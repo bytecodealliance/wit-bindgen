@@ -1,0 +1,8 @@
+package foo:foo;
+
+world go-params {
+    import error-code: func(err: u32) -> option<u32>;
+    import error-code2: func(ret: u32) -> option<u32>;
+    import error-code3: func(err: u32, ret: option<u32>) -> result<u32>;
+    import error-code4: func() -> result<u32>;
+}

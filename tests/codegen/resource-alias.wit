@@ -1,0 +1,31 @@
+package my:resources;
+
+interface e1 {
+  resource x {
+    constructor(s: string);
+    get: func() -> string;
+  }
+
+  record foo { x: x }
+
+  a: func(f: foo) -> list<x>;
+}
+
+interface e2 {
+  use e1.{x, foo as bar};
+
+  record foo { x: x }
+
+  a: func(f: foo, g: bar) -> list<x>;
+}
+
+world resources {
+  use e2.{x};
+
+  export frobnicate: func(x: list<x>) -> list<x>;
+
+  import e1;
+  import e2;
+  export e1;
+  export e2;
+}

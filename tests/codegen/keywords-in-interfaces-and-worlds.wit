@@ -1,0 +1,11 @@
+package foo:foo;
+
+world trait {
+  import continue: interface {
+    break: func();
+  }
+
+  export match: interface {
+    return: func();
+  }
+}

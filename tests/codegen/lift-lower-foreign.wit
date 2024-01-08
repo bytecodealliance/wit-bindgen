@@ -1,0 +1,51 @@
+package my:lift-lower-foreign;
+
+interface a {
+  type t1 = u32;
+  record t2 { a: t1 }
+  flags t3 { a, b, c }
+  type t4 = tuple<t1, t2, t3>;
+  variant t5 { a, b(t2), c(t3) }
+  enum t6 { a, b, c }
+  type t7 = option<t2>;
+  type t8 = result<t2, t3>;
+  type t10 = list<t5>;
+  type t11 = t10;
+}
+
+interface the-interface {
+  use a.{t1 as u1, t2 as u2, t3 as u3, t4 as u4, t5 as u5};
+  use a.{t6 as u6, t7 as u7, t8 as %u8};
+  use a.{t10 as u10, t11 as u11};
+
+  f1: func(a: u1) -> u1;
+  f2: func(a: u2) -> u2;
+  f3: func(a: u3) -> u3;
+  f4: func(a: u4) -> u4;
+  f5: func(a: u5) -> u5;
+  f6: func(a: u6) -> u6;
+  f7: func(a: u7) -> u7;
+  f8: func(a: %u8) -> %u8;
+  f10: func(a: u10) -> u10;
+  f11: func(a: u11) -> u11;
+}
+
+world foo {
+  use a.{t1 as u1, t2 as u2, t3 as u3, t4 as u4, t5 as u5};
+  use a.{t6 as u6, t7 as u7, t8 as %u8};
+  use a.{t10 as u10, t11 as u11};
+
+  export foo-f1: func(a: u1) -> u1;
+  export foo-f2: func(a: u2) -> u2;
+  export foo-f3: func(a: u3) -> u3;
+  export foo-f4: func(a: u4) -> u4;
+  export foo-f5: func(a: u5) -> u5;
+  export foo-f6: func(a: u6) -> u6;
+  export foo-f7: func(a: u7) -> u7;
+  export foo-f8: func(a: %u8) -> %u8;
+  export foo-f10: func(a: u10) -> u10;
+  export foo-f11: func(a: u11) -> u11;
+
+  import the-interface;
+  export the-interface;
+}

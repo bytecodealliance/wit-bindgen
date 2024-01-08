@@ -1,0 +1,16 @@
+// This test generates multiple `RetArea` structs.
+
+package foo:foo;
+
+interface tcp {
+  type ipv6-socket-address = tuple<u16, u16, u16, u16, u16, u16, u16, u16, u16, u16>;
+
+  connect: func(
+      local-address: ipv6-socket-address,
+      remote-address: ipv6-socket-address,
+  ) -> tuple<u32, u32>;
+}
+
+world wasi {
+  import tcp;
+}

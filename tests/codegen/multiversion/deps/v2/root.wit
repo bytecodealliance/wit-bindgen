@@ -1,0 +1,6 @@
+package my:dep@0.2.0;
+
+interface a {
+  use my:dep/a@0.1.0.{foo};
+  x: func() -> foo;
+}

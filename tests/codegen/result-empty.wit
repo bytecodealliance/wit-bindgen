@@ -1,0 +1,32 @@
+package local:demo;
+
+interface my-interface {
+    variant stuff {
+        this,
+        that
+    }
+
+    // NB: this record used to be empty, but that's no longer valid, so now it's
+    // non-empty. Don't want to delete the whole test however.
+    record empty {
+        not-empty-anymore: bool,
+    }
+
+    stuff-or-stuff: func() -> result<stuff, stuff>;
+    stuff-or-empty: func() -> result<stuff, empty>;
+    empty-or-stuff: func() -> result<empty, stuff>;
+    empty-or-empty: func() -> result<empty, empty>;
+
+    stuff-or-absent: func() -> result<stuff>;
+    absent-or-stuff: func() -> result<_, stuff>;
+
+    empty-or-absent: func() -> result<empty>;
+    absent-or-empty: func() -> result<_, empty>;
+
+    absent-or-absent: func() -> result;
+}
+
+
+world my-world {
+    import my-interface;
+}

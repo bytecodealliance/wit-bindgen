@@ -1,0 +1,19 @@
+package unused:%import;
+
+interface types {
+    record r {
+        a: list<u8>,
+    }
+}
+
+world the-world {
+    import foo: interface {
+      use types.{r};
+
+      foo: func(data: r);
+    }
+
+    export bar: interface {
+      use types.{r};
+    }
+}

@@ -1,0 +1,15 @@
+package my:resources;
+
+interface with-lists {
+  resource x {
+    constructor(l: list<u8>);
+    get: func() -> list<u8>;
+    set: func(l: list<u8>);
+    etc: static func(l: list<u8>) -> list<u8>;
+  }
+}
+
+world resources {
+  import with-lists;
+  export with-lists;
+}

@@ -1,0 +1,11 @@
+package foo:bar;
+
+world x {
+  resource y;
+
+  record r {
+    y: borrow<y>
+  }
+
+  import f: func(a: list<r>);
+}

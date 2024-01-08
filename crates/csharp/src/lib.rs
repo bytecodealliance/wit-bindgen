@@ -124,24 +124,6 @@ impl CSharp {
     }
 }
 
-#[derive(Debug, Default)]
-struct Return {
-    scalar: Option<Scalar>,
-    retptrs: Vec<Type>,
-}
-
-struct CSharpSig {
-    ret: Return,
-}
-
-#[derive(Debug)]
-enum Scalar {
-    Void,
-    OptionBool(Type),
-    ResultBool(Option<Type>, Option<Type>),
-    Type(Type),
-}
-
 impl WorldGenerator for CSharp {
     fn preprocess(&mut self, resolve: &Resolve, world: WorldId) {
         let name = &resolve.worlds[world].name;
@@ -385,7 +367,7 @@ impl WorldGenerator for CSharp {
 
                             return BitConverter.ToInt32(span.Slice(offset, 4));
                         }}
-                        
+
                         public void SetS32(int offset, int value)
                         {{
                             Span<byte> span = MemoryMarshal.CreateSpan(ref buffer, {});
@@ -641,25 +623,34 @@ impl InterfaceGenerator<'_> {
                 r#"
                 private unsafe struct ReturnArea
                 {{
-                    public int GetS32(IntPtr ptr, int offset)
+                    public static byte GetU8(IntPtr ptr)
                     {{
-                        var span = new Span<byte>((void*)ptr, {});
+                        var span = new Span<byte>((void*)ptr, 1);
 
-                        return BitConverter.ToInt32(span.Slice(offset, 4));
+                        return span[0];
                     }}
 
-                    public string GetUTF8String(IntPtr ptr)
+                    public static ushort GetU16(IntPtr ptr)
                     {{
-                        return Encoding.UTF8.GetString((byte*)GetS32(ptr, 0), GetS32(ptr, 4));
+                        var span = new Span<byte>((void*)ptr, 2);
+
+                        return BitConverter.ToUInt16(span);
+                    }}
+
+                    public static int GetS32(IntPtr ptr)
+                    {{
+                        var span = new Span<byte>((void*)ptr, 4);
+
+                        return BitConverter.ToInt32(span);
+                    }}
+
+                    public static string GetUTF8String(IntPtr ptr)
+                    {{
+                        return Encoding.UTF8.GetString((byte*)GetS32(ptr), GetS32(ptr + 4));
                     }}
 
                 }}
-
-                [ThreadStatic]
-                [FixedAddressValueType]
-                private static ReturnArea returnArea;
-            "#,
-                self.gen.return_area_size
+            "#
             );
         }
 
@@ -694,6 +685,20 @@ impl InterfaceGenerator<'_> {
                             return BitConverter.ToInt32(span.Slice(offset, 4));
                         }}
                         
+                        public void SetS8(int offset, int value)
+                        {{
+                            Span<byte> span = MemoryMarshal.CreateSpan(ref buffer, {});
+
+                            BitConverter.TryWriteBytes(span.Slice(offset), value);
+                        }}
+
+                        public void SetS16(int offset, short value)
+                        {{
+                            Span<byte> span = MemoryMarshal.CreateSpan(ref buffer, {});
+
+                            BitConverter.TryWriteBytes(span.Slice(offset), value);
+                        }}
+
                         public void SetS32(int offset, int value)
                         {{
                             Span<byte> span = MemoryMarshal.CreateSpan(ref buffer, {});
@@ -720,6 +725,8 @@ impl InterfaceGenerator<'_> {
                     ",
                 self.gen.return_area_size,
                 self.gen.return_area_align,
+                self.gen.return_area_size,
+                self.gen.return_area_size,
                 self.gen.return_area_size,
                 self.gen.return_area_size
             );
@@ -755,7 +762,15 @@ impl InterfaceGenerator<'_> {
                 let ty = func.results.iter_types().next().unwrap();
                 self.type_name_with_qualifier(ty, true)
             }
-            _ => unreachable!(), //TODO
+            _ => {
+                let types = func
+                    .results
+                    .iter_types()
+                    .map(|ty| self.type_name(ty))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("({})", types)
+            }
         };
 
         let camel_name = func.name.to_upper_camel_case();
@@ -856,12 +871,15 @@ impl InterfaceGenerator<'_> {
         let result_type = match func.results.len() {
             0 => "void".to_owned(),
             1 => self.type_name(func.results.iter_types().next().unwrap()),
-            _ => func
-                .results
-                .iter_types()
-                .map(|ty| self.type_name(ty))
-                .collect::<Vec<String>>()
-                .join(", "),
+            _ => {
+                let types = func
+                    .results
+                    .iter_types()
+                    .map(|ty| self.type_name(ty))
+                    .collect::<Vec<String>>()
+                    .join(", ");
+                format!("({})", types)
+            }
         };
 
         let camel_name = func.name.to_upper_camel_case();
@@ -1394,7 +1412,6 @@ struct FunctionBindgen<'a, 'b> {
     func_name: &'b str,
     params: Box<[String]>,
     src: String,
-    sig: CSharpSig,
     locals: Ns,
     block_storage: Vec<BlockStorage>,
     blocks: Vec<Block>,
@@ -1404,13 +1421,11 @@ struct FunctionBindgen<'a, 'b> {
 impl<'a, 'b> FunctionBindgen<'a, 'b> {
     fn new(
         gen: &'b mut InterfaceGenerator<'a>,
-        sig: CSharpSig,
         func_name: &'b str,
         params: Box<[String]>,
     ) -> FunctionBindgen<'a, 'b> {
         Self {
             gen,
-            sig,
             func_name,
             params,
             src: String::new(),
@@ -1447,19 +1462,27 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::I32Load { offset } => {
                 if self.gen.in_import {
-                    results.push(format!("returnArea.GetS32(ptr, {offset})"))
+                    results.push(format!("ReturnArea.GetS32(ptr + {offset})"))
                 } else {
                     results.push(format!("returnArea.GetS32({offset})"))
                 }
             }
             Instruction::I32Load8U { offset } => {
-                results.push(format!("returnArea.GetU8({offset})"))
+                if self.gen.in_import {
+                    results.push(format!("ReturnArea.GetU8(ptr + {offset})"))
+                } else {
+                    results.push(format!("returnArea.GetU8({offset})"))
+                }
             }
             Instruction::I32Load8S { offset } => {
                 results.push(format!("returnArea.GetS8({offset})"))
             }
             Instruction::I32Load16U { offset } => {
-                results.push(format!("returnArea.GetU16({offset})"))
+                if self.gen.in_import {
+                    results.push(format!("ReturnArea.GetU16(ptr + {offset})"))
+                } else {
+                    results.push(format!("returnArea.GetU16({offset})"))
+                }
             }
             Instruction::I32Load16S { offset } => {
                 results.push(format!("returnArea.GetS16({offset})"))
@@ -1474,7 +1497,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::I32Store8 { offset } => {
                 uwriteln!(self.src, "returnArea.SetS8({}, {});", offset, operands[0])
             }
-            Instruction::I32Store16 { .. } => todo!("I32Store16"),
+            Instruction::I32Store16 { offset } => {
+                uwriteln!(
+                    self.src,
+                    "returnArea.SetS16({}, unchecked((short){}));",
+                    offset,
+                    operands[0]
+                )
+            }
             Instruction::I64Store { .. } => todo!("I64Store"),
             Instruction::F32Store { .. } => todo!("F32Store"),
             Instruction::F64Store { .. } => todo!("F64Store"),
@@ -1516,10 +1546,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             } => {
                 if flags.flags.len() > 32 {
                     results.push(format!(
-                        "(int)(((long){}) & uint.MaxValue)",
+                        "unchecked((int)(((long){}) & uint.MaxValue))",
                         operands[0].to_string()
                     ));
-                    results.push(format!("((int)({})) >> 32", operands[0].to_string()));
+                    results.push(format!(
+                        "unchecked(((int)((long){} >> 32)))",
+                        operands[0].to_string()
+                    ));
                 } else {
                     results.push(format!("(int){}", operands[0].to_string()));
                 }
@@ -1534,7 +1567,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 );
                 if flags.flags.len() > 32 {
                     results.push(format!(
-                        "({})((long)({}) << 32 | (uint)({}))",
+                        "({})(unchecked((uint)({})) | (ulong)(unchecked((uint)({}))) << 32)",
                         qualified_type_name,
                         operands[0].to_string(),
                         operands[1].to_string()
@@ -1547,7 +1580,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::RecordLower { record, .. } => {
                 let op = &operands[0];
                 for f in record.fields.iter() {
-                    results.push(format!("({}).{}", op, f.name.to_upper_camel_case()));
+                    results.push(format!("({}).{}", op, f.name.to_csharp_ident()));
                 }
             }
             Instruction::RecordLift { ty, name, .. } => {
@@ -1557,14 +1590,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.gen.qualifier(true, id_type),
                     name.to_string().to_upper_camel_case()
                 );
-                let mut result = format!("({}) {{\n", qualified_type_name);
-                uwriteln!(result, "{}", operands.join(","));
+                let mut result = format!("new {} (\n", qualified_type_name);
 
-                result.push_str("}");
+                result.push_str(&operands.join(","));
+                result.push_str(")");
+
                 results.push(result);
             }
-            Instruction::TupleLift { ty, .. } => {
-                let id_type = &self.gen.resolve.types[*ty];
+            Instruction::TupleLift { .. } => {
                 let mut result = String::from("(");
 
                 uwriteln!(result, "{}", operands.join(","));
@@ -1575,8 +1608,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::TupleLower { tuple, ty: _ } => {
                 let op = &operands[0];
-                for i in 0..tuple.types.len() {
-                    results.push(format!("({}).Item{}", op, i + 1));
+                match tuple.types.len() {
+                    1 => results.push(format!("({})", op)),
+                    _ => {
+                        for i in 0..tuple.types.len() {
+                            results.push(format!("({}).Item{}", op, i + 1));
+                        }
+                    }
                 }
             }
 
@@ -1628,7 +1666,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::StringLift { .. } => {
                 if self.gen.in_import {
-                    results.push(format!("returnArea.GetUTF8String(ptr)"));
+                    results.push(format!("ReturnArea.GetUTF8String(ptr)"));
                 } else {
                     let address = &operands[0];
                     let length = &operands[1];
@@ -1674,6 +1712,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::CallInterface { func } => {
                 let module = self.gen.name.to_string();
                 let func_name = self.func_name.to_upper_camel_case();
+                let qualifiedName = self.gen.name.to_upper_camel_case();
                 let class_name =
                     CSharp::get_class_name_from_qualified_name(module).to_upper_camel_case();
                 let mut oper = String::new();
@@ -1686,22 +1725,30 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     }
                 }
 
-                // TOOD: Expect we need to fill this out similar to how C is done, then see if the match on len can be removed.
-                match &self.sig.ret.scalar {
-                    Some(Scalar::Type(_)) => {
+                match func.results.len() {
+                    0 => self
+                        .src
+                        .push_str(&format!("{class_name}Impl.{func_name}({oper});")),
+                    1 => {
                         let ret = self.locals.tmp("ret");
-                        let ty = func.results.iter_types().next().unwrap();
-                        let ty = self.gen.gen.type_name(ty);
-                        uwriteln!(self.src, "{} {} = {}({});", ty, ret, self.sig.name, args);
+                        uwriteln!(
+                            self.src,
+                            "var {ret} = {class_name}Impl.{func_name}({oper});"
+                        );
                         results.push(ret);
                     }
-                    _ => match func.results.len() {
-                        0 => self
-                            .src
-                            .push_str(&format!("{class_name}Impl.{func_name}({oper});")),
-                        1 => results.push(format!("{class_name}Impl.{func_name}({oper})")),
-                        _ => results.push(format!("{class_name}Impl.{func_name}({oper})")),
-                    },
+                    _ => {
+                        let ret = self.locals.tmp("ret");
+                        uwriteln!(
+                            self.src,
+                            "var {ret} = {class_name}Impl.{func_name}({oper});"
+                        );
+                        let mut i = 1;
+                        for _ in func.results.iter_types() {
+                            results.push(format!("{}.Item{}", ret, i));
+                            i += 1;
+                        }
+                    }
                 }
             }
 
@@ -1720,7 +1767,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         .map(|ty| wasm_type(ty))
                         .collect::<Vec<&str>>()
                         .join(", ");
-                    uwriteln!(self.src, "return ({cast})({results});")
+                    uwriteln!(self.src, "return ({results});")
                 }
             },
 

@@ -1,0 +1,7 @@
+package test:test;
+
+world foo {
+  resource x;
+
+  export return-resource: func() -> x;
+}

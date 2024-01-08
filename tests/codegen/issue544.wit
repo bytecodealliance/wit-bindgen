@@ -1,0 +1,17 @@
+// ./wit/issue.wit
+package foo:foo;
+
+world issue {
+    variant variants {
+        list-u8(list<u8>),
+        list-tuple-bool(list<tuple<bool>>),
+    }
+
+    record record-tuple-u8 {
+        field: tuple<u8>,
+    }
+
+    import func-using-list-u8-in-args: func(body: list<u8>) -> ();
+    export func-using-list-tuple-bool-in-return: func() -> list<tuple<bool>>;
+    export func-using-tuple-u8-in-return: func() -> tuple<u8>;
+}

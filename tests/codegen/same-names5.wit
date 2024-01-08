@@ -1,0 +1,10 @@
+package name5:name5;
+
+world name5 {
+  record name5 {
+    r: bool,
+  }
+
+  export x: func() -> name5;
+}
+

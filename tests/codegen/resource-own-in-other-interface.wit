@@ -1,0 +1,13 @@
+package my:resources;
+interface e1 {
+	resource x {
+		fun: func() -> tuple<x>;
+	}
+}
+
+world resources {
+  import e2: interface {
+    use e1.{x};
+    use-res: func() -> x;
+}
+}

@@ -1,0 +1,12 @@
+package foo:bar;
+
+interface foo2 {
+  resource a;
+  type b = a;
+  f1: func(a: borrow<a>);
+  f2: func(b: borrow<b>);
+}
+
+world x {
+  import foo2;
+}

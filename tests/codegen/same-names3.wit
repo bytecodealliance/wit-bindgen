@@ -1,0 +1,10 @@
+package name3:name3;
+
+interface name3 {
+  name3: func();
+}
+
+world w {
+  import name3;
+  export name3;
+}

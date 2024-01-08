@@ -1,0 +1,32 @@
+package local:demo;
+
+interface interface1 {
+    variant error {
+        some-error
+    }
+    record my-record {
+        some-field: u32
+    }
+    my-func: func() -> result<my-record, error>;
+    my-optional: func() -> option<my-record>;
+    my-tuple: func() -> tuple<my-record, error>;
+    my-list: func() -> list<my-record>;
+}
+
+interface interface2 {
+    variant error {
+        other-error
+    }
+    record my-record {
+        other-field: u32
+    }
+    my-func: func() -> result<my-record, error>;
+    my-optional: func() -> option<my-record>;
+    my-tuple: func() -> tuple<my-record, error>;
+    my-list: func() -> list<my-record>;
+}
+
+world my-world {
+    import interface1;
+    import interface2;
+}

@@ -1,0 +1,16 @@
+package my:resources;
+
+interface foo {
+  resource x {
+    constructor(s: string);
+    get: func() -> string;
+  }
+
+  type y = x;
+  transmogriphy: func(y: y) -> x;
+}
+
+world resources {
+  import foo;
+  export foo;
+}

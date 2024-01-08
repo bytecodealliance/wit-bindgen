@@ -1,0 +1,115 @@
+package foo:foo;
+
+interface types-interface {
+  /// "package of named fields"
+  record r {
+    a: u32,
+    b: string,
+    c: list<tuple<string, option<t4>>>
+  }
+
+  /// values of this type will be one of the specified cases
+  variant human {
+    baby,
+    /// type payload
+    child(u32), // optional type payload
+    adult,
+  }
+
+  /// similar to `variant`, but no type payloads
+  enum errno {
+    too-big,
+    too-small,
+    too-fast,
+    too-slow,
+  }
+
+  /// a bitflags type
+  flags permissions {
+    read,
+    write,
+    exec,
+  }
+
+  // type aliases are allowed to primitive types and additionally here are some
+  // examples of other types
+  type t1 = u32;
+  type t2 = tuple<u32, u64>;
+  type t3 = string;
+  type t4 = option<u32>;
+  /// no "ok" type
+  type t5 = result<_, errno>;           // no "ok" type
+  type t6 = result<string>;             // no "err" type
+  type t7 = result<char, errno>;        // both types specified
+  type t8 = result;                     // no "ok" or "err" type
+  type t9 = list<string>;
+  type t10 = t9;
+}
+
+/// Comment for import interface
+interface api-imports {
+  use types-interface.{t7};
+
+  /// Same name as the type in `types-interface`, but this is a different type
+  variant human {
+    baby,
+    child(u64),
+    adult(tuple<string, option<option<string>>, tuple<s64>>),
+  }
+
+  api-a1-b2: func(arg: list<human>) -> (h1: t7, val2: human);
+}
+
+interface api {
+  /// Comment for export function
+  f1: func() -> (val-one: tuple<s32>, val2: string);
+
+  /// Comment for t5 in api
+  type t5 = result<_, option<errno>>;
+
+  record errno {
+    a-u1: u64,
+    /// A list of signed 64-bit integers
+    list-s1: list<s64>,
+    str: option<string>,
+    c: option<char>,
+  }
+
+  class: func(break: option<option<t5>>) -> tuple<u32>;
+  continue: func(abstract: option<result<_, errno>>, extends: tuple<u32>) -> (%implements: option<tuple<u32>>);
+}
+
+world types-example {
+    use types-interface.{t2 as t2-renamed, t10, permissions};
+
+    import api-imports;
+    import print: func(message: string, level: log-level);
+    /// Comment for import inline
+    import inline: interface {
+      /// Comment for import inline function
+      inline-imp: func(args: list<option<char>>) -> result<_, char>;
+    }
+
+    export types-interface;
+    export api;
+
+    enum log-level {
+      /// lowest level
+      debug,
+      info,
+      warn,
+      error,
+    }
+
+    // NB: this record used to be empty, but that's no longer valid, so now it's
+    // non-empty. Don't want to delete the whole test however.
+    record empty {
+        not-empty-anymore: bool,
+    }
+
+    export f-f1: func(typedef: t10) -> t10;
+    export f1: func(f: float32, f-list: list<tuple<char, float64>>) -> (val-p1: s64, val2: string);
+    /// t2 has been renamed with `use self.types-interface.{t2 as t2-renamed}`
+    export re-named: func(perm: option<permissions>, e: option<empty>) -> t2-renamed;
+    export re-named2: func(tup: tuple<list<u16>>, e: empty) -> tuple<option<u8>, s8>;
+}

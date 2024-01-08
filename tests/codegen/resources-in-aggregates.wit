@@ -1,0 +1,49 @@
+package my:resources;
+
+interface aggregates {
+  resource z;
+
+  record r1 {
+    z: z
+  }
+  record r2 {
+    z: borrow<z>
+  }
+  record r3 {
+    z1: borrow<z>,
+    z2: z,
+  }
+  type t1 = tuple<z, r1>;
+  type t2 = tuple<borrow<z>>;
+
+  variant v1 {
+    z(z),
+  }
+  variant v2 {
+    z(borrow<z>),
+  }
+
+  type l1 = list<z>;
+  type l2 = list<borrow<z>>;
+
+  f: func(
+    r1: r1,
+    r2: r2,
+    r3: r3,
+    t1: t1,
+    t2: t2,
+    v1: v1,
+    v2: v2,
+    l1: l1,
+    l2: l2,
+    o1: option<z>,
+    o2: option<borrow<z>>,
+    result1: result<z>,
+    result2: result<borrow<z>>,
+  );
+}
+
+world resources {
+  import aggregates;
+  export aggregates;
+}

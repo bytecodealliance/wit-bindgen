@@ -1,0 +1,6 @@
+package my:dep@0.1.0;
+
+interface a {
+  type foo = u8;
+  x: func();
+}

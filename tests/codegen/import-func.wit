@@ -1,0 +1,8 @@
+package foo:foo;
+
+world foo {
+  import foo: func();
+  import foo1: func() -> string;
+  import foo2: func(x: string);
+  import foo3: func(x: list<u8>) -> result<option<u32>, string>;
+}

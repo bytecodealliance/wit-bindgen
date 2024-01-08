@@ -1,0 +1,20 @@
+package foo:foo;
+
+interface http-fetch-imports {
+    record request{
+        method: string,
+        uri: string,
+        body: string
+    }
+
+    record response{
+        status: u16,
+        body: string
+    }
+
+    fetch: func(req: request) -> result<response>;
+}
+
+world http-fetch-simple {
+    import http-fetch-imports;
+}

@@ -1,0 +1,12 @@
+package name4:name4;
+
+interface name4 {
+  type name4 = u32;
+
+  bar: func() -> name4;
+}
+
+world w {
+  import name4;
+  export name4;
+}

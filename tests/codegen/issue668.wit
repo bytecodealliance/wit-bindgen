@@ -1,0 +1,20 @@
+package test:test;
+
+interface test-import {
+  resource resource-a {
+    constructor(id: u32);
+  }
+
+  record record-a {
+    resource-a: resource-a,
+    resources: list<resource-a>,
+  }
+
+  resource resource-b {
+    make: static func(record-a: record-a);
+  }
+}
+
+world test-world {
+  import test-import;
+}

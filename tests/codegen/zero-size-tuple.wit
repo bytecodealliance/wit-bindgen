@@ -1,0 +1,10 @@
+package foo:foo;
+
+world bindings {
+    import component;
+}
+
+interface component {
+    type value = tuple<u32>;
+    query-eval: func(q: u64) -> list<value>;
+}

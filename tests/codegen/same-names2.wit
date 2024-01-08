@@ -1,0 +1,5 @@
+package name2:name2;
+
+world name2 {
+  export name2: func();
+}
