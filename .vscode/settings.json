@@ -1,8 +1,0 @@
-{
-    "rust-analyzer.linkedProjects": [
-        ".\\crates\\csharp\\Cargo.toml"
-    ],
-    "rust-analyzer.cargo.features": [
-        "csharp"
-    ]
-}
