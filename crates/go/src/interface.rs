@@ -28,6 +28,7 @@ pub(crate) struct InterfaceGenerator<'a> {
     // this interface-level tracking is needed to prevent duplicated
     // resource declaration which has been declared in other interfaces
     pub(crate) exported_resources: HashSet<TypeId>,
+    pub(crate) wasm_import_module: Option<&'a str>,
 }
 
 impl InterfaceGenerator<'_> {
@@ -1031,67 +1032,138 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         _docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
         let type_name = self.type_name(name, true);
+        let private_type_name = type_name.to_snake_case();
         // for imports, generate a `int32` type for resource handle representation.
         // for exports, generate a map to store unique IDs of resources to their
         // resource interfaces, which are implemented by guest code.
-        if matches!(self.direction, Direction::Import) {
-            self.src.push_str(&format!(
-                "// {type_name} is a handle to imported resource {name}\n"
-            ));
-            self.src.push_str(&format!("type {type_name} int32\n\n"));
-        } else {
-            // generate a typedef struct for export resource
-            let c_typedef_target = self.gen.c_type_names[&id].clone();
+        match self.direction {
+            Direction::Import => {
+                self.src.push_str(&format!(
+                    "// {type_name} is a handle to imported resource {name}\n"
+                ));
+                self.src.push_str(&format!("type {type_name} int32\n\n"));
+                let import_module = self.wasm_import_module.unwrap().to_string();
 
-            self.preamble
-                .push_str(&format!("// typedef struct {c_typedef_target} "));
-            self.preamble.push_str("{");
-            self.preamble.deindent(1);
-            self.preamble.push_str("\n");
-            self.preamble.push_str("//  int32_t __handle; \n");
-            self.preamble.push_str("// ");
-            self.preamble.push_str("} ");
-            self.preamble.push_str(&c_typedef_target);
-            self.preamble.push_str(";\n");
+                // generate [resource-drop] function
+                uwriteln!(
+                    self.src,
+                    "//go:wasmimport {import_module} [resource-drop]{name}
+                    func _{type_name}_drop(self {type_name})
+                    
+                    func (self {type_name}) Drop() {{
+                        _{type_name}_drop(self)
+                    }}
+                    "
+                );
+            }
+            Direction::Export => {
+                // generate a typedef struct for export resource
+                let c_typedef_target = self.gen.c_type_names[&id].clone();
+                let ns = self.c_namespace_of_resource(id);
+                let snake = self.resolve.types[id]
+                    .name
+                    .as_ref()
+                    .unwrap()
+                    .to_snake_case();
+                let mut own = ns.clone();
+                own.push_str("_own_");
+                own.push_str(&snake);
+                own.push_str("_t");
 
-            // import "sync" for Mutex
-            self.gen.with_sync_import(true);
-            self.src
-                .push_str(&format!("// resource {type_name} internal bookkeeping"));
-            let private_type_name = type_name.to_snake_case();
-            uwriteln!(
-                self.src,
-                "
-                var (
-                    {private_type_name}_pointers = make(map[int32]{type_name})
-                    {private_type_name}_next_id int32 = 0
-                    {private_type_name}_mu sync.Mutex
-                )
-                "
-            );
+                // generate a typedef struct for export resource
+                // the typedef struct is a dummy struct that contains a
+                // Go binding specific handle field. This handle field is used
+                // to retrieve the exported Go struct from the exported C struct.
+                self.preamble
+                    .push_str(&format!("// typedef struct {c_typedef_target} "));
+                self.preamble.push_str("{");
+                self.preamble.push_str("\n");
+                self.preamble.push_str("//  int32_t __handle; \n");
+                self.preamble.push_str("// ");
+                self.preamble.push_str("} ");
+                self.preamble.push_str(&c_typedef_target);
+                self.preamble.push_str(";\n");
 
-            // generate dtors for exported resources
-            let namespace = self.c_owner_namespace(id);
-            let snake = name.to_snake_case();
-            let func_name = format!("{}_{}", namespace, snake).to_lower_camel_case();
-            let private_type_name = type_name.to_snake_case();
-            self.src
-                .push_str(&format!("//export {namespace}_{snake}_destructor\n"));
-            uwriteln!(
-                self.src,
-                "func {func_name}Destructor(self *C.{c_typedef_target}) {{
-                    C.free(unsafe.Pointer(self))
-                    delete({private_type_name}_pointers, int32(self.__handle))
-                }}
-                ",
-            );
+                // import "sync" for Mutex
+                self.gen.with_sync_import(true);
+                self.src
+                    .push_str(&format!("// resource {type_name} internal bookkeeping"));
+                uwriteln!(
+                    self.src,
+                    "
+                    var (
+                        // a map of indexed {type_name} instances
+                        // this is used to retrieve the instance from exported C resources
+                        // This establishes a link between the exported C struct and the exported Go struct.
+                        // This map will be recycled when the dtor is called.
+                        {private_type_name}_pointers = make(map[int32]{type_name})
+                        {private_type_name}_next_id int32 = 0
+                        {private_type_name}_mu sync.Mutex
 
-            self.gen.with_import_unsafe(true);
+                        // a map of {type_name} instances to their owning handlers. This is used to
+                        // retrieve the owning handler that is necessary to implement the Drop() method.
+                        // Note that the owning handler only exists after the constructor has been called.
+                        // This map will be recycled when the dtor is called.
+                        {private_type_name}_to_own_handlers sync.Map
+                    )
+                    "
+                );
 
-            // book keep the exported resource type
-            self.exported_resources.insert(id);
-            self.gen.exported_resources.insert(id);
-        }
+                uwriteln!(
+                    self.src,
+                    "
+                    // link the instance to its owning handler
+                    func set{type_name}OwningHandler(self {type_name}, owningHandler int32) {{
+                        {private_type_name}_to_own_handlers.Store(self, owningHandler)
+                    }}
+
+                    // get the owning handler for the instance
+                    func get{type_name}OwningHandler(self {type_name}) int32 {{
+                        owningHandler, ok := {private_type_name}_to_own_handlers.Load(self)
+                        if !ok {{
+                            panic(\"Internal error: owning handler not found\")
+                        }}
+                        return owningHandler.(int32)
+                    }}
+                    "
+                );
+
+                // generate [dtor] function for exported resources
+                let namespace = self.c_owner_namespace(id);
+                let snake = name.to_snake_case();
+                let func_name = format!("{}_{}", namespace, snake).to_lower_camel_case();
+                self.src
+                    .push_str(&format!("//export {namespace}_{snake}_destructor\n"));
+                uwriteln!(
+                    self.src,
+                    "func {func_name}Destructor(self *C.{c_typedef_target}) {{
+                        {private_type_name} := {private_type_name}_pointers[int32(self.__handle)]
+                        {private_type_name}_to_own_handlers.Delete({private_type_name})
+                        delete({private_type_name}_pointers, int32(self.__handle))
+                        C.free(unsafe.Pointer(self))
+                    }}
+                    ",
+                );
+
+                self.gen.with_import_unsafe(true);
+
+                // generate [resource-drop] function
+                uwriteln!(
+                    self.src,
+                    "func Drop{type_name}(self {type_name}) {{
+                        owningHandler := get{type_name}OwningHandler(self)
+                        var cOwningHandler C.{own}
+                        cOwningHandler.__handle = C.int32_t(owningHandler)
+                        C.{ns}_{snake}_drop_own(cOwningHandler)
+                    }}
+                    ",
+                );
+
+                // book keep the exported resource type
+                self.exported_resources.insert(id);
+                self.gen.exported_resources.insert(id);
+            }
+        };
     }
 
     fn type_flags(
