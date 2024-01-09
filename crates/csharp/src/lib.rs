@@ -355,22 +355,22 @@ impl WorldGenerator for CSharp {
                 uwrite!(
                     ret_area_str,
                     "
-                    [InlineArray({})]
-                    [StructLayout(LayoutKind.Sequential, Pack = {})]
+                    [InlineArray({0})]
+                    [StructLayout(LayoutKind.Sequential, Pack = {1})]
                     private struct ReturnArea
                     {{
                         private byte buffer;
     
                         private int GetS32(int offset)
                         {{
-                            ReadOnlySpan<byte> span = MemoryMarshal.CreateSpan(ref buffer, {});
+                            ReadOnlySpan<byte> span = MemoryMarshal.CreateSpan(ref buffer, {0});
 
                             return BitConverter.ToInt32(span.Slice(offset, 4));
                         }}
 
                         public void SetS32(int offset, int value)
                         {{
-                            Span<byte> span = MemoryMarshal.CreateSpan(ref buffer, {});
+                            Span<byte> span = MemoryMarshal.CreateSpan(ref buffer, {0});
 
                             BitConverter.TryWriteBytes(span.Slice(offset), value);
                         }}
@@ -393,9 +393,7 @@ impl WorldGenerator for CSharp {
                     private static ReturnArea returnArea = default;
                     ",
                     self.return_area_size,
-                    self.return_area_align,
-                    self.return_area_size,
-                    self.return_area_size
+                    self.return_area_align
                 );
 
                 src.push_str(&ret_area_str);
@@ -672,36 +670,36 @@ impl InterfaceGenerator<'_> {
             uwrite!(
                 ret_area_str,
                 "
-                    [InlineArray({})]
-                    [StructLayout(LayoutKind.Sequential, Pack = {})]
+                    [InlineArray({0})]
+                    [StructLayout(LayoutKind.Sequential, Pack = {1})]
                     private struct ReturnArea
                     {{
                         private byte buffer;
     
                         private int GetS32(int offset)
                         {{
-                            ReadOnlySpan<byte> span = MemoryMarshal.CreateSpan(ref buffer, {});
+                            ReadOnlySpan<byte> span = MemoryMarshal.CreateSpan(ref buffer, {0});
 
                             return BitConverter.ToInt32(span.Slice(offset, 4));
                         }}
                         
                         public void SetS8(int offset, int value)
                         {{
-                            Span<byte> span = MemoryMarshal.CreateSpan(ref buffer, {});
+                            Span<byte> span = MemoryMarshal.CreateSpan(ref buffer, {0});
 
                             BitConverter.TryWriteBytes(span.Slice(offset), value);
                         }}
 
                         public void SetS16(int offset, short value)
                         {{
-                            Span<byte> span = MemoryMarshal.CreateSpan(ref buffer, {});
+                            Span<byte> span = MemoryMarshal.CreateSpan(ref buffer, {0});
 
                             BitConverter.TryWriteBytes(span.Slice(offset), value);
                         }}
 
                         public void SetS32(int offset, int value)
                         {{
-                            Span<byte> span = MemoryMarshal.CreateSpan(ref buffer, {});
+                            Span<byte> span = MemoryMarshal.CreateSpan(ref buffer, {0});
 
                             BitConverter.TryWriteBytes(span.Slice(offset), value);
                         }}
@@ -724,11 +722,7 @@ impl InterfaceGenerator<'_> {
                     private static ReturnArea returnArea = default;
                     ",
                 self.gen.return_area_size,
-                self.gen.return_area_align,
-                self.gen.return_area_size,
-                self.gen.return_area_size,
-                self.gen.return_area_size,
-                self.gen.return_area_size
+                self.gen.return_area_align
             );
 
             self.csharp_interop_src.push_str(&ret_area_str);
