@@ -1832,31 +1832,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
             }
 
-            //Instruction::TupleLower { tuple, ty: _ } => {
-            //    let ops = operands
-            //        .iter()
-            //        .map(|op| op.to_string())
-            //        .collect::<Vec<_>>()
-            //        .join(", ");
-            //
-            //    let temps = tuple
-            //        .types
-            //        .iter()
-            //        .map(|_| self.locals.tmp("tmp"))
-            //        .collect::<Vec<_>>();
-            //
-            //    let vars = temps
-            //        .iter()
-            //        .map(|tmp| format!("var {tmp}"))
-            //        .collect::<Vec<_>>()
-            //        .join(", ");
-            //
-            //    uwriteln!(self.src, "({vars}) = {ops};");
-            //
-            //    for tmp in temps {
-            //        results.push(format!("({tmp})"));
-            //    }
-            //}
             Instruction::VariantPayloadName => {
                 todo!("VariantPayloadName");
             }
