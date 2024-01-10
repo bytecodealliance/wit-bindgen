@@ -2234,6 +2234,7 @@ dependencies = [
  "test-helpers",
  "wasm-encoder 0.38.0",
  "wasm-metadata",
+ "wasmparser 0.118.0",
  "wit-bindgen-core",
  "wit-component",
 ]

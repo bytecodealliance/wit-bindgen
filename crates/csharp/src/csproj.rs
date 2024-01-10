@@ -202,6 +202,11 @@ impl CSProjectMonoBuilder {
             ),
         )?;
 
+        let maybe_aot = match aot {
+            true => format!("<WasmBuildNative>{aot}</WasmBuildNative>"),
+            false => String::new(),
+        };
+
         let mut csproj = format!(
             "<Project Sdk=\"Microsoft.NET.Sdk\">
     
@@ -210,7 +215,7 @@ impl CSProjectMonoBuilder {
             <RuntimeIdentifier>wasi-wasm</RuntimeIdentifier>
 
             <TargetOs>wasi</TargetOs>
-            <WasmBuildNative>{aot}</WasmBuildNative>
+            {maybe_aot}
             <WasmNativeStrip>false</WasmNativeStrip>
             <IsBrowserWasmProject>false</IsBrowserWasmProject>
             <WasmSingleFileBundle>true</WasmSingleFileBundle>
