@@ -1051,7 +1051,7 @@ void {ns}_{snake}_destructor({ty_name} *rep);
 __attribute__(( __import_module__("[export]{module}"), __import_name__("[resource-new]{name}")))
 extern int32_t __wasm_import_{ns}_{snake}_new(int32_t);
 
-__attribute__((__import_module__("[export]{module}"), __import_name__("[resource-rep]{snake}")))
+__attribute__((__import_module__("[export]{module}"), __import_name__("[resource-rep]{name}")))
 extern int32_t __wasm_import_{ns}_{snake}_rep(int32_t);
 
 {own} {ns}_{snake}_new({ty_name} *rep) {{
@@ -1967,6 +1967,11 @@ impl InterfaceGenerator<'_> {
     }
 }
 
+struct DroppableBorrow {
+    name: String,
+    ty: TypeId,
+}
+
 struct FunctionBindgen<'a, 'b> {
     gen: &'a mut InterfaceGenerator<'b>,
     locals: Ns,
@@ -1984,7 +1989,10 @@ struct FunctionBindgen<'a, 'b> {
 
     /// Borrows observed during lifting an export, that will need to be dropped when the guest
     /// function exits.
-    borrows: Vec<(String, TypeId)>,
+    borrows: Vec<DroppableBorrow>,
+
+    /// Forward declarations for temporary storage of borrow copies.
+    borrow_decls: wit_bindgen_core::Source,
 }
 
 impl<'a, 'b> FunctionBindgen<'a, 'b> {
@@ -2007,6 +2015,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             ret_store_cnt: 0,
             import_return_pointer_area_size: 0,
             import_return_pointer_area_align: 0,
+            borrow_decls: Default::default(),
             borrows: Vec::new(),
         }
     }
@@ -2264,8 +2273,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         if !self.gen.in_import && self.gen.autodrop_enabled() {
                             // Here we've received a borrow of an imported resource, which is the
                             // kind we'll need to drop when the exported function is returning.
-                            let target = dealias(self.gen.resolve, *id);
-                            self.borrows.push((op.clone(), target));
+                            let ty = dealias(self.gen.resolve, *id);
+
+                            let name = self.locals.tmp("borrow");
+                            uwriteln!(self.borrow_decls, "int32_t {name} = 0;");
+                            uwriteln!(self.src, "{name} = {op};");
+
+                            self.borrows.push(DroppableBorrow { name, ty });
                         }
                     }
                 }
@@ -2372,10 +2386,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 for (i, (case, (block, block_results))) in
                     variant.cases.iter().zip(blocks).enumerate()
                 {
-                    if let Some(ty) = case.ty.as_ref() {
-                        self.assert_no_droppable_borrows("variant", ty);
-                    }
-
                     uwriteln!(self.src, "case {}: {{", i);
                     self.src.push_str(&block);
                     assert!(block_results.len() == (case.ty.is_some() as usize));
@@ -2431,8 +2441,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::OptionLift { ty, .. } => {
-                self.assert_no_droppable_borrows("option", &Type::Id(*ty));
-
                 let (mut some, some_results) = self.blocks.pop().unwrap();
                 let (mut none, none_results) = self.blocks.pop().unwrap();
                 assert!(none_results.len() == 0);
@@ -2520,8 +2528,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::ResultLift { result, ty, .. } => {
-                self.assert_no_droppable_borrows("result", &Type::Id(*ty));
-
                 let (mut err, err_results) = self.blocks.pop().unwrap();
                 assert!(err_results.len() == (result.err.is_some() as usize));
                 let (mut ok, ok_results) = self.blocks.pop().unwrap();
@@ -2837,8 +2843,15 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
             },
             Instruction::Return { amt, .. } => {
-                for (op, ty) in self.borrows.iter() {
-                    uwriteln!(self.src, "{}({op});", self.gen.gen.resources[ty].drop_fn);
+                // Emit all temporary borrow decls
+                let src = std::mem::replace(&mut self.src, std::mem::take(&mut self.borrow_decls));
+                self.src.append_src(&src);
+
+                for DroppableBorrow { name, ty } in self.borrows.iter() {
+                    let drop_fn = self.gen.gen.resources[ty].drop_fn.as_str();
+                    uwriteln!(self.src, "if ({name} != 0) {{");
+                    uwriteln!(self.src, "  {drop_fn}({name});");
+                    uwriteln!(self.src, "}}");
                 }
 
                 assert!(*amt <= 1);

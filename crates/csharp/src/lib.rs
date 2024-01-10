@@ -368,7 +368,7 @@ impl WorldGenerator for CSharp {
 
                             return BitConverter.ToInt32(span.Slice(offset, 4));
                         }}
-                        
+
                         internal void SetS16(int offset, short value)
                         {{
                             Span<byte> span = MemoryMarshal.CreateSpan(ref buffer, {0});
@@ -643,92 +643,94 @@ impl InterfaceGenerator<'_> {
                 r#"
                 private unsafe struct ReturnArea
                 {{
-                    internal byte GetU8(IntPtr ptr, int offset)
+                    internal static byte GetU8(IntPtr ptr)
                     {{
-                        var span = new Span<byte>((void*)ptr, {0});
+                        var span = new Span<byte>((void*)ptr, 1);
 
-                        return span[offset];
+                        return span[0];
                     }}
 
-                    internal int GetS32(IntPtr ptr, int offset)
+                    public static ushort GetU16(IntPtr ptr)
                     {{
-                        var span = new Span<byte>((void*)ptr, {0});
+                        var span = new Span<byte>((void*)ptr, 2);
 
-                        return BitConverter.ToInt32(span.Slice(offset, 4));
+                        return BitConverter.ToUInt16(span);
                     }}
 
-                    internal long GetS64(IntPtr ptr, int offset)
+                    internal static int GetS32(IntPtr ptr)
                     {{
-                        var span = new Span<byte>((void*)ptr, {0});
+                        var span = new Span<byte>((void*)ptr, 4);
 
-                        return BitConverter.ToInt64(span.Slice(offset, 8));
+                        return BitConverter.ToInt32(span);
                     }}
 
-                    internal float GetF32(IntPtr ptr, int offset)
+                    internal static long GetS64(IntPtr ptr)
                     {{
-                        var span = new Span<byte>((void*)ptr, {0});
+                        var span = new Span<byte>((void*)ptr, 8);
 
-                        return BitConverter.ToSingle(span.Slice(offset, 4));
+                        return BitConverter.ToInt64(span);
                     }}
 
-                    internal void SetS16(IntPtr ptr, int offset, short value)
+                    internal static float GetF32(IntPtr ptr)
                     {{
-                        var span = new Span<byte>((void*)ptr, {0});
+                        var span = new Span<byte>((void*)ptr, 4);
 
-                        BitConverter.TryWriteBytes(span.Slice(offset), value);
+                        return BitConverter.ToSingle(span);
                     }}
 
-                    internal void SetS32(IntPtr ptr, int offset, int value)
+                    internal static void SetS16(IntPtr ptr, short value)
                     {{
-                        var span = new Span<byte>((void*)ptr, {0});
+                        var span = new Span<byte>((void*)ptr, 2);
 
-                        BitConverter.TryWriteBytes(span.Slice(offset), value);
+                        BitConverter.TryWriteBytes(span, value);
                     }}
 
-                    internal void SetU32(IntPtr ptr, int offset, uint value)
+                    internal static void SetS32(IntPtr ptr, int value)
                     {{
-                        var span = new Span<byte>((void*)ptr, {0});
+                        var span = new Span<byte>((void*)ptr, 4);
 
-                        BitConverter.TryWriteBytes(span.Slice(offset), value);
+                        BitConverter.TryWriteBytes(span, value);
                     }}
 
-                    internal void SetArray<T>(IntPtr ptr, int offset, T[] value, int length)
+                    internal static void SetU32(IntPtr ptr, uint value)
                     {{
-                        var span = new Span<byte>((void*)ptr, {0});
+                        var span = new Span<byte>((void*)ptr, 4);
+
+                        BitConverter.TryWriteBytes(span, value);
+                    }}
+
+                    internal static void SetArray<T>(IntPtr ptr, T[] value, int length)
+                    {{
+                        var span = new Span<byte>((void*)ptr, sizeof(T)*length);
 
                         fixed (T* dstPtr = &value[0])
                         {{
-                            Marshal.Copy(span.Slice(offset, length).ToArray(), 0, (IntPtr)dstPtr, length);
+                            Marshal.Copy(span.ToArray(), 0, (IntPtr)dstPtr, length);
                         }}
                     }}
 
-                    unsafe internal T[] GetArray<T>(IntPtr ptr, int offset, int length)
+                    unsafe internal static T[] GetArray<T>(IntPtr ptr, int length)
                     {{
-                        var span = new Span<byte>((void*)ptr, {0});
+                        var span = new Span<byte>((void*)ptr, sizeof(T)*length);
         
                         var array = new T[length];
         
                         fixed (T* dstPtr = &array[0])
                         {{
                             //TODO: Optimize this. The ToArray call is not needed and does an additional heap allocation.
-                            Marshal.Copy(span.Slice(offset, length).ToArray(), 0, (IntPtr)dstPtr, length);
+                            Marshal.Copy(span.ToArray(), 0, (IntPtr)dstPtr, length);
                         }}
         
                         return array;
                     }}
 
-                    internal string GetUTF8String(IntPtr ptr)
+                    internal static string GetUTF8String(IntPtr ptr)
                     {{
-                        return Encoding.UTF8.GetString((byte*)GetS32(ptr, 0), GetS32(ptr, 4));
+                        return Encoding.UTF8.GetString((byte*)GetS32(ptr), GetS32(ptr + 4));
                     }}
 
                 }}
-
-                [ThreadStatic]
-                [FixedAddressValueType]
-                private static ReturnArea returnArea;
             "#,
-                self.gen.return_area_size
             );
         }
 
@@ -795,6 +797,7 @@ impl InterfaceGenerator<'_> {
                             return BitConverter.ToInt32(span.Slice(offset, 4));
                         }}
 
+                        
                         internal long GetS64(int offset)
                         {{
                             ReadOnlySpan<byte> span = MemoryMarshal.CreateSpan(ref buffer, {0});
@@ -802,7 +805,14 @@ impl InterfaceGenerator<'_> {
                             return BitConverter.ToInt64(span.Slice(offset, 8));
                         }}
                         
-                        internal void SetS8(int offset, int value)
+                        public void SetS8(int offset, int value)
+                        {{
+                            Span<byte> span = MemoryMarshal.CreateSpan(ref buffer, {0});
+
+                            BitConverter.TryWriteBytes(span.Slice(offset), value);
+                        }}
+
+                        public void SetS16(int offset, short value)
                         {{
                             Span<byte> span = MemoryMarshal.CreateSpan(ref buffer, {0});
 
@@ -890,6 +900,15 @@ impl InterfaceGenerator<'_> {
                     .collect::<Vec<_>>()
                     .join(", ");
                 format!("Tuple<{}>", types)
+            }
+            _ => {
+                let types = func
+                    .results
+                    .iter_types()
+                    .map(|ty| self.type_name(ty))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("({})", types)
             }
         };
 
@@ -999,6 +1018,15 @@ impl InterfaceGenerator<'_> {
                     .collect::<Vec<String>>()
                     .join(", ")
             ),
+            _ => {
+                let types = func
+                    .results
+                    .iter_types()
+                    .map(|ty| self.type_name(ty))
+                    .collect::<Vec<String>>()
+                    .join(", ");
+                format!("({})", types)
+            }
         };
 
         let camel_name = func.name.to_upper_camel_case();
@@ -1108,17 +1136,7 @@ impl InterfaceGenerator<'_> {
 
                         let params = match count {
                             0 => String::new(),
-                            // Since there are only Tuples for 7 items.
-                            // See https://learn.microsoft.com/en-us/dotnet/api/system.tuple-8.-ctor?view=net-8.0
-                            1..=7 => format!(
-                                "Tuple<{}>",
-                                tuple
-                                    .types
-                                    .iter()
-                                    .map(|ty| self.type_name_boxed(ty, qualifier))
-                                    .collect::<Vec<_>>()
-                                    .join(", ")
-                            ),
+                            1 => self.type_name_boxed(tuple.types.first().unwrap(), qualifier),
                             _ => format!(
                                 "({})",
                                 tuple
@@ -1591,49 +1609,70 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             })),
             Instruction::I32Load { offset } => {
                 if self.gen.in_import {
-                    results.push(format!("returnArea.GetS32({}, {offset})", operands[0]))
+                    results.push(format!("ReturnArea.GetS32({} + {offset})", operands[0]))
                 } else {
                     results.push(format!("returnArea.GetS32({offset})"))
                 }
             }
             Instruction::I32Load8U { offset } => {
                 if self.gen.in_import {
-                    results.push(format!("returnArea.GetU8({}, {offset})", operands[0]))
+                    results.push(format!("ReturnArea.GetU8({} + {offset})", operands[0]))
                 } else {
                     results.push(format!("returnArea.GetU8({offset})"))
                 }
             }
             Instruction::I32Load8S { offset } => {
-                results.push(format!("returnArea.GetS8({offset})"))
+                if self.gen.in_import {
+                    results.push(format!("ReturnArea.GetS8({} + {offset})", operands[0]))
+                } else {
+                    results.push(format!("returnArea.GetS8({offset})"))
+                }
             }
             Instruction::I32Load16U { offset } => {
-                results.push(format!("returnArea.GetU16({offset})"))
+                if self.gen.in_import {
+                    results.push(format!("ReturnArea.GetU16({} + {offset})", operands[0]))
+                } else {
+                    results.push(format!("returnArea.GetU16({offset})"))
+                }
             }
             Instruction::I32Load16S { offset } => {
-                results.push(format!("returnArea.GetS16({offset})"))
+                if self.gen.in_import {
+                    results.push(format!("ReturnArea.GetS16({} + {offset})", operands[0]))
+                } else {
+                    results.push(format!("returnArea.GetS16({offset})"))
+                }
             }
             Instruction::I64Load { offset } => {
                 if self.gen.in_import {
-                    results.push(format!("returnArea.GetS64({}, {offset})", operands[0]))
+                    results.push(format!("ReturnArea.GetS64({} + {offset})", operands[0]))
                 } else {
                     results.push(format!("returnArea.GetS64({offset})"))
                 }
             }
             Instruction::F32Load { offset } => {
-                results.push(format!("returnArea.GetF32(ptr, {offset})"))
+                if self.gen.in_import {
+                    results.push(format!("ReturnArea.GetF32({} + {offset})", operands[0]))
+                } else {
+                    results.push(format!("returnArea.GetF32({offset})"))
+                }
             }
-            Instruction::F64Load { offset } => results.push(format!("returnArea.GetF64({offset})")),
+            Instruction::F64Load { offset } => {
+                if self.gen.in_import {
+                    results.push(format!("ReturnArea.GetF64({} + {offset})", operands[0]))
+                } else {
+                    results.push(format!("returnArea.GetF64({offset})"))
+                }
+            }
 
             Instruction::I32Store { offset } => {
                 if self.gen.in_import {
                     uwriteln!(
                         self.src,
-                        "returnArea.SetS32(ptr, {}, {});",
-                        offset,
+                        "ReturnArea.SetS32(ptr + {offset}, {});",
                         operands[0]
                     )
                 } else {
-                    uwriteln!(self.src, "returnArea.SetS32({}, {});", offset, operands[0])
+                    uwriteln!(self.src, "returnArea.SetS32({offset}, {});", operands[0])
                 }
             }
             Instruction::I32Store8 { offset } => uwriteln!(
@@ -1645,15 +1684,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 if self.gen.in_import {
                     uwriteln!(
                         self.src,
-                        "returnArea.SetS16(ptr, {}, (short){});",
-                        offset,
+                        "ReturnArea.SetS16(ptr + {offset}, unchecked((short){}));",
                         operands[0]
                     )
                 } else {
                     uwriteln!(
                         self.src,
-                        "returnArea.SetS16({}, (short){});",
-                        offset,
+                        "returnArea.SetS16({offset}, unchecked((short){}));",
                         operands[0]
                     )
                 }
@@ -1662,17 +1699,26 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 if self.gen.in_import {
                     uwriteln!(
                         self.src,
-                        "returnArea.SetS64(ptr, {}, {});",
-                        offset,
+                        "ReturnArea.SetS64(ptr + {offset}, {});",
                         operands[0]
                     )
                 } else {
-                    uwriteln!(self.src, "returnArea.SetS64({}, {});", offset, operands[0])
+                    uwriteln!(self.src, "returnArea.SetS64({offset}, {});", operands[0])
                 }
             }
             Instruction::F32Store { offset } => {
-                uwriteln!(self.src, "returnArea.SetF32({}, {});", offset, operands[0])
+                if self.gen.in_import {
+                    uwriteln!(
+                        self.src,
+                        "ReturnArea.SetF32(ptr + {offset}, {});",
+                        operands[0]
+                    )
+                } else {
+                    uwriteln!(self.src, "returnArea.SetF32({offset}, {});", operands[0])
+                }
             }
+            Instruction::I64Store { .. } => todo!("I64Store"),
+            Instruction::F32Store { .. } => todo!("F32Store"),
             Instruction::F64Store { .. } => todo!("F64Store"),
 
             Instruction::I64FromU64 => results.push(format!("unchecked((long)({}))", operands[0])),
@@ -1714,10 +1760,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             } => {
                 if flags.flags.len() > 32 {
                     results.push(format!(
-                        "(int)(((long){}) & uint.MaxValue)",
+                        "unchecked((int)(((long){}) & uint.MaxValue))",
                         operands[0].to_string()
                     ));
-                    results.push(format!("((int)({})) >> 32", operands[0].to_string()));
+                    results.push(format!(
+                        "unchecked(((int)((long){} >> 32)))",
+                        operands[0].to_string()
+                    ));
                 } else {
                     results.push(format!("(int){}", operands[0].to_string()));
                 }
@@ -1732,7 +1781,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 );
                 if flags.flags.len() > 32 {
                     results.push(format!(
-                        "({})((long)({}) << 32 | (uint)({}))",
+                        "({})(unchecked((uint)({})) | (ulong)(unchecked((uint)({}))) << 32)",
                         qualified_type_name,
                         operands[0].to_string(),
                         operands[1].to_string()
@@ -1742,44 +1791,72 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
             }
 
-            Instruction::RecordLower { .. } => todo!("RecordLower"),
-            Instruction::RecordLift { .. } => todo!("RecordLift"),
-            Instruction::TupleLift { .. } => {
-                let ops = operands
-                    .iter()
-                    .map(|op| op.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ");
+            Instruction::RecordLower { record, .. } => {
+                let op = &operands[0];
+                for f in record.fields.iter() {
+                    results.push(format!("({}).{}", op, f.name.to_csharp_ident()));
+                }
+            }
+            Instruction::RecordLift { ty, name, .. } => {
+                let id_type = &self.gen.resolve.types[*ty];
+                let qualified_type_name = format!(
+                    "{}{}",
+                    self.gen.qualifier(true, id_type),
+                    name.to_string().to_upper_camel_case()
+                );
+                let mut result = format!("new {} (\n", qualified_type_name);
 
-                results.push(format!("Tuple.Create({ops})"));
+                result.push_str(&operands.join(","));
+                result.push_str(")");
+
+                results.push(result);
+            }
+            Instruction::TupleLift { .. } => {
+                let mut result = String::from("(");
+
+                uwriteln!(result, "{}", operands.join(","));
+
+                result.push_str(")");
+                results.push(result);
             }
 
             Instruction::TupleLower { tuple, ty: _ } => {
-                let ops = operands
-                    .iter()
-                    .map(|op| op.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-
-                let temps = tuple
-                    .types
-                    .iter()
-                    .map(|_| self.locals.tmp("tmp"))
-                    .collect::<Vec<_>>();
-
-                let vars = temps
-                    .iter()
-                    .map(|tmp| format!("var {tmp}"))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-
-                uwriteln!(self.src, "({vars}) = {ops};");
-
-                for tmp in temps {
-                    results.push(format!("({tmp})"));
+                let op = &operands[0];
+                match tuple.types.len() {
+                    1 => results.push(format!("({})", op)),
+                    _ => {
+                        for i in 0..tuple.types.len() {
+                            results.push(format!("({}).Item{}", op, i + 1));
+                        }
+                    }
                 }
             }
 
+            //Instruction::TupleLower { tuple, ty: _ } => {
+            //    let ops = operands
+            //        .iter()
+            //        .map(|op| op.to_string())
+            //        .collect::<Vec<_>>()
+            //        .join(", ");
+            //
+            //    let temps = tuple
+            //        .types
+            //        .iter()
+            //        .map(|_| self.locals.tmp("tmp"))
+            //        .collect::<Vec<_>>();
+            //
+            //    let vars = temps
+            //        .iter()
+            //        .map(|tmp| format!("var {tmp}"))
+            //        .collect::<Vec<_>>()
+            //        .join(", ");
+            //
+            //    uwriteln!(self.src, "({vars}) = {ops};");
+            //
+            //    for tmp in temps {
+            //        results.push(format!("({tmp})"));
+            //    }
+            //}
             Instruction::VariantPayloadName => {
                 todo!("VariantPayloadName");
             }
@@ -1818,7 +1895,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         uwrite!(
                             self.src,
                             "
-                            returnArea.SetArray<{ty}>({ptr}, 0, {op}, ({op}).Length);
+                            ReturnArea.SetArray<{ty}>({ptr} + 0, {op}, ({op}).Length);
                             "
                         );
                         results.push(format!("{ptr}"));
@@ -1826,8 +1903,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         uwrite!(
                             self.src,
                             "
-                        returnArea.SetArray<{ty}>(ptr, 0, {op}, ({op}).Length);
-                        "
+                            ReturnArea.SetArray<{ty}>(ptr + 0, {op}, ({op}).Length);
+                            "
                         );
                         results.push(format!("ptr"));
                     }
@@ -1848,7 +1925,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::ListCanonLift { element, .. } => {
                 let (_, ty) = list_element_info(element);
-                let op = &operands[0];
                 let array = self.locals.tmp("array");
                 let address = &operands[0];
                 let length = &operands[1];
@@ -1857,7 +1933,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     uwrite!(
                         self.src,
                         "
-                        var {array} = returnArea.GetArray<{ty}>({op}, {address}, {length});                    
+                        var {array} = ReturnArea.GetArray<{ty}>({address}, {length});                    
                         "
                     );
                 } else {
@@ -1896,7 +1972,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::StringLift { .. } => {
                 if self.gen.in_import {
-                    results.push(format!("returnArea.GetUTF8String(ptr)"));
+                    results.push(format!("ReturnArea.GetUTF8String(ptr)"));
                 } else {
                     let address = &operands[0];
                     let length = &operands[1];
@@ -2022,6 +2098,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::CallInterface { func } => {
                 let module = self.gen.name.to_string();
                 let func_name = self.func_name.to_upper_camel_case();
+                let qualifiedName = self.gen.name.to_upper_camel_case();
                 let class_name =
                     CSharp::get_class_name_from_qualified_name(module).to_upper_camel_case();
                 let mut oper = String::new();
@@ -2038,42 +2115,25 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     0 => self
                         .src
                         .push_str(&format!("{class_name}Impl.{func_name}({oper});")),
-                    1 => results.push(format!("{class_name}Impl.{func_name}({oper})")),
-                    _ => {
-                        let ty = format!(
-                            "Tuple<{}>",
-                            func.results
-                                .iter_types()
-                                .map(|ty| self.gen.type_name_boxed(ty, false))
-                                .collect::<Vec<_>>()
-                                .join(", ")
-                        );
-
-                        let result = self.locals.tmp("result");
-                        let assignment = format!("{ty} {result} = ");
-
-                        let destructure = func
-                            .results
-                            .iter_types()
-                            .enumerate()
-                            .map(|(index, ty)| {
-                                let ty = self.gen.type_name(ty);
-                                let my_result = self.locals.tmp("result");
-                                let assignment =
-                                    format!("{ty} {my_result} = {result}.Item{};", index + 1);
-                                results.push(my_result);
-                                assignment
-                            })
-                            .collect::<Vec<_>>()
-                            .join("\n");
-
-                        uwrite!(
+                    1 => {
+                        let ret = self.locals.tmp("ret");
+                        uwriteln!(
                             self.src,
-                            "
-                            {assignment} {class_name}Impl.{func_name}({oper});
-                            {destructure}
-                            "
+                            "var {ret} = {class_name}Impl.{func_name}({oper});"
                         );
+                        results.push(ret);
+                    }
+                    _ => {
+                        let ret = self.locals.tmp("ret");
+                        uwriteln!(
+                            self.src,
+                            "var {ret} = {class_name}Impl.{func_name}({oper});"
+                        );
+                        let mut i = 1;
+                        for _ in func.results.iter_types() {
+                            results.push(format!("{}.Item{}", ret, i));
+                            i += 1;
+                        }
                     }
                 }
             }
@@ -2096,7 +2156,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     if self.gen.in_import {
                         uwriteln!(self.src, "return Tuple.Create({results});")
                     } else {
-                        uwriteln!(self.src, "return ({cast})({results});")
+                        uwriteln!(self.src, "return ({results});")
                     }
                 }
             },

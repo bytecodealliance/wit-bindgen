@@ -32,7 +32,6 @@ macro_rules! codegen_test {
                         "lists",
                         "many-arguments",
                         "option-result",
-                        "records",
                         "rename-interface",
                         "resource-alias",
                         "resource-borrow-in-record",
