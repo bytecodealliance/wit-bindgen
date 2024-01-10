@@ -25,8 +25,6 @@ use wit_component::StringEncoding;
 mod csproj;
 pub use csproj::CSProject;
 
-//cargo run c-sharp --out-dir testing-csharp tests/codegen/floats.wit
-
 //TODO remove unused
 const CSHARP_IMPORTS: &str = "\
 using System;
@@ -1677,7 +1675,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     IntPtr {interop_string} = InteropString.FromString({result_var}, out int length{result_var});"
                 );
 
-                //TODO: Oppertunity to optimize and not reallocate every call
                 if realloc.is_none() {
                     results.push(format!("{interop_string}.ToInt32()"));
                 } else {
@@ -1893,33 +1890,6 @@ fn wasm_type(ty: WasmType) -> &'static str {
     }
 }
 
-//TODO: Implement Flags
-//fn flags_repr(flags: &Flags) -> Int {
-//    match flags.repr() {
-//        FlagsRepr::U8 => Int::U8,
-//        FlagsRepr::U16 => Int::U16,
-//        FlagsRepr::U32(1) => Int::U32,
-//        FlagsRepr::U32(2) => Int::U64,
-//        repr => panic!("unimplemented flags {repr:?}"),
-//    }
-//}
-
-//fn list_element_info(ty: &Type) -> (usize, &'static str) {
-//    match ty {
-//        Type::S8 => (1, "sbyte"),
-//        Type::S16 => (2, "short"),
-//        Type::S32 => (4, "int"),
-//        Type::S64 => (8, "long"),
-//        Type::U8 => (1, "byte"),
-//        Type::U16 => (2, "ushort"),
-//        Type::U32 => (4, "uint"),
-//        Type::U64 => (8, "ulong"),
-//        Type::Float32 => (4, "float"),
-//        Type::Float64 => (8, "double"),
-//        _ => unreachable!(),
-//    }
-//}
-
 fn indent(code: &str) -> String {
     let mut indented = String::with_capacity(code.len());
     let mut indent = 0;
@@ -1947,13 +1917,6 @@ fn indent(code: &str) -> String {
     }
     indented
 }
-
-// fn world_name(resolve: &Resolve, world: WorldId) -> String {
-//     format!(
-//         "wit.worlds.{}",
-//         resolve.worlds[world].name.to_upper_camel_case()
-//     )
-// }
 
 fn interface_name(resolve: &Resolve, name: &WorldKey, direction: Direction) -> String {
     let pkg = match name {
