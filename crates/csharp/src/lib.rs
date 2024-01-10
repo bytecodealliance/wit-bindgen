@@ -1736,7 +1736,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::CallInterface { func } => {
                 let module = self.gen.name.to_string();
                 let func_name = self.func_name.to_upper_camel_case();
-                let qualifiedName = self.gen.name.to_upper_camel_case();
                 let class_name =
                     CSharp::get_class_name_from_qualified_name(module).to_upper_camel_case();
                 let mut oper = String::new();
@@ -1781,16 +1780,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 1 => uwriteln!(self.src, "return {};", operands[0]),
                 _ => {
                     let results = operands.join(", ");
-                    let sig = self
-                        .gen
-                        .resolve()
-                        .wasm_signature(AbiVariant::GuestExport, func);
-                    let cast = sig
-                        .results
-                        .into_iter()
-                        .map(|ty| wasm_type(ty))
-                        .collect::<Vec<&str>>()
-                        .join(", ");
                     uwriteln!(self.src, "return ({results});")
                 }
             },
