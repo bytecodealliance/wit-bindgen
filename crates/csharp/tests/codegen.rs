@@ -17,7 +17,6 @@ macro_rules! codegen_test {
                 |resolve, world, files| {
                     if [
                         "conventions",
-                        "flags",
                         "guest-name",
                         "import-and-export-resource",
                         "import-and-export-resource-alias",
@@ -35,9 +34,7 @@ macro_rules! codegen_test {
                         "lists",
                         "many-arguments",
                         "multi-return",
-                        "multiversion",
                         "option-result",
-                        "records",
                         "rename-interface",
                         "resource-alias",
                         "resource-borrow-in-record",
@@ -57,12 +54,12 @@ macro_rules! codegen_test {
                         "simple-http",
                         "simple-lists",
                         "small-anonymous",
-                        "strings",
                         "unused-import",
                         "use-across-interfaces",
                         "variants",
                         "worlds-with-types",
                         "zero-size-tuple",
+                        "go_params",
                     ]
                     .contains(&$name)
                     {

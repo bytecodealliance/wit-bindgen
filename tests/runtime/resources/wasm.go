@@ -20,12 +20,20 @@ type MyZ struct {
 	a int32
 }
 
+type MyKebabCase struct {
+	a uint32
+}
+
 func (e ExportsImpl) ConstructorX(a int32) ExportsX {
 	return &MyX{a: a}
 }
 
 func (e ExportsImpl) ConstructorZ(a int32) ExportsZ {
 	return &MyZ{a: a}
+}
+
+func (e ExportsImpl) ConstructorKebabCase(a uint32) ExportsKebabCase {
+	return &MyKebabCase{a: a}
 }
 
 func (x *MyX) MethodXGetA() int32 {
@@ -46,6 +54,14 @@ func (z *MyZ) MethodZGetA() int32 {
 
 func (e ExportsImpl) Add(z ExportsZ, b ExportsZ) ExportsZ {
 	return &MyZ{a: z.MethodZGetA() + b.MethodZGetA()}
+}
+
+func (k *MyKebabCase) MethodKebabCaseGetA() uint32 {
+	return k.a
+}
+
+func (e ExportsImpl) StaticKebabCaseTakeOwned(k ExportsKebabCase) uint32 {
+	return k.MethodKebabCaseGetA()
 }
 
 func (e ExportsImpl) TestImports() Result[struct{}, string] {
@@ -69,6 +85,7 @@ func (e ExportsImpl) TestImports() Result[struct{}, string] {
 		panic("y.GetA() != 5")
 	}
 
+	y.Drop()
 	return Ok[struct{}, string](struct{}{})
 }
 

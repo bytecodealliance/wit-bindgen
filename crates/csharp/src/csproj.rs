@@ -11,7 +11,6 @@ pub struct CSProjectLLVMBuilder {
     aot: bool,
     clean_targets: bool,
     world_name: String,
-    wasm_imports: Vec<(String, String)>,
 }
 
 pub struct CSProjectMonoBuilder {
@@ -30,7 +29,6 @@ impl CSProject {
             aot: false,
             clean_targets: false,
             world_name: world_name.to_string(),
-            wasm_imports: Vec::new(),
         }
     }
 
@@ -50,6 +48,7 @@ impl CSProjectLLVMBuilder {
         let name = &self.name;
         let world = &self.world_name.replace("-", "_");
         let snake_world = world.to_upper_camel_case();
+        let camel = snake_world.to_upper_camel_case();
 
         fs::write(
             self.dir.join("rd.xml"),
@@ -79,8 +78,9 @@ impl CSProjectLLVMBuilder {
             <PublishTrimmed>true</PublishTrimmed>
             <AssemblyName>{name}</AssemblyName>
         </PropertyGroup>
-            <ItemGroup>
+        <ItemGroup>
           <NativeLibrary Include=\"{world}_component_type.o\" />
+          <NativeLibrary Include=\"$(MSBuildProjectDirectory)/{camel}_cabi_realloc.o\" />
    
         </ItemGroup>
 
@@ -101,11 +101,26 @@ impl CSProjectLLVMBuilder {
                 </ItemGroup>
    
                 <ItemGroup>
-                    <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
-                    <PackageReference Include="runtime.win-x64.Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
+                    <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="9.0.0-*" />
+                    <PackageReference Include="runtime.win-x64.Microsoft.DotNet.ILCompiler.LLVM" Version="9.0.0-*" />
                 </ItemGroup>
+
+                <Target Name="CheckWasmSdks">
+                    <Error Text="Emscripten not found, not compiling to WebAssembly. To enable WebAssembly compilation, install Emscripten and ensure the EMSDK environment variable points to the directory containing upstream/emscripten/emcc.bat"
+                        Condition="'$(EMSDK)' == ''" />
+                </Target>
                 "#,
             );
+
+            csproj.push_str(&format!("
+              <Target Name=\"CompileCabiRealloc\" BeforeTargets=\"IlcCompile\" DependsOnTargets=\"CheckWasmSdks\" 
+                Inputs=\"$(MSBuildProjectDirectory)/{camel}_cabi_realloc.c\"
+                Outputs=\"$(MSBuildProjectDirectory)/{camel}_cabi_realloc.o\"
+                >
+                <Exec Command=\"emcc.bat &quot;$(MSBuildProjectDirectory)/{camel}_cabi_realloc.c&quot; -c -o &quot;$(MSBuildProjectDirectory)/{camel}_cabi_realloc.o&quot;\"/>
+              </Target>
+            "
+            ));
 
             fs::write(
                 self.dir.join("nuget.config"),
@@ -123,19 +138,6 @@ impl CSProjectLLVMBuilder {
               </packageSources>
             </configuration>"#,
             )?;
-        }
-
-        if !&self.wasm_imports.is_empty() {
-            csproj.push_str("\t<ItemGroup>\n");
-            for (module_name, func_name) in &self.wasm_imports {
-                csproj.push_str(&format!(
-                    r#"
-                    <WasmImport Include="{}!{}" />
-                    "#,
-                    module_name, func_name,
-                ));
-            }
-            csproj.push_str("\t</ItemGroup>\n\n");
         }
 
         if self.clean_targets {
@@ -160,7 +162,6 @@ impl CSProjectLLVMBuilder {
             "#,
         );
 
-        let camel = snake_world.to_upper_camel_case();
         fs::write(self.dir.join(format!("{camel}.csproj")), csproj)?;
 
         Ok(())
@@ -174,11 +175,6 @@ impl CSProjectLLVMBuilder {
         self.clean_targets = true;
 
         self
-    }
-
-    pub fn add_import(&mut self, module_name: &str, func_name: &str) {
-        self.wasm_imports
-            .push((module_name.to_string(), func_name.to_string()));
     }
 }
 

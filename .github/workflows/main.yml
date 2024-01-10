@@ -57,8 +57,8 @@ jobs:
         curl.exe -OL https://github.com/emscripten-core/emsdk/archive/refs/heads/main.zip
         unzip main.zip
         cd emsdk-main
-        ./emsdk.bat install 3.1.23
-        ./emsdk.bat activate 3.1.23
+        ./emsdk.bat install 3.1.47
+        ./emsdk.bat activate 3.1.47
       if : matrix.os == 'windows-latest'
 
     - run: ci/download-teavm.sh

@@ -11,6 +11,31 @@ world resources {
 
   export add: func(a: borrow<z>, b: borrow<z>) -> own<z>;
 
+  export maybe-with-z: func(a: option<borrow<z>>);
+
+  variant includes-borrow {
+    a,
+    b(borrow<z>),
+  }
+
+  export variant-with-z: func(a: includes-borrow);
+  export maybe-variant-with-z: func(a: option<includes-borrow>);
+
+  record big {
+    x1: borrow<z>,
+    x2: borrow<z>,
+    x3: borrow<z>,
+    x4: borrow<z>,
+    x5: borrow<z>,
+    x6: borrow<z>,
+    x7: borrow<z>,
+    x8: borrow<z>,
+    x9: borrow<z>,
+    x10: borrow<z>,
+  }
+
+  export big-record: func(r: big);
+
   export exports: interface {
     resource x {
       constructor(a: float64);

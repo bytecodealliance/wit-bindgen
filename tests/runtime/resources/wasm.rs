@@ -7,10 +7,12 @@ wit_bindgen::generate!({
         "exports": Test,
         "exports/x": ComponentX,
         "exports/z": ComponentZ,
+        "exports/kebab-case": ComponentKebabCase,
     }
 });
 
 use exports::exports::OwnX;
+use exports::exports::OwnKebabCase;
 
 pub struct Test {}
 
@@ -20,6 +22,10 @@ pub struct ComponentX {
 
 pub struct ComponentZ {
     val: i32,
+}
+
+pub struct ComponentKebabCase {
+    val: u32,
 }
 
 impl exports::exports::Guest for Test {
@@ -76,5 +82,18 @@ impl exports::exports::GuestZ for ComponentZ {
     }
     fn get_a(&self) -> i32 {
         self.val
+    }
+}
+
+impl exports::exports::GuestKebabCase for ComponentKebabCase {
+    fn new(a: u32) -> Self {
+        Self { val: a }
+    }
+    fn get_a(&self) -> u32 {
+        self.val
+    }
+
+    fn take_owned(k: OwnKebabCase) -> u32 {
+        k.get_a()
     }
 }
