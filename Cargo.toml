@@ -22,7 +22,7 @@ edition = "2021"
 [workspace.dependencies]
 anyhow = "1.0.72"
 bitflags = "2.3.3"
-heck =  { version = "0.4", features = ["unicode"] }
+heck = { version = "0.4", features = ["unicode"] }
 pulldown-cmark = { version = "0.9", default-features = false }
 clap = { version = "4.3.19", features = ["derive"] }
 env_logger = "0.10.0"
@@ -82,3 +82,5 @@ wasmtime = { git = "https://github.com/bytecodealliance/wasmtime", features = ['
 wasmtime-wasi =  { git = "https://github.com/bytecodealliance/wasmtime"}
 test-artifacts = { path = 'crates/test-rust-wasm/artifacts' }
 wit-parser = { workspace = true }
+wasmparser = "0.118.0"
+wasm-encoder = { workspace = true }

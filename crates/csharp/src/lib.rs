@@ -25,8 +25,6 @@ use wit_component::StringEncoding;
 mod csproj;
 pub use csproj::CSProject;
 
-//cargo run c-sharp --out-dir testing-csharp tests/codegen/floats.wit
-
 //TODO remove unused
 const CSHARP_IMPORTS: &str = "\
 using System;
@@ -45,6 +43,10 @@ pub struct Opts {
     pub string_encoding: StringEncoding,
     #[cfg_attr(feature = "clap", arg(long))]
     pub generate_stub: bool,
+
+    // TODO: This should only temporarily needed until mono and native aot aligns.
+    #[cfg_attr(feature = "clap", arg(short, long, value_enum))]
+    pub runtime: CSharpRuntime,
 }
 
 impl Opts {
@@ -54,6 +56,14 @@ impl Opts {
             ..CSharp::default()
         })
     }
+}
+
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
+pub enum CSharpRuntime {
+    #[default]
+    NativeAOT,
+    Mono,
 }
 
 struct InterfaceFragment {
@@ -487,6 +497,22 @@ impl WorldGenerator for CSharp {
             );
         }
 
+        //TODO: This is currently neede for mono even if it's built as a library.
+        if self.opts.runtime == CSharpRuntime::Mono {
+            files.push(
+                &format!("MonoEntrypoint.cs",),
+                indent(
+                    r#"
+                public class MonoEntrypoint() {
+                    public static void Main() {
+                    }
+                }
+                "#,
+                )
+                .as_bytes(),
+            );
+        }
+
         files.push(
             &format!("{snake}_component_type.o",),
             component_type_object::object(resolve, id, self.opts.string_encoding)
@@ -812,6 +838,7 @@ impl InterfaceGenerator<'_> {
             .join(", ");
 
         let import_name = &func.name;
+
         uwrite!(
             self.csharp_interop_src,
             r#"
@@ -1648,7 +1675,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     IntPtr {interop_string} = InteropString.FromString({result_var}, out int length{result_var});"
                 );
 
-                //TODO: Oppertunity to optimize and not reallocate every call
                 if realloc.is_none() {
                     results.push(format!("{interop_string}.ToInt32()"));
                 } else {
@@ -1707,7 +1733,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::CallInterface { func } => {
                 let module = self.gen.name.to_string();
                 let func_name = self.func_name.to_upper_camel_case();
-                let qualifiedName = self.gen.name.to_upper_camel_case();
                 let class_name =
                     CSharp::get_class_name_from_qualified_name(module).to_upper_camel_case();
                 let mut oper = String::new();
@@ -1752,16 +1777,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 1 => uwriteln!(self.src, "return {};", operands[0]),
                 _ => {
                     let results = operands.join(", ");
-                    let sig = self
-                        .gen
-                        .resolve()
-                        .wasm_signature(AbiVariant::GuestExport, func);
-                    let cast = sig
-                        .results
-                        .into_iter()
-                        .map(|ty| wasm_type(ty))
-                        .collect::<Vec<&str>>()
-                        .join(", ");
                     uwriteln!(self.src, "return ({results});")
                 }
             },
@@ -1875,33 +1890,6 @@ fn wasm_type(ty: WasmType) -> &'static str {
     }
 }
 
-//TODO: Implement Flags
-//fn flags_repr(flags: &Flags) -> Int {
-//    match flags.repr() {
-//        FlagsRepr::U8 => Int::U8,
-//        FlagsRepr::U16 => Int::U16,
-//        FlagsRepr::U32(1) => Int::U32,
-//        FlagsRepr::U32(2) => Int::U64,
-//        repr => panic!("unimplemented flags {repr:?}"),
-//    }
-//}
-
-//fn list_element_info(ty: &Type) -> (usize, &'static str) {
-//    match ty {
-//        Type::S8 => (1, "sbyte"),
-//        Type::S16 => (2, "short"),
-//        Type::S32 => (4, "int"),
-//        Type::S64 => (8, "long"),
-//        Type::U8 => (1, "byte"),
-//        Type::U16 => (2, "ushort"),
-//        Type::U32 => (4, "uint"),
-//        Type::U64 => (8, "ulong"),
-//        Type::Float32 => (4, "float"),
-//        Type::Float64 => (8, "double"),
-//        _ => unreachable!(),
-//    }
-//}
-
 fn indent(code: &str) -> String {
     let mut indented = String::with_capacity(code.len());
     let mut indent = 0;
@@ -1929,13 +1917,6 @@ fn indent(code: &str) -> String {
     }
     indented
 }
-
-// fn world_name(resolve: &Resolve, world: WorldId) -> String {
-//     format!(
-//         "wit.worlds.{}",
-//         resolve.worlds[world].name.to_upper_camel_case()
-//     )
-// }
 
 fn interface_name(resolve: &Resolve, name: &WorldKey, direction: Direction) -> String {
     let pkg = match name {
