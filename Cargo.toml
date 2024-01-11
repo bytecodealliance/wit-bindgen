@@ -11,7 +11,9 @@ CLI tool to generate bindings for WIT documents and the component model.
 """
 
 [workspace]
-members = ["crates/test-rust-wasm"]
+members = [
+  "crates/test-rust-wasm",
+]
 resolver = "2"
 
 [workspace.package]
@@ -49,19 +51,22 @@ clap = { workspace = true }
 wit-bindgen-core = { workspace = true }
 wit-bindgen-rust = { workspace = true, features = ['clap'], optional = true }
 wit-bindgen-c = { workspace = true, features = ['clap'], optional = true }
-wit-bindgen-markdown = { workspace = true, features = [
-  'clap',
-], optional = true }
-wit-bindgen-teavm-java = { workspace = true, features = [
-  'clap',
-], optional = true }
+wit-bindgen-markdown = { workspace = true, features = ['clap'], optional = true }
+wit-bindgen-teavm-java = { workspace = true, features = ['clap'], optional = true }
 wit-bindgen-go = { workspace = true, features = ['clap'], optional = true }
 wit-bindgen-csharp = { workspace = true, features = ['clap'], optional = true }
 wit-component = { workspace = true }
 wasm-encoder = { workspace = true }
 
 [features]
-default = ['c', 'rust', 'markdown', 'teavm-java', 'go', 'csharp-naot']
+default = [
+  'c',
+  'rust',
+  'markdown',
+  'teavm-java',
+  'go',
+  'csharp-naot',
+]
 c = ['dep:wit-bindgen-c']
 rust = ['dep:wit-bindgen-rust']
 markdown = ['dep:wit-bindgen-markdown']
