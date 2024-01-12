@@ -16,6 +16,7 @@ pub(super) struct FunctionBindgen<'a, 'b> {
     cleanup: Vec<(String, String)>,
     pub import_return_pointer_area_size: usize,
     pub import_return_pointer_area_align: usize,
+    pub handle_decls: Vec<String>,
 }
 
 impl<'a, 'b> FunctionBindgen<'a, 'b> {
@@ -34,6 +35,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             cleanup: Vec::new(),
             import_return_pointer_area_size: 0,
             import_return_pointer_area_align: 0,
+            handle_decls: Vec::new(),
         }
     }
 
@@ -451,9 +453,19 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                                 format!("{name}::from_handle({op} as u32)")
                             }
                         }
-                    } else {
+                    } else if prefix == "" {
                         let name = self.gen.type_path(resource, true);
-                        format!("{prefix}{name}::from_handle({op} as u32)")
+                        format!("{name}::from_handle({op} as u32)")
+                    } else {
+                        let tmp = format!("handle{}", self.tmp());
+                        self.handle_decls.push(format!("let {tmp};"));
+                        let name = self.gen.type_path(resource, true);
+                        format!(
+                            "{{\n
+                                {tmp} = {name}::from_handle({op} as u32);
+                                {prefix}{tmp}
+                            }}"
+                        )
                     },
                 );
             }

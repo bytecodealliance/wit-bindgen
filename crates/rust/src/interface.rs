@@ -284,12 +284,14 @@ impl InterfaceGenerator<'_> {
             src,
             import_return_pointer_area_size,
             import_return_pointer_area_align,
+            handle_decls,
             ..
         } = f;
 
         if needs_cleanup_list {
             self.src.push_str("let mut cleanup_list = Vec::new();\n");
         }
+        assert!(handle_decls.is_empty());
         if import_return_pointer_area_size > 0 {
             uwrite!(
                 self.src,
@@ -389,9 +391,14 @@ impl InterfaceGenerator<'_> {
         let FunctionBindgen {
             needs_cleanup_list,
             src,
+            handle_decls,
             ..
         } = f;
         assert!(!needs_cleanup_list);
+        for decl in handle_decls {
+            self.src.push_str(&decl);
+            self.src.push_str("\n");
+        }
         self.src.push_str(&String::from(src));
         self.src.push_str("}\n");
 
@@ -420,9 +427,11 @@ impl InterfaceGenerator<'_> {
             let FunctionBindgen {
                 needs_cleanup_list,
                 src,
+                handle_decls,
                 ..
             } = f;
             assert!(!needs_cleanup_list);
+            assert!(handle_decls.is_empty());
             self.src.push_str(&String::from(src));
             self.src.push_str("}\n");
             self.src.push_str("};\n");

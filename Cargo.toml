@@ -28,10 +28,10 @@ clap = { version = "4.4.7", features = ["derive"] }
 env_logger = "0.10.0"
 indexmap = "2.0.2"
 
-wasm-encoder = "0.38.1"
-wasm-metadata = "0.10.14"
-wit-parser = "0.13.0"
-wit-component = "0.19.0"
+wasm-encoder = "0.39.0"
+wasm-metadata = "0.10.15"
+wit-parser = "0.13.1"
+wit-component = "0.19.1"
 
 wit-bindgen-core = { path = 'crates/core', version = '0.16.0' }
 wit-bindgen-c = { path = 'crates/c', version = '0.16.0' }
@@ -86,3 +86,5 @@ wasmtime = { git = "https://github.com/bytecodealliance/wasmtime", features = ['
 wasmtime-wasi =  { git = "https://github.com/bytecodealliance/wasmtime"}
 test-artifacts = { path = 'crates/test-rust-wasm/artifacts' }
 wit-parser = { workspace = true }
+wasmparser = "0.118.0"
+wasm-encoder = { workspace = true }

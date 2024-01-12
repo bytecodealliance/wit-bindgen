@@ -492,8 +492,155 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
     }
 
     #[cfg(feature = "csharp-mono")]
-    for path in c_sharp.iter() {
-        todo!()
+    if !c_sharp.is_empty() {
+        let (resolve, world) = resolve_wit_dir(&dir);
+        for path in c_sharp.iter() {
+            let world_name = &resolve.worlds[world].name;
+            let out_dir = out_dir.join(format!("csharp-{}", world_name));
+            drop(fs::remove_dir_all(&out_dir));
+            fs::create_dir_all(&out_dir).unwrap();
+
+            for csharp_impl in &c_sharp {
+                fs::copy(
+                    &csharp_impl,
+                    &out_dir.join(csharp_impl.file_name().unwrap()),
+                )
+                .unwrap();
+            }
+
+            let snake = world_name.replace("-", "_");
+            let camel = snake.to_upper_camel_case();
+
+            let assembly_name = format!(
+                "csharp-{}",
+                path.file_stem().and_then(|s| s.to_str()).unwrap()
+            );
+
+            let out_wasm = out_dir.join(&assembly_name);
+
+            let mut files = Default::default();
+            let mut opts = wit_bindgen_csharp::Opts::default();
+            opts.runtime = wit_bindgen_csharp::CSharpRuntime::Mono;
+
+            if let Some(path) = path.file_name().and_then(|s| s.to_str()) {
+                if path.contains("utf16") {
+                    opts.string_encoding = wit_component::StringEncoding::UTF16;
+                }
+            }
+            opts.build().generate(&resolve, world, &mut files).unwrap();
+
+            for (file, contents) in files.iter() {
+                let dst = out_dir.join(file);
+                fs::write(dst, contents).unwrap();
+            }
+
+            let mut csproj = wit_bindgen_csharp::CSProject::new_mono(
+                out_dir.clone(),
+                &assembly_name,
+                world_name,
+            );
+            csproj.aot();
+
+            // Copy test file to target location to be included in compilation
+            let file_name = path.file_name().unwrap();
+            fs::copy(path, out_dir.join(file_name.to_str().unwrap()))?;
+
+            csproj.generate()?;
+
+            let dotnet_root_env = "DOTNET_ROOT";
+            let dotnet_cmd: PathBuf;
+            match env::var(dotnet_root_env) {
+                Ok(val) => dotnet_cmd = Path::new(&val).join("dotnet"),
+                Err(_e) => dotnet_cmd = "dotnet".into(),
+            }
+
+            let mut cmd = Command::new(dotnet_cmd);
+
+            cmd.current_dir(&out_dir);
+
+            cmd.arg("build")
+                .arg(out_dir.join(format!("{camel}.csproj")))
+                .arg("-c")
+                .arg("Debug")
+                .arg("-o")
+                .arg(&out_wasm);
+
+            let output = match cmd.output() {
+                Ok(output) => output,
+                Err(e) => panic!("failed to spawn compiler: {}", e),
+            };
+
+            if !output.status.success() {
+                println!("status: {}", output.status);
+                println!("stdout: ------------------------------------------");
+                println!("{}", String::from_utf8_lossy(&output.stdout));
+                println!("stderr: ------------------------------------------");
+                println!("{}", String::from_utf8_lossy(&output.stderr));
+                panic!("failed to compile");
+            }
+
+            let out_wasm = out_wasm.join("AppBundle").join(assembly_name);
+            let mut wasm_filename = out_wasm.clone();
+            wasm_filename.set_extension("wasm");
+
+            let module = fs::read(&wasm_filename).expect("failed to read wasm file");
+
+            // Translate the canonical ABI module into a component.
+            let component_type = fs::read(out_dir.join("numbers_component_type.o"))?;
+
+            let mut new_module = wasm_encoder::Module::new();
+
+            for payload in wasmparser::Parser::new(0).parse_all(&module) {
+                let payload = payload.unwrap();
+                match payload {
+                    _ => {
+                        if let Some((id, range)) = payload.as_section() {
+                            new_module.section(&wasm_encoder::RawSection {
+                                id,
+                                data: &module[range],
+                            });
+                        }
+                    }
+                }
+            }
+
+            for payload in wasmparser::Parser::new(0).parse_all(&component_type) {
+                let payload = payload.unwrap();
+                match payload {
+                    wasmparser::Payload::CustomSection(_) => {
+                        if let Some((id, range)) = payload.as_section() {
+                            new_module.section(&wasm_encoder::RawSection {
+                                id,
+                                data: &component_type[range],
+                            });
+                        }
+                    }
+                    _ => {
+                        continue;
+                    }
+                }
+            }
+
+            let module = new_module.finish();
+
+            let component = ComponentEncoder::default()
+                .module(&module)
+                .expect("pull custom sections from module")
+                .validate(true)
+                .adapter("wasi_snapshot_preview1", &wasi_adapter)
+                .expect("adapter failed to get loaded")
+                .realloc_via_memory_grow(true)
+                .encode()
+                .expect(&format!(
+                    "module {:?} can be translated to a component",
+                    out_wasm
+                ));
+            let component_path = out_wasm.with_extension("component.wasm");
+            println!("COMPONENT WASM File name: {}", component_path.display());
+            fs::write(&component_path, component).expect("write component to disk");
+
+            result.push(component_path);
+        }
     }
 
     #[cfg(feature = "csharp-naot")]
