@@ -26,8 +26,6 @@ use wit_component::StringEncoding;
 mod csproj;
 pub use csproj::CSProject;
 
-//cargo run c-sharp --out-dir testing-csharp tests/codegen/floats.wit
-
 //TODO remove unused
 const CSHARP_IMPORTS: &str = "\
 using System;
@@ -46,6 +44,10 @@ pub struct Opts {
     pub string_encoding: StringEncoding,
     #[cfg_attr(feature = "clap", arg(long))]
     pub generate_stub: bool,
+
+    // TODO: This should only temporarily needed until mono and native aot aligns.
+    #[cfg_attr(feature = "clap", arg(short, long, value_enum))]
+    pub runtime: CSharpRuntime,
 }
 
 impl Opts {
@@ -55,6 +57,14 @@ impl Opts {
             ..CSharp::default()
         })
     }
+}
+
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
+pub enum CSharpRuntime {
+    #[default]
+    NativeAOT,
+    Mono,
 }
 
 struct InterfaceFragment {
@@ -393,6 +403,13 @@ impl WorldGenerator for CSharp {
                             BitConverter.TryWriteBytes(span.Slice(offset), value);
                         }}
 
+                        public void SetF32(int offset, float value)
+                        {{
+                            Span<byte> span = this;
+                            
+                            BitConverter.TryWriteBytes(span.Slice(offset), value);
+                        }}
+
                         internal unsafe int AddrOfBuffer()
                         {{
                             fixed(byte* ptr = &buffer)
@@ -517,6 +534,22 @@ impl WorldGenerator for CSharp {
                 format!("I{name}World"),
                 files,
                 Stubs::World(&self.world_fragments),
+            );
+        }
+
+        //TODO: This is currently neede for mono even if it's built as a library.
+        if self.opts.runtime == CSharpRuntime::Mono {
+            files.push(
+                &format!("MonoEntrypoint.cs",),
+                indent(
+                    r#"
+                public class MonoEntrypoint() {
+                    public static void Main() {
+                    }
+                }
+                "#,
+                )
+                .as_bytes(),
             );
         }
 
@@ -820,6 +853,12 @@ impl InterfaceGenerator<'_> {
                         return BitConverter.ToInt32(span);
                     }}
 
+                    internal static float GetF32(IntPtr ptr, int offset)
+                    {{
+                        var span = new Span<byte>((void*)ptr, 4);
+                        return BitConverter.ToSingle(span.Slice(offset, 4));
+                    }}
+
                     public static string GetUTF8String(IntPtr ptr)
                     {{
                         return Encoding.UTF8.GetString((byte*)GetS32(ptr), GetS32(ptr + 4));
@@ -879,6 +918,13 @@ impl InterfaceGenerator<'_> {
                         {{
                             Span<byte> span = MemoryMarshal.CreateSpan(ref buffer, {0});
 
+                            BitConverter.TryWriteBytes(span.Slice(offset), value);
+                        }}
+
+                        public void SetF32(int offset, float value)
+                        {{
+                            Span<byte> span = this;
+                            
                             BitConverter.TryWriteBytes(span.Slice(offset), value);
                         }}
 
@@ -990,6 +1036,7 @@ impl InterfaceGenerator<'_> {
             .join(", ");
 
         let import_name = &func.name;
+
         uwrite!(
             self.csharp_interop_src,
             r#"
@@ -1704,7 +1751,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
                 .to_owned()
             })),
-
             Instruction::I32Load { offset } => {
                 if self.gen.in_import {
                     results.push(format!("ReturnArea.GetS32(ptr + {offset})"))
@@ -1732,9 +1778,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::I32Load16S { offset } => {
                 results.push(format!("returnArea.GetS16({offset})"))
             }
-            Instruction::I64Load { offset } => results.push(format!("returnArea.GetS64({offset})")),
-            Instruction::F32Load { offset } => results.push(format!("returnArea.GetF32({offset})")),
-            Instruction::F64Load { offset } => results.push(format!("returnArea.GetF64({offset})")),
+            Instruction::I64Load { offset } => results.push(format!("ReturnArea.GetS64({offset})")),
+            Instruction::F32Load { offset } => {
+                results.push(format!("ReturnArea.GetF32(ptr, {offset})"))
+            }
+            Instruction::F64Load { offset } => results.push(format!("ReturnArea.GetF64({offset})")),
 
             Instruction::I32Store { offset } => {
                 uwriteln!(self.src, "returnArea.SetS32({}, {});", offset, operands[0])
@@ -1751,7 +1799,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 )
             }
             Instruction::I64Store { .. } => todo!("I64Store"),
-            Instruction::F32Store { .. } => todo!("F32Store"),
+            Instruction::F32Store { offset } => {
+                uwriteln!(self.src, "returnArea.SetF32({}, {});", offset, operands[0])
+            }
             Instruction::F64Store { .. } => todo!("F64Store"),
 
             Instruction::I64FromU64 => results.push(format!("unchecked((long)({}))", operands[0])),
@@ -1764,6 +1814,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::U32FromI32 => results.push(format!("unchecked((uint)({}))", operands[0])),
             Instruction::U64FromI64 => results.push(format!("unchecked((ulong)({}))", operands[0])),
             Instruction::CharFromI32 => results.push(format!("unchecked((uint)({}))", operands[0])),
+            Instruction::Float32FromF32 => {
+                results.push(format!("unchecked((float){})", operands[0]))
+            }
             Instruction::I64FromS64
             | Instruction::I32FromU16
             | Instruction::I32FromS16
@@ -1774,7 +1827,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             | Instruction::F64FromFloat64
             | Instruction::S32FromI32
             | Instruction::S64FromI64
-            | Instruction::Float32FromF32
             | Instruction::Float64FromF64 => results.push(operands[0].clone()),
 
             Instruction::Bitcasts { .. } => todo!("Bitcasts"),
@@ -2001,7 +2053,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     IntPtr {interop_string} = InteropString.FromString({result_var}, out int length{result_var});"
                 );
 
-                //TODO: Oppertunity to optimize and not reallocate every call
                 if realloc.is_none() {
                     results.push(format!("{interop_string}.ToInt32()"));
                 } else {
@@ -2113,16 +2164,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 1 => uwriteln!(self.src, "return {};", operands[0]),
                 _ => {
                     let results = operands.join(", ");
-                    let sig = self
-                        .gen
-                        .resolve()
-                        .wasm_signature(AbiVariant::GuestExport, func);
-                    let cast = sig
-                        .results
-                        .into_iter()
-                        .map(|ty| wasm_type(ty))
-                        .collect::<Vec<&str>>()
-                        .join(", ");
                     uwriteln!(self.src, "return ({results});")
                 }
             },
@@ -2235,33 +2276,6 @@ fn wasm_type(ty: WasmType) -> &'static str {
         WasmType::F64 => "double",
     }
 }
-
-//TODO: Implement Flags
-//fn flags_repr(flags: &Flags) -> Int {
-//    match flags.repr() {
-//        FlagsRepr::U8 => Int::U8,
-//        FlagsRepr::U16 => Int::U16,
-//        FlagsRepr::U32(1) => Int::U32,
-//        FlagsRepr::U32(2) => Int::U64,
-//        repr => panic!("unimplemented flags {repr:?}"),
-//    }
-//}
-
-//fn list_element_info(ty: &Type) -> (usize, &'static str) {
-//    match ty {
-//        Type::S8 => (1, "sbyte"),
-//        Type::S16 => (2, "short"),
-//        Type::S32 => (4, "int"),
-//        Type::S64 => (8, "long"),
-//        Type::U8 => (1, "byte"),
-//        Type::U16 => (2, "ushort"),
-//        Type::U32 => (4, "uint"),
-//        Type::U64 => (8, "ulong"),
-//        Type::Float32 => (4, "float"),
-//        Type::Float64 => (8, "double"),
-//        _ => unreachable!(),
-//    }
-//}
 
 fn indent(code: &str) -> String {
     let mut indented = String::with_capacity(code.len());
