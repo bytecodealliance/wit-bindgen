@@ -240,7 +240,7 @@ impl WorldGenerator for CSharp {
         _files: &mut Files,
     ) {
         let name = &format!("{}-world", resolve.worlds[world].name);
-        let mut gen = self.interface(resolve, name, Direction::Export);
+        let mut gen = self.interface(resolve, name, Direction::Import);
 
         for (ty_name, ty) in types {
             gen.define_type(ty_name, *ty);
