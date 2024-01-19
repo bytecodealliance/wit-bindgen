@@ -681,7 +681,7 @@ impl InterfaceGenerator<'_> {
             let prev = type_names.insert(ty, typedef_name.clone());
             assert!(prev.is_none());
 
-            // workaround for owner not set on anonymous types
+            // workaround for owner not set on anonymous types, maintain or own map to the owner
             self.gen
                 .anonymous_type_owners
                 .insert(ty, TypeOwner::Interface(id));
@@ -706,84 +706,14 @@ impl InterfaceGenerator<'_> {
         //     }
         // }
 
+        //TODO: what other TypeDefKind do we need here?
         match kind {
-            //     TypeDefKind::Type(_)
-            //     | TypeDefKind::Flags(_)
-            //     | TypeDefKind::Record(_)
-            //     | TypeDefKind::Resource
-            //     | TypeDefKind::Enum(_)
-            //     | TypeDefKind::Variant(_) => {
-            //         unreachable!()
-            //     }
-            //     TypeDefKind::Handle(handle) => {
-            //         let resource = match handle {
-            //             Handle::Borrow(id) | Handle::Own(id) => id,
-            //         };
-            //         let info = &self.gen.resources[&dealias(self.resolve, *resource)];
-            //         match handle {
-            //             Handle::Borrow(_) => self.src.h_defs(&info.borrow),
-            //             Handle::Own(_) => self.src.h_defs(&info.own),
-            //         }
-            //     }
             TypeDefKind::Tuple(t) => self.type_tuple(type_id, typedef_name, t, &type_def.docs),
             TypeDefKind::Option(t) => self.type_option(type_id, typedef_name, t, &type_def.docs),
             TypeDefKind::Record(t) => self.type_record(type_id, typedef_name, t, &type_def.docs),
-            //     TypeDefKind::Result(r) => {
-            //         self.src.h_defs(
-            //             "struct {
-            //                 bool is_err;
-            //             ",
-            //         );
-            //         let ok_ty = r.ok.as_ref();
-            //         let err_ty = r.err.as_ref();
-            //         if ok_ty.is_some() || err_ty.is_some() {
-            //             self.src.h_defs("union {\n");
-            //             if let Some(ok) = ok_ty {
-            //                 let ty = self.gen.type_name(ok);
-            //                 uwriteln!(self.src.h_defs, "{ty} ok;");
-            //             }
-            //             if let Some(err) = err_ty {
-            //                 let ty = self.gen.type_name(err);
-            //                 uwriteln!(self.src.h_defs, "{ty} err;");
-            //             }
-            //             self.src.h_defs("} val;\n");
-            //         }
-            //         self.src.h_defs("}");
-            //     }
-            //     TypeDefKind::List(t) => {
-            //         self.src.h_defs("struct {\n");
-            //         let ty = self.gen.type_name(t);
-            //         uwriteln!(self.src.h_defs, "{ty} *ptr;");
-            //         self.src.h_defs("size_t len;\n");
-            //         self.src.h_defs("}");
-            //     }
-            //     TypeDefKind::Future(_) => todo!("print_anonymous_type for future"),
-            //     TypeDefKind::Stream(_) => todo!("print_anonymous_type for stream"),
-            //     TypeDefKind::Unknown => unreachable!(),
             _ => unreachable!(),
         }
-        // self.src.h_defs(" ");
-        // self.print_typedef_target(ty);
     }
-
-    // fn qualifier(&self, when: bool, ty: TypeDef) -> String {
-
-    //     if let TypeOwner::Interface(id) = &type_def.owner {
-    //         if let Some(name) = self.gen.interface_names.get(id) {
-    //             if name != self.name {
-    //                 return format!("{}.", name);
-    //             }
-    //         }
-    //     }
-
-    //     if when {
-    //         // we want the c# interface name, i.e. with "I" in front of the last part of the name
-    //         let name = self.name;
-    //         format!("{name}.")
-    //     } else {
-    //         String::new()
-    //     }
-    // }
 
     fn qualifier(&self, when: bool, ty: &TypeId) -> String {
         // anonymous types dont get an owner from wit-parser, so assume they are part of an interface here.
@@ -803,7 +733,6 @@ impl InterfaceGenerator<'_> {
         }
 
         if when {
-            // we want the c# interface name, i.e. with "I" in front of the last part of the name
             let name = self.name;
             format!("{name}.")
         } else {
@@ -1238,8 +1167,7 @@ impl InterfaceGenerator<'_> {
                         params
                     }
                     TypeDefKind::Option(base_ty) => {
-                        // TODO: remove the if and accept that it will fail if there is an anonymous type with the same name as a user type?
-                        // Or use a generic Option<> class.
+                        // TODO: investigate a generic Option<> class.
                         if let Some(_name) = &ty.name {
                             format!(
                                 "{}Option{}",
@@ -2083,7 +2011,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::IterBasePointer => todo!("IterBasePointer"),
 
             Instruction::CallWasm { sig, name } => {
-                //TODO: Use base_name instead?
                 let assignment = match &sig.results[..] {
                     [_] => {
                         let result = self.locals.tmp("result");

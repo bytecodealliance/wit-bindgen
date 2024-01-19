@@ -47,9 +47,7 @@ impl CSProjectLLVMBuilder {
     pub fn generate(&self) -> Result<()> {
         let name = &self.name;
         let world = &self.world_name.replace("-", "_");
-        // TODO remove snake_world?
-        let snake_world = format!("{}World", world.to_upper_camel_case());
-        let camel = snake_world.to_upper_camel_case();
+        let camel = format!("{}World", world.to_upper_camel_case());
 
         fs::write(
             self.dir.join("rd.xml"),
