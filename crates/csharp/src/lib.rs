@@ -1877,10 +1877,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 let op = &operands[0];
 
-                let mut block = |ty: Option<&Type>, Block { body, results, .. }, payload| {
-                    let payload = if let Some(ty) = self.gen.non_empty_type(ty) {
-                        let ty = self.gen.type_name(ty);
-
+                let block = |ty: Option<&Type>, Block { body, results, .. }, payload| {
+                    let payload = if let Some(_ty) = self.gen.non_empty_type(ty) {
                         format!("var {payload} = ({op}).Value;")
                     } else {
                         String::new()

@@ -1,8 +1,8 @@
 using System.Diagnostics;
-using v1 = wit_foo.wit.imports.test.dep.v0_1_0.Test;
-using v2 = wit_foo.wit.imports.test.dep.v0_2_0.Test;
+using v1 = FooWorld.wit.imports.test.dep.v0_1_0;
+using v2 = FooWorld.wit.imports.test.dep.v0_2_0;
 
-namespace wit_foo {
+namespace FooWorld {
 
 public class FooWorldImpl : IFooWorld
 {
@@ -17,10 +17,10 @@ public class FooWorldImpl : IFooWorld
 }
 }
 
-namespace wit_foo.wit.exports.test.dep.v0_1_0.Test {
+namespace FooWorld.wit.exports.test.dep.v0_1_0 {
 
 
-    public class TestImpl : wit_foo.wit.exports.test.dep.v0_1_0.Test.ITest
+    public class TestImpl : FooWorld.wit.exports.test.dep.v0_1_0.ITest
     {
         public static float X() {
             return 1.0f;
@@ -32,8 +32,9 @@ namespace wit_foo.wit.exports.test.dep.v0_1_0.Test {
     }
 }
 
-namespace wit_foo.wit.exports.test.dep.v0_2_0.Test {
-    public class TestImpl : wit_foo.wit.exports.test.dep.v0_2_0.Test.ITest
+namespace FooWorld.wit.exports.test.dep.v0_2_0
+{
+    public class TestImpl : FooWorld.wit.exports.test.dep.v0_2_0.ITest
     {
         public static float X() {
             return 2.0f;
