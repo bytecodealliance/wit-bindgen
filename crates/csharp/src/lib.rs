@@ -113,8 +113,7 @@ impl CSharp {
         &'a mut self,
         resolve: &'a Resolve,
         name: &'a str,
-        in_import: bool,
-        in_interface: bool,
+        direction: Direction,
     ) -> InterfaceGenerator<'a> {
         InterfaceGenerator {
             src: String::new(),
@@ -123,8 +122,7 @@ impl CSharp {
             gen: self,
             resolve,
             name,
-            in_import,
-            in_interface,
+            direction,
         }
     }
 
@@ -159,7 +157,7 @@ impl WorldGenerator for CSharp {
     ) {
         let name = interface_name(self, resolve, key, Direction::Import);
         self.interface_names.insert(id, name.clone());
-        let mut gen = self.interface(resolve, &name, true, true);
+        let mut gen = self.interface(resolve, &name, Direction::Import);
 
         gen.types(id);
 
@@ -182,7 +180,7 @@ impl WorldGenerator for CSharp {
         _files: &mut Files,
     ) {
         let name = &format!("{}-world", resolve.worlds[world].name);
-        let mut gen = self.interface(resolve, name, true, false);
+        let mut gen = self.interface(resolve, name, Direction::Import);
 
         for (import_module_name, func) in funcs {
             gen.import(import_module_name, func);
@@ -200,7 +198,7 @@ impl WorldGenerator for CSharp {
     ) -> Result<()> {
         let name = interface_name(self, resolve, key, Direction::Export);
         self.interface_names.insert(id, name.clone());
-        let mut gen = self.interface(resolve, &name, false, true);
+        let mut gen = self.interface(resolve, &name, Direction::Export);
 
         gen.types(id);
 
@@ -224,7 +222,7 @@ impl WorldGenerator for CSharp {
         _files: &mut Files,
     ) -> Result<()> {
         let name = &format!("{}-world", resolve.worlds[world].name);
-        let mut gen = self.interface(resolve, name, false, false);
+        let mut gen = self.interface(resolve, name, Direction::Export);
 
         for (_, func) in funcs {
             gen.export(func, None);
@@ -242,7 +240,7 @@ impl WorldGenerator for CSharp {
         _files: &mut Files,
     ) {
         let name = &format!("{}-world", resolve.worlds[world].name);
-        let mut gen = self.interface(resolve, name, true, true);
+        let mut gen = self.interface(resolve, name, Direction::Export);
 
         for (ty_name, ty) in types {
             gen.define_type(ty_name, *ty);
@@ -646,8 +644,7 @@ struct InterfaceGenerator<'a> {
     gen: &'a mut CSharp,
     resolve: &'a Resolve,
     name: &'a str,
-    in_import: bool,
-    in_interface: bool,
+    direction: Direction,
 }
 
 impl InterfaceGenerator<'_> {
@@ -1679,30 +1676,21 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
                 .to_owned()
             })),
-            Instruction::I32Load { offset } => {
-                if self.gen.in_import {
-                    results.push(format!("ReturnArea.GetS32(ptr + {offset})"))
-                } else {
-                    results.push(format!("returnArea.GetS32({offset})"))
-                }
-            }
-            Instruction::I32Load8U { offset } => {
-                if self.gen.in_import {
-                    results.push(format!("ReturnArea.GetU8(ptr + {offset})"))
-                } else {
-                    results.push(format!("returnArea.GetU8({offset})"))
-                }
-            }
+            Instruction::I32Load { offset } => match self.gen.direction {
+                Direction::Import => results.push(format!("ReturnArea.GetS32(ptr + {offset})")),
+                Direction::Export => results.push(format!("returnArea.GetS32({offset})")),
+            },
+            Instruction::I32Load8U { offset } => match self.gen.direction {
+                Direction::Import => results.push(format!("ReturnArea.GetU8(ptr + {offset})")),
+                Direction::Export => results.push(format!("returnArea.GetU8({offset})")),
+            },
             Instruction::I32Load8S { offset } => {
                 results.push(format!("returnArea.GetS8({offset})"))
             }
-            Instruction::I32Load16U { offset } => {
-                if self.gen.in_import {
-                    results.push(format!("ReturnArea.GetU16(ptr + {offset})"))
-                } else {
-                    results.push(format!("returnArea.GetU16({offset})"))
-                }
-            }
+            Instruction::I32Load16U { offset } => match self.gen.direction {
+                Direction::Import => results.push(format!("ReturnArea.GetU16(ptr + {offset})")),
+                Direction::Export => results.push(format!("returnArea.GetU16({offset})")),
+            },
             Instruction::I32Load16S { offset } => {
                 results.push(format!("returnArea.GetS16({offset})"))
             }
@@ -1989,16 +1977,15 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.gen.gen.needs_interop_string = true;
             }
 
-            Instruction::StringLift { .. } => {
-                if self.gen.in_import {
-                    results.push(format!("ReturnArea.GetUTF8String(ptr)"));
-                } else {
+            Instruction::StringLift { .. } => match self.gen.direction {
+                Direction::Import => results.push(format!("ReturnArea.GetUTF8String(ptr)")),
+                Direction::Export => {
                     let address = &operands[0];
                     let length = &operands[1];
 
                     results.push(format!("returnArea.GetUTF8String({address}, {length})"));
                 }
-            }
+            },
 
             Instruction::ListLower { .. } => todo!("ListLower"),
 
@@ -2038,12 +2025,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let func_name = self.func_name.to_upper_camel_case();
                 let interface_name = CSharp::get_class_name_from_qualified_name(module).1;
 
-                let class_name_root = (match self.gen.in_interface {
-                    true => interface_name
+                let class_name_root = (match self.gen.direction {
+                    Direction::Import => interface_name
                         .strip_prefix("I")
                         .unwrap()
                         .to_upper_camel_case(),
-                    false => interface_name,
+                    Direction::Export => interface_name,
                 })
                 .to_upper_camel_case();
 
@@ -2120,33 +2107,36 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
         // Use a stack-based return area for imports, because exports need
         // their return area to be live until the post-return call.
-        if self.gen.in_import {
-            self.gen.gen.return_area_size = size;
-            self.gen.gen.return_area_align = align;
+        match self.gen.direction {
+            Direction::Import => {
+                self.gen.gen.return_area_size = size;
+                self.gen.gen.return_area_align = align;
 
-            uwrite!(
-                self.src,
-                "
+                uwrite!(
+                    self.src,
+                    "
                 void* buffer = stackalloc int[{} + {} - 1];
                 var {} = ((int)buffer) + ({} - 1) & -{};
                 ",
-                size,
-                align,
-                ptr,
-                align,
-                align,
-            );
-        } else {
-            self.gen.gen.return_area_size = self.gen.gen.return_area_size.max(size);
-            self.gen.gen.return_area_align = self.gen.gen.return_area_align.max(align);
+                    size,
+                    align,
+                    ptr,
+                    align,
+                    align,
+                );
+            }
+            Direction::Export => {
+                self.gen.gen.return_area_size = self.gen.gen.return_area_size.max(size);
+                self.gen.gen.return_area_align = self.gen.gen.return_area_align.max(align);
 
-            uwrite!(
-                self.src,
-                "
+                uwrite!(
+                    self.src,
+                    "
                 var {} = returnArea.AddrOfBuffer();
                 ",
-                ptr,
-            );
+                    ptr,
+                );
+            }
         }
 
         format!("{ptr}")
