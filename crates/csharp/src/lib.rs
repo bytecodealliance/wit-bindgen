@@ -473,7 +473,7 @@ impl WorldGenerator for CSharp {
             "#,
         );
         files.push(
-            &format!("{name}_cabi_realloc.c"),
+            &format!("{name}World_cabi_realloc.c"),
             indent(&cabi_relloc_src).as_bytes(),
         );
 
@@ -984,7 +984,7 @@ impl InterfaceGenerator<'_> {
                 let types = func
                     .results
                     .iter_types()
-                    .map(|ty| self.type_name(ty))
+                    .map(|ty| self.type_name_with_qualifier(ty, true))
                     .collect::<Vec<_>>()
                     .join(", ");
                 format!("({})", types)

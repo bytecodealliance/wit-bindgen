@@ -1,8 +1,8 @@
 using System;
 using System.Diagnostics;
-using wit_strings.wit.imports.test.strings.Imports;
+using StringsWorld.wit.imports.test.strings;
 
-namespace wit_strings;
+namespace StringsWorld;
 
 public class StringsWorldImpl : IStringsWorld
 {

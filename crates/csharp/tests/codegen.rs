@@ -32,7 +32,6 @@ macro_rules! codegen_test {
                         "keywords",
                         "lift-lower-foreign",
                         "lists",
-                        "many-arguments",
                         "option-result",
                         "rename-interface",
                         "resource-alias",
