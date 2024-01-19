@@ -9,6 +9,14 @@ interface option-result {
   record o-one {
     a: option<bool>,
   }
+  
+  record o-nested {
+    a: option<option<o-one>>,
+  }
+
+  type o1 = option<o-one>;
+  type o2 = option<empty>;
+  type o4 = option<option<o-nested>>;
 
   type r1 = result;
   type r2 = result<_, empty>;
