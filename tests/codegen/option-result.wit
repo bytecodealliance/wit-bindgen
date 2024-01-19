@@ -9,7 +9,7 @@ interface option-result {
   record o-one {
     a: option<bool>,
   }
-  
+
   record o-nested {
     a: option<option<o-one>>,
   }
