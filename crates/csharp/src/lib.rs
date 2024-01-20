@@ -91,7 +91,7 @@ impl InterfaceTypeAndFragments {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FunctionLevel {
     Interface,
-    Freestanding,
+    FreeStanding,
 }
 
 #[derive(Default)]
@@ -166,7 +166,7 @@ impl WorldGenerator for CSharp {
     ) {
         let name = interface_name(self, resolve, key, Direction::Import);
         self.interface_names.insert(id, name.clone());
-        let mut gen = self.interface(resolve, &name, Direction::Import);
+        let mut gen = self.interface(resolve, &name, Direction::Import, FunctionLevel::Interface);
 
         gen.types(id);
 
@@ -189,7 +189,12 @@ impl WorldGenerator for CSharp {
         _files: &mut Files,
     ) {
         let name = &format!("{}-world", resolve.worlds[world].name);
-        let mut gen = self.interface(resolve, name, Direction::Import);
+        let mut gen = self.interface(
+            resolve,
+            name,
+            Direction::Import,
+            FunctionLevel::FreeStanding,
+        );
 
         for (import_module_name, func) in funcs {
             gen.import(import_module_name, func);
@@ -207,7 +212,7 @@ impl WorldGenerator for CSharp {
     ) -> Result<()> {
         let name = interface_name(self, resolve, key, Direction::Export);
         self.interface_names.insert(id, name.clone());
-        let mut gen = self.interface(resolve, &name, Direction::Export);
+        let mut gen = self.interface(resolve, &name, Direction::Export, FunctionLevel::Interface);
 
         gen.types(id);
 
@@ -231,7 +236,12 @@ impl WorldGenerator for CSharp {
         _files: &mut Files,
     ) -> Result<()> {
         let name = &format!("{}-world", resolve.worlds[world].name);
-        let mut gen = self.interface(resolve, name, Direction::Export);
+        let mut gen = self.interface(
+            resolve,
+            name,
+            Direction::Export,
+            FunctionLevel::FreeStanding,
+        );
 
         for (_, func) in funcs {
             gen.export(func, None);
@@ -249,7 +259,7 @@ impl WorldGenerator for CSharp {
         _files: &mut Files,
     ) {
         let name = &format!("{}-world", resolve.worlds[world].name);
-        let mut gen = self.interface(resolve, name, Direction::Import);
+        let mut gen = self.interface(resolve, name, Direction::Import, FunctionLevel::Interface);
 
         for (ty_name, ty) in types {
             gen.define_type(ty_name, *ty);
@@ -2040,7 +2050,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         .strip_prefix("I")
                         .unwrap()
                         .to_upper_camel_case(),
-                    FunctionLevel::Freestanding => interface_name,
+                    FunctionLevel::FreeStanding => interface_name,
                 })
                 .to_upper_camel_case();
 
