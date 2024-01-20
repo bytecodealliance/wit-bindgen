@@ -87,6 +87,13 @@ impl InterfaceTypeAndFragments {
     }
 }
 
+/// Indicates if we are generating for functions in an interface or free standing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FunctionLevel {
+    Interface,
+    Freestanding,
+}
+
 #[derive(Default)]
 pub struct CSharp {
     opts: Opts,
@@ -114,6 +121,7 @@ impl CSharp {
         resolve: &'a Resolve,
         name: &'a str,
         direction: Direction,
+        function_level: FunctionLevel,
     ) -> InterfaceGenerator<'a> {
         InterfaceGenerator {
             src: String::new(),
@@ -123,6 +131,7 @@ impl CSharp {
             resolve,
             name,
             direction,
+            function_level,
         }
     }
 
@@ -645,6 +654,7 @@ struct InterfaceGenerator<'a> {
     resolve: &'a Resolve,
     name: &'a str,
     direction: Direction,
+    function_level: FunctionLevel,
 }
 
 impl InterfaceGenerator<'_> {
@@ -2025,12 +2035,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let func_name = self.func_name.to_upper_camel_case();
                 let interface_name = CSharp::get_class_name_from_qualified_name(module).1;
 
-                let class_name_root = (match self.gen.direction {
-                    Direction::Import => interface_name
+                let class_name_root = (match self.gen.function_level {
+                    FunctionLevel::Interface => interface_name
                         .strip_prefix("I")
                         .unwrap()
                         .to_upper_camel_case(),
-                    Direction::Export => interface_name,
+                    FunctionLevel::Freestanding => interface_name,
                 })
                 .to_upper_camel_case();
 
