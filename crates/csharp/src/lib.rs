@@ -1971,8 +1971,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::EnumLower { .. } => results.push(format!("(int){}", operands[0])),
 
             Instruction::EnumLift { ty, .. } => results.push(format!(
-                "({})Enum.ToObject(typeof({}), {})",
-                self.gen.type_name(&Type::Id(*ty)),
+                "({}){}",
                 self.gen.type_name(&Type::Id(*ty)),
                 operands[0]
             )),
