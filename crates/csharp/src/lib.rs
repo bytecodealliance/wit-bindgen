@@ -1580,7 +1580,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         uwrite!(
             self.src,
             "
-            public static enum {name} {{
+            public enum {name} {{
                 {cases}
             }}
             "
@@ -1968,9 +1968,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::ResultLift { .. } => todo!("ResultLift"),
 
-            Instruction::EnumLower { .. } => todo!("EnumLower"),
+            Instruction::EnumLower { .. } => results.push(format!("(int){}", operands[0])),
 
-            Instruction::EnumLift { .. } => todo!("EnumLift"),
+            Instruction::EnumLift { ty, .. } => results.push(format!(
+                "({})Enum.ToObject(typeof({}), {})",
+                self.gen.type_name(&Type::Id(*ty)),
+                self.gen.type_name(&Type::Id(*ty)),
+                operands[0]
+            )),
 
             Instruction::ListCanonLower { .. } => todo!("ListCanonLower"),
 
