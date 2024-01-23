@@ -47,8 +47,7 @@ impl CSProjectLLVMBuilder {
     pub fn generate(&self) -> Result<()> {
         let name = &self.name;
         let world = &self.world_name.replace("-", "_");
-        let snake_world = world.to_upper_camel_case();
-        let camel = snake_world.to_upper_camel_case();
+        let camel = format!("{}World", world.to_upper_camel_case());
 
         fs::write(
             self.dir.join("rd.xml"),
@@ -79,7 +78,7 @@ impl CSProjectLLVMBuilder {
             <AssemblyName>{name}</AssemblyName>
         </PropertyGroup>
         <ItemGroup>
-          <NativeLibrary Include=\"{world}_component_type.o\" />
+          <NativeLibrary Include=\"{camel}_component_type.o\" />
           <NativeLibrary Include=\"$(MSBuildProjectDirectory)/{camel}_cabi_realloc.o\" />
    
         </ItemGroup>
@@ -182,7 +181,7 @@ impl CSProjectMonoBuilder {
     pub fn generate(&self) -> Result<()> {
         let name = &self.name;
         let world = &self.world_name.replace("-", "_");
-        let snake_world = world.to_upper_camel_case();
+        let camel = format!("{}World", world.to_upper_camel_case());
 
         let aot = self.aot;
 
@@ -228,7 +227,7 @@ impl CSProjectMonoBuilder {
         </PropertyGroup>
 
         <ItemGroup>
-          <NativeLibrary Include=\"{world}_component_type.o\" />
+          <NativeLibrary Include=\"{camel}_component_type.o\" />
         </ItemGroup>
 
         <ItemGroup>
@@ -277,7 +276,6 @@ impl CSProjectMonoBuilder {
             "#,
         );
 
-        let camel = snake_world.to_upper_camel_case();
         fs::write(self.dir.join(format!("{camel}.csproj")), csproj)?;
 
         Ok(())

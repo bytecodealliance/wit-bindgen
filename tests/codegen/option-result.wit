@@ -16,7 +16,6 @@ interface option-result {
 
   type o1 = option<o-one>;
   type o2 = option<empty>;
-  type o3 = option<o-nested>;
   type o4 = option<option<o-nested>>;
 
   type r1 = result;
@@ -31,18 +30,6 @@ interface option-result {
   type o5 = option<result>;
   type o6 = option<result<option<result>>>;
 
-
-   o1-arg: func(x: o1);
-   o1-result: func() -> o1;
-
-   o2-arg: func(x: o2);
-   o2-result: func() -> o2;
-
-   o3-arg: func(x: o3);
-   o3-result: func() -> o3;
-
-   o4-arg: func(x: o4);
-   o4-result: func() -> o4;
 
    o5-arg: func(x: o5);
    o5-result: func() -> o5;

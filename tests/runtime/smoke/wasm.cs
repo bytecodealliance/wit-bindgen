@@ -1,8 +1,9 @@
 using System;
 using System.Diagnostics;
-using wit_smoke.wit.imports.test.smoke.Imports;
+using SmokeWorld;
+using SmokeWorld.wit.imports.test.smoke;
 
-namespace wit_smoke;
+namespace SmokeWorld;
 
 public class SmokeWorldImpl : ISmokeWorld
 {
