@@ -14,6 +14,7 @@
 | --- | --- |
 | v | passed by value |
 | t | owernership transferred |
+| p | cabi_post_ cleans up |
 
 
 | Code | mode | WIT Type | Rust type | C++ Type | Lower | Reason |
@@ -30,8 +31,12 @@
 | | | result<string,list> | Result<String, Vec> | std::expected<wasi::string, wasi::vector> | &(d,a,l) |
 | GEA | t | string | String | wasi::string&& | addr, len |
 | | | result<string,list> | Result<String, Vec> | std::expected<wasi::string, wasi::vector>&& | d,a,l |
-| GER | t | string | String | wasi::string (or std?) | -> &(a,l) cabi_post_N:P/I#F |
+| GER | p | string | String | wasi::string (or std?) | -> &(a,l) cabi_post_N:P/I#F |
 | | | result<string,list> | Result<String, Vec> | std::expected<wasi::string, wasi::vector> | -> &(d,a,l) cabi_post |
-| G-S | ? | string | String | wasi::string | addr, len |
+| --S | ? | string | String | wasi::string | addr, len |
+| HIA | v | string | | string_view | a,l |
+| HIR | t | string | | wasi::string | &(a,l) |
+| HEA | t | string | | wasi::string&& | a,l | 
+| HER | p | string | | string_view + special cleanup | -> &(a,l) |
 
 Note: The host never frees memory (is never passed ownership)!
