@@ -33,6 +33,7 @@ using System.Runtime.CompilerServices;
 using System.Collections;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Diagnostics;
 
 ";
 
@@ -1970,11 +1971,17 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::EnumLower { .. } => results.push(format!("(int){}", operands[0])),
 
-            Instruction::EnumLift { ty, .. } => results.push(format!(
-                "({}){}",
-                self.gen.type_name(&Type::Id(*ty)),
-                operands[0]
-            )),
+            Instruction::EnumLift { ty, .. } => {
+                let t = self.gen.type_name(&Type::Id(*ty));
+                let op = &operands[0];
+                results.push(format!("({}){}", t, op));
+
+                uwriteln!(
+                    self.src,
+                    "Debug.Assert(Enum.IsDefined(typeof({}), {}));",
+                    t, op
+                );
+            },
 
             Instruction::ListCanonLower { .. } => todo!("ListCanonLower"),
 
