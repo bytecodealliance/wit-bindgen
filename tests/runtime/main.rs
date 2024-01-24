@@ -509,7 +509,7 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
             }
 
             let snake = world_name.replace("-", "_");
-            let camel = snake.to_upper_camel_case();
+            let camel = format!("{}World", snake.to_upper_camel_case());
 
             let assembly_name = format!(
                 "csharp-{}",
@@ -661,7 +661,7 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
             }
 
             let snake = world_name.replace("-", "_");
-            let camel = snake.to_upper_camel_case();
+            let camel = format!("{}World", snake.to_upper_camel_case());
 
             let assembly_name = format!(
                 "csharp-{}",

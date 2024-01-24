@@ -1,7 +1,8 @@
 using System.Diagnostics;
-using wit_many_arguments.wit.imports.Imports;
+using ManyArgumentsWorld;
+using ManyArgumentsWorld.wit.imports;
 
-namespace wit_many_arguments;
+namespace ManyArgumentsWorld;
 
 public class ManyArgumentsWorldImpl : IManyArgumentsWorld
 {

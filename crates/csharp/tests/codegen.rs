@@ -114,7 +114,7 @@ fn aot_verify(dir: &Path, name: &str) {
     wasm_filename.set_extension("wasm");
     //  add .arg("/bl") to diagnose dotnet build problems
     cmd.arg("build")
-        .arg(dir.join(format!("TheWorld.csproj")))
+        .arg(dir.join(format!("TheWorldWorld.csproj")))
         .arg("-r")
         .arg("wasi-wasm")
         .arg("-c")
