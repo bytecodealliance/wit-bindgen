@@ -33,6 +33,7 @@ using System.Runtime.CompilerServices;
 using System.Collections;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Diagnostics;
 
 ";
 
@@ -1580,7 +1581,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         uwrite!(
             self.src,
             "
-            public static enum {name} {{
+            public enum {name} {{
                 {cases}
             }}
             "
@@ -1968,9 +1969,20 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::ResultLift { .. } => todo!("ResultLift"),
 
-            Instruction::EnumLower { .. } => todo!("EnumLower"),
+            Instruction::EnumLower { .. } => results.push(format!("(int){}", operands[0])),
 
-            Instruction::EnumLift { .. } => todo!("EnumLift"),
+            Instruction::EnumLift { ty, .. } => {
+                let t = self.gen.type_name_with_qualifier(&Type::Id(*ty), true);
+                let op = &operands[0];
+                results.push(format!("({}){}", t, op));
+
+                uwriteln!(
+                    self.src,
+                    "Debug.Assert(Enum.IsDefined(typeof({}), {}));",
+                    t,
+                    op
+                );
+            }
 
             Instruction::ListCanonLower { .. } => todo!("ListCanonLower"),
 
