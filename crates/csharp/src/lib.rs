@@ -1972,16 +1972,17 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::EnumLower { .. } => results.push(format!("(int){}", operands[0])),
 
             Instruction::EnumLift { ty, .. } => {
-                let t = self.gen.type_name(&Type::Id(*ty));
+                let t = self.gen.type_name_with_qualifier(&Type::Id(*ty), true);
                 let op = &operands[0];
                 results.push(format!("({}){}", t, op));
 
                 uwriteln!(
                     self.src,
                     "Debug.Assert(Enum.IsDefined(typeof({}), {}));",
-                    t, op
+                    t,
+                    op
                 );
-            },
+            }
 
             Instruction::ListCanonLower { .. } => todo!("ListCanonLower"),
 
