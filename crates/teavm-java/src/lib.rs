@@ -218,7 +218,6 @@ impl WorldGenerator for TeaVmJava {
             id,
             wit_component::StringEncoding::UTF8,
             Some(&producers),
-            None,
         )
         .unwrap();
 
