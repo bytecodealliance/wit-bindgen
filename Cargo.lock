@@ -2409,7 +2409,7 @@ dependencies = [
  "clap",
  "heck",
  "test-helpers",
- "wasm-encoder 0.39.0",
+ "wasm-encoder 0.40.0",
  "wasm-metadata",
  "wit-bindgen-c",
  "wit-bindgen-core",

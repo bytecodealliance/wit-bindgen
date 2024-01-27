@@ -41,7 +41,11 @@ fn verify(dir: &Path, name: &str) {
     );
     let sysroot = sdk_path.join("share/wasi-sysroot");
     let c_src = dir.join(format!("{name}.cpp"));
-    let additional_includes = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("environment variable CARGO_MANIFEST_DIR should get set by cargo")).join("test_headers");
+    let additional_includes = PathBuf::from(
+        env::var_os("CARGO_MANIFEST_DIR")
+            .expect("environment variable CARGO_MANIFEST_DIR should get set by cargo"),
+    )
+    .join("test_headers");
 
     let shared_args = vec![
         "--sysroot",
@@ -69,7 +73,11 @@ fn verify(dir: &Path, name: &str) {
 fn verify_host(dir: &Path, name: &str) {
     let name = name.to_snake_case();
     let c_src = dir.join(format!("{name}_host.cpp"));
-    let additional_includes = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("environment variable CARGO_MANIFEST_DIR should get set by cargo")).join("test_headers");
+    let additional_includes = PathBuf::from(
+        env::var_os("CARGO_MANIFEST_DIR")
+            .expect("environment variable CARGO_MANIFEST_DIR should get set by cargo"),
+    )
+    .join("test_headers");
 
     let shared_args = vec![
         "-I",

@@ -299,7 +299,8 @@ impl WorldGenerator for Cpp {
             uwrite!(
                 h_str.src,
                 "#ifndef __CPP_HOST_BINDINGS_{0}_H
-                #define __CPP_HOST_BINDINGS_{0}_H\n",
+                #define __CPP_HOST_BINDINGS_{0}_H
+                struct WASMExecEnv; // WAMR execution environment\n",
                 world.name.to_shouty_snake_case(),
             );
         }
@@ -350,7 +351,8 @@ impl WorldGenerator for Cpp {
             if !self.opts.short_cut {
                 uwriteln!(
                     c_str.src,
-                    "#include <wasm_export.h> // wasm-micro-runtime header"
+                    "#include <wasm_export.h> // wasm-micro-runtime header\n\
+                    #include <assert.h>"
                 );
 
                 if c_str.src.len() > 0 {
@@ -789,6 +791,12 @@ impl CppInterfaceGenerator<'_> {
         }
         self.gen.h_src.src.push_str(&cpp_sig.name);
         self.gen.h_src.src.push_str("(");
+        if import && self.gen.opts.host {
+            self.gen.h_src.src.push_str("WASMExecEnv* exec_env");
+            if !cpp_sig.arguments.is_empty() {
+                self.gen.h_src.src.push_str(", ");
+            }
+        }
         for (num, (arg, typ)) in cpp_sig.arguments.iter().enumerate() {
             if num > 0 {
                 self.gen.h_src.src.push_str(", ");
@@ -819,6 +827,12 @@ impl CppInterfaceGenerator<'_> {
             self.gen.c_src.qualify(&cpp_sig.namespace);
             self.gen.c_src.src.push_str(&cpp_sig.name);
             self.gen.c_src.src.push_str("(");
+            if import && self.gen.opts.host {
+                self.gen.c_src.src.push_str("wasm_exec_env_t exec_env");
+                if !cpp_sig.arguments.is_empty() || cpp_sig.implicit_self {
+                    self.gen.c_src.src.push_str(", ");
+                }
+            }
             if cpp_sig.implicit_self {
                 params.push("(*this)".into());
             }
@@ -894,6 +908,7 @@ impl CppInterfaceGenerator<'_> {
             let mut f = FunctionBindgen::new(self, params);
             if !export {
                 f.namespace = namespace;
+                f.wamr_signature = Some(wamr::wamr_signature(&f.gen.resolve, func));
             }
             abi::call(f.gen.resolve, variant, lift_lower, func, &mut f);
             let code = String::from(f.src);
@@ -1384,6 +1399,8 @@ struct FunctionBindgen<'a, 'b> {
     block_storage: Vec<wit_bindgen_core::Source>,
     blocks: Vec<(String, Vec<String>)>,
     payloads: Vec<String>,
+    // caching for wasm
+    wamr_signature: Option<wamr::WamrSig>,
 }
 
 impl<'a, 'b> FunctionBindgen<'a, 'b> {
@@ -1399,6 +1416,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             block_storage: Default::default(),
             blocks: Default::default(),
             payloads: Default::default(),
+            wamr_signature: None,
         }
     }
 
@@ -1917,19 +1935,55 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     .as_ref()
                     .map(|e| e.clone())
                     .unwrap();
-                let func = self
-                    .gen
-                    .declare_import(&module_name, name, &sig.params, &sig.results);
+                if self.gen.gen.opts.host {
+                    uwriteln!(self.src, "wasm_function_inst_t wasm_func = wasm_runtime_lookup_function(wasm_runtime_get_module_inst(exec_env), \n\
+                            \"{}#{}\", \"{}\");", module_name, name, self.wamr_signature.as_ref().unwrap().to_string());
+                    if !sig.results.is_empty() {
+                        uwriteln!(
+                            self.src,
+                            "wasm_val_t wasm_results[{}] = {{ WASM_INIT_VAL }};",
+                            sig.results.len()
+                        );
+                    } else {
+                        uwriteln!(self.src, "wasm_val_t *wasm_results = nullptr;");
+                    }
+                    if !sig.params.is_empty() {
+                        uwrite!(self.src, "wasm_val_t wasm_args[{}] = {{", sig.params.len());
+                        for (typ, value) in sig.params.iter().zip(operands.iter()) {
+                            match typ {
+                                WasmType::I32 => uwrite!(self.src, "WASM_I32_VAL({}),", value),
+                                WasmType::I64 => todo!(),
+                                WasmType::F32 => todo!(),
+                                WasmType::F64 => todo!(),
+                            }
+                        }
+                        self.src.push_str("};\n");
+                    } else {
+                        uwriteln!(self.src, "wasm_val_t *wasm_args = nullptr;");
+                    }
+                    uwriteln!(self.src, "bool wasm_ok = wasm_runtime_call_wasm_a(exec_env, wasm_func, {}, wasm_results, {}, wasm_args);", sig.results.len(), sig.params.len());
+                    uwriteln!(self.src, "assert(wasm_ok);");
+                    if sig.results.len() > 0 {
+                        self.src
+                            .push_str("assert(wasm_results[0].kind==WASM_I32);\n");
+                        self.src.push_str("auto ret = wasm_results[0].of.i32;\n");
+                        results.push("ret".to_string());
+                    }
+                } else {
+                    let func =
+                        self.gen
+                            .declare_import(&module_name, name, &sig.params, &sig.results);
 
-                // ... then call the function with all our operands
-                if sig.results.len() > 0 {
-                    self.src.push_str("auto ret = ");
-                    results.push("ret".to_string());
+                    // ... then call the function with all our operands
+                    if sig.results.len() > 0 {
+                        self.src.push_str("auto ret = ");
+                        results.push("ret".to_string());
+                    }
+                    self.src.push_str(&func);
+                    self.src.push_str("(");
+                    self.src.push_str(&operands.join(", "));
+                    self.src.push_str(");\n");
                 }
-                self.src.push_str(&func);
-                self.src.push_str("(");
-                self.src.push_str(&operands.join(", "));
-                self.src.push_str(");\n");
             }
             abi::Instruction::CallInterface { func } => {
                 // dbg!(func);
@@ -1997,7 +2051,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             8 => "uint64_t",
             _ => todo!(),
         };
-        let static_var = if self.gen.in_import { ""}else {"static "};
+        let static_var = if self.gen.in_import { "" } else { "static " };
         uwriteln!(self.src, "{static_var}{tp} ret_area[{elems}];");
         uwriteln!(self.src, "int32_t ptr{tmp} = int32_t(&ret_area);");
 
