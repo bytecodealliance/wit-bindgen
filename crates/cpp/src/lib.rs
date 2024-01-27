@@ -1964,9 +1964,15 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     uwriteln!(self.src, "bool wasm_ok = wasm_runtime_call_wasm_a(exec_env, wasm_func, {}, wasm_results, {}, wasm_args);", sig.results.len(), sig.params.len());
                     uwriteln!(self.src, "assert(wasm_ok);");
                     if sig.results.len() > 0 {
-                        self.src
-                            .push_str("assert(wasm_results[0].kind==WASM_I32);\n");
-                        self.src.push_str("auto ret = wasm_results[0].of.i32;\n");
+                        let (kind, elem) = match sig.results.first() {
+                            Some(WasmType::I32) => (String::from("WASM_I32"), String::from("i32")),
+                            Some(WasmType::I64) => (String::from("WASM_I64"), String::from("i64")),
+                            Some(WasmType::F32) => (String::from("WASM_F32"), String::from("f32")),
+                            Some(WasmType::F64) => (String::from("WASM_F64"), String::from("f64")),
+                            None => todo!(),
+                        };
+                        uwriteln!(self.src, "assert(wasm_results[0].kind=={kind});");
+                        uwriteln!(self.src, "auto ret = wasm_results[0].of.{elem};");
                         results.push("ret".to_string());
                     }
                 } else {
