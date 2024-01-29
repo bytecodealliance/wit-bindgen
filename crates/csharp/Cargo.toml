@@ -27,7 +27,7 @@ anyhow = { workspace = true }
 [dev-dependencies]
 test-helpers = { path = '../test-helpers' }
 wasm-encoder = { workspace = true }
-wasmparser = "0.118.0"
+wasmparser = { workspace = true }
 
 [features]
 default = ["aot"]
