@@ -28,7 +28,7 @@ clap = { version = "4.3.19", features = ["derive"] }
 env_logger = "0.10.0"
 indexmap = "2.0.0"
 
-wasm-metadata = "0.10.16
+wasm-metadata = "0.10.16"
 wasm-encoder  = { git = "https://github.com/wasmfx/wasmfx-tools", tag = "wasmfx-tools-1.0.57" }
 wit-parser    = { git = "https://github.com/wasmfx/wasmfx-tools", tag = "wasmfx-tools-1.0.57" }
 wit-component = { git = "https://github.com/wasmfx/wasmfx-tools", tag = "wasmfx-tools-1.0.57" }
