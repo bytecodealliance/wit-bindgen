@@ -744,6 +744,7 @@ impl InterfaceGenerator<'_> {
             TypeDefKind::Tuple(t) => self.type_tuple(type_id, typedef_name, t, &type_def.docs),
             TypeDefKind::Option(t) => self.type_option(type_id, typedef_name, t, &type_def.docs),
             TypeDefKind::Record(t) => self.type_record(type_id, typedef_name, t, &type_def.docs),
+            TypeDefKind::List(t) => self.type_list(type_id, typedef_name, t, &type_def.docs),
             _ => unreachable!(),
         }
     }
@@ -792,7 +793,7 @@ impl InterfaceGenerator<'_> {
             uwrite!(
                 ret_struct_type,
                 r#"
-                private unsafe struct ReturnArea
+                internal unsafe struct ReturnArea
                 {{
                     internal static byte GetU8(IntPtr ptr)
                     {{
@@ -1093,6 +1094,7 @@ impl InterfaceGenerator<'_> {
             .map(|(_i, param)| {
                 let ty = self.type_name_with_qualifier(&param.1, true);
                 let param_name = &param.0;
+                let param_name = param_name.to_csharp_ident();
                 format!("{ty} {param_name}")
             })
             .collect::<Vec<_>>()
@@ -1114,7 +1116,7 @@ impl InterfaceGenerator<'_> {
         uwrite!(
             self.csharp_interop_src,
             r#"
-                internal static unsafe {result_type} {camel_name}({params})
+                static unsafe {result_type} {camel_name}({params})
                 {{
                     {src}
                     //TODO: free alloc handle (interopString) if exists
@@ -1245,9 +1247,13 @@ impl InterfaceGenerator<'_> {
             Type::Id(id) => {
                 let ty = &self.resolve.types[*id];
                 match &ty.kind {
+                    TypeDefKind::List(_list) => "".to_owned(),
                     TypeDefKind::Tuple(_tuple) => "".to_owned(),
                     TypeDefKind::Type(inner_type) => self.global_if_user_type(inner_type),
-                    _ => "global::".to_owned(),
+                    _ => {
+                        println!("global_if_user_type: {:?}, {:?}", ty.name, ty.kind);
+                        "global::".to_owned()
+                    },
                 }
             }
             _ => "".to_owned(),
