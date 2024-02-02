@@ -1250,10 +1250,7 @@ impl InterfaceGenerator<'_> {
                     TypeDefKind::List(_list) => "".to_owned(),
                     TypeDefKind::Tuple(_tuple) => "".to_owned(),
                     TypeDefKind::Type(inner_type) => self.global_if_user_type(inner_type),
-                    _ => {
-                        println!("global_if_user_type: {:?}, {:?}", ty.name, ty.kind);
-                        "global::".to_owned()
-                    },
+                    _ => "global::".to_owned(),
                 }
             }
             _ => "".to_owned(),
