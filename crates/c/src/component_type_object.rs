@@ -40,8 +40,7 @@ pub fn object(
         env!("CARGO_PKG_NAME"),
         env!("CARGO_PKG_VERSION"),
     );
-    let data =
-        wit_component::metadata::encode(resolve, world, encoding, Some(&producers), None).unwrap();
+    let data = wit_component::metadata::encode(resolve, world, encoding, Some(&producers)).unwrap();
 
     // The custom section name here must start with "component-type" but
     // otherwise is attempted to be unique here to ensure that this doesn't get

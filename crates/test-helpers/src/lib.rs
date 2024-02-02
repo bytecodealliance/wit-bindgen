@@ -91,7 +91,7 @@ pub fn run_component_codegen_test(
     let world_name = &resolve.worlds[world].name;
     let mut wasm = wit_component::dummy_module(&resolve, world);
     let encoded =
-        wit_component::metadata::encode(&resolve, world, StringEncoding::UTF8, None, None).unwrap();
+        wit_component::metadata::encode(&resolve, world, StringEncoding::UTF8, None).unwrap();
     let section = wasm_encoder::CustomSection {
         name: std::borrow::Cow::Borrowed("component-type"),
         data: std::borrow::Cow::Borrowed(&encoded),

@@ -1,7 +1,7 @@
 using System.Diagnostics;
-using wit_records.wit.imports.test.records.Test;
+using RecordsWorld.wit.imports.test.records;
 
-namespace wit_records.exports
+namespace RecordsWorld
 {
     public class RecordsWorldImpl : IRecordsWorld
     {
@@ -61,7 +61,7 @@ namespace wit_records.exports
 
 }
 
-namespace wit_records.wit.exports.test.records.Test
+namespace RecordsWorld.wit.exports.test.records
 {
     public class TestImpl : ITest
     {

@@ -1,0 +1,43 @@
+package foo:foo;
+
+interface option-simple {
+  // NB: this record used to be empty, but that's no longer valid, so now it's
+  // non-empty. Don't want to delete the whole test however.
+  record empty {
+    not-empty-anymore: bool,
+  }
+  record o-one {
+    a: option<bool>,
+  }
+
+  record o-nested {
+    a: option<option<o-one>>,
+  }
+
+  type o1 = option<o-one>;
+  type o2 = option<empty>;
+  type o3 = option<o-nested>;
+  type o4 = option<option<o-nested>>;
+
+
+   oint-arg: func(x: option<s32>);
+   oint-result: func() -> option<s32>;
+
+   o1-arg: func(x: o1);
+   o1-result: func() -> o1;
+
+   o2-arg: func(x: o2);
+   o2-result: func() -> o2;
+
+   o3-arg: func(x: o3);
+   o3-result: func() -> o3;
+
+   o4-arg: func(x: o4);
+   o4-result: func() -> o4;
+}
+
+world my-world {
+  import option-simple;
+  export option-simple;
+}
+

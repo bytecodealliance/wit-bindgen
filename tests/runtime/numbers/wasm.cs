@@ -1,9 +1,9 @@
 using System;
 using System.Runtime.InteropServices;
 using System.Diagnostics;
-using wit_numbers.wit.imports.test.numbers.Test;
+using NumbersWorld.wit.imports.test.numbers;
 
-namespace wit_numbers
+namespace NumbersWorld
 {
 
     public class NumbersWorldImpl : INumbersWorld
@@ -65,9 +65,9 @@ namespace wit_numbers
     }
 }
 
-namespace wit_numbers.wit.exports.test.numbers.Test
+namespace NumbersWorld.wit.exports.test.numbers
 {
-    public class TestImpl : wit_numbers.wit.exports.test.numbers.Test.ITest
+    public class TestImpl : ITest
     {
         static uint SCALAR = 0;
 
@@ -137,4 +137,3 @@ namespace wit_numbers.wit.exports.test.numbers.Test
         }
     }
 }
-    
