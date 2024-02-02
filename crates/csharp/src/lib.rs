@@ -1153,14 +1153,6 @@ impl InterfaceGenerator<'_> {
         let result_type = match func.results.len() {
             0 => "void".to_owned(),
             1 => self.type_name(func.results.iter_types().next().unwrap()),
-            _ => format!(
-                "Tuple<{}>",
-                func.results
-                    .iter_types()
-                    .map(|ty| self.type_name(ty))
-                    .collect::<Vec<String>>()
-                    .join(", ")
-            ),
             _ => {
                 let types = func
                     .results
@@ -1434,7 +1426,7 @@ impl InterfaceGenerator<'_> {
             count => {
                 self.gen.tuple_counts.insert(count);
                 format!(
-                    "Tuple<{}>",
+                    "({})",
                     func.results
                         .iter_types()
                         .map(|ty| self.type_name_boxed(ty, qualifier))
