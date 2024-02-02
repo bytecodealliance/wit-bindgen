@@ -1050,15 +1050,6 @@ impl InterfaceGenerator<'_> {
                     .map(|ty| self.type_name_with_qualifier(ty, true))
                     .collect::<Vec<_>>()
                     .join(", ");
-                format!("Tuple<{}>", types)
-            }
-            _ => {
-                let types = func
-                    .results
-                    .iter_types()
-                    .map(|ty| self.type_name(ty))
-                    .collect::<Vec<_>>()
-                    .join(", ");
                 format!("({})", types)
             }
         };
