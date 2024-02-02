@@ -1116,7 +1116,7 @@ impl InterfaceGenerator<'_> {
         uwrite!(
             self.csharp_interop_src,
             r#"
-                static unsafe {result_type} {camel_name}({params})
+                internal static unsafe {result_type} {camel_name}({params})
                 {{
                     {src}
                     //TODO: free alloc handle (interopString) if exists
