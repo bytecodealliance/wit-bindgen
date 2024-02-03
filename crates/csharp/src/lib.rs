@@ -912,7 +912,8 @@ impl InterfaceGenerator<'_> {
     
                         unsafe internal T[] GetArray<T>(int offset, int length)
                         {{
-                            Span<byte> span = this;
+                            var p = new IntPtr(offset);
+                            var span = new Span<byte>(p.ToPointer(), length);
             
                             var array = new T[length];
 
@@ -923,7 +924,7 @@ impl InterfaceGenerator<'_> {
             
                             fixed (T* ptr = &array[0])
                             {{
-                                Marshal.Copy(span.Slice(offset, length).ToArray(), 0, (IntPtr)ptr, length);
+                                Marshal.Copy(span.ToArray(), 0, (IntPtr)ptr, length);
                             }}
             
                             return array;
