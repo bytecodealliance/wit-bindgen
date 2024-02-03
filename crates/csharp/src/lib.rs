@@ -915,6 +915,11 @@ impl InterfaceGenerator<'_> {
                             Span<byte> span = this;
             
                             var array = new T[length];
+
+                            if (array.Length == 0)
+                            {{
+                                return array;
+                            }}
             
                             fixed (T* ptr = &array[0])
                             {{
