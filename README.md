@@ -32,7 +32,10 @@ between bindings definitions.
 The `wit-bindgen` repository is currently focused on **guest** programs which
 are those compiled to WebAssembly. Executing a component in a host is not
 managed in this repository, and some options of how to do so are [described
-below][hosts].
+below][hosts]. Languages developed in this repository are Rust, C, Java (TeaVM
+Java), Go (TinyGo), and C#. If you encounter any problems feel free to [open an
+issue](https://github.com/bytecodealliance/wit-bindgen/issues/new) or chat with
+us on [Zulip][zulip].
 
 ## [WIT] as an IDL
 
@@ -140,10 +143,11 @@ modules][preview1-build] with each release that are suitable to use with
 `--adapt` to implement `wasi_snapshot_preview1` in terms of WASI 0.2. On
 Wasmtime's releases page you'll see three modules to choose from:
 
-* [`wasi_snapshot_preview1.command.wasm`] - use this for CLI applications
+* [`wasi_snapshot_preview1.command.wasm`] - use this for CLI applications.
 * [`wasi_snapshot_preview1.reactor.wasm`] - use this for applications that don't
-  have a `main` function for example
-* [`wasi_snapshot_preview1.servec.wasm`] - use this for applications fed into
+  have a `main` function for example: for example a process that responds to an
+  event.
+* [`wasi_snapshot_preview1.proxy.wasm`] - use this for applications fed into
   `wasmtime serve` for example.
 
 Only one adapter is necessary and be sure to look for the [latest
@@ -372,7 +376,7 @@ This can then be compiled with `tinygo` and assembled into a component with:
 go generate # generate bindings for Go
 tinygo build -target=wasi -o main.wasm my-component.go # compile
 wasm-tools component embed --world host ./wit main.wasm -o main.embed.wasm # create a component
-wasm-tools component new main.embed.wasm --adapt wasi_snapshot_preview1.wasm -o main.component.wasm
+wasm-tools component new main.embed.wasm --adapt wasi_snapshot_preview1.command.wasm -o main.component.wasm
 wasm-tools validate main.component.wasm --features component-model
 ```
 
