@@ -19,11 +19,6 @@
 
 ## About
 
-> **Note**: this project is still relatively young and active development with
-> large changes is still happening. If you're considering depending on this at
-> this time it's recommended to reach out to the authors on [zulip] and get more
-> information first.
-
 [zulip]: https://bytecodealliance.zulipchat.com/#narrow/stream/327223-wit-bindgen
 
 This project is a suite of bindings generators for languages that are compiled
@@ -31,13 +26,16 @@ to WebAssembly and use the [component model]. Bindings are described with
 [`*.wit` files][WIT] which specify imports, exports, and facilitate reuse
 between bindings definitions.
 
-[WIT]: https://github.com/WebAssembly/component-model/blob/main/design/mvp/WIT.md
+[WIT]: https://component-model.bytecodealliance.org/design/wit.html
 [component model]: https://github.com/WebAssembly/component-model
 
 The `wit-bindgen` repository is currently focused on **guest** programs which
 are those compiled to WebAssembly. Executing a component in a host is not
 managed in this repository, and some options of how to do so are [described
-below][hosts].
+below][hosts]. Languages developed in this repository are Rust, C, Java (TeaVM
+Java), Go (TinyGo), and C#. If you encounter any problems feel free to [open an
+issue](https://github.com/bytecodealliance/wit-bindgen/issues/new) or chat with
+us on [Zulip][zulip].
 
 ## [WIT] as an IDL
 
@@ -97,8 +95,9 @@ etc. This can then be imported wholesale into the `my-game` world via the
 `plugin` namespace. The structure of a [WIT] document and world will affect the
 generated bindings per-language.
 
-For more information about WIT and its syntax see the [upstream description of
-WIT][WIT].
+For more information about WIT and its syntax see the [online documentation for
+WIT][WIT] as well as its [upstream
+reference](https://github.com/WebAssembly/component-model/blob/main/design/mvp/WIT.md).
 
 ## Creating a Component
 
@@ -139,23 +138,26 @@ that are using `wasi_snapshot_preview1` APIs.
 
 The `wasm-tools component new` subcommand takes an `--adapt` argument which acts
 as a way to polyfill non-component-model APIs, like `wasi_snapshot_preview1`,
-with component model APIs. The [preview2-prototyping] project is the current
-go-to location to acquire a polyfill from `wasi_snapshot_preview1` to an
-in-development version of "wasi preview2" which is specified with [WIT]
-and the component model.
+with component model APIs. The [Wasmtime] runtime publishes [adapter
+modules][preview1-build] with each release that are suitable to use with
+`--adapt` to implement `wasi_snapshot_preview1` in terms of WASI 0.2. On
+Wasmtime's releases page you'll see three modules to choose from:
 
-Notably you'll want to download [one of the adapter modules][preview1-build]
-and name it `wasi_snapshot_preview1.wasm` locally to pass as an `--adapt`
-argument to `wasm-tools component new`. Note that there are two modules
-provided on the downloads page, [one is for non-commands][non-command] which
-don't have a `_start` entrypoint in the generated core wasm module (e.g. the
-`cdylib` crate type in Rust) and [one that is for command modules][command]
-which has a `_start` entrypoint (e.g. a `src/main.rs` in Rust).
+* [`wasi_snapshot_preview1.command.wasm`] - use this for CLI applications.
+* [`wasi_snapshot_preview1.reactor.wasm`] - use this for applications that don't
+  have a `main` function for example: for example a process that responds to an
+  event.
+* [`wasi_snapshot_preview1.proxy.wasm`] - use this for applications fed into
+  `wasmtime serve` for example.
 
-[preview2-prototyping]: https://github.com/bytecodealliance/preview2-prototyping
+Only one adapter is necessary and be sure to look for the [latest
+versions][preview1-build] as well.
+
 [preview1-build]: https://github.com/bytecodealliance/wasmtime/releases/latest
-[non-command]: https://github.com/bytecodealliance/wasmtime/releases/latest/download/wasi_snapshot_preview1.reactor.wasm
-[command]: https://github.com/bytecodealliance/wasmtime/releases/latest/download/wasi_snapshot_preview1.command.wasm
+[wasmtime]: https://github.com/bytecodealliance/wasmtime
+[`wasi_snapshot_preview1.command.wasm`]: https://github.com/bytecodealliance/wasmtime/releases/download/v17.0.0/wasi_snapshot_preview1.command.wasm
+[`wasi_snapshot_preview1.reactor.wasm`]: https://github.com/bytecodealliance/wasmtime/releases/download/v17.0.0/wasi_snapshot_preview1.reactor.wasm
+[`wasi_snapshot_preview1.proxy.wasm`]: https://github.com/bytecodealliance/wasmtime/releases/download/v17.0.0/wasi_snapshot_preview1.proxy.wasm
 
 ## Supported Guest Languages
 
@@ -183,14 +185,15 @@ world host {
 
 ### Guest: Rust
 
-The Rust compiler supports a native `wasm32-wasi` target and can be added to any
-`rustup`-based toolchain with:
+The Rust compiler supports a native `wasm32-wasi` target and can be added to
+any `rustup`-based toolchain with:
 
 ```sh
 rustup target add wasm32-wasi
 ```
 
-In order to compile a wasi dynamic library, the following must be added to the `Cargo.toml` file:
+In order to compile a wasi dynamic library, the following must be added to the
+`Cargo.toml` file:
 
 ```toml
 [lib]
@@ -200,7 +203,7 @@ crate-type = ["cdylib"]
 Projects can then depend on `wit-bindgen` by executing:
 
 ```sh
-cargo add --git https://github.com/bytecodealliance/wit-bindgen wit-bindgen
+cargo add wit-bindgen
 ```
 
 WIT files are currently added to a `wit/` folder adjacent to your `Cargo.toml`
@@ -237,14 +240,17 @@ impl Guest for MyHost {
 ```
 
 By using [`cargo expand`](https://github.com/dtolnay/cargo-expand) or `cargo
-doc` you can also explore the generated code.
+doc` you can also explore the generated code. If there's a bug in `wit-bindgen`
+and the generated bindings do not compile or if there's an error in the
+generated code (which is probably also a bug in `wit-bindgen`), you can use
+`WIT_BINDGEN_DEBUG=1` as an environment variable to help debug this.
 
 This project can then be built with:
 
 ```sh
 cargo build --target wasm32-wasi
 wasm-tools component new ./target/wasm32-wasi/debug/my-project.wasm \
-    -o my-component.wasm --adapt ./wasi_snapshot_preview1.wasm
+    -o my-component.wasm --adapt ./wasi_snapshot_preview1.reactor.wasm
 ```
 
 This creates a `my-component.wasm` file which is suitable to execute in any
@@ -370,7 +376,7 @@ This can then be compiled with `tinygo` and assembled into a component with:
 go generate # generate bindings for Go
 tinygo build -target=wasi -o main.wasm my-component.go # compile
 wasm-tools component embed --world host ./wit main.wasm -o main.embed.wasm # create a component
-wasm-tools component new main.embed.wasm --adapt wasi_snapshot_preview1.wasm -o main.component.wasm
+wasm-tools component new main.embed.wasm --adapt wasi_snapshot_preview1.command.wasm -o main.component.wasm
 wasm-tools validate main.component.wasm --features component-model
 ```
 
@@ -406,7 +412,7 @@ the following cargo command. This will let you generate the bindings for any
 supported language.
 
 ```
-cargo install --git https://github.com/bytecodealliance/wit-bindgen wit-bindgen-cli
+cargo install wit-bindgen-cli
 ```
 
 This CLI **IS NOT** stable and may change, do not expect it to be or rely on it
@@ -431,7 +437,7 @@ components:
   takes a [WIT] package as input and generates `trait`-based bindings for the
   runtime to implement and use.
 
-- JS: the [`js-component-tools`] project can be used to execute components in JS
+- JS: the [`jco`] project can be used to execute components in JS
   either on the web or outside the browser in a runtime such as `node`. This
   project generates a polyfill for a single concrete component to execute in a
   JS environment by extracting the core WebAssembly modules that make up a
@@ -451,7 +457,7 @@ components:
   inspect the WIT-based interface of a component with `wasm-tools component
 wit`. You can link two components together with `wasm-tools compose` as well.
 
-[`js-component-tools`]: https://github.com/bytecodealliance/js-component-tools
+[`jco`]: https://github.com/bytecodealliance/jco
 
 Note that the runtimes above are generally intended to work with arbitrary
 components, not necessarily only those created by `wit-bindgen`. This is also

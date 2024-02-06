@@ -16,6 +16,7 @@ mod flavorful;
 mod lists;
 mod many_arguments;
 mod numbers;
+mod options;
 mod other_dependencies;
 mod ownership;
 mod records;

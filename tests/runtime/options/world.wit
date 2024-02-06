@@ -1,0 +1,17 @@
+package test:options;
+
+interface test {
+  option-none-param: func(a: option<string>);
+  option-some-param: func(a: option<string>);
+  option-none-result: func() -> option<string>;
+  option-some-result: func() -> option<string>;
+
+  option-roundtrip: func(a: option<string>) -> option<string>;
+}
+
+world options {
+  import test;
+  export test;
+
+  export test-imports: func();
+}
