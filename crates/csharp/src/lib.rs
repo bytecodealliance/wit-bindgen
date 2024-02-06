@@ -948,11 +948,13 @@ impl InterfaceGenerator<'_> {
                             return (sbyte)span[offset];
                         }}
 
-                        internal int GetS32(int offset)
+                        unsafe internal int GetS32(int offset)
                         {{
-                            ReadOnlySpan<byte> span = MemoryMarshal.CreateSpan(ref buffer, {0});
+                            var p = new IntPtr(offset);
+                            var span = new Span<byte>(p.ToPointer(), 4);
 
-                            return BitConverter.ToInt32(span.Slice(offset, 4));
+                            Console.WriteLine(\"GetS32 \" + offset +  span.Length);
+                            return BitConverter.ToInt32(span.ToArray());
                         }}
 
                         
@@ -1826,7 +1828,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 Direction::Import => {
                     results.push(format!("ReturnArea.GetS32({} + {offset})", operands[0]))
                 }
-                Direction::Export => results.push(format!("returnArea.GetS32({offset})")),
+                Direction::Export => results.push(format!("returnArea.GetS32({}+{offset})", operands[0])),
             },
             Instruction::I32Load8U { offset } => match self.gen.direction {
                 Direction::Import => {
@@ -2353,7 +2355,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.src,
                     "
                     var {array} = new List<{ty}>({length});
-                    for (int {index} = 0; {index} < {array}.Count; ++{index}) {{
+                    for (int {index} = 0; {index} < {length}; ++{index}) {{
                         int {base} = {address} + ({index} * {size});
                         {body}
                         {array}.Add({result});
