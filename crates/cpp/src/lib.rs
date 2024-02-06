@@ -25,6 +25,9 @@ pub const OWNED_CLASS_NAME: &str = "Owned";
 
 type CppType = String;
 
+enum Position { Argument, Result, InStruct }
+type Flavor = (AbiVariant, Position);
+
 #[derive(Default)]
 struct HighlevelSignature {
     /// this is a constructor or destructor without a written type
@@ -53,6 +56,8 @@ struct Includes {
     needs_exported_resources: bool,
     needs_variant: bool,
     needs_tuple: bool,
+    // needs wit types
+    needs_wit: bool,
 }
 
 #[derive(Clone)]
@@ -741,6 +746,7 @@ impl CppInterfaceGenerator<'_> {
         from_namespace: &Vec<String>,
     ) -> HighlevelSignature {
         let mut res = HighlevelSignature::default();
+        let abi_variant = if import ^ self.gen.opts.host { AbiVariant::GuestImport} else {AbiVariant::GuestExport};
 
         let (namespace, func_name_h) = self.func_namespace_name(func, !(import ^ self.gen.opts.host));
         res.name = func_name_h;
@@ -758,7 +764,7 @@ impl CppInterfaceGenerator<'_> {
                     }
                 }
                 wit_bindgen_core::wit_parser::Results::Anon(ty) => {
-                    res.result = self.type_name(ty, from_namespace);
+                    res.result = self.type_name(ty, from_namespace, (abi_variant, Position::Result));
                 }
             }
         }
@@ -771,7 +777,7 @@ impl CppInterfaceGenerator<'_> {
                 continue;
             }
             res.arguments
-                .push((name.to_snake_case(), self.type_name(param, &res.namespace)));
+                .push((name.to_snake_case(), self.type_name(param, &res.namespace, (abi_variant, Position::Argument))));
         }
         // default to non-const when exporting a method
         if matches!(func.kind, FunctionKind::Method(_)) && import {
@@ -963,9 +969,9 @@ impl CppInterfaceGenerator<'_> {
     }
 
     // in C this is print_optional_ty
-    fn optional_type_name(&mut self, ty: Option<&Type>, from_namespace: &Vec<String>) -> String {
+    fn optional_type_name(&mut self, ty: Option<&Type>, from_namespace: &Vec<String>, flavor: Flavor) -> String {
         match ty {
-            Some(ty) => self.type_name(ty, from_namespace),
+            Some(ty) => self.type_name(ty, from_namespace, flavor),
             None => "void".into(),
         }
     }
@@ -983,7 +989,7 @@ impl CppInterfaceGenerator<'_> {
         )
     }
 
-    fn type_name(&mut self, ty: &Type, from_namespace: &Vec<String>) -> String {
+    fn type_name(&mut self, ty: &Type, from_namespace: &Vec<String>, flavor: Flavor) -> String {
         match ty {
             Type::Bool => "bool".into(),
             Type::Char => "uint32_t".into(),
@@ -998,18 +1004,23 @@ impl CppInterfaceGenerator<'_> {
             Type::Float32 => "float".into(),
             Type::Float64 => "double".into(),
             Type::String => {
-                self.gen.dependencies.needs_string = true;
-                "std::string".into()
+                if flavor == (AbiVariant::GuestImport, Position::Argument) {
+                    self.gen.dependencies.needs_string_view = true;
+                    "std::string_view".into()
+                } else {
+                    self.gen.dependencies.needs_wit = true;
+                    "wit::string".into()
+                }
             }
             Type::Id(id) => match &self.resolve.types[*id].kind {
                 TypeDefKind::Record(_r) => self.scoped_type_name(*id, from_namespace),
                 TypeDefKind::Resource => self.scoped_type_name(*id, from_namespace),
                 TypeDefKind::Handle(Handle::Own(id)) => {
-                    self.type_name(&Type::Id(*id), from_namespace)
+                    self.type_name(&Type::Id(*id), from_namespace, flavor)
                 }
                 TypeDefKind::Handle(Handle::Borrow(id)) => {
                     "std::reference_wrapper<".to_string()
-                        + &self.type_name(&Type::Id(*id), from_namespace)
+                        + &self.type_name(&Type::Id(*id), from_namespace, flavor)
                         + ">"
                 }
                 TypeDefKind::Flags(_f) => self.scoped_type_name(*id, from_namespace),
@@ -1018,7 +1029,7 @@ impl CppInterfaceGenerator<'_> {
                         if !a.is_empty() {
                             a += ", ";
                         }
-                        a + &self.type_name(b, from_namespace)
+                        a + &self.type_name(b, from_namespace, flavor)
                     });
                     self.gen.dependencies.needs_tuple = true;
                     String::from("std::tuple<") + &types + ">"
@@ -1027,23 +1038,23 @@ impl CppInterfaceGenerator<'_> {
                 TypeDefKind::Enum(_e) => self.scoped_type_name(*id, from_namespace),
                 TypeDefKind::Option(o) => {
                     self.gen.dependencies.needs_optional = true;
-                    "std::optional<".to_string() + &self.type_name(o, from_namespace) + ">"
+                    "std::optional<".to_string() + &self.type_name(o, from_namespace, flavor) + ">"
                 }
                 TypeDefKind::Result(r) => {
                     self.gen.dependencies.needs_expected = true;
                     "std::expected<".to_string()
-                        + &self.optional_type_name(r.ok.as_ref(), from_namespace)
+                        + &self.optional_type_name(r.ok.as_ref(), from_namespace, flavor)
                         + ", "
-                        + &self.optional_type_name(r.err.as_ref(), from_namespace)
+                        + &self.optional_type_name(r.err.as_ref(), from_namespace, flavor)
                         + ">"
                 }
                 TypeDefKind::List(ty) => {
                     self.gen.dependencies.needs_vector = true;
-                    "std::vector<".to_string() + &self.type_name(ty, from_namespace) + ">"
+                    "std::vector<".to_string() + &self.type_name(ty, from_namespace, flavor) + ">"
                 }
                 TypeDefKind::Future(_) => todo!(),
                 TypeDefKind::Stream(_) => todo!(),
-                TypeDefKind::Type(ty) => self.type_name(ty, from_namespace),
+                TypeDefKind::Type(ty) => self.type_name(ty, from_namespace, flavor),
                 TypeDefKind::Unknown => todo!(),
             },
         }
@@ -1132,7 +1143,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
         uwriteln!(self.gen.h_src.src, "struct {pascal} {{");
         for field in record.fields.iter() {
             Self::docs(&mut self.gen.h_src.src, &field.docs);
-            let typename = self.type_name(&field.ty, &namespc);
+            let typename = self.type_name(&field.ty, &namespc, (AbiVariant::GuestExport, Position::InStruct));
             let fname = field.name.to_lower_camel_case();
             uwriteln!(self.gen.h_src.src, "{typename} {fname};");
         }
