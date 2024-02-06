@@ -1954,8 +1954,8 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                             match typ {
                                 WasmType::I32 => uwrite!(self.src, "WASM_I32_VAL({}),", value),
                                 WasmType::I64 => uwrite!(self.src, "WASM_I64_VAL({}),", value),
-                                WasmType::F32 => todo!(),
-                                WasmType::F64 => todo!(),
+                                WasmType::F32 => uwrite!(self.src, "WASM_F32_VAL({}),", value),
+                                WasmType::F64 => uwrite!(self.src, "WASM_F64_VAL({}),", value),
                             }
                         }
                         self.src.push_str("};\n");

@@ -35,3 +35,5 @@ wasm_function_inst_t wasm_runtime_lookup_function(wasm_module_inst_t, const char
 #define WASM_INIT_VAL {.kind = WASM_I32, .of = {.i32 = 0}}
 #define WASM_I32_VAL(x) {.kind = WASM_I32, .of = {.i32 =(x)}}
 #define WASM_I64_VAL(x) {.kind = WASM_I64, .of = {.i64 =(x)}}
+#define WASM_F32_VAL(x) {.kind = WASM_F32, .of = {.f32 =(x)}}
+#define WASM_F64_VAL(x) {.kind = WASM_F64, .of = {.f64 =(x)}}
