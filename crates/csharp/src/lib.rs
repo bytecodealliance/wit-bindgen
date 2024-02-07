@@ -930,16 +930,6 @@ impl InterfaceGenerator<'_> {
                             return array;
                         }}
 
-                        unsafe internal void SetArray<T>(int offset, T[] value, int length)
-                        {{
-                            Span<byte> span = this;
-                            byte[] buffer = new byte[length];
-                            Buffer.BlockCopy(value, 0, buffer, 0, length);
-                            fixed (byte* ptr = &span[offset])
-                            {{
-                                Marshal.Copy(buffer, 0, (IntPtr)ptr, length);
-                            }}
-                        }}
 
                         internal sbyte GetS8(int offset)
                         {{
@@ -979,11 +969,13 @@ impl InterfaceGenerator<'_> {
                             BitConverter.TryWriteBytes(span.Slice(offset), value);
                         }}
 
-                        internal void SetS32(int offset, int value)
+                        unsafe internal void SetS32(int offset, int value)
                         {{
-                            Span<byte> span = MemoryMarshal.CreateSpan(ref buffer, {0});
 
-                            BitConverter.TryWriteBytes(span.Slice(offset), value);
+                            var p = new IntPtr(offset);
+                            var span = new Span<byte>(p.ToPointer(), 4);
+                            
+                            BitConverter.TryWriteBytes(span, value);
                         }}
 
                         internal void SetS64(int offset, long value)
@@ -1828,7 +1820,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 Direction::Import => {
                     results.push(format!("ReturnArea.GetS32({} + {offset})", operands[0]))
                 }
-                Direction::Export => results.push(format!("returnArea.GetS32({}+{offset})", operands[0])),
+                Direction::Export => {
+                    results.push(format!("returnArea.GetS32({}+{offset})", operands[0]))
+                }
             },
             Instruction::I32Load8U { offset } => match self.gen.direction {
                 Direction::Import => {
@@ -1881,7 +1875,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     )
                 }
                 Direction::Export => {
-                    uwriteln!(self.src, "returnArea.SetS32({offset}, {});", operands[0])
+                    uwriteln!(
+                        self.src,
+                        "returnArea.SetS32({offset} + {}, {});",
+                        operands[1],
+                        operands[0]
+                    )
                 }
             },
             Instruction::I32Store8 { offset } => uwriteln!(
@@ -2213,16 +2212,27 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         results.push(format!("({op}).Length"));
                     }
                     Direction::Export => {
-                        let result = self.locals.tmp("result");
+                        let address = self.locals.tmp("address");
+                        let buffer = self.locals.tmp("buffer");
                         uwrite!(
                             self.src,
                             "
-                        var {result} = {op};
-                        returnArea.SetArray<{ty}>(0, {result}, {result}.Length);
+                        byte[] {buffer} = new byte[{op}.Length];
+                        Buffer.BlockCopy({op}, 0, {buffer}, 0, {op}.Length);
+                        var {address} = NativeMemory.Alloc((nuint){op}.Length, {size});
+                        Marshal.Copy({buffer}, 0, (IntPtr){address}, {op}.Length);                        
                         "
                         );
-                        results.push(format!("ptr"));
-                        results.push(format!("{result}.Length"));
+                        //todo free
+                        //if realloc.is_none() {
+                        //    self.cleanup.push(Cleanup {
+                        //        address: address.clone(),
+                        //        size: format!("({op}).size() * {size}"),
+                        //        align,
+                        //    });
+                        //}
+                        results.push(format!("((IntPtr)({address})).ToInt32()"));
+                        results.push(format!("{op}.Length"));
                     }
                 }
             }
@@ -2314,6 +2324,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                     for (int {index} = 0; {index} < {list}.Count; ++{index}) {{
                         {ty} {block_element} = {list}[{index}];
+                        int {base} = {ptr} + ({index} * {size});
                         {body}
                     }}
                     "

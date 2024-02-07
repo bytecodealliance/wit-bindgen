@@ -269,27 +269,27 @@ namespace ListsWorld.wit.exports.test.lists
         }
         public static (byte[], sbyte[]) ListMinmax8(byte[] a, sbyte[] b)
         {
-            throw new NotImplementedException();
+            return (a, b);
         }
 
         public static (ushort[], short[]) ListMinmax16(ushort[] a, short[] b)
         {
-            throw new NotImplementedException();
+            return (a, b);
         }
 
         public static (uint[], int[]) ListMinmax32(uint[] a, int[] b)
         {
-            throw new NotImplementedException();
+            return (a, b);
         }
 
         public static (ulong[], long[]) ListMinmax64(ulong[] a, long[] b)
         {
-            throw new NotImplementedException();
+            return (a, b);
         }
 
         public static string StringRoundtrip(string a)
         {
-            throw new NotImplementedException();
+            return a;
         }
     }
 }
