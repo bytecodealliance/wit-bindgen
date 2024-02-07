@@ -25,8 +25,12 @@ pub const OWNED_CLASS_NAME: &str = "Owned";
 
 type CppType = String;
 
-enum Position { Argument, Result, InStruct }
-type Flavor = (AbiVariant, Position);
+#[derive(Clone, Copy, Debug)]
+enum Flavor {
+    Argument(AbiVariant),
+    Result(AbiVariant),
+    InStruct,
+}
 
 #[derive(Default)]
 struct HighlevelSignature {
@@ -521,7 +525,9 @@ impl WorldGenerator for Cpp {
 // determine namespace (for the lifted C++ function)
 fn namespace(resolve: &Resolve, owner: &TypeOwner, export: bool) -> Vec<String> {
     let mut result = Vec::default();
-    if export { result.push(String::from("exports")); }
+    if export {
+        result.push(String::from("exports"));
+    }
     match owner {
         TypeOwner::World(w) => result.push(resolve.worlds[*w].name.to_snake_case()),
         TypeOwner::Interface(i) => {
@@ -746,9 +752,14 @@ impl CppInterfaceGenerator<'_> {
         from_namespace: &Vec<String>,
     ) -> HighlevelSignature {
         let mut res = HighlevelSignature::default();
-        let abi_variant = if import ^ self.gen.opts.host { AbiVariant::GuestImport} else {AbiVariant::GuestExport};
+        let abi_variant = if import ^ self.gen.opts.host {
+            AbiVariant::GuestImport
+        } else {
+            AbiVariant::GuestExport
+        };
 
-        let (namespace, func_name_h) = self.func_namespace_name(func, !(import ^ self.gen.opts.host));
+        let (namespace, func_name_h) =
+            self.func_namespace_name(func, !(import ^ self.gen.opts.host));
         res.name = func_name_h;
         res.namespace = namespace;
         let is_drop = is_drop_method(func);
@@ -764,7 +775,7 @@ impl CppInterfaceGenerator<'_> {
                     }
                 }
                 wit_bindgen_core::wit_parser::Results::Anon(ty) => {
-                    res.result = self.type_name(ty, from_namespace, (abi_variant, Position::Result));
+                    res.result = self.type_name(ty, from_namespace, Flavor::Result(abi_variant));
                 }
             }
         }
@@ -776,8 +787,10 @@ impl CppInterfaceGenerator<'_> {
                 res.implicit_self = true;
                 continue;
             }
-            res.arguments
-                .push((name.to_snake_case(), self.type_name(param, &res.namespace, (abi_variant, Position::Argument))));
+            res.arguments.push((
+                name.to_snake_case(),
+                self.type_name(param, &res.namespace, Flavor::Argument(abi_variant)),
+            ));
         }
         // default to non-const when exporting a method
         if matches!(func.kind, FunctionKind::Method(_)) && import {
@@ -881,7 +894,11 @@ impl CppInterfaceGenerator<'_> {
                         _ => panic!("drop should be static"),
                     }];
                     self.gen.c_src.src.push_str("  ");
-                    let mut namespace = namespace(self.resolve, &owner.owner, matches!(variant, AbiVariant::GuestExport));
+                    let mut namespace = namespace(
+                        self.resolve,
+                        &owner.owner,
+                        matches!(variant, AbiVariant::GuestExport),
+                    );
                     namespace.push(owner.name.as_ref().unwrap().to_upper_camel_case());
                     self.gen.c_src.qualify(&namespace);
                     uwriteln!(self.gen.c_src.src, "remove_resource({});", params[0]);
@@ -899,7 +916,11 @@ impl CppInterfaceGenerator<'_> {
             }
         } else {
             let namespace = if matches!(func.kind, FunctionKind::Freestanding) {
-                namespace(self.resolve, &TypeOwner::Interface(interface), matches!(variant, AbiVariant::GuestExport))
+                namespace(
+                    self.resolve,
+                    &TypeOwner::Interface(interface),
+                    matches!(variant, AbiVariant::GuestExport),
+                )
             } else {
                 let owner = &self.resolve.types[match &func.kind {
                     FunctionKind::Static(id) => *id,
@@ -908,7 +929,11 @@ impl CppInterfaceGenerator<'_> {
                     FunctionKind::Freestanding => unreachable!(),
                 }]
                 .clone();
-                let mut namespace = namespace(self.resolve, &owner.owner, matches!(variant, AbiVariant::GuestExport));
+                let mut namespace = namespace(
+                    self.resolve,
+                    &owner.owner,
+                    matches!(variant, AbiVariant::GuestExport),
+                );
                 namespace.push(owner.name.as_ref().unwrap().to_upper_camel_case());
                 namespace
             };
@@ -969,7 +994,12 @@ impl CppInterfaceGenerator<'_> {
     }
 
     // in C this is print_optional_ty
-    fn optional_type_name(&mut self, ty: Option<&Type>, from_namespace: &Vec<String>, flavor: Flavor) -> String {
+    fn optional_type_name(
+        &mut self,
+        ty: Option<&Type>,
+        from_namespace: &Vec<String>,
+        flavor: Flavor,
+    ) -> String {
         match ty {
             Some(ty) => self.type_name(ty, from_namespace, flavor),
             None => "void".into(),
@@ -1004,7 +1034,7 @@ impl CppInterfaceGenerator<'_> {
             Type::Float32 => "float".into(),
             Type::Float64 => "double".into(),
             Type::String => {
-                if flavor == (AbiVariant::GuestImport, Position::Argument) {
+                if matches!(flavor, Flavor::Argument(AbiVariant::GuestImport)) {
                     self.gen.dependencies.needs_string_view = true;
                     "std::string_view".into()
                 } else {
@@ -1143,7 +1173,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
         uwriteln!(self.gen.h_src.src, "struct {pascal} {{");
         for field in record.fields.iter() {
             Self::docs(&mut self.gen.h_src.src, &field.docs);
-            let typename = self.type_name(&field.ty, &namespc, (AbiVariant::GuestExport, Position::InStruct));
+            let typename = self.type_name(&field.ty, &namespc, Flavor::InStruct);
             let fname = field.name.to_lower_camel_case();
             uwriteln!(self.gen.h_src.src, "{typename} {fname};");
         }
@@ -1308,7 +1338,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
             all_types += &case_pascal;
             uwrite!(self.gen.h_src.src, "struct {case_pascal} {{");
             if let Some(ty) = case.ty.as_ref() {
-                let typestr = self.type_name(ty, &namespc);
+                let typestr = self.type_name(ty, &namespc, Flavor::InStruct);
                 uwrite!(self.gen.h_src.src, " {typestr} value; ")
             }
             uwriteln!(self.gen.h_src.src, "}};");
@@ -1375,7 +1405,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
         self.gen.h_src.change_namespace(&namespc);
         let pascal = name.to_pascal_case();
         Self::docs(&mut self.gen.h_src.src, docs);
-        let typename = self.type_name(alias_type, &namespc);
+        let typename = self.type_name(alias_type, &namespc, Flavor::InStruct);
         uwriteln!(self.gen.h_src.src, "using {pascal} = {typename};");
     }
 
@@ -1665,7 +1695,9 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let tmp = self.tmp();
                 let size = self.gen.sizes.size(element);
                 let _align = self.gen.sizes.align(element);
-                let vtype = self.gen.type_name(element, &self.namespace);
+                let vtype = self
+                    .gen
+                    .type_name(element, &self.namespace, Flavor::InStruct);
                 let len = format!("len{tmp}");
                 let base = format!("base{tmp}");
                 let result = format!("result{tmp}");
@@ -1749,7 +1781,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     &(tuple
                         .types
                         .iter()
-                        .map(|t| self.gen.type_name(t, &self.namespace)))
+                        .map(|t| self.gen.type_name(t, &self.namespace, Flavor::InStruct)))
                     .collect::<Vec<_>>()
                     .join(", "),
                 );
@@ -1807,7 +1839,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 {
                     uwriteln!(self.src, "case {}: {{", i);
                     if let Some(ty) = case.ty.as_ref() {
-                        let ty = self.gen.type_name(ty, &self.namespace);
+                        let ty = self.gen.type_name(ty, &self.namespace, Flavor::InStruct);
                         uwrite!(
                             self.src,
                             "const {} *{} = &({}).val",
@@ -1888,13 +1920,19 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             }
             abi::Instruction::EnumLower { .. } => results.push(format!("int32_t({})", operands[0])),
             abi::Instruction::EnumLift { ty, .. } => {
-                let typename = self.gen.type_name(&Type::Id(*ty), &self.namespace);
+                let typename =
+                    self.gen
+                        .type_name(&Type::Id(*ty), &self.namespace, Flavor::InStruct);
                 results.push(format!("({typename}){}", &operands[0]));
             }
             abi::Instruction::OptionLower { .. } => self.push_str("OptionLower"),
             abi::Instruction::OptionLift { payload, .. } => {
                 let mut result: String = "std::optional<".into();
-                result.push_str(&self.gen.type_name(*payload, &self.namespace));
+                result.push_str(
+                    &self
+                        .gen
+                        .type_name(*payload, &self.namespace, Flavor::InStruct),
+                );
                 result.push_str(">(");
                 result.push_str(&operands[0]);
                 result.push(')');
@@ -1927,12 +1965,16 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 } else {
                     err = format!("std::move({err})");
                 }
-                let ok_type = self
-                    .gen
-                    .optional_type_name(result.ok.as_ref(), &self.namespace);
-                let err_type = self
-                    .gen
-                    .optional_type_name(result.err.as_ref(), &self.namespace);
+                let ok_type = self.gen.optional_type_name(
+                    result.ok.as_ref(),
+                    &self.namespace,
+                    Flavor::InStruct,
+                );
+                let err_type = self.gen.optional_type_name(
+                    result.err.as_ref(),
+                    &self.namespace,
+                    Flavor::InStruct,
+                );
                 let type_name = format!("std::expected<{ok_type}, {err_type}>",);
                 let err_type = "std::unexpected";
                 let operand = &operands[0];
@@ -2006,7 +2048,8 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             abi::Instruction::CallInterface { func } => {
                 // dbg!(func);
                 self.let_results(func.results.len(), results);
-                let (mut namespace, func_name_h) = self.gen.func_namespace_name(func, !self.gen.gen.opts.host);
+                let (mut namespace, func_name_h) =
+                    self.gen.func_namespace_name(func, !self.gen.gen.opts.host);
                 if matches!(func.kind, FunctionKind::Method(_)) {
                     let this = operands.remove(0);
                     //self.gen.gen.c_src.qualify(&namespace);
