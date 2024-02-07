@@ -422,11 +422,13 @@ impl WorldGenerator for CSharp {
                             BitConverter.TryWriteBytes(span.Slice(offset), value);
                         }}
 
-                        internal void SetS32(int offset, int value)
+                        unsafe internal void SetS32(int offset, int value)
                         {{
-                            Span<byte> span = MemoryMarshal.CreateSpan(ref buffer, {0});
 
-                            BitConverter.TryWriteBytes(span.Slice(offset), value);
+                            var p = new IntPtr(offset);
+                            var span = new Span<byte>(p.ToPointer(), 4);
+                            
+                            BitConverter.TryWriteBytes(span, value);
                         }}
 
                         internal void SetS64(int offset, long value)
