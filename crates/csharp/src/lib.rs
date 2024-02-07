@@ -855,12 +855,14 @@ impl InterfaceGenerator<'_> {
 
                     internal static void SetArray<T>(IntPtr ptr, T[] value, int length)
                     {{
-                        var span = new Span<byte>((void*)ptr, sizeof(T)*length);
-
-                        fixed (T* dstPtr = &value[0])
+                        if (length == 0)
                         {{
-                            Marshal.Copy(span.ToArray(), 0, (IntPtr)dstPtr, length);
+                            return;
                         }}
+
+                        var span = new Span<byte>(&value, sizeof(T) * length);
+                
+                        Marshal.Copy(span.ToArray(), 0, ptr, length);
                     }}
 
                     unsafe internal static T[] GetArray<T>(IntPtr ptr, int length)
@@ -868,6 +870,11 @@ impl InterfaceGenerator<'_> {
                         var span = new Span<byte>((void*)ptr, sizeof(T)*length);
         
                         var array = new T[length];
+
+                        if (array.Length == 0)
+                        {{
+                            return array;
+                        }}
         
                         fixed (T* dstPtr = &array[0])
                         {{
@@ -2186,30 +2193,29 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 match self.gen.direction {
                     Direction::Import => {
                         if self.is_list_canonical(_resolve, element) {
-                            let ptr = self.locals.tmp("ptr");
                             let buffer: String = self.locals.tmp("buffer");
                             uwrite!(
                                 self.src,
                                 "
-                        void* {buffer} = stackalloc int[{size} + {size} - 1];
-                        var {ptr} = ((int){buffer}) + ({size} - 1) & -{size};
-                        "
+                            void* {buffer} = stackalloc {ty}[({op}).Length];
+                            "
                             );
                             uwrite!(
                                 self.src,
                                 "
-                            ReturnArea.SetArray<{ty}>({ptr} + 0, {op}, ({op}).Length);
+                            ReturnArea.SetArray<{ty}>((int){buffer}, {op}, ({op}).Length);
+                            "
+                            );
+                            results.push(format!("(int){buffer}"));
+                        } else {
+                            let ptr = self.locals.tmp("ptr");
+                            uwrite!(
+                                self.src,
+                                "
+                            ReturnArea.SetArray<{ty}>({ptr}, {op}, ({op}).Length);
                             "
                             );
                             results.push(format!("{ptr}"));
-                        } else {
-                            uwrite!(
-                                self.src,
-                                "
-                            ReturnArea.SetArray<{ty}>(ptr + 0, {op}, ({op}).Length);
-                            "
-                            );
-                            results.push(format!("ptr"));
                         }
                         results.push(format!("({op}).Length"));
                     }

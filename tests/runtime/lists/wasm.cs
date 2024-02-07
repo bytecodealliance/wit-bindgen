@@ -14,30 +14,27 @@ namespace ListsWorld {
 
         public static void TestImports()
         {
-            //Test.EmptyListParam(new byte[0]);
-            //
-            //Test.EmptyStringParam("");
-            //
-            //{
-            //    byte[] result = Test.EmptyListResult();
-            //    Debug.Assert(result.length == 0);
-            //}
-            //
-            //{
-            //    string result = Test.EmptyStringResult();
-            //    Debug.Assert(result.length() == 0);
-            //}
-            //
-            //Test.ListParam(new byte[] { (byte)1, (byte)2, (byte)3, (byte)4 });
-            //
-            //Test.ListParam2("foo");
-            //
-            //        Test.listParam3(new List<String>() {{
-            //            add("foo");
-            //        add("bar");
-            //        add("baz");
-            //    }
-            //});
+
+            TestInterop.EmptyListParam(new byte[0]);
+            TestInterop.EmptyStringParam("");
+            
+            {
+                byte[] result = TestInterop.EmptyListResult();
+                Debug.Assert(result.Length == 0);
+            }
+
+            {
+                string result = TestInterop.EmptyStringResult();
+                Debug.Assert(result.Length == 0);
+            }
+
+            TestInterop.ListParam(new byte[] { (byte)1, (byte)2, (byte)3, (byte)4 });
+            TestInterop.ListParam2("foo");
+            TestInterop.ListParam3(new List<String>() {
+                "foo",
+                "bar",
+                "baz"
+            });
 
             //        Test.listParam4(new List<List<String>>() {{
             //            add(new List<String>() {{
@@ -147,13 +144,6 @@ namespace ListsWorld {
             //}
         }
 
-        public static void Expect(bool v)
-        {
-            if (!v)
-            {
-                //throw new AssertionError();
-            }
-        }
     }
 }
 
