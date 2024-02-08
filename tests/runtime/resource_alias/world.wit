@@ -11,11 +11,11 @@ interface e1 {
 }
 
 interface e2 {
-  use e1.{x, foo as bar};
+  use e1.{x as y, foo as bar};
 
-  record foo { x: x }
+  record foo { x: y }
 
-  a: func(f: foo, g: bar) -> list<x>;
+  a: func(f: foo, g: bar, h: borrow<y>) -> list<y>;
 }
 
 world resource-alias {
