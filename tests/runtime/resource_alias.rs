@@ -50,9 +50,13 @@ fn run_test(instance: ResourceAlias, store: &mut Store<crate::Wasi<()>>) -> anyh
             .x()
             .call_constructor(&mut *store, 8)?,
     };
+    let y = instance
+        .test_resource_alias_e1()
+        .x()
+        .call_constructor(&mut *store, 8)?;
     let _ = instance
         .test_resource_alias_e2()
-        .call_a(&mut *store, foo_e2, bar_e2)?;
+        .call_a(&mut *store, foo_e2, bar_e2, y)?;
 
     // TODO: how do I test deep equal of ResourceAny type?
     // assert_eq!(
