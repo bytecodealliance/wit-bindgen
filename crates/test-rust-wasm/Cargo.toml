@@ -45,6 +45,10 @@ name = "results"
 test = false
 
 [[bin]]
+name = "options"
+test = false
+
+[[bin]]
 name = "owning"
 test = false
 
