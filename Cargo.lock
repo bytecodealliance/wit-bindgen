@@ -2446,7 +2446,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-rust-macro"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "anyhow",
  "proc-macro2",
