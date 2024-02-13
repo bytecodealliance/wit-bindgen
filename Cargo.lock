@@ -2386,7 +2386,6 @@ name = "wit-bindgen-core"
 version = "0.17.1"
 dependencies = [
  "anyhow",
- "wit-component",
  "wit-parser 0.14.0",
 ]
 
@@ -2455,7 +2454,6 @@ dependencies = [
  "syn",
  "wit-bindgen-core",
  "wit-bindgen-rust",
- "wit-component",
 ]
 
 [[package]]

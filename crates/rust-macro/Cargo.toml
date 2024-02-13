@@ -21,5 +21,4 @@ syn = { version = "2.0", features = ["printing"] }
 quote = "1"
 wit-bindgen-core = { workspace = true }
 wit-bindgen-rust = { workspace = true }
-wit-component = { workspace = true }
 anyhow = { workspace = true }
