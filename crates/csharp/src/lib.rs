@@ -1696,10 +1696,15 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     WasmType::I64 => "0L",
                     WasmType::F32 => "0.0F",
                     WasmType::F64 => "0.0D",
+                    WasmType::Pointer => "0",
+                    WasmType::PointerOrI64 => "0L",
+                    WasmType::Length => "0",
                 }
                 .to_owned()
             })),
-            Instruction::I32Load { offset } => match self.gen.direction {
+            Instruction::I32Load { offset }
+            | Instruction::PointerLoad { offset }
+            | Instruction::LengthLoad { offset } => match self.gen.direction {
                 Direction::Import => results.push(format!("ReturnArea.GetS32(ptr + {offset})")),
                 Direction::Export => results.push(format!("returnArea.GetS32({offset})")),
             },
@@ -1723,7 +1728,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
             Instruction::F64Load { offset } => results.push(format!("ReturnArea.GetF64({offset})")),
 
-            Instruction::I32Store { offset } => {
+            Instruction::I32Store { offset }
+            | Instruction::PointerStore { offset }
+            | Instruction::LengthStore { offset } => {
                 uwriteln!(self.src, "returnArea.SetS32({}, {});", offset, operands[0])
             }
             Instruction::I32Store8 { offset } => {
@@ -2223,6 +2230,9 @@ fn wasm_type(ty: WasmType) -> &'static str {
         WasmType::I64 => "long",
         WasmType::F32 => "float",
         WasmType::F64 => "double",
+        WasmType::Pointer => "int",
+        WasmType::PointerOrI64 => "long",
+        WasmType::Length => "int",
     }
 }
 

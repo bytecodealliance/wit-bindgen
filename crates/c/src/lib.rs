@@ -2205,11 +2205,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                                 op
                             ));
                         }
-                        Bitcast::I32ToI64 => {
+                        Bitcast::I32ToI64 | Bitcast::PToP64 => {
                             results.push(format!("(int64_t) {}", op));
                         }
-                        Bitcast::I64ToI32 => {
+                        Bitcast::I64ToI32 | Bitcast::P64ToP => {
                             results.push(format!("(int32_t) {}", op));
+                        }
+                        Bitcast::I64ToP64 | Bitcast::P64ToI64 => {
+                            results.push(format!("{}", op));
                         }
                         Bitcast::None => results.push(op.to_string()),
                     }
@@ -2869,11 +2872,17 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
             }
 
-            Instruction::I32Load { offset } => self.load("int32_t", *offset, operands, results),
+            Instruction::I32Load { offset }
+            | Instruction::PointerLoad { offset }
+            | Instruction::LengthLoad { offset } => {
+                self.load("int32_t", *offset, operands, results)
+            }
             Instruction::I64Load { offset } => self.load("int64_t", *offset, operands, results),
             Instruction::F32Load { offset } => self.load("float", *offset, operands, results),
             Instruction::F64Load { offset } => self.load("double", *offset, operands, results),
-            Instruction::I32Store { offset } => self.store("int32_t", *offset, operands),
+            Instruction::I32Store { offset }
+            | Instruction::PointerStore { offset }
+            | Instruction::LengthStore { offset } => self.store("int32_t", *offset, operands),
             Instruction::I64Store { offset } => self.store("int64_t", *offset, operands),
             Instruction::F32Store { offset } => self.store("float", *offset, operands),
             Instruction::F64Store { offset } => self.store("double", *offset, operands),
@@ -3015,6 +3024,9 @@ fn wasm_type(ty: WasmType) -> &'static str {
         WasmType::I64 => "int64_t",
         WasmType::F32 => "float",
         WasmType::F64 => "double",
+        WasmType::Pointer => "uintptr_t",
+        WasmType::PointerOrI64 => "int64_t",
+        WasmType::Length => "size_t",
     }
 }
 

@@ -1294,6 +1294,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     WasmType::I64 => "0L",
                     WasmType::F32 => "0.0F",
                     WasmType::F64 => "0.0D",
+                    WasmType::Pointer => "0",
+                    WasmType::PointerOrI64 => "0L",
+                    WasmType::Length => "0",
                 }
                 .to_owned()
             })),
@@ -1336,6 +1339,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     Bitcast::F64ToI64 => format!("Double.doubleToLongBits({op})"),
                     Bitcast::I32ToI64 => format!("(long) ({op})"),
                     Bitcast::I64ToI32 => format!("(int) ({op})"),
+                    Bitcast::I64ToP64 => format!("{op}"),
+                    Bitcast::P64ToI64 => format!("{op}"),
+                    Bitcast::PToP64 => format!("(long) ({op})"),
+                    Bitcast::P64ToP => format!("(int) ({op})"),
                     Bitcast::None => op.to_owned(),
                 }))
             }
@@ -1863,7 +1870,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
             }
 
-            Instruction::I32Load { offset } => results.push(format!(
+            Instruction::I32Load { offset }
+            | Instruction::PointerLoad { offset }
+            | Instruction::LengthLoad { offset } => results.push(format!(
                 "Address.fromInt(({}) + {offset}).getInt()",
                 operands[0]
             )),
@@ -1903,7 +1912,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 operands[0]
             )),
 
-            Instruction::I32Store { offset } => uwriteln!(
+            Instruction::I32Store { offset }
+            | Instruction::PointerStore { offset }
+            | Instruction::LengthStore { offset } => uwriteln!(
                 self.src,
                 "Address.fromInt(({}) + {offset}).putInt({});",
                 operands[1],
@@ -2103,6 +2114,9 @@ fn wasm_type(ty: WasmType) -> &'static str {
         WasmType::I64 => "long",
         WasmType::F32 => "float",
         WasmType::F64 => "double",
+        WasmType::Pointer => "int",
+        WasmType::PointerOrI64 => "long",
+        WasmType::Length => "int",
     }
 }
 
