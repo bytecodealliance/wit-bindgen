@@ -123,20 +123,14 @@ fn parse_source(source: &Option<Source>) -> anyhow::Result<(Resolve, PackageId, 
     let mut files = Vec::new();
     let root = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
     let mut parse = |path: &Path| -> anyhow::Result<_> {
-        if path.is_dir() {
-            let (pkg, sources) = resolve.push_dir(path)?;
-            files = sources;
-            Ok(pkg)
-        } else {
-            let pkg = UnresolvedPackage::parse_file(path)?;
-            files.extend(pkg.source_files().map(|s| s.to_owned()));
-            resolve.push(pkg)
-        }
+        let (pkg, sources) = resolve.push_path(path)?;
+        files.extend(sources);
+        Ok(pkg)
     };
     let pkg = match source {
         Some(Source::Inline(s, path)) => {
             if let Some(p) = path {
-                resolve.push_dir(p).unwrap();
+                parse(&root.join(p))?;
             }
             resolve.push(UnresolvedPackage::parse("macro-input".as_ref(), s)?)?
         }

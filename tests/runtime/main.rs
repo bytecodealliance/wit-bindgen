@@ -761,7 +761,7 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
 
 fn resolve_wit_dir(dir: &PathBuf) -> (Resolve, WorldId) {
     let mut resolve = Resolve::new();
-    let (pkg, _files) = resolve.push_dir(dir).unwrap();
+    let (pkg, _files) = resolve.push_path(dir).unwrap();
     let world = resolve.select_world(pkg, None).unwrap();
     (resolve, world)
 }
