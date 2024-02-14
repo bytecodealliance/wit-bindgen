@@ -37,6 +37,6 @@
 | HIA | v | string | | string_view | a,l |
 | HIR | t | string | | wit::string | &(a,l) |
 | HEA | t | string | | wit::string&& | a,l | 
-| HER | p | string | | string_view + special cleanup | -> &(a,l) |
+| HER | p | string | | string_view ? + special cleanup | -> &(a,l) |
 
 Note: The host never frees memory (is never passed ownership)!

@@ -1079,6 +1079,10 @@ impl CppInterfaceGenerator<'_> {
                     self.gen.dependencies.needs_wit = true;
                     "wit::string &&".into()
                 }
+                Flavor::Result(AbiVariant::GuestExport) if self.gen.opts.host => {
+                    self.gen.dependencies.needs_string_view = true;
+                    "std::string_view".into()
+                }
                 _ => {
                     self.gen.dependencies.needs_wit = true;
                     "wit::string".into()

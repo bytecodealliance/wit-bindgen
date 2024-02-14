@@ -1,8 +1,10 @@
+#pragma once
 // minimal WAMR header mock-up for compilation tests
 #include <stdint.h>
 struct WASMExecEnv;
 typedef WASMExecEnv* wasm_exec_env_t;
-typedef void* wasm_module_inst_t;
+struct WASMModuleInstanceCommon;
+typedef WASMModuleInstanceCommon* wasm_module_inst_t;
 typedef void* wasm_function_inst_t;
 typedef uint8_t wasm_valkind_t;
 enum wasm_valkind_enum {

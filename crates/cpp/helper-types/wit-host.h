@@ -20,43 +20,75 @@ namespace wit {
     typedef uint32_t guest_address;
     typedef uint32_t guest_size;
 #endif
+}
 
 #ifdef WIT_HOST_WAMR
-    typedef void* guest_instance;
-#elif defined(WIT_HOST_DIRECT)
-    typedef int guest_instance;
+# include <wasm_export.h>
 #endif
-    typedef void (*guest_cabi_post_t)(guest_instance, guest_address);
-    typedef void* (*from_guest_address_t)(guest_instance, guest_address);
+
+namespace wit {
+    typedef void (*guest_cabi_post_t)(WASMExecEnv*, guest_address);
+    typedef guest_address (*guest_alloc_t)(WASMExecEnv*, guest_size size, guest_size align);
     
     // host code never de-allocates directly
     class string {
         guest_address data_;
         guest_size length;
         public:
-        // string(string const&) = default;
-        // string(string&&b) = default;
-        // string& operator=(string const&) = default;
-        // string& operator=(string &&b) = default;
-        // ~string() {}
-        std::string_view get_view(from_guest_address_t conv, guest_instance inst) const {
-            return std::string_view((char const*)(*conv)(inst, data_), length);
+#ifdef WIT_HOST_WAMR
+        std::string_view get_view(WASMExecEnv* inst) const {
+            return std::string_view((char const*)wasm_runtime_addr_app_to_native(wasm_runtime_get_module_inst(inst), data_), length);
         }
+#elif defined(WIT_HOST_DIRECT)
+        std::string_view get_view() const {
+            return std::string_view((char const*)data_, length);
+        }
+#endif
         string(guest_address a, guest_size s) : data_(a), length(s) {}
+        // add a convenient way to create a string
     };
 
     template <class T>
-    class guest_owned {
+    class guest_owned : public T {
         guest_address data_;
-        guest_cabi_post_t free_func;
-        from_guest_address_t conv_func;
-        guest_instance instance;
+#ifdef WIT_HOST_WAMR
+        wasm_function_inst_t free_func;
+        WASMExecEnv* exec_env;
+#elif defined(WIT_HOST_DIRECT)
+        void (*free_func)(guest_address);
+#endif
         public:
-        T const* operator->() const {
-            return (T const*)(*conv_func)(instance, data_);
+        guest_owned(guest_owned const&) = delete;
+        guest_owned& operator=(guest_owned const&) = delete;
+        ~guest_owned() {
+            if (data_) {
+#ifdef WIT_HOST_WAMR
+                wasm_val_t *wasm_results = nullptr;
+                wasm_val_t wasm_args[1] = {WASM_I32_VAL(data_),};
+                wasm_runtime_call_wasm_a(exec_env, free_func, 0, wasm_results, 1, wasm_args);
+#elif defined(WIT_HOST_DIRECT)
+                (*free_func)(data_);
+#endif
+            }
         }
-        T* operator->() {
-            return (T*)(*conv_func)(instance, data_);
+        guest_owned(guest_owned&&b) : T(b), data_(b.data_), free_func(b.free_func)
+#ifdef WIT_HOST_WAMR
+            , exec_env(b.exec_env)
+#endif
+        {
+            b.data_ = nullptr;
         }
+        guest_owned(T&& t, guest_address a, 
+#ifdef WIT_HOST_WAMR
+            wasm_function_inst_t f,
+            WASMExecEnv* e
+#elif defined(WIT_HOST_DIRECT)
+            , void (*f)(guest_address)
+#endif
+            ) : T(std::move(t)), data_(a), free_func(f)
+#ifdef WIT_HOST_WAMR
+                , exec_env(e)
+#endif
+        {}
     };
 }
