@@ -860,9 +860,8 @@ impl InterfaceGenerator<'_> {
                             return;
                         }}
 
-                        var span = new Span<byte>(&value, sizeof(T) * length);
-                
-                        Marshal.Copy(span.ToArray(), 0, ptr, length);
+                        Span<T> span = value;
+                        span.CopyTo(new Span<T>((void*)ptr, length));
                     }}
 
                     unsafe internal static T[] GetArray<T>(IntPtr ptr, int length)
