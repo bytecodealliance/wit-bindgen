@@ -865,23 +865,20 @@ impl InterfaceGenerator<'_> {
                         span.CopyTo(new Span<T>((void*)ptr, length));
                     }}
 
-                    unsafe internal static T[] GetArray<T>(IntPtr ptr, int length)
+                    unsafe static internal T[] GetArray<T>(int offset, int length)
                     {{
-                        var span = new Span<byte>((void*)ptr, sizeof(T)*length);
-        
+                        var p = new IntPtr(offset);
+                        var span = new Span<T>(p.ToPointer(), length);
+                        
                         var array = new T[length];
-
+                        
                         if (array.Length == 0)
                         {{
                             return array;
                         }}
         
-                        fixed (T* dstPtr = &array[0])
-                        {{
-                            //TODO: Optimize this. The ToArray call is not needed and does an additional heap allocation.
-                            Marshal.Copy(span.ToArray(), 0, (IntPtr)dstPtr, length);
-                        }}
-        
+                        span.CopyTo(new Span<T>(array));
+                        
                         return array;
                     }}
 
@@ -2296,11 +2293,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::StringLift { .. } => match self.gen.direction {
-                Direction::Import =>{
+                Direction::Import => {
                     let address = &operands[0];
                     let length = &operands[1];
                     results.push(format!("ReturnArea.GetUTF8String({address}, {length})"))
-                },
+                }
                 Direction::Export => {
                     let address = &operands[0];
                     let length = &operands[1];
@@ -2520,7 +2517,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     "
                 );
 
-                return format!("(int){ptr}")
+                return format!("(int){ptr}");
             }
             Direction::Export => {
                 self.gen.gen.return_area_size = self.gen.gen.return_area_size.max(size);
@@ -2533,7 +2530,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     "
                 );
 
-                return format!("{ptr}")
+                return format!("{ptr}");
             }
         }
     }

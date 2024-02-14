@@ -2,6 +2,7 @@ using System;
 using System.Runtime.InteropServices;
 using System.Diagnostics;
 using ListsWorld.wit.imports.test.lists;
+using System.Text;
 
 namespace ListsWorld {
 
@@ -70,83 +71,94 @@ namespace ListsWorld {
                Debug.Assert(result[0] == "hello,");
                Debug.Assert(result[1] == "world!");
             }
-            
-            //
-            //for (string s : new String[] { "x", "", "hello", "hello ⚑ world" })
-            //{
-            //    string result = Test.stringRoundtrip(s);
-            //    Debug.Assert(result.equals(s));
-            //
-            //    byte[] bytes = s.getBytes(StandardCharsets.UTF_8);
-            //    Debug.Assert(Arrays.equals(bytes, Test.listRoundtrip(bytes)));
-            //}
-            //
-            //{
-            //    Tuple2<byte[], byte[]> result = Test.listMinmax8
-            //        (new byte[] { (byte)0, (byte)0xFF }, new byte[] { (byte)0x80, (byte)0x7F });
-            //
-            //    Debug.Assert(result.f0.length == 2 && result.f0[0] == (byte)0 && result.f0[1] == (byte)0xFF);
-            //    Debug.Assert(result.f1.length == 2 && result.f1[0] == (byte)0x80 && result.f1[1] == (byte)0x7F);
-            //}
-            //
-            //{
-            //    Tuple2<short[], short[]> result = Test.listMinmax16
-            //        (new short[] { (short)0, (short)0xFFFF }, new short[] { (short)0x8000, (short)0x7FFF });
-            //
-            //    Debug.Assert(result.f0.length == 2 && result.f0[0] == (short)0 && result.f0[1] == (short)0xFFFF);
-            //    Debug.Assert(result.f1.length == 2 && result.f1[0] == (short)0x8000 && result.f1[1] == (short)0x7FFF);
-            //}
-            //
-            //{
-            //    Tuple2<int[], int[]> result = Test.listMinmax32
-            //        (new int[] { 0, 0xFFFFFFFF }, new int[] { 0x80000000, 0x7FFFFFFF });
-            //
-            //    Debug.Assert(result.f0.length == 2 && result.f0[0] == 0 && result.f0[1] == 0xFFFFFFFF);
-            //    Debug.Assert(result.f1.length == 2 && result.f1[0] == 0x80000000 && result.f1[1] == 0x7FFFFFFF);
-            //}
-            //
-            //{
-            //    Tuple2<long[], long[]> result = Test.listMinmax64
-            //        (new long[] { 0, 0xFFFFFFFFFFFFFFFFL }, new long[] { 0x8000000000000000L, 0x7FFFFFFFFFFFFFFFL });
-            //
-            //    Debug.Assert(result.f0.length == 2
-            //           && result.f0[0] == 0
-            //           && result.f0[1] == 0xFFFFFFFFFFFFFFFFL);
-            //
-            //    Debug.Assert(result.f1.length == 2
-            //           && result.f1[0] == 0x8000000000000000L
-            //           && result.f1[1] == 0x7FFFFFFFFFFFFFFFL);
-            //}
-            //
-            //{
-            //    Tuple2<float[], double[]> result = Test.listMinmaxFloat
-            //        (new float[] {
-            //            -Float.MAX_VALUE,
-            //            Float.MAX_VALUE,
-            //            Float.NEGATIVE_INFINITY,
-            //            Float.POSITIVE_INFINITY
-            //        },
-            //            new double[] {
-            //                -Double.MAX_VALUE,
-            //                Double.MAX_VALUE,
-            //                Double.NEGATIVE_INFINITY,
-            //                Double.POSITIVE_INFINITY
-            //            });
-            //
-            //    Debug.Assert(result.f0.length == 4
-            //           && result.f0[0] == -Float.MAX_VALUE
-            //           && result.f0[1] == Float.MAX_VALUE
-            //           && result.f0[2] == Float.NEGATIVE_INFINITY
-            //           && result.f0[3] == Float.POSITIVE_INFINITY);
-            //
-            //    Debug.Assert(result.f1.length == 4
-            //           && result.f1[0] == -Double.MAX_VALUE
-            //           && result.f1[1] == Double.MAX_VALUE
-            //           && result.f1[2] == Double.NEGATIVE_INFINITY
-            //           && result.f1[3] == Double.POSITIVE_INFINITY);
-            //}
-        }
 
+            string[] strings = { "x", "", "hello", "hello ⚑ world" };
+            foreach (string s in strings)
+            {
+                string result = TestInterop.StringRoundtrip(s);
+                Debug.Assert(result == s);
+
+                byte[] bytes = Encoding.UTF8.GetBytes(s);
+                Debug.Assert(bytes.SequenceEqual(TestInterop.ListRoundtrip(bytes)));
+            }
+
+            {
+                var (u, s) = TestInterop.ListMinmax8(
+                    new byte[] { byte.MinValue,byte.MaxValue },
+                    new sbyte[] { sbyte.MinValue, sbyte.MaxValue }
+                );
+
+                Debug.Assert(u.Length == 2 && u[0] == byte.MinValue && u[1] == byte.MaxValue);
+                Debug.Assert(s.Length == 2 && s[0] == sbyte.MinValue && s[1] == sbyte.MaxValue);
+            }
+
+            {
+                var (u, s) = TestInterop.ListMinmax16(
+                    new ushort[] { ushort.MinValue, ushort.MaxValue },
+                    new short[] { short.MinValue, short.MaxValue }
+                );
+
+                Console.WriteLine(u[0]);
+                Console.WriteLine(u[1]);
+                Debug.Assert(u.Length == 2, $"u.Length {u.Length}");
+                Debug.Assert(u[0] == ushort.MinValue, $"u[0] == {u[0]}");
+                Debug.Assert(u[1] == ushort.MaxValue, $"u[1] == {u[1]}");
+               
+                Debug.Assert(s.Length == 2);
+                Console.WriteLine(s[0]);
+                Console.WriteLine(s[1]);
+                Debug.Assert(s.Length == 2 && s[0] == short.MinValue && s[1] == short.MaxValue);
+            }
+
+            {
+                var (u, s) = TestInterop.ListMinmax32(
+                    new uint[] { uint.MinValue, uint.MaxValue }, 
+                    new int[] { int.MinValue, int.MaxValue }
+                );
+
+                Debug.Assert(u.Length == 2 && u[0] == uint.MinValue && u[1] == uint.MaxValue);
+                Debug.Assert(s.Length == 2 && s[0] == int.MinValue && s[1] == int.MaxValue);
+            }
+
+            {
+                var (u, s) = TestInterop.ListMinmax64(
+                    new ulong[] { ulong.MinValue, ulong.MaxValue },
+                    new long[] { long.MinValue, long.MaxValue }
+                );
+
+                Debug.Assert(u.Length == 2 && u[0] == ulong.MinValue && u[1] == ulong.MaxValue);
+
+                Debug.Assert(s.Length == 2 && s[0] == long.MinValue && s[1] == long.MaxValue);
+            }
+            
+            {
+                var (u, s) = TestInterop.ListMinmaxFloat(
+                    new float[] {
+                        float.MinValue,
+                        float.MaxValue,
+                        float.NegativeInfinity,
+                        float.PositiveInfinity
+                    },
+                    new double[] {
+                        double.MinValue,
+                        double.MaxValue,
+                        double.NegativeInfinity,
+                        double.PositiveInfinity
+                    });
+
+                Debug.Assert(u.Length == 4
+                    && u[0] == float.MinValue
+                    && u[1] == float.MaxValue
+                    && u[2] == float.NegativeInfinity
+                    && u[3] == float.PositiveInfinity);
+
+                Debug.Assert(s.Length == 4
+                    && s[0] == double.MinValue
+                    && s[1] == double.MaxValue
+                    && s[2] == double.NegativeInfinity
+                    && s[3] == double.PositiveInfinity);
+            }
+        }
     }
 }
 
