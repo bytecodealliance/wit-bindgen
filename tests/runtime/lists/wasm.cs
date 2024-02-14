@@ -62,14 +62,14 @@ namespace ListsWorld {
                Debug.Assert(result == "hello!");
             }
             
-            // {
-            //    List<String> result = TestInterop.ListResult3();
-            //    Debug.Assert(result.Count() == 2);
-            //    Console.WriteLine(result[0]);
-            //    Console.WriteLine(result[1]);
-            //    Debug.Assert(result[0] == "hello,");
-            //    Debug.Assert(result[1] == "world!");
-            // }
+            {
+               List<String> result = TestInterop.ListResult3();
+               Debug.Assert(result.Count() == 2);
+               Console.WriteLine(result[0]);
+               Console.WriteLine(result[1]);
+               Debug.Assert(result[0] == "hello,");
+               Debug.Assert(result[1] == "world!");
+            }
             
             //
             //for (string s : new String[] { "x", "", "hello", "hello ⚑ world" })

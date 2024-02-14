@@ -885,9 +885,9 @@ impl InterfaceGenerator<'_> {
                         return array;
                     }}
 
-                    internal static string GetUTF8String(IntPtr ptr)
+                    internal static string GetUTF8String(int p0, int p1)
                     {{
-                        return Encoding.UTF8.GetString((byte*)GetS32(ptr), GetS32(ptr + 4));
+                        return Encoding.UTF8.GetString((byte*)p0, p1);
                     }}
 
                 }}
@@ -2296,7 +2296,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::StringLift { .. } => match self.gen.direction {
-                Direction::Import => results.push(format!("ReturnArea.GetUTF8String(ptr)")),
+                Direction::Import =>{
+                    let address = &operands[0];
+                    let length = &operands[1];
+                    results.push(format!("ReturnArea.GetUTF8String({address}, {length})"))
+                },
                 Direction::Export => {
                     let address = &operands[0];
                     let length = &operands[1];
@@ -2501,7 +2505,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
     fn return_pointer(&mut self, size: usize, align: usize) -> String {
         let ptr = self.locals.tmp("ptr");
-        let buffer: String = self.locals.tmp("buffer");
 
         // Use a stack-based return area for imports, because exports need
         // their return area to be live until the post-return call.
@@ -2513,10 +2516,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwrite!(
                     self.src,
                     "
-                    void* {buffer} = stackalloc int[{size} + {align} - 1];
-                    var {ptr} = ((int){buffer}) + ({align} - 1) & -{align};
+                    void* {ptr} = stackalloc int[{size} + {align} - 1];
                     "
                 );
+
+                return format!("(int){ptr}")
             }
             Direction::Export => {
                 self.gen.gen.return_area_size = self.gen.gen.return_area_size.max(size);
@@ -2528,10 +2532,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     var {ptr} = returnArea.AddrOfBuffer();
                     "
                 );
+
+                return format!("{ptr}")
             }
         }
-
-        format!("{ptr}")
     }
 
     fn push_block(&mut self) {
