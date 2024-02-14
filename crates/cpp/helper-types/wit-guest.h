@@ -27,6 +27,10 @@ namespace wit {
                 free(const_cast<uint8_t*>(data_));
             }
         }
+        // leak the memory
+        void leak() { data_ = nullptr; }
+        // typically called by post
+        static void drop_raw(void* ptr) { free(ptr); }
         std::string_view get_view() const {
             return std::string_view((const char*)data_, length);
         }

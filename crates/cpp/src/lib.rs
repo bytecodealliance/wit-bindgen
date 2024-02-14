@@ -954,6 +954,44 @@ impl CppInterfaceGenerator<'_> {
             self.gen.c_src.src.push_str(&code);
         }
         self.gen.c_src.src.push_str("}\n");
+        // cabi_post
+        if !self.gen.opts.host
+            && matches!(variant, AbiVariant::GuestExport)
+            && abi::guest_export_needs_post_return(self.resolve, func)
+        {
+            let sig = self.resolve.wasm_signature(variant, func);
+            let module_name = self.wasm_import_module.as_ref().map(|e| e.clone()).unwrap();
+            let export_name = func.core_export_name(Some(&module_name));
+            let import_name = CppInterfaceGenerator::export_name2(&module_name, &func.name);
+            uwriteln!(
+                self.gen.c_src.src,
+                "__attribute__((__weak__, __export_name__(\"cabi_post_{export_name}\")))"
+            );
+            uwrite!(self.gen.c_src.src, "void {import_name}_post_return(");
+
+            let mut params = Vec::new();
+            // let mut c_sig = CSig {
+            //     name: String::from("INVALID"),
+            //     sig: String::from("INVALID"),
+            //     params: Vec::new(),
+            //     ret: Return::default(),
+            //     retptrs: Vec::new(),
+            // };
+            for (i, result) in sig.results.iter().enumerate() {
+                let name = format!("arg{i}");
+                uwrite!(self.gen.c_src.src, "{} {name}", wasm_type(*result));
+                // c_sig.params.push((false, name.clone()));
+                params.push(name);
+            }
+            self.gen.c_src.src.push_str(") {\n");
+
+            let mut f = FunctionBindgen::new(self, params.clone());
+            f.params = params;
+            abi::post_return(f.gen.resolve, func, &mut f);
+            let FunctionBindgen { src, .. } = f;
+            self.gen.c_src.src.push_str(&src);
+            self.gen.c_src.src.push_str("}\n");
+        }
     }
 
     pub fn type_path(&self, id: TypeId, owned: bool) -> String {
@@ -1671,11 +1709,16 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 if realloc.is_none() {
                     results.push(ptr);
                 } else {
-                    self.gen.gen.dependencies.needs_guest_alloc = true;
-                    self.gen.gen.dependencies.needs_cstring = true;
-                    uwriteln!(self.src, "int32_t {result} = guest_alloc(exec_env, {len});");
-                    uwriteln!(self.src, "memcpy(wasm_runtime_addr_app_to_native(wasm_runtime_get_module_inst(exec_env), {result}), {ptr}, {len});");
-                    results.push(result);
+                    if self.gen.gen.opts.host {
+                        self.gen.gen.dependencies.needs_guest_alloc = true;
+                        self.gen.gen.dependencies.needs_cstring = true;
+                        uwriteln!(self.src, "int32_t {result} = guest_alloc(exec_env, {len});");
+                        uwriteln!(self.src, "memcpy(wasm_runtime_addr_app_to_native(wasm_runtime_get_module_inst(exec_env), {result}), {ptr}, {len});");
+                        results.push(result);
+                    } else {
+                        uwriteln!(self.src, "{}.leak();\n", operands[0]);
+                        results.push(ptr);
+                    }
                 }
                 results.push(len);
             }
@@ -2103,7 +2146,11 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             }
             abi::Instruction::Malloc { .. } => todo!(),
             abi::Instruction::GuestDeallocate { .. } => todo!(),
-            abi::Instruction::GuestDeallocateString => todo!(),
+            abi::Instruction::GuestDeallocateString => {
+                uwriteln!(self.src, "if (({}) > 0) {{", operands[1]);
+                uwriteln!(self.src, "wit::string::drop_raw((void*) ({}));", operands[0]);
+                uwriteln!(self.src, "}}");
+            }
             abi::Instruction::GuestDeallocateList { .. } => todo!(),
             abi::Instruction::GuestDeallocateVariant { .. } => todo!(),
         }
