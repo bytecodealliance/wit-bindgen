@@ -432,13 +432,15 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     Handle::Borrow(resource) => ("&", resource),
                     Handle::Own(resource) => ("", resource),
                 };
-                let resource = dealias(resolve, *resource);
+
+                let dealiased_resource = dealias(resolve, *resource);
 
                 results.push(
-                    if let Direction::Export = self.gen.gen.resources[&resource].direction {
+                    if let Direction::Export = self.gen.gen.resources[&dealiased_resource].direction
+                    {
                         match handle {
                             Handle::Borrow(_) => {
-                                let name = resolve.types[resource]
+                                let name = resolve.types[*resource]
                                     .name
                                     .as_deref()
                                     .unwrap()
@@ -449,17 +451,17 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                                 )
                             }
                             Handle::Own(_) => {
-                                let name = self.gen.type_path(resource, true);
+                                let name = self.gen.type_path(dealiased_resource, true);
                                 format!("{name}::from_handle({op} as u32)")
                             }
                         }
                     } else if prefix == "" {
-                        let name = self.gen.type_path(resource, true);
+                        let name = self.gen.type_path(dealiased_resource, true);
                         format!("{name}::from_handle({op} as u32)")
                     } else {
                         let tmp = format!("handle{}", self.tmp());
                         self.handle_decls.push(format!("let {tmp};"));
-                        let name = self.gen.type_path(resource, true);
+                        let name = self.gen.type_path(dealiased_resource, true);
                         format!(
                             "{{\n
                                 {tmp} = {name}::from_handle({op} as u32);
