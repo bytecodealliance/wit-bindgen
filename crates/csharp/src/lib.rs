@@ -1878,7 +1878,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 Direction::Import => {
                     uwriteln!(
                         self.src,
-                        "ReturnArea.SetS32(ptr + {offset}, {});",
+                        "ReturnArea.SetS32({offset} + {}, {});",
+                        operands[1],
                         operands[0]
                     )
                 }
@@ -2319,19 +2320,17 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let index = self.locals.tmp("index");
                 let list: String = self.locals.tmp("list");
 
-                let ptr = self.locals.tmp("ptr");
                 let buffer: String = self.locals.tmp("buffer");
 
                 uwrite!(
                     self.src,
                     "
-                    void* {buffer} = stackalloc int[{size} + {align} - 1];
-                    var {ptr} = ((int){buffer}) + ({align} - 1) & -{align};
+                    void* {buffer} = stackalloc byte[{size} + {align} * ({op}).Count];
                     var {list} = {op};
 
                     for (int {index} = 0; {index} < {list}.Count; ++{index}) {{
                         {ty} {block_element} = {list}[{index}];
-                        int {base} = {ptr} + ({index} * {size});
+                        int {base} = (int){buffer} + ({index} * {size});
                         {body}
                     }}
                     "
@@ -2345,7 +2344,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 //    });
                 //}
 
-                results.push(format!("{ptr}"));
+                results.push(format!("(int){buffer}"));
                 results.push(format!("{list}.Count"));
             }
 
