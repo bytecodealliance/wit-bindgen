@@ -970,17 +970,9 @@ impl CppInterfaceGenerator<'_> {
             uwrite!(self.gen.c_src.src, "void {import_name}_post_return(");
 
             let mut params = Vec::new();
-            // let mut c_sig = CSig {
-            //     name: String::from("INVALID"),
-            //     sig: String::from("INVALID"),
-            //     params: Vec::new(),
-            //     ret: Return::default(),
-            //     retptrs: Vec::new(),
-            // };
             for (i, result) in sig.results.iter().enumerate() {
                 let name = format!("arg{i}");
                 uwrite!(self.gen.c_src.src, "{} {name}", wasm_type(*result));
-                // c_sig.params.push((false, name.clone()));
                 params.push(name);
             }
             self.gen.c_src.src.push_str(") {\n");
@@ -1078,15 +1070,20 @@ impl CppInterfaceGenerator<'_> {
             Type::S64 => "int64_t".into(),
             Type::Float32 => "float".into(),
             Type::Float64 => "double".into(),
-            Type::String => {
-                if matches!(flavor, Flavor::Argument(AbiVariant::GuestImport)) {
+            Type::String => match flavor {
+                Flavor::Argument(AbiVariant::GuestImport) => {
                     self.gen.dependencies.needs_string_view = true;
                     "std::string_view".into()
-                } else {
+                }
+                Flavor::Argument(AbiVariant::GuestExport) => {
+                    self.gen.dependencies.needs_wit = true;
+                    "wit::string &&".into()
+                }
+                _ => {
                     self.gen.dependencies.needs_wit = true;
                     "wit::string".into()
                 }
-            }
+            },
             Type::Id(id) => match &self.resolve.types[*id].kind {
                 TypeDefKind::Record(_r) => self.scoped_type_name(*id, from_namespace),
                 TypeDefKind::Resource => self.scoped_type_name(*id, from_namespace),
@@ -2148,7 +2145,11 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             abi::Instruction::GuestDeallocate { .. } => todo!(),
             abi::Instruction::GuestDeallocateString => {
                 uwriteln!(self.src, "if (({}) > 0) {{", operands[1]);
-                uwriteln!(self.src, "wit::string::drop_raw((void*) ({}));", operands[0]);
+                uwriteln!(
+                    self.src,
+                    "wit::string::drop_raw((void*) ({}));",
+                    operands[0]
+                );
                 uwriteln!(self.src, "}}");
             }
             abi::Instruction::GuestDeallocateList { .. } => todo!(),

@@ -42,6 +42,7 @@ namespace wit {
         std::string_view get_view(from_guest_address_t conv, guest_instance inst) const {
             return std::string_view((char const*)(*conv)(inst, data_), length);
         }
+        string(guest_address a, guest_size s) : data_(a), length(s) {}
     };
 
     template <class T>
