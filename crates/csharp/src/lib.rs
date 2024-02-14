@@ -1899,14 +1899,16 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 Direction::Import => {
                     uwriteln!(
                         self.src,
-                        "ReturnArea.SetS16(ptr + {offset}, unchecked((short){}));",
+                        "ReturnArea.SetS16({} + {offset}, unchecked((short){}));",
+                        operands[1],
                         operands[0]
                     )
                 }
                 Direction::Export => {
                     uwriteln!(
                         self.src,
-                        "returnArea.SetS16({offset}, unchecked((short){}));",
+                        "returnArea.SetS16({offset} + {}, unchecked((short){}));",
+                        operands[1],
                         operands[0]
                     )
                 }
@@ -1915,29 +1917,31 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 Direction::Import => {
                     uwriteln!(
                         self.src,
-                        "ReturnArea.SetS64(ptr + {offset}, {});",
+                        "ReturnArea.SetS64({} + {offset}, {});",
+                        operands[1],
                         operands[0]
                     )
                 }
                 Direction::Export => {
-                    uwriteln!(self.src, "returnArea.SetS64({offset}, {});", operands[0])
+                    uwriteln!(self.src, "returnArea.SetS64({} + {offset}, {});", operands[1], operands[0])
                 }
             },
             Instruction::F32Store { offset } => match self.gen.direction {
                 Direction::Import => {
                     uwriteln!(
                         self.src,
-                        "ReturnArea.SetF32(ptr + {offset}, {});",
+                        "ReturnArea.SetF32({} + {offset}, {});",
+                        operands[1],
                         operands[0]
                     )
                 }
                 Direction::Export => {
-                    uwriteln!(self.src, "returnArea.SetF32({offset}, {});", operands[0])
+                    uwriteln!(self.src, "returnArea.SetF32({} + {offset}, {});", operands[1], operands[0])
                 }
             },
             Instruction::I64Store { .. } => todo!("I64Store"),
             Instruction::F32Store { offset } => {
-                uwriteln!(self.src, "returnArea.SetF32({}, {});", offset, operands[0])
+                uwriteln!(self.src, "returnArea.SetF32({offset} + {}, {});", operands[1], operands[0])
             }
             Instruction::F64Store { .. } => todo!("F64Store"),
 
