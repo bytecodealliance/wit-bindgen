@@ -36,38 +36,41 @@ namespace ListsWorld {
                 "baz"
             });
 
-            //        Test.listParam4(new List<List<String>>() {{
-            //            add(new List<String>() {{
-            //                add("foo");
-            //        add("bar");
-            //    }
-            //});
-            //add(new List<String>() {{
-            //                add("baz");
-            //            }});
-            //        }});
+            TestInterop.ListParam4(new List<List<String>>() {
+                new List<String>() {
+                    "foo",
+                    "bar"
+               },
+                new List<String>() {
+                    "baz"
+                }
+            });
 
-            //{
-            //    byte[] result = Test.listResult();
-            //    Debug.Assert(result.length == 5);
-            //    Debug.Assert(result[0] == (byte)1);
-            //    Debug.Assert(result[1] == (byte)2);
-            //    Debug.Assert(result[2] == (byte)3);
-            //    Debug.Assert(result[3] == (byte)4);
-            //    Debug.Assert(result[4] == (byte)5);
-            //}
-            //
-            //{
-            //    string result = Test.listResult2();
-            //    Debug.Assert(result.equals("hello!"));
-            //}
-            //
-            //{
-            //    List<String> result = Test.listResult3();
+            {
+               byte[] result = TestInterop.ListResult();
+               Debug.Assert(result.Length == 5);
+               Debug.Assert(result[0] == (byte)1);
+               Debug.Assert(result[1] == (byte)2);
+               Debug.Assert(result[2] == (byte)3);
+               Debug.Assert(result[3] == (byte)4);
+               Debug.Assert(result[4] == (byte)5);
+            }
+
+            {
+               string result = TestInterop.ListResult2();
+               Console.WriteLine(result);
+               Debug.Assert(result == "hello!");
+            }
+            
+            // {
+            //    List<String> result = TestInterop.ListResult3();
             //    Debug.Assert(result.Count() == 2);
-            //    Debug.Assert(result.get(0).equals("hello,"));
-            //    Debug.Assert(result.get(1).equals("world!"));
-            //}
+            //    Console.WriteLine(result[0]);
+            //    Console.WriteLine(result[1]);
+            //    Debug.Assert(result[0] == "hello,");
+            //    Debug.Assert(result[1] == "world!");
+            // }
+            
             //
             //for (string s : new String[] { "x", "", "hello", "hello ⚑ world" })
             //{
