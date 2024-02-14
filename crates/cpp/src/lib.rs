@@ -344,6 +344,13 @@ impl WorldGenerator for Cpp {
         if self.dependencies.needs_tuple {
             self.include("<tuple>");
         }
+        if self.dependencies.needs_wit {
+            if self.opts.host || self.opts.short_cut {
+                self.include("<wit-host.h>");
+            } else {
+                self.include("<wit-guest.h>");
+            }
+        }
 
         for include in self.includes.iter() {
             uwriteln!(h_str.src, "#include {include}");
@@ -1687,7 +1694,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let tmp = self.tmp();
                 let len = format!("len{}", tmp);
                 uwriteln!(self.src, "auto {} = {};\n", len, operands[1]);
-                let result = format!("std::string((char const*)({}), {len})", operands[0]);
+                let result = format!("wit::string((char const*)({}), {len})", operands[0]);
                 results.push(result);
             }
             abi::Instruction::ListLift { element, .. } => {

@@ -31,7 +31,7 @@ namespace wit {
     
     // host code never de-allocates directly
     class string {
-        guest_address data;
+        guest_address data_;
         guest_size length;
         public:
         // string(string const&) = default;
@@ -40,22 +40,22 @@ namespace wit {
         // string& operator=(string &&b) = default;
         // ~string() {}
         std::string_view get_view(from_guest_address_t conv, guest_instance inst) const {
-            return std::string_view((char const*)(*conv)(inst, data), length);
+            return std::string_view((char const*)(*conv)(inst, data_), length);
         }
     };
 
     template <class T>
     class guest_owned {
-        guest_address data;
+        guest_address data_;
         guest_cabi_post_t free_func;
         from_guest_address_t conv_func;
         guest_instance instance;
         public:
         T const* operator->() const {
-            return (T const*)(*conv_func)(instance, data);
+            return (T const*)(*conv_func)(instance, data_);
         }
         T* operator->() {
-            return (T*)(*conv_func)(instance, data);
+            return (T*)(*conv_func)(instance, data_);
         }
     };
 }
