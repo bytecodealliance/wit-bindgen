@@ -2337,7 +2337,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen"
-version = "0.17.1"
+version = "0.18.0"
 dependencies = [
  "bitflags 2.4.2",
  "wit-bindgen-rust-macro",
@@ -2345,7 +2345,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-c"
-version = "0.17.1"
+version = "0.18.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2360,7 +2360,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-cli"
-version = "0.17.1"
+version = "0.18.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2384,10 +2384,9 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-core"
-version = "0.17.1"
+version = "0.18.0"
 dependencies = [
  "anyhow",
- "wit-component",
  "wit-parser 0.14.0",
 ]
 
@@ -2408,7 +2407,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-csharp"
-version = "0.17.1"
+version = "0.18.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2423,7 +2422,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-go"
-version = "0.17.1"
+version = "0.18.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2435,7 +2434,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-markdown"
-version = "0.17.1"
+version = "0.18.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2447,7 +2446,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-rust"
-version = "0.17.1"
+version = "0.18.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2463,7 +2462,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-rust-macro"
-version = "0.17.1"
+version = "0.18.1"
 dependencies = [
  "anyhow",
  "proc-macro2",
@@ -2471,12 +2470,11 @@ dependencies = [
  "syn",
  "wit-bindgen-core",
  "wit-bindgen-rust",
- "wit-component",
 ]
 
 [[package]]
 name = "wit-bindgen-teavm-java"
-version = "0.17.1"
+version = "0.18.0"
 dependencies = [
  "anyhow",
  "clap",
