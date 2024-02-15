@@ -416,11 +416,12 @@ impl WorldGenerator for CSharp {
                             return BitConverter.ToInt32(span.Slice(offset, 4));
                         }}
 
-                        internal void SetS16(int offset, short value)
+                        unsafe internal void SetS16(int offset, short value)
                         {{
-                            Span<byte> span = MemoryMarshal.CreateSpan(ref buffer, {0});
-
-                            BitConverter.TryWriteBytes(span.Slice(offset), value);
+                            var p = new IntPtr(offset);
+                            var span = new Span<byte>(p.ToPointer(), 4);
+                            
+                            BitConverter.TryWriteBytes(span, value);
                         }}
 
                         unsafe internal void SetS32(int offset, int value)
@@ -968,11 +969,12 @@ impl InterfaceGenerator<'_> {
                             BitConverter.TryWriteBytes(span.Slice(offset), value);
                         }}
 
-                        public void SetS16(int offset, short value)
+                        unsafe internal void SetS16(int offset, short value)
                         {{
-                            Span<byte> span = MemoryMarshal.CreateSpan(ref buffer, {0});
-
-                            BitConverter.TryWriteBytes(span.Slice(offset), value);
+                            var p = new IntPtr(offset);
+                            var span = new Span<byte>(p.ToPointer(), 4);
+                            
+                            BitConverter.TryWriteBytes(span, value);
                         }}
 
                         unsafe internal void SetS32(int offset, int value)
@@ -1923,7 +1925,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     )
                 }
                 Direction::Export => {
-                    uwriteln!(self.src, "returnArea.SetS64({} + {offset}, {});", operands[1], operands[0])
+                    uwriteln!(
+                        self.src,
+                        "returnArea.SetS64({} + {offset}, {});",
+                        operands[1],
+                        operands[0]
+                    )
                 }
             },
             Instruction::F32Store { offset } => match self.gen.direction {
@@ -1936,12 +1943,22 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     )
                 }
                 Direction::Export => {
-                    uwriteln!(self.src, "returnArea.SetF32({} + {offset}, {});", operands[1], operands[0])
+                    uwriteln!(
+                        self.src,
+                        "returnArea.SetF32({} + {offset}, {});",
+                        operands[1],
+                        operands[0]
+                    )
                 }
             },
             Instruction::I64Store { .. } => todo!("I64Store"),
             Instruction::F32Store { offset } => {
-                uwriteln!(self.src, "returnArea.SetF32({offset} + {}, {});", operands[1], operands[0])
+                uwriteln!(
+                    self.src,
+                    "returnArea.SetF32({offset} + {}, {});",
+                    operands[1],
+                    operands[0]
+                )
             }
             Instruction::F64Store { .. } => todo!("F64Store"),
 
