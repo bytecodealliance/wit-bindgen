@@ -50,7 +50,6 @@ macro_rules! codegen_test {
                         "small-anonymous",
                         "unused-import",
                         "use-across-interfaces",
-                        "variants",
                         "worlds-with-types",
                         "go_params",
                     ]

@@ -9,7 +9,7 @@ use std::{
     ops::Deref,
 };
 use wit_bindgen_core::{
-    abi::{self, AbiVariant, Bindgen, Instruction, LiftLower, WasmType},
+    abi::{self, AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType},
     wit_parser::LiveTypes,
     Direction,
 };
@@ -305,23 +305,24 @@ impl WorldGenerator for CSharp {
             env!("CARGO_PKG_VERSION"),
         );
 
+        src.push_str("}\n");
+
         if self.needs_result {
             src.push_str(
                 r#"
-                using System.Runtime.InteropServices;
 
-                namespace Wit.Interop;
+                public readonly struct None {}
 
                 [StructLayout(LayoutKind.Sequential)]
                 public readonly struct Result<Ok, Err>
                 {
                     public readonly byte Tag;
-                    private readonly object _value;
+                    private readonly object value;
 
                     private Result(byte tag, object value)
                     {
                         Tag = tag;
-                        _value = value;
+                        this.value = value;
                     }
 
                     public static Result<Ok, Err> ok(Ok ok)
@@ -341,9 +342,9 @@ impl WorldGenerator for CSharp {
                     {
                         get
                         {
-                            if (Tag == OK)
-                                return (Ok)_value;
-                            else
+                            if (Tag == OK) 
+                                return (Ok)value;
+                            else 
                                 throw new ArgumentException("expected OK, got " + Tag);
                         }
                     }
@@ -353,7 +354,7 @@ impl WorldGenerator for CSharp {
                         get
                         {
                             if (Tag == ERR)
-                                return (Err)_value;
+                                return (Err)value;
                             else
                                 throw new ArgumentException("expected ERR, got " + Tag);
                         }
@@ -365,7 +366,6 @@ impl WorldGenerator for CSharp {
                 "#,
             )
         }
-        src.push_str("}\n");
 
         if self.needs_interop_string {
             src.push_str(
@@ -706,6 +706,8 @@ impl InterfaceGenerator<'_> {
             TypeDefKind::Option(t) => self.type_option(type_id, typedef_name, t, &type_def.docs),
             TypeDefKind::Record(t) => self.type_record(type_id, typedef_name, t, &type_def.docs),
             TypeDefKind::List(t) => self.type_list(type_id, typedef_name, t, &type_def.docs),
+            TypeDefKind::Variant(t) => self.type_variant(type_id, typedef_name, t, &type_def.docs),
+            TypeDefKind::Result(t) => self.type_result(type_id, typedef_name, t, &type_def.docs),
             _ => unreachable!(),
         }
     }
@@ -746,6 +748,255 @@ impl InterfaceGenerator<'_> {
                 csharp_interop_src: self.csharp_interop_src,
                 stub: self.stub,
             });
+    }
+
+    fn add_import_return_area(&mut self) {
+        let mut ret_struct_type = String::new();
+        if self.gen.return_area_size > 0 {
+            uwrite!(
+                ret_struct_type,
+                r#"
+                internal unsafe struct ReturnArea
+                {{
+                    internal static byte GetU8(IntPtr ptr)
+                    {{
+                        var span = new Span<byte>((void*)ptr, 1);
+
+                        return span[0];
+                    }}
+
+                    public static ushort GetU16(IntPtr ptr)
+                    {{
+                        var span = new Span<byte>((void*)ptr, 2);
+
+                        return BitConverter.ToUInt16(span);
+                    }}
+
+                    internal static int GetS32(IntPtr ptr)
+                    {{
+                        var span = new Span<byte>((void*)ptr, 4);
+
+                        return BitConverter.ToInt32(span);
+                    }}
+
+                    internal static long GetS64(IntPtr ptr)
+                    {{
+                        var span = new Span<byte>((void*)ptr, 8);
+
+                        return BitConverter.ToInt64(span);
+                    }}
+
+                    internal static float GetF32(IntPtr ptr)
+                    {{
+                        var span = new Span<byte>((void*)ptr, 4);
+
+                        return BitConverter.ToSingle(span);
+                    }}
+
+                    internal static double GetF64(IntPtr ptr)
+                    {{
+                        var span = new Span<byte>((void*)ptr, 8);
+
+                        return BitConverter.ToDouble(span);
+                    }}
+
+                    internal static void SetS16(IntPtr ptr, short value)
+                    {{
+                        var span = new Span<byte>((void*)ptr, 2);
+
+                        BitConverter.TryWriteBytes(span, value);
+                    }}
+
+                    internal static void SetS32(IntPtr ptr, int value)
+                    {{
+                        var span = new Span<byte>((void*)ptr, 4);
+
+                        BitConverter.TryWriteBytes(span, value);
+                    }}
+
+                    internal static void SetU32(IntPtr ptr, uint value)
+                    {{
+                        var span = new Span<byte>((void*)ptr, 4);
+
+                        BitConverter.TryWriteBytes(span, value);
+                    }}
+
+                    internal static void SetArray<T>(IntPtr ptr, T[] value, int length)
+                    {{
+                        if (length == 0)
+                        {{
+                            return;
+                        }}
+
+                        var span = new Span<byte>(&value, sizeof(T) * length);
+                
+                        Marshal.Copy(span.ToArray(), 0, ptr, length);
+                    }}
+
+                    unsafe internal static T[] GetArray<T>(IntPtr ptr, int length)
+                    {{
+                        var span = new Span<byte>((void*)ptr, sizeof(T)*length);
+        
+                        var array = new T[length];
+
+                        if (array.Length == 0)
+                        {{
+                            return array;
+                        }}
+        
+                        fixed (T* dstPtr = &array[0])
+                        {{
+                            //TODO: Optimize this. The ToArray call is not needed and does an additional heap allocation.
+                            Marshal.Copy(span.ToArray(), 0, (IntPtr)dstPtr, length);
+                        }}
+        
+                        return array;
+                    }}
+
+                    internal static string GetUTF8String(IntPtr ptr)
+                    {{
+                        return Encoding.UTF8.GetString((byte*)GetS32(ptr), GetS32(ptr + 4));
+                    }}
+
+                }}
+            "#,
+            );
+        }
+
+        uwrite!(
+            self.csharp_interop_src,
+            r#"
+                {ret_struct_type}
+            "#
+        );
+    }
+
+    fn add_export_return_area(&mut self) {
+        // Declare a statically-allocated return area, if needed. We only do
+        // this for export bindings, because import bindings allocate their
+        // return-area on the stack.
+        if self.gen.return_area_size > 0 {
+            let mut ret_area_str = String::new();
+
+            uwrite!(
+                ret_area_str,
+                "
+                    [InlineArray({0})]
+                    [StructLayout(LayoutKind.Sequential, Pack = {1})]
+                    private struct ReturnArea
+                    {{
+                        private byte buffer;
+    
+                        unsafe internal T[] GetArray<T>(int offset, int length)
+                        {{
+                            var p = new IntPtr(offset);
+                            var span = new Span<byte>(p.ToPointer(), length);
+            
+                            var array = new T[length];
+
+                            if (array.Length == 0)
+                            {{
+                                return array;
+                            }}
+            
+                            fixed (T* ptr = &array[0])
+                            {{
+                                Marshal.Copy(span.ToArray(), 0, (IntPtr)ptr, length);
+                            }}
+            
+                            return array;
+                        }}
+
+
+                        internal sbyte GetS8(int offset)
+                        {{
+                            ReadOnlySpan<byte> span = MemoryMarshal.CreateSpan(ref buffer, {0});
+
+                            return (sbyte)span[offset];
+                        }}
+
+                        unsafe internal int GetS32(int offset)
+                        {{
+                            var p = new IntPtr(offset);
+                            var span = new Span<byte>(p.ToPointer(), 4);
+
+                            Console.WriteLine(\"GetS32 \" + offset +  span.Length);
+                            return BitConverter.ToInt32(span.ToArray());
+                        }}
+
+                        
+                        internal long GetS64(int offset)
+                        {{
+                            ReadOnlySpan<byte> span = MemoryMarshal.CreateSpan(ref buffer, {0});
+
+                            return BitConverter.ToInt64(span.Slice(offset, 8));
+                        }}
+                        
+                        public void SetS8(int offset, int value)
+                        {{
+                            Span<byte> span = MemoryMarshal.CreateSpan(ref buffer, {0});
+
+                            BitConverter.TryWriteBytes(span.Slice(offset), value);
+                        }}
+
+                        public void SetS16(int offset, short value)
+                        {{
+                            Span<byte> span = MemoryMarshal.CreateSpan(ref buffer, {0});
+
+                            BitConverter.TryWriteBytes(span.Slice(offset), value);
+                        }}
+
+                        unsafe internal void SetS32(int offset, int value)
+                        {{
+                            Span<byte> span = MemoryMarshal.CreateSpan(ref buffer, {0});
+                            
+                            BitConverter.TryWriteBytes(span.Slice(offset), value);
+                        }}
+
+                        internal void SetS64(int offset, long value)
+                        {{
+                            Span<byte> span = MemoryMarshal.CreateSpan(ref buffer, {0});
+
+                            BitConverter.TryWriteBytes(span.Slice(offset), value);
+                        }}
+
+                        internal void SetF32(int offset, float value)
+                        {{
+                            Span<byte> span = MemoryMarshal.CreateSpan(ref buffer, {0});
+                            
+                            BitConverter.TryWriteBytes(span.Slice(offset), value);
+                        }}
+
+                        internal void SetF64(int offset, double value)
+                        {{
+                            Span<byte> span = MemoryMarshal.CreateSpan(ref buffer, {0});
+                            
+                            BitConverter.TryWriteBytes(span.Slice(offset), value);
+                        }}
+
+                        internal unsafe int AddrOfBuffer()
+                        {{
+                            fixed(byte* ptr = &buffer)
+                            {{
+                                return (int)ptr;
+                            }}
+                        }}
+
+                        internal unsafe string GetUTF8String(int p0, int p1)
+                        {{
+                            return Encoding.UTF8.GetString((byte*)p0, p1);
+                        }}
+                    }}
+    
+                    [ThreadStatic]
+                    private static ReturnArea returnArea = default;
+                    ",
+                self.gen.return_area_size,
+                self.gen.return_area_align,
+            );
+
+            self.csharp_interop_src.push_str(&ret_area_str);
+        }
     }
 
     fn add_world_fragment(self) {
@@ -1055,12 +1306,12 @@ impl InterfaceGenerator<'_> {
                         let mut name = |ty: &Option<Type>| {
                             ty.as_ref()
                                 .map(|ty| self.type_name_boxed(ty, qualifier))
-                                .unwrap_or_else(|| "void".to_owned())
+                                .unwrap_or_else(|| "None".to_owned())
                         };
                         let ok = name(&result.ok);
                         let err = name(&result.err);
 
-                        format!("{}Result<{ok}, {err}>", self.gen.qualifier())
+                        format!("Result<{ok}, {err}>")
                     }
                     _ => {
                         if let Some(name) = &ty.name {
@@ -1334,13 +1585,16 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                     let tag = case.name.to_shouty_snake_case();
                     let ty = self.type_name(ty);
                     format!(
-                        r#"public {ty} get{case_name}() {{
-                               if (this.tag == {tag}) {{
-                                   return ({ty}) this.value;
-                               }} else {{
-                                   throw new RuntimeException("expected {tag}, got " + this.tag);
-                               }}
-                           }}
+                        r#"public {ty} As{case_name} 
+                        {{ 
+                            get 
+                            {{
+                                if (Tag == {tag}) 
+                                    return ({ty})value;
+                                else 
+                                    throw new ArgumentException("expected {tag}, got " + Tag);
+                            }} 
+                        }}
                         "#
                     )
                 })
@@ -1354,7 +1608,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .enumerate()
             .map(|(i, case)| {
                 let tag = case.name.to_shouty_snake_case();
-                format!("public readonly {tag_type} {tag} = {i};")
+                format!("public const {tag_type} {tag} = {i};")
             })
             .collect::<Vec<_>>()
             .join("\n");
@@ -1362,12 +1616,12 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         uwrite!(
             self.src,
             "
-            public static class {name} {{
-                public readonly {tag_type} tag;
-                private readonly Object value;
+            public class {name} {{
+                public readonly {tag_type} Tag;
+                private readonly object value;
 
-                private {name}({tag_type} tag, Object value) {{
-                    this.tag = tag;
+                private {name}({tag_type} tag, object value) {{
+                    this.Tag = tag;
                     this.value = value;
                 }}
 
@@ -1530,6 +1784,156 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             cleanup: Vec::new(),
         }
     }
+
+    fn lower_variant(
+        &mut self,
+        cases: &[(&str, Option<Type>)],
+        lowered_types: &[WasmType],
+        op: &str,
+        results: &mut Vec<String>,
+    ) {
+        let blocks = self
+            .blocks
+            .drain(self.blocks.len() - cases.len()..)
+            .collect::<Vec<_>>();
+
+        let payloads = self
+            .payloads
+            .drain(self.payloads.len() - cases.len()..)
+            .collect::<Vec<_>>();
+
+        let lowered = lowered_types
+            .iter()
+            .map(|_| self.locals.tmp("lowered"))
+            .collect::<Vec<_>>();
+
+        results.extend(lowered.iter().cloned());
+
+        let declarations = lowered
+            .iter()
+            .zip(lowered_types)
+            .map(|(lowered, ty)| format!("{} {lowered};", wasm_type(*ty)))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let cases = cases
+            .iter()
+            .zip(blocks)
+            .zip(payloads)
+            .enumerate()
+            .map(
+                |(i, (((name, ty), Block { body, results, .. }), payload))| {
+                    let payload = if let Some(ty) = self.gen.non_empty_type(ty.as_ref()) {
+                        let ty = self.gen.type_name(ty);
+                        let name = name.to_upper_camel_case();
+
+                        format!("{ty} {payload} = {op}.As{name};")
+                    } else {
+                        String::new()
+                    };
+
+                    let assignments = lowered
+                        .iter()
+                        .zip(&results)
+                        .map(|(lowered, result)| format!("{lowered} = {result};\n"))
+                        .collect::<Vec<_>>()
+                        .concat();
+
+                    format!(
+                        "case {i}: {{
+                         {payload}
+                         {body}
+                         {assignments}
+                         break;
+                     }}"
+                    )
+                },
+            )
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        uwrite!(
+            self.src,
+            r#"
+            {declarations}
+
+            switch ({op}.Tag) {{
+                {cases}
+
+                default: throw new ArgumentException($"invalid disciminant: {{{op}}}");
+            }}
+            "#
+        );
+    }
+
+    fn lift_variant(
+        &mut self,
+        ty: &Type,
+        cases: &[(&str, Option<Type>)],
+        op: &str,
+        results: &mut Vec<String>,
+    ) {
+        let blocks = self
+            .blocks
+            .drain(self.blocks.len() - cases.len()..)
+            .collect::<Vec<_>>();
+        let ty = self.gen.type_name_with_qualifier(ty, true);
+        //let ty = self.gen.type_name(ty);
+        let generics_position = ty.find('<');
+        let lifted = self.locals.tmp("lifted");
+
+        let cases = cases
+            .iter()
+            .zip(blocks)
+            .enumerate()
+            .map(|(i, ((case_name, case_ty), Block { body, results, .. }))| {
+                let payload = if self.gen.non_empty_type(case_ty.as_ref()).is_some() {
+                    results.into_iter().next().unwrap()
+                } else if generics_position.is_some() {
+                    if let Some(ty) = case_ty.as_ref() {
+                        format!("{}.INSTANCE", self.gen.type_name(ty))
+                    } else {
+                        format!("new {}None()", self.gen.gen.qualifier())
+                    }
+                } else {
+                    String::new()
+                };
+
+                let method = case_name.to_csharp_ident();
+
+                let call = if let Some(position) = generics_position {
+                    let (ty, generics) = ty.split_at(position);
+                    format!("{ty}{generics}.{method}")
+                } else {
+                    format!("{ty}.{method}")
+                };
+
+                format!(
+                    "case {i}: {{
+                         {body}
+                         {lifted} = {call}({payload});
+                         break;
+                     }}"
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        uwrite!(
+            self.src,
+            r#"
+            {ty} {lifted};
+
+            switch ({op}) {{
+                {cases}
+
+                default: throw new ArgumentException($"invalid disciminant: {{{op}}}");
+            }}
+            "#
+        );
+
+        results.push(lifted);
+    }
 }
 
 impl Bindgen for FunctionBindgen<'_, '_> {
@@ -1561,7 +1965,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::I32Load16S { offset } => results.push(format!("BitConverter.ToInt16(new Span<byte>((void*)({} + {offset}), 2))",operands[0])),
             Instruction::I64Load { offset } => results.push(format!("BitConverter.ToInt64(new Span<byte>((void*)({} + {offset}), 8))",operands[0])),
             Instruction::F32Load { offset } => results.push(format!("BitConverter.ToSingle(new Span<byte>((void*)({} + {offset}), 4))",operands[0])),
-            Instruction::F64Load { offset } => todo!("F64Load"),
+            Instruction::F64Load { offset } => results.push(format!("BitConverter.ToDouble(new Span<byte>((void*)({} + {offset}), 8))",operands[0])),
             // for I32 store instructions we the full int32 value is written to the memory hence the Span<byte> is 4 bytes long and the value is cast to the int32
             Instruction::I32Store { offset } => uwriteln!(self.src, "BitConverter.TryWriteBytes(new Span<byte>((void*)({} + {offset}), 4), (int){});", operands[1], operands[0]),
             Instruction::I32Store8 { offset } => uwriteln!(self.src, "BitConverter.TryWriteBytes(new Span<byte>((void*)({} + {offset}), 4), (int){});", operands[1], operands[0]),
@@ -1591,7 +1995,21 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             | Instruction::S32FromI32
             | Instruction::S64FromI64
             | Instruction::Float64FromF64 => results.push(operands[0].clone()),
-            Instruction::Bitcasts { .. } => todo!("Bitcasts"),
+
+            Instruction::Bitcasts { casts } => {
+                results.extend(casts.iter().zip(operands).map(|(cast, op)| match cast {
+                    Bitcast::I32ToF32 => format!("BitConverter.Int32BitsToSingle({op})"),
+                    Bitcast::I64ToF32 => format!("BitConverter.Int64BitsToDouble((int) ({op}))"),
+                    Bitcast::F32ToI32 => format!("BitConverter.SingleToInt32Bits({op})"),
+                    Bitcast::F32ToI64 => format!("(long) BitConverter.SingleToInt32Bits({op})"),
+                    Bitcast::I64ToF64 => format!("BitConverter.Int64BitsToDouble({op})"),
+                    Bitcast::F64ToI64 => format!("BitConverter.DoubleToInt64Bits({op})"),
+                    Bitcast::I32ToI64 => format!("(long) ({op})"),
+                    Bitcast::I64ToI32 => format!("(int) ({op})"),
+                    Bitcast::None => op.to_owned(),
+                }))
+            }
+
             Instruction::I32FromBool => {
                 results.push(format!("({} ? 1 : 0)", operands[0]));
             }
@@ -1680,9 +2098,31 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.payloads.push(payload);
             }
 
-            Instruction::VariantLower { .. } => todo!("VariantLift"),
+            Instruction::VariantLower {
+                variant,
+                results: lowered_types,
+                ..
+            } => self.lower_variant(
+                &variant
+                    .cases
+                    .iter()
+                    .map(|case| (case.name.deref(), case.ty))
+                    .collect::<Vec<_>>(),
+                lowered_types,
+                &operands[0],
+                results,
+            ),
 
-            Instruction::VariantLift { .. } => todo!("VariantLift"),
+            Instruction::VariantLift { variant, ty, .. } => self.lift_variant(
+                &Type::Id(*ty),
+                &variant
+                    .cases
+                    .iter()
+                    .map(|case| (case.name.deref(), case.ty))
+                    .collect::<Vec<_>>(),
+                &operands[0],
+                results,
+            ),
 
             Instruction::OptionLower {
                 results: lowered_types,
@@ -1781,7 +2221,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             break;
                         }}
 
-                        default: throw new Exception("invalid discriminant: " + ({op}));
+                        default: throw new ArgumentException("invalid discriminant: " + ({op}));
                     }}
                     "#
                 );
@@ -1789,9 +2229,23 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.push(lifted);
             }
 
-            Instruction::ResultLower { .. } => todo!("ResultLower"),
+            Instruction::ResultLower {
+                results: lowered_types,
+                result,
+                ..
+            } => self.lower_variant(
+                &[("ok", result.ok), ("err", result.err)],
+                lowered_types,
+                &operands[0],
+                results,
+            ),
 
-            Instruction::ResultLift { .. } => todo!("ResultLift"),
+            Instruction::ResultLift { result, ty } => self.lift_variant(
+                &Type::Id(*ty),
+                &[("ok", result.ok), ("err", result.err)],
+                &operands[0],
+                results,
+            ),
 
             Instruction::EnumLower { .. } => results.push(format!("(int){}", operands[0])),
 
@@ -1800,12 +2254,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let op = &operands[0];
                 results.push(format!("({}){}", t, op));
 
-                uwriteln!(
-                    self.src,
-                    "Debug.Assert(Enum.IsDefined(typeof({}), {}));",
-                    t,
-                    op
-                );
+                //uwriteln!(
+                //    self.src,
+                //    "Debug.Assert(Enum.IsDefined(typeof({}), {}));",
+                //    t,
+                //    op
+                //);
             }
 
             Instruction::ListCanonLower { element, realloc } => {
