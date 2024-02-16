@@ -765,14 +765,21 @@ fn interface_identifier(
             ns.push_str("_");
             ns.push_str(&pkg.name.name.to_snake_case());
             ns.push_str("_");
-            if let Some(version) = &pkg.name.version {
-                let version = version
-                    .to_string()
-                    .replace('.', "_")
-                    .replace('-', "_")
-                    .replace('+', "_");
-                ns.push_str(&version);
-                ns.push_str("_");
+            let pkg_has_multiple_versions = resolve.packages.iter().any(|(_, p)| {
+                p.name.namespace == pkg.name.namespace
+                    && p.name.name == pkg.name.name
+                    && p.name.version != pkg.name.version
+            });
+            if pkg_has_multiple_versions {
+                if let Some(version) = &pkg.name.version {
+                    let version = version
+                        .to_string()
+                        .replace('.', "_")
+                        .replace('-', "_")
+                        .replace('+', "_");
+                    ns.push_str(&version);
+                    ns.push_str("_");
+                }
             }
             ns.push_str(&iface.name.as_ref().unwrap().to_snake_case());
             ns

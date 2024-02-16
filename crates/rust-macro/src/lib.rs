@@ -2,6 +2,7 @@ use proc_macro2::{Span, TokenStream};
 use quote::ToTokens;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 use syn::parse::{Error, Parse, ParseStream, Result};
 use syn::punctuated::Punctuated;
 use syn::{braced, token, Token};
@@ -122,20 +123,14 @@ fn parse_source(source: &Option<Source>) -> anyhow::Result<(Resolve, PackageId, 
     let mut files = Vec::new();
     let root = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
     let mut parse = |path: &Path| -> anyhow::Result<_> {
-        if path.is_dir() {
-            let (pkg, sources) = resolve.push_dir(path)?;
-            files = sources;
-            Ok(pkg)
-        } else {
-            let pkg = UnresolvedPackage::parse_file(path)?;
-            files.extend(pkg.source_files().map(|s| s.to_owned()));
-            resolve.push(pkg)
-        }
+        let (pkg, sources) = resolve.push_path(path)?;
+        files.extend(sources);
+        Ok(pkg)
     };
     let pkg = match source {
         Some(Source::Inline(s, path)) => {
             if let Some(p) = path {
-                resolve.push_dir(p).unwrap();
+                parse(&root.join(p))?;
             }
             resolve.push(UnresolvedPackage::parse("macro-input".as_ref(), s)?)?
         }
@@ -154,16 +149,43 @@ impl Config {
             .generate(&self.resolve, self.world, &mut files)
             .map_err(|e| Error::new(Span::call_site(), e))?;
         let (_, src) = files.iter().next().unwrap();
-        let src = std::str::from_utf8(src).unwrap();
+        let mut src = std::str::from_utf8(src).unwrap().to_string();
+
+        // If a magical `WIT_BINDGEN_DEBUG` environment variable is set then
+        // place a formatted version of the expanded code into a file. This file
+        // will then show up in rustc error messages for any codegen issues and can
+        // be inspected manually.
+        if std::env::var("WIT_BINDGEN_DEBUG").is_ok() {
+            static INVOCATION: AtomicUsize = AtomicUsize::new(0);
+            let root = Path::new(env!("DEBUG_OUTPUT_DIR"));
+            let world_name = &self.resolve.worlds[self.world].name;
+            let n = INVOCATION.fetch_add(1, Relaxed);
+            let path = root.join(format!("{world_name}{n}.rs"));
+
+            std::fs::write(&path, &src).unwrap();
+
+            // optimistically format the code but don't require success
+            drop(
+                std::process::Command::new("rustfmt")
+                    .arg(&path)
+                    .arg("--edition=2021")
+                    .output(),
+            );
+
+            src = format!("include!({path:?});");
+        }
         let mut contents = src.parse::<TokenStream>().unwrap();
 
-        // Include a dummy `include_str!` for any files we read so rustc knows that
+        // Include a dummy `include_bytes!` for any files we read so rustc knows that
         // we depend on the contents of those files.
         for file in self.files.iter() {
             contents.extend(
-                format!("const _: &str = include_str!(r#\"{}\"#);\n", file.display())
-                    .parse::<TokenStream>()
-                    .unwrap(),
+                format!(
+                    "const _: &[u8] = include_bytes!(r#\"{}\"#);\n",
+                    file.display()
+                )
+                .parse::<TokenStream>()
+                .unwrap(),
             );
         }
 

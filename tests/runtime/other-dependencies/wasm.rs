@@ -6,5 +6,5 @@ wit_bindgen::generate!({
         export other:test/test;
     }
     "#,
-    path: "tests/runtime/other-dependencies/other",
+    path: "../../tests/runtime/other-dependencies/other",
 });

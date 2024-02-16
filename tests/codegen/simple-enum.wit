@@ -1,0 +1,24 @@
+package foo:foo;
+
+interface enums {
+  enum e1 {
+      a,
+      b,
+      c
+  }
+
+  enum e2 {
+      something,
+      else
+  }
+
+  e1-arg: func(x: e1);
+  e2-arg: func(x: e2);
+
+  e1-ret: func(x: e1) -> e2;
+}
+
+world the-world {
+  import enums;
+  export enums;
+}
