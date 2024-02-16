@@ -51,6 +51,7 @@ TestInterop.VariantZeros((ITest.Z1.a(1), ITest.Z2.a(2), ITest.Z3.a(3.0f), ITest.
 
             var (zb1, zb2, zb3, zb4) =
 TestInterop.VariantZeros((ITest.Z1.b(), ITest.Z2.b(), ITest.Z3.b(), ITest.Z4.b()));
+            //TODO: Add comparison operator to variants and None
             //Debug.Assert(zb1.AsB == ITest.Z1.b());
             //Debug.Assert(zb2.AsB == ITest.Z2.b());
             //Debug.Assert(zb3.AsB == ITest.Z3.b());
