@@ -177,7 +177,7 @@ impl WorldGenerator for TeaVmJava {
         gen.add_world_fragment();
     }
 
-    fn finish(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) {
+    fn finish(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) -> Result<()> {
         let name = world_name(resolve, id);
         let (package, name) = split_qualified_name(&name);
 
@@ -431,6 +431,8 @@ impl WorldGenerator for TeaVmJava {
                 generate_stub(&package, format!("{name}Impl"), fragments, files);
             }
         }
+
+        Ok(())
     }
 }
 

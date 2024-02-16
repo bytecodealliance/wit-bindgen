@@ -294,8 +294,7 @@ pub trait WorldGenerator {
         for (name, id) in interfaces {
             self.export_interface(resolve, name, *id, files)?;
         }
-        self.finish(resolve, id, files);
-        Ok(())
+        self.finish(resolve, id, files)
     }
 
     fn finish_imports(&mut self, resolve: &Resolve, world: WorldId, files: &mut Files) {
@@ -348,7 +347,7 @@ pub trait WorldGenerator {
         types: &[(&str, TypeId)],
         files: &mut Files,
     );
-    fn finish(&mut self, resolve: &Resolve, world: WorldId, files: &mut Files);
+    fn finish(&mut self, resolve: &Resolve, world: WorldId, files: &mut Files) -> Result<()>;
 }
 
 /// This is a possible replacement for the `Generator` trait above, currently
