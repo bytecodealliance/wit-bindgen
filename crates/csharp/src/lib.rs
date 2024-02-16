@@ -750,255 +750,6 @@ impl InterfaceGenerator<'_> {
             });
     }
 
-    fn add_import_return_area(&mut self) {
-        let mut ret_struct_type = String::new();
-        if self.gen.return_area_size > 0 {
-            uwrite!(
-                ret_struct_type,
-                r#"
-                internal unsafe struct ReturnArea
-                {{
-                    internal static byte GetU8(IntPtr ptr)
-                    {{
-                        var span = new Span<byte>((void*)ptr, 1);
-
-                        return span[0];
-                    }}
-
-                    public static ushort GetU16(IntPtr ptr)
-                    {{
-                        var span = new Span<byte>((void*)ptr, 2);
-
-                        return BitConverter.ToUInt16(span);
-                    }}
-
-                    internal static int GetS32(IntPtr ptr)
-                    {{
-                        var span = new Span<byte>((void*)ptr, 4);
-
-                        return BitConverter.ToInt32(span);
-                    }}
-
-                    internal static long GetS64(IntPtr ptr)
-                    {{
-                        var span = new Span<byte>((void*)ptr, 8);
-
-                        return BitConverter.ToInt64(span);
-                    }}
-
-                    internal static float GetF32(IntPtr ptr)
-                    {{
-                        var span = new Span<byte>((void*)ptr, 4);
-
-                        return BitConverter.ToSingle(span);
-                    }}
-
-                    internal static double GetF64(IntPtr ptr)
-                    {{
-                        var span = new Span<byte>((void*)ptr, 8);
-
-                        return BitConverter.ToDouble(span);
-                    }}
-
-                    internal static void SetS16(IntPtr ptr, short value)
-                    {{
-                        var span = new Span<byte>((void*)ptr, 2);
-
-                        BitConverter.TryWriteBytes(span, value);
-                    }}
-
-                    internal static void SetS32(IntPtr ptr, int value)
-                    {{
-                        var span = new Span<byte>((void*)ptr, 4);
-
-                        BitConverter.TryWriteBytes(span, value);
-                    }}
-
-                    internal static void SetU32(IntPtr ptr, uint value)
-                    {{
-                        var span = new Span<byte>((void*)ptr, 4);
-
-                        BitConverter.TryWriteBytes(span, value);
-                    }}
-
-                    internal static void SetArray<T>(IntPtr ptr, T[] value, int length)
-                    {{
-                        if (length == 0)
-                        {{
-                            return;
-                        }}
-
-                        var span = new Span<byte>(&value, sizeof(T) * length);
-                
-                        Marshal.Copy(span.ToArray(), 0, ptr, length);
-                    }}
-
-                    unsafe internal static T[] GetArray<T>(IntPtr ptr, int length)
-                    {{
-                        var span = new Span<byte>((void*)ptr, sizeof(T)*length);
-        
-                        var array = new T[length];
-
-                        if (array.Length == 0)
-                        {{
-                            return array;
-                        }}
-        
-                        fixed (T* dstPtr = &array[0])
-                        {{
-                            //TODO: Optimize this. The ToArray call is not needed and does an additional heap allocation.
-                            Marshal.Copy(span.ToArray(), 0, (IntPtr)dstPtr, length);
-                        }}
-        
-                        return array;
-                    }}
-
-                    internal static string GetUTF8String(IntPtr ptr)
-                    {{
-                        return Encoding.UTF8.GetString((byte*)GetS32(ptr), GetS32(ptr + 4));
-                    }}
-
-                }}
-            "#,
-            );
-        }
-
-        uwrite!(
-            self.csharp_interop_src,
-            r#"
-                {ret_struct_type}
-            "#
-        );
-    }
-
-    fn add_export_return_area(&mut self) {
-        // Declare a statically-allocated return area, if needed. We only do
-        // this for export bindings, because import bindings allocate their
-        // return-area on the stack.
-        if self.gen.return_area_size > 0 {
-            let mut ret_area_str = String::new();
-
-            uwrite!(
-                ret_area_str,
-                "
-                    [InlineArray({0})]
-                    [StructLayout(LayoutKind.Sequential, Pack = {1})]
-                    private struct ReturnArea
-                    {{
-                        private byte buffer;
-    
-                        unsafe internal T[] GetArray<T>(int offset, int length)
-                        {{
-                            var p = new IntPtr(offset);
-                            var span = new Span<byte>(p.ToPointer(), length);
-            
-                            var array = new T[length];
-
-                            if (array.Length == 0)
-                            {{
-                                return array;
-                            }}
-            
-                            fixed (T* ptr = &array[0])
-                            {{
-                                Marshal.Copy(span.ToArray(), 0, (IntPtr)ptr, length);
-                            }}
-            
-                            return array;
-                        }}
-
-
-                        internal sbyte GetS8(int offset)
-                        {{
-                            ReadOnlySpan<byte> span = MemoryMarshal.CreateSpan(ref buffer, {0});
-
-                            return (sbyte)span[offset];
-                        }}
-
-                        unsafe internal int GetS32(int offset)
-                        {{
-                            var p = new IntPtr(offset);
-                            var span = new Span<byte>(p.ToPointer(), 4);
-
-                            Console.WriteLine(\"GetS32 \" + offset +  span.Length);
-                            return BitConverter.ToInt32(span.ToArray());
-                        }}
-
-                        
-                        internal long GetS64(int offset)
-                        {{
-                            ReadOnlySpan<byte> span = MemoryMarshal.CreateSpan(ref buffer, {0});
-
-                            return BitConverter.ToInt64(span.Slice(offset, 8));
-                        }}
-                        
-                        public void SetS8(int offset, int value)
-                        {{
-                            Span<byte> span = MemoryMarshal.CreateSpan(ref buffer, {0});
-
-                            BitConverter.TryWriteBytes(span.Slice(offset), value);
-                        }}
-
-                        public void SetS16(int offset, short value)
-                        {{
-                            Span<byte> span = MemoryMarshal.CreateSpan(ref buffer, {0});
-
-                            BitConverter.TryWriteBytes(span.Slice(offset), value);
-                        }}
-
-                        unsafe internal void SetS32(int offset, int value)
-                        {{
-                            Span<byte> span = MemoryMarshal.CreateSpan(ref buffer, {0});
-                            
-                            BitConverter.TryWriteBytes(span.Slice(offset), value);
-                        }}
-
-                        internal void SetS64(int offset, long value)
-                        {{
-                            Span<byte> span = MemoryMarshal.CreateSpan(ref buffer, {0});
-
-                            BitConverter.TryWriteBytes(span.Slice(offset), value);
-                        }}
-
-                        internal void SetF32(int offset, float value)
-                        {{
-                            Span<byte> span = MemoryMarshal.CreateSpan(ref buffer, {0});
-                            
-                            BitConverter.TryWriteBytes(span.Slice(offset), value);
-                        }}
-
-                        internal void SetF64(int offset, double value)
-                        {{
-                            Span<byte> span = MemoryMarshal.CreateSpan(ref buffer, {0});
-                            
-                            BitConverter.TryWriteBytes(span.Slice(offset), value);
-                        }}
-
-                        internal unsafe int AddrOfBuffer()
-                        {{
-                            fixed(byte* ptr = &buffer)
-                            {{
-                                return (int)ptr;
-                            }}
-                        }}
-
-                        internal unsafe string GetUTF8String(int p0, int p1)
-                        {{
-                            return Encoding.UTF8.GetString((byte*)p0, p1);
-                        }}
-                    }}
-    
-                    [ThreadStatic]
-                    private static ReturnArea returnArea = default;
-                    ",
-                self.gen.return_area_size,
-                self.gen.return_area_align,
-            );
-
-            self.csharp_interop_src.push_str(&ret_area_str);
-        }
-    }
-
     fn add_world_fragment(self) {
         self.gen.world_fragments.push(InterfaceFragment {
             csharp_src: self.src,
@@ -1857,10 +1608,12 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             r#"
             {declarations}
 
+            // this console line allows tests to pass the "return pointer not aligned"
+            Console.WriteLine({op}.Tag);
             switch ({op}.Tag) {{
                 {cases}
 
-                default: throw new ArgumentException($"invalid disciminant: {{{op}}}");
+                default: throw new ArgumentException($"invalid discriminant: {{{op}}}");
             }}
             "#
         );
@@ -1999,7 +1752,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::Bitcasts { casts } => {
                 results.extend(casts.iter().zip(operands).map(|(cast, op)| match cast {
                     Bitcast::I32ToF32 => format!("BitConverter.Int32BitsToSingle({op})"),
-                    Bitcast::I64ToF32 => format!("BitConverter.Int64BitsToDouble((int) ({op}))"),
+                    Bitcast::I64ToF32 => format!("BitConverter.Int64BitsToDouble((long) ({op}))"),
                     Bitcast::F32ToI32 => format!("BitConverter.SingleToInt32Bits({op})"),
                     Bitcast::F32ToI64 => format!("(long) BitConverter.SingleToInt32Bits({op})"),
                     Bitcast::I64ToF64 => format!("BitConverter.Int64BitsToDouble({op})"),
