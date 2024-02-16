@@ -1487,10 +1487,15 @@ struct Block {
     base: String,
 }
 
+struct Cleanup {
+    address: String,
+}
+
 struct BlockStorage {
     body: String,
     element: String,
     base: String,
+    cleanup: Vec<Cleanup>,
 }
 
 struct FunctionBindgen<'a, 'b> {
@@ -1503,6 +1508,7 @@ struct FunctionBindgen<'a, 'b> {
     blocks: Vec<Block>,
     payloads: Vec<String>,
     needs_cleanup_list: bool,
+    cleanup: Vec<Cleanup>,
 }
 
 impl<'a, 'b> FunctionBindgen<'a, 'b> {
@@ -1521,6 +1527,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             blocks: Vec::new(),
             payloads: Vec::new(),
             needs_cleanup_list: false,
+            cleanup: Vec::new(),
         }
     }
 }
@@ -1819,25 +1826,26 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         results.push(format!("({op}).Length"));
                     }
                     Direction::Export => {
+                        // TODO: is the Alloc nessary here?
                         let address = self.locals.tmp("address");
                         let buffer = self.locals.tmp("buffer");
+                        let gc_handle = self.locals.tmp("gcHandle");
                         uwrite!(
                             self.src,
                             "
                         byte[] {buffer} = new byte[{op}.Length];
                         Buffer.BlockCopy({op}, 0, {buffer}, 0, {op}.Length);
-                        var {address} = GCHandle.Alloc({op}, GCHandleType.Pinned).AddrOfPinnedObject();
+                        var {gc_handle} = GCHandle.Alloc({op}, GCHandleType.Pinned);
+                        var {address} = {gc_handle}.AddrOfPinnedObject();
                         Marshal.Copy({buffer}, 0, (IntPtr){address}, {op}.Length);                        
                         "
                         );
 
-                        // if realloc.is_none() {
-                        //    self.cleanup.push(Cleanup {
-                        //        address: address.clone(),
-                        //        size: format!("({op}).size() * {size}"),
-                        //        align,
-                        //    });
-                        // }
+                        if realloc.is_none() {
+                           self.cleanup.push(Cleanup {
+                               address: gc_handle.clone(),
+                           });
+                        }
                         results.push(format!("((IntPtr)({address})).ToInt32()"));
                         results.push(format!("{op}.Length"));
                     }
@@ -1915,14 +1923,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     }}
                     "
                 );
-
-                //if realloc.is_none() {
-                //    self.cleanup.push(Cleanup {
-                //        address: address.clone(),
-                //        size: format!("({op}).size() * {size}"),
-                //        align,
-                //    });
-                //}
 
                 results.push(format!("(int){buffer}"));
                 results.push(format!("{list}.Count"));
@@ -2047,12 +2047,24 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
             }
 
-            Instruction::Return { amt: _, func } => match func.results.len() {
-                0 => (),
-                1 => uwriteln!(self.src, "return {};", operands[0]),
-                _ => {
-                    let results = operands.join(", ");
-                    uwriteln!(self.src, "return ({results});")
+            Instruction::Return { amt: _, func } => {
+                for Cleanup {
+                    address
+                } in &self.cleanup
+                {
+                    uwriteln!(
+                        self.src,
+                        "{address}.Free();"
+                    );
+                }
+
+                match func.results.len() {
+                    0 => (),
+                    1 => uwriteln!(self.src, "return {};", operands[0]),
+                    _ => {
+                        let results = operands.join(", ");
+                        uwriteln!(self.src, "return ({results});")
+                    }
                 }
             },
 
@@ -2119,6 +2131,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             body: mem::take(&mut self.src),
             element: self.locals.tmp("element"),
             base: self.locals.tmp("basePtr"),
+            cleanup: mem::take(&mut self.cleanup),
         });
     }
 
@@ -2127,7 +2140,18 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             body,
             element,
             base,
+            cleanup,
         } = self.block_storage.pop().unwrap();
+
+        if !self.cleanup.is_empty() {
+            //self.needs_cleanup_list = true;
+
+            for Cleanup { address } in &self.cleanup {
+                uwriteln!(self.src, "{address}.Free();");
+            }
+        }
+
+        self.cleanup = cleanup;
 
         self.blocks.push(Block {
             body: mem::replace(&mut self.src, body),
