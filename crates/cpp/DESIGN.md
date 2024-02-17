@@ -19,7 +19,7 @@
 | Code | mode | WIT Type | Rust type | C++ Type | Lower | Reason |
 | --- | --- | --- | --- | --- | --- | --- |
 | GIA | v | string | &str[^1] | string_view (17) | addr, len | |
-| | | list | &[T] | span (20) | addr, len | |
+| | | list | &[T] | wit::span [^5] | addr, len | |
 | | | tuple | (...) | std::tuple | 0, 1, ...| |
 | | | tuple<string, list> | (&str, &[T]) | std::tuple<...> | a,l,a,l | 
 | | | record{string, list} | &T | T const& | a,l,a,l | 
@@ -47,3 +47,5 @@ Complex (non-POD) struct elements on the host will need exec_env to decode or co
 [^3]: A wit::string requires exec_env inside the host implementation. ~~Perhaps a flexible type (either std::string or wit::string would be possible), or make this a generation option?~~ std::string requires a copy, wit::string requires passing exec_env to the method (which is necessary for methods anyway).
 
 [^4]: A host side wit::string doesn't own the data (not free in dtor), thus no move semantics.
+
+[^5]: std::span requires C++-20, this alias should give minimal functionality with older compiler targets.
