@@ -2,12 +2,14 @@
 
 #include <assert.h>
 #include <stdint.h>
+#include <map>
 #if __cplusplus > 202001L
 #include <span>
 #endif
 
 namespace wit {
 #if __cplusplus > 202001L
+using std::span;
 #else
 // minimal implementation to get things going
 template <class T> class span {

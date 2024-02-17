@@ -4,6 +4,7 @@ use std::{
     fmt::Write as FmtWrite,
     io::{Read, Write},
     process::{Command, Stdio},
+    str::FromStr,
 };
 use wit_bindgen_c::{to_c_ident, wasm_type};
 use wit_bindgen_core::{
@@ -1133,8 +1134,26 @@ impl CppInterfaceGenerator<'_> {
                         + ">"
                 }
                 TypeDefKind::List(ty) => {
-                    self.gen.dependencies.needs_vector = true;
-                    "std::vector<".to_string() + &self.type_name(ty, from_namespace, flavor) + ">"
+                    let inner = self.type_name(ty, from_namespace, flavor);
+                    match flavor {
+                        //self.gen.dependencies.needs_vector = true;
+                        Flavor::Argument(AbiVariant::GuestImport) => {
+                            self.gen.dependencies.needs_wit = true;
+                            format!("wit::span<{inner}>")
+                        }
+                        Flavor::Argument(AbiVariant::GuestExport) if !self.gen.opts.host => {
+                            self.gen.dependencies.needs_wit = true;
+                            format!("wit::vector<{inner}>&&")
+                        }
+                        Flavor::Result(AbiVariant::GuestExport) if self.gen.opts.host => {
+                            self.gen.dependencies.needs_wit = true;
+                            format!("wit::span<{inner}>")
+                        }
+                        _ => {
+                            self.gen.dependencies.needs_wit = true;
+                            format!("wit::vector<{inner}>")
+                        }
+                    }
                 }
                 TypeDefKind::Future(_) => todo!(),
                 TypeDefKind::Stream(_) => todo!(),
@@ -1273,7 +1292,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
             let base_type = if definition {
                 format!("wit::{RESOURCE_EXPORT_BASE_CLASS_NAME}<{pascal}>")
             } else {
-                std::String("wit::") + RESOURCE_IMPORT_BASE_CLASS_NAME
+                String::from_str("wit::").unwrap() + RESOURCE_IMPORT_BASE_CLASS_NAME
             };
             let derive = format!(" : public {world_name}{base_type}");
             uwriteln!(self.gen.h_src.src, "class {pascal}{derive} {{\n");
@@ -1520,6 +1539,10 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         let ret = self.tmp;
         self.tmp += 1;
         ret
+    }
+
+    fn tempname(&mut self, base: &str, idx: usize) -> String {
+        format!("{base}{idx}")
     }
 
     fn push_str(&mut self, s: &str) {
@@ -2177,7 +2200,25 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 );
                 uwriteln!(self.src, "}}");
             }
-            abi::Instruction::GuestDeallocateList { .. } => todo!(),
+            abi::Instruction::GuestDeallocateList { element } => {
+                let (body, results) = self.blocks.pop().unwrap();
+                assert!(results.is_empty());
+                let tmp = self.tmp();
+                let ptr = self.tempname("ptr", tmp);
+                let len = self.tempname("len", tmp);
+                uwriteln!(self.src, "int32_t {ptr} = {};", operands[0]);
+                uwriteln!(self.src, "int32_t {len} = {};", operands[1]);
+                let i = self.tempname("i", tmp);
+                uwriteln!(self.src, "for (int32_t {i} = 0; {i} < {len}; {i}++) {{");
+                let size = self.gen.sizes.size(element);
+                uwriteln!(self.src, "int32_t base = {ptr} + {i} * {size};");
+                uwriteln!(self.src, "(void) base;");
+                uwrite!(self.src, "{body}");
+                uwriteln!(self.src, "}}");
+                uwriteln!(self.src, "if ({len} > 0) {{");
+                uwriteln!(self.src, "free((void*) ({ptr}));");
+                uwriteln!(self.src, "}}");
+            }
             abi::Instruction::GuestDeallocateVariant { .. } => todo!(),
         }
     }
