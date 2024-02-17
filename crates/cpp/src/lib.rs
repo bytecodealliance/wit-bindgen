@@ -1720,9 +1720,29 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             abi::Instruction::Float32FromF32 => top_as("float"),
             abi::Instruction::Float64FromF64 => top_as("double"),
             abi::Instruction::BoolFromI32 => top_as("bool"),
-            abi::Instruction::ListCanonLower { .. } => {
-                results.push("ListCanonLower.addr".into());
-                results.push("ListCanonLower.len".into());
+            abi::Instruction::ListCanonLower { realloc, .. } => {
+                let tmp = self.tmp();
+                let val = format!("vec{}", tmp);
+                let ptr = format!("ptr{}", tmp);
+                let len = format!("len{}", tmp);
+                let result = format!("result{}", tmp);
+                self.push_str(&format!("auto const&{} = {};\n", val, operands[0]));
+                if self.gen.gen.opts.short_cut {
+                    self.push_str(&format!("auto {} = {}.data();\n", ptr, val));
+                    self.push_str(&format!("auto {} = {}.size();\n", len, val));
+                } else {
+                    self.push_str(&format!("auto {} = (int32_t)({}.data());\n", ptr, val));
+                    self.push_str(&format!("auto {} = (int32_t)({}.size());\n", len, val));
+                }
+                if realloc.is_none() {
+                    results.push(ptr);
+                } else {
+                    if !self.gen.gen.opts.host {
+                        uwriteln!(self.src, "{}.leak();\n", operands[0]);
+                    }
+                    results.push(ptr);
+                }
+                results.push(len);
             }
             abi::Instruction::StringLower { realloc } => {
                 let tmp = self.tmp();
@@ -1741,28 +1761,43 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 if realloc.is_none() {
                     results.push(ptr);
                 } else {
-                    if self.gen.gen.opts.host {
-                        // self.gen.gen.dependencies.needs_guest_alloc = true;
-                        // self.gen.gen.dependencies.needs_cstring = true;
-                        // uwriteln!(self.src, "int32_t {result} = guest_alloc(exec_env, {len});");
-                        // uwriteln!(self.src, "memcpy(wasm_runtime_addr_app_to_native(wasm_runtime_get_module_inst(exec_env), {result}), {ptr}, {len});");
-                        // results.push(result);
-                    } else {
+                    if !self.gen.gen.opts.host {
                         uwriteln!(self.src, "{}.leak();\n", operands[0]);
                     }
                     results.push(ptr);
                 }
                 results.push(len);
             }
-            abi::Instruction::ListLower { .. } => {
-                results.push("ListLower1".into());
-                results.push("ListLower2".into());
+            abi::Instruction::ListLower { element, realloc } => {
+                let tmp = self.tmp();
+                let val = format!("vec{}", tmp);
+                let ptr = format!("ptr{}", tmp);
+                let len = format!("len{}", tmp);
+                let result = format!("result{}", tmp);
+                self.push_str(&format!("auto const&{} = {};\n", val, operands[0]));
+                if self.gen.gen.opts.short_cut {
+                    self.push_str(&format!("auto {} = {}.data();\n", ptr, val));
+                    self.push_str(&format!("auto {} = {}.size();\n", len, val));
+                } else {
+                    self.push_str(&format!("auto {} = (int32_t)({}.data());\n", ptr, val));
+                    self.push_str(&format!("auto {} = (int32_t)({}.size());\n", len, val));
+                }
+                if realloc.is_none() {
+                    results.push(ptr);
+                } else {
+                    if !self.gen.gen.opts.host {
+                        uwriteln!(self.src, "{}.leak();\n", operands[0]);
+                    }
+                    results.push(ptr);
+                }
+                results.push(len);
             }
-            abi::Instruction::ListCanonLift { .. } => {
+            abi::Instruction::ListCanonLift { element, .. } => {
                 let tmp = self.tmp();
                 let len = format!("len{}", tmp);
-                self.push_str(&format!("let {} = {};\n", len, operands[1]));
-                let result = format!("std::vector<...>({0}, {0}+{1})", operands[0], len);
+                let inner = self.gen.type_name(element, &self.namespace, Flavor::InStruct);
+                self.push_str(&format!("auto {} = {};\n", len, operands[1]));
+                let result = format!("wit::vector<{2}>(({2} const *){0}, {1})", operands[0], len, inner);
                 results.push(result);
             }
             abi::Instruction::StringLift => {
