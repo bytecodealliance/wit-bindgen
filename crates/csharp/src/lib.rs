@@ -1711,6 +1711,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
                 .to_owned()
             })),
+
             Instruction::I32Load { offset } => results.push(format!("BitConverter.ToInt32(new Span<byte>((void*)({} + {offset}), 4))",operands[0])),
             Instruction::I32Load8U { offset } => results.push(format!("new Span<byte>((void*)({} + {offset}), 1)[0]",operands[0])),
             Instruction::I32Load8S { offset } => results.push(format!("(sbyte)new Span<byte>((void*)({} + {offset}), 1)[0]",operands[0])),
@@ -1719,13 +1720,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::I64Load { offset } => results.push(format!("BitConverter.ToInt64(new Span<byte>((void*)({} + {offset}), 8))",operands[0])),
             Instruction::F32Load { offset } => results.push(format!("BitConverter.ToSingle(new Span<byte>((void*)({} + {offset}), 4))",operands[0])),
             Instruction::F64Load { offset } => results.push(format!("BitConverter.ToDouble(new Span<byte>((void*)({} + {offset}), 8))",operands[0])),
-            // for I32 store instructions we the full int32 value is written to the memory hence the Span<byte> is 4 bytes long and the value is cast to the int32
-            Instruction::I32Store { offset } => uwriteln!(self.src, "BitConverter.TryWriteBytes(new Span<byte>((void*)({} + {offset}), 4), (int){});", operands[1], operands[0]),
-            Instruction::I32Store8 { offset } => uwriteln!(self.src, "BitConverter.TryWriteBytes(new Span<byte>((void*)({} + {offset}), 4), (int){});", operands[1], operands[0]),
-            Instruction::I32Store16 { offset } => uwriteln!(self.src, "BitConverter.TryWriteBytes(new Span<byte>((void*)({} + {offset}), 4), (int){});", operands[1], operands[0]),
-            Instruction::I64Store { offset } => uwriteln!(self.src, "BitConverter.TryWriteBytes(new Span<byte>((void*)({} + {offset}), 8), (long){});", operands[1], operands[0]),
-            Instruction::F32Store { offset } => uwriteln!(self.src, "BitConverter.TryWriteBytes(new Span<byte>((void*)({} + {offset}), 8), (float){});", operands[1], operands[0]),
-            Instruction::F64Store { offset } => uwriteln!(self.src, "BitConverter.TryWriteBytes(new Span<byte>((void*)({} + {offset}), 8), (double){});", operands[1], operands[0]),
+
+            Instruction::I32Store { offset } => uwriteln!(self.src, "BitConverter.TryWriteBytes(new Span<byte>((void*)({} + {offset}), 4), unchecked((int){}));", operands[1], operands[0]),
+            Instruction::I32Store8 { offset } => uwriteln!(self.src, "*(byte*)({} + {offset}) = (byte){};", operands[1], operands[0]),
+            Instruction::I32Store16 { offset } => uwriteln!(self.src, "BitConverter.TryWriteBytes(new Span<byte>((void*)({} + {offset}), 2), (short){});", operands[1], operands[0]),
+            Instruction::I64Store { offset } => uwriteln!(self.src, "BitConverter.TryWriteBytes(new Span<byte>((void*)({} + {offset}), 8), unchecked((long){}));", operands[1], operands[0]),
+            Instruction::F32Store { offset } => uwriteln!(self.src, "BitConverter.TryWriteBytes(new Span<byte>((void*)({} + {offset}), 4), unchecked((float){}));", operands[1], operands[0]),
+            Instruction::F64Store { offset } => uwriteln!(self.src, "BitConverter.TryWriteBytes(new Span<byte>((void*)({} + {offset}), 8), unchecked((double){}));", operands[1], operands[0]),
+
             Instruction::I64FromU64 => results.push(format!("unchecked((long)({}))", operands[0])),
             Instruction::I32FromChar => results.push(format!("((int){})", operands[0])),
             Instruction::I32FromU32 => results.push(format!("unchecked((int)({}))", operands[0])),
@@ -1752,7 +1754,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::Bitcasts { casts } => {
                 results.extend(casts.iter().zip(operands).map(|(cast, op)| match cast {
                     Bitcast::I32ToF32 => format!("BitConverter.Int32BitsToSingle({op})"),
-                    Bitcast::I64ToF32 => format!("BitConverter.Int64BitsToDouble((long) ({op}))"),
+                    Bitcast::I64ToF32 => format!("(float) BitConverter.Int64BitsToDouble(({op}))"),
                     Bitcast::F32ToI32 => format!("BitConverter.SingleToInt32Bits({op})"),
                     Bitcast::F32ToI64 => format!("(long) BitConverter.SingleToInt32Bits({op})"),
                     Bitcast::I64ToF64 => format!("BitConverter.Int64BitsToDouble({op})"),
@@ -2049,9 +2051,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         );
 
                         if realloc.is_none() {
-                           self.cleanup.push(Cleanup {
-                               address: gc_handle.clone(),
-                           });
+                            self.cleanup.push(Cleanup {
+                                address: gc_handle.clone(),
+                            });
                         }
                         results.push(format!("((IntPtr)({address})).ToInt32()"));
                         results.push(format!("{op}.Length"));
@@ -2097,7 +2099,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.gen.gen.needs_interop_string = true;
             }
 
-            Instruction::StringLift { .. } => results.push(format!("Encoding.UTF8.GetString((byte*){}, {})", operands[0], operands[1])),
+            Instruction::StringLift { .. } => results.push(format!(
+                "Encoding.UTF8.GetString((byte*){}, {})",
+                operands[0], operands[1]
+            )),
 
             Instruction::ListLower { element, realloc } => {
                 let Block {
@@ -2255,14 +2260,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::Return { amt: _, func } => {
-                for Cleanup {
-                    address
-                } in &self.cleanup
-                {
-                    uwriteln!(
-                        self.src,
-                        "{address}.Free();"
-                    );
+                for Cleanup { address } in &self.cleanup {
+                    uwriteln!(self.src, "{address}.Free();");
                 }
 
                 match func.results.len() {
@@ -2273,7 +2272,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         uwriteln!(self.src, "return ({results});")
                     }
                 }
-            },
+            }
 
             Instruction::Malloc { .. } => unimplemented!(),
 
