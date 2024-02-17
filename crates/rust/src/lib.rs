@@ -48,6 +48,9 @@ struct RustWasm {
     resources: HashMap<TypeId, ResourceInfo>,
     import_funcs_called: bool,
     with_name_counter: usize,
+    // Track the with options that were used. Remapped interfaces provided via `with`
+    // are required to be used.
+    used_with_opts: HashSet<String>,
 }
 
 #[cfg(feature = "clap")]
@@ -288,6 +291,7 @@ impl RustWasm {
         let with_name = resolve.name_world_key(name);
         let entry = if let Some(remapped_path) = self.opts.with.get(&with_name) {
             let name = format!("__with_name{}", self.with_name_counter);
+            self.used_with_opts.insert(with_name);
             self.with_name_counter += 1;
             uwriteln!(self.src, "use {remapped_path} as {name};");
             InterfaceName {
@@ -459,7 +463,7 @@ impl WorldGenerator for RustWasm {
         }
     }
 
-    fn finish(&mut self, resolve: &Resolve, world: WorldId, files: &mut Files) {
+    fn finish(&mut self, resolve: &Resolve, world: WorldId, files: &mut Files) -> Result<()> {
         let name = &resolve.worlds[world].name;
 
         let imports = mem::take(&mut self.import_modules);
@@ -582,6 +586,20 @@ impl WorldGenerator for RustWasm {
 
         let module_name = name.to_snake_case();
         files.push(&format!("{module_name}.rs"), src.as_bytes());
+
+        let remapping_keys = self.opts.with.keys().cloned().collect::<HashSet<String>>();
+
+        let mut unused_keys = remapping_keys
+            .difference(&self.used_with_opts)
+            .collect::<Vec<&String>>();
+
+        unused_keys.sort();
+
+        if !unused_keys.is_empty() {
+            bail!("unused remappings provided via `with`: {unused_keys:?}");
+        }
+
+        Ok(())
     }
 }
 

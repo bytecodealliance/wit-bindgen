@@ -286,7 +286,7 @@ impl WorldGenerator for TinyGo {
         self.src.push_str(&src);
     }
 
-    fn finish(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) {
+    fn finish(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) -> Result<()> {
         // make sure all types are defined on top of the file
         let src = mem::take(&mut self.src);
         self.src.push_str(&src);
@@ -351,7 +351,9 @@ impl WorldGenerator for TinyGo {
         opts.no_object_file = true;
         opts.build()
             .generate(resolve, id, files)
-            .expect("C generator should be infallible")
+            .expect("C generator should be infallible");
+
+        Ok(())
     }
 }
 
