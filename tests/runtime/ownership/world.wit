@@ -1,5 +1,17 @@
 package test:ownership;
 
+interface both-list-and-resource {
+    resource the-resource {
+        constructor(the-list: list<string>);
+    }
+    record thing {
+        a: list<string>,
+        b: the-resource
+    }
+
+    list-and-resource: func(a: thing);
+}
+
 world ownership {
     import lists: interface {
         foo: func(a: list<list<string>>) -> list<list<string>>;
@@ -22,6 +34,8 @@ world ownership {
 
         baz: func(a: thing) -> thing;
     }
+
+    import both-list-and-resource;
 
     export foo: func();
 }

@@ -703,7 +703,6 @@ impl InterfaceGenerator<'_> {
             }
             let name = to_rust_ident(name);
             self.push_str(&name);
-            params.push(name);
             self.push_str(": ");
 
             // Select the "style" of mode that the parameter's type will be
@@ -731,6 +730,34 @@ impl InterfaceGenerator<'_> {
             let mode = self.type_mode_for(param, style, "'_");
             self.print_ty(param, mode);
             self.push_str(",");
+
+            // Depending on the style of this request vs what we got perhaps
+            // change how this argument is used.
+            //
+            // If the `mode` that was selected matches the requested style, then
+            // everything is as expected and the argument should be used as-is.
+            // If it differs though then that means that we requested a borrowed
+            // mode but a different mode ended up being selected. This situation
+            // indicates for example that an argument to an import should be
+            // borrowed but the argument's type means that it can't be borrowed.
+            // For example all arguments to imports are borrowed by default but
+            // owned resources cannot ever be borrowed, so they pop out here as
+            // owned instead.
+            //
+            // In such a situation the lower code still expects to be operating
+            // over borrows. For example raw pointers from lists are passed to
+            // the canonical ABI layer assuming that the lists are "rooted" by
+            // the caller. To uphold this invariant a borrow of the argument is
+            // recorded as the name of this parameter. That ensures that all
+            // access to the parameter is done indirectly which pretends, at
+            // least internally, that the argument was borrowed. The original
+            // motivation for this was #817.
+            if mode.style == style {
+                params.push(name);
+            } else {
+                assert!(style != TypeOwnershipStyle::Owned);
+                params.push(format!("&{name}"));
+            }
         }
         self.push_str(")");
         params
@@ -1772,8 +1799,8 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                         }}
 
                         #[doc(hidden)]
-                        pub fn into_handle(self) -> u32 {{
-                            {rt}::Resource::into_handle(self.handle)
+                        pub fn take_handle(&self) -> u32 {{
+                            {rt}::Resource::take_handle(&self.handle)
                         }}
 
                         #[doc(hidden)]

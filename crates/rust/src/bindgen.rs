@@ -413,8 +413,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let rt = self.gen.gen.runtime_path();
                 let resource = dealias(self.gen.resolve, *resource);
                 results.push(match self.gen.gen.resources[&resource].direction {
-                    Direction::Import => format!("({op}).into_handle() as i32"),
-                    Direction::Export => format!("{rt}::Resource::into_handle({op}) as i32"),
+                    Direction::Import => format!("({op}).take_handle() as i32"),
+                    Direction::Export => format!("{rt}::Resource::take_handle(&{op}) as i32"),
                 });
             }
 
