@@ -1,4 +1,5 @@
 #![allow(unused_macros)]
+#![allow(dead_code, unused_variables)]
 
 mod codegen_tests {
     macro_rules! codegen_test {
@@ -17,6 +18,20 @@ mod codegen_tests {
 
                 #[test]
                 fn works() {}
+
+                mod borrowed {
+                    wit_bindgen::generate!({
+                        path: $test,
+                        ownership: Borrowing {
+                            duplicate_if_necessary: false
+                        },
+                        stubs,
+                        export_prefix: "[borrowed]",
+                    });
+
+                    #[test]
+                    fn works() {}
+                }
 
                 mod duplicate {
                     wit_bindgen::generate!({

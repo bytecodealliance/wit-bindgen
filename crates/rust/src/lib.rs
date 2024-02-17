@@ -362,6 +362,34 @@ fn name_package_module(resolve: &Resolve, id: PackageId) -> String {
 impl WorldGenerator for RustWasm {
     fn preprocess(&mut self, resolve: &Resolve, _world: WorldId) {
         wit_bindgen_core::generated_preamble(&mut self.src, env!("CARGO_PKG_VERSION"));
+
+        // Render some generator options to assist with debugging and/or to help
+        // recreate it if the original generation command is lost.
+        uwriteln!(self.src, "// Options used:");
+        if self.opts.std_feature {
+            uwriteln!(self.src, "//   * std_feature");
+        }
+        if self.opts.raw_strings {
+            uwriteln!(self.src, "//   * raw_strings");
+        }
+        if !self.opts.skip.is_empty() {
+            uwriteln!(self.src, "//   * skip: {:?}", self.opts.skip);
+        }
+        if !matches!(self.opts.ownership, Ownership::Owning) {
+            uwriteln!(self.src, "//   * ownership: {:?}", self.opts.ownership);
+        }
+        if !self.opts.additional_derive_attributes.is_empty() {
+            uwriteln!(
+                self.src,
+                "//   * additional derives {:?}",
+                self.opts.additional_derive_attributes
+            );
+        }
+        if !self.opts.with.is_empty() {
+            let mut with = self.opts.with.iter().collect::<Vec<_>>();
+            with.sort();
+            uwriteln!(self.src, "//   * with {with:?}");
+        }
         self.types.analyze(resolve);
     }
 
@@ -642,13 +670,6 @@ fn group_by_resource<'a>(
         }
     }
     by_resource
-}
-
-#[derive(Debug, Copy, Clone, PartialEq)]
-enum TypeMode {
-    Owned,
-    AllBorrowed(&'static str),
-    HandlesBorrowed(&'static str),
 }
 
 #[derive(Default, Debug, Clone, Copy)]

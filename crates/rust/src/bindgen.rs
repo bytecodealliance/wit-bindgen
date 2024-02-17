@@ -435,41 +435,39 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 let dealiased_resource = dealias(resolve, *resource);
 
-                results.push(
-                    if let Direction::Export = self.gen.gen.resources[&dealiased_resource].direction
-                    {
-                        match handle {
-                            Handle::Borrow(_) => {
-                                let name = resolve.types[*resource]
-                                    .name
-                                    .as_deref()
-                                    .unwrap()
-                                    .to_upper_camel_case();
-                                let rt = self.gen.gen.runtime_path();
-                                format!(
-                                    "{rt}::Resource::<{name}>::lift_borrow({op} as u32 as usize)"
-                                )
-                            }
-                            Handle::Own(_) => {
-                                let name = self.gen.type_path(dealiased_resource, true);
-                                format!("{name}::from_handle({op} as u32)")
-                            }
+                let result = if let Direction::Export =
+                    self.gen.gen.resources[&dealiased_resource].direction
+                {
+                    match handle {
+                        Handle::Borrow(_) => {
+                            let name = resolve.types[*resource]
+                                .name
+                                .as_deref()
+                                .unwrap()
+                                .to_upper_camel_case();
+                            let rt = self.gen.gen.runtime_path();
+                            format!("{rt}::Resource::<{name}>::lift_borrow({op} as u32 as usize)")
                         }
-                    } else if prefix == "" {
-                        let name = self.gen.type_path(dealiased_resource, true);
-                        format!("{name}::from_handle({op} as u32)")
-                    } else {
-                        let tmp = format!("handle{}", self.tmp());
-                        self.handle_decls.push(format!("let {tmp};"));
-                        let name = self.gen.type_path(dealiased_resource, true);
-                        format!(
-                            "{{\n
-                                {tmp} = {name}::from_handle({op} as u32);
-                                {prefix}{tmp}
-                            }}"
-                        )
-                    },
-                );
+                        Handle::Own(_) => {
+                            let name = self.gen.type_path(dealiased_resource, true);
+                            format!("{name}::from_handle({op} as u32)")
+                        }
+                    }
+                } else if prefix == "" {
+                    let name = self.gen.type_path(dealiased_resource, true);
+                    format!("{name}::from_handle({op} as u32)")
+                } else {
+                    let tmp = format!("handle{}", self.tmp());
+                    self.handle_decls.push(format!("let {tmp};"));
+                    let name = self.gen.type_path(dealiased_resource, true);
+                    format!(
+                        "{{\n
+                            {tmp} = {name}::from_handle({op} as u32);
+                            {prefix}{tmp}
+                        }}"
+                    )
+                };
+                results.push(result);
             }
 
             Instruction::RecordLower { ty, record, .. } => {
