@@ -824,7 +824,9 @@ impl CppInterfaceGenerator<'_> {
         }
         self.gen.h_src.src.push_str(&cpp_sig.name);
         self.gen.h_src.src.push_str("(");
-        if import && self.gen.opts.host {
+        if
+        /*import &&*/
+        self.gen.opts.host {
             self.gen.h_src.src.push_str("WASMExecEnv* exec_env");
             if !cpp_sig.arguments.is_empty() {
                 self.gen.h_src.src.push_str(", ");
@@ -1706,7 +1708,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let len = format!("len{}", tmp);
                 let result = format!("result{}", tmp);
                 self.push_str(&format!("auto const&{} = {};\n", val, operands[0]));
-                if self.gen.gen.opts.host {
+                if self.gen.gen.opts.short_cut {
                     self.push_str(&format!("auto {} = {}.data();\n", ptr, val));
                     self.push_str(&format!("auto {} = {}.size();\n", len, val));
                 } else {
@@ -1717,15 +1719,15 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     results.push(ptr);
                 } else {
                     if self.gen.gen.opts.host {
-                        self.gen.gen.dependencies.needs_guest_alloc = true;
-                        self.gen.gen.dependencies.needs_cstring = true;
-                        uwriteln!(self.src, "int32_t {result} = guest_alloc(exec_env, {len});");
-                        uwriteln!(self.src, "memcpy(wasm_runtime_addr_app_to_native(wasm_runtime_get_module_inst(exec_env), {result}), {ptr}, {len});");
-                        results.push(result);
+                        // self.gen.gen.dependencies.needs_guest_alloc = true;
+                        // self.gen.gen.dependencies.needs_cstring = true;
+                        // uwriteln!(self.src, "int32_t {result} = guest_alloc(exec_env, {len});");
+                        // uwriteln!(self.src, "memcpy(wasm_runtime_addr_app_to_native(wasm_runtime_get_module_inst(exec_env), {result}), {ptr}, {len});");
+                        // results.push(result);
                     } else {
                         uwriteln!(self.src, "{}.leak();\n", operands[0]);
-                        results.push(ptr);
                     }
+                    results.push(ptr);
                 }
                 results.push(len);
             }
@@ -2135,6 +2137,14 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 }
                 self.src.push_str(&func_name_h);
                 self.push_str("(");
+                if self.gen.gen.opts.host {
+                    if !matches!(func.kind, FunctionKind::Method(_)) {
+                        self.push_str("exec_env");
+                        if !operands.is_empty() {
+                            self.push_str(", ");
+                        }
+                    }
+                }
                 self.push_str(&operands.join(", "));
                 self.push_str(");\n");
             }

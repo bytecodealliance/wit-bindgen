@@ -45,6 +45,8 @@ namespace wit {
         }
 #endif
         string(guest_address a, guest_size s) : data_(a), length(s) {}
+        guest_address data() const { return data_;}
+        guest_size size() const {return length;}
         // add a convenient way to create a string
     };
 
