@@ -90,5 +90,13 @@ namespace wit {
                 , exec_env(e)
 #endif
         {}
+
+#ifdef WIT_HOST_WAMR
+        // not necessary? as the only way to get a guest_owned object
+        // is to pass exec_env
+        // WASMExecEnv* get_exec_env() const {
+        //     return exec_env;
+        // }
+#endif
     };
 }

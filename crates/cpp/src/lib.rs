@@ -98,7 +98,7 @@ pub struct Opts {
     #[cfg_attr(feature = "clap", arg(long, default_value_t = bool::default()))]
     pub host: bool,
     /// Generate code for directly linking to guest code (WIP)
-    #[cfg_attr(feature = "clap", arg(long, default_value_t = bool::default()))]
+    #[cfg_attr(feature = "clap", arg(long, default_value_t = bool::default(), alias = "direct"))]
     pub short_cut: bool,
     /// Call clang-format on the generated code
     #[cfg_attr(feature = "clap", arg(long, default_value_t = bool::default()))]
@@ -284,7 +284,12 @@ impl WorldGenerator for Cpp {
         todo!()
     }
 
-    fn finish(&mut self, resolve: &Resolve, world_id: WorldId, files: &mut Files) -> std::result::Result<(), anyhow::Error> {
+    fn finish(
+        &mut self,
+        resolve: &Resolve,
+        world_id: WorldId,
+        files: &mut Files,
+    ) -> std::result::Result<(), anyhow::Error> {
         let world = &resolve.worlds[world_id];
         let snake = world.name.to_snake_case();
 
@@ -1739,7 +1744,12 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let tmp = self.tmp();
                 let len = format!("len{}", tmp);
                 uwriteln!(self.src, "auto {} = {};\n", len, operands[1]);
-                let result = format!("wit::string((char const*)({}), {len})", operands[0]);
+                let result = if self.gen.gen.opts.host {
+                    uwriteln!(self.src, "char const* ptr{} = (char const*)wasm_runtime_addr_app_to_native(wasm_runtime_get_module_inst(exec_env), {});\n", tmp, operands[0]);
+                    format!("std::string_view(ptr{}, {len})", tmp)
+                } else {
+                    format!("wit::string((char const*)({}), {len})", operands[0])
+                };
                 results.push(result);
             }
             abi::Instruction::ListLift { element, .. } => {
