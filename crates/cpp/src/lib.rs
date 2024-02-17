@@ -284,7 +284,7 @@ impl WorldGenerator for Cpp {
         todo!()
     }
 
-    fn finish(&mut self, resolve: &Resolve, world_id: WorldId, files: &mut Files) {
+    fn finish(&mut self, resolve: &Resolve, world_id: WorldId, files: &mut Files) -> std::result::Result<(), anyhow::Error> {
         let world = &resolve.worlds[world_id];
         let snake = world.name.to_snake_case();
 
@@ -526,6 +526,7 @@ impl WorldGenerator for Cpp {
         for (name, content) in self.user_class_files.iter() {
             files.push(&name, content.as_bytes());
         }
+        Ok(())
     }
 }
 
