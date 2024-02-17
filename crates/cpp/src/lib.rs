@@ -1832,14 +1832,15 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     operand1 = operands[1]
                 ));
                 self.push_str(&format!(
-                    r#"auto {result} = std::vector<{vtype}>();
-                    {result}.reserve({len});
+                    r#"auto {result} = wit::vector<{vtype}>();
+                    {result}.allocate({len});
                     "#,
                 ));
 
                 uwriteln!(self.src, "for (unsigned i=0; i<{len}; ++i) {{");
                 uwriteln!(self.src, "auto base = {base} + i * {size};");
                 uwriteln!(self.src, "auto e{tmp} = todo();");
+                // inplace construct
                 uwriteln!(self.src, "{result}.push_back(e{tmp});");
                 uwriteln!(self.src, "}}");
                 results.push(result);
