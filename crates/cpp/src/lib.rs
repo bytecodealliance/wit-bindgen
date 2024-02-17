@@ -1428,7 +1428,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
         _payload: &wit_bindgen_core::wit_parser::Type,
         _docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
-        todo!()
+        // I assume I don't need to do anything ...
     }
 
     fn type_result(
@@ -1438,7 +1438,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
         _result: &wit_bindgen_core::wit_parser::Result_,
         _docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
-        todo!()
+        // I assume I don't need to do anything ...
     }
 
     fn type_enum(
@@ -2048,7 +2048,40 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                         .type_name(&Type::Id(*ty), &self.namespace, Flavor::InStruct);
                 results.push(format!("({typename}){}", &operands[0]));
             }
-            abi::Instruction::OptionLower { .. } => self.push_str("OptionLower"),
+            abi::Instruction::OptionLower { payload, results: result_types, .. } => {
+                let (mut some, some_results) = self.blocks.pop().unwrap();
+                let (mut none, none_results) = self.blocks.pop().unwrap();
+                let some_payload = self.payloads.pop().unwrap();
+                let _none_payload = self.payloads.pop().unwrap();
+
+                for (i, ty) in result_types.iter().enumerate() {
+                    let tmp = self.tmp();
+                    let name = self.tempname("option", tmp);
+                    results.push(name.clone());
+                    self.src.push_str(wasm_type(*ty));
+                    self.src.push_str(" ");
+                    self.src.push_str(&name);
+                    self.src.push_str(";\n");
+                    let some_result = &some_results[i];
+                    uwriteln!(some, "{name} = {some_result};");
+                    let none_result = &none_results[i];
+                    uwriteln!(none, "{name} = {none_result};");
+                }
+
+                let op0 = &operands[0];
+                let ty = self.gen.type_name(payload, &self.namespace, Flavor::InStruct);
+                let bind_some = format!("const {ty} *{some_payload} = &({op0}).val;");
+
+                uwrite!(
+                    self.src,
+                    "\
+                    if (({op0}).is_some) {{
+                        {bind_some}
+                        {some}}} else {{
+                        {none}}}
+                    "
+                );
+            }
             abi::Instruction::OptionLift { payload, .. } => {
                 let mut result: String = "std::optional<".into();
                 result.push_str(
