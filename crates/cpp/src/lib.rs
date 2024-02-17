@@ -90,6 +90,7 @@ struct Cpp {
     world_id: Option<WorldId>,
     imported_interfaces: HashSet<InterfaceId>,
     user_class_files: HashMap<String, String>,
+    defined_types: HashSet<(Vec<String>, String)>,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -117,6 +118,16 @@ impl Opts {
 impl Cpp {
     fn new() -> Cpp {
         Cpp::default()
+    }
+
+    pub fn is_first_definition(&mut self, ns: &Vec<String>, name: &str) -> bool {
+        let owned = (ns.to_owned(), name.to_owned());
+        if !self.defined_types.contains(&owned) {
+            self.defined_types.insert(owned);
+            true
+        } else {
+            false
+        }
     }
 
     fn include(&mut self, s: &str) {
@@ -614,6 +625,11 @@ struct CppInterfaceGenerator<'a> {
     // return_pointer_area_align: usize,
     pub wasm_import_module: Option<String>,
 }
+
+// I wish this was possible
+// impl Equivalent<(Vec<String>, String)> for (&Vec<String>, &str) {
+
+// }
 
 impl CppInterfaceGenerator<'_> {
     fn types(&mut self, iface: InterfaceId) {
@@ -1240,17 +1256,19 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
     ) {
         let ty = &self.resolve.types[id];
         let namespc = namespace(self.resolve, &ty.owner, false);
-        self.gen.h_src.change_namespace(&namespc);
-        Self::docs(&mut self.gen.h_src.src, docs);
-        let pascal = name.to_pascal_case();
-        uwriteln!(self.gen.h_src.src, "struct {pascal} {{");
-        for field in record.fields.iter() {
-            Self::docs(&mut self.gen.h_src.src, &field.docs);
-            let typename = self.type_name(&field.ty, &namespc, Flavor::InStruct);
-            let fname = field.name.to_lower_camel_case();
-            uwriteln!(self.gen.h_src.src, "{typename} {fname};");
+        if self.gen.is_first_definition(&namespc, name) {
+            self.gen.h_src.change_namespace(&namespc);
+            Self::docs(&mut self.gen.h_src.src, docs);
+            let pascal = name.to_pascal_case();
+            uwriteln!(self.gen.h_src.src, "struct {pascal} {{");
+            for field in record.fields.iter() {
+                Self::docs(&mut self.gen.h_src.src, &field.docs);
+                let typename = self.type_name(&field.ty, &namespc, Flavor::InStruct);
+                let fname = field.name.to_lower_camel_case();
+                uwriteln!(self.gen.h_src.src, "{typename} {fname};");
+            }
+            uwriteln!(self.gen.h_src.src, "}};");
         }
-        uwriteln!(self.gen.h_src.src, "}};");
     }
 
     fn type_resource(
@@ -1795,9 +1813,14 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             abi::Instruction::ListCanonLift { element, .. } => {
                 let tmp = self.tmp();
                 let len = format!("len{}", tmp);
-                let inner = self.gen.type_name(element, &self.namespace, Flavor::InStruct);
+                let inner = self
+                    .gen
+                    .type_name(element, &self.namespace, Flavor::InStruct);
                 self.push_str(&format!("auto {} = {};\n", len, operands[1]));
-                let result = format!("wit::vector<{2}>(({2} const *){0}, {1})", operands[0], len, inner);
+                let result = format!(
+                    "wit::vector<{2}>(({2} const *){0}, {1})",
+                    operands[0], len, inner
+                );
                 results.push(result);
             }
             abi::Instruction::StringLift => {
@@ -2048,7 +2071,11 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                         .type_name(&Type::Id(*ty), &self.namespace, Flavor::InStruct);
                 results.push(format!("({typename}){}", &operands[0]));
             }
-            abi::Instruction::OptionLower { payload, results: result_types, .. } => {
+            abi::Instruction::OptionLower {
+                payload,
+                results: result_types,
+                ..
+            } => {
                 let (mut some, some_results) = self.blocks.pop().unwrap();
                 let (mut none, none_results) = self.blocks.pop().unwrap();
                 let some_payload = self.payloads.pop().unwrap();
@@ -2069,13 +2096,15 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 }
 
                 let op0 = &operands[0];
-                let ty = self.gen.type_name(payload, &self.namespace, Flavor::InStruct);
-                let bind_some = format!("const {ty} *{some_payload} = &({op0}).val;");
+                let ty = self
+                    .gen
+                    .type_name(payload, &self.namespace, Flavor::InStruct);
+                let bind_some = format!("{ty} {some_payload} = (std::move({op0})).value();");
 
                 uwrite!(
                     self.src,
                     "\
-                    if (({op0}).is_some) {{
+                    if (({op0}).has_value()) {{
                         {bind_some}
                         {some}}} else {{
                         {none}}}
