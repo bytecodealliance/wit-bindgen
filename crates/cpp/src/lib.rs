@@ -596,6 +596,7 @@ impl SourceWithState {
 
     fn qualify(&mut self, target: &Vec<String>) {
         let mut same = 0;
+        let mut subpart = false;
         // itertools::fold_while?
         for (a, b) in self.namespace.iter().zip(target.iter()) {
             if a == b {
@@ -604,9 +605,12 @@ impl SourceWithState {
                 break;
             }
         }
-        // if same == 0 {
-        //     self.src.push_str("::");
-        // }
+        if same == 0 && !target.is_empty() {
+            // if the root namespace exists below the current namespace we need to start at root
+            if self.namespace.contains(&target.first().unwrap()) {
+                self.src.push_str("::");
+            }
+        }
         for i in target.iter().skip(same) {
             uwrite!(self.src, "{i}::");
         }
