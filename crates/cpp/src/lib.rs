@@ -1183,19 +1183,41 @@ impl CppInterfaceGenerator<'_> {
         }
     }
 
+    fn hexdigit(v: u32) -> char {
+        if v < 10 {
+            char::from_u32(('0' as u32) + v).unwrap()
+        } else {
+            char::from_u32(('A' as u32) - 10 + v).unwrap()
+        }
+    }
+
     fn make_export_name(input: &str) -> String {
         input
             .chars()
             .map(|c| match c {
-                'A'..='Z' | 'a'..='z' | '0'..='9' => c,
-                _ => '_',
+                'A'..='Z' | 'a'..='z' | '0'..='9' => {
+                    let mut s = String::new();
+                    s.push(c);
+                    s
+                }
+                '-' => {
+                    let mut s = String::new();
+                    s.push('_');
+                    s
+                }
+                _ => {
+                    let mut s = String::from_str("X").unwrap();
+                    s.push(Self::hexdigit((c as u32 & 0xf0) >> 4));
+                    s.push(Self::hexdigit(c as u32 & 0xf));
+                    s
+                }
             })
             .collect()
     }
 
     fn export_name2(module_name: &str, name: &str) -> String {
         let mut res = Self::make_export_name(module_name);
-        res.push('_');
+        res.push_str("X23"); // # character
         res.push_str(&Self::make_export_name(name));
         res
     }
