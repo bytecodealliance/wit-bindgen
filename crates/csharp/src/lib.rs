@@ -103,6 +103,7 @@ pub struct CSharp {
     return_area_align: usize,
     tuple_counts: HashSet<usize>,
     needs_result: bool,
+    needs_option: bool,
     needs_interop_string: bool,
     needs_export_return_area: bool,
     interface_fragments: HashMap<String, InterfaceTypeAndFragments>,
@@ -362,6 +363,34 @@ impl WorldGenerator for CSharp {
 
                     public const byte OK = 0;
                     public const byte ERR = 1;
+                }
+                "#,
+            )
+        }
+
+        if self.needs_option {
+            src.push_str(
+                r#"
+
+                public class Option<T> {
+                    private static Option<T> none = new ();
+                    
+                    private Option()
+                    {
+                        HasValue = false;
+                    }
+                    
+                    public Option(T v)
+                    {
+                        HasValue = true;
+                        Value = v;
+                    }
+                    
+                    public static Option<T> None => none;
+                    
+                    public bool HasValue { get; }
+                    
+                    public T Value { get; }
                 }
                 "#,
             )
@@ -982,6 +1011,7 @@ impl InterfaceGenerator<'_> {
             Type::Id(id) => {
                 let ty = &self.resolve.types[*id];
                 match &ty.kind {
+                    TypeDefKind::Option(_ty) => "".to_owned(),
                     TypeDefKind::Result(_result) => "".to_owned(),
                     TypeDefKind::List(_list) => "".to_owned(),
                     TypeDefKind::Tuple(_tuple) => "".to_owned(),
@@ -1040,19 +1070,11 @@ impl InterfaceGenerator<'_> {
                         params
                     }
                     TypeDefKind::Option(base_ty) => {
-                        // TODO: investigate a generic Option<> class.
+                        self.gen.needs_option = true;
                         if let Some(_name) = &ty.name {
-                            format!(
-                                "{}Option{}",
-                                self.qualifier(qualifier, id),
-                                self.type_name_with_qualifier(base_ty, false)
-                            )
+                            format!("Option<{}>", self.type_name_with_qualifier(base_ty, true))
                         } else {
-                            format!(
-                                "{}Option_{}",
-                                self.qualifier(qualifier, id),
-                                self.type_name_with_qualifier(base_ty, false)
-                            )
+                            format!("Option<{}>", self.type_name_with_qualifier(base_ty, true))
                         }
                     }
                     TypeDefKind::Result(result) => {
@@ -1387,37 +1409,8 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         );
     }
 
-    fn type_option(&mut self, id: TypeId, _name: &str, payload: &Type, _docs: &Docs) {
-        let payload_type_name = self.type_name(payload);
-        let name = &self.type_name(&Type::Id(id));
-
-        uwrite!(
-            self.src,
-            "
-            public class {0} {{
-                private static {0} none = new ();
-
-                private {0}()
-                {{
-                    HasValue = false;
-                }}
-
-                public {0}({1} v)
-                {{
-                    HasValue = true;
-                    Value = v;
-                }}
-
-                public static {0} None => none;
-
-                public bool HasValue {{ get; }}
-
-                public {1} Value {{ get; }}
-            }}
-            ",
-            name,
-            payload_type_name
-        );
+    fn type_option(&mut self, id: TypeId, _name: &str, _payload: &Type, _docs: &Docs) {
+        self.type_name(&Type::Id(id));
     }
 
     fn type_result(&mut self, id: TypeId, _name: &str, _result: &Result_, _docs: &Docs) {
