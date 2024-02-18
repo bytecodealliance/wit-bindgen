@@ -982,6 +982,7 @@ impl InterfaceGenerator<'_> {
             Type::Id(id) => {
                 let ty = &self.resolve.types[*id];
                 match &ty.kind {
+                    TypeDefKind::Result(_result) => "".to_owned(),
                     TypeDefKind::List(_list) => "".to_owned(),
                     TypeDefKind::Tuple(_tuple) => "".to_owned(),
                     TypeDefKind::Type(inner_type) => self.global_if_user_type(inner_type),
@@ -1577,7 +1578,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             .map(
                 |(i, (((name, ty), Block { body, results, .. }), payload))| {
                     let payload = if let Some(ty) = self.gen.non_empty_type(ty.as_ref()) {
-                        let ty = self.gen.type_name(ty);
+                        let ty = self.gen.type_name_with_qualifier(ty, true);
                         let name = name.to_upper_camel_case();
 
                         format!("{ty} {payload} = {op}.As{name};")
@@ -1644,7 +1645,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                     results.into_iter().next().unwrap()
                 } else if generics_position.is_some() {
                     if let Some(ty) = case_ty.as_ref() {
-                        format!("{}.INSTANCE", self.gen.type_name(ty))
+                        format!("{}.INSTANCE", self.gen.type_name_with_qualifier(ty, true))
                     } else {
                         format!("new {}None()", self.gen.gen.qualifier())
                     }
