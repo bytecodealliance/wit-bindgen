@@ -1950,7 +1950,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             abi::Instruction::FlagsLift { .. } => results.push("FlagsLift".to_string()),
             abi::Instruction::VariantPayloadName => {
                 let name = format!("payload{}", self.tmp());
-                results.push(format!("*{}", name));
+                results.push(name.clone()); //format!("*{}", name));
                 self.payloads.push(name);
             }
             abi::Instruction::VariantLower {
