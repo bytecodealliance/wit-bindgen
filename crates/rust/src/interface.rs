@@ -1031,11 +1031,11 @@ impl InterfaceGenerator<'_> {
                 self.push_str("}\n");
                 self.push_str("}\n");
                 if self.gen.opts.std_feature {
-                    self.push_str("#[cfg(feature = \"std\")]");
+                    self.push_str("#[cfg(feature = \"std\")]\n");
                 }
                 self.push_str("impl std::error::Error for ");
                 self.push_str(&name);
-                self.push_str("{}\n");
+                self.push_str(" {}\n");
             }
         }
     }
@@ -1170,7 +1170,7 @@ impl InterfaceGenerator<'_> {
                 self.push_str("\n");
 
                 if self.gen.opts.std_feature {
-                    self.push_str("#[cfg(feature = \"std\")]");
+                    self.push_str("#[cfg(feature = \"std\")]\n");
                 }
                 self.push_str("impl");
                 self.print_generics(lt);
@@ -1361,11 +1361,11 @@ impl InterfaceGenerator<'_> {
             self.push_str("}\n");
             self.push_str("\n");
             if self.gen.opts.std_feature {
-                self.push_str("#[cfg(feature = \"std\")]");
+                self.push_str("#[cfg(feature = \"std\")]\n");
             }
             self.push_str("impl std::error::Error for ");
             self.push_str(&name);
-            self.push_str("{}\n");
+            self.push_str(" {}\n");
         } else {
             self.print_rust_enum_debug(
                 id,

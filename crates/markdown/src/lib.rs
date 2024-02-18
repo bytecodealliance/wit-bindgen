@@ -200,7 +200,7 @@ impl WorldGenerator for Markdown {
         }
     }
 
-    fn finish(&mut self, resolve: &Resolve, world: WorldId, files: &mut Files) {
+    fn finish(&mut self, resolve: &Resolve, world: WorldId, files: &mut Files) -> Result<()> {
         let world = &resolve.worlds[world];
         let parser = Parser::new(&self.src);
         let mut events = Vec::new();
@@ -227,6 +227,8 @@ impl WorldGenerator for Markdown {
             files.push(&format!("{}.md", world.name), self.src.as_bytes());
             files.push(&format!("{}.html", world.name), html_output.as_bytes());
         }
+
+        Ok(())
     }
 }
 

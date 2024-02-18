@@ -268,7 +268,7 @@ impl WorldGenerator for CSharp {
         gen.add_world_fragment();
     }
 
-    fn finish(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) {
+    fn finish(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) -> Result<()> {
         let world = &resolve.worlds[id];
         let world_namespace = self.qualifier();
         let world_namespace = world_namespace.strip_suffix(".").unwrap();
@@ -630,6 +630,8 @@ impl WorldGenerator for CSharp {
                 generate_stub(full_name.to_string(), files, Stubs::Interface(fragments));
             }
         }
+
+        Ok(())
     }
 }
 
