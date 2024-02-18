@@ -697,7 +697,7 @@ impl CppInterfaceGenerator<'_> {
         (namespace, func_name_h)
     }
 
-    // print the signature of the lowered (wasm) function calling into highlevel
+    // print the signature of the guest export (lowered (wasm) function calling into highlevel)
     fn print_export_signature(&mut self, func: &Function) -> Vec<String> {
         let is_drop = is_drop_method(func);
         let signature = if is_drop {
@@ -731,7 +731,8 @@ impl CppInterfaceGenerator<'_> {
                 wasm_type(signature.results[0])
             });
         self.gen.c_src.src.push_str(" ");
-        let export_name = CppInterfaceGenerator::export_name2(&module_name, &func.name);
+        let export_name =
+            CppInterfaceGenerator::export_name2(&module_name, &func.name, AbiVariant::GuestExport);
         self.gen.c_src.src.push_str(&export_name);
         self.gen.c_src.src.push_str("(");
         let mut first_arg = true;
@@ -991,12 +992,16 @@ impl CppInterfaceGenerator<'_> {
             let sig = self.resolve.wasm_signature(variant, func);
             let module_name = self.wasm_import_module.as_ref().map(|e| e.clone()).unwrap();
             let export_name = func.core_export_name(Some(&module_name));
-            let import_name = CppInterfaceGenerator::export_name2(&module_name, &func.name);
+            let import_name = CppInterfaceGenerator::export_name2(
+                &module_name,
+                &func.name,
+                AbiVariant::GuestExport,
+            );
             uwriteln!(
                 self.gen.c_src.src,
                 "__attribute__((__weak__, __export_name__(\"cabi_post_{export_name}\")))"
             );
-            uwrite!(self.gen.c_src.src, "void {import_name}_post_return(");
+            uwrite!(self.gen.c_src.src, "void cabi_post_{import_name}(");
 
             let mut params = Vec::new();
             for (i, result) in sig.results.iter().enumerate() {
@@ -1215,9 +1220,13 @@ impl CppInterfaceGenerator<'_> {
             .collect()
     }
 
-    fn export_name2(module_name: &str, name: &str) -> String {
+    fn export_name2(module_name: &str, name: &str, variant: AbiVariant) -> String {
         let mut res = Self::make_export_name(module_name);
-        res.push_str("X23"); // # character
+        res.push_str(if matches!(variant, AbiVariant::GuestExport) {
+            "X23"
+        } else {
+            "X00"
+        }); // NUL character
         res.push_str(&Self::make_export_name(name));
         res
     }
@@ -1228,7 +1237,7 @@ impl CppInterfaceGenerator<'_> {
         args: &str,
         result: &str,
     ) -> (String, String) {
-        let extern_name = Self::export_name2(module_name, name);
+        let extern_name = Self::export_name2(module_name, name, AbiVariant::GuestImport);
         let import = format!("extern __attribute__((import_module(\"{module_name}\")))\n __attribute__((import_name(\"{name}\")))\n {result} {extern_name}({args});\n");
         (extern_name, import)
     }
