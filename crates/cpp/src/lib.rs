@@ -1223,10 +1223,10 @@ impl CppInterfaceGenerator<'_> {
     fn export_name2(module_name: &str, name: &str, variant: AbiVariant) -> String {
         let mut res = Self::make_export_name(module_name);
         res.push_str(if matches!(variant, AbiVariant::GuestExport) {
-            "X23"
+            "X23" // Hash character
         } else {
-            "X00"
-        }); // NUL character
+            "X00" // NUL character (some tools use '.' for display)
+        });
         res.push_str(&Self::make_export_name(name));
         res
     }
@@ -1299,7 +1299,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
             for field in record.fields.iter() {
                 Self::docs(&mut self.gen.h_src.src, &field.docs);
                 let typename = self.type_name(&field.ty, &namespc, Flavor::InStruct);
-                let fname = field.name.to_lower_camel_case();
+                let fname = field.name.to_snake_case();
                 uwriteln!(self.gen.h_src.src, "{typename} {fname};");
             }
             uwriteln!(self.gen.h_src.src, "}};");
