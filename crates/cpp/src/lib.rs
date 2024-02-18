@@ -1594,7 +1594,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         ret
     }
 
-    fn tempname(&mut self, base: &str, idx: usize) -> String {
+    fn tempname(&self, base: &str, idx: usize) -> String {
         format!("{base}{idx}")
     }
 
@@ -1916,11 +1916,14 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 }
             }
             abi::Instruction::RecordLift { record, ty, .. } => {
-                let mut result = self.typename_lift(*ty);
+//                let t = self.gen.resolve().types[*ty];
+                let mut result = self.gen.type_name(&Type::Id(*ty), &self.namespace, Flavor::InStruct);
+                // self.typename_lift(*ty);
                 result.push_str("{");
                 for (_field, val) in record.fields.iter().zip(operands) {
+                    result.push_str("std::move(");
                     result.push_str(&val);
-                    result.push_str(", ");
+                    result.push_str("), ");
                 }
                 result.push_str("}");
                 results.push(result);
@@ -2147,16 +2150,39 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 );
             }
             abi::Instruction::OptionLift { payload, .. } => {
-                let mut result: String = "std::optional<".into();
-                result.push_str(
-                    &self
-                        .gen
-                        .type_name(*payload, &self.namespace, Flavor::InStruct),
+                let (mut some, some_results) = self.blocks.pop().unwrap();
+                let (mut none, none_results) = self.blocks.pop().unwrap();
+                assert!(none_results.len() == 0);
+                assert!(some_results.len() == 1);
+                let some_result = &some_results[0];
+                let type_name = self
+                    .gen
+                    .type_name(*payload, &self.namespace, Flavor::InStruct);
+                let full_type = format!("std::optional<{type_name}>");
+                let op0 = &operands[0];
+
+                let tmp = self.tmp();
+                let resultname = self.tempname("option", tmp);
+                uwriteln!(
+                    self.src,
+                    "{full_type} {resultname};
+                    if ({op0}) {{
+                        {some}
+                        {resultname}.emplace(std::move({}));
+                    }}",
+                    some_results[0]
                 );
-                result.push_str(">(");
-                result.push_str(&operands[0]);
-                result.push(')');
-                results.push(result);
+
+                // let mut result: String = "std::optional<".into();
+                // result.push_str(
+                //     &self
+                //         .gen
+                //         .type_name(*payload, &self.namespace, Flavor::InStruct),
+                // );
+                // result.push_str(">(");
+                // result.push_str(&operands[0]);
+                // result.push(')');
+                results.push(resultname);
             }
             abi::Instruction::ResultLower {
                 results: result_types,
