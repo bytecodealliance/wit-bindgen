@@ -1748,7 +1748,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             | Instruction::Float32FromF32
             | Instruction::F32FromFloat32
             | Instruction::F64FromFloat64
-            | Instruction::Float64FromF64 
+            | Instruction::Float64FromF64
             | Instruction::S32FromI32
             | Instruction::S64FromI64 => results.push(operands[0].clone()),
 
