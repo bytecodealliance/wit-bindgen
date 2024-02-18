@@ -10,9 +10,9 @@ namespace VariantsWorld
     {
         public static void TestImports()
         {
-            Debug.Assert(TestInterop.RoundtripOption(new ITest.Option_float(1.0f)).Value == 1);
-            Debug.Assert(TestInterop.RoundtripOption(ITest.Option_float.None).HasValue == false);
-            Debug.Assert(TestInterop.RoundtripOption(new ITest.Option_float(2.0f)).Value == 2);
+            Debug.Assert(TestInterop.RoundtripOption(new Option<float>(1.0f)).Value == 1);
+            Debug.Assert(TestInterop.RoundtripOption(Option<float>.None).HasValue == false);
+            Debug.Assert(TestInterop.RoundtripOption(new Option<float>(2.0f)).Value == 2);
 
             Debug.Assert(TestInterop.RoundtripResult(Result<uint, float>.ok(2)).AsOk == 2.0);
             Debug.Assert(TestInterop.RoundtripResult(Result<uint, float>.ok(4)).AsOk == 4.0);
@@ -57,7 +57,7 @@ TestInterop.VariantZeros((ITest.Z1.b(), ITest.Z2.b(), ITest.Z3.b(), ITest.Z4.b()
             //Debug.Assert(zb3.AsB == ITest.Z3.b());
             //Debug.Assert(zb4.AsB == ITest.Z4.b());
 
-            TestInterop.VariantTypedefs(ITest.Optionuint.None, false, Result<uint, None>.err(new None()));
+            TestInterop.VariantTypedefs(Option<uint>.None, false, Result<uint, None>.err(new None()));
 
             var (a, b, c) = TestInterop.VariantEnums(true, Result<None, None>.ok(new None()), ITest.MyErrno.SUCCESS);
             Debug.Assert(a == false);
@@ -71,9 +71,9 @@ namespace VariantsWorld.wit.exports.test.variants
 {
     public class TestImpl : ITest
     {
-        public static ITest.Option_byte RoundtripOption(ITest.Option_float a)
+        public static Option<byte> RoundtripOption(Option<float> a)
         {
-            return a.HasValue ? new ITest.Option_byte((byte)a.Value) : ITest.Option_byte.None;
+            return a.HasValue ? new Option<byte>((byte)a.Value) : Option<byte>.None;
         }
 
         public static Result<double, byte> RoundtripResult(Result<uint, float> a)
@@ -108,7 +108,7 @@ namespace VariantsWorld.wit.exports.test.variants
             return new(a, b, c);
         }
 
-        public static void VariantTypedefs(ITest.Optionuint a, bool b, Result<uint, None> c) { }
+        public static void VariantTypedefs(Option<uint> a, bool b, Result<uint, None> c) { }
 
         public static (ITest.Z1, ITest.Z2, ITest.Z3, ITest.Z4) VariantZeros((ITest.Z1, ITest.Z2, ITest.Z3, ITest.Z4) a)
         {
