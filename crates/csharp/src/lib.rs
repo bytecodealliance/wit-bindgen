@@ -1608,8 +1608,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             r#"
             {declarations}
 
-            // this console line allows tests to pass the "return pointer not aligned"
-            Console.WriteLine({op}.Tag);
             switch ({op}.Tag) {{
                 {cases}
 
@@ -1738,25 +1736,26 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::U32FromI32 => results.push(format!("unchecked((uint)({}))", operands[0])),
             Instruction::U64FromI64 => results.push(format!("unchecked((ulong)({}))", operands[0])),
             Instruction::CharFromI32 => results.push(format!("unchecked((uint)({}))", operands[0])),
-            Instruction::Float32FromF32 => results.push(format!("unchecked((float){})", operands[0])),
+
             Instruction::I64FromS64
             | Instruction::I32FromU16
             | Instruction::I32FromS16
             | Instruction::I32FromU8
             | Instruction::I32FromS8
             | Instruction::I32FromS32
+            | Instruction::Float32FromF32
             | Instruction::F32FromFloat32
             | Instruction::F64FromFloat64
+            | Instruction::Float64FromF64 
             | Instruction::S32FromI32
-            | Instruction::S64FromI64
-            | Instruction::Float64FromF64 => results.push(operands[0].clone()),
+            | Instruction::S64FromI64 => results.push(operands[0].clone()),
 
             Instruction::Bitcasts { casts } => {
                 results.extend(casts.iter().zip(operands).map(|(cast, op)| match cast {
                     Bitcast::I32ToF32 => format!("BitConverter.Int32BitsToSingle({op})"),
-                    Bitcast::I64ToF32 => format!("(float) BitConverter.Int64BitsToDouble(({op}))"),
+                    Bitcast::I64ToF32 => format!("BitConverter.Int32BitsToSingle((int){op})"),
                     Bitcast::F32ToI32 => format!("BitConverter.SingleToInt32Bits({op})"),
-                    Bitcast::F32ToI64 => format!("(long) BitConverter.SingleToInt32Bits({op})"),
+                    Bitcast::F32ToI64 => format!("BitConverter.SingleToInt32Bits({op})"),
                     Bitcast::I64ToF64 => format!("BitConverter.Int64BitsToDouble({op})"),
                     Bitcast::F64ToI64 => format!("BitConverter.DoubleToInt64Bits({op})"),
                     Bitcast::I32ToI64 => format!("(long) ({op})"),
@@ -2297,39 +2296,16 @@ impl Bindgen for FunctionBindgen<'_, '_> {
     }
 
     fn return_pointer(&mut self, size: usize, align: usize) -> String {
+        self.gen.gen.return_area_size = self.gen.gen.return_area_size.max(size);
+        self.gen.gen.return_area_align = self.gen.gen.return_area_align.max(align);
         let ptr = self.locals.tmp("ptr");
 
-        // Use a stack-based return area for imports, because exports need
-        // their return area to be live until the post-return call.
-        match self.gen.direction {
-            Direction::Import => {
-                self.gen.gen.return_area_size = size;
-                self.gen.gen.return_area_align = align;
-
-                uwrite!(
-                    self.src,
-                    "
-                    void* {ptr} = stackalloc int[{size} + {align} - 1];
-                    "
-                );
-
-                return format!("(int){ptr}");
-            }
-            Direction::Export => {
-                self.gen.gen.return_area_size = self.gen.gen.return_area_size.max(size);
-                self.gen.gen.return_area_align = self.gen.gen.return_area_align.max(align);
-
-                uwrite!(
-                    self.src,
-                    "
-                    var {ptr} = InteropReturnArea.returnArea.AddressOfReturnArea();
-                    "
-                );
-                self.gen.gen.needs_export_return_area = true;
-
-                return format!("{ptr}");
-            }
-        }
+        uwriteln!(
+            self.src,
+            "var {ptr} = InteropReturnArea.returnArea.AddressOfReturnArea();"
+        );
+        self.gen.gen.needs_export_return_area = true;
+        format!("{ptr}")
     }
 
     fn push_block(&mut self) {
