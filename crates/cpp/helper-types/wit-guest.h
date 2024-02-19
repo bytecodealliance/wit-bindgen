@@ -56,7 +56,7 @@ public:
     b.data_ = nullptr;
     return *this;
   }
-  vector(T const *d, size_t l) : data_(d), length(l) {}
+  vector(T *d, size_t l) : data_(d), length(l) {}
   T const *data() const { return data_; }
   T *data() { return data_; }
   size_t size() const { return length; }

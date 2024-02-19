@@ -1899,7 +1899,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     format!("wit::span<{inner} const>(ptr{}, (size_t){len})", tmp)
                 } else {
                     format!(
-                        "wit::vector<{inner}>(({inner} const*)({}), {len})",
+                        "wit::vector<{inner}>(({inner}*)({}), {len})",
                         operands[0]
                     )
                 };
@@ -2473,7 +2473,9 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 }
             }
             abi::Instruction::Malloc { .. } => todo!(),
-            abi::Instruction::GuestDeallocate { .. } => todo!(),
+            abi::Instruction::GuestDeallocate { .. } => {
+                uwriteln!(self.src, "free((void*) ({}));", operands[0]);
+            },
             abi::Instruction::GuestDeallocateString => {
                 uwriteln!(self.src, "if (({}) > 0) {{", operands[1]);
                 uwriteln!(
@@ -2502,7 +2504,21 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 uwriteln!(self.src, "free((void*) ({ptr}));");
                 uwriteln!(self.src, "}}");
             }
-            abi::Instruction::GuestDeallocateVariant { .. } => todo!(),
+            abi::Instruction::GuestDeallocateVariant { blocks } => {
+                let blocks = self
+                    .blocks
+                    .drain(self.blocks.len() - blocks..)
+                    .collect::<Vec<_>>();
+
+                uwriteln!(self.src, "switch ((int32_t) {}) {{", operands[0]);
+                for (i, (block, results)) in blocks.into_iter().enumerate() {
+                    assert!(results.is_empty());
+                    uwriteln!(self.src, "case {}: {{", i);
+                    self.src.push_str(&block);
+                    self.src.push_str("break;\n}\n");
+                }
+                self.src.push_str("}\n");
+            }
         }
     }
 

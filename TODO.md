@@ -63,4 +63,3 @@
 
 * Nested lists
 * Host: Strings inside records
-* result
