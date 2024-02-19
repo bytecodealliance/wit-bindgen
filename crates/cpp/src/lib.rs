@@ -8,11 +8,10 @@ use std::{
 };
 use wit_bindgen_c::{to_c_ident, wasm_type};
 use wit_bindgen_core::{
-    abi::{self, AbiVariant, LiftLower, WasmSignature},
-    abi::{Bindgen, WasmType},
+    abi::{self, AbiVariant, Bindgen, LiftLower, WasmSignature, WasmType},
     uwrite, uwriteln,
     wit_parser::{
-        Docs, Function, FunctionKind, Handle, InterfaceId, Resolve, Results, SizeAlign, Type,
+        Docs, Function, FunctionKind, Handle, Int, InterfaceId, Resolve, Results, SizeAlign, Type,
         TypeDefKind, TypeId, TypeOwner, WorldId, WorldKey,
     },
     Files, InterfaceGenerator, Source, WorldGenerator,
@@ -2024,14 +2023,42 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 self.src.push_str(");\n");
                 results.push(name);
             }
-            abi::Instruction::FlagsLower { flags, .. } => {
-                let tmp = self.tmp();
-                self.push_str(&format!("auto flags{} = {};\n", tmp, operands[0]));
-                for i in 0..flags.repr().count() {
-                    results.push(format!("((flags{} >> {})&1)!=0", tmp, i * 32));
+            abi::Instruction::FlagsLower { flags, ty, .. } => {
+                match wit_bindgen_c::flags_repr(flags) {
+                    Int::U8 | Int::U16 | Int::U32 => {
+                        results.push(format!("((int32_t){})", operands.pop().unwrap()));
+                    }
+                    Int::U64 => {
+                        let name =
+                            self.gen
+                                .type_name(&Type::Id(*ty), &self.namespace, Flavor::InStruct);
+                        let tmp = self.tmp();
+                        let tempname = self.tempname("flags", tmp);
+                        uwriteln!(self.src, "{name} {tempname} = {};", operands[0]);
+                        results.push(format!("(int32_t)(((uint64_t){tempname}) & 0xffffffff)"));
+                        results.push(format!(
+                            "(int32_t)((((uint64_t){tempname}) >> 32) & 0xffffffff)"
+                        ));
+                    }
                 }
             }
-            abi::Instruction::FlagsLift { .. } => results.push("FlagsLift".to_string()),
+            abi::Instruction::FlagsLift { flags, ty, .. } => {
+                let typename =
+                    self.gen
+                        .type_name(&Type::Id(*ty), &self.namespace, Flavor::InStruct);
+                match wit_bindgen_c::flags_repr(flags) {
+                    Int::U8 | Int::U16 | Int::U32 => {
+                        results.push(format!("(({typename}){})", operands.pop().unwrap()));
+                    }
+                    Int::U64 => {
+                        let op0 = &operands[0];
+                        let op1 = &operands[1];
+                        results.push(format!(
+                            "(({typename})(({op0}) | (((uint64_t)({op1})) << 32)))"
+                        ));
+                    }
+                }
+            }
             abi::Instruction::VariantPayloadName => {
                 let name = format!("payload{}", self.tmp());
                 results.push(name.clone()); //format!("*{}", name));
