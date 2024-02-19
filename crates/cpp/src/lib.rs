@@ -8,7 +8,7 @@ use std::{
 };
 use wit_bindgen_c::{to_c_ident, wasm_type};
 use wit_bindgen_core::{
-    abi::{self, AbiVariant, Bindgen, LiftLower, WasmSignature, WasmType},
+    abi::{self, AbiVariant, Bindgen, Bitcast, LiftLower, WasmSignature, WasmType},
     uwrite, uwriteln,
     wit_parser::{
         Docs, Function, FunctionKind, Handle, Int, InterfaceId, Resolve, Results, SizeAlign, Type,
@@ -1740,7 +1740,40 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 }
             }
             abi::Instruction::I32Const { val } => results.push(format!("(int32_t({}))", val)),
-            abi::Instruction::Bitcasts { .. } => todo!(),
+            abi::Instruction::Bitcasts { casts } => {
+                for (cast, op) in casts.iter().zip(operands) {
+                    let op = op;
+                    match cast {
+                        Bitcast::I32ToF32 | Bitcast::I64ToF32 => {
+                            results
+                                .push(format!("((union {{ int32_t a; float b; }}){{ {} }}).b", op));
+                        }
+                        Bitcast::F32ToI32 | Bitcast::F32ToI64 => {
+                            results
+                                .push(format!("((union {{ float a; int32_t b; }}){{ {} }}).b", op));
+                        }
+                        Bitcast::I64ToF64 => {
+                            results.push(format!(
+                                "((union {{ int64_t a; double b; }}){{ {} }}).b",
+                                op
+                            ));
+                        }
+                        Bitcast::F64ToI64 => {
+                            results.push(format!(
+                                "((union {{ double a; int64_t b; }}){{ {} }}).b",
+                                op
+                            ));
+                        }
+                        Bitcast::I32ToI64 => {
+                            results.push(format!("(int64_t) {}", op));
+                        }
+                        Bitcast::I64ToI32 => {
+                            results.push(format!("(int32_t) {}", op));
+                        }
+                        Bitcast::None => results.push(op.to_string()),
+                    }
+                }
+            }
             abi::Instruction::ConstZero { tys } => {
                 for ty in tys.iter() {
                     match ty {
@@ -1898,10 +1931,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     uwriteln!(self.src, "{inner} const* ptr{tmp} = ({inner} const*)wasm_runtime_addr_app_to_native(wasm_runtime_get_module_inst(exec_env), {});\n", operands[0]);
                     format!("wit::span<{inner} const>(ptr{}, (size_t){len})", tmp)
                 } else {
-                    format!(
-                        "wit::vector<{inner}>(({inner}*)({}), {len})",
-                        operands[0]
-                    )
+                    format!("wit::vector<{inner}>(({inner}*)({}), {len})", operands[0])
                 };
                 results.push(result);
             }
@@ -2475,7 +2505,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             abi::Instruction::Malloc { .. } => todo!(),
             abi::Instruction::GuestDeallocate { .. } => {
                 uwriteln!(self.src, "free((void*) ({}));", operands[0]);
-            },
+            }
             abi::Instruction::GuestDeallocateString => {
                 uwriteln!(self.src, "if (({}) > 0) {{", operands[1]);
                 uwriteln!(

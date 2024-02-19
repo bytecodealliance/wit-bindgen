@@ -96,7 +96,9 @@ fn wamr_add_result(sig: &mut WamrSig, resolve: &Resolve, ty: &Type) {
                     .push(if fl.flags.len() > 32 { 'I' } else { 'i' })
             }
             TypeDefKind::Tuple(_) => sig.wamr_result.push('i'),
-            TypeDefKind::Variant(_) => todo!(),
+            TypeDefKind::Variant(_) => {
+                sig.wamr_types.push('*');
+            }
             TypeDefKind::Enum(_e) => {
                 sig.wamr_types.push('*');
             }
