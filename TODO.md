@@ -61,4 +61,6 @@
 
 # Cpp
 
-* Start namespace at root within exports referring to normal structs
+* Nested lists
+* Host: Strings inside records
+* result

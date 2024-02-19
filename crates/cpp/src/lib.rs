@@ -1412,23 +1412,25 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
     ) {
         let ty = &self.resolve.types[id];
         let namespc = namespace(self.resolve, &ty.owner, false);
-        self.gen.h_src.change_namespace(&namespc);
-        Self::docs(&mut self.gen.h_src.src, docs);
-        let pascal = name.to_pascal_case();
-        let int_repr = wit_bindgen_c::int_repr(wit_bindgen_c::flags_repr(flags));
-        uwriteln!(self.gen.h_src.src, "enum class {pascal} : {int_repr} {{");
-        uwriteln!(self.gen.h_src.src, "k_None = 0,");
-        for (n, field) in flags.flags.iter().enumerate() {
-            Self::docs(&mut self.gen.h_src.src, &field.docs);
-            let fname = field.name.to_pascal_case();
-            uwriteln!(self.gen.h_src.src, "k{fname} = (1<<{n}),");
-        }
-        uwriteln!(self.gen.h_src.src, "}};");
-        uwriteln!(
-            self.gen.h_src.src,
-            r#"static inline {pascal} operator|({pascal} a, {pascal} b) {{ return {pascal}({int_repr}(a)|{int_repr}(b)); }}
+        if self.gen.is_first_definition(&namespc, name) {
+            self.gen.h_src.change_namespace(&namespc);
+            Self::docs(&mut self.gen.h_src.src, docs);
+            let pascal = name.to_pascal_case();
+            let int_repr = wit_bindgen_c::int_repr(wit_bindgen_c::flags_repr(flags));
+            uwriteln!(self.gen.h_src.src, "enum class {pascal} : {int_repr} {{");
+            uwriteln!(self.gen.h_src.src, "k_None = 0,");
+            for (n, field) in flags.flags.iter().enumerate() {
+                Self::docs(&mut self.gen.h_src.src, &field.docs);
+                let fname = field.name.to_pascal_case();
+                uwriteln!(self.gen.h_src.src, "k{fname} = (1<<{n}),");
+            }
+            uwriteln!(self.gen.h_src.src, "}};");
+            uwriteln!(
+                self.gen.h_src.src,
+                r#"static inline {pascal} operator|({pascal} a, {pascal} b) {{ return {pascal}({int_repr}(a)|{int_repr}(b)); }}
         static inline {pascal} operator&({pascal} a, {pascal} b) {{ return {pascal}({int_repr}(a)&{int_repr}(b)); }}"#
-        );
+            );
+        }
     }
 
     fn type_tuple(
@@ -1438,7 +1440,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
         _flags: &wit_bindgen_core::wit_parser::Tuple,
         _docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
-        todo!()
+        // I assume I don't need to do anything ...
     }
 
     fn type_variant(
@@ -1503,20 +1505,22 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
     ) {
         let ty = &self.resolve.types[id];
         let namespc = namespace(self.resolve, &ty.owner, false);
-        self.gen.h_src.change_namespace(&namespc);
-        let pascal = name.to_pascal_case();
-        Self::docs(&mut self.gen.h_src.src, docs);
-        let int_t = wit_bindgen_c::int_repr(enum_.tag());
-        uwriteln!(self.gen.h_src.src, "enum class {pascal} : {int_t} {{");
-        for (i, case) in enum_.cases.iter().enumerate() {
-            Self::docs(&mut self.gen.h_src.src, &case.docs);
-            uwriteln!(
-                self.gen.h_src.src,
-                " k{} = {i},",
-                case.name.to_pascal_case(),
-            );
+        if self.gen.is_first_definition(&namespc, name) {
+            self.gen.h_src.change_namespace(&namespc);
+            let pascal = name.to_pascal_case();
+            Self::docs(&mut self.gen.h_src.src, docs);
+            let int_t = wit_bindgen_c::int_repr(enum_.tag());
+            uwriteln!(self.gen.h_src.src, "enum class {pascal} : {int_t} {{");
+            for (i, case) in enum_.cases.iter().enumerate() {
+                Self::docs(&mut self.gen.h_src.src, &case.docs);
+                uwriteln!(
+                    self.gen.h_src.src,
+                    " k{} = {i},",
+                    case.name.to_pascal_case(),
+                );
+            }
+            uwriteln!(self.gen.h_src.src, "}};\n");
         }
-        uwriteln!(self.gen.h_src.src, "}};\n");
     }
 
     fn type_alias(
@@ -1916,8 +1920,10 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 }
             }
             abi::Instruction::RecordLift { record, ty, .. } => {
-//                let t = self.gen.resolve().types[*ty];
-                let mut result = self.gen.type_name(&Type::Id(*ty), &self.namespace, Flavor::InStruct);
+                //                let t = self.gen.resolve().types[*ty];
+                let mut result =
+                    self.gen
+                        .type_name(&Type::Id(*ty), &self.namespace, Flavor::InStruct);
                 // self.typename_lift(*ty);
                 result.push_str("{");
                 for (_field, val) in record.fields.iter().zip(operands) {
