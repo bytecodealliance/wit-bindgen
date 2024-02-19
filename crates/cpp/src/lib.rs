@@ -137,7 +137,7 @@ impl Cpp {
     fn interface<'a>(
         &'a mut self,
         resolve: &'a Resolve,
-        name: &'a Option<&'a WorldKey>,
+        name: Option<&'a WorldKey>,
         in_import: bool,
         wasm_import_module: Option<String>,
     ) -> CppInterfaceGenerator<'a> {
@@ -224,7 +224,7 @@ impl WorldGenerator for Cpp {
         self.imported_interfaces.insert(id);
         let wasm_import_module = resolve.name_world_key(name);
         let binding = Some(name);
-        let mut gen = self.interface(resolve, &binding, true, Some(wasm_import_module));
+        let mut gen = self.interface(resolve, binding, true, Some(wasm_import_module));
         gen.interface = Some(id);
         // if self.gen.interfaces_with_types_printed.insert(id) {
         gen.types(id);
@@ -234,7 +234,7 @@ impl WorldGenerator for Cpp {
         for (_name, func) in resolve.interfaces[id].functions.iter() {
             if matches!(func.kind, FunctionKind::Freestanding) {
                 gen.gen.h_src.change_namespace(&namespace);
-                gen.generate_function(func, id, AbiVariant::GuestImport);
+                gen.generate_function(func, &TypeOwner::Interface(id), AbiVariant::GuestImport);
             }
         }
         // gen.finish();
@@ -252,7 +252,7 @@ impl WorldGenerator for Cpp {
             .push_str(&format!("// export_interface {name:?}\n"));
         let wasm_import_module = resolve.name_world_key(name);
         let binding = Some(name);
-        let mut gen = self.interface(resolve, &binding, false, Some(wasm_import_module));
+        let mut gen = self.interface(resolve, binding, false, Some(wasm_import_module));
         gen.interface = Some(id);
         gen.types(id);
         let namespace = namespace(resolve, &TypeOwner::Interface(id), true);
@@ -260,7 +260,7 @@ impl WorldGenerator for Cpp {
         for (_name, func) in resolve.interfaces[id].functions.iter() {
             if matches!(func.kind, FunctionKind::Freestanding) {
                 gen.gen.h_src.change_namespace(&namespace);
-                gen.generate_function(func, id, AbiVariant::GuestExport);
+                gen.generate_function(func, &TypeOwner::Interface(id), AbiVariant::GuestExport);
             }
         }
         Ok(())
@@ -278,12 +278,26 @@ impl WorldGenerator for Cpp {
 
     fn export_funcs(
         &mut self,
-        _resolve: &Resolve,
-        _world: WorldId,
-        _funcs: &[(&str, &Function)],
+        resolve: &Resolve,
+        world: WorldId,
+        funcs: &[(&str, &Function)],
         _files: &mut Files,
     ) -> anyhow::Result<()> {
-        todo!()
+        let name = WorldKey::Name(resolve.worlds[world].name.clone());
+        let wasm_import_module = resolve.name_world_key(&name);
+        let binding = Some(name);
+        let mut gen = self.interface(resolve, binding.as_ref(), false, Some(wasm_import_module));
+        //gen.interface = Some(id);
+        //gen.types(id);
+        let namespace = namespace(resolve, &TypeOwner::World(world), true);
+
+        for (_name, func) in funcs.iter() {
+            if matches!(func.kind, FunctionKind::Freestanding) {
+                gen.gen.h_src.change_namespace(&namespace);
+                gen.generate_function(func, &TypeOwner::World(world), AbiVariant::GuestExport);
+            }
+        }
+        Ok(())
     }
 
     fn import_types(
@@ -622,7 +636,7 @@ struct CppInterfaceGenerator<'a> {
     gen: &'a mut Cpp,
     resolve: &'a Resolve,
     interface: Option<InterfaceId>,
-    _name: &'a Option<&'a WorldKey>,
+    _name: Option<&'a WorldKey>,
     sizes: SizeAlign,
     in_import: bool,
     // return_pointer_area_size: usize,
@@ -911,7 +925,13 @@ impl CppInterfaceGenerator<'_> {
         }
     }
 
-    fn generate_function(&mut self, func: &Function, interface: InterfaceId, variant: AbiVariant) {
+    fn generate_function(
+        &mut self,
+        func: &Function,
+        owner: &TypeOwner,
+        //interface: InterfaceId,
+        variant: AbiVariant,
+    ) {
         let export = match variant {
             AbiVariant::GuestImport => self.gen.opts.host,
             AbiVariant::GuestExport => !self.gen.opts.host,
@@ -955,7 +975,7 @@ impl CppInterfaceGenerator<'_> {
             let namespace = if matches!(func.kind, FunctionKind::Freestanding) {
                 namespace(
                     self.resolve,
-                    &TypeOwner::Interface(interface),
+                    owner,
                     matches!(variant, AbiVariant::GuestExport),
                 )
             } else {
@@ -1365,7 +1385,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                     results: Results::Named(vec![]),
                     docs: Docs::default(),
                 };
-                self.generate_function(&func, intf, variant);
+                self.generate_function(&func, &TypeOwner::Interface(intf), variant);
             }
             let funcs = self.resolve.interfaces[intf].functions.values();
             for func in funcs {
@@ -1375,7 +1395,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                     FunctionKind::Static(mid) => *mid == id,
                     FunctionKind::Constructor(mid) => *mid == id,
                 } {
-                    self.generate_function(func, intf, variant);
+                    self.generate_function(func, &TypeOwner::Interface(intf), variant);
                 }
             }
 
