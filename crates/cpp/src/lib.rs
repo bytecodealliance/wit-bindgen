@@ -268,12 +268,23 @@ impl WorldGenerator for Cpp {
 
     fn import_funcs(
         &mut self,
-        _resolve: &Resolve,
-        _world: WorldId,
-        _funcs: &[(&str, &Function)],
+        resolve: &Resolve,
+        world: WorldId,
+        funcs: &[(&str, &Function)],
         _files: &mut Files,
     ) {
-        todo!()
+        let name = WorldKey::Name(resolve.worlds[world].name.clone());
+        let wasm_import_module = resolve.name_world_key(&name);
+        let binding = Some(name);
+        let mut gen = self.interface(resolve, binding.as_ref(), true, Some(wasm_import_module));
+        let namespace = namespace(resolve, &TypeOwner::World(world), false);
+
+        for (_name, func) in funcs.iter() {
+            if matches!(func.kind, FunctionKind::Freestanding) {
+                gen.gen.h_src.change_namespace(&namespace);
+                gen.generate_function(func, &TypeOwner::World(world), AbiVariant::GuestImport);
+            }
+        }
     }
 
     fn export_funcs(
@@ -287,8 +298,6 @@ impl WorldGenerator for Cpp {
         let wasm_import_module = resolve.name_world_key(&name);
         let binding = Some(name);
         let mut gen = self.interface(resolve, binding.as_ref(), false, Some(wasm_import_module));
-        //gen.interface = Some(id);
-        //gen.types(id);
         let namespace = namespace(resolve, &TypeOwner::World(world), true);
 
         for (_name, func) in funcs.iter() {
@@ -413,7 +422,7 @@ impl WorldGenerator for Cpp {
                 }
             }
             if self.dependencies.needs_exported_resources {
-                let world_name = &self.world;
+                // let world_name = &self.world;
                 uwriteln!(c_str.src, "template <class R> std::map<int32_t, R> wit::{RESOURCE_EXPORT_BASE_CLASS_NAME}<R>::resources;");
             }
         }
@@ -610,7 +619,7 @@ impl SourceWithState {
 
     fn qualify(&mut self, target: &Vec<String>) {
         let mut same = 0;
-        let mut subpart = false;
+        // let mut subpart = false;
         // itertools::fold_while?
         for (a, b) in self.namespace.iter().zip(target.iter()) {
             if a == b {
@@ -1184,7 +1193,7 @@ impl CppInterfaceGenerator<'_> {
                         //self.gen.dependencies.needs_vector = true;
                         Flavor::Argument(AbiVariant::GuestImport) => {
                             self.gen.dependencies.needs_wit = true;
-                            format!("wit::span<{inner}>")
+                            format!("wit::span<{inner} const>")
                         }
                         Flavor::Argument(AbiVariant::GuestExport) if !self.gen.opts.host => {
                             self.gen.dependencies.needs_wit = true;
@@ -1192,7 +1201,7 @@ impl CppInterfaceGenerator<'_> {
                         }
                         Flavor::Result(AbiVariant::GuestExport) if self.gen.opts.host => {
                             self.gen.dependencies.needs_wit = true;
-                            format!("wit::span<{inner}>")
+                            format!("wit::span<{inner} const>")
                         }
                         _ => {
                             self.gen.dependencies.needs_wit = true;
@@ -1442,7 +1451,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
             for (n, field) in flags.flags.iter().enumerate() {
                 Self::docs(&mut self.gen.h_src.src, &field.docs);
                 let fname = field.name.to_pascal_case();
-                uwriteln!(self.gen.h_src.src, "k{fname} = (1<<{n}),");
+                uwriteln!(self.gen.h_src.src, "k{fname} = (1ULL<<{n}),");
             }
             uwriteln!(self.gen.h_src.src, "}};");
             uwriteln!(
@@ -1589,6 +1598,7 @@ struct FunctionBindgen<'a, 'b> {
     namespace: Vec<String>,
     src: Source,
     block_storage: Vec<wit_bindgen_core::Source>,
+    /// intermediate calculations for contained objects
     blocks: Vec<(String, Vec<String>)>,
     payloads: Vec<String>,
     // caching for wasm
@@ -1802,7 +1812,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let val = format!("vec{}", tmp);
                 let ptr = format!("ptr{}", tmp);
                 let len = format!("len{}", tmp);
-                let result = format!("result{}", tmp);
+                // let result = format!("result{}", tmp);
                 self.push_str(&format!("auto const&{} = {};\n", val, operands[0]));
                 if self.gen.gen.opts.short_cut {
                     self.push_str(&format!("auto {} = {}.data();\n", ptr, val));
@@ -1826,7 +1836,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let val = format!("vec{}", tmp);
                 let ptr = format!("ptr{}", tmp);
                 let len = format!("len{}", tmp);
-                let result = format!("result{}", tmp);
+                // let result = format!("result{}", tmp);
                 self.push_str(&format!("auto const&{} = {};\n", val, operands[0]));
                 if self.gen.gen.opts.short_cut {
                     self.push_str(&format!("auto {} = {}.data();\n", ptr, val));
@@ -1845,12 +1855,15 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 }
                 results.push(len);
             }
-            abi::Instruction::ListLower { element, realloc } => {
+            abi::Instruction::ListLower {
+                element: _,
+                realloc,
+            } => {
                 let tmp = self.tmp();
                 let val = format!("vec{}", tmp);
                 let ptr = format!("ptr{}", tmp);
                 let len = format!("len{}", tmp);
-                let result = format!("result{}", tmp);
+                // let result = format!("result{}", tmp);
                 self.push_str(&format!("auto const&{} = {};\n", val, operands[0]));
                 if self.gen.gen.opts.short_cut {
                     self.push_str(&format!("auto {} = {}.data();\n", ptr, val));
@@ -1876,10 +1889,21 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     .gen
                     .type_name(element, &self.namespace, Flavor::InStruct);
                 self.push_str(&format!("auto {} = {};\n", len, operands[1]));
-                let result = format!(
-                    "wit::vector<{2}>(({2} const *){0}, {1})",
-                    operands[0], len, inner
-                );
+                // let typecast = if self.gen.gen.opts.host {
+                //     String::new()
+                // } else {
+                //     format!("({inner} const *)")
+                // };
+                //                let result = format!("wit::vector<{inner}>({typecast}{}, {len})", operands[0]);
+                let result = if self.gen.gen.opts.host {
+                    uwriteln!(self.src, "{inner} const* ptr{tmp} = ({inner} const*)wasm_runtime_addr_app_to_native(wasm_runtime_get_module_inst(exec_env), {});\n", operands[0]);
+                    format!("wit::span<{inner} const>(ptr{}, (size_t){len})", tmp)
+                } else {
+                    format!(
+                        "wit::vector<{inner}>(({inner} const*)({}), {len})",
+                        operands[0]
+                    )
+                };
                 results.push(result);
             }
             abi::Instruction::StringLift => {
@@ -2176,11 +2200,11 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 );
             }
             abi::Instruction::OptionLift { payload, .. } => {
-                let (mut some, some_results) = self.blocks.pop().unwrap();
-                let (mut none, none_results) = self.blocks.pop().unwrap();
+                let (some, some_results) = self.blocks.pop().unwrap();
+                let (_none, none_results) = self.blocks.pop().unwrap();
                 assert!(none_results.len() == 0);
                 assert!(some_results.len() == 1);
-                let some_result = &some_results[0];
+                // let some_result = &some_results[0];
                 let type_name = self
                     .gen
                     .type_name(*payload, &self.namespace, Flavor::InStruct);
@@ -2198,44 +2222,79 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     }}",
                     some_results[0]
                 );
-
-                // let mut result: String = "std::optional<".into();
-                // result.push_str(
-                //     &self
-                //         .gen
-                //         .type_name(*payload, &self.namespace, Flavor::InStruct),
-                // );
-                // result.push_str(">(");
-                // result.push_str(&operands[0]);
-                // result.push(')');
                 results.push(resultname);
             }
             abi::Instruction::ResultLower {
                 results: result_types,
+                result,
                 ..
             } => {
-                let err = self.blocks.pop().unwrap().0;
-                let ok = self.blocks.pop().unwrap().0;
-                self.let_results(result_types.len(), results);
-                let operand = &operands[0];
-                self.push_str(&format!(
-                    "{operand}.has_value()
-                        ? ({ok})
-                        : ({err});"
-                ));
+                let (mut err, err_results) = self.blocks.pop().unwrap();
+                let (mut ok, ok_results) = self.blocks.pop().unwrap();
+                let err_payload = self.payloads.pop().unwrap();
+                let ok_payload = self.payloads.pop().unwrap();
+
+                for (i, ty) in result_types.iter().enumerate() {
+                    let tmp = self.tmp();
+                    let name = self.tempname("result", tmp);
+                    results.push(name.clone());
+                    self.src.push_str(wasm_type(*ty));
+                    self.src.push_str(" ");
+                    self.src.push_str(&name);
+                    self.src.push_str(";\n");
+                    let ok_result = &ok_results[i];
+                    uwriteln!(ok, "{name} = {ok_result};");
+                    let err_result = &err_results[i];
+                    uwriteln!(err, "{name} = {err_result};");
+                }
+
+                let op0 = &operands[0];
+                let ok_ty = self.gen.optional_type_name(
+                    result.ok.as_ref(),
+                    &self.namespace,
+                    Flavor::InStruct,
+                );
+                let err_ty = self.gen.optional_type_name(
+                    result.err.as_ref(),
+                    &self.namespace,
+                    Flavor::InStruct,
+                );
+                let bind_ok = if let Some(_ok) = result.ok.as_ref() {
+                    format!("{ok_ty} {ok_payload} = std::move({op0}).value();")
+                } else {
+                    String::new()
+                };
+                let bind_err = if let Some(_err) = result.err.as_ref() {
+                    format!("{err_ty} {err_payload} = std::move({op0}).error();")
+                } else {
+                    String::new()
+                };
+
+                uwrite!(
+                    self.src,
+                    "\
+                    if (({op0}).has_value()) {{
+                        {bind_ok}
+                        {ok}}} else {{
+                        {bind_err}
+                        {err}}}
+                    "
+                );
             }
             abi::Instruction::ResultLift { result, .. } => {
-                let mut err = self.blocks.pop().unwrap().0;
-                let mut ok = self.blocks.pop().unwrap().0;
+                let (mut err, err_results) = self.blocks.pop().unwrap();
+                let (mut ok, ok_results) = self.blocks.pop().unwrap();
+                let mut ok_result = String::new();
+                let mut err_result = String::new();
                 if result.ok.is_none() {
                     ok.clear();
                 } else {
-                    ok = format!("std::move({ok})");
+                    ok_result = format!("std::move({})", ok_results[0]);
                 }
                 if result.err.is_none() {
                     err.clear();
                 } else {
-                    err = format!("std::move({err})");
+                    err_result = format!("std::move({})", err_results[0]);
                 }
                 let ok_type = self.gen.optional_type_name(
                     result.ok.as_ref(),
@@ -2247,12 +2306,24 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     &self.namespace,
                     Flavor::InStruct,
                 );
-                let type_name = format!("std::expected<{ok_type}, {err_type}>",);
+                let full_type = format!("std::expected<{ok_type}, {err_type}>",);
                 let err_type = "std::unexpected";
                 let operand = &operands[0];
-                results.push(format!(
-                    "{operand}==0 \n? {type_name}({ok}) \n: {type_name}({err_type}({err}))"
-                ));
+
+                let tmp = self.tmp();
+                let resultname = self.tempname("result", tmp);
+                uwriteln!(
+                    self.src,
+                    "{full_type} {resultname};
+                    if ({operand}==0) {{
+                        {ok}
+                        {resultname}.emplace({ok_result});
+                    }} else {{
+                        {err}
+                        {resultname}={err_type}{{{err_result}}};
+                    }}"
+                );
+                results.push(resultname);
             }
             abi::Instruction::CallWasm { name, sig } => {
                 let module_name = self
