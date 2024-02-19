@@ -193,7 +193,6 @@ impl WorldGenerator for Cpp {
             uwriteln!(
                 self.c_src.src,
                 r#"#include "{}_cpp.h"
-            #include <utility>
             #include <cstdlib> // realloc
 
             extern "C" void *cabi_realloc(void *ptr, size_t old_size, size_t align, size_t new_size);
@@ -353,6 +352,7 @@ impl WorldGenerator for Cpp {
             );
         }
         self.include("<cstdint>");
+        self.include("<utility>"); // for std::move
         if self.dependencies.needs_string {
             self.include("<string>");
         }
