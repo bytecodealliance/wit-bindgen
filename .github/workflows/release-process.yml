@@ -34,6 +34,11 @@ jobs:
       - name: Bump version number
         run: ./publish ${{ github.event.inputs.action }}
 
+      # Regenerate precompiled artifacts in this repo as they're dependent on
+      # the version number.
+      - uses: ./.github/actions/install-wasi-sdk
+      - run: ./ci/rebuild-libcabi-realloc.sh
+
       - name: Prep PR metadata
         run: |
           set -ex

@@ -15,6 +15,10 @@ pub use wit_bindgen_rust_macro::*;
 #[doc(hidden)]
 pub use bitflags;
 
+/// For more information about this see `./ci/rebuild-libcabi-realloc.sh`.
+#[cfg(feature = "realloc")]
+mod cabi_realloc;
+
 #[doc(hidden)]
 pub mod rt {
     use crate::alloc::string::String;
@@ -56,9 +60,33 @@ pub mod rt {
     // Re-export things from liballoc for convenient use.
     pub use super::alloc::{alloc, boxed, string, vec};
 
+    /// This function is called from generated bindings and will be deleted by
+    /// the linker. The purpose of this function is to force a reference to the
+    /// symbol `cabi_realloc` to make its way through to the final linker
+    /// command line. That way `wasm-ld` will pick it up, see it needs to be
+    /// exported, and then export it.
+    ///
+    /// For more information about this see `./ci/rebuild-libcabi-realloc.sh`.
+    pub fn maybe_link_cabi_realloc() {
+        #[cfg(feature = "realloc")]
+        extern "C" {
+            fn cabi_realloc(
+                old_ptr: *mut u8,
+                old_len: usize,
+                align: usize,
+                new_len: usize,
+            ) -> *mut u8;
+        }
+        #[cfg(feature = "realloc")]
+        static _X: unsafe extern "C" fn(*mut u8, usize, usize, usize) -> *mut u8 = cabi_realloc;
+    }
+
+    /// NB: this function is called by a generated function in the
+    /// `cabi_realloc` module above. It's otherwise never explicitly called.
+    ///
+    /// For more information about this see `./ci/rebuild-libcabi-realloc.sh`.
     #[cfg(feature = "realloc")]
-    #[no_mangle]
-    unsafe extern "C" fn cabi_realloc(
+    pub unsafe fn cabi_realloc(
         old_ptr: *mut u8,
         old_len: usize,
         align: usize,
