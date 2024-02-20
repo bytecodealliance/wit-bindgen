@@ -69,7 +69,9 @@ impl exports::test::resource_aggregates::test::Guest for Test {
         let o2 = o2.map(|v| v.value.as_ref().unwrap());
         let result1 = result1.map(|mut v| Option::take(&mut v.value).unwrap());
         let result2 = result2.map(|v| v.value.as_ref().unwrap());
-        import_foo(r1, r2, r3, t1, t2, v1, v2, l1, l2, o1, o2, result1, result2) + 4
+        import_foo(
+            r1, &r2, r3, t1, &t2, v1, &v2, l1, &l2, o1, o2, result1, result2,
+        ) + 4
     }
 }
 impl exports::test::resource_aggregates::test::GuestThing for MyThing {
