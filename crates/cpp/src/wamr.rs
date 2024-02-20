@@ -131,8 +131,8 @@ pub fn wamr_signature(resolve: &Resolve, func: &Function) -> WamrSig {
     match &func.results {
         Results::Named(p) => {
             if !p.is_empty() {
-                dbg!(p);
-                todo!()
+                // assume a pointer
+                result.wamr_types.push('*');
             }
         }
         Results::Anon(e) => wamr_add_result(&mut result, resolve, e),

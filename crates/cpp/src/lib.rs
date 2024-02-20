@@ -829,9 +829,15 @@ impl CppInterfaceGenerator<'_> {
                         res.result = "void".into();
                     } else {
                         res.result = "std::tuple<".into();
-                        for (i, (name, ty)) in n.iter().enumerate() {
-                            if i>0 {res.result.push_str(", ");}
-                            res.result.push_str(&self.type_name(ty, &res.namespace, Flavor::Result(abi_variant)));
+                        for (i, (_name, ty)) in n.iter().enumerate() {
+                            if i > 0 {
+                                res.result.push_str(", ");
+                            }
+                            res.result.push_str(&self.type_name(
+                                ty,
+                                &res.namespace,
+                                Flavor::Result(abi_variant),
+                            ));
                         }
                         res.result.push('>');
                     }
@@ -1645,17 +1651,19 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
     }
 
     fn let_results(&mut self, amt: usize, results: &mut Vec<String>) {
-        match amt {
-            0 => {}
-            1 => {
-                let tmp = self.tmp();
-                let res = format!("result{}", tmp);
-                self.push_str("auto ");
-                self.push_str(&res);
+        if amt > 0 {
+            let tmp = self.tmp();
+            let res = format!("result{}", tmp);
+            self.push_str("auto ");
+            self.push_str(&res);
+            self.push_str(" = ");
+            if amt == 1 {
                 results.push(res);
-                self.push_str(" = ");
+            } else {
+                for i in 0..amt {
+                    results.push(format!("std::get<{i}>({res})"));
+                }
             }
-            _n => todo!(),
         }
     }
 
@@ -2493,7 +2501,8 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let import = !self.gen.gen.opts.host;
                 match amt {
                     0 => {}
-                    1 => {
+                    _ => {
+                        assert!(*amt == operands.len());
                         match &func.kind {
                             FunctionKind::Constructor(_) if import => {
                                 // strange but works
@@ -2501,10 +2510,26 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                             }
                             _ => self.src.push_str("return "),
                         }
-                        self.src.push_str(&operands[0]);
-                        self.src.push_str(";\n");
+                        if *amt == 1 {
+                            self.src.push_str(&operands[0]);
+                            self.src.push_str(";\n");
+                        } else {
+                            self.src.push_str("std::tuple<");
+                            if let Results::Named(params) = &func.results {
+                                for (num, (_name, ty)) in params.iter().enumerate() {
+                                    if num > 0 {
+                                        self.src.push_str(", ");
+                                    }
+                                    let tname =
+                                        self.gen.type_name(ty, &self.namespace, Flavor::InStruct);
+                                    self.src.push_str(&tname);
+                                }
+                            }
+                            self.src.push_str(">(");
+                            self.src.push_str(&operands.join(", "));
+                            self.src.push_str(");\n");
+                        }
                     }
-                    _ => todo!(),
                 }
             }
             abi::Instruction::Malloc { .. } => todo!(),
