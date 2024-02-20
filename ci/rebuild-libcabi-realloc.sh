@@ -74,6 +74,12 @@ rm -f crates/guest-rust/src/cabi_realloc.o
 $WASI_SDK_PATH/bin/clang crates/guest-rust/src/cabi_realloc.c \
   -O -c -o crates/guest-rust/src/cabi_realloc.o
 
+# Remove the `producers` section. This appears to differ whether the host for
+# clang is either macOS or Linux. Not needed here anyway, so discard it to help
+# either host produce the same object.
+wasm-tools strip -d producers ./crates/guest-rust/src/cabi_realloc.o \
+  -o ./crates/guest-rust/src/cabi_realloc.o
+
 rm -f crates/guest-rust/src/libwit_bindgen_cabi_realloc.a
 $WASI_SDK_PATH/bin/llvm-ar crus crates/guest-rust/src/libwit_bindgen_cabi_realloc.a \
   crates/guest-rust/src/cabi_realloc.o
