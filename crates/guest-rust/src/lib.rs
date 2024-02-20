@@ -68,17 +68,20 @@ pub mod rt {
     ///
     /// For more information about this see `./ci/rebuild-libcabi-realloc.sh`.
     pub fn maybe_link_cabi_realloc() {
-        #[cfg(feature = "realloc")]
-        extern "C" {
-            fn cabi_realloc(
-                old_ptr: *mut u8,
-                old_len: usize,
-                align: usize,
-                new_len: usize,
-            ) -> *mut u8;
+        #[cfg(target_family = "wasm")]
+        {
+            #[cfg(feature = "realloc")]
+            extern "C" {
+                fn cabi_realloc(
+                    old_ptr: *mut u8,
+                    old_len: usize,
+                    align: usize,
+                    new_len: usize,
+                ) -> *mut u8;
+            }
+            #[cfg(feature = "realloc")]
+            static _X: unsafe extern "C" fn(*mut u8, usize, usize, usize) -> *mut u8 = cabi_realloc;
         }
-        #[cfg(feature = "realloc")]
-        static _X: unsafe extern "C" fn(*mut u8, usize, usize, usize) -> *mut u8 = cabi_realloc;
     }
 
     /// NB: this function is called by a generated function in the
