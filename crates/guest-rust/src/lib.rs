@@ -5,8 +5,8 @@ extern crate alloc;
 use alloc::boxed::Box;
 use core::fmt;
 use core::marker;
-use core::mem::ManuallyDrop;
 use core::ops::{Deref, DerefMut};
+use core::sync::atomic::{AtomicU32, Ordering::Relaxed};
 
 #[cfg(feature = "macros")]
 pub use wit_bindgen_rust_macro::*;
@@ -188,7 +188,13 @@ type RawRep<T> = Option<T>;
 /// resources.
 #[repr(transparent)]
 pub struct Resource<T: WasmResource> {
-    handle: u32,
+    // NB: This would ideally be `u32` but it is not. The fact that this has
+    // interior mutability is not exposed in the API of this type except for the
+    // `take_handle` method which is supposed to in theory be private.
+    //
+    // This represents, almost all the time, a valid handle value. When it's
+    // invalid it's stored as `u32::MAX`.
+    handle: AtomicU32,
     _marker: marker::PhantomData<Box<T>>,
 }
 
@@ -215,20 +221,33 @@ pub unsafe trait RustResource: WasmResource {
 impl<T: WasmResource> Resource<T> {
     #[doc(hidden)]
     pub unsafe fn from_handle(handle: u32) -> Self {
+        assert!(handle != u32::MAX);
         Self {
-            handle,
+            handle: AtomicU32::new(handle),
             _marker: marker::PhantomData,
         }
     }
 
+    /// Takes ownership of the handle owned by `resource`.
+    ///
+    /// Note that this ideally would be `into_handle` taking `Resource<T>` by
+    /// ownership. The code generator does not enable that in all situations,
+    /// unfortunately, so this is provided instead.
+    ///
+    /// Also note that `take_handle` is in theory only ever called on values
+    /// owned by a generated function. For example a generated function might
+    /// take `Resource<T>` as an argument but then call `take_handle` on a
+    /// reference to that argument. In that sense the dynamic nature of
+    /// `take_handle` should only be exposed internally to generated code, not
+    /// to user code.
     #[doc(hidden)]
-    pub fn into_handle(resource: Resource<T>) -> u32 {
-        ManuallyDrop::new(resource).handle
+    pub fn take_handle(resource: &Resource<T>) -> u32 {
+        resource.handle.swap(u32::MAX, Relaxed)
     }
 
     #[doc(hidden)]
     pub fn handle(resource: &Resource<T>) -> u32 {
-        resource.handle
+        resource.handle.load(Relaxed)
     }
 
     /// Creates a new Rust-defined resource from the underlying representation
@@ -261,7 +280,7 @@ impl<T: WasmResource> Resource<T> {
         T: RustResource,
     {
         unsafe {
-            let rep = T::rep(resource.handle);
+            let rep = T::rep(resource.handle.load(Relaxed));
             RawRep::take(&mut *(rep as *mut RawRep<T>)).unwrap()
         }
     }
@@ -280,7 +299,7 @@ impl<T: RustResource> Deref for Resource<T> {
 
     fn deref(&self) -> &T {
         unsafe {
-            let rep = T::rep(self.handle);
+            let rep = T::rep(self.handle.load(Relaxed));
             RawRep::as_ref(&*(rep as *const RawRep<T>)).unwrap()
         }
     }
@@ -289,7 +308,7 @@ impl<T: RustResource> Deref for Resource<T> {
 impl<T: RustResource> DerefMut for Resource<T> {
     fn deref_mut(&mut self) -> &mut T {
         unsafe {
-            let rep = T::rep(self.handle);
+            let rep = T::rep(self.handle.load(Relaxed));
             RawRep::as_mut(&mut *(rep as *mut RawRep<T>)).unwrap()
         }
     }
@@ -306,7 +325,15 @@ impl<T: WasmResource> fmt::Debug for Resource<T> {
 impl<T: WasmResource> Drop for Resource<T> {
     fn drop(&mut self) {
         unsafe {
-            T::drop(self.handle);
+            match self.handle.load(Relaxed) {
+                // If this handle was "taken" then don't do anything in the
+                // destructor.
+                u32::MAX => {}
+
+                // ... but otherwise do actually destroy it with the imported
+                // component model intrinsic as defined through `T`.
+                other => T::drop(other),
+            }
         }
     }
 }

@@ -1,6 +1,7 @@
+#![allow(unused_imports)] // not all imports used by all generators
+
 use anyhow::{Context, Result};
 use heck::ToUpperCamelCase;
-
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -759,6 +760,7 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
     Ok(result)
 }
 
+#[allow(dead_code)] // not used by all generators
 fn resolve_wit_dir(dir: &PathBuf) -> (Resolve, WorldId) {
     let mut resolve = Resolve::new();
     let (pkg, _files) = resolve.push_path(dir).unwrap();
