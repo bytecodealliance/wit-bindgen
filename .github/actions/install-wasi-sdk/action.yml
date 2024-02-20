@@ -1,8 +1,6 @@
 name: 'Install the wasi-sdk'
 description: 'Install the wasi-sdk toolchain'
 
-inputs:
-
 runs:
   using: composite
   steps:
