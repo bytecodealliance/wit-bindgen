@@ -828,7 +828,12 @@ impl CppInterfaceGenerator<'_> {
                     if n.is_empty() {
                         res.result = "void".into();
                     } else {
-                        todo!();
+                        res.result = "std::tuple<".into();
+                        for (i, (name, ty)) in n.iter().enumerate() {
+                            if i>0 {res.result.push_str(", ");}
+                            res.result.push_str(&self.type_name(ty, &res.namespace, Flavor::Result(abi_variant)));
+                        }
+                        res.result.push('>');
                     }
                 }
                 wit_bindgen_core::wit_parser::Results::Anon(ty) => {
