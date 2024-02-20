@@ -17,6 +17,14 @@ pub fn generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         .into()
 }
 
+fn anyhow_to_syn(span: Span, err: anyhow::Error) -> Error {
+    let mut msg = err.to_string();
+    for cause in err.chain().skip(1) {
+        msg.push_str(&format!("\n\nCaused by:\n  {cause}"));
+    }
+    Error::new(span, msg)
+}
+
 struct Config {
     opts: Opts,
     resolve: Resolve,
@@ -104,10 +112,10 @@ impl Parse for Config {
             }
         }
         let (resolve, pkg, files) =
-            parse_source(&source).map_err(|err| Error::new(call_site, format!("{err:?}")))?;
+            parse_source(&source).map_err(|err| anyhow_to_syn(call_site, err))?;
         let world = resolve
             .select_world(pkg, world.as_deref())
-            .map_err(|e| Error::new(call_site, format!("{e:?}")))?;
+            .map_err(|e| anyhow_to_syn(call_site, e))?;
         Ok(Config {
             opts,
             resolve,
