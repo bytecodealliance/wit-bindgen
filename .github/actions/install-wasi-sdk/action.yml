@@ -19,3 +19,5 @@ runs:
         echo "WASI_SDK_PATH=`pwd`/wasi-sdk-20.0+m" >> $GITHUB_ENV
       if: runner.os == 'Windows'
       shell: bash
+    - name: Setup `wasm-tools`
+      uses: bytecodealliance/actions/wasm-tools/setup@v1
