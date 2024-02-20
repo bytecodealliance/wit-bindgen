@@ -459,3 +459,40 @@ cargo build
 ```
 
 Learn more how to run the tests in the [testing document](tests/README.md).
+
+# Versioning and Releases
+
+This repository's crates and CLI are all currently versioned at `0.X.Y` where
+`Y` is frequently `0` and `X` increases most of the time with publishes. This
+means that changes are published as possibly-API-breaking changes as development
+continues here.
+
+Also, this repository does not currently have a strict release cadence. Releases
+are done on an as-needed basis. If you'd like a release done please feel free to
+reach out on [Zulip], file an issue, leave a comment on a PR, or otherwise
+contact a maintainer.
+
+[Zulip]: https://bytecodealliance.zulipchat.com/
+
+For maintainers, the release process looks like:
+
+* Go to [this link](https://github.com/bytecodealliance/wit-bindgen/actions/workflows/release-process.yml)
+* Click on "Run workflow" in the UI.
+* Use the default `bump` argument and hit "Run workflow"
+* Wait for a PR to be created by CI. You can watch the "Actions" tab for if
+  things go wrong.
+* When the PR opens, close it then reopen it. Don't ask questions.
+* Review the PR, approve it, then queue it for merge.
+
+That should be it, but be sure to keep an eye on CI in case anything goes wrong.
+
+# License
+
+This project is licensed under the Apache 2.0 license with the LLVM exception.
+See [LICENSE](LICENSE) for more details.
+
+### Contribution
+
+Unless you explicitly state otherwise, any contribution intentionally submitted
+for inclusion in this project by you, as defined in the Apache-2.0 license,
+shall be licensed as above, without any additional terms or conditions.

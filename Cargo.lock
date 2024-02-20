@@ -1368,7 +1368,7 @@ checksum = "69758bda2e78f098e4ccb393021a0963bb3442eac05f135c30f61b7370bbafae"
 
 [[package]]
 name = "test-artifacts"
-version = "0.1.0"
+version = "0.0.0"
 
 [[package]]
 name = "test-helpers"
@@ -2457,7 +2457,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-rust-macro"
-version = "0.18.1"
+version = "0.18.0"
 dependencies = [
  "anyhow",
  "proc-macro2",

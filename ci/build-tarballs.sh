@@ -9,11 +9,7 @@ rm -rf tmp
 mkdir tmp
 mkdir -p dist
 
-tag=dev
-if [[ $GITHUB_REF == refs/tags/wit-bindgen-cli-* ]]; then
-  tag=v${GITHUB_REF:26}
-fi
-
+tag=$(./ci/print-current-version.sh)
 bin_pkgname=wit-bindgen-$tag-$platform
 
 mkdir tmp/$bin_pkgname
