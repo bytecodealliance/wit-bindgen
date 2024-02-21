@@ -157,16 +157,17 @@ fn gen_world(
     let mut resolve = Resolve::default();
     let (pkg, _files) = resolve.push_path(&opts.wit)?;
     let world = resolve.select_world(pkg, opts.world.as_deref())?;
-    if let Err(e) = generator.generate(&resolve, world, files) {
-        if e.to_string().starts_with("no `exports` map provided") {
-            bail!(
-                "{e:?}\n\n\
-                help: Specify export implementations using the `--exports` option.\n    \
-                For example: `--exports world=MyWorld,ns:pkg/iface=MyIface`\n    \
-                Alternatively, specify `--stubs` to generate stub implementations."
+    if let Err(mut e) = generator.generate(&resolve, world, files) {
+        #[cfg(feature = "rust")]
+        if e.is::<wit_bindgen_rust::MissingExportsMap>() {
+            e = e.context(
+                "no `--exports` option was found but one was required, \
+                 this can be passed as `--exports world=MyWorld,ns:pkg/iface=MyIface` \
+                 for example\n\
+                Alternatively, specify `--stubs` to generate stub implementations.",
             );
         }
-        bail!("{e:?}");
+        return Err(e);
     }
 
     Ok(())

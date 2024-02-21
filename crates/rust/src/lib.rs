@@ -276,7 +276,7 @@ impl RustWasm {
             ExportKey::Name(name) => format!("\"{name}\""),
         };
         if self.opts.exports.is_empty() {
-            bail!("no `exports` map provided in configuration - provide an `exports` map a key `{key}`")
+            bail!(MissingExportsMap { key });
         }
         bail!("expected `exports` map to contain key `{key}`")
     }
@@ -869,3 +869,20 @@ impl fmt::Display for RustFlagsRepr {
         }
     }
 }
+
+#[derive(Debug)]
+pub struct MissingExportsMap {
+    key: String,
+}
+
+impl fmt::Display for MissingExportsMap {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "no `exports` map provided in configuration - provide an `exports` map a key `{key}`",
+            key = self.key,
+        )
+    }
+}
+
+impl std::error::Error for MissingExportsMap {}
