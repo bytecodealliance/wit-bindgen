@@ -33,6 +33,7 @@ struct RustWasm {
     export_modules: Vec<(String, Vec<String>)>,
     skip: HashSet<String>,
     interface_names: HashMap<InterfaceId, InterfaceName>,
+    /// Each imported and exported interface is stored in this map. Value indicates if last use was import.
     interface_last_seen_as_import: HashMap<InterfaceId, bool>,
     import_funcs_called: bool,
     with_name_counter: usize,
