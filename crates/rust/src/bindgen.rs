@@ -1,4 +1,4 @@
-use crate::{int_repr, to_rust_ident, wasm_type, Direction, InterfaceGenerator, RustFlagsRepr};
+use crate::{int_repr, to_rust_ident, wasm_type, InterfaceGenerator, RustFlagsRepr};
 use heck::*;
 use std::fmt::Write as _;
 use std::mem;
@@ -411,11 +411,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             } => {
                 let op = &operands[0];
                 let rt = self.gen.gen.runtime_path();
-                let resource = dealias(self.gen.resolve, *resource);
-                results.push(match self.gen.gen.resources[&resource].direction {
-                    Direction::Import => format!("({op}).take_handle() as i32"),
-                    Direction::Export => format!("{rt}::Resource::take_handle(&{op}) as i32"),
-                });
+                let result = if self.gen.is_exported_resource(*resource) {
+                    format!("{rt}::Resource::take_handle(&{op}) as i32")
+                } else {
+                    format!("({op}).take_handle() as i32")
+                };
+                results.push(result);
             }
 
             Instruction::HandleLower {
@@ -435,9 +436,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 let dealiased_resource = dealias(resolve, *resource);
 
-                let result = if let Direction::Export =
-                    self.gen.gen.resources[&dealiased_resource].direction
-                {
+                let result = if self.gen.is_exported_resource(*resource) {
                     match handle {
                         Handle::Borrow(_) => {
                             let name = resolve.types[*resource]
@@ -834,7 +833,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         ));
                     }
                     FunctionKind::Constructor(ty) => {
-                        self.gen.mark_resource_owned(*ty);
                         self.push_str(&format!(
                             "Own{0}::new(<_{0}Impl as Guest{0}>::new",
                             resolve.types[*ty]
