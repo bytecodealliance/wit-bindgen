@@ -1,7 +1,7 @@
 use crate::bindgen::FunctionBindgen;
 use crate::{
-    int_repr, to_rust_ident, to_upper_camel_case, wasm_type, Direction, ExportKey, FnSig,
-    Identifier, InterfaceName, Ownership, RustFlagsRepr, RustWasm,
+    int_repr, to_rust_ident, to_upper_camel_case, wasm_type, ExportKey, FnSig, Identifier,
+    InterfaceName, Ownership, RustFlagsRepr, RustWasm,
 };
 use anyhow::Result;
 use heck::*;
@@ -1115,7 +1115,6 @@ impl InterfaceGenerator<'_> {
             }
 
             TypeDefKind::Handle(Handle::Own(ty)) => {
-                self.mark_resource_owned(*ty);
                 self.print_ty(&Type::Id(*ty), mode);
             }
 
@@ -1596,7 +1595,6 @@ impl InterfaceGenerator<'_> {
             // aliases) is used prior to generating declarations.  For example,
             // if only borrows are used, no need to generate the `Own{name}`
             // version.
-            self.mark_resource_owned(target);
             for prefix in ["Own", ""] {
                 self.rustdoc(docs);
                 self.push_str(&format!(
@@ -1700,31 +1698,25 @@ impl InterfaceGenerator<'_> {
         self.push_str(&format!("{rt}::vec::Vec", rt = self.gen.runtime_path()));
     }
 
-    fn is_exported_resource(&self, mut ty: TypeId) -> bool {
-        loop {
-            let def = &self.resolve.types[ty];
-            if let TypeOwner::World(_) = &def.owner {
-                // Worlds cannot export types of any kind as of this writing.
-                return false;
-            }
-            match &def.kind {
-                TypeDefKind::Type(Type::Id(id)) => ty = *id,
-                _ => break,
-            }
+    pub fn is_exported_resource(&self, ty: TypeId) -> bool {
+        let ty = dealias(self.resolve, ty);
+        let ty = &self.resolve.types[ty];
+        match &ty.kind {
+            TypeDefKind::Resource => {}
+            _ => return false,
         }
 
-        matches!(
-            self.gen.resources.get(&ty).map(|info| info.direction),
-            Some(Direction::Export)
-        )
-    }
+        match ty.owner {
+            // Worlds cannot export types of any kind as of this writing.
+            TypeOwner::World(_) => false,
 
-    pub fn mark_resource_owned(&mut self, resource: TypeId) {
-        self.gen
-            .resources
-            .entry(dealias(self.resolve, resource))
-            .or_default()
-            .owned = true;
+            // Interfaces are "stateful" currently where whatever we last saw
+            // them as dictates whether it's exported or not.
+            TypeOwner::Interface(i) => !self.gen.interface_last_seen_as_import[&i],
+
+            // Shouldn't be the case for resources
+            TypeOwner::None => unreachable!(),
+        }
     }
 
     fn push_string_name(&mut self) {
@@ -1765,15 +1757,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.print_typedef_record(id, record, docs);
     }
 
-    fn type_resource(&mut self, id: TypeId, name: &str, docs: &Docs) {
-        let entry = self
-            .gen
-            .resources
-            .entry(dealias(self.resolve, id))
-            .or_default();
-        if !self.in_import {
-            entry.direction = Direction::Export;
-        }
+    fn type_resource(&mut self, _id: TypeId, name: &str, docs: &Docs) {
         self.rustdoc(docs);
         let camel = to_upper_camel_case(name);
         let rt = self.gen.runtime_path();

@@ -415,3 +415,45 @@ mod with {
         my::inline::bar::bar(&msg);
     }
 }
+
+mod with_and_resources {
+    wit_bindgen::generate!({
+        inline: "
+            package my:inline;
+
+            interface foo {
+                resource a;
+            }
+
+            interface bar {
+                use foo.{a};
+
+                bar: func(m: a) -> list<a>;
+            }
+
+            world baz {
+                import bar;
+            }
+        ",
+        with: {
+            "my:inline/foo": other::my::inline::foo,
+        },
+    });
+
+    pub mod other {
+        wit_bindgen::generate!({
+            inline: "
+                package my:inline;
+
+                interface foo {
+                    resource a;
+                }
+
+                world dummy {
+                    use foo.{a};
+                    import bar: func(m: a);
+                }
+            ",
+        });
+    }
+}

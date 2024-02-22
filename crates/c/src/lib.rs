@@ -92,7 +92,7 @@ pub struct Opts {
     pub type_section_suffix: Option<String>,
 
     /// Configure the autodropping of borrows in exported functions.
-    #[cfg_attr(feature = "clap", arg(long))]
+    #[cfg_attr(feature = "clap", arg(long, default_value_t = Enabled::default()))]
     pub autodrop_borrows: Enabled,
 }
 
