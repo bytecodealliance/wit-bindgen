@@ -274,6 +274,13 @@ use core::sync::atomic::{AtomicU32, Ordering::Relaxed};
 ///     // case above if possible.
 ///     ownership: Borrowing { duplicate_if_necessary: false },
 ///
+///     // This will suffix the custom section containing component type
+///     // information with the specified string. This is not required by
+///     // default but if the same world is generated in two different locations
+///     // in the crate then one bindings generation location will need this
+///     // suffix to avoid having the custom sections corrupt each other.
+///     type_section_suffix: "suffix",
+///
 ///     // Configures the path to the `wit-bindgen` crate itself. By default
 ///     // this is `wit_bindgen` assuming that your crate depends on the
 ///     // `wit-bindgen` crate itself.

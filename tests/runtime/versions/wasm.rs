@@ -24,23 +24,23 @@ impl Guest for Component {
 }
 
 struct Component1;
-impl v1 for Component1{ 
+impl v1 for Component1 {
     fn x() -> f32 {
         1.0
     }
 
     fn y(a: f32) -> f32 {
-        1.0+a
+        1.0 + a
     }
 }
 
 struct Component2;
-impl v2 for Component2{ 
+impl v2 for Component2 {
     fn x() -> f32 {
         2.0
     }
 
     fn z(a: f32, b: f32) -> f32 {
-        2.0+a+b
+        2.0 + a + b
     }
 }

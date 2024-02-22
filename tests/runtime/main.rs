@@ -35,6 +35,7 @@ mod resource_with_lists;
 mod resources;
 mod smoke;
 mod strings;
+mod type_section_suffix;
 mod variants;
 mod versions;
 

@@ -103,6 +103,9 @@ impl Parse for Config {
                             .collect()
                     }
                     Opt::With(with) => opts.with.extend(with),
+                    Opt::TypeSectionSuffix(suffix) => {
+                        opts.type_section_suffix = Some(suffix.value())
+                    }
                 }
             }
         } else {
@@ -216,6 +219,7 @@ mod kw {
     syn::custom_keyword!(export_prefix);
     syn::custom_keyword!(additional_derives);
     syn::custom_keyword!(with);
+    syn::custom_keyword!(type_section_suffix);
 }
 
 #[derive(Clone)]
@@ -276,6 +280,7 @@ enum Opt {
     // Parse as paths so we can take the concrete types/macro names rather than raw strings
     AdditionalDerives(Vec<syn::Path>),
     With(HashMap<String, String>),
+    TypeSectionSuffix(syn::LitStr),
 }
 
 impl Parse for Opt {
@@ -381,6 +386,10 @@ impl Parse for Opt {
             let fields: Punctuated<_, Token![,]> =
                 contents.parse_terminated(with_field_parse, Token![,])?;
             Ok(Opt::With(HashMap::from_iter(fields.into_iter())))
+        } else if l.peek(kw::type_section_suffix) {
+            input.parse::<kw::type_section_suffix>()?;
+            input.parse::<Token![:]>()?;
+            Ok(Opt::TypeSectionSuffix(input.parse()?))
         } else {
             Err(l.error())
         }

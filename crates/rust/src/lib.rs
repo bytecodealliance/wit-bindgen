@@ -171,6 +171,11 @@ pub struct Opts {
     /// Remapping of interface names to rust module names.
     #[cfg_attr(feature = "clap", arg(long, value_parser = parse_with, default_value = ""))]
     pub with: HashMap<String, String>,
+
+    /// Add the specified suffix to the name of the custome section containing
+    /// the component type.
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub type_section_suffix: Option<String>,
 }
 
 impl Opts {
@@ -533,8 +538,10 @@ impl WorldGenerator for RustWasm {
         // otherwise is attempted to be unique here to ensure that this doesn't get
         // concatenated to other custom sections by LLD by accident since LLD will
         // concatenate custom sections of the same name.
-        self.src
-            .push_str(&format!("#[link_section = \"component-type:{}\"]\n", name,));
+        let suffix = self.opts.type_section_suffix.as_deref().unwrap_or("");
+        self.src.push_str(&format!(
+            "#[link_section = \"component-type:{name}{suffix}\"]\n"
+        ));
 
         let mut producers = wasm_metadata::Producers::empty();
         producers.add(
