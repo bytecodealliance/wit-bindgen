@@ -376,8 +376,18 @@ pub mod rt {
                     new_len: usize,
                 ) -> *mut u8;
             }
+            // Force the `cabi_realloc` symbol to be referenced from here. This
+            // function isn't ever actually used at runtime but the symbol needs
+            // to be used here to force it to get referenced all the way through
+            // to the linker. By the time we get to the linker this symbol will
+            // be discarded due to it never actually being used by
+            // `cabi_realloc` will have already been referenced at which point
+            // its export name annotation will ensure it's exported regardless.
             #[cfg(feature = "realloc")]
-            static _X: unsafe extern "C" fn(*mut u8, usize, usize, usize) -> *mut u8 = cabi_realloc;
+            unsafe {
+                cabi_realloc(core::ptr::null_mut(), 0, 1, 1);
+            }
+            unreachable!();
         }
     }
 
@@ -549,7 +559,7 @@ pub unsafe trait RustResource: WasmResource {
 impl<T: WasmResource> Resource<T> {
     #[doc(hidden)]
     pub unsafe fn from_handle(handle: u32) -> Self {
-        assert!(handle != u32::MAX);
+        debug_assert!(handle != u32::MAX);
         Self {
             handle: AtomicU32::new(handle),
             _marker: marker::PhantomData,
