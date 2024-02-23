@@ -9,7 +9,7 @@ use std::process::{Command, Stdio};
 use std::str::FromStr;
 use wit_bindgen_core::abi::{Bitcast, WasmType};
 use wit_bindgen_core::{
-    uwriteln, wit_parser::*, Files, InterfaceGenerator as _, Source, Types, WorldGenerator,
+    uwrite, uwriteln, wit_parser::*, Files, InterfaceGenerator as _, Source, Types, WorldGenerator,
 };
 
 mod bindgen;
@@ -560,10 +560,33 @@ impl WorldGenerator for RustWasm {
 
         self.src.push_str("#[doc(hidden)]\n");
         self.src.push_str(&format!(
-            "pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; {}] = ",
+            "pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; {}] = *b\"\\\n",
             component_type.len()
         ));
-        self.src.push_str(&format!("{:?};\n", component_type));
+        let mut line_length = 0;
+        let s = self.src.as_mut_string();
+        for byte in component_type.iter() {
+            if line_length >= 80 {
+                s.push_str("\\\n");
+                line_length = 0;
+            }
+            match byte {
+                b if b.is_ascii_alphanumeric() || (b.is_ascii_punctuation() && *b != b'\\') => {
+                    s.push(char::from(*byte));
+                    line_length += 1;
+                }
+                0 => {
+                    s.push_str("\\0");
+                    line_length += 2;
+                }
+                _ => {
+                    uwrite!(s, "\\x{:02x}", byte);
+                    line_length += 4;
+                }
+            }
+        }
+
+        self.src.push_str("\";\n");
 
         let rt = self.runtime_path().to_string();
         uwriteln!(
