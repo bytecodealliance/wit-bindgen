@@ -558,13 +558,17 @@ impl WorldGenerator for RustWasm {
         ));
         self.src.push_str(&format!("{:?};\n", component_type));
 
-        self.src.push_str(
+        let rt = self.runtime_path().to_string();
+        uwriteln!(
+            self.src,
             "
-            #[inline(never)]
-            #[doc(hidden)]
-            #[cfg(target_arch = \"wasm32\")]
-            pub fn __link_section() {}
-        ",
+                #[inline(never)]
+                #[doc(hidden)]
+                #[cfg(target_arch = \"wasm32\")]
+                pub fn __link_section() {{
+                    {rt}::maybe_link_cabi_realloc();
+                }}
+            ",
         );
 
         if self.opts.stubs {
