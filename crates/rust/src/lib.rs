@@ -571,7 +571,15 @@ impl WorldGenerator for RustWasm {
                 line_length = 0;
             }
             match byte {
-                b if b.is_ascii_alphanumeric() || (b.is_ascii_punctuation() && *b != b'\\') => {
+                b'\\' => {
+                    s.push_str("\\\\");
+                    line_length += 2;
+                }
+                b'"' => {
+                    s.push_str("\\\"");
+                    line_length += 2;
+                }
+                b if b.is_ascii_alphanumeric() || b.is_ascii_punctuation() => {
                     s.push(char::from(*byte));
                     line_length += 1;
                 }
