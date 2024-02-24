@@ -17,6 +17,14 @@ pub fn generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         .into()
 }
 
+fn anyhow_to_syn(span: Span, err: anyhow::Error) -> Error {
+    let mut msg = err.to_string();
+    for cause in err.chain().skip(1) {
+        msg.push_str(&format!("\n\nCaused by:\n  {cause}"));
+    }
+    Error::new(span, msg)
+}
+
 struct Config {
     opts: Opts,
     resolve: Resolve,
@@ -95,6 +103,9 @@ impl Parse for Config {
                             .collect()
                     }
                     Opt::With(with) => opts.with.extend(with),
+                    Opt::TypeSectionSuffix(suffix) => {
+                        opts.type_section_suffix = Some(suffix.value())
+                    }
                 }
             }
         } else {
@@ -104,10 +115,10 @@ impl Parse for Config {
             }
         }
         let (resolve, pkg, files) =
-            parse_source(&source).map_err(|err| Error::new(call_site, format!("{err:?}")))?;
+            parse_source(&source).map_err(|err| anyhow_to_syn(call_site, err))?;
         let world = resolve
             .select_world(pkg, world.as_deref())
-            .map_err(|e| Error::new(call_site, format!("{e:?}")))?;
+            .map_err(|e| anyhow_to_syn(call_site, e))?;
         Ok(Config {
             opts,
             resolve,
@@ -123,20 +134,14 @@ fn parse_source(source: &Option<Source>) -> anyhow::Result<(Resolve, PackageId, 
     let mut files = Vec::new();
     let root = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
     let mut parse = |path: &Path| -> anyhow::Result<_> {
-        if path.is_dir() {
-            let (pkg, sources) = resolve.push_dir(path)?;
-            files = sources;
-            Ok(pkg)
-        } else {
-            let pkg = UnresolvedPackage::parse_file(path)?;
-            files.extend(pkg.source_files().map(|s| s.to_owned()));
-            resolve.push(pkg)
-        }
+        let (pkg, sources) = resolve.push_path(path)?;
+        files.extend(sources);
+        Ok(pkg)
     };
     let pkg = match source {
         Some(Source::Inline(s, path)) => {
             if let Some(p) = path {
-                resolve.push_dir(p).unwrap();
+                parse(&root.join(p))?;
             }
             resolve.push(UnresolvedPackage::parse("macro-input".as_ref(), s)?)?
         }
@@ -182,13 +187,16 @@ impl Config {
         }
         let mut contents = src.parse::<TokenStream>().unwrap();
 
-        // Include a dummy `include_str!` for any files we read so rustc knows that
+        // Include a dummy `include_bytes!` for any files we read so rustc knows that
         // we depend on the contents of those files.
         for file in self.files.iter() {
             contents.extend(
-                format!("const _: &str = include_str!(r#\"{}\"#);\n", file.display())
-                    .parse::<TokenStream>()
-                    .unwrap(),
+                format!(
+                    "const _: &[u8] = include_bytes!(r#\"{}\"#);\n",
+                    file.display()
+                )
+                .parse::<TokenStream>()
+                .unwrap(),
             );
         }
 
@@ -211,6 +219,7 @@ mod kw {
     syn::custom_keyword!(export_prefix);
     syn::custom_keyword!(additional_derives);
     syn::custom_keyword!(with);
+    syn::custom_keyword!(type_section_suffix);
 }
 
 #[derive(Clone)]
@@ -271,6 +280,7 @@ enum Opt {
     // Parse as paths so we can take the concrete types/macro names rather than raw strings
     AdditionalDerives(Vec<syn::Path>),
     With(HashMap<String, String>),
+    TypeSectionSuffix(syn::LitStr),
 }
 
 impl Parse for Opt {
@@ -376,6 +386,10 @@ impl Parse for Opt {
             let fields: Punctuated<_, Token![,]> =
                 contents.parse_terminated(with_field_parse, Token![,])?;
             Ok(Opt::With(HashMap::from_iter(fields.into_iter())))
+        } else if l.peek(kw::type_section_suffix) {
+            input.parse::<kw::type_section_suffix>()?;
+            input.parse::<Token![:]>()?;
+            Ok(Opt::TypeSectionSuffix(input.parse()?))
         } else {
             Err(l.error())
         }

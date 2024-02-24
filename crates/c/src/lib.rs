@@ -92,7 +92,7 @@ pub struct Opts {
     pub type_section_suffix: Option<String>,
 
     /// Configure the autodropping of borrows in exported functions.
-    #[cfg_attr(feature = "clap", arg(long))]
+    #[cfg_attr(feature = "clap", arg(long, default_value_t = Enabled::default()))]
     pub autodrop_borrows: Enabled,
 }
 
@@ -270,7 +270,7 @@ impl WorldGenerator for C {
         gen.gen.src.append(&gen.src);
     }
 
-    fn finish(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) {
+    fn finish(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) -> Result<()> {
         let linking_symbol = component_type_object::linking_symbol(&self.world);
         self.include("<stdlib.h>");
         let snake = self.world.to_snake_case();
@@ -463,6 +463,8 @@ impl WorldGenerator for C {
                 .as_slice(),
             );
         }
+
+        Ok(())
     }
 
     fn pre_export_interface(&mut self, resolve: &Resolve, _files: &mut Files) -> Result<()> {

@@ -1,7 +1,7 @@
 use crate::bindgen::FunctionBindgen;
 use crate::{
-    int_repr, to_rust_ident, to_upper_camel_case, wasm_type, Direction, ExportKey, FnSig,
-    Identifier, InterfaceName, Ownership, RustFlagsRepr, RustWasm, TypeMode,
+    int_repr, to_rust_ident, to_upper_camel_case, wasm_type, ExportKey, FnSig, Identifier,
+    InterfaceName, Ownership, RustFlagsRepr, RustWasm,
 };
 use anyhow::Result;
 use heck::*;
@@ -21,6 +21,107 @@ pub struct InterfaceGenerator<'a> {
     pub resolve: &'a Resolve,
     pub return_pointer_area_size: usize,
     pub return_pointer_area_align: usize,
+}
+
+/// A description of the "mode" in which a type is printed.
+///
+/// Rust types can either be "borrowed" or "owned". This primarily has to do
+/// with lists and imports where arguments to imports can be borrowed lists in
+/// theory as ownership is not taken from the caller. This structure is used to
+/// help with this fact in addition to the various codegen options of this
+/// generator. Namely types in WIT can be reflected into Rust as two separate
+/// types, one "owned" and one "borrowed" (aka one with `Vec` and one with
+/// `&[T]`).
+///
+/// This structure is used in conjunction with `modes_of` and `type_mode_for*`
+/// primarily. That enables creating a programmatic description of what a type
+/// is rendered as along with various options.
+///
+/// Note that a `TypeMode` is a description of a single "level" of a type. This
+/// means that there's one mode for `Vec<T>` and one mode for `T` internally.
+/// This is mostly used for things like records where some fields have lifetime
+/// parameters, for example, and others don't.
+///
+/// This type is intended to simplify generation of types and encapsulate all
+/// the knowledge about whether lifetime parameters are used and how lists are
+/// rendered.
+///
+/// There are currently two users of lifetime parameters:
+///
+/// * Lists - when borrowed these are rendered as either `&[T]` or `&str`.
+/// * Borrowed resources - for resources owned by the current module they're
+///   represented as `&T` and for borrows of imported resources they're
+///   represented, more-or-less, as `&Resource<T>`.
+///
+/// Lists have a choice of being rendered as borrowed or not but resources are
+/// required to be borrowed.
+#[derive(Debug, Copy, Clone, PartialEq)]
+struct TypeMode {
+    /// The lifetime parameter, if any, for this type. If present this type is
+    /// required to have a lifetime parameter.
+    lifetime: Option<&'static str>,
+
+    /// Whether or not lists are borrowed in this type.
+    ///
+    /// If this field is `true` then lists are rendered as `&[T]` and `&str`
+    /// rather than their owned equivalent. If this field is `false` than the
+    /// owned equivalents are used instead.
+    lists_borrowed: bool,
+
+    /// The "style" of ownership that this mode was created with.
+    ///
+    /// This information is used to determine what mode the next layer deep int
+    /// he type tree is rendered with. For example if this layer is owned so is
+    /// the next layer. This is primarily used for the "OnlyTopBorrowed"
+    /// ownership style where all further layers beneath that are `Owned`.
+    style: TypeOwnershipStyle,
+}
+
+/// The style of ownership of a type, used to initially create a `TypeMode` and
+/// stored internally within it as well.
+#[derive(Debug, Copy, Clone, PartialEq)]
+enum TypeOwnershipStyle {
+    /// This style means owned things are printed such as `Vec<T>` and `String`.
+    ///
+    /// Note that this primarily applies to lists.
+    Owned,
+
+    /// This style means that lists/strings are `&[T]` and `&str`.
+    ///
+    /// Note that this primarily applies to lists.
+    Borrowed,
+
+    /// This style means that the top-level of a type is borrowed but all other
+    /// layers are `Owned`.
+    ///
+    /// This is used for parameters in the "owning" mode of generation to
+    /// imports. It's easy enough to create a `&T` at the root layer but it's
+    /// more difficult to create `&T` stored within a `U`, for example.
+    OnlyTopBorrowed,
+}
+
+impl TypeMode {
+    /// Returns a mode where everything is indicated that it's supposed to be
+    /// rendered as an "owned" type.
+    fn owned() -> TypeMode {
+        TypeMode {
+            lifetime: None,
+            lists_borrowed: false,
+            style: TypeOwnershipStyle::Owned,
+        }
+    }
+}
+
+impl TypeOwnershipStyle {
+    /// Preserves this mode except for `OnlyTopBorrowed` where it switches it to
+    /// `Owned`.
+    fn next(&self) -> TypeOwnershipStyle {
+        match self {
+            TypeOwnershipStyle::Owned => TypeOwnershipStyle::Owned,
+            TypeOwnershipStyle::Borrowed => TypeOwnershipStyle::Borrowed,
+            TypeOwnershipStyle::OnlyTopBorrowed => TypeOwnershipStyle::Owned,
+        }
+    }
 }
 
 impl InterfaceGenerator<'_> {
@@ -126,7 +227,7 @@ impl InterfaceGenerator<'_> {
                 sig.self_arg = Some("&self".into());
                 sig.self_is_first_param = true;
             }
-            self.print_signature(func, TypeMode::Owned, &sig);
+            self.print_signature(func, true, &sig);
             self.src.push_str(";\n");
             let trait_method = mem::replace(&mut self.src, prev);
             methods.push(trait_method);
@@ -245,7 +346,6 @@ impl InterfaceGenerator<'_> {
         }
 
         let mut sig = FnSig::default();
-        let param_mode = TypeMode::AllBorrowed("'_");
         match func.kind {
             FunctionKind::Freestanding => {}
             FunctionKind::Method(id) | FunctionKind::Static(id) | FunctionKind::Constructor(id) => {
@@ -260,7 +360,7 @@ impl InterfaceGenerator<'_> {
             }
         }
         self.src.push_str("#[allow(unused_unsafe, clippy::all)]\n");
-        let params = self.print_signature(func, param_mode, &sig);
+        let params = self.print_signature(func, false, &sig);
         self.src.push_str("{\n");
         self.src.push_str(&format!(
             "
@@ -491,7 +591,7 @@ impl InterfaceGenerator<'_> {
                 sig.self_arg = Some("&self".into());
                 sig.self_is_first_param = true;
             }
-            self.print_signature(func, TypeMode::Owned, &sig);
+            self.print_signature(func, true, &sig);
             self.src.push_str("{ unreachable!() }\n");
         }
 
@@ -546,17 +646,12 @@ impl InterfaceGenerator<'_> {
         // }
     }
 
-    fn print_signature(
-        &mut self,
-        func: &Function,
-        param_mode: TypeMode,
-        sig: &FnSig,
-    ) -> Vec<String> {
-        let params = self.print_docs_and_params(func, param_mode, sig);
+    fn print_signature(&mut self, func: &Function, params_owned: bool, sig: &FnSig) -> Vec<String> {
+        let params = self.print_docs_and_params(func, params_owned, sig);
         if let FunctionKind::Constructor(_) = &func.kind {
             self.push_str(" -> Self")
         } else {
-            self.print_results(&func.results, TypeMode::Owned);
+            self.print_results(&func.results);
         }
         params
     }
@@ -564,7 +659,7 @@ impl InterfaceGenerator<'_> {
     fn print_docs_and_params(
         &mut self,
         func: &Function,
-        param_mode: TypeMode,
+        params_owned: bool,
         sig: &FnSig,
     ) -> Vec<String> {
         self.rustdoc(&func.docs);
@@ -608,30 +703,254 @@ impl InterfaceGenerator<'_> {
             }
             let name = to_rust_ident(name);
             self.push_str(&name);
-            params.push(name);
             self.push_str(": ");
-            self.print_ty(param, param_mode);
+
+            // Select the "style" of mode that the parameter's type will be
+            // rendered as. Owned parameters are always owned, that's the easy
+            // case. Otherwise it means that we're rendering the arguments to an
+            // imported function which technically don't need ownership. In this
+            // case the `ownership` configuration is consulted.
+            //
+            // If `Owning` is specified then that means that the top-level
+            // argument will be `&T` but everything under that will be `T`. For
+            // example a record-of-lists would be passed as `&RecordOfLists` as
+            // opposed to `RecordOfLists<'a>`.
+            //
+            // In the `Borrowing` mode however a different tradeoff is made. The
+            // types are generated differently meaning that a borrowed version
+            // is used.
+            let style = if params_owned {
+                TypeOwnershipStyle::Owned
+            } else {
+                match self.gen.opts.ownership {
+                    Ownership::Owning => TypeOwnershipStyle::OnlyTopBorrowed,
+                    Ownership::Borrowing { .. } => TypeOwnershipStyle::Borrowed,
+                }
+            };
+            let mode = self.type_mode_for(param, style, "'_");
+            self.print_ty(param, mode);
             self.push_str(",");
+
+            // Depending on the style of this request vs what we got perhaps
+            // change how this argument is used.
+            //
+            // If the `mode` that was selected matches the requested style, then
+            // everything is as expected and the argument should be used as-is.
+            // If it differs though then that means that we requested a borrowed
+            // mode but a different mode ended up being selected. This situation
+            // indicates for example that an argument to an import should be
+            // borrowed but the argument's type means that it can't be borrowed.
+            // For example all arguments to imports are borrowed by default but
+            // owned resources cannot ever be borrowed, so they pop out here as
+            // owned instead.
+            //
+            // In such a situation the lower code still expects to be operating
+            // over borrows. For example raw pointers from lists are passed to
+            // the canonical ABI layer assuming that the lists are "rooted" by
+            // the caller. To uphold this invariant a borrow of the argument is
+            // recorded as the name of this parameter. That ensures that all
+            // access to the parameter is done indirectly which pretends, at
+            // least internally, that the argument was borrowed. The original
+            // motivation for this was #817.
+            if mode.style == style {
+                params.push(name);
+            } else {
+                assert!(style != TypeOwnershipStyle::Owned);
+                params.push(format!("&{name}"));
+            }
         }
         self.push_str(")");
         params
     }
 
-    fn print_results(&mut self, results: &Results, mode: TypeMode) {
+    fn print_results(&mut self, results: &Results) {
         match results.len() {
             0 => {}
             1 => {
                 self.push_str(" -> ");
-                self.print_ty(results.iter_types().next().unwrap(), mode);
+                let ty = results.iter_types().next().unwrap();
+                let mode = self.type_mode_for(ty, TypeOwnershipStyle::Owned, "'INVALID");
+                assert!(mode.lifetime.is_none());
+                self.print_ty(ty, mode);
             }
             _ => {
                 self.push_str(" -> (");
                 for ty in results.iter_types() {
+                    let mode = self.type_mode_for(ty, TypeOwnershipStyle::Owned, "'INVALID");
+                    assert!(mode.lifetime.is_none());
                     self.print_ty(ty, mode);
                     self.push_str(", ")
                 }
                 self.push_str(")")
             }
+        }
+    }
+
+    /// Calculates the `TypeMode` to be used for the `ty` specified.
+    ///
+    /// This takes a `style` argument which is the requested style of ownership
+    /// for this type. Note that the returned `TypeMode` may have a different
+    /// `style`.
+    ///
+    /// This additionally takes a `lt` parameter which, if needed, is what will
+    /// be used to render lifetimes.
+    fn type_mode_for(&self, ty: &Type, style: TypeOwnershipStyle, lt: &'static str) -> TypeMode {
+        match ty {
+            Type::Id(id) => self.type_mode_for_id(*id, style, lt),
+
+            // Borrowed strings are handled specially here since they're the
+            // only list-like primitive.
+            Type::String if style != TypeOwnershipStyle::Owned => TypeMode {
+                lifetime: Some(lt),
+                lists_borrowed: true,
+                style,
+            },
+
+            _ => TypeMode::owned(),
+        }
+    }
+
+    /// Same as `type_mode_for`, but specifically for `TypeId` which refers to a
+    /// type.
+    fn type_mode_for_id(
+        &self,
+        ty: TypeId,
+        style: TypeOwnershipStyle,
+        lt: &'static str,
+    ) -> TypeMode {
+        // NB: This method is the heart of determining how to render types.
+        // There's a lot of permutations and corner cases to handle, especially
+        // with being able to configure at the generator level how types are
+        // generated. Long story short this is a subtle and complicated method.
+        //
+        // The hope is that most of the complexity around type generation in
+        // Rust is largely centered here where everything else can lean on this.
+        // This has gone through so many refactors I've lost count at this
+        // point, but maybe this one is the one that'll stick!
+        //
+        // The general idea is that there's some clear-and-fast rules for how
+        // `TypeMode` must be returned here. For example borrowed handles are
+        // required to have a lifetime parameter. Everything else though is here
+        // to handle the various levels of configuration and semantics for each
+        // level of types.
+        //
+        // As a reminder a `TypeMode` is generated for each "level" of a type
+        // hierarchy, for example there's one mode for `Vec<T>` and another mode
+        // for `T`. This enables, for example, rendering the outer layer as
+        // either `Vec<T>` or `&[T]` but the inner `T` may or may not have a
+        // type parameter.
+
+        let info = self.info(ty);
+        let lifetime = if info.has_borrow_handle {
+            // Borrowed handles always have a lifetime associated with them so
+            // thread it through.
+            Some(lt)
+        } else if style == TypeOwnershipStyle::Owned {
+            // If this type is being rendered as an "owned" type, and it
+            // doesn't have any borrowed handles, then no lifetimes are needed
+            // since any internal lists will be their owned version.
+            None
+        } else if info.has_own_handle || !info.has_list {
+            // At this point there are no borrowed handles and a borrowed style
+            // of type is requested. In this situation there's two cases where a
+            // lifetime is never used:
+            //
+            // * Owned handles are present - in this situation ownership is used
+            //   to statically reflect how a value is lost when passed to an
+            //   import. This means that no lifetime is used for internal lists
+            //   since they must be rendered in an owned mode.
+            //
+            // * There are no lists present - here the lifetime parameter won't
+            //   be used for anything because there's no borrows or lists, so
+            //   it's skipped.
+            None
+        } else if !info.owned || self.uses_two_names(&info) {
+            // This next layer things get a little more interesting. To recap,
+            // so far we know that there's no borrowed handles, a borrowed mode
+            // is requested, there's no own handles, and there's a list. In that
+            // situation if `info` shows that this type is never used in an
+            // owned position, or if two types are explicitly requested for
+            // owned/borrowed values, then a lifetime is used.
+            Some(lt)
+        } else {
+            // ... and finally, here at the end we know:
+            //
+            // * No borrowed handles
+            // * Borrowing mode is requested
+            // * No owned handles
+            // * A list is somewhere
+            // * This type is used somewhere in an owned position
+            // * This type does not used "two names" meaning that we must use
+            //   the owned version of the type.
+            //
+            // If the configured ownership mode for generating types of this
+            // generator is "owning" then that's the only type that can be used.
+            // If borrowing is requested then this means that `&T` is going to
+            // be rendered, so thread it through.
+            //
+            // If the configured ownership mode uses borrowing by default, then
+            // things get a little weird. This means that a lifetime is going to
+            // be used an any lists should be borrowed, but we specifically
+            // switch to only borrowing the top layer of the type rather than
+            // the entire hierarchy. This situation can happen in
+            // `duplicate_if_necessary: false` mode for example where we're
+            // borrowing a type which is used in an owned position elsewhere.
+            // The only possibility at that point is to borrow it at the root
+            // but everything else internally is required to be owned from then
+            // on.
+            match self.gen.opts.ownership {
+                Ownership::Owning => Some(lt),
+                Ownership::Borrowing { .. } => {
+                    return TypeMode {
+                        lifetime: Some(lt),
+                        lists_borrowed: true,
+                        style: TypeOwnershipStyle::OnlyTopBorrowed,
+                    };
+                }
+            }
+        };
+        TypeMode {
+            lifetime,
+
+            // If a lifetime is present and ownership isn't requested, then make
+            // sure any lists show up as `&str` or `&[T]`.
+            lists_borrowed: lifetime.is_some() && style != TypeOwnershipStyle::Owned,
+
+            // Switch the style to `Owned` if an `own<T>` handle is present
+            // because there's no option but to take interior types by ownership
+            // as that statically shows that the ownership of the value is being
+            // lost.
+            style: if info.has_own_handle {
+                TypeOwnershipStyle::Owned
+            } else {
+                style
+            },
+        }
+    }
+
+    /// Generates the "next" mode for a type.
+    ///
+    /// The `ty` specified is the type that a mode is being generated for, and
+    /// the `mode` argument is the "parent" mode that the previous outer layer
+    /// of type was rendered with. The returned mode should be used to render
+    /// `ty`.
+    fn filter_mode(&self, ty: &Type, mode: TypeMode) -> TypeMode {
+        match mode.lifetime {
+            Some(lt) => self.type_mode_for(ty, mode.style.next(), lt),
+            None => TypeMode::owned(),
+        }
+    }
+
+    /// Same as `filder_mode` except if `mode` has the type `OnlyTopBorrowed`
+    /// the `mode` is specifically preserved as-is.
+    ///
+    /// This is used for types like `Option<T>` to render as `Option<&T>`
+    /// instead of `&Option<T>` for example.
+    fn filter_mode_preserve_top(&self, ty: &Type, mode: TypeMode) -> TypeMode {
+        if mode.style == TypeOwnershipStyle::OnlyTopBorrowed {
+            mode
+        } else {
+            self.filter_mode(ty, mode)
         }
     }
 
@@ -650,23 +969,29 @@ impl InterfaceGenerator<'_> {
             Type::Float32 => self.push_str("f32"),
             Type::Float64 => self.push_str("f64"),
             Type::Char => self.push_str("char"),
-            Type::String => match mode {
-                TypeMode::AllBorrowed(lt) => self.print_borrowed_str(lt),
-                TypeMode::Owned | TypeMode::HandlesBorrowed(_) => {
-                    if self.gen.opts.raw_strings {
-                        self.push_vec_name();
-                        self.push_str("::<u8>");
-                    } else {
-                        self.push_string_name();
+            Type::String => {
+                assert_eq!(mode.lists_borrowed, mode.lifetime.is_some());
+                match mode.lifetime {
+                    Some(lt) => self.print_borrowed_str(lt),
+                    None => {
+                        if self.gen.opts.raw_strings {
+                            self.push_vec_name();
+                            self.push_str("::<u8>");
+                        } else {
+                            self.push_string_name();
+                        }
                     }
                 }
-            },
+            }
         }
     }
 
     fn print_optional_ty(&mut self, ty: Option<&Type>, mode: TypeMode) {
         match ty {
-            Some(ty) => self.print_ty(ty, mode),
+            Some(ty) => {
+                let mode = self.filter_mode_preserve_top(ty, mode);
+                self.print_ty(ty, mode)
+            }
             None => self.push_str("()"),
         }
     }
@@ -692,72 +1017,44 @@ impl InterfaceGenerator<'_> {
     }
 
     fn print_tyid(&mut self, id: TypeId, mode: TypeMode) {
-        let info = self.info(id);
-        let lt = self.lifetime_for(&info, mode);
         let ty = &self.resolve.types[id];
         if ty.name.is_some() {
-            // If `mode` is borrowed then that means literal ownership of the
-            // input type is not necessarily required. In this situation we
-            // ideally want to put a `&` in front to statically indicate this.
-            // That's not required in all situations however and is only really
-            // critical for lists which otherwise would transfer ownership of
-            // the allocation to this function.
+            // NB: Most of the heavy lifting of `TypeMode` and what to do here
+            // has already happened in `type_mode_for*`. Here though a little
+            // more happens because this is where `OnlyTopBorrowed` is
+            // processed.
             //
-            // Note, though, that if the type has an `own<T>` inside of it then
-            // it is actually required that we take ownership since Rust is
-            // losing access to those handles.
-            //
-            // We also skip borrowing if the type has a lifetime associated with
-            // in which case we treated it as already borrowed.
-            //
-            // Check here if the type has the right shape and if we're in the
-            // right mode, and if those conditions are met a lifetime is
-            // printed.
-            if info.has_list && !info.has_own_handle && lt.is_none() {
-                if let TypeMode::AllBorrowed(lt) | TypeMode::HandlesBorrowed(lt) = mode {
+            // Specifically what should happen is that in the case of an
+            // argument to an imported function if only the top value is
+            // borrowed then we want to render it as `&T`. If this all is
+            // applicable then the lifetime is rendered here before the type.
+            // The `mode` is then switched to `Owned` and recalculated for the
+            // type we're rendering here to avoid accidentally giving it a
+            // lifetime type parameter when it otherwise doesn't have it.
+            let mode = if mode.style == TypeOwnershipStyle::OnlyTopBorrowed {
+                if let Some(lt) = mode.lifetime {
                     self.push_str("&");
                     if lt != "'_" {
                         self.push_str(lt);
                         self.push_str(" ");
                     }
+                    self.type_mode_for_id(id, TypeOwnershipStyle::Owned, lt)
+                } else {
+                    mode
                 }
-            }
-            let name = self.type_path(id, lt.is_none());
+            } else {
+                mode
+            };
+            let name = self.type_path(
+                id,
+                match mode.style {
+                    TypeOwnershipStyle::Owned => true,
+                    TypeOwnershipStyle::OnlyTopBorrowed | TypeOwnershipStyle::Borrowed => false,
+                },
+            );
             self.push_str(&name);
-
-            // If the type recursively owns data and it's a
-            // variant/record/list, then we need to place the
-            // lifetime parameter on the type as well.
-            if (info.has_list || info.has_borrow_handle)
-                && !info.has_own_handle
-                && needs_generics(self.resolve, &ty.kind)
-            {
-                self.print_generics(lt);
-            }
-
+            self.print_generics(mode.lifetime);
             return;
-
-            fn needs_generics(resolve: &Resolve, ty: &TypeDefKind) -> bool {
-                match ty {
-                    TypeDefKind::Variant(_)
-                    | TypeDefKind::Record(_)
-                    | TypeDefKind::Option(_)
-                    | TypeDefKind::Result(_)
-                    | TypeDefKind::Future(_)
-                    | TypeDefKind::Stream(_)
-                    | TypeDefKind::List(_)
-                    | TypeDefKind::Flags(_)
-                    | TypeDefKind::Enum(_)
-                    | TypeDefKind::Tuple(_) => true,
-                    TypeDefKind::Type(Type::Id(t)) => {
-                        needs_generics(resolve, &resolve.types[*t].kind)
-                    }
-                    TypeDefKind::Type(Type::String) => true,
-                    TypeDefKind::Handle(Handle::Borrow(_)) => true,
-                    TypeDefKind::Resource | TypeDefKind::Handle(_) | TypeDefKind::Type(_) => false,
-                    TypeDefKind::Unknown => unreachable!(),
-                }
-            }
         }
 
         match &ty.kind {
@@ -765,6 +1062,7 @@ impl InterfaceGenerator<'_> {
 
             TypeDefKind::Option(t) => {
                 self.push_str("Option<");
+                let mode = self.filter_mode_preserve_top(t, mode);
                 self.print_ty(t, mode);
                 self.push_str(">");
             }
@@ -785,6 +1083,7 @@ impl InterfaceGenerator<'_> {
             TypeDefKind::Tuple(t) => {
                 self.push_str("(");
                 for ty in t.types.iter() {
+                    let mode = self.filter_mode_preserve_top(ty, mode);
                     self.print_ty(ty, mode);
                     self.push_str(",");
                 }
@@ -816,17 +1115,16 @@ impl InterfaceGenerator<'_> {
             }
 
             TypeDefKind::Handle(Handle::Own(ty)) => {
-                self.mark_resource_owned(*ty);
                 self.print_ty(&Type::Id(*ty), mode);
             }
 
             TypeDefKind::Handle(Handle::Borrow(ty)) => {
                 self.push_str("&");
-                if let TypeMode::AllBorrowed(lt) | TypeMode::HandlesBorrowed(lt) = mode {
-                    if lt != "'_" {
-                        self.push_str(lt);
-                        self.push_str(" ");
-                    }
+                assert!(mode.lifetime.is_some());
+                let lt = mode.lifetime.unwrap();
+                if lt != "'_" {
+                    self.push_str(lt);
+                    self.push_str(" ");
                 }
                 if self.is_exported_resource(*ty) {
                     self.push_str(
@@ -840,7 +1138,9 @@ impl InterfaceGenerator<'_> {
                         ),
                     );
                 } else {
-                    self.print_ty(&Type::Id(*ty), mode);
+                    let ty = &Type::Id(*ty);
+                    let mode = self.filter_mode(ty, mode);
+                    self.print_ty(ty, mode);
                 }
             }
 
@@ -851,45 +1151,23 @@ impl InterfaceGenerator<'_> {
     }
 
     fn print_list(&mut self, ty: &Type, mode: TypeMode) {
-        let next_mode = if matches!(self.gen.opts.ownership, Ownership::Owning) {
-            if let TypeMode::HandlesBorrowed(_) = mode {
-                mode
-            } else {
-                TypeMode::Owned
+        let next_mode = self.filter_mode(ty, mode);
+        if mode.lists_borrowed {
+            let lifetime = mode.lifetime.unwrap();
+            self.push_str("&");
+            if lifetime != "'_" {
+                self.push_str(lifetime);
+                self.push_str(" ");
             }
+            self.push_str("[");
+            self.print_ty(ty, next_mode);
+            self.push_str("]");
         } else {
-            mode
-        };
-        // Lists with `own` handles must always be owned
-        let mode = match *ty {
-            Type::Id(id) if self.info(id).has_own_handle => TypeMode::Owned,
-            _ => mode,
-        };
-        match mode {
-            TypeMode::AllBorrowed(lt) => {
-                self.print_borrowed_slice(false, ty, lt, next_mode);
-            }
-            TypeMode::Owned | TypeMode::HandlesBorrowed(_) => {
-                self.push_vec_name();
-                self.push_str("::<");
-                self.print_ty(ty, next_mode);
-                self.push_str(">");
-            }
+            self.push_vec_name();
+            self.push_str("::<");
+            self.print_ty(ty, next_mode);
+            self.push_str(">");
         }
-    }
-
-    fn print_rust_slice(&mut self, mutbl: bool, ty: &Type, lifetime: &'static str, mode: TypeMode) {
-        self.push_str("&");
-        if lifetime != "'_" {
-            self.push_str(lifetime);
-            self.push_str(" ");
-        }
-        if mutbl {
-            self.push_str(" mut ");
-        }
-        self.push_str("[");
-        self.print_ty(ty, mode);
-        self.push_str("]");
     }
 
     fn print_generics(&mut self, lifetime: Option<&str>) {
@@ -916,37 +1194,34 @@ impl InterfaceGenerator<'_> {
         }
         let mut result = Vec::new();
 
-        // Prioritize generating an "owned" type. This is done to simplify
-        // generated bindings by default. Borrowed handles always use a borrow,
-        // however.
-        let first_mode = if info.owned
-            || !info.borrowed
-            || matches!(self.gen.opts.ownership, Ownership::Owning)
-            || info.has_own_handle
-        {
-            if info.has_borrow_handle {
-                TypeMode::HandlesBorrowed("'a")
-            } else {
-                TypeMode::Owned
-            }
-        } else {
-            assert!(!self.uses_two_names(&info));
-            TypeMode::AllBorrowed("'a")
-        };
-        result.push((self.result_name(ty), first_mode));
+        // Generate one mode for when the type is owned and another for when
+        // it's borrowed.
+        let a = self.type_mode_for_id(ty, TypeOwnershipStyle::Owned, "'a");
+        let b = self.type_mode_for_id(ty, TypeOwnershipStyle::Borrowed, "'a");
+
         if self.uses_two_names(&info) {
-            result.push((self.param_name(ty), TypeMode::AllBorrowed("'a")));
+            // If this type uses two names then, well, it uses two names. In
+            // this situation both modes are returned.
+            assert!(a != b);
+            result.push((self.result_name(ty), a));
+            result.push((self.param_name(ty), b));
+        } else if a == b {
+            // If the modes are the same then there's only one result.
+            result.push((self.result_name(ty), a));
+        } else if info.owned || matches!(self.gen.opts.ownership, Ownership::Owning) {
+            // If this type is owned or if ownership is preferred then the owned
+            // variant is used as a priority. This is where the generator's
+            // configuration comes into play.
+            result.push((self.result_name(ty), a));
+        } else {
+            // And finally, failing all that, the borrowed variant is used.
+            assert!(!info.owned);
+            result.push((self.param_name(ty), b));
         }
         result
     }
 
-    fn print_typedef_record(
-        &mut self,
-        id: TypeId,
-        record: &Record,
-        docs: &Docs,
-        derive_component: bool,
-    ) {
+    fn print_typedef_record(&mut self, id: TypeId, record: &Record, docs: &Docs) {
         let info = self.info(id);
         // We use a BTree set to make sure we don't have any duplicates and we have a stable order
         let additional_derives: BTreeSet<String> = self
@@ -957,17 +1232,7 @@ impl InterfaceGenerator<'_> {
             .cloned()
             .collect();
         for (name, mode) in self.modes_of(id) {
-            let lt = self.lifetime_for(&info, mode);
             self.rustdoc(docs);
-
-            if derive_component {
-                self.push_str("#[derive(wasmtime::component::ComponentType)]\n");
-                if lt.is_none() {
-                    self.push_str("#[derive(wasmtime::component::Lift)]\n");
-                }
-                self.push_str("#[derive(wasmtime::component::Lower)]\n");
-                self.push_str("#[component(record)]\n");
-            }
             let mut derives = additional_derives.clone();
             if info.is_copy() {
                 self.push_str("#[repr(C)]\n");
@@ -981,26 +1246,24 @@ impl InterfaceGenerator<'_> {
                 self.push_str(")]\n")
             }
             self.push_str(&format!("pub struct {}", name));
-            self.print_generics(lt);
+            self.print_generics(mode.lifetime);
             self.push_str(" {\n");
             for field in record.fields.iter() {
                 self.rustdoc(&field.docs);
-                if derive_component {
-                    self.push_str(&format!("#[component(name = \"{}\")]\n", field.name));
-                }
                 self.push_str("pub ");
                 self.push_str(&to_rust_ident(&field.name));
                 self.push_str(": ");
+                let mode = self.filter_mode(&field.ty, mode);
                 self.print_ty(&field.ty, mode);
                 self.push_str(",\n");
             }
             self.push_str("}\n");
 
             self.push_str("impl");
-            self.print_generics(lt);
+            self.print_generics(mode.lifetime);
             self.push_str(" ::core::fmt::Debug for ");
             self.push_str(&name);
-            self.print_generics(lt);
+            self.print_generics(mode.lifetime);
             self.push_str(" {\n");
             self.push_str(
                 "fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {\n",
@@ -1019,10 +1282,10 @@ impl InterfaceGenerator<'_> {
 
             if info.error {
                 self.push_str("impl");
-                self.print_generics(lt);
+                self.print_generics(mode.lifetime);
                 self.push_str(" ::core::fmt::Display for ");
                 self.push_str(&name);
-                self.print_generics(lt);
+                self.print_generics(mode.lifetime);
                 self.push_str(" {\n");
                 self.push_str(
                     "fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {\n",
@@ -1031,65 +1294,34 @@ impl InterfaceGenerator<'_> {
                 self.push_str("}\n");
                 self.push_str("}\n");
                 if self.gen.opts.std_feature {
-                    self.push_str("#[cfg(feature = \"std\")]");
+                    self.push_str("#[cfg(feature = \"std\")]\n");
                 }
                 self.push_str("impl std::error::Error for ");
                 self.push_str(&name);
-                self.push_str("{}\n");
+                self.push_str(" {}\n");
             }
         }
     }
 
-    fn print_typedef_tuple(&mut self, id: TypeId, tuple: &Tuple, docs: &Docs) {
-        let info = self.info(id);
-        for (name, mode) in self.modes_of(id) {
-            let lt = self.lifetime_for(&info, mode);
-            self.rustdoc(docs);
-            self.push_str(&format!("pub type {}", name));
-            self.print_generics(lt);
-            self.push_str(" = (");
-            for ty in tuple.types.iter() {
-                self.print_ty(ty, mode);
-                self.push_str(",");
-            }
-            self.push_str(");\n");
-        }
-    }
-
-    fn print_typedef_variant(
-        &mut self,
-        id: TypeId,
-        variant: &Variant,
-        docs: &Docs,
-        derive_component: bool,
-    ) where
+    fn print_typedef_variant(&mut self, id: TypeId, variant: &Variant, docs: &Docs)
+    where
         Self: Sized,
     {
         self.print_rust_enum(
             id,
-            variant.cases.iter().map(|c| {
-                (
-                    c.name.to_upper_camel_case(),
-                    Some(c.name.clone()),
-                    &c.docs,
-                    c.ty.as_ref(),
-                )
-            }),
+            variant
+                .cases
+                .iter()
+                .map(|c| (c.name.to_upper_camel_case(), &c.docs, c.ty.as_ref())),
             docs,
-            if derive_component {
-                Some("variant")
-            } else {
-                None
-            },
         );
     }
 
     fn print_rust_enum<'b>(
         &mut self,
         id: TypeId,
-        cases: impl IntoIterator<Item = (String, Option<String>, &'b Docs, Option<&'b Type>)> + Clone,
+        cases: impl IntoIterator<Item = (String, &'b Docs, Option<&'b Type>)> + Clone,
         docs: &Docs,
-        derive_component: Option<&str>,
     ) where
         Self: Sized,
     {
@@ -1104,15 +1336,6 @@ impl InterfaceGenerator<'_> {
             .collect();
         for (name, mode) in self.modes_of(id) {
             self.rustdoc(docs);
-            let lt = self.lifetime_for(&info, mode);
-            if let Some(derive_component) = derive_component {
-                self.push_str("#[derive(wasmtime::component::ComponentType)]\n");
-                if lt.is_none() {
-                    self.push_str("#[derive(wasmtime::component::Lift)]\n");
-                }
-                self.push_str("#[derive(wasmtime::component::Lower)]\n");
-                self.push_str(&format!("#[component({})]\n", derive_component));
-            }
             let mut derives = additional_derives.clone();
             if info.is_copy() {
                 derives.extend(["Copy", "Clone"].into_iter().map(|s| s.to_string()));
@@ -1125,18 +1348,14 @@ impl InterfaceGenerator<'_> {
                 self.push_str(")]\n")
             }
             self.push_str(&format!("pub enum {name}"));
-            self.print_generics(lt);
+            self.print_generics(mode.lifetime);
             self.push_str("{\n");
-            for (case_name, component_name, docs, payload) in cases.clone() {
+            for (case_name, docs, payload) in cases.clone() {
                 self.rustdoc(docs);
-                if derive_component.is_some() {
-                    if let Some(n) = component_name {
-                        self.push_str(&format!("#[component(name = \"{}\")] ", n));
-                    }
-                }
                 self.push_str(&case_name);
                 if let Some(ty) = payload {
                     self.push_str("(");
+                    let mode = self.filter_mode(ty, mode);
                     self.print_ty(ty, mode);
                     self.push_str(")")
                 }
@@ -1145,21 +1364,20 @@ impl InterfaceGenerator<'_> {
             self.push_str("}\n");
 
             self.print_rust_enum_debug(
-                id,
                 mode,
                 &name,
                 cases
                     .clone()
                     .into_iter()
-                    .map(|(name, _attr, _docs, ty)| (name, ty)),
+                    .map(|(name, _docs, ty)| (name, ty)),
             );
 
             if info.error {
                 self.push_str("impl");
-                self.print_generics(lt);
+                self.print_generics(mode.lifetime);
                 self.push_str(" ::core::fmt::Display for ");
                 self.push_str(&name);
-                self.print_generics(lt);
+                self.print_generics(mode.lifetime);
                 self.push_str(" {\n");
                 self.push_str(
                     "fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {\n",
@@ -1170,13 +1388,13 @@ impl InterfaceGenerator<'_> {
                 self.push_str("\n");
 
                 if self.gen.opts.std_feature {
-                    self.push_str("#[cfg(feature = \"std\")]");
+                    self.push_str("#[cfg(feature = \"std\")]\n");
                 }
                 self.push_str("impl");
-                self.print_generics(lt);
+                self.print_generics(mode.lifetime);
                 self.push_str(" std::error::Error for ");
                 self.push_str(&name);
-                self.print_generics(lt);
+                self.print_generics(mode.lifetime);
                 self.push_str(" {}\n");
             }
         }
@@ -1184,20 +1402,17 @@ impl InterfaceGenerator<'_> {
 
     fn print_rust_enum_debug<'b>(
         &mut self,
-        id: TypeId,
         mode: TypeMode,
         name: &str,
         cases: impl IntoIterator<Item = (String, Option<&'b Type>)>,
     ) where
         Self: Sized,
     {
-        let info = self.info(id);
-        let lt = self.lifetime_for(&info, mode);
         self.push_str("impl");
-        self.print_generics(lt);
+        self.print_generics(mode.lifetime);
         self.push_str(" ::core::fmt::Debug for ");
         self.push_str(name);
-        self.print_generics(lt);
+        self.print_generics(mode.lifetime);
         self.push_str(" {\n");
         self.push_str(
             "fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {\n",
@@ -1224,13 +1439,10 @@ impl InterfaceGenerator<'_> {
     }
 
     fn print_typedef_option(&mut self, id: TypeId, payload: &Type, docs: &Docs) {
-        let info = self.info(id);
-
         for (name, mode) in self.modes_of(id) {
             self.rustdoc(docs);
-            let lt = self.lifetime_for(&info, mode);
             self.push_str(&format!("pub type {}", name));
-            self.print_generics(lt);
+            self.print_generics(mode.lifetime);
             self.push_str("= Option<");
             self.print_ty(payload, mode);
             self.push_str(">;\n");
@@ -1238,13 +1450,10 @@ impl InterfaceGenerator<'_> {
     }
 
     fn print_typedef_result(&mut self, id: TypeId, result: &Result_, docs: &Docs) {
-        let info = self.info(id);
-
         for (name, mode) in self.modes_of(id) {
             self.rustdoc(docs);
-            let lt = self.lifetime_for(&info, mode);
             self.push_str(&format!("pub type {}", name));
-            self.print_generics(lt);
+            self.print_generics(mode.lifetime);
             self.push_str("= Result<");
             self.print_optional_ty(result.ok.as_ref(), mode);
             self.push_str(",");
@@ -1361,15 +1570,14 @@ impl InterfaceGenerator<'_> {
             self.push_str("}\n");
             self.push_str("\n");
             if self.gen.opts.std_feature {
-                self.push_str("#[cfg(feature = \"std\")]");
+                self.push_str("#[cfg(feature = \"std\")]\n");
             }
             self.push_str("impl std::error::Error for ");
             self.push_str(&name);
-            self.push_str("{}\n");
+            self.push_str(" {}\n");
         } else {
             self.print_rust_enum_debug(
-                id,
-                TypeMode::Owned,
+                TypeMode::owned(),
                 &name,
                 enum_
                     .cases
@@ -1387,7 +1595,6 @@ impl InterfaceGenerator<'_> {
             // aliases) is used prior to generating declarations.  For example,
             // if only borrows are used, no need to generate the `Own{name}`
             // version.
-            self.mark_resource_owned(target);
             for prefix in ["Own", ""] {
                 self.rustdoc(docs);
                 self.push_str(&format!(
@@ -1407,29 +1614,14 @@ impl InterfaceGenerator<'_> {
                 ));
             }
         } else {
-            let info = self.info(id);
             for (name, mode) in self.modes_of(id) {
                 self.rustdoc(docs);
                 self.push_str(&format!("pub type {name}"));
-                let lt = self.lifetime_for(&info, mode);
-                self.print_generics(lt);
+                self.print_generics(mode.lifetime);
                 self.push_str(" = ");
                 self.print_ty(ty, mode);
                 self.push_str(";\n");
             }
-        }
-    }
-
-    fn print_type_list(&mut self, id: TypeId, ty: &Type, docs: &Docs) {
-        let info = self.info(id);
-        for (name, mode) in self.modes_of(id) {
-            let lt = self.lifetime_for(&info, mode);
-            self.rustdoc(docs);
-            self.push_str(&format!("pub type {}", name));
-            self.print_generics(lt);
-            self.push_str(" = ");
-            self.print_list(ty, mode);
-            self.push_str(";\n");
         }
     }
 
@@ -1473,37 +1665,6 @@ impl InterfaceGenerator<'_> {
             && !info.has_own_handle
     }
 
-    fn lifetime_for(&self, info: &TypeInfo, mode: TypeMode) -> Option<&'static str> {
-        let lt = match mode {
-            TypeMode::AllBorrowed(s) | TypeMode::HandlesBorrowed(s) => s,
-            TypeMode::Owned => return None,
-        };
-        if info.has_borrow_handle {
-            return Some(lt);
-        }
-        if matches!(self.gen.opts.ownership, Ownership::Owning) {
-            return None;
-        }
-        // No lifetimes needed unless this has a list.
-        if !info.has_list {
-            return None;
-        }
-        // If two names are used then this type will have an owned and a
-        // borrowed copy and the borrowed copy is being used, so it needs a
-        // lifetime. Otherwise if it's only borrowed and not owned then this can
-        // also use a lifetime since it's not needed in two contexts and only
-        // the borrowed version of the structure was generated.
-        if self.uses_two_names(info) || (info.borrowed && !info.owned) {
-            Some(lt)
-        } else {
-            None
-        }
-    }
-
-    // fn ownership(&self) -> Ownership {
-    //     self.gen.opts.ownership
-    // }
-
     fn path_to_interface(&self, interface: InterfaceId) -> Option<String> {
         let InterfaceName { path, remapped } = &self.gen.interface_names[&interface];
         if *remapped {
@@ -1537,31 +1698,25 @@ impl InterfaceGenerator<'_> {
         self.push_str(&format!("{rt}::vec::Vec", rt = self.gen.runtime_path()));
     }
 
-    fn is_exported_resource(&self, mut ty: TypeId) -> bool {
-        loop {
-            let def = &self.resolve.types[ty];
-            if let TypeOwner::World(_) = &def.owner {
-                // Worlds cannot export types of any kind as of this writing.
-                return false;
-            }
-            match &def.kind {
-                TypeDefKind::Type(Type::Id(id)) => ty = *id,
-                _ => break,
-            }
+    pub fn is_exported_resource(&self, ty: TypeId) -> bool {
+        let ty = dealias(self.resolve, ty);
+        let ty = &self.resolve.types[ty];
+        match &ty.kind {
+            TypeDefKind::Resource => {}
+            _ => return false,
         }
 
-        matches!(
-            self.gen.resources.get(&ty).map(|info| info.direction),
-            Some(Direction::Export)
-        )
-    }
+        match ty.owner {
+            // Worlds cannot export types of any kind as of this writing.
+            TypeOwner::World(_) => false,
 
-    pub fn mark_resource_owned(&mut self, resource: TypeId) {
-        self.gen
-            .resources
-            .entry(dealias(self.resolve, resource))
-            .or_default()
-            .owned = true;
+            // Interfaces are "stateful" currently where whatever we last saw
+            // them as dictates whether it's exported or not.
+            TypeOwner::Interface(i) => !self.gen.interface_last_seen_as_import[&i],
+
+            // Shouldn't be the case for resources
+            TypeOwner::None => unreachable!(),
+        }
     }
 
     fn push_string_name(&mut self) {
@@ -1577,16 +1732,6 @@ impl InterfaceGenerator<'_> {
 
     fn info(&self, ty: TypeId) -> TypeInfo {
         self.gen.types.get(ty)
-    }
-
-    fn print_borrowed_slice(
-        &mut self,
-        mutbl: bool,
-        ty: &Type,
-        lifetime: &'static str,
-        mode: TypeMode,
-    ) {
-        self.print_rust_slice(mutbl, ty, lifetime, mode);
     }
 
     fn print_borrowed_str(&mut self, lifetime: &'static str) {
@@ -1609,18 +1754,10 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     }
 
     fn type_record(&mut self, id: TypeId, _name: &str, record: &Record, docs: &Docs) {
-        self.print_typedef_record(id, record, docs, false);
+        self.print_typedef_record(id, record, docs);
     }
 
-    fn type_resource(&mut self, id: TypeId, name: &str, docs: &Docs) {
-        let entry = self
-            .gen
-            .resources
-            .entry(dealias(self.resolve, id))
-            .or_default();
-        if !self.in_import {
-            entry.direction = Direction::Export;
-        }
+    fn type_resource(&mut self, _id: TypeId, name: &str, docs: &Docs) {
         self.rustdoc(docs);
         let camel = to_upper_camel_case(name);
         let rt = self.gen.runtime_path();
@@ -1646,8 +1783,8 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                         }}
 
                         #[doc(hidden)]
-                        pub fn into_handle(self) -> u32 {{
-                            {rt}::Resource::into_handle(self.handle)
+                        pub fn take_handle(&self) -> u32 {{
+                            {rt}::Resource::take_handle(&self.handle)
                         }}
 
                         #[doc(hidden)]
@@ -1754,7 +1891,18 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     }
 
     fn type_tuple(&mut self, id: TypeId, _name: &str, tuple: &Tuple, docs: &Docs) {
-        self.print_typedef_tuple(id, tuple, docs);
+        for (name, mode) in self.modes_of(id) {
+            self.rustdoc(docs);
+            self.push_str(&format!("pub type {}", name));
+            self.print_generics(mode.lifetime);
+            self.push_str(" = (");
+            for ty in tuple.types.iter() {
+                let mode = self.filter_mode(ty, mode);
+                self.print_ty(ty, mode);
+                self.push_str(",");
+            }
+            self.push_str(");\n");
+        }
     }
 
     fn type_flags(&mut self, _id: TypeId, name: &str, flags: &Flags, docs: &Docs) {
@@ -1781,7 +1929,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     }
 
     fn type_variant(&mut self, id: TypeId, _name: &str, variant: &Variant, docs: &Docs) {
-        self.print_typedef_variant(id, variant, docs, false);
+        self.print_typedef_variant(id, variant, docs);
     }
 
     fn type_option(&mut self, id: TypeId, _name: &str, payload: &Type, docs: &Docs) {
@@ -1826,7 +1974,14 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     }
 
     fn type_list(&mut self, id: TypeId, _name: &str, ty: &Type, docs: &Docs) {
-        self.print_type_list(id, ty, docs);
+        for (name, mode) in self.modes_of(id) {
+            self.rustdoc(docs);
+            self.push_str(&format!("pub type {}", name));
+            self.print_generics(mode.lifetime);
+            self.push_str(" = ");
+            self.print_list(ty, mode);
+            self.push_str(";\n");
+        }
     }
 
     fn type_builtin(&mut self, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
@@ -1834,7 +1989,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.src
             .push_str(&format!("pub type {}", name.to_upper_camel_case()));
         self.src.push_str(" = ");
-        self.print_ty(ty, TypeMode::Owned);
+        self.print_ty(ty, TypeMode::owned());
         self.src.push_str(";\n");
     }
 }

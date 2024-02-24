@@ -8,7 +8,7 @@ use std::process::Command;
 use wasm_encoder::{Encode, Section};
 use wit_bindgen_core::Files;
 use wit_component::StringEncoding;
-use wit_parser::{Resolve, UnresolvedPackage, WorldId};
+use wit_parser::{Resolve, WorldId};
 
 /// Returns a suitable directory to place output for tests within.
 ///
@@ -125,13 +125,7 @@ pub fn run_component_codegen_test(
 
 fn parse_wit(path: &Path) -> (Resolve, WorldId) {
     let mut resolve = Resolve::default();
-    let pkg = if path.is_dir() {
-        resolve.push_dir(path).unwrap().0
-    } else {
-        resolve
-            .push(UnresolvedPackage::parse_file(path).unwrap())
-            .unwrap()
-    };
+    let (pkg, _files) = resolve.push_path(path).unwrap();
     let world = resolve.select_world(pkg, None).unwrap();
     (resolve, world)
 }

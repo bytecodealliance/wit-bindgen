@@ -1,7 +1,7 @@
 [package]
 name = "wit-bindgen-c"
 authors = ["Alex Crichton <alex@alexcrichton.com>"]
-version = "0.17.0"
+version.workspace = true
 edition.workspace = true
 repository = 'https://github.com/bytecodealliance/wit-bindgen'
 license = "Apache-2.0 WITH LLVM-exception"

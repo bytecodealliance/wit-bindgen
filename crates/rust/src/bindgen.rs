@@ -1,4 +1,4 @@
-use crate::{int_repr, to_rust_ident, wasm_type, Direction, InterfaceGenerator, RustFlagsRepr};
+use crate::{int_repr, to_rust_ident, wasm_type, InterfaceGenerator, RustFlagsRepr};
 use heck::*;
 use std::fmt::Write as _;
 use std::mem;
@@ -411,11 +411,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             } => {
                 let op = &operands[0];
                 let rt = self.gen.gen.runtime_path();
-                let resource = dealias(self.gen.resolve, *resource);
-                results.push(match self.gen.gen.resources[&resource].direction {
-                    Direction::Import => format!("({op}).into_handle() as i32"),
-                    Direction::Export => format!("{rt}::Resource::into_handle({op}) as i32"),
-                });
+                let result = if self.gen.is_exported_resource(*resource) {
+                    format!("{rt}::Resource::take_handle(&{op}) as i32")
+                } else {
+                    format!("({op}).take_handle() as i32")
+                };
+                results.push(result);
             }
 
             Instruction::HandleLower {
@@ -435,41 +436,37 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 let dealiased_resource = dealias(resolve, *resource);
 
-                results.push(
-                    if let Direction::Export = self.gen.gen.resources[&dealiased_resource].direction
-                    {
-                        match handle {
-                            Handle::Borrow(_) => {
-                                let name = resolve.types[*resource]
-                                    .name
-                                    .as_deref()
-                                    .unwrap()
-                                    .to_upper_camel_case();
-                                let rt = self.gen.gen.runtime_path();
-                                format!(
-                                    "{rt}::Resource::<{name}>::lift_borrow({op} as u32 as usize)"
-                                )
-                            }
-                            Handle::Own(_) => {
-                                let name = self.gen.type_path(dealiased_resource, true);
-                                format!("{name}::from_handle({op} as u32)")
-                            }
+                let result = if self.gen.is_exported_resource(*resource) {
+                    match handle {
+                        Handle::Borrow(_) => {
+                            let name = resolve.types[*resource]
+                                .name
+                                .as_deref()
+                                .unwrap()
+                                .to_upper_camel_case();
+                            let rt = self.gen.gen.runtime_path();
+                            format!("{rt}::Resource::<{name}>::lift_borrow({op} as u32 as usize)")
                         }
-                    } else if prefix == "" {
-                        let name = self.gen.type_path(dealiased_resource, true);
-                        format!("{name}::from_handle({op} as u32)")
-                    } else {
-                        let tmp = format!("handle{}", self.tmp());
-                        self.handle_decls.push(format!("let {tmp};"));
-                        let name = self.gen.type_path(dealiased_resource, true);
-                        format!(
-                            "{{\n
-                                {tmp} = {name}::from_handle({op} as u32);
-                                {prefix}{tmp}
-                            }}"
-                        )
-                    },
-                );
+                        Handle::Own(_) => {
+                            let name = self.gen.type_path(dealiased_resource, true);
+                            format!("{name}::from_handle({op} as u32)")
+                        }
+                    }
+                } else if prefix == "" {
+                    let name = self.gen.type_path(dealiased_resource, true);
+                    format!("{name}::from_handle({op} as u32)")
+                } else {
+                    let tmp = format!("handle{}", self.tmp());
+                    self.handle_decls.push(format!("let {tmp};"));
+                    let name = self.gen.type_path(dealiased_resource, true);
+                    format!(
+                        "{{\n
+                            {tmp} = {name}::from_handle({op} as u32);
+                            {prefix}{tmp}
+                        }}"
+                    )
+                };
+                results.push(result);
             }
 
             Instruction::RecordLower { ty, record, .. } => {
@@ -737,7 +734,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     "let {layout} = alloc::Layout::from_size_align_unchecked({vec}.len() * {size}, {align});\n",
                 ));
                 self.push_str(&format!(
-                    "let {result} = if {layout}.size() != 0\n{{\nlet ptr = alloc::alloc({layout});\n",
+                    "let {result} = if {layout}.size() != 0 {{\nlet ptr = alloc::alloc({layout});\n",
                 ));
                 self.push_str(&format!(
                     "if ptr.is_null()\n{{\nalloc::handle_alloc_error({layout});\n}}\nptr\n}}",
@@ -836,7 +833,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         ));
                     }
                     FunctionKind::Constructor(ty) => {
-                        self.gen.mark_resource_owned(*ty);
                         self.push_str(&format!(
                             "Own{0}::new(<_{0}Impl as Guest{0}>::new",
                             resolve.types[*ty]

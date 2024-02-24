@@ -32,7 +32,7 @@ impl exports::test::resource_alias::e2::Guest for E2 {
     fn a(
         f: exports::test::resource_alias::e2::Foo,
         g: exports::test::resource_alias::e2::Bar,
-        h: &exports::test::resource_alias::e1::X,
+        _h: &exports::test::resource_alias::e1::X,
     ) -> wit_bindgen::rt::vec::Vec<exports::test::resource_alias::e2::OwnY> {
         vec![f.x, g.x]
     }

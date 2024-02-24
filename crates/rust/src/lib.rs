@@ -9,23 +9,11 @@ use std::process::{Command, Stdio};
 use std::str::FromStr;
 use wit_bindgen_core::abi::{Bitcast, WasmType};
 use wit_bindgen_core::{
-    uwriteln, wit_parser::*, Direction, Files, InterfaceGenerator as _, Source, Types,
-    WorldGenerator,
+    uwrite, uwriteln, wit_parser::*, Files, InterfaceGenerator as _, Source, Types, WorldGenerator,
 };
 
 mod bindgen;
 mod interface;
-
-#[derive(Default)]
-struct ResourceInfo {
-    // Note that a resource can be both imported and exported (e.g. when
-    // importing and exporting the same interface which contains one or more
-    // resources).  In that case, this field will be `Import` while we're
-    // importing the interface and later change to `Export` while we're
-    // exporting the interface.
-    direction: Direction,
-    owned: bool,
-}
 
 struct InterfaceName {
     /// True when this interface name has been remapped through the use of `with` in the `bindgen!`
@@ -45,9 +33,14 @@ struct RustWasm {
     export_modules: Vec<(String, Vec<String>)>,
     skip: HashSet<String>,
     interface_names: HashMap<InterfaceId, InterfaceName>,
-    resources: HashMap<TypeId, ResourceInfo>,
+    /// Each imported and exported interface is stored in this map. Value indicates if last use was import.
+    interface_last_seen_as_import: HashMap<InterfaceId, bool>,
     import_funcs_called: bool,
     with_name_counter: usize,
+    // Track the with options that were used. Remapped interfaces provided via `with`
+    // are required to be used.
+    used_with_opts: HashSet<String>,
+    world: Option<WorldId>,
 }
 
 #[cfg(feature = "clap")]
@@ -178,6 +171,11 @@ pub struct Opts {
     /// Remapping of interface names to rust module names.
     #[cfg_attr(feature = "clap", arg(long, value_parser = parse_with, default_value = ""))]
     pub with: HashMap<String, String>,
+
+    /// Add the specified suffix to the name of the custome section containing
+    /// the component type.
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub type_section_suffix: Option<String>,
 }
 
 impl Opts {
@@ -273,7 +271,7 @@ impl RustWasm {
             ExportKey::Name(name) => format!("\"{name}\""),
         };
         if self.opts.exports.is_empty() {
-            bail!("no `exports` map provided in configuration - provide an `exports` map a key `{key}`")
+            bail!(MissingExportsMap { key });
         }
         bail!("expected `exports` map to contain key `{key}`")
     }
@@ -288,6 +286,7 @@ impl RustWasm {
         let with_name = resolve.name_world_key(name);
         let entry = if let Some(remapped_path) = self.opts.with.get(&with_name) {
             let name = format!("__with_name{}", self.with_name_counter);
+            self.used_with_opts.insert(with_name);
             self.with_name_counter += 1;
             uwriteln!(self.src, "use {remapped_path} as {name};");
             InterfaceName {
@@ -356,9 +355,38 @@ fn name_package_module(resolve: &Resolve, id: PackageId) -> String {
 }
 
 impl WorldGenerator for RustWasm {
-    fn preprocess(&mut self, resolve: &Resolve, _world: WorldId) {
+    fn preprocess(&mut self, resolve: &Resolve, world: WorldId) {
         wit_bindgen_core::generated_preamble(&mut self.src, env!("CARGO_PKG_VERSION"));
+
+        // Render some generator options to assist with debugging and/or to help
+        // recreate it if the original generation command is lost.
+        uwriteln!(self.src, "// Options used:");
+        if self.opts.std_feature {
+            uwriteln!(self.src, "//   * std_feature");
+        }
+        if self.opts.raw_strings {
+            uwriteln!(self.src, "//   * raw_strings");
+        }
+        if !self.opts.skip.is_empty() {
+            uwriteln!(self.src, "//   * skip: {:?}", self.opts.skip);
+        }
+        if !matches!(self.opts.ownership, Ownership::Owning) {
+            uwriteln!(self.src, "//   * ownership: {:?}", self.opts.ownership);
+        }
+        if !self.opts.additional_derive_attributes.is_empty() {
+            uwriteln!(
+                self.src,
+                "//   * additional derives {:?}",
+                self.opts.additional_derive_attributes
+            );
+        }
+        if !self.opts.with.is_empty() {
+            let mut with = self.opts.with.iter().collect::<Vec<_>>();
+            with.sort();
+            uwriteln!(self.src, "//   * with {with:?}");
+        }
         self.types.analyze(resolve);
+        self.world = Some(world);
     }
 
     fn import_interface(
@@ -368,6 +396,7 @@ impl WorldGenerator for RustWasm {
         id: InterfaceId,
         _files: &mut Files,
     ) {
+        self.interface_last_seen_as_import.insert(id, true);
         let wasm_import_module = resolve.name_world_key(name);
         let mut gen = self.interface(
             Identifier::Interface(id, name),
@@ -410,6 +439,7 @@ impl WorldGenerator for RustWasm {
         id: InterfaceId,
         _files: &mut Files,
     ) -> Result<()> {
+        self.interface_last_seen_as_import.insert(id, false);
         let mut gen = self.interface(Identifier::Interface(id, name), None, resolve, false);
         let (snake, module_path) = gen.start_append_submodule(name);
         if gen.gen.name_interface(resolve, id, name, true) {
@@ -418,6 +448,31 @@ impl WorldGenerator for RustWasm {
         gen.types(id);
         gen.generate_exports(resolve.interfaces[id].functions.values())?;
         gen.finish_append_submodule(&snake, module_path);
+
+        if self.opts.stubs {
+            let (pkg, name) = match name {
+                WorldKey::Name(name) => (None, name),
+                WorldKey::Interface(id) => {
+                    let interface = &resolve.interfaces[*id];
+                    (
+                        Some(interface.package.unwrap()),
+                        interface.name.as_ref().unwrap(),
+                    )
+                }
+            };
+            for (resource, funcs) in group_by_resource(resolve.interfaces[id].functions.values()) {
+                let world_id = self.world.unwrap();
+                let mut gen = self.interface(Identifier::World(world_id), None, resolve, false);
+                let pkg = pkg.map(|pid| {
+                    let namespace = resolve.packages[pid].name.namespace.clone();
+                    let package_module = name_package_module(resolve, pid);
+                    (namespace, package_module)
+                });
+                gen.generate_stub(resource, pkg, name, true, &funcs);
+                let stub = gen.finish();
+                self.src.push_str(&stub);
+            }
+        }
         Ok(())
     }
 
@@ -432,6 +487,16 @@ impl WorldGenerator for RustWasm {
         gen.generate_exports(funcs.iter().map(|f| f.1))?;
         let src = gen.finish();
         self.src.push_str(&src);
+
+        if self.opts.stubs {
+            for (resource, funcs) in group_by_resource(funcs.iter().map(|f| f.1)) {
+                let mut gen = self.interface(Identifier::World(world), None, resolve, false);
+                let world = &resolve.worlds[world];
+                gen.generate_stub(resource, None, &world.name, false, &funcs);
+                let stub = gen.finish();
+                self.src.push_str(&stub);
+            }
+        }
         Ok(())
     }
 
@@ -459,7 +524,7 @@ impl WorldGenerator for RustWasm {
         }
     }
 
-    fn finish(&mut self, resolve: &Resolve, world: WorldId, files: &mut Files) {
+    fn finish(&mut self, resolve: &Resolve, world: WorldId, files: &mut Files) -> Result<()> {
         let name = &resolve.worlds[world].name;
 
         let imports = mem::take(&mut self.import_modules);
@@ -473,8 +538,10 @@ impl WorldGenerator for RustWasm {
         // otherwise is attempted to be unique here to ensure that this doesn't get
         // concatenated to other custom sections by LLD by accident since LLD will
         // concatenate custom sections of the same name.
-        self.src
-            .push_str(&format!("#[link_section = \"component-type:{}\"]\n", name,));
+        let suffix = self.opts.type_section_suffix.as_deref().unwrap_or("");
+        self.src.push_str(&format!(
+            "#[link_section = \"component-type:{name}{suffix}\"]\n"
+        ));
 
         let mut producers = wasm_metadata::Producers::empty();
         producers.add(
@@ -493,66 +560,57 @@ impl WorldGenerator for RustWasm {
 
         self.src.push_str("#[doc(hidden)]\n");
         self.src.push_str(&format!(
-            "pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; {}] = ",
+            "pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; {}] = *b\"\\\n",
             component_type.len()
         ));
-        self.src.push_str(&format!("{:?};\n", component_type));
+        let mut line_length = 0;
+        let s = self.src.as_mut_string();
+        for byte in component_type.iter() {
+            if line_length >= 80 {
+                s.push_str("\\\n");
+                line_length = 0;
+            }
+            match byte {
+                b'\\' => {
+                    s.push_str("\\\\");
+                    line_length += 2;
+                }
+                b'"' => {
+                    s.push_str("\\\"");
+                    line_length += 2;
+                }
+                b if b.is_ascii_alphanumeric() || b.is_ascii_punctuation() => {
+                    s.push(char::from(*byte));
+                    line_length += 1;
+                }
+                0 => {
+                    s.push_str("\\0");
+                    line_length += 2;
+                }
+                _ => {
+                    uwrite!(s, "\\x{:02x}", byte);
+                    line_length += 4;
+                }
+            }
+        }
 
-        self.src.push_str(
+        self.src.push_str("\";\n");
+
+        let rt = self.runtime_path().to_string();
+        uwriteln!(
+            self.src,
             "
-            #[inline(never)]
-            #[doc(hidden)]
-            #[cfg(target_arch = \"wasm32\")]
-            pub fn __link_section() {}
-        ",
+                #[inline(never)]
+                #[doc(hidden)]
+                #[cfg(target_arch = \"wasm32\")]
+                pub fn __link_section() {{
+                    {rt}::maybe_link_cabi_realloc();
+                }}
+            ",
         );
 
         if self.opts.stubs {
             self.src.push_str("\n#[derive(Debug)]\npub struct Stub;\n");
-            let world_id = world;
-            let world = &resolve.worlds[world];
-            let mut funcs = Vec::new();
-            for (name, export) in world.exports.iter() {
-                let (pkg, name) = match name {
-                    WorldKey::Name(name) => (None, name),
-                    WorldKey::Interface(id) => {
-                        let interface = &resolve.interfaces[*id];
-                        (
-                            Some(interface.package.unwrap()),
-                            interface.name.as_ref().unwrap(),
-                        )
-                    }
-                };
-                match export {
-                    WorldItem::Function(func) => {
-                        funcs.push(func);
-                    }
-                    WorldItem::Interface(id) => {
-                        for (resource, funcs) in
-                            group_by_resource(resolve.interfaces[*id].functions.values())
-                        {
-                            let mut gen =
-                                self.interface(Identifier::World(world_id), None, resolve, false);
-                            let pkg = pkg.map(|pid| {
-                                let namespace = resolve.packages[pid].name.namespace.clone();
-                                let package_module = name_package_module(resolve, pid);
-                                (namespace, package_module)
-                            });
-                            gen.generate_stub(resource, pkg, name, true, &funcs);
-                            let stub = gen.finish();
-                            self.src.push_str(&stub);
-                        }
-                    }
-                    WorldItem::Type(_) => unreachable!(),
-                }
-            }
-
-            for (resource, funcs) in group_by_resource(funcs.into_iter()) {
-                let mut gen = self.interface(Identifier::World(world_id), None, resolve, false);
-                gen.generate_stub(resource, None, &world.name, false, &funcs);
-                let stub = gen.finish();
-                self.src.push_str(&stub);
-            }
         }
 
         let mut src = mem::take(&mut self.src);
@@ -582,6 +640,20 @@ impl WorldGenerator for RustWasm {
 
         let module_name = name.to_snake_case();
         files.push(&format!("{module_name}.rs"), src.as_bytes());
+
+        let remapping_keys = self.opts.with.keys().cloned().collect::<HashSet<String>>();
+
+        let mut unused_keys = remapping_keys
+            .difference(&self.used_with_opts)
+            .collect::<Vec<&String>>();
+
+        unused_keys.sort();
+
+        if !unused_keys.is_empty() {
+            bail!("unused remappings provided via `with`: {unused_keys:?}");
+        }
+
+        Ok(())
     }
 }
 
@@ -624,13 +696,6 @@ fn group_by_resource<'a>(
         }
     }
     by_resource
-}
-
-#[derive(Debug, Copy, Clone, PartialEq)]
-enum TypeMode {
-    Owned,
-    AllBorrowed(&'static str),
-    HandlesBorrowed(&'static str),
 }
 
 #[derive(Default, Debug, Clone, Copy)]
@@ -830,3 +895,20 @@ impl fmt::Display for RustFlagsRepr {
         }
     }
 }
+
+#[derive(Debug)]
+pub struct MissingExportsMap {
+    key: String,
+}
+
+impl fmt::Display for MissingExportsMap {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "no `exports` map provided in configuration - provide an `exports` map a key `{key}`",
+            key = self.key,
+        )
+    }
+}
+
+impl std::error::Error for MissingExportsMap {}
