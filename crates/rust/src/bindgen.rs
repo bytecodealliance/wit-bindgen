@@ -734,7 +734,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     "let {layout} = alloc::Layout::from_size_align_unchecked({vec}.len() * {size}, {align});\n",
                 ));
                 self.push_str(&format!(
-                    "let {result} = if {layout}.size() != 0\n{{\nlet ptr = alloc::alloc({layout});\n",
+                    "let {result} = if {layout}.size() != 0 {{\nlet ptr = alloc::alloc({layout});\n",
                 ));
                 self.push_str(&format!(
                     "if ptr.is_null()\n{{\nalloc::handle_alloc_error({layout});\n}}\nptr\n}}",
