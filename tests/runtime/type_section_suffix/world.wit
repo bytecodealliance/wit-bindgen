@@ -1,0 +1,15 @@
+package test:suffix;
+
+interface imports {
+  foo: func();
+}
+
+world available-imports {
+  import imports;
+}
+
+world required-exports {
+  include available-imports;
+
+  export run: func();
+}

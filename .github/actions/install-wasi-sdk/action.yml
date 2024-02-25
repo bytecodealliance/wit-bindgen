@@ -1,0 +1,26 @@
+name: 'Install the wasi-sdk'
+description: 'Install the wasi-sdk toolchain'
+
+runs:
+  using: composite
+  steps:
+    - run: |
+        curl https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-20/wasi-sdk-20.0-linux.tar.gz -L | tar xzvf -
+        echo "WASI_SDK_PATH=`pwd`/wasi-sdk-20.0" >> $GITHUB_ENV
+      if: runner.os == 'Linux'
+      shell: bash
+    - run: |
+        curl https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-20/wasi-sdk-20.0-macos.tar.gz -L | tar xzvf -
+        echo "WASI_SDK_PATH=`pwd`/wasi-sdk-20.0" >> $GITHUB_ENV
+      if: runner.os == 'macOS'
+      shell: bash
+    - run: |
+        curl https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-20/wasi-sdk-20.0.m-mingw.tar.gz -L | tar xzvf -
+        echo "WASI_SDK_PATH=`pwd`/wasi-sdk-20.0+m" >> $GITHUB_ENV
+      if: runner.os == 'Windows'
+      shell: bash
+    - name: Setup `wasm-tools`
+      uses: bytecodealliance/actions/wasm-tools/setup@v1
+      with:
+        version: "1.0.60"
+        github_token: ${{ github.token }}

@@ -274,6 +274,13 @@ use core::sync::atomic::{AtomicU32, Ordering::Relaxed};
 ///     // case above if possible.
 ///     ownership: Borrowing { duplicate_if_necessary: false },
 ///
+///     // This will suffix the custom section containing component type
+///     // information with the specified string. This is not required by
+///     // default but if the same world is generated in two different locations
+///     // in the crate then one bindings generation location will need this
+///     // suffix to avoid having the custom sections corrupt each other.
+///     type_section_suffix: "suffix",
+///
 ///     // Configures the path to the `wit-bindgen` crate itself. By default
 ///     // this is `wit_bindgen` assuming that your crate depends on the
 ///     // `wit-bindgen` crate itself.
@@ -304,6 +311,10 @@ pub use wit_bindgen_rust_macro::generate;
 // Re-export `bitflags` so that we can reference it from macros.
 #[doc(hidden)]
 pub use bitflags;
+
+/// For more information about this see `./ci/rebuild-libcabi-realloc.sh`.
+#[cfg(feature = "realloc")]
+mod cabi_realloc;
 
 #[doc(hidden)]
 pub mod rt {
@@ -346,9 +357,46 @@ pub mod rt {
     // Re-export things from liballoc for convenient use.
     pub use super::alloc::{alloc, boxed, string, vec};
 
+    /// This function is called from generated bindings and will be deleted by
+    /// the linker. The purpose of this function is to force a reference to the
+    /// symbol `cabi_realloc` to make its way through to the final linker
+    /// command line. That way `wasm-ld` will pick it up, see it needs to be
+    /// exported, and then export it.
+    ///
+    /// For more information about this see `./ci/rebuild-libcabi-realloc.sh`.
+    pub fn maybe_link_cabi_realloc() {
+        #[cfg(target_family = "wasm")]
+        {
+            #[cfg(feature = "realloc")]
+            extern "C" {
+                fn cabi_realloc(
+                    old_ptr: *mut u8,
+                    old_len: usize,
+                    align: usize,
+                    new_len: usize,
+                ) -> *mut u8;
+            }
+            // Force the `cabi_realloc` symbol to be referenced from here. This
+            // function isn't ever actually used at runtime but the symbol needs
+            // to be used here to force it to get referenced all the way through
+            // to the linker. By the time we get to the linker this symbol will
+            // be discarded due to it never actually being used by
+            // `cabi_realloc` will have already been referenced at which point
+            // its export name annotation will ensure it's exported regardless.
+            #[cfg(feature = "realloc")]
+            unsafe {
+                cabi_realloc(core::ptr::null_mut(), 0, 1, 1);
+            }
+            unreachable!();
+        }
+    }
+
+    /// NB: this function is called by a generated function in the
+    /// `cabi_realloc` module above. It's otherwise never explicitly called.
+    ///
+    /// For more information about this see `./ci/rebuild-libcabi-realloc.sh`.
     #[cfg(feature = "realloc")]
-    #[no_mangle]
-    unsafe extern "C" fn cabi_realloc(
+    pub unsafe fn cabi_realloc(
         old_ptr: *mut u8,
         old_len: usize,
         align: usize,
@@ -511,7 +559,7 @@ pub unsafe trait RustResource: WasmResource {
 impl<T: WasmResource> Resource<T> {
     #[doc(hidden)]
     pub unsafe fn from_handle(handle: u32) -> Self {
-        assert!(handle != u32::MAX);
+        debug_assert!(handle != u32::MAX);
         Self {
             handle: AtomicU32::new(handle),
             _marker: marker::PhantomData,

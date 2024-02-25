@@ -67,18 +67,7 @@ jobs:
     - name: Install wasm32-wasi target
       run: rustup target add wasm32-wasi
 
-    - run: |
-        curl https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-20/wasi-sdk-20.0-linux.tar.gz -L | tar xzvf -
-        echo "WASI_SDK_PATH=`pwd`/wasi-sdk-20.0" >> $GITHUB_ENV
-      if : matrix.os == 'ubuntu-latest'
-    - run: |
-        curl https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-20/wasi-sdk-20.0-macos.tar.gz -L | tar xzvf -
-        echo "WASI_SDK_PATH=`pwd`/wasi-sdk-20.0" >> $GITHUB_ENV
-      if : matrix.os == 'macos-latest'
-    - run: |
-        curl https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-20/wasi-sdk-20.0.m-mingw.tar.gz -L | tar xzvf -
-        echo "WASI_SDK_PATH=`pwd`/wasi-sdk-20.0+m" >> $GITHUB_ENV
-      if : matrix.os == 'windows-latest'
+    - uses: ./.github/actions/install-wasi-sdk
 
     - run: |
         curl.exe -LO https://dotnet.microsoft.com/download/dotnet/scripts/v1/dotnet-install.ps1
@@ -119,6 +108,26 @@ jobs:
       run: |
         source ./emsdk-main/emsdk_env.sh
         cargo test --workspace
+
+  check:
+    name: Check
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install Rust
+      run: rustup update stable --no-self-update && rustup default stable
+    - name: Install wasm32-unknown-unknown target
+      run: rustup target add wasm32-unknown-unknown
+    - name: Install wasm32-wasi target
+      run: rustup target add wasm32-wasi
+
+    # Verify the output of the `./ci/rebuild-libcabi-realloc.sh` script is
+    # up-to-date.
+    - uses: ./.github/actions/install-wasi-sdk
+    - run: ./ci/rebuild-libcabi-realloc.sh
+    - run: git diff --exit-code
+
+    # Test various feature combinations, make sure they all build
     - run: cargo build
     - run: cargo build --no-default-features
     - run: cargo build --no-default-features --features rust
@@ -127,7 +136,6 @@ jobs:
     - run: cargo build --no-default-features --features go
     - run: cargo build --no-default-features --features csharp
     - run: cargo build --no-default-features --features markdown
-
 
   rustfmt:
     name: Rustfmt
@@ -162,6 +170,7 @@ jobs:
       - rustfmt
       - build
       - verify-publish
+      - check
     if: always()
 
     steps:

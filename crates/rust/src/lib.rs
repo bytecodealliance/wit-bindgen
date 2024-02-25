@@ -9,7 +9,7 @@ use std::process::{Command, Stdio};
 use std::str::FromStr;
 use wit_bindgen_core::abi::{Bitcast, WasmType};
 use wit_bindgen_core::{
-    uwriteln, wit_parser::*, Files, InterfaceGenerator as _, Source, Types, WorldGenerator,
+    uwrite, uwriteln, wit_parser::*, Files, InterfaceGenerator as _, Source, Types, WorldGenerator,
 };
 
 mod bindgen;
@@ -171,6 +171,11 @@ pub struct Opts {
     /// Remapping of interface names to rust module names.
     #[cfg_attr(feature = "clap", arg(long, value_parser = parse_with, default_value = ""))]
     pub with: HashMap<String, String>,
+
+    /// Add the specified suffix to the name of the custome section containing
+    /// the component type.
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub type_section_suffix: Option<String>,
 }
 
 impl Opts {
@@ -533,8 +538,10 @@ impl WorldGenerator for RustWasm {
         // otherwise is attempted to be unique here to ensure that this doesn't get
         // concatenated to other custom sections by LLD by accident since LLD will
         // concatenate custom sections of the same name.
-        self.src
-            .push_str(&format!("#[link_section = \"component-type:{}\"]\n", name,));
+        let suffix = self.opts.type_section_suffix.as_deref().unwrap_or("");
+        self.src.push_str(&format!(
+            "#[link_section = \"component-type:{name}{suffix}\"]\n"
+        ));
 
         let mut producers = wasm_metadata::Producers::empty();
         producers.add(
@@ -553,18 +560,53 @@ impl WorldGenerator for RustWasm {
 
         self.src.push_str("#[doc(hidden)]\n");
         self.src.push_str(&format!(
-            "pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; {}] = ",
+            "pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; {}] = *b\"\\\n",
             component_type.len()
         ));
-        self.src.push_str(&format!("{:?};\n", component_type));
+        let mut line_length = 0;
+        let s = self.src.as_mut_string();
+        for byte in component_type.iter() {
+            if line_length >= 80 {
+                s.push_str("\\\n");
+                line_length = 0;
+            }
+            match byte {
+                b'\\' => {
+                    s.push_str("\\\\");
+                    line_length += 2;
+                }
+                b'"' => {
+                    s.push_str("\\\"");
+                    line_length += 2;
+                }
+                b if b.is_ascii_alphanumeric() || b.is_ascii_punctuation() => {
+                    s.push(char::from(*byte));
+                    line_length += 1;
+                }
+                0 => {
+                    s.push_str("\\0");
+                    line_length += 2;
+                }
+                _ => {
+                    uwrite!(s, "\\x{:02x}", byte);
+                    line_length += 4;
+                }
+            }
+        }
 
-        self.src.push_str(
+        self.src.push_str("\";\n");
+
+        let rt = self.runtime_path().to_string();
+        uwriteln!(
+            self.src,
             "
-            #[inline(never)]
-            #[doc(hidden)]
-            #[cfg(target_arch = \"wasm32\")]
-            pub fn __link_section() {}
-        ",
+                #[inline(never)]
+                #[doc(hidden)]
+                #[cfg(target_arch = \"wasm32\")]
+                pub fn __link_section() {{
+                    {rt}::maybe_link_cabi_realloc();
+                }}
+            ",
         );
 
         if self.opts.stubs {
