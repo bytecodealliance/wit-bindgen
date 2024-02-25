@@ -6,6 +6,10 @@
 #include <utility>
 #define WIT_HOST_DIRECT
 #include <wit-host.h>
+
+extern "C" void *cabi_realloc(void *ptr, size_t old_size, size_t align,
+                              size_t new_size);
+
 namespace foo {
 namespace foo {
 namespace strings {

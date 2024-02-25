@@ -2,6 +2,7 @@
 
 #include <malloc.h>
 #include <stdint.h>
+#include <string.h>
 #include <string_view>
 #include "wit-common.h"
 
@@ -17,6 +18,8 @@ namespace wit {
 #ifdef WIT_HOST_DIRECT
 typedef intptr_t guest_address;
 typedef size_t guest_size;
+extern "C" void *cabi_realloc(void *ptr, size_t old_size, size_t align,
+                              size_t new_size);
 #elif defined(WIT_WASI64)
 typedef uint64_t guest_address;
 typedef uint64_t guest_size;
@@ -58,6 +61,14 @@ public:
   guest_address data() const { return data_; }
   guest_size size() const { return length; }
   // add a convenient way to create a string
+
+  static string from_view(std::string_view v) {
+#if defined(WIT_HOST_DIRECT)
+    void* addr = cabi_realloc(nullptr, 0, 1, v.length());
+#endif
+    memcpy(addr, v.data(), v.length());
+    return string((guest_address)addr, v.length());
+  }
 };
 
 template <class T>
@@ -130,6 +141,7 @@ public:
 #endif
   {
   }
+  T const& inner() const { return *static_cast<T const*>(this); }
 
 #ifdef WIT_HOST_WAMR
   // not necessary? as the only way to get a guest_owned object

@@ -10,7 +10,7 @@ libstrings.so: the_world.pie.o guest.pie.o
 	$(CXX) $(CXXFLAGS) -fPIE -o $@ -c $^
 
 app-strings: the_world_native.o main.o
-	$(CXX) $(CXXFLAGS) -o $@ $^ -lstrings
+	$(CXX) $(CXXFLAGS) -o $@ $^ -L. -lstrings
 
 bindgen: wit/strings.wit
 	$(WIT_BINDGEN) cpp wit --wasm64 --format
