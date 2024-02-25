@@ -1865,12 +1865,12 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let len = format!("len{}", tmp);
                 // let result = format!("result{}", tmp);
                 self.push_str(&format!("auto const&{} = {};\n", val, operands[0]));
-                if self.gen.gen.opts.short_cut {
+                if self.gen.gen.opts.short_cut || self.gen.gen.opts.host {
                     self.push_str(&format!("auto {} = {}.data();\n", ptr, val));
                     self.push_str(&format!("auto {} = {}.size();\n", len, val));
                 } else {
-                    self.push_str(&format!("auto {} = (int32_t)({}.data());\n", ptr, val));
-                    self.push_str(&format!("auto {} = (int32_t)({}.size());\n", len, val));
+                    self.push_str(&format!("auto {} = (intptr_t)({}.data());\n", ptr, val));
+                    self.push_str(&format!("auto {} = (size_t)({}.size());\n", len, val));
                 }
                 if realloc.is_none() {
                     results.push(ptr);
@@ -1889,12 +1889,12 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let len = format!("len{}", tmp);
                 // let result = format!("result{}", tmp);
                 self.push_str(&format!("auto const&{} = {};\n", val, operands[0]));
-                if self.gen.gen.opts.short_cut {
+                if self.gen.gen.opts.short_cut || self.gen.gen.opts.host {
                     self.push_str(&format!("auto {} = {}.data();\n", ptr, val));
                     self.push_str(&format!("auto {} = {}.size();\n", len, val));
                 } else {
-                    self.push_str(&format!("auto {} = (int32_t)({}.data());\n", ptr, val));
-                    self.push_str(&format!("auto {} = (int32_t)({}.size());\n", len, val));
+                    self.push_str(&format!("auto {} = (intptr_t)({}.data());\n", ptr, val));
+                    self.push_str(&format!("auto {} = (size_t)({}.size());\n", len, val));
                 }
                 if realloc.is_none() {
                     results.push(ptr);
@@ -1916,12 +1916,12 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let len = format!("len{}", tmp);
                 // let result = format!("result{}", tmp);
                 self.push_str(&format!("auto const&{} = {};\n", val, operands[0]));
-                if self.gen.gen.opts.short_cut {
+                if self.gen.gen.opts.short_cut || self.gen.gen.opts.host {
                     self.push_str(&format!("auto {} = {}.data();\n", ptr, val));
                     self.push_str(&format!("auto {} = {}.size();\n", len, val));
                 } else {
-                    self.push_str(&format!("auto {} = (int32_t)({}.data());\n", ptr, val));
-                    self.push_str(&format!("auto {} = (int32_t)({}.size());\n", len, val));
+                    self.push_str(&format!("auto {} = (intptr_t)({}.data());\n", ptr, val));
+                    self.push_str(&format!("auto {} = (size_t)({}.size());\n", len, val));
                 }
                 if realloc.is_none() {
                     results.push(ptr);
@@ -2432,14 +2432,14 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                                     if self.gen.gen.opts.wasm64 {
                                         uwrite!(self.src, "WASM_I64_VAL({}),", value)
                                     } else {
-                                        uwrite!(self.src, "WASM_I32_VAL({}),", value)
+                                        uwrite!(self.src, "WASM_I32_VAL((int32_t){}),", value)
                                     }
                                 }
                                 WasmType::Pointer => {
                                     if self.gen.gen.opts.wasm64 {
                                         uwrite!(self.src, "WASM_I64_VAL({}),", value)
                                     } else {
-                                        uwrite!(self.src, "WASM_I32_VAL({}),", value)
+                                        uwrite!(self.src, "WASM_I32_VAL((int32_t){}),", value)
                                     }
                                 }
                                 WasmType::PointerOrI64 => {
