@@ -9,12 +9,15 @@
 #define WIT_HOST_WAMR
 #endif
 
-#ifdef WIT_HOST_DIRECT
-#define WIT_WASI64
-#endif
+// #ifdef WIT_HOST_DIRECT
+// #define WIT_WASI64
+// #endif
 
 namespace wit {
-#ifdef WIT_WASI64
+#ifdef WIT_HOST_DIRECT
+typedef intptr_t guest_address;
+typedef size_t guest_size;
+#elif defined(WIT_WASI64)
 typedef uint64_t guest_address;
 typedef uint64_t guest_size;
 #else
@@ -28,9 +31,11 @@ typedef uint32_t guest_size;
 #endif
 
 namespace wit {
+#ifdef WIT_HOST_WAMR
 typedef void (*guest_cabi_post_t)(WASMExecEnv *, guest_address);
 typedef guest_address (*guest_alloc_t)(WASMExecEnv *, guest_size size,
                                        guest_size align);
+#endif
 
 // host code never de-allocates directly
 class string {
@@ -115,7 +120,7 @@ public:
 #ifdef WIT_HOST_WAMR
               wasm_function_inst_t f, WASMExecEnv *e
 #elif defined(WIT_HOST_DIRECT)
-              , void (*f)(guest_address)
+              void (*f)(guest_address)
 #endif
               )
       : T(std::move(t)), data_(a), free_func(f)

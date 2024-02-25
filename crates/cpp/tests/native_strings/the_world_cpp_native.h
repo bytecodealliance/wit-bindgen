@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <string_view>
 #include <utility>
+#define WIT_HOST_DIRECT
 #include <wit-host.h>
 namespace foo {
 namespace foo {

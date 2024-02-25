@@ -751,8 +751,8 @@ impl CppInterfaceGenerator<'_> {
             self.resolve.wasm_signature(AbiVariant::GuestExport, func)
         };
         let module_name = self.wasm_import_module.as_ref().map(|e| e.clone()).unwrap();
-        if self.gen.opts.short_cut { } else
-        if self.gen.opts.host {
+        if self.gen.opts.short_cut {
+        } else if self.gen.opts.host {
             self.gen.c_src.src.push_str("static ");
         } else {
             let func_name = &func.name;
@@ -800,7 +800,13 @@ impl CppInterfaceGenerator<'_> {
             // else {
             //     first_arg = false;
             // }
-            let ptrtype = if !self.gen.opts.host  { "intptr_t"} else if self.gen.opts.wasm64 {"int64_t"} else {"int32_t"};
+            let ptrtype = if !self.gen.opts.host {
+                "intptr_t"
+            } else if self.gen.opts.wasm64 {
+                "int64_t"
+            } else {
+                "int32_t"
+            };
             self.gen.c_src.src.push_str(ptrtype);
             self.gen.c_src.src.push_str(" resultptr");
             params.push("resultptr".into());
