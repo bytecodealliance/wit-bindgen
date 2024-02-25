@@ -1876,6 +1876,12 @@ fn cast(from: WasmType, to: WasmType) -> Bitcast {
         (I64, F32) => Bitcast::I64ToF32,
 
         (F32, F64) | (F64, F32) | (F64, I32) | (I32, F64) => unreachable!(),
+        (WasmType::Pointer, _) | (WasmType::PointerOrI64, _) | (WasmType::Length, _) => {
+            unreachable!()
+        }
+        (_, WasmType::Pointer) | (_, WasmType::PointerOrI64) | (_, WasmType::Length) => {
+            unreachable!()
+        }
     }
 }
 

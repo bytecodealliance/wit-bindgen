@@ -313,6 +313,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         WasmType::I64 => results.push("0i64".to_string()),
                         WasmType::F32 => results.push("0.0f32".to_string()),
                         WasmType::F64 => results.push("0.0f64".to_string()),
+                        WasmType::Length => results.push("0usize".to_string()),
+                        WasmType::Pointer => results.push("0usize".to_string()),
+                        WasmType::PointerOrI64 => results.push("0i64".to_string()),
                     }
                 }
             }

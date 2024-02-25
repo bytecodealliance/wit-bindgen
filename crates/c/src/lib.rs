@@ -3015,6 +3015,9 @@ pub fn wasm_type(ty: WasmType) -> &'static str {
         WasmType::I64 => "int64_t",
         WasmType::F32 => "float",
         WasmType::F64 => "double",
+        WasmType::Length => "size_t",
+        WasmType::Pointer => "intptr_t",
+        WasmType::PointerOrI64 => "int64_t",
     }
 }
 

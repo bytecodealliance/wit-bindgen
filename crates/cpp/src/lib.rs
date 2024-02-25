@@ -104,6 +104,9 @@ pub struct Opts {
     /// Call clang-format on the generated code
     #[cfg_attr(feature = "clap", arg(long, default_value_t = bool::default()))]
     pub format: bool,
+    /// 64bit guest
+    #[cfg_attr(feature = "clap", arg(long, default_value_t = bool::default()))]
+    pub wasm64: bool,
 }
 
 impl Opts {
@@ -1794,6 +1797,9 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                         WasmType::I64 => results.push("int64_t(0)".to_string()),
                         WasmType::F32 => results.push("0.0f".to_string()),
                         WasmType::F64 => results.push("0.0".to_string()),
+                        WasmType::Length => results.push("size_t(0)".to_string()),
+                        WasmType::Pointer => results.push("nullptr".to_string()),
+                        WasmType::PointerOrI64 => results.push("int64_t(0)".to_string()),
                     }
                 }
             }
@@ -2422,6 +2428,23 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                                 WasmType::I64 => uwrite!(self.src, "WASM_I64_VAL({}),", value),
                                 WasmType::F32 => uwrite!(self.src, "WASM_F32_VAL({}),", value),
                                 WasmType::F64 => uwrite!(self.src, "WASM_F64_VAL({}),", value),
+                                WasmType::Length => {
+                                    if self.gen.gen.opts.wasm64 {
+                                        uwrite!(self.src, "WASM_I64_VAL({}),", value)
+                                    } else {
+                                        uwrite!(self.src, "WASM_I32_VAL({}),", value)
+                                    }
+                                }
+                                WasmType::Pointer => {
+                                    if self.gen.gen.opts.wasm64 {
+                                        uwrite!(self.src, "WASM_I64_VAL({}),", value)
+                                    } else {
+                                        uwrite!(self.src, "WASM_I32_VAL({}),", value)
+                                    }
+                                }
+                                WasmType::PointerOrI64 => {
+                                    uwrite!(self.src, "WASM_I64_VAL({}),", value)
+                                }
                             }
                         }
                         self.src.push_str("};\n");
@@ -2436,6 +2459,23 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                             Some(WasmType::I64) => (String::from("WASM_I64"), String::from("i64")),
                             Some(WasmType::F32) => (String::from("WASM_F32"), String::from("f32")),
                             Some(WasmType::F64) => (String::from("WASM_F64"), String::from("f64")),
+                            Some(WasmType::Pointer) => {
+                                if self.gen.gen.opts.wasm64 {
+                                    (String::from("WASM_I64"), String::from("i64"))
+                                } else {
+                                    (String::from("WASM_I32"), String::from("i32"))
+                                }
+                            }
+                            Some(WasmType::Length) => {
+                                if self.gen.gen.opts.wasm64 {
+                                    (String::from("WASM_I64"), String::from("i64"))
+                                } else {
+                                    (String::from("WASM_I32"), String::from("i32"))
+                                }
+                            }
+                            Some(WasmType::PointerOrI64) => {
+                                (String::from("WASM_I64"), String::from("i64"))
+                            }
                             None => todo!(),
                         };
                         uwriteln!(self.src, "assert(wasm_results[0].kind=={kind});");

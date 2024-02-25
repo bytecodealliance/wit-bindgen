@@ -1294,6 +1294,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     WasmType::I64 => "0L",
                     WasmType::F32 => "0.0F",
                     WasmType::F64 => "0.0D",
+                    WasmType::Length => todo!(),
+                    WasmType::Pointer => todo!(),
+                    WasmType::PointerOrI64 => todo!(),
                 }
                 .to_owned()
             })),
@@ -2103,6 +2106,9 @@ fn wasm_type(ty: WasmType) -> &'static str {
         WasmType::I64 => "long",
         WasmType::F32 => "float",
         WasmType::F64 => "double",
+        WasmType::Length => todo!(),
+        WasmType::Pointer => todo!(),
+        WasmType::PointerOrI64 => todo!(),
     }
 }
 

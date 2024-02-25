@@ -835,6 +835,9 @@ fn wasm_type(ty: WasmType) -> &'static str {
         WasmType::I64 => "i64",
         WasmType::F32 => "f32",
         WasmType::F64 => "f64",
+        WasmType::Length => "usize",
+        WasmType::Pointer => "usize",
+        WasmType::PointerOrI64 => "i64",
     }
 }
 
