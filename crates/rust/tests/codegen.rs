@@ -192,7 +192,7 @@ mod alternative_runtime_path {
         inline: "
             package my:inline;
             world foo {
-                export foobar: func();
+                export foobar: func() -> string;
             }
         ",
         runtime_path: "my_rt",
@@ -206,7 +206,9 @@ mod alternative_runtime_path {
     struct Component;
 
     impl Guest for Component {
-        fn foobar() {}
+        fn foobar() -> String {
+            String::new()
+        }
     }
 }
 

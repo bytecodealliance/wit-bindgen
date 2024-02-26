@@ -267,14 +267,10 @@ impl InterfaceGenerator<'_> {
             uwrite!(
                 self.src,
                 "
-                    #[allow(unused_imports)]
-                    use {rt}::{{alloc, vec::Vec, string::String}};
-
                     #[repr(align({align}))]
                     struct _RetArea([u8; {size}]);
                     static mut _RET_AREA: _RetArea = _RetArea([0; {size}]);
                 ",
-                rt = self.gen.runtime_path(),
                 align = self.return_pointer_area_align,
                 size = self.return_pointer_area_size,
             );
@@ -362,13 +358,6 @@ impl InterfaceGenerator<'_> {
         self.src.push_str("#[allow(unused_unsafe, clippy::all)]\n");
         let params = self.print_signature(func, false, &sig);
         self.src.push_str("{\n");
-        self.src.push_str(&format!(
-            "
-                #[allow(unused_imports)]
-                use {rt}::{{alloc, vec::Vec, string::String}};
-            ",
-            rt = self.gen.runtime_path()
-        ));
         self.src.push_str("unsafe {\n");
 
         let mut f = FunctionBindgen::new(self, params);
@@ -389,7 +378,8 @@ impl InterfaceGenerator<'_> {
         } = f;
 
         if needs_cleanup_list {
-            self.src.push_str("let mut cleanup_list = Vec::new();\n");
+            let vec = self.path_to_vec();
+            uwriteln!(self.src, "let mut cleanup_list = {vec}::new();");
         }
         assert!(handle_decls.is_empty());
         if import_return_pointer_area_size > 0 {
@@ -456,12 +446,10 @@ impl InterfaceGenerator<'_> {
 
         self.push_str(" {");
 
+        let run_ctors_once = self.path_to_run_ctors_once();
         uwrite!(
             self.src,
             "
-                #[allow(unused_imports)]
-                use {rt}::{{alloc, vec::Vec, string::String}};
-
                 // Before executing any other code, use this function to run all static
                 // constructors, if they have not yet been run. This is a hack required
                 // to work around wasi-libc ctors calling import functions to initialize
@@ -474,10 +462,9 @@ impl InterfaceGenerator<'_> {
                 // https://github.com/bytecodealliance/preview2-prototyping/issues/99
                 // for more details.
                 #[cfg(target_arch=\"wasm32\")]
-                {rt}::run_ctors_once();
+                {run_ctors_once}();
 
             ",
-            rt = self.gen.runtime_path()
         );
 
         let mut f = FunctionBindgen::new(self, params);
@@ -1695,7 +1682,8 @@ impl InterfaceGenerator<'_> {
     }
 
     fn push_vec_name(&mut self) {
-        self.push_str(&format!("{rt}::vec::Vec", rt = self.gen.runtime_path()));
+        let path = self.path_to_vec();
+        self.push_str(&path);
     }
 
     pub fn is_exported_resource(&self, ty: TypeId) -> bool {
@@ -1720,10 +1708,8 @@ impl InterfaceGenerator<'_> {
     }
 
     fn push_string_name(&mut self) {
-        self.push_str(&format!(
-            "{rt}::string::String",
-            rt = self.gen.runtime_path()
-        ));
+        let path = self.path_to_string();
+        self.push_str(&path);
     }
 
     fn push_str(&mut self, s: &str) {
@@ -1746,6 +1732,70 @@ impl InterfaceGenerator<'_> {
             self.push_str("str");
         }
     }
+
+    pub fn path_to_resource(&mut self) -> String {
+        format!("{}::Resource", self.gen.runtime_path())
+    }
+
+    pub fn path_to_invalid_enum_discriminant(&mut self) -> String {
+        format!("{}::invalid_enum_discriminant", self.gen.runtime_path())
+    }
+
+    pub fn path_to_string_lift(&mut self) -> String {
+        format!("{}::string_lift", self.gen.runtime_path())
+    }
+
+    pub fn path_to_cabi_dealloc(&mut self) -> String {
+        format!("{}::dealloc", self.gen.runtime_path())
+    }
+
+    pub fn path_to_as_i64(&mut self) -> String {
+        format!("{}::as_i64", self.gen.runtime_path())
+    }
+
+    pub fn path_to_as_i32(&mut self) -> String {
+        format!("{}::as_i32", self.gen.runtime_path())
+    }
+
+    pub fn path_to_as_f64(&mut self) -> String {
+        format!("{}::as_f64", self.gen.runtime_path())
+    }
+
+    pub fn path_to_as_f32(&mut self) -> String {
+        format!("{}::as_f32", self.gen.runtime_path())
+    }
+
+    pub fn path_to_char_lift(&mut self) -> String {
+        format!("{}::char_lift", self.gen.runtime_path())
+    }
+
+    pub fn path_to_bool_lift(&mut self) -> String {
+        format!("{}::bool_lift", self.gen.runtime_path())
+    }
+
+    fn path_to_run_ctors_once(&mut self) -> String {
+        format!("{}::run_ctors_once", self.gen.runtime_path())
+    }
+
+    pub fn path_to_vec(&mut self) -> String {
+        format!("{}::vec::Vec", self.gen.runtime_path())
+    }
+
+    pub fn path_to_string(&mut self) -> String {
+        format!("{}::string::String", self.gen.runtime_path())
+    }
+
+    fn path_to_rust_resource(&mut self) -> String {
+        format!("{}::RustResource", self.gen.runtime_path())
+    }
+
+    fn path_to_wasm_resource(&mut self) -> String {
+        format!("{}::WasmResource", self.gen.runtime_path())
+    }
+
+    pub fn path_to_alloc_crate(&mut self) -> String {
+        format!("{}::alloc", self.gen.runtime_path())
+    }
 }
 
 impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
@@ -1760,7 +1810,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     fn type_resource(&mut self, _id: TypeId, name: &str, docs: &Docs) {
         self.rustdoc(docs);
         let camel = to_upper_camel_case(name);
-        let rt = self.gen.runtime_path();
+        let resource = self.path_to_resource();
 
         let wasm_import_module = if self.in_import {
             // Imported resources are a simple wrapper around `Resource<T>` in
@@ -1771,31 +1821,33 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                     #[derive(Debug)]
                     #[repr(transparent)]
                     pub struct {camel} {{
-                        handle: {rt}::Resource<{camel}>,
+                        handle: {resource}<{camel}>,
                     }}
 
                     impl {camel} {{
                         #[doc(hidden)]
                         pub unsafe fn from_handle(handle: u32) -> Self {{
                             Self {{
-                                handle: {rt}::Resource::from_handle(handle),
+                                handle: {resource}::from_handle(handle),
                             }}
                         }}
 
                         #[doc(hidden)]
                         pub fn take_handle(&self) -> u32 {{
-                            {rt}::Resource::take_handle(&self.handle)
+                            {resource}::take_handle(&self.handle)
                         }}
 
                         #[doc(hidden)]
                         pub fn handle(&self) -> u32 {{
-                            {rt}::Resource::handle(&self.handle)
+                            {resource}::handle(&self.handle)
                         }}
                     }}
                 "#
             );
             self.wasm_import_module.unwrap().to_string()
         } else {
+            let rust_resource = self.path_to_rust_resource();
+
             // Exported resources are represented as `Resource<T>` as opposed
             // to being wrapped like imported resources.
             //
@@ -1825,10 +1877,10 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                         #[export_name = "{export_prefix}{module}#[dtor]{name}"]
                         #[allow(non_snake_case)]
                         unsafe extern "C" fn dtor(rep: usize) {{
-                            {rt}::Resource::<{camel}>::dtor(rep)
+                            {resource}::<{camel}>::dtor(rep)
                         }}
                     }};
-                    unsafe impl {rt}::RustResource for {camel} {{
+                    unsafe impl {rust_resource} for {camel} {{
                         unsafe fn new(_rep: usize) -> u32 {{
                             #[cfg(not(target_arch = "wasm32"))]
                             unreachable!();
@@ -1859,16 +1911,17 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                             }}
                         }}
                     }}
-                    pub type Own{camel} = {rt}::Resource<{camel}>;
+                    pub type Own{camel} = {resource}<{camel}>;
                 "#
             );
             format!("[export]{module}")
         };
 
+        let wasm_resource = self.path_to_wasm_resource();
         uwriteln!(
             self.src,
             r#"
-                unsafe impl {rt}::WasmResource for {camel} {{
+                unsafe impl {wasm_resource} for {camel} {{
                      #[inline]
                      unsafe fn drop(_handle: u32) {{
                          #[cfg(not(target_arch = "wasm32"))]
