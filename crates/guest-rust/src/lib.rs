@@ -312,11 +312,10 @@ pub use bitflags;
 #[cfg(feature = "realloc")]
 mod cabi_realloc;
 
+mod pre_wit_bindgen_0_20_0;
+
 #[doc(hidden)]
 pub mod rt {
-
-    extern crate alloc;
-
     /// This function is called from generated bindings and will be deleted by
     /// the linker. The purpose of this function is to force a reference to the
     /// symbol `cabi_realloc` to make its way through to the final linker
@@ -365,7 +364,7 @@ pub mod rt {
         align: usize,
         new_len: usize,
     ) -> *mut u8 {
-        use self::alloc::alloc::{self, Layout};
+        use alloc::Layout;
 
         let layout;
         let ptr = if old_len == 0 {
@@ -394,4 +393,6 @@ pub mod rt {
         }
         return ptr;
     }
+
+    pub use crate::pre_wit_bindgen_0_20_0::*;
 }
