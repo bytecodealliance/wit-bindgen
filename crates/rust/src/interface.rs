@@ -1744,7 +1744,15 @@ impl InterfaceGenerator<'_> {
     }
 
     pub fn path_to_resource(&mut self) -> String {
-        format!("{}::Resource", self.gen.runtime_path())
+        self.path_from_runtime_module(RuntimeItem::ResourceType, "Resource")
+    }
+
+    fn path_to_rust_resource(&mut self) -> String {
+        self.path_from_runtime_module(RuntimeItem::RustResource, "RustResource")
+    }
+
+    fn path_to_wasm_resource(&mut self) -> String {
+        self.path_from_runtime_module(RuntimeItem::ResourceType, "WasmResource")
     }
 
     pub fn path_to_invalid_enum_discriminant(&mut self) -> String {
@@ -1796,14 +1804,6 @@ impl InterfaceGenerator<'_> {
 
     pub fn path_to_string(&mut self) -> String {
         self.path_from_runtime_module(RuntimeItem::StringType, "String")
-    }
-
-    fn path_to_rust_resource(&mut self) -> String {
-        format!("{}::RustResource", self.gen.runtime_path())
-    }
-
-    fn path_to_wasm_resource(&mut self) -> String {
-        format!("{}::WasmResource", self.gen.runtime_path())
     }
 
     pub fn path_to_std_alloc_module(&mut self) -> String {

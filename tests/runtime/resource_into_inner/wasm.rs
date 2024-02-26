@@ -8,7 +8,6 @@ wit_bindgen::generate!({
 });
 
 use exports::test::resource_into_inner::test::{Guest, GuestThing};
-use wit_bindgen::rt::Resource;
 
 pub struct Test;
 

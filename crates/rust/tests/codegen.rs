@@ -249,15 +249,15 @@ mod owned_resource_deref_mut {
             }
         ",
         exports: {
-            "my:inline/foo/bar": Resource
+            "my:inline/foo/bar": MyResource
         }
     });
 
-    pub struct Resource {
+    pub struct MyResource {
         data: u32,
     }
 
-    impl exports::my::inline::foo::GuestBar for Resource {
+    impl exports::my::inline::foo::GuestBar for MyResource {
         fn new(data: u32) -> Self {
             Self { data }
         }
@@ -294,13 +294,13 @@ mod package_with_versions {
             }
         ",
         exports: {
-            "my:inline/foo/bar": Resource
+            "my:inline/foo/bar": MyResource
         }
     });
 
-    pub struct Resource;
+    pub struct MyResource;
 
-    impl exports::my::inline::foo::GuestBar for Resource {
+    impl exports::my::inline::foo::GuestBar for MyResource {
         fn new() -> Self {
             loop {}
         }
