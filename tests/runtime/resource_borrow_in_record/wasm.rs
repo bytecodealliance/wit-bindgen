@@ -1,33 +1,32 @@
 wit_bindgen::generate!({
     path: "../../tests/runtime/resource_borrow_in_record",
-    exports: {
-        world: Test,
-        "test:resource-borrow-in-record/test": Test,
-        "test:resource-borrow-in-record/test/thing": MyThing,
-    },
 });
 
-use exports::test::resource_borrow_in_record::test::{Guest, GuestThing, OwnThing};
+use exports::test::resource_borrow_in_record::test::{Guest, GuestThing, Thing as ThingExport};
 use test::resource_borrow_in_record::test::Foo;
 use test::resource_borrow_in_record::test::Thing;
 
 pub struct Test {}
 
+export_resource_borrow_in_record!(Test);
+
 impl Guest for Test {
+    type Thing = MyThing;
+
     fn test(
         a: Vec<exports::test::resource_borrow_in_record::test::Foo>,
-    ) -> Vec<exports::test::resource_borrow_in_record::test::OwnThing> {
+    ) -> Vec<exports::test::resource_borrow_in_record::test::Thing> {
         let foo = a
             .iter()
             .map(
                 |a: &exports::test::resource_borrow_in_record::test::Foo| Foo {
-                    thing: &a.thing.thing,
+                    thing: &a.thing.get::<MyThing>().thing,
                 },
             )
             .collect::<Vec<Foo>>();
         test::resource_borrow_in_record::test::test(&foo)
             .into_iter()
-            .map(|a| OwnThing::new(MyThing::from_thing(a)))
+            .map(|a| ThingExport::new(MyThing::from_thing(a)))
             .collect()
     }
 }

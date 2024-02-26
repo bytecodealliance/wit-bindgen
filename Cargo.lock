@@ -1195,6 +1195,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rust-xcrate-test"
+version = "0.0.0"
+dependencies = [
+ "wit-bindgen",
+]
+
+[[package]]
 name = "rustc-demangle"
 version = "0.1.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1385,6 +1392,7 @@ dependencies = [
 name = "test-rust-wasm"
 version = "0.0.0"
 dependencies = [
+ "rust-xcrate-test",
  "wit-bindgen",
 ]
 

@@ -1,0 +1,26 @@
+package test:xcrate;
+
+interface a-imports {
+  a: func();
+}
+
+world a {
+  import a-imports;
+
+  export a-unused: func();
+}
+
+interface b-imports {
+  b: func();
+}
+
+world b {
+  import b-imports;
+
+  export b: func();
+}
+
+world c {
+  import a-imports;
+  include b;
+}

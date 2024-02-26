@@ -1,12 +1,10 @@
 wit_bindgen::generate!({
     path: "../../tests/runtime/lists",
-    exports: {
-        world: Component,
-        "test:lists/test": Component
-    },
 });
 
 struct Component;
+
+export_lists!(Component);
 
 impl Guest for Component {
     fn allocated_bytes() -> u32 {

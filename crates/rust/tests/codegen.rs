@@ -130,9 +130,6 @@ mod skip {
             }
         ",
         skip: ["foo"],
-        exports: {
-            "exports": Component
-        }
     });
 
     struct Component;
@@ -140,6 +137,8 @@ mod skip {
     impl exports::exports::Guest for Component {
         fn bar() {}
     }
+
+    export_baz!(Component);
 }
 
 mod symbol_does_not_conflict {
@@ -170,12 +169,6 @@ mod symbol_does_not_conflict {
                 export bar2;
             }
         ",
-        exports: {
-            "my:inline/foo1": Component,
-            "my:inline/foo2": Component,
-            "my:inline/bar1": Component,
-            "my:inline/bar2": Component
-        }
     });
 
     struct Component;
@@ -199,6 +192,8 @@ mod symbol_does_not_conflict {
             String::new()
         }
     }
+
+    export_foo!(Component);
 }
 
 mod alternative_bitflags_path {
@@ -215,14 +210,13 @@ mod alternative_bitflags_path {
             }
         ",
         bitflags_path: "my_bitflags",
-        exports: {
-            world: Component
-        }
     });
 
     pub(crate) use wit_bindgen::bitflags as my_bitflags;
 
     struct Component;
+
+    export_foo!(Component);
 
     impl Guest for Component {
         fn get_flag() -> Bar {
@@ -248,9 +242,6 @@ mod owned_resource_deref_mut {
                 export foo;
             }
         ",
-        exports: {
-            "my:inline/foo/bar": MyResource
-        }
     });
 
     pub struct MyResource {
@@ -266,16 +257,24 @@ mod owned_resource_deref_mut {
             self.data
         }
 
-        fn consume(mut this: exports::my::inline::foo::OwnBar) -> u32 {
-            // Check that Deref<Target = Self> is implemented
-            let prior_data: &u32 = &this.data;
+        fn consume(mut this: exports::my::inline::foo::Bar) -> u32 {
+            let me: &MyResource = this.get();
+            let prior_data: &u32 = &me.data;
             let new_data = prior_data + 1;
-            // Check that DerefMut<Target = Self> is implemented
-            let mutable_data: &mut u32 = &mut this.data;
+            let me: &mut MyResource = this.get_mut();
+            let mutable_data: &mut u32 = &mut me.data;
             *mutable_data = new_data;
-            this.data
+            me.data
         }
     }
+
+    struct Component;
+
+    impl exports::my::inline::foo::Guest for Component {
+        type Bar = MyResource;
+    }
+
+    export_baz!(Component);
 }
 
 mod package_with_versions {
@@ -293,9 +292,6 @@ mod package_with_versions {
                 export foo;
             }
         ",
-        exports: {
-            "my:inline/foo/bar": MyResource
-        }
     });
 
     pub struct MyResource;
@@ -305,6 +301,14 @@ mod package_with_versions {
             loop {}
         }
     }
+
+    struct Component;
+
+    impl exports::my::inline::foo::Guest for Component {
+        type Bar = MyResource;
+    }
+
+    export_baz!(Component);
 }
 
 mod custom_derives {
@@ -327,9 +331,7 @@ mod custom_derives {
                 export blah;
             }
         ",
-        exports: {
-            "my:inline/blah": Component
-        },
+
         // Clone is included by default almost everywhere, so include it here to make sure it
         // doesn't conflict
         additional_derives: [serde::Serialize, serde::Deserialize, Hash, Clone, PartialEq, Eq],
@@ -351,6 +353,8 @@ mod custom_derives {
             let _ = serde_json::to_string(&cool);
         }
     }
+
+    export_baz!(Component);
 }
 
 mod with {

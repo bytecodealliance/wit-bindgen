@@ -1,11 +1,10 @@
 wit_bindgen::generate!({
     path: "../../tests/runtime/resource_borrow_simple",
-    exports: {
-        world: Test,
-    }
 });
 
 pub struct Test {}
+
+export_resource_borrow_simple!(Test);
 
 impl Guest for Test {
     fn test_imports() {

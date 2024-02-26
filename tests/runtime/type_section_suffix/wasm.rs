@@ -1,10 +1,9 @@
 wit_bindgen::generate!({
     path: "../../tests/runtime/type_section_suffix",
     world: "required-exports",
-    exports: {
-        world: Exports
-    }
 });
+
+export_required_exports!(Exports);
 
 // generate bindings once here
 mod a {

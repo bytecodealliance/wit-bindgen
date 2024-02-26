@@ -1,12 +1,5 @@
 wit_bindgen::generate!({
     path: "../../tests/runtime/resource_alias_redux",
-    exports: {
-        world: Test,
-        "test:resource-alias-redux/test": Test,
-        "test:resource-alias-redux/resource-alias1": MyResourceAlias1,
-        "test:resource-alias-redux/resource-alias2": MyResourceAlias2,
-        "test:resource-alias-redux/resource-alias1/thing": MyThing,
-    }
 });
 
 use test::resource_alias_redux::resource_alias1::{
@@ -16,25 +9,25 @@ use test::resource_alias_redux::resource_alias2::{b as import_b, Foo as ImportAl
 
 pub struct Test {}
 
-pub struct MyResourceAlias1 {}
-
-pub struct MyResourceAlias2 {}
+export_resource_alias_redux!(Test);
 
 pub struct MyThing {
     value: Option<ImportThing>,
 }
 
-impl exports::test::resource_alias_redux::resource_alias1::Guest for MyResourceAlias1 {
+impl exports::test::resource_alias_redux::resource_alias1::Guest for Test {
+    type Thing = MyThing;
+
     fn a(
         mut f: exports::test::resource_alias_redux::resource_alias1::Foo,
-    ) -> Vec<exports::test::resource_alias_redux::resource_alias1::OwnThing> {
+    ) -> Vec<exports::test::resource_alias_redux::resource_alias1::Thing> {
         let foo = ImportAlias1Foo {
-            thing: Option::take(&mut f.thing.value).unwrap(),
+            thing: Option::take(&mut f.thing.get_mut::<MyThing>().value).unwrap(),
         };
         import_a(foo)
             .into_iter()
             .map(|t| {
-                exports::test::resource_alias_redux::resource_alias1::OwnThing::new(MyThing {
+                exports::test::resource_alias_redux::resource_alias1::Thing::new(MyThing {
                     value: Some(t),
                 })
             })
@@ -51,21 +44,22 @@ impl exports::test::resource_alias_redux::resource_alias1::GuestThing for MyThin
         self.value.as_ref().unwrap().get() + " Thing.get"
     }
 }
-impl exports::test::resource_alias_redux::resource_alias2::Guest for MyResourceAlias2 {
+
+impl exports::test::resource_alias_redux::resource_alias2::Guest for Test {
     fn b(
         mut f: exports::test::resource_alias_redux::resource_alias2::Foo,
         mut g: exports::test::resource_alias_redux::resource_alias2::Bar,
-    ) -> Vec<exports::test::resource_alias_redux::resource_alias2::OwnThing> {
+    ) -> Vec<exports::test::resource_alias_redux::resource_alias2::Thing> {
         let foo = ImportAlias2Foo {
-            thing: Option::take(&mut f.thing.value).unwrap(),
+            thing: Option::take(&mut f.thing.get_mut::<MyThing>().value).unwrap(),
         };
         let bar = ImportAlias1Foo {
-            thing: Option::take(&mut g.thing.value).unwrap(),
+            thing: Option::take(&mut g.thing.get_mut::<MyThing>().value).unwrap(),
         };
         import_b(foo, bar)
             .into_iter()
             .map(|t| {
-                exports::test::resource_alias_redux::resource_alias1::OwnThing::new(MyThing {
+                exports::test::resource_alias_redux::resource_alias1::Thing::new(MyThing {
                     value: Some(t),
                 })
             })
