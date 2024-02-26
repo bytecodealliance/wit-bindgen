@@ -455,10 +455,11 @@ impl InterfaceGenerator<'_> {
 
         self.push_str(" {");
 
-        let run_ctors_once = self.path_to_run_ctors_once();
-        uwrite!(
-            self.src,
-            "
+        if self.gen.opts.run_ctors_once_workaround {
+            let run_ctors_once = self.path_to_run_ctors_once();
+            uwrite!(
+                self.src,
+                "
                 // Before executing any other code, use this function to run all static
                 // constructors, if they have not yet been run. This is a hack required
                 // to work around wasi-libc ctors calling import functions to initialize
@@ -474,7 +475,8 @@ impl InterfaceGenerator<'_> {
                 {run_ctors_once}();
 
             ",
-        );
+            );
+        }
 
         let mut f = FunctionBindgen::new(self, params);
         abi::call(
@@ -1786,7 +1788,7 @@ impl InterfaceGenerator<'_> {
     }
 
     fn path_to_run_ctors_once(&mut self) -> String {
-        format!("{}::run_ctors_once", self.gen.runtime_path())
+        self.path_from_runtime_module(RuntimeItem::RunCtorsOnce, "bool_lift")
     }
 
     pub fn path_to_vec(&mut self) -> String {

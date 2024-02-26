@@ -77,6 +77,20 @@ mod strings {
     }
 }
 
+mod run_ctors_once_workaround {
+    wit_bindgen::generate!({
+        inline: "
+            package my:strings;
+
+            world not-used-name {
+                export apply-the-workaround: func();
+            }
+        ",
+        run_ctors_once_workaround: true,
+        stubs,
+    });
+}
+
 /// Like `strings` but with raw_strings`.
 mod raw_strings {
     wit_bindgen::generate!({

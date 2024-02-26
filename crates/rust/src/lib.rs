@@ -57,6 +57,7 @@ enum RuntimeItem {
     CharLift,
     BoolLift,
     CabiDealloc,
+    RunCtorsOnce,
 }
 
 #[cfg(feature = "clap")]
@@ -192,6 +193,11 @@ pub struct Opts {
     /// the component type.
     #[cfg_attr(feature = "clap", arg(long))]
     pub type_section_suffix: Option<String>,
+
+    /// Apply a workaround required before Rust 1.69 to run wasm ctors only
+    /// once.
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub run_ctors_once_workaround: bool,
 }
 
 impl Opts {
@@ -432,6 +438,39 @@ pub unsafe fn bool_lift(val: u8) -> bool {
     }
 }
                     ",
+                );
+            }
+
+            RuntimeItem::RunCtorsOnce => {
+                self.src.push_str(
+                    r#"
+/// Provide a hook for generated export functions to run static
+/// constructors at most once. wit-bindgen-rust generates a call to this
+/// function at the start of all component export functions. Importantly,
+/// it is not called as part of `cabi_realloc`, which is a *core* export
+/// func, but may not execute ctors, because the environment ctor in
+/// wasi-libc (before rust 1.69.0) calls an import func, which is not
+/// permitted by the Component Model when inside realloc.
+#[cfg(target_arch = "wasm32")]
+pub fn run_ctors_once() {
+    static mut RUN: bool = false;
+    unsafe {
+        if !RUN {
+            // This function is synthesized by `wasm-ld` to run all static
+            // constructors. wasm-ld will either provide an implementation
+            // of this symbol, or synthesize a wrapper around each
+            // exported function to (unconditionally) run ctors. By using
+            // this function, the linked module is opting into "manually"
+            // running ctors.
+            extern "C" {
+                fn __wasm_call_ctors();
+            }
+            __wasm_call_ctors();
+            RUN = true;
+        }
+    }
+}
+                    "#,
                 );
             }
         }

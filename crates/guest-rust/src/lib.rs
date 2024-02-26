@@ -301,6 +301,10 @@ use core::sync::atomic::{AtomicU32, Ordering::Relaxed};
 ///     // for generated types. This is a niche option that is only here to
 ///     // support the standard library itself depending on this crate one day.
 ///     std_feature,
+///
+///     // Force a workaround to be emitted for pre-Rust-1.69.0 modules to
+///     // ensure that libc ctors run only once.
+///     run_ctors_once_workaround: true,
 /// });
 /// ```
 ///
@@ -319,35 +323,6 @@ mod cabi_realloc;
 #[doc(hidden)]
 pub mod rt {
     pub use crate::{Resource, RustResource, WasmResource};
-
-    /// Provide a hook for generated export functions to run static
-    /// constructors at most once. wit-bindgen-rust generates a call to this
-    /// function at the start of all component export functions. Importantly,
-    /// it is not called as part of `cabi_realloc`, which is a *core* export
-    /// func, but may not execute ctors, because the environment ctor in
-    /// wasi-libc (before rust 1.69.0) calls an import func, which is not
-    /// permitted by the Component Model when inside realloc.
-    ///
-    /// We intend to remove this once rust 1.69.0 stabilizes.
-    #[cfg(target_arch = "wasm32")]
-    pub fn run_ctors_once() {
-        static mut RUN: bool = false;
-        unsafe {
-            if !RUN {
-                // This function is synthesized by `wasm-ld` to run all static
-                // constructors. wasm-ld will either provide an implementation
-                // of this symbol, or synthesize a wrapper around each
-                // exported function to (unconditionally) run ctors. By using
-                // this function, the linked module is opting into "manually"
-                // running ctors.
-                extern "C" {
-                    fn __wasm_call_ctors();
-                }
-                __wasm_call_ctors();
-                RUN = true;
-            }
-        }
-    }
 
     use super::alloc::alloc;
     use super::alloc::alloc::Layout;
