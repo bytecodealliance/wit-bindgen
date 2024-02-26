@@ -1,6 +1,7 @@
 use crate::interface::InterfaceGenerator;
 use anyhow::{bail, Result};
 use heck::*;
+use indexmap::IndexSet;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::{self, Write as _};
 use std::io::{Read, Write};
@@ -41,6 +42,21 @@ struct RustWasm {
     // are required to be used.
     used_with_opts: HashSet<String>,
     world: Option<WorldId>,
+
+    rt_module: IndexSet<RuntimeItem>,
+}
+
+#[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
+enum RuntimeItem {
+    AllocCrate,
+    StringType,
+    StdAllocModule,
+    VecType,
+    StringLift,
+    InvalidEnumDiscriminant,
+    CharLift,
+    BoolLift,
+    CabiDealloc,
 }
 
 #[cfg(feature = "clap")]
@@ -212,6 +228,7 @@ impl RustWasm {
             resolve,
             return_pointer_area_size: 0,
             return_pointer_area_align: 0,
+            needs_runtime_module: false,
         }
     }
 
@@ -306,6 +323,118 @@ impl RustWasm {
         self.interface_names.insert(id, entry);
 
         remapped
+    }
+
+    fn finish_runtime_module(&mut self) {
+        if self.rt_module.is_empty() {
+            return;
+        }
+        self.src.push_str("mod _rt {\n");
+        let mut emitted = IndexSet::new();
+        while !self.rt_module.is_empty() {
+            for item in mem::take(&mut self.rt_module) {
+                if emitted.insert(item) {
+                    self.emit_runtime_item(item);
+                }
+            }
+        }
+        self.src.push_str("}\n");
+    }
+
+    fn emit_runtime_item(&mut self, item: RuntimeItem) {
+        match item {
+            RuntimeItem::AllocCrate => {
+                uwriteln!(self.src, "extern crate alloc as alloc_crate;");
+            }
+            RuntimeItem::StdAllocModule => {
+                self.rt_module.insert(RuntimeItem::AllocCrate);
+                uwriteln!(self.src, "pub use alloc_crate::alloc;");
+            }
+            RuntimeItem::StringType => {
+                self.rt_module.insert(RuntimeItem::AllocCrate);
+                uwriteln!(self.src, "pub use alloc_crate::string::String;");
+            }
+            RuntimeItem::VecType => {
+                self.rt_module.insert(RuntimeItem::AllocCrate);
+                uwriteln!(self.src, "pub use alloc_crate::vec::Vec;");
+            }
+
+            RuntimeItem::CabiDealloc => {
+                self.rt_module.insert(RuntimeItem::StdAllocModule);
+                self.src.push_str(
+                    "\
+pub unsafe fn cabi_dealloc(ptr: i32, size: usize, align: usize) {
+    if size == 0 {
+        return;
+    }
+    let layout = alloc::Layout::from_size_align_unchecked(size, align);
+    alloc::dealloc(ptr as *mut u8, layout);
+}
+                    ",
+                );
+            }
+
+            RuntimeItem::StringLift => {
+                self.rt_module.insert(RuntimeItem::StringType);
+                self.src.push_str(
+                    "\
+pub unsafe fn string_lift(bytes: Vec<u8>) -> String {
+    if cfg!(debug_assertions) {
+        String::from_utf8(bytes).unwrap()
+    } else {
+        String::from_utf8_unchecked(bytes)
+    }
+}
+                    ",
+                );
+            }
+
+            RuntimeItem::InvalidEnumDiscriminant => {
+                self.src.push_str(
+                    "\
+pub unsafe fn invalid_enum_discriminant<T>() -> T {
+    if cfg!(debug_assertions) {
+        panic!(\"invalid enum discriminant\")
+    } else {
+        core::hint::unreachable_unchecked()
+    }
+}
+                    ",
+                );
+            }
+
+            RuntimeItem::CharLift => {
+                self.src.push_str(
+                    "\
+pub unsafe fn char_lift(val: u32) -> char {
+    if cfg!(debug_assertions) {
+        core::char::from_u32(val).unwrap()
+    } else {
+        core::char::from_u32_unchecked(val)
+    }
+}
+                    ",
+                );
+            }
+
+            RuntimeItem::BoolLift => {
+                self.src.push_str(
+                    "\
+pub unsafe fn bool_lift(val: u8) -> bool {
+    if cfg!(debug_assertions) {
+        match val {
+            0 => false,
+            1 => true,
+            _ => panic!(\"invalid bool discriminant\"),
+        }
+    } else {
+        core::mem::transmute::<u8, bool>(val)
+    }
+}
+                    ",
+                );
+            }
+        }
     }
 }
 
@@ -531,6 +660,8 @@ impl WorldGenerator for RustWasm {
         self.emit_modules(imports);
         let exports = mem::take(&mut self.export_modules);
         self.emit_modules(exports);
+
+        self.finish_runtime_module();
 
         self.src.push_str("\n#[cfg(target_arch = \"wasm32\")]\n");
 

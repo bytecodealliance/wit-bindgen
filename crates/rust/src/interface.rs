@@ -1,7 +1,7 @@
 use crate::bindgen::FunctionBindgen;
 use crate::{
     int_repr, to_rust_ident, to_upper_camel_case, wasm_type, ExportKey, FnSig, Identifier,
-    InterfaceName, Ownership, RustFlagsRepr, RustWasm,
+    InterfaceName, Ownership, RuntimeItem, RustFlagsRepr, RustWasm,
 };
 use anyhow::Result;
 use heck::*;
@@ -21,6 +21,7 @@ pub struct InterfaceGenerator<'a> {
     pub resolve: &'a Resolve,
     pub return_pointer_area_size: usize,
     pub return_pointer_area_align: usize,
+    pub(super) needs_runtime_module: bool,
 }
 
 /// A description of the "mode" in which a type is printed.
@@ -276,7 +277,15 @@ impl InterfaceGenerator<'_> {
             );
         }
 
-        mem::take(&mut self.src).into()
+        let src = mem::take(&mut self.src).into();
+
+        if self.needs_runtime_module {
+            let root = self.path_to_root();
+            if !root.is_empty() {
+                return format!("use {root}_rt;\n{src}");
+            }
+        }
+        src
     }
 
     fn path_to_root(&self) -> String {
@@ -1738,15 +1747,18 @@ impl InterfaceGenerator<'_> {
     }
 
     pub fn path_to_invalid_enum_discriminant(&mut self) -> String {
-        format!("{}::invalid_enum_discriminant", self.gen.runtime_path())
+        self.path_from_runtime_module(
+            RuntimeItem::InvalidEnumDiscriminant,
+            "invalid_enum_discriminant",
+        )
     }
 
     pub fn path_to_string_lift(&mut self) -> String {
-        format!("{}::string_lift", self.gen.runtime_path())
+        self.path_from_runtime_module(RuntimeItem::StringLift, "string_lift")
     }
 
     pub fn path_to_cabi_dealloc(&mut self) -> String {
-        format!("{}::dealloc", self.gen.runtime_path())
+        self.path_from_runtime_module(RuntimeItem::CabiDealloc, "cabi_dealloc")
     }
 
     pub fn path_to_as_i64(&mut self) -> String {
@@ -1766,11 +1778,11 @@ impl InterfaceGenerator<'_> {
     }
 
     pub fn path_to_char_lift(&mut self) -> String {
-        format!("{}::char_lift", self.gen.runtime_path())
+        self.path_from_runtime_module(RuntimeItem::CharLift, "char_lift")
     }
 
     pub fn path_to_bool_lift(&mut self) -> String {
-        format!("{}::bool_lift", self.gen.runtime_path())
+        self.path_from_runtime_module(RuntimeItem::BoolLift, "bool_lift")
     }
 
     fn path_to_run_ctors_once(&mut self) -> String {
@@ -1778,11 +1790,11 @@ impl InterfaceGenerator<'_> {
     }
 
     pub fn path_to_vec(&mut self) -> String {
-        format!("{}::vec::Vec", self.gen.runtime_path())
+        self.path_from_runtime_module(RuntimeItem::VecType, "Vec")
     }
 
     pub fn path_to_string(&mut self) -> String {
-        format!("{}::string::String", self.gen.runtime_path())
+        self.path_from_runtime_module(RuntimeItem::StringType, "String")
     }
 
     fn path_to_rust_resource(&mut self) -> String {
@@ -1793,8 +1805,18 @@ impl InterfaceGenerator<'_> {
         format!("{}::WasmResource", self.gen.runtime_path())
     }
 
-    pub fn path_to_alloc_crate(&mut self) -> String {
-        format!("{}::alloc", self.gen.runtime_path())
+    pub fn path_to_std_alloc_module(&mut self) -> String {
+        self.path_from_runtime_module(RuntimeItem::StdAllocModule, "alloc")
+    }
+
+    fn path_from_runtime_module(
+        &mut self,
+        item: RuntimeItem,
+        name_in_runtime_module: &str,
+    ) -> String {
+        self.needs_runtime_module = true;
+        self.gen.rt_module.insert(item);
+        format!("_rt::{name_in_runtime_module}")
     }
 }
 

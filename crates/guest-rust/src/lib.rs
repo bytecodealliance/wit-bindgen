@@ -318,9 +318,6 @@ mod cabi_realloc;
 
 #[doc(hidden)]
 pub mod rt {
-    use crate::alloc::string::String;
-    use crate::alloc::vec::Vec;
-
     pub use crate::{Resource, RustResource, WasmResource};
 
     /// Provide a hook for generated export functions to run static
@@ -352,10 +349,8 @@ pub mod rt {
         }
     }
 
+    use super::alloc::alloc;
     use super::alloc::alloc::Layout;
-
-    // Re-export things from liballoc for convenient use.
-    pub use super::alloc::{alloc, boxed, string, vec};
 
     /// This function is called from generated bindings and will be deleted by
     /// the linker. The purpose of this function is to force a reference to the
@@ -430,14 +425,6 @@ pub mod rt {
         return ptr;
     }
 
-    pub unsafe fn dealloc(ptr: i32, size: usize, align: usize) {
-        if size == 0 {
-            return;
-        }
-        let layout = Layout::from_size_align_unchecked(size, align);
-        alloc::dealloc(ptr as *mut u8, layout);
-    }
-
     macro_rules! as_traits {
         ($(($trait_:ident $func:ident $ty:ident <=> $($tys:ident)*))*) => ($(
             pub fn $func<T: $trait_>(t: T) -> $ty {
@@ -471,42 +458,6 @@ pub mod rt {
         (AsI32 as_i32 i32 <=> i32 u32 i16 u16 i8 u8 char usize)
         (AsF32 as_f32 f32 <=> f32)
         (AsF64 as_f64 f64 <=> f64)
-    }
-
-    pub unsafe fn string_lift(bytes: Vec<u8>) -> String {
-        if cfg!(debug_assertions) {
-            String::from_utf8(bytes).unwrap()
-        } else {
-            String::from_utf8_unchecked(bytes)
-        }
-    }
-
-    pub unsafe fn invalid_enum_discriminant<T>() -> T {
-        if cfg!(debug_assertions) {
-            panic!("invalid enum discriminant")
-        } else {
-            core::hint::unreachable_unchecked()
-        }
-    }
-
-    pub unsafe fn char_lift(val: u32) -> char {
-        if cfg!(debug_assertions) {
-            core::char::from_u32(val).unwrap()
-        } else {
-            core::char::from_u32_unchecked(val)
-        }
-    }
-
-    pub unsafe fn bool_lift(val: u8) -> bool {
-        if cfg!(debug_assertions) {
-            match val {
-                0 => false,
-                1 => true,
-                _ => panic!("invalid bool discriminant"),
-            }
-        } else {
-            core::mem::transmute::<u8, bool>(val)
-        }
     }
 }
 

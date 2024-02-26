@@ -41,13 +41,13 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
 
     fn emit_cleanup(&mut self) {
         for (ptr, layout) in mem::take(&mut self.cleanup) {
-            let alloc = self.gen.path_to_alloc_crate();
+            let alloc = self.gen.path_to_std_alloc_module();
             self.push_str(&format!(
                 "if {layout}.size() != 0 {{\n{alloc}::dealloc({ptr}, {layout});\n}}\n"
             ));
         }
         if self.needs_cleanup_list {
-            let alloc = self.gen.path_to_alloc_crate();
+            let alloc = self.gen.path_to_std_alloc_module();
             self.push_str(&format!(
                 "for (ptr, layout) in cleanup_list {{\n
                     if layout.size() != 0 {{\n
@@ -706,7 +706,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::ListLower { element, realloc } => {
-                let alloc = self.gen.path_to_alloc_crate();
+                let alloc = self.gen.path_to_std_alloc_module();
                 let body = self.blocks.pop().unwrap();
                 let tmp = self.tmp();
                 let vec = format!("vec{tmp}");

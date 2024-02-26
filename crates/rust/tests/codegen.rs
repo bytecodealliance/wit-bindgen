@@ -187,31 +187,6 @@ mod symbol_does_not_conflict {
     }
 }
 
-mod alternative_runtime_path {
-    wit_bindgen::generate!({
-        inline: "
-            package my:inline;
-            world foo {
-                export foobar: func() -> string;
-            }
-        ",
-        runtime_path: "my_rt",
-        exports: {
-            world: Component
-        }
-    });
-
-    pub(crate) use wit_bindgen::rt as my_rt;
-
-    struct Component;
-
-    impl Guest for Component {
-        fn foobar() -> String {
-            String::new()
-        }
-    }
-}
-
 mod alternative_bitflags_path {
     wit_bindgen::generate!({
         inline: "
