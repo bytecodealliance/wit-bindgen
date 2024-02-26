@@ -473,7 +473,6 @@ impl InterfaceGenerator<'_> {
                 // for more details.
                 #[cfg(target_arch=\"wasm32\")]
                 {run_ctors_once}();
-
             ",
             );
         }
@@ -1763,20 +1762,20 @@ impl InterfaceGenerator<'_> {
         self.path_from_runtime_module(RuntimeItem::CabiDealloc, "cabi_dealloc")
     }
 
-    pub fn path_to_as_i64(&mut self) -> String {
-        format!("{}::as_i64", self.gen.runtime_path())
-    }
-
     pub fn path_to_as_i32(&mut self) -> String {
-        format!("{}::as_i32", self.gen.runtime_path())
+        self.path_from_runtime_module(RuntimeItem::AsI32, "as_i32")
     }
 
-    pub fn path_to_as_f64(&mut self) -> String {
-        format!("{}::as_f64", self.gen.runtime_path())
+    pub fn path_to_as_i64(&mut self) -> String {
+        self.path_from_runtime_module(RuntimeItem::AsI64, "as_i64")
     }
 
     pub fn path_to_as_f32(&mut self) -> String {
-        format!("{}::as_f32", self.gen.runtime_path())
+        self.path_from_runtime_module(RuntimeItem::AsF32, "as_f32")
+    }
+
+    pub fn path_to_as_f64(&mut self) -> String {
+        self.path_from_runtime_module(RuntimeItem::AsF64, "as_f64")
     }
 
     pub fn path_to_char_lift(&mut self) -> String {

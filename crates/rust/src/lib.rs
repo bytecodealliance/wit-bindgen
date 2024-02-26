@@ -58,6 +58,10 @@ enum RuntimeItem {
     BoolLift,
     CabiDealloc,
     RunCtorsOnce,
+    AsI32,
+    AsI64,
+    AsF32,
+    AsF64,
 }
 
 #[cfg(feature = "clap")]
@@ -473,6 +477,63 @@ pub fn run_ctors_once() {
                     "#,
                 );
             }
+
+            RuntimeItem::AsI32 => {
+                self.emit_runtime_as_trait(
+                    "i32",
+                    &["i32", "u32", "i16", "u16", "i8", "u8", "char", "usize"],
+                );
+            }
+
+            RuntimeItem::AsI64 => {
+                self.emit_runtime_as_trait("i64", &["i64", "u64"]);
+            }
+
+            RuntimeItem::AsF32 => {
+                self.emit_runtime_as_trait("f32", &["f32"]);
+            }
+
+            RuntimeItem::AsF64 => {
+                self.emit_runtime_as_trait("f64", &["f64"]);
+            }
+        }
+    }
+
+    // This is a workaround for in the bindings sometimes we've got `&i32` and
+    // sometimes we've got `i32` but that should all be able to be worked with
+    // as `i32`, so these helper functions are used to boil away the
+    // indirection.
+    fn emit_runtime_as_trait(&mut self, ty: &str, to_convert: &[&str]) {
+        let upcase = ty.to_uppercase();
+        self.src.push_str(&format!(
+            r#"
+pub fn as_{ty}<T: As{upcase}>(t: T) -> {ty} {{
+    t.as_{ty}()
+}}
+
+pub trait As{upcase} {{
+    fn as_{ty}(self) -> {ty};
+}}
+
+impl<'a, T: Copy + As{upcase}> As{upcase} for &'a T {{
+    fn as_{ty}(self) -> {ty} {{
+        (*self).as_{ty}()
+    }}
+}}
+            "#
+        ));
+
+        for to_convert in to_convert {
+            self.src.push_str(&format!(
+                r#"
+impl As{upcase} for {to_convert} {{
+    #[inline]
+    fn as_{ty}(self) -> {ty} {{
+        self as {ty}
+    }}
+}}
+                "#
+            ));
         }
     }
 }
