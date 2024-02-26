@@ -377,17 +377,20 @@ pub mod rt {
                 ) -> *mut u8;
             }
             // Force the `cabi_realloc` symbol to be referenced from here. This
-            // function isn't ever actually used at runtime but the symbol needs
-            // to be used here to force it to get referenced all the way through
-            // to the linker. By the time we get to the linker this symbol will
-            // be discarded due to it never actually being used by
-            // `cabi_realloc` will have already been referenced at which point
-            // its export name annotation will ensure it's exported regardless.
+            // is done with a `#[used]` Rust `static` to ensure that this
+            // reference makes it all the way to the linker before it's
+            // considered for garbage collection. When the linker sees it it'll
+            // remove this `static` here (due to it not actually being needed)
+            // but the linker will have at that point seen the `cabi_realloc`
+            // symbol and it should get exported.
             #[cfg(feature = "realloc")]
-            unsafe {
-                cabi_realloc(core::ptr::null_mut(), 0, 1, 1);
-            }
-            unreachable!();
+            #[used]
+            static _NAME_DOES_NOT_MATTER: unsafe extern "C" fn(
+                *mut u8,
+                usize,
+                usize,
+                usize,
+            ) -> *mut u8 = cabi_realloc;
         }
     }
 
