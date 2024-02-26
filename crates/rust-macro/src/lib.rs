@@ -104,7 +104,10 @@ impl Parse for Config {
                     }
                     Opt::With(with) => opts.with.extend(with),
                     Opt::TypeSectionSuffix(suffix) => {
-                        opts.type_section_suffix = Some(suffix.value())
+                        opts.type_section_suffix = Some(suffix.value());
+                    }
+                    Opt::RunCtorsOnceWorkaround(enable) => {
+                        opts.run_ctors_once_workaround = enable.value();
                     }
                 }
             }
@@ -220,6 +223,7 @@ mod kw {
     syn::custom_keyword!(additional_derives);
     syn::custom_keyword!(with);
     syn::custom_keyword!(type_section_suffix);
+    syn::custom_keyword!(run_ctors_once_workaround);
 }
 
 #[derive(Clone)]
@@ -281,6 +285,7 @@ enum Opt {
     AdditionalDerives(Vec<syn::Path>),
     With(HashMap<String, String>),
     TypeSectionSuffix(syn::LitStr),
+    RunCtorsOnceWorkaround(syn::LitBool),
 }
 
 impl Parse for Opt {
@@ -390,6 +395,10 @@ impl Parse for Opt {
             input.parse::<kw::type_section_suffix>()?;
             input.parse::<Token![:]>()?;
             Ok(Opt::TypeSectionSuffix(input.parse()?))
+        } else if l.peek(kw::run_ctors_once_workaround) {
+            input.parse::<kw::run_ctors_once_workaround>()?;
+            input.parse::<Token![:]>()?;
+            Ok(Opt::RunCtorsOnceWorkaround(input.parse()?))
         } else {
             Err(l.error())
         }
