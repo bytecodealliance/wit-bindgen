@@ -8,29 +8,26 @@ wit_bindgen::generate!({
 });
 
 use exports::test::resource_borrow_in_record::test::{Guest, GuestThing, OwnThing};
-use test::resource_borrow_in_record::test::Thing;
 use test::resource_borrow_in_record::test::Foo;
+use test::resource_borrow_in_record::test::Thing;
 
 pub struct Test {}
 
 impl Guest for Test {
     fn test(
-        a: wit_bindgen::rt::vec::Vec<exports::test::resource_borrow_in_record::test::Foo>,
-    ) -> wit_bindgen::rt::vec::Vec<exports::test::resource_borrow_in_record::test::OwnThing> {
-        let foo = a.iter()
-            .map(|a: &exports::test::resource_borrow_in_record::test::Foo| {
-                Foo {
+        a: Vec<exports::test::resource_borrow_in_record::test::Foo>,
+    ) -> Vec<exports::test::resource_borrow_in_record::test::OwnThing> {
+        let foo = a
+            .iter()
+            .map(
+                |a: &exports::test::resource_borrow_in_record::test::Foo| Foo {
                     thing: &a.thing.thing,
-                }
-            })
+                },
+            )
             .collect::<Vec<Foo>>();
         test::resource_borrow_in_record::test::test(&foo)
             .into_iter()
-            .map(|a| {
-                OwnThing::new(
-                    MyThing::from_thing(a),
-                ) 
-            })
+            .map(|a| OwnThing::new(MyThing::from_thing(a)))
             .collect()
     }
 }
@@ -47,12 +44,12 @@ impl MyThing {
 }
 
 impl GuestThing for MyThing {
-    fn new(s: wit_bindgen::rt::string::String) -> Self {
+    fn new(s: String) -> Self {
         Self {
             thing: Thing::new(&format!("{} Thing", s)),
         }
     }
-    fn get(&self) -> wit_bindgen::rt::string::String {
+    fn get(&self) -> String {
         self.thing.get() + " Thing.get"
     }
 }

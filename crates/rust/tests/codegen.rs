@@ -77,6 +77,20 @@ mod strings {
     }
 }
 
+mod run_ctors_once_workaround {
+    wit_bindgen::generate!({
+        inline: "
+            package my:strings;
+
+            world not-used-name {
+                export apply-the-workaround: func();
+            }
+        ",
+        run_ctors_once_workaround: true,
+        stubs,
+    });
+}
+
 /// Like `strings` but with raw_strings`.
 mod raw_strings {
     wit_bindgen::generate!({
@@ -187,29 +201,6 @@ mod symbol_does_not_conflict {
     }
 }
 
-mod alternative_runtime_path {
-    wit_bindgen::generate!({
-        inline: "
-            package my:inline;
-            world foo {
-                export foobar: func();
-            }
-        ",
-        runtime_path: "my_rt",
-        exports: {
-            world: Component
-        }
-    });
-
-    pub(crate) use wit_bindgen::rt as my_rt;
-
-    struct Component;
-
-    impl Guest for Component {
-        fn foobar() {}
-    }
-}
-
 mod alternative_bitflags_path {
     wit_bindgen::generate!({
         inline: "
@@ -258,15 +249,15 @@ mod owned_resource_deref_mut {
             }
         ",
         exports: {
-            "my:inline/foo/bar": Resource
+            "my:inline/foo/bar": MyResource
         }
     });
 
-    pub struct Resource {
+    pub struct MyResource {
         data: u32,
     }
 
-    impl exports::my::inline::foo::GuestBar for Resource {
+    impl exports::my::inline::foo::GuestBar for MyResource {
         fn new(data: u32) -> Self {
             Self { data }
         }
@@ -303,13 +294,13 @@ mod package_with_versions {
             }
         ",
         exports: {
-            "my:inline/foo/bar": Resource
+            "my:inline/foo/bar": MyResource
         }
     });
 
-    pub struct Resource;
+    pub struct MyResource;
 
-    impl exports::my::inline::foo::GuestBar for Resource {
+    impl exports::my::inline::foo::GuestBar for MyResource {
         fn new() -> Self {
             loop {}
         }

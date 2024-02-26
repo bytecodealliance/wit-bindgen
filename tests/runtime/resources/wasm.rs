@@ -11,8 +11,8 @@ wit_bindgen::generate!({
     }
 });
 
-use exports::exports::OwnX;
 use exports::exports::OwnKebabCase;
+use exports::exports::OwnX;
 
 pub struct Test {}
 
@@ -29,8 +29,8 @@ pub struct ComponentKebabCase {
 }
 
 impl exports::exports::Guest for Test {
-    fn add(a: &ComponentZ, b: &ComponentZ) -> wit_bindgen::Resource<ComponentZ> {
-        wit_bindgen::Resource::new(ComponentZ { val: a.val + b.val })
+    fn add(a: &ComponentZ, b: &ComponentZ) -> Resource<ComponentZ> {
+        Resource::new(ComponentZ { val: a.val + b.val })
     }
     fn test_imports() -> Result<(), String> {
         use imports::*;
