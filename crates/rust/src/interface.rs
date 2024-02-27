@@ -199,6 +199,7 @@ impl InterfaceGenerator<'_> {
             uwriteln!(
                 self.src,
                 r#"
+#[doc(hidden)]
 unsafe fn _resource_new(val: *mut u8) -> u32
     where Self: Sized
 {{
@@ -216,6 +217,7 @@ unsafe fn _resource_new(val: *mut u8) -> u32
     }}
 }}
 
+#[doc(hidden)]
 fn _resource_rep(handle: u32) -> *mut u8
     where Self: Sized
 {{
