@@ -2214,7 +2214,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         Bitcast::I64ToP64 | Bitcast::P64ToI64 => {
                             results.push(format!("{}", op));
                         }
-                        Bitcast::None => results.push(op.to_string()),
+                        Bitcast::I32ToP | Bitcast::PToI32 | Bitcast::None => {
+                            results.push(op.to_string())
+                        }
                     }
                 }
             }

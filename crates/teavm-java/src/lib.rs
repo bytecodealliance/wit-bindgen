@@ -1343,7 +1343,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     Bitcast::P64ToI64 => format!("{op}"),
                     Bitcast::PToP64 => format!("(long) ({op})"),
                     Bitcast::P64ToP => format!("(int) ({op})"),
-                    Bitcast::None => op.to_owned(),
+                    Bitcast::I32ToP | Bitcast::PToI32 | Bitcast::None => op.to_owned(),
                 }))
             }
 
