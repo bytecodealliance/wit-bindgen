@@ -379,7 +379,7 @@ impl RustWasm {
                 self.rt_module.insert(RuntimeItem::StdAllocModule);
                 self.src.push_str(
                     "\
-pub unsafe fn cabi_dealloc(ptr: *mut ::core::ffi::c_void, size: usize, align: usize) {
+pub unsafe fn cabi_dealloc(ptr: *mut u8, size: usize, align: usize) {
     if size == 0 {
         return;
     }
@@ -1248,7 +1248,7 @@ fn wasm_type(ty: WasmType) -> &'static str {
         WasmType::I64 => "i64",
         WasmType::F32 => "f32",
         WasmType::F64 => "f64",
-        WasmType::Pointer => "*mut ::core::ffi::c_void",
+        WasmType::Pointer => "*mut u8",
         WasmType::Length => "usize",
 
         // `PointerOrI64` can hold either a `u64` or a pointer with provenance.
@@ -1293,7 +1293,7 @@ fn bitcast(casts: &[Bitcast], operands: &[String], results: &mut Vec<String>) {
                 format!(
                     "{{
                         let mut t = ::core::mem::MaybeUnunit::<u64>::uninit();
-                        t.as_mut_ptr().cast::<*mut core::ptr::c_void>().write({});
+                        t.as_mut_ptr().cast::<*mut u8>().write({});
                         t
                     }}",
                     operand
@@ -1302,14 +1302,11 @@ fn bitcast(casts: &[Bitcast], operands: &[String], results: &mut Vec<String>) {
             // Convert a `MaybeUninit<u64>` holding a pointer value back into
             // the pointer value.
             Bitcast::P64ToP => {
-                format!(
-                    "{}.as_mut_ptr().cast::<*mut core::ptr::c_void>().read()",
-                    operand
-                )
+                format!("{}.as_mut_ptr().cast::<*mut u8>().read()", operand)
             }
             // Convert an `i32` into a pointer.
             Bitcast::I32ToP => {
-                format!("{} as *mut ::core::ffi::c_void", operand)
+                format!("{} as *mut u8", operand)
             }
             // Convert a pointer holding an `i32` value back into the `i32`.
             Bitcast::PToI32 => {

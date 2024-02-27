@@ -270,14 +270,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.import_return_pointer_area_align.max(align);
             uwrite!(
                 self.src,
-                "let ptr{tmp} = ret_area.0.as_mut_ptr().cast::<::core::ffi::c_void>();"
+                "let ptr{tmp} = ret_area.0.as_mut_ptr().cast::<u8>();"
             );
         } else {
             self.gen.return_pointer_area_size = self.gen.return_pointer_area_size.max(size);
             self.gen.return_pointer_area_align = self.gen.return_pointer_area_align.max(align);
             uwriteln!(
                 self.src,
-                "let ptr{tmp} = _RET_AREA.0.as_mut_ptr().cast::<::core::ffi::c_void>();"
+                "let ptr{tmp} = _RET_AREA.0.as_mut_ptr().cast::<u8>();"
             );
         }
         format!("ptr{}", tmp)
@@ -658,10 +658,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     let op0 = operands.pop().unwrap();
                     self.push_str(&format!("let {} = ({}).into_boxed_slice();\n", val, op0));
                 }
-                self.push_str(&format!(
-                    "let {} = {}.as_ptr().cast::<::core::ffi::c_void>();\n",
-                    ptr, val
-                ));
+                self.push_str(&format!("let {} = {}.as_ptr().cast::<u8>();\n", ptr, val));
                 self.push_str(&format!("let {} = {}.len();\n", len, val));
                 if realloc.is_some() {
                     self.push_str(&format!("::core::mem::forget({});\n", val));
@@ -693,10 +690,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     let op0 = format!("{}.into_bytes()", operands[0]);
                     self.push_str(&format!("let {} = ({}).into_boxed_slice();\n", val, op0));
                 }
-                self.push_str(&format!(
-                    "let {} = {}.as_ptr().cast::<::core::ffi::c_void>();\n",
-                    ptr, val
-                ));
+                self.push_str(&format!("let {} = {}.as_ptr().cast::<u8>();\n", ptr, val));
                 self.push_str(&format!("let {} = {}.len();\n", len, val));
                 if realloc.is_some() {
                     self.push_str(&format!("::core::mem::forget({});\n", val));
@@ -742,14 +736,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 ));
                 self.push_str(&format!("let {result} = if {layout}.size() != 0 {{\n"));
                 self.push_str(&format!(
-                    "let ptr = {alloc}::alloc({layout}).cast::<::core::ffi::c_void>();\n",
+                    "let ptr = {alloc}::alloc({layout}).cast::<u8>();\n",
                 ));
                 self.push_str(&format!(
                     "if ptr.is_null()\n{{\n{alloc}::handle_alloc_error({layout});\n}}\nptr\n}}",
                 ));
                 self.push_str("else {{\n::core::ptr::null_mut()\n}};\n");
                 self.push_str(&format!("for (i, e) in {vec}.into_iter().enumerate() {{\n",));
-                self.push_str(&format!("let base = {result}.byte_add(i * {size});\n",));
+                self.push_str(&format!("let base = {result}.add(i * {size});\n",));
                 self.push_str(&body);
                 self.push_str("\n}\n");
                 results.push(format!("{result}"));
@@ -785,7 +779,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 ));
 
                 uwriteln!(self.src, "for i in 0..{len} {{");
-                uwriteln!(self.src, "let base = {base}.byte_add(i * {size});");
+                uwriteln!(self.src, "let base = {base}.add(i * {size});");
                 uwriteln!(self.src, "let e{tmp} = {body};");
                 uwriteln!(self.src, "{result}.push(e{tmp});");
                 uwriteln!(self.src, "}}");
@@ -877,7 +871,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let tmp = self.tmp();
                 uwriteln!(
                     self.src,
-                    "let l{tmp} = *{}.byte_add({offset}).cast::<i32>();",
+                    "let l{tmp} = *{}.add({offset}).cast::<i32>();",
                     operands[0]
                 );
                 results.push(format!("l{tmp}"));
@@ -886,7 +880,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let tmp = self.tmp();
                 uwriteln!(
                     self.src,
-                    "let l{tmp} = i32::from(*{}.byte_add({offset}).cast::<u8>());",
+                    "let l{tmp} = i32::from(*{}.add({offset}).cast::<u8>());",
                     operands[0]
                 );
                 results.push(format!("l{tmp}"));
@@ -895,7 +889,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let tmp = self.tmp();
                 uwriteln!(
                     self.src,
-                    "let l{tmp} = i32::from(*{}.byte_add({offset}).cast::<i8>());",
+                    "let l{tmp} = i32::from(*{}.add({offset}).cast::<i8>());",
                     operands[0]
                 );
                 results.push(format!("l{tmp}"));
@@ -904,7 +898,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let tmp = self.tmp();
                 uwriteln!(
                     self.src,
-                    "let l{tmp} = i32::from(*{}.byte_add({offset}).cast::<u16>());",
+                    "let l{tmp} = i32::from(*{}.add({offset}).cast::<u16>());",
                     operands[0]
                 );
                 results.push(format!("l{tmp}"));
@@ -913,7 +907,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let tmp = self.tmp();
                 uwriteln!(
                     self.src,
-                    "let l{tmp} = i32::from(*{}.byte_add({offset}).cast::<i16>());",
+                    "let l{tmp} = i32::from(*{}.add({offset}).cast::<i16>());",
                     operands[0]
                 );
                 results.push(format!("l{tmp}"));
@@ -922,7 +916,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let tmp = self.tmp();
                 uwriteln!(
                     self.src,
-                    "let l{tmp} = *{}.byte_add({offset}).cast::<i64>();",
+                    "let l{tmp} = *{}.add({offset}).cast::<i64>();",
                     operands[0]
                 );
                 results.push(format!("l{tmp}"));
@@ -931,7 +925,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let tmp = self.tmp();
                 uwriteln!(
                     self.src,
-                    "let l{tmp} = *{}.byte_add({offset}).cast::<f32>();",
+                    "let l{tmp} = *{}.add({offset}).cast::<f32>();",
                     operands[0]
                 );
                 results.push(format!("l{tmp}"));
@@ -940,7 +934,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let tmp = self.tmp();
                 uwriteln!(
                     self.src,
-                    "let l{tmp} = *{}.byte_add({offset}).cast::<f64>();",
+                    "let l{tmp} = *{}.add({offset}).cast::<f64>();",
                     operands[0]
                 );
                 results.push(format!("l{tmp}"));
@@ -950,7 +944,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let tmp = self.tmp();
                 uwriteln!(
                     self.src,
-                    "let l{tmp} = *{}.byte_add({offset}).cast::<*mut ::core::ffi::c_void>();",
+                    "let l{tmp} = *{}.add({offset}).cast::<*mut u8>();",
                     operands[0]
                 );
                 results.push(format!("l{tmp}"));
@@ -959,7 +953,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let tmp = self.tmp();
                 uwriteln!(
                     self.src,
-                    "let l{tmp} = *{}.byte_add({offset}).cast::<usize>();",
+                    "let l{tmp} = *{}.add({offset}).cast::<usize>();",
                     operands[0]
                 );
                 results.push(format!("l{tmp}"));
@@ -967,50 +961,50 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::I32Store { offset } => {
                 self.push_str(&format!(
-                    "*{}.byte_add({}).cast::<i32>() = {};\n",
+                    "*{}.add({}).cast::<i32>() = {};\n",
                     operands[1], offset, operands[0]
                 ));
             }
             Instruction::I32Store8 { offset } => {
                 self.push_str(&format!(
-                    "*{}.byte_add({}).cast::<u8>() = ({}) as u8;\n",
+                    "*{}.add({}).cast::<u8>() = ({}) as u8;\n",
                     operands[1], offset, operands[0]
                 ));
             }
             Instruction::I32Store16 { offset } => {
                 self.push_str(&format!(
-                    "*{}.byte_add({}).cast::<u16>() = ({}) as u16;\n",
+                    "*{}.add({}).cast::<u16>() = ({}) as u16;\n",
                     operands[1], offset, operands[0]
                 ));
             }
             Instruction::I64Store { offset } => {
                 self.push_str(&format!(
-                    "*{}.byte_add({}).cast::<i64>() = {};\n",
+                    "*{}.add({}).cast::<i64>() = {};\n",
                     operands[1], offset, operands[0]
                 ));
             }
             Instruction::F32Store { offset } => {
                 self.push_str(&format!(
-                    "*{}.byte_add({}).cast::<f32>() = {};\n",
+                    "*{}.add({}).cast::<f32>() = {};\n",
                     operands[1], offset, operands[0]
                 ));
             }
             Instruction::F64Store { offset } => {
                 self.push_str(&format!(
-                    "*{}.byte_add({}).cast::<f64>() = {};\n",
+                    "*{}.add({}).cast::<f64>() = {};\n",
                     operands[1], offset, operands[0]
                 ));
             }
 
             Instruction::PointerStore { offset } => {
                 self.push_str(&format!(
-                    "*{}.byte_add({}).cast::<*mut ::core::ffi::c_void>() = {};\n",
+                    "*{}.add({}).cast::<*mut u8>() = {};\n",
                     operands[1], offset, operands[0]
                 ));
             }
             Instruction::LengthStore { offset } => {
                 self.push_str(&format!(
-                    "*{}.byte_add({}).cast::<usize>() = {};\n",
+                    "*{}.add({}).cast::<usize>() = {};\n",
                     operands[1], offset, operands[0]
                 ));
             }
@@ -1075,7 +1069,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.push_str(" {\n");
                     self.push_str("let base = ");
                     self.push_str(&base);
-                    self.push_str(".byte_add(i * ");
+                    self.push_str(".add(i * ");
                     self.push_str(&size.to_string());
                     self.push_str(");\n");
                     self.push_str(&body);
