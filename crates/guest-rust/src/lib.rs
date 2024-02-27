@@ -845,6 +845,9 @@ mod cabi_realloc;
 
 mod pre_wit_bindgen_0_20_0;
 
+#[cfg(docsrs)]
+pub mod examples;
+
 #[doc(hidden)]
 pub mod rt {
     /// This function is called from generated bindings and will be deleted by

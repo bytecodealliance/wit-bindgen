@@ -640,6 +640,18 @@ impl As{upcase} for {to_convert} {{
 /// root implementation of all generated traits.
 ///
 /// For more information see the documentation of `wit_bindgen::generate!`.
+///
+/// ```rust
+/// # macro_rules! export_{world_name} {{ () => (); }}
+/// # trait Guest {{}}
+/// struct MyType;
+///
+/// impl Guest for MyType {{
+///     // ...
+/// }}
+///
+/// export_{world_name}!(MyType);
+/// ```
 #[allow(unused_macros)]
 #[doc(hidden)]
 {macro_export}
@@ -667,7 +679,8 @@ macro_rules! __export_{world_name}_impl {{
 
         uwriteln!(
             self.src,
-            "{use_vis} use __export_{world_name}_impl as export_{world_name};"
+            "#[doc(inline)]\n\
+            {use_vis} use __export_{world_name}_impl as export_{world_name};"
         );
 
         if self.opts.stubs {
