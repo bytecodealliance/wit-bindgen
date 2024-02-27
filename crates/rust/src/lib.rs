@@ -1307,6 +1307,14 @@ fn bitcast(casts: &[Bitcast], operands: &[String], results: &mut Vec<String>) {
                     operand
                 )
             }
+            // Convert an `i32` into a pointer.
+            Bitcast::I32ToP => {
+                format!("{} as *mut ::core::ffi::c_void", operand)
+            }
+            // Convert a pointer holding an `i32` value back into the `i32`.
+            Bitcast::PToI32 => {
+                format!("{} as i32", operand)
+            }
         });
     }
 }

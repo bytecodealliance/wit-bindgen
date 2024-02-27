@@ -541,6 +541,8 @@ pub enum Bitcast {
     I64ToP64,
     P64ToP,
     PToP64,
+    I32ToP,
+    PToI32,
 
     None,
 }
@@ -1901,13 +1903,16 @@ fn cast(from: WasmType, to: WasmType) -> Bitcast {
         (Pointer, PointerOrI64) => Bitcast::PToP64,
         (PointerOrI64, Pointer) => Bitcast::P64ToP,
 
+        (I32, Pointer) => Bitcast::I32ToP,
+        (Pointer, I32) => Bitcast::PToI32,
+
         (Pointer | PointerOrI64 | Length, _)
         | (_, Pointer | PointerOrI64 | Length)
         | (F32, F64)
         | (F64, F32)
         | (F64, I32)
         | (I32, F64) => {
-            unreachable!()
+            unreachable!("Don't know how to bitcast from {:?} to {:?}", from, to);
         }
     }
 }
