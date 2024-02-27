@@ -379,7 +379,7 @@ impl RustWasm {
                 self.rt_module.insert(RuntimeItem::StdAllocModule);
                 self.src.push_str(
                     "\
-pub unsafe fn cabi_dealloc(ptr: *mut core::ffi::c_void, size: usize, align: usize) {
+pub unsafe fn cabi_dealloc(ptr: *mut ::core::ffi::c_void, size: usize, align: usize) {
     if size == 0 {
         return;
     }
@@ -444,7 +444,7 @@ pub unsafe fn bool_lift(val: u8) -> bool {
             _ => panic!(\"invalid bool discriminant\"),
         }
     } else {
-        core::mem::transmute::<u8, bool>(val)
+        ::core::mem::transmute::<u8, bool>(val)
     }
 }
                     ",
@@ -1248,7 +1248,7 @@ fn wasm_type(ty: WasmType) -> &'static str {
         WasmType::I64 => "i64",
         WasmType::F32 => "f32",
         WasmType::F64 => "f64",
-        WasmType::Pointer => "*mut core::ffi::c_void",
+        WasmType::Pointer => "*mut ::core::ffi::c_void",
         WasmType::Length => "usize",
 
         // `PointerOrI64` can hold either a `u64` or a pointer with provenance.
@@ -1256,7 +1256,7 @@ fn wasm_type(ty: WasmType) -> &'static str {
         // `MaybeUninit<u64>`, since `MaybeUninit` is [documented] to preserve
         // provenance.
         // [documented]: https://github.com/rust-lang/rfcs/blob/master/text/3559-rust-has-provenance.md#reference-level-explanation
-        WasmType::PointerOrI64 => "core::mem::MaybeUninit::<u64>",
+        WasmType::PointerOrI64 => "::core::mem::MaybeUninit::<u64>",
     }
 }
 
@@ -1283,7 +1283,7 @@ fn bitcast(casts: &[Bitcast], operands: &[String], results: &mut Vec<String>) {
             Bitcast::I64ToF32 => format!("f32::from_bits({} as u32)", operand),
 
             // Convert an `i64` into a `MaybeUninit<u64>`.
-            Bitcast::I64ToP64 => format!("core::mem::MaybeUninit::new({} as u64)", operand),
+            Bitcast::I64ToP64 => format!("::core::mem::MaybeUninit::new({} as u64)", operand),
             // Convert a `MaybeUninit<u64>` holding an `i64` value back into
             // the `i64` value.
             Bitcast::P64ToI64 => format!("{}.assume_init() as i64", operand),
@@ -1292,7 +1292,7 @@ fn bitcast(casts: &[Bitcast], operands: &[String], results: &mut Vec<String>) {
             Bitcast::PToP64 => {
                 format!(
                     "{{
-                        let mut t = core::mem::MaybeUnunit::<u64>::uninit();
+                        let mut t = ::core::mem::MaybeUnunit::<u64>::uninit();
                         t.as_mut_ptr().cast::<*mut core::ptr::c_void>().write({});
                         t
                     }}",

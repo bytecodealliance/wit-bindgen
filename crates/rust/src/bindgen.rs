@@ -270,14 +270,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.import_return_pointer_area_align.max(align);
             uwrite!(
                 self.src,
-                "let ptr{tmp} = ret_area.0.as_mut_ptr().cast::<core::ffi::c_void>();"
+                "let ptr{tmp} = ret_area.0.as_mut_ptr().cast::<::core::ffi::c_void>();"
             );
         } else {
             self.gen.return_pointer_area_size = self.gen.return_pointer_area_size.max(size);
             self.gen.return_pointer_area_align = self.gen.return_pointer_area_align.max(align);
             uwriteln!(
                 self.src,
-                "let ptr{tmp} = _RET_AREA.0.as_mut_ptr().cast::<core::ffi::c_void>();"
+                "let ptr{tmp} = _RET_AREA.0.as_mut_ptr().cast::<::core::ffi::c_void>();"
             );
         }
         format!("ptr{}", tmp)
@@ -321,9 +321,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         WasmType::I64 => results.push("0i64".to_string()),
                         WasmType::F32 => results.push("0.0f32".to_string()),
                         WasmType::F64 => results.push("0.0f64".to_string()),
-                        WasmType::Pointer => results.push("core::ptr::null_mut()".to_string()),
+                        WasmType::Pointer => results.push("::core::ptr::null_mut()".to_string()),
                         WasmType::PointerOrI64 => {
-                            results.push("core::mem::MaybeUninit::<u64>::zeroed()".to_string())
+                            results.push("::core::mem::MaybeUninit::<u64>::zeroed()".to_string())
                         }
                         WasmType::Length => results.push("0usize".to_string()),
                     }
@@ -659,7 +659,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.push_str(&format!("let {} = ({}).into_boxed_slice();\n", val, op0));
                 }
                 self.push_str(&format!(
-                    "let {} = {}.as_ptr().cast::<core::ffi::c_void>();\n",
+                    "let {} = {}.as_ptr().cast::<::core::ffi::c_void>();\n",
                     ptr, val
                 ));
                 self.push_str(&format!("let {} = {}.len();\n", len, val));
@@ -694,7 +694,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.push_str(&format!("let {} = ({}).into_boxed_slice();\n", val, op0));
                 }
                 self.push_str(&format!(
-                    "let {} = {}.as_ptr().cast::<core::ffi::c_void>();\n",
+                    "let {} = {}.as_ptr().cast::<::core::ffi::c_void>();\n",
                     ptr, val
                 ));
                 self.push_str(&format!("let {} = {}.len();\n", len, val));
@@ -742,7 +742,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 ));
                 self.push_str(&format!("let {result} = if {layout}.size() != 0 {{\n"));
                 self.push_str(&format!(
-                    "let ptr = {alloc}::alloc({layout}).cast::<core::ffi::c_void>();\n",
+                    "let ptr = {alloc}::alloc({layout}).cast::<::core::ffi::c_void>();\n",
                 ));
                 self.push_str(&format!(
                     "if ptr.is_null()\n{{\n{alloc}::handle_alloc_error({layout});\n}}\nptr\n}}",
@@ -950,7 +950,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let tmp = self.tmp();
                 uwriteln!(
                     self.src,
-                    "let l{tmp} = *{}.byte_add({offset}).cast::<*mut core::ffi::c_void>();",
+                    "let l{tmp} = *{}.byte_add({offset}).cast::<*mut ::core::ffi::c_void>();",
                     operands[0]
                 );
                 results.push(format!("l{tmp}"));
@@ -1004,7 +1004,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::PointerStore { offset } => {
                 self.push_str(&format!(
-                    "*{}.byte_add({}).cast::<*mut core::ffi::c_void>() = {};\n",
+                    "*{}.byte_add({}).cast::<*mut ::core::ffi::c_void>() = {};\n",
                     operands[1], offset, operands[0]
                 ));
             }
