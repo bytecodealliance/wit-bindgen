@@ -536,11 +536,21 @@ pub enum Bitcast {
     I64ToI32,
     I64ToF32,
 
-    // Pointers
-    P64ToI64,
-    I64ToP64,
+    // PointerOrI64<->Pointer conversions. These preserve provenance.
+    //
+    // These are used when pointer values are being stored in
+    // (PToP64) and loaded out of (P64ToP) PointerOrI64 values, so they
+    // always have to preserve provenance.
     P64ToP,
     PToP64,
+
+    // Pointer<->integer conversions. These do not preserve provenance.
+    //
+    // These are used when integer values are being stored in
+    // (I64ToP64 and I32ToP) and loaded out of (P64ToI64 and PToI32) pointer
+    // or PointerOrI64 values, so they never have any provenance to preserve.
+    P64ToI64,
+    I64ToP64,
     I32ToP,
     PToI32,
 
