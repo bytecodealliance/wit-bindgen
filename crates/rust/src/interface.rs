@@ -269,8 +269,8 @@ impl InterfaceGenerator<'_> {
                 self.src,
                 "
                     #[repr(align({align}))]
-                    struct _RetArea([u8; {size}]);
-                    static mut _RET_AREA: _RetArea = _RetArea([0; {size}]);
+                    struct _RetArea([::core::mem::MaybeUninit::<u8>; {size}]);
+                    static mut _RET_AREA: _RetArea = _RetArea([::core::mem::MaybeUninit::uninit(); {size}]);
                 ",
                 align = self.return_pointer_area_align,
                 size = self.return_pointer_area_size,
@@ -396,8 +396,8 @@ impl InterfaceGenerator<'_> {
                 self.src,
                 "
                     #[repr(align({import_return_pointer_area_align}))]
-                    struct RetArea([u8; {import_return_pointer_area_size}]);
-                    let mut ret_area = ::core::mem::MaybeUninit::<RetArea>::uninit();
+                    struct RetArea([::core::mem::MaybeUninit::<u8>; {import_return_pointer_area_size}]);
+                    let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); {import_return_pointer_area_size}]);
                 ",
             );
         }
