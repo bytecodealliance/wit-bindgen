@@ -1,0 +1,57 @@
+package test:variants-unioning-types;
+
+world a {
+  variant v-u32 {
+    a(list<u8>),
+    b(tuple<u32, u32>),
+  }
+  import f-u32: func(x: v-u32);
+
+  variant v-s32 {
+    a(list<u8>),
+    b(tuple<s32, s32>),
+  }
+  import f-s32: func(x: v-s32);
+
+  variant v-f32 {
+    a(list<u8>),
+    b(tuple<f32, f32>),
+  }
+  import f-f32: func(x: v-f32);
+
+  variant v-f64 {
+    a(list<u8>),
+    b(tuple<f64, f64>),
+  }
+  import f-f64: func(x: v-f64);
+
+  variant v-u64 {
+    a(list<u8>),
+    b(tuple<u64, u64>),
+  }
+  import f-u64: func(x: v-u64);
+
+  variant v-s64 {
+    a(list<u8>),
+    b(tuple<s64, s64>),
+  }
+  import f-s64: func(x: v-s64);
+
+  variant v-bool {
+    a(list<u8>),
+    b(tuple<bool, bool>),
+  }
+  import f-bool: func(x: v-bool);
+
+  variant v-char {
+    a(list<u8>),
+    b(tuple<char, char>),
+  }
+  import f-char: func(x: v-char);
+
+  variant v-string {
+    a(list<u8>),
+    b(tuple<string, string>),
+  }
+  import f-string: func(x: v-string);
+}

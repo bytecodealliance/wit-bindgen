@@ -544,15 +544,27 @@ pub enum Bitcast {
     P64ToP,
     PToP64,
 
-    // Pointer<->integer conversions. These do not preserve provenance.
+    // Pointer<->number conversions. These do not preserve provenance.
     //
-    // These are used when integer values are being stored in
-    // (I64ToP64 and I32ToP) and loaded out of (P64ToI64 and PToI32) pointer
+    // These are used when integer or floating-point values are being stored in
+    // (I64ToP64/I32ToP/etc.) and loaded out of (P64ToI64/PToI32/etc.) pointer
     // or PointerOrI64 values, so they never have any provenance to preserve.
     P64ToI64,
     I64ToP64,
+    P64ToF64,
+    F64ToP64,
     I32ToP,
     PToI32,
+    F32ToP,
+    PToF32,
+
+    // Number<->Number conversions.
+    I32ToL,
+    LToI32,
+    I64ToL,
+    LToI64,
+    F32ToL,
+    LToF32,
 
     None,
 }
@@ -1910,11 +1922,22 @@ fn cast(from: WasmType, to: WasmType) -> Bitcast {
 
         (I64, PointerOrI64) => Bitcast::I64ToP64,
         (PointerOrI64, I64) => Bitcast::P64ToI64,
+        (F64, PointerOrI64) => Bitcast::F64ToP64,
+        (PointerOrI64, F64) => Bitcast::P64ToF64,
         (Pointer, PointerOrI64) => Bitcast::PToP64,
         (PointerOrI64, Pointer) => Bitcast::P64ToP,
 
         (I32, Pointer) => Bitcast::I32ToP,
         (Pointer, I32) => Bitcast::PToI32,
+        (F32, Pointer) => Bitcast::F32ToP,
+        (Pointer, F32) => Bitcast::PToF32,
+
+        (I32, Length) => Bitcast::I32ToL,
+        (Length, I32) => Bitcast::LToI32,
+        (I64, Length) => Bitcast::I64ToL,
+        (Length, I64) => Bitcast::LToI64,
+        (F32, Length) => Bitcast::F32ToL,
+        (Length, F32) => Bitcast::LToF32,
 
         (Pointer | PointerOrI64 | Length, _)
         | (_, Pointer | PointerOrI64 | Length)

@@ -1331,19 +1331,31 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::Bitcasts { casts } => {
                 results.extend(casts.iter().zip(operands).map(|(cast, op)| match cast {
-                    Bitcast::I32ToF32 => format!("Float.intBitsToFloat({op})"),
+                    Bitcast::I32ToF32 | Bitcast::PToF32 | Bitcast::LToF32 => {
+                        format!("Float.intBitsToFloat({op})")
+                    }
                     Bitcast::I64ToF32 => format!("Float.intBitsToFloat((int) ({op}))"),
-                    Bitcast::F32ToI32 => format!("Float.floatToIntBits({op})"),
+                    Bitcast::F32ToI32 | Bitcast::F32ToP | Bitcast::F32ToL => {
+                        format!("Float.floatToIntBits({op})")
+                    }
                     Bitcast::F32ToI64 => format!("(long) Float.floatToIntBits({op})"),
-                    Bitcast::I64ToF64 => format!("Double.longBitsToDouble({op})"),
-                    Bitcast::F64ToI64 => format!("Double.doubleToLongBits({op})"),
+                    Bitcast::P64ToF64 | Bitcast::I64ToF64 => {
+                        format!("Double.longBitsToDouble({op})")
+                    }
+                    Bitcast::F64ToP64 | Bitcast::F64ToI64 => {
+                        format!("Double.doubleToLongBits({op})")
+                    }
                     Bitcast::I32ToI64 => format!("(long) ({op})"),
                     Bitcast::I64ToI32 => format!("(int) ({op})"),
                     Bitcast::I64ToP64 => format!("{op}"),
                     Bitcast::P64ToI64 => format!("{op}"),
-                    Bitcast::PToP64 => format!("(long) ({op})"),
-                    Bitcast::P64ToP => format!("(int) ({op})"),
-                    Bitcast::I32ToP | Bitcast::PToI32 | Bitcast::None => op.to_owned(),
+                    Bitcast::LToI64 | Bitcast::PToP64 => format!("(long) ({op})"),
+                    Bitcast::I64ToL | Bitcast::P64ToP => format!("(int) ({op})"),
+                    Bitcast::I32ToP
+                    | Bitcast::PToI32
+                    | Bitcast::I32ToL
+                    | Bitcast::LToI32
+                    | Bitcast::None => op.to_owned(),
                 }))
             }
 
