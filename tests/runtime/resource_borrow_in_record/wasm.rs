@@ -8,7 +8,7 @@ use test::resource_borrow_in_record::test::Thing;
 
 pub struct Test {}
 
-export_resource_borrow_in_record!(Test);
+export!(Test);
 
 impl Guest for Test {
     type Thing = MyThing;

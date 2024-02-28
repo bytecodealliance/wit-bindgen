@@ -138,7 +138,7 @@ mod skip {
         fn bar() {}
     }
 
-    export_baz!(Component);
+    export!(Component);
 }
 
 mod symbol_does_not_conflict {
@@ -193,7 +193,7 @@ mod symbol_does_not_conflict {
         }
     }
 
-    export_foo!(Component);
+    export!(Component);
 }
 
 mod alternative_bitflags_path {
@@ -216,7 +216,7 @@ mod alternative_bitflags_path {
 
     struct Component;
 
-    export_foo!(Component);
+    export!(Component);
 
     impl Guest for Component {
         fn get_flag() -> Bar {
@@ -274,7 +274,7 @@ mod owned_resource_deref_mut {
         type Bar = MyResource;
     }
 
-    export_baz!(Component);
+    export!(Component);
 }
 
 mod package_with_versions {
@@ -308,7 +308,7 @@ mod package_with_versions {
         type Bar = MyResource;
     }
 
-    export_baz!(Component);
+    export!(Component);
 }
 
 mod custom_derives {
@@ -354,7 +354,7 @@ mod custom_derives {
         }
     }
 
-    export_baz!(Component);
+    export!(Component);
 }
 
 mod with {

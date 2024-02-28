@@ -8,7 +8,7 @@ use test::resource_floats::test::Float as ImportFloat2;
 
 pub struct Test {}
 
-export_resource_floats!(Test);
+export!(Test);
 
 pub struct MyFloat {
     val: Option<ImportFloat1>,

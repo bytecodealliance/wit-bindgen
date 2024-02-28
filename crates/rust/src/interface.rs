@@ -266,7 +266,7 @@ fn _resource_rep(handle: u32) -> *mut u8
                 )
             }
         };
-        let (macro_export, use_vis) = if self.gen.opts.pub_export_macros {
+        let (macro_export, use_vis) = if self.gen.opts.pub_export_macro {
             ("#[macro_export]", "pub")
         } else {
             ("", "pub(crate)")

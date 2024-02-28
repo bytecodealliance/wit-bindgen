@@ -6,7 +6,7 @@ use exports::test::variants::test::*;
 
 struct Component;
 
-export_variants!(Component);
+export!(Component);
 
 impl Guest for Component {
     fn test_imports() {

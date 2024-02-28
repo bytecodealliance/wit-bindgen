@@ -4,7 +4,7 @@ wit_bindgen::generate!({
 
 pub struct Test {}
 
-export_resource_alias!(Test);
+export!(Test);
 
 pub struct E1X(u32);
 

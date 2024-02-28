@@ -3,7 +3,7 @@ wit_bindgen::generate!({
     world: "required-exports",
 });
 
-export_required_exports!(Exports);
+export!(Exports);
 
 // generate bindings once here
 mod a {

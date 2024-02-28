@@ -179,15 +179,19 @@ pub struct Opts {
     #[cfg_attr(feature = "clap", arg(long))]
     pub run_ctors_once_workaround: bool,
 
-    /// Changes the default module used in the generated `export_*` macro to
+    /// Changes the default module used in the generated `export!` macro to
     /// something other than `self`.
     #[cfg_attr(feature = "clap", arg(long))]
     pub default_bindings_module: Option<String>,
 
-    /// Ensures that all `export_*!` macros will be made accessible outside of
-    /// the crate.
+    /// Alternative name to use for the `export!` macro if one is generated.
     #[cfg_attr(feature = "clap", arg(long))]
-    pub pub_export_macros: bool,
+    pub export_macro_name: Option<String>,
+
+    /// Ensures that the `export!` macro will be defined as `pub` so it is a
+    /// candidate for being exported outside of the crate.
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub pub_export_macro: bool,
 }
 
 impl Opts {
@@ -611,7 +615,7 @@ impl As{upcase} for {to_convert} {{
         }
     }
 
-    /// Generates an `export_*!` macro for the `world_id` specified.
+    /// Generates an `export!` macro for the `world_id` specified.
     ///
     /// This will generate a macro which will then itself invoke all the
     /// other macros collected in `self.export_macros` prior. All these macros
@@ -628,11 +632,17 @@ impl As{upcase} for {to_convert} {{
             .default_bindings_module
             .clone()
             .unwrap_or("self".to_string());
-        let (macro_export, use_vis) = if self.opts.pub_export_macros {
+        let (macro_export, use_vis) = if self.opts.pub_export_macro {
             ("#[macro_export]", "pub")
         } else {
             ("", "pub(crate)")
         };
+        let export_macro_name = self
+            .opts
+            .export_macro_name
+            .as_deref()
+            .unwrap_or("export")
+            .to_string();
         uwriteln!(
             self.src,
             r#"
@@ -642,7 +652,7 @@ impl As{upcase} for {to_convert} {{
 /// For more information see the documentation of `wit_bindgen::generate!`.
 ///
 /// ```rust
-/// # macro_rules! export_{world_name} {{ () => (); }}
+/// # macro_rules! export {{ () => (); }}
 /// # trait Guest {{}}
 /// struct MyType;
 ///
@@ -650,13 +660,13 @@ impl As{upcase} for {to_convert} {{
 ///     // ...
 /// }}
 ///
-/// export_{world_name}!(MyType);
+/// export!(MyType);
 /// ```
 #[allow(unused_macros)]
 #[doc(hidden)]
 {macro_export}
 macro_rules! __export_{world_name}_impl {{
-    ($ty:ident) => ({default_bindings_module}::export_{world_name}!($ty with_types_in {default_bindings_module}););
+    ($ty:ident) => ({default_bindings_module}::{export_macro_name}!($ty with_types_in {default_bindings_module}););
     ($ty:ident with_types_in $($path_to_types_root:tt)*) => ("#
         );
         for (name, path_to_types) in self.export_macros.iter() {
@@ -669,7 +679,7 @@ macro_rules! __export_{world_name}_impl {{
         }
 
         // See comments in `finish` for why this conditionally happens here.
-        if self.opts.pub_export_macros {
+        if self.opts.pub_export_macro {
             uwriteln!(self.src, "const _: () = {{");
             self.emit_custom_section(resolve, world_id, "imports and exports", None);
             uwriteln!(self.src, "}};");
@@ -680,11 +690,11 @@ macro_rules! __export_{world_name}_impl {{
         uwriteln!(
             self.src,
             "#[doc(inline)]\n\
-            {use_vis} use __export_{world_name}_impl as export_{world_name};"
+            {use_vis} use __export_{world_name}_impl as {export_macro_name};"
         );
 
         if self.opts.stubs {
-            uwriteln!(self.src, "export_{world_name}!(Stub);");
+            uwriteln!(self.src, "export!(Stub);");
         }
     }
 
@@ -871,8 +881,11 @@ impl WorldGenerator for RustWasm {
         if self.opts.run_ctors_once_workaround {
             uwriteln!(self.src, "//   * run-ctors-once-workaround");
         }
-        if self.opts.pub_export_macros {
-            uwriteln!(self.src, "//   * pub-export-macros");
+        if let Some(s) = &self.opts.export_macro_name {
+            uwriteln!(self.src, "//   * export-macro-name: {s}");
+        }
+        if self.opts.pub_export_macro {
+            uwriteln!(self.src, "//   * pub-export-macro");
         }
         self.types.analyze(resolve);
         self.world = Some(world);
@@ -1040,14 +1053,14 @@ impl WorldGenerator for RustWasm {
         //    This slimmed down world should be able to be unioned with the
         //    first world trivially and will be GC'd by `wit-component` if not
         //    used.
-        // 2. The second section is emitted as part of the generated `export_!*`
+        // 2. The second section is emitted as part of the generated `export!`
         //    macro invocation. That world has all the export information as
         //    well as all the import information.
         //
         // In the end this is hoped to ensure that usage of crates like `wasi`
         // don't accidentally try to export things, for example.
         let mut resolve_copy;
-        let (resolve_to_encode, world_to_encode) = if self.opts.pub_export_macros {
+        let (resolve_to_encode, world_to_encode) = if self.opts.pub_export_macro {
             resolve_copy = resolve.clone();
             let world_copy = resolve_copy.worlds.alloc(World {
                 exports: Default::default(),

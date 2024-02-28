@@ -11,7 +11,7 @@ impl PartialEq for thing_in_and_out::Thing {
 
 struct Exports;
 
-export_ownership!(Exports);
+export!(Exports);
 
 impl Guest for Exports {
     fn foo() {

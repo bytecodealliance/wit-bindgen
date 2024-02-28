@@ -6,7 +6,7 @@ use exports::test::resource_borrow_export::test::{Guest, GuestThing, ThingBorrow
 
 pub struct Test {}
 
-export_resource_borrow_export!(Test);
+export!(Test);
 
 pub struct MyThing {
     val: u32,

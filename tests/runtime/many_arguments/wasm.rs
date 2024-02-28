@@ -4,7 +4,7 @@ wit_bindgen::generate!({
 
 struct Component;
 
-export_many_arguments!(Component);
+export!(Component);
 
 impl Guest for Component {
     fn many_arguments(

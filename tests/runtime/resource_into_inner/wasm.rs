@@ -6,7 +6,7 @@ use exports::test::resource_into_inner::test::{Guest, GuestThing, Thing};
 
 pub struct Test;
 
-export_resource_into_inner!(Test);
+export!(Test);
 
 impl Guest for Test {
     type Thing = MyThing;

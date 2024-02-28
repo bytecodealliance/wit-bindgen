@@ -6,7 +6,7 @@ use test::resource_borrow_import::test::{foo, Thing};
 
 pub struct Test {}
 
-export_resource_borrow_import!(Test);
+export!(Test);
 
 impl Guest for Test {
     fn test(v: u32) -> u32 {

@@ -7,7 +7,7 @@ use exports::test::dep0_2_0::test::Guest as v2;
 
 struct Component;
 
-export_foo!(Component);
+export!(Component);
 
 impl Guest for Component {
     fn test_imports() {

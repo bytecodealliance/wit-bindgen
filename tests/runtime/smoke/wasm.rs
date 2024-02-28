@@ -4,7 +4,7 @@ wit_bindgen::generate!({
 
 struct Exports;
 
-export_smoke!(Exports);
+export!(Exports);
 
 impl Guest for Exports {
     fn thunk() {

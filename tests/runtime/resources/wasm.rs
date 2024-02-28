@@ -8,7 +8,7 @@ use exports::exports::{KebabCase, ZBorrow, X, Z};
 
 pub struct Test {}
 
-export_resources!(Test);
+export!(Test);
 
 pub struct ComponentX {
     val: RefCell<i32>,

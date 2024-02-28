@@ -7,7 +7,7 @@ use test::resource_with_lists::test::Thing;
 
 pub struct Test {}
 
-export_resource_with_lists!(Test);
+export!(Test);
 
 impl exports::test::resource_with_lists::test::Guest for Test {
     type Thing = MyThing;

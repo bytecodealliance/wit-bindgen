@@ -8,7 +8,7 @@ use exports::test::resource_import_and_export::test::{GuestThing, Thing as Expor
 
 pub struct Test {}
 
-export_resource_import_and_export!(Test);
+export!(Test);
 
 pub struct MyThing {
     thing: RefCell<Option<Thing>>,

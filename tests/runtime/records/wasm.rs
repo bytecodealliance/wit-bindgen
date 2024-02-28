@@ -6,7 +6,7 @@ use exports::test::records::test::*;
 
 struct Component;
 
-export_records!(Component);
+export!(Component);
 
 impl Guest for Component {
     fn test_imports() {

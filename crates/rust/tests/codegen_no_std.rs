@@ -106,5 +106,5 @@ mod skip {
         fn bar() {}
     }
 
-    export_baz!(Component with_types_in self);
+    export!(Component);
 }

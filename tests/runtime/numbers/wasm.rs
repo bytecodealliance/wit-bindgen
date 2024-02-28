@@ -8,7 +8,7 @@ static SCALAR: AtomicU32 = AtomicU32::new(0);
 
 struct Component;
 
-export_numbers!(Component);
+export!(Component);
 
 impl Guest for Component {
     fn test_imports() {

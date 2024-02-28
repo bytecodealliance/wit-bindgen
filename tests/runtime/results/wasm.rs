@@ -4,7 +4,7 @@ wit_bindgen::generate!({
 
 struct Exports;
 
-export_results!(Exports);
+export!(Exports);
 
 use exports::test::results::test as test_exports;
 use test::results::test as test_imports;

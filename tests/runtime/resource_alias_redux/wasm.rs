@@ -9,7 +9,7 @@ use test::resource_alias_redux::resource_alias2::{b as import_b, Foo as ImportAl
 
 pub struct Test {}
 
-export_resource_alias_redux!(Test);
+export!(Test);
 
 pub struct MyThing {
     value: Option<ImportThing>,

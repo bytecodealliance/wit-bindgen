@@ -6,7 +6,7 @@ use exports::test::flavorful::test::*;
 
 struct Component;
 
-export_flavorful!(Component);
+export!(Component);
 
 impl Guest for Component {
     fn test_imports() {

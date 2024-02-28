@@ -7,7 +7,7 @@ use test::resource_aggregates::test::{foo as import_foo, Thing};
 
 pub struct Test {}
 
-export_resource_aggregates!(Test);
+export!(Test);
 
 impl Deref for exports::test::resource_aggregates::test::Thing {
     type Target = MyThing;

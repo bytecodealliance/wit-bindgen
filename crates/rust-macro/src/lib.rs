@@ -107,8 +107,11 @@ impl Parse for Config {
                     Opt::DefaultBindingsModule(enable) => {
                         opts.default_bindings_module = Some(enable.value());
                     }
-                    Opt::PubExportMacros(enable) => {
-                        opts.pub_export_macros = enable.value();
+                    Opt::ExportMacroName(name) => {
+                        opts.export_macro_name = Some(name.value());
+                    }
+                    Opt::PubExportMacro(enable) => {
+                        opts.pub_export_macro = enable.value();
                     }
                 }
             }
@@ -226,7 +229,8 @@ mod kw {
     syn::custom_keyword!(type_section_suffix);
     syn::custom_keyword!(run_ctors_once_workaround);
     syn::custom_keyword!(default_bindings_module);
-    syn::custom_keyword!(pub_export_macros);
+    syn::custom_keyword!(export_macro_name);
+    syn::custom_keyword!(pub_export_macro);
 }
 
 #[derive(Clone)]
@@ -274,7 +278,8 @@ enum Opt {
     TypeSectionSuffix(syn::LitStr),
     RunCtorsOnceWorkaround(syn::LitBool),
     DefaultBindingsModule(syn::LitStr),
-    PubExportMacros(syn::LitBool),
+    ExportMacroName(syn::LitStr),
+    PubExportMacro(syn::LitBool),
 }
 
 impl Parse for Opt {
@@ -385,10 +390,14 @@ impl Parse for Opt {
             input.parse::<kw::default_bindings_module>()?;
             input.parse::<Token![:]>()?;
             Ok(Opt::DefaultBindingsModule(input.parse()?))
-        } else if l.peek(kw::pub_export_macros) {
-            input.parse::<kw::pub_export_macros>()?;
+        } else if l.peek(kw::export_macro_name) {
+            input.parse::<kw::export_macro_name>()?;
             input.parse::<Token![:]>()?;
-            Ok(Opt::PubExportMacros(input.parse()?))
+            Ok(Opt::ExportMacroName(input.parse()?))
+        } else if l.peek(kw::pub_export_macro) {
+            input.parse::<kw::pub_export_macro>()?;
+            input.parse::<Token![:]>()?;
+            Ok(Opt::PubExportMacro(input.parse()?))
         } else {
             Err(l.error())
         }

@@ -4,7 +4,7 @@ wit_bindgen::generate!({
 
 struct Component;
 
-export_lists!(Component);
+export!(Component);
 
 impl Guest for Component {
     fn allocated_bytes() -> u32 {

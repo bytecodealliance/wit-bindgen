@@ -4,7 +4,7 @@ wit_bindgen::generate!({
 
 struct Component;
 
-export_options!(Component);
+export!(Component);
 
 impl Guest for Component {
     fn test_imports() {

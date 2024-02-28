@@ -4,7 +4,7 @@ wit_bindgen::generate!({
 
 pub struct Test {}
 
-export_resource_borrow_simple!(Test);
+export!(Test);
 
 impl Guest for Test {
     fn test_imports() {
