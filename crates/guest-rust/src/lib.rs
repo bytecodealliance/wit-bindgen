@@ -86,6 +86,526 @@
 ///
 /// For documentation on each option, see below.
 ///
+/// ## Exploring generated bindings
+///
+/// Once bindings have been generated they can be explored via a number of means
+/// to see what was generated:
+///
+/// * Using `cargo doc` should render all of the generated bindings in addition
+///   to the original comments in the WIT format itself.
+/// * If your IDE supports `rust-analyzer` code completion should be available
+///   to explore and see types.
+/// * The `wit-bindgen` CLI tool, packaged as `wit-bindgen-cli` on crates.io,
+///   can be executed the same as the `generate!` macro and the output can be
+///   read.
+/// * If you're seeing an error, `WIT_BINDGEN_DEBUG=1` can help debug what's
+///   happening (more on this below) by emitting macro output to a file.
+/// * This documentation can be consulted for various constructs as well.
+///
+/// Currently browsing generated code may have road bumps on the way. If you run
+/// into issues or have idea of how to improve the situation please [file an
+/// issue].
+///
+/// [file an issue]: https://github.com/bytecodealliance/wit-bindgen/issues/new
+///
+/// ## Namespacing
+///
+/// In WIT, worlds can import and export `interface`s, functions, and types. Each
+/// `interface` can either be "anonymous" and only named within the context of a
+/// `world` or it can have a "package ID" associated with it. Names in Rust take
+/// into account all the names associated with a WIT `interface`. For example
+/// the package ID `foo:bar/baz` would create a `mod foo` which contains a `mod
+/// bar` which contains a `mod baz`.
+///
+/// WIT imports and exports are additionally separated into their own
+/// namespaces. Imports are generated at the level of the `generate!` macro
+/// where exports are generated under an `exports` namespace.
+///
+/// ## Imports
+///
+/// Imports into a `world` can be types, resources, functions, and interfaces.
+/// Each of these is bound as a Rust type, function, or module. The intent is
+/// that the WIT interfaces map to what is roughly idiomatic Rust for the given
+/// interface.
+///
+/// ### Imports: Top-level functions and types
+///
+/// Imports at the top-level of a world are generated directly where the
+/// `generate!` macro is invoked.
+///
+/// ```
+/// use wit_bindgen::generate;
+///
+/// generate!({
+///     inline: r"
+///         package a:b;
+///
+///         world the-world {
+///             record fahrenheit {
+///                 degrees: f32,
+///             }
+///
+///             import what-temperature-is-it: func() -> fahrenheit;
+///
+///             record celsius {
+///                 degrees: f32,
+///             }
+///
+///             import convert-to-celsius: func(a: fahrenheit) -> celsius;
+///         }
+///     ",
+/// });
+///
+/// fn test() {
+///     let current_temp = what_temperature_is_it();
+///     println!("current temp in fahrenheit is {}", current_temp.degrees);
+///     let in_celsius: Celsius = convert_to_celsius(current_temp);
+///     println!("current temp in celsius is {}", in_celsius.degrees);
+/// }
+/// ```
+///
+/// ### Imports: Interfaces
+///
+/// Interfaces are placed into submodules where the `generate!` macro is
+/// invoked and are namespaced based on their identifiers.
+///
+/// ```
+/// use wit_bindgen::generate;
+///
+/// generate!({
+///     inline: r"
+///         package my:test;
+///
+///         interface logging {
+///             enum level {
+///                 debug,
+///                 info,
+///                 error,
+///             }
+///             log: func(level: level, msg: string);
+///         }
+///
+///         world the-world {
+///             import logging;
+///             import global-logger: interface {
+///                 use logging.{level};
+///
+///                 set-current-level: func(level: level);
+///                 get-current-level: func() -> level;
+///             }
+///         }
+///     ",
+/// });
+///
+/// // `my` and `test` are from `package my:test;` and `logging` is for the
+/// // interfac name.
+/// use my::test::logging::Level;
+///
+/// fn test() {
+///     let current_level = global_logger::get_current_level();
+///     println!("current logging level is {current_level:?}");
+///     global_logger::set_current_level(Level::Error);
+///
+///     my::test::logging::log(Level::Info, "Hello there!");
+/// }
+/// #
+/// # fn main() {}
+/// ```
+///
+/// ### Imports: Resources
+///
+/// Imported resources generate a type named after the name of the resource.
+/// This type is then used both for borrows as `&T` as well as via ownership as
+/// `T`. Resource methods are bound as methods on the type `T`.
+///
+/// ```
+/// use wit_bindgen::generate;
+///
+/// generate!({
+///     inline: r#"
+///         package my:test;
+///
+///         interface logger {
+///             enum level {
+///                 debug,
+///                 info,
+///                 error,
+///             }
+///
+///             resource logger {
+///                 constructor(destination: string);
+///                 log: func(level: level, msg: string);
+///             }
+///         }
+///
+///         // Note that while this world does not textually import the above
+///         // `logger` interface it is a transitive dependency via the `use`
+///         // statement so the "elaborated world" imports the logger.
+///         world the-world {
+///             use logger.{logger};
+///
+///             import get-global-logger: func() -> logger;
+///         }
+///     "#,
+/// });
+///
+/// use my::test::logger::Level;
+///
+/// fn test() {
+///     let logger = get_global_logger();
+///     logger.log(Level::Debug, "This is a global message");
+///
+///     let logger2 = Logger::new("/tmp/other.log");
+///     logger2.log(Level::Info, "This is not a global message");
+/// }
+/// #
+/// # fn main() {}
+/// ```
+///
+/// Note in the above example the lack of import of `Logger`. The `use`
+/// statement imported the `Logger` type, an alias of it, from the `logger`
+/// interface into `the-world`. This generated a Rust `type` alias so `Logger`
+/// was available at the top-level.
+///
+/// ## Exports: Basic Usage
+///
+/// A WIT world can not only `import` functionality but can additionally
+/// `export` functionality as well. An `export` represents a contract that the
+/// Rust program must implement to be able to work correctly. The `generate!`
+/// macro's goal is to take care of all the low-level and ABI details for you,
+/// so the end result is that `generate!`, for exports, will generate Rust
+/// `trait`s that you must implement.
+///
+/// A minimal example of this is:
+///
+/// ```
+/// use wit_bindgen::generate;
+///
+/// generate!({
+///     inline: r#"
+///         package my:test;
+///
+///         world my-world {
+///             export hello: func();
+///         }
+///     "#,
+/// });
+///
+/// struct MyComponent;
+///
+/// impl Guest for MyComponent {
+///     fn hello() {}
+/// }
+///
+/// export!(MyComponent);
+/// #
+/// # fn main() {}
+/// ```
+///
+/// Here the `Guest` trait was generated by the `generate!` macro and represents
+/// the functions at the top-level of `my-world`, in this case the function
+/// `hello`. A custom type, here called `MyComponent`, is created and the trait
+/// is implemented for that type.
+///
+/// Additionally a macro is generated by `generate!` (macros generating macros)
+/// called `export!`. The `export!` macro is given a component that implements
+/// the export `trait`s and then it will itself generate all necessary
+/// `#[no_mangle]` functions to implement the ABI required.
+///
+/// ## Exports: Multiple Interfaces
+///
+/// Each `interface` in WIT will generate a `trait` that must be implemented in
+/// addition to the top-level `trait` for the world. All traits are named
+/// `Guest` here and are namespaced appropriately in modules:
+///
+/// ```
+/// use wit_bindgen::generate;
+///
+/// generate!({
+///     inline: r#"
+///         package my:test;
+///
+///         interface a {
+///             func-in-a: func();
+///             second-func-in-a: func();
+///         }
+///
+///         world my-world {
+///             export a;
+///             export b: interface {
+///                 func-in-b: func();
+///             }
+///             export c: func();
+///         }
+///     "#,
+/// });
+///
+/// struct MyComponent;
+///
+/// impl Guest for MyComponent {
+///     fn c() {}
+/// }
+///
+/// impl exports::my::test::a::Guest for MyComponent {
+///     fn func_in_a() {}
+///     fn second_func_in_a() {}
+/// }
+///
+/// impl exports::b::Guest for MyComponent {
+///     fn func_in_b() {}
+/// }
+///
+/// export!(MyComponent);
+/// #
+/// # fn main() {}
+/// ```
+///
+/// Here note that there were three `Guest` traits generated for each of the
+/// three groups: two interfaces and one `world`. Also note that traits (and
+/// types) for exports are namespaced in an `exports` module.
+///
+/// Note that when the top-level `world` does not have any exported functions,
+/// or if an interface does not have any functions, then no `trait` is
+/// generated:
+///
+/// ```
+/// use wit_bindgen::generate;
+///
+/// generate!({
+///     inline: r#"
+///         package my:test;
+///
+///         interface a {
+///             type my-type = u32;
+///         }
+///
+///         world my-world {
+///             export b: interface {
+///                 use a.{my-type};
+///
+///                 foo: func() -> my-type;
+///             }
+///         }
+///     "#,
+/// });
+///
+/// struct MyComponent;
+///
+/// impl exports::b::Guest for MyComponent {
+///     fn foo() -> u32 {
+///         42
+///     }
+/// }
+///
+/// export!(MyComponent);
+/// #
+/// # fn main() {}
+/// ```
+///
+/// ## Exports: Resources
+///
+/// Exporting a resource is significantly different than importing a resource.
+/// A component defining a resource can create new resources of that type at any
+/// time, for example. Additionally resources can be "dereferenced" into their
+/// underlying values within the component.
+///
+/// Owned resources have a custom type generated and borrowed resources are
+/// generated with a type of the same name suffixed with `Borrow<'_>`, such as
+/// `MyResource` and `MyResourceBorrow<'_>`.
+///
+/// Like `interface`s the methods and functions used with a `resource` are
+/// packaged up into a `trait`.
+///
+/// Specifying a custom resource type is done with an associated type on the
+/// corresponding trait for the resource's containing interface/world:
+///
+/// ```
+/// use wit_bindgen::generate;
+/// use std::cell::{RefCell, Cell};
+///
+/// generate!({
+///     inline: r#"
+///         package my:test;
+///
+///         interface logging {
+///             enum level {
+///                 debug,
+///                 info,
+///                 error,
+///             }
+///
+///             resource logger {
+///                 constructor(level: level);
+///                 log: func(level: level, msg: string);
+///                 level: func() -> level;
+///                 set-level: func(level: level);
+///             }
+///         }
+///
+///         world my-world {
+///             export logging;
+///         }
+///     "#,
+/// });
+///
+/// use exports::my::test::logging::{Guest, GuestLogger, Level};
+///
+/// struct MyComponent;
+///
+/// // Note that the `logging` interface has no methods of its own but a trait
+/// // is required to be implemented here to specify the type of `Logger`.
+/// impl Guest for MyComponent {
+///     type Logger = MyLogger;
+/// }
+///
+/// struct MyLogger {
+///     level: Cell<Level>,
+///     contents: RefCell<String>,
+/// }
+///
+/// impl GuestLogger for MyLogger {
+///     fn new(level: Level) -> MyLogger {
+///         MyLogger {
+///             level: Cell::new(level),
+///             contents: RefCell::new(String::new()),
+///         }
+///     }
+///
+///     fn log(&self, level: Level, msg: String) {
+///         if level as u32 <= self.level.get() as u32 {
+///             self.contents.borrow_mut().push_str(&msg);
+///             self.contents.borrow_mut().push_str("\n");
+///         }
+///     }
+///
+///     fn level(&self) -> Level {
+///         self.level.get()
+///     }
+///
+///     fn set_level(&self, level: Level) {
+///         self.level.set(level);
+///     }
+/// }
+///
+/// export!(MyComponent);
+/// #
+/// # fn main() {}
+/// ```
+///
+/// It's important to note that resources in Rust do not get `&mut self` as
+/// methods, but instead are required to be defined with `&self`. This requires
+/// the use of interior mutability such as `Cell` and `RefCell` above from the
+/// `std::cell` module.
+///
+/// ## Exports: The `export!` macro
+///
+/// Components are created by having exported WebAssembly functions with
+/// specific names, and these functions are not created when `generate!` is
+/// invoked. Instead these functions are created afterwards once you've defined
+/// your own type an implemented the various `trait`s for it. The `#[no_mangle]`
+/// functions that will become the component are created with the generated
+/// `export!` macro.
+///
+/// Each call to `generate!` will itself generate a macro called `export!`.
+/// The macro's first argument is the name of a type that implements the traits
+/// generated:
+///
+/// ```
+/// use wit_bindgen::generate;
+///
+/// generate!({
+///     inline: r#"
+///         package my:test;
+///
+///         world my-world {
+/// #           export hello: func();
+///             // ...
+///         }
+///     "#,
+/// });
+///
+/// struct MyComponent;
+///
+/// impl Guest for MyComponent {
+/// #   fn hello() {}
+///     // ...
+/// }
+///
+/// export!(MyComponent);
+/// #
+/// # fn main() {}
+/// ```
+///
+/// This argument is a Rust type which implements the `Guest` traits generated
+/// by `generate!`. Note that all `Guest` traits must be implemented for the
+/// type provided or an error will be generated.
+///
+/// This macro additionally accepts a second argument. The macro itself needs to
+/// be able to find the module where the `generate!` macro itself was originally
+/// invoked. Currently that can't be done automatically so a path to where
+/// `generate!` was provided can also be passed to the macro. By default, the
+/// argument is set to `self`:
+///
+/// ```
+/// use wit_bindgen::generate;
+///
+/// generate!({
+///     // ...
+/// #   inline: r#"
+/// #       package my:test;
+/// #
+/// #       world my-world {
+/// #           export hello: func();
+/// #           // ...
+/// #       }
+/// #   "#,
+/// });
+/// #
+/// # struct MyComponent;
+/// #
+/// # impl Guest for MyComponent {
+/// #   fn hello() {}
+/// #     // ...
+/// # }
+/// #
+/// export!(MyComponent with_types_in self);
+/// #
+/// # fn main() {}
+/// ```
+///
+/// This indicates that the current module, referred to with `self`, is the one
+/// which had the `generate!` macro expanded.
+///
+/// If, however, the `generate!` macro was run in a different module then that
+/// must be configured:
+///
+/// ```
+/// mod bindings {
+///     wit_bindgen::generate!({
+///         // ...
+/// #   inline: r#"
+/// #       package my:test;
+/// #
+/// #       world my-world {
+/// #           export hello: func();
+/// #           // ...
+/// #       }
+/// #   "#,
+///     });
+/// }
+/// #
+/// # struct MyComponent;
+/// #
+/// # impl bindings::Guest for MyComponent {
+/// #   fn hello() {}
+/// #     // ...
+/// # }
+/// #
+/// bindings::export!(MyComponent with_types_in bindings);
+/// #
+/// # fn main() {}
+/// ```
+///
 /// ## Debugging output to `generate!`
 ///
 /// While `wit-bindgen` is tested to the best of our ability there are
@@ -246,6 +766,17 @@
 ///     // more allocations than necessary.
 ///     ownership: Owning,
 ///
+///     // Specifies an alternative name for the `export!` macro generated for
+///     // any exports this world has.
+///     //
+///     // Defaults to "export"
+///     export_macro_name: "export",
+///
+///     // Indicates whether the `export!` macro is `pub` or just `pub(crate)`.
+///     //
+///     // This defaults to `false`.
+///     pub_export_macro: false,
+///
 ///     // The second mode of ownership is "Borrowing". This mode then
 ///     // additionally has a boolean flag indicating whether duplicate types
 ///     // should be generated if necessary.
@@ -265,6 +796,12 @@
 ///     // `wit-bindgen` repository to help improve the default "Owning" use
 ///     // case above if possible.
 ///     ownership: Borrowing { duplicate_if_necessary: false },
+///
+///     // The generated `export!` macro, if any, will by default look for
+///     // generated types adjacent to where the `export!` macro is invoked
+///     // through the `self` module. This option can be used to change the
+///     // defaults to look somewhere else instead.
+///     default_bindings_module: "path::to::bindings",
 ///
 ///     // This will suffix the custom section containing component type
 ///     // information with the specified string. This is not required by
@@ -313,6 +850,9 @@ pub use bitflags;
 mod cabi_realloc;
 
 mod pre_wit_bindgen_0_20_0;
+
+#[cfg(docsrs)]
+pub mod examples;
 
 #[doc(hidden)]
 pub mod rt {

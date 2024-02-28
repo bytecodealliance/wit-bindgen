@@ -1,11 +1,10 @@
 wit_bindgen::generate!({
     path: "../../tests/runtime/results",
-    exports: {
-        "test:results/test": Exports
-    }
 });
 
 struct Exports;
+
+export!(Exports);
 
 use exports::test::results::test as test_exports;
 use test::results::test as test_imports;

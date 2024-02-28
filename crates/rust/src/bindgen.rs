@@ -407,16 +407,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::HandleLower {
-                handle: Handle::Own(resource),
+                handle: Handle::Own(_),
                 ..
             } => {
                 let op = &operands[0];
-                let result = if self.gen.is_exported_resource(*resource) {
-                    let resource = self.gen.path_to_resource();
-                    format!("{resource}::take_handle(&{op}) as i32")
-                } else {
-                    format!("({op}).take_handle() as i32")
-                };
+                let result = format!("({op}).take_handle() as i32");
                 results.push(result);
             }
 
@@ -430,32 +425,23 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::HandleLift { handle, .. } => {
                 let op = &operands[0];
-                let (prefix, resource) = match handle {
-                    Handle::Borrow(resource) => ("&", resource),
-                    Handle::Own(resource) => ("", resource),
+                let (is_own, resource) = match handle {
+                    Handle::Borrow(resource) => (false, resource),
+                    Handle::Own(resource) => (true, resource),
                 };
 
                 let dealiased_resource = dealias(resolve, *resource);
 
-                let result = if self.gen.is_exported_resource(*resource) {
-                    match handle {
-                        Handle::Borrow(_) => {
-                            let name = resolve.types[*resource]
-                                .name
-                                .as_deref()
-                                .unwrap()
-                                .to_upper_camel_case();
-                            let resource = self.gen.path_to_resource();
-                            format!("{resource}::<{name}>::lift_borrow({op} as u32 as usize)")
-                        }
-                        Handle::Own(_) => {
-                            let name = self.gen.type_path(dealiased_resource, true);
-                            format!("{name}::from_handle({op} as u32)")
-                        }
-                    }
-                } else if prefix == "" {
+                let result = if is_own {
                     let name = self.gen.type_path(dealiased_resource, true);
                     format!("{name}::from_handle({op} as u32)")
+                } else if self.gen.is_exported_resource(*resource) {
+                    let name = resolve.types[*resource]
+                        .name
+                        .as_deref()
+                        .unwrap()
+                        .to_upper_camel_case();
+                    format!("{name}Borrow::lift({op} as u32 as usize)")
                 } else {
                     let tmp = format!("handle{}", self.tmp());
                     self.handle_decls.push(format!("let {tmp};"));
@@ -463,7 +449,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     format!(
                         "{{\n
                             {tmp} = {name}::from_handle({op} as u32);
-                            {prefix}{tmp}
+                            &{tmp}
                         }}"
                     )
                 };
@@ -815,25 +801,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.let_results(func.results.len(), results);
                 match &func.kind {
                     FunctionKind::Freestanding => {
-                        self.push_str(&format!(
-                            "<_GuestImpl as Guest>::{}",
-                            to_rust_ident(&func.name)
-                        ));
+                        self.push_str(&format!("T::{}", to_rust_ident(&func.name)));
                     }
-                    FunctionKind::Method(ty) | FunctionKind::Static(ty) => {
-                        self.push_str(&format!(
-                            "<_{0}Impl as Guest{0}>::{1}",
-                            resolve.types[*ty]
-                                .name
-                                .as_deref()
-                                .unwrap()
-                                .to_upper_camel_case(),
-                            to_rust_ident(func.item_name())
-                        ));
+                    FunctionKind::Method(_) | FunctionKind::Static(_) => {
+                        self.push_str(&format!("T::{}", to_rust_ident(func.item_name())));
                     }
                     FunctionKind::Constructor(ty) => {
                         self.push_str(&format!(
-                            "Own{0}::new(<_{0}Impl as Guest{0}>::new",
+                            "{}::new(T::new",
                             resolve.types[*ty]
                                 .name
                                 .as_deref()
@@ -843,7 +818,20 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     }
                 }
                 self.push_str("(");
-                self.push_str(&operands.join(", "));
+                for (i, operand) in operands.iter().enumerate() {
+                    if i > 0 {
+                        self.push_str(", ");
+                    }
+
+                    self.push_str(operand);
+
+                    // Automatically convert `Borrow<'_, AResource>` to
+                    // `&Self` since traits have `&self` as their
+                    // first arguments.
+                    if i == 0 && matches!(func.kind, FunctionKind::Method(_)) {
+                        self.push_str(".get()")
+                    }
+                }
                 self.push_str(")");
                 if let FunctionKind::Constructor(_) = &func.kind {
                     self.push_str(")");

@@ -1,0 +1,50 @@
+package test:xcrate;
+
+interface a-imports {
+  a: func();
+
+  resource x {
+    constructor();
+    foo: func();
+  }
+}
+
+world a {
+  import a-imports;
+
+  export a-unused: func();
+
+  export an-unused-interface: interface {
+    resource x {
+      constructor();
+      foo: func();
+    }
+  }
+}
+
+interface b-imports {
+  b: func();
+
+  resource x {
+    constructor();
+    foo: func();
+  }
+}
+
+world b {
+  import b-imports;
+
+  export b: func();
+
+  export an-exported-interface: interface {
+    resource x {
+      constructor();
+      foo: func();
+    }
+  }
+}
+
+world c {
+  import a-imports;
+  include b;
+}

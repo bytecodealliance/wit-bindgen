@@ -1,11 +1,10 @@
 wit_bindgen::generate!({
     path: "../../tests/runtime/many_arguments",
-    exports: {
-        world: Component
-    }
 });
 
 struct Component;
+
+export!(Component);
 
 impl Guest for Component {
     fn many_arguments(

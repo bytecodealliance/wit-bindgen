@@ -1,7 +1,7 @@
 use crate::bindgen::FunctionBindgen;
 use crate::{
-    int_repr, to_rust_ident, to_upper_camel_case, wasm_type, ExportKey, FnSig, Identifier,
-    InterfaceName, Ownership, RuntimeItem, RustFlagsRepr, RustWasm,
+    int_repr, to_rust_ident, to_upper_camel_case, wasm_type, FnSig, Identifier, InterfaceName,
+    Ownership, RuntimeItem, RustFlagsRepr, RustWasm,
 };
 use anyhow::Result;
 use heck::*;
@@ -126,98 +126,43 @@ impl TypeOwnershipStyle {
 }
 
 impl InterfaceGenerator<'_> {
-    fn export_key(&self, item: Option<&str>) -> ExportKey {
-        let base = match self.identifier {
-            Identifier::World(_) => ExportKey::World,
-            Identifier::Interface(_, WorldKey::Name(n)) => ExportKey::Name(n.to_string()),
-
-            // If an interface belongs to a package with a version then `id_of`
-            // will print the version, but versions are onerous to keep in sync
-            // and write down everywhere. In lieu of proliferating the
-            // requirement of everyone always thinking about versions this
-            // will attempt to drop the version if it can unambiguously be
-            // dropped.
-            //
-            // If this interface belongs to a package with a version, and there
-            // is no other package of the same name/namespace, then drop the
-            // version from the export key.
-            Identifier::Interface(_, WorldKey::Interface(n)) => {
-                let iface = &self.resolve.interfaces[*n];
-                let package = iface.package.unwrap();
-                let package_name = &self.resolve.packages[package].name;
-                if package_name.version.is_some()
-                    && self
-                        .resolve
-                        .package_names
-                        .iter()
-                        .filter(|(name, _)| {
-                            package_name.name == name.name
-                                && package_name.namespace == name.namespace
-                        })
-                        .count()
-                        == 1
-                {
-                    ExportKey::Name(format!(
-                        "{}:{}/{}",
-                        package_name.namespace,
-                        package_name.name,
-                        iface.name.as_ref().unwrap()
-                    ))
-                } else {
-                    ExportKey::Name(self.resolve.id_of(*n).unwrap())
-                }
-            }
-        };
-        match item {
-            Some(item) => match base {
-                ExportKey::World => unimplemented!("item projected from world interface"),
-                ExportKey::Name(name) => ExportKey::Name(format!("{name}/{item}")),
-            },
-            None => base,
-        }
-    }
-
     pub(super) fn generate_exports<'a>(
         &mut self,
+        interface: Option<(InterfaceId, &WorldKey)>,
         funcs: impl Iterator<Item = &'a Function> + Clone,
-    ) -> Result<()> {
+    ) -> Result<String> {
         let mut traits = BTreeMap::new();
+        let mut funcs_to_export = Vec::new();
+
+        traits.insert(None, ("Guest".to_string(), Vec::new()));
+
+        if let Some((id, _)) = interface {
+            for (name, id) in self.resolve.interfaces[id].types.iter() {
+                match self.resolve.types[*id].kind {
+                    TypeDefKind::Resource => {}
+                    _ => continue,
+                }
+                let camel = name.to_upper_camel_case();
+                traits.insert(Some(*id), (format!("Guest{camel}"), Vec::new()));
+            }
+        }
 
         for func in funcs {
             if self.gen.skip.contains(&func.name) {
                 continue;
             }
 
-            // First generate the exported function which performs lift/lower
-            // operations and delegates to a trait (that doesn't exist just yet).
-            self.src.push_str("const _: () = {\n");
-            self.generate_guest_export(func);
-            self.src.push_str("};\n");
-
-            // Next generate a trait signature for this method and insert it
-            // into `traits`. Note that `traits` will have a trait-per-resource.
-            let (trait_name, local_impl_name, export_key) = match func.kind {
-                FunctionKind::Freestanding => (
-                    "Guest".to_string(),
-                    "_GuestImpl".to_string(),
-                    self.export_key(None),
-                ),
+            let resource = match func.kind {
+                FunctionKind::Freestanding => None,
                 FunctionKind::Method(id)
                 | FunctionKind::Constructor(id)
-                | FunctionKind::Static(id) => {
-                    let resource_name = self.resolve.types[id].name.as_deref().unwrap();
-                    let camel = resource_name.to_upper_camel_case();
-                    let trait_name = format!("Guest{camel}");
-                    let export_key = self.export_key(Some(&resource_name));
-                    let local_impl_name = format!("_{camel}Impl");
-                    (trait_name, local_impl_name, export_key)
-                }
+                | FunctionKind::Static(id) => Some(id),
             };
 
-            let (_, _, methods) =
-                traits
-                    .entry(export_key)
-                    .or_insert((trait_name, local_impl_name, Vec::new()));
+            funcs_to_export.push((func, resource));
+            let (trait_name, methods) = traits.get_mut(&resource).unwrap();
+            self.generate_guest_export(func, &trait_name);
+
             let prev = mem::take(&mut self.src);
             let mut sig = FnSig {
                 use_item_name: true,
@@ -234,27 +179,149 @@ impl InterfaceGenerator<'_> {
             methods.push(trait_method);
         }
 
-        // Once all the traits have been assembled then they can be emitted.
-        //
-        // Additionally alias the user-configured item for each trait here as
-        // there's only one implementation of this trait and it must be
-        // pre-configured.
-        for (export_key, (trait_name, local_impl_name, methods)) in traits {
-            let impl_name = self.gen.lookup_export(&export_key)?;
-            let path_to_root = self.path_to_root();
+        let (name, methods) = traits.remove(&None).unwrap();
+        if !methods.is_empty() || !traits.is_empty() {
+            self.generate_interface_trait(
+                &name,
+                &methods,
+                traits.iter().map(|(resource, (trait_name, _methods))| {
+                    (resource.unwrap(), trait_name.as_str())
+                }),
+            )
+        }
+
+        for (resource, (trait_name, methods)) in traits.iter() {
+            uwriteln!(self.src, "pub trait {trait_name}: 'static {{");
+            let resource = resource.unwrap();
+            let resource_name = self.resolve.types[resource].name.as_ref().unwrap();
+            let (_, interface_name) = interface.unwrap();
+            let module = self.resolve.name_world_key(interface_name);
             uwriteln!(
                 self.src,
-                "use {path_to_root}{impl_name} as {local_impl_name};"
-            );
+                r#"
+#[doc(hidden)]
+unsafe fn _resource_new(val: *mut u8) -> u32
+    where Self: Sized
+{{
+    #[cfg(not(target_arch = "wasm32"))]
+    unreachable!();
 
-            uwriteln!(self.src, "pub trait {trait_name} {{");
+    #[cfg(target_arch = "wasm32")]
+    {{
+        #[link(wasm_import_module = "[export]{module}")]
+        extern "C" {{
+            #[link_name = "[resource-new]{resource_name}"]
+            fn new(_: *mut u8) -> u32;
+        }}
+        new(val)
+    }}
+}}
+
+#[doc(hidden)]
+fn _resource_rep(handle: u32) -> *mut u8
+    where Self: Sized
+{{
+    #[cfg(not(target_arch = "wasm32"))]
+    unreachable!();
+
+    #[cfg(target_arch = "wasm32")]
+    {{
+        #[link(wasm_import_module = "[export]{module}")]
+        extern "C" {{
+            #[link_name = "[resource-rep]{resource_name}"]
+            fn rep(_: u32) -> *mut u8;
+        }}
+        unsafe {{
+            rep(handle)
+        }}
+    }}
+}}
+
+                    "#
+            );
             for method in methods {
-                self.src.push_str(&method);
+                self.src.push_str(method);
             }
             uwriteln!(self.src, "}}");
         }
 
-        Ok(())
+        let macro_name = match interface {
+            None => {
+                let world = match self.identifier {
+                    Identifier::World(w) => w,
+                    Identifier::Interface(..) => unreachable!(),
+                };
+                let world = self.resolve.worlds[world].name.to_snake_case();
+                format!("__export_world_{world}_cabi")
+            }
+            Some((_, name)) => {
+                format!(
+                    "__export_{}_cabi",
+                    self.resolve
+                        .name_world_key(name)
+                        .to_snake_case()
+                        .chars()
+                        .map(|c| if !c.is_alphanumeric() { '_' } else { c })
+                        .collect::<String>()
+                )
+            }
+        };
+        let (macro_export, use_vis) = if self.gen.opts.pub_export_macro {
+            ("#[macro_export]", "pub")
+        } else {
+            ("", "pub(crate)")
+        };
+
+        uwriteln!(
+            self.src,
+            "\
+#[doc(hidden)]
+{macro_export}
+macro_rules! {macro_name} {{
+    ($ty:ident with_types_in $($path_to_types:tt)*) => (const _: () = {{
+"
+        );
+
+        for (func, resource) in funcs_to_export {
+            let ty = match resource {
+                None => "$ty".to_string(),
+                Some(id) => {
+                    let name = self.resolve.types[id]
+                        .name
+                        .as_ref()
+                        .unwrap()
+                        .to_upper_camel_case();
+                    format!("<$ty as $($path_to_types)*::Guest>::{name}")
+                }
+            };
+            self.generate_raw_cabi_export(func, &ty, "$($path_to_types)*");
+        }
+        uwriteln!(self.src, "}};);");
+        uwriteln!(self.src, "}}");
+        uwriteln!(self.src, "#[doc(hidden)]");
+        uwriteln!(self.src, "{use_vis} use {macro_name};");
+        Ok(macro_name)
+    }
+
+    fn generate_interface_trait<'a>(
+        &mut self,
+        trait_name: &str,
+        methods: &[Source],
+        resource_traits: impl Iterator<Item = (TypeId, &'a str)>,
+    ) {
+        uwriteln!(self.src, "pub trait {trait_name} {{");
+        for (id, trait_name) in resource_traits {
+            let name = self.resolve.types[id]
+                .name
+                .as_ref()
+                .unwrap()
+                .to_upper_camel_case();
+            uwriteln!(self.src, "type {name}: {trait_name};");
+        }
+        for method in methods {
+            self.src.push_str(method);
+        }
+        uwriteln!(self.src, "}}");
     }
 
     pub fn generate_imports<'a>(&mut self, funcs: impl Iterator<Item = &'a Function>) {
@@ -332,7 +399,7 @@ impl InterfaceGenerator<'_> {
                     #[used]
                     #[doc(hidden)]
                     #[cfg(target_arch = \"wasm32\")]
-                    static __FORCE_SECTION_REF: fn() = {path_to_root}__link_section;
+                    static __FORCE_SECTION_REF: fn() = {path_to_root}__link_custom_section_describing_imports;
                     {module}
                 }}
             ",
@@ -414,45 +481,17 @@ impl InterfaceGenerator<'_> {
         }
     }
 
-    fn generate_guest_export(&mut self, func: &Function) {
-        if self.gen.skip.contains(&func.name) {
-            return;
-        }
-
+    fn generate_guest_export(&mut self, func: &Function, trait_name: &str) {
         let name_snake = func.name.to_snake_case().replace('.', "_");
-        let wasm_module_export_name = match self.identifier {
-            Identifier::Interface(_, key) => Some(self.resolve.name_world_key(key)),
-            Identifier::World(_) => None,
-        };
-        let export_prefix = self.gen.opts.export_prefix.as_deref().unwrap_or("");
-        let export_name = func.core_export_name(wasm_module_export_name.as_deref());
         uwrite!(
             self.src,
             "
                 #[doc(hidden)]
-                #[export_name = \"{export_prefix}{export_name}\"]
                 #[allow(non_snake_case)]
-                unsafe extern \"C\" fn __export_{name_snake}(\
+                pub unsafe fn _export_{name_snake}_cabi<T: {trait_name}>\
             ",
         );
-
-        let sig = self.resolve.wasm_signature(AbiVariant::GuestExport, func);
-        let mut params = Vec::new();
-        for (i, param) in sig.params.iter().enumerate() {
-            let name = format!("arg{}", i);
-            uwrite!(self.src, "{name}: {},", wasm_type(*param));
-            params.push(name);
-        }
-        self.src.push_str(")");
-
-        match sig.results.len() {
-            0 => {}
-            1 => {
-                uwrite!(self.src, " -> {}", wasm_type(sig.results[0]));
-            }
-            _ => unimplemented!(),
-        }
-
+        let params = self.print_export_sig(func);
         self.push_str(" {");
 
         if self.gen.opts.run_ctors_once_workaround {
@@ -500,24 +539,16 @@ impl InterfaceGenerator<'_> {
         self.src.push_str("}\n");
 
         if abi::guest_export_needs_post_return(self.resolve, func) {
-            let export_prefix = self.gen.opts.export_prefix.as_deref().unwrap_or("");
             uwrite!(
                 self.src,
                 "
-                    const _: () = {{
                     #[doc(hidden)]
-                    #[export_name = \"{export_prefix}cabi_post_{export_name}\"]
                     #[allow(non_snake_case)]
-                    unsafe extern \"C\" fn __post_return_{name_snake}(\
+                    pub unsafe fn __post_return_{name_snake}<T: {trait_name}>\
                 "
             );
-            let mut params = Vec::new();
-            for (i, result) in sig.results.iter().enumerate() {
-                let name = format!("arg{}", i);
-                uwrite!(self.src, "{name}: {},", wasm_type(*result));
-                params.push(name);
-            }
-            self.src.push_str(") {\n");
+            let params = self.print_post_return_sig(func);
+            self.src.push_str("{\n");
 
             let mut f = FunctionBindgen::new(self, params);
             abi::post_return(f.gen.resolve, func, &mut f);
@@ -531,51 +562,136 @@ impl InterfaceGenerator<'_> {
             assert!(handle_decls.is_empty());
             self.src.push_str(&String::from(src));
             self.src.push_str("}\n");
-            self.src.push_str("};\n");
         }
     }
 
-    pub fn generate_stub(
+    fn generate_raw_cabi_export(&mut self, func: &Function, ty: &str, path_to_self: &str) {
+        let name_snake = func.name.to_snake_case().replace('.', "_");
+        let wasm_module_export_name = match self.identifier {
+            Identifier::Interface(_, key) => Some(self.resolve.name_world_key(key)),
+            Identifier::World(_) => None,
+        };
+        let export_prefix = self.gen.opts.export_prefix.as_deref().unwrap_or("");
+        let export_name = func.core_export_name(wasm_module_export_name.as_deref());
+        uwrite!(
+            self.src,
+            "
+                #[export_name = \"{export_prefix}{export_name}\"]
+                unsafe extern \"C\" fn export_{name_snake}\
+            ",
+        );
+
+        let params = self.print_export_sig(func);
+        self.push_str(" {\n");
+        uwriteln!(
+            self.src,
+            "{path_to_self}::_export_{name_snake}_cabi::<{ty}>({})",
+            params.join(", ")
+        );
+        self.push_str("}\n");
+
+        if abi::guest_export_needs_post_return(self.resolve, func) {
+            let export_prefix = self.gen.opts.export_prefix.as_deref().unwrap_or("");
+            uwrite!(
+                self.src,
+                "
+                    #[export_name = \"{export_prefix}cabi_post_{export_name}\"]
+                    unsafe extern \"C\" fn _post_return_{name_snake}\
+                "
+            );
+            let params = self.print_post_return_sig(func);
+            self.src.push_str("{\n");
+            uwriteln!(
+                self.src,
+                "{path_to_self}::__post_return_{name_snake}::<{ty}>({})",
+                params.join(", ")
+            );
+            self.src.push_str("}\n");
+        }
+    }
+
+    fn print_export_sig(&mut self, func: &Function) -> Vec<String> {
+        self.src.push_str("(");
+        let sig = self.resolve.wasm_signature(AbiVariant::GuestExport, func);
+        let mut params = Vec::new();
+        for (i, param) in sig.params.iter().enumerate() {
+            let name = format!("arg{}", i);
+            uwrite!(self.src, "{name}: {},", wasm_type(*param));
+            params.push(name);
+        }
+        self.src.push_str(")");
+
+        match sig.results.len() {
+            0 => {}
+            1 => {
+                uwrite!(self.src, " -> {}", wasm_type(sig.results[0]));
+            }
+            _ => unimplemented!(),
+        }
+        params
+    }
+
+    fn print_post_return_sig(&mut self, func: &Function) -> Vec<String> {
+        self.src.push_str("(");
+        let mut params = Vec::new();
+        let sig = self.resolve.wasm_signature(AbiVariant::GuestExport, func);
+        for (i, result) in sig.results.iter().enumerate() {
+            let name = format!("arg{}", i);
+            uwrite!(self.src, "{name}: {},", wasm_type(*result));
+            params.push(name);
+        }
+        self.src.push_str(") ");
+        params
+    }
+
+    pub fn generate_stub<'a>(
         &mut self,
-        resource: Option<TypeId>,
-        pkg: Option<(String, String)>,
-        name: &str,
-        in_interface: bool,
+        interface: Option<(InterfaceId, &WorldKey)>,
+        funcs: impl Iterator<Item = &'a Function> + Clone,
+    ) {
+        let mut funcs = super::group_by_resource(funcs.clone());
+
+        let root_methods = funcs.remove(&None).unwrap_or(Vec::new());
+
+        let mut extra_trait_items = String::new();
+        let guest_trait = match interface {
+            Some((id, _)) => {
+                let path = self.path_to_interface(id).unwrap();
+                for (name, id) in self.resolve.interfaces[id].types.iter() {
+                    match self.resolve.types[*id].kind {
+                        TypeDefKind::Resource => {}
+                        _ => continue,
+                    }
+                    let camel = name.to_upper_camel_case();
+                    uwriteln!(extra_trait_items, "type {camel} = Stub;");
+
+                    let resource_methods = funcs.remove(&Some(*id)).unwrap_or(Vec::new());
+                    let trait_name = format!("{path}::Guest{camel}");
+                    self.generate_stub_impl(&trait_name, "", &resource_methods);
+                }
+                format!("{path}::Guest")
+            }
+            None => {
+                assert!(funcs.is_empty());
+                "Guest".to_string()
+            }
+        };
+
+        if !root_methods.is_empty() || !extra_trait_items.is_empty() {
+            self.generate_stub_impl(&guest_trait, &extra_trait_items, &root_methods);
+        }
+    }
+
+    fn generate_stub_impl(
+        &mut self,
+        trait_name: &str,
+        extra_trait_items: &str,
         funcs: &[&Function],
     ) {
-        let path = if let Some((namespace, pkg_name)) = pkg {
-            format!(
-                "{}::{}::{}",
-                to_rust_ident(&namespace),
-                to_rust_ident(&pkg_name),
-                to_rust_ident(name),
-            )
-        } else {
-            to_rust_ident(name)
-        };
+        uwriteln!(self.src, "impl {trait_name} for Stub {{");
+        self.src.push_str(extra_trait_items);
 
-        let name = resource
-            .map(|ty| {
-                format!(
-                    "Guest{}",
-                    self.resolve.types[ty]
-                        .name
-                        .as_deref()
-                        .unwrap()
-                        .to_upper_camel_case()
-                )
-            })
-            .unwrap_or_else(|| "Guest".to_string());
-
-        let qualified_name = if in_interface {
-            format!("exports::{path}::{name}")
-        } else {
-            name
-        };
-
-        uwriteln!(self.src, "impl {qualified_name} for Stub {{");
-
-        for &func in funcs {
+        for func in funcs {
             if self.gen.skip.contains(&func.name) {
                 continue;
             }
@@ -1116,25 +1232,25 @@ impl InterfaceGenerator<'_> {
             }
 
             TypeDefKind::Handle(Handle::Borrow(ty)) => {
-                self.push_str("&");
                 assert!(mode.lifetime.is_some());
                 let lt = mode.lifetime.unwrap();
-                if lt != "'_" {
-                    self.push_str(lt);
-                    self.push_str(" ");
-                }
                 if self.is_exported_resource(*ty) {
-                    self.push_str(
-                        &self.type_path_with_name(
-                            *ty,
-                            self.resolve.types[*ty]
-                                .name
-                                .as_deref()
-                                .unwrap()
-                                .to_upper_camel_case(),
-                        ),
-                    );
+                    let camel = self.resolve.types[*ty]
+                        .name
+                        .as_deref()
+                        .unwrap()
+                        .to_upper_camel_case();
+                    let name = format!("{camel}Borrow");
+                    self.push_str(&self.type_path_with_name(*ty, name));
+                    self.push_str("<");
+                    self.push_str(lt);
+                    self.push_str(">");
                 } else {
+                    self.push_str("&");
+                    if lt != "'_" {
+                        self.push_str(lt);
+                        self.push_str(" ");
+                    }
                     let ty = &Type::Id(*ty);
                     let mode = self.filter_mode(ty, mode);
                     self.print_ty(ty, mode);
@@ -1585,40 +1701,24 @@ impl InterfaceGenerator<'_> {
     }
 
     fn print_typedef_alias(&mut self, id: TypeId, ty: &Type, docs: &Docs) {
+        for (name, mode) in self.modes_of(id) {
+            self.rustdoc(docs);
+            self.push_str(&format!("pub type {name}"));
+            self.print_generics(mode.lifetime);
+            self.push_str(" = ");
+            self.print_ty(ty, mode);
+            self.push_str(";\n");
+        }
+
         if self.is_exported_resource(id) {
-            let target = dealias(self.resolve, id);
-            let ty = &self.resolve.types[target];
-            // TODO: We could wait until we know how a resource (and its
-            // aliases) is used prior to generating declarations.  For example,
-            // if only borrows are used, no need to generate the `Own{name}`
-            // version.
-            for prefix in ["Own", ""] {
-                self.rustdoc(docs);
-                self.push_str(&format!(
-                    "pub type {prefix}{} = {};\n",
-                    self.resolve.types[id]
-                        .name
-                        .as_deref()
-                        .unwrap()
-                        .to_upper_camel_case(),
-                    self.type_path_with_name(
-                        target,
-                        format!(
-                            "{prefix}{}",
-                            ty.name.as_deref().unwrap().to_upper_camel_case()
-                        )
-                    )
-                ));
-            }
-        } else {
-            for (name, mode) in self.modes_of(id) {
-                self.rustdoc(docs);
-                self.push_str(&format!("pub type {name}"));
-                self.print_generics(mode.lifetime);
-                self.push_str(" = ");
-                self.print_ty(ty, mode);
-                self.push_str(";\n");
-            }
+            self.rustdoc(docs);
+            let name = self.resolve.types[id].name.as_ref().unwrap();
+            let name = name.to_upper_camel_case();
+            self.push_str(&format!("pub type {name}Borrow<'a>"));
+            self.push_str(" = ");
+            self.print_ty(ty, TypeMode::owned());
+            self.push_str("Borrow<'a>");
+            self.push_str(";\n");
         }
     }
 
@@ -1637,8 +1737,6 @@ impl InterfaceGenerator<'_> {
         let name = to_upper_camel_case(self.resolve.types[ty].name.as_ref().unwrap());
         if self.uses_two_names(&info) {
             format!("{}Result", name)
-        } else if self.is_exported_resource(ty) {
-            format!("Own{name}")
         } else {
             name
         }
@@ -1747,10 +1845,6 @@ impl InterfaceGenerator<'_> {
         self.path_from_runtime_module(RuntimeItem::ResourceType, "Resource")
     }
 
-    fn path_to_rust_resource(&mut self) -> String {
-        self.path_from_runtime_module(RuntimeItem::RustResource, "RustResource")
-    }
-
     fn path_to_wasm_resource(&mut self) -> String {
         self.path_from_runtime_module(RuntimeItem::ResourceType, "WasmResource")
     }
@@ -1804,6 +1898,10 @@ impl InterfaceGenerator<'_> {
 
     pub fn path_to_string(&mut self) -> String {
         self.path_from_runtime_module(RuntimeItem::StringType, "String")
+    }
+
+    pub fn path_to_box(&mut self) -> String {
+        self.path_from_runtime_module(RuntimeItem::BoxType, "Box")
     }
 
     pub fn path_to_std_alloc_module(&mut self) -> String {
@@ -1869,72 +1967,128 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             );
             self.wasm_import_module.unwrap().to_string()
         } else {
-            let rust_resource = self.path_to_rust_resource();
-
-            // Exported resources are represented as `Resource<T>` as opposed
-            // to being wrapped like imported resources.
-            //
-            // An `Own` typedef is available for the `Resource<T>` type though.
-            //
-            // Note that the actual name `{camel}` is defined here though as
-            // an alias of the type this is implemented by as configured by the
-            // `exports` configuration by the user.
-            let export_prefix = self.gen.opts.export_prefix.as_deref().unwrap_or("");
             let module = match self.identifier {
                 Identifier::Interface(_, key) => self.resolve.name_world_key(key),
                 Identifier::World(_) => unimplemented!("resource exports from worlds"),
             };
-            // NB: errors are ignored here since they'll generate an error
-            // through the `generate_exports` method above.
-            let impl_name = self
-                .gen
-                .lookup_export(&self.export_key(Some(name)))
-                .unwrap_or_else(|_| "ERROR".to_string());
-            let path_to_root = self.path_to_root();
+            let box_path = self.path_to_box();
             uwriteln!(
                 self.src,
                 r#"
-                    pub use {path_to_root}{impl_name} as {camel};
-                    const _: () = {{
-                        #[doc(hidden)]
-                        #[export_name = "{export_prefix}{module}#[dtor]{name}"]
-                        #[allow(non_snake_case)]
-                        unsafe extern "C" fn dtor(rep: usize) {{
-                            {resource}::<{camel}>::dtor(rep)
-                        }}
-                    }};
-                    unsafe impl {rust_resource} for {camel} {{
-                        unsafe fn new(_rep: usize) -> u32 {{
-                            #[cfg(not(target_arch = "wasm32"))]
-                            unreachable!();
+#[derive(Debug)]
+#[repr(transparent)]
+pub struct {camel} {{
+    handle: {resource}<{camel}>,
+}}
 
-                            #[cfg(target_arch = "wasm32")]
-                            {{
-                                #[link(wasm_import_module = "[export]{module}")]
-                                extern "C" {{
-                                    #[link_name = "[resource-new]{name}"]
-                                    fn new(_: usize) -> u32;
-                                }}
-                                new(_rep)
-                            }}
-                        }}
+type _{camel}Rep<T> = Option<T>;
 
-                        unsafe fn rep(_handle: u32) -> usize {{
-                            #[cfg(not(target_arch = "wasm32"))]
-                            unreachable!();
+impl {camel} {{
+    /// Creates a new resource from the specified representation.
+    ///
+    /// This function will create a new resource handle by moving `val` onto
+    /// the heap and then passing that heap pointer to the component model to
+    /// create a handle. The owned handle is then returned as `{camel}`.
+    pub fn new<T: Guest{camel}>(val: T) -> Self {{
+        Self::type_guard::<T>();
+        let val: _{camel}Rep<T> = Some(val);
+        let ptr: *mut _{camel}Rep<T> =
+            {box_path}::into_raw({box_path}::new(val));
+        unsafe {{
+            Self::from_handle(T::_resource_new(ptr.cast()))
+        }}
+    }}
 
-                            #[cfg(target_arch = "wasm32")]
-                            {{
-                                #[link(wasm_import_module = "[export]{module}")]
-                                extern "C" {{
-                                    #[link_name = "[resource-rep]{name}"]
-                                    fn rep(_: u32) -> usize;
-                                }}
-                                rep(_handle)
-                            }}
-                        }}
-                    }}
-                    pub type Own{camel} = {resource}<{camel}>;
+    /// Gets access to the underlying `T` which represents this resource.
+    pub fn get<T: Guest{camel}>(&self) -> &T {{
+        let ptr = unsafe {{ &*self.as_ptr::<T>() }};
+        ptr.as_ref().unwrap()
+    }}
+
+    /// Gets mutable access to the underlying `T` which represents this
+    /// resource.
+    pub fn get_mut<T: Guest{camel}>(&mut self) -> &mut T {{
+        let ptr = unsafe {{ &mut *self.as_ptr::<T>() }};
+        ptr.as_mut().unwrap()
+    }}
+
+    /// Consumes this resource and returns the underlying `T`.
+    pub fn into_inner<T: Guest{camel}>(self) -> T {{
+        let ptr = unsafe {{ &mut *self.as_ptr::<T>() }};
+        ptr.take().unwrap()
+    }}
+
+    #[doc(hidden)]
+    pub unsafe fn from_handle(handle: u32) -> Self {{
+        Self {{
+            handle: {resource}::from_handle(handle),
+        }}
+    }}
+
+    #[doc(hidden)]
+    pub fn take_handle(&self) -> u32 {{
+        {resource}::take_handle(&self.handle)
+    }}
+
+    #[doc(hidden)]
+    pub fn handle(&self) -> u32 {{
+        {resource}::handle(&self.handle)
+    }}
+
+    // It's theoretically possible to implement the `Guest{camel}` trait twice
+    // so guard against using it with two different types here.
+    #[doc(hidden)]
+    fn type_guard<T: 'static>() {{
+        use core::any::TypeId;
+        static mut LAST_TYPE: Option<TypeId> = None;
+        unsafe {{
+            assert!(!cfg!(target_feature = "threads"));
+            let id = TypeId::of::<T>();
+            match LAST_TYPE {{
+                Some(ty) => assert!(ty == id, "cannot use two types with this resource type"),
+                None => LAST_TYPE = Some(id),
+            }}
+        }}
+    }}
+
+    fn as_ptr<T: Guest{camel}>(&self) -> *mut _{camel}Rep<T> {{
+       {camel}::type_guard::<T>();
+       unsafe {{ T::_resource_rep(self.handle()).cast() }}
+    }}
+}}
+
+/// A borrowed version of [`{camel}`] which represents a borrowed value
+/// with the lifetime `'a`.
+#[derive(Debug)]
+#[repr(transparent)]
+pub struct {camel}Borrow<'a> {{
+    rep: *mut u8,
+    _marker: core::marker::PhantomData<&'a {camel}>,
+}}
+
+impl<'a> {camel}Borrow<'a>{{
+    #[doc(hidden)]
+    pub unsafe fn lift(rep: usize) -> Self {{
+        Self {{
+            rep: rep as *mut u8,
+            _marker: core::marker::PhantomData,
+        }}
+    }}
+
+    /// Gets access to the underlying `T` in this resource.
+    pub fn get<T: Guest{camel}>(&self) -> &T {{
+       let ptr = unsafe {{ &mut *self.as_ptr::<T>() }};
+       ptr.as_ref().unwrap()
+    }}
+
+    // NB: mutable access is not allowed due to the component model allowing
+    // multiple borrows of the same resource.
+
+    fn as_ptr<T: 'static>(&self) -> *mut _{camel}Rep<T> {{
+       {camel}::type_guard::<T>();
+       self.rep.cast()
+    }}
+}}
                 "#
             );
             format!("[export]{module}")
