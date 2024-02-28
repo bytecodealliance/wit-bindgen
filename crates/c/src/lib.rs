@@ -2183,49 +2183,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::Bitcasts { casts } => {
                 for (cast, op) in casts.iter().zip(operands) {
-                    let op = op;
-                    match cast {
-                        Bitcast::I32ToF32
-                        | Bitcast::I64ToF32
-                        | Bitcast::PToF32
-                        | Bitcast::LToF32 => {
-                            results
-                                .push(format!("((union {{ int32_t a; float b; }}){{ {} }}).b", op));
-                        }
-                        Bitcast::F32ToI32
-                        | Bitcast::F32ToI64
-                        | Bitcast::F32ToP
-                        | Bitcast::F32ToL => {
-                            results
-                                .push(format!("((union {{ float a; int32_t b; }}){{ {} }}).b", op));
-                        }
-                        Bitcast::P64ToF64 | Bitcast::I64ToF64 => {
-                            results.push(format!(
-                                "((union {{ int64_t a; double b; }}){{ {} }}).b",
-                                op
-                            ));
-                        }
-                        Bitcast::F64ToP64 | Bitcast::F64ToI64 => {
-                            results.push(format!(
-                                "((union {{ double a; int64_t b; }}){{ {} }}).b",
-                                op
-                            ));
-                        }
-                        Bitcast::I32ToI64 | Bitcast::LToI64 | Bitcast::PToP64 => {
-                            results.push(format!("(int64_t) {}", op));
-                        }
-                        Bitcast::I64ToI32 | Bitcast::I64ToL | Bitcast::P64ToP => {
-                            results.push(format!("(int32_t) {}", op));
-                        }
-                        Bitcast::I64ToP64 | Bitcast::P64ToI64 => {
-                            results.push(format!("{}", op));
-                        }
-                        Bitcast::I32ToP
-                        | Bitcast::PToI32
-                        | Bitcast::I32ToL
-                        | Bitcast::LToI32
-                        | Bitcast::None => results.push(op.to_string()),
-                    }
+                    let op = perform_cast(op, cast);
+                    results.push(op);
                 }
             }
 
@@ -2955,6 +2914,44 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             i => unimplemented!("{:?}", i),
+        }
+    }
+}
+
+fn perform_cast(op: &str, cast: &Bitcast) -> String {
+    match cast {
+        Bitcast::I32ToF32 | Bitcast::I64ToF32 => {
+            format!("((union {{ int32_t a; float b; }}){{ {} }}).b", op)
+        }
+        Bitcast::F32ToI32 | Bitcast::F32ToI64 => {
+            format!("((union {{ float a; int32_t b; }}){{ {} }}).b", op)
+        }
+        Bitcast::I64ToF64 => {
+            format!("((union {{ int64_t a; double b; }}){{ {} }}).b", op)
+        }
+        Bitcast::F64ToI64 => {
+            format!("((union {{ double a; int64_t b; }}){{ {} }}).b", op)
+        }
+        Bitcast::I32ToI64 | Bitcast::LToI64 | Bitcast::PToP64 => {
+            format!("(int64_t) {}", op)
+        }
+        Bitcast::I64ToI32 | Bitcast::I64ToL | Bitcast::P64ToP => {
+            format!("(int32_t) {}", op)
+        }
+        Bitcast::I64ToP64 | Bitcast::P64ToI64 => {
+            format!("{}", op)
+        }
+        Bitcast::I32ToP
+        | Bitcast::PToI32
+        | Bitcast::I32ToL
+        | Bitcast::LToI32
+        | Bitcast::LToP
+        | Bitcast::PToL
+        | Bitcast::None => op.to_string(),
+
+        Bitcast::Sequence(sequence) => {
+            let [first, second] = &**sequence;
+            perform_cast(&perform_cast(op, first), second)
         }
     }
 }

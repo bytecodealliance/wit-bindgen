@@ -1271,91 +1271,80 @@ fn int_repr(repr: Int) -> &'static str {
 
 fn bitcast(casts: &[Bitcast], operands: &[String], results: &mut Vec<String>) {
     for (cast, operand) in casts.iter().zip(operands) {
-        results.push(match cast {
-            Bitcast::None => operand.clone(),
-            Bitcast::I32ToI64 => format!("i64::from({})", operand),
-            Bitcast::F32ToI32 => format!("({}).to_bits() as i32", operand),
-            Bitcast::F64ToI64 => format!("({}).to_bits() as i64", operand),
-            Bitcast::I64ToI32 => format!("{} as i32", operand),
-            Bitcast::I32ToF32 => format!("f32::from_bits({} as u32)", operand),
-            Bitcast::I64ToF64 => format!("f64::from_bits({} as u64)", operand),
-            Bitcast::F32ToI64 => format!("i64::from(({}).to_bits())", operand),
-            Bitcast::I64ToF32 => format!("f32::from_bits({} as u32)", operand),
+        results.push(perform_cast(operand, cast));
+    }
+}
 
-            // Convert an `i64` into a `MaybeUninit<u64>`.
-            Bitcast::I64ToP64 => format!("::core::mem::MaybeUninit::new({} as u64)", operand),
-            // Convert a `MaybeUninit<u64>` holding an `i64` value back into
-            // the `i64` value.
-            Bitcast::P64ToI64 => format!("{}.assume_init() as i64", operand),
+fn perform_cast(operand: &str, cast: &Bitcast) -> String {
+    match cast {
+        Bitcast::None => operand.to_owned(),
+        Bitcast::I32ToI64 => format!("i64::from({})", operand),
+        Bitcast::F32ToI32 => format!("({}).to_bits() as i32", operand),
+        Bitcast::F64ToI64 => format!("({}).to_bits() as i64", operand),
+        Bitcast::I64ToI32 => format!("{} as i32", operand),
+        Bitcast::I32ToF32 => format!("f32::from_bits({} as u32)", operand),
+        Bitcast::I64ToF64 => format!("f64::from_bits({} as u64)", operand),
+        Bitcast::F32ToI64 => format!("i64::from(({}).to_bits())", operand),
+        Bitcast::I64ToF32 => format!("f32::from_bits({} as u32)", operand),
 
-            // Convert an `i64` into a `MaybeUninit<u64>`.
-            Bitcast::F64ToP64 => {
-                format!(
-                    "::core::mem::MaybeUninit::new({}.to_bits() as u64)",
-                    operand
-                )
-            }
-            // Convert a `MaybeUninit<u64>` holding an `i64` value back into
-            // the `i64` value.
-            Bitcast::P64ToF64 => format!("f64::from_bits({}.assume_init() as i64)", operand),
+        // Convert an `i64` into a `MaybeUninit<u64>`.
+        Bitcast::I64ToP64 => format!("::core::mem::MaybeUninit::new({} as u64)", operand),
+        // Convert a `MaybeUninit<u64>` holding an `i64` value back into
+        // the `i64` value.
+        Bitcast::P64ToI64 => format!("{}.assume_init() as i64", operand),
 
-            // Convert a pointer value into a `MaybeUninit<u64>`.
-            Bitcast::PToP64 => {
-                format!(
-                    "{{
+        // Convert a pointer value into a `MaybeUninit<u64>`.
+        Bitcast::PToP64 => {
+            format!(
+                "{{
                         let mut t = ::core::mem::MaybeUninit::<u64>::uninit();
                         t.as_mut_ptr().cast::<*mut u8>().write({});
                         t
                     }}",
-                    operand
-                )
-            }
-            // Convert a `MaybeUninit<u64>` holding a pointer value back into
-            // the pointer value.
-            Bitcast::P64ToP => {
-                format!("{}.as_mut_ptr().cast::<*mut u8>().read()", operand)
-            }
-            // Convert an `i32` into a pointer.
-            Bitcast::I32ToP => {
-                format!("{} as *mut u8", operand)
-            }
-            // Convert a pointer holding an `i32` value back into the `i32`.
-            Bitcast::PToI32 => {
-                format!("{} as i32", operand)
-            }
-            // Convert an `f32` into a pointer.
-            Bitcast::F32ToP => {
-                format!("{}.to_bits() as *mut u8", operand)
-            }
-            // Convert a pointer holding an `f32` value back into the `f32`.
-            Bitcast::PToF32 => {
-                format!("f32::from_bits({} as i32)", operand)
-            }
-            // Convert an `f32` into a length.
-            Bitcast::F32ToL => {
-                format!("{}.to_bits() as usize", operand)
-            }
-            // Convert a length holding an `f32` value back into the `f32`.
-            Bitcast::LToF32 => {
-                format!("f32::from_bits({} as i32)", operand)
-            }
-            // Convert an `i32` into a `usize`.
-            Bitcast::I32ToL => {
-                format!("{} as usize", operand)
-            }
-            // Convert a `usize` holding an `i32` value back into the `i32`.
-            Bitcast::LToI32 => {
-                format!("{} as i32", operand)
-            }
-            // Convert an `i64` holding a length back into the `usize`.
-            Bitcast::I64ToL => {
-                format!("{} as usize", operand)
-            }
-            // Convert a `usize` into an `i64`.
-            Bitcast::LToI64 => {
-                format!("{} as i64", operand)
-            }
-        });
+                operand
+            )
+        }
+        // Convert a `MaybeUninit<u64>` holding a pointer value back into
+        // the pointer value.
+        Bitcast::P64ToP => {
+            format!("{}.as_mut_ptr().cast::<*mut u8>().read()", operand)
+        }
+        // Convert an `i32` into a pointer.
+        Bitcast::I32ToP => {
+            format!("{} as *mut u8", operand)
+        }
+        // Convert a pointer holding an `i32` value back into the `i32`.
+        Bitcast::PToI32 => {
+            format!("{} as i32", operand)
+        }
+        // Convert a `usize` into a pointer.
+        Bitcast::LToP => {
+            format!("{} as *mut u8", operand)
+        }
+        // Convert a pointer holding a `usize` value back into the `usize`.
+        Bitcast::PToL => {
+            format!("{} as usize", operand)
+        }
+        // Convert an `i32` into a `usize`.
+        Bitcast::I32ToL => {
+            format!("{} as usize", operand)
+        }
+        // Convert a `usize` holding an `i32` value back into the `i32`.
+        Bitcast::LToI32 => {
+            format!("{} as i32", operand)
+        }
+        // Convert an `i64` holding a length back into the `usize`.
+        Bitcast::I64ToL => {
+            format!("{} as usize", operand)
+        }
+        // Convert a `usize` into an `i64`.
+        Bitcast::LToI64 => {
+            format!("{} as i64", operand)
+        }
+        Bitcast::Sequence(sequence) => {
+            let [first, second] = &**sequence;
+            perform_cast(&perform_cast(operand, first), second)
+        }
     }
 }
 

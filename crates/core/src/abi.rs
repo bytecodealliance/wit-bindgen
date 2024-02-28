@@ -536,35 +536,36 @@ pub enum Bitcast {
     I64ToI32,
     I64ToF32,
 
-    // PointerOrI64<->Pointer conversions. These preserve provenance.
+    // PointerOrI64 conversions. These preserve provenance when the source
+    // or destination is a pointer value.
     //
     // These are used when pointer values are being stored in
-    // (PToP64) and loaded out of (P64ToP) PointerOrI64 values, so they
-    // always have to preserve provenance.
+    // (ToP64) and loaded out of (P64To) PointerOrI64 values, so they
+    // always have to preserve provenance when the value being loaded or
+    // stored is a pointer.
+    P64ToI64,
+    I64ToP64,
     P64ToP,
     PToP64,
 
     // Pointer<->number conversions. These do not preserve provenance.
     //
     // These are used when integer or floating-point values are being stored in
-    // (I64ToP64/I32ToP/etc.) and loaded out of (P64ToI64/PToI32/etc.) pointer
-    // or PointerOrI64 values, so they never have any provenance to preserve.
-    P64ToI64,
-    I64ToP64,
-    P64ToF64,
-    F64ToP64,
+    // (I32ToP/etc.) and loaded out of (PToI32/etc.) pointer values, so they
+    // never have any provenance to preserve.
     I32ToP,
     PToI32,
-    F32ToP,
-    PToF32,
+    PToL,
+    LToP,
 
     // Number<->Number conversions.
     I32ToL,
     LToI32,
     I64ToL,
     LToI64,
-    F32ToL,
-    LToF32,
+
+    // Multiple conversions in sequence.
+    Sequence(Box<[Bitcast; 2]>),
 
     None,
 }
@@ -1907,6 +1908,7 @@ fn cast(from: WasmType, to: WasmType) -> Bitcast {
         | (F32, F32)
         | (F64, F64)
         | (Pointer, Pointer)
+        | (PointerOrI64, PointerOrI64)
         | (Length, Length) => Bitcast::None,
 
         (I32, I64) => Bitcast::I32ToI64,
@@ -1921,30 +1923,33 @@ fn cast(from: WasmType, to: WasmType) -> Bitcast {
         (I64, F32) => Bitcast::I64ToF32,
 
         (I64, PointerOrI64) => Bitcast::I64ToP64,
-        (PointerOrI64, I64) => Bitcast::P64ToI64,
-        (F64, PointerOrI64) => Bitcast::F64ToP64,
-        (PointerOrI64, F64) => Bitcast::P64ToF64,
         (Pointer, PointerOrI64) => Bitcast::PToP64,
+        (_, PointerOrI64) => {
+            Bitcast::Sequence(Box::new([cast(from, I64), cast(I64, PointerOrI64)]))
+        }
+
+        (PointerOrI64, I64) => Bitcast::P64ToI64,
         (PointerOrI64, Pointer) => Bitcast::P64ToP,
+        (PointerOrI64, _) => Bitcast::Sequence(Box::new([cast(PointerOrI64, I64), cast(I64, to)])),
 
         (I32, Pointer) => Bitcast::I32ToP,
         (Pointer, I32) => Bitcast::PToI32,
-        (F32, Pointer) => Bitcast::F32ToP,
-        (Pointer, F32) => Bitcast::PToF32,
-
         (I32, Length) => Bitcast::I32ToL,
         (Length, I32) => Bitcast::LToI32,
         (I64, Length) => Bitcast::I64ToL,
         (Length, I64) => Bitcast::LToI64,
-        (F32, Length) => Bitcast::F32ToL,
-        (Length, F32) => Bitcast::LToF32,
+        (Pointer, Length) => Bitcast::PToL,
+        (Length, Pointer) => Bitcast::LToP,
 
-        (Pointer | PointerOrI64 | Length, _)
-        | (_, Pointer | PointerOrI64 | Length)
-        | (F32, F64)
+        (F32, Pointer | Length) => Bitcast::Sequence(Box::new([cast(F32, I32), cast(I32, to)])),
+        (Pointer | Length, F32) => Bitcast::Sequence(Box::new([cast(from, I32), cast(I32, F32)])),
+
+        (F32, F64)
         | (F64, F32)
         | (F64, I32)
-        | (I32, F64) => {
+        | (I32, F64)
+        | (Pointer | Length, I64 | F64)
+        | (I64 | F64, Pointer | Length) => {
             unreachable!("Don't know how to bitcast from {:?} to {:?}", from, to);
         }
     }
