@@ -110,7 +110,7 @@
 ///
 /// ## Namespacing
 ///
-/// In WIT worlds can import and export `interface`s, functions, and types. Each
+/// In WIT, worlds can import and export `interface`s, functions, and types. Each
 /// `interface` can either be "anonymous" and only named within the context of a
 /// `world` or it can have a "package ID" associated with it. Names in Rust take
 /// into account all the names associated with a WIT `interface`. For example
