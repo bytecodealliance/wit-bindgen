@@ -652,7 +652,7 @@ impl As{upcase} for {to_convert} {{
 /// For more information see the documentation of `wit_bindgen::generate!`.
 ///
 /// ```rust
-/// # macro_rules! export {{ () => (); }}
+/// # macro_rules! {export_macro_name} {{ ($($t:tt)*) => (); }}
 /// # trait Guest {{}}
 /// struct MyType;
 ///
@@ -660,7 +660,7 @@ impl As{upcase} for {to_convert} {{
 ///     // ...
 /// }}
 ///
-/// export!(MyType);
+/// {export_macro_name}!(MyType);
 /// ```
 #[allow(unused_macros)]
 #[doc(hidden)]
