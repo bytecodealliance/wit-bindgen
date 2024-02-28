@@ -19,5 +19,27 @@ impl rust_xcrate_test::b::Guest for Exports {
     fn b() {
         rust_xcrate_test::a::test::xcrate::a_imports::a();
         rust_xcrate_test::b::test::xcrate::b_imports::b();
+
+        let x = rust_xcrate_test::a::test::xcrate::a_imports::X::new();
+        x.foo();
+        drop(x);
+
+        let x = rust_xcrate_test::b::test::xcrate::b_imports::X::new();
+        x.foo();
+        drop(x);
     }
+}
+
+impl rust_xcrate_test::b::exports::an_exported_interface::Guest for Exports {
+    type X = MyX;
+}
+
+struct MyX;
+
+impl rust_xcrate_test::b::exports::an_exported_interface::GuestX for MyX {
+    fn new() -> MyX {
+        MyX
+    }
+
+    fn foo(&self) {}
 }

@@ -1,7 +1,11 @@
 use anyhow::Result;
+use wasmtime::component::Resource;
 use wasmtime::Store;
 
 wasmtime::component::bindgen!("c" in "tests/runtime/rust_xcrate");
+
+use test::xcrate::a_imports::X as A_X;
+use test::xcrate::b_imports::X as B_X;
 
 #[derive(Default)]
 pub struct MyImports;
@@ -12,8 +16,36 @@ impl test::xcrate::a_imports::Host for MyImports {
     }
 }
 
+impl test::xcrate::a_imports::HostX for MyImports {
+    fn new(&mut self) -> Result<Resource<A_X>> {
+        Ok(Resource::new_own(2))
+    }
+
+    fn foo(&mut self, _resource: Resource<A_X>) -> Result<()> {
+        Ok(())
+    }
+
+    fn drop(&mut self, _resource: Resource<A_X>) -> Result<()> {
+        Ok(())
+    }
+}
+
 impl test::xcrate::b_imports::Host for MyImports {
     fn b(&mut self) -> Result<()> {
+        Ok(())
+    }
+}
+
+impl test::xcrate::b_imports::HostX for MyImports {
+    fn new(&mut self) -> Result<Resource<B_X>> {
+        Ok(Resource::new_own(2))
+    }
+
+    fn foo(&mut self, _resource: Resource<B_X>) -> Result<()> {
+        Ok(())
+    }
+
+    fn drop(&mut self, _resource: Resource<B_X>) -> Result<()> {
         Ok(())
     }
 }
@@ -30,6 +62,11 @@ fn run() -> Result<()> {
 
 fn run_test(exports: C, store: &mut Store<crate::Wasi<MyImports>>) -> Result<()> {
     exports.call_b(&mut *store)?;
+
+    let x = exports.an_exported_interface().x();
+    let resource = x.call_constructor(&mut *store)?;
+    x.call_foo(&mut *store, resource.clone())?;
+    resource.resource_drop(&mut *store)?;
 
     Ok(())
 }
