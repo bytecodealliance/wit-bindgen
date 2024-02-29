@@ -878,7 +878,6 @@ impl WorldGenerator for RustWasm {
         self.types.analyze(resolve);
         self.world = Some(world);
 
-        dbg!(&self.opts.with);
         for (k, v) in self.opts.with.iter() {
             self.with.insert(k.clone(), v.clone());
         }
