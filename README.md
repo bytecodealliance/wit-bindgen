@@ -217,14 +217,6 @@ file. Example code using this then looks like:
 wit_bindgen::generate!({
     // the name of the world in the `*.wit` input file
     world: "host",
-
-    // For all exported worlds, interfaces, and resources, this specifies what
-    // type they're corresponding to in this module. In this case the `MyHost`
-    // struct defined below is going to define the exports of the `world`,
-    // namely the `run` function.
-    exports: {
-        world: MyHost,
-    },
 });
 
 // Define a custom type and implement the generated `Guest` trait for it which
@@ -237,6 +229,10 @@ impl Guest for MyHost {
         print("Hello, world!");
     }
 }
+
+// export! defines that the `MyHost` struct defined below is going to define
+// the exports of the `world`, namely the `run` function.
+export!(MyHost);
 ```
 
 By using [`cargo expand`](https://github.com/dtolnay/cargo-expand) or `cargo
