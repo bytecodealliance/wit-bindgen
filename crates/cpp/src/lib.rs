@@ -1810,6 +1810,19 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                             results.push(format!("(int32_t) {}", op));
                         }
                         Bitcast::None => results.push(op.to_string()),
+                        Bitcast::P64ToI64 => todo!(),
+                        Bitcast::I64ToP64 => todo!(),
+                        Bitcast::P64ToP => todo!(),
+                        Bitcast::PToP64 => todo!(),
+                        Bitcast::I32ToP => todo!(),
+                        Bitcast::PToI32 => todo!(),
+                        Bitcast::PToL => todo!(),
+                        Bitcast::LToP => todo!(),
+                        Bitcast::I32ToL => todo!(),
+                        Bitcast::LToI32 => todo!(),
+                        Bitcast::I64ToL => todo!(),
+                        Bitcast::LToI64 => todo!(),
+                        Bitcast::Sequence(_) => todo!(),
                     }
                 }
             }
@@ -2642,6 +2655,10 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 }
                 self.src.push_str("}\n");
             }
+            abi::Instruction::PointerLoad { offset } => todo!(),
+            abi::Instruction::LengthLoad { offset } => todo!(),
+            abi::Instruction::PointerStore { offset } => todo!(),
+            abi::Instruction::LengthStore { offset } => todo!(),
         }
     }
 
