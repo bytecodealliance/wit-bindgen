@@ -45,6 +45,7 @@ struct RustWasm {
 
     rt_module: IndexSet<RuntimeItem>,
     export_macros: Vec<(String, String)>,
+    with: HashMap<String, String>,
 }
 
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
@@ -67,15 +68,6 @@ enum RuntimeItem {
     BoxType,
 }
 
-#[cfg(feature = "clap")]
-fn iterate_hashmap_string(s: &str) -> impl Iterator<Item = Result<(&str, &str), String>> {
-    s.split(',').map(move |entry| {
-        entry.split_once('=').ok_or_else(|| {
-            format!("expected string of form `<key>=<value>[,<key>=<value>...]`; got `{s}`")
-        })
-    })
-}
-
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ExportKey {
     World,
@@ -83,17 +75,11 @@ pub enum ExportKey {
 }
 
 #[cfg(feature = "clap")]
-fn parse_with(s: &str) -> Result<HashMap<String, String>, String> {
-    if s.is_empty() {
-        Ok(HashMap::default())
-    } else {
-        iterate_hashmap_string(s)
-            .map(|entry| {
-                let (key, value) = entry?;
-                Ok((key.to_owned(), value.to_owned()))
-            })
-            .collect()
-    }
+fn parse_with(s: &str) -> Result<(String, String), String> {
+    let (k, v) = s.split_once('=').ok_or_else(|| {
+        format!("expected string of form `<key>=<value>[,<key>=<value>...]`; got `{s}`")
+    })?;
+    Ok((k.to_string(), v.to_string()))
 }
 
 #[derive(Default, Debug, Clone)]
@@ -166,8 +152,12 @@ pub struct Opts {
     pub additional_derive_attributes: Vec<String>,
 
     /// Remapping of interface names to rust module names.
-    #[cfg_attr(feature = "clap", arg(long, value_parser = parse_with, default_value = ""))]
-    pub with: HashMap<String, String>,
+    ///
+    /// Argument must be of the form `k=v` and this option can be passed
+    /// multiple times or one option can be comma separated, for example
+    /// `k1=v1,k2=v2`.
+    #[cfg_attr(feature = "clap", arg(long, value_parser = parse_with, value_delimiter = ','))]
+    pub with: Vec<(String, String)>,
 
     /// Add the specified suffix to the name of the custome section containing
     /// the component type.
@@ -284,7 +274,7 @@ impl RustWasm {
         is_export: bool,
     ) -> bool {
         let with_name = resolve.name_world_key(name);
-        let entry = if let Some(remapped_path) = self.opts.with.get(&with_name) {
+        let entry = if let Some(remapped_path) = self.with.get(&with_name) {
             let name = format!("__with_name{}", self.with_name_counter);
             self.used_with_opts.insert(with_name);
             self.with_name_counter += 1;
@@ -870,10 +860,8 @@ impl WorldGenerator for RustWasm {
                 self.opts.additional_derive_attributes
             );
         }
-        if !self.opts.with.is_empty() {
-            let mut with = self.opts.with.iter().collect::<Vec<_>>();
-            with.sort();
-            uwriteln!(self.src, "//   * with {with:?}");
+        for (k, v) in self.opts.with.iter() {
+            uwriteln!(self.src, "//   * with {k:?} = {v:?}");
         }
         if let Some(default) = &self.opts.default_bindings_module {
             uwriteln!(self.src, "//   * default-bindings-module: {default:?}");
@@ -889,6 +877,11 @@ impl WorldGenerator for RustWasm {
         }
         self.types.analyze(resolve);
         self.world = Some(world);
+
+        dbg!(&self.opts.with);
+        for (k, v) in self.opts.with.iter() {
+            self.with.insert(k.clone(), v.clone());
+        }
     }
 
     fn import_interface(
@@ -1110,7 +1103,7 @@ impl WorldGenerator for RustWasm {
         let module_name = name.to_snake_case();
         files.push(&format!("{module_name}.rs"), src.as_bytes());
 
-        let remapping_keys = self.opts.with.keys().cloned().collect::<HashSet<String>>();
+        let remapping_keys = self.with.keys().cloned().collect::<HashSet<String>>();
 
         let mut unused_keys = remapping_keys
             .difference(&self.used_with_opts)
