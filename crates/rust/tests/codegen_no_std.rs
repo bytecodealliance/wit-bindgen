@@ -98,9 +98,6 @@ mod skip {
         ",
         skip: ["foo"],
         std_feature,
-        exports: {
-            "exports": Component
-        }
     });
 
     struct Component;
@@ -108,4 +105,6 @@ mod skip {
     impl exports::exports::Guest for Component {
         fn bar() {}
     }
+
+    export!(Component);
 }

@@ -1,15 +1,17 @@
 wit_bindgen::generate!({
     path: "../../tests/runtime/resource_with_lists",
-    exports: {
-        world: Test,
-        "test:resource-with-lists/test/thing": MyThing,
-    }
 });
 
 use exports::test::resource_with_lists::test::GuestThing;
 use test::resource_with_lists::test::Thing;
 
 pub struct Test {}
+
+export!(Test);
+
+impl exports::test::resource_with_lists::test::Guest for Test {
+    type Thing = MyThing;
+}
 
 pub struct MyThing {
     val: Thing,

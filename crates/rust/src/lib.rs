@@ -44,6 +44,8 @@ struct RustWasm {
     world: Option<WorldId>,
 
     rt_module: IndexSet<RuntimeItem>,
+    export_macros: Vec<(String, String)>,
+    with: HashMap<String, String>,
 }
 
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
@@ -63,36 +65,7 @@ enum RuntimeItem {
     AsF32,
     AsF64,
     ResourceType,
-    RustResource,
-}
-
-#[cfg(feature = "clap")]
-fn iterate_hashmap_string(s: &str) -> impl Iterator<Item = Result<(&str, &str), String>> {
-    s.split(',').map(move |entry| {
-        entry.split_once('=').ok_or_else(|| {
-            format!("expected string of form `<key>=<value>[,<key>=<value>...]`; got `{s}`")
-        })
-    })
-}
-
-#[cfg(feature = "clap")]
-fn parse_exports(s: &str) -> Result<HashMap<ExportKey, String>, String> {
-    if s.is_empty() {
-        Ok(HashMap::default())
-    } else {
-        iterate_hashmap_string(s)
-            .map(|entry| {
-                let (key, value) = entry?;
-                Ok((
-                    match key {
-                        "world" => ExportKey::World,
-                        _ => ExportKey::Name(key.to_owned()),
-                    },
-                    value.to_owned(),
-                ))
-            })
-            .collect()
-    }
+    BoxType,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -102,17 +75,11 @@ pub enum ExportKey {
 }
 
 #[cfg(feature = "clap")]
-fn parse_with(s: &str) -> Result<HashMap<String, String>, String> {
-    if s.is_empty() {
-        Ok(HashMap::default())
-    } else {
-        iterate_hashmap_string(s)
-            .map(|entry| {
-                let (key, value) = entry?;
-                Ok((key.to_owned(), value.to_owned()))
-            })
-            .collect()
-    }
+fn parse_with(s: &str) -> Result<(String, String), String> {
+    let (k, v) = s.split_once('=').ok_or_else(|| {
+        format!("expected string of form `<key>=<value>[,<key>=<value>...]`; got `{s}`")
+    })?;
+    Ok((k.to_string(), v.to_string()))
 }
 
 #[derive(Default, Debug, Clone)]
@@ -137,13 +104,6 @@ pub struct Opts {
     /// Names of functions to skip generating bindings for.
     #[cfg_attr(feature = "clap", arg(long))]
     pub skip: Vec<String>,
-
-    /// Names of the concrete types which implement the traits representing any
-    /// functions, interfaces, and/or resources exported by the world.
-    ///
-    /// Example: `--exports world=MyWorld,ns:pkg/iface1=MyIface1,ns:pkg/iface1/resource1=MyResource1`,
-    #[cfg_attr(feature = "clap", arg(long, value_parser = parse_exports, default_value = ""))]
-    pub exports: HashMap<ExportKey, String>,
 
     /// If true, generate stub implementations for any exported functions,
     /// interfaces, and/or resources.
@@ -192,8 +152,12 @@ pub struct Opts {
     pub additional_derive_attributes: Vec<String>,
 
     /// Remapping of interface names to rust module names.
-    #[cfg_attr(feature = "clap", arg(long, value_parser = parse_with, default_value = ""))]
-    pub with: HashMap<String, String>,
+    ///
+    /// Argument must be of the form `k=v` and this option can be passed
+    /// multiple times or one option can be comma separated, for example
+    /// `k1=v1,k2=v2`.
+    #[cfg_attr(feature = "clap", arg(long, value_parser = parse_with, value_delimiter = ','))]
+    pub with: Vec<(String, String)>,
 
     /// Add the specified suffix to the name of the custome section containing
     /// the component type.
@@ -204,6 +168,20 @@ pub struct Opts {
     /// once.
     #[cfg_attr(feature = "clap", arg(long))]
     pub run_ctors_once_workaround: bool,
+
+    /// Changes the default module used in the generated `export!` macro to
+    /// something other than `self`.
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub default_bindings_module: Option<String>,
+
+    /// Alternative name to use for the `export!` macro if one is generated.
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub export_macro_name: Option<String>,
+
+    /// Ensures that the `export!` macro will be defined as `pub` so it is a
+    /// candidate for being exported outside of the crate.
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub pub_export_macro: bool,
 }
 
 impl Opts {
@@ -288,23 +266,6 @@ impl RustWasm {
             .unwrap_or("wit_bindgen::bitflags")
     }
 
-    fn lookup_export(&self, key: &ExportKey) -> Result<String> {
-        if let Some(key) = self.opts.exports.get(key) {
-            return Ok(key.clone());
-        }
-        if self.opts.stubs {
-            return Ok("Stub".to_owned());
-        }
-        let key = match key {
-            ExportKey::World => "world".to_owned(),
-            ExportKey::Name(name) => format!("\"{name}\""),
-        };
-        if self.opts.exports.is_empty() {
-            bail!(MissingExportsMap { key });
-        }
-        bail!("expected `exports` map to contain key `{key}`")
-    }
-
     fn name_interface(
         &mut self,
         resolve: &Resolve,
@@ -313,7 +274,7 @@ impl RustWasm {
         is_export: bool,
     ) -> bool {
         let with_name = resolve.name_world_key(name);
-        let entry = if let Some(remapped_path) = self.opts.with.get(&with_name) {
+        let entry = if let Some(remapped_path) = self.with.get(&with_name) {
             let name = format!("__with_name{}", self.with_name_counter);
             self.used_with_opts.insert(with_name);
             self.with_name_counter += 1;
@@ -351,10 +312,6 @@ impl RustWasm {
             }
         }
         self.src.push_str("}\n");
-
-        if emitted.contains(&RuntimeItem::ResourceType) {
-            self.src.push_str("pub use _rt::Resource;\n");
-        }
     }
 
     fn emit_runtime_item(&mut self, item: RuntimeItem) {
@@ -370,6 +327,10 @@ impl RustWasm {
                 self.rt_module.insert(RuntimeItem::AllocCrate);
                 uwriteln!(self.src, "pub use alloc_crate::string::String;");
             }
+            RuntimeItem::BoxType => {
+                self.rt_module.insert(RuntimeItem::AllocCrate);
+                uwriteln!(self.src, "pub use alloc_crate::boxed::Box;");
+            }
             RuntimeItem::VecType => {
                 self.rt_module.insert(RuntimeItem::AllocCrate);
                 uwriteln!(self.src, "pub use alloc_crate::vec::Vec;");
@@ -379,7 +340,7 @@ impl RustWasm {
                 self.rt_module.insert(RuntimeItem::StdAllocModule);
                 self.src.push_str(
                     "\
-pub unsafe fn cabi_dealloc(ptr: i32, size: usize, align: usize) {
+pub unsafe fn cabi_dealloc(ptr: *mut u8, size: usize, align: usize) {
     if size == 0 {
         return;
     }
@@ -444,7 +405,7 @@ pub unsafe fn bool_lift(val: u8) -> bool {
             _ => panic!(\"invalid bool discriminant\"),
         }
     } else {
-        core::mem::transmute::<u8, bool>(val)
+        ::core::mem::transmute::<u8, bool>(val)
     }
 }
                     ",
@@ -506,7 +467,6 @@ pub fn run_ctors_once() {
             RuntimeItem::ResourceType => {
                 self.src.push_str(
                     r#"
-type RawRep<T> = Option<T>;
 
 use core::fmt;
 use core::marker;
@@ -604,80 +564,6 @@ impl<T: WasmResource> Drop for Resource<T> {
                     "#,
                 );
             }
-            RuntimeItem::RustResource => {
-                self.rt_module.insert(RuntimeItem::ResourceType);
-                self.rt_module.insert(RuntimeItem::AllocCrate);
-                self.src.push_str(
-                    r#"
-use alloc_crate::boxed::Box;
-use core::ops::{Deref, DerefMut};
-
-/// A trait which extends [`WasmResource`] used for Rust-defined resources, or
-/// those exported from this component.
-///
-/// This generally is implemented by generated code, not user-facing code.
-pub unsafe trait RustResource: WasmResource {
-    /// Invokes the `[resource-new]...` intrinsic.
-    unsafe fn new(rep: usize) -> u32;
-    /// Invokes the `[resource-rep]...` intrinsic.
-    unsafe fn rep(handle: u32) -> usize;
-}
-
-impl<T: RustResource> Resource<T> {
-    /// Creates a new Rust-defined resource from the underlying representation
-    /// `T`.
-    ///
-    /// This will move `T` onto the heap to create a single pointer to represent
-    /// it which is then wrapped up in a component model resource.
-    pub fn new(val: T) -> Resource<T> {
-        let rep = Box::into_raw(Box::new(Some(val))) as usize;
-        unsafe {
-            let handle = T::new(rep);
-            Resource::from_handle(handle)
-        }
-    }
-
-    #[doc(hidden)]
-    pub unsafe fn dtor(rep: usize) {
-        let _ = Box::from_raw(rep as *mut RawRep<T>);
-    }
-
-    /// Takes back ownership of the object, dropping the resource handle.
-    pub fn into_inner(resource: Self) -> T {
-        unsafe {
-            let rep = T::rep(resource.handle.load(Relaxed));
-            RawRep::take(&mut *(rep as *mut RawRep<T>)).unwrap()
-        }
-    }
-
-    #[doc(hidden)]
-    pub unsafe fn lift_borrow<'a>(rep: usize) -> &'a T {
-        RawRep::as_ref(&*(rep as *const RawRep<T>)).unwrap()
-    }
-}
-
-impl<T: RustResource> Deref for Resource<T> {
-    type Target = T;
-
-    fn deref(&self) -> &T {
-        unsafe {
-            let rep = T::rep(self.handle.load(Relaxed));
-            RawRep::as_ref(&*(rep as *const RawRep<T>)).unwrap()
-        }
-    }
-}
-
-impl<T: RustResource> DerefMut for Resource<T> {
-    fn deref_mut(&mut self) -> &mut T {
-        unsafe {
-            let rep = T::rep(self.handle.load(Relaxed));
-            RawRep::as_mut(&mut *(rep as *mut RawRep<T>)).unwrap()
-        }
-    }
-}
-                    "#,
-                );
-            }
         }
     }
 
@@ -716,6 +602,189 @@ impl As{upcase} for {to_convert} {{
 }}
                 "#
             ));
+        }
+    }
+
+    /// Generates an `export!` macro for the `world_id` specified.
+    ///
+    /// This will generate a macro which will then itself invoke all the
+    /// other macros collected in `self.export_macros` prior. All these macros
+    /// are woven together in this single invocation.
+    fn finish_export_macro(&mut self, resolve: &Resolve, world_id: WorldId) {
+        if self.export_macros.is_empty() {
+            return;
+        }
+        let world = &resolve.worlds[world_id];
+        let world_name = world.name.to_snake_case();
+
+        let default_bindings_module = self
+            .opts
+            .default_bindings_module
+            .clone()
+            .unwrap_or("self".to_string());
+        let (macro_export, use_vis) = if self.opts.pub_export_macro {
+            ("#[macro_export]", "pub")
+        } else {
+            ("", "pub(crate)")
+        };
+        let export_macro_name = self
+            .opts
+            .export_macro_name
+            .as_deref()
+            .unwrap_or("export")
+            .to_string();
+        uwriteln!(
+            self.src,
+            r#"
+/// Generates `#[no_mangle]` functions to export the specified type as the
+/// root implementation of all generated traits.
+///
+/// For more information see the documentation of `wit_bindgen::generate!`.
+///
+/// ```rust
+/// # macro_rules! {export_macro_name} {{ ($($t:tt)*) => (); }}
+/// # trait Guest {{}}
+/// struct MyType;
+///
+/// impl Guest for MyType {{
+///     // ...
+/// }}
+///
+/// {export_macro_name}!(MyType);
+/// ```
+#[allow(unused_macros)]
+#[doc(hidden)]
+{macro_export}
+macro_rules! __export_{world_name}_impl {{
+    ($ty:ident) => ({default_bindings_module}::{export_macro_name}!($ty with_types_in {default_bindings_module}););
+    ($ty:ident with_types_in $($path_to_types_root:tt)*) => ("#
+        );
+        for (name, path_to_types) in self.export_macros.iter() {
+            let mut path = "$($path_to_types_root)*".to_string();
+            if !path_to_types.is_empty() {
+                path.push_str("::");
+                path.push_str(path_to_types)
+            }
+            uwriteln!(self.src, "{path}::{name}!($ty with_types_in {path});");
+        }
+
+        // See comments in `finish` for why this conditionally happens here.
+        if self.opts.pub_export_macro {
+            uwriteln!(self.src, "const _: () = {{");
+            self.emit_custom_section(resolve, world_id, "imports and exports", None);
+            uwriteln!(self.src, "}};");
+        }
+
+        uwriteln!(self.src, ")\n}}");
+
+        uwriteln!(
+            self.src,
+            "#[doc(inline)]\n\
+            {use_vis} use __export_{world_name}_impl as {export_macro_name};"
+        );
+
+        if self.opts.stubs {
+            uwriteln!(self.src, "export!(Stub);");
+        }
+    }
+
+    /// Generates a `#[link_section]` custom section to get smuggled through
+    /// `wasm-ld`.
+    ///
+    /// This custom section is an encoding of the component metadata and will be
+    /// used as part of the `wit-component`-based componentization process.
+    ///
+    /// The `section_suffix` here is used to distinguish the multiple sections
+    /// that this generator emits, and `func_name` is an optional function to
+    /// generate next to this which is used to force rustc to at least visit
+    /// this `static` and codegen it.
+    fn emit_custom_section(
+        &mut self,
+        resolve: &Resolve,
+        world: WorldId,
+        section_suffix: &str,
+        func_name: Option<&str>,
+    ) {
+        self.src.push_str("\n#[cfg(target_arch = \"wasm32\")]\n");
+
+        // The custom section name here must start with "component-type" but
+        // otherwise is attempted to be unique here to ensure that this doesn't get
+        // concatenated to other custom sections by LLD by accident since LLD will
+        // concatenate custom sections of the same name.
+        let opts_suffix = self.opts.type_section_suffix.as_deref().unwrap_or("");
+        let world_name = &resolve.worlds[world].name;
+        let version = env!("CARGO_PKG_VERSION");
+        self.src.push_str(&format!(
+            "#[link_section = \"component-type:wit-bindgen:{version}:\
+             {world_name}:{section_suffix}{opts_suffix}\"]\n"
+        ));
+
+        let mut producers = wasm_metadata::Producers::empty();
+        producers.add(
+            "processed-by",
+            env!("CARGO_PKG_NAME"),
+            env!("CARGO_PKG_VERSION"),
+        );
+
+        let component_type = wit_component::metadata::encode(
+            resolve,
+            world,
+            wit_component::StringEncoding::UTF8,
+            Some(&producers),
+        )
+        .unwrap();
+
+        self.src.push_str("#[doc(hidden)]\n");
+        self.src.push_str(&format!(
+            "pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; {}] = *b\"\\\n",
+            component_type.len()
+        ));
+        let mut line_length = 0;
+        let s = self.src.as_mut_string();
+        for byte in component_type.iter() {
+            if line_length >= 80 {
+                s.push_str("\\\n");
+                line_length = 0;
+            }
+            match byte {
+                b'\\' => {
+                    s.push_str("\\\\");
+                    line_length += 2;
+                }
+                b'"' => {
+                    s.push_str("\\\"");
+                    line_length += 2;
+                }
+                b if b.is_ascii_alphanumeric() || b.is_ascii_punctuation() => {
+                    s.push(char::from(*byte));
+                    line_length += 1;
+                }
+                0 => {
+                    s.push_str("\\0");
+                    line_length += 2;
+                }
+                _ => {
+                    uwrite!(s, "\\x{:02x}", byte);
+                    line_length += 4;
+                }
+            }
+        }
+
+        self.src.push_str("\";\n");
+
+        if let Some(func_name) = func_name {
+            let rt = self.runtime_path().to_string();
+            uwriteln!(
+                self.src,
+                "
+                #[inline(never)]
+                #[doc(hidden)]
+                #[cfg(target_arch = \"wasm32\")]
+                pub fn {func_name}() {{
+                    {rt}::maybe_link_cabi_realloc();
+                }}
+            ",
+            );
         }
     }
 }
@@ -791,13 +860,27 @@ impl WorldGenerator for RustWasm {
                 self.opts.additional_derive_attributes
             );
         }
-        if !self.opts.with.is_empty() {
-            let mut with = self.opts.with.iter().collect::<Vec<_>>();
-            with.sort();
-            uwriteln!(self.src, "//   * with {with:?}");
+        for (k, v) in self.opts.with.iter() {
+            uwriteln!(self.src, "//   * with {k:?} = {v:?}");
+        }
+        if let Some(default) = &self.opts.default_bindings_module {
+            uwriteln!(self.src, "//   * default-bindings-module: {default:?}");
+        }
+        if self.opts.run_ctors_once_workaround {
+            uwriteln!(self.src, "//   * run-ctors-once-workaround");
+        }
+        if let Some(s) = &self.opts.export_macro_name {
+            uwriteln!(self.src, "//   * export-macro-name: {s}");
+        }
+        if self.opts.pub_export_macro {
+            uwriteln!(self.src, "//   * pub-export-macro");
         }
         self.types.analyze(resolve);
         self.world = Some(world);
+
+        for (k, v) in self.opts.with.iter() {
+            self.with.insert(k.clone(), v.clone());
+        }
     }
 
     fn import_interface(
@@ -857,32 +940,18 @@ impl WorldGenerator for RustWasm {
             return Ok(());
         }
         gen.types(id);
-        gen.generate_exports(resolve.interfaces[id].functions.values())?;
+        let macro_name =
+            gen.generate_exports(Some((id, name)), resolve.interfaces[id].functions.values())?;
         gen.finish_append_submodule(&snake, module_path);
+        self.export_macros
+            .push((macro_name, self.interface_names[&id].path.clone()));
 
         if self.opts.stubs {
-            let (pkg, name) = match name {
-                WorldKey::Name(name) => (None, name),
-                WorldKey::Interface(id) => {
-                    let interface = &resolve.interfaces[*id];
-                    (
-                        Some(interface.package.unwrap()),
-                        interface.name.as_ref().unwrap(),
-                    )
-                }
-            };
-            for (resource, funcs) in group_by_resource(resolve.interfaces[id].functions.values()) {
-                let world_id = self.world.unwrap();
-                let mut gen = self.interface(Identifier::World(world_id), None, resolve, false);
-                let pkg = pkg.map(|pid| {
-                    let namespace = resolve.packages[pid].name.namespace.clone();
-                    let package_module = name_package_module(resolve, pid);
-                    (namespace, package_module)
-                });
-                gen.generate_stub(resource, pkg, name, true, &funcs);
-                let stub = gen.finish();
-                self.src.push_str(&stub);
-            }
+            let world_id = self.world.unwrap();
+            let mut gen = self.interface(Identifier::World(world_id), None, resolve, false);
+            gen.generate_stub(Some((id, name)), resolve.interfaces[id].functions.values());
+            let stub = gen.finish();
+            self.src.push_str(&stub);
         }
         Ok(())
     }
@@ -895,18 +964,16 @@ impl WorldGenerator for RustWasm {
         _files: &mut Files,
     ) -> Result<()> {
         let mut gen = self.interface(Identifier::World(world), None, resolve, false);
-        gen.generate_exports(funcs.iter().map(|f| f.1))?;
+        let macro_name = gen.generate_exports(None, funcs.iter().map(|f| f.1))?;
         let src = gen.finish();
         self.src.push_str(&src);
+        self.export_macros.push((macro_name, String::new()));
 
         if self.opts.stubs {
-            for (resource, funcs) in group_by_resource(funcs.iter().map(|f| f.1)) {
-                let mut gen = self.interface(Identifier::World(world), None, resolve, false);
-                let world = &resolve.worlds[world];
-                gen.generate_stub(resource, None, &world.name, false, &funcs);
-                let stub = gen.finish();
-                self.src.push_str(&stub);
-            }
+            let mut gen = self.interface(Identifier::World(world), None, resolve, false);
+            gen.generate_stub(None, funcs.iter().map(|f| f.1));
+            let stub = gen.finish();
+            self.src.push_str(&stub);
         }
         Ok(())
     }
@@ -944,82 +1011,63 @@ impl WorldGenerator for RustWasm {
         self.emit_modules(exports);
 
         self.finish_runtime_module();
+        self.finish_export_macro(resolve, world);
 
-        self.src.push_str("\n#[cfg(target_arch = \"wasm32\")]\n");
-
-        // The custom section name here must start with "component-type" but
-        // otherwise is attempted to be unique here to ensure that this doesn't get
-        // concatenated to other custom sections by LLD by accident since LLD will
-        // concatenate custom sections of the same name.
-        let suffix = self.opts.type_section_suffix.as_deref().unwrap_or("");
-        self.src.push_str(&format!(
-            "#[link_section = \"component-type:{name}{suffix}\"]\n"
-        ));
-
-        let mut producers = wasm_metadata::Producers::empty();
-        producers.add(
-            "processed-by",
-            env!("CARGO_PKG_NAME"),
-            env!("CARGO_PKG_VERSION"),
-        );
-
-        let component_type = wit_component::metadata::encode(
-            resolve,
-            world,
-            wit_component::StringEncoding::UTF8,
-            Some(&producers),
-        )
-        .unwrap();
-
-        self.src.push_str("#[doc(hidden)]\n");
-        self.src.push_str(&format!(
-            "pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; {}] = *b\"\\\n",
-            component_type.len()
-        ));
-        let mut line_length = 0;
-        let s = self.src.as_mut_string();
-        for byte in component_type.iter() {
-            if line_length >= 80 {
-                s.push_str("\\\n");
-                line_length = 0;
-            }
-            match byte {
-                b'\\' => {
-                    s.push_str("\\\\");
-                    line_length += 2;
-                }
-                b'"' => {
-                    s.push_str("\\\"");
-                    line_length += 2;
-                }
-                b if b.is_ascii_alphanumeric() || b.is_ascii_punctuation() => {
-                    s.push(char::from(*byte));
-                    line_length += 1;
-                }
-                0 => {
-                    s.push_str("\\0");
-                    line_length += 2;
-                }
-                _ => {
-                    uwrite!(s, "\\x{:02x}", byte);
-                    line_length += 4;
-                }
-            }
-        }
-
-        self.src.push_str("\";\n");
-
-        let rt = self.runtime_path().to_string();
-        uwriteln!(
-            self.src,
-            "
-                #[inline(never)]
-                #[doc(hidden)]
-                #[cfg(target_arch = \"wasm32\")]
-                pub fn __link_section() {{
-                    {rt}::maybe_link_cabi_realloc();
-                }}
-            ",
+        // This is a bit tricky, but we sometimes want to "split" the `world` in
+        // two and only encode the imports here.
+        //
+        // First, a primer. Each invocation of `generate!` has a WIT world as
+        // input. This is one of the first steps in the build process as wasm
+        // hasn't even been produced yet. One of the later stages of the build
+        // process will be to emit a component, currently through the
+        // `wit-component` crate. That crate relies on custom sections being
+        // present to describe what WIT worlds were present in the wasm binary.
+        //
+        // Additionally a `generate!` macro is not the only thing in a binary.
+        // There might be multiple `generate!` macros, perhaps even across
+        // different languages. To handle all this `wit-component` will decode
+        // each custom section and "union" everything together. Unioning in
+        // general should work so long as everything has the same structure and
+        // came from the same source.
+        //
+        // The problem here is that if `pub_export_macros` is turned on, meaning
+        // that the macros are supposed to be used across crates, then neither
+        // the imports nor the exports of this world are guaranteed to be used.
+        // For imports that's ok because `wit-component` will drop any unused
+        // imports automatically. For exports that's a problem because
+        // `wit-component` unconditionally looks for a definition for all
+        // exports.
+        //
+        // When `pub_export_macros` is turned on, and cross-crate usage of the
+        // macro is expected, this is solved by emitting two custom sections:
+        //
+        // 1. The first section emitted here only has the imports of the world.
+        //    This slimmed down world should be able to be unioned with the
+        //    first world trivially and will be GC'd by `wit-component` if not
+        //    used.
+        // 2. The second section is emitted as part of the generated `export!`
+        //    macro invocation. That world has all the export information as
+        //    well as all the import information.
+        //
+        // In the end this is hoped to ensure that usage of crates like `wasi`
+        // don't accidentally try to export things, for example.
+        let mut resolve_copy;
+        let (resolve_to_encode, world_to_encode) = if self.opts.pub_export_macro {
+            resolve_copy = resolve.clone();
+            let world_copy = resolve_copy.worlds.alloc(World {
+                exports: Default::default(),
+                name: format!("{name}-with-all-of-its-exports-removed"),
+                ..resolve.worlds[world].clone()
+            });
+            (&resolve_copy, world_copy)
+        } else {
+            (resolve, world)
+        };
+        self.emit_custom_section(
+            resolve_to_encode,
+            world_to_encode,
+            "encoded world",
+            Some("__link_custom_section_describing_imports"),
         );
 
         if self.opts.stubs {
@@ -1054,7 +1102,7 @@ impl WorldGenerator for RustWasm {
         let module_name = name.to_snake_case();
         files.push(&format!("{module_name}.rs"), src.as_bytes());
 
-        let remapping_keys = self.opts.with.keys().cloned().collect::<HashSet<String>>();
+        let remapping_keys = self.with.keys().cloned().collect::<HashSet<String>>();
 
         let mut unused_keys = remapping_keys
             .difference(&self.used_with_opts)
@@ -1077,15 +1125,15 @@ fn compute_module_path(name: &WorldKey, resolve: &Resolve, is_export: bool) -> V
     }
     match name {
         WorldKey::Name(name) => {
-            path.push(name.to_snake_case());
+            path.push(to_rust_ident(name));
         }
         WorldKey::Interface(id) => {
             let iface = &resolve.interfaces[*id];
             let pkg = iface.package.unwrap();
             let pkgname = resolve.packages[pkg].name.clone();
-            path.push(pkgname.namespace.to_snake_case());
+            path.push(to_rust_ident(&pkgname.namespace));
             path.push(name_package_module(resolve, pkg));
-            path.push(iface.name.as_ref().unwrap().to_snake_case());
+            path.push(to_rust_ident(iface.name.as_ref().unwrap()));
         }
     }
     path
@@ -1248,9 +1296,15 @@ fn wasm_type(ty: WasmType) -> &'static str {
         WasmType::I64 => "i64",
         WasmType::F32 => "f32",
         WasmType::F64 => "f64",
+        WasmType::Pointer => "*mut u8",
         WasmType::Length => "usize",
-        WasmType::Pointer => "usize",
-        WasmType::PointerOrI64 => "i64",
+
+        // `PointerOrI64` can hold either a `u64` or a pointer with provenance.
+        // Neither a `u64` nor a pointer type can portably do both, so we use
+        // `MaybeUninit<u64>`, since `MaybeUninit` is [documented] to preserve
+        // provenance.
+        // [documented]: https://github.com/rust-lang/rfcs/blob/master/text/3559-rust-has-provenance.md#reference-level-explanation
+        WasmType::PointerOrI64 => "::core::mem::MaybeUninit::<u64>",
     }
 }
 
@@ -1265,17 +1319,64 @@ fn int_repr(repr: Int) -> &'static str {
 
 fn bitcast(casts: &[Bitcast], operands: &[String], results: &mut Vec<String>) {
     for (cast, operand) in casts.iter().zip(operands) {
-        results.push(match cast {
-            Bitcast::None => operand.clone(),
-            Bitcast::I32ToI64 => format!("i64::from({})", operand),
-            Bitcast::F32ToI32 => format!("({}).to_bits() as i32", operand),
-            Bitcast::F64ToI64 => format!("({}).to_bits() as i64", operand),
-            Bitcast::I64ToI32 => format!("{} as i32", operand),
-            Bitcast::I32ToF32 => format!("f32::from_bits({} as u32)", operand),
-            Bitcast::I64ToF64 => format!("f64::from_bits({} as u64)", operand),
-            Bitcast::F32ToI64 => format!("i64::from(({}).to_bits())", operand),
-            Bitcast::I64ToF32 => format!("f32::from_bits({} as u32)", operand),
-        });
+        results.push(perform_cast(operand, cast));
+    }
+}
+
+fn perform_cast(operand: &str, cast: &Bitcast) -> String {
+    match cast {
+        Bitcast::None => operand.to_owned(),
+        Bitcast::I32ToI64 => format!("i64::from({})", operand),
+        Bitcast::F32ToI32 => format!("({}).to_bits() as i32", operand),
+        Bitcast::F64ToI64 => format!("({}).to_bits() as i64", operand),
+        Bitcast::I64ToI32 => format!("{} as i32", operand),
+        Bitcast::I32ToF32 => format!("f32::from_bits({} as u32)", operand),
+        Bitcast::I64ToF64 => format!("f64::from_bits({} as u64)", operand),
+        Bitcast::F32ToI64 => format!("i64::from(({}).to_bits())", operand),
+        Bitcast::I64ToF32 => format!("f32::from_bits({} as u32)", operand),
+
+        // Convert an `i64` into a `MaybeUninit<u64>`.
+        Bitcast::I64ToP64 => format!("::core::mem::MaybeUninit::new({} as u64)", operand),
+        // Convert a `MaybeUninit<u64>` holding an `i64` value back into
+        // the `i64` value.
+        Bitcast::P64ToI64 => format!("{}.assume_init() as i64", operand),
+
+        // Convert a pointer value into a `MaybeUninit<u64>`.
+        Bitcast::PToP64 => {
+            format!(
+                "{{
+                        let mut t = ::core::mem::MaybeUninit::<u64>::uninit();
+                        t.as_mut_ptr().cast::<*mut u8>().write({});
+                        t
+                    }}",
+                operand
+            )
+        }
+        // Convert a `MaybeUninit<u64>` holding a pointer value back into
+        // the pointer value.
+        Bitcast::P64ToP => {
+            format!("{}.as_mut_ptr().cast::<*mut u8>().read()", operand)
+        }
+        // Convert an `i32` or a `usize` into a pointer.
+        Bitcast::I32ToP | Bitcast::LToP => {
+            format!("{} as *mut u8", operand)
+        }
+        // Convert a pointer or length holding an `i32` value back into the `i32`.
+        Bitcast::PToI32 | Bitcast::LToI32 => {
+            format!("{} as i32", operand)
+        }
+        // Convert an `i32`, `i64`, or pointer holding a `usize` value back into the `usize`.
+        Bitcast::I32ToL | Bitcast::I64ToL | Bitcast::PToL => {
+            format!("{} as usize", operand)
+        }
+        // Convert a `usize` into an `i64`.
+        Bitcast::LToI64 => {
+            format!("{} as i64", operand)
+        }
+        Bitcast::Sequence(sequence) => {
+            let [first, second] = &**sequence;
+            perform_cast(&perform_cast(operand, first), second)
+        }
     }
 }
 
@@ -1311,20 +1412,3 @@ impl fmt::Display for RustFlagsRepr {
         }
     }
 }
-
-#[derive(Debug)]
-pub struct MissingExportsMap {
-    key: String,
-}
-
-impl fmt::Display for MissingExportsMap {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "no `exports` map provided in configuration - provide an `exports` map a key `{key}`",
-            key = self.key,
-        )
-    }
-}
-
-impl std::error::Error for MissingExportsMap {}
