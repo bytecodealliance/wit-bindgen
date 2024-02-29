@@ -1309,32 +1309,16 @@ fn perform_cast(operand: &str, cast: &Bitcast) -> String {
         Bitcast::P64ToP => {
             format!("{}.as_mut_ptr().cast::<*mut u8>().read()", operand)
         }
-        // Convert an `i32` into a pointer.
-        Bitcast::I32ToP => {
+        // Convert an `i32` or a `usize` into a pointer.
+        Bitcast::I32ToP | Bitcast::LToP => {
             format!("{} as *mut u8", operand)
         }
-        // Convert a pointer holding an `i32` value back into the `i32`.
-        Bitcast::PToI32 => {
+        // Convert a pointer or length holding an `i32` value back into the `i32`.
+        Bitcast::PToI32 | Bitcast::LToI32 => {
             format!("{} as i32", operand)
         }
-        // Convert a `usize` into a pointer.
-        Bitcast::LToP => {
-            format!("{} as *mut u8", operand)
-        }
-        // Convert a pointer holding a `usize` value back into the `usize`.
-        Bitcast::PToL => {
-            format!("{} as usize", operand)
-        }
-        // Convert an `i32` into a `usize`.
-        Bitcast::I32ToL => {
-            format!("{} as usize", operand)
-        }
-        // Convert a `usize` holding an `i32` value back into the `i32`.
-        Bitcast::LToI32 => {
-            format!("{} as i32", operand)
-        }
-        // Convert an `i64` holding a length back into the `usize`.
-        Bitcast::I64ToL => {
+        // Convert an `i32`, `i64`, or pointer holding a `usize` value back into the `usize`.
+        Bitcast::I32ToL | Bitcast::I64ToL | Bitcast::PToL => {
             format!("{} as usize", operand)
         }
         // Convert a `usize` into an `i64`.
