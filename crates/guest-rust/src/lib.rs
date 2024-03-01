@@ -10,14 +10,6 @@
 
 #![no_std]
 
-extern crate alloc;
-
-use alloc::boxed::Box;
-use core::fmt;
-use core::marker;
-use core::ops::{Deref, DerefMut};
-use core::sync::atomic::{AtomicU32, Ordering::Relaxed};
-
 /// Generate bindings for an input WIT document.
 ///
 /// This macro is the bread-and-butter of the `wit-bindgen` crate. The macro
@@ -93,6 +85,526 @@ use core::sync::atomic::{AtomicU32, Ordering::Relaxed};
 /// ```
 ///
 /// For documentation on each option, see below.
+///
+/// ## Exploring generated bindings
+///
+/// Once bindings have been generated they can be explored via a number of means
+/// to see what was generated:
+///
+/// * Using `cargo doc` should render all of the generated bindings in addition
+///   to the original comments in the WIT format itself.
+/// * If your IDE supports `rust-analyzer` code completion should be available
+///   to explore and see types.
+/// * The `wit-bindgen` CLI tool, packaged as `wit-bindgen-cli` on crates.io,
+///   can be executed the same as the `generate!` macro and the output can be
+///   read.
+/// * If you're seeing an error, `WIT_BINDGEN_DEBUG=1` can help debug what's
+///   happening (more on this below) by emitting macro output to a file.
+/// * This documentation can be consulted for various constructs as well.
+///
+/// Currently browsing generated code may have road bumps on the way. If you run
+/// into issues or have idea of how to improve the situation please [file an
+/// issue].
+///
+/// [file an issue]: https://github.com/bytecodealliance/wit-bindgen/issues/new
+///
+/// ## Namespacing
+///
+/// In WIT, worlds can import and export `interface`s, functions, and types. Each
+/// `interface` can either be "anonymous" and only named within the context of a
+/// `world` or it can have a "package ID" associated with it. Names in Rust take
+/// into account all the names associated with a WIT `interface`. For example
+/// the package ID `foo:bar/baz` would create a `mod foo` which contains a `mod
+/// bar` which contains a `mod baz`.
+///
+/// WIT imports and exports are additionally separated into their own
+/// namespaces. Imports are generated at the level of the `generate!` macro
+/// where exports are generated under an `exports` namespace.
+///
+/// ## Imports
+///
+/// Imports into a `world` can be types, resources, functions, and interfaces.
+/// Each of these is bound as a Rust type, function, or module. The intent is
+/// that the WIT interfaces map to what is roughly idiomatic Rust for the given
+/// interface.
+///
+/// ### Imports: Top-level functions and types
+///
+/// Imports at the top-level of a world are generated directly where the
+/// `generate!` macro is invoked.
+///
+/// ```
+/// use wit_bindgen::generate;
+///
+/// generate!({
+///     inline: r"
+///         package a:b;
+///
+///         world the-world {
+///             record fahrenheit {
+///                 degrees: f32,
+///             }
+///
+///             import what-temperature-is-it: func() -> fahrenheit;
+///
+///             record celsius {
+///                 degrees: f32,
+///             }
+///
+///             import convert-to-celsius: func(a: fahrenheit) -> celsius;
+///         }
+///     ",
+/// });
+///
+/// fn test() {
+///     let current_temp = what_temperature_is_it();
+///     println!("current temp in fahrenheit is {}", current_temp.degrees);
+///     let in_celsius: Celsius = convert_to_celsius(current_temp);
+///     println!("current temp in celsius is {}", in_celsius.degrees);
+/// }
+/// ```
+///
+/// ### Imports: Interfaces
+///
+/// Interfaces are placed into submodules where the `generate!` macro is
+/// invoked and are namespaced based on their identifiers.
+///
+/// ```
+/// use wit_bindgen::generate;
+///
+/// generate!({
+///     inline: r"
+///         package my:test;
+///
+///         interface logging {
+///             enum level {
+///                 debug,
+///                 info,
+///                 error,
+///             }
+///             log: func(level: level, msg: string);
+///         }
+///
+///         world the-world {
+///             import logging;
+///             import global-logger: interface {
+///                 use logging.{level};
+///
+///                 set-current-level: func(level: level);
+///                 get-current-level: func() -> level;
+///             }
+///         }
+///     ",
+/// });
+///
+/// // `my` and `test` are from `package my:test;` and `logging` is for the
+/// // interfac name.
+/// use my::test::logging::Level;
+///
+/// fn test() {
+///     let current_level = global_logger::get_current_level();
+///     println!("current logging level is {current_level:?}");
+///     global_logger::set_current_level(Level::Error);
+///
+///     my::test::logging::log(Level::Info, "Hello there!");
+/// }
+/// #
+/// # fn main() {}
+/// ```
+///
+/// ### Imports: Resources
+///
+/// Imported resources generate a type named after the name of the resource.
+/// This type is then used both for borrows as `&T` as well as via ownership as
+/// `T`. Resource methods are bound as methods on the type `T`.
+///
+/// ```
+/// use wit_bindgen::generate;
+///
+/// generate!({
+///     inline: r#"
+///         package my:test;
+///
+///         interface logger {
+///             enum level {
+///                 debug,
+///                 info,
+///                 error,
+///             }
+///
+///             resource logger {
+///                 constructor(destination: string);
+///                 log: func(level: level, msg: string);
+///             }
+///         }
+///
+///         // Note that while this world does not textually import the above
+///         // `logger` interface it is a transitive dependency via the `use`
+///         // statement so the "elaborated world" imports the logger.
+///         world the-world {
+///             use logger.{logger};
+///
+///             import get-global-logger: func() -> logger;
+///         }
+///     "#,
+/// });
+///
+/// use my::test::logger::Level;
+///
+/// fn test() {
+///     let logger = get_global_logger();
+///     logger.log(Level::Debug, "This is a global message");
+///
+///     let logger2 = Logger::new("/tmp/other.log");
+///     logger2.log(Level::Info, "This is not a global message");
+/// }
+/// #
+/// # fn main() {}
+/// ```
+///
+/// Note in the above example the lack of import of `Logger`. The `use`
+/// statement imported the `Logger` type, an alias of it, from the `logger`
+/// interface into `the-world`. This generated a Rust `type` alias so `Logger`
+/// was available at the top-level.
+///
+/// ## Exports: Basic Usage
+///
+/// A WIT world can not only `import` functionality but can additionally
+/// `export` functionality as well. An `export` represents a contract that the
+/// Rust program must implement to be able to work correctly. The `generate!`
+/// macro's goal is to take care of all the low-level and ABI details for you,
+/// so the end result is that `generate!`, for exports, will generate Rust
+/// `trait`s that you must implement.
+///
+/// A minimal example of this is:
+///
+/// ```
+/// use wit_bindgen::generate;
+///
+/// generate!({
+///     inline: r#"
+///         package my:test;
+///
+///         world my-world {
+///             export hello: func();
+///         }
+///     "#,
+/// });
+///
+/// struct MyComponent;
+///
+/// impl Guest for MyComponent {
+///     fn hello() {}
+/// }
+///
+/// export!(MyComponent);
+/// #
+/// # fn main() {}
+/// ```
+///
+/// Here the `Guest` trait was generated by the `generate!` macro and represents
+/// the functions at the top-level of `my-world`, in this case the function
+/// `hello`. A custom type, here called `MyComponent`, is created and the trait
+/// is implemented for that type.
+///
+/// Additionally a macro is generated by `generate!` (macros generating macros)
+/// called `export!`. The `export!` macro is given a component that implements
+/// the export `trait`s and then it will itself generate all necessary
+/// `#[no_mangle]` functions to implement the ABI required.
+///
+/// ## Exports: Multiple Interfaces
+///
+/// Each `interface` in WIT will generate a `trait` that must be implemented in
+/// addition to the top-level `trait` for the world. All traits are named
+/// `Guest` here and are namespaced appropriately in modules:
+///
+/// ```
+/// use wit_bindgen::generate;
+///
+/// generate!({
+///     inline: r#"
+///         package my:test;
+///
+///         interface a {
+///             func-in-a: func();
+///             second-func-in-a: func();
+///         }
+///
+///         world my-world {
+///             export a;
+///             export b: interface {
+///                 func-in-b: func();
+///             }
+///             export c: func();
+///         }
+///     "#,
+/// });
+///
+/// struct MyComponent;
+///
+/// impl Guest for MyComponent {
+///     fn c() {}
+/// }
+///
+/// impl exports::my::test::a::Guest for MyComponent {
+///     fn func_in_a() {}
+///     fn second_func_in_a() {}
+/// }
+///
+/// impl exports::b::Guest for MyComponent {
+///     fn func_in_b() {}
+/// }
+///
+/// export!(MyComponent);
+/// #
+/// # fn main() {}
+/// ```
+///
+/// Here note that there were three `Guest` traits generated for each of the
+/// three groups: two interfaces and one `world`. Also note that traits (and
+/// types) for exports are namespaced in an `exports` module.
+///
+/// Note that when the top-level `world` does not have any exported functions,
+/// or if an interface does not have any functions, then no `trait` is
+/// generated:
+///
+/// ```
+/// use wit_bindgen::generate;
+///
+/// generate!({
+///     inline: r#"
+///         package my:test;
+///
+///         interface a {
+///             type my-type = u32;
+///         }
+///
+///         world my-world {
+///             export b: interface {
+///                 use a.{my-type};
+///
+///                 foo: func() -> my-type;
+///             }
+///         }
+///     "#,
+/// });
+///
+/// struct MyComponent;
+///
+/// impl exports::b::Guest for MyComponent {
+///     fn foo() -> u32 {
+///         42
+///     }
+/// }
+///
+/// export!(MyComponent);
+/// #
+/// # fn main() {}
+/// ```
+///
+/// ## Exports: Resources
+///
+/// Exporting a resource is significantly different than importing a resource.
+/// A component defining a resource can create new resources of that type at any
+/// time, for example. Additionally resources can be "dereferenced" into their
+/// underlying values within the component.
+///
+/// Owned resources have a custom type generated and borrowed resources are
+/// generated with a type of the same name suffixed with `Borrow<'_>`, such as
+/// `MyResource` and `MyResourceBorrow<'_>`.
+///
+/// Like `interface`s the methods and functions used with a `resource` are
+/// packaged up into a `trait`.
+///
+/// Specifying a custom resource type is done with an associated type on the
+/// corresponding trait for the resource's containing interface/world:
+///
+/// ```
+/// use wit_bindgen::generate;
+/// use std::cell::{RefCell, Cell};
+///
+/// generate!({
+///     inline: r#"
+///         package my:test;
+///
+///         interface logging {
+///             enum level {
+///                 debug,
+///                 info,
+///                 error,
+///             }
+///
+///             resource logger {
+///                 constructor(level: level);
+///                 log: func(level: level, msg: string);
+///                 level: func() -> level;
+///                 set-level: func(level: level);
+///             }
+///         }
+///
+///         world my-world {
+///             export logging;
+///         }
+///     "#,
+/// });
+///
+/// use exports::my::test::logging::{Guest, GuestLogger, Level};
+///
+/// struct MyComponent;
+///
+/// // Note that the `logging` interface has no methods of its own but a trait
+/// // is required to be implemented here to specify the type of `Logger`.
+/// impl Guest for MyComponent {
+///     type Logger = MyLogger;
+/// }
+///
+/// struct MyLogger {
+///     level: Cell<Level>,
+///     contents: RefCell<String>,
+/// }
+///
+/// impl GuestLogger for MyLogger {
+///     fn new(level: Level) -> MyLogger {
+///         MyLogger {
+///             level: Cell::new(level),
+///             contents: RefCell::new(String::new()),
+///         }
+///     }
+///
+///     fn log(&self, level: Level, msg: String) {
+///         if level as u32 <= self.level.get() as u32 {
+///             self.contents.borrow_mut().push_str(&msg);
+///             self.contents.borrow_mut().push_str("\n");
+///         }
+///     }
+///
+///     fn level(&self) -> Level {
+///         self.level.get()
+///     }
+///
+///     fn set_level(&self, level: Level) {
+///         self.level.set(level);
+///     }
+/// }
+///
+/// export!(MyComponent);
+/// #
+/// # fn main() {}
+/// ```
+///
+/// It's important to note that resources in Rust do not get `&mut self` as
+/// methods, but instead are required to be defined with `&self`. This requires
+/// the use of interior mutability such as `Cell` and `RefCell` above from the
+/// `std::cell` module.
+///
+/// ## Exports: The `export!` macro
+///
+/// Components are created by having exported WebAssembly functions with
+/// specific names, and these functions are not created when `generate!` is
+/// invoked. Instead these functions are created afterwards once you've defined
+/// your own type an implemented the various `trait`s for it. The `#[no_mangle]`
+/// functions that will become the component are created with the generated
+/// `export!` macro.
+///
+/// Each call to `generate!` will itself generate a macro called `export!`.
+/// The macro's first argument is the name of a type that implements the traits
+/// generated:
+///
+/// ```
+/// use wit_bindgen::generate;
+///
+/// generate!({
+///     inline: r#"
+///         package my:test;
+///
+///         world my-world {
+/// #           export hello: func();
+///             // ...
+///         }
+///     "#,
+/// });
+///
+/// struct MyComponent;
+///
+/// impl Guest for MyComponent {
+/// #   fn hello() {}
+///     // ...
+/// }
+///
+/// export!(MyComponent);
+/// #
+/// # fn main() {}
+/// ```
+///
+/// This argument is a Rust type which implements the `Guest` traits generated
+/// by `generate!`. Note that all `Guest` traits must be implemented for the
+/// type provided or an error will be generated.
+///
+/// This macro additionally accepts a second argument. The macro itself needs to
+/// be able to find the module where the `generate!` macro itself was originally
+/// invoked. Currently that can't be done automatically so a path to where
+/// `generate!` was provided can also be passed to the macro. By default, the
+/// argument is set to `self`:
+///
+/// ```
+/// use wit_bindgen::generate;
+///
+/// generate!({
+///     // ...
+/// #   inline: r#"
+/// #       package my:test;
+/// #
+/// #       world my-world {
+/// #           export hello: func();
+/// #           // ...
+/// #       }
+/// #   "#,
+/// });
+/// #
+/// # struct MyComponent;
+/// #
+/// # impl Guest for MyComponent {
+/// #   fn hello() {}
+/// #     // ...
+/// # }
+/// #
+/// export!(MyComponent with_types_in self);
+/// #
+/// # fn main() {}
+/// ```
+///
+/// This indicates that the current module, referred to with `self`, is the one
+/// which had the `generate!` macro expanded.
+///
+/// If, however, the `generate!` macro was run in a different module then that
+/// must be configured:
+///
+/// ```
+/// mod bindings {
+///     wit_bindgen::generate!({
+///         // ...
+/// #   inline: r#"
+/// #       package my:test;
+/// #
+/// #       world my-world {
+/// #           export hello: func();
+/// #           // ...
+/// #       }
+/// #   "#,
+///     });
+/// }
+/// #
+/// # struct MyComponent;
+/// #
+/// # impl bindings::Guest for MyComponent {
+/// #   fn hello() {}
+/// #     // ...
+/// # }
+/// #
+/// bindings::export!(MyComponent with_types_in bindings);
+/// #
+/// # fn main() {}
+/// ```
 ///
 /// ## Debugging output to `generate!`
 ///
@@ -254,6 +766,17 @@ use core::sync::atomic::{AtomicU32, Ordering::Relaxed};
 ///     // more allocations than necessary.
 ///     ownership: Owning,
 ///
+///     // Specifies an alternative name for the `export!` macro generated for
+///     // any exports this world has.
+///     //
+///     // Defaults to "export"
+///     export_macro_name: "export",
+///
+///     // Indicates whether the `export!` macro is `pub` or just `pub(crate)`.
+///     //
+///     // This defaults to `false`.
+///     pub_export_macro: false,
+///
 ///     // The second mode of ownership is "Borrowing". This mode then
 ///     // additionally has a boolean flag indicating whether duplicate types
 ///     // should be generated if necessary.
@@ -273,6 +796,12 @@ use core::sync::atomic::{AtomicU32, Ordering::Relaxed};
 ///     // `wit-bindgen` repository to help improve the default "Owning" use
 ///     // case above if possible.
 ///     ownership: Borrowing { duplicate_if_necessary: false },
+///
+///     // The generated `export!` macro, if any, will by default look for
+///     // generated types adjacent to where the `export!` macro is invoked
+///     // through the `self` module. This option can be used to change the
+///     // defaults to look somewhere else instead.
+///     default_bindings_module: "path::to::bindings",
 ///
 ///     // This will suffix the custom section containing component type
 ///     // information with the specified string. This is not required by
@@ -301,6 +830,10 @@ use core::sync::atomic::{AtomicU32, Ordering::Relaxed};
 ///     // for generated types. This is a niche option that is only here to
 ///     // support the standard library itself depending on this crate one day.
 ///     std_feature,
+///
+///     // Force a workaround to be emitted for pre-Rust-1.69.0 modules to
+///     // ensure that libc ctors run only once.
+///     run_ctors_once_workaround: true,
 /// });
 /// ```
 ///
@@ -316,47 +849,13 @@ pub use bitflags;
 #[cfg(feature = "realloc")]
 mod cabi_realloc;
 
+mod pre_wit_bindgen_0_20_0;
+
+#[cfg(docsrs)]
+pub mod examples;
+
 #[doc(hidden)]
 pub mod rt {
-    use crate::alloc::string::String;
-    use crate::alloc::vec::Vec;
-
-    pub use crate::{Resource, RustResource, WasmResource};
-
-    /// Provide a hook for generated export functions to run static
-    /// constructors at most once. wit-bindgen-rust generates a call to this
-    /// function at the start of all component export functions. Importantly,
-    /// it is not called as part of `cabi_realloc`, which is a *core* export
-    /// func, but may not execute ctors, because the environment ctor in
-    /// wasi-libc (before rust 1.69.0) calls an import func, which is not
-    /// permitted by the Component Model when inside realloc.
-    ///
-    /// We intend to remove this once rust 1.69.0 stabilizes.
-    #[cfg(target_arch = "wasm32")]
-    pub fn run_ctors_once() {
-        static mut RUN: bool = false;
-        unsafe {
-            if !RUN {
-                // This function is synthesized by `wasm-ld` to run all static
-                // constructors. wasm-ld will either provide an implementation
-                // of this symbol, or synthesize a wrapper around each
-                // exported function to (unconditionally) run ctors. By using
-                // this function, the linked module is opting into "manually"
-                // running ctors.
-                extern "C" {
-                    fn __wasm_call_ctors();
-                }
-                __wasm_call_ctors();
-                RUN = true;
-            }
-        }
-    }
-
-    use super::alloc::alloc::Layout;
-
-    // Re-export things from liballoc for convenient use.
-    pub use super::alloc::{alloc, boxed, string, vec};
-
     /// This function is called from generated bindings and will be deleted by
     /// the linker. The purpose of this function is to force a reference to the
     /// symbol `cabi_realloc` to make its way through to the final linker
@@ -377,17 +876,20 @@ pub mod rt {
                 ) -> *mut u8;
             }
             // Force the `cabi_realloc` symbol to be referenced from here. This
-            // function isn't ever actually used at runtime but the symbol needs
-            // to be used here to force it to get referenced all the way through
-            // to the linker. By the time we get to the linker this symbol will
-            // be discarded due to it never actually being used by
-            // `cabi_realloc` will have already been referenced at which point
-            // its export name annotation will ensure it's exported regardless.
+            // is done with a `#[used]` Rust `static` to ensure that this
+            // reference makes it all the way to the linker before it's
+            // considered for garbage collection. When the linker sees it it'll
+            // remove this `static` here (due to it not actually being needed)
+            // but the linker will have at that point seen the `cabi_realloc`
+            // symbol and it should get exported.
             #[cfg(feature = "realloc")]
-            unsafe {
-                cabi_realloc(core::ptr::null_mut(), 0, 1, 1);
-            }
-            unreachable!();
+            #[used]
+            static _NAME_DOES_NOT_MATTER: unsafe extern "C" fn(
+                *mut u8,
+                usize,
+                usize,
+                usize,
+            ) -> *mut u8 = cabi_realloc;
         }
     }
 
@@ -402,6 +904,8 @@ pub mod rt {
         align: usize,
         new_len: usize,
     ) -> *mut u8 {
+        use alloc::Layout;
+
         let layout;
         let ptr = if old_len == 0 {
             if new_len == 0 {
@@ -430,248 +934,5 @@ pub mod rt {
         return ptr;
     }
 
-    pub unsafe fn dealloc(ptr: i32, size: usize, align: usize) {
-        if size == 0 {
-            return;
-        }
-        let layout = Layout::from_size_align_unchecked(size, align);
-        alloc::dealloc(ptr as *mut u8, layout);
-    }
-
-    macro_rules! as_traits {
-        ($(($trait_:ident $func:ident $ty:ident <=> $($tys:ident)*))*) => ($(
-            pub fn $func<T: $trait_>(t: T) -> $ty {
-                t.$func()
-            }
-
-            pub trait $trait_ {
-                fn $func(self) -> $ty;
-            }
-
-            impl<'a, T: Copy + $trait_> $trait_ for &'a T {
-                fn $func(self) -> $ty{
-                    (*self).$func()
-                }
-            }
-
-            $(
-                impl $trait_ for $tys {
-                    #[inline]
-                    fn $func(self) -> $ty {
-                        self as $ty
-                    }
-                }
-            )*
-
-        )*)
-    }
-
-    as_traits! {
-        (AsI64 as_i64 i64 <=> i64 u64)
-        (AsI32 as_i32 i32 <=> i32 u32 i16 u16 i8 u8 char usize)
-        (AsF32 as_f32 f32 <=> f32)
-        (AsF64 as_f64 f64 <=> f64)
-    }
-
-    pub unsafe fn string_lift(bytes: Vec<u8>) -> String {
-        if cfg!(debug_assertions) {
-            String::from_utf8(bytes).unwrap()
-        } else {
-            String::from_utf8_unchecked(bytes)
-        }
-    }
-
-    pub unsafe fn invalid_enum_discriminant<T>() -> T {
-        if cfg!(debug_assertions) {
-            panic!("invalid enum discriminant")
-        } else {
-            core::hint::unreachable_unchecked()
-        }
-    }
-
-    pub unsafe fn char_lift(val: u32) -> char {
-        if cfg!(debug_assertions) {
-            core::char::from_u32(val).unwrap()
-        } else {
-            core::char::from_u32_unchecked(val)
-        }
-    }
-
-    pub unsafe fn bool_lift(val: u8) -> bool {
-        if cfg!(debug_assertions) {
-            match val {
-                0 => false,
-                1 => true,
-                _ => panic!("invalid bool discriminant"),
-            }
-        } else {
-            core::mem::transmute::<u8, bool>(val)
-        }
-    }
-}
-
-type RawRep<T> = Option<T>;
-
-/// A type which represents a component model resource, either imported or
-/// exported into this component.
-///
-/// This is a low-level wrapper which handles the lifetime of the resource
-/// (namely this has a destructor). The `T` provided defines the component model
-/// intrinsics that this wrapper uses.
-///
-/// One of the chief purposes of this type is to provide `Deref` implementations
-/// to access the underlying data when it is owned.
-///
-/// This type is primarily used in generated code for exported and imported
-/// resources.
-#[repr(transparent)]
-pub struct Resource<T: WasmResource> {
-    // NB: This would ideally be `u32` but it is not. The fact that this has
-    // interior mutability is not exposed in the API of this type except for the
-    // `take_handle` method which is supposed to in theory be private.
-    //
-    // This represents, almost all the time, a valid handle value. When it's
-    // invalid it's stored as `u32::MAX`.
-    handle: AtomicU32,
-    _marker: marker::PhantomData<Box<T>>,
-}
-
-/// A trait which all wasm resources implement, namely providing the ability to
-/// drop a resource.
-///
-/// This generally is implemented by generated code, not user-facing code.
-pub unsafe trait WasmResource {
-    /// Invokes the `[resource-drop]...` intrinsic.
-    unsafe fn drop(handle: u32);
-}
-
-/// A trait which extends [`WasmResource`] used for Rust-defined resources, or
-/// those exported from this component.
-///
-/// This generally is implemented by generated code, not user-facing code.
-pub unsafe trait RustResource: WasmResource {
-    /// Invokes the `[resource-new]...` intrinsic.
-    unsafe fn new(rep: usize) -> u32;
-    /// Invokes the `[resource-rep]...` intrinsic.
-    unsafe fn rep(handle: u32) -> usize;
-}
-
-impl<T: WasmResource> Resource<T> {
-    #[doc(hidden)]
-    pub unsafe fn from_handle(handle: u32) -> Self {
-        debug_assert!(handle != u32::MAX);
-        Self {
-            handle: AtomicU32::new(handle),
-            _marker: marker::PhantomData,
-        }
-    }
-
-    /// Takes ownership of the handle owned by `resource`.
-    ///
-    /// Note that this ideally would be `into_handle` taking `Resource<T>` by
-    /// ownership. The code generator does not enable that in all situations,
-    /// unfortunately, so this is provided instead.
-    ///
-    /// Also note that `take_handle` is in theory only ever called on values
-    /// owned by a generated function. For example a generated function might
-    /// take `Resource<T>` as an argument but then call `take_handle` on a
-    /// reference to that argument. In that sense the dynamic nature of
-    /// `take_handle` should only be exposed internally to generated code, not
-    /// to user code.
-    #[doc(hidden)]
-    pub fn take_handle(resource: &Resource<T>) -> u32 {
-        resource.handle.swap(u32::MAX, Relaxed)
-    }
-
-    #[doc(hidden)]
-    pub fn handle(resource: &Resource<T>) -> u32 {
-        resource.handle.load(Relaxed)
-    }
-
-    /// Creates a new Rust-defined resource from the underlying representation
-    /// `T`.
-    ///
-    /// This will move `T` onto the heap to create a single pointer to represent
-    /// it which is then wrapped up in a component model resource.
-    pub fn new(val: T) -> Resource<T>
-    where
-        T: RustResource,
-    {
-        let rep = Box::into_raw(Box::new(Some(val))) as usize;
-        unsafe {
-            let handle = T::new(rep);
-            Resource::from_handle(handle)
-        }
-    }
-
-    #[doc(hidden)]
-    pub unsafe fn dtor(rep: usize)
-    where
-        T: RustResource,
-    {
-        let _ = Box::from_raw(rep as *mut RawRep<T>);
-    }
-
-    /// Takes back ownership of the object, dropping the resource handle.
-    pub fn into_inner(resource: Self) -> T
-    where
-        T: RustResource,
-    {
-        unsafe {
-            let rep = T::rep(resource.handle.load(Relaxed));
-            RawRep::take(&mut *(rep as *mut RawRep<T>)).unwrap()
-        }
-    }
-
-    #[doc(hidden)]
-    pub unsafe fn lift_borrow<'a>(rep: usize) -> &'a T
-    where
-        T: RustResource,
-    {
-        RawRep::as_ref(&*(rep as *const RawRep<T>)).unwrap()
-    }
-}
-
-impl<T: RustResource> Deref for Resource<T> {
-    type Target = T;
-
-    fn deref(&self) -> &T {
-        unsafe {
-            let rep = T::rep(self.handle.load(Relaxed));
-            RawRep::as_ref(&*(rep as *const RawRep<T>)).unwrap()
-        }
-    }
-}
-
-impl<T: RustResource> DerefMut for Resource<T> {
-    fn deref_mut(&mut self) -> &mut T {
-        unsafe {
-            let rep = T::rep(self.handle.load(Relaxed));
-            RawRep::as_mut(&mut *(rep as *mut RawRep<T>)).unwrap()
-        }
-    }
-}
-
-impl<T: WasmResource> fmt::Debug for Resource<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Resource")
-            .field("handle", &self.handle)
-            .finish()
-    }
-}
-
-impl<T: WasmResource> Drop for Resource<T> {
-    fn drop(&mut self) {
-        unsafe {
-            match self.handle.load(Relaxed) {
-                // If this handle was "taken" then don't do anything in the
-                // destructor.
-                u32::MAX => {}
-
-                // ... but otherwise do actually destroy it with the imported
-                // component model intrinsic as defined through `T`.
-                other => T::drop(other),
-            }
-        }
-    }
+    pub use crate::pre_wit_bindgen_0_20_0::*;
 }

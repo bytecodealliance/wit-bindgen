@@ -137,6 +137,11 @@ jobs:
     - run: cargo build --no-default-features --features csharp
     - run: cargo build --no-default-features --features markdown
 
+    # Verity that documentation can be generated for the rust bindings crate.
+    - run: cargo doc -p wit-bindgen --no-deps
+      env:
+        RUSTDOCFLAGS: --cfg=docsrs
+
   rustfmt:
     name: Rustfmt
     runs-on: ubuntu-latest

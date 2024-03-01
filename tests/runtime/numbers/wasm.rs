@@ -1,9 +1,5 @@
 wit_bindgen::generate!({
     path: "../../tests/runtime/numbers",
-    exports: {
-        world: Component,
-        "test:numbers/test": Component
-    }
 });
 
 use std::sync::atomic::{AtomicU32, Ordering::SeqCst};
@@ -11,6 +7,8 @@ use std::sync::atomic::{AtomicU32, Ordering::SeqCst};
 static SCALAR: AtomicU32 = AtomicU32::new(0);
 
 struct Component;
+
+export!(Component);
 
 impl Guest for Component {
     fn test_imports() {

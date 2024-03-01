@@ -1,14 +1,12 @@
 wit_bindgen::generate!({
     path: "../../tests/runtime/flavorful",
-    exports: {
-        world: Component,
-        "test:flavorful/test": Component
-    }
 });
 
 use exports::test::flavorful::test::*;
 
 struct Component;
+
+export!(Component);
 
 impl Guest for Component {
     fn test_imports() {

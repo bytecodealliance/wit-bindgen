@@ -1294,6 +1294,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     WasmType::I64 => "0L",
                     WasmType::F32 => "0.0F",
                     WasmType::F64 => "0.0D",
+                    WasmType::Pointer => "0",
+                    WasmType::PointerOrI64 => "0L",
+                    WasmType::Length => "0",
                 }
                 .to_owned()
             })),
@@ -1326,19 +1329,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             | Instruction::Float32FromF32
             | Instruction::Float64FromF64 => results.push(operands[0].clone()),
 
-            Instruction::Bitcasts { casts } => {
-                results.extend(casts.iter().zip(operands).map(|(cast, op)| match cast {
-                    Bitcast::I32ToF32 => format!("Float.intBitsToFloat({op})"),
-                    Bitcast::I64ToF32 => format!("Float.intBitsToFloat((int) ({op}))"),
-                    Bitcast::F32ToI32 => format!("Float.floatToIntBits({op})"),
-                    Bitcast::F32ToI64 => format!("(long) Float.floatToIntBits({op})"),
-                    Bitcast::I64ToF64 => format!("Double.longBitsToDouble({op})"),
-                    Bitcast::F64ToI64 => format!("Double.doubleToLongBits({op})"),
-                    Bitcast::I32ToI64 => format!("(long) ({op})"),
-                    Bitcast::I64ToI32 => format!("(int) ({op})"),
-                    Bitcast::None => op.to_owned(),
-                }))
-            }
+            Instruction::Bitcasts { casts } => results.extend(
+                casts
+                    .iter()
+                    .zip(operands)
+                    .map(|(cast, op)| perform_cast(op, cast)),
+            ),
 
             Instruction::I32FromBool => {
                 results.push(format!("({} ? 1 : 0)", operands[0]));
@@ -1863,7 +1859,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
             }
 
-            Instruction::I32Load { offset } => results.push(format!(
+            Instruction::I32Load { offset }
+            | Instruction::PointerLoad { offset }
+            | Instruction::LengthLoad { offset } => results.push(format!(
                 "Address.fromInt(({}) + {offset}).getInt()",
                 operands[0]
             )),
@@ -1903,7 +1901,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 operands[0]
             )),
 
-            Instruction::I32Store { offset } => uwriteln!(
+            Instruction::I32Store { offset }
+            | Instruction::PointerStore { offset }
+            | Instruction::LengthStore { offset } => uwriteln!(
                 self.src,
                 "Address.fromInt(({}) + {offset}).putInt({});",
                 operands[1],
@@ -2088,6 +2088,43 @@ impl Bindgen for FunctionBindgen<'_, '_> {
     }
 }
 
+fn perform_cast(op: &str, cast: &Bitcast) -> String {
+    match cast {
+        Bitcast::I32ToF32 => {
+            format!("Float.intBitsToFloat({op})")
+        }
+        Bitcast::I64ToF32 => format!("Float.intBitsToFloat((int) ({op}))"),
+        Bitcast::F32ToI32 => {
+            format!("Float.floatToIntBits({op})")
+        }
+        Bitcast::F32ToI64 => format!("(long) Float.floatToIntBits({op})"),
+        Bitcast::I64ToF64 => {
+            format!("Double.longBitsToDouble({op})")
+        }
+        Bitcast::F64ToI64 => {
+            format!("Double.doubleToLongBits({op})")
+        }
+        Bitcast::I32ToI64 => format!("(long) ({op})"),
+        Bitcast::I64ToI32 => format!("(int) ({op})"),
+        Bitcast::I64ToP64 => format!("{op}"),
+        Bitcast::P64ToI64 => format!("{op}"),
+        Bitcast::LToI64 | Bitcast::PToP64 => format!("(long) ({op})"),
+        Bitcast::I64ToL | Bitcast::P64ToP => format!("(int) ({op})"),
+        Bitcast::I32ToP
+        | Bitcast::PToI32
+        | Bitcast::I32ToL
+        | Bitcast::LToI32
+        | Bitcast::LToP
+        | Bitcast::PToL
+        | Bitcast::None => op.to_owned(),
+
+        Bitcast::Sequence(sequence) => {
+            let [first, second] = &**sequence;
+            perform_cast(&perform_cast(op, first), second)
+        }
+    }
+}
+
 fn int_type(int: Int) -> &'static str {
     match int {
         Int::U8 => "byte",
@@ -2103,6 +2140,9 @@ fn wasm_type(ty: WasmType) -> &'static str {
         WasmType::I64 => "long",
         WasmType::F32 => "float",
         WasmType::F64 => "double",
+        WasmType::Pointer => "int",
+        WasmType::PointerOrI64 => "long",
+        WasmType::Length => "int",
     }
 }
 
