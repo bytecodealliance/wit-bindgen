@@ -113,6 +113,11 @@ def_instruction! {
         /// it, using the specified constant offset.
         F64Load { offset: i32 } : [1] => [1],
 
+        /// Like `I32Load` or `I64Load`, but for loading pointer values.
+        PointerLoad { offset: i32 } : [1] => [1],
+        /// Like `I32Load` or `I64Load`, but for loading array length values.
+        LengthLoad { offset: i32 } : [1] => [1],
+
         /// Pops an `i32` address from the stack and then an `i32` value.
         /// Stores the value in little-endian at the pointer specified plus the
         /// constant `offset`.
@@ -137,6 +142,11 @@ def_instruction! {
         /// Stores the value in little-endian at the pointer specified plus the
         /// constant `offset`.
         F64Store { offset: i32 } : [2] => [0],
+
+        /// Like `I32Store` or `I64Store`, but for storing pointer values.
+        PointerStore { offset: i32 } : [2] => [0],
+        /// Like `I32Store` or `I64Store`, but for storing array length values.
+        LengthStore { offset: i32 } : [2] => [0],
 
         // Scalar lifting/lowering
 
@@ -525,6 +535,37 @@ pub enum Bitcast {
     I64ToF64,
     I64ToI32,
     I64ToF32,
+
+    // PointerOrI64 conversions. These preserve provenance when the source
+    // or destination is a pointer value.
+    //
+    // These are used when pointer values are being stored in
+    // (ToP64) and loaded out of (P64To) PointerOrI64 values, so they
+    // always have to preserve provenance when the value being loaded or
+    // stored is a pointer.
+    P64ToI64,
+    I64ToP64,
+    P64ToP,
+    PToP64,
+
+    // Pointer<->number conversions. These do not preserve provenance.
+    //
+    // These are used when integer or floating-point values are being stored in
+    // (I32ToP/etc.) and loaded out of (PToI32/etc.) pointer values, so they
+    // never have any provenance to preserve.
+    I32ToP,
+    PToI32,
+    PToL,
+    LToP,
+
+    // Number<->Number conversions.
+    I32ToL,
+    LToI32,
+    I64ToL,
+    LToI64,
+
+    // Multiple conversions in sequence.
+    Sequence(Box<[Bitcast; 2]>),
 
     None,
 }
@@ -1517,9 +1558,9 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         // and the length into the high address.
         self.lower(ty);
         self.stack.push(addr.clone());
-        self.emit(&Instruction::I32Store { offset: offset + 4 });
+        self.emit(&Instruction::LengthStore { offset: offset + 4 });
         self.stack.push(addr);
-        self.emit(&Instruction::I32Store { offset });
+        self.emit(&Instruction::PointerStore { offset });
     }
 
     fn write_fields_to_memory<'b>(
@@ -1689,9 +1730,9 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         // Read the pointer/len and then perform the standard lifting
         // proceses.
         self.stack.push(addr.clone());
-        self.emit(&Instruction::I32Load { offset });
+        self.emit(&Instruction::PointerLoad { offset });
         self.stack.push(addr);
-        self.emit(&Instruction::I32Load { offset: offset + 4 });
+        self.emit(&Instruction::LengthLoad { offset: offset + 4 });
         self.lift(ty);
     }
 
@@ -1742,9 +1783,9 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         match *ty {
             Type::String => {
                 self.stack.push(addr.clone());
-                self.emit(&Instruction::I32Load { offset });
+                self.emit(&Instruction::PointerLoad { offset });
                 self.stack.push(addr);
-                self.emit(&Instruction::I32Load { offset: offset + 4 });
+                self.emit(&Instruction::LengthLoad { offset: offset + 4 });
                 self.emit(&Instruction::GuestDeallocateString);
             }
 
@@ -1772,9 +1813,9 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     self.finish_block(0);
 
                     self.stack.push(addr.clone());
-                    self.emit(&Instruction::I32Load { offset });
+                    self.emit(&Instruction::PointerLoad { offset });
                     self.stack.push(addr);
-                    self.emit(&Instruction::I32Load { offset: offset + 4 });
+                    self.emit(&Instruction::LengthLoad { offset: offset + 4 });
                     self.emit(&Instruction::GuestDeallocateList { element });
                 }
 
@@ -1862,7 +1903,13 @@ fn cast(from: WasmType, to: WasmType) -> Bitcast {
     use WasmType::*;
 
     match (from, to) {
-        (I32, I32) | (I64, I64) | (F32, F32) | (F64, F64) => Bitcast::None,
+        (I32, I32)
+        | (I64, I64)
+        | (F32, F32)
+        | (F64, F64)
+        | (Pointer, Pointer)
+        | (PointerOrI64, PointerOrI64)
+        | (Length, Length) => Bitcast::None,
 
         (I32, I64) => Bitcast::I32ToI64,
         (F32, I32) => Bitcast::F32ToI32,
@@ -1875,7 +1922,36 @@ fn cast(from: WasmType, to: WasmType) -> Bitcast {
         (F32, I64) => Bitcast::F32ToI64,
         (I64, F32) => Bitcast::I64ToF32,
 
-        (F32, F64) | (F64, F32) | (F64, I32) | (I32, F64) => unreachable!(),
+        (I64, PointerOrI64) => Bitcast::I64ToP64,
+        (Pointer, PointerOrI64) => Bitcast::PToP64,
+        (_, PointerOrI64) => {
+            Bitcast::Sequence(Box::new([cast(from, I64), cast(I64, PointerOrI64)]))
+        }
+
+        (PointerOrI64, I64) => Bitcast::P64ToI64,
+        (PointerOrI64, Pointer) => Bitcast::P64ToP,
+        (PointerOrI64, _) => Bitcast::Sequence(Box::new([cast(PointerOrI64, I64), cast(I64, to)])),
+
+        (I32, Pointer) => Bitcast::I32ToP,
+        (Pointer, I32) => Bitcast::PToI32,
+        (I32, Length) => Bitcast::I32ToL,
+        (Length, I32) => Bitcast::LToI32,
+        (I64, Length) => Bitcast::I64ToL,
+        (Length, I64) => Bitcast::LToI64,
+        (Pointer, Length) => Bitcast::PToL,
+        (Length, Pointer) => Bitcast::LToP,
+
+        (F32, Pointer | Length) => Bitcast::Sequence(Box::new([cast(F32, I32), cast(I32, to)])),
+        (Pointer | Length, F32) => Bitcast::Sequence(Box::new([cast(from, I32), cast(I32, F32)])),
+
+        (F32, F64)
+        | (F64, F32)
+        | (F64, I32)
+        | (I32, F64)
+        | (Pointer | Length, I64 | F64)
+        | (I64 | F64, Pointer | Length) => {
+            unreachable!("Don't know how to bitcast from {:?} to {:?}", from, to);
+        }
     }
 }
 

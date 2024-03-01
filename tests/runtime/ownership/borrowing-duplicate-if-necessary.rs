@@ -1,8 +1,5 @@
 wit_bindgen::generate!({
     path: "../../tests/runtime/ownership",
-    exports: {
-        world: Exports
-    },
     ownership: Borrowing {
         duplicate_if_necessary: true
     }
@@ -15,6 +12,8 @@ impl PartialEq for thing_in_and_out::ThingResult {
 }
 
 struct Exports;
+
+export!(Exports);
 
 impl Guest for Exports {
     fn foo() {
@@ -39,6 +38,15 @@ impl Guest for Exports {
                 value: vec!["some value".to_owned(), "another value".to_owned()],
             },
             thing_in_and_out::baz(value)
+        );
+
+        let strings = vec!["foo", "bar", "baz"];
+        let resource = test::ownership::both_list_and_resource::TheResource::new(&strings);
+        test::ownership::both_list_and_resource::list_and_resource(
+            test::ownership::both_list_and_resource::Thing {
+                a: strings.iter().map(|s| s.to_string()).collect(),
+                b: resource,
+            },
         );
     }
 }

@@ -17,6 +17,14 @@ pub fn generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         .into()
 }
 
+fn anyhow_to_syn(span: Span, err: anyhow::Error) -> Error {
+    let mut msg = err.to_string();
+    for cause in err.chain().skip(1) {
+        msg.push_str(&format!("\n\nCaused by:\n  {cause}"));
+    }
+    Error::new(span, msg)
+}
+
 struct Config {
     opts: Opts,
     resolve: Resolve,
@@ -79,11 +87,6 @@ impl Parse for Config {
                     Opt::Skip(list) => opts.skip.extend(list.iter().map(|i| i.value())),
                     Opt::RuntimePath(path) => opts.runtime_path = Some(path.value()),
                     Opt::BitflagsPath(path) => opts.bitflags_path = Some(path.value()),
-                    Opt::Exports(exports) => opts.exports.extend(
-                        exports
-                            .into_iter()
-                            .map(|export| (export.key.into(), serialize(export.value))),
-                    ),
                     Opt::Stubs => {
                         opts.stubs = true;
                     }
@@ -95,6 +98,21 @@ impl Parse for Config {
                             .collect()
                     }
                     Opt::With(with) => opts.with.extend(with),
+                    Opt::TypeSectionSuffix(suffix) => {
+                        opts.type_section_suffix = Some(suffix.value());
+                    }
+                    Opt::RunCtorsOnceWorkaround(enable) => {
+                        opts.run_ctors_once_workaround = enable.value();
+                    }
+                    Opt::DefaultBindingsModule(enable) => {
+                        opts.default_bindings_module = Some(enable.value());
+                    }
+                    Opt::ExportMacroName(name) => {
+                        opts.export_macro_name = Some(name.value());
+                    }
+                    Opt::PubExportMacro(enable) => {
+                        opts.pub_export_macro = enable.value();
+                    }
                 }
             }
         } else {
@@ -104,10 +122,10 @@ impl Parse for Config {
             }
         }
         let (resolve, pkg, files) =
-            parse_source(&source).map_err(|err| Error::new(call_site, format!("{err:?}")))?;
+            parse_source(&source).map_err(|err| anyhow_to_syn(call_site, err))?;
         let world = resolve
             .select_world(pkg, world.as_deref())
-            .map_err(|e| Error::new(call_site, format!("{e:?}")))?;
+            .map_err(|e| anyhow_to_syn(call_site, e))?;
         Ok(Config {
             opts,
             resolve,
@@ -208,6 +226,11 @@ mod kw {
     syn::custom_keyword!(export_prefix);
     syn::custom_keyword!(additional_derives);
     syn::custom_keyword!(with);
+    syn::custom_keyword!(type_section_suffix);
+    syn::custom_keyword!(run_ctors_once_workaround);
+    syn::custom_keyword!(default_bindings_module);
+    syn::custom_keyword!(export_macro_name);
+    syn::custom_keyword!(pub_export_macro);
 }
 
 #[derive(Clone)]
@@ -237,21 +260,6 @@ impl From<ExportKey> for wit_bindgen_rust::ExportKey {
     }
 }
 
-#[derive(Clone)]
-struct Export {
-    key: ExportKey,
-    value: syn::Path,
-}
-
-impl Parse for Export {
-    fn parse(input: ParseStream<'_>) -> Result<Self> {
-        let key = input.parse()?;
-        input.parse::<Token![:]>()?;
-        let value = input.parse()?;
-        Ok(Self { key, value })
-    }
-}
-
 enum Opt {
     World(syn::LitStr),
     Path(syn::LitStr),
@@ -262,12 +270,16 @@ enum Opt {
     Ownership(Ownership),
     RuntimePath(syn::LitStr),
     BitflagsPath(syn::LitStr),
-    Exports(Vec<Export>),
     Stubs,
     ExportPrefix(syn::LitStr),
     // Parse as paths so we can take the concrete types/macro names rather than raw strings
     AdditionalDerives(Vec<syn::Path>),
     With(HashMap<String, String>),
+    TypeSectionSuffix(syn::LitStr),
+    RunCtorsOnceWorkaround(syn::LitBool),
+    DefaultBindingsModule(syn::LitStr),
+    ExportMacroName(syn::LitStr),
+    PubExportMacro(syn::LitBool),
 }
 
 impl Parse for Opt {
@@ -329,13 +341,6 @@ impl Parse for Opt {
                     ));
                 }
             }))
-        } else if l.peek(kw::exports) {
-            input.parse::<kw::exports>()?;
-            input.parse::<Token![:]>()?;
-            let contents;
-            syn::braced!(contents in input);
-            let list = Punctuated::<_, Token![,]>::parse_terminated(&contents)?;
-            Ok(Opt::Exports(list.iter().cloned().collect()))
         } else if l.peek(kw::skip) {
             input.parse::<kw::skip>()?;
             input.parse::<Token![:]>()?;
@@ -373,29 +378,29 @@ impl Parse for Opt {
             let fields: Punctuated<_, Token![,]> =
                 contents.parse_terminated(with_field_parse, Token![,])?;
             Ok(Opt::With(HashMap::from_iter(fields.into_iter())))
+        } else if l.peek(kw::type_section_suffix) {
+            input.parse::<kw::type_section_suffix>()?;
+            input.parse::<Token![:]>()?;
+            Ok(Opt::TypeSectionSuffix(input.parse()?))
+        } else if l.peek(kw::run_ctors_once_workaround) {
+            input.parse::<kw::run_ctors_once_workaround>()?;
+            input.parse::<Token![:]>()?;
+            Ok(Opt::RunCtorsOnceWorkaround(input.parse()?))
+        } else if l.peek(kw::default_bindings_module) {
+            input.parse::<kw::default_bindings_module>()?;
+            input.parse::<Token![:]>()?;
+            Ok(Opt::DefaultBindingsModule(input.parse()?))
+        } else if l.peek(kw::export_macro_name) {
+            input.parse::<kw::export_macro_name>()?;
+            input.parse::<Token![:]>()?;
+            Ok(Opt::ExportMacroName(input.parse()?))
+        } else if l.peek(kw::pub_export_macro) {
+            input.parse::<kw::pub_export_macro>()?;
+            input.parse::<Token![:]>()?;
+            Ok(Opt::PubExportMacro(input.parse()?))
         } else {
             Err(l.error())
         }
-    }
-}
-
-fn serialize(path: syn::Path) -> String {
-    let serialized = path
-        .segments
-        .iter()
-        .map(|s| {
-            if s.arguments.is_none() {
-                s.ident.to_string()
-            } else {
-                todo!("support path arguments")
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("::");
-    if path.leading_colon.is_some() {
-        format!("::{serialized}")
-    } else {
-        serialized
     }
 }
 

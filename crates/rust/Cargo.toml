@@ -1,7 +1,7 @@
 [package]
 name = "wit-bindgen-rust"
 authors = ["Alex Crichton <alex@alexcrichton.com>"]
-version = "0.18.0"
+version.workspace = true
 edition.workspace = true
 repository = 'https://github.com/bytecodealliance/wit-bindgen'
 license = "Apache-2.0 WITH LLVM-exception"
@@ -22,6 +22,7 @@ wit-component = { workspace = true }
 wasm-metadata = { workspace = true }
 heck = { workspace = true }
 clap = { workspace = true, optional = true }
+indexmap = { workspace = true }
 
 [dev-dependencies]
 wit-bindgen = { path = '../guest-rust' }

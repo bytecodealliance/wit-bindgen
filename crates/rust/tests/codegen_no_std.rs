@@ -4,6 +4,7 @@
 
 #![no_std]
 #![allow(unused_macros)]
+#![allow(dead_code, unused_variables)]
 
 // This test expects `"std"` to be absent.
 #[cfg(feature = "std")]
@@ -97,9 +98,6 @@ mod skip {
         ",
         skip: ["foo"],
         std_feature,
-        exports: {
-            "exports": Component
-        }
     });
 
     struct Component;
@@ -107,4 +105,6 @@ mod skip {
     impl exports::exports::Guest for Component {
         fn bar() {}
     }
+
+    export!(Component);
 }

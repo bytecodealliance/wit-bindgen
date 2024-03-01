@@ -2,19 +2,13 @@ use std::cell::RefCell;
 
 wit_bindgen::generate!({
     path: "../../tests/runtime/resources",
-    exports: {
-        world: Test,
-        "exports": Test,
-        "exports/x": ComponentX,
-        "exports/z": ComponentZ,
-        "exports/kebab-case": ComponentKebabCase,
-    }
 });
 
-use exports::exports::OwnX;
-use exports::exports::OwnKebabCase;
+use exports::exports::{KebabCase, ZBorrow, X, Z};
 
 pub struct Test {}
+
+export!(Test);
 
 pub struct ComponentX {
     val: RefCell<i32>,
@@ -29,8 +23,14 @@ pub struct ComponentKebabCase {
 }
 
 impl exports::exports::Guest for Test {
-    fn add(a: &ComponentZ, b: &ComponentZ) -> wit_bindgen::Resource<ComponentZ> {
-        wit_bindgen::Resource::new(ComponentZ { val: a.val + b.val })
+    type X = ComponentX;
+    type Z = ComponentZ;
+    type KebabCase = ComponentKebabCase;
+
+    fn add(a: ZBorrow<'_>, b: ZBorrow<'_>) -> Z {
+        let a = a.get::<ComponentZ>();
+        let b = b.get::<ComponentZ>();
+        Z::new(ComponentZ { val: a.val + b.val })
     }
     fn test_imports() -> Result<(), String> {
         use imports::*;
@@ -70,8 +70,11 @@ impl exports::exports::GuestX for ComponentX {
     fn set_a(&self, a: i32) {
         *self.val.borrow_mut() = a;
     }
-    fn add(x: OwnX, a: i32) -> OwnX {
-        x.set_a(x.get_a() + a);
+    fn add(x: X, a: i32) -> X {
+        {
+            let x = x.get::<ComponentX>();
+            x.set_a(x.get_a() + a);
+        }
         x
     }
 }
@@ -93,7 +96,7 @@ impl exports::exports::GuestKebabCase for ComponentKebabCase {
         self.val
     }
 
-    fn take_owned(k: OwnKebabCase) -> u32 {
-        k.get_a()
+    fn take_owned(k: KebabCase) -> u32 {
+        k.get::<ComponentKebabCase>().get_a()
     }
 }

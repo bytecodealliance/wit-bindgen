@@ -1702,11 +1702,15 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     WasmType::I64 => "0L",
                     WasmType::F32 => "0.0F",
                     WasmType::F64 => "0.0D",
+                    WasmType::Pointer => "0",
+                    WasmType::PointerOrI64 => "0L",
+                    WasmType::Length => "0",
                 }
                 .to_owned()
             })),
-
-            Instruction::I32Load { offset } => results.push(format!("BitConverter.ToInt32(new Span<byte>((void*)({} + {offset}), 4))",operands[0])),
+            Instruction::I32Load { offset } 
+            | Instruction::PointerLoad { offset }
+            | Instruction::LengthLoad { offset } => results.push(format!("BitConverter.ToInt32(new Span<byte>((void*)({} + {offset}), 4))",operands[0])),
             Instruction::I32Load8U { offset } => results.push(format!("new Span<byte>((void*)({} + {offset}), 1)[0]",operands[0])),
             Instruction::I32Load8S { offset } => results.push(format!("(sbyte)new Span<byte>((void*)({} + {offset}), 1)[0]",operands[0])),
             Instruction::I32Load16U { offset } => results.push(format!("BitConverter.ToUInt16(new Span<byte>((void*)({} + {offset}), 2))",operands[0])),
@@ -1714,8 +1718,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::I64Load { offset } => results.push(format!("BitConverter.ToInt64(new Span<byte>((void*)({} + {offset}), 8))",operands[0])),
             Instruction::F32Load { offset } => results.push(format!("BitConverter.ToSingle(new Span<byte>((void*)({} + {offset}), 4))",operands[0])),
             Instruction::F64Load { offset } => results.push(format!("BitConverter.ToDouble(new Span<byte>((void*)({} + {offset}), 8))",operands[0])),
-
-            Instruction::I32Store { offset } => uwriteln!(self.src, "BitConverter.TryWriteBytes(new Span<byte>((void*)({} + {offset}), 4), unchecked((int){}));", operands[1], operands[0]),
+            Instruction::I32Store { offset }
+            | Instruction::PointerStore { offset }
+            | Instruction::LengthStore { offset } => uwriteln!(self.src, "BitConverter.TryWriteBytes(new Span<byte>((void*)({} + {offset}), 4), unchecked((int){}));", operands[1], operands[0]),
             Instruction::I32Store8 { offset } => uwriteln!(self.src, "*(byte*)({} + {offset}) = (byte){};", operands[1], operands[0]),
             Instruction::I32Store16 { offset } => uwriteln!(self.src, "BitConverter.TryWriteBytes(new Span<byte>((void*)({} + {offset}), 2), (short){});", operands[1], operands[0]),
             Instruction::I64Store { offset } => uwriteln!(self.src, "BitConverter.TryWriteBytes(new Span<byte>((void*)({} + {offset}), 8), unchecked((long){}));", operands[1], operands[0]),
@@ -1757,6 +1762,19 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     Bitcast::I32ToI64 => format!("(long) ({op})"),
                     Bitcast::I64ToI32 => format!("(int) ({op})"),
                     Bitcast::None => op.to_owned(),
+                    Bitcast::P64ToI64 => todo!(),
+                    Bitcast::I64ToP64 => todo!(),
+                    Bitcast::P64ToP => todo!(),
+                    Bitcast::PToP64 => todo!(),
+                    Bitcast::I32ToP => todo!(),
+                    Bitcast::PToI32 => todo!(),
+                    Bitcast::PToL => todo!(),
+                    Bitcast::LToP => todo!(),
+                    Bitcast::I32ToL => todo!(),
+                    Bitcast::LToI32 => todo!(),
+                    Bitcast::I64ToL => todo!(),
+                    Bitcast::LToI64 => todo!(),
+                    Bitcast::Sequence(_) => todo!(),
                 }))
             }
 
@@ -2383,6 +2401,9 @@ fn wasm_type(ty: WasmType) -> &'static str {
         WasmType::I64 => "long",
         WasmType::F32 => "float",
         WasmType::F64 => "double",
+        WasmType::Pointer => "int",
+        WasmType::PointerOrI64 => "long",
+        WasmType::Length => "int",
     }
 }
 

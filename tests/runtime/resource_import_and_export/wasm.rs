@@ -2,16 +2,13 @@ use std::cell::RefCell;
 
 wit_bindgen::generate!({
     path: "../../tests/runtime/resource_import_and_export",
-    exports: {
-        world: Test,
-        "test:resource-import-and-export/test/thing": MyThing,
-    }
 });
 
-use exports::test::resource_import_and_export::test::GuestThing;
-use exports::test::resource_import_and_export::test::OwnThing;
+use exports::test::resource_import_and_export::test::{GuestThing, Thing as ExportThing};
 
 pub struct Test {}
+
+export!(Test);
 
 pub struct MyThing {
     thing: RefCell<Option<Thing>>,
@@ -21,6 +18,10 @@ impl Guest for Test {
     fn toplevel_export(input: Thing) -> Thing {
         toplevel_import(input)
     }
+}
+
+impl exports::test::resource_import_and_export::test::Guest for Test {
+    type Thing = MyThing;
 }
 
 impl GuestThing for MyThing {
@@ -42,11 +43,11 @@ impl GuestThing for MyThing {
         thing.bar(v + 3);
     }
 
-    fn baz(a: OwnThing, b: OwnThing) -> OwnThing {
-        let mut a = a.thing.borrow_mut();
-        let mut b = b.thing.borrow_mut();
+    fn baz(a: ExportThing, b: ExportThing) -> ExportThing {
+        let mut a = a.get::<MyThing>().thing.borrow_mut();
+        let mut b = b.get::<MyThing>().thing.borrow_mut();
         let result =
             Thing::baz(Option::take(&mut a).unwrap(), Option::take(&mut b).unwrap()).foo() + 4;
-        OwnThing::new(MyThing::new(result))
+        ExportThing::new(MyThing::new(result))
     }
 }

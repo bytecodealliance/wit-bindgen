@@ -157,17 +157,7 @@ fn gen_world(
     let mut resolve = Resolve::default();
     let (pkg, _files) = resolve.push_path(&opts.wit)?;
     let world = resolve.select_world(pkg, opts.world.as_deref())?;
-    if let Err(e) = generator.generate(&resolve, world, files) {
-        if e.to_string().starts_with("no `exports` map provided") {
-            bail!(
-                "{e:?}\n\n\
-                help: Specify export implementations using the `--exports` option.\n    \
-                For example: `--exports world=MyWorld,ns:pkg/iface=MyIface`\n    \
-                Alternatively, specify `--stubs` to generate stub implementations."
-            );
-        }
-        bail!("{e:?}");
-    }
+    generator.generate(&resolve, world, files)?;
 
     Ok(())
 }

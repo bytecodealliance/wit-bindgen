@@ -1,14 +1,23 @@
 use anyhow::Result;
+use wasmtime::component::Resource;
 use wasmtime::Store;
 
-wasmtime::component::bindgen!(in "tests/runtime/ownership");
+wasmtime::component::bindgen!({
+    path: "tests/runtime/ownership",
+    with: {
+        "test:ownership/both-list-and-resource/the-resource": MyResource,
+    },
+});
 
 #[derive(Default)]
 pub struct MyImports {
     called_foo: bool,
     called_bar: bool,
     called_baz: bool,
+    last_resource_list: Option<Vec<String>>,
 }
+
+pub struct MyResource;
 
 impl lists::Host for MyImports {
     fn foo(&mut self, list: Vec<Vec<String>>) -> Result<Vec<Vec<String>>> {
@@ -28,6 +37,31 @@ impl thing_in_and_out::Host for MyImports {
     fn baz(&mut self, value: thing_in_and_out::Thing) -> Result<thing_in_and_out::Thing> {
         self.called_baz = true;
         Ok(value)
+    }
+}
+
+impl test::ownership::both_list_and_resource::Host for MyImports {
+    fn list_and_resource(
+        &mut self,
+        value: test::ownership::both_list_and_resource::Thing,
+    ) -> Result<()> {
+        assert_eq!(value.b.rep(), 100);
+        assert!(value.b.owned());
+        let expected = self.last_resource_list.as_ref().unwrap();
+        assert_eq!(value.a, *expected);
+        Ok(())
+    }
+}
+
+impl test::ownership::both_list_and_resource::HostTheResource for MyImports {
+    fn new(&mut self, list: Vec<String>) -> Result<Resource<MyResource>> {
+        assert!(self.last_resource_list.is_none());
+        self.last_resource_list = Some(list);
+        Ok(Resource::new_own(100))
+    }
+
+    fn drop(&mut self, _val: Resource<MyResource>) -> Result<()> {
+        unreachable!()
     }
 }
 
@@ -52,6 +86,7 @@ fn run_test(exports: Ownership, store: &mut Store<crate::Wasi<MyImports>>) -> Re
     assert!(store.data().0.called_foo);
     assert!(store.data().0.called_bar);
     assert!(store.data().0.called_baz);
+    assert!(store.data().0.last_resource_list.is_some());
 
     Ok(())
 }
