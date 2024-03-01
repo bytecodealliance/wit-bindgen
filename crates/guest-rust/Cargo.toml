@@ -12,10 +12,11 @@ Used when compiling Rust programs to the component model.
 """
 
 [dependencies]
-wit-bindgen-rust-macro = { path = "../rust-macro", optional = true, version = "0.20.0" }
+wit-bindgen-rust-macro = { path = "./macro", optional = true, version = "0.20.0" }
+wit-bindgen-rt = { path = "./rt", optional = true, version = "0.20.0" }
 bitflags = { workspace = true }
 
 [features]
 default = ["macros", "realloc"]
-macros = ["wit-bindgen-rust-macro"]
-realloc = []
+macros = ["dep:wit-bindgen-rust-macro"]
+realloc = ["dep:wit-bindgen-rt"]

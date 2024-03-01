@@ -2359,6 +2359,7 @@ name = "wit-bindgen"
 version = "0.20.0"
 dependencies = [
  "bitflags 2.4.2",
+ "wit-bindgen-rt",
  "wit-bindgen-rust-macro",
 ]
 
@@ -2446,6 +2447,10 @@ dependencies = [
  "wit-bindgen-core",
  "wit-component",
 ]
+
+[[package]]
+name = "wit-bindgen-rt"
+version = "0.20.0"
 
 [[package]]
 name = "wit-bindgen-rust"
