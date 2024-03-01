@@ -22,6 +22,7 @@ wit-component = { workspace = true }
 wasm-metadata = { workspace = true }
 heck = { workspace = true }
 clap = { workspace = true, optional = true }
+indexmap = { workspace = true }
 
 [dev-dependencies]
 wit-bindgen = { path = '../guest-rust' }

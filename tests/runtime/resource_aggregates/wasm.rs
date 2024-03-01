@@ -1,15 +1,33 @@
 wit_bindgen::generate!({
     path: "../../tests/runtime/resource_aggregates",
-    exports: {
-        world: Test,
-        "test:resource-aggregates/test": Test,
-        "test:resource-aggregates/test/thing": MyThing,
-    },
 });
 
+use core::ops::{Deref, DerefMut};
 use test::resource_aggregates::test::{foo as import_foo, Thing};
 
 pub struct Test {}
+
+export!(Test);
+
+impl Deref for exports::test::resource_aggregates::test::Thing {
+    type Target = MyThing;
+    fn deref(&self) -> &MyThing {
+        self.get()
+    }
+}
+
+impl DerefMut for exports::test::resource_aggregates::test::Thing {
+    fn deref_mut(&mut self) -> &mut MyThing {
+        self.get_mut()
+    }
+}
+
+impl Deref for exports::test::resource_aggregates::test::ThingBorrow<'_> {
+    type Target = MyThing;
+    fn deref(&self) -> &MyThing {
+        self.get()
+    }
+}
 
 #[derive(Debug)]
 pub struct MyThing {
@@ -17,6 +35,8 @@ pub struct MyThing {
 }
 
 impl exports::test::resource_aggregates::test::Guest for Test {
+    type Thing = MyThing;
+
     fn foo(
         mut r1: exports::test::resource_aggregates::test::R1,
         r2: exports::test::resource_aggregates::test::R2,
@@ -27,10 +47,10 @@ impl exports::test::resource_aggregates::test::Guest for Test {
         v2: exports::test::resource_aggregates::test::V2,
         l1: exports::test::resource_aggregates::test::L1,
         l2: exports::test::resource_aggregates::test::L2,
-        o1: Option<exports::test::resource_aggregates::test::OwnThing>,
-        o2: Option<&exports::test::resource_aggregates::test::Thing>,
-        result1: Result<exports::test::resource_aggregates::test::OwnThing, ()>,
-        result2: Result<&exports::test::resource_aggregates::test::Thing, ()>,
+        o1: Option<exports::test::resource_aggregates::test::Thing>,
+        o2: Option<exports::test::resource_aggregates::test::ThingBorrow<'_>>,
+        result1: Result<exports::test::resource_aggregates::test::Thing, ()>,
+        result2: Result<exports::test::resource_aggregates::test::ThingBorrow<'_>, ()>,
     ) -> u32 {
         let r1 = test::resource_aggregates::test::R1 {
             thing: Option::take(&mut r1.thing.value).unwrap(),
@@ -54,7 +74,7 @@ impl exports::test::resource_aggregates::test::Guest for Test {
                 Option::take(&mut v.value).unwrap()
             }
         });
-        let v2 = test::resource_aggregates::test::V2::Thing(match v2 {
+        let v2 = test::resource_aggregates::test::V2::Thing(match &v2 {
             exports::test::resource_aggregates::test::V2::Thing(v) => v.value.as_ref().unwrap(),
         });
         let l1 = l1
@@ -62,13 +82,16 @@ impl exports::test::resource_aggregates::test::Guest for Test {
             .map(|mut v| Option::take(&mut v.value).unwrap())
             .collect::<Vec<_>>();
         let l2 = l2
-            .into_iter()
+            .iter()
             .map(|v| v.value.as_ref().unwrap())
             .collect::<Vec<_>>();
         let o1 = o1.map(|mut v| Option::take(&mut v.value).unwrap());
-        let o2 = o2.map(|v| v.value.as_ref().unwrap());
+        let o2 = o2.as_ref().map(|v| v.value.as_ref().unwrap());
         let result1 = result1.map(|mut v| Option::take(&mut v.value).unwrap());
-        let result2 = result2.map(|v| v.value.as_ref().unwrap());
+        let result2 = match &result2 {
+            Ok(v) => Ok(v.value.as_ref().unwrap()),
+            Err(()) => Err(()),
+        };
         import_foo(
             r1, &r2, r3, t1, &t2, v1, &v2, l1, &l2, o1, o2, result1, result2,
         ) + 4

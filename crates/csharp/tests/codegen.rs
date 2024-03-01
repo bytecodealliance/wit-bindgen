@@ -56,6 +56,7 @@ macro_rules! codegen_test {
                         "unused-import",
                         "use-across-interfaces",
                         "variants",
+                        "variants-unioning-types",
                         "worlds-with-types",
                         "zero-size-tuple",
                         "go_params",

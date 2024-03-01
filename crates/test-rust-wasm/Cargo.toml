@@ -6,6 +6,7 @@ publish = false
 
 [dependencies]
 wit-bindgen = { path = "../guest-rust" }
+rust-xcrate-test = { path = './rust-xcrate-test' }
 
 [lib]
 test = false
@@ -105,4 +106,8 @@ test = false
 
 [[bin]]
 name = "type_section_suffix"
+test = false
+
+[[bin]]
+name = "rust_xcrate"
 test = false
