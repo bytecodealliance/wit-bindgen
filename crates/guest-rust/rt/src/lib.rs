@@ -13,7 +13,6 @@ mod cabi_realloc;
 pub fn maybe_link_cabi_realloc() {
     #[cfg(target_family = "wasm")]
     {
-        #[cfg(feature = "realloc")]
         extern "C" {
             fn cabi_realloc(
                 old_ptr: *mut u8,
@@ -29,7 +28,6 @@ pub fn maybe_link_cabi_realloc() {
         // remove this `static` here (due to it not actually being needed)
         // but the linker will have at that point seen the `cabi_realloc`
         // symbol and it should get exported.
-        #[cfg(feature = "realloc")]
         #[used]
         static _NAME_DOES_NOT_MATTER: unsafe extern "C" fn(
             *mut u8,
