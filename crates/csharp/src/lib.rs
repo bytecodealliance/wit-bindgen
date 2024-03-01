@@ -2292,16 +2292,36 @@ impl Bindgen for FunctionBindgen<'_, '_> {
     }
 
     fn return_pointer(&mut self, size: usize, align: usize) -> String {
-        self.gen.gen.return_area_size = self.gen.gen.return_area_size.max(size);
-        self.gen.gen.return_area_align = self.gen.gen.return_area_align.max(align);
         let ptr = self.locals.tmp("ptr");
 
-        uwriteln!(
-            self.src,
-            "var {ptr} = InteropReturnArea.returnArea.AddressOfReturnArea();"
-        );
-        self.gen.gen.needs_export_return_area = true;
-        format!("{ptr}")
+        // Use a stack-based return area for imports, because exports need
+        // their return area to be live until the post-return call.
+        match self.gen.direction {
+            Direction::Import => {
+                uwrite!(
+                    self.src,
+                    "
+                    void* {ptr} = stackalloc int[{size} + {align} - 1];
+                    "
+                );
+
+                return format!("(int){ptr}");
+            }
+            Direction::Export => {
+                self.gen.gen.return_area_size = self.gen.gen.return_area_size.max(size);
+                self.gen.gen.return_area_align = self.gen.gen.return_area_align.max(align);
+
+                uwrite!(
+                    self.src,
+                    "
+                    var {ptr} = InteropReturnArea.returnArea.AddressOfReturnArea();
+                    "
+                );
+                self.gen.gen.needs_export_return_area = true;
+
+                return format!("{ptr}");
+            }
+        }
     }
 
     fn push_block(&mut self) {
