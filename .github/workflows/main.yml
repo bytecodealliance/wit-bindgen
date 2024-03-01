@@ -137,6 +137,12 @@ jobs:
     - run: cargo build --no-default-features --features csharp
     - run: cargo build --no-default-features --features markdown
 
+    # Feature combos of the `wit-bindgen` crate
+    - run: cargo build --target wasm32-wasi -p wit-bindgen --no-default-features
+    - run: cargo build --target wasm32-wasi -p wit-bindgen --no-default-features --features realloc
+    - run: cargo build --target wasm32-wasi -p wit-bindgen --no-default-features --features macros
+    - run: cargo build --target wasm32-wasi -p wit-bindgen --no-default-features --features macros,realloc
+
     # Verity that documentation can be generated for the rust bindings crate.
     - run: cargo doc -p wit-bindgen --no-deps
       env:
