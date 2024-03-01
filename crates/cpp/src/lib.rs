@@ -2655,10 +2655,10 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 }
                 self.src.push_str("}\n");
             }
-            abi::Instruction::PointerLoad { offset } => todo!(),
-            abi::Instruction::LengthLoad { offset } => todo!(),
-            abi::Instruction::PointerStore { offset } => todo!(),
-            abi::Instruction::LengthStore { offset } => todo!(),
+            abi::Instruction::PointerLoad { offset } => self.load("uint8_t*", *offset, operands, results),
+            abi::Instruction::LengthLoad { offset } => self.load("size_t", *offset, operands, results),
+            abi::Instruction::PointerStore { offset } => self.store("uint8_t*", *offset, operands),
+            abi::Instruction::LengthStore { offset } => self.store("size_t", *offset, operands),
         }
     }
 
