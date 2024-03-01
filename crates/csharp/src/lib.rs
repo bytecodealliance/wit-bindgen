@@ -2004,12 +2004,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let op = &operands[0];
                 results.push(format!("({}){}", t, op));
 
-                //uwriteln!(
-                //    self.src,
-                //    "Debug.Assert(Enum.IsDefined(typeof({}), {}));",
-                //    t,
-                //    op
-                //);
+                uwriteln!(
+                   self.src,
+                   "Debug.Assert(Enum.IsDefined(typeof({}), {}));",
+                   t,
+                   op
+                );
             }
 
             Instruction::ListCanonLower { element, realloc } => {
