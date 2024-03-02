@@ -62,13 +62,41 @@ public:
   guest_size size() const { return length; }
   // add a convenient way to create a string
 
-  static string from_view(std::string_view v) {
 #if defined(WIT_HOST_DIRECT)
+  static string from_view(std::string_view v) {
     void* addr = cabi_realloc(nullptr, 0, 1, v.length());
-#endif
     memcpy(addr, v.data(), v.length());
     return string((guest_address)addr, v.length());
   }
+#endif
+#if defined(WIT_HOST_WAMR)
+  static string from_view(wasm_exec_env_t exec_env, std::string_view v) {
+    void* addr = nullptr;
+    wasm_function_inst_t wasm_func = wasm_runtime_lookup_function(wasm_runtime_get_module_inst(exec_env), 
+  "cabi_realloc", "(*$ii)*");
+
+    wasm_val_t wasm_results[1] = {
+      WASM_INIT_VAL
+    };
+    wasm_val_t wasm_args[4] = {
+      WASM_I32_VAL(0 /*nullptr*/),
+      WASM_I32_VAL(0),
+      WASM_I32_VAL(1),
+      WASM_I32_VAL(0 /*v.length()*/),
+    };
+    bool wasm_ok;
+    wasm_args[3].of.i32 = v.length();
+    wasm_ok = wasm_runtime_call_wasm_a(exec_env, wasm_func, 1, wasm_results, 4,
+                              wasm_args);
+    assert(wasm_ok);
+    assert(wasm_results[0].kind==WASM_I32);
+    auto ret = wasm_results[0].of.i32;
+    addr = (void*)wasm_runtime_addr_app_to_native(wasm_runtime_get_module_inst(exec_env), 
+      ret);
+    memcpy(addr, v.data(), v.length());
+    return string((guest_address)ret, v.length());
+  }
+#endif
 };
 
 template <class T>

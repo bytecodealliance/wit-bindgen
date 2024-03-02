@@ -1905,7 +1905,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     self.push_str(&format!("auto {} = {}.data();\n", ptr, val));
                     self.push_str(&format!("auto {} = {}.size();\n", len, val));
                 } else {
-                    self.push_str(&format!("auto {} = (intptr_t)({}.data());\n", ptr, val));
+                    self.push_str(&format!("auto {} = (uintptr_t)({}.data());\n", ptr, val));
                     self.push_str(&format!("auto {} = (size_t)({}.size());\n", len, val));
                 }
                 if realloc.is_none() {
@@ -1929,7 +1929,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     self.push_str(&format!("auto {} = {}.data();\n", ptr, val));
                     self.push_str(&format!("auto {} = {}.size();\n", len, val));
                 } else {
-                    self.push_str(&format!("auto {} = (intptr_t)({}.data());\n", ptr, val));
+                    self.push_str(&format!("auto {} = (uintptr_t)({}.data());\n", ptr, val));
                     self.push_str(&format!("auto {} = (size_t)({}.size());\n", len, val));
                 }
                 if realloc.is_none() {
@@ -1956,7 +1956,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     self.push_str(&format!("auto {} = {}.data();\n", ptr, val));
                     self.push_str(&format!("auto {} = {}.size();\n", len, val));
                 } else {
-                    self.push_str(&format!("auto {} = (intptr_t)({}.data());\n", ptr, val));
+                    self.push_str(&format!("auto {} = (uintptr_t)({}.data());\n", ptr, val));
                     self.push_str(&format!("auto {} = (size_t)({}.size());\n", len, val));
                 }
                 if realloc.is_none() {
@@ -2655,9 +2655,9 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 }
                 self.src.push_str("}\n");
             }
-            abi::Instruction::PointerLoad { offset } => self.load("uint8_t*", *offset, operands, results),
+            abi::Instruction::PointerLoad { offset } => self.load("uintptr_t", *offset, operands, results),
             abi::Instruction::LengthLoad { offset } => self.load("size_t", *offset, operands, results),
-            abi::Instruction::PointerStore { offset } => self.store("uint8_t*", *offset, operands),
+            abi::Instruction::PointerStore { offset } => self.store("uintptr_t", *offset, operands),
             abi::Instruction::LengthStore { offset } => self.store("size_t", *offset, operands),
         }
     }
@@ -2674,7 +2674,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
         };
         let static_var = if self.gen.in_import { "" } else { "static " };
         uwriteln!(self.src, "{static_var}{tp} ret_area[{elems}];");
-        uwriteln!(self.src, "int32_t ptr{tmp} = int32_t(&ret_area);");
+        uwriteln!(self.src, "intptr_t ptr{tmp} = intptr_t(&ret_area);");
 
         format!("ptr{}", tmp)
     }
