@@ -82,6 +82,8 @@ struct Cpp {
     opts: Opts,
     c_src: SourceWithState,
     h_src: SourceWithState,
+    c_src_head: Source,
+    extern_c_decls: Source,
     dependencies: Includes,
     includes: Vec<String>,
     host_functions: HashMap<String, Vec<HostFunction>>,
@@ -198,7 +200,7 @@ impl WorldGenerator for Cpp {
         //        self.sizes.fill(resolve);
         if !self.opts.host_side() {
             uwriteln!(
-                self.c_src.src,
+                self.c_src_head,
                 r#"#include "{}_cpp.h"
             #include <cstdlib> // realloc
 
@@ -255,6 +257,7 @@ impl WorldGenerator for Cpp {
         self.h_src
             .src
             .push_str(&format!("// export_interface {name:?}\n"));
+        self.imported_interfaces.remove(&id);
         let wasm_import_module = resolve.name_world_key(name);
         let binding = Some(name);
         let mut gen = self.interface(resolve, binding, false, Some(wasm_import_module));
@@ -318,10 +321,12 @@ impl WorldGenerator for Cpp {
         &mut self,
         _resolve: &Resolve,
         _world: WorldId,
-        _types: &[(&str, TypeId)],
+        types: &[(&str, TypeId)],
         _files: &mut Files,
     ) {
-        todo!()
+        for i in types.iter() {
+            uwriteln!(self.h_src.src, "// import_type {}", i.0);
+        }
     }
 
     fn finish(
@@ -436,93 +441,19 @@ impl WorldGenerator for Cpp {
             }
         }
         if self.opts.host_side() && self.dependencies.needs_exported_resources {
-            // let world_name = &self.world;
             uwriteln!(c_str.src, "template <class R> std::map<int32_t, R> wit::{RESOURCE_EXPORT_BASE_CLASS_NAME}<R>::resources;");
         }
 
-        // if self.dependencies.needs_exported_resources {
-        //     let namespace = namespace(resolve, &TypeOwner::World(world_id), false);
-        //     h_str.change_namespace(&namespace);
-        //     // this is export, not host
-        //     uwriteln!(
-        //         h_str.src,
-        //         "template <class R>
-        //              class {RESOURCE_EXPORT_BASE_CLASS_NAME} {{
-        //                     static std::map<int32_t, R> resources;
-        //                 public:
-        //                     static R* lookup_resource(int32_t id) {{
-        //                         auto result = resources.find(id);
-        //                         return result == resources.end() ? nullptr : &result->second;
-        //                     }}
-        //                     static int32_t store_resource(R && value) {{
-        //                         auto last = resources.rbegin();
-        //                         int32_t id = last == resources.rend() ? 0 : last->first+1;
-        //                         resources.insert(std::pair<int32_t, R>(id, std::move(value)));
-        //                         return id;
-        //                     }}
-        //                     static void remove_resource(int32_t id) {{
-        //                         resources.erase(id);
-        //                     }}
-        //                 }};
-        //                 template <typename T> struct {OWNED_CLASS_NAME} {{
-        //                     T *ptr;
-        //                 }};"
-        //     );
-        // }
-        // if self.dependencies.needs_imported_resources {
-        //     // somehow spaces get removed, newlines remain (problem occurs before const&)
-        //     // TODO: should into_handle become && ???
-        //     let namespace = namespace(resolve, &TypeOwner::World(world_id), false);
-        //     h_str.change_namespace(&namespace);
-        //     uwriteln!(
-        //             h_str.src,
-        //             "class {RESOURCE_IMPORT_BASE_CLASS_NAME} {{
-        //                     static const int32_t invalid = -1;
-        //                     protected:
-        //                     int32_t handle;
-        //                     public:
-        //                     {RESOURCE_IMPORT_BASE_CLASS_NAME}(int32_t h=invalid) : handle(h) {{}}
-        //                     {RESOURCE_IMPORT_BASE_CLASS_NAME}({RESOURCE_IMPORT_BASE_CLASS_NAME}&&r)
-        //                         : handle(r.handle) {{
-        //                             r.handle=invalid;
-        //                     }}
-        //                     {RESOURCE_IMPORT_BASE_CLASS_NAME}({RESOURCE_IMPORT_BASE_CLASS_NAME}
-        //                         const&) = delete;
-        //                     void set_handle(int32_t h) {{ handle=h; }}
-        //                     int32_t get_handle() const {{ return handle; }}
-        //                     int32_t into_handle() {{
-        //                         int32_t h= handle;
-        //                         handle= invalid;
-        //                         return h;
-        //                     }}
-        //                     {RESOURCE_IMPORT_BASE_CLASS_NAME}& operator=({RESOURCE_IMPORT_BASE_CLASS_NAME}&&r) {{
-        //                         assert(handle<0);
-        //                         handle= r.handle;
-        //                         r.handle= invalid;
-        //                         return *this;
-        //                     }}
-        //                     {RESOURCE_IMPORT_BASE_CLASS_NAME}& operator=({RESOURCE_IMPORT_BASE_CLASS_NAME}
-        //                         const&r) = delete;
-        //                     }};"
-        //         );
-        // }
         h_str.change_namespace(&Vec::default());
 
         self.c_src.change_namespace(&Vec::default());
+        c_str.src.push_str(&self.c_src_head);
+        c_str.src.push_str(&self.extern_c_decls);
         c_str.src.push_str(&self.c_src.src);
         self.h_src.change_namespace(&Vec::default());
         h_str.src.push_str(&self.h_src.src);
-        // c_str.push_str(&self.src.c_fns);
-
-        // if self.src.h_defs.len() > 0 {
-        //     h_str.push_str(&self.src.h_defs);
-        // }
-
-        // h_str.push_str(&self.src.h_fns);
 
         uwriteln!(c_str.src, "\n// Component Adapters");
-
-        // c_str.push_str(&self.src.c_adapters);
 
         if !self.opts.short_cut && self.opts.host {
             uwriteln!(
@@ -1303,7 +1234,7 @@ impl CppInterfaceGenerator<'_> {
         result: &str,
     ) -> (String, String) {
         let extern_name = Self::export_name2(module_name, name, AbiVariant::GuestImport);
-        let import = format!("extern __attribute__((import_module(\"{module_name}\")))\n __attribute__((import_name(\"{name}\")))\n {result} {extern_name}({args});\n");
+        let import = format!("extern \"C\" __attribute__((import_module(\"{module_name}\")))\n __attribute__((import_name(\"{name}\")))\n {result} {extern_name}({args});\n");
         (extern_name, import)
     }
 
@@ -1327,7 +1258,7 @@ impl CppInterfaceGenerator<'_> {
             wasm_type(results[0])
         };
         let (name, code) = Self::declare_import2(module_name, name, &args, result);
-        self.gen.c_src.src.push_str(&code);
+        self.gen.extern_c_decls.push_str(&code);
         name
     }
 
@@ -1406,13 +1337,14 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
             } else {
                 self.gen.dependencies.needs_exported_resources = true;
             }
+            self.gen.dependencies.needs_wit = true;
 
             let base_type = if definition {
                 format!("wit::{RESOURCE_EXPORT_BASE_CLASS_NAME}<{pascal}>")
             } else {
                 String::from_str("wit::").unwrap() + RESOURCE_IMPORT_BASE_CLASS_NAME
             };
-            let derive = format!(" : public {world_name}{base_type}");
+            let derive = format!(" : public {base_type}");
             uwriteln!(self.gen.h_src.src, "class {pascal}{derive} {{\n");
             uwriteln!(self.gen.h_src.src, "public:\n");
             let variant = if guest_import {
@@ -1611,7 +1543,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
         _ty: &wit_bindgen_core::wit_parser::Type,
         _docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
-        todo!()
+        // I assume I don't need to do anything ... we could create a typedef though
     }
 
     fn type_builtin(
@@ -2655,8 +2587,12 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 }
                 self.src.push_str("}\n");
             }
-            abi::Instruction::PointerLoad { offset } => self.load("uintptr_t", *offset, operands, results),
-            abi::Instruction::LengthLoad { offset } => self.load("size_t", *offset, operands, results),
+            abi::Instruction::PointerLoad { offset } => {
+                self.load("uintptr_t", *offset, operands, results)
+            }
+            abi::Instruction::LengthLoad { offset } => {
+                self.load("size_t", *offset, operands, results)
+            }
             abi::Instruction::PointerStore { offset } => self.store("uintptr_t", *offset, operands),
             abi::Instruction::LengthStore { offset } => self.store("size_t", *offset, operands),
         }
