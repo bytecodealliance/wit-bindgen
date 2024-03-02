@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <string_view>
+#include <optional>
 #include "wit-common.h"
 
 #ifndef WIT_HOST_DIRECT
@@ -31,6 +32,7 @@ typedef uint32_t guest_size;
 
 #ifdef WIT_HOST_WAMR
 #include <wasm_export.h>
+#include <wasm_c_api.h>
 #endif
 
 namespace wit {
@@ -178,5 +180,30 @@ public:
   //     return exec_env;
   // }
 #endif
+};
+
+template <class R> class ResourceExportBase {
+  static std::map<int32_t, R> resources;
+
+public:
+  static R *lookup_resource(int32_t id) {
+    auto result = resources.find(id);
+    return result == resources.end() ? nullptr : &result->second;
+  }
+  static int32_t store_resource(R &&value) {
+    auto last = resources.rbegin();
+    int32_t id = last == resources.rend() ? 0 : last->first + 1;
+    resources.insert(std::pair<int32_t, R>(id, std::move(value)));
+    return id;
+  }
+  static std::optional<R> remove_resource(int32_t id) { 
+    auto iter = resources.find(id);
+    std::optional<R> result;
+    if (iter!=resources.end()) {
+      result = std::move(*iter);
+      resources.erase(iter);
+    }
+    return std::move(result);
+  }
 };
 } // namespace wit

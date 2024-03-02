@@ -56,22 +56,6 @@ public:
   ResourceImportBase &operator=(ResourceImportBase const &r) = delete;
 };
 
-template <class R> class ResourceExportBase {
-  static std::map<int32_t, R> resources;
-
-public:
-  static R *lookup_resource(int32_t id) {
-    auto result = resources.find(id);
-    return result == resources.end() ? nullptr : &result->second;
-  }
-  static int32_t store_resource(R &&value) {
-    auto last = resources.rbegin();
-    int32_t id = last == resources.rend() ? 0 : last->first + 1;
-    resources.insert(std::pair<int32_t, R>(id, std::move(value)));
-    return id;
-  }
-  static void remove_resource(int32_t id) { resources.erase(id); }
-};
 template <typename T> struct Owned {
   T *ptr;
 };
