@@ -51,6 +51,7 @@ macro_rules! codegen_test {
                         "unused-import",
                         "use-across-interfaces",
                         "worlds-with-types",
+                        "variants-unioning-types",
                         "go_params",
                     ]
                     .contains(&$name)

@@ -10,14 +10,17 @@ namespace VariantsWorld
     {
         public static void TestImports()
         {
+            Console.WriteLine("test options");
             Debug.Assert(TestInterop.RoundtripOption(new Option<float>(1.0f)).Value == 1);
             Debug.Assert(TestInterop.RoundtripOption(Option<float>.None).HasValue == false);
             Debug.Assert(TestInterop.RoundtripOption(new Option<float>(2.0f)).Value == 2);
 
+            Console.WriteLine("test results");
             Debug.Assert(TestInterop.RoundtripResult(Result<uint, float>.ok(2)).AsOk == 2.0);
             Debug.Assert(TestInterop.RoundtripResult(Result<uint, float>.ok(4)).AsOk == 4.0);
             Debug.Assert(TestInterop.RoundtripResult(Result<uint, float>.err(5.3f)).AsErr == 5);
 
+            Console.WriteLine("test enums");
             Debug.Assert(TestInterop.RoundtripEnum(ITest.E1.A) == ITest.E1.A);
             Debug.Assert(TestInterop.RoundtripEnum(ITest.E1.B) == ITest.E1.B);
 

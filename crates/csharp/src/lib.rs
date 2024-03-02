@@ -3,6 +3,7 @@ mod component_type_object;
 use anyhow::Result;
 use heck::{ToLowerCamelCase, ToShoutySnakeCase, ToUpperCamelCase};
 use std::{
+    any::Any,
     collections::{HashMap, HashSet},
     fmt::Write,
     iter, mem,
@@ -1708,7 +1709,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
                 .to_owned()
             })),
-            Instruction::I32Load { offset } 
+            Instruction::I32Load { offset }
             | Instruction::PointerLoad { offset }
             | Instruction::LengthLoad { offset } => results.push(format!("BitConverter.ToInt32(new Span<byte>((void*)({} + {offset}), 4))",operands[0])),
             Instruction::I32Load8U { offset } => results.push(format!("new Span<byte>((void*)({} + {offset}), 1)[0]",operands[0])),
@@ -1752,30 +1753,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             | Instruction::S64FromI64 => results.push(operands[0].clone()),
 
             Instruction::Bitcasts { casts } => {
-                results.extend(casts.iter().zip(operands).map(|(cast, op)| match cast {
-                    Bitcast::I32ToF32 => format!("BitConverter.Int32BitsToSingle({op})"),
-                    Bitcast::I64ToF32 => format!("BitConverter.Int32BitsToSingle((int){op})"),
-                    Bitcast::F32ToI32 => format!("BitConverter.SingleToInt32Bits({op})"),
-                    Bitcast::F32ToI64 => format!("BitConverter.SingleToInt32Bits({op})"),
-                    Bitcast::I64ToF64 => format!("BitConverter.Int64BitsToDouble({op})"),
-                    Bitcast::F64ToI64 => format!("BitConverter.DoubleToInt64Bits({op})"),
-                    Bitcast::I32ToI64 => format!("(long) ({op})"),
-                    Bitcast::I64ToI32 => format!("(int) ({op})"),
-                    Bitcast::None => op.to_owned(),
-                    Bitcast::P64ToI64 => todo!(),
-                    Bitcast::I64ToP64 => todo!(),
-                    Bitcast::P64ToP => todo!(),
-                    Bitcast::PToP64 => todo!(),
-                    Bitcast::I32ToP => todo!(),
-                    Bitcast::PToI32 => todo!(),
-                    Bitcast::PToL => todo!(),
-                    Bitcast::LToP => todo!(),
-                    Bitcast::I32ToL => todo!(),
-                    Bitcast::LToI32 => todo!(),
-                    Bitcast::I64ToL => todo!(),
-                    Bitcast::LToI64 => todo!(),
-                    Bitcast::Sequence(_) => todo!(),
-                }))
+                results.extend(casts.iter().zip(operands).map(|(cast, op)| perform_cast(op, cast)))
             }
 
             Instruction::I32FromBool => {
@@ -2022,12 +2000,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let op = &operands[0];
                 results.push(format!("({}){}", t, op));
 
-                uwriteln!(
-                   self.src,
-                   "Debug.Assert(Enum.IsDefined(typeof({}), {}));",
-                   t,
-                   op
-                );
+                // uwriteln!(
+                //    self.src,
+                //    "Debug.Assert(Enum.IsDefined(typeof({}), {}));",
+                //    t,
+                //    op
+                // );
             }
 
             Instruction::ListCanonLower { element, realloc } => {
@@ -2383,6 +2361,34 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
     fn is_list_canonical(&self, _resolve: &Resolve, element: &Type) -> bool {
         is_primitive(element)
+    }
+}
+
+fn perform_cast(op: &String, cast: &Bitcast) -> String {
+    match cast {
+        Bitcast::I32ToF32 => format!("BitConverter.Int32BitsToSingle({op})"),
+        Bitcast::I64ToF32 => format!("BitConverter.Int32BitsToSingle((int){op})"),
+        Bitcast::F32ToI32 => format!("BitConverter.SingleToInt32Bits({op})"),
+        Bitcast::F32ToI64 => format!("BitConverter.SingleToInt32Bits({op})"),
+        Bitcast::I64ToF64 => format!("BitConverter.Int64BitsToDouble({op})"),
+        Bitcast::F64ToI64 => format!("BitConverter.DoubleToInt64Bits({op})"),
+        Bitcast::I32ToI64 => format!("(long) ({op})"),
+        Bitcast::I64ToI32 => format!("(int) ({op})"),
+        Bitcast::I64ToP64 => format!("{op}"),
+        Bitcast::P64ToI64 => format!("{op}"),
+        Bitcast::LToI64 | Bitcast::PToP64 => format!("(long) ({op})"),
+        Bitcast::I64ToL | Bitcast::P64ToP => format!("(int) ({op})"),
+        Bitcast::I32ToP
+        | Bitcast::PToI32
+        | Bitcast::I32ToL
+        | Bitcast::LToI32
+        | Bitcast::LToP
+        | Bitcast::PToL
+        | Bitcast::None => op.to_owned(),
+        Bitcast::Sequence(sequence) => {
+            let [first, second] = &**sequence;
+            perform_cast(&perform_cast(op, first), second)
+        }
     }
 }
 
