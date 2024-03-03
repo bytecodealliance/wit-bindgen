@@ -651,15 +651,18 @@ impl CppInterfaceGenerator<'_> {
                 .unwrap_or(TypeOwner::World(self.gen.world_id.unwrap())),
         ));
         let mut namespace = namespace(self.resolve, &owner, export);
-        let is_drop = is_drop_method(func);
+        let is_drop = is_special_method(func);
         let func_name_h = if !matches!(&func.kind, FunctionKind::Freestanding) {
             namespace.push(object.clone());
             if let FunctionKind::Constructor(_i) = &func.kind {
                 object.clone()
-            } else if is_drop {
-                "~".to_string() + &object
             } else {
-                func.item_name().to_pascal_case()
+                match is_drop {
+                    SpecialMethod::Drop => "~".to_string() + &object,
+                    SpecialMethod::Dtor => "Dtor".to_string(),
+                    SpecialMethod::ResourceNew => "ResourceNew".to_string(),
+                    SpecialMethod::None => func.item_name().to_pascal_case(),
+                }
             }
         } else {
             func.name.to_pascal_case()
@@ -669,17 +672,31 @@ impl CppInterfaceGenerator<'_> {
 
     // print the signature of the guest export (lowered (wasm) function calling into highlevel)
     fn print_export_signature(&mut self, func: &Function) -> Vec<String> {
-        let is_drop = is_drop_method(func);
-        let signature = if is_drop {
-            WasmSignature {
+        let is_drop = is_special_method(func);
+        let signature = match is_drop {
+            SpecialMethod::Drop => WasmSignature {
                 params: vec![WasmType::I32],
                 results: Vec::new(),
                 indirect_params: false,
                 retptr: false,
-            }
-        } else {
+            },
+            SpecialMethod::Dtor => WasmSignature {
+                params: vec![WasmType::Pointer],
+                results: Vec::new(),
+                indirect_params: false,
+                retptr: false,
+            },
+            SpecialMethod::ResourceNew => WasmSignature {
+                params: vec![WasmType::Pointer],
+                results: vec![WasmType::I32],
+                indirect_params: false,
+                retptr: false,
+            },
+            SpecialMethod::None =>
             // TODO perhaps remember better names for the arguments
-            self.resolve.wasm_signature(AbiVariant::GuestExport, func)
+            {
+                self.resolve.wasm_signature(AbiVariant::GuestExport, func)
+            }
         };
         let module_name = self.wasm_import_module.as_ref().map(|e| e.clone()).unwrap();
         if self.gen.opts.short_cut {
@@ -776,10 +793,12 @@ impl CppInterfaceGenerator<'_> {
             self.func_namespace_name(func, !(import ^ self.gen.opts.host_side()));
         res.name = func_name_h;
         res.namespace = namespace;
-        let is_drop = is_drop_method(func);
+        let is_drop = is_special_method(func);
         // we might want to separate c_sig and h_sig
         // let mut sig = String::new();
-        if !matches!(&func.kind, FunctionKind::Constructor(_)) && !is_drop {
+        if !matches!(&func.kind, FunctionKind::Constructor(_))
+            && matches!(is_drop, SpecialMethod::None)
+        {
             match &func.results {
                 wit_bindgen_core::wit_parser::Results::Named(n) => {
                     if n.is_empty() {
@@ -804,7 +823,7 @@ impl CppInterfaceGenerator<'_> {
                 }
             }
         }
-        if matches!(func.kind, FunctionKind::Static(_)) && !is_drop {
+        if matches!(func.kind, FunctionKind::Static(_)) && matches!(is_drop, SpecialMethod::None) {
             res.static_member = true;
         }
         for (i, (name, param)) in func.params.iter().enumerate() {
@@ -919,8 +938,8 @@ impl CppInterfaceGenerator<'_> {
         } else {
             LiftLower::LowerArgsLiftResults
         };
-        if is_drop_method(func) {
-            match lift_lower {
+        match is_special_method(func) {
+            SpecialMethod::Drop => match lift_lower {
                 LiftLower::LiftArgsLowerResults => {
                     let owner = &self.resolve.types[match &func.kind {
                         FunctionKind::Static(id) => *id,
@@ -946,38 +965,45 @@ impl CppInterfaceGenerator<'_> {
                             }}"
                     );
                 }
+            },
+            SpecialMethod::Dtor => self.gen.c_src.src.push_str("// dtor logic\n"),
+            SpecialMethod::ResourceNew => {
+                self.gen.c_src.src.push_str("// new logic: call r-new\n");
+                //let f = Function { name: String::new(), kind: FunctionKind::Static(Id), params: Vec::new(), results: Vec::new(), docs: Docs::default() };
             }
-        } else {
-            let namespace = if matches!(func.kind, FunctionKind::Freestanding) {
-                namespace(
-                    self.resolve,
-                    owner,
-                    matches!(variant, AbiVariant::GuestExport),
-                )
-            } else {
-                let owner = &self.resolve.types[match &func.kind {
-                    FunctionKind::Static(id) => *id,
-                    FunctionKind::Constructor(id) => *id,
-                    FunctionKind::Method(id) => *id,
-                    FunctionKind::Freestanding => unreachable!(),
-                }]
-                .clone();
-                let mut namespace = namespace(
-                    self.resolve,
-                    &owner.owner,
-                    matches!(variant, AbiVariant::GuestExport),
-                );
-                namespace.push(owner.name.as_ref().unwrap().to_upper_camel_case());
-                namespace
-            };
-            let mut f = FunctionBindgen::new(self, params);
-            if !export {
-                f.namespace = namespace;
-                f.wamr_signature = Some(wamr::wamr_signature(&f.gen.resolve, func));
+            SpecialMethod::None => {
+                // normal methods
+                let namespace = if matches!(func.kind, FunctionKind::Freestanding) {
+                    namespace(
+                        self.resolve,
+                        owner,
+                        matches!(variant, AbiVariant::GuestExport),
+                    )
+                } else {
+                    let owner = &self.resolve.types[match &func.kind {
+                        FunctionKind::Static(id) => *id,
+                        FunctionKind::Constructor(id) => *id,
+                        FunctionKind::Method(id) => *id,
+                        FunctionKind::Freestanding => unreachable!(),
+                    }]
+                    .clone();
+                    let mut namespace = namespace(
+                        self.resolve,
+                        &owner.owner,
+                        matches!(variant, AbiVariant::GuestExport),
+                    );
+                    namespace.push(owner.name.as_ref().unwrap().to_upper_camel_case());
+                    namespace
+                };
+                let mut f = FunctionBindgen::new(self, params);
+                if !export {
+                    f.namespace = namespace;
+                    f.wamr_signature = Some(wamr::wamr_signature(&f.gen.resolve, func));
+                }
+                abi::call(f.gen.resolve, variant, lift_lower, func, &mut f);
+                let code = String::from(f.src);
+                self.gen.c_src.src.push_str(&code);
             }
-            abi::call(f.gen.resolve, variant, lift_lower, func, &mut f);
-            let code = String::from(f.src);
-            self.gen.c_src.src.push_str(&code);
         }
         self.gen.c_src.src.push_str("}\n");
         // cabi_post
@@ -1383,6 +1409,26 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                     "{pascal}(wit::{RESOURCE_IMPORT_BASE_CLASS_NAME}&&);\n"
                 );
                 uwriteln!(self.gen.h_src.src, "{pascal}({pascal}&&) = default;\n");
+            } else {
+                if !self.gen.opts.host_side() {
+                    let func = Function {
+                        name: "[resource-new]".to_string() + &name,
+                        kind: FunctionKind::Static(id),
+                        params: vec![("self".into(), Type::Id(id))],
+                        results: Results::Named(vec![]),
+                        docs: Docs::default(),
+                    };
+                    self.generate_function(&func, &TypeOwner::Interface(intf), variant);
+
+                    let func2 = Function {
+                        name: "[dtor]".to_string() + &name,
+                        kind: FunctionKind::Static(id),
+                        params: vec![("self".into(), Type::Id(id))],
+                        results: Results::Named(vec![]),
+                        docs: Docs::default(),
+                    };
+                    self.generate_function(&func2, &TypeOwner::Interface(intf), variant);
+                }
             }
             uwriteln!(self.gen.h_src.src, "}};\n");
             if definition {
@@ -2647,8 +2693,27 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
     }
 }
 
-fn is_drop_method(func: &Function) -> bool {
-    matches!(func.kind, FunctionKind::Static(_)) && func.name.starts_with("[resource-drop]")
+enum SpecialMethod {
+    None,
+    Drop,        // ([export]) [resource-drop]
+    ResourceNew, // [export][resource-new]
+    Dtor,        // [dtor] (guest export only)
+}
+
+fn is_special_method(func: &Function) -> SpecialMethod {
+    if matches!(func.kind, FunctionKind::Static(_)) {
+        if func.name.starts_with("[resource-drop]") {
+            SpecialMethod::Drop
+        } else if func.name.starts_with("[resource-new]") {
+            SpecialMethod::ResourceNew
+        } else if func.name.starts_with("[dtor]") {
+            SpecialMethod::Dtor
+        } else {
+            SpecialMethod::None
+        }
+    } else {
+        SpecialMethod::None
+    }
 }
 
 // fn is_arg_by_pointer(resolve: &Resolve, ty: &Type) -> bool {
