@@ -12,7 +12,7 @@ use wit_bindgen_core::{
     uwrite, uwriteln,
     wit_parser::{
         Docs, Function, FunctionKind, Handle, Int, InterfaceId, Resolve, Results, SizeAlign, Type,
-        TypeDefKind, TypeId, TypeOwner, WorldId, WorldKey,
+        TypeDefKind, TypeId, TypeOwner, Variant, WorldId, WorldKey,
     },
     Files, InterfaceGenerator, Source, WorldGenerator,
 };
@@ -722,7 +722,13 @@ impl CppInterfaceGenerator<'_> {
             //     retptr: false,
             // },
         };
-        let module_name = self.wasm_import_module.as_ref().map(|e| e.clone()).unwrap();
+        let mut module_name = self.wasm_import_module.as_ref().map(|e| e.clone()).unwrap();
+        if matches!(
+            is_drop,
+            SpecialMethod::ResourceNew | SpecialMethod::ResourceDrop
+        ) {
+            module_name = String::from("[export]") + &module_name;
+        }
         if self.gen.opts.short_cut {
         } else if self.gen.opts.host {
             self.gen.c_src.src.push_str("static ");
@@ -821,7 +827,8 @@ impl CppInterfaceGenerator<'_> {
         // we might want to separate c_sig and h_sig
         // let mut sig = String::new();
         if !matches!(&func.kind, FunctionKind::Constructor(_))
-            && matches!(is_drop, SpecialMethod::None)
+            && !(matches!(is_drop, SpecialMethod::ResourceDrop)
+                && matches!(abi_variant, AbiVariant::GuestImport))
         {
             match &func.results {
                 wit_bindgen_core::wit_parser::Results::Named(n) => {
@@ -847,11 +854,19 @@ impl CppInterfaceGenerator<'_> {
                 }
             }
         }
-        if matches!(func.kind, FunctionKind::Static(_)) && matches!(is_drop, SpecialMethod::None) {
+        if matches!(func.kind, FunctionKind::Static(_))
+            && !(matches!(is_drop, SpecialMethod::ResourceDrop)
+                && matches!(abi_variant, AbiVariant::GuestImport))
+        {
             res.static_member = true;
         }
         for (i, (name, param)) in func.params.iter().enumerate() {
-            if i == 0 && name == "self" {
+            if i == 0
+                && name == "self"
+                && (matches!(&func.kind, FunctionKind::Method(_))
+                    || (matches!(is_drop, SpecialMethod::ResourceDrop)
+                        && matches!(abi_variant, AbiVariant::GuestImport)))
+            {
                 res.implicit_self = true;
                 continue;
             }
@@ -881,7 +896,7 @@ impl CppInterfaceGenerator<'_> {
         self.gen.h_src.src.push_str("(");
         if
         /*import &&*/
-        self.gen.opts.host {
+        self.gen.opts.host && !matches!(func.kind, FunctionKind::Method(_)) {
             self.gen.h_src.src.push_str("WASMExecEnv* exec_env");
             if !cpp_sig.arguments.is_empty() {
                 self.gen.h_src.src.push_str(", ");
@@ -917,7 +932,7 @@ impl CppInterfaceGenerator<'_> {
             self.gen.c_src.qualify(&cpp_sig.namespace);
             self.gen.c_src.src.push_str(&cpp_sig.name);
             self.gen.c_src.src.push_str("(");
-            if import && self.gen.opts.host {
+            if import && self.gen.opts.host && !matches!(func.kind, FunctionKind::Method(_)) {
                 self.gen.c_src.src.push_str("wasm_exec_env_t exec_env");
                 if !cpp_sig.arguments.is_empty() || cpp_sig.implicit_self {
                     self.gen.c_src.src.push_str(", ");
@@ -1406,7 +1421,12 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
             };
             // destructor
             {
-                let name = "[resource-drop]".to_string() + &name;
+                let name = match variant {
+                    AbiVariant::GuestImport => "[resource-drop]",
+                    AbiVariant::GuestExport => "[dtor]",
+                }
+                .to_string()
+                    + &name;
                 let func = Function {
                     name: name,
                     kind: FunctionKind::Static(id),
@@ -1425,6 +1445,21 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                     FunctionKind::Constructor(mid) => *mid == id,
                 } {
                     self.generate_function(func, &TypeOwner::Interface(intf), variant);
+                    if matches!(func.kind, FunctionKind::Constructor(_))
+                        && matches!(variant, AbiVariant::GuestExport)
+                        && !self.gen.opts.host_side()
+                    {
+                        // functional safety requires the option to use a different allocator, so move new into the implementation
+                        let func2 = Function {
+                            name: "$alloc".to_string(),
+                            kind: FunctionKind::Static(id),
+                            // same params as constructor
+                            params: func.params.clone(),
+                            results: Results::Anon(Type::Id(id)),
+                            docs: Docs::default(),
+                        };
+                        self.generate_function(&func2, &TypeOwner::Interface(intf), variant);
+                    }
                 }
             }
 
@@ -1441,29 +1476,20 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                         name: "[resource-new]".to_string() + &name,
                         kind: FunctionKind::Static(id),
                         params: vec![("self".into(), Type::Id(id))],
-                        results: Results::Named(vec![]),
+                        results: Results::Anon(Type::S32),
                         docs: Docs::default(),
                     };
                     self.generate_function(&func, &TypeOwner::Interface(intf), variant);
 
                     let func2 = Function {
-                        name: "[dtor]".to_string() + &name,
+                        name: "[resource-drop]".to_string() + &name,
                         kind: FunctionKind::Static(id),
-                        params: vec![("self".into(), Type::Id(id))],
+                        params: vec![("id".into(), Type::S32)],
                         results: Results::Named(vec![]),
                         docs: Docs::default(),
                     };
                     self.generate_function(&func2, &TypeOwner::Interface(intf), variant);
                 }
-                let func3 = Function {
-                    name: "$alloc".to_string(),
-                    kind: FunctionKind::Static(id),
-                    // same params as constructor ...template?
-                    params: vec![],
-                    results: Results::Named(vec![]),
-                    docs: Docs::default(),
-                };
-                self.generate_function(&func3, &TypeOwner::Interface(intf), variant);
             }
             uwriteln!(self.gen.h_src.src, "}};\n");
             if definition {
@@ -2734,7 +2760,7 @@ enum SpecialMethod {
     ResourceNew,  // [export][resource-new]
     Dtor,         // [dtor] (guest export only)
     Allocate,     // internal: allocate new object (called from generated code)
-    // Deallocate,   // internal: de-allocate object - now Dtor
+                  // Deallocate,   // internal: de-allocate object - now Dtor
 }
 
 fn is_special_method(func: &Function) -> SpecialMethod {
