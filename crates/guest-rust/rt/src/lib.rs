@@ -1,3 +1,5 @@
+#![no_std]
+
 extern crate alloc;
 
 /// For more information about this see `./ci/rebuild-libcabi-realloc.sh`.
