@@ -511,16 +511,21 @@ impl WorldGenerator for Cpp {
             files.push(&format!("{snake}_cpp_host.h"), h_str.src.as_bytes());
         }
         for (name, content) in self.user_class_files.iter() {
-            files.push(&name, content.as_bytes());
+            // if the user class file exists create an updated .template
+            if std::path::Path::exists(&std::path::PathBuf::from(name)) {
+                files.push(&(String::from(name) + ".template"), content.as_bytes());
+            } else {
+                files.push(name, content.as_bytes());
+            }
         }
         Ok(())
     }
 }
 
 // determine namespace (for the lifted C++ function)
-fn namespace(resolve: &Resolve, owner: &TypeOwner, export: bool) -> Vec<String> {
+fn namespace(resolve: &Resolve, owner: &TypeOwner, guest_export: bool) -> Vec<String> {
     let mut result = Vec::default();
-    if export {
+    if guest_export {
         result.push(String::from("exports"));
     }
     match owner {
@@ -633,7 +638,7 @@ impl CppInterfaceGenerator<'_> {
         }
     }
 
-    fn func_namespace_name(&self, func: &Function, export: bool) -> (Vec<String>, String) {
+    fn func_namespace_name(&self, func: &Function, guest_export: bool) -> (Vec<String>, String) {
         let (object, owner) = match &func.kind {
             FunctionKind::Freestanding => None,
             FunctionKind::Method(i) => Some(i),
@@ -650,7 +655,7 @@ impl CppInterfaceGenerator<'_> {
                 .map(|id| TypeOwner::Interface(id))
                 .unwrap_or(TypeOwner::World(self.gen.world_id.unwrap())),
         ));
-        let mut namespace = namespace(self.resolve, &owner, export);
+        let mut namespace = namespace(self.resolve, &owner, guest_export);
         let is_drop = is_special_method(func);
         let func_name_h = if !matches!(&func.kind, FunctionKind::Freestanding) {
             namespace.push(object.clone());
@@ -658,9 +663,17 @@ impl CppInterfaceGenerator<'_> {
                 object.clone()
             } else {
                 match is_drop {
-                    SpecialMethod::Drop => "~".to_string() + &object,
+                    SpecialMethod::ResourceDrop => {
+                        if guest_export {
+                            "ResourceDrop".to_string()
+                        } else {
+                            "~".to_string() + &object
+                        }
+                    }
                     SpecialMethod::Dtor => "Dtor".to_string(),
                     SpecialMethod::ResourceNew => "ResourceNew".to_string(),
+                    SpecialMethod::Allocate => "New".to_string(),
+                    // SpecialMethod::Deallocate => "Deallocate".to_string(),
                     SpecialMethod::None => func.item_name().to_pascal_case(),
                 }
             }
@@ -674,7 +687,7 @@ impl CppInterfaceGenerator<'_> {
     fn print_export_signature(&mut self, func: &Function) -> Vec<String> {
         let is_drop = is_special_method(func);
         let signature = match is_drop {
-            SpecialMethod::Drop => WasmSignature {
+            SpecialMethod::ResourceDrop => WasmSignature {
                 params: vec![WasmType::I32],
                 results: Vec::new(),
                 indirect_params: false,
@@ -692,11 +705,22 @@ impl CppInterfaceGenerator<'_> {
                 indirect_params: false,
                 retptr: false,
             },
-            SpecialMethod::None =>
-            // TODO perhaps remember better names for the arguments
-            {
+            SpecialMethod::None => {
+                // TODO perhaps remember better names for the arguments
                 self.resolve.wasm_signature(AbiVariant::GuestExport, func)
             }
+            SpecialMethod::Allocate => WasmSignature {
+                params: vec![],
+                results: vec![WasmType::Pointer],
+                indirect_params: false,
+                retptr: false,
+            },
+            // SpecialMethod::Deallocate => WasmSignature {
+            //     params: vec![WasmType::Pointer],
+            //     results: vec![],
+            //     indirect_params: false,
+            //     retptr: false,
+            // },
         };
         let module_name = self.wasm_import_module.as_ref().map(|e| e.clone()).unwrap();
         if self.gen.opts.short_cut {
@@ -939,7 +963,7 @@ impl CppInterfaceGenerator<'_> {
             LiftLower::LowerArgsLiftResults
         };
         match is_special_method(func) {
-            SpecialMethod::Drop => match lift_lower {
+            SpecialMethod::ResourceDrop => match lift_lower {
                 LiftLower::LiftArgsLowerResults => {
                     let owner = &self.resolve.types[match &func.kind {
                         FunctionKind::Static(id) => *id,
@@ -971,6 +995,8 @@ impl CppInterfaceGenerator<'_> {
                 self.gen.c_src.src.push_str("// new logic: call r-new\n");
                 //let f = Function { name: String::new(), kind: FunctionKind::Static(Id), params: Vec::new(), results: Vec::new(), docs: Docs::default() };
             }
+            SpecialMethod::Allocate => self.gen.c_src.src.push_str("// allocate\n"),
+            // SpecialMethod::Deallocate => self.gen.c_src.src.push_str("// deallocate\n"),
             SpecialMethod::None => {
                 // normal methods
                 let namespace = if matches!(func.kind, FunctionKind::Freestanding) {
@@ -1429,6 +1455,15 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                     };
                     self.generate_function(&func2, &TypeOwner::Interface(intf), variant);
                 }
+                let func3 = Function {
+                    name: "$alloc".to_string(),
+                    kind: FunctionKind::Static(id),
+                    // same params as constructor ...template?
+                    params: vec![],
+                    results: Results::Named(vec![]),
+                    docs: Docs::default(),
+                };
+                self.generate_function(&func3, &TypeOwner::Interface(intf), variant);
             }
             uwriteln!(self.gen.h_src.src, "}};\n");
             if definition {
@@ -1441,7 +1476,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                 }
                 self.gen
                     .user_class_files
-                    .insert(user_filename + ".template", headerfile.src.to_string());
+                    .insert(user_filename, headerfile.src.to_string());
             }
         }
     }
@@ -2695,19 +2730,25 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
 
 enum SpecialMethod {
     None,
-    Drop,        // ([export]) [resource-drop]
-    ResourceNew, // [export][resource-new]
-    Dtor,        // [dtor] (guest export only)
+    ResourceDrop, // ([export]) [resource-drop]
+    ResourceNew,  // [export][resource-new]
+    Dtor,         // [dtor] (guest export only)
+    Allocate,     // internal: allocate new object (called from generated code)
+    // Deallocate,   // internal: de-allocate object - now Dtor
 }
 
 fn is_special_method(func: &Function) -> SpecialMethod {
     if matches!(func.kind, FunctionKind::Static(_)) {
         if func.name.starts_with("[resource-drop]") {
-            SpecialMethod::Drop
+            SpecialMethod::ResourceDrop
         } else if func.name.starts_with("[resource-new]") {
             SpecialMethod::ResourceNew
         } else if func.name.starts_with("[dtor]") {
             SpecialMethod::Dtor
+        } else if func.name == "$alloc" {
+            SpecialMethod::Allocate
+        // } else if func.name == "$dealloc" {
+        //     SpecialMethod::Deallocate
         } else {
             SpecialMethod::None
         }
