@@ -427,6 +427,7 @@ impl WorldGenerator for Cpp {
             uwriteln!(
                 c_str.src,
                 "#include <wasm_export.h> // wasm-micro-runtime header\n\
+                #include <wasm_c_api.h>\n\
                     #include <assert.h>"
             );
 
@@ -1419,8 +1420,8 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
             } else {
                 AbiVariant::GuestExport
             };
-            // destructor
             {
+                // destructor
                 let name = match variant {
                     AbiVariant::GuestImport => "[resource-drop]",
                     AbiVariant::GuestExport => "[dtor]",
