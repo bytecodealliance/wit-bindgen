@@ -32,6 +32,16 @@ enum Flavor {
     InStruct,
 }
 
+impl Flavor {
+    fn is_guest_export(&self) -> bool {
+        match self {
+            Flavor::Argument(var) => matches!(var, AbiVariant::GuestExport),
+            Flavor::Result(var) => matches!(var, AbiVariant::GuestExport),
+            Flavor::InStruct => false,
+        }
+    }
+}
+
 #[derive(Default)]
 struct HighlevelSignature {
     /// this is a constructor or destructor without a written type
@@ -427,8 +437,8 @@ impl WorldGenerator for Cpp {
             uwriteln!(
                 c_str.src,
                 "#include <wasm_export.h> // wasm-micro-runtime header\n\
-                #include <wasm_c_api.h>\n\
-                    #include <assert.h>"
+                 #include <wasm_c_api.h>\n\
+                 #include <assert.h>"
             );
 
             if c_str.src.len() > 0 {
@@ -852,6 +862,9 @@ impl CppInterfaceGenerator<'_> {
                 }
                 wit_bindgen_core::wit_parser::Results::Anon(ty) => {
                     res.result = self.type_name(ty, from_namespace, Flavor::Result(abi_variant));
+                    if matches!(is_drop, SpecialMethod::Allocate) {
+                        res.result.push('*');
+                    }
                 }
             }
         }
@@ -871,10 +884,17 @@ impl CppInterfaceGenerator<'_> {
                 res.implicit_self = true;
                 continue;
             }
-            res.arguments.push((
-                name.to_snake_case(),
-                self.type_name(param, &res.namespace, Flavor::Argument(abi_variant)),
-            ));
+            if matches!(is_drop, SpecialMethod::Dtor | SpecialMethod::ResourceNew) {
+                res.arguments.push((
+                    name.to_snake_case(),
+                    self.type_name(param, &res.namespace, Flavor::Argument(abi_variant)) + "*",
+                ));
+            } else {
+                res.arguments.push((
+                    name.to_snake_case(),
+                    self.type_name(param, &res.namespace, Flavor::Argument(abi_variant)),
+                ));
+            }
         }
         // default to non-const when exporting a method
         if matches!(func.kind, FunctionKind::Method(_)) && import {
@@ -1141,9 +1161,14 @@ impl CppInterfaceGenerator<'_> {
         }
     }
 
-    fn scoped_type_name(&self, id: TypeId, from_namespace: &Vec<String>) -> String {
+    fn scoped_type_name(
+        &self,
+        id: TypeId,
+        from_namespace: &Vec<String>,
+        guest_export: bool,
+    ) -> String {
         let ty = &self.resolve.types[id];
-        let namespc = namespace(self.resolve, &ty.owner, false);
+        let namespc = namespace(self.resolve, &ty.owner, guest_export);
         let mut relative = SourceWithState::default();
         relative.namespace = from_namespace.clone();
         relative.qualify(&namespc);
@@ -1187,8 +1212,12 @@ impl CppInterfaceGenerator<'_> {
                 }
             },
             Type::Id(id) => match &self.resolve.types[*id].kind {
-                TypeDefKind::Record(_r) => self.scoped_type_name(*id, from_namespace),
-                TypeDefKind::Resource => self.scoped_type_name(*id, from_namespace),
+                TypeDefKind::Record(_r) => {
+                    self.scoped_type_name(*id, from_namespace, flavor.is_guest_export())
+                }
+                TypeDefKind::Resource => {
+                    self.scoped_type_name(*id, from_namespace, flavor.is_guest_export())
+                }
                 TypeDefKind::Handle(Handle::Own(id)) => {
                     self.type_name(&Type::Id(*id), from_namespace, flavor)
                 }
@@ -1197,7 +1226,9 @@ impl CppInterfaceGenerator<'_> {
                         + &self.type_name(&Type::Id(*id), from_namespace, flavor)
                         + ">"
                 }
-                TypeDefKind::Flags(_f) => self.scoped_type_name(*id, from_namespace),
+                TypeDefKind::Flags(_f) => {
+                    self.scoped_type_name(*id, from_namespace, flavor.is_guest_export())
+                }
                 TypeDefKind::Tuple(t) => {
                     let types = t.types.iter().fold(String::new(), |mut a, b| {
                         if !a.is_empty() {
@@ -1208,8 +1239,12 @@ impl CppInterfaceGenerator<'_> {
                     self.gen.dependencies.needs_tuple = true;
                     String::from("std::tuple<") + &types + ">"
                 }
-                TypeDefKind::Variant(_v) => self.scoped_type_name(*id, from_namespace),
-                TypeDefKind::Enum(_e) => self.scoped_type_name(*id, from_namespace),
+                TypeDefKind::Variant(_v) => {
+                    self.scoped_type_name(*id, from_namespace, flavor.is_guest_export())
+                }
+                TypeDefKind::Enum(_e) => {
+                    self.scoped_type_name(*id, from_namespace, flavor.is_guest_export())
+                }
                 TypeDefKind::Option(o) => {
                     self.gen.dependencies.needs_optional = true;
                     "std::optional<".to_string() + &self.type_name(o, from_namespace, flavor) + ">"
