@@ -739,6 +739,7 @@ macro_rules! __export_{world_name}_impl {{
             "pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; {}] = *b\"\\\n",
             component_type.len()
         ));
+        let old_indent = self.src.set_indent(0);
         let mut line_length = 0;
         let s = self.src.as_mut_string();
         for byte in component_type.iter() {
@@ -771,6 +772,7 @@ macro_rules! __export_{world_name}_impl {{
         }
 
         self.src.push_str("\";\n");
+        self.src.set_indent(old_indent);
 
         if let Some(func_name) = func_name {
             let rt = self.runtime_path().to_string();

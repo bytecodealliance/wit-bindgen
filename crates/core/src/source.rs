@@ -102,6 +102,13 @@ impl Source {
         self.indent -= amt;
     }
 
+    /// Set the indentation level, and return the old level.
+    pub fn set_indent(&mut self, amt: usize) -> usize {
+        let old = self.indent;
+        self.indent = amt;
+        old
+    }
+
     fn newline(&mut self) {
         self.in_line_comment = false;
         self.continuing_line = false;
