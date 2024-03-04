@@ -2035,9 +2035,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             "
                         byte[] {buffer} = new byte[{op}.Length];
                         Buffer.BlockCopy({op}, 0, {buffer}, 0, {op}.Length);
-                        var {gc_handle} = GCHandle.Alloc({op}, GCHandleType.Pinned);
+                        var {gc_handle} = GCHandle.Alloc({buffer}, GCHandleType.Pinned);
                         var {address} = {gc_handle}.AddrOfPinnedObject();
-                        Marshal.Copy({buffer}, 0, (IntPtr){address}, {op}.Length);                        
                         "
                         );
 
