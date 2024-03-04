@@ -649,7 +649,12 @@ impl CppInterfaceGenerator<'_> {
         }
     }
 
-    fn func_namespace_name(&self, func: &Function, guest_export: bool) -> (Vec<String>, String) {
+    fn func_namespace_name(
+        &self,
+        func: &Function,
+        guest_export: bool,
+        cpp_file: bool,
+    ) -> (Vec<String>, String) {
         let (object, owner) = match &func.kind {
             FunctionKind::Freestanding => None,
             FunctionKind::Method(i) => Some(i),
@@ -671,7 +676,11 @@ impl CppInterfaceGenerator<'_> {
         let func_name_h = if !matches!(&func.kind, FunctionKind::Freestanding) {
             namespace.push(object.clone());
             if let FunctionKind::Constructor(_i) = &func.kind {
-                object.clone()
+                if guest_export && cpp_file {
+                    String::from("New")
+                } else {
+                    object.clone()
+                }
             } else {
                 match is_drop {
                     SpecialMethod::ResourceDrop => {
@@ -831,7 +840,7 @@ impl CppInterfaceGenerator<'_> {
         };
 
         let (namespace, func_name_h) =
-            self.func_namespace_name(func, !(import ^ self.gen.opts.host_side()));
+            self.func_namespace_name(func, !(import ^ self.gen.opts.host_side()), false);
         res.name = func_name_h;
         res.namespace = namespace;
         let is_drop = is_special_method(func);
@@ -935,6 +944,35 @@ impl CppInterfaceGenerator<'_> {
         if cpp_sig.const_member {
             self.gen.h_src.src.push_str(" const");
         }
+        let is_special = is_special_method(func);
+        match is_special {
+            SpecialMethod::Allocate => {
+                uwrite!(
+                    self.gen.h_src.src,
+                    "{{\
+                        return new {};\
+                    }}",
+                    cpp_sig.namespace.join("::")
+                );
+                // body is inside the header
+                return;
+            }
+            SpecialMethod::Dtor => {
+                uwrite!(
+                    self.gen.h_src.src,
+                    "{{\
+                        delete {};\
+                    }}",
+                    cpp_sig.arguments.get(0).unwrap().0
+                );
+                // body is inside the header
+                return;
+            }
+            // SpecialMethod::None => todo!(),
+            // SpecialMethod::ResourceDrop => todo!(),
+            // SpecialMethod::ResourceNew => todo!(),
+            _ => (),
+        }
         self.gen.h_src.src.push_str(";\n");
         drop(cpp_sig);
 
@@ -987,6 +1025,24 @@ impl CppInterfaceGenerator<'_> {
         //interface: InterfaceId,
         variant: AbiVariant,
     ) {
+        fn class_namespace(
+            cifg: &CppInterfaceGenerator,
+            func: &Function,
+            variant: AbiVariant,
+        ) -> Vec<String> {
+            let owner = &cifg.resolve.types[match &func.kind {
+                FunctionKind::Static(id) => *id,
+                _ => panic!("special func should be static"),
+            }];
+            let mut namespace = namespace(
+                cifg.resolve,
+                &owner.owner,
+                matches!(variant, AbiVariant::GuestExport),
+            );
+            namespace.push(owner.name.as_ref().unwrap().to_upper_camel_case());
+            namespace
+        }
+
         let export = match variant {
             AbiVariant::GuestImport => self.gen.opts.host_side(),
             AbiVariant::GuestExport => !self.gen.opts.host_side(),
@@ -1001,19 +1057,9 @@ impl CppInterfaceGenerator<'_> {
         match is_special_method(func) {
             SpecialMethod::ResourceDrop => match lift_lower {
                 LiftLower::LiftArgsLowerResults => {
-                    let owner = &self.resolve.types[match &func.kind {
-                        FunctionKind::Static(id) => *id,
-                        _ => panic!("drop should be static"),
-                    }];
-                    self.gen.c_src.src.push_str("  ");
-                    let mut namespace = namespace(
-                        self.resolve,
-                        &owner.owner,
-                        matches!(variant, AbiVariant::GuestExport),
-                    );
-                    namespace.push(owner.name.as_ref().unwrap().to_upper_camel_case());
+                    let namespace = class_namespace(self, func, variant);
                     self.gen.c_src.qualify(&namespace);
-                    uwriteln!(self.gen.c_src.src, "remove_resource({});", params[0]);
+                    uwriteln!(self.gen.c_src.src, "  remove_resource({});", params[0]);
                 }
                 LiftLower::LowerArgsLiftResults => {
                     let module_name = self.wasm_import_module.as_ref().map(|e| e.clone()).unwrap();
@@ -1026,9 +1072,23 @@ impl CppInterfaceGenerator<'_> {
                     );
                 }
             },
-            SpecialMethod::Dtor => self.gen.c_src.src.push_str("// dtor logic\n"),
+            SpecialMethod::Dtor => {
+                let classname = class_namespace(self, func, variant).join("::");
+                uwriteln!(self.gen.c_src.src, "{0}::Dtor(({0}*)arg0);", classname);
+            }
             SpecialMethod::ResourceNew => {
-                self.gen.c_src.src.push_str("// new logic: call r-new\n");
+                let classname = class_namespace(self, func, variant).join("::");
+                let args = func
+                    .params
+                    .iter()
+                    .map(|(nm, _ty)| nm.clone())
+                    .collect::<Vec<_>>()
+                    .join(",");
+                uwriteln!(
+                    self.gen.c_src.src,
+                    "return {classname}::New({args})->handle;"
+                );
+                // self.gen.c_src.src.push_str("// new logic: call r-new\n");
                 //let f = Function { name: String::new(), kind: FunctionKind::Static(Id), params: Vec::new(), results: Vec::new(), docs: Docs::default() };
             }
             SpecialMethod::Allocate => self.gen.c_src.src.push_str("// allocate\n"),
@@ -2148,7 +2208,11 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 //     code.push_str(&n);
                 //     code.push_str("::");
                 // }
-                results.push(format!("{op}.store_resource(std::move({op}))"));
+                if self.gen.gen.opts.host_side() {
+                    results.push(format!("{op}.store_resource(std::move({op}))"));
+                } else {
+                    results.push(format!("{op}->handle"));
+                }
             }
             abi::Instruction::HandleLower {
                 handle: Handle::Borrow(_),
@@ -2613,20 +2677,28 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 // dbg!(func);
                 self.let_results(func.results.len(), results);
                 let (mut namespace, func_name_h) =
-                    self.gen.func_namespace_name(func, !self.gen.gen.opts.host);
+                    self.gen
+                        .func_namespace_name(func, !self.gen.gen.opts.host, true);
                 if matches!(func.kind, FunctionKind::Method(_)) {
                     let this = operands.remove(0);
                     //self.gen.gen.c_src.qualify(&namespace);
-                    let mut relative = SourceWithState::default();
                     // relative.namespace = self.namespace.clone();
-                    relative.qualify(&namespace);
-                    uwrite!(
-                        self.src,
-                        "{}lookup_resource({this})->",
-                        relative.src.to_string()
-                    );
+                    if self.gen.gen.opts.host_side() {
+                        let mut relative = SourceWithState::default();
+                        relative.qualify(&namespace);
+                        uwrite!(
+                            self.src,
+                            "{}lookup_resource({this})->",
+                            relative.src.to_string()
+                        );
+                    } else {
+                        let objtype = namespace.join("::");
+                        uwrite!(self.src, "(({objtype}*){this})->",);
+                    }
                 } else {
-                    if matches!(func.kind, FunctionKind::Constructor(_)) {
+                    if matches!(func.kind, FunctionKind::Constructor(_))
+                        && self.gen.gen.opts.host_side()
+                    {
                         let _ = namespace.pop();
                     }
                     let mut relative = SourceWithState::default();
@@ -2655,7 +2727,9 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     _ => {
                         assert!(*amt == operands.len());
                         match &func.kind {
-                            FunctionKind::Constructor(_) if import => {
+                            FunctionKind::Constructor(_)
+                                if import && self.gen.gen.opts.host_side() =>
+                            {
                                 // strange but works
                                 self.src.push_str("this->handle = ");
                             }
