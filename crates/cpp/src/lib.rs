@@ -981,7 +981,12 @@ impl CppInterfaceGenerator<'_> {
         drop(cpp_sig);
 
         // we want to separate the lowered signature (wasm) and the high level signature
-        if !import && !matches!(is_special, SpecialMethod::ResourceDrop|SpecialMethod::ResourceNew) {
+        if !import
+            && !matches!(
+                is_special,
+                SpecialMethod::ResourceDrop | SpecialMethod::ResourceNew
+            )
+        {
             self.print_export_signature(func)
         } else {
             // recalulate with c file namespace
@@ -1063,9 +1068,25 @@ impl CppInterfaceGenerator<'_> {
             match is_special_method(func) {
                 SpecialMethod::ResourceDrop => match lift_lower {
                     LiftLower::LiftArgsLowerResults => {
-                        let namespace = class_namespace(self, func, variant);
-                        self.gen.c_src.qualify(&namespace);
-                        uwriteln!(self.gen.c_src.src, "  remove_resource({});", params[0]);
+                        if self.gen.opts.host_side() {
+                            let namespace = class_namespace(self, func, variant);
+                            self.gen.c_src.qualify(&namespace);
+                            uwriteln!(self.gen.c_src.src, "  remove_resource({});", params[0]);
+                        } else {
+                            let module_name = String::from("[export]")
+                                + &self.wasm_import_module.as_ref().map(|e| e.clone()).unwrap();
+                            let wasm_sig = self.declare_import(
+                                &module_name,
+                                &func.name,
+                                &[WasmType::I32],
+                                &[],
+                            );
+                            uwriteln!(
+                                self.gen.c_src.src,
+                                "{wasm_sig}({});",
+                                func.params.get(0).unwrap().0
+                            );
+                        }
                     }
                     LiftLower::LowerArgsLiftResults => {
                         let module_name =
@@ -1085,18 +1106,30 @@ impl CppInterfaceGenerator<'_> {
                     uwriteln!(self.gen.c_src.src, "{0}::Dtor(({0}*)arg0);", classname);
                 }
                 SpecialMethod::ResourceNew => {
-                    
-                    let classname = class_namespace(self, func, variant).join("::");
-                    let args = func
-                        .params
-                        .iter()
-                        .map(|(nm, _ty)| nm.clone())
-                        .collect::<Vec<_>>()
-                        .join(",");
+                    let module_name = String::from("[export]")
+                        + &self.wasm_import_module.as_ref().map(|e| e.clone()).unwrap();
+                    let wasm_sig = self.declare_import(
+                        &module_name,
+                        &func.name,
+                        &[WasmType::Pointer],
+                        &[WasmType::I32],
+                    );
                     uwriteln!(
                         self.gen.c_src.src,
-                        "return {classname}::New({args})->handle;"
+                        "return {wasm_sig}((uintptr_t){});",
+                        func.params.get(0).unwrap().0
                     );
+                    // let classname = class_namespace(self, func, variant).join("::");
+                    // let args = func
+                    //     .params
+                    //     .iter()
+                    //     .map(|(nm, _ty)| nm.clone())
+                    //     .collect::<Vec<_>>()
+                    //     .join(",");
+                    // uwriteln!(
+                    //     self.gen.c_src.src,
+                    //     "return {classname}::New({args})->handle;"
+                    // );
                     // self.gen.c_src.src.push_str("// new logic: call r-new\n");
                     //let f = Function { name: String::new(), kind: FunctionKind::Static(Id), params: Vec::new(), results: Vec::new(), docs: Docs::default() };
                 }
