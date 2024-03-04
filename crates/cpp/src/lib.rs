@@ -950,12 +950,18 @@ impl CppInterfaceGenerator<'_> {
                 uwrite!(
                     self.gen.h_src.src,
                     "{{\
-                        return new {};\
+                        return new {}({});\
                     }}",
-                    cpp_sig.namespace.join("::")
+                    cpp_sig.namespace.join("::"),
+                    cpp_sig
+                        .arguments
+                        .iter()
+                        .map(|(arg, _)| arg.clone())
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 );
                 // body is inside the header
-                return;
+                return Vec::default();
             }
             SpecialMethod::Dtor => {
                 uwrite!(
@@ -965,8 +971,6 @@ impl CppInterfaceGenerator<'_> {
                     }}",
                     cpp_sig.arguments.get(0).unwrap().0
                 );
-                // body is inside the header
-                return;
             }
             // SpecialMethod::None => todo!(),
             // SpecialMethod::ResourceDrop => todo!(),
@@ -977,7 +981,7 @@ impl CppInterfaceGenerator<'_> {
         drop(cpp_sig);
 
         // we want to separate the lowered signature (wasm) and the high level signature
-        if !import {
+        if !import && !matches!(is_special, SpecialMethod::ResourceDrop|SpecialMethod::ResourceNew) {
             self.print_export_signature(func)
         } else {
             // recalulate with c file namespace
@@ -1048,119 +1052,125 @@ impl CppInterfaceGenerator<'_> {
             AbiVariant::GuestExport => !self.gen.opts.host_side(),
         };
         let params = self.print_signature(func, !export);
-        self.gen.c_src.src.push_str("{\n");
-        let lift_lower = if export {
-            LiftLower::LiftArgsLowerResults
-        } else {
-            LiftLower::LowerArgsLiftResults
-        };
-        match is_special_method(func) {
-            SpecialMethod::ResourceDrop => match lift_lower {
-                LiftLower::LiftArgsLowerResults => {
-                    let namespace = class_namespace(self, func, variant);
-                    self.gen.c_src.qualify(&namespace);
-                    uwriteln!(self.gen.c_src.src, "  remove_resource({});", params[0]);
-                }
-                LiftLower::LowerArgsLiftResults => {
-                    let module_name = self.wasm_import_module.as_ref().map(|e| e.clone()).unwrap();
-                    let name = self.declare_import(&module_name, &func.name, &[WasmType::I32], &[]);
-                    uwriteln!(
-                        self.gen.c_src.src,
-                        "   if (handle>=0) {{
+        let special = is_special_method(func);
+        if !matches!(special, SpecialMethod::Allocate) {
+            self.gen.c_src.src.push_str("{\n");
+            let lift_lower = if export {
+                LiftLower::LiftArgsLowerResults
+            } else {
+                LiftLower::LowerArgsLiftResults
+            };
+            match is_special_method(func) {
+                SpecialMethod::ResourceDrop => match lift_lower {
+                    LiftLower::LiftArgsLowerResults => {
+                        let namespace = class_namespace(self, func, variant);
+                        self.gen.c_src.qualify(&namespace);
+                        uwriteln!(self.gen.c_src.src, "  remove_resource({});", params[0]);
+                    }
+                    LiftLower::LowerArgsLiftResults => {
+                        let module_name =
+                            self.wasm_import_module.as_ref().map(|e| e.clone()).unwrap();
+                        let name =
+                            self.declare_import(&module_name, &func.name, &[WasmType::I32], &[]);
+                        uwriteln!(
+                            self.gen.c_src.src,
+                            "   if (handle>=0) {{
                                 {name}(handle);
                             }}"
-                    );
+                        );
+                    }
+                },
+                SpecialMethod::Dtor => {
+                    let classname = class_namespace(self, func, variant).join("::");
+                    uwriteln!(self.gen.c_src.src, "{0}::Dtor(({0}*)arg0);", classname);
                 }
-            },
-            SpecialMethod::Dtor => {
-                let classname = class_namespace(self, func, variant).join("::");
-                uwriteln!(self.gen.c_src.src, "{0}::Dtor(({0}*)arg0);", classname);
+                SpecialMethod::ResourceNew => {
+                    
+                    let classname = class_namespace(self, func, variant).join("::");
+                    let args = func
+                        .params
+                        .iter()
+                        .map(|(nm, _ty)| nm.clone())
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    uwriteln!(
+                        self.gen.c_src.src,
+                        "return {classname}::New({args})->handle;"
+                    );
+                    // self.gen.c_src.src.push_str("// new logic: call r-new\n");
+                    //let f = Function { name: String::new(), kind: FunctionKind::Static(Id), params: Vec::new(), results: Vec::new(), docs: Docs::default() };
+                }
+                SpecialMethod::Allocate => unreachable!(),
+                // SpecialMethod::Deallocate => self.gen.c_src.src.push_str("// deallocate\n"),
+                SpecialMethod::None => {
+                    // normal methods
+                    let namespace = if matches!(func.kind, FunctionKind::Freestanding) {
+                        namespace(
+                            self.resolve,
+                            owner,
+                            matches!(variant, AbiVariant::GuestExport),
+                        )
+                    } else {
+                        let owner = &self.resolve.types[match &func.kind {
+                            FunctionKind::Static(id) => *id,
+                            FunctionKind::Constructor(id) => *id,
+                            FunctionKind::Method(id) => *id,
+                            FunctionKind::Freestanding => unreachable!(),
+                        }]
+                        .clone();
+                        let mut namespace = namespace(
+                            self.resolve,
+                            &owner.owner,
+                            matches!(variant, AbiVariant::GuestExport),
+                        );
+                        namespace.push(owner.name.as_ref().unwrap().to_upper_camel_case());
+                        namespace
+                    };
+                    let mut f = FunctionBindgen::new(self, params);
+                    if !export {
+                        f.namespace = namespace;
+                        f.wamr_signature = Some(wamr::wamr_signature(&f.gen.resolve, func));
+                    }
+                    abi::call(f.gen.resolve, variant, lift_lower, func, &mut f);
+                    let code = String::from(f.src);
+                    self.gen.c_src.src.push_str(&code);
+                }
             }
-            SpecialMethod::ResourceNew => {
-                let classname = class_namespace(self, func, variant).join("::");
-                let args = func
-                    .params
-                    .iter()
-                    .map(|(nm, _ty)| nm.clone())
-                    .collect::<Vec<_>>()
-                    .join(",");
+            self.gen.c_src.src.push_str("}\n");
+            // cabi_post
+            if !self.gen.opts.host_side()
+                && matches!(variant, AbiVariant::GuestExport)
+                && abi::guest_export_needs_post_return(self.resolve, func)
+            {
+                let sig = self.resolve.wasm_signature(variant, func);
+                let module_name = self.wasm_import_module.as_ref().map(|e| e.clone()).unwrap();
+                let export_name = func.core_export_name(Some(&module_name));
+                let import_name = CppInterfaceGenerator::export_name2(
+                    &module_name,
+                    &func.name,
+                    AbiVariant::GuestExport,
+                );
                 uwriteln!(
                     self.gen.c_src.src,
-                    "return {classname}::New({args})->handle;"
+                    "__attribute__((__weak__, __export_name__(\"cabi_post_{export_name}\")))"
                 );
-                // self.gen.c_src.src.push_str("// new logic: call r-new\n");
-                //let f = Function { name: String::new(), kind: FunctionKind::Static(Id), params: Vec::new(), results: Vec::new(), docs: Docs::default() };
-            }
-            SpecialMethod::Allocate => self.gen.c_src.src.push_str("// allocate\n"),
-            // SpecialMethod::Deallocate => self.gen.c_src.src.push_str("// deallocate\n"),
-            SpecialMethod::None => {
-                // normal methods
-                let namespace = if matches!(func.kind, FunctionKind::Freestanding) {
-                    namespace(
-                        self.resolve,
-                        owner,
-                        matches!(variant, AbiVariant::GuestExport),
-                    )
-                } else {
-                    let owner = &self.resolve.types[match &func.kind {
-                        FunctionKind::Static(id) => *id,
-                        FunctionKind::Constructor(id) => *id,
-                        FunctionKind::Method(id) => *id,
-                        FunctionKind::Freestanding => unreachable!(),
-                    }]
-                    .clone();
-                    let mut namespace = namespace(
-                        self.resolve,
-                        &owner.owner,
-                        matches!(variant, AbiVariant::GuestExport),
-                    );
-                    namespace.push(owner.name.as_ref().unwrap().to_upper_camel_case());
-                    namespace
-                };
-                let mut f = FunctionBindgen::new(self, params);
-                if !export {
-                    f.namespace = namespace;
-                    f.wamr_signature = Some(wamr::wamr_signature(&f.gen.resolve, func));
+                uwrite!(self.gen.c_src.src, "void cabi_post_{import_name}(");
+
+                let mut params = Vec::new();
+                for (i, result) in sig.results.iter().enumerate() {
+                    let name = format!("arg{i}");
+                    uwrite!(self.gen.c_src.src, "{} {name}", wasm_type(*result));
+                    params.push(name);
                 }
-                abi::call(f.gen.resolve, variant, lift_lower, func, &mut f);
-                let code = String::from(f.src);
-                self.gen.c_src.src.push_str(&code);
-            }
-        }
-        self.gen.c_src.src.push_str("}\n");
-        // cabi_post
-        if !self.gen.opts.host_side()
-            && matches!(variant, AbiVariant::GuestExport)
-            && abi::guest_export_needs_post_return(self.resolve, func)
-        {
-            let sig = self.resolve.wasm_signature(variant, func);
-            let module_name = self.wasm_import_module.as_ref().map(|e| e.clone()).unwrap();
-            let export_name = func.core_export_name(Some(&module_name));
-            let import_name = CppInterfaceGenerator::export_name2(
-                &module_name,
-                &func.name,
-                AbiVariant::GuestExport,
-            );
-            uwriteln!(
-                self.gen.c_src.src,
-                "__attribute__((__weak__, __export_name__(\"cabi_post_{export_name}\")))"
-            );
-            uwrite!(self.gen.c_src.src, "void cabi_post_{import_name}(");
+                self.gen.c_src.src.push_str(") {\n");
 
-            let mut params = Vec::new();
-            for (i, result) in sig.results.iter().enumerate() {
-                let name = format!("arg{i}");
-                uwrite!(self.gen.c_src.src, "{} {name}", wasm_type(*result));
-                params.push(name);
+                let mut f = FunctionBindgen::new(self, params.clone());
+                f.params = params;
+                abi::post_return(f.gen.resolve, func, &mut f);
+                let FunctionBindgen { src, .. } = f;
+                self.gen.c_src.src.push_str(&src);
+                self.gen.c_src.src.push_str("}\n");
             }
-            self.gen.c_src.src.push_str(") {\n");
-
-            let mut f = FunctionBindgen::new(self, params.clone());
-            f.params = params;
-            abi::post_return(f.gen.resolve, func, &mut f);
-            let FunctionBindgen { src, .. } = f;
-            self.gen.c_src.src.push_str(&src);
-            self.gen.c_src.src.push_str("}\n");
         }
     }
 
