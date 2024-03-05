@@ -2,8 +2,8 @@ use crate::{int_repr, to_rust_ident, wasm_type, InterfaceGenerator, RustFlagsRep
 use heck::*;
 use std::fmt::Write as _;
 use std::mem;
-use wit_bindgen_core::abi::{Bindgen, Instruction, LiftLower, WasmType};
-use wit_bindgen_core::{dealias, uwrite, uwriteln, wit_parser::*, Source};
+use wit_bindgen_core::abi::{AbiVariant, Bindgen, Instruction, LiftLower, WasmType};
+use wit_bindgen_core::{dealias, make_external_symbol, uwrite, uwriteln, wit_parser::*, Source};
 
 pub(super) struct FunctionBindgen<'a, 'b> {
     pub gen: &'b mut InterfaceGenerator<'a>,
@@ -78,21 +78,18 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             sig.push_str(" -> ");
             sig.push_str(wasm_type(*result));
         }
+        let export_name = make_external_symbol(module_name, name, AbiVariant::GuestImport);
         uwrite!(
             self.src,
             "
-                #[cfg(target_arch = \"wasm32\")]
                 #[link(wasm_import_module = \"{module_name}\")]
                 extern \"C\" {{
-                    #[link_name = \"{name}\"]
-                    fn wit_import{sig};
+                    #[cfg_attr(target_arch = \"wasm32\", link_name = \"{name}\")]
+                    fn {export_name}{sig};
                 }}
-
-                #[cfg(not(target_arch = \"wasm32\"))]
-                fn wit_import{sig} {{ unreachable!() }}
             "
         );
-        "wit_import".to_string()
+        export_name
     }
 
     fn let_results(&mut self, amt: usize, results: &mut Vec<String>) {
@@ -441,7 +438,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         .as_deref()
                         .unwrap()
                         .to_upper_camel_case();
-                    format!("{name}Borrow::lift({op} as u32 as usize)")
+                    format!("{name}Borrow::lift({op} as usize)")
                 } else {
                     let tmp = format!("handle{}", self.tmp());
                     self.handle_decls.push(format!("let {tmp};"));

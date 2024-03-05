@@ -9,7 +9,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::mem;
 use wit_bindgen_core::abi::{self, AbiVariant, LiftLower};
-use wit_bindgen_core::{dealias, uwrite, uwriteln, wit_parser::*, Source, TypeInfo};
+use wit_bindgen_core::{
+    dealias, make_external_component, make_external_symbol, uwrite, uwriteln, wit_parser::*,
+    Source, TypeInfo,
+};
 
 pub struct InterfaceGenerator<'a> {
     pub src: Source,
@@ -196,6 +199,16 @@ impl InterfaceGenerator<'_> {
             let resource_name = self.resolve.types[resource].name.as_ref().unwrap();
             let (_, interface_name) = interface.unwrap();
             let module = self.resolve.name_world_key(interface_name);
+            let external_new = make_external_symbol(
+                &(String::from("[export]") + &module),
+                &(String::from("[resource-new]") + &resource_name),
+                AbiVariant::GuestImport,
+            );
+            let external_rep = make_external_symbol(
+                &(String::from("[export]") + &module),
+                &(String::from("[resource-rep]") + &resource_name),
+                AbiVariant::GuestImport,
+            );
             uwriteln!(
                 self.src,
                 r#"
@@ -203,17 +216,13 @@ impl InterfaceGenerator<'_> {
 unsafe fn _resource_new(val: *mut u8) -> u32
     where Self: Sized
 {{
-    #[cfg(not(target_arch = "wasm32"))]
-    unreachable!();
-
-    #[cfg(target_arch = "wasm32")]
     {{
         #[link(wasm_import_module = "[export]{module}")]
         extern "C" {{
-            #[link_name = "[resource-new]{resource_name}"]
-            fn new(_: *mut u8) -> u32;
+            #[cfg_attr(target_arch = "wasm32", link_name = "[resource-new]{resource_name}")]
+            fn {external_new}(_: *mut u8) -> u32;
         }}
-        new(val)
+        {external_new}(val)
     }}
 }}
 
@@ -221,18 +230,14 @@ unsafe fn _resource_new(val: *mut u8) -> u32
 fn _resource_rep(handle: u32) -> *mut u8
     where Self: Sized
 {{
-    #[cfg(not(target_arch = "wasm32"))]
-    unreachable!();
-
-    #[cfg(target_arch = "wasm32")]
     {{
         #[link(wasm_import_module = "[export]{module}")]
         extern "C" {{
-            #[link_name = "[resource-rep]{resource_name}"]
-            fn rep(_: u32) -> *mut u8;
+            #[cfg_attr(target_arch = "wasm32", link_name = "[resource-rep]{resource_name}")]
+            fn {external_rep}(_: u32) -> *mut u8;
         }}
         unsafe {{
-            rep(handle)
+            {external_rep}(handle)
         }}
     }}
 }}
@@ -573,11 +578,12 @@ macro_rules! {macro_name} {{
         };
         let export_prefix = self.gen.opts.export_prefix.as_deref().unwrap_or("");
         let export_name = func.core_export_name(wasm_module_export_name.as_deref());
+        let external_name = make_external_component(&(String::from(export_prefix) + &export_name));
         uwrite!(
             self.src,
             "\
                 #[export_name = \"{export_prefix}{export_name}\"]
-                unsafe extern \"C\" fn export_{name_snake}\
+                unsafe extern \"C\" fn {external_name}\
 ",
         );
 
@@ -592,11 +598,13 @@ macro_rules! {macro_name} {{
 
         if abi::guest_export_needs_post_return(self.resolve, func) {
             let export_prefix = self.gen.opts.export_prefix.as_deref().unwrap_or("");
+            let external_name =
+                make_external_component(&(String::from(export_prefix) + &export_name));
             uwrite!(
                 self.src,
                 "\
                     #[export_name = \"{export_prefix}cabi_post_{export_name}\"]
-                    unsafe extern \"C\" fn _post_return_{name_snake}\
+                    unsafe extern \"C\" fn {external_name}\
 "
             );
             let params = self.print_post_return_sig(func);
@@ -2098,24 +2106,25 @@ impl<'a> {camel}Borrow<'a>{{
         };
 
         let wasm_resource = self.path_to_wasm_resource();
+        let export_name = make_external_symbol(
+            &wasm_import_module,
+            &format!("[resource-drop]{name}"),
+            AbiVariant::GuestImport,
+        );
         uwriteln!(
             self.src,
             r#"
                 unsafe impl {wasm_resource} for {camel} {{
                      #[inline]
                      unsafe fn drop(_handle: u32) {{
-                         #[cfg(not(target_arch = "wasm32"))]
-                         unreachable!();
-
-                         #[cfg(target_arch = "wasm32")]
                          {{
                              #[link(wasm_import_module = "{wasm_import_module}")]
                              extern "C" {{
-                                 #[link_name = "[resource-drop]{name}"]
-                                 fn drop(_: u32);
+                                 #[cfg_attr(target_arch = "wasm32", link_name = "[resource-drop]{name}")]
+                                 fn {export_name}(_: u32);
                              }}
 
-                             drop(_handle);
+                             {export_name}(_handle);
                          }}
                      }}
                 }}

@@ -9,10 +9,10 @@ use std::{
 use wit_bindgen_c::{to_c_ident, wasm_type};
 use wit_bindgen_core::{
     abi::{self, AbiVariant, Bindgen, Bitcast, LiftLower, WasmSignature, WasmType},
-    uwrite, uwriteln,
+    make_external_symbol, uwrite, uwriteln,
     wit_parser::{
         Docs, Function, FunctionKind, Handle, Int, InterfaceId, Resolve, Results, SizeAlign, Type,
-        TypeDefKind, TypeId, TypeOwner, Variant, WorldId, WorldKey,
+        TypeDefKind, TypeId, TypeOwner, WorldId, WorldKey,
     },
     Files, InterfaceGenerator, Source, WorldGenerator,
 };
@@ -243,9 +243,7 @@ impl WorldGenerator for Cpp {
         let binding = Some(name);
         let mut gen = self.interface(resolve, binding, true, Some(wasm_import_module));
         gen.interface = Some(id);
-        // if self.gen.interfaces_with_types_printed.insert(id) {
         gen.types(id);
-        // }
         let namespace = namespace(resolve, &TypeOwner::Interface(id), false);
 
         for (_name, func) in resolve.interfaces[id].functions.iter() {
@@ -254,7 +252,6 @@ impl WorldGenerator for Cpp {
                 gen.generate_function(func, &TypeOwner::Interface(id), AbiVariant::GuestImport);
             }
         }
-        // gen.finish();
     }
 
     fn export_interface(
@@ -766,8 +763,7 @@ impl CppInterfaceGenerator<'_> {
                 wasm_type(signature.results[0])
             });
         self.gen.c_src.src.push_str(" ");
-        let export_name =
-            CppInterfaceGenerator::export_name2(&module_name, &func.name, AbiVariant::GuestExport);
+        let export_name = make_external_symbol(&module_name, &func.name, AbiVariant::GuestExport);
         self.gen.c_src.src.push_str(&export_name);
         self.gen.c_src.src.push_str("(");
         let mut first_arg = true;
@@ -1176,11 +1172,8 @@ impl CppInterfaceGenerator<'_> {
                 let sig = self.resolve.wasm_signature(variant, func);
                 let module_name = self.wasm_import_module.as_ref().map(|e| e.clone()).unwrap();
                 let export_name = func.core_export_name(Some(&module_name));
-                let import_name = CppInterfaceGenerator::export_name2(
-                    &module_name,
-                    &func.name,
-                    AbiVariant::GuestExport,
-                );
+                let import_name =
+                    make_external_symbol(&module_name, &func.name, AbiVariant::GuestExport);
                 uwriteln!(
                     self.gen.c_src.src,
                     "extern \"C\" __attribute__((__weak__, __export_name__(\"cabi_post_{export_name}\")))"
@@ -1388,56 +1381,13 @@ impl CppInterfaceGenerator<'_> {
         }
     }
 
-    fn hexdigit(v: u32) -> char {
-        if v < 10 {
-            char::from_u32(('0' as u32) + v).unwrap()
-        } else {
-            char::from_u32(('A' as u32) - 10 + v).unwrap()
-        }
-    }
-
-    fn make_export_name(input: &str) -> String {
-        input
-            .chars()
-            .map(|c| match c {
-                'A'..='Z' | 'a'..='z' | '0'..='9' => {
-                    let mut s = String::new();
-                    s.push(c);
-                    s
-                }
-                '-' => {
-                    let mut s = String::new();
-                    s.push('_');
-                    s
-                }
-                _ => {
-                    let mut s = String::from_str("X").unwrap();
-                    s.push(Self::hexdigit((c as u32 & 0xf0) >> 4));
-                    s.push(Self::hexdigit(c as u32 & 0xf));
-                    s
-                }
-            })
-            .collect()
-    }
-
-    fn export_name2(module_name: &str, name: &str, variant: AbiVariant) -> String {
-        let mut res = Self::make_export_name(module_name);
-        res.push_str(if matches!(variant, AbiVariant::GuestExport) {
-            "X23" // Hash character
-        } else {
-            "X00" // NUL character (some tools use '.' for display)
-        });
-        res.push_str(&Self::make_export_name(name));
-        res
-    }
-
     fn declare_import2(
         module_name: &str,
         name: &str,
         args: &str,
         result: &str,
     ) -> (String, String) {
-        let extern_name = Self::export_name2(module_name, name, AbiVariant::GuestImport);
+        let extern_name = make_external_symbol(module_name, name, AbiVariant::GuestImport);
         let import = format!("extern \"C\" __attribute__((import_module(\"{module_name}\")))\n __attribute__((import_name(\"{name}\")))\n {result} {extern_name}({args});\n");
         (extern_name, import)
     }

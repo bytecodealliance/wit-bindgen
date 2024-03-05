@@ -90,3 +90,6 @@ test-artifacts = { path = 'crates/test-rust-wasm/artifacts' }
 wit-parser = { workspace = true }
 wasmparser = { workspace = true }
 wasm-encoder = { workspace = true }
+
+[patch.crates-io]
+wit-parser = { path = "/home/christof/src/wasm-tools/crates/wit-parser" }
