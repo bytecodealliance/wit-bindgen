@@ -420,6 +420,9 @@ impl WorldGenerator for Cpp {
             }
         }
 
+        if self.opts.short_cut {
+            uwriteln!(h_str.src, "#define WIT_HOST_DIRECT");
+        }
         for include in self.includes.iter() {
             uwriteln!(h_str.src, "#include {include}");
         }
@@ -1326,7 +1329,7 @@ impl CppInterfaceGenerator<'_> {
                     self.type_name(&Type::Id(*id), from_namespace, flavor)
                 }
                 TypeDefKind::Handle(Handle::Borrow(id)) => {
-                    "std::reference_wrapper<".to_string()
+                    "std::reference_wrapper<const ".to_string()
                         + &self.type_name(&Type::Id(*id), from_namespace, flavor)
                         + ">"
                 }
