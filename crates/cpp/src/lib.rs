@@ -1164,6 +1164,7 @@ impl CppInterfaceGenerator<'_> {
                         f.namespace = namespace;
                         f.wamr_signature = Some(wamr::wamr_signature(&f.gen.resolve, func));
                     }
+                    f.variant = variant;
                     abi::call(f.gen.resolve, variant, lift_lower, func, &mut f);
                     let code = String::from(f.src);
                     self.gen.c_src.src.push_str(&code);
@@ -1817,6 +1818,7 @@ struct FunctionBindgen<'a, 'b> {
     payloads: Vec<String>,
     // caching for wasm
     wamr_signature: Option<wamr::WamrSig>,
+    variant: AbiVariant,
 }
 
 impl<'a, 'b> FunctionBindgen<'a, 'b> {
@@ -1833,6 +1835,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             blocks: Default::default(),
             payloads: Default::default(),
             wamr_signature: None,
+            variant: AbiVariant::GuestImport,
         }
     }
 
@@ -2764,15 +2767,13 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 self.push_str(");\n");
             }
             abi::Instruction::Return { amt, func } => {
-                let import = !self.gen.gen.opts.host;
+                let import = matches!(self.variant, AbiVariant::GuestImport);
                 match amt {
                     0 => {}
                     _ => {
                         assert!(*amt == operands.len());
                         match &func.kind {
-                            FunctionKind::Constructor(_)
-                                if import && self.gen.gen.opts.host_side() =>
-                            {
+                            FunctionKind::Constructor(_) if import => {
                                 // strange but works
                                 self.src.push_str("this->handle = ");
                             }
