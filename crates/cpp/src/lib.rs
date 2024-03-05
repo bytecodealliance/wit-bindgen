@@ -756,7 +756,7 @@ impl CppInterfaceGenerator<'_> {
             let func_name = &func.name;
             uwriteln!(
                 self.gen.c_src.src,
-                r#"__attribute__((__export_name__("{module_name}#{func_name}")))"#
+                r#"extern "C" __attribute__((__export_name__("{module_name}#{func_name}")))"#
             );
         }
         let return_via_pointer = signature.retptr && self.gen.opts.host_side();
@@ -1186,7 +1186,7 @@ impl CppInterfaceGenerator<'_> {
                 );
                 uwriteln!(
                     self.gen.c_src.src,
-                    "__attribute__((__weak__, __export_name__(\"cabi_post_{export_name}\")))"
+                    "extern \"C\" __attribute__((__weak__, __export_name__(\"cabi_post_{export_name}\")))"
                 );
                 uwrite!(self.gen.c_src.src, "void cabi_post_{import_name}(");
 
