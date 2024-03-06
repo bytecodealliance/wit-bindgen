@@ -1455,12 +1455,17 @@ impl InterfaceGenerator<'_> {
             }
 
             TypeDefKind::List(t) => {
+                self.src.c_helpers("size_t list_len = ptr->len;\n");
+                uwriteln!(self.src.c_helpers, "if (list_len > 0) {{");
+                let mut t_name = String::new();
+                self.gen.push_type_name(t, &mut t_name);
                 self.src
-                    .c_helpers("for (size_t i = 0; i < ptr->len; i++) {\n");
-                self.free(t, "&ptr->ptr[i]");
+                    .c_helpers(&format!("{t_name} *list_ptr = ptr->ptr;\n"));
+                self.src
+                    .c_helpers("for (size_t i = 0; i < list_len; i++) {\n");
+                self.free(t, "&list_ptr[i]");
                 self.src.c_helpers("}\n");
-                uwriteln!(self.src.c_helpers, "if (ptr->len > 0) {{");
-                uwriteln!(self.src.c_helpers, "free(ptr->ptr);");
+                uwriteln!(self.src.c_helpers, "free(list_ptr);");
                 uwriteln!(self.src.c_helpers, "}}");
             }
 
@@ -2111,13 +2116,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             self.import_return_pointer_area_size = self.import_return_pointer_area_size.max(size);
             self.import_return_pointer_area_align =
                 self.import_return_pointer_area_align.max(align);
-            uwriteln!(self.src, "int32_t {} = (int32_t) &ret_area;", ptr);
+            uwriteln!(self.src, "uint8_t *{} = (uint8_t *) &ret_area;", ptr);
         } else {
             self.gen.gen.return_pointer_area_size = self.gen.gen.return_pointer_area_size.max(size);
             self.gen.gen.return_pointer_area_align =
                 self.gen.gen.return_pointer_area_align.max(align);
             // Declare a statically-allocated return area.
-            uwriteln!(self.src, "int32_t {} = (int32_t) &RET_AREA;", ptr);
+            uwriteln!(self.src, "uint8_t *{} = (uint8_t *) &RET_AREA;", ptr);
         }
 
         ptr
@@ -2562,8 +2567,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::EnumLift { .. } => results.push(operands.pop().unwrap()),
 
             Instruction::ListCanonLower { .. } | Instruction::StringLower { .. } => {
-                results.push(format!("(int32_t) ({}).ptr", operands[0]));
-                results.push(format!("(int32_t) ({}).len", operands[0]));
+                results.push(format!("(uint8_t *) ({}).ptr", operands[0]));
+                results.push(format!("({}).len", operands[0]));
             }
             Instruction::ListCanonLift { element, ty, .. } => {
                 self.assert_no_droppable_borrows("list", &Type::Id(*ty));
@@ -2571,14 +2576,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let list_name = self.gen.gen.type_name(&Type::Id(*ty));
                 let elem_name = self.gen.gen.type_name(element);
                 results.push(format!(
-                    "({}) {{ ({}*)({}), (size_t)({}) }}",
+                    "({}) {{ ({}*)({}), ({}) }}",
                     list_name, elem_name, operands[0], operands[1]
                 ));
             }
             Instruction::StringLift { .. } => {
                 let list_name = self.gen.gen.type_name(&Type::String);
                 results.push(format!(
-                    "({}) {{ ({}*)({}), (size_t)({}) }}",
+                    "({}) {{ ({}*)({}), ({}) }}",
                     list_name,
                     self.gen.gen.char_type(),
                     operands[0],
@@ -2588,8 +2593,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::ListLower { .. } => {
                 let _body = self.blocks.pop().unwrap();
-                results.push(format!("(int32_t) ({}).ptr", operands[0]));
-                results.push(format!("(int32_t) ({}).len", operands[0]));
+                results.push(format!("(uint8_t *) ({}).ptr", operands[0]));
+                results.push(format!("({}).len", operands[0]));
             }
 
             Instruction::ListLift { element, ty, .. } => {
@@ -2599,7 +2604,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let list_name = self.gen.gen.type_name(&Type::Id(*ty));
                 let elem_name = self.gen.gen.type_name(element);
                 results.push(format!(
-                    "({}) {{ ({}*)({}), (size_t)({}) }}",
+                    "({}) {{ ({}*)({}), ({}) }}",
                     list_name, elem_name, operands[0], operands[1]
                 ));
             }
@@ -2841,22 +2846,22 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
             }
 
-            Instruction::I32Load { offset }
-            | Instruction::PointerLoad { offset }
-            | Instruction::LengthLoad { offset } => {
-                self.load("int32_t", *offset, operands, results)
-            }
+            Instruction::I32Load { offset } => self.load("int32_t", *offset, operands, results),
             Instruction::I64Load { offset } => self.load("int64_t", *offset, operands, results),
             Instruction::F32Load { offset } => self.load("float", *offset, operands, results),
             Instruction::F64Load { offset } => self.load("double", *offset, operands, results),
-            Instruction::I32Store { offset }
-            | Instruction::PointerStore { offset }
-            | Instruction::LengthStore { offset } => self.store("int32_t", *offset, operands),
+            Instruction::PointerLoad { offset } => {
+                self.load("uint8_t *", *offset, operands, results)
+            }
+            Instruction::LengthLoad { offset } => self.load("size_t", *offset, operands, results),
+            Instruction::I32Store { offset } => self.store("int32_t", *offset, operands),
             Instruction::I64Store { offset } => self.store("int64_t", *offset, operands),
             Instruction::F32Store { offset } => self.store("float", *offset, operands),
             Instruction::F64Store { offset } => self.store("double", *offset, operands),
             Instruction::I32Store8 { offset } => self.store("int8_t", *offset, operands),
             Instruction::I32Store16 { offset } => self.store("int16_t", *offset, operands),
+            Instruction::PointerStore { offset } => self.store("uint8_t *", *offset, operands),
+            Instruction::LengthStore { offset } => self.store("size_t", *offset, operands),
 
             Instruction::I32Load8U { offset } => {
                 self.load_ext("uint8_t", *offset, operands, results)
@@ -2872,11 +2877,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::GuestDeallocate { .. } => {
-                uwriteln!(self.src, "free((void*) ({}));", operands[0]);
+                uwriteln!(self.src, "free({});", operands[0]);
             }
             Instruction::GuestDeallocateString => {
                 uwriteln!(self.src, "if (({}) > 0) {{", operands[1]);
-                uwriteln!(self.src, "free((void*) ({}));", operands[0]);
+                uwriteln!(self.src, "free({});", operands[0]);
                 uwriteln!(self.src, "}}");
             }
             Instruction::GuestDeallocateVariant { blocks } => {
@@ -2897,19 +2902,19 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::GuestDeallocateList { element } => {
                 let (body, results) = self.blocks.pop().unwrap();
                 assert!(results.is_empty());
-                let ptr = self.locals.tmp("ptr");
                 let len = self.locals.tmp("len");
-                uwriteln!(self.src, "int32_t {ptr} = {};", operands[0]);
-                uwriteln!(self.src, "int32_t {len} = {};", operands[1]);
+                uwriteln!(self.src, "size_t {len} = {};", operands[1]);
+                uwriteln!(self.src, "if ({len} > 0) {{");
+                let ptr = self.locals.tmp("ptr");
+                uwriteln!(self.src, "uint8_t *{ptr} = {};", operands[0]);
                 let i = self.locals.tmp("i");
-                uwriteln!(self.src, "for (int32_t {i} = 0; {i} < {len}; {i}++) {{");
+                uwriteln!(self.src, "for (size_t {i} = 0; {i} < {len}; {i}++) {{");
                 let size = self.gen.gen.sizes.size(element);
-                uwriteln!(self.src, "int32_t base = {ptr} + {i} * {size};");
+                uwriteln!(self.src, "uint8_t *base = {ptr} + {i} * {size};");
                 uwriteln!(self.src, "(void) base;");
                 uwrite!(self.src, "{body}");
                 uwriteln!(self.src, "}}");
-                uwriteln!(self.src, "if ({len} > 0) {{");
-                uwriteln!(self.src, "free((void*) ({ptr}));");
+                uwriteln!(self.src, "free({ptr});");
                 uwriteln!(self.src, "}}");
             }
 
@@ -2935,19 +2940,21 @@ fn perform_cast(op: &str, cast: &Bitcast) -> String {
         Bitcast::I32ToI64 | Bitcast::LToI64 | Bitcast::PToP64 => {
             format!("(int64_t) {}", op)
         }
-        Bitcast::I64ToI32 | Bitcast::I64ToL | Bitcast::P64ToP => {
+        Bitcast::I64ToI32 | Bitcast::I64ToL => {
             format!("(int32_t) {}", op)
         }
+        // P64 is currently represented as int64_t, so no conversion is needed.
         Bitcast::I64ToP64 | Bitcast::P64ToI64 => {
             format!("{}", op)
         }
-        Bitcast::I32ToP
-        | Bitcast::PToI32
-        | Bitcast::I32ToL
-        | Bitcast::LToI32
-        | Bitcast::LToP
-        | Bitcast::PToL
-        | Bitcast::None => op.to_string(),
+        Bitcast::P64ToP | Bitcast::I32ToP | Bitcast::LToP => {
+            format!("(uint8_t *) {}", op)
+        }
+
+        // Cast to uintptr_t to avoid implicit pointer-to-int conversions.
+        Bitcast::PToI32 | Bitcast::PToL => format!("(uintptr_t) {}", op),
+
+        Bitcast::I32ToL | Bitcast::LToI32 | Bitcast::None => op.to_string(),
 
         Bitcast::Sequence(sequence) => {
             let [first, second] = &**sequence;
@@ -3031,7 +3038,7 @@ fn wasm_type(ty: WasmType) -> &'static str {
         WasmType::I64 => "int64_t",
         WasmType::F32 => "float",
         WasmType::F64 => "double",
-        WasmType::Pointer => "uintptr_t",
+        WasmType::Pointer => "uint8_t *",
         WasmType::PointerOrI64 => "int64_t",
         WasmType::Length => "size_t",
     }
