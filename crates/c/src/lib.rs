@@ -2943,18 +2943,18 @@ fn perform_cast(op: &str, cast: &Bitcast) -> String {
         Bitcast::I64ToI32 | Bitcast::I64ToL => {
             format!("(int32_t) {}", op)
         }
+        // P64 is currently represented as int64_t, so no conversion is needed.
         Bitcast::I64ToP64 | Bitcast::P64ToI64 => {
             format!("{}", op)
         }
-        Bitcast::P64ToP | Bitcast::I32ToP => {
+        Bitcast::P64ToP | Bitcast::I32ToP | Bitcast::LToP => {
             format!("(uint8_t *) {}", op)
         }
-        Bitcast::PToI32
-        | Bitcast::I32ToL
-        | Bitcast::LToI32
-        | Bitcast::LToP
-        | Bitcast::PToL
-        | Bitcast::None => op.to_string(),
+
+        // Cast to uintptr_t to avoid implicit pointer-to-int conversions.
+        Bitcast::PToI32 | Bitcast::PToL => format!("(uintptr_t) {}", op),
+
+        Bitcast::I32ToL | Bitcast::LToI32 | Bitcast::None => op.to_string(),
 
         Bitcast::Sequence(sequence) => {
             let [first, second] = &**sequence;
