@@ -738,12 +738,6 @@ impl CppInterfaceGenerator<'_> {
                 indirect_params: false,
                 retptr: false,
             },
-            // SpecialMethod::Deallocate => WasmSignature {
-            //     params: vec![WasmType::Pointer],
-            //     results: vec![],
-            //     indirect_params: false,
-            //     retptr: false,
-            // },
         };
         let mut module_name = self.wasm_import_module.as_ref().map(|e| e.clone()).unwrap();
         if matches!(
