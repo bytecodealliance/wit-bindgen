@@ -1733,7 +1733,7 @@ impl InterfaceGenerator<'_> {
         if abi::guest_export_needs_post_return(self.resolve, func) {
             uwriteln!(
                 self.src.c_fns,
-                "__attribute__((__export_name__(\"cabi_post_{export_name}\")))"
+                "__attribute__((__weak__, __export_name__(\"cabi_post_{export_name}\")))"
             );
             uwrite!(self.src.c_fns, "void {import_name}_post_return(");
 
