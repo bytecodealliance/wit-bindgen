@@ -16,7 +16,8 @@ use wit_component::StringEncoding;
 struct C {
     src: Source,
     opts: Opts,
-    includes: Vec<String>,
+    h_includes: Vec<String>,
+    c_includes: Vec<String>,
     return_pointer_area_size: usize,
     return_pointer_area_align: usize,
     names: Ns,
@@ -276,7 +277,7 @@ impl WorldGenerator for C {
 
     fn finish(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) -> Result<()> {
         let linking_symbol = component_type_object::linking_symbol(&self.world);
-        self.include("<stdlib.h>");
+        self.c_include("<stdlib.h>");
         let snake = self.world.to_snake_case();
         uwriteln!(
             self.src.c_adapters,
@@ -295,11 +296,11 @@ impl WorldGenerator for C {
         self.print_intrinsics();
 
         if self.needs_string {
-            self.include("<string.h>");
+            self.c_include("<string.h>");
             let (strlen, size) = match self.opts.string_encoding {
                 StringEncoding::UTF8 => (format!("strlen(s)"), 1),
                 StringEncoding::UTF16 => {
-                    self.include("<uchar.h>");
+                    self.h_include("<uchar.h>");
                     uwrite!(
                         self.src.h_helpers,
                         "
@@ -385,11 +386,14 @@ impl WorldGenerator for C {
 
         uwriteln!(h_str, "#include <stdint.h>");
         uwriteln!(h_str, "#include <stdbool.h>");
+        for include in self.h_includes.iter() {
+            uwriteln!(h_str, "#include {include}");
+        }
 
         let mut c_str = wit_bindgen_core::Source::default();
         wit_bindgen_core::generated_preamble(&mut c_str, version);
         uwriteln!(c_str, "#include \"{snake}.h\"");
-        for include in self.includes.iter() {
+        for include in self.c_includes.iter() {
             uwriteln!(c_str, "#include {include}");
         }
         c_str.push_str(&self.src.c_defs);
@@ -494,8 +498,12 @@ impl C {
         }
     }
 
-    fn include(&mut self, s: &str) {
-        self.includes.push(s.to_string());
+    fn h_include(&mut self, s: &str) {
+        self.h_includes.push(s.to_string());
+    }
+
+    fn c_include(&mut self, s: &str) {
+        self.c_includes.push(s.to_string());
     }
 
     fn char_type(&self) -> &'static str {
