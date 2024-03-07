@@ -2,6 +2,7 @@
 #include <limits.h>
 #include <math.h>
 #include <resources.h>
+#include <stdlib.h>
 
 struct exports_x_t {
     int32_t a;
