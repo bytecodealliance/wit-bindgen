@@ -84,32 +84,32 @@ def_instruction! {
 
         // Memory load/store instructions
 
-        /// Pops an `i32` from the stack and loads a little-endian `i32` from
+        /// Pops a pointer from the stack and loads a little-endian `i32` from
         /// it, using the specified constant offset.
         I32Load { offset: i32 } : [1] => [1],
-        /// Pops an `i32` from the stack and loads a little-endian `i8` from
+        /// Pops a pointer from the stack and loads a little-endian `i8` from
         /// it, using the specified constant offset. The value loaded is the
         /// zero-extended to 32-bits
         I32Load8U { offset: i32 } : [1] => [1],
-        /// Pops an `i32` from the stack and loads a little-endian `i8` from
+        /// Pops a pointer from the stack and loads a little-endian `i8` from
         /// it, using the specified constant offset. The value loaded is the
         /// sign-extended to 32-bits
         I32Load8S { offset: i32 } : [1] => [1],
-        /// Pops an `i32` from the stack and loads a little-endian `i16` from
+        /// Pops a pointer from the stack and loads a little-endian `i16` from
         /// it, using the specified constant offset. The value loaded is the
         /// zero-extended to 32-bits
         I32Load16U { offset: i32 } : [1] => [1],
-        /// Pops an `i32` from the stack and loads a little-endian `i16` from
+        /// Pops a pointer from the stack and loads a little-endian `i16` from
         /// it, using the specified constant offset. The value loaded is the
         /// sign-extended to 32-bits
         I32Load16S { offset: i32 } : [1] => [1],
-        /// Pops an `i32` from the stack and loads a little-endian `i64` from
+        /// Pops a pointer from the stack and loads a little-endian `i64` from
         /// it, using the specified constant offset.
         I64Load { offset: i32 } : [1] => [1],
-        /// Pops an `i32` from the stack and loads a little-endian `f32` from
+        /// Pops a pointer from the stack and loads a little-endian `f32` from
         /// it, using the specified constant offset.
         F32Load { offset: i32 } : [1] => [1],
-        /// Pops an `i32` from the stack and loads a little-endian `f64` from
+        /// Pops a pointer from the stack and loads a little-endian `f64` from
         /// it, using the specified constant offset.
         F64Load { offset: i32 } : [1] => [1],
 
@@ -118,27 +118,27 @@ def_instruction! {
         /// Like `I32Load` or `I64Load`, but for loading array length values.
         LengthLoad { offset: i32 } : [1] => [1],
 
-        /// Pops an `i32` address from the stack and then an `i32` value.
+        /// Pops a pointer from the stack and then an `i32` value.
         /// Stores the value in little-endian at the pointer specified plus the
         /// constant `offset`.
         I32Store { offset: i32 } : [2] => [0],
-        /// Pops an `i32` address from the stack and then an `i32` value.
+        /// Pops a pointer from the stack and then an `i32` value.
         /// Stores the low 8 bits of the value in little-endian at the pointer
         /// specified plus the constant `offset`.
         I32Store8 { offset: i32 } : [2] => [0],
-        /// Pops an `i32` address from the stack and then an `i32` value.
+        /// Pops a pointer from the stack and then an `i32` value.
         /// Stores the low 16 bits of the value in little-endian at the pointer
         /// specified plus the constant `offset`.
         I32Store16 { offset: i32 } : [2] => [0],
-        /// Pops an `i32` address from the stack and then an `i64` value.
+        /// Pops a pointer from the stack and then an `i64` value.
         /// Stores the value in little-endian at the pointer specified plus the
         /// constant `offset`.
         I64Store { offset: i32 } : [2] => [0],
-        /// Pops an `i32` address from the stack and then an `f32` value.
+        /// Pops a pointer from the stack and then an `f32` value.
         /// Stores the value in little-endian at the pointer specified plus the
         /// constant `offset`.
         F32Store { offset: i32 } : [2] => [0],
-        /// Pops an `i32` address from the stack and then an `f64` value.
+        /// Pops a pointer from the stack and then an `f64` value.
         /// Stores the value in little-endian at the pointer specified plus the
         /// constant `offset`.
         F64Store { offset: i32 } : [2] => [0],
