@@ -276,6 +276,7 @@ impl WorldGenerator for C {
 
     fn finish(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) -> Result<()> {
         let linking_symbol = component_type_object::linking_symbol(&self.world);
+        self.include("<stdlib.h>");
         let snake = self.world.to_snake_case();
         uwriteln!(
             self.src.c_adapters,
@@ -382,17 +383,15 @@ impl WorldGenerator for C {
         h_str.deindent(1);
         uwriteln!(h_str, "\n#endif\n");
 
-        self.include("<stdint.h>");
-        self.include("<stdbool.h>");
-
-        for include in self.includes.iter() {
-            uwriteln!(h_str, "#include {include}");
-        }
+        uwriteln!(h_str, "#include <stdint.h>");
+        uwriteln!(h_str, "#include <stdbool.h>");
 
         let mut c_str = wit_bindgen_core::Source::default();
         wit_bindgen_core::generated_preamble(&mut c_str, version);
         uwriteln!(c_str, "#include \"{snake}.h\"");
-        uwriteln!(c_str, "#include <stdlib.h>");
+        for include in self.includes.iter() {
+            uwriteln!(c_str, "#include {include}");
+        }
         c_str.push_str(&self.src.c_defs);
         c_str.push_str(&self.src.c_fns);
 
