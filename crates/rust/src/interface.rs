@@ -599,13 +599,13 @@ macro_rules! {macro_name} {{
 
         if abi::guest_export_needs_post_return(self.resolve, func) {
             let export_prefix = self.gen.opts.export_prefix.as_deref().unwrap_or("");
-            let external_name = make_external_component(
-                &(String::from(export_prefix) + "cabi_post_" + &export_name),
-            );
+            let external_name = make_external_component(export_prefix)
+                + "cabi_post_"
+                + &make_external_component(&export_name);
             uwrite!(
                 self.src,
                 "\
-                    #[target_arch = \"wasm32\", export_name = \"{export_prefix}cabi_post_{export_name}\")]
+                    #[cfg_attr(target_arch = \"wasm32\", export_name = \"{export_prefix}cabi_post_{export_name}\")]
                     #[cfg_attr(not(target_arch = \"wasm32\"), no_mangle)]
                     unsafe extern \"C\" fn {external_name}\
             "
