@@ -1691,7 +1691,7 @@ impl InterfaceGenerator<'_> {
         // canonical ABI.
         uwriteln!(
             self.src.c_adapters,
-            "\n__attribute__((__used__, __export_name__(\"{export_name}\")))"
+            "\n__attribute__((__export_name__(\"{export_name}\")))"
         );
         let name = self.c_func_name(interface_name, func);
         let import_name = self.gen.names.tmp(&format!("__wasm_export_{name}"));
@@ -1733,7 +1733,7 @@ impl InterfaceGenerator<'_> {
         if abi::guest_export_needs_post_return(self.resolve, func) {
             uwriteln!(
                 self.src.c_fns,
-                "__attribute__((__used__, __export_name__(\"cabi_post_{export_name}\")))"
+                "__attribute__((__export_name__(\"cabi_post_{export_name}\")))"
             );
             uwrite!(self.src.c_fns, "void {import_name}_post_return(");
 
