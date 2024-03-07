@@ -582,9 +582,10 @@ macro_rules! {macro_name} {{
         uwrite!(
             self.src,
             "\
-                #[export_name = \"{export_prefix}{export_name}\"]
+                #[cfg_attr(target_arch = \"wasm32\", export_name = \"{export_prefix}{export_name}\")]
+                #[cfg_attr(not(target_arch = \"wasm32\"), no_mangle)]
                 unsafe extern \"C\" fn {external_name}\
-",
+        ",
         );
 
         let params = self.print_export_sig(func);
@@ -598,14 +599,16 @@ macro_rules! {macro_name} {{
 
         if abi::guest_export_needs_post_return(self.resolve, func) {
             let export_prefix = self.gen.opts.export_prefix.as_deref().unwrap_or("");
-            let external_name =
-                make_external_component(&(String::from(export_prefix) + &export_name));
+            let external_name = make_external_component(
+                &(String::from(export_prefix) + "cabi_post_" + &export_name),
+            );
             uwrite!(
                 self.src,
                 "\
-                    #[export_name = \"{export_prefix}cabi_post_{export_name}\"]
+                    #[target_arch = \"wasm32\", export_name = \"{export_prefix}cabi_post_{export_name}\")]
+                    #[cfg_attr(not(target_arch = \"wasm32\"), no_mangle)]
                     unsafe extern \"C\" fn {external_name}\
-"
+            "
             );
             let params = self.print_post_return_sig(func);
             self.src.push_str("{\n");
