@@ -16,7 +16,8 @@ use wit_component::StringEncoding;
 struct C {
     src: Source,
     opts: Opts,
-    includes: Vec<String>,
+    h_includes: Vec<String>,
+    c_includes: Vec<String>,
     return_pointer_area_size: usize,
     return_pointer_area_align: usize,
     names: Ns,
@@ -181,6 +182,7 @@ impl WorldGenerator for C {
             if i == 0 {
                 let name = resolve.name_world_key(name);
                 uwriteln!(gen.src.h_fns, "\n// Imported Functions from `{name}`");
+                uwriteln!(gen.src.c_fns, "\n// Imported Functions from `{name}`");
             }
             gen.import(Some(name), func);
         }
@@ -202,6 +204,7 @@ impl WorldGenerator for C {
         for (i, (_name, func)) in funcs.iter().enumerate() {
             if i == 0 {
                 uwriteln!(gen.src.h_fns, "\n// Imported Functions from `{name}`");
+                uwriteln!(gen.src.c_fns, "\n// Imported Functions from `{name}`");
             }
             gen.import(None, func);
         }
@@ -224,6 +227,7 @@ impl WorldGenerator for C {
             if i == 0 {
                 let name = resolve.name_world_key(name);
                 uwriteln!(gen.src.h_fns, "\n// Exported Functions from `{name}`");
+                uwriteln!(gen.src.c_fns, "\n// Exported Functions from `{name}`");
             }
             gen.export(func, Some(name));
         }
@@ -246,6 +250,7 @@ impl WorldGenerator for C {
         for (i, (_name, func)) in funcs.iter().enumerate() {
             if i == 0 {
                 uwriteln!(gen.src.h_fns, "\n// Exported Functions from `{name}`");
+                uwriteln!(gen.src.c_fns, "\n// Exported Functions from `{name}`");
             }
             gen.export(func, None);
         }
@@ -272,8 +277,12 @@ impl WorldGenerator for C {
 
     fn finish(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) -> Result<()> {
         let linking_symbol = component_type_object::linking_symbol(&self.world);
-        self.include("<stdlib.h>");
+        self.c_include("<stdlib.h>");
         let snake = self.world.to_snake_case();
+        uwriteln!(
+            self.src.c_adapters,
+            "\n// Ensure that the *_component_type.o object is linked in"
+        );
         uwrite!(
             self.src.c_adapters,
             "
@@ -287,11 +296,11 @@ impl WorldGenerator for C {
         self.print_intrinsics();
 
         if self.needs_string {
-            self.include("<string.h>");
+            self.c_include("<string.h>");
             let (strlen, size) = match self.opts.string_encoding {
                 StringEncoding::UTF8 => (format!("strlen(s)"), 1),
                 StringEncoding::UTF16 => {
-                    self.include("<uchar.h>");
+                    self.h_include("<uchar.h>");
                     uwrite!(
                         self.src.h_helpers,
                         "
@@ -375,18 +384,17 @@ impl WorldGenerator for C {
         h_str.deindent(1);
         uwriteln!(h_str, "\n#endif\n");
 
-        self.include("<stdint.h>");
-        self.include("<stdbool.h>");
-
-        for include in self.includes.iter() {
+        uwriteln!(h_str, "#include <stdint.h>");
+        uwriteln!(h_str, "#include <stdbool.h>");
+        for include in self.h_includes.iter() {
             uwriteln!(h_str, "#include {include}");
         }
 
         let mut c_str = wit_bindgen_core::Source::default();
         wit_bindgen_core::generated_preamble(&mut c_str, version);
         uwriteln!(c_str, "#include \"{snake}.h\"");
-        if c_str.len() > 0 {
-            c_str.push_str("\n");
+        for include in self.c_includes.iter() {
+            uwriteln!(c_str, "#include {include}");
         }
         c_str.push_str(&self.src.c_defs);
         c_str.push_str(&self.src.c_fns);
@@ -395,7 +403,7 @@ impl WorldGenerator for C {
             uwriteln!(
                 h_str,
                 "
-                typedef struct {{\n\
+                typedef struct {snake}_string_t {{\n\
                   {ty} *ptr;\n\
                   size_t len;\n\
                 }} {snake}_string_t;",
@@ -490,8 +498,12 @@ impl C {
         }
     }
 
-    fn include(&mut self, s: &str) {
-        self.includes.push(s.to_string());
+    fn h_include(&mut self, s: &str) {
+        self.h_includes.push(s.to_string());
+    }
+
+    fn c_include(&mut self, s: &str) {
+        self.c_includes.push(s.to_string());
     }
 
     fn char_type(&self) -> &'static str {
@@ -825,6 +837,8 @@ impl C {
     fn print_intrinsics(&mut self) {
         // Note that these intrinsics are declared as `weak` so they can be
         // overridden from some other symbol.
+        self.src.c_fns("\n// Canonical ABI intrinsics");
+        self.src.c_fns("\n");
         self.src.c_fns(
             r#"
                 __attribute__((__weak__, __export_name__("cabi_realloc")))
@@ -918,7 +932,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     fn type_record(&mut self, id: TypeId, _name: &str, record: &Record, docs: &Docs) {
         self.src.h_defs("\n");
         self.docs(docs, SourceType::HDefs);
-        self.src.h_defs("typedef struct {\n");
+        self.start_typedef_struct(id);
         for field in record.fields.iter() {
             self.docs(&field.docs, SourceType::HDefs);
             self.print_ty(SourceType::HDefs, &field.ty);
@@ -926,8 +940,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             self.src.h_defs(&to_c_ident(&field.name));
             self.src.h_defs(";\n");
         }
-        self.src.h_defs("} ");
-        self.print_typedef_target(id);
+        self.finish_typedef_struct(id);
     }
 
     fn type_resource(&mut self, id: TypeId, name: &str, _docs: &Docs) {
@@ -1097,13 +1110,12 @@ void __wasm_export_{ns}_{snake}_dtor({ns}_{snake}_t* arg) {{
     fn type_tuple(&mut self, id: TypeId, _name: &str, tuple: &Tuple, docs: &Docs) {
         self.src.h_defs("\n");
         self.docs(docs, SourceType::HDefs);
-        self.src.h_defs("typedef struct {\n");
+        self.start_typedef_struct(id);
         for (i, ty) in tuple.types.iter().enumerate() {
             self.print_ty(SourceType::HDefs, ty);
             uwriteln!(self.src.h_defs, " f{i};");
         }
-        self.src.h_defs("} ");
-        self.print_typedef_target(id);
+        self.finish_typedef_struct(id);
     }
 
     fn type_flags(&mut self, id: TypeId, name: &str, flags: &Flags, docs: &Docs) {
@@ -1133,7 +1145,7 @@ void __wasm_export_{ns}_{snake}_dtor({ns}_{snake}_t* arg) {{
     fn type_variant(&mut self, id: TypeId, name: &str, variant: &Variant, docs: &Docs) {
         self.src.h_defs("\n");
         self.docs(docs, SourceType::HDefs);
-        self.src.h_defs("typedef struct {\n");
+        self.start_typedef_struct(id);
         self.src.h_defs(int_repr(variant.tag()));
         self.src.h_defs(" tag;\n");
 
@@ -1154,8 +1166,7 @@ void __wasm_export_{ns}_{snake}_dtor({ns}_{snake}_t* arg) {{
             }
             self.src.h_defs("} val;\n");
         }
-        self.src.h_defs("} ");
-        self.print_typedef_target(id);
+        self.finish_typedef_struct(id);
 
         if variant.cases.len() > 0 {
             self.src.h_defs("\n");
@@ -1175,18 +1186,17 @@ void __wasm_export_{ns}_{snake}_dtor({ns}_{snake}_t* arg) {{
     fn type_option(&mut self, id: TypeId, _name: &str, payload: &Type, docs: &Docs) {
         self.src.h_defs("\n");
         self.docs(docs, SourceType::HDefs);
-        self.src.h_defs("typedef struct {\n");
+        self.start_typedef_struct(id);
         self.src.h_defs("bool is_some;\n");
         self.print_ty(SourceType::HDefs, payload);
         self.src.h_defs(" val;\n");
-        self.src.h_defs("} ");
-        self.print_typedef_target(id);
+        self.finish_typedef_struct(id);
     }
 
     fn type_result(&mut self, id: TypeId, _name: &str, result: &Result_, docs: &Docs) {
         self.src.h_defs("\n");
         self.docs(docs, SourceType::HDefs);
-        self.src.h_defs("typedef struct {\n");
+        self.start_typedef_struct(id);
         self.src.h_defs("bool is_err;\n");
         if result.ok.is_some() || result.err.is_some() {
             self.src.h_defs("union {\n");
@@ -1200,8 +1210,7 @@ void __wasm_export_{ns}_{snake}_dtor({ns}_{snake}_t* arg) {{
             }
             self.src.h_defs("} val;\n");
         }
-        self.src.h_defs("} ");
-        self.print_typedef_target(id);
+        self.finish_typedef_struct(id);
     }
 
     fn type_enum(&mut self, id: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
@@ -1246,12 +1255,11 @@ void __wasm_export_{ns}_{snake}_dtor({ns}_{snake}_t* arg) {{
     fn type_list(&mut self, id: TypeId, _name: &str, ty: &Type, docs: &Docs) {
         self.src.h_defs("\n");
         self.docs(docs, SourceType::HDefs);
-        self.src.h_defs("typedef struct {\n");
+        self.start_typedef_struct(id);
         self.print_ty(SourceType::HDefs, ty);
         self.src.h_defs(" *ptr;\n");
         self.src.h_defs("size_t len;\n");
-        self.src.h_defs("} ");
-        self.print_typedef_target(id);
+        self.finish_typedef_struct(id);
     }
 
     fn type_builtin(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
@@ -1353,6 +1361,7 @@ impl InterfaceGenerator<'_> {
         }
 
         self.src.h_defs("\ntypedef ");
+        let name = &self.gen.type_names[&ty];
         match kind {
             TypeDefKind::Type(_)
             | TypeDefKind::Flags(_)
@@ -1373,7 +1382,7 @@ impl InterfaceGenerator<'_> {
                 }
             }
             TypeDefKind::Tuple(t) => {
-                self.src.h_defs("struct {\n");
+                self.src.h_defs(&format!("struct {name} {{\n"));
                 for (i, t) in t.types.iter().enumerate() {
                     let ty = self.gen.type_name(t);
                     uwriteln!(self.src.h_defs, "{ty} f{i};");
@@ -1381,18 +1390,15 @@ impl InterfaceGenerator<'_> {
                 self.src.h_defs("}");
             }
             TypeDefKind::Option(t) => {
-                self.src.h_defs("struct {\n");
+                self.src.h_defs(&format!("struct {name} {{\n"));
                 self.src.h_defs("bool is_some;\n");
                 let ty = self.gen.type_name(t);
                 uwriteln!(self.src.h_defs, "{ty} val;");
                 self.src.h_defs("}");
             }
             TypeDefKind::Result(r) => {
-                self.src.h_defs(
-                    "struct {
-                        bool is_err;
-                    ",
-                );
+                self.src.h_defs(&format!("struct {name} {{\n"));
+                self.src.h_defs("bool is_err;\n");
                 let ok_ty = r.ok.as_ref();
                 let err_ty = r.err.as_ref();
                 if ok_ty.is_some() || err_ty.is_some() {
@@ -1410,7 +1416,7 @@ impl InterfaceGenerator<'_> {
                 self.src.h_defs("}");
             }
             TypeDefKind::List(t) => {
-                self.src.h_defs("struct {\n");
+                self.src.h_defs(&format!("struct {name} {{\n"));
                 let ty = self.gen.type_name(t);
                 uwriteln!(self.src.h_defs, "{ty} *ptr;");
                 self.src.h_defs("size_t len;\n");
@@ -1672,6 +1678,8 @@ impl InterfaceGenerator<'_> {
     fn export(&mut self, func: &Function, interface_name: Option<&WorldKey>) {
         let sig = self.resolve.wasm_signature(AbiVariant::GuestExport, func);
 
+        self.src.c_fns("\n");
+
         let core_module_name = interface_name.map(|s| self.resolve.name_world_key(s));
         let export_name = func.core_export_name(core_module_name.as_deref());
 
@@ -1877,6 +1885,18 @@ impl InterfaceGenerator<'_> {
         let name = &self.gen.type_names[&id];
         self.src.h_defs(&name);
         self.src.h_defs(";\n");
+    }
+
+    fn start_typedef_struct(&mut self, id: TypeId) {
+        let name = &self.gen.type_names[&id];
+        self.src.h_defs("typedef struct ");
+        self.src.h_defs(&name);
+        self.src.h_defs(" {\n");
+    }
+
+    fn finish_typedef_struct(&mut self, id: TypeId) {
+        self.src.h_defs("} ");
+        self.print_typedef_target(id);
     }
 
     fn owner_namespace(&self, id: TypeId) -> String {

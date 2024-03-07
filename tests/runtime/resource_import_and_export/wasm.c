@@ -4,7 +4,7 @@
 /* #include <limits.h> */
 /* #include <math.h> */
 /* #include <stdalign.h> */
-/* #include <stdlib.h> */
+#include <stdlib.h>
 #include <string.h>
 
 struct exports_test_resource_import_and_export_test_thing_t {
