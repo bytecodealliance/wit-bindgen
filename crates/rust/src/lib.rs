@@ -405,7 +405,7 @@ pub unsafe fn bool_lift(val: u8) -> bool {
             _ => panic!(\"invalid bool discriminant\"),
         }
     } else {
-        ::core::mem::transmute::<u8, bool>(val)
+        val != 0
     }
 }
                     ",

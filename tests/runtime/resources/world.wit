@@ -21,6 +21,8 @@ world resources {
     resource z {
       constructor(a: s32);
       get-a: func() -> s32;
+
+      num-dropped: static func() -> u32;
     }
 
     add: func(a: borrow<z>, b: borrow<z>) -> own<z>;
