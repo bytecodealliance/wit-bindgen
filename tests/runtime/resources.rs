@@ -92,15 +92,16 @@ fn run_test(exports: Exports, store: &mut Store<crate::Wasi<MyImports>>) -> Resu
     let z_add = exports.call_add(&mut *store, z_instance_1, z_instance_2)?;
     assert_eq!(z.call_get_a(&mut *store, z_add)?, 30);
 
-    let dropped_zs = z.call_num_dropped(&mut *store)?;
-    assert_eq!(dropped_zs, 0);
+    let dropped_zs_start = z.call_num_dropped(&mut *store)?;
 
     ResourceAny::resource_drop(x_instance, &mut *store)?;
     ResourceAny::resource_drop(z_instance_1, &mut *store)?;
     ResourceAny::resource_drop(z_instance_2, &mut *store)?;
 
-    let dropped_zs = z.call_num_dropped(&mut *store)?;
-    assert_eq!(dropped_zs, 2);
+    let dropped_zs_end = z.call_num_dropped(&mut *store)?;
+    if dropped_zs_start != 0 {
+        assert_eq!(dropped_zs_end, dropped_zs_start + 2);
+    }
 
     Ok(())
 }

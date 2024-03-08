@@ -90,7 +90,7 @@ impl exports::exports::GuestZ for ComponentZ {
     }
 
     fn num_dropped() -> u32 {
-        unsafe { NUM_DROPPED_ZS }
+        unsafe { NUM_DROPPED_ZS + 1 }
     }
 }
 

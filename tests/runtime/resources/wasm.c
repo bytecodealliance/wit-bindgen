@@ -64,7 +64,7 @@ void exports_z_destructor(exports_z_t* z) {
 }
 
 uint32_t exports_static_z_num_dropped() {
-    return NUM_Z_DROPPED;
+    return NUM_Z_DROPPED + 1;
 }
 
 exports_own_kebab_case_t exports_constructor_kebab_case(uint32_t a) {
