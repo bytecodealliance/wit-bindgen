@@ -133,6 +133,7 @@ impl InterfaceGenerator<'_> {
     ) -> Result<String> {
         let mut traits = BTreeMap::new();
         let mut funcs_to_export = Vec::new();
+        let mut resources_to_drop = Vec::new();
 
         traits.insert(None, ("Guest".to_string(), Vec::new()));
 
@@ -142,6 +143,7 @@ impl InterfaceGenerator<'_> {
                     TypeDefKind::Resource => {}
                     _ => continue,
                 }
+                resources_to_drop.push(name);
                 let camel = name.to_upper_camel_case();
                 traits.insert(Some(*id), (format!("Guest{camel}"), Vec::new()));
             }
@@ -295,6 +297,29 @@ macro_rules! {macro_name} {{
                 }
             };
             self.generate_raw_cabi_export(func, &ty, "$($path_to_types)*");
+        }
+        let export_prefix = self.gen.opts.export_prefix.as_deref().unwrap_or("");
+        for name in resources_to_drop {
+            let module = match self.identifier {
+                Identifier::Interface(_, key) => self.resolve.name_world_key(key),
+                Identifier::World(_) => unreachable!(),
+            };
+            let camel = name.to_upper_camel_case();
+            uwriteln!(
+                self.src,
+                r#"
+                const _: () = {{
+                    #[doc(hidden)]
+                    #[export_name = "{export_prefix}{module}#[dtor]{name}"]
+                    #[allow(non_snake_case)]
+                    unsafe extern "C" fn dtor(rep: *mut u8) {{
+                        $($path_to_types)*::{camel}::dtor::<
+                            <$ty as $($path_to_types)*::Guest>::{camel}
+                        >(rep)
+                    }}
+                }};
+                "#
+            );
         }
         uwriteln!(self.src, "}};);");
         uwriteln!(self.src, "}}");
@@ -2052,6 +2077,12 @@ impl {camel} {{
                 None => LAST_TYPE = Some(id),
             }}
         }}
+    }}
+
+    #[doc(hidden)]
+    pub unsafe fn dtor<T: 'static>(handle: *mut u8) {{
+        Self::type_guard::<T>();
+        let _ = {box_path}::from_raw(handle as *mut _{camel}Rep<T>);
     }}
 
     fn as_ptr<T: Guest{camel}>(&self) -> *mut _{camel}Rep<T> {{
