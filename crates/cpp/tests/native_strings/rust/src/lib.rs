@@ -9,18 +9,14 @@ struct MyWorld;
 impl Guest for MyWorld {
     fn a(x: String,) {
         the_world::foo::foo::strings::a(&x);
-//        println!("a received {x}");
     }
 
     fn b() -> String {
         the_world::foo::foo::strings::b()
-//        "b".into()
     }
 
     fn c(a: String,b: String,) -> String {
         the_world::foo::foo::strings::c(&a, &b)
-        // println!("c received {a}, {b}");
-        // "c".into()
     }
 }
 
