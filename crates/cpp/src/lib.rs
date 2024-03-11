@@ -704,7 +704,7 @@ impl CppInterfaceGenerator<'_> {
     }
 
     // print the signature of the guest export (lowered (wasm) function calling into highlevel)
-    fn print_export_signature(&mut self, func: &Function) -> Vec<String> {
+    fn print_export_signature(&mut self, func: &Function, variant: AbiVariant) -> Vec<String> {
         let is_drop = is_special_method(func);
         let signature = match is_drop {
             SpecialMethod::ResourceDrop => WasmSignature {
@@ -727,7 +727,7 @@ impl CppInterfaceGenerator<'_> {
             },
             SpecialMethod::None => {
                 // TODO perhaps remember better names for the arguments
-                self.resolve.wasm_signature(AbiVariant::GuestExport, func)
+                self.resolve.wasm_signature(variant, func)
             }
             SpecialMethod::Allocate => WasmSignature {
                 params: vec![],
@@ -744,6 +744,7 @@ impl CppInterfaceGenerator<'_> {
             module_name = String::from("[export]") + &module_name;
         }
         if self.gen.opts.short_cut {
+            uwrite!(self.gen.c_src.src, "extern \"C\" ");
         } else if self.gen.opts.host {
             self.gen.c_src.src.push_str("static ");
         } else {
@@ -763,7 +764,7 @@ impl CppInterfaceGenerator<'_> {
                 wasm_type(signature.results[0])
             });
         self.gen.c_src.src.push_str(" ");
-        let export_name = make_external_symbol(&module_name, &func.name, AbiVariant::GuestExport);
+        let export_name = make_external_symbol(&module_name, &func.name, variant);
         self.gen.c_src.src.push_str(&export_name);
         self.gen.c_src.src.push_str("(");
         let mut first_arg = true;
@@ -822,18 +823,19 @@ impl CppInterfaceGenerator<'_> {
     fn high_level_signature(
         &mut self,
         func: &Function,
-        import: bool,
+        abi_variant: AbiVariant,
+        // import: bool,
         from_namespace: &Vec<String>,
     ) -> HighlevelSignature {
         let mut res = HighlevelSignature::default();
-        let abi_variant = if import ^ self.gen.opts.host_side() {
-            AbiVariant::GuestImport
-        } else {
-            AbiVariant::GuestExport
-        };
+        // let abi_variant = if import ^ self.gen.opts.host_side() {
+        //     AbiVariant::GuestImport
+        // } else {
+        //     AbiVariant::GuestExport
+        // };
 
         let (namespace, func_name_h) =
-            self.func_namespace_name(func, !(import ^ self.gen.opts.host_side()), false);
+            self.func_namespace_name(func, matches!(abi_variant, AbiVariant::GuestExport), false);
         res.name = func_name_h;
         res.namespace = namespace;
         let is_drop = is_special_method(func);
@@ -899,15 +901,21 @@ impl CppInterfaceGenerator<'_> {
             }
         }
         // default to non-const when exporting a method
+        let import = matches!(abi_variant, AbiVariant::GuestImport) ^ self.gen.opts.host_side();
         if matches!(func.kind, FunctionKind::Method(_)) && import {
             res.const_member = true;
         }
         res
     }
 
-    fn print_signature(&mut self, func: &Function, import: bool) -> Vec<String> {
+    fn print_signature(
+        &mut self,
+        func: &Function,
+        variant: AbiVariant,
+        import: bool,
+    ) -> Vec<String> {
         let from_namespace = self.gen.h_src.namespace.clone();
-        let cpp_sig = self.high_level_signature(func, import, &from_namespace);
+        let cpp_sig = self.high_level_signature(func, variant, &from_namespace);
         if cpp_sig.static_member {
             self.gen.h_src.src.push_str("static ");
         }
@@ -980,11 +988,11 @@ impl CppInterfaceGenerator<'_> {
                 SpecialMethod::ResourceDrop | SpecialMethod::ResourceNew
             )
         {
-            self.print_export_signature(func)
+            self.print_export_signature(func, variant)
         } else {
             // recalulate with c file namespace
             let c_namespace = self.gen.c_src.namespace.clone();
-            let cpp_sig = self.high_level_signature(func, import, &c_namespace);
+            let cpp_sig = self.high_level_signature(func, variant, &c_namespace);
             let mut params = Vec::new();
             self.gen.c_src.src.push_str(&cpp_sig.result);
             if !cpp_sig.result.is_empty() {
@@ -1049,7 +1057,7 @@ impl CppInterfaceGenerator<'_> {
             AbiVariant::GuestImport => self.gen.opts.host_side(),
             AbiVariant::GuestExport => !self.gen.opts.host_side(),
         };
-        let params = self.print_signature(func, !export);
+        let params = self.print_signature(func, variant, !export);
         let special = is_special_method(func);
         if !matches!(special, SpecialMethod::Allocate) {
             self.gen.c_src.src.push_str("{\n");
