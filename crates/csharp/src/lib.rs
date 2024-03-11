@@ -963,7 +963,7 @@ impl InterfaceGenerator<'_> {
             self.csharp_interop_src,
             r#"
             [UnmanagedCallersOnly(EntryPoint = "{export_name}")]
-            unsafe public static {wasm_result_type} {interop_name}({wasm_params}) {{
+            public static unsafe {wasm_result_type} {interop_name}({wasm_params}) {{
                 {src}
             }}
             "#
