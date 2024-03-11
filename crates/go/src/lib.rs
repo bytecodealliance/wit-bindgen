@@ -304,6 +304,7 @@ impl WorldGenerator for TinyGo {
         self.src.push_str("// #include \"");
         self.src.push_str(self.world.to_snake_case().as_str());
         self.src.push_str(".h\"\n");
+        self.src.push_str("// #include <stdlib.h>\n");
         if self.preamble.len() > 0 {
             self.src.append_src(&self.preamble);
         }

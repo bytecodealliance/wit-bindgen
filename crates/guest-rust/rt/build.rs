@@ -1,8 +1,4 @@
 fn main() {
-    if !cfg!(feature = "realloc") {
-        return;
-    }
-
     let target_arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap_or(String::new());
     let target_family = std::env::var("CARGO_CFG_TARGET_FAMILY").unwrap_or(String::new());
 

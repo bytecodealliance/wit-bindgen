@@ -2,6 +2,7 @@
 #include <limits.h>
 #include <math.h>
 #include <resources.h>
+#include <stdlib.h>
 
 struct exports_x_t {
     int32_t a;
@@ -56,8 +57,15 @@ void exports_x_destructor(exports_x_t* x) {
     free(x);
 }
 
+static uint32_t NUM_Z_DROPPED = 0;
+
 void exports_z_destructor(exports_z_t* z) {
+    NUM_Z_DROPPED += 1;
     free(z);
+}
+
+uint32_t exports_static_z_num_dropped() {
+    return NUM_Z_DROPPED + 1;
 }
 
 exports_own_kebab_case_t exports_constructor_kebab_case(uint32_t a) {
