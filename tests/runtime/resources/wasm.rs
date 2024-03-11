@@ -79,12 +79,26 @@ impl exports::exports::GuestX for ComponentX {
     }
 }
 
+static mut NUM_DROPPED_ZS: u32 = 0;
+
 impl exports::exports::GuestZ for ComponentZ {
     fn new(a: i32) -> Self {
         Self { val: a }
     }
     fn get_a(&self) -> i32 {
         self.val
+    }
+
+    fn num_dropped() -> u32 {
+        unsafe { NUM_DROPPED_ZS + 1 }
+    }
+}
+
+impl Drop for ComponentZ {
+    fn drop(&mut self) {
+        unsafe {
+            NUM_DROPPED_ZS += 1;
+        }
     }
 }
 

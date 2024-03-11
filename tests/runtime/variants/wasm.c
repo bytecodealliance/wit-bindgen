@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <variants.h>
+#include <stddef.h>
 
 void variants_test_imports() {
   {

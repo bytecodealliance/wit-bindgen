@@ -133,6 +133,7 @@ impl InterfaceGenerator<'_> {
     ) -> Result<String> {
         let mut traits = BTreeMap::new();
         let mut funcs_to_export = Vec::new();
+        let mut resources_to_drop = Vec::new();
 
         traits.insert(None, ("Guest".to_string(), Vec::new()));
 
@@ -142,6 +143,7 @@ impl InterfaceGenerator<'_> {
                     TypeDefKind::Resource => {}
                     _ => continue,
                 }
+                resources_to_drop.push(name);
                 let camel = name.to_upper_camel_case();
                 traits.insert(Some(*id), (format!("Guest{camel}"), Vec::new()));
             }
@@ -296,6 +298,29 @@ macro_rules! {macro_name} {{
             };
             self.generate_raw_cabi_export(func, &ty, "$($path_to_types)*");
         }
+        let export_prefix = self.gen.opts.export_prefix.as_deref().unwrap_or("");
+        for name in resources_to_drop {
+            let module = match self.identifier {
+                Identifier::Interface(_, key) => self.resolve.name_world_key(key),
+                Identifier::World(_) => unreachable!(),
+            };
+            let camel = name.to_upper_camel_case();
+            uwriteln!(
+                self.src,
+                r#"
+                const _: () = {{
+                    #[doc(hidden)]
+                    #[export_name = "{export_prefix}{module}#[dtor]{name}"]
+                    #[allow(non_snake_case)]
+                    unsafe extern "C" fn dtor(rep: *mut u8) {{
+                        $($path_to_types)*::{camel}::dtor::<
+                            <$ty as $($path_to_types)*::Guest>::{camel}
+                        >(rep)
+                    }}
+                }};
+                "#
+            );
+        }
         uwriteln!(self.src, "}};);");
         uwriteln!(self.src, "}}");
         uwriteln!(self.src, "#[doc(hidden)]");
@@ -334,11 +359,11 @@ macro_rules! {macro_name} {{
         if self.return_pointer_area_align > 0 {
             uwrite!(
                 self.src,
-                "
+                "\
                     #[repr(align({align}))]
                     struct _RetArea([::core::mem::MaybeUninit::<u8>; {size}]);
                     static mut _RET_AREA: _RetArea = _RetArea([::core::mem::MaybeUninit::uninit(); {size}]);
-                ",
+",
                 align = self.return_pointer_area_align,
                 size = self.return_pointer_area_size,
             );
@@ -393,7 +418,7 @@ macro_rules! {macro_name} {{
         let module = self.finish();
         let path_to_root = self.path_to_root();
         let module = format!(
-            "
+            "\
                 #[allow(clippy::all)]
                 pub mod {snake} {{
                     #[used]
@@ -402,7 +427,7 @@ macro_rules! {macro_name} {{
                     static __FORCE_SECTION_REF: fn() = {path_to_root}__link_custom_section_describing_imports;
                     {module}
                 }}
-            ",
+",
         );
         let map = if self.in_import {
             &mut self.gen.import_modules
@@ -461,11 +486,11 @@ macro_rules! {macro_name} {{
         if import_return_pointer_area_size > 0 {
             uwrite!(
                 self.src,
-                "
+                "\
                     #[repr(align({import_return_pointer_area_align}))]
                     struct RetArea([::core::mem::MaybeUninit::<u8>; {import_return_pointer_area_size}]);
                     let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); {import_return_pointer_area_size}]);
-                ",
+",
             );
         }
         self.src.push_str(&String::from(src));
@@ -485,11 +510,11 @@ macro_rules! {macro_name} {{
         let name_snake = func.name.to_snake_case().replace('.', "_");
         uwrite!(
             self.src,
-            "
+            "\
                 #[doc(hidden)]
                 #[allow(non_snake_case)]
                 pub unsafe fn _export_{name_snake}_cabi<T: {trait_name}>\
-            ",
+",
         );
         let params = self.print_export_sig(func);
         self.push_str(" {");
@@ -498,7 +523,7 @@ macro_rules! {macro_name} {{
             let run_ctors_once = self.path_to_run_ctors_once();
             uwrite!(
                 self.src,
-                "
+                "\
                 // Before executing any other code, use this function to run all static
                 // constructors, if they have not yet been run. This is a hack required
                 // to work around wasi-libc ctors calling import functions to initialize
@@ -512,7 +537,7 @@ macro_rules! {macro_name} {{
                 // for more details.
                 #[cfg(target_arch=\"wasm32\")]
                 {run_ctors_once}();
-            ",
+",
             );
         }
 
@@ -541,11 +566,11 @@ macro_rules! {macro_name} {{
         if abi::guest_export_needs_post_return(self.resolve, func) {
             uwrite!(
                 self.src,
-                "
+                "\
                     #[doc(hidden)]
                     #[allow(non_snake_case)]
                     pub unsafe fn __post_return_{name_snake}<T: {trait_name}>\
-                "
+"
             );
             let params = self.print_post_return_sig(func);
             self.src.push_str("{\n");
@@ -575,10 +600,10 @@ macro_rules! {macro_name} {{
         let export_name = func.core_export_name(wasm_module_export_name.as_deref());
         uwrite!(
             self.src,
-            "
+            "\
                 #[export_name = \"{export_prefix}{export_name}\"]
                 unsafe extern \"C\" fn export_{name_snake}\
-            ",
+",
         );
 
         let params = self.print_export_sig(func);
@@ -594,10 +619,10 @@ macro_rules! {macro_name} {{
             let export_prefix = self.gen.opts.export_prefix.as_deref().unwrap_or("");
             uwrite!(
                 self.src,
-                "
+                "\
                     #[export_name = \"{export_prefix}cabi_post_{export_name}\"]
                     unsafe extern \"C\" fn _post_return_{name_snake}\
-                "
+"
             );
             let params = self.print_post_return_sig(func);
             self.src.push_str("{\n");
@@ -717,8 +742,11 @@ macro_rules! {macro_name} {{
             None => return,
         };
         for line in docs.trim().lines() {
-            self.push_str("/// ");
-            self.push_str(line);
+            self.push_str("///");
+            if !line.is_empty() {
+                self.push_str(" ");
+                self.push_str(line);
+            }
             self.push_str("\n");
         }
     }
@@ -1462,7 +1490,7 @@ macro_rules! {macro_name} {{
             }
             self.push_str(&format!("pub enum {name}"));
             self.print_generics(mode.lifetime);
-            self.push_str("{\n");
+            self.push_str(" {\n");
             for (case_name, docs, payload) in cases.clone() {
                 self.rustdoc(docs);
                 self.push_str(&case_name);
@@ -2049,6 +2077,12 @@ impl {camel} {{
                 None => LAST_TYPE = Some(id),
             }}
         }}
+    }}
+
+    #[doc(hidden)]
+    pub unsafe fn dtor<T: 'static>(handle: *mut u8) {{
+        Self::type_guard::<T>();
+        let _ = {box_path}::from_raw(handle as *mut _{camel}Rep<T>);
     }}
 
     fn as_ptr<T: Guest{camel}>(&self) -> *mut _{camel}Rep<T> {{
