@@ -1357,7 +1357,7 @@ fn perform_cast(operand: &str, cast: &Bitcast) -> String {
         // Convert a `MaybeUninit<u64>` holding a pointer value back into
         // the pointer value.
         Bitcast::P64ToP => {
-            format!("{}.as_mut_ptr().cast::<*mut u8>().read()", operand)
+            format!("{}.as_ptr().cast::<*mut u8>().read()", operand)
         }
         // Convert an `i32` or a `usize` into a pointer.
         Bitcast::I32ToP | Bitcast::LToP => {

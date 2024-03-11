@@ -92,4 +92,10 @@ world a {
     b(f32),
   }
   import f-s64-f32: func(x: v-s64-f32);
+
+  variant v-string-u64 {
+    a(string),
+    b(u64),
+  }
+  export f-string-u64: func(x: v-string-u64);
 }
