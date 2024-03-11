@@ -1675,7 +1675,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             switch ({op}) {{
                 {cases}
 
-                default: throw new ArgumentException($"invalid disciminant: {{{op}}}");
+                default: throw new ArgumentException($"invalid discriminant: {{{op}}}");
             }}
             "#
         );
