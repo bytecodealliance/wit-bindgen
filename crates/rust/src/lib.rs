@@ -182,6 +182,10 @@ pub struct Opts {
     /// candidate for being exported outside of the crate.
     #[cfg_attr(feature = "clap", arg(long))]
     pub pub_export_macro: bool,
+
+    /// Generate code for 64bit wasm
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub wasm64: bool,
 }
 
 impl Opts {
@@ -205,7 +209,11 @@ impl RustWasm {
         resolve: &'a Resolve,
         in_import: bool,
     ) -> InterfaceGenerator<'a> {
-        let mut sizes = SizeAlign::default();
+        let mut sizes = SizeAlign::new(if self.opts.wasm64 {
+            AddressSize::Wasm64
+        } else {
+            AddressSize::Wasm32
+        });
         sizes.fill(resolve);
 
         InterfaceGenerator {

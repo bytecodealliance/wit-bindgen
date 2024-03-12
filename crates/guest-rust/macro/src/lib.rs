@@ -90,6 +90,9 @@ impl Parse for Config {
                     Opt::Stubs => {
                         opts.stubs = true;
                     }
+                    Opt::Wasm64 => {
+                        opts.wasm64 = true;
+                    }
                     Opt::ExportPrefix(prefix) => opts.export_prefix = Some(prefix.value()),
                     Opt::AdditionalDerives(paths) => {
                         opts.additional_derive_attributes = paths
@@ -231,6 +234,7 @@ mod kw {
     syn::custom_keyword!(default_bindings_module);
     syn::custom_keyword!(export_macro_name);
     syn::custom_keyword!(pub_export_macro);
+    syn::custom_keyword!(wasm64);
 }
 
 #[derive(Clone)]
@@ -280,6 +284,7 @@ enum Opt {
     DefaultBindingsModule(syn::LitStr),
     ExportMacroName(syn::LitStr),
     PubExportMacro(syn::LitBool),
+    Wasm64,
 }
 
 impl Parse for Opt {
@@ -359,6 +364,9 @@ impl Parse for Opt {
         } else if l.peek(kw::stubs) {
             input.parse::<kw::stubs>()?;
             Ok(Opt::Stubs)
+        } else if l.peek(kw::wasm64) {
+            input.parse::<kw::wasm64>()?;
+            Ok(Opt::Wasm64)
         } else if l.peek(kw::export_prefix) {
             input.parse::<kw::export_prefix>()?;
             input.parse::<Token![:]>()?;
