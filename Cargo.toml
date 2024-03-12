@@ -92,4 +92,4 @@ wasmparser = { workspace = true }
 wasm-encoder = { workspace = true }
 
 [patch.crates-io]
-wit-parser = { path = "../wasm-tools/crates/wit-parser" }
+wit-parser = { git = "https://github.com/cpetig/wasm-tools" }
