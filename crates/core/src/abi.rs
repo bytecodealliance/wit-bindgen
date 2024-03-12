@@ -1558,7 +1558,9 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         // and the length into the high address.
         self.lower(ty);
         self.stack.push(addr.clone());
-        self.emit(&Instruction::LengthStore { offset: offset + 4 });
+        self.emit(&Instruction::LengthStore {
+            offset: offset + self.bindgen.sizes().align(ty) as i32,
+        });
         self.stack.push(addr);
         self.emit(&Instruction::PointerStore { offset });
     }
@@ -1732,7 +1734,9 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         self.stack.push(addr.clone());
         self.emit(&Instruction::PointerLoad { offset });
         self.stack.push(addr);
-        self.emit(&Instruction::LengthLoad { offset: offset + 4 });
+        self.emit(&Instruction::LengthLoad {
+            offset: offset + self.bindgen.sizes().align(ty) as i32,
+        });
         self.lift(ty);
     }
 
@@ -1785,7 +1789,9 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 self.stack.push(addr.clone());
                 self.emit(&Instruction::PointerLoad { offset });
                 self.stack.push(addr);
-                self.emit(&Instruction::LengthLoad { offset: offset + 4 });
+                self.emit(&Instruction::LengthLoad {
+                    offset: offset + self.bindgen.sizes().align(ty) as i32,
+                });
                 self.emit(&Instruction::GuestDeallocateString);
             }
 
@@ -1815,7 +1821,9 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     self.stack.push(addr.clone());
                     self.emit(&Instruction::PointerLoad { offset });
                     self.stack.push(addr);
-                    self.emit(&Instruction::LengthLoad { offset: offset + 4 });
+                    self.emit(&Instruction::LengthLoad {
+                        offset: offset + self.bindgen.sizes().align(ty) as i32,
+                    });
                     self.emit(&Instruction::GuestDeallocateList { element });
                 }
 
