@@ -794,7 +794,7 @@ pub use wit_bindgen_rust_macro::generate;
 
 // Re-export `bitflags` so that we can reference it from macros.
 #[doc(hidden)]
-pub use bitflags;
+pub use wit_bindgen_rt::bitflags;
 
 mod pre_wit_bindgen_0_20_0;
 

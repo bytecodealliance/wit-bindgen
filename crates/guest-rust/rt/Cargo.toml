@@ -8,3 +8,7 @@ homepage = 'https://github.com/bytecodealliance/wit-bindgen'
 description = """
 Runtime support for the `wit-bindgen` crate
 """
+
+[dependencies]
+# Optionally re-export the version of bitflags used by wit-bindgen.
+bitflags = { workspace = true, optional = true }
