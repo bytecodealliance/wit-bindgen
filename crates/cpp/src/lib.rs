@@ -11,8 +11,8 @@ use wit_bindgen_core::{
     abi::{self, AbiVariant, Bindgen, Bitcast, LiftLower, WasmSignature, WasmType},
     make_external_symbol, uwrite, uwriteln,
     wit_parser::{
-        Docs, Function, FunctionKind, Handle, Int, InterfaceId, Resolve, Results, SizeAlign,
-        SizeAlignAbi, SizeAlignSelect, Type, TypeDefKind, TypeId, TypeOwner, WorldId, WorldKey,
+        AddressSize, Docs, Function, FunctionKind, Handle, Int, InterfaceId, Resolve, Results,
+        SizeAlign, Type, TypeDefKind, TypeId, TypeOwner, WorldId, WorldKey,
     },
     Files, InterfaceGenerator, Source, WorldGenerator,
 };
@@ -159,11 +159,11 @@ impl Cpp {
         in_import: bool,
         wasm_import_module: Option<String>,
     ) -> CppInterfaceGenerator<'a> {
-        let mut sizes = if self.opts.wasm64 {
-            SizeAlignSelect::Wasm64(SizeAlignAbi::default())
+        let mut sizes = SizeAlign::new(if self.opts.wasm64 {
+            AddressSize::Wasm64
         } else {
-            SizeAlignSelect::Wasm32(SizeAlignAbi::default())
-        };
+            AddressSize::Wasm32
+        });
         sizes.fill(resolve);
 
         CppInterfaceGenerator {
@@ -613,7 +613,7 @@ struct CppInterfaceGenerator<'a> {
     resolve: &'a Resolve,
     interface: Option<InterfaceId>,
     _name: Option<&'a WorldKey>,
-    sizes: SizeAlignSelect,
+    sizes: SizeAlign,
     in_import: bool,
     // return_pointer_area_size: usize,
     // return_pointer_area_align: usize,
@@ -2848,7 +2848,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
         //       uwriteln!(self.src, "// finish_block()");
     }
 
-    fn sizes(&self) -> &wit_bindgen_core::wit_parser::SizeAlignSelect {
+    fn sizes(&self) -> &wit_bindgen_core::wit_parser::SizeAlign {
         &self.gen.sizes
     }
 

@@ -1743,7 +1743,7 @@ dependencies = [
 [[package]]
 name = "wasmparser"
 version = "0.201.0"
-source = "git+https://github.com/cpetig/wasm-tools#f88fec6b55a59f966377dfabcf49fa9715b40069"
+source = "git+https://github.com/cpetig/wasm-tools#dcd74ecc05a0a21c52b7fac8a219eaab69658990"
 dependencies = [
  "bitflags 2.4.2",
  "indexmap",
@@ -2560,7 +2560,7 @@ dependencies = [
 [[package]]
 name = "wit-parser"
 version = "0.201.0"
-source = "git+https://github.com/cpetig/wasm-tools#f88fec6b55a59f966377dfabcf49fa9715b40069"
+source = "git+https://github.com/cpetig/wasm-tools#dcd74ecc05a0a21c52b7fac8a219eaab69658990"
 dependencies = [
  "anyhow",
  "id-arena",
