@@ -18,7 +18,7 @@ resolver = "2"
 
 [workspace.package]
 edition = "2021"
-version = "0.21.0"
+version = "0.22.0"
 
 [workspace.dependencies]
 anyhow = "1.0.72"
@@ -35,14 +35,14 @@ wasm-encoder  = { git = "https://github.com/wasmfx/wasmfx-tools", tag = "wasmfx-
 wit-parser    = { git = "https://github.com/wasmfx/wasmfx-tools", tag = "wasmfx-tools-1.201.0+rev.1" }
 wit-component = { git = "https://github.com/wasmfx/wasmfx-tools", tag = "wasmfx-tools-1.201.0+rev.1" }
 
-wit-bindgen-core = { path = 'crates/core', version = '0.21.0' }
-wit-bindgen-c = { path = 'crates/c', version = '0.21.0' }
-wit-bindgen-rust = { path = "crates/rust", version = "0.21.0" }
-wit-bindgen-teavm-java = { path = 'crates/teavm-java', version = '0.21.0' }
-wit-bindgen-go = { path = 'crates/go', version = '0.21.0' }
-wit-bindgen-csharp = { path = 'crates/csharp', version = '0.21.0' }
-wit-bindgen-markdown = { path = 'crates/markdown', version = '0.21.0' }
-wit-bindgen = { path = 'crates/guest-rust', version = '0.21.0', default-features = false }
+wit-bindgen-core = { path = 'crates/core', version = '0.22.0' }
+wit-bindgen-c = { path = 'crates/c', version = '0.22.0' }
+wit-bindgen-rust = { path = "crates/rust", version = "0.22.0" }
+wit-bindgen-teavm-java = { path = 'crates/teavm-java', version = '0.22.0' }
+wit-bindgen-go = { path = 'crates/go', version = '0.22.0' }
+wit-bindgen-csharp = { path = 'crates/csharp', version = '0.22.0' }
+wit-bindgen-markdown = { path = 'crates/markdown', version = '0.22.0' }
+wit-bindgen = { path = 'crates/guest-rust', version = '0.22.0', default-features = false }
 
 [[bin]]
 name = "wit-bindgen"
