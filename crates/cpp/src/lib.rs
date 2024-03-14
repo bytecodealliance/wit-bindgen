@@ -798,7 +798,7 @@ impl CppInterfaceGenerator<'_> {
             //     first_arg = false;
             // }
             let ptrtype = if !self.gen.opts.host {
-                "intptr_t"
+                "uint8_t*"
             } else if self.gen.opts.wasm64 {
                 "int64_t"
             } else {
@@ -929,11 +929,11 @@ impl CppInterfaceGenerator<'_> {
         if cpp_sig.static_member {
             self.gen.h_src.src.push_str("static ");
         }
-        if cpp_sig.post_return {
+        if cpp_sig.post_return && self.gen.opts.host_side() {
             self.gen.h_src.src.push_str("wit::guest_owned<");
         }
         self.gen.h_src.src.push_str(&cpp_sig.result);
-        if cpp_sig.post_return {
+        if cpp_sig.post_return && self.gen.opts.host_side() {
             self.gen.h_src.src.push_str(">");
         }
         if !cpp_sig.result.is_empty() {
@@ -1133,7 +1133,7 @@ impl CppInterfaceGenerator<'_> {
                     );
                     uwriteln!(
                         self.gen.c_src.src,
-                        "return {wasm_sig}((uintptr_t){});",
+                        "return {wasm_sig}((uint8_t*){});",
                         func.params.get(0).unwrap().0
                     );
                     // let classname = class_namespace(self, func, variant).join("::");
@@ -2057,7 +2057,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     self.push_str(&format!("auto {} = {}.data();\n", ptr, val));
                     self.push_str(&format!("auto {} = {}.size();\n", len, val));
                 } else {
-                    self.push_str(&format!("auto {} = (uintptr_t)({}.data());\n", ptr, val));
+                    self.push_str(&format!("auto {} = (uint8_t*)({}.data());\n", ptr, val));
                     self.push_str(&format!("auto {} = (size_t)({}.size());\n", len, val));
                 }
                 if realloc.is_none() {
@@ -2081,7 +2081,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     self.push_str(&format!("auto {} = {}.data();\n", ptr, val));
                     self.push_str(&format!("auto {} = {}.size();\n", len, val));
                 } else {
-                    self.push_str(&format!("auto {} = (uintptr_t)({}.data());\n", ptr, val));
+                    self.push_str(&format!("auto {} = (uint8_t*)({}.data());\n", ptr, val));
                     self.push_str(&format!("auto {} = (size_t)({}.size());\n", len, val));
                 }
                 if realloc.is_none() {
@@ -2108,7 +2108,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     self.push_str(&format!("auto {} = {}.data();\n", ptr, val));
                     self.push_str(&format!("auto {} = {}.size();\n", len, val));
                 } else {
-                    self.push_str(&format!("auto {} = (uintptr_t)({}.data());\n", ptr, val));
+                    self.push_str(&format!("auto {} = (uint8_t*)({}.data());\n", ptr, val));
                     self.push_str(&format!("auto {} = (size_t)({}.size());\n", len, val));
                 }
                 if realloc.is_none() {
@@ -2820,12 +2820,12 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 self.src.push_str("}\n");
             }
             abi::Instruction::PointerLoad { offset } => {
-                self.load("uintptr_t", *offset, operands, results)
+                self.load("uint8_t*", *offset, operands, results)
             }
             abi::Instruction::LengthLoad { offset } => {
                 self.load("size_t", *offset, operands, results)
             }
-            abi::Instruction::PointerStore { offset } => self.store("uintptr_t", *offset, operands),
+            abi::Instruction::PointerStore { offset } => self.store("uint8_t*", *offset, operands),
             abi::Instruction::LengthStore { offset } => self.store("size_t", *offset, operands),
         }
     }
@@ -2842,7 +2842,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
         };
         let static_var = if self.gen.in_import { "" } else { "static " };
         uwriteln!(self.src, "{static_var}{tp} ret_area[{elems}];");
-        uwriteln!(self.src, "intptr_t ptr{tmp} = intptr_t(&ret_area);");
+        uwriteln!(self.src, "uint8_t* ptr{tmp} = (uint8_t*)(&ret_area);");
 
         format!("ptr{}", tmp)
     }

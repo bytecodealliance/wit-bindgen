@@ -18,3 +18,6 @@ bindgen: wit/strings.wit
 
 guest.wasm: the_world.cpp guest.cpp
 	/opt/wasi-sdk/bin/clang++ -o $@ $^ $(CXXFLAGS) 
+	
+clean:
+	-rm *.o libstrings.so app-strings
