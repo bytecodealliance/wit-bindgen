@@ -53,6 +53,7 @@ struct HighlevelSignature {
     name: String,
     namespace: Vec<String>,
     implicit_self: bool,
+    post_return: bool,
 }
 
 // follows https://google.github.io/styleguide/cppguide.html
@@ -875,6 +876,11 @@ impl CppInterfaceGenerator<'_> {
                     }
                 }
             }
+            if matches!(abi_variant, AbiVariant::GuestExport)
+                && abi::guest_export_needs_post_return(self.resolve, func)
+            {
+                res.post_return = true;
+            }
         }
         if matches!(func.kind, FunctionKind::Static(_))
             && !(matches!(is_drop, SpecialMethod::ResourceDrop)
@@ -923,7 +929,13 @@ impl CppInterfaceGenerator<'_> {
         if cpp_sig.static_member {
             self.gen.h_src.src.push_str("static ");
         }
+        if cpp_sig.post_return {
+            self.gen.h_src.src.push_str("wit::guest_owned<");
+        }
         self.gen.h_src.src.push_str(&cpp_sig.result);
+        if cpp_sig.post_return {
+            self.gen.h_src.src.push_str(">");
+        }
         if !cpp_sig.result.is_empty() {
             self.gen.h_src.src.push_str(" ");
         }
