@@ -139,7 +139,7 @@ public:
 #ifdef WIT_HOST_WAMR
       wasm_val_t *wasm_results = nullptr;
       wasm_val_t wasm_args[1] = {
-          WASM_I32_VAL(data_),
+          WASM_I32_VAL((int32_t)data_),
       };
       wasm_runtime_call_wasm_a(exec_env, free_func, 0, wasm_results, 1,
                                wasm_args);

@@ -1196,10 +1196,31 @@ impl CppInterfaceGenerator<'_> {
                     };
                     let mut f = FunctionBindgen::new(self, params);
                     if !export {
-                        f.namespace = namespace;
+                        f.namespace = namespace.clone();
                         f.wamr_signature = Some(wamr::wamr_signature(&f.gen.resolve, func));
                     }
                     f.variant = variant;
+                    f.cabi_post = if matches!(variant, AbiVariant::GuestExport)
+                        && f.gen.gen.opts.host_side()
+                        && abi::guest_export_needs_post_return(f.gen.resolve, func)
+                    {
+                        let module_name = f
+                            .gen
+                            .wasm_import_module
+                            .as_ref()
+                            .map(|e| e.clone())
+                            .unwrap();
+                        // let export_name = func.core_export_name(Some(&module_name));
+                        let import_name =
+                            make_external_symbol(&module_name, &func.name, AbiVariant::GuestExport);
+                        let cpp_sig = f.gen.high_level_signature(func, variant, &namespace);
+                        Some(CabiPostInformation {
+                            name: format!("cabi_post_{import_name}"),
+                            ret_type: cpp_sig.result,
+                        })
+                    } else {
+                        None
+                    };
                     abi::call(f.gen.resolve, variant, lift_lower, func, &mut f);
                     let code = String::from(f.src);
                     self.gen.c_src.src.push_str(&code);
@@ -1797,6 +1818,11 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
     }
 }
 
+struct CabiPostInformation {
+    name: String,
+    ret_type: String,
+}
+
 struct FunctionBindgen<'a, 'b> {
     gen: &'b mut CppInterfaceGenerator<'a>,
     params: Vec<String>,
@@ -1812,6 +1838,7 @@ struct FunctionBindgen<'a, 'b> {
     // caching for wasm
     wamr_signature: Option<wamr::WamrSig>,
     variant: AbiVariant,
+    cabi_post: Option<CabiPostInformation>,
 }
 
 impl<'a, 'b> FunctionBindgen<'a, 'b> {
@@ -1829,6 +1856,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             payloads: Default::default(),
             wamr_signature: None,
             variant: AbiVariant::GuestImport,
+            cabi_post: None,
         }
     }
 
@@ -2787,9 +2815,17 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                             }
                             _ => self.src.push_str("return "),
                         }
+                        if let Some(CabiPostInformation {
+                            name: _cabi_post_name,
+                            ret_type: cabi_post_type,
+                        }) = self.cabi_post.as_ref()
+                        {
+                            self.src.push_str("wit::guest_owned<");
+                            self.src.push_str(&cabi_post_type);
+                            self.src.push_str(">(");
+                        }
                         if *amt == 1 {
                             self.src.push_str(&operands[0]);
-                            self.src.push_str(";\n");
                         } else {
                             self.src.push_str("std::tuple<");
                             if let Results::Named(params) = &func.results {
@@ -2804,8 +2840,16 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                             }
                             self.src.push_str(">(");
                             self.src.push_str(&operands.join(", "));
-                            self.src.push_str(");\n");
+                            self.src.push_str(")");
                         }
+                        if let Some(CabiPostInformation {
+                            name: cabi_post_name,
+                            ret_type: _cabi_post_type,
+                        }) = self.cabi_post.as_ref()
+                        {
+                            self.src.push_str(&format!(", wasm_results[0].of.i32, wasm_runtime_lookup_function(wasm_runtime_get_module_inst(exec_env), \"{}\", \"(i)\"), exec_env)", cabi_post_name));
+                        }
+                        self.src.push_str(";\n");
                     }
                 }
             }
