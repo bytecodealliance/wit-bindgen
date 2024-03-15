@@ -6,7 +6,7 @@ use std::{
     process::{Command, Stdio},
     str::FromStr,
 };
-use wit_bindgen_c::{to_c_ident, wasm_type};
+use wit_bindgen_c::to_c_ident;
 use wit_bindgen_core::{
     abi::{self, AbiVariant, Bindgen, Bitcast, LiftLower, WasmSignature, WasmType},
     make_external_symbol, uwrite, uwriteln,
@@ -131,6 +131,24 @@ impl Opts {
 
     fn host_side(&self) -> bool {
         self.short_cut || self.host
+    }
+
+    fn ptr_type(&self) -> &'static str {
+        if !self.host {
+            "uint8_t*"
+        } else if self.wasm64 {
+            "int64_t"
+        } else {
+            "int32_t"
+        }
+    }
+
+    // we need to map pointers depending on context
+    fn wasm_type(&self, ty: WasmType) -> &'static str {
+        match ty {
+            WasmType::Pointer => self.ptr_type(),
+            _ => wit_bindgen_c::wasm_type(ty),
+        }
     }
 }
 
@@ -766,7 +784,7 @@ impl CppInterfaceGenerator<'_> {
             .push_str(if signature.results.is_empty() || return_via_pointer {
                 "void"
             } else {
-                wasm_type(signature.results[0])
+                self.gen.opts.wasm_type(signature.results[0])
             });
         self.gen.c_src.src.push_str(" ");
         let export_name = make_external_symbol(&module_name, &func.name, variant);
@@ -785,7 +803,7 @@ impl CppInterfaceGenerator<'_> {
             } else {
                 first_arg = false;
             }
-            self.gen.c_src.src.push_str(wasm_type(*ty));
+            self.gen.c_src.src.push_str(self.gen.opts.wasm_type(*ty));
             self.gen.c_src.src.push_str(" ");
             self.gen.c_src.src.push_str(&name);
             params.push(name);
@@ -797,14 +815,7 @@ impl CppInterfaceGenerator<'_> {
             // else {
             //     first_arg = false;
             // }
-            let ptrtype = if !self.gen.opts.host {
-                "uint8_t*"
-            } else if self.gen.opts.wasm64 {
-                "int64_t"
-            } else {
-                "int32_t"
-            };
-            self.gen.c_src.src.push_str(ptrtype);
+            self.gen.c_src.src.push_str(self.gen.opts.ptr_type());
             self.gen.c_src.src.push_str(" resultptr");
             params.push("resultptr".into());
         }
@@ -1010,7 +1021,13 @@ impl CppInterfaceGenerator<'_> {
             let c_namespace = self.gen.c_src.namespace.clone();
             let cpp_sig = self.high_level_signature(func, variant, &c_namespace);
             let mut params = Vec::new();
+            if cpp_sig.post_return && self.gen.opts.host_side() {
+                self.gen.c_src.src.push_str("wit::guest_owned<");
+            }
             self.gen.c_src.src.push_str(&cpp_sig.result);
+            if cpp_sig.post_return && self.gen.opts.host_side() {
+                self.gen.c_src.src.push_str(">");
+            }
             if !cpp_sig.result.is_empty() {
                 self.gen.c_src.src.push_str(" ");
             }
@@ -1133,7 +1150,8 @@ impl CppInterfaceGenerator<'_> {
                     );
                     uwriteln!(
                         self.gen.c_src.src,
-                        "return {wasm_sig}((uint8_t*){});",
+                        "return {wasm_sig}(({}){});",
+                        self.gen.opts.ptr_type(),
                         func.params.get(0).unwrap().0
                     );
                     // let classname = class_namespace(self, func, variant).join("::");
@@ -1207,7 +1225,11 @@ impl CppInterfaceGenerator<'_> {
                 let mut params = Vec::new();
                 for (i, result) in sig.results.iter().enumerate() {
                     let name = format!("arg{i}");
-                    uwrite!(self.gen.c_src.src, "{} {name}", wasm_type(*result));
+                    uwrite!(
+                        self.gen.c_src.src,
+                        "{} {name}",
+                        self.gen.opts.wasm_type(*result)
+                    );
                     params.push(name);
                 }
                 self.gen.c_src.src.push_str(") {\n");
@@ -1425,7 +1447,7 @@ impl CppInterfaceGenerator<'_> {
     ) -> String {
         let mut args = String::default();
         for (n, param) in params.iter().enumerate() {
-            args.push_str(wasm_type(*param));
+            args.push_str(self.gen.opts.wasm_type(*param));
             if n + 1 != params.len() {
                 args.push_str(", ");
             }
@@ -1433,7 +1455,7 @@ impl CppInterfaceGenerator<'_> {
         let result = if results.is_empty() {
             "void"
         } else {
-            wasm_type(results[0])
+            self.gen.opts.wasm_type(results[0])
         };
         let (name, code) = Self::declare_import2(module_name, name, &args, result);
         self.gen.extern_c_decls.push_str(&code);
@@ -2057,7 +2079,12 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     self.push_str(&format!("auto {} = {}.data();\n", ptr, val));
                     self.push_str(&format!("auto {} = {}.size();\n", len, val));
                 } else {
-                    self.push_str(&format!("auto {} = (uint8_t*)({}.data());\n", ptr, val));
+                    self.push_str(&format!(
+                        "auto {} = ({})({}.data());\n",
+                        ptr,
+                        self.gen.gen.opts.ptr_type(),
+                        val
+                    ));
                     self.push_str(&format!("auto {} = (size_t)({}.size());\n", len, val));
                 }
                 if realloc.is_none() {
@@ -2081,7 +2108,12 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     self.push_str(&format!("auto {} = {}.data();\n", ptr, val));
                     self.push_str(&format!("auto {} = {}.size();\n", len, val));
                 } else {
-                    self.push_str(&format!("auto {} = (uint8_t*)({}.data());\n", ptr, val));
+                    self.push_str(&format!(
+                        "auto {} = ({})({}.data());\n",
+                        ptr,
+                        self.gen.gen.opts.ptr_type(),
+                        val
+                    ));
                     self.push_str(&format!("auto {} = (size_t)({}.size());\n", len, val));
                 }
                 if realloc.is_none() {
@@ -2108,7 +2140,12 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     self.push_str(&format!("auto {} = {}.data();\n", ptr, val));
                     self.push_str(&format!("auto {} = {}.size();\n", len, val));
                 } else {
-                    self.push_str(&format!("auto {} = (uint8_t*)({}.data());\n", ptr, val));
+                    self.push_str(&format!(
+                        "auto {} = ({})({}.data());\n",
+                        ptr,
+                        self.gen.gen.opts.ptr_type(),
+                        val
+                    ));
                     self.push_str(&format!("auto {} = (size_t)({}.size());\n", len, val));
                 }
                 if realloc.is_none() {
@@ -2326,7 +2363,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 for ty in result_types.iter() {
                     let name = format!("variant{}", self.tmp());
                     results.push(name.clone());
-                    self.src.push_str(wasm_type(*ty));
+                    self.src.push_str(self.gen.gen.opts.wasm_type(*ty));
                     self.src.push_str(" ");
                     self.src.push_str(&name);
                     self.src.push_str(";\n");
@@ -2441,7 +2478,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     let tmp = self.tmp();
                     let name = self.tempname("option", tmp);
                     results.push(name.clone());
-                    self.src.push_str(wasm_type(*ty));
+                    self.src.push_str(self.gen.gen.opts.wasm_type(*ty));
                     self.src.push_str(" ");
                     self.src.push_str(&name);
                     self.src.push_str(";\n");
@@ -2506,7 +2543,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     let tmp = self.tmp();
                     let name = self.tempname("result", tmp);
                     results.push(name.clone());
-                    self.src.push_str(wasm_type(*ty));
+                    self.src.push_str(self.gen.gen.opts.wasm_type(*ty));
                     self.src.push_str(" ");
                     self.src.push_str(&name);
                     self.src.push_str(";\n");
@@ -2820,12 +2857,16 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 self.src.push_str("}\n");
             }
             abi::Instruction::PointerLoad { offset } => {
-                self.load("uint8_t*", *offset, operands, results)
+                let ptr_type = self.gen.gen.opts.ptr_type();
+                self.load(ptr_type, *offset, operands, results)
             }
             abi::Instruction::LengthLoad { offset } => {
                 self.load("size_t", *offset, operands, results)
             }
-            abi::Instruction::PointerStore { offset } => self.store("uint8_t*", *offset, operands),
+            abi::Instruction::PointerStore { offset } => {
+                let ptr_type = self.gen.gen.opts.ptr_type();
+                self.store(ptr_type, *offset, operands)
+            }
             abi::Instruction::LengthStore { offset } => self.store("size_t", *offset, operands),
         }
     }
@@ -2842,7 +2883,11 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
         };
         let static_var = if self.gen.in_import { "" } else { "static " };
         uwriteln!(self.src, "{static_var}{tp} ret_area[{elems}];");
-        uwriteln!(self.src, "uint8_t* ptr{tmp} = (uint8_t*)(&ret_area);");
+        uwriteln!(
+            self.src,
+            "{} ptr{tmp} = ({0})(&ret_area);",
+            self.gen.gen.opts.ptr_type(),
+        );
 
         format!("ptr{}", tmp)
     }
