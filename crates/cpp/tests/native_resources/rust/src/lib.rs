@@ -26,10 +26,10 @@ impl Guest for MyWorld {
         resources::R::new(MyResource::new(1))
     }
     fn borrows(o: RBorrow<'_>) {
-        println!("resource borrowed with {:?}", o);
+        println!("resource borrowed with {:?}", o.get::<MyResource>().0.lock().unwrap());
     }
-    fn consume(o: resources::R) {
-        println!("resource consumed with {:?}", o);
+    fn consume(o: Self::R) {
+        println!("resource consumed with {:?}", o.0.lock().unwrap());
 
         println!("exercise the other direction");
         let obj = the_world::foo::foo::resources::create();

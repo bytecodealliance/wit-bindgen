@@ -7,7 +7,10 @@ edition = "2021"
 
 [lib]
 crate-type = ["cdylib"]
-#wit-bindgen = { path = "../../../../guest-rust" }
 
 [dependencies]
 # wit-bindgen-rt = "0.21.0"
+wit-bindgen = { path = "../../../../guest-rust" }
+
+[patch.crates-io]
+wit-parser = { git = "https://github.com/bytecodealliance/wasm-tools" }

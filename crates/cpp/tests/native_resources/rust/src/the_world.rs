@@ -294,14 +294,14 @@ pub mod exports {
 }
 #[doc(hidden)]
 #[allow(non_snake_case)]
-pub unsafe fn _export_consume_cabi<T: Guest>(arg0: i32,) {#[cfg(target_arch="wasm32")]
-_rt::run_ctors_once();T::consume(R::from_handle(arg0 as u32));
+pub unsafe fn _export_consume_cabi<T: Guest>(arg0: *mut u8,) {#[cfg(target_arch="wasm32")]
+_rt::run_ctors_once();T::consume(_rt::Box::<_RRep<T::R>>::from_raw(arg0.cast()).unwrap());
 }
 pub trait Guest {
   type R: GuestR;
   fn create() -> R;
   fn borrows(o: RBorrow<'_>,);
-  fn consume(o: R,);
+  fn consume(o: Self::R,);
 }
 pub trait GuestR: 'static {
 
@@ -366,7 +366,7 @@ macro_rules! __export_foo_foo_resources_cabi{
     }
     #[cfg_attr(target_arch = "wasm32", export_name = "foo:foo/resources#consume")]
     #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
-    unsafe extern "C" fn fooX3AfooX2FresourcesX23consume(arg0: i32,) {
+    unsafe extern "C" fn fooX3AfooX2FresourcesX23consume(arg0: *mut u8,) {
       $($path_to_types)*::_export_consume_cabi::<$ty>(arg0)
     }
 
