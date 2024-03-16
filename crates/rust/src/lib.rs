@@ -164,10 +164,10 @@ pub struct Opts {
     #[cfg_attr(feature = "clap", arg(long))]
     pub type_section_suffix: Option<String>,
 
-    /// Apply a workaround required before Rust 1.69 to run wasm ctors only
-    /// once.
+    /// Disable a workaround used to prevent libc ctors/dtors from being invoked
+    /// too much.
     #[cfg_attr(feature = "clap", arg(long))]
-    pub run_ctors_once_workaround: bool,
+    pub disable_run_ctors_once_workaround: bool,
 
     /// Changes the default module used in the generated `export!` macro to
     /// something other than `self`.
@@ -413,36 +413,15 @@ pub unsafe fn bool_lift(val: u8) -> bool {
             }
 
             RuntimeItem::RunCtorsOnce => {
-                self.src.push_str(
+                let rt = self.runtime_path();
+                self.src.push_str(&format!(
                     r#"
-/// Provide a hook for generated export functions to run static
-/// constructors at most once. wit-bindgen-rust generates a call to this
-/// function at the start of all component export functions. Importantly,
-/// it is not called as part of `cabi_realloc`, which is a *core* export
-/// func, but may not execute ctors, because the environment ctor in
-/// wasi-libc (before rust 1.69.0) calls an import func, which is not
-/// permitted by the Component Model when inside realloc.
 #[cfg(target_arch = "wasm32")]
-pub fn run_ctors_once() {
-    static mut RUN: bool = false;
-    unsafe {
-        if !RUN {
-            // This function is synthesized by `wasm-ld` to run all static
-            // constructors. wasm-ld will either provide an implementation
-            // of this symbol, or synthesize a wrapper around each
-            // exported function to (unconditionally) run ctors. By using
-            // this function, the linked module is opting into "manually"
-            // running ctors.
-            extern "C" {
-                fn __wasm_call_ctors();
-            }
-            __wasm_call_ctors();
-            RUN = true;
-        }
-    }
-}
+pub fn run_ctors_once() {{
+    {rt}::run_ctors_once();
+}}
                     "#,
-                );
+                ));
             }
 
             RuntimeItem::AsI32 => {
@@ -868,8 +847,8 @@ impl WorldGenerator for RustWasm {
         if let Some(default) = &self.opts.default_bindings_module {
             uwriteln!(self.src, "//   * default-bindings-module: {default:?}");
         }
-        if self.opts.run_ctors_once_workaround {
-            uwriteln!(self.src, "//   * run-ctors-once-workaround");
+        if self.opts.disable_run_ctors_once_workaround {
+            uwriteln!(self.src, "//   * disable-run-ctors-once-workaround");
         }
         if let Some(s) = &self.opts.export_macro_name {
             uwriteln!(self.src, "//   * export-macro-name: {s}");
