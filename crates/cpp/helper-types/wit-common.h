@@ -5,6 +5,8 @@
 #include <map>
 #if __cplusplus > 202001L
 #include <span>
+#else
+#include <vector>
 #endif
 
 namespace wit {
@@ -25,10 +27,14 @@ public:
   const_iterator begin() const { return address; }
   const_iterator end() const { return address + length; }
   T const &operator[](size_t index) { return address[index]; }
+  // create from any compatible vector (borrows data!)
+  template <class U>
+  span(std::vector<U> const&vec) : address(vec.data()), length(v.size()) {}
 };
 #endif
 
 class ResourceImportBase {
+public:
   static const int32_t invalid = -1;
 
 protected:

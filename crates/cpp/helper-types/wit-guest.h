@@ -1,6 +1,7 @@
 #include <malloc.h>
 #include <stdint.h>
 #include <string_view>
+#include <string>
 #include "wit-common.h"
 
 namespace wit {
@@ -36,6 +37,9 @@ public:
   std::string_view get_view() const {
     return std::string_view((const char *)data_, length);
   }
+  std::string to_string() const {
+    return std::string((const char *)data_, length);
+  }
 };
 
 template <class T>
@@ -59,6 +63,8 @@ public:
   vector(T *d, size_t l) : data_(d), length(l) {}
   T const *data() const { return data_; }
   T *data() { return data_; }
+  T& operator[](size_t n) { return data_[n]; }
+  T const& operator[](size_t n) const { return data_[n]; }
   size_t size() const { return length; }
   ~vector() {
     if (data_) {
@@ -76,9 +82,16 @@ public:
 
 template <class R> class ResourceExportBase {
   public:
+    static const int32_t invalid = -1;
+
     int32_t handle;
 
-    ResourceExportBase() : handle(R::ResourceNew(this)) {}
-    ~ResourceExportBase() { R::ResourceDrop(handle); }
+    ResourceExportBase() : handle(R::ResourceNew((R*)this)) {}
+    ~ResourceExportBase() { if (handle>=0) { R::ResourceDrop(handle); } }
+    ResourceExportBase(ResourceExportBase const&) = delete;
+    ResourceExportBase(ResourceExportBase &&) = delete;
+    ResourceExportBase& operator=(ResourceExportBase &&b) = delete;
+    ResourceExportBase& operator=(ResourceExportBase const&) = delete;
+    int32_t get_handle() const { return handle; }
 };
 } // namespace wit
