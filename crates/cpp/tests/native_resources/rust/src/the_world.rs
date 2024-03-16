@@ -289,7 +289,7 @@ pub mod exports {
   }
   #[doc(hidden)]
   #[allow(non_snake_case)]
-  pub unsafe fn _export_borrows_cabi<T: Guest>(arg0: i32,) {#[cfg(target_arch="wasm32")]
+  pub unsafe fn _export_borrows_cabi<T: Guest>(arg0: *mut u8,) {#[cfg(target_arch="wasm32")]
   _rt::run_ctors_once();T::borrows(RBorrow::lift(arg0 as usize));
 }
 #[doc(hidden)]
@@ -361,7 +361,7 @@ macro_rules! __export_foo_foo_resources_cabi{
     }
     #[cfg_attr(target_arch = "wasm32", export_name = "foo:foo/resources#borrows")]
     #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
-    unsafe extern "C" fn fooX3AfooX2FresourcesX23borrows(arg0: i32,) {
+    unsafe extern "C" fn fooX3AfooX2FresourcesX23borrows(arg0: *mut u8,) {
       $($path_to_types)*::_export_borrows_cabi::<$ty>(arg0)
     }
     #[cfg_attr(target_arch = "wasm32", export_name = "foo:foo/resources#consume")]

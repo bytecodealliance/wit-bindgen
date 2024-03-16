@@ -29,7 +29,7 @@ public:
   T const &operator[](size_t index) { return address[index]; }
   // create from any compatible vector (borrows data!)
   template <class U>
-  span(std::vector<U> const&vec) : address(vec.data()), length(v.size()) {}
+  span(std::vector<U> const&vec) : address(vec.data()), length(vec.size()) {}
 };
 #endif
 
