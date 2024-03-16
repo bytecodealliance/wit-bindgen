@@ -86,7 +86,7 @@ mod run_ctors_once_workaround {
                 export apply-the-workaround: func();
             }
         ",
-        run_ctors_once_workaround: true,
+        disable_run_ctors_once_workaround: true,
         stubs,
     });
 }

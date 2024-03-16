@@ -104,8 +104,8 @@ impl Parse for Config {
                     Opt::TypeSectionSuffix(suffix) => {
                         opts.type_section_suffix = Some(suffix.value());
                     }
-                    Opt::RunCtorsOnceWorkaround(enable) => {
-                        opts.run_ctors_once_workaround = enable.value();
+                    Opt::DisableRunCtorsOnceWorkaround(enable) => {
+                        opts.disable_run_ctors_once_workaround = enable.value();
                     }
                     Opt::DefaultBindingsModule(enable) => {
                         opts.default_bindings_module = Some(enable.value());
@@ -230,7 +230,7 @@ mod kw {
     syn::custom_keyword!(additional_derives);
     syn::custom_keyword!(with);
     syn::custom_keyword!(type_section_suffix);
-    syn::custom_keyword!(run_ctors_once_workaround);
+    syn::custom_keyword!(disable_run_ctors_once_workaround);
     syn::custom_keyword!(default_bindings_module);
     syn::custom_keyword!(export_macro_name);
     syn::custom_keyword!(pub_export_macro);
@@ -280,7 +280,7 @@ enum Opt {
     AdditionalDerives(Vec<syn::Path>),
     With(HashMap<String, String>),
     TypeSectionSuffix(syn::LitStr),
-    RunCtorsOnceWorkaround(syn::LitBool),
+    DisableRunCtorsOnceWorkaround(syn::LitBool),
     DefaultBindingsModule(syn::LitStr),
     ExportMacroName(syn::LitStr),
     PubExportMacro(syn::LitBool),
@@ -390,10 +390,10 @@ impl Parse for Opt {
             input.parse::<kw::type_section_suffix>()?;
             input.parse::<Token![:]>()?;
             Ok(Opt::TypeSectionSuffix(input.parse()?))
-        } else if l.peek(kw::run_ctors_once_workaround) {
-            input.parse::<kw::run_ctors_once_workaround>()?;
+        } else if l.peek(kw::disable_run_ctors_once_workaround) {
+            input.parse::<kw::disable_run_ctors_once_workaround>()?;
             input.parse::<Token![:]>()?;
-            Ok(Opt::RunCtorsOnceWorkaround(input.parse()?))
+            Ok(Opt::DisableRunCtorsOnceWorkaround(input.parse()?))
         } else if l.peek(kw::default_bindings_module) {
             input.parse::<kw::default_bindings_module>()?;
             input.parse::<Token![:]>()?;

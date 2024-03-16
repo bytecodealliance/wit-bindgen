@@ -524,25 +524,19 @@ macro_rules! {macro_name} {{
         let params = self.print_export_sig(func);
         self.push_str(" {");
 
-        if self.gen.opts.run_ctors_once_workaround {
+        if !self.gen.opts.disable_run_ctors_once_workaround {
             let run_ctors_once = self.path_to_run_ctors_once();
+            // Before executing any other code, use this function to run all
+            // static constructors, if they have not yet been run. This is a
+            // hack required to work around wasi-libc ctors calling import
+            // functions to initialize the environment.
+            //
+            // See
+            // https://github.com/bytecodealliance/preview2-prototyping/issues/99
+            // for more details.
             uwrite!(
                 self.src,
-                "\
-                // Before executing any other code, use this function to run all static
-                // constructors, if they have not yet been run. This is a hack required
-                // to work around wasi-libc ctors calling import functions to initialize
-                // the environment.
-                //
-                // This functionality will be removed once rust 1.69.0 is stable, at which
-                // point wasi-libc will no longer have this behavior.
-                //
-                // See
-                // https://github.com/bytecodealliance/preview2-prototyping/issues/99
-                // for more details.
-                #[cfg(target_arch=\"wasm32\")]
-                {run_ctors_once}();
-",
+                "#[cfg(target_arch=\"wasm32\")]\n{run_ctors_once}();",
             );
         }
 
@@ -1928,7 +1922,7 @@ macro_rules! {macro_name} {{
     }
 
     fn path_to_run_ctors_once(&mut self) -> String {
-        self.path_from_runtime_module(RuntimeItem::RunCtorsOnce, "bool_lift")
+        self.path_from_runtime_module(RuntimeItem::RunCtorsOnce, "run_ctors_once")
     }
 
     pub fn path_to_vec(&mut self) -> String {
