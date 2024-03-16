@@ -427,7 +427,7 @@ pub fn make_external_component(input: &str) -> String {
     input
         .chars()
         .map(|c| match c {
-            'A'..='Z' | 'a'..='z' | '0'..='9' => {
+            'A'..='Z' | 'a'..='z' | '0'..='9' | '_' => {
                 let mut s = String::new();
                 s.push(c);
                 s
