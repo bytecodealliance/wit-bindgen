@@ -310,14 +310,20 @@ macro_rules! {macro_name} {{
                 Identifier::World(_) => unreachable!(),
             };
             let camel = name.to_upper_camel_case();
+            let dtor_symbol = make_external_symbol(
+                &module,
+                &(String::from("[dtor]") + &name),
+                AbiVariant::GuestExport,
+            );
             uwriteln!(
                 self.src,
                 r#"
                 const _: () = {{
                     #[doc(hidden)]
-                    #[export_name = "{export_prefix}{module}#[dtor]{name}"]
+                    #[cfg_attr(target_arch = "wasm32", export_name = "{export_prefix}{module}#[dtor]{name}")]
+                    #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
                     #[allow(non_snake_case)]
-                    unsafe extern "C" fn dtor(rep: *mut u8) {{
+                    unsafe extern "C" fn {dtor_symbol}(rep: *mut u8) {{
                         $($path_to_types)*::{camel}::dtor::<
                             <$ty as $($path_to_types)*::Guest>::{camel}
                         >(rep)
