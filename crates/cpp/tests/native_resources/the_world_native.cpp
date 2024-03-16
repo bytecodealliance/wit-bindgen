@@ -79,3 +79,5 @@ void exports::foo::foo::resources::Consume(R &&o) {
 }
 
 // Component Adapters
+exports::foo::foo::resources::R::R(wit::ResourceExportBase&&) 
+{ abort(); } 
