@@ -17,7 +17,7 @@
 
 namespace wit {
 #ifdef WIT_HOST_DIRECT
-typedef intptr_t guest_address;
+typedef uint8_t* guest_address;
 typedef size_t guest_size;
 extern "C" void *cabi_realloc(void *ptr, size_t old_size, size_t align,
                               size_t new_size);

@@ -1453,8 +1453,9 @@ impl CppInterfaceGenerator<'_> {
         name: &str,
         args: &str,
         result: &str,
+        variant: AbiVariant,
     ) -> (String, String) {
-        let extern_name = make_external_symbol(module_name, name, AbiVariant::GuestImport);
+        let extern_name = make_external_symbol(module_name, name, variant);
         let import = format!("extern \"C\" __attribute__((import_module(\"{module_name}\")))\n __attribute__((import_name(\"{name}\")))\n {result} {extern_name}({args});\n");
         (extern_name, import)
     }
@@ -1478,7 +1479,12 @@ impl CppInterfaceGenerator<'_> {
         } else {
             self.gen.opts.wasm_type(results[0])
         };
-        let (name, code) = Self::declare_import2(module_name, name, &args, result);
+        let variant = if self.gen.opts.short_cut {
+            AbiVariant::GuestExport
+        } else {
+            AbiVariant::GuestImport
+        };
+        let (name, code) = Self::declare_import2(module_name, name, &args, result, variant);
         self.gen.extern_c_decls.push_str(&code);
         name
     }
@@ -2760,7 +2766,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 self.let_results(func.results.len(), results);
                 let (mut namespace, func_name_h) =
                     self.gen
-                        .func_namespace_name(func, !self.gen.gen.opts.host, true);
+                        .func_namespace_name(func, !self.gen.gen.opts.host_side(), true);
                 if matches!(func.kind, FunctionKind::Method(_)) {
                     let this = operands.remove(0);
                     //self.gen.gen.c_src.qualify(&namespace);
@@ -2847,7 +2853,11 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                             ret_type: _cabi_post_type,
                         }) = self.cabi_post.as_ref()
                         {
-                            self.src.push_str(&format!(", wasm_results[0].of.i32, wasm_runtime_lookup_function(wasm_runtime_get_module_inst(exec_env), \"{}\", \"(i)\"), exec_env)", cabi_post_name));
+                            if self.gen.gen.opts.host {
+                                self.src.push_str(&format!(", wasm_results[0].of.i32, wasm_runtime_lookup_function(wasm_runtime_get_module_inst(exec_env), \"{}\", \"(i)\"), exec_env)", cabi_post_name));
+                            } else {
+                                self.src.push_str(&format!(", ret, {})", cabi_post_name));
+                            }
                         }
                         self.src.push_str(";\n");
                     }
