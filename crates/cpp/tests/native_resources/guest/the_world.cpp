@@ -72,7 +72,7 @@ extern "C" __attribute__((__export_name__("foo:foo/resources#[constructor]r")))
 int32_t
 fooX3AfooX2FresourcesX23X5BconstructorX5Dr(int32_t arg0) {
   auto result0 = exports::foo::foo::resources::R::New((uint32_t(arg0)));
-  return result0->handle;
+  return result0->into_handle();
 }
 extern "C"
     __attribute__((__export_name__("foo:foo/resources#[method]r.add"))) void
@@ -89,15 +89,17 @@ void exports::foo::foo::resources::R::ResourceDrop(int32_t id) {
 extern "C" __attribute__((__export_name__("foo:foo/resources#create"))) int32_t
 fooX3AfooX2FresourcesX23create() {
   auto result0 = exports::foo::foo::resources::Create();
-  return result0->handle;
+  return result0.release()->handle;
 }
 extern "C" __attribute__((__export_name__("foo:foo/resources#borrows"))) void
-fooX3AfooX2FresourcesX23borrows(int32_t arg0) {
-  exports::foo::foo::resources::Borrows(arg0);
+fooX3AfooX2FresourcesX23borrows(int8_t* arg0) {
+  exports::foo::foo::resources::Borrows(std::cref(*(exports::foo::foo::resources::R const*)arg0));
 }
 extern "C" __attribute__((__export_name__("foo:foo/resources#consume"))) void
-fooX3AfooX2FresourcesX23consume(int32_t arg0) {
-  exports::foo::foo::resources::Consume(arg0);
+fooX3AfooX2FresourcesX23consume(int8_t* arg0) {
+  auto obj = exports::foo::foo::resources::R::Owned((exports::foo::foo::resources::R*)arg0);
+  obj->into_handle();
+  exports::foo::foo::resources::Consume(std::move(obj));
 }
 
 // Component Adapters

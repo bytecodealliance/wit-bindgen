@@ -93,5 +93,6 @@ template <class R> class ResourceExportBase {
     ResourceExportBase& operator=(ResourceExportBase &&b) = delete;
     ResourceExportBase& operator=(ResourceExportBase const&) = delete;
     int32_t get_handle() const { return handle; }
+    int32_t into_handle() { int32_t result = handle; handle=invalid; return result; }
 };
 } // namespace wit
