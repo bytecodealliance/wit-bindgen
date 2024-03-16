@@ -7,38 +7,46 @@
 #include <map>
 #include <utility>
 #include <wit-host.h>
+
+// guest imports (implemented here)
+#include "foo-foo-resources-R.h"
 namespace foo {
 namespace foo {
 namespace resources {
-class R : public wit::ResourceImportBase {
-
-public:
-  ~R();
-  R(uint32_t a);
-  void Add(uint32_t b);
-  R(wit::ResourceImportBase &&);
-
-  R(R &&) = default;
-};
-
-R Create();
+R::Owned Create();
 void Borrows(std::reference_wrapper<const R> o);
-void Consume(R o);
-// export_interface Interface(Id { idx: 0 })
+void Consume(R::Owned o);
 } // namespace resources
 } // namespace foo
 } // namespace foo
-#include "exports-foo-foo-resources-R.h"
+
+// guest exports
 namespace exports {
 namespace foo {
 namespace foo {
 namespace resources {
+// only a proxy, no data, an import?
+class R : public wit::ResourceExportBase {
+
+public:
+  ~R();
+  R(uint32_t a);
+  void Add(uint32_t b) const;
+  R(ResourceExportBase &&);
+
+  R(R &&) = default;
+  R(R const&) = delete;
+  R& operator=(R const&)=delete;
+  R& operator=(R &&)=delete;
+};
+
 R Create();
 void Borrows(std::reference_wrapper<const R> o);
-void Consume(R o);
+void Consume(R &&o);
+// export_interface Interface(Id { idx: 0 })
 } // namespace resources
 } // namespace foo
 } // namespace foo
-} // namespace exports
+}
 
 #endif

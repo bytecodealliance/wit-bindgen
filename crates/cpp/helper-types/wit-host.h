@@ -182,7 +182,7 @@ public:
 #endif
 };
 
-template <class R> class ResourceExportBase {
+template <class R> class ResourceTable {
   static std::map<int32_t, R> resources;
 
 public:
@@ -206,4 +206,33 @@ public:
     return std::move(result);
   }
 };
+
+// guest exported resource
+class ResourceExportBase : public ResourceTable<guest_address> {
+  protected:
+    guest_address rep;
+    int32_t index;
+  public:
+    ResourceExportBase() : rep(0), index(-1) {}
+    ResourceExportBase(int32_t i) : rep(*lookup_resource(i)), index(i) {}
+    ResourceExportBase(ResourceExportBase &&) = default;
+    ResourceExportBase(ResourceExportBase const&) = delete;
+    ResourceExportBase& operator=(ResourceExportBase const&)=delete;
+    ResourceExportBase& operator=(ResourceExportBase &&)=delete;
+    int32_t get_handle() const { return index; }
+    guest_address get_rep() const { return rep; }
+};
+
+template <class R>
+class ResourceImportBase : public ResourceTable<R> {
+    int32_t index;
+  public:
+    static const int32_t invalid=-1;
+    ResourceImportBase() : index(invalid) {}
+    ResourceImportBase(ResourceImportBase &&) = default;
+    ResourceImportBase(ResourceImportBase const&) = delete;
+    ResourceImportBase& operator=(ResourceImportBase const&)=delete;
+    ResourceImportBase& operator=(ResourceImportBase &&)=delete;
+};
+
 } // namespace wit

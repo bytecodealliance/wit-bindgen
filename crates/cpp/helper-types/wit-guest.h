@@ -95,4 +95,33 @@ template <class R> class ResourceExportBase {
     int32_t get_handle() const { return handle; }
     int32_t into_handle() { int32_t result = handle; handle=invalid; return result; }
 };
+
+class ResourceImportBase {
+public:
+  static const int32_t invalid = -1;
+
+protected:
+  int32_t handle;
+
+public:
+  ResourceImportBase(int32_t h = invalid) : handle(h) {}
+  ResourceImportBase(ResourceImportBase &&r) : handle(r.handle) {
+    r.handle = invalid;
+  }
+  ResourceImportBase(ResourceImportBase const &) = delete;
+  void set_handle(int32_t h) { handle = h; }
+  int32_t get_handle() const { return handle; }
+  int32_t into_handle() {
+    int32_t h = handle;
+    handle = invalid;
+    return h;
+  }
+  ResourceImportBase &operator=(ResourceImportBase &&r) {
+    assert(handle < 0);
+    handle = r.handle;
+    r.handle = invalid;
+    return *this;
+  }
+  ResourceImportBase &operator=(ResourceImportBase const &r) = delete;
+};
 } // namespace wit
