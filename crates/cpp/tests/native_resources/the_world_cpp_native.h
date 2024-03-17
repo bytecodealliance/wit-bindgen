@@ -37,7 +37,7 @@ public:
   R(R &&) = default;
   R(R const&) = delete;
   R& operator=(R const&)=delete;
-  R& operator=(R &&)=delete;
+  R& operator=(R &&)=default;
 };
 
 R Create();

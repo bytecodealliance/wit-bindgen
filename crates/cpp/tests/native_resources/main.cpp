@@ -2,9 +2,15 @@
 #include "the_world_cpp_native.h"
 #include <iostream>
 
-foo::foo::resources::R::Owned foo::foo::resources::Create() { abort();}
-void foo::foo::resources::Borrows(std::reference_wrapper<R const>) { abort(); }
-void foo::foo::resources::Consume(R::Owned o) { abort(); }
+foo::foo::resources::R::Owned foo::foo::resources::Create() { 
+    return R::New(1);
+}
+void foo::foo::resources::Borrows(std::reference_wrapper<R const> o) {
+    printf("resource borrowed with %d\n", o.get().GetValue());
+}
+void foo::foo::resources::Consume(R::Owned o) { 
+    printf("resource consumed with %d\n", o->GetValue());
+}
 
 int main() {
     auto obj = exports::foo::foo::resources::Create();
