@@ -22,15 +22,9 @@ extern "C" __attribute__((import_module("foo:foo/resources")))
 __attribute__((import_name("consume"))) void
     fooX3AfooX2FresourcesX23consume(uint8_t*);
 
-#if 0
-foo::foo::resources::R::~R() {
-  foo::foo::resources::R::remove_resource((*this));
-}
-#endif
 extern "C" int32_t fooX3AfooX2FresourcesX00X5BconstructorX5Dr(int32_t arg0) {
   auto result0 = foo::foo::resources::R::New((uint32_t(arg0)));
   return result0.release()->get_handle();
-//  this->handle = result0.store_resource(std::move(result0));
 }
 extern "C" void fooX3AfooX2FresourcesX00X5BmethodX5DrX2Eadd(int32_t arg0,
                                                             int32_t arg1) {
@@ -39,9 +33,6 @@ extern "C" void fooX3AfooX2FresourcesX00X5BmethodX5DrX2Eadd(int32_t arg0,
 extern "C" int32_t fooX3AfooX2FresourcesX00create() {
   auto result0 = foo::foo::resources::Create();
   return result0.release()->get_handle();
-//  return result0->get_handle();
-//  abort();
-//  return result0.store_resource(std::move(result0));
 }
 extern "C" void fooX3AfooX2FresourcesX00borrows(int32_t arg0) {
   foo::foo::resources::Borrows(**foo::foo::resources::R::lookup_resource(arg0));

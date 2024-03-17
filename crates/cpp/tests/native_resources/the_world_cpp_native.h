@@ -25,7 +25,7 @@ namespace exports {
 namespace foo {
 namespace foo {
 namespace resources {
-// only a proxy, no data, an import?
+// only a handle, no data, imported from guest
 class R : public wit::ResourceExportBase {
 
 public:
