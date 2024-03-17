@@ -33,9 +33,9 @@ namespace exports {
 namespace foo {
 namespace foo {
 namespace resources {
-std::unique_ptr<R, R::Deleter> Create();
+R::Owned Create();
 void Borrows(std::reference_wrapper<const R> o);
-void Consume(std::unique_ptr<R, R::Deleter> o);
+void Consume(R::Owned o);
 } // namespace resources
 } // namespace foo
 } // namespace foo
