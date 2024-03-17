@@ -55,7 +55,7 @@ void foo::foo::resources::R::Add(uint32_t b) const {
 }
 foo::foo::resources::R foo::foo::resources::Create() {
   auto ret = fooX3AfooX2FresourcesX00create();
-  return ret;
+  return wit::ResourceImportBase{ret};
 }
 void foo::foo::resources::Borrows(std::reference_wrapper<const R> o) {
   fooX3AfooX2FresourcesX00borrows(o.get().get_handle());
@@ -72,7 +72,7 @@ extern "C" __attribute__((__export_name__("foo:foo/resources#[constructor]r")))
 int32_t
 fooX3AfooX2FresourcesX23X5BconstructorX5Dr(int32_t arg0) {
   auto result0 = exports::foo::foo::resources::R::New((uint32_t(arg0)));
-  return result0->into_handle();
+  return result0.release()->into_handle();
 }
 extern "C"
     __attribute__((__export_name__("foo:foo/resources#[method]r.add"))) void
@@ -103,3 +103,4 @@ fooX3AfooX2FresourcesX23consume(int8_t* arg0) {
 }
 
 // Component Adapters
+foo::foo::resources::R::R(wit::ResourceImportBase&&b) : wit::ResourceImportBase(std::move(b)) {}
