@@ -811,7 +811,7 @@ pub mod rt {
         wit_bindgen_rt::maybe_link_cabi_realloc();
     }
 
-    #[cfg(feature = "realloc")]
+    #[cfg(all(feature = "realloc", not(target_env = "p2")))]
     pub use wit_bindgen_rt::cabi_realloc;
 
     pub use crate::pre_wit_bindgen_0_20_0::*;

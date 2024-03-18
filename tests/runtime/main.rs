@@ -166,18 +166,23 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
                 None => false,
             })
             .unwrap_or_else(|| panic!("failed to find wasm with name '{name}' - make sure to include '{name}.rs' module in crates/test-rust-wasm/src/bin directory"));
-        println!("rust core module = {core:?}");
-        let module = std::fs::read(&core)?;
-        let wasm = ComponentEncoder::default()
-            .module(&module)?
-            .validate(true)
-            .adapter("wasi_snapshot_preview1", &wasi_adapter)?
-            .realloc_via_memory_grow(true)
-            .encode()?;
+        let bytes = std::fs::read(&core)?;
+        let dst = if wasmparser::Parser::is_component(&bytes) {
+            PathBuf::from(core)
+        } else {
+            println!("rust core module = {core:?}");
+            let wasm = ComponentEncoder::default()
+                .module(&bytes)?
+                .validate(true)
+                .adapter("wasi_snapshot_preview1", &wasi_adapter)?
+                .realloc_via_memory_grow(true)
+                .encode()?;
 
-        let dst = out_dir.join("rust.wasm");
+            let dst = out_dir.join("rust.wasm");
+            std::fs::write(&dst, &wasm)?;
+            dst
+        };
         println!("rust component {dst:?}");
-        std::fs::write(&dst, &wasm)?;
         result.push(dst);
     }
 
