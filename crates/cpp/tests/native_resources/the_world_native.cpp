@@ -20,7 +20,7 @@ __attribute__((import_name("borrows"))) void
     fooX3AfooX2FresourcesX23borrows(uint8_t*);
 extern "C" __attribute__((import_module("foo:foo/resources")))
 __attribute__((import_name("consume"))) void
-    fooX3AfooX2FresourcesX23consume(uint8_t*);
+    fooX3AfooX2FresourcesX23consume(int32_t);
 
 extern "C" int32_t fooX3AfooX2FresourcesX00X5BconstructorX5Dr(int32_t arg0) {
   auto result0 = foo::foo::resources::R::New((uint32_t(arg0)));
@@ -53,6 +53,9 @@ extern "C" int32_t X5BexportX5DfooX3AfooX2FresourcesX00X5Bresource_newX5Dr(uint8
 extern "C" void X5BexportX5DfooX3AfooX2FresourcesX00X5Bresource_dropX5Dr(int32_t idx) {
   exports::foo::foo::resources::R::remove_resource(idx);
 }
+extern "C" uint8_t* X5BexportX5DfooX3AfooX2FresourcesX00X5Bresource_repX5Dr(int32_t idx) {
+  return *exports::foo::foo::resources::R::lookup_resource(idx);
+}
 
 exports::foo::foo::resources::R::~R() {
   if (this->rep)
@@ -76,8 +79,8 @@ void exports::foo::foo::resources::Borrows(std::reference_wrapper<const R> o) {
 }
 void exports::foo::foo::resources::Consume(R &&o) {
   auto rep = o.take_rep();
-  R::remove_resource(o.get_handle());
-  fooX3AfooX2FresourcesX23consume(rep);
+  //R::remove_resource(o.get_handle());
+  fooX3AfooX2FresourcesX23consume(o.get_handle());
 }
 
 // Component Adapters

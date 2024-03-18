@@ -21,6 +21,7 @@ public:
   void Add(uint32_t b) { value += b; }
   static int32_t ResourceNew(R *self);
   static void ResourceDrop(int32_t id);
+  static R* ResourceRep(int32_t id);
 
   uint32_t GetValue() const { return value; }
 };

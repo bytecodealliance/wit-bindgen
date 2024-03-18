@@ -40,6 +40,9 @@ X5BexportX5DfooX3AfooX2FresourcesX00X5Bresource_newX5Dr(uint8_t *);
 extern "C" __attribute__((import_module("[export]foo:foo/resources")))
 __attribute__((import_name("[resource-drop]r"))) void
     X5BexportX5DfooX3AfooX2FresourcesX00X5Bresource_dropX5Dr(int32_t);
+extern "C" __attribute__((import_module("[export]foo:foo/resources")))
+__attribute__((import_name("[resource-rep]r"))) uint8_t*
+    X5BexportX5DfooX3AfooX2FresourcesX00X5Bresource_repX5Dr(int32_t);
 foo::foo::resources::R::~R() {
   if (handle >= 0) {
     fooX3AfooX2FresourcesX00X5Bresource_dropX5Dr(handle);
@@ -86,6 +89,9 @@ int32_t exports::foo::foo::resources::R::ResourceNew(R *self) {
 void exports::foo::foo::resources::R::ResourceDrop(int32_t id) {
   X5BexportX5DfooX3AfooX2FresourcesX00X5Bresource_dropX5Dr(id);
 }
+exports::foo::foo::resources::R* exports::foo::foo::resources::R::ResourceRep(int32_t id) {
+  return (exports::foo::foo::resources::R*)X5BexportX5DfooX3AfooX2FresourcesX00X5Bresource_repX5Dr(id);
+}
 extern "C" __attribute__((__export_name__("foo:foo/resources#create"))) int32_t
 fooX3AfooX2FresourcesX23create() {
   auto result0 = exports::foo::foo::resources::Create();
@@ -96,9 +102,9 @@ fooX3AfooX2FresourcesX23borrows(int8_t* arg0) {
   exports::foo::foo::resources::Borrows(std::cref(*(exports::foo::foo::resources::R const*)arg0));
 }
 extern "C" __attribute__((__export_name__("foo:foo/resources#consume"))) void
-fooX3AfooX2FresourcesX23consume(int8_t* arg0) {
-  auto obj = exports::foo::foo::resources::R::Owned((exports::foo::foo::resources::R*)arg0);
-  obj->into_handle();
+fooX3AfooX2FresourcesX23consume(int32_t arg0) {
+  auto obj = exports::foo::foo::resources::R::Owned(exports::foo::foo::resources::R::ResourceRep(arg0));
+  //obj->into_handle();
   exports::foo::foo::resources::Consume(std::move(obj));
 }
 
