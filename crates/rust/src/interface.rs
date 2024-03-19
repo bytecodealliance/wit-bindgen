@@ -419,7 +419,7 @@ macro_rules! {macro_name} {{
         let path_to_root = self.path_to_root();
         let module = format!(
             "\
-                #[allow(clippy::all)]
+                #[allow(dead_code, clippy::all)]
                 pub mod {snake} {{
                     #[used]
                     #[doc(hidden)]
