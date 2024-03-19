@@ -259,11 +259,11 @@ impl RustWasm {
             .unwrap_or("wit_bindgen::rt")
     }
 
-    fn bitflags_path(&self) -> &str {
+    fn bitflags_path(&self) -> String {
         self.opts
             .bitflags_path
-            .as_deref()
-            .unwrap_or("wit_bindgen::bitflags")
+            .to_owned()
+            .unwrap_or(format!("{}::bitflags", self.runtime_path()))
     }
 
     fn name_interface(
