@@ -2009,7 +2009,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::ListCanonLower { element, realloc } => {
-                let op = &operands[0];
+                let list = &operands[0];
                 let (_size, ty) = list_element_info(element);
 
                 match self.gen.direction {
@@ -2018,23 +2018,22 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         uwrite!(
                             self.src,
                             "
-                            void* {buffer} = stackalloc {ty}[({op}).Length];
-                            {op}.AsSpan<{ty}>().CopyTo(new Span<{ty}>({buffer}, {op}.Length));
+                            void* {buffer} = stackalloc {ty}[({list}).Length];
+                            {list}.AsSpan<{ty}>().CopyTo(new Span<{ty}>({buffer}, {list}.Length));
                             "
                         );
                         results.push(format!("(int){buffer}"));
-                        results.push(format!("({op}).Length"));
+                        results.push(format!("({list}).Length"));
                     }
                     Direction::Export => {
-                        // TODO: is the Alloc nessary here?
                         let address = self.locals.tmp("address");
                         let buffer = self.locals.tmp("buffer");
                         let gc_handle = self.locals.tmp("gcHandle");
                         uwrite!(
                             self.src,
                             "
-                        byte[] {buffer} = new byte[{op}.Length];
-                        Buffer.BlockCopy({op}, 0, {buffer}, 0, {op}.Length);
+                        byte[] {buffer} = new byte[{list}.Length];
+                        Buffer.BlockCopy({list}, 0, {buffer}, 0, {list}.Length * sizeof({ty}));
                         var {gc_handle} = GCHandle.Alloc({buffer}, GCHandleType.Pinned);
                         var {address} = {gc_handle}.AddrOfPinnedObject();
                         "
@@ -2046,7 +2045,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             });
                         }
                         results.push(format!("((IntPtr)({address})).ToInt32()"));
-                        results.push(format!("{op}.Length"));
+                        results.push(format!("{list}.Length"));
                     }
                 }
             }
