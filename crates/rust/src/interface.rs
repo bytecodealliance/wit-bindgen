@@ -206,7 +206,10 @@ unsafe fn _resource_new(val: *mut u8) -> u32
     where Self: Sized
 {{
     #[cfg(not(target_arch = "wasm32"))]
-    unreachable!();
+    {{
+        let _ = val;
+        unreachable!();
+    }}
 
     #[cfg(target_arch = "wasm32")]
     {{
@@ -224,7 +227,10 @@ fn _resource_rep(handle: u32) -> *mut u8
     where Self: Sized
 {{
     #[cfg(not(target_arch = "wasm32"))]
-    unreachable!();
+    {{
+        let _ = handle;
+        unreachable!();
+    }}
 
     #[cfg(target_arch = "wasm32")]
     {{
@@ -2081,7 +2087,7 @@ impl {camel} {{
 
     fn as_ptr<T: Guest{camel}>(&self) -> *mut _{camel}Rep<T> {{
        {camel}::type_guard::<T>();
-       unsafe {{ T::_resource_rep(self.handle()).cast() }}
+       T::_resource_rep(self.handle()).cast()
     }}
 }}
 
