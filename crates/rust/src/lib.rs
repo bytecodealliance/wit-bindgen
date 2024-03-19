@@ -242,6 +242,11 @@ impl RustWasm {
         emit(&mut self.src, map);
         fn emit(me: &mut Source, module: Module) {
             for (name, submodule) in module.submodules {
+                // Ignore dead-code warnings. If the bindings are only used
+                // within a crate, and not exported to a different crate, some
+                // parts may be unused, and that's ok.
+                uwriteln!(me, "#[allow(dead_code)]");
+
                 uwriteln!(me, "pub mod {name} {{");
                 emit(me, submodule);
                 uwriteln!(me, "}}");
