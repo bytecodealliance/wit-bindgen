@@ -792,9 +792,10 @@
 #[cfg(feature = "macros")]
 pub use wit_bindgen_rust_macro::generate;
 
-// Re-export `bitflags` so that we can reference it from macros.
+// This re-export is no longer needed in new bindings and is only
+// here for compatibility.
 #[doc(hidden)]
-pub use bitflags;
+pub use rt::bitflags;
 
 mod pre_wit_bindgen_0_20_0;
 
@@ -803,6 +804,9 @@ pub mod examples;
 
 #[doc(hidden)]
 pub mod rt {
+    // Re-export `bitflags` so that we can reference it from macros.
+    pub use wit_bindgen_rt::bitflags;
+
     #[cfg(target_arch = "wasm32")]
     pub use wit_bindgen_rt::run_ctors_once;
 
