@@ -218,6 +218,13 @@ impl InterfaceGenerator<'_> {
 unsafe fn _resource_new(val: *mut u8) -> u32
     where Self: Sized
 {{
+    #[cfg(not(target_arch = "wasm32"))]
+    {{
+        let _ = val;
+        unreachable!();
+    }}
+
+    #[cfg(target_arch = "wasm32")]
     {{
         #[link(wasm_import_module = "[export]{module}")]
         extern "C" {{
@@ -232,6 +239,13 @@ unsafe fn _resource_new(val: *mut u8) -> u32
 fn _resource_rep(handle: u32) -> *mut u8
     where Self: Sized
 {{
+    #[cfg(not(target_arch = "wasm32"))]
+    {{
+        let _ = handle;
+        unreachable!();
+    }}
+
+    #[cfg(target_arch = "wasm32")]
     {{
         #[link(wasm_import_module = "[export]{module}")]
         extern "C" {{
@@ -430,7 +444,7 @@ macro_rules! {macro_name} {{
         let path_to_root = self.path_to_root();
         let module = format!(
             "\
-                #[allow(clippy::all)]
+                #[allow(dead_code, clippy::all)]
                 pub mod {snake} {{
                     #[used]
                     #[doc(hidden)]
@@ -2098,7 +2112,7 @@ impl {camel} {{
 
     fn as_ptr<T: Guest{camel}>(&self) -> *mut _{camel}Rep<T> {{
        {camel}::type_guard::<T>();
-       unsafe {{ T::_resource_rep(self.handle()).cast() }}
+       T::_resource_rep(self.handle()).cast()
     }}
 }}
 

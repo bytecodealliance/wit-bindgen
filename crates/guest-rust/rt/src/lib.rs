@@ -2,6 +2,11 @@
 
 extern crate alloc;
 
+// Re-export `bitflags` so that we can reference it from macros.
+#[cfg(feature = "bitflags")]
+#[doc(hidden)]
+pub use bitflags;
+
 /// For more information about this see `./ci/rebuild-libcabi-realloc.sh`.
 #[cfg(not(target_env = "p2"))]
 mod cabi_realloc;

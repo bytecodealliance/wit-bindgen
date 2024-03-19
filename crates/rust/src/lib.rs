@@ -250,6 +250,11 @@ impl RustWasm {
         emit(&mut self.src, map);
         fn emit(me: &mut Source, module: Module) {
             for (name, submodule) in module.submodules {
+                // Ignore dead-code warnings. If the bindings are only used
+                // within a crate, and not exported to a different crate, some
+                // parts may be unused, and that's ok.
+                uwriteln!(me, "#[allow(dead_code)]");
+
                 uwriteln!(me, "pub mod {name} {{");
                 emit(me, submodule);
                 uwriteln!(me, "}}");
@@ -267,11 +272,11 @@ impl RustWasm {
             .unwrap_or("wit_bindgen::rt")
     }
 
-    fn bitflags_path(&self) -> &str {
+    fn bitflags_path(&self) -> String {
         self.opts
             .bitflags_path
-            .as_deref()
-            .unwrap_or("wit_bindgen::bitflags")
+            .to_owned()
+            .unwrap_or(format!("{}::bitflags", self.runtime_path()))
     }
 
     fn name_interface(
