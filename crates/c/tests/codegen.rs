@@ -61,6 +61,7 @@ fn verify(dir: &Path, name: &str) {
         dir.to_str().unwrap(),
         "-Wall",
         "-Wextra",
+        "-Wc++-compat",
         "-Werror",
         "-Wno-unused-parameter",
         "-c",
