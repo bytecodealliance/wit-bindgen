@@ -94,7 +94,6 @@ fn run_test(exports: Guest, store: &mut Store<crate::Wasi<MyImports>>) -> Result
 
     let dropped_zs_start = z.call_num_dropped(&mut *store)?;
 
-    ResourceAny::resource_drop(x_instance, &mut *store)?;
     ResourceAny::resource_drop(z_instance_1, &mut *store)?;
     ResourceAny::resource_drop(z_instance_2, &mut *store)?;
 
