@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use wasmtime::{component::Resource, Result, Store};
 
 use self::test::resource_import_and_export::test::{Host, HostThing};
-use crate::resource_import_and_export::exports::test::resource_import_and_export::test::Test;
+use crate::resource_import_and_export::exports::test::resource_import_and_export::test::Guest;
 
 wasmtime::component::bindgen!(in "tests/runtime/resource_import_and_export");
 
@@ -65,7 +65,7 @@ fn run() -> anyhow::Result<()> {
     )
 }
 
-fn run_test(instance: Test, store: &mut Store<crate::Wasi<MyHostThing>>) -> anyhow::Result<()> {
+fn run_test(instance: Guest, store: &mut Store<crate::Wasi<MyHostThing>>) -> anyhow::Result<()> {
     let thing1 = instance.thing().call_constructor(&mut *store, 42)?;
 
     // 42 + 1 (constructor) + 1 (constructor) + 2 (foo) + 2 (foo)

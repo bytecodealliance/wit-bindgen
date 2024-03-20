@@ -9,7 +9,7 @@ use std::{env, fs};
 use wasm_encoder::{Encode, Section};
 use wasmtime::component::{Component, Instance, Linker, ResourceTable};
 use wasmtime::{Config, Engine, Store, Table};
-use wasmtime_wasi::preview2::{WasiCtx, WasiCtxBuilder, WasiView};
+use wasmtime_wasi::{WasiCtx, WasiCtxBuilder, WasiView};
 use wit_component::{ComponentEncoder, StringEncoding};
 use wit_parser::{Resolve, WorldId, WorldItem};
 
@@ -46,16 +46,10 @@ struct Wasi<T: Send>(T, MyCtx, ResourceTable, WasiCtx);
 
 // wasi trait
 impl<T: Send> WasiView for Wasi<T> {
-    fn table(&self) -> &ResourceTable {
-        &self.2
-    }
-    fn table_mut(&mut self) -> &mut ResourceTable {
+    fn table(&mut self) -> &mut ResourceTable {
         &mut self.2
     }
-    fn ctx(&self) -> &WasiCtx {
-        &self.3
-    }
-    fn ctx_mut(&mut self) -> &mut WasiCtx {
+    fn ctx(&mut self) -> &mut WasiCtx {
         &mut self.3
     }
 }
@@ -106,7 +100,7 @@ where
 
         let mut store = Store::new(&engine, data);
 
-        wasmtime_wasi::preview2::command::sync::add_to_linker(&mut linker)?;
+        wasmtime_wasi::command::sync::add_to_linker(&mut linker)?;
 
         let (exports, _) = instantiate(&mut store, &component, &linker)?;
 

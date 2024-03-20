@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use wasmtime::{component::Resource, Store};
 
 use self::test::resource_with_lists::test::{Host, HostThing, Thing};
-use crate::resource_with_lists::exports::test::resource_with_lists::test::Test;
+use crate::resource_with_lists::exports::test::resource_with_lists::test::Guest;
 
 wasmtime::component::bindgen!(in "tests/runtime/resource_with_lists");
 
@@ -65,7 +65,7 @@ fn run() -> anyhow::Result<()> {
     )
 }
 
-fn run_test(exports: Test, store: &mut Store<crate::Wasi<MyHostThing>>) -> anyhow::Result<()> {
+fn run_test(exports: Guest, store: &mut Store<crate::Wasi<MyHostThing>>) -> anyhow::Result<()> {
     let thing = exports.thing();
 
     let hi_encoded = "Hi".as_bytes().to_vec();

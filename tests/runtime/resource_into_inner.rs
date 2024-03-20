@@ -2,7 +2,7 @@ use wasmtime::Store;
 
 wasmtime::component::bindgen!(in "tests/runtime/resource_into_inner");
 
-use exports::test::resource_into_inner::test::Test;
+use exports::test::resource_into_inner::test::Guest;
 
 #[test]
 fn run() -> anyhow::Result<()> {
@@ -17,6 +17,6 @@ fn run() -> anyhow::Result<()> {
     )
 }
 
-fn run_test(instance: Test, store: &mut Store<crate::Wasi<()>>) -> anyhow::Result<()> {
+fn run_test(instance: Guest, store: &mut Store<crate::Wasi<()>>) -> anyhow::Result<()> {
     instance.call_test(&mut *store)
 }
