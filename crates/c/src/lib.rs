@@ -2068,7 +2068,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
     fn load_ext(&mut self, ty: &str, offset: i32, operands: &[String], results: &mut Vec<String>) {
         self.load(ty, offset, operands, results);
         let result = results.pop().unwrap();
-        results.push(format!("(int32_t) ({})", result));
+        results.push(format!("(int32_t) {}", result));
     }
 
     fn store(&mut self, ty: &str, offset: i32, operands: &[String]) {
@@ -2223,11 +2223,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     results.push(format!("({}).{}", op, to_c_ident(&f.name)));
                 }
             }
-            Instruction::RecordLift { ty, .. } => {
+            Instruction::RecordLift { ty, record, .. } => {
                 let name = self.gen.gen.type_name(&Type::Id(*ty));
                 let mut result = format!("({}) {{\n", name);
-                for op in operands {
-                    uwriteln!(result, "{},", op);
+                for (field, op) in record.fields.iter().zip(operands.iter()) {
+                    let field_ty = self.gen.gen.type_name(&field.ty);
+                    uwriteln!(result, "({}) {},", field_ty, op);
                 }
                 result.push_str("}");
                 results.push(result);
