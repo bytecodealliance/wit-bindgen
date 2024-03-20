@@ -207,57 +207,64 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
             let sdk = PathBuf::from(std::env::var_os("WASI_SDK_PATH").expect(
                 "point the `WASI_SDK_PATH` environment variable to the path of your wasi-sdk",
             ));
-            let mut cmd = Command::new(sdk.join("bin/clang"));
-            let out_wasm = out_dir.join(format!(
-                "c-{}.wasm",
-                path.file_stem().and_then(|s| s.to_str()).unwrap()
-            ));
-            cmd.arg("--sysroot").arg(sdk.join("share/wasi-sysroot"));
-            cmd.arg(path)
-                .arg(out_dir.join(format!("{snake}.c")))
-                .arg(out_dir.join(format!("{snake}_component_type.o")))
-                .arg("-I")
-                .arg(&out_dir)
-                .arg("-Wall")
-                .arg("-Wextra")
-                .arg("-Werror")
-                .arg("-Wno-unused-parameter")
-                .arg("-mexec-model=reactor")
-                .arg("-g")
-                .arg("-o")
-                .arg(&out_wasm);
-            println!("{:?}", cmd);
-            let output = match cmd.output() {
-                Ok(output) => output,
-                Err(e) => panic!("failed to spawn compiler: {}", e),
-            };
-
-            if !output.status.success() {
-                println!("status: {}", output.status);
-                println!("stdout: ------------------------------------------");
-                println!("{}", String::from_utf8_lossy(&output.stdout));
-                println!("stderr: ------------------------------------------");
-                println!("{}", String::from_utf8_lossy(&output.stderr));
-                panic!("failed to compile");
-            }
-
-            // Translate the canonical ABI module into a component.
-            let module = fs::read(&out_wasm).expect("failed to read wasm file");
-            let component = ComponentEncoder::default()
-                .module(module.as_slice())
-                .expect("pull custom sections from module")
-                .validate(true)
-                .adapter("wasi_snapshot_preview1", &wasi_adapter)
-                .expect("adapter failed to get loaded")
-                .encode()
-                .expect(&format!(
-                    "module {:?} can be translated to a component",
-                    out_wasm
+            // Test both C mode and C++ mode.
+            for compiler in ["bin/clang", "bin/clang++"] {
+                let mut cmd = Command::new(sdk.join(compiler));
+                let out_wasm = out_dir.join(format!(
+                    "c-{}.wasm",
+                    path.file_stem().and_then(|s| s.to_str()).unwrap()
                 ));
-            let component_path = out_wasm.with_extension("component.wasm");
-            fs::write(&component_path, component).expect("write component to disk");
+                cmd.arg("--sysroot").arg(sdk.join("share/wasi-sysroot"));
+                cmd.arg(path)
+                    .arg(out_dir.join(format!("{snake}.c")))
+                    .arg(out_dir.join(format!("{snake}_component_type.o")))
+                    .arg("-I")
+                    .arg(&out_dir)
+                    .arg("-Wall")
+                    .arg("-Wextra")
+                    .arg("-Werror")
+                    .arg("-Wno-unused-parameter")
+                    .arg("-mexec-model=reactor")
+                    .arg("-g")
+                    .arg("-o")
+                    .arg(&out_wasm);
+                // Disable the warning about compiling a `.c` file in C++ mode.
+                if compiler.ends_with("++") {
+                    cmd.arg("-Wno-deprecated");
+                }
+                println!("{:?}", cmd);
+                let output = match cmd.output() {
+                    Ok(output) => output,
+                    Err(e) => panic!("failed to spawn compiler: {}", e),
+                };
 
-            result.push(component_path);
+                if !output.status.success() {
+                    println!("status: {}", output.status);
+                    println!("stdout: ------------------------------------------");
+                    println!("{}", String::from_utf8_lossy(&output.stdout));
+                    println!("stderr: ------------------------------------------");
+                    println!("{}", String::from_utf8_lossy(&output.stderr));
+                    panic!("failed to compile");
+                }
+
+                // Translate the canonical ABI module into a component.
+                let module = fs::read(&out_wasm).expect("failed to read wasm file");
+                let component = ComponentEncoder::default()
+                    .module(module.as_slice())
+                    .expect("pull custom sections from module")
+                    .validate(true)
+                    .adapter("wasi_snapshot_preview1", &wasi_adapter)
+                    .expect("adapter failed to get loaded")
+                    .encode()
+                    .expect(&format!(
+                        "module {:?} can be translated to a component",
+                        out_wasm
+                    ));
+                let component_path = out_wasm.with_extension("component.wasm");
+                fs::write(&component_path, component).expect("write component to disk");
+
+                result.push(component_path);
+            }
         }
     }
 
