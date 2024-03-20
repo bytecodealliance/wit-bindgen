@@ -371,27 +371,27 @@ impl WorldGenerator for C {
             );
         }
         if self.needs_union_int32_float {
-            uwrite!(
+            uwriteln!(
                 self.src.c_helpers,
-                "union int32_float {{ int32_t a; float b; }};"
+                "\nunion int32_float {{ int32_t a; float b; }};"
             );
         }
         if self.needs_union_float_int32 {
-            uwrite!(
+            uwriteln!(
                 self.src.c_helpers,
-                "union float_int32 {{ float a; int32_t b; }};"
+                "\nunion float_int32 {{ float a; int32_t b; }};"
             );
         }
         if self.needs_union_int64_double {
-            uwrite!(
+            uwriteln!(
                 self.src.c_helpers,
-                "union int64_double {{ int64_t a; double b; }};"
+                "\nunion int64_double {{ int64_t a; double b; }};"
             );
         }
         if self.needs_union_double_int64 {
-            uwrite!(
+            uwriteln!(
                 self.src.c_helpers,
-                "union double_int64 {{ double a; int64_t b; }};"
+                "\nunion double_int64 {{ double a; int64_t b; }};"
             );
         }
         let version = env!("CARGO_PKG_VERSION");
