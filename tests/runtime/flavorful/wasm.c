@@ -189,11 +189,11 @@ void exports_test_flavorful_test_list_typedefs(exports_test_flavorful_test_list_
   assert(memcmp(c->ptr[0].ptr, "typedef2", c->ptr[0].len) == 0);
   exports_test_flavorful_test_list_typedef3_free(c);
 
-  ret0->ptr = malloc(8);
+  ret0->ptr = (uint8_t *) malloc(8);
   ret0->len = 8;
   memcpy(ret0->ptr, "typedef3", 8);
 
-  ret1->ptr = malloc(sizeof(flavorful_string_t));
+  ret1->ptr = (flavorful_string_t *) malloc(sizeof(flavorful_string_t));
   ret1->len = 1;
   flavorful_string_dup(&ret1->ptr[0], "typedef4");
 }
