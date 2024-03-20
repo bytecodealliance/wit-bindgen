@@ -9,7 +9,7 @@ use imports::Y;
 use wasmtime::component::Resource;
 use wasmtime::Store;
 
-use self::exports::exports::Exports;
+use self::exports::exports::Guest;
 use self::imports::Host;
 
 #[derive(Default)]
@@ -71,7 +71,7 @@ fn run() -> Result<()> {
     )
 }
 
-fn run_test(exports: Exports, store: &mut Store<crate::Wasi<MyImports>>) -> Result<()> {
+fn run_test(exports: Guest, store: &mut Store<crate::Wasi<MyImports>>) -> Result<()> {
     let _ = exports.call_test_imports(&mut *store)?;
 
     let x = exports.x();
