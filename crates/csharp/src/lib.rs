@@ -851,6 +851,8 @@ impl InterfaceGenerator<'_> {
         );
 
         let src = bindgen.src;
+        let import_return_pointer_area_size = bindgen.import_return_pointer_area_size;
+        let import_return_pointer_area_align = bindgen.import_return_pointer_area_align;
 
         let params = func
             .params
@@ -874,8 +876,36 @@ impl InterfaceGenerator<'_> {
             {{
                 [DllImport("{import_module_name}", EntryPoint = "{import_name}"), WasmImportLinkage]
                 internal static extern {wasm_result_type} wasmImport{camel_name}({wasm_params});
-            }}
             "#
+        );
+
+        if import_return_pointer_area_size > 0 {
+            uwrite!(
+                self.csharp_interop_src,
+                r#"
+                [InlineArray({import_return_pointer_area_size})]
+                [StructLayout(LayoutKind.Sequential, Pack = {import_return_pointer_area_align})]
+                internal struct ImportReturnArea
+                {{
+                    private byte buffer;
+
+                    internal unsafe int AddressOfReturnArea()
+                    {{
+                        fixed(byte* ptr = &buffer)
+                        {{
+                            return (int)ptr;
+                        }}
+                    }}
+                }}
+                "#,
+            )
+        }
+
+        uwrite!(
+            self.csharp_interop_src,
+            r#"
+            }}
+            "#,
         );
 
         uwrite!(
@@ -1511,6 +1541,8 @@ struct FunctionBindgen<'a, 'b> {
     payloads: Vec<String>,
     needs_cleanup_list: bool,
     cleanup: Vec<Cleanup>,
+    import_return_pointer_area_size: usize,
+    import_return_pointer_area_align: usize,
 }
 
 impl<'a, 'b> FunctionBindgen<'a, 'b> {
@@ -1530,6 +1562,8 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             payloads: Vec::new(),
             needs_cleanup_list: false,
             cleanup: Vec::new(),
+            import_return_pointer_area_size: 0,
+            import_return_pointer_area_align: 0,
         }
     }
 
@@ -2029,11 +2063,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         let address = self.locals.tmp("address");
                         let buffer = self.locals.tmp("buffer");
                         let gc_handle = self.locals.tmp("gcHandle");
+                        let size = self.gen.gen.sizes.size(element);
                         uwrite!(
                             self.src,
                             "
-                        byte[] {buffer} = new byte[{list}.Length];
-                        Buffer.BlockCopy({list}, 0, {buffer}, 0, {list}.Length * sizeof({ty}));
+                        byte[] {buffer} = new byte[({size}) * {list}.Count()];
+                        Buffer.BlockCopy({list}.ToArray(), 0, {buffer}, 0, ({size}) * {list}.Count());
                         var {gc_handle} = GCHandle.Alloc({buffer}, GCHandleType.Pinned);
                         var {address} = {gc_handle}.AddrOfPinnedObject();
                         "
@@ -2045,7 +2080,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             });
                         }
                         results.push(format!("((IntPtr)({address})).ToInt32()"));
-                        results.push(format!("{list}.Length"));
+                        results.push(format!("{list}.Count()"));
                     }
                 }
             }
@@ -2102,31 +2137,39 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 } = self.blocks.pop().unwrap();
                 assert!(block_results.is_empty());
 
-                let op = &operands[0];
+                let list = &operands[0];
                 let size = self.gen.gen.sizes.size(element);
                 let align = self.gen.gen.sizes.align(element);
                 let ty = self.gen.type_name(element);
                 let index = self.locals.tmp("index");
-                let list: String = self.locals.tmp("list");
 
                 let buffer: String = self.locals.tmp("buffer");
+                let gc_handle = self.locals.tmp("gcHandle");
+                let address = self.locals.tmp("address");
 
                 uwrite!(
                     self.src,
                     "
-                    void* {buffer} = stackalloc byte[{size} + {align} * ({op}).Count];
-                    var {list} = {op};
+                    byte[] {buffer} = new byte[{size} * {list}.Count()];
+                    var {gc_handle} = GCHandle.Alloc({buffer}, GCHandleType.Pinned);
+                    var {address} = {gc_handle}.AddrOfPinnedObject();
 
-                    for (int {index} = 0; {index} < {list}.Count; ++{index}) {{
+                    for (int {index} = 0; {index} < {list}.Count(); ++{index}) {{
                         {ty} {block_element} = {list}[{index}];
-                        int {base} = (int){buffer} + ({index} * {size});
+                        int {base} = (int){address} + ({index} * {size});
                         {body}
                     }}
                     "
                 );
 
-                results.push(format!("(int){buffer}"));
-                results.push(format!("{list}.Count"));
+                if realloc.is_none() {
+                    self.cleanup.push(Cleanup {
+                        address: gc_handle.clone(),
+                    });
+                }
+
+                results.push(format!("(int){address}"));
+                results.push(format!("{list}.Count()"));
             }
 
             Instruction::ListLift { element, .. } => {
@@ -2292,14 +2335,20 @@ impl Bindgen for FunctionBindgen<'_, '_> {
         // their return area to be live until the post-return call.
         match self.gen.direction {
             Direction::Import => {
+                let name = self.func_name.to_upper_camel_case();
+                self.import_return_pointer_area_size =
+                    self.import_return_pointer_area_size.max(size);
+                self.import_return_pointer_area_align =
+                    self.import_return_pointer_area_align.max(align);
                 uwrite!(
                     self.src,
                     "
-                    void* {ptr} = stackalloc int[{size} + {align} - 1];
+                    var return_area = new {name}WasmInterop.ImportReturnArea();
+                    var {ptr} = return_area.AddressOfReturnArea();
                     "
                 );
 
-                return format!("(int){ptr}");
+                return format!("{ptr}");
             }
             Direction::Export => {
                 self.gen.gen.return_area_size = self.gen.gen.return_area_size.max(size);
