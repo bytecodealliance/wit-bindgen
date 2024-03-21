@@ -2335,6 +2335,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
         // their return area to be live until the post-return call.
         match self.gen.direction {
             Direction::Import => {
+                let ret_area = self.locals.tmp("retArea");
                 let name = self.func_name.to_upper_camel_case();
                 self.import_return_pointer_area_size =
                     self.import_return_pointer_area_size.max(size);
@@ -2343,8 +2344,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwrite!(
                     self.src,
                     "
-                    var return_area = new {name}WasmInterop.ImportReturnArea();
-                    var {ptr} = return_area.AddressOfReturnArea();
+                    var {ret_area} = new {name}WasmInterop.ImportReturnArea();
+                    var {ptr} = {ret_area}.AddressOfReturnArea();
                     "
                 );
 
