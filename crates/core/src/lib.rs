@@ -177,6 +177,7 @@ pub trait InterfaceGenerator<'a> {
             TypeDefKind::Future(_) => todo!("generate for future"),
             TypeDefKind::Stream(_) => todo!("generate for stream"),
             TypeDefKind::Handle(_) => todo!("generate for handle"),
+            TypeDefKind::Error => todo!("generate for error"),
             TypeDefKind::Unknown => unreachable!(),
         }
     }
@@ -191,8 +192,9 @@ pub trait AnonymousTypeGenerator<'a> {
     fn anonymous_type_result(&mut self, id: TypeId, ty: &Result_, docs: &Docs);
     fn anonymous_type_list(&mut self, id: TypeId, ty: &Type, docs: &Docs);
     fn anonymous_type_future(&mut self, id: TypeId, ty: &Option<Type>, docs: &Docs);
-    fn anonymous_type_stream(&mut self, id: TypeId, ty: &Stream, docs: &Docs);
+    fn anonymous_type_stream(&mut self, id: TypeId, ty: &Type, docs: &Docs);
     fn anonymous_typ_type(&mut self, id: TypeId, ty: &Type, docs: &Docs);
+    fn anonymous_type_error(&mut self);
 
     fn define_anonymous_type(&mut self, id: TypeId) {
         let ty = &self.resolve().types[id];
@@ -211,6 +213,7 @@ pub trait AnonymousTypeGenerator<'a> {
             TypeDefKind::List(t) => self.anonymous_type_list(id, t, &ty.docs),
             TypeDefKind::Future(f) => self.anonymous_type_future(id, f, &ty.docs),
             TypeDefKind::Stream(s) => self.anonymous_type_stream(id, s, &ty.docs),
+            TypeDefKind::Error => self.anonymous_type_error(),
             TypeDefKind::Handle(handle) => self.anonymous_type_handle(id, handle, &ty.docs),
             TypeDefKind::Unknown => unreachable!(),
         }
