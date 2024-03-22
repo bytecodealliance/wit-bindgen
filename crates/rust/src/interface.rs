@@ -1132,8 +1132,8 @@ macro_rules! {macro_name} {{
             Type::S16 => self.push_str("i16"),
             Type::S32 => self.push_str("i32"),
             Type::S64 => self.push_str("i64"),
-            Type::Float32 => self.push_str("f32"),
-            Type::Float64 => self.push_str("f64"),
+            Type::F32 => self.push_str("f32"),
+            Type::F64 => self.push_str("f64"),
             Type::Char => self.push_str("char"),
             Type::String => {
                 assert_eq!(mode.lists_borrowed, mode.lifetime.is_some());

@@ -217,8 +217,8 @@ impl InterfaceGenerator<'_> {
             Type::S16 => "int16".into(),
             Type::S32 => "int32".into(),
             Type::S64 => "int64".into(),
-            Type::Float32 => "float32".into(),
-            Type::Float64 => "float64".into(),
+            Type::F32 => "float32".into(),
+            Type::F64 => "float64".into(),
             Type::Char => "rune".into(),
             Type::String => "string".into(),
             Type::Id(id) => {
@@ -259,8 +259,8 @@ impl InterfaceGenerator<'_> {
             Type::S16 => "S16".into(),
             Type::S32 => "S32".into(),
             Type::S64 => "S64".into(),
-            Type::Float32 => "F32".into(),
-            Type::Float64 => "F64".into(),
+            Type::F32 => "F32".into(),
+            Type::F64 => "F64".into(),
             Type::Char => "Byte".into(),
             Type::String => "String".into(),
             Type::Id(id) => {

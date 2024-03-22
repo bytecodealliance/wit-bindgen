@@ -105,8 +105,8 @@ impl TinyGo {
             Type::S16 => "int16_t".into(),
             Type::S32 => "int32_t".into(),
             Type::S64 => "int64_t".into(),
-            Type::Float32 => "float".into(),
-            Type::Float64 => "double".into(),
+            Type::F32 => "float".into(),
+            Type::F64 => "double".into(),
             Type::Char => "uint32_t".into(),
             Type::String => {
                 format!(

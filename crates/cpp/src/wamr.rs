@@ -27,10 +27,10 @@ fn push_wamr(ty: &Type, resolve: &Resolve, params_str: &mut String) {
         Type::U64 | Type::S64 => {
             params_str.push('I');
         }
-        Type::Float32 => {
+        Type::F32 => {
             params_str.push('f');
         }
-        Type::Float64 => {
+        Type::F64 => {
             params_str.push('F');
         }
         Type::String => {
@@ -80,10 +80,10 @@ fn wamr_add_result(sig: &mut WamrSig, resolve: &Resolve, ty: &Type) {
         Type::S64 | Type::U64 => {
             sig.wamr_result = "I".into();
         }
-        Type::Float32 => {
+        Type::F32 => {
             sig.wamr_result = "f".into();
         }
-        Type::Float64 => {
+        Type::F64 => {
             sig.wamr_result = "F".into();
         }
         Type::String => {

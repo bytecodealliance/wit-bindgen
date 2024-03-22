@@ -747,8 +747,8 @@ fn needs_post_return(resolve: &Resolve, ty: &Type) -> bool {
         | Type::S32
         | Type::U64
         | Type::S64
-        | Type::Float32
-        | Type::Float64
+        | Type::F32
+        | Type::F64
         | Type::Char => false,
     }
 }
@@ -1067,8 +1067,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             Type::S64 => self.emit(&I64FromS64),
             Type::U64 => self.emit(&I64FromU64),
             Type::Char => self.emit(&I32FromChar),
-            Type::Float32 => self.emit(&F32FromFloat32),
-            Type::Float64 => self.emit(&F64FromFloat64),
+            Type::F32 => self.emit(&F32FromFloat32),
+            Type::F64 => self.emit(&F64FromFloat64),
             Type::String => {
                 let realloc = self.list_realloc();
                 self.emit(&StringLower { realloc });
@@ -1256,8 +1256,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             Type::S64 => self.emit(&S64FromI64),
             Type::U64 => self.emit(&U64FromI64),
             Type::Char => self.emit(&CharFromI32),
-            Type::Float32 => self.emit(&Float32FromF32),
-            Type::Float64 => self.emit(&Float64FromF64),
+            Type::F32 => self.emit(&Float32FromF32),
+            Type::F64 => self.emit(&Float64FromF64),
             Type::String => self.emit(&StringLift),
             Type::Id(id) => match &self.resolve.types[id].kind {
                 TypeDefKind::Type(t) => self.lift(t),
@@ -1414,8 +1414,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 self.lower_and_emit(ty, addr, &I32Store { offset })
             }
             Type::U64 | Type::S64 => self.lower_and_emit(ty, addr, &I64Store { offset }),
-            Type::Float32 => self.lower_and_emit(ty, addr, &F32Store { offset }),
-            Type::Float64 => self.lower_and_emit(ty, addr, &F64Store { offset }),
+            Type::F32 => self.lower_and_emit(ty, addr, &F32Store { offset }),
+            Type::F64 => self.lower_and_emit(ty, addr, &F64Store { offset }),
             Type::String => self.write_list_to_memory(ty, addr, offset),
 
             Type::Id(id) => match &self.resolve.types[id].kind {
@@ -1604,8 +1604,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             Type::S16 => self.emit_and_lift(ty, addr, &I32Load16S { offset }),
             Type::U32 | Type::S32 | Type::Char => self.emit_and_lift(ty, addr, &I32Load { offset }),
             Type::U64 | Type::S64 => self.emit_and_lift(ty, addr, &I64Load { offset }),
-            Type::Float32 => self.emit_and_lift(ty, addr, &F32Load { offset }),
-            Type::Float64 => self.emit_and_lift(ty, addr, &F64Load { offset }),
+            Type::F32 => self.emit_and_lift(ty, addr, &F32Load { offset }),
+            Type::F64 => self.emit_and_lift(ty, addr, &F64Load { offset }),
             Type::String => self.read_list_from_memory(ty, addr, offset),
 
             Type::Id(id) => match &self.resolve.types[id].kind {
@@ -1805,8 +1805,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             | Type::Char
             | Type::U64
             | Type::S64
-            | Type::Float32
-            | Type::Float64 => {}
+            | Type::F32
+            | Type::F64 => {}
 
             Type::Id(id) => match &self.resolve.types[id].kind {
                 TypeDefKind::Type(t) => self.deallocate(t, addr, offset),

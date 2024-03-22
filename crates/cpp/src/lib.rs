@@ -1350,8 +1350,8 @@ impl CppInterfaceGenerator<'_> {
             Type::S32 => "int32_t".into(),
             Type::U64 => "uint64_t".into(),
             Type::S64 => "int64_t".into(),
-            Type::Float32 => "float".into(),
-            Type::Float64 => "double".into(),
+            Type::F32 => "float".into(),
+            Type::F64 => "double".into(),
             Type::String => match flavor {
                 Flavor::Argument(AbiVariant::GuestImport) => {
                     self.gen.dependencies.needs_string_view = true;
