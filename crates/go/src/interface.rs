@@ -322,11 +322,11 @@ impl InterfaceGenerator<'_> {
                     TypeDefKind::Stream(t) => {
                         let mut src = String::new();
                         src.push_str("Stream");
-                        src.push_str(&self.optional_ty_name(t.element.as_ref()));
-                        src.push_str(&self.optional_ty_name(t.end.as_ref()));
+                        src.push_str(&self.ty_name(t));
                         src.push('T');
                         src
                     }
+                    TypeDefKind::ErrorContext => "ErrorContext".to_owned(),
                     TypeDefKind::Handle(Handle::Own(ty)) => {
                         // Currently there is no different between Own and Borrow
                         // in the Go code. They are just represented as
@@ -678,6 +678,7 @@ impl InterfaceGenerator<'_> {
             }
             TypeDefKind::Future(_) => todo!("anonymous_type for future"),
             TypeDefKind::Stream(_) => todo!("anonymous_type for stream"),
+            TypeDefKind::ErrorContext => todo!("anonymous_type for error-context"),
             TypeDefKind::Unknown => unreachable!(),
         }
     }

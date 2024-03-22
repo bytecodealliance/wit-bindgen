@@ -32,11 +32,11 @@ indexmap = "2.0.0"
 prettyplease = "0.2.20"
 syn = { version = "2.0", features = ["printing"] }
 
-wasmparser = "0.219.0"
-wasm-encoder = "0.219.0"
-wasm-metadata = "0.219.0"
-wit-parser = "0.219.0"
-wit-component = "0.219.0"
+wasmparser = { git = "https://github.com/dicej/wasm-tools", branch = "async" }
+wasm-encoder = { git = "https://github.com/dicej/wasm-tools", branch = "async" }
+wasm-metadata = { git = "https://github.com/dicej/wasm-tools", branch = "async" }
+wit-parser = { git = "https://github.com/dicej/wasm-tools", branch = "async" }
+wit-component = { git = "https://github.com/dicej/wasm-tools", branch = "async" }
 
 wit-bindgen-core = { path = 'crates/core', version = '0.34.0' }
 wit-bindgen-c = { path = 'crates/c', version = '0.34.0' }
@@ -74,6 +74,7 @@ default = [
   'go',
   'csharp',
   'moonbit',
+  'async',
 ]
 c = ['dep:wit-bindgen-c']
 rust = ['dep:wit-bindgen-rust']
@@ -83,6 +84,7 @@ go = ['dep:wit-bindgen-go']
 csharp = ['dep:wit-bindgen-csharp']
 csharp-mono = ['csharp']
 moonbit = ['dep:wit-bindgen-moonbit']
+async = ["wit-bindgen-rust/async"]
 
 [dev-dependencies]
 heck = { workspace = true }

@@ -779,6 +779,7 @@ impl InterfaceGenerator<'_> {
             LiftLower::LowerArgsLiftResults,
             func,
             &mut bindgen,
+            false,
         );
 
         let src = bindgen.src;
@@ -868,6 +869,7 @@ impl InterfaceGenerator<'_> {
             LiftLower::LiftArgsLowerResults,
             func,
             &mut bindgen,
+            false,
         );
 
         assert!(!bindgen.needs_cleanup_list);
@@ -927,7 +929,7 @@ impl InterfaceGenerator<'_> {
                 (0..sig.results.len()).map(|i| format!("p{i}")).collect(),
             );
 
-            abi::post_return(bindgen.gen.resolve, func, &mut bindgen);
+            abi::post_return(bindgen.gen.resolve, func, &mut bindgen, false);
 
             let src = bindgen.src;
 
@@ -2579,6 +2581,21 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 uwriteln!(self.src, "{ffi_qualifier}free({address})");
             }
+
+            Instruction::Flush { amt } => {
+                results.extend(operands.iter().take(*amt).map(|v| v.clone()));
+            }
+
+            Instruction::AsyncMalloc { .. }
+            | Instruction::AsyncPostCallInterface { .. }
+            | Instruction::AsyncCallReturn { .. }
+            | Instruction::FutureLower { .. }
+            | Instruction::FutureLift { .. }
+            | Instruction::StreamLower { .. }
+            | Instruction::StreamLift { .. }
+            | Instruction::ErrorContextLower { .. }
+            | Instruction::ErrorContextLift { .. }
+            | Instruction::AsyncCallWasm { .. } => todo!(),
         }
     }
 

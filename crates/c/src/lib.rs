@@ -718,6 +718,7 @@ fn is_prim_type_id(resolve: &Resolve, id: TypeId) -> bool {
         | TypeDefKind::Result(_)
         | TypeDefKind::Future(_)
         | TypeDefKind::Stream(_)
+        | TypeDefKind::ErrorContext
         | TypeDefKind::Unknown => false,
     }
 }
@@ -779,8 +780,9 @@ pub fn push_ty_name(resolve: &Resolve, ty: &Type, src: &mut String) {
                     src.push_str("list_");
                     push_ty_name(resolve, ty, src);
                 }
-                TypeDefKind::Future(_) => unimplemented!(),
-                TypeDefKind::Stream(_) => unimplemented!(),
+                TypeDefKind::Future(_) => todo!(),
+                TypeDefKind::Stream(_) => todo!(),
+                TypeDefKind::ErrorContext => todo!(),
                 TypeDefKind::Handle(Handle::Own(resource)) => {
                     src.push_str("own_");
                     push_ty_name(resolve, &Type::Id(*resource), src);
@@ -992,6 +994,7 @@ impl Return {
 
             TypeDefKind::Future(_) => todo!("return_single for future"),
             TypeDefKind::Stream(_) => todo!("return_single for stream"),
+            TypeDefKind::ErrorContext => todo!("return_single for error-context"),
             TypeDefKind::Resource => todo!("return_single for resource"),
             TypeDefKind::Unknown => unreachable!(),
         }
@@ -1427,12 +1430,16 @@ impl<'a> wit_bindgen_core::AnonymousTypeGenerator<'a> for InterfaceGenerator<'a>
         todo!("print_anonymous_type for future");
     }
 
-    fn anonymous_type_stream(&mut self, _id: TypeId, _ty: &Stream, _docs: &Docs) {
+    fn anonymous_type_stream(&mut self, _id: TypeId, _ty: &Type, _docs: &Docs) {
         todo!("print_anonymous_type for stream");
     }
 
-    fn anonymous_typ_type(&mut self, _id: TypeId, _ty: &Type, _docs: &Docs) {
-        todo!("print_anonymous_type for typ");
+    fn anonymous_type_error_context(&mut self) {
+        todo!("print_anonymous_type for error-context");
+    }
+
+    fn anonymous_type_type(&mut self, _id: TypeId, _ty: &Type, _docs: &Docs) {
+        todo!("print_anonymous_type for type");
     }
 }
 
@@ -1605,6 +1612,7 @@ impl InterfaceGenerator<'_> {
             }
             TypeDefKind::Future(_) => todo!("print_dtor for future"),
             TypeDefKind::Stream(_) => todo!("print_dtor for stream"),
+            TypeDefKind::ErrorContext => todo!("print_dtor for error-context"),
             TypeDefKind::Resource => {}
             TypeDefKind::Handle(Handle::Borrow(id) | Handle::Own(id)) => {
                 self.free(&Type::Id(*id), "*ptr");
@@ -1750,6 +1758,7 @@ impl InterfaceGenerator<'_> {
             LiftLower::LowerArgsLiftResults,
             func,
             &mut f,
+            false,
         );
 
         let FunctionBindgen {
@@ -1822,6 +1831,7 @@ impl InterfaceGenerator<'_> {
             LiftLower::LiftArgsLowerResults,
             func,
             &mut f,
+            false,
         );
         let FunctionBindgen { src, .. } = f;
         self.src.c_adapters(&src);
@@ -1852,7 +1862,7 @@ impl InterfaceGenerator<'_> {
 
             let mut f = FunctionBindgen::new(self, c_sig, &import_name);
             f.params = params;
-            abi::post_return(f.gen.resolve, func, &mut f);
+            abi::post_return(f.gen.resolve, func, &mut f, false);
             let FunctionBindgen { src, .. } = f;
             self.src.c_fns(&src);
             self.src.c_fns("}\n");
@@ -2075,17 +2085,8 @@ impl InterfaceGenerator<'_> {
 
                 TypeDefKind::List(ty) => self.contains_droppable_borrow(ty),
 
-                TypeDefKind::Future(r) => r
-                    .as_ref()
-                    .map_or(false, |ty| self.contains_droppable_borrow(ty)),
-
-                TypeDefKind::Stream(s) => {
-                    s.element
-                        .as_ref()
-                        .map_or(false, |ty| self.contains_droppable_borrow(ty))
-                        || s.end
-                            .as_ref()
-                            .map_or(false, |ty| self.contains_droppable_borrow(ty))
+                TypeDefKind::Future(_) | TypeDefKind::Stream(_) | TypeDefKind::ErrorContext => {
+                    false
                 }
 
                 TypeDefKind::Type(ty) => self.contains_droppable_borrow(ty),
@@ -2753,7 +2754,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.src.push_str(");\n");
             }
 
-            Instruction::CallInterface { func } => {
+            Instruction::CallInterface { func, .. } => {
                 let mut args = String::new();
                 for (i, (op, (byref, _))) in operands.iter().zip(&self.sig.params).enumerate() {
                     if i > 0 {
@@ -3037,6 +3038,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwriteln!(self.src, "}}");
             }
 
+            Instruction::Flush { amt } => {
+                results.extend(operands.iter().take(*amt).map(|v| v.clone()));
+            }
+
             i => unimplemented!("{:?}", i),
         }
     }
@@ -3145,6 +3150,7 @@ pub fn is_arg_by_pointer(resolve: &Resolve, ty: &Type) -> bool {
             TypeDefKind::Tuple(_) | TypeDefKind::Record(_) | TypeDefKind::List(_) => true,
             TypeDefKind::Future(_) => todo!("is_arg_by_pointer for future"),
             TypeDefKind::Stream(_) => todo!("is_arg_by_pointer for stream"),
+            TypeDefKind::ErrorContext => todo!("is_arg_by_pointer for error-context"),
             TypeDefKind::Resource => todo!("is_arg_by_pointer for resource"),
             TypeDefKind::Unknown => unreachable!(),
         },

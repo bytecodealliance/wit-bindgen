@@ -413,28 +413,14 @@ impl InterfaceGenerator<'_> {
                             self.push_str("future");
                         }
                     },
-                    TypeDefKind::Stream(s) => match (s.element, s.end) {
-                        (Some(element), Some(end)) => {
-                            self.push_str("stream<");
-                            self.print_ty(&element);
-                            self.push_str(", ");
-                            self.print_ty(&end);
-                            self.push_str(">");
-                        }
-                        (None, Some(end)) => {
-                            self.push_str("stream<_, ");
-                            self.print_ty(&end);
-                            self.push_str(">");
-                        }
-                        (Some(element), None) => {
-                            self.push_str("stream<");
-                            self.print_ty(&element);
-                            self.push_str(">");
-                        }
-                        (None, None) => {
-                            self.push_str("stream");
-                        }
-                    },
+                    TypeDefKind::Stream(t) => {
+                        self.push_str("stream<");
+                        self.print_ty(t);
+                        self.push_str(">");
+                    }
+                    TypeDefKind::ErrorContext => {
+                        self.push_str("error-context");
+                    }
                     TypeDefKind::Handle(Handle::Own(ty)) => {
                         self.push_str("own<");
                         self.print_ty(&Type::Id(*ty));
