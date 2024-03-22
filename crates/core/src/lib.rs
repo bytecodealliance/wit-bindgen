@@ -22,6 +22,22 @@ pub enum Direction {
 
 pub trait WorldGenerator {
     fn generate(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) -> Result<()> {
+        // TODO: Should we refine this test to inspect only types reachable from
+        // the specified world?
+        if !cfg!(feature = "async")
+            && resolve.types.iter().any(|(_, ty)| {
+                matches!(
+                    ty.kind,
+                    TypeDefKind::Future(_) | TypeDefKind::Stream(_) | TypeDefKind::ErrorContext
+                )
+            })
+        {
+            anyhow::bail!(
+                "must enable `async` feature when using WIT files \
+                 containing future, stream, or error types"
+            );
+        }
+
         let world = &resolve.worlds[id];
         self.preprocess(resolve, id);
 
@@ -154,6 +170,9 @@ pub trait InterfaceGenerator<'a> {
     fn type_alias(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs);
     fn type_list(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs);
     fn type_builtin(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs);
+    fn type_future(&mut self, id: TypeId, name: &str, ty: &Option<Type>, docs: &Docs);
+    fn type_stream(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs);
+    fn type_error_context(&mut self, id: TypeId, name: &str, docs: &Docs);
     fn types(&mut self, iface: InterfaceId) {
         let iface = &self.resolve().interfaces[iface];
         for (name, id) in iface.types.iter() {
@@ -174,9 +193,10 @@ pub trait InterfaceGenerator<'a> {
             TypeDefKind::Result(r) => self.type_result(id, name, r, &ty.docs),
             TypeDefKind::List(t) => self.type_list(id, name, t, &ty.docs),
             TypeDefKind::Type(t) => self.type_alias(id, name, t, &ty.docs),
-            TypeDefKind::Future(_) => todo!("generate for future"),
-            TypeDefKind::Stream(_) => todo!("generate for stream"),
-            TypeDefKind::Handle(_) => todo!("generate for handle"),
+            TypeDefKind::Future(t) => self.type_future(id, name, t, &ty.docs),
+            TypeDefKind::Stream(t) => self.type_stream(id, name, t, &ty.docs),
+            TypeDefKind::Handle(_) => panic!("handle types do not require definition"),
+            TypeDefKind::ErrorContext => self.type_error_context(id, name, &ty.docs),
             TypeDefKind::Unknown => unreachable!(),
         }
     }
@@ -191,8 +211,9 @@ pub trait AnonymousTypeGenerator<'a> {
     fn anonymous_type_result(&mut self, id: TypeId, ty: &Result_, docs: &Docs);
     fn anonymous_type_list(&mut self, id: TypeId, ty: &Type, docs: &Docs);
     fn anonymous_type_future(&mut self, id: TypeId, ty: &Option<Type>, docs: &Docs);
-    fn anonymous_type_stream(&mut self, id: TypeId, ty: &Stream, docs: &Docs);
-    fn anonymous_typ_type(&mut self, id: TypeId, ty: &Type, docs: &Docs);
+    fn anonymous_type_stream(&mut self, id: TypeId, ty: &Type, docs: &Docs);
+    fn anonymous_type_type(&mut self, id: TypeId, ty: &Type, docs: &Docs);
+    fn anonymous_type_error_context(&mut self);
 
     fn define_anonymous_type(&mut self, id: TypeId) {
         let ty = &self.resolve().types[id];
@@ -204,13 +225,14 @@ pub trait AnonymousTypeGenerator<'a> {
             | TypeDefKind::Variant(_) => {
                 unreachable!()
             }
-            TypeDefKind::Type(t) => self.anonymous_typ_type(id, t, &ty.docs),
+            TypeDefKind::Type(t) => self.anonymous_type_type(id, t, &ty.docs),
             TypeDefKind::Tuple(tuple) => self.anonymous_type_tuple(id, tuple, &ty.docs),
             TypeDefKind::Option(t) => self.anonymous_type_option(id, t, &ty.docs),
             TypeDefKind::Result(r) => self.anonymous_type_result(id, r, &ty.docs),
             TypeDefKind::List(t) => self.anonymous_type_list(id, t, &ty.docs),
             TypeDefKind::Future(f) => self.anonymous_type_future(id, f, &ty.docs),
             TypeDefKind::Stream(s) => self.anonymous_type_stream(id, s, &ty.docs),
+            TypeDefKind::ErrorContext => self.anonymous_type_error_context(),
             TypeDefKind::Handle(handle) => self.anonymous_type_handle(id, handle, &ty.docs),
             TypeDefKind::Unknown => unreachable!(),
         }

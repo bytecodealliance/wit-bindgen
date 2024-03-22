@@ -27,8 +27,14 @@ syn = { workspace = true }
 prettyplease = { workspace = true }
 
 [dev-dependencies]
+futures = { workspace = true }
 wit-bindgen = { path = '../guest-rust' }
+wit-bindgen-rt = { path = '../guest-rust/rt' }
 test-helpers = { path = '../test-helpers' }
 # For use with the custom attributes test
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1"
+
+[features]
+default = ["async"]
+async = ["wit-bindgen-core/async"]

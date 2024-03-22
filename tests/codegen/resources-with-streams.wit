@@ -1,0 +1,17 @@
+package my:resources;
+
+interface with-streams {
+  resource x {
+    constructor(l: stream<u8>);
+    get: func() -> stream<u8>;
+    set: func(l: stream<u8>);
+    etc: static func(l: stream<u8>) -> stream<u8>;
+  }
+
+  foo: func(x: stream<x>) -> stream<x>;
+}
+
+world resources {
+  import with-streams;
+  export with-streams;
+}
