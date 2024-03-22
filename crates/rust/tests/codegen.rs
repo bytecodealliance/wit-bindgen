@@ -51,6 +51,19 @@ mod codegen_tests {
                     #[test]
                     fn works() {}
                 }
+
+                #[cfg(feature = "async")]
+                mod async_ {
+                    wit_bindgen::generate!({
+                        path: $test,
+                        stubs,
+                        export_prefix: "[async-prefix]",
+                        generate_all,
+                    });
+
+                    #[test]
+                    fn works() {}
+                }
             }
 
         };
