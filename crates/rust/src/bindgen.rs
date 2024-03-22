@@ -8,6 +8,7 @@ use wit_bindgen_core::{dealias, uwrite, uwriteln, wit_parser::*, Source};
 pub(super) struct FunctionBindgen<'a, 'b> {
     pub gen: &'b mut InterfaceGenerator<'a>,
     params: Vec<String>,
+    async_: bool,
     pub src: Source,
     blocks: Vec<String>,
     block_storage: Vec<(Source, Vec<(String, String)>)>,
@@ -23,10 +24,12 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
     pub(super) fn new(
         gen: &'b mut InterfaceGenerator<'a>,
         params: Vec<String>,
+        async_: bool,
     ) -> FunctionBindgen<'a, 'b> {
         FunctionBindgen {
             gen,
             params,
+            async_,
             src: Default::default(),
             blocks: Vec::new(),
             block_storage: Vec::new(),
@@ -66,6 +69,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         results: &[WasmType],
     ) -> String {
         // Define the actual function we're calling inline
+        let tmp = self.tmp();
         let mut sig = "(".to_owned();
         for param in params.iter() {
             sig.push_str("_: ");
@@ -85,14 +89,14 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                 #[link(wasm_import_module = \"{module_name}\")]
                 extern \"C\" {{
                     #[link_name = \"{name}\"]
-                    fn wit_import{sig};
+                    fn wit_import{tmp}{sig};
                 }}
 
                 #[cfg(not(target_arch = \"wasm32\"))]
-                fn wit_import{sig} {{ unreachable!() }}
+                extern \"C\" fn wit_import{tmp}{sig} {{ unreachable!() }}
             "
         );
-        "wit_import".to_string()
+        format!("wit_import{tmp}")
     }
 
     fn let_results(&mut self, amt: usize, results: &mut Vec<String>) {
@@ -780,7 +784,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::CallWasm { name, sig, .. } => {
                 let func = self.declare_import(
-                    self.gen.wasm_import_module.unwrap(),
+                    self.gen.wasm_import_module,
                     name,
                     &sig.params,
                     &sig.results,
@@ -797,8 +801,37 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.push_str(");\n");
             }
 
+            Instruction::AsyncCallWasm { name, size, align } => {
+                let func = self.declare_import(
+                    self.gen.wasm_import_module,
+                    name,
+                    &[WasmType::Pointer; 3],
+                    &[WasmType::I32],
+                );
+
+                let await_result = self.gen.path_to_await_result();
+                let tmp = self.tmp();
+                let layout = format!("layout{tmp}");
+                let alloc = self.gen.path_to_std_alloc_module();
+                self.push_str(&format!(
+                    "let {layout} = {alloc}::Layout::from_size_align_unchecked({size}, {align});\n",
+                ));
+                let operands = operands.join(", ");
+                uwriteln!(
+                    self.src,
+                    "{await_result}({func}, {layout}, {operands}).await;"
+                );
+            }
+
             Instruction::CallInterface { func, .. } => {
-                self.let_results(func.results.len(), results);
+                if self.async_ {
+                    let tmp = self.tmp();
+                    let result = format!("result{tmp}");
+                    self.push_str(&format!("let {result} = "));
+                    results.push(result);
+                } else {
+                    self.let_results(func.results.len(), results);
+                };
                 match &func.kind {
                     FunctionKind::Freestanding => {
                         self.push_str(&format!("T::{}", to_rust_ident(&func.name)));
@@ -837,6 +870,55 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.push_str(")");
                 }
                 self.push_str(";\n");
+            }
+
+            Instruction::AsyncMalloc { size, align } => {
+                let alloc = self.gen.path_to_std_alloc_module();
+                let tmp = self.tmp();
+                let ptr = format!("ptr{tmp}");
+                let layout = format!("layout{tmp}");
+                uwriteln!(
+                    self.src,
+                    "let {layout} = {alloc}::Layout::from_size_align_unchecked({size}, {align});
+                     let {ptr} = {alloc}::alloc({layout});"
+                );
+                results.push(ptr);
+            }
+
+            Instruction::AsyncPostCallInterface { func } => {
+                let result = &operands[0];
+                self.let_results(func.results.len(), results);
+                let first_poll = self.gen.path_to_first_poll();
+                uwriteln!(
+                    self.src,
+                    "\
+                        match {first_poll}({result}) {{
+                            Ok(results) => results,
+                            Err(ctx) => return ctx,
+                        }};\
+                    "
+                );
+            }
+
+            Instruction::AsyncCallStart {
+                name,
+                params,
+                results: call_results,
+            } => {
+                let func =
+                    self.declare_import(self.gen.wasm_import_module, name, params, call_results);
+
+                if !call_results.is_empty() {
+                    self.push_str("let ret = ");
+                    results.push("ret".to_string());
+                }
+                uwriteln!(self.src, "{func}({});", operands.join(", "));
+            }
+
+            Instruction::AsyncCallReturn { name, params } => {
+                let func = self.declare_import(self.gen.wasm_import_module, name, params, &[]);
+
+                uwriteln!(self.src, "{func}({});", operands.join(", "));
             }
 
             Instruction::Return { amt, .. } => {

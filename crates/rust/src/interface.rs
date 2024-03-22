@@ -1,7 +1,7 @@
 use crate::bindgen::FunctionBindgen;
 use crate::{
-    int_repr, to_rust_ident, to_upper_camel_case, wasm_type, FnSig, Identifier, InterfaceName,
-    Ownership, RuntimeItem, RustFlagsRepr, RustWasm,
+    int_repr, to_rust_ident, to_upper_camel_case, wasm_type, AsyncConfig, FnSig, Identifier,
+    InterfaceName, Ownership, RuntimeItem, RustFlagsRepr, RustWasm,
 };
 use anyhow::Result;
 use heck::*;
@@ -17,7 +17,7 @@ pub struct InterfaceGenerator<'a> {
     pub in_import: bool,
     pub sizes: SizeAlign,
     pub(super) gen: &'a mut RustWasm,
-    pub wasm_import_module: Option<&'a str>,
+    pub wasm_import_module: &'a str,
     pub resolve: &'a Resolve,
     pub return_pointer_area_size: usize,
     pub return_pointer_area_align: usize,
@@ -135,7 +135,7 @@ impl InterfaceGenerator<'_> {
         let mut funcs_to_export = Vec::new();
         let mut resources_to_drop = Vec::new();
 
-        traits.insert(None, ("Guest".to_string(), Vec::new()));
+        traits.insert(None, ("Guest".to_string(), Vec::new(), false));
 
         if let Some((id, _)) = interface {
             for (name, id) in self.resolve.interfaces[id].types.iter() {
@@ -145,7 +145,7 @@ impl InterfaceGenerator<'_> {
                 }
                 resources_to_drop.push(name);
                 let camel = name.to_upper_camel_case();
-                traits.insert(Some(*id), (format!("Guest{camel}"), Vec::new()));
+                traits.insert(Some(*id), (format!("Guest{camel}"), Vec::new(), false));
             }
         }
 
@@ -154,6 +154,17 @@ impl InterfaceGenerator<'_> {
                 continue;
             }
 
+            let async_ = match &self.gen.opts.async_ {
+                AsyncConfig::None => false,
+                AsyncConfig::All => true,
+                AsyncConfig::Some { exports, .. } => {
+                    exports.contains(&if let Some((_, key)) = interface {
+                        format!("{}/{}", self.resolve.name_world_key(key), func.name)
+                    } else {
+                        func.name.clone()
+                    })
+                }
+            };
             let resource = match func.kind {
                 FunctionKind::Freestanding => None,
                 FunctionKind::Method(id)
@@ -161,12 +172,14 @@ impl InterfaceGenerator<'_> {
                 | FunctionKind::Static(id) => Some(id),
             };
 
-            funcs_to_export.push((func, resource));
-            let (trait_name, methods) = traits.get_mut(&resource).unwrap();
-            self.generate_guest_export(func, &trait_name);
+            funcs_to_export.push((func, resource, async_));
+            let (trait_name, methods, async_methods) = traits.get_mut(&resource).unwrap();
+            *async_methods |= async_;
+            self.generate_guest_export(func, &trait_name, async_);
 
             let prev = mem::take(&mut self.src);
             let mut sig = FnSig {
+                async_,
                 use_item_name: true,
                 private: true,
                 ..Default::default()
@@ -181,18 +194,22 @@ impl InterfaceGenerator<'_> {
             methods.push(trait_method);
         }
 
-        let (name, methods) = traits.remove(&None).unwrap();
+        let (name, methods, async_methods) = traits.remove(&None).unwrap();
         if !methods.is_empty() || !traits.is_empty() {
             self.generate_interface_trait(
                 &name,
                 &methods,
-                traits.iter().map(|(resource, (trait_name, _methods))| {
-                    (resource.unwrap(), trait_name.as_str())
-                }),
+                traits
+                    .iter()
+                    .map(|(resource, (trait_name, ..))| (resource.unwrap(), trait_name.as_str())),
+                async_methods,
             )
         }
 
-        for (resource, (trait_name, methods)) in traits.iter() {
+        for (resource, (trait_name, methods, async_methods)) in traits.iter() {
+            if *async_methods {
+                uwriteln!(self.src, "#[async_trait::async_trait(?Send)]");
+            }
             uwriteln!(self.src, "pub trait {trait_name}: 'static {{");
             let resource = resource.unwrap();
             let resource_name = self.resolve.types[resource].name.as_ref().unwrap();
@@ -290,7 +307,7 @@ macro_rules! {macro_name} {{
 "
         );
 
-        for (func, resource) in funcs_to_export {
+        for (func, resource, async_) in funcs_to_export {
             let ty = match resource {
                 None => "$ty".to_string(),
                 Some(id) => {
@@ -302,7 +319,7 @@ macro_rules! {macro_name} {{
                     format!("<$ty as $($path_to_types)*::Guest>::{name}")
                 }
             };
-            self.generate_raw_cabi_export(func, &ty, "$($path_to_types)*");
+            self.generate_raw_cabi_export(func, &ty, "$($path_to_types)*", async_);
         }
         let export_prefix = self.gen.opts.export_prefix.as_deref().unwrap_or("");
         for name in resources_to_drop {
@@ -339,7 +356,11 @@ macro_rules! {macro_name} {{
         trait_name: &str,
         methods: &[Source],
         resource_traits: impl Iterator<Item = (TypeId, &'a str)>,
+        async_methods: bool,
     ) {
+        if async_methods {
+            uwriteln!(self.src, "#[async_trait::async_trait(?Send)]");
+        }
         uwriteln!(self.src, "pub trait {trait_name} {{");
         for (id, trait_name) in resource_traits {
             let name = self.resolve.types[id]
@@ -355,9 +376,13 @@ macro_rules! {macro_name} {{
         uwriteln!(self.src, "}}");
     }
 
-    pub fn generate_imports<'a>(&mut self, funcs: impl Iterator<Item = &'a Function>) {
+    pub fn generate_imports<'a>(
+        &mut self,
+        funcs: impl Iterator<Item = &'a Function>,
+        interface: Option<&WorldKey>,
+    ) {
         for func in funcs {
-            self.generate_guest_import(func);
+            self.generate_guest_import(func, interface);
         }
     }
 
@@ -443,12 +468,24 @@ macro_rules! {macro_name} {{
         map.push((module, module_path))
     }
 
-    fn generate_guest_import(&mut self, func: &Function) {
+    fn generate_guest_import(&mut self, func: &Function, interface: Option<&WorldKey>) {
         if self.gen.skip.contains(&func.name) {
             return;
         }
 
-        let mut sig = FnSig::default();
+        let async_ = match &self.gen.opts.async_ {
+            AsyncConfig::None => false,
+            AsyncConfig::All => true,
+            AsyncConfig::Some { imports, .. } => imports.contains(&if let Some(key) = interface {
+                format!("{}/{}", self.resolve.name_world_key(key), func.name)
+            } else {
+                func.name.clone()
+            }),
+        };
+        let mut sig = FnSig {
+            async_,
+            ..Default::default()
+        };
         match func.kind {
             FunctionKind::Freestanding => {}
             FunctionKind::Method(id) | FunctionKind::Static(id) | FunctionKind::Constructor(id) => {
@@ -467,13 +504,14 @@ macro_rules! {macro_name} {{
         self.src.push_str("{\n");
         self.src.push_str("unsafe {\n");
 
-        let mut f = FunctionBindgen::new(self, params);
+        let mut f = FunctionBindgen::new(self, params, async_);
         abi::call(
             f.gen.resolve,
             AbiVariant::GuestImport,
             LiftLower::LowerArgsLiftResults,
             func,
             &mut f,
+            async_,
         );
         let FunctionBindgen {
             needs_cleanup_list,
@@ -512,17 +550,23 @@ macro_rules! {macro_name} {{
         }
     }
 
-    fn generate_guest_export(&mut self, func: &Function, trait_name: &str) {
+    fn generate_guest_export(&mut self, func: &Function, trait_name: &str, async_: bool) {
         let name_snake = func.name.to_snake_case().replace('.', "_");
+
         uwrite!(
             self.src,
             "\
                 #[doc(hidden)]
                 #[allow(non_snake_case)]
                 pub unsafe fn _export_{name_snake}_cabi<T: {trait_name}>\
-",
+            ",
         );
-        let params = self.print_export_sig(func);
+        let params = if async_ {
+            self.push_str("() -> *mut u8");
+            Vec::new()
+        } else {
+            self.print_export_sig(func)
+        };
         self.push_str(" {");
 
         if !self.gen.opts.disable_run_ctors_once_workaround {
@@ -541,13 +585,14 @@ macro_rules! {macro_name} {{
             );
         }
 
-        let mut f = FunctionBindgen::new(self, params);
+        let mut f = FunctionBindgen::new(self, params, async_);
         abi::call(
             f.gen.resolve,
             AbiVariant::GuestExport,
             LiftLower::LiftArgsLowerResults,
             func,
             &mut f,
+            async_,
         );
         let FunctionBindgen {
             needs_cleanup_list,
@@ -570,13 +615,13 @@ macro_rules! {macro_name} {{
                     #[doc(hidden)]
                     #[allow(non_snake_case)]
                     pub unsafe fn __post_return_{name_snake}<T: {trait_name}>\
-"
+                "
             );
             let params = self.print_post_return_sig(func);
             self.src.push_str("{\n");
 
-            let mut f = FunctionBindgen::new(self, params);
-            abi::post_return(f.gen.resolve, func, &mut f);
+            let mut f = FunctionBindgen::new(self, params, async_);
+            abi::post_return(f.gen.resolve, func, &mut f, async_);
             let FunctionBindgen {
                 needs_cleanup_list,
                 src,
@@ -590,7 +635,13 @@ macro_rules! {macro_name} {{
         }
     }
 
-    fn generate_raw_cabi_export(&mut self, func: &Function, ty: &str, path_to_self: &str) {
+    fn generate_raw_cabi_export(
+        &mut self,
+        func: &Function,
+        ty: &str,
+        path_to_self: &str,
+        async_: bool,
+    ) {
         let name_snake = func.name.to_snake_case().replace('.', "_");
         let wasm_module_export_name = match self.identifier {
             Identifier::Interface(_, key) => Some(self.resolve.name_world_key(key)),
@@ -606,7 +657,12 @@ macro_rules! {macro_name} {{
 ",
         );
 
-        let params = self.print_export_sig(func);
+        let params = if async_ {
+            self.push_str("() -> *mut u8");
+            Vec::new()
+        } else {
+            self.print_export_sig(func)
+        };
         self.push_str(" {\n");
         uwriteln!(
             self.src,
@@ -1936,6 +1992,14 @@ macro_rules! {macro_name} {{
         self.path_from_runtime_module(RuntimeItem::StdAllocModule, "alloc")
     }
 
+    pub fn path_to_await_result(&mut self) -> String {
+        self.path_from_runtime_module(RuntimeItem::AsyncSupport, "await_result")
+    }
+
+    pub fn path_to_first_poll(&mut self) -> String {
+        self.path_from_runtime_module(RuntimeItem::AsyncSupport, "first_poll")
+    }
+
     fn path_from_runtime_module(
         &mut self,
         item: RuntimeItem,
@@ -1993,7 +2057,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                     }}
                 "#
             );
-            self.wasm_import_module.unwrap().to_string()
+            self.wasm_import_module.to_string()
         } else {
             let module = match self.identifier {
                 Identifier::Interface(_, key) => self.resolve.name_world_key(key),

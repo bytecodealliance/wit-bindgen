@@ -1653,6 +1653,7 @@ impl InterfaceGenerator<'_> {
             LiftLower::LowerArgsLiftResults,
             func,
             &mut f,
+            false,
         );
 
         let FunctionBindgen {
@@ -1725,6 +1726,7 @@ impl InterfaceGenerator<'_> {
             LiftLower::LiftArgsLowerResults,
             func,
             &mut f,
+            false,
         );
         let FunctionBindgen { src, .. } = f;
         self.src.c_adapters(&src);
@@ -1755,7 +1757,7 @@ impl InterfaceGenerator<'_> {
 
             let mut f = FunctionBindgen::new(self, c_sig, &import_name);
             f.params = params;
-            abi::post_return(f.gen.resolve, func, &mut f);
+            abi::post_return(f.gen.resolve, func, &mut f, false);
             let FunctionBindgen { src, .. } = f;
             self.src.c_fns(&src);
             self.src.c_fns("}\n");
@@ -2654,7 +2656,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.src.push_str(");\n");
             }
 
-            Instruction::CallInterface { func } => {
+            Instruction::CallInterface { func, .. } => {
                 let mut args = String::new();
                 for (i, (op, (byref, _))) in operands.iter().zip(&self.sig.params).enumerate() {
                     if i > 0 {
