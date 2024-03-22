@@ -319,6 +319,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                     }
                     TypeDefKind::Future(_) => todo!("impl future"),
                     TypeDefKind::Stream(_) => todo!("impl stream"),
+                    TypeDefKind::ErrorContext => todo!("impl error-context"),
                     TypeDefKind::Resource => todo!("impl resource"),
                     TypeDefKind::Handle(h) => {
                         match self.interface.direction {
@@ -609,6 +610,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                     }
                     TypeDefKind::Future(_) => todo!("impl future"),
                     TypeDefKind::Stream(_) => todo!("impl stream"),
+                    TypeDefKind::ErrorContext => todo!("impl error-context"),
                     TypeDefKind::Resource => todo!("impl resource"),
                     TypeDefKind::Handle(h) => {
                         match self.interface.direction {

@@ -24,3 +24,5 @@ anyhow = { workspace = true }
 syn = { workspace = true }
 prettyplease = { workspace = true }
 
+[features]
+async = []

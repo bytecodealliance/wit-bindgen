@@ -270,6 +270,7 @@ impl InterfaceGenerator<'_> {
             LiftLower::LowerArgsLiftResults,
             func,
             &mut bindgen,
+            false,
         );
 
         let src = bindgen.src;
@@ -395,6 +396,7 @@ impl InterfaceGenerator<'_> {
             LiftLower::LiftArgsLowerResults,
             func,
             &mut bindgen,
+            false,
         );
 
         assert!(!bindgen.needs_cleanup_list);
@@ -1157,6 +1159,21 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 direction: Direction::Import,
             })
             .direction = self.direction;
+    }
+
+    fn type_future(&mut self, id: TypeId, name: &str, ty: &Option<Type>, docs: &Docs) {
+        _ = (id, name, ty, docs);
+        todo!()
+    }
+
+    fn type_stream(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
+        _ = (id, name, ty, docs);
+        todo!()
+    }
+
+    fn type_error_context(&mut self, id: TypeId, name: &str, docs: &Docs) {
+        _ = (id, name, docs);
+        todo!()
     }
 }
 

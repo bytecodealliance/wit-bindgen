@@ -322,11 +322,11 @@ impl InterfaceGenerator<'_> {
                     TypeDefKind::Stream(t) => {
                         let mut src = String::new();
                         src.push_str("Stream");
-                        src.push_str(&self.optional_ty_name(t.element.as_ref()));
-                        src.push_str(&self.optional_ty_name(t.end.as_ref()));
+                        src.push_str(&self.ty_name(t));
                         src.push('T');
                         src
                     }
+                    TypeDefKind::ErrorContext => "ErrorContext".to_owned(),
                     TypeDefKind::Handle(Handle::Own(ty)) => {
                         // Currently there is no different between Own and Borrow
                         // in the Go code. They are just represented as
@@ -678,6 +678,7 @@ impl InterfaceGenerator<'_> {
             }
             TypeDefKind::Future(_) => todo!("anonymous_type for future"),
             TypeDefKind::Stream(_) => todo!("anonymous_type for stream"),
+            TypeDefKind::ErrorContext => todo!("anonymous_type for error-context"),
             TypeDefKind::Unknown => unreachable!(),
         }
     }
@@ -1263,6 +1264,21 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
     fn type_result(&mut self, _id: TypeId, _name: &str, _result: &Result_, _docs: &Docs) {
         // no impl since these types are generated as anonymous types
+    }
+
+    fn type_future(&mut self, id: TypeId, name: &str, ty: &Option<Type>, docs: &Docs) {
+        _ = (id, name, ty, docs);
+        todo!()
+    }
+
+    fn type_stream(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
+        _ = (id, name, ty, docs);
+        todo!()
+    }
+
+    fn type_error_context(&mut self, id: TypeId, name: &str, docs: &Docs) {
+        _ = (id, name, docs);
+        todo!()
     }
 
     fn type_builtin(&mut self, _id: TypeId, _name: &str, _ty: &Type, _docs: &Docs) {

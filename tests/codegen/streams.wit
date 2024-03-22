@@ -1,0 +1,85 @@
+package foo:foo;
+
+interface streams {
+  stream-u8-param: func(x: stream<u8>);
+  stream-u16-param: func(x: stream<u16>);
+  stream-u32-param: func(x: stream<u32>);
+  stream-u64-param: func(x: stream<u64>);
+  stream-s8-param: func(x: stream<s8>);
+  stream-s16-param: func(x: stream<s16>);
+  stream-s32-param: func(x: stream<s32>);
+  stream-s64-param: func(x: stream<s64>);
+  stream-f32-param: func(x: stream<f32>);
+  stream-f64-param: func(x: stream<f64>);
+
+  stream-u8-ret: func() -> stream<u8>;
+  stream-u16-ret: func() -> stream<u16>;
+  stream-u32-ret: func() -> stream<u32>;
+  stream-u64-ret: func() -> stream<u64>;
+  stream-s8-ret: func() -> stream<s8>;
+  stream-s16-ret: func() -> stream<s16>;
+  stream-s32-ret: func() -> stream<s32>;
+  stream-s64-ret: func() -> stream<s64>;
+  stream-f32-ret: func() -> stream<f32>;
+  stream-f64-ret: func() -> stream<f64>;
+
+  tuple-stream: func(x: stream<tuple<u8, s8>>) -> stream<tuple<s64, u32>>;
+  string-stream-arg: func(a: stream<string>);
+  string-stream-ret: func() -> stream<string>;
+  tuple-string-stream: func(x: stream<tuple<u8, string>>) -> stream<tuple<string, u8>>;
+  string-stream: func(x: stream<string>) -> stream<string>;
+
+  record some-record {
+    x: string,
+    y: other-record,
+    z: stream<other-record>,
+    c1: u32,
+    c2: u64,
+    c3: s32,
+    c4: s64,
+  }
+  record other-record {
+    a1: u32,
+    a2: u64,
+    a3: s32,
+    a4: s64,
+    b: string,
+    c: stream<u8>,
+  }
+  record-stream: func(x: stream<some-record>) -> stream<other-record>;
+  record-stream-reverse: func(x: stream<other-record>) -> stream<some-record>;
+
+  variant some-variant {
+    a(string),
+    b,
+    c(u32),
+    d(stream<other-variant>),
+  }
+  variant other-variant {
+    a,
+    b(u32),
+    c(string),
+  }
+  variant-stream: func(x: stream<some-variant>) -> stream<other-variant>;
+
+  type load-store-all-sizes = stream<tuple<
+    string,
+    u8,
+    s8,
+    u16,
+    s16,
+    u32,
+    s32,
+    u64,
+    s64,
+    f32,
+    f64,
+    char,
+  >>;
+  load-store-everything: func(a: load-store-all-sizes) -> load-store-all-sizes;
+}
+
+world the-streams {
+  import streams;
+  export streams;
+}

@@ -112,3 +112,7 @@ pub fn run_ctors_once() {
         }
     }
 }
+
+/// Support for using the Component Model Async ABI
+#[cfg(feature = "async")]
+pub mod async_support;

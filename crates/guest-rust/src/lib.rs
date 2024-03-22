@@ -818,6 +818,32 @@
 ///     // used in library-like situations. This is `false` by default with
 ///     // `#[used]` statics being emitted.
 ///     disable_custom_section_link_helpers: false,
+///
+///     // Write generated code to a .rs file, which allows the compiler to
+///     // emit more useful diagnostics for errors in the generated code.  This
+///     // is primarily useful for `wit-bindgen` developers.
+///     //
+///     // This does the same thing as setting `WIT_BINDGEN_DEBUG=1`, except
+///     // that it can be used on a more fine-grained basis (i.e. it only affects
+///     // the specific `generate!` call where it is used.
+///     debug: true,
+///
+///     // Generate async import and/or export bindings.
+///     //
+///     // The resulting bindings will use the component model
+///     // [async ABI](https://github.com/WebAssembly/component-model/blob/main/design/mvp/Async.md).
+///     // This may be specified either as a boolean (e.g. `async: true`, meaning
+///     // all imports and exports should use the async ABI) or as lists of
+///     // specific imports and/or exports as shown here:
+///     async: {
+///         imports: [
+///             "wasi:http/types@0.3.0-draft#[static]body.finish",
+///             "wasi:http/handler@0.3.0-draft#handle",
+///         ],
+///         exports: [
+///             "wasi:http/handler@0.3.0-draft#handle",
+///         ]
+///     }
 /// });
 /// ```
 ///
