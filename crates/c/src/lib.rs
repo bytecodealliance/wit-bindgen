@@ -22,6 +22,10 @@ struct C {
     return_pointer_area_align: usize,
     names: Ns,
     needs_string: bool,
+    needs_union_int32_float: bool,
+    needs_union_float_int32: bool,
+    needs_union_int64_double: bool,
+    needs_union_double_int64: bool,
     prim_names: HashSet<String>,
     world: String,
     sizes: SizeAlign,
@@ -331,7 +335,7 @@ impl WorldGenerator for C {
                 self.src.h_helpers,
                 "
                    // Transfers ownership of `s` into the string `ret`
-                   void {snake}_string_set({snake}_string_t *ret, {c_string_ty} *s);
+                   void {snake}_string_set({snake}_string_t *ret, const {c_string_ty} *s);
 
                    // Creates a copy of the input nul-terminate string `s` and
                    // stores it into the component model string `ret`.
@@ -345,14 +349,14 @@ impl WorldGenerator for C {
             uwrite!(
                 self.src.c_helpers,
                 "
-                   void {snake}_string_set({snake}_string_t *ret, {c_string_ty} *s) {{
+                   void {snake}_string_set({snake}_string_t *ret, const {c_string_ty} *s) {{
                        ret->ptr = ({ty}*) s;
                        ret->len = {strlen};
                    }}
 
                    void {snake}_string_dup({snake}_string_t *ret, const {c_string_ty} *s) {{
                        ret->len = {strlen};
-                       ret->ptr = cabi_realloc(NULL, 0, {size}, ret->len * {size});
+                       ret->ptr = ({ty}*) cabi_realloc(NULL, 0, {size}, ret->len * {size});
                        memcpy(ret->ptr, s, ret->len * {size});
                    }}
 
@@ -364,6 +368,30 @@ impl WorldGenerator for C {
                        ret->len = 0;
                    }}
                ",
+            );
+        }
+        if self.needs_union_int32_float {
+            uwriteln!(
+                self.src.c_helpers,
+                "\nunion int32_float {{ int32_t a; float b; }};"
+            );
+        }
+        if self.needs_union_float_int32 {
+            uwriteln!(
+                self.src.c_helpers,
+                "\nunion float_int32 {{ float a; int32_t b; }};"
+            );
+        }
+        if self.needs_union_int64_double {
+            uwriteln!(
+                self.src.c_helpers,
+                "\nunion int64_double {{ int64_t a; double b; }};"
+            );
+        }
+        if self.needs_union_double_int64 {
+            uwriteln!(
+                self.src.c_helpers,
+                "\nunion double_int64 {{ double a; int64_t b; }};"
             );
         }
         let version = env!("CARGO_PKG_VERSION");
@@ -569,6 +597,51 @@ impl C {
         self.dtor_funcs.retain(|k, _| live_import_types.contains(k));
         self.type_names.retain(|k, _| live_import_types.contains(k));
         self.resources.retain(|k, _| live_import_types.contains(k));
+    }
+
+    fn perform_cast(&mut self, op: &str, cast: &Bitcast) -> String {
+        match cast {
+            Bitcast::I32ToF32 | Bitcast::I64ToF32 => {
+                self.needs_union_int32_float = true;
+                format!("((union int32_float){{ (int32_t) {} }}).b", op)
+            }
+            Bitcast::F32ToI32 | Bitcast::F32ToI64 => {
+                self.needs_union_float_int32 = true;
+                format!("((union float_int32){{ {} }}).b", op)
+            }
+            Bitcast::I64ToF64 => {
+                self.needs_union_int64_double = true;
+                format!("((union int64_double){{ (int64_t) {} }}).b", op)
+            }
+            Bitcast::F64ToI64 => {
+                self.needs_union_double_int64 = true;
+                format!("((union double_int64){{ {} }}).b", op)
+            }
+            Bitcast::I32ToI64 | Bitcast::LToI64 | Bitcast::PToP64 => {
+                format!("(int64_t) {}", op)
+            }
+            Bitcast::I64ToI32 | Bitcast::I64ToL => {
+                format!("(int32_t) {}", op)
+            }
+            // P64 is currently represented as int64_t, so no conversion is needed.
+            Bitcast::I64ToP64 | Bitcast::P64ToI64 => {
+                format!("{}", op)
+            }
+            Bitcast::P64ToP | Bitcast::I32ToP | Bitcast::LToP => {
+                format!("(uint8_t *) {}", op)
+            }
+
+            // Cast to uintptr_t to avoid implicit pointer-to-int conversions.
+            Bitcast::PToI32 | Bitcast::PToL => format!("(uintptr_t) {}", op),
+
+            Bitcast::I32ToL | Bitcast::LToI32 | Bitcast::None => op.to_string(),
+
+            Bitcast::Sequence(sequence) => {
+                let [first, second] = &**sequence;
+                let inner = self.perform_cast(op, first);
+                self.perform_cast(&inner, second)
+            }
+        }
     }
 }
 
@@ -2068,7 +2141,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
     fn load_ext(&mut self, ty: &str, offset: i32, operands: &[String], results: &mut Vec<String>) {
         self.load(ty, offset, operands, results);
         let result = results.pop().unwrap();
-        results.push(format!("(int32_t) ({})", result));
+        results.push(format!("(int32_t) {}", result));
     }
 
     fn store(&mut self, ty: &str, offset: i32, operands: &[String]) {
@@ -2208,7 +2281,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::Bitcasts { casts } => {
                 for (cast, op) in casts.iter().zip(operands) {
-                    let op = perform_cast(op, cast);
+                    let op = self.gen.gen.perform_cast(op, cast);
                     results.push(op);
                 }
             }
@@ -2223,11 +2296,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     results.push(format!("({}).{}", op, to_c_ident(&f.name)));
                 }
             }
-            Instruction::RecordLift { ty, .. } => {
+            Instruction::RecordLift { ty, record, .. } => {
                 let name = self.gen.gen.type_name(&Type::Id(*ty));
                 let mut result = format!("({}) {{\n", name);
-                for op in operands {
-                    uwriteln!(result, "{},", op);
+                for (field, op) in record.fields.iter().zip(operands.iter()) {
+                    let field_ty = self.gen.gen.type_name(&field.ty);
+                    uwriteln!(result, "({}) {},", field_ty, op);
                 }
                 result.push_str("}");
                 results.push(result);
@@ -2239,11 +2313,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     results.push(format!("({}).f{}", op, i));
                 }
             }
-            Instruction::TupleLift { ty, .. } => {
+            Instruction::TupleLift { ty, tuple, .. } => {
                 let name = self.gen.gen.type_name(&Type::Id(*ty));
                 let mut result = format!("({}) {{\n", name);
-                for op in operands {
-                    uwriteln!(result, "{},", op);
+                for (ty, op) in tuple.types.iter().zip(operands.iter()) {
+                    let ty = self.gen.gen.type_name(&ty);
+                    uwriteln!(result, "({}) {},", ty, op);
                 }
                 result.push_str("}");
                 results.push(result);
@@ -2939,46 +3014,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             i => unimplemented!("{:?}", i),
-        }
-    }
-}
-
-fn perform_cast(op: &str, cast: &Bitcast) -> String {
-    match cast {
-        Bitcast::I32ToF32 | Bitcast::I64ToF32 => {
-            format!("((union {{ int32_t a; float b; }}){{ {} }}).b", op)
-        }
-        Bitcast::F32ToI32 | Bitcast::F32ToI64 => {
-            format!("((union {{ float a; int32_t b; }}){{ {} }}).b", op)
-        }
-        Bitcast::I64ToF64 => {
-            format!("((union {{ int64_t a; double b; }}){{ {} }}).b", op)
-        }
-        Bitcast::F64ToI64 => {
-            format!("((union {{ double a; int64_t b; }}){{ {} }}).b", op)
-        }
-        Bitcast::I32ToI64 | Bitcast::LToI64 | Bitcast::PToP64 => {
-            format!("(int64_t) {}", op)
-        }
-        Bitcast::I64ToI32 | Bitcast::I64ToL => {
-            format!("(int32_t) {}", op)
-        }
-        // P64 is currently represented as int64_t, so no conversion is needed.
-        Bitcast::I64ToP64 | Bitcast::P64ToI64 => {
-            format!("{}", op)
-        }
-        Bitcast::P64ToP | Bitcast::I32ToP | Bitcast::LToP => {
-            format!("(uint8_t *) {}", op)
-        }
-
-        // Cast to uintptr_t to avoid implicit pointer-to-int conversions.
-        Bitcast::PToI32 | Bitcast::PToL => format!("(uintptr_t) {}", op),
-
-        Bitcast::I32ToL | Bitcast::LToI32 | Bitcast::None => op.to_string(),
-
-        Bitcast::Sequence(sequence) => {
-            let [first, second] = &**sequence;
-            perform_cast(&perform_cast(op, first), second)
         }
     }
 }

@@ -307,7 +307,7 @@ void exports_test_lists_test_list_param4(lists_list_list_string_t *a) {
 }
 
 void exports_test_lists_test_list_result(lists_list_u8_t *ret0) {
-  ret0->ptr = malloc(5);
+  ret0->ptr = (uint8_t *) malloc(5);
   ret0->len = 5;
   ret0->ptr[0] = 1;
   ret0->ptr[1] = 2;
@@ -322,7 +322,7 @@ void exports_test_lists_test_list_result2(lists_string_t *ret0) {
 
 void exports_test_lists_test_list_result3(lists_list_string_t *ret0) {
   ret0->len = 2;
-  ret0->ptr = malloc(2 * sizeof(lists_string_t));
+  ret0->ptr = (lists_string_t *) malloc(2 * sizeof(lists_string_t));
 
   lists_string_dup(&ret0->ptr[0], "hello,");
   lists_string_dup(&ret0->ptr[1], "world!");

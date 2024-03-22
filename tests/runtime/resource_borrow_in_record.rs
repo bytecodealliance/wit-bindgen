@@ -5,7 +5,7 @@ use self::{
     exports::test::resource_borrow_in_record::test::Foo as ImportFoo,
     test::resource_borrow_in_record::test::{Foo as HostFoo, Host as TestHost, HostThing, Thing},
 };
-use crate::resource_borrow_in_record::exports::test::resource_borrow_in_record::test::Test;
+use crate::resource_borrow_in_record::exports::test::resource_borrow_in_record::test::Guest;
 
 wasmtime::component::bindgen!(in "tests/runtime/resource_borrow_in_record");
 
@@ -70,7 +70,7 @@ fn run() -> anyhow::Result<()> {
     )
 }
 
-fn run_test(instance: Test, store: &mut Store<crate::Wasi<MyHostThing>>) -> anyhow::Result<()> {
+fn run_test(instance: Guest, store: &mut Store<crate::Wasi<MyHostThing>>) -> anyhow::Result<()> {
     let thing1 = instance.thing().call_constructor(&mut *store, "Bonjour")?;
     let thing2 = instance.thing().call_constructor(&mut *store, "mon cher")?;
     let foo1 = ImportFoo { thing: thing1 };

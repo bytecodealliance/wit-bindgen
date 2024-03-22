@@ -19,6 +19,7 @@ resource_import_and_export_toplevel_export(resource_import_and_export_own_thing_
 exports_test_resource_import_and_export_test_own_thing_t
 exports_test_resource_import_and_export_test_constructor_thing(uint32_t v) {
   exports_test_resource_import_and_export_test_thing_t *val =
+    (exports_test_resource_import_and_export_test_thing_t *)
     malloc(sizeof(exports_test_resource_import_and_export_test_thing_t));
   assert(val != NULL);
   val->thing = test_resource_import_and_export_test_constructor_thing(v + 1);
