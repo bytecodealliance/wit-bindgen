@@ -1151,8 +1151,8 @@ impl InterfaceGenerator<'_> {
             Type::S16 => "short".to_owned(),
             Type::S32 => "int".to_owned(),
             Type::S64 => "long".to_owned(),
-            Type::Float32 => "float".to_owned(),
-            Type::Float64 => "double".to_owned(),
+            Type::F32 => "float".to_owned(),
+            Type::F64 => "double".to_owned(),
             Type::Char => "uint".to_owned(),
             Type::String => "string".to_owned(),
             Type::Id(id) => {
@@ -1241,8 +1241,8 @@ impl InterfaceGenerator<'_> {
             Type::S16 => "short".into(),
             Type::S32 => "int".into(),
             Type::S64 => "long".into(),
-            Type::Float32 => "float".into(),
-            Type::Float64 => "double".into(),
+            Type::F32 => "float".into(),
+            Type::F64 => "double".into(),
             Type::Char => "uint".into(),
             Type::Id(id) => {
                 let def = &self.resolve.types[*id];
@@ -2332,8 +2332,8 @@ fn is_primitive(ty: &Type) -> bool {
             | Type::S32
             | Type::U64
             | Type::S64
-            | Type::Float32
-            | Type::Float64
+            | Type::F32
+            | Type::F64
     )
 }
 

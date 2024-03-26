@@ -661,8 +661,8 @@ impl InterfaceGenerator<'_> {
             Type::U16 | Type::S16 => "short".into(),
             Type::U32 | Type::S32 | Type::Char => "int".into(),
             Type::U64 | Type::S64 => "long".into(),
-            Type::Float32 => "float".into(),
-            Type::Float64 => "double".into(),
+            Type::F32 => "float".into(),
+            Type::F64 => "double".into(),
             Type::String => "String".into(),
             Type::Id(id) => {
                 let ty = &self.resolve.types[*id];
@@ -735,8 +735,8 @@ impl InterfaceGenerator<'_> {
             Type::U16 | Type::S16 => "Short".into(),
             Type::U32 | Type::S32 | Type::Char => "Integer".into(),
             Type::U64 | Type::S64 => "Long".into(),
-            Type::Float32 => "Float".into(),
-            Type::Float64 => "Double".into(),
+            Type::F32 => "Float".into(),
+            Type::F64 => "Double".into(),
             Type::Id(id) => {
                 let def = &self.resolve.types[*id];
                 match &def.kind {
@@ -2162,8 +2162,8 @@ fn list_element_info(ty: &Type) -> (usize, &'static str) {
         Type::U16 | Type::S16 => (2, "short"),
         Type::U32 | Type::S32 => (4, "int"),
         Type::U64 | Type::S64 => (8, "long"),
-        Type::Float32 => (4, "float"),
-        Type::Float64 => (8, "double"),
+        Type::F32 => (4, "float"),
+        Type::F64 => (8, "double"),
         _ => unreachable!(),
     }
 }
@@ -2207,8 +2207,8 @@ fn is_primitive(ty: &Type) -> bool {
             | Type::S32
             | Type::U64
             | Type::S64
-            | Type::Float32
-            | Type::Float64
+            | Type::F32
+            | Type::F64
     )
 }
 

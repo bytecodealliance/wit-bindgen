@@ -333,8 +333,8 @@ impl InterfaceGenerator<'_> {
             Type::S32 => self.push_str("`s32`"),
             Type::U64 => self.push_str("`u64`"),
             Type::S64 => self.push_str("`s64`"),
-            Type::Float32 => self.push_str("`float32`"),
-            Type::Float64 => self.push_str("`float64`"),
+            Type::F32 => self.push_str("`f32`"),
+            Type::F64 => self.push_str("`f64`"),
             Type::Char => self.push_str("`char`"),
             Type::String => self.push_str("`string`"),
             Type::Id(id) => {
