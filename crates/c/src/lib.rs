@@ -560,8 +560,8 @@ impl C {
             Type::S32 => dst.push_str("int32_t"),
             Type::U64 => dst.push_str("uint64_t"),
             Type::S64 => dst.push_str("int64_t"),
-            Type::Float32 => dst.push_str("float"),
-            Type::Float64 => dst.push_str("double"),
+            Type::F32 => dst.push_str("float"),
+            Type::F64 => dst.push_str("double"),
             Type::String => {
                 dst.push_str(&self.world.to_snake_case());
                 dst.push_str("_");
@@ -731,8 +731,8 @@ pub fn push_ty_name(resolve: &Resolve, ty: &Type, src: &mut String) {
         Type::S32 => src.push_str("s32"),
         Type::U64 => src.push_str("u64"),
         Type::S64 => src.push_str("s64"),
-        Type::Float32 => src.push_str("float32"),
-        Type::Float64 => src.push_str("float64"),
+        Type::F32 => src.push_str("float32"),
+        Type::F64 => src.push_str("float64"),
         Type::String => src.push_str("string"),
         Type::Id(id) => {
             let ty = &resolve.types[*id];
@@ -1617,8 +1617,8 @@ impl InterfaceGenerator<'_> {
             | Type::S32
             | Type::U64
             | Type::S64
-            | Type::Float32
-            | Type::Float64
+            | Type::F32
+            | Type::F64
             | Type::Char => {}
         }
     }
