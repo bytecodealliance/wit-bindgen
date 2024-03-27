@@ -1049,7 +1049,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                     self.src,
                     "//go:wasmimport {import_module} [resource-drop]{name}
                     func _{type_name}_drop(self {type_name})
-                    
+
                     func (self {type_name}) Drop() {{
                         _{type_name}_drop(self)
                     }}
