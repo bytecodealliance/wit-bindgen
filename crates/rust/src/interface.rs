@@ -135,7 +135,7 @@ impl InterfaceGenerator<'_> {
         let mut funcs_to_export = Vec::new();
         let mut resources_to_drop = Vec::new();
 
-        traits.insert(None, ("Guest".to_string(), Vec::new(), false));
+        traits.insert(None, ("Guest".to_string(), Vec::new()));
 
         if let Some((id, _)) = interface {
             for (name, id) in self.resolve.interfaces[id].types.iter() {
@@ -145,7 +145,7 @@ impl InterfaceGenerator<'_> {
                 }
                 resources_to_drop.push(name);
                 let camel = name.to_upper_camel_case();
-                traits.insert(Some(*id), (format!("Guest{camel}"), Vec::new(), false));
+                traits.insert(Some(*id), (format!("Guest{camel}"), Vec::new()));
             }
         }
 
@@ -173,8 +173,7 @@ impl InterfaceGenerator<'_> {
             };
 
             funcs_to_export.push((func, resource, async_));
-            let (trait_name, methods, async_methods) = traits.get_mut(&resource).unwrap();
-            *async_methods |= async_;
+            let (trait_name, methods) = traits.get_mut(&resource).unwrap();
             self.generate_guest_export(func, &trait_name, async_);
 
             let prev = mem::take(&mut self.src);
@@ -188,13 +187,13 @@ impl InterfaceGenerator<'_> {
                 sig.self_arg = Some("&self".into());
                 sig.self_is_first_param = true;
             }
-            self.print_signature(func, true, &sig);
+            self.print_signature(func, true, &sig, false);
             self.src.push_str(";\n");
             let trait_method = mem::replace(&mut self.src, prev);
             methods.push(trait_method);
         }
 
-        let (name, methods, async_methods) = traits.remove(&None).unwrap();
+        let (name, methods) = traits.remove(&None).unwrap();
         if !methods.is_empty() || !traits.is_empty() {
             self.generate_interface_trait(
                 &name,
@@ -202,14 +201,10 @@ impl InterfaceGenerator<'_> {
                 traits
                     .iter()
                     .map(|(resource, (trait_name, ..))| (resource.unwrap(), trait_name.as_str())),
-                async_methods,
             )
         }
 
-        for (resource, (trait_name, methods, async_methods)) in traits.iter() {
-            if *async_methods {
-                uwriteln!(self.src, "#[async_trait::async_trait(?Send)]");
-            }
+        for (resource, (trait_name, methods)) in traits.iter() {
             uwriteln!(self.src, "pub trait {trait_name}: 'static {{");
             let resource = resource.unwrap();
             let resource_name = self.resolve.types[resource].name.as_ref().unwrap();
@@ -356,11 +351,7 @@ macro_rules! {macro_name} {{
         trait_name: &str,
         methods: &[Source],
         resource_traits: impl Iterator<Item = (TypeId, &'a str)>,
-        async_methods: bool,
     ) {
-        if async_methods {
-            uwriteln!(self.src, "#[async_trait::async_trait(?Send)]");
-        }
         uwriteln!(self.src, "pub trait {trait_name} {{");
         for (id, trait_name) in resource_traits {
             let name = self.resolve.types[id]
@@ -500,7 +491,7 @@ macro_rules! {macro_name} {{
             }
         }
         self.src.push_str("#[allow(unused_unsafe, clippy::all)]\n");
-        let params = self.print_signature(func, false, &sig);
+        let params = self.print_signature(func, false, &sig, true);
         self.src.push_str("{\n");
         self.src.push_str("unsafe {\n");
 
@@ -649,6 +640,11 @@ macro_rules! {macro_name} {{
         };
         let export_prefix = self.gen.opts.export_prefix.as_deref().unwrap_or("");
         let export_name = func.core_export_name(wasm_module_export_name.as_deref());
+        let export_name = if async_ {
+            format!("[async]{export_name}")
+        } else {
+            export_name.to_string()
+        };
         uwrite!(
             self.src,
             "\
@@ -785,7 +781,7 @@ macro_rules! {macro_name} {{
                 sig.self_arg = Some("&self".into());
                 sig.self_is_first_param = true;
             }
-            self.print_signature(func, true, &sig);
+            self.print_signature(func, true, &sig, true);
             self.src.push_str("{ unreachable!() }\n");
         }
 
@@ -843,12 +839,18 @@ macro_rules! {macro_name} {{
         // }
     }
 
-    fn print_signature(&mut self, func: &Function, params_owned: bool, sig: &FnSig) -> Vec<String> {
-        let params = self.print_docs_and_params(func, params_owned, sig);
+    fn print_signature(
+        &mut self,
+        func: &Function,
+        params_owned: bool,
+        sig: &FnSig,
+        use_async_sugar: bool,
+    ) -> Vec<String> {
+        let params = self.print_docs_and_params(func, params_owned, sig, use_async_sugar);
         if let FunctionKind::Constructor(_) = &func.kind {
             self.push_str(" -> Self")
         } else {
-            self.print_results(&func.results);
+            self.print_results(&func.results, sig.async_ && !use_async_sugar);
         }
         params
     }
@@ -858,6 +860,7 @@ macro_rules! {macro_name} {{
         func: &Function,
         params_owned: bool,
         sig: &FnSig,
+        use_async_sugar: bool,
     ) -> Vec<String> {
         self.rustdoc(&func.docs);
         self.rustdoc_params(&func.params, "Parameters");
@@ -870,7 +873,7 @@ macro_rules! {macro_name} {{
         if sig.unsafe_ {
             self.push_str("unsafe ");
         }
-        if sig.async_ {
+        if sig.async_ && use_async_sugar {
             self.push_str("async ");
         }
         self.push_str("fn ");
@@ -960,18 +963,24 @@ macro_rules! {macro_name} {{
         params
     }
 
-    fn print_results(&mut self, results: &Results) {
+    fn print_results(&mut self, results: &Results, async_: bool) {
+        self.push_str(" -> ");
+        if async_ {
+            self.push_str("impl ::core::future::Future<Output = ");
+        }
+
         match results.len() {
-            0 => {}
+            0 => {
+                self.push_str("()");
+            }
             1 => {
-                self.push_str(" -> ");
                 let ty = results.iter_types().next().unwrap();
                 let mode = self.type_mode_for(ty, TypeOwnershipStyle::Owned, "'INVALID");
                 assert!(mode.lifetime.is_none());
                 self.print_ty(ty, mode);
             }
             _ => {
-                self.push_str(" -> (");
+                self.push_str("(");
                 for ty in results.iter_types() {
                     let mode = self.type_mode_for(ty, TypeOwnershipStyle::Owned, "'INVALID");
                     assert!(mode.lifetime.is_none());
@@ -980,6 +989,10 @@ macro_rules! {macro_name} {{
                 }
                 self.push_str(")")
             }
+        }
+
+        if async_ {
+            self.push_str("> + 'static");
         }
     }
 

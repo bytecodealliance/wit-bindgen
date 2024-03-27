@@ -888,7 +888,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
 
                     assert_eq!(self.stack.len(), 3);
                     self.emit(&Instruction::AsyncCallWasm {
-                        name: &func.name,
+                        name: &format!("[async]{}", func.name),
                         size: params_size,
                         align: params_align,
                     });
@@ -968,7 +968,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         self.resolve.push_flat(ty, &mut params);
                     }
 
-                    let name = &format!("[start]{}", func.name);
+                    let name = &format!("[async-start]{}", func.name);
 
                     if params.len() > MAX_FLAT_RESULTS {
                         let (size, align) = self
@@ -1092,7 +1092,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
 
                 if let Some(results) = async_results {
-                    let name = &format!("[return]{}", func.name);
+                    let name = &format!("[async-return]{}", func.name);
 
                     self.emit(&Instruction::AsyncCallReturn {
                         name,
