@@ -1324,10 +1324,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             | Instruction::I32FromS32
             | Instruction::I64FromS64
             | Instruction::I64FromU64
-            | Instruction::F32FromFloat32
-            | Instruction::F64FromFloat64
-            | Instruction::Float32FromF32
-            | Instruction::Float64FromF64 => results.push(operands[0].clone()),
+            | Instruction::CoreF32FromF32
+            | Instruction::CoreF64FromF64
+            | Instruction::F32FromCoreF32
+            | Instruction::F64FromCoreF64 => results.push(operands[0].clone()),
 
             Instruction::Bitcasts { casts } => results.extend(
                 casts

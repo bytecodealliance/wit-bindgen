@@ -731,8 +731,8 @@ pub fn push_ty_name(resolve: &Resolve, ty: &Type, src: &mut String) {
         Type::S32 => src.push_str("s32"),
         Type::U64 => src.push_str("u64"),
         Type::S64 => src.push_str("s64"),
-        Type::F32 => src.push_str("float32"),
-        Type::F64 => src.push_str("float64"),
+        Type::F32 => src.push_str("f32"),
+        Type::F64 => src.push_str("f64"),
         Type::String => src.push_str("string"),
         Type::Id(id) => {
             let ty = &resolve.types[*id];
@@ -2264,10 +2264,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             // f32/f64 have the same representation in the import type and in C,
             // so no conversions necessary.
-            Instruction::F32FromFloat32
-            | Instruction::F64FromFloat64
-            | Instruction::Float32FromF32
-            | Instruction::Float64FromF64 => {
+            Instruction::CoreF32FromF32
+            | Instruction::CoreF64FromF64
+            | Instruction::F32FromCoreF32
+            | Instruction::F64FromCoreF64 => {
                 results.push(operands[0].clone());
             }
 

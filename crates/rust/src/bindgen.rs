@@ -345,16 +345,16 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.push(format!("{}({s})", self.gen.path_to_as_i32()));
             }
 
-            Instruction::F32FromFloat32 => {
+            Instruction::CoreF32FromF32 => {
                 let s = operands.pop().unwrap();
                 results.push(format!("{}({s})", self.gen.path_to_as_f32()));
             }
-            Instruction::F64FromFloat64 => {
+            Instruction::CoreF64FromF64 => {
                 let s = operands.pop().unwrap();
                 results.push(format!("{}({s})", self.gen.path_to_as_f64()));
             }
-            Instruction::Float32FromF32
-            | Instruction::Float64FromF64
+            Instruction::F32FromCoreF32
+            | Instruction::F64FromCoreF64
             | Instruction::S32FromI32
             | Instruction::S64FromI64 => {
                 results.push(operands.pop().unwrap());

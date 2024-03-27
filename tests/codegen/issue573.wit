@@ -108,7 +108,7 @@ world types-example {
     }
 
     export f-f1: func(typedef: t10) -> t10;
-    export f1: func(f: float32, f-list: list<tuple<char, float64>>) -> (val-p1: s64, val2: string);
+    export f1: func(f: f32, f-list: list<tuple<char, f64>>) -> (val-p1: s64, val2: string);
     /// t2 has been renamed with `use self.types-interface.{t2 as t2-renamed}`
     export re-named: func(perm: option<permissions>, e: option<empty>) -> t2-renamed;
     export re-named2: func(tup: tuple<list<u16>>, e: empty) -> tuple<option<u8>, s8>;

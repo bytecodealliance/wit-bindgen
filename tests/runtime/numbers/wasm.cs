@@ -42,15 +42,15 @@ namespace NumbersWorld
             Debug.Assert(TestInterop.RoundtripS64(Int64.MinValue) == Int64.MinValue);
             Debug.Assert(TestInterop.RoundtripS64(Int64.MaxValue) == Int64.MaxValue);
 
-            Debug.Assert(TestInterop.RoundtripFloat32(1.0f) == 1.0f);
-            Debug.Assert(TestInterop.RoundtripFloat32(Single.PositiveInfinity) == Single.PositiveInfinity);
-            Debug.Assert(TestInterop.RoundtripFloat32(Single.NegativeInfinity) == Single.NegativeInfinity);
-            Debug.Assert(float.IsNaN(TestInterop.RoundtripFloat32(Single.NaN)));
+            Debug.Assert(TestInterop.RoundtripF32(1.0f) == 1.0f);
+            Debug.Assert(TestInterop.RoundtripF32(Single.PositiveInfinity) == Single.PositiveInfinity);
+            Debug.Assert(TestInterop.RoundtripF32(Single.NegativeInfinity) == Single.NegativeInfinity);
+            Debug.Assert(float.IsNaN(TestInterop.RoundtripF32(Single.NaN)));
 
-            Debug.Assert(TestInterop.RoundtripFloat64(1.0) == 1.0);
-            Debug.Assert(TestInterop.RoundtripFloat64(Double.PositiveInfinity) == Double.PositiveInfinity);
-            Debug.Assert(TestInterop.RoundtripFloat64(Double.NegativeInfinity) == Double.NegativeInfinity);
-            Debug.Assert(double.IsNaN(TestInterop.RoundtripFloat64(Double.NaN)));
+            Debug.Assert(TestInterop.RoundtripF64(1.0) == 1.0);
+            Debug.Assert(TestInterop.RoundtripF64(Double.PositiveInfinity) == Double.PositiveInfinity);
+            Debug.Assert(TestInterop.RoundtripF64(Double.NegativeInfinity) == Double.NegativeInfinity);
+            Debug.Assert(double.IsNaN(TestInterop.RoundtripF64(Double.NaN)));
 
             Debug.Assert(TestInterop.RoundtripChar('a') == 'a');
             Debug.Assert(TestInterop.RoundtripChar(' ') == ' ');
@@ -111,12 +111,12 @@ namespace NumbersWorld.wit.exports.test.numbers
             return p0;
         }
 
-        public static float RoundtripFloat32(float p0)
+        public static float RoundtripF32(float p0)
         {
             return p0;
         }
 
-        public static double RoundtripFloat64(double p0)
+        public static double RoundtripF64(double p0)
         {
             return p0;
         }

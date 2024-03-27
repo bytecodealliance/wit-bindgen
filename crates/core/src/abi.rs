@@ -174,13 +174,13 @@ def_instruction! {
         /// This may be a noop for some implementations, but it's here in case the
         /// native language representation of `f32` is different than the wasm
         /// representation of `f32`.
-        F32FromFloat32 : [1] => [1],
+        CoreF32FromF32 : [1] => [1],
         /// Conversion an interface type `f64` value to a wasm `f64`.
         ///
         /// This may be a noop for some implementations, but it's here in case the
         /// native language representation of `f64` is different than the wasm
         /// representation of `f64`.
-        F64FromFloat64 : [1] => [1],
+        CoreF64FromF64 : [1] => [1],
 
         /// Converts a native wasm `i32` to an interface type `s8`.
         ///
@@ -211,9 +211,9 @@ def_instruction! {
         /// It's safe to assume that the `i32` is indeed a valid unicode code point.
         CharFromI32 : [1] => [1],
         /// Converts a native wasm `f32` to an interface type `f32`.
-        Float32FromF32 : [1] => [1],
+        F32FromCoreF32 : [1] => [1],
         /// Converts a native wasm `f64` to an interface type `f64`.
-        Float64FromF64 : [1] => [1],
+        F64FromCoreF64 : [1] => [1],
 
         /// Creates a `bool` from an `i32` input, trapping if the `i32` isn't
         /// zero or one.
@@ -1067,8 +1067,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             Type::S64 => self.emit(&I64FromS64),
             Type::U64 => self.emit(&I64FromU64),
             Type::Char => self.emit(&I32FromChar),
-            Type::F32 => self.emit(&F32FromFloat32),
-            Type::F64 => self.emit(&F64FromFloat64),
+            Type::F32 => self.emit(&CoreF32FromF32),
+            Type::F64 => self.emit(&CoreF64FromF64),
             Type::String => {
                 let realloc = self.list_realloc();
                 self.emit(&StringLower { realloc });
@@ -1256,8 +1256,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             Type::S64 => self.emit(&S64FromI64),
             Type::U64 => self.emit(&U64FromI64),
             Type::Char => self.emit(&CharFromI32),
-            Type::F32 => self.emit(&Float32FromF32),
-            Type::F64 => self.emit(&Float64FromF64),
+            Type::F32 => self.emit(&F32FromCoreF32),
+            Type::F64 => self.emit(&F64FromCoreF64),
             Type::String => self.emit(&StringLift),
             Type::Id(id) => match &self.resolve.types[id].kind {
                 TypeDefKind::Type(t) => self.lift(t),

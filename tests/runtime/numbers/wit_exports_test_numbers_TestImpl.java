@@ -33,11 +33,11 @@ public class TestImpl {
         return a;
     }
 
-    public static float roundtripFloat32(float a) {
+    public static float roundtripF32(float a) {
         return a;
     }
 
-    public static double roundtripFloat64(double a) {
+    public static double roundtripF64(double a) {
         return a;
     }
 

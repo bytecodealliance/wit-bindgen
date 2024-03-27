@@ -1,8 +1,8 @@
 package test:variants;
 
 interface test {
-  roundtrip-option: func(a: option<float32>) -> option<u8>;
-  roundtrip-result: func(a: result<u32, float32>) -> result<float64, u8>;
+  roundtrip-option: func(a: option<f32>) -> option<u8>;
+  roundtrip-result: func(a: result<u32, f32>) -> result<f64, u8>;
 
   enum e1 { a, b }
   roundtrip-enum: func(a: e1) -> e1;
@@ -10,18 +10,18 @@ interface test {
   invert-bool: func(a: bool) -> bool;
 
   variant c1 { a(s32), b(s64) }
-  variant c2 { a(s32), b(float32) }
-  variant c3 { a(s32), b(float64) }
-  variant c4 { a(s64), b(float32) }
-  variant c5 { a(s64), b(float64) }
-  variant c6 { a(float32), b(float64) }
+  variant c2 { a(s32), b(f32) }
+  variant c3 { a(s32), b(f64) }
+  variant c4 { a(s64), b(f32) }
+  variant c5 { a(s64), b(f64) }
+  variant c6 { a(f32), b(f64) }
   type casts = tuple<c1, c2, c3, c4, c5, c6>;
   variant-casts: func(a: casts) -> casts;
 
   variant z1 { a(s32), b }
   variant z2 { a(s64), b }
-  variant z3 { a(float32), b }
-  variant z4 { a(float64), b }
+  variant z3 { a(f32), b }
+  variant z4 { a(f64), b }
   type zeros = tuple<z1, z2, z3, z4>;
   variant-zeros: func(a: zeros) -> zeros;
 
