@@ -43,3 +43,7 @@ pub async unsafe fn await_result(
         _ => todo!(),
     }
 }
+
+pub fn callback(ctx: *mut u8, event0: i32, event1: i32, event2: i32) -> i32 {
+    todo!()
+}

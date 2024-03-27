@@ -599,7 +599,19 @@ macro_rules! {macro_name} {{
         self.src.push_str(&String::from(src));
         self.src.push_str("}\n");
 
-        if abi::guest_export_needs_post_return(self.resolve, func) {
+        if async_ {
+            let callback = self.path_to_callback();
+            uwrite!(
+                self.src,
+                "\
+                    #[doc(hidden)]
+                    #[allow(non_snake_case)]
+                    pub unsafe fn __callback_{name_snake}(ctx: *mut u8, event0: i32, event1: i32, event2: i32) -> i32 {{
+                        {callback}(ctx, event0, event1, event2)
+                    }}
+                "
+            );
+        } else if abi::guest_export_needs_post_return(self.resolve, func) {
             uwrite!(
                 self.src,
                 "\
@@ -667,8 +679,18 @@ macro_rules! {macro_name} {{
         );
         self.push_str("}\n");
 
-        if abi::guest_export_needs_post_return(self.resolve, func) {
-            let export_prefix = self.gen.opts.export_prefix.as_deref().unwrap_or("");
+        let export_prefix = self.gen.opts.export_prefix.as_deref().unwrap_or("");
+        if async_ {
+            uwrite!(
+                self.src,
+                "\
+                    #[export_name = \"{export_prefix}[callback]{export_name}\"]
+                    unsafe extern \"C\" fn _callback_{name_snake}(ctx: *mut u8, event0: i32, event1: i32, event2: i32) -> i32 {{
+                        {path_to_self}::__callback_{name_snake}(ctx, event0, event1, event2)
+                    }}
+                "
+            );
+        } else if abi::guest_export_needs_post_return(self.resolve, func) {
             uwrite!(
                 self.src,
                 "\
@@ -2011,6 +2033,10 @@ macro_rules! {macro_name} {{
 
     pub fn path_to_first_poll(&mut self) -> String {
         self.path_from_runtime_module(RuntimeItem::AsyncSupport, "first_poll")
+    }
+
+    pub fn path_to_callback(&mut self) -> String {
+        self.path_from_runtime_module(RuntimeItem::AsyncSupport, "callback")
     }
 
     fn path_from_runtime_module(
