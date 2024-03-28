@@ -40,6 +40,10 @@ interface %flags {
     b56, b57, b58, b59, b60, b61, b62, b63,
   }
 
+  flags withdashes {
+    with-dashes,
+  }
+
   roundtrip-flag1: func(x: flag1) -> flag1;
   roundtrip-flag2: func(x: flag2) -> flag2;
   roundtrip-flag4: func(x: flag4) -> flag4;
