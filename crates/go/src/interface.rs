@@ -1179,17 +1179,19 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.src.push_str(&format!("type {name} uint64\n"));
         self.src.push_str("const (\n");
         for (i, flag) in flags.flags.iter().enumerate() {
+            let case_flag = flag.name.to_upper_camel_case();
+
             if i == 0 {
                 self.src.push_str(&format!(
                     "   {name}_{flag} {name} = 1 << iota\n",
                     name = name,
-                    flag = flag.name.to_uppercase(),
+                    flag = case_flag,
                 ));
             } else {
                 self.src.push_str(&format!(
                     "   {name}_{flag}\n",
                     name = name,
-                    flag = flag.name.to_uppercase(),
+                    flag = case_flag,
                 ));
             }
         }
