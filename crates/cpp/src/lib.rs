@@ -1,4 +1,4 @@
-use heck::{ToShoutySnakeCase, ToSnakeCase, ToUpperCamelCase, *};
+use heck::{ToShoutySnakeCase, ToSnakeCase, ToUpperCamelCase, ToPascalCase};
 use std::{
     collections::{HashMap, HashSet},
     fmt::Write as FmtWrite,
@@ -22,6 +22,8 @@ mod wamr;
 pub const RESOURCE_IMPORT_BASE_CLASS_NAME: &str = "ResourceImportBase";
 pub const RESOURCE_EXPORT_BASE_CLASS_NAME: &str = "ResourceExportBase";
 pub const OWNED_CLASS_NAME: &str = "Owned";
+// these types are always defined in the non-exports namespace
+const NOT_IN_EXPORTED_NAMESPACE: bool = false;
 
 type CppType = String;
 
@@ -1407,7 +1409,7 @@ impl CppInterfaceGenerator<'_> {
             },
             Type::Id(id) => match &self.resolve.types[*id].kind {
                 TypeDefKind::Record(_r) => {
-                    self.scoped_type_name(*id, from_namespace, flavor.is_guest_export())
+                    self.scoped_type_name(*id, from_namespace, NOT_IN_EXPORTED_NAMESPACE)
                 }
                 TypeDefKind::Resource => {
                     self.scoped_type_name(*id, from_namespace, flavor.is_guest_export())
@@ -1421,7 +1423,7 @@ impl CppInterfaceGenerator<'_> {
                         + ">"
                 }
                 TypeDefKind::Flags(_f) => {
-                    self.scoped_type_name(*id, from_namespace, flavor.is_guest_export())
+                    self.scoped_type_name(*id, from_namespace, NOT_IN_EXPORTED_NAMESPACE)
                 }
                 TypeDefKind::Tuple(t) => {
                     let types = t.types.iter().fold(String::new(), |mut a, b| {
@@ -1434,10 +1436,10 @@ impl CppInterfaceGenerator<'_> {
                     String::from("std::tuple<") + &types + ">"
                 }
                 TypeDefKind::Variant(_v) => {
-                    self.scoped_type_name(*id, from_namespace, flavor.is_guest_export())
+                    self.scoped_type_name(*id, from_namespace, NOT_IN_EXPORTED_NAMESPACE)
                 }
                 TypeDefKind::Enum(_e) => {
-                    self.scoped_type_name(*id, from_namespace, flavor.is_guest_export())
+                    self.scoped_type_name(*id, from_namespace, NOT_IN_EXPORTED_NAMESPACE)
                 }
                 TypeDefKind::Option(o) => {
                     self.gen.dependencies.needs_optional = true;
@@ -1546,7 +1548,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
         docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
         let ty = &self.resolve.types[id];
-        let namespc = namespace(self.resolve, &ty.owner, false);
+        let namespc = namespace(self.resolve, &ty.owner, NOT_IN_EXPORTED_NAMESPACE);
         if self.gen.is_first_definition(&namespc, name) {
             self.gen.h_src.change_namespace(&namespc);
             Self::docs(&mut self.gen.h_src.src, docs);
@@ -1708,7 +1710,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
         docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
         let ty = &self.resolve.types[id];
-        let namespc = namespace(self.resolve, &ty.owner, false);
+        let namespc = namespace(self.resolve, &ty.owner, NOT_IN_EXPORTED_NAMESPACE);
         if self.gen.is_first_definition(&namespc, name) {
             self.gen.h_src.change_namespace(&namespc);
             Self::docs(&mut self.gen.h_src.src, docs);
@@ -1748,7 +1750,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
         docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
         let ty = &self.resolve.types[id];
-        let namespc = namespace(self.resolve, &ty.owner, false);
+        let namespc = namespace(self.resolve, &ty.owner, NOT_IN_EXPORTED_NAMESPACE);
         self.gen.h_src.change_namespace(&namespc);
         Self::docs(&mut self.gen.h_src.src, docs);
         let pascal = name.to_pascal_case();
@@ -1801,7 +1803,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
         docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
         let ty = &self.resolve.types[id];
-        let namespc = namespace(self.resolve, &ty.owner, false);
+        let namespc = namespace(self.resolve, &ty.owner, NOT_IN_EXPORTED_NAMESPACE);
         if self.gen.is_first_definition(&namespc, name) {
             self.gen.h_src.change_namespace(&namespc);
             let pascal = name.to_pascal_case();
@@ -1828,7 +1830,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
         docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
         let ty = &self.resolve.types[id];
-        let namespc = namespace(self.resolve, &ty.owner, false);
+        let namespc = namespace(self.resolve, &ty.owner, NOT_IN_EXPORTED_NAMESPACE);
         self.gen.h_src.change_namespace(&namespc);
         let pascal = name.to_pascal_case();
         Self::docs(&mut self.gen.h_src.src, docs);
