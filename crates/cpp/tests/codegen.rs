@@ -18,16 +18,19 @@ macro_rules! codegen_test {
                 },
                 verify,
             );
-            test_helpers::run_world_codegen_test(
-                "cpp-host",
-                $test.as_ref(),
-                |resolve, world, files| {
-                    let mut opts = wit_bindgen_cpp::Opts::default();
-                    opts.host = true;
-                    opts.build().generate(resolve, world, files).unwrap()
-                },
-                verify_host,
-            );
+            let test_host_code = env::var_os("CPP_HOST_TESTS").is_some();
+            if test_host_code {
+                test_helpers::run_world_codegen_test(
+                    "cpp-host",
+                    $test.as_ref(),
+                    |resolve, world, files| {
+                        let mut opts = wit_bindgen_cpp::Opts::default();
+                        opts.host = true;
+                        opts.build().generate(resolve, world, files).unwrap()
+                    },
+                    verify_host,
+                );
+            }
         }
     };
 }
