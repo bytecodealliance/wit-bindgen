@@ -113,6 +113,9 @@ impl Parse for Config {
                     Opt::PubExportMacro(enable) => {
                         opts.pub_export_macro = enable.value();
                     }
+                    Opt::AllowUnused(enable) => {
+                        opts.allow_unused = enable.value();
+                    }
                 }
             }
         } else {
@@ -231,6 +234,7 @@ mod kw {
     syn::custom_keyword!(default_bindings_module);
     syn::custom_keyword!(export_macro_name);
     syn::custom_keyword!(pub_export_macro);
+    syn::custom_keyword!(allow_unused);
 }
 
 #[derive(Clone)]
@@ -280,6 +284,7 @@ enum Opt {
     DefaultBindingsModule(syn::LitStr),
     ExportMacroName(syn::LitStr),
     PubExportMacro(syn::LitBool),
+    AllowUnused(syn::LitBool),
 }
 
 impl Parse for Opt {
@@ -398,6 +403,10 @@ impl Parse for Opt {
             input.parse::<kw::pub_export_macro>()?;
             input.parse::<Token![:]>()?;
             Ok(Opt::PubExportMacro(input.parse()?))
+        } else if l.peek(kw::allow_unused) {
+            input.parse::<kw::allow_unused>()?;
+            input.parse::<Token![:]>()?;
+            Ok(Opt::AllowUnused(input.parse()?))
         } else {
             Err(l.error())
         }

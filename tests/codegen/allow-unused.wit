@@ -1,0 +1,9 @@
+package foo:foo;
+
+world bindings {
+    export component;
+}
+
+interface component {
+    record unused {}
+}
