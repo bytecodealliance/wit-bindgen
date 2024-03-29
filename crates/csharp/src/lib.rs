@@ -484,7 +484,7 @@ impl WorldGenerator for CSharp {
                 /* of WASI libc prevent us doing so. */
                 /* See https://github.com/bytecodealliance/wit-bindgen/issues/777  */
                 /* and https://github.com/WebAssembly/wasi-libc/issues/452 */
-                /* The component model `start` function might be an alternative to this depending on whether it
+                /* The component model `start` function might be an alternative to this depending on whether it */
                 /* has the same constraints as `cabi_realloc` */
                 __attribute__((__weak__, __export_name__("cabi_realloc")))
                 void *cabi_realloc(void *ptr, size_t old_size, size_t align, size_t new_size) {
@@ -592,7 +592,7 @@ impl WorldGenerator for CSharp {
             // temporarily add this attribute until it is available in dotnet 9
             namespace System.Runtime.InteropServices
             {
-                public class WasmImportLinkageAttribute : Attribute {}
+                internal partial class WasmImportLinkageAttribute : Attribute {}
             }
             "#,
         );
@@ -1065,8 +1065,8 @@ impl InterfaceGenerator<'_> {
             Type::S16 => "short".to_owned(),
             Type::S32 => "int".to_owned(),
             Type::S64 => "long".to_owned(),
-            Type::Float32 => "float".to_owned(),
-            Type::Float64 => "double".to_owned(),
+            Type::F32 => "float".to_owned(),
+            Type::F64 => "double".to_owned(),
             Type::Char => "uint".to_owned(),
             Type::String => "string".to_owned(),
             Type::Id(id) => {
@@ -1147,8 +1147,8 @@ impl InterfaceGenerator<'_> {
             Type::S16 => "short".into(),
             Type::S32 => "int".into(),
             Type::S64 => "long".into(),
-            Type::Float32 => "float".into(),
-            Type::Float64 => "double".into(),
+            Type::F32 => "float".into(),
+            Type::F64 => "double".into(),
             Type::Char => "uint".into(),
             Type::Id(id) => {
                 let def = &self.resolve.types[*id];
@@ -2573,8 +2573,8 @@ fn is_primitive(ty: &Type) -> bool {
             | Type::S32
             | Type::U64
             | Type::S64
-            | Type::Float32
-            | Type::Float64
+            | Type::F32
+            | Type::F64
     )
 }
 

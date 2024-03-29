@@ -105,8 +105,8 @@ impl TinyGo {
             Type::S16 => "int16_t".into(),
             Type::S32 => "int32_t".into(),
             Type::S64 => "int64_t".into(),
-            Type::Float32 => "float".into(),
-            Type::Float64 => "double".into(),
+            Type::F32 => "float".into(),
+            Type::F64 => "double".into(),
             Type::Char => "uint32_t".into(),
             Type::String => {
                 format!(
@@ -304,6 +304,7 @@ impl WorldGenerator for TinyGo {
         self.src.push_str("// #include \"");
         self.src.push_str(self.world.to_snake_case().as_str());
         self.src.push_str(".h\"\n");
+        self.src.push_str("// #include <stdlib.h>\n");
         if self.preamble.len() > 0 {
             self.src.append_src(&self.preamble);
         }

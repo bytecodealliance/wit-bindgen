@@ -38,6 +38,7 @@ pub struct Source {
     s: String,
     indent: usize,
     in_line_comment: bool,
+    continuing_line: bool,
 }
 
 impl Source {
@@ -50,6 +51,15 @@ impl Source {
     pub fn push_str(&mut self, src: &str) {
         let lines = src.lines().collect::<Vec<_>>();
         for (i, line) in lines.iter().enumerate() {
+            if !self.continuing_line {
+                if !line.is_empty() {
+                    for _ in 0..self.indent {
+                        self.s.push_str("  ");
+                    }
+                }
+                self.continuing_line = true;
+            }
+
             let trimmed = line.trim();
             if trimmed.starts_with("//") {
                 self.in_line_comment = true;
@@ -92,12 +102,17 @@ impl Source {
         self.indent -= amt;
     }
 
+    /// Set the indentation level, and return the old level.
+    pub fn set_indent(&mut self, amt: usize) -> usize {
+        let old = self.indent;
+        self.indent = amt;
+        old
+    }
+
     fn newline(&mut self) {
         self.in_line_comment = false;
+        self.continuing_line = false;
         self.s.push('\n');
-        for _ in 0..self.indent {
-            self.s.push_str("  ");
-        }
     }
 
     pub fn as_mut_string(&mut self) -> &mut String {

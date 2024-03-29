@@ -164,10 +164,10 @@ pub struct Opts {
     #[cfg_attr(feature = "clap", arg(long))]
     pub type_section_suffix: Option<String>,
 
-    /// Apply a workaround required before Rust 1.69 to run wasm ctors only
-    /// once.
+    /// Disable a workaround used to prevent libc ctors/dtors from being invoked
+    /// too much.
     #[cfg_attr(feature = "clap", arg(long))]
-    pub run_ctors_once_workaround: bool,
+    pub disable_run_ctors_once_workaround: bool,
 
     /// Changes the default module used in the generated `export!` macro to
     /// something other than `self`.
@@ -242,6 +242,11 @@ impl RustWasm {
         emit(&mut self.src, map);
         fn emit(me: &mut Source, module: Module) {
             for (name, submodule) in module.submodules {
+                // Ignore dead-code warnings. If the bindings are only used
+                // within a crate, and not exported to a different crate, some
+                // parts may be unused, and that's ok.
+                uwriteln!(me, "#[allow(dead_code)]");
+
                 uwriteln!(me, "pub mod {name} {{");
                 emit(me, submodule);
                 uwriteln!(me, "}}");
@@ -259,11 +264,11 @@ impl RustWasm {
             .unwrap_or("wit_bindgen::rt")
     }
 
-    fn bitflags_path(&self) -> &str {
+    fn bitflags_path(&self) -> String {
         self.opts
             .bitflags_path
-            .as_deref()
-            .unwrap_or("wit_bindgen::bitflags")
+            .to_owned()
+            .unwrap_or(format!("{}::bitflags", self.runtime_path()))
     }
 
     fn name_interface(
@@ -405,7 +410,7 @@ pub unsafe fn bool_lift(val: u8) -> bool {
             _ => panic!(\"invalid bool discriminant\"),
         }
     } else {
-        ::core::mem::transmute::<u8, bool>(val)
+        val != 0
     }
 }
                     ",
@@ -413,36 +418,15 @@ pub unsafe fn bool_lift(val: u8) -> bool {
             }
 
             RuntimeItem::RunCtorsOnce => {
-                self.src.push_str(
+                let rt = self.runtime_path();
+                self.src.push_str(&format!(
                     r#"
-/// Provide a hook for generated export functions to run static
-/// constructors at most once. wit-bindgen-rust generates a call to this
-/// function at the start of all component export functions. Importantly,
-/// it is not called as part of `cabi_realloc`, which is a *core* export
-/// func, but may not execute ctors, because the environment ctor in
-/// wasi-libc (before rust 1.69.0) calls an import func, which is not
-/// permitted by the Component Model when inside realloc.
 #[cfg(target_arch = "wasm32")]
-pub fn run_ctors_once() {
-    static mut RUN: bool = false;
-    unsafe {
-        if !RUN {
-            // This function is synthesized by `wasm-ld` to run all static
-            // constructors. wasm-ld will either provide an implementation
-            // of this symbol, or synthesize a wrapper around each
-            // exported function to (unconditionally) run ctors. By using
-            // this function, the linked module is opting into "manually"
-            // running ctors.
-            extern "C" {
-                fn __wasm_call_ctors();
-            }
-            __wasm_call_ctors();
-            RUN = true;
-        }
-    }
-}
+pub fn run_ctors_once() {{
+    {rt}::run_ctors_once();
+}}
                     "#,
-                );
+                ));
             }
 
             RuntimeItem::AsI32 => {
@@ -739,6 +723,7 @@ macro_rules! __export_{world_name}_impl {{
             "pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; {}] = *b\"\\\n",
             component_type.len()
         ));
+        let old_indent = self.src.set_indent(0);
         let mut line_length = 0;
         let s = self.src.as_mut_string();
         for byte in component_type.iter() {
@@ -771,6 +756,7 @@ macro_rules! __export_{world_name}_impl {{
         }
 
         self.src.push_str("\";\n");
+        self.src.set_indent(old_indent);
 
         if let Some(func_name) = func_name {
             let rt = self.runtime_path().to_string();
@@ -866,8 +852,8 @@ impl WorldGenerator for RustWasm {
         if let Some(default) = &self.opts.default_bindings_module {
             uwriteln!(self.src, "//   * default-bindings-module: {default:?}");
         }
-        if self.opts.run_ctors_once_workaround {
-            uwriteln!(self.src, "//   * run-ctors-once-workaround");
+        if self.opts.disable_run_ctors_once_workaround {
+            uwriteln!(self.src, "//   * disable-run-ctors-once-workaround");
         }
         if let Some(s) = &self.opts.export_macro_name {
             uwriteln!(self.src, "//   * export-macro-name: {s}");
@@ -1355,7 +1341,7 @@ fn perform_cast(operand: &str, cast: &Bitcast) -> String {
         // Convert a `MaybeUninit<u64>` holding a pointer value back into
         // the pointer value.
         Bitcast::P64ToP => {
-            format!("{}.as_mut_ptr().cast::<*mut u8>().read()", operand)
+            format!("{}.as_ptr().cast::<*mut u8>().read()", operand)
         }
         // Convert an `i32` or a `usize` into a pointer.
         Bitcast::I32ToP | Bitcast::LToP => {

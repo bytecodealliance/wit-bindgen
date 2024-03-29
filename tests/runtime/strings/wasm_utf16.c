@@ -6,7 +6,7 @@
 
 char16_t STR_BUFFER[500];
 
-void assert_str(strings_string_t* str, char16_t* expected) {
+void assert_str(strings_string_t* str, const char16_t* expected) {
   size_t expected_len = 0;
   while (expected[expected_len])
     expected_len++;
@@ -32,7 +32,7 @@ void strings_return_empty(strings_string_t *ret) {
 void strings_roundtrip(strings_string_t *str, strings_string_t *ret) {
   assert(str->len > 0);
   ret->len = str->len;
-  ret->ptr = malloc(ret->len * 2);
+  ret->ptr = (uint16_t *) malloc(ret->len * 2);
   memcpy(ret->ptr, str->ptr, 2 * ret->len);
   strings_string_free(str);
 }

@@ -52,6 +52,10 @@ func (z *MyZ) MethodZGetA() int32 {
 	return z.a
 }
 
+func (e ExportsImpl) StaticZNumDropped() uint32 {
+        return 0
+}
+
 func (e ExportsImpl) Add(z ExportsZ, b ExportsZ) ExportsZ {
 	return &MyZ{a: z.MethodZGetA() + b.MethodZGetA()}
 }

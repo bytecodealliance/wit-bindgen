@@ -217,8 +217,8 @@ impl InterfaceGenerator<'_> {
             Type::S16 => "int16".into(),
             Type::S32 => "int32".into(),
             Type::S64 => "int64".into(),
-            Type::Float32 => "float32".into(),
-            Type::Float64 => "float64".into(),
+            Type::F32 => "float32".into(),
+            Type::F64 => "float64".into(),
             Type::Char => "rune".into(),
             Type::String => "string".into(),
             Type::Id(id) => {
@@ -259,8 +259,8 @@ impl InterfaceGenerator<'_> {
             Type::S16 => "S16".into(),
             Type::S32 => "S32".into(),
             Type::S64 => "S64".into(),
-            Type::Float32 => "F32".into(),
-            Type::Float64 => "F64".into(),
+            Type::F32 => "F32".into(),
+            Type::F64 => "F64".into(),
             Type::Char => "Byte".into(),
             Type::String => "String".into(),
             Type::Id(id) => {
@@ -1049,7 +1049,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                     self.src,
                     "//go:wasmimport {import_module} [resource-drop]{name}
                     func _{type_name}_drop(self {type_name})
-                    
+
                     func (self {type_name}) Drop() {{
                         _{type_name}_drop(self)
                     }}
@@ -1179,17 +1179,19 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.src.push_str(&format!("type {name} uint64\n"));
         self.src.push_str("const (\n");
         for (i, flag) in flags.flags.iter().enumerate() {
+            let case_flag = flag.name.to_upper_camel_case();
+
             if i == 0 {
                 self.src.push_str(&format!(
                     "   {name}_{flag} {name} = 1 << iota\n",
                     name = name,
-                    flag = flag.name.to_uppercase(),
+                    flag = case_flag,
                 ));
             } else {
                 self.src.push_str(&format!(
                     "   {name}_{flag}\n",
                     name = name,
-                    flag = flag.name.to_uppercase(),
+                    flag = case_flag,
                 ));
             }
         }

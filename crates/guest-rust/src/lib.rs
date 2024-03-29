@@ -668,55 +668,6 @@
 ///     // By default this set is empty.
 ///     additional_derives: [PartialEq, Eq, Hash, Clone],
 ///
-///     // If the `world` being generated has any exports, then this option is
-///     // required. Each exported interface must have an entry here in addition
-///     // to a `world` key if the world has any top-level exported functions.
-///     //
-///     // Each entry in this map points to a type in Rust. The specified type
-///     // must implement the generated trait.
-///     exports: {
-///         // If the WIT world has top-level function exports, such as:
-///         //
-///         //      world my-world {
-///         //          export foo: func();
-///         //      }
-///         //
-///         // then this option specifies which type implements the world's
-///         // exported functions.
-///         world: MyWorld,
-///
-///         // For each exported interface from a world a key is additionally
-///         // required. Each key must be a string of the form "a:b/c"
-///         // specifying the "WIT path" to the interface. For example:
-///         //
-///         //      package my:package;
-///         //
-///         //      interface my-interface {
-///         //          foo: func();
-///         //      }
-///         //
-///         //      world my-world {
-///         //          export my-interface;
-///         //          export wasi:random/insecure-seed;
-///         //      }
-///         //
-///         // this would require these fields to be specified:
-///         "my:package/my-interface": MyInterface,
-///         "wasi:random/insecure-seed": MyInsecureSeed,
-///
-///         // If an unnamed interface is used then the export's name is the key
-///         // to use:
-///         //
-///         //      world my-world {
-///         //          export foo: interface {
-///         //              some-func: func();
-///         //          }
-///         //      }
-///         //
-///         // would require:
-///         "foo": MyFoo,
-///     },
-///
 ///     // When generating bindings for imports it might be the case that
 ///     // bindings were already generated in a different crate. For example
 ///     // if your world refers to WASI types then the `wasi` crate already
@@ -831,9 +782,9 @@
 ///     // support the standard library itself depending on this crate one day.
 ///     std_feature,
 ///
-///     // Force a workaround to be emitted for pre-Rust-1.69.0 modules to
-///     // ensure that libc ctors run only once.
-///     run_ctors_once_workaround: true,
+///     // Disable a workaround to force wasm constructors to be run only once
+///     // when exported functions are called.
+///     disable_run_ctors_once_workaround: false,
 /// });
 /// ```
 ///
@@ -841,9 +792,10 @@
 #[cfg(feature = "macros")]
 pub use wit_bindgen_rust_macro::generate;
 
-// Re-export `bitflags` so that we can reference it from macros.
+// This re-export is no longer needed in new bindings and is only
+// here for compatibility.
 #[doc(hidden)]
-pub use bitflags;
+pub use rt::bitflags;
 
 mod pre_wit_bindgen_0_20_0;
 
@@ -852,12 +804,18 @@ pub mod examples;
 
 #[doc(hidden)]
 pub mod rt {
+    // Re-export `bitflags` so that we can reference it from macros.
+    pub use wit_bindgen_rt::bitflags;
+
+    #[cfg(target_arch = "wasm32")]
+    pub use wit_bindgen_rt::run_ctors_once;
+
     pub fn maybe_link_cabi_realloc() {
         #[cfg(feature = "realloc")]
         wit_bindgen_rt::maybe_link_cabi_realloc();
     }
 
-    #[cfg(feature = "realloc")]
+    #[cfg(all(feature = "realloc", not(target_env = "p2")))]
     pub use wit_bindgen_rt::cabi_realloc;
 
     pub use crate::pre_wit_bindgen_0_20_0::*;
