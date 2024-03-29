@@ -1,0 +1,19 @@
+package foo:foo;
+
+interface foo-bar {
+    record foo{
+        something: string,
+        anything: string
+    }
+
+    enum bar{
+        anything,
+        %type
+    }
+
+    fetch: func(x: foo, e: bar) -> string;
+}
+
+world foo-world {
+    import foo-bar;
+}
