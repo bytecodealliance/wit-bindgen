@@ -53,6 +53,7 @@ macro_rules! codegen_test {
                         "simple-http",
                         "simple-lists",
                         "small-anonymous",
+                        "trivial-lists",
                         "unused-import",
                         "use-across-interfaces",
                         "variants",
