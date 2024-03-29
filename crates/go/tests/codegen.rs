@@ -86,4 +86,5 @@ fn verify(dir: &Path, name: &str) {
     cmd.arg(format!("{name}.go"));
     cmd.current_dir(dir);
     test_helpers::run_command(&mut cmd);
+
 }
