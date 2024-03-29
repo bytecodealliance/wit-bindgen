@@ -1,4 +1,4 @@
-use heck::{ToShoutySnakeCase, ToSnakeCase, ToUpperCamelCase, ToPascalCase};
+use heck::{ToPascalCase, ToShoutySnakeCase, ToSnakeCase, ToUpperCamelCase};
 use std::{
     collections::{HashMap, HashSet},
     fmt::Write as FmtWrite,
@@ -2892,12 +2892,12 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let tmp = self.tmp();
                 let ptr = self.tempname("ptr", tmp);
                 let len = self.tempname("len", tmp);
-                uwriteln!(self.src, "int32_t {ptr} = {};", operands[0]);
-                uwriteln!(self.src, "int32_t {len} = {};", operands[1]);
+                uwriteln!(self.src, "uint8_t* {ptr} = {};", operands[0]);
+                uwriteln!(self.src, "size_t {len} = {};", operands[1]);
                 let i = self.tempname("i", tmp);
-                uwriteln!(self.src, "for (int32_t {i} = 0; {i} < {len}; {i}++) {{");
+                uwriteln!(self.src, "for (size_t {i} = 0; {i} < {len}; {i}++) {{");
                 let size = self.gen.sizes.size(element);
-                uwriteln!(self.src, "int32_t base = {ptr} + {i} * {size};");
+                uwriteln!(self.src, "uint8_t* base = {ptr} + {i} * {size};");
                 uwriteln!(self.src, "(void) base;");
                 uwrite!(self.src, "{body}");
                 uwriteln!(self.src, "}}");

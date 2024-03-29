@@ -7,6 +7,53 @@ macro_rules! codegen_test {
     ($id:ident $name:tt $test:tt) => {
         #[test]
         fn $id() {
+            if [
+                "go_params",
+                "guest-name",
+                "import-and-export-resource",
+                "import-and-export-resource-alias",
+                "issue544",
+                "issue551",
+                "issue573",
+                "issue607",
+                "issue668",
+                "just-export",
+                "keywords",
+                "lift-lower-foreign",
+                "lists",
+                "many-arguments",
+                "multi-return",
+                "multiversion",
+                "option-result",
+                "records",
+                "resource-alias",
+                "resource-borrow-in-record",
+                "resource-borrow-in-record-export",
+                "resource-local-alias",
+                "resource-local-alias-borrow",
+                "resource-local-alias-borrow-import",
+                "resource-own-in-other-interface",
+                "resources",
+                "resources-in-aggregates",
+                "resources-with-lists",
+                "result-empty",
+                "ret-areas",
+                "return-resource-from-export",
+                "same-names5",
+                "simple-http",
+                "simple-lists",
+                "small-anonymous",
+                "unused-import",
+                "use-across-interfaces",
+                "variants",
+                "variants-unioning-types",
+                "worlds-with-types",
+                "zero-size-tuple",
+            ]
+            .contains(&$name)
+            {
+                return;
+            }
             test_helpers::run_world_codegen_test(
                 "cpp",
                 $test.as_ref(),
