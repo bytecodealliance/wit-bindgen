@@ -223,6 +223,41 @@ impl Cpp {
         let status = child.wait().unwrap();
         assert!(status.success());
     }
+
+    fn perform_cast(&mut self, op: &str, cast: &Bitcast) -> String {
+        match cast {
+            Bitcast::I32ToF32 | Bitcast::I64ToF32 => {
+                format!("((union {{ int32_t a; float b; }}){{ {} }}).b", op)
+            }
+            Bitcast::F32ToI32 | Bitcast::F32ToI64 => {
+                format!("((union {{ float a; int32_t b; }}){{ {} }}).b", op)
+            }
+            Bitcast::I64ToF64 => {
+                format!("((union {{ int64_t a; double b; }}){{ {} }}).b", op)
+            }
+            Bitcast::F64ToI64 => {
+                format!("((union {{ double a; int64_t b; }}){{ {} }}).b", op)
+            }
+            Bitcast::I32ToI64 | Bitcast::LToI64 | Bitcast::PToP64 => {
+                format!("(int64_t) {}", op)
+            }
+            Bitcast::I64ToI32 | Bitcast::PToI32 | Bitcast::LToI32 => {
+                format!("(int32_t) {}", op)
+            }
+            Bitcast::P64ToI64 | Bitcast::None | Bitcast::I64ToP64 => op.to_string(),
+            Bitcast::P64ToP | Bitcast::I32ToP | Bitcast::LToP => {
+                format!("(uint8_t*) {}", op)
+            }
+            Bitcast::PToL | Bitcast::I32ToL | Bitcast::I64ToL => {
+                format!("(size_t) {}", op)
+            }
+            Bitcast::Sequence(sequence) => {
+                let [first, second] = &**sequence;
+                let inner = self.perform_cast(op, first);
+                self.perform_cast(&inner, second)
+            }
+        }
+    }
 }
 
 impl WorldGenerator for Cpp {
@@ -1988,49 +2023,8 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             abi::Instruction::I32Const { val } => results.push(format!("(int32_t({}))", val)),
             abi::Instruction::Bitcasts { casts } => {
                 for (cast, op) in casts.iter().zip(operands) {
-                    let op = op;
-                    match cast {
-                        Bitcast::I32ToF32 | Bitcast::I64ToF32 => {
-                            results
-                                .push(format!("((union {{ int32_t a; float b; }}){{ {} }}).b", op));
-                        }
-                        Bitcast::F32ToI32 | Bitcast::F32ToI64 => {
-                            results
-                                .push(format!("((union {{ float a; int32_t b; }}){{ {} }}).b", op));
-                        }
-                        Bitcast::I64ToF64 => {
-                            results.push(format!(
-                                "((union {{ int64_t a; double b; }}){{ {} }}).b",
-                                op
-                            ));
-                        }
-                        Bitcast::F64ToI64 => {
-                            results.push(format!(
-                                "((union {{ double a; int64_t b; }}){{ {} }}).b",
-                                op
-                            ));
-                        }
-                        Bitcast::I32ToI64 => {
-                            results.push(format!("(int64_t) {}", op));
-                        }
-                        Bitcast::I64ToI32 => {
-                            results.push(format!("(int32_t) {}", op));
-                        }
-                        Bitcast::None => results.push(op.to_string()),
-                        Bitcast::P64ToI64 => todo!(),
-                        Bitcast::I64ToP64 => todo!(),
-                        Bitcast::P64ToP => todo!(),
-                        Bitcast::PToP64 => todo!(),
-                        Bitcast::I32ToP => todo!(),
-                        Bitcast::PToI32 => todo!(),
-                        Bitcast::PToL => todo!(),
-                        Bitcast::LToP => todo!(),
-                        Bitcast::I32ToL => todo!(),
-                        Bitcast::LToI32 => todo!(),
-                        Bitcast::I64ToL => todo!(),
-                        Bitcast::LToI64 => todo!(),
-                        Bitcast::Sequence(_) => todo!(),
-                    }
+                    // let op = op;
+                    results.push(self.gen.gen.perform_cast(op, cast));
                 }
             }
             abi::Instruction::ConstZero { tys } => {
