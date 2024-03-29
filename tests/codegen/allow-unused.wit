@@ -5,5 +5,14 @@ world bindings {
 }
 
 interface component {
-    record unused {}
+    variant unused-variant {
+        %enum(unused-enum),
+        %record(unused-record)
+    }
+    enum unused-enum {
+        unused
+    }
+    record unused-record {
+        x: u32
+    }
 }
