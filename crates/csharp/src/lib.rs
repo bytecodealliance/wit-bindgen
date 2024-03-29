@@ -2471,8 +2471,8 @@ fn list_element_info(ty: &Type) -> (usize, &'static str) {
         Type::U16 => (2, "ushort"),
         Type::U32 => (4, "uint"),
         Type::U64 => (8, "ulong"),
-        Type::Float32 => (4, "float"),
-        Type::Float64 => (8, "double"),
+        Type::F32 => (4, "float"),
+        Type::F64 => (8, "double"),
         _ => unreachable!(),
     }
 }
