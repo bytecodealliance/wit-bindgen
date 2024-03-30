@@ -1330,7 +1330,7 @@ macro_rules! {macro_name} {{
     fn modes_of(&self, ty: TypeId) -> Vec<(String, TypeMode)> {
         let info = self.info(ty);
         let mut result = Vec::new();
-        if !self.gen.opts.allow_unused {
+        if !self.gen.opts.generate_unused_types {
             // If this type isn't actually used, no need to generate it.
             if !info.owned && !info.borrowed {
                 return result;
