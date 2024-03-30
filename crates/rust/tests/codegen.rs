@@ -340,6 +340,7 @@ mod custom_derives {
     use exports::my::inline::blah::Foo;
 
     struct Component;
+
     impl exports::my::inline::blah::Guest for Component {
         fn bar(cool: Foo) {
             // Check that built in derives that I've added actually work by seeing that this hashes
@@ -451,4 +452,35 @@ mod with_and_resources {
             ",
         });
     }
+}
+
+#[allow(unused)]
+mod generate_unused_types {
+    use exports::foo::bar::component::UnusedEnum;
+    use exports::foo::bar::component::UnusedRecord;
+    use exports::foo::bar::component::UnusedVariant;
+
+    wit_bindgen::generate!({
+        inline: "
+            package foo:bar;
+
+            world bindings {
+                export component;
+            }
+
+            interface component {
+                variant unused-variant {
+                    %enum(unused-enum),
+                    %record(unused-record)
+                }
+                enum unused-enum {
+                    unused
+                }
+                record unused-record {
+                    x: u32
+                }
+            }
+        ",
+        generate_unused_types: true,
+    });
 }
