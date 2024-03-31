@@ -15,6 +15,7 @@ app-strings: the_world_native.o main.o
 bindgen: wit/strings.wit
 	$(WIT_BINDGEN) cpp wit --wasm64 --format
 	$(WIT_BINDGEN) cpp wit --wasm64 --format --direct
+	cd rust/src ; ../../$(WIT_BINDGEN) rust ../../wit --wasm64
 
 guest.wasm: the_world.cpp guest.cpp
 	/opt/wasi-sdk/bin/clang++ -o $@ $^ $(CXXFLAGS) 
