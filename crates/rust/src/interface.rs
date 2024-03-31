@@ -1329,12 +1329,13 @@ macro_rules! {macro_name} {{
 
     fn modes_of(&self, ty: TypeId) -> Vec<(String, TypeMode)> {
         let info = self.info(ty);
-        // If this type isn't actually used, no need to generate it.
-        if !info.owned && !info.borrowed {
-            return Vec::new();
-        }
         let mut result = Vec::new();
-
+        if !self.gen.opts.generate_unused_types {
+            // If this type isn't actually used, no need to generate it.
+            if !info.owned && !info.borrowed {
+                return result;
+            }
+        }
         // Generate one mode for when the type is owned and another for when
         // it's borrowed.
         let a = self.type_mode_for_id(ty, TypeOwnershipStyle::Owned, "'a");

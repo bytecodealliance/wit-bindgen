@@ -113,6 +113,9 @@ impl Parse for Config {
                     Opt::PubExportMacro(enable) => {
                         opts.pub_export_macro = enable.value();
                     }
+                    Opt::GenerateUnusedTypes(enable) => {
+                        opts.generate_unused_types = enable.value();
+                    }
                 }
             }
         } else {
@@ -231,6 +234,7 @@ mod kw {
     syn::custom_keyword!(default_bindings_module);
     syn::custom_keyword!(export_macro_name);
     syn::custom_keyword!(pub_export_macro);
+    syn::custom_keyword!(generate_unused_types);
 }
 
 #[derive(Clone)]
@@ -280,6 +284,7 @@ enum Opt {
     DefaultBindingsModule(syn::LitStr),
     ExportMacroName(syn::LitStr),
     PubExportMacro(syn::LitBool),
+    GenerateUnusedTypes(syn::LitBool),
 }
 
 impl Parse for Opt {
@@ -398,6 +403,10 @@ impl Parse for Opt {
             input.parse::<kw::pub_export_macro>()?;
             input.parse::<Token![:]>()?;
             Ok(Opt::PubExportMacro(input.parse()?))
+        } else if l.peek(kw::generate_unused_types) {
+            input.parse::<kw::generate_unused_types>()?;
+            input.parse::<Token![:]>()?;
+            Ok(Opt::GenerateUnusedTypes(input.parse()?))
         } else {
             Err(l.error())
         }
