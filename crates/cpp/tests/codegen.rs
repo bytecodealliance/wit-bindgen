@@ -12,20 +12,16 @@ macro_rules! codegen_test {
                 "guest-name",
                 "import-and-export-resource",
                 "import-and-export-resource-alias",
-                "issue544",
                 "issue551",
                 "issue573",
                 "issue607",
                 "issue668",
-                "just-export",
                 "keywords",
                 "lift-lower-foreign",
                 "lists",
-                "many-arguments",
                 "multi-return",
                 "multiversion",
                 "option-result",
-                "records",
                 "resource-alias",
                 "resource-borrow-in-record",
                 "resource-borrow-in-record-export",
@@ -42,8 +38,6 @@ macro_rules! codegen_test {
                 "same-names5",
                 "simple-http",
                 "simple-lists",
-                "small-anonymous",
-                "unused-import",
                 "use-across-interfaces",
                 "variants",
                 "variants-unioning-types",
@@ -52,7 +46,10 @@ macro_rules! codegen_test {
             ]
             .contains(&$name)
             {
-                return;
+                let test_all_code = env::var_os("CPP_ALL_TESTS").is_some();
+                if !test_all_code {
+                    return;
+                }
             }
             test_helpers::run_world_codegen_test(
                 "cpp",
