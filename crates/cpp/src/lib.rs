@@ -177,7 +177,7 @@ impl Cpp {
         &'a mut self,
         resolve: &'a Resolve,
         name: Option<&'a WorldKey>,
-        in_import: bool,
+        in_guest_import: bool,
         wasm_import_module: Option<String>,
     ) -> CppInterfaceGenerator<'a> {
         let mut sizes = SizeAlign::new(if self.opts.wasm64 {
@@ -195,7 +195,7 @@ impl Cpp {
             _name: name,
             sizes,
             // public_anonymous_types: BTreeSet::new(),
-            in_import,
+            in_guest_import,
             // export_funcs: Vec::new(),
             // return_pointer_area_size: 0,
             // return_pointer_area_align: 0,
@@ -670,7 +670,7 @@ struct CppInterfaceGenerator<'a> {
     interface: Option<InterfaceId>,
     _name: Option<&'a WorldKey>,
     sizes: SizeAlign,
-    in_import: bool,
+    in_guest_import: bool,
     // return_pointer_area_size: usize,
     // return_pointer_area_align: usize,
     pub wasm_import_module: Option<String>,
@@ -1573,7 +1573,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
         let type_ = &self.resolve.types[id];
         if let TypeOwner::Interface(intf) = type_.owner {
             let guest_import = self.gen.imported_interfaces.contains(&intf);
-            let definition = !(guest_import ^ self.gen.opts.host);
+            let definition = !(guest_import ^ self.gen.opts.host_side());
             let mut world_name = self.gen.world.to_snake_case();
             world_name.push_str("::");
             let mut headerfile = SourceWithState::default();
@@ -1601,10 +1601,15 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
             }
             self.gen.dependencies.needs_wit = true;
 
-            let base_type = if definition {
-                format!("wit::{RESOURCE_EXPORT_BASE_CLASS_NAME}<{pascal}>")
-            } else {
-                String::from_str("wit::").unwrap() + RESOURCE_IMPORT_BASE_CLASS_NAME
+            let base_type = match (definition, self.gen.opts.host_side()) {
+                (true, false) => format!("wit::{RESOURCE_EXPORT_BASE_CLASS_NAME}<{pascal}>"),
+                (false, false) => {
+                    String::from_str("wit::").unwrap() + RESOURCE_IMPORT_BASE_CLASS_NAME
+                }
+                (false, true) => {
+                    String::from_str("wit::").unwrap() + RESOURCE_EXPORT_BASE_CLASS_NAME
+                }
+                (true, true) => format!("wit::{RESOURCE_IMPORT_BASE_CLASS_NAME}<{pascal}>"),
             };
             let derive = format!(" : public {base_type}");
             uwriteln!(self.gen.h_src.src, "class {pascal}{derive} {{\n");
@@ -2013,7 +2018,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
         match inst {
             abi::Instruction::GetArg { nth } => {
                 if *nth == 0 && self.params[0].as_str() == "self" {
-                    if self.gen.in_import ^ self.gen.gen.opts.host {
+                    if self.gen.in_guest_import ^ self.gen.gen.opts.host {
                         results.push("(*this)".to_string());
                     } else {
                         results.push("(*lookup_resource(self))".to_string());
@@ -2947,7 +2952,11 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             8 => "uint64_t",
             _ => todo!(),
         };
-        let static_var = if self.gen.in_import { "" } else { "static " };
+        let static_var = if self.gen.in_guest_import {
+            ""
+        } else {
+            "static "
+        };
         uwriteln!(self.src, "{static_var}{tp} ret_area[{elems}];");
         uwriteln!(
             self.src,
