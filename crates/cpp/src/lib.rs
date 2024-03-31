@@ -2287,16 +2287,10 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 ..
             } => {
                 let op = &operands[0];
-                // let namespace = namespace(self.gen.resolve, &self.gen.resolve.types[*ty].owner);
-                // let mut code = String::default();
-                // for n in namespace {
-                //     code.push_str(&n);
-                //     code.push_str("::");
-                // }
                 if self.gen.gen.opts.host_side() {
                     results.push(format!("{op}.store_resource(std::move({op}))"));
                 } else {
-                    results.push(format!("{op}->handle"));
+                    results.push(format!("{op}.into_handle()"));
                 }
             }
             abi::Instruction::HandleLower {
@@ -2803,16 +2797,24 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     }
                 }
                 self.push_str(&operands.join(", "));
-                self.push_str(");\n");
+                if matches!(func.kind, FunctionKind::Constructor(_))
+                    && !self.gen.gen.opts.host_side()
+                {
+                    // acquire object from unique_ptr
+                    self.push_str(").release();");
+                    results[0] = format!("(*({}))", results[0]);
+                } else {
+                    self.push_str(");\n");
+                }
             }
             abi::Instruction::Return { amt, func } => {
-                let import = matches!(self.variant, AbiVariant::GuestImport);
+                let guest_import = matches!(self.variant, AbiVariant::GuestImport);
                 match amt {
                     0 => {}
                     _ => {
                         assert!(*amt == operands.len());
                         match &func.kind {
-                            FunctionKind::Constructor(_) if import => {
+                            FunctionKind::Constructor(_) if guest_import => {
                                 // strange but works
                                 self.src.push_str("this->handle = ");
                             }
