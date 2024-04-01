@@ -97,27 +97,27 @@ func (i NumbersImpl) TestImports() {
 		panic("roundtrip-s64")
 	}
 
-	if TestNumbersTestRoundtripFloat32(1.0) != 1.0 {
-		panic("roundtrip-float32")
+	if TestNumbersTestRoundtripF32(1.0) != 1.0 {
+		panic("roundtrip-f32")
 	}
-	if TestNumbersTestRoundtripFloat32(math.MaxFloat32) != math.MaxFloat32 {
-		panic("roundtrip-float32")
+	if TestNumbersTestRoundtripF32(math.MaxFloat32) != math.MaxFloat32 {
+		panic("roundtrip-f32")
 	}
-	if TestNumbersTestRoundtripFloat32(math.SmallestNonzeroFloat32) != math.SmallestNonzeroFloat32 {
-		panic("roundtrip-float32")
+	if TestNumbersTestRoundtripF32(math.SmallestNonzeroFloat32) != math.SmallestNonzeroFloat32 {
+		panic("roundtrip-f32")
 	}
 
-	if TestNumbersTestRoundtripFloat64(1.0) != 1.0 {
-		panic("roundtrip-float64")
+	if TestNumbersTestRoundtripF64(1.0) != 1.0 {
+		panic("roundtrip-f64")
 	}
-	if TestNumbersTestRoundtripFloat64(math.MaxFloat64) != math.MaxFloat64 {
-		panic("roundtrip-float64")
+	if TestNumbersTestRoundtripF64(math.MaxFloat64) != math.MaxFloat64 {
+		panic("roundtrip-f64")
 	}
-	if TestNumbersTestRoundtripFloat64(math.SmallestNonzeroFloat64) != math.SmallestNonzeroFloat64 {
-		panic("roundtrip-float64")
+	if TestNumbersTestRoundtripF64(math.SmallestNonzeroFloat64) != math.SmallestNonzeroFloat64 {
+		panic("roundtrip-f64")
 	}
-	if !math.IsNaN(TestNumbersTestRoundtripFloat64(math.NaN())) {
-		panic("roundtrip-float64")
+	if !math.IsNaN(TestNumbersTestRoundtripF64(math.NaN())) {
+		panic("roundtrip-f64")
 	}
 
 	if TestNumbersTestRoundtripChar('a') != 'a' {
@@ -173,11 +173,11 @@ func (o *NumbersImpl) RoundtripS64(a int64) int64 {
 	return a
 }
 
-func (o *NumbersImpl) RoundtripFloat32(a float32) float32 {
+func (o *NumbersImpl) RoundtripF32(a float32) float32 {
 	return a
 }
 
-func (o *NumbersImpl) RoundtripFloat64(a float64) float64 {
+func (o *NumbersImpl) RoundtripF64(a float64) float64 {
 	return a
 }
 

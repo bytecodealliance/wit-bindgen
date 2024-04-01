@@ -42,15 +42,15 @@ public class NumbersImpl {
         expect(Test.roundtripS64(Long.MIN_VALUE) == Long.MIN_VALUE);
         expect(Test.roundtripS64(Long.MAX_VALUE) == Long.MAX_VALUE);
 
-        expect(Test.roundtripFloat32(1.0F) == 1.0F);
-        expect(Test.roundtripFloat32(Float.POSITIVE_INFINITY) == Float.POSITIVE_INFINITY);
-        expect(Test.roundtripFloat32(Float.NEGATIVE_INFINITY) == Float.NEGATIVE_INFINITY);
-        expect(Float.isNaN(Test.roundtripFloat32(Float.NaN)));
+        expect(Test.roundtripF32(1.0F) == 1.0F);
+        expect(Test.roundtripF32(Float.POSITIVE_INFINITY) == Float.POSITIVE_INFINITY);
+        expect(Test.roundtripF32(Float.NEGATIVE_INFINITY) == Float.NEGATIVE_INFINITY);
+        expect(Float.isNaN(Test.roundtripF32(Float.NaN)));
 
-        expect(Test.roundtripFloat64(1.0) == 1.0);
-        expect(Test.roundtripFloat64(Double.POSITIVE_INFINITY) == Double.POSITIVE_INFINITY);
-        expect(Test.roundtripFloat64(Double.NEGATIVE_INFINITY) == Double.NEGATIVE_INFINITY);
-        expect(Double.isNaN(Test.roundtripFloat64(Double.NaN)));
+        expect(Test.roundtripF64(1.0) == 1.0);
+        expect(Test.roundtripF64(Double.POSITIVE_INFINITY) == Double.POSITIVE_INFINITY);
+        expect(Test.roundtripF64(Double.NEGATIVE_INFINITY) == Double.NEGATIVE_INFINITY);
+        expect(Double.isNaN(Test.roundtripF64(Double.NaN)));
 
         expect(Test.roundtripChar((int) 'a') == (int) 'a');
         expect(Test.roundtripChar((int) ' ') == (int) ' ');

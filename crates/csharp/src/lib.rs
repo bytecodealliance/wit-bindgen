@@ -1779,10 +1779,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             | Instruction::I32FromU8
             | Instruction::I32FromS8
             | Instruction::I32FromS32
-            | Instruction::Float32FromF32
-            | Instruction::F32FromFloat32
-            | Instruction::F64FromFloat64
-            | Instruction::Float64FromF64
+            | Instruction::F32FromCoreF32
+            | Instruction::CoreF32FromF32
+            | Instruction::CoreF64FromF64
+            | Instruction::F64FromCoreF64
             | Instruction::S32FromI32
             | Instruction::S64FromI64 => results.push(operands[0].clone()),
 

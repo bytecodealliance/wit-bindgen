@@ -9,8 +9,8 @@ interface test {
   roundtrip-s32: func(a: s32) -> s32;
   roundtrip-u64: func(a: u64) -> u64;
   roundtrip-s64: func(a: s64) -> s64;
-  roundtrip-float32: func(a: float32) -> float32;
-  roundtrip-float64: func(a: float64) -> float64;
+  roundtrip-f32: func(a: f32) -> f32;
+  roundtrip-f64: func(a: f64) -> f64;
   roundtrip-char: func(a: char) -> char;
 
   set-scalar: func(a: u32);
