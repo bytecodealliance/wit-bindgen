@@ -2,8 +2,8 @@ package test:resource-floats;
 
 interface test {
   resource float {
-    constructor(v: float64);
-    get: func() -> float64;
+    constructor(v: f64);
+    get: func() -> f64;
   }
 }
 
@@ -12,17 +12,17 @@ world resource-floats {
 
   export exports: interface {
     resource float {
-      constructor(v: float64);
-      get: func() -> float64;
-      add: static func(a: float, b: float64) -> float;
+      constructor(v: f64);
+      get: func() -> f64;
+      add: static func(a: float, b: f64) -> float;
     }
   }
 
   import imports: interface {
     resource float {
-      constructor(v: float64);
-      get: func() -> float64;
-      add: static func(a: float, b: float64) -> float;
+      constructor(v: f64);
+      get: func() -> f64;
+      add: static func(a: float, b: f64) -> float;
     }
   }
 

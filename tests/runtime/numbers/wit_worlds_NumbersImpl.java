@@ -50,7 +50,7 @@ public class NumbersImpl {
         expect(Test.roundtripF64(1.0) == 1.0);
         expect(Test.roundtripF64(Double.POSITIVE_INFINITY) == Double.POSITIVE_INFINITY);
         expect(Test.roundtripF64(Double.NEGATIVE_INFINITY) == Double.NEGATIVE_INFINITY);
-        expect(Double.isNaN(Test.roundtripFloat64(Double.NaN)));
+        expect(Double.isNaN(Test.roundtripF64(Double.NaN)));
 
         expect(Test.roundtripChar((int) 'a') == (int) 'a');
         expect(Test.roundtripChar((int) ' ') == (int) ' ');
