@@ -360,7 +360,7 @@ impl WorldGenerator for TinyGo {
 
 fn avoid_keyword(s: &str) -> String {
     if GOKEYWORDS.contains(&s) {
-        format!("{s}_")
+        format!("_{s}")
     } else {
         s.into()
     }

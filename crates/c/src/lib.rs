@@ -3140,7 +3140,7 @@ pub fn is_arg_by_pointer(resolve: &Resolve, ty: &Type) -> bool {
 }
 
 pub fn to_c_ident(name: &str) -> String {
-    let escaped_name = match name {
+    match name {
         // Escape C and C++ keywords.
         // Source: https://en.cppreference.com/w/cpp/keyword
         "alignas" => "alignas_".into(),
@@ -3246,41 +3246,5 @@ pub fn to_c_ident(name: &str) -> String {
         "ret" => "ret_".into(),
         "err" => "err_".into(),
         s => s.to_snake_case(),
-    };
-
-    // escape golang keywords because they get used in CGO
-    //  and cause failures
-    if GOKEYWORDS.contains(&escaped_name.as_str()) {
-        format!("{escaped_name}_")
-    } else {
-        escaped_name.into()
     }
 }
-
-const GOKEYWORDS: [&str; 25] = [
-    "break",
-    "default",
-    "func",
-    "interface",
-    "select",
-    "case",
-    "defer",
-    "go",
-    "map",
-    "struct",
-    "chan",
-    "else",
-    "goto",
-    "package",
-    "switch",
-    "const",
-    "fallthrough",
-    "if",
-    "range",
-    "type",
-    "continue",
-    "for",
-    "import",
-    "return",
-    "var",
-];
