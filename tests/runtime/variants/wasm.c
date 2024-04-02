@@ -15,7 +15,7 @@ void variants_test_imports() {
 
 
   {
-    test_variants_test_result_u32_float32_t a;
+    test_variants_test_result_u32_f32_t a;
     double b_ok;
     uint8_t b_err;
 
@@ -141,7 +141,7 @@ bool exports_test_variants_test_roundtrip_option(float *a, uint8_t *ret0) {
   return a != NULL;
 }
 
-bool exports_test_variants_test_roundtrip_result(exports_test_variants_test_result_u32_float32_t *a, double *ok, uint8_t *err) {
+bool exports_test_variants_test_roundtrip_result(exports_test_variants_test_result_u32_f32_t *a, double *ok, uint8_t *err) {
   if (a->is_err) {
     *err = a->val.err;
     return false;

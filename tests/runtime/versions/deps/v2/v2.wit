@@ -1,6 +1,6 @@
 package test:dep@0.2.0;
 
 interface test {
-  x: func() -> float32;
-  z: func(a: float32, b: float32) -> float32;
+  x: func() -> f32;
+  z: func(a: f32, b: f32) -> f32;
 }

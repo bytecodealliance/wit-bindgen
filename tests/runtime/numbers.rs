@@ -41,11 +41,11 @@ impl test::numbers::test::Host for MyImports {
         Ok(val)
     }
 
-    fn roundtrip_float32(&mut self, val: f32) -> Result<f32> {
+    fn roundtrip_f32(&mut self, val: f32) -> Result<f32> {
         Ok(val)
     }
 
-    fn roundtrip_float64(&mut self, val: f64) -> Result<f64> {
+    fn roundtrip_f64(&mut self, val: f64) -> Result<f64> {
         Ok(val)
     }
 
@@ -156,31 +156,27 @@ fn run_test(exports: Numbers, store: &mut Store<crate::Wasi<MyImports>>) -> Resu
         i64::max_value()
     );
 
-    assert_eq!(exports.call_roundtrip_float32(&mut *store, 1.0)?, 1.0);
+    assert_eq!(exports.call_roundtrip_f32(&mut *store, 1.0)?, 1.0);
     assert_eq!(
-        exports.call_roundtrip_float32(&mut *store, f32::INFINITY)?,
+        exports.call_roundtrip_f32(&mut *store, f32::INFINITY)?,
         f32::INFINITY
     );
     assert_eq!(
-        exports.call_roundtrip_float32(&mut *store, f32::NEG_INFINITY)?,
+        exports.call_roundtrip_f32(&mut *store, f32::NEG_INFINITY)?,
         f32::NEG_INFINITY
     );
-    assert!(exports
-        .call_roundtrip_float32(&mut *store, f32::NAN)?
-        .is_nan());
+    assert!(exports.call_roundtrip_f32(&mut *store, f32::NAN)?.is_nan());
 
-    assert_eq!(exports.call_roundtrip_float64(&mut *store, 1.0)?, 1.0);
+    assert_eq!(exports.call_roundtrip_f64(&mut *store, 1.0)?, 1.0);
     assert_eq!(
-        exports.call_roundtrip_float64(&mut *store, f64::INFINITY)?,
+        exports.call_roundtrip_f64(&mut *store, f64::INFINITY)?,
         f64::INFINITY
     );
     assert_eq!(
-        exports.call_roundtrip_float64(&mut *store, f64::NEG_INFINITY)?,
+        exports.call_roundtrip_f64(&mut *store, f64::NEG_INFINITY)?,
         f64::NEG_INFINITY
     );
-    assert!(exports
-        .call_roundtrip_float64(&mut *store, f64::NAN)?
-        .is_nan());
+    assert!(exports.call_roundtrip_f64(&mut *store, f64::NAN)?.is_nan());
 
     assert_eq!(exports.call_roundtrip_char(&mut *store, 'a')?, 'a');
     assert_eq!(exports.call_roundtrip_char(&mut *store, ' ')?, ' ');

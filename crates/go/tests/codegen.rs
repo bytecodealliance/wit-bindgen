@@ -29,7 +29,7 @@ macro_rules! codegen_test {
 test_helpers::codegen_tests!();
 
 fn verify(dir: &Path, name: &str) {
-    let name = name.to_kebab_case();
+    let name = name.to_snake_case();
     let main = dir.join(format!("{name}.go"));
 
     // The generated go package is named after the world's name.

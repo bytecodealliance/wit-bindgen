@@ -35,11 +35,11 @@ int64_t exports_test_numbers_test_roundtrip_s64(int64_t a) {
   return a;
 }
 
-float exports_test_numbers_test_roundtrip_float32(float a) {
+float exports_test_numbers_test_roundtrip_f32(float a) {
   return a;
 }
 
-double exports_test_numbers_test_roundtrip_float64(double a) {
+double exports_test_numbers_test_roundtrip_f64(double a) {
   return a;
 }
 
@@ -91,15 +91,15 @@ void numbers_test_imports() {
   assert(test_numbers_test_roundtrip_s64(LONG_MIN) == LONG_MIN);
   assert(test_numbers_test_roundtrip_s64(LONG_MAX) == LONG_MAX);
 
-  assert(test_numbers_test_roundtrip_float32(1.0) == 1.0);
-  assert(test_numbers_test_roundtrip_float32(INFINITY) == INFINITY);
-  assert(test_numbers_test_roundtrip_float32(-INFINITY) == -INFINITY);
-  assert(isnan(test_numbers_test_roundtrip_float32(NAN)));
+  assert(test_numbers_test_roundtrip_f32(1.0) == 1.0);
+  assert(test_numbers_test_roundtrip_f32(INFINITY) == INFINITY);
+  assert(test_numbers_test_roundtrip_f32(-INFINITY) == -INFINITY);
+  assert(isnan(test_numbers_test_roundtrip_f32(NAN)));
 
-  assert(test_numbers_test_roundtrip_float64(1.0) == 1.0);
-  assert(test_numbers_test_roundtrip_float64(INFINITY) == INFINITY);
-  assert(test_numbers_test_roundtrip_float64(-INFINITY) == -INFINITY);
-  assert(isnan(test_numbers_test_roundtrip_float64(NAN)));
+  assert(test_numbers_test_roundtrip_f64(1.0) == 1.0);
+  assert(test_numbers_test_roundtrip_f64(INFINITY) == INFINITY);
+  assert(test_numbers_test_roundtrip_f64(-INFINITY) == -INFINITY);
+  assert(isnan(test_numbers_test_roundtrip_f64(NAN)));
 
   assert(test_numbers_test_roundtrip_char('a') == 'a');
   assert(test_numbers_test_roundtrip_char(' ') == ' ');

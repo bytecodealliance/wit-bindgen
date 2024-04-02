@@ -198,7 +198,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                         uwriteln!(self.lower_src, "var {lower_name} {c_typedef_target}");
                         for field in r.fields.iter() {
                             let c_field_name = &self.get_c_field_name(field);
-                            let field_name = &self.interface.field_name(field);
+                            let field_name = &self.get_go_field_name(field);
 
                             self.lower_value(
                                 &format!("{param}.{field_name}"),
@@ -439,7 +439,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                             ty_name = self.interface.get_ty(&Type::Id(*id)),
                         );
                         for field in r.fields.iter() {
-                            let field_name = &self.interface.field_name(field);
+                            let field_name = &self.get_go_field_name(field);
                             let c_field_name = &self.get_c_field_name(field);
                             self.lift_value(
                                 &format!("{param}.{c_field_name}"),
@@ -690,6 +690,11 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
     }
 
     pub(crate) fn get_c_field_name(&mut self, field: &Field) -> String {
-        field.name.to_snake_case()
+        avoid_keyword(field.name.to_snake_case().as_str())
+    }
+
+    pub(crate) fn get_go_field_name(&mut self, field: &Field) -> String {
+        let name = &self.interface.field_name(field);
+        avoid_keyword(name)
     }
 }

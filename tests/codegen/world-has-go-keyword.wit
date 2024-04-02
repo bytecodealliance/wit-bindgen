@@ -1,0 +1,9 @@
+package foo:foo;
+
+interface foo-bar {
+    hello: func() -> string;
+}
+
+world %type {
+    import foo-bar;
+}
