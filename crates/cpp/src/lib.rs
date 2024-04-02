@@ -1667,10 +1667,11 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                 // consuming constructor from handle (bindings)
                 uwriteln!(
                     self.gen.h_src.src,
-                    "{pascal}({base_type});\n",
+                    "{pascal}({base_type} &&);",
                     // if self.gen.opts.host_side() {RESOURCE_EXPORT_BASE_CLASS_NAME} else {RESOURCE_IMPORT_BASE_CLASS_NAME}
                 );
-                uwriteln!(self.gen.h_src.src, "{pascal}({pascal}&&) = default;\n");
+                uwriteln!(self.gen.h_src.src, "{pascal}({pascal}&&) = default;");
+                uwriteln!(self.gen.h_src.src, "{pascal}& operator=({pascal}&&) = default;");
             } else {
                 if !self.gen.opts.host_side() {
                     let func = Function {
