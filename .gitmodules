@@ -1,0 +1,15 @@
+[submodule "tests/codegen/wasi-filesystem"]
+	path = tests/codegen/wasi-filesystem
+	url = https://github.com/WebAssembly/wasi-filesystem
+[submodule "tests/codegen/wasi-http"]
+	path = tests/codegen/wasi-http
+	url = https://github.com/WebAssembly/wasi-http
+[submodule "tests/codegen/wasi-cli"]
+	path = tests/codegen/wasi-cli
+	url = https://github.com/WebAssembly/wasi-cli
+[submodule "tests/codegen/wasi-io"]
+	path = tests/codegen/wasi-io
+	url = https://github.com/WebAssembly/wasi-io
+[submodule "tests/codegen/wasi-clocks"]
+	path = tests/codegen/wasi-clocks
+	url = https://github.com/WebAssembly/wasi-clocks

@@ -7,26 +7,31 @@ use std::env;
 /// `codegen_test!` macro then does what's necessary to actually run the test.
 #[proc_macro]
 pub fn codegen_tests(_input: TokenStream) -> TokenStream {
-    let mut tests = Vec::new();
-    for entry in env::current_dir()
-        .unwrap()
-        .join("tests/codegen")
+    let tests_dir = env::current_dir().unwrap().join("tests/codegen");
+    let tests = tests_dir
         .read_dir()
         .unwrap()
-    {
-        let entry = entry.unwrap();
-        let test = entry.path();
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            let path = entry.path();
+            let is_dir = entry.file_type().unwrap().is_dir();
+            if is_dir || path.extension().and_then(|s| s.to_str()) == Some("wit") {
+                let test_path = if is_dir {
+                    path.join("wit")
+                } else {
+                    path.clone()
+                };
+                let name = path.file_stem().unwrap().to_str().unwrap();
+                let ident = quote::format_ident!("{}", name.to_snake_case());
+                let path = test_path.to_str().unwrap();
+                Some(quote::quote! {
+                    codegen_test!(#ident #name #path);
+                })
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
 
-        if entry.file_type().unwrap().is_dir()
-            || test.extension().and_then(|s| s.to_str()) == Some("wit")
-        {
-            let name = test.file_stem().unwrap().to_str().unwrap();
-            let path = test.to_str().unwrap();
-            let ident = quote::format_ident!("{}", name.to_snake_case());
-            tests.push(quote::quote! {
-                codegen_test!(#ident #name #path);
-            });
-        }
-    }
     (quote::quote!(#(#tests)*)).into()
 }
