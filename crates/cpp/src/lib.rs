@@ -1674,7 +1674,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                 self.gen.c_src.qualify(&namespc);
                 uwriteln!(
                     self.gen.c_src.src,
-                    "::{pascal}({base_type}&&b) : {base_type}(std::move(b)) {{}}"
+                    "{pascal}::{pascal}({base_type}&&b) : {base_type}(std::move(b)) {{}}"
                 );
             } else {
                 if !self.gen.opts.host_side() {
