@@ -2089,8 +2089,8 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             | abi::Instruction::I32FromU32
             | abi::Instruction::I32FromS32 => top_as("int32_t"),
             abi::Instruction::I64FromU64 | abi::Instruction::I64FromS64 => top_as("int64_t"),
-            abi::Instruction::F32FromFloat32 => top_as("float"),
-            abi::Instruction::F64FromFloat64 => top_as("double"),
+            abi::Instruction::F32FromCoreF32 => top_as("float"),
+            abi::Instruction::F64FromCoreF64 => top_as("double"),
             abi::Instruction::S8FromI32 => top_as("int8_t"),
             abi::Instruction::U8FromI32 => top_as("uint8_t"),
             abi::Instruction::S16FromI32 => top_as("int16_t"),
@@ -2100,8 +2100,8 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             abi::Instruction::S64FromI64 => top_as("int64_t"),
             abi::Instruction::U64FromI64 => top_as("uint64_t"),
             abi::Instruction::CharFromI32 => top_as("uint32_t"),
-            abi::Instruction::Float32FromF32 => top_as("float"),
-            abi::Instruction::Float64FromF64 => top_as("double"),
+            abi::Instruction::CoreF32FromF32 => top_as("float"),
+            abi::Instruction::CoreF64FromF64 => top_as("double"),
             abi::Instruction::BoolFromI32 => top_as("bool"),
             abi::Instruction::ListCanonLower { realloc, .. } => {
                 let tmp = self.tmp();
