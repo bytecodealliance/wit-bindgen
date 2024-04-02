@@ -1,0 +1,18 @@
+package foo:foo;
+
+interface %type {
+    record foo{
+        something: string,
+        anything: string
+    }
+
+    record bar{
+        anything: u16
+    }
+
+    fetch: func(x: foo) -> result<bar>;
+}
+
+world foo-world {
+    import %type;
+}

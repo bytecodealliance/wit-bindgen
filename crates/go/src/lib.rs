@@ -304,7 +304,7 @@ impl WorldGenerator for TinyGo {
         // prepend package and imports header
         let src = mem::take(&mut self.src);
         wit_bindgen_core::generated_preamble(&mut self.src, env!("CARGO_PKG_VERSION"));
-        let snake = self.world.to_snake_case();
+        let snake = avoid_keyword(self.world.to_snake_case().as_str()).to_owned();
         // add package
         self.src.push_str("package ");
         self.src.push_str(&snake);
@@ -365,7 +365,7 @@ impl WorldGenerator for TinyGo {
 
 fn avoid_keyword(s: &str) -> String {
     if GOKEYWORDS.contains(&s) {
-        format!("{s}_")
+        format!("_{s}")
     } else {
         s.into()
     }
