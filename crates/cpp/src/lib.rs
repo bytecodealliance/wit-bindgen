@@ -1174,6 +1174,7 @@ impl CppInterfaceGenerator<'_> {
                 },
                 SpecialMethod::Dtor => {
                     let classname = class_namespace(self, func, variant).join("::");
+                    uwriteln!(self.gen.c_src.src, "(({classname}*)arg0)->handle=-1;");
                     uwriteln!(self.gen.c_src.src, "{0}::Dtor(({0}*)arg0);", classname);
                 }
                 SpecialMethod::ResourceNew => {
@@ -3011,7 +3012,6 @@ enum SpecialMethod {
     ResourceNew,  // [export][resource-new]
     Dtor,         // [dtor] (guest export only)
     Allocate,     // internal: allocate new object (called from generated code)
-                  // Deallocate,   // internal: de-allocate object - now Dtor
 }
 
 fn is_special_method(func: &Function) -> SpecialMethod {
@@ -3024,8 +3024,6 @@ fn is_special_method(func: &Function) -> SpecialMethod {
             SpecialMethod::Dtor
         } else if func.name == "$alloc" {
             SpecialMethod::Allocate
-        // } else if func.name == "$dealloc" {
-        //     SpecialMethod::Deallocate
         } else {
             SpecialMethod::None
         }
