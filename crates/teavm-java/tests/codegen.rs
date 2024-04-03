@@ -20,6 +20,11 @@ macro_rules! codegen_test {
     (resources_in_aggregates $name:tt $test:tt) => {};
     (issue668 $name:tt $test:tt) => {};
     (multiversion $name:tt $test:tt) => {};
+    (wasi_cli $name:tt $test:tt) => {};
+    (wasi_clocks $name:tt $test:tt) => {};
+    (wasi_filesystem $name:tt $test:tt) => {};
+    (wasi_http $name:tt $test:tt) => {};
+    (wasi_io $name:tt $test:tt) => {};
 
     ($id:ident $name:tt $test:tt) => {
         #[test]

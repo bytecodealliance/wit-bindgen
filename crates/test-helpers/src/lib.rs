@@ -66,7 +66,16 @@ pub fn run_world_codegen_test(
     let (resolve, world) = parse_wit(wit_path);
     let world_name = &resolve.worlds[world].name;
 
-    let wit_name = wit_path.file_stem().and_then(|s| s.to_str()).unwrap();
+    let wit_name = if wit_path.is_dir() {
+        wit_path
+            .parent()
+            .unwrap()
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap()
+    } else {
+        wit_path.file_stem().and_then(|s| s.to_str()).unwrap()
+    };
     let gen_name = format!("{gen_name}-{wit_name}");
     let dir = test_directory("codegen", &gen_name, &world_name);
 
@@ -106,7 +115,16 @@ pub fn run_component_codegen_test(
         .encode()
         .unwrap();
 
-    let wit_name = wit_path.file_stem().and_then(|s| s.to_str()).unwrap();
+    let wit_name = if wit_path.is_dir() {
+        wit_path
+            .parent()
+            .unwrap()
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap()
+    } else {
+        wit_path.file_stem().and_then(|s| s.to_str()).unwrap()
+    };
 
     let gen_name = format!("{gen_name}-{wit_name}",);
     let dir = test_directory("codegen", &gen_name, &world_name);
@@ -126,6 +144,9 @@ pub fn run_component_codegen_test(
 fn parse_wit(path: &Path) -> (Resolve, WorldId) {
     let mut resolve = Resolve::default();
     let (pkg, _files) = resolve.push_path(path).unwrap();
-    let world = resolve.select_world(pkg, None).unwrap();
+    let world = resolve.select_world(pkg, None).unwrap_or_else(|_| {
+        // note: if there are multiples worlds in the wit package, we assume the "imports" world
+        resolve.select_world(pkg, Some("imports")).unwrap()
+    });
     (resolve, world)
 }

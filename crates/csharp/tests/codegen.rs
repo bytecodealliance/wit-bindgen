@@ -56,6 +56,11 @@ macro_rules! codegen_test {
                         "worlds-with-types",
                         "variants-unioning-types",
                         "go_params",
+                        "wasi-cli",
+                        "wasi-clocks",
+                        "wasi-filesystem",
+                        "wasi-http",
+                        "wasi-io",
                     ]
                     .contains(&$name)
                     {

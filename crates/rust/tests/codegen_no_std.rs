@@ -14,6 +14,8 @@ extern crate alloc;
 
 mod codegen_tests {
     macro_rules! codegen_test {
+        (wasi_cli $name:tt $test:tt) => {};
+        (wasi_http $name:tt $test:tt) => {};
         ($id:ident $name:tt $test:tt) => {
             mod $id {
                 wit_bindgen::generate!({
