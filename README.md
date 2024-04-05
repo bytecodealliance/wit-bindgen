@@ -320,15 +320,13 @@ e.g. Java, Kotlin, Clojure, Scala, etc.
 
 ### Guest: TinyGo
 
-Go code can be compiled for the `wasm32-wasi` target using the [TinyGo](https://tinygo.org/) compiler. For example, the following command compiles `main.go` to a wasm modules with WASI support:
+You can compile Go code into a Wasm module using the [TinyGo](https://tinygo.org/) compiler. For example, the following command compiles `main.go` to a WASI module:
 
 `tinygo build -target=wasi main.go`
 
-> Note: the current TinyGo bindgen only supports TinyGo version v0.27.0 or later.
+> Note: the current TinyGo `bindgen` requires TinyGo version v0.27.0 or later.
 
-To start in Go a `*.go` and `*.h` C header file are generated for your
-project to use. These files are generated with the [`wit-bindgen` CLI
-command][cli-install] in this repository.
+When using `wit-bindgen tiny-go` bindgen, `*.go` and `*.h` C header file are generated for your project. These files are generated with the [`wit-bindgen` CLI command][cli-install] in this repository.
 
 ```sh
 wit-bindgen tiny-go ./wit
@@ -338,35 +336,42 @@ wit-bindgen tiny-go ./wit
 # Generating "host_component_type.o"
 ```
 
-If your Go code uses `result` or `option` type, a second Go file `host_types.go` will be generated. This file contains the Go types that correspond to the `result` and `option` types in the WIT file.
+If your Go code uses `result` or `option` type, an additional Go file `host_types.go` will be generated. This file contains the Go types that correspond to the `result` and `option` types in the WIT file.
 
-Some example code using this would then look like
+An example of using the generated Go code would look like:
+
+Initialize Go:
+```bash
+go mod init example.com
+```
+
+Create your Go main file:
 
 ```go
 // my-component.go
 package main
 
 import (
-    gen "host/gen"
+	api "example.com/api"
 )
 
 func init() {
     a := HostImpl{}
-    gen.SetHost(a)
+    api.SetHost(a)
 }
 
 type HostImpl struct {
 }
 
 func (e HostImpl) Run() {
-  gen.Print("Hello, world!")
+  api.HostPrint("Hello, world!")
 }
 
-//go:generate wit-bindgen tiny-go ../wit --out-dir=gen
+//go:generate wit-bindgen tiny-go wit --out-dir=api
 func main() {}
 ```
 
-This can then be compiled with `tinygo` and assembled into a component with:
+This setup allows you to invoke `go generate`, which generates the bindings for the Go code into an `api` directory. Afterward, you can compile your Go code into a WASI module using the TinyGo compiler. Lastly you can componentize the module using `wasm-tools`:
 
 ```sh
 go generate # generate bindings for Go
