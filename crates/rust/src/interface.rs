@@ -218,43 +218,25 @@ impl InterfaceGenerator<'_> {
 unsafe fn _resource_new(val: *mut u8) -> u32
     where Self: Sized
 {{
-    #[cfg(not(target_arch = "wasm32"))]
-    {{
-        let _ = val;
-        unreachable!();
+    #[link(wasm_import_module = "[export]{module}")]
+    extern "C" {{
+        #[cfg_attr(target_arch = "wasm32", link_name = "[resource-new]{resource_name}")]
+        fn {external_new}(_: *mut u8) -> u32;
     }}
-
-    #[cfg(target_arch = "wasm32")]
-    {{
-        #[link(wasm_import_module = "[export]{module}")]
-        extern "C" {{
-            #[cfg_attr(target_arch = "wasm32", link_name = "[resource-new]{resource_name}")]
-            fn {external_new}(_: *mut u8) -> u32;
-        }}
-        {external_new}(val)
-    }}
+    {external_new}(val)
 }}
 
 #[doc(hidden)]
 fn _resource_rep(handle: u32) -> *mut u8
     where Self: Sized
 {{
-    #[cfg(not(target_arch = "wasm32"))]
-    {{
-        let _ = handle;
-        unreachable!();
+    #[link(wasm_import_module = "[export]{module}")]
+    extern "C" {{
+        #[cfg_attr(target_arch = "wasm32", link_name = "[resource-rep]{resource_name}")]
+        fn {external_rep}(_: u32) -> *mut u8;
     }}
-
-    #[cfg(target_arch = "wasm32")]
-    {{
-        #[link(wasm_import_module = "[export]{module}")]
-        extern "C" {{
-            #[cfg_attr(target_arch = "wasm32", link_name = "[resource-rep]{resource_name}")]
-            fn {external_rep}(_: u32) -> *mut u8;
-        }}
-        unsafe {{
-            {external_rep}(handle)
-        }}
+    unsafe {{
+        {external_rep}(handle)
     }}
 }}
 
