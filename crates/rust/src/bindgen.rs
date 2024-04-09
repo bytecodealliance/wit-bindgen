@@ -885,21 +885,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.push(ptr);
             }
 
-            Instruction::AsyncPostCallInterface { func } => {
-                let result = &operands[0];
-                self.let_results(func.results.len(), results);
-                let first_poll = self.gen.path_to_first_poll();
-                uwriteln!(
-                    self.src,
-                    "\
-                        match {first_poll}({result}) {{
-                            Ok(results) => results,
-                            Err(ctx) => return ctx,
-                        }};\
-                    "
-                );
-            }
-
             Instruction::AsyncCallStart {
                 name,
                 params,
@@ -915,10 +900,38 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwriteln!(self.src, "{func}({});", operands.join(", "));
             }
 
+            Instruction::AsyncPostCallInterface { func } => {
+                let result = &operands[0];
+                results.push("result".into());
+                let params = (0..func.results.len())
+                    .map(|_| {
+                        let tmp = self.tmp();
+                        let param = format!("result{}", tmp);
+                        results.push(param.clone());
+                        param
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let first_poll = self.gen.path_to_first_poll();
+                uwriteln!(
+                    self.src,
+                    "\
+                        let result = {first_poll}({result}, |{params}| {{
+                    "
+                );
+            }
+
             Instruction::AsyncCallReturn { name, params } => {
                 let func = self.declare_import(self.gen.wasm_import_module, name, params, &[]);
 
-                uwriteln!(self.src, "{func}({});", operands.join(", "));
+                uwriteln!(
+                    self.src,
+                    "\
+                            {func}({});
+                        }});
+                    ",
+                    operands.join(", ")
+                );
             }
 
             Instruction::Return { amt, .. } => {

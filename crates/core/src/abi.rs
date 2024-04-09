@@ -531,7 +531,7 @@ def_instruction! {
             results: &'a [WasmType]
         } : [params.len()] => [results.len()],
 
-        AsyncPostCallInterface { func: &'a Function } : [1] => [func.results.len()],
+        AsyncPostCallInterface { func: &'a Function } : [1] => [func.results.len() + 1],
 
         AsyncCallReturn { name: &'a str, params: &'a [WasmType] } : [params.len()] => [0],
     }
@@ -1101,9 +1101,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         } else {
                             results
                         },
-                    });
-                    self.emit(&Instruction::ConstZero {
-                        tys: &[WasmType::Pointer],
                     });
                     self.emit(&Instruction::Return { func, amt: 1 });
                 } else {
