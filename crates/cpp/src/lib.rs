@@ -1417,12 +1417,20 @@ impl CppInterfaceGenerator<'_> {
                 }
                 TypeDefKind::Handle(Handle::Own(id)) => {
                     let mut typename = self.type_name(&Type::Id(*id), from_namespace, flavor);
-                    match flavor {
-                        Flavor::Argument(AbiVariant::GuestImport) => typename.push_str("&&"),
-                        Flavor::Argument(AbiVariant::GuestExport)
-                        | Flavor::Result(AbiVariant::GuestExport) => typename.push_str("::Owned"),
-                        Flavor::Result(AbiVariant::GuestImport) => (),
-                        Flavor::InStruct => (),
+                    match (self.gen.opts.host_side(), flavor) {
+                        (false, Flavor::Argument(AbiVariant::GuestImport))
+                        | (true, Flavor::Argument(AbiVariant::GuestExport)) => {
+                            typename.push_str("&&")
+                        }
+                        (false, Flavor::Argument(AbiVariant::GuestExport))
+                        | (false, Flavor::Result(AbiVariant::GuestExport))
+                        | (true, Flavor::Argument(AbiVariant::GuestImport))
+                        | (true, Flavor::Result(AbiVariant::GuestImport)) => {
+                            typename.push_str("::Owned")
+                        }
+                        (false, Flavor::Result(AbiVariant::GuestImport))
+                        | (true, Flavor::Result(AbiVariant::GuestExport)) => (),
+                        (_, Flavor::InStruct) => (),
                     }
                     typename
                 }
