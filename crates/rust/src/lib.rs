@@ -488,6 +488,7 @@ pub struct Resource<T: WasmResource> {
 /// drop a resource.
 ///
 /// This generally is implemented by generated code, not user-facing code.
+#[allow(clippy::missing_safety_doc)]
 pub unsafe trait WasmResource {
     /// Invokes the `[resource-drop]...` intrinsic.
     unsafe fn drop(handle: u32);
