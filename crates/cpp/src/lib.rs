@@ -1416,7 +1416,15 @@ impl CppInterfaceGenerator<'_> {
                     self.scoped_type_name(*id, from_namespace, flavor.is_guest_export())
                 }
                 TypeDefKind::Handle(Handle::Own(id)) => {
-                    self.type_name(&Type::Id(*id), from_namespace, flavor)
+                    let mut typename = self.type_name(&Type::Id(*id), from_namespace, flavor);
+                    match flavor {
+                        Flavor::Argument(AbiVariant::GuestImport) => typename.push_str("&&"),
+                        Flavor::Argument(AbiVariant::GuestExport)
+                        | Flavor::Result(AbiVariant::GuestExport) => typename.push_str("::Owned"),
+                        Flavor::Result(AbiVariant::GuestImport) => (),
+                        Flavor::InStruct => (),
+                    }
+                    typename
                 }
                 TypeDefKind::Handle(Handle::Borrow(id)) => {
                     "std::reference_wrapper<const ".to_string()

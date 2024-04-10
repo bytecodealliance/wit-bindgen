@@ -5,7 +5,6 @@
 #include <cstdint>
 #include <map>
 #include <utility>
-#include <memory>
 #include <wit-guest.h>
 namespace foo {
 namespace foo {
@@ -17,8 +16,8 @@ public:
   R(uint32_t a);
   void Add(uint32_t b) const;
   R(wit::ResourceImportBase &&);
-
   R(R &&) = default;
+  R &operator=(R &&) = default;
 };
 
 R Create();
