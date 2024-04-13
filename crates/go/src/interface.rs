@@ -7,8 +7,8 @@ use wit_bindgen_c::{
     CTypeNameInfo,
 };
 use wit_bindgen_core::wit_parser::{
-    Field, Function, FunctionKind, Handle, InterfaceId, LiveTypes, Resolve, Type, TypeDefKind,
-    TypeId, TypeOwner, WorldKey,
+    Docs, Enum, Field, Flags, Function, FunctionKind, Handle, InterfaceId, LiveTypes, Record,
+    Resolve, Result_, Tuple, Type, TypeDefKind, TypeId, TypeOwner, Variant, WorldKey,
 };
 use wit_bindgen_core::{uwriteln, Direction, InterfaceGenerator as _, Source};
 
@@ -1008,13 +1008,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.resolve
     }
 
-    fn type_record(
-        &mut self,
-        _id: wit_bindgen_core::wit_parser::TypeId,
-        name: &str,
-        record: &wit_bindgen_core::wit_parser::Record,
-        _docs: &wit_bindgen_core::wit_parser::Docs,
-    ) {
+    fn type_record(&mut self, _id: TypeId, name: &str, record: &Record, _docs: &Docs) {
         let name = self.type_name(name, true);
         self.src.push_str(&format!("type {name} struct {{\n",));
         for field in record.fields.iter() {
@@ -1025,12 +1019,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.src.push_str("}\n\n");
     }
 
-    fn type_resource(
-        &mut self,
-        id: TypeId,
-        name: &str,
-        _docs: &wit_bindgen_core::wit_parser::Docs,
-    ) {
+    fn type_resource(&mut self, id: TypeId, name: &str, _docs: &Docs) {
         let type_name = self.type_name(name, true);
         let private_type_name = type_name.to_snake_case();
         // for imports, generate a `int32` type for resource handle representation.
@@ -1166,13 +1155,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         };
     }
 
-    fn type_flags(
-        &mut self,
-        _id: wit_bindgen_core::wit_parser::TypeId,
-        name: &str,
-        flags: &wit_bindgen_core::wit_parser::Flags,
-        _docs: &wit_bindgen_core::wit_parser::Docs,
-    ) {
+    fn type_flags(&mut self, _id: TypeId, name: &str, flags: &Flags, _docs: &Docs) {
         let name = self.type_name(name, true);
 
         // TODO: use flags repr to determine how many flags are needed
@@ -1198,13 +1181,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.src.push_str(")\n\n");
     }
 
-    fn type_tuple(
-        &mut self,
-        _id: wit_bindgen_core::wit_parser::TypeId,
-        name: &str,
-        tuple: &wit_bindgen_core::wit_parser::Tuple,
-        _docs: &wit_bindgen_core::wit_parser::Docs,
-    ) {
+    fn type_tuple(&mut self, _id: TypeId, name: &str, tuple: &Tuple, _docs: &Docs) {
         let name = self.type_name(name, true);
         self.src.push_str(&format!("type {name} struct {{\n",));
         for (i, case) in tuple.types.iter().enumerate() {
@@ -1214,13 +1191,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.src.push_str("}\n\n");
     }
 
-    fn type_variant(
-        &mut self,
-        _id: wit_bindgen_core::wit_parser::TypeId,
-        name: &str,
-        variant: &wit_bindgen_core::wit_parser::Variant,
-        _docs: &wit_bindgen_core::wit_parser::Docs,
-    ) {
+    fn type_variant(&mut self, _id: TypeId, name: &str, variant: &Variant, _docs: &Docs) {
         let name = self.type_name(name, true);
         // TODO: use variant's tag to determine how many cases are needed
         // this will help to optmize the Kind type.
@@ -1251,33 +1222,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         }
     }
 
-    fn type_option(
-        &mut self,
-        id: wit_bindgen_core::wit_parser::TypeId,
-        _name: &str,
-        _payload: &wit_bindgen_core::wit_parser::Type,
-        _docs: &wit_bindgen_core::wit_parser::Docs,
-    ) {
-        self.get_ty(&Type::Id(id));
-    }
-
-    fn type_result(
-        &mut self,
-        id: wit_bindgen_core::wit_parser::TypeId,
-        _name: &str,
-        _result: &wit_bindgen_core::wit_parser::Result_,
-        _docs: &wit_bindgen_core::wit_parser::Docs,
-    ) {
-        self.get_ty(&Type::Id(id));
-    }
-
-    fn type_enum(
-        &mut self,
-        _id: wit_bindgen_core::wit_parser::TypeId,
-        name: &str,
-        enum_: &wit_bindgen_core::wit_parser::Enum,
-        _docs: &wit_bindgen_core::wit_parser::Docs,
-    ) {
+    fn type_enum(&mut self, _id: TypeId, name: &str, enum_: &Enum, _docs: &Docs) {
         let name = self.type_name(name, true);
         // TODO: use variant's tag to determine how many cases are needed
         // this will help to optmize the Kind type.
@@ -1302,37 +1247,25 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         }
     }
 
-    fn type_alias(
-        &mut self,
-        _id: wit_bindgen_core::wit_parser::TypeId,
-        name: &str,
-        ty: &wit_bindgen_core::wit_parser::Type,
-        _docs: &wit_bindgen_core::wit_parser::Docs,
-    ) {
+    fn type_alias(&mut self, _id: TypeId, name: &str, ty: &Type, _docs: &Docs) {
         let name = self.type_name(name, true);
         let ty = self.get_ty(ty);
         self.src.push_str(&format!("type {name} = {ty}\n"));
     }
 
-    fn type_list(
-        &mut self,
-        _id: wit_bindgen_core::wit_parser::TypeId,
-        name: &str,
-        ty: &wit_bindgen_core::wit_parser::Type,
-        _docs: &wit_bindgen_core::wit_parser::Docs,
-    ) {
-        let name = self.type_name(name, true);
-        let ty = self.get_ty(ty);
-        self.src.push_str(&format!("type {name} = {ty}\n"));
+    fn type_list(&mut self, _id: TypeId, _name: &str, _ty: &Type, _docs: &Docs) {
+        // no impl since these types are generated as anonymous types
     }
 
-    fn type_builtin(
-        &mut self,
-        _id: wit_bindgen_core::wit_parser::TypeId,
-        _name: &str,
-        _ty: &wit_bindgen_core::wit_parser::Type,
-        _docs: &wit_bindgen_core::wit_parser::Docs,
-    ) {
+    fn type_option(&mut self, _id: TypeId, _name: &str, _payload: &Type, _docs: &Docs) {
+        // no impl since these types are generated as anonymous types
+    }
+
+    fn type_result(&mut self, _id: TypeId, _name: &str, _result: &Result_, _docs: &Docs) {
+        // no impl since these types are generated as anonymous types
+    }
+
+    fn type_builtin(&mut self, _id: TypeId, _name: &str, _ty: &Type, _docs: &Docs) {
         todo!("type_builtin")
     }
 }
