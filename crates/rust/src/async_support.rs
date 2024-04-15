@@ -58,16 +58,22 @@ pub async unsafe fn await_result(
     const STATUS_DONE: i32 = 3;
 
     match import(params, results, call) {
+        STATUS_NOT_STARTED => {
+            let (tx, rx) = oneshot::channel();
+            CALLS.insert(*call.cast::<i32>(), tx);
+            rx.await.unwrap();
+            alloc::dealloc(params, params_layout);
+        }
         STATUS_PARAMS_READ => {
             alloc::dealloc(params, params_layout);
             let (tx, rx) = oneshot::channel();
             CALLS.insert(*call.cast::<i32>(), tx);
             rx.await.unwrap()
         }
-        STATUS_DONE => {
+        STATUS_RESULTS_WRITTEN | STATUS_DONE => {
             alloc::dealloc(params, params_layout);
         }
-        _ => todo!(),
+        status => unreachable!(),
     }
 }
 
@@ -77,22 +83,30 @@ pub unsafe fn callback(ctx: *mut u8, event0: i32, event1: i32, event2: i32) -> i
     const EVENT_CALL_DONE: i32 = 2;
 
     match event0 {
-        EVENT_CALL_DONE => {
-            CALLS.remove(&event1).unwrap().send(());
+        EVENT_CALL_STARTED => {
+            // TODO: could dealloc params here if we attached the pointer to the call
+            1
+        }
+        EVENT_CALL_RETURNED | EVENT_CALL_DONE => {
+            if let Some(call) = CALLS.remove(&event1) {
+                call.send(());
 
-            match (*(ctx as *mut FutureState))
-                .0
-                .as_mut()
-                .poll(&mut Context::from_waker(&dummy_waker()))
-            {
-                Poll::Ready(()) => {
-                    // TODO: consider spawned task before returning "done" here
-                    drop(Box::from_raw(ctx as *mut FutureState));
-                    1
+                match (*(ctx as *mut FutureState))
+                    .0
+                    .as_mut()
+                    .poll(&mut Context::from_waker(&dummy_waker()))
+                {
+                    Poll::Ready(()) => {
+                        // TODO: consider spawned task before returning "done" here
+                        drop(Box::from_raw(ctx as *mut FutureState));
+                        1
+                    }
+                    Poll::Pending => 0,
                 }
-                Poll::Pending => 0,
+            } else {
+                1
             }
         }
-        _ => todo!(),
+        _ => unreachable!(),
     }
 }
