@@ -22,10 +22,6 @@ fn main() {
         "wit_bindgen_cabi_realloc{}",
         env!("CARGO_PKG_VERSION").replace(".", "_")
     );
-    let mut src = env::current_dir().unwrap();
-    src.push("src");
-    src.push("libwit_bindgen_cabi_realloc.a");
-
     let dst = out_dir.join(format!("lib{dst_name}.a"));
 
     std::fs::copy(&src, &dst).unwrap();
