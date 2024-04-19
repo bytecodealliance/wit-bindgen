@@ -50,12 +50,14 @@ foo::foo::resources::R::~R() {
 }
 foo::foo::resources::R::R(uint32_t a) {
   auto ret = fooX3AfooX2FresourcesX00X5BconstructorX5Dr((int32_t(a)));
-  this->handle = ret;
+  this->handle = wit::ResourceImportBase{ret}.into_handle();
 }
 void foo::foo::resources::R::Add(uint32_t b) const {
   fooX3AfooX2FresourcesX00X5BmethodX5DrX2Eadd((*this).get_handle(),
                                               (int32_t(b)));
 }
+foo::foo::resources::R::R(wit::ResourceImportBase &&b)
+    : wit::ResourceImportBase(std::move(b)) {}
 foo::foo::resources::R foo::foo::resources::Create() {
   auto ret = fooX3AfooX2FresourcesX00create();
   return wit::ResourceImportBase{ret};
@@ -63,19 +65,21 @@ foo::foo::resources::R foo::foo::resources::Create() {
 void foo::foo::resources::Borrows(std::reference_wrapper<const R> o) {
   fooX3AfooX2FresourcesX00borrows(o.get().get_handle());
 }
-void foo::foo::resources::Consume(R&& o) {
+void foo::foo::resources::Consume(R &&o) {
   fooX3AfooX2FresourcesX00consume(o.into_handle());
 }
 extern "C" __attribute__((__export_name__("foo:foo/resources#[dtor]r"))) void
 fooX3AfooX2FresourcesX23X5BdtorX5Dr(uint8_t *arg0) {
+  ((exports::foo::foo::resources::R *)arg0)->handle = -1;
   exports::foo::foo::resources::R::Dtor(
       (exports::foo::foo::resources::R *)arg0);
 }
 extern "C" __attribute__((__export_name__("foo:foo/resources#[constructor]r")))
 int32_t
 fooX3AfooX2FresourcesX23X5BconstructorX5Dr(int32_t arg0) {
-  auto result0 = exports::foo::foo::resources::R::New((uint32_t(arg0)));
-  return result0.release()->into_handle();
+  auto result0 =
+      exports::foo::foo::resources::R::New((uint32_t(arg0))).release();
+  return (*(result0)).into_handle();
 }
 extern "C"
     __attribute__((__export_name__("foo:foo/resources#[method]r.add"))) void
@@ -109,4 +113,3 @@ fooX3AfooX2FresourcesX23consume(int32_t arg0) {
 }
 
 // Component Adapters
-foo::foo::resources::R::R(wit::ResourceImportBase&&b) : wit::ResourceImportBase(std::move(b)) {}

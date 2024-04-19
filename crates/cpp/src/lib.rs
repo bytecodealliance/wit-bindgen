@@ -2329,8 +2329,14 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 results.push(format!("{op}.get_handle()"));
             }
             abi::Instruction::HandleLift { .. } => {
+                // does it make a difference whether we own or borrow?
+                // if so we could look at handle
                 let op = &operands[0];
-                results.push(op.clone());
+                if self.gen.gen.opts.host_side() {
+                    results.push(format!("wit::ResourceExportBase{{{op}}}"));
+                } else {
+                    results.push(format!("wit::ResourceImportBase{{{op}}}"));
+                }
             }
             abi::Instruction::TupleLower { tuple, .. } => {
                 let op = &operands[0];
@@ -2898,6 +2904,10 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                                 );
                                 self.src.push_str(&format!(", ret, {})", cabi_post_name));
                             }
+                        }
+                        if matches!(func.kind, FunctionKind::Constructor(_)) {
+                            // we wrapped the handle in an object, so unpack it
+                            self.src.push_str(".into_handle()");
                         }
                         self.src.push_str(";\n");
                     }
