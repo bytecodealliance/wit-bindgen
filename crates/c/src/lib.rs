@@ -1,4 +1,4 @@
-mod component_type_object;
+pub mod component_type_object;
 
 use anyhow::Result;
 use heck::*;

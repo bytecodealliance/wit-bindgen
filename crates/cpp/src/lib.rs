@@ -9,7 +9,7 @@ use std::{
 use wit_bindgen_c::to_c_ident;
 use wit_bindgen_core::{
     abi::{self, AbiVariant, Bindgen, Bitcast, LiftLower, WasmSignature, WasmType},
-    make_external_symbol, uwrite, uwriteln,
+    make_external_component, make_external_symbol, uwrite, uwriteln,
     wit_parser::{
         AddressSize, Docs, Function, FunctionKind, Handle, Int, InterfaceId, Resolve, Results,
         SizeAlign, Type, TypeDefKind, TypeId, TypeOwner, WorldId, WorldKey,
@@ -348,7 +348,7 @@ impl WorldGenerator for Cpp {
         funcs: &[(&str, &Function)],
         _files: &mut Files,
     ) {
-        let name = WorldKey::Name(resolve.worlds[world].name.clone());
+        let name = WorldKey::Name("$root".to_string()); //WorldKey::Name(resolve.worlds[world].name.clone());
         let wasm_import_module = resolve.name_world_key(&name);
         let binding = Some(name);
         let mut gen = self.interface(resolve, binding.as_ref(), true, Some(wasm_import_module));
@@ -370,9 +370,9 @@ impl WorldGenerator for Cpp {
         _files: &mut Files,
     ) -> anyhow::Result<()> {
         let name = WorldKey::Name(resolve.worlds[world].name.clone());
-        let wasm_import_module = resolve.name_world_key(&name);
+        // let wasm_import_module = resolve.name_world_key(&name);
         let binding = Some(name);
-        let mut gen = self.interface(resolve, binding.as_ref(), false, Some(wasm_import_module));
+        let mut gen = self.interface(resolve, binding.as_ref(), false, None);
         let namespace = namespace(resolve, &TypeOwner::World(world), true);
 
         for (_name, func) in funcs.iter() {
@@ -404,6 +404,7 @@ impl WorldGenerator for Cpp {
     ) -> std::result::Result<(), anyhow::Error> {
         let world = &resolve.worlds[world_id];
         let snake = world.name.to_snake_case();
+        let linking_symbol = wit_bindgen_c::component_type_object::linking_symbol(&world.name);
 
         let mut h_str = SourceWithState::default();
         let mut c_str = SourceWithState::default();
@@ -492,6 +493,19 @@ impl WorldGenerator for Cpp {
             uwriteln!(c_str.src, "#include \"{snake}_cpp_native.h\"");
         } else if !self.opts.host {
             // uwriteln!(c_str.src, "#include \"{snake}_cpp.h\"");
+            uwriteln!(
+                c_str.src,
+                "\n// Ensure that the *_component_type.o object is linked in"
+            );
+            uwrite!(
+                c_str.src,
+                "
+                   extern void {linking_symbol}(void);
+                   void {linking_symbol}_public_use_in_this_compilation_unit(void) {{
+                       {linking_symbol}();
+                   }}
+               ",
+            );
         } else {
             uwriteln!(c_str.src, "#include \"{snake}_cpp_host.h\"");
             uwriteln!(
@@ -589,6 +603,18 @@ impl WorldGenerator for Cpp {
                 files.push(name, content.as_bytes());
             }
         }
+        files.push(
+            &format!("{snake}_component_type.o",),
+            wit_bindgen_c::component_type_object::object(
+                resolve,
+                world_id,
+                &world.name,
+                wit_component::StringEncoding::UTF8,
+                None,
+            )
+            .unwrap()
+            .as_slice(),
+        );
         Ok(())
     }
 }
@@ -796,12 +822,12 @@ impl CppInterfaceGenerator<'_> {
                 retptr: false,
             },
         };
-        let mut module_name = self.wasm_import_module.as_ref().map(|e| e.clone()).unwrap();
+        let mut module_name = self.wasm_import_module.as_ref().map(|e| e.clone());
         if matches!(
             is_drop,
             SpecialMethod::ResourceNew | SpecialMethod::ResourceDrop
         ) {
-            module_name = String::from("[export]") + &module_name;
+            module_name = Some(String::from("[export]") + &module_name.unwrap());
         }
         if self.gen.opts.short_cut {
             uwrite!(self.gen.c_src.src, "extern \"C\" ");
@@ -809,9 +835,14 @@ impl CppInterfaceGenerator<'_> {
             self.gen.c_src.src.push_str("static ");
         } else {
             let func_name = &func.name;
+            let module_prefix = module_name.as_ref().map_or(String::default(), |name| {
+                let mut res = name.clone();
+                res.push('#');
+                res
+            });
             uwriteln!(
                 self.gen.c_src.src,
-                r#"extern "C" __attribute__((__export_name__("{module_name}#{func_name}")))"#
+                r#"extern "C" __attribute__((__export_name__("{module_prefix}{func_name}")))"#
             );
         }
         let return_via_pointer = signature.retptr && self.gen.opts.host_side();
@@ -824,7 +855,10 @@ impl CppInterfaceGenerator<'_> {
                 self.gen.opts.wasm_type(signature.results[0])
             });
         self.gen.c_src.src.push_str(" ");
-        let export_name = make_external_symbol(&module_name, &func.name, variant);
+        let export_name = match module_name {
+            Some(ref module_name) => make_external_symbol(&module_name, &func.name, variant),
+            None => make_external_component(&func.name),
+        };
         self.gen.c_src.src.push_str(&export_name);
         self.gen.c_src.src.push_str("(");
         let mut first_arg = true;
@@ -866,7 +900,7 @@ impl CppInterfaceGenerator<'_> {
             };
             self.gen
                 .host_functions
-                .entry(module_name)
+                .entry(module_name.unwrap_or(self.gen.world.clone()))
                 .and_modify(|v| v.push(remember.clone()))
                 .or_insert(vec![remember]);
         }
