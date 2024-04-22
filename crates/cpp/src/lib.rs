@@ -492,18 +492,18 @@ impl WorldGenerator for Cpp {
         if self.opts.short_cut {
             uwriteln!(c_str.src, "#include \"{snake}_cpp_native.h\"");
         } else if !self.opts.host {
-            // uwriteln!(c_str.src, "#include \"{snake}_cpp.h\"");
             uwriteln!(
                 c_str.src,
                 "\n// Ensure that the *_component_type.o object is linked in"
             );
             uwrite!(
                 c_str.src,
-                "
+                "#ifdef __wasm32__
                    extern void {linking_symbol}(void);
                    void {linking_symbol}_public_use_in_this_compilation_unit(void) {{
                        {linking_symbol}();
                    }}
+                   #endif
                ",
             );
         } else {
