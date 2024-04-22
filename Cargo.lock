@@ -327,7 +327,7 @@ checksum = "98cc8fbded0c607b7ba9dd60cd98df59af97e84d24e49c8557331cfc26d301ce"
 name = "codegen-macro"
 version = "0.0.0"
 dependencies = [
- "heck 0.4.1",
+ "heck 0.5.0",
  "quote",
 ]
 
@@ -780,9 +780,6 @@ name = "heck"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "95505c38b4572b2d910cecb0281560f54b440a19336cbbcb27bf6ce6adc6f5a8"
-dependencies = [
- "unicode-segmentation",
-]
 
 [[package]]
 name = "heck"
@@ -1564,12 +1561,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "unicode-segmentation"
-version = "1.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d4c87d22b6e3f4a18d4d40ef354e97c90fcb14dd91d7dc0aa9d8a1172ebf7202"
-
-[[package]]
 name = "unicode-width"
 version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2348,7 +2339,7 @@ version = "0.24.0"
 dependencies = [
  "anyhow",
  "clap",
- "heck 0.4.1",
+ "heck 0.5.0",
  "test-helpers",
  "wasm-encoder 0.202.0",
  "wasm-metadata",
@@ -2363,7 +2354,7 @@ version = "0.24.0"
 dependencies = [
  "anyhow",
  "clap",
- "heck 0.4.1",
+ "heck 0.5.0",
  "test-artifacts",
  "wasm-encoder 0.202.0",
  "wasmparser 0.202.0",
@@ -2385,6 +2376,7 @@ name = "wit-bindgen-core"
 version = "0.24.0"
 dependencies = [
  "anyhow",
+ "heck 0.5.0",
  "wit-parser 0.202.0",
 ]
 
@@ -2394,7 +2386,7 @@ version = "0.24.0"
 dependencies = [
  "anyhow",
  "clap",
- "heck 0.4.1",
+ "heck 0.5.0",
  "test-helpers",
  "wasm-encoder 0.202.0",
  "wasm-metadata",
@@ -2409,7 +2401,7 @@ version = "0.24.0"
 dependencies = [
  "anyhow",
  "clap",
- "heck 0.4.1",
+ "heck 0.5.0",
  "test-helpers",
  "wit-bindgen-c",
  "wit-bindgen-core",
@@ -2421,7 +2413,7 @@ version = "0.24.0"
 dependencies = [
  "anyhow",
  "clap",
- "heck 0.4.1",
+ "heck 0.5.0",
  "pulldown-cmark",
  "wit-bindgen-core",
  "wit-component",
@@ -2440,7 +2432,7 @@ version = "0.24.0"
 dependencies = [
  "anyhow",
  "clap",
- "heck 0.4.1",
+ "heck 0.5.0",
  "indexmap",
  "serde",
  "serde_json",
@@ -2469,7 +2461,7 @@ version = "0.24.0"
 dependencies = [
  "anyhow",
  "clap",
- "heck 0.4.1",
+ "heck 0.5.0",
  "test-helpers",
  "wasm-metadata",
  "wit-bindgen-core",

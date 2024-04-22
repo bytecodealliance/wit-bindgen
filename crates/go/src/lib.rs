@@ -14,6 +14,7 @@ use wit_bindgen_core::{Direction, Files, Source, WorldGenerator};
 mod bindgen;
 mod imports;
 mod interface;
+mod path;
 
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "clap", derive(clap::Args))]

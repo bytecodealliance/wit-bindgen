@@ -23,7 +23,7 @@ version = "0.24.0"
 [workspace.dependencies]
 anyhow = "1.0.72"
 bitflags = "2.3.3"
-heck = { version = "0.4", features = ["unicode"] }
+heck = { version = "0.5" }
 pulldown-cmark = { version = "0.9", default-features = false }
 clap = { version = "4.3.19", features = ["derive"] }
 indexmap = "2.0.0"

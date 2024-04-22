@@ -17,3 +17,4 @@ doctest = false
 [dependencies]
 wit-parser = { workspace = true }
 anyhow = { workspace = true }
+heck = { workspace = true }
