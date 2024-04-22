@@ -4,7 +4,7 @@ use std::mem;
 use std::process::Stdio;
 
 use anyhow::Result;
-use heck::{ToKebabCase, ToSnakeCase};
+use heck::ToSnakeCase;
 use wit_bindgen_c::imported_types_used_by_exported_interfaces;
 use wit_bindgen_core::wit_parser::{
     Function, InterfaceId, LiveTypes, Resolve, SizeAlign, Type, TypeId, WorldId, WorldKey,

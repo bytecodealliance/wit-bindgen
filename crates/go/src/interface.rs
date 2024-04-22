@@ -937,7 +937,7 @@ impl InterfaceGenerator<'_> {
     }
 
     pub(crate) fn finish(&mut self) {
-        if !self.export_funcs.is_empty() {
+        if !self.export_funcs.is_empty() || !self.exported_resources.is_empty() {
             let interface_var_name = &self.get_interface_var_name();
             let interface_name = &self.namespace();
 
