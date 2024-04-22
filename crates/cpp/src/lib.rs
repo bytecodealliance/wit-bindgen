@@ -2941,7 +2941,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                                 self.src.push_str(&format!(", ret, {})", cabi_post_name));
                             }
                         }
-                        if matches!(func.kind, FunctionKind::Constructor(_)) {
+                        if matches!(func.kind, FunctionKind::Constructor(_)) && guest_import {
                             // we wrapped the handle in an object, so unpack it
                             self.src.push_str(".into_handle()");
                         }
