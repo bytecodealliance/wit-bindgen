@@ -224,14 +224,14 @@ impl InterfaceGenerator<'_> {
             Type::Id(id) => {
                 let ty = &self.resolve().types[*id];
                 match &ty.kind {
-                    wit_bindgen_core::wit_parser::TypeDefKind::List(ty) => {
+                    TypeDefKind::List(ty) => {
                         format!("[]{}", self.get_ty(ty))
                     }
-                    wit_bindgen_core::wit_parser::TypeDefKind::Option(o) => {
+                    TypeDefKind::Option(o) => {
                         self.gen.with_result_option(true);
                         format!("Option[{}]", self.get_ty(o))
                     }
-                    wit_bindgen_core::wit_parser::TypeDefKind::Result(r) => {
+                    TypeDefKind::Result(r) => {
                         self.gen.with_result_option(true);
                         format!(
                             "Result[{}, {}]",
