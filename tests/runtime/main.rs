@@ -129,11 +129,7 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
             Some("java") => java.push(path),
             Some("rs") => rust.push(path),
             Some("go") => go.push(path),
-            Some("cs") => {
-                if cfg!(windows) {
-                    c_sharp.push(path);
-                }
-            }
+            Some("cs") => c_sharp.push(path),
             _ => {}
         }
     }
@@ -501,7 +497,7 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
     }
 
     #[cfg(feature = "csharp-mono")]
-    if !c_sharp.is_empty() {
+    if cfg!(windows) && !c_sharp.is_empty() {
         let (resolve, world) = resolve_wit_dir(&dir);
         for path in c_sharp.iter() {
             let world_name = &resolve.worlds[world].name;
@@ -548,7 +544,6 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
                 &assembly_name,
                 world_name,
             );
-            csproj.aot();
 
             // Copy test file to target location to be included in compilation
             let file_name = path.file_name().unwrap();
@@ -571,6 +566,8 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
                 .arg(out_dir.join(format!("{camel}.csproj")))
                 .arg("-c")
                 .arg("Debug")
+                .arg("/p:PlatformTarget=AnyCPU")
+                .arg("--self-contained")
                 .arg("-o")
                 .arg(&out_wasm);
 
@@ -592,10 +589,18 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
             let mut wasm_filename = out_wasm.clone();
             wasm_filename.set_extension("wasm");
 
-            let module = fs::read(&wasm_filename).expect("failed to read wasm file");
+            let module = fs::read(&wasm_filename).with_context(|| {
+                format!("failed to read wasm file: {}", wasm_filename.display())
+            })?;
 
             // Translate the canonical ABI module into a component.
-            let component_type = fs::read(out_dir.join("numbers_component_type.o"))?;
+            let component_type_filename = out_dir.join(format!("{camel}_component_type.o"));
+            let component_type = fs::read(&component_type_filename).with_context(|| {
+                format!(
+                    "failed to read component type file: {}",
+                    component_type_filename.display()
+                )
+            })?;
 
             let mut new_module = wasm_encoder::Module::new();
 
@@ -653,7 +658,7 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
     }
 
     #[cfg(feature = "csharp-naot")]
-    if !c_sharp.is_empty() {
+    if cfg!(windows) && !c_sharp.is_empty() {
         let (resolve, world) = resolve_wit_dir(&dir);
         for path in c_sharp.iter() {
             let world_name = &resolve.worlds[world].name;

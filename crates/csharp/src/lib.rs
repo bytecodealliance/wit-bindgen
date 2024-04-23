@@ -2,8 +2,8 @@ mod component_type_object;
 
 use anyhow::Result;
 use heck::{ToLowerCamelCase, ToShoutySnakeCase, ToUpperCamelCase};
+use indexmap::IndexMap;
 use std::{
-    any::Any,
     collections::{HashMap, HashSet},
     fmt::Write,
     iter, mem,
@@ -17,8 +17,8 @@ use wit_bindgen_core::{
 use wit_bindgen_core::{
     uwrite, uwriteln,
     wit_parser::{
-        Docs, Enum, Flags, FlagsRepr, Function, FunctionKind, Int, InterfaceId, Record, Resolve,
-        Result_, SizeAlign, Tuple, Type, TypeDefKind, TypeId, TypeOwner, Variant, WorldId,
+        Docs, Enum, Flags, FlagsRepr, Function, FunctionKind, Handle, Int, InterfaceId, Record,
+        Resolve, Result_, SizeAlign, Tuple, Type, TypeDefKind, TypeId, TypeOwner, Variant, WorldId,
         WorldKey,
     },
     Files, InterfaceGenerator as _, Ns, WorldGenerator,
@@ -36,14 +36,16 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 ";
 
 #[derive(Default, Debug, Clone)]
 #[cfg_attr(feature = "clap", derive(clap::Args))]
 pub struct Opts {
-    /// Whether or not to generate a stub class for exported functions
     #[cfg_attr(feature = "clap", arg(long, default_value_t = StringEncoding::default()))]
     pub string_encoding: StringEncoding,
+
+    /// Whether or not to generate a stub class for exported functions
     #[cfg_attr(feature = "clap", arg(long))]
     pub generate_stub: bool,
 
@@ -58,6 +60,31 @@ impl Opts {
             opts: self.clone(),
             ..CSharp::default()
         })
+    }
+}
+
+#[derive(Clone)]
+struct ResourceInfo {
+    module: String,
+    name: String,
+    docs: Docs,
+    direction: Direction,
+}
+
+impl ResourceInfo {
+    /// Returns the name of the exported implementation of this resource.
+    ///
+    /// The result is only valid if the resource is actually being exported by the world.
+    fn export_impl_name(&self) -> String {
+        format!(
+            "{}Impl.{}",
+            CSharp::get_class_name_from_qualified_name(&self.module)
+                .1
+                .strip_prefix("I")
+                .unwrap()
+                .to_upper_camel_case(),
+            self.name.to_upper_camel_case()
+        )
     }
 }
 
@@ -107,11 +134,15 @@ pub struct CSharp {
     needs_option: bool,
     needs_interop_string: bool,
     needs_export_return_area: bool,
+    needs_rep_table: bool,
     interface_fragments: HashMap<String, InterfaceTypeAndFragments>,
     world_fragments: Vec<InterfaceFragment>,
     sizes: SizeAlign,
     interface_names: HashMap<InterfaceId, String>,
     anonymous_type_owners: HashMap<TypeId, TypeOwner>,
+    all_resources: HashMap<TypeId, ResourceInfo>,
+    world_resources: HashMap<TypeId, ResourceInfo>,
+    import_funcs_called: bool,
 }
 
 impl CSharp {
@@ -125,7 +156,6 @@ impl CSharp {
         resolve: &'a Resolve,
         name: &'a str,
         direction: Direction,
-        function_level: FunctionLevel,
     ) -> InterfaceGenerator<'a> {
         InterfaceGenerator {
             src: String::new(),
@@ -135,12 +165,11 @@ impl CSharp {
             resolve,
             name,
             direction,
-            function_level,
         }
     }
 
     // returns the qualifier and last part
-    fn get_class_name_from_qualified_name(qualified_type: String) -> (String, String) {
+    fn get_class_name_from_qualified_name(qualified_type: &str) -> (String, String) {
         let parts: Vec<&str> = qualified_type.split('.').collect();
         if let Some(last_part) = parts.last() {
             let mut qualifier = qualified_type.strip_suffix(last_part);
@@ -170,12 +199,33 @@ impl WorldGenerator for CSharp {
     ) {
         let name = interface_name(self, resolve, key, Direction::Import);
         self.interface_names.insert(id, name.clone());
-        let mut gen = self.interface(resolve, &name, Direction::Import, FunctionLevel::Interface);
+        let mut gen = self.interface(resolve, &name, Direction::Import);
 
+        let mut old_resources = mem::take(&mut gen.gen.all_resources);
         gen.types(id);
+        let new_resources = mem::take(&mut gen.gen.all_resources);
+        old_resources.extend(new_resources.clone());
+        gen.gen.all_resources = old_resources;
 
-        for (_, func) in resolve.interfaces[id].functions.iter() {
-            gen.import(&resolve.name_world_key(key), func);
+        for (resource, funcs) in by_resource(
+            resolve.interfaces[id]
+                .functions
+                .iter()
+                .map(|(k, v)| (k.as_str(), v)),
+            new_resources.keys().copied(),
+        ) {
+            if let Some(resource) = resource {
+                gen.start_resource(resource, Some(key));
+            }
+
+            let import_module_name = &resolve.name_world_key(key);
+            for func in funcs {
+                gen.import(import_module_name, func);
+            }
+
+            if resource.is_some() {
+                gen.end_resource();
+            }
         }
 
         // for anonymous types
@@ -191,16 +241,27 @@ impl WorldGenerator for CSharp {
         funcs: &[(&str, &Function)],
         _files: &mut Files,
     ) {
-        let name = &format!("{}-world", resolve.worlds[world].name);
-        let mut gen = self.interface(
-            resolve,
-            name,
-            Direction::Import,
-            FunctionLevel::FreeStanding,
-        );
+        self.import_funcs_called = true;
 
-        for (import_module_name, func) in funcs {
-            gen.import(import_module_name, func);
+        let name = &format!("{}-world", resolve.worlds[world].name).to_upper_camel_case();
+        let name = &format!("{name}.I{name}");
+        let mut gen = self.interface(resolve, name, Direction::Import);
+
+        for (resource, funcs) in by_resource(
+            funcs.iter().copied(),
+            gen.gen.world_resources.keys().copied(),
+        ) {
+            if let Some(resource) = resource {
+                gen.start_resource(resource, None);
+            }
+
+            for func in funcs {
+                gen.import("$root", func);
+            }
+
+            if resource.is_some() {
+                gen.end_resource();
+            }
         }
 
         gen.add_world_fragment();
@@ -215,12 +276,32 @@ impl WorldGenerator for CSharp {
     ) -> Result<()> {
         let name = interface_name(self, resolve, key, Direction::Export);
         self.interface_names.insert(id, name.clone());
-        let mut gen = self.interface(resolve, &name, Direction::Export, FunctionLevel::Interface);
+        let mut gen = self.interface(resolve, &name, Direction::Export);
 
+        let mut old_resources = mem::take(&mut gen.gen.all_resources);
         gen.types(id);
+        let new_resources = mem::take(&mut gen.gen.all_resources);
+        old_resources.extend(new_resources.clone());
+        gen.gen.all_resources = old_resources;
 
-        for (_, func) in resolve.interfaces[id].functions.iter() {
-            gen.export(func, Some(key));
+        for (resource, funcs) in by_resource(
+            resolve.interfaces[id]
+                .functions
+                .iter()
+                .map(|(k, v)| (k.as_str(), v)),
+            new_resources.keys().copied(),
+        ) {
+            if let Some(resource) = resource {
+                gen.start_resource(resource, Some(key));
+            }
+
+            for func in funcs {
+                gen.export(func, Some(key));
+            }
+
+            if resource.is_some() {
+                gen.end_resource();
+            }
         }
 
         // for anonymous types
@@ -237,16 +318,22 @@ impl WorldGenerator for CSharp {
         funcs: &[(&str, &Function)],
         _files: &mut Files,
     ) -> Result<()> {
-        let name = &format!("{}-world", resolve.worlds[world].name);
-        let mut gen = self.interface(
-            resolve,
-            name,
-            Direction::Export,
-            FunctionLevel::FreeStanding,
-        );
+        let name = &format!("{}-world", resolve.worlds[world].name).to_upper_camel_case();
+        let name = &format!("{name}.I{name}");
+        let mut gen = self.interface(resolve, name, Direction::Export);
 
-        for (_, func) in funcs {
-            gen.export(func, None);
+        for (resource, funcs) in by_resource(funcs.iter().copied(), iter::empty()) {
+            if let Some(resource) = resource {
+                gen.start_resource(resource, None);
+            }
+
+            for func in funcs {
+                gen.export(func, None);
+            }
+
+            if resource.is_some() {
+                gen.end_resource();
+            }
         }
 
         gen.add_world_fragment();
@@ -260,17 +347,28 @@ impl WorldGenerator for CSharp {
         types: &[(&str, TypeId)],
         _files: &mut Files,
     ) {
-        let name = &format!("{}-world", resolve.worlds[world].name);
-        let mut gen = self.interface(resolve, name, Direction::Import, FunctionLevel::Interface);
+        let name = &format!("{}-world", resolve.worlds[world].name).to_upper_camel_case();
+        let name = &format!("{name}.I{name}");
+        let mut gen = self.interface(resolve, name, Direction::Import);
 
+        let mut old_resources = mem::take(&mut gen.gen.all_resources);
         for (ty_name, ty) in types {
             gen.define_type(ty_name, *ty);
         }
+        let new_resources = mem::take(&mut gen.gen.all_resources);
+        old_resources.extend(new_resources.clone());
+        gen.gen.all_resources = old_resources;
+        gen.gen.world_resources = new_resources;
 
         gen.add_world_fragment();
     }
 
     fn finish(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) -> Result<()> {
+        if !self.import_funcs_called {
+            // Ensure that we emit type declarations for any top-level imported resource types:
+            self.import_funcs(resolve, id, &[], files);
+        }
+
         let world = &resolve.worlds[id];
         let world_namespace = self.qualifier();
         let world_namespace = world_namespace.strip_suffix(".").unwrap();
@@ -285,7 +383,7 @@ impl WorldGenerator for CSharp {
             src,
             "{CSHARP_IMPORTS}
 
-            namespace {world_namespace} {{
+             namespace {world_namespace} {{
 
              public interface I{name}World {{
             "
@@ -389,9 +487,10 @@ impl WorldGenerator for CSharp {
                     
                     public static Option<T> None => none;
                     
+                    [MemberNotNullWhen(true, nameof(Value))]
                     public bool HasValue { get; }
                     
-                    public T Value { get; }
+                    public T? Value { get; }
                 }
                 "#,
             )
@@ -451,6 +550,11 @@ impl WorldGenerator for CSharp {
             src.push_str(&ret_area_str);
         }
 
+        if self.needs_rep_table {
+            src.push_str("\n");
+            src.push_str(include_str!("RepTable.cs"));
+        }
+
         if !&self.world_fragments.is_empty() {
             src.push_str("\n");
 
@@ -458,10 +562,10 @@ impl WorldGenerator for CSharp {
             src.push_str(&format!("public static class {name}World\n"));
             src.push_str("{");
 
-            for fragement in &self.world_fragments {
+            for fragment in &self.world_fragments {
                 src.push_str("\n");
 
-                src.push_str(&fragement.csharp_interop_src);
+                src.push_str(&fragment.csharp_interop_src);
             }
             src.push_str("}\n");
             src.push_str("}\n");
@@ -503,7 +607,7 @@ impl WorldGenerator for CSharp {
 
         let generate_stub = |name: String, files: &mut Files, stubs: Stubs| {
             let (stub_namespace, interface_or_class_name) =
-                CSharp::get_class_name_from_qualified_name(name.clone());
+                CSharp::get_class_name_from_qualified_name(&name);
 
             let stub_class_name = format!(
                 "{}Impl",
@@ -532,6 +636,10 @@ impl WorldGenerator for CSharp {
                 }
             };
 
+            if fragments.iter().all(|f| f.stub.is_empty()) {
+                return;
+            }
+
             let body = fragments
                 .iter()
                 .map(|f| f.stub.deref())
@@ -540,9 +648,9 @@ impl WorldGenerator for CSharp {
 
             let body = format!(
                 "// Generated by `wit-bindgen` {version}. DO NOT EDIT!
-                {CSHARP_IMPORTS}
+                 {CSHARP_IMPORTS}
 
-                namespace {fully_qualified_namespace};
+                 namespace {fully_qualified_namespace};
 
                  public partial class {stub_class_name} : {interface_or_class_name} {{
                     {body}
@@ -561,17 +669,17 @@ impl WorldGenerator for CSharp {
             );
         }
 
-        //TODO: This is currently neede for mono even if it's built as a library.
+        //TODO: This is currently needed for mono even if it's built as a library.
         if self.opts.runtime == CSharpRuntime::Mono {
             files.push(
                 &format!("MonoEntrypoint.cs",),
                 indent(
                     r#"
-                public class MonoEntrypoint() {
-                    public static void Main() {
+                    public class MonoEntrypoint() {
+                        public static void Main() {
+                        }
                     }
-                }
-                "#,
+                    "#,
                 )
                 .as_bytes(),
             );
@@ -605,7 +713,7 @@ impl WorldGenerator for CSharp {
             let fragments = &interface_type_and_fragments.interface_fragments;
 
             let (namespace, interface_name) =
-                &CSharp::get_class_name_from_qualified_name(full_name.to_string());
+                &CSharp::get_class_name_from_qualified_name(full_name);
 
             // C#
             let body = fragments
@@ -673,7 +781,6 @@ struct InterfaceGenerator<'a> {
     resolve: &'a Resolve,
     name: &'a str,
     direction: Direction,
-    function_level: FunctionLevel,
 }
 
 impl InterfaceGenerator<'_> {
@@ -740,6 +847,10 @@ impl InterfaceGenerator<'_> {
             TypeDefKind::List(t) => self.type_list(type_id, typedef_name, t, &type_def.docs),
             TypeDefKind::Variant(t) => self.type_variant(type_id, typedef_name, t, &type_def.docs),
             TypeDefKind::Result(t) => self.type_result(type_id, typedef_name, t, &type_def.docs),
+            TypeDefKind::Handle(_) => {
+                // Handles don't require a separate definition beyond what we already define for the corresponding
+                // resource types.
+            }
             _ => unreachable!(),
         }
     }
@@ -753,17 +864,19 @@ impl InterfaceGenerator<'_> {
             type_def.owner
         };
 
+        let global_prefix = self.global_if_user_type(&Type::Id(*ty));
+
         if let TypeOwner::Interface(id) = owner {
             if let Some(name) = self.gen.interface_names.get(&id) {
                 if name != self.name {
-                    return format!("{}.", name);
+                    return format!("{global_prefix}{name}.");
                 }
             }
         }
 
         if when {
             let name = self.name;
-            format!("{name}.")
+            format!("{global_prefix}{name}.")
         } else {
             String::new()
         }
@@ -791,9 +904,17 @@ impl InterfaceGenerator<'_> {
     }
 
     fn import(&mut self, import_module_name: &str, func: &Function) {
-        if func.kind != FunctionKind::Freestanding {
-            todo!("resources");
-        }
+        let (camel_name, modifiers) = match &func.kind {
+            FunctionKind::Freestanding | FunctionKind::Static(_) => {
+                (func.item_name().to_upper_camel_case(), "static")
+            }
+            FunctionKind::Method(_) => (func.item_name().to_upper_camel_case(), ""),
+            FunctionKind::Constructor(id) => {
+                (self.gen.all_resources[id].name.to_upper_camel_case(), "")
+            }
+        };
+
+        let interop_camel_name = func.item_name().to_upper_camel_case();
 
         let sig = self.resolve.wasm_signature(AbiVariant::GuestImport, func);
 
@@ -803,24 +924,26 @@ impl InterfaceGenerator<'_> {
             _ => unreachable!(),
         };
 
-        let result_type: String = match func.results.len() {
-            0 => "void".to_string(),
-            1 => {
-                let ty = func.results.iter_types().next().unwrap();
-                self.type_name_with_qualifier(ty, true)
-            }
-            _ => {
-                let types = func
-                    .results
-                    .iter_types()
-                    .map(|ty| self.type_name_with_qualifier(ty, true))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                format!("({})", types)
+        let result_type = if let FunctionKind::Constructor(_) = &func.kind {
+            String::new()
+        } else {
+            match func.results.len() {
+                0 => "void".to_string(),
+                1 => {
+                    let ty = func.results.iter_types().next().unwrap();
+                    self.type_name_with_qualifier(ty, true)
+                }
+                _ => {
+                    let types = func
+                        .results
+                        .iter_types()
+                        .map(|ty| self.type_name_with_qualifier(ty, true))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    format!("({})", types)
+                }
             }
         };
-
-        let camel_name = func.name.to_upper_camel_case();
 
         let wasm_params = sig
             .params
@@ -835,10 +958,18 @@ impl InterfaceGenerator<'_> {
 
         let mut bindgen = FunctionBindgen::new(
             self,
-            &func.name,
+            &func.item_name(),
+            &func.kind,
             func.params
                 .iter()
-                .map(|(name, _)| name.to_csharp_ident())
+                .enumerate()
+                .map(|(i, (name, _))| {
+                    if i == 0 && matches!(&func.kind, FunctionKind::Method(_)) {
+                        "this".to_owned()
+                    } else {
+                        name.to_csharp_ident()
+                    }
+                })
                 .collect(),
         );
 
@@ -857,8 +988,12 @@ impl InterfaceGenerator<'_> {
         let params = func
             .params
             .iter()
-            .enumerate()
-            .map(|(_i, param)| {
+            .skip(if let FunctionKind::Method(_) = &func.kind {
+                1
+            } else {
+                0
+            })
+            .map(|param| {
                 let ty = self.type_name_with_qualifier(&param.1, true);
                 let param_name = &param.0;
                 let param_name = param_name.to_csharp_ident();
@@ -869,19 +1004,25 @@ impl InterfaceGenerator<'_> {
 
         let import_name = &func.name;
 
+        let target = if let FunctionKind::Freestanding = &func.kind {
+            &mut self.csharp_interop_src
+        } else {
+            &mut self.src
+        };
+
         uwrite!(
-            self.csharp_interop_src,
+            target,
             r#"
-            internal static class {camel_name}WasmInterop
+            internal static class {interop_camel_name}WasmInterop
             {{
                 [DllImport("{import_module_name}", EntryPoint = "{import_name}"), WasmImportLinkage]
-                internal static extern {wasm_result_type} wasmImport{camel_name}({wasm_params});
+                internal static extern {wasm_result_type} wasmImport{interop_camel_name}({wasm_params});
             "#
         );
 
         if import_return_pointer_area_size > 0 {
             uwrite!(
-                self.csharp_interop_src,
+                target,
                 r#"
                 [InlineArray({import_return_pointer_area_size})]
                 [StructLayout(LayoutKind.Sequential, Pack = {import_return_pointer_area_align})]
@@ -902,16 +1043,16 @@ impl InterfaceGenerator<'_> {
         }
 
         uwrite!(
-            self.csharp_interop_src,
+            target,
             r#"
             }}
             "#,
         );
 
         uwrite!(
-            self.csharp_interop_src,
+            target,
             r#"
-                internal static unsafe {result_type} {camel_name}({params})
+                internal {modifiers} unsafe {result_type} {camel_name}({params})
                 {{
                     {src}
                     //TODO: free alloc handle (interopString) if exists
@@ -921,11 +1062,22 @@ impl InterfaceGenerator<'_> {
     }
 
     fn export(&mut self, func: &Function, interface_name: Option<&WorldKey>) {
+        let (camel_name, modifiers) = match &func.kind {
+            FunctionKind::Freestanding | FunctionKind::Static(_) => {
+                (func.item_name().to_upper_camel_case(), "static abstract")
+            }
+            FunctionKind::Method(_) => (func.item_name().to_upper_camel_case(), ""),
+            FunctionKind::Constructor(id) => {
+                (self.gen.all_resources[id].name.to_upper_camel_case(), "")
+            }
+        };
+
         let sig = self.resolve.wasm_signature(AbiVariant::GuestExport, func);
 
         let mut bindgen = FunctionBindgen::new(
             self,
-            &func.name,
+            &func.item_name(),
+            &func.kind,
             (0..sig.params.len()).map(|i| format!("p{i}")).collect(),
         );
 
@@ -941,27 +1093,36 @@ impl InterfaceGenerator<'_> {
 
         let src = bindgen.src;
 
+        let vars = bindgen
+            .resource_drops
+            .iter()
+            .map(|(t, v)| format!("{t}? {v} = null;"))
+            .collect::<Vec<_>>()
+            .join(";\n");
+
         let wasm_result_type = match &sig.results[..] {
             [] => "void",
             [result] => wasm_type(*result),
             _ => unreachable!(),
         };
 
-        let result_type = match func.results.len() {
-            0 => "void".to_owned(),
-            1 => self.type_name(func.results.iter_types().next().unwrap()),
-            _ => {
-                let types = func
-                    .results
-                    .iter_types()
-                    .map(|ty| self.type_name(ty))
-                    .collect::<Vec<String>>()
-                    .join(", ");
-                format!("({})", types)
+        let result_type = if let FunctionKind::Constructor(_) = &func.kind {
+            String::new()
+        } else {
+            match func.results.len() {
+                0 => "void".to_owned(),
+                1 => self.type_name(func.results.iter_types().next().unwrap()),
+                _ => {
+                    let types = func
+                        .results
+                        .iter_types()
+                        .map(|ty| self.type_name(ty))
+                        .collect::<Vec<String>>()
+                        .join(", ");
+                    format!("({}) ", types)
+                }
             }
         };
-
-        let camel_name = func.name.to_upper_camel_case();
 
         let wasm_params = sig
             .params
@@ -977,6 +1138,11 @@ impl InterfaceGenerator<'_> {
         let params = func
             .params
             .iter()
+            .skip(if let FunctionKind::Method(_) = &func.kind {
+                1
+            } else {
+                0
+            })
             .map(|(name, ty)| {
                 let ty = self.type_name(ty);
                 let name = name.to_csharp_ident();
@@ -985,7 +1151,7 @@ impl InterfaceGenerator<'_> {
             .collect::<Vec<String>>()
             .join(", ");
 
-        let interop_name = format!("wasmExport{camel_name}");
+        let interop_name = format!("wasmExport{}", func.name.to_upper_camel_case());
         let core_module_name = interface_name.map(|s| self.resolve.name_world_key(s));
         let export_name = func.core_export_name(core_module_name.as_deref());
 
@@ -994,6 +1160,7 @@ impl InterfaceGenerator<'_> {
             r#"
             [UnmanagedCallersOnly(EntryPoint = "{export_name}")]
             public static unsafe {wasm_result_type} {interop_name}({wasm_params}) {{
+                {vars}
                 {src}
             }}
             "#
@@ -1005,18 +1172,20 @@ impl InterfaceGenerator<'_> {
                 r#"
                 [UnmanagedCallersOnly(EntryPoint = "cabi_post_{export_name}")]
                 public static void cabi_post_{interop_name}({wasm_result_type} returnValue) {{
-                    Console.WriteLine("cabi_post_{export_name}");
+                    Console.WriteLine("TODO: cabi_post_{export_name}");
                 }}
                 "#
             );
         }
 
-        uwrite!(
-            self.src,
-            r#"static abstract {result_type} {camel_name}({params});
+        if !matches!(&func.kind, FunctionKind::Constructor(_)) {
+            uwrite!(
+                self.src,
+                r#"{modifiers} {result_type} {camel_name}({params});
 
             "#
-        );
+            );
+        }
 
         if self.gen.opts.generate_stub {
             let sig = self.sig_string(func, true);
@@ -1037,7 +1206,7 @@ impl InterfaceGenerator<'_> {
     }
 
     // We use a global:: prefix to avoid conflicts with namespace clashes on partial namespace matches
-    fn global_if_user_type(&mut self, ty: &Type) -> String {
+    fn global_if_user_type(&self, ty: &Type) -> String {
         match ty {
             Type::Id(id) => {
                 let ty = &self.resolve.types[*id];
@@ -1077,7 +1246,7 @@ impl InterfaceGenerator<'_> {
                         if is_primitive(ty) {
                             format!("{}[]", self.type_name(ty))
                         } else {
-                            format!("List<{}>", self.type_name_boxed(ty, qualifier))
+                            format!("List<{}>", self.type_name_with_qualifier(ty, qualifier))
                         }
                     }
                     TypeDefKind::Tuple(tuple) => {
@@ -1086,13 +1255,14 @@ impl InterfaceGenerator<'_> {
 
                         let params = match count {
                             0 => String::new(),
-                            1 => self.type_name_boxed(tuple.types.first().unwrap(), qualifier),
+                            1 => self
+                                .type_name_with_qualifier(tuple.types.first().unwrap(), qualifier),
                             _ => format!(
                                 "({})",
                                 tuple
                                     .types
                                     .iter()
-                                    .map(|ty| self.type_name_boxed(ty, qualifier))
+                                    .map(|ty| self.type_name_with_qualifier(ty, qualifier))
                                     .collect::<Vec<_>>()
                                     .join(", ")
                             ),
@@ -1103,22 +1273,32 @@ impl InterfaceGenerator<'_> {
                     TypeDefKind::Option(base_ty) => {
                         self.gen.needs_option = true;
                         if let Some(_name) = &ty.name {
-                            format!("Option<{}>", self.type_name_with_qualifier(base_ty, true))
+                            format!(
+                                "Option<{}>",
+                                self.type_name_with_qualifier(base_ty, qualifier)
+                            )
                         } else {
-                            format!("Option<{}>", self.type_name_with_qualifier(base_ty, true))
+                            format!(
+                                "Option<{}>",
+                                self.type_name_with_qualifier(base_ty, qualifier)
+                            )
                         }
                     }
                     TypeDefKind::Result(result) => {
                         self.gen.needs_result = true;
                         let mut name = |ty: &Option<Type>| {
                             ty.as_ref()
-                                .map(|ty| self.type_name_boxed(ty, qualifier))
+                                .map(|ty| self.type_name_with_qualifier(ty, qualifier))
                                 .unwrap_or_else(|| "None".to_owned())
                         };
                         let ok = name(&result.ok);
                         let err = name(&result.err);
 
                         format!("Result<{ok}, {err}>")
+                    }
+                    TypeDefKind::Handle(handle) => {
+                        let (Handle::Own(id) | Handle::Borrow(id)) = handle;
+                        self.type_name_with_qualifier(&Type::Id(*id), qualifier)
                     }
                     _ => {
                         if let Some(name) = &ty.name {
@@ -1128,36 +1308,11 @@ impl InterfaceGenerator<'_> {
                                 name.to_upper_camel_case()
                             )
                         } else {
-                            unreachable!()
+                            unreachable!("todo: {ty:?}")
                         }
                     }
                 }
             }
-        }
-    }
-
-    fn type_name_boxed(&mut self, ty: &Type, qualifier: bool) -> String {
-        match ty {
-            Type::Bool => "bool".into(),
-            Type::U8 => "byte".into(),
-            Type::U16 => "ushort".into(),
-            Type::U32 => "uint".into(),
-            Type::U64 => "ulong".into(),
-            Type::S8 => "sbyte".into(),
-            Type::S16 => "short".into(),
-            Type::S32 => "int".into(),
-            Type::S64 => "long".into(),
-            Type::F32 => "float".into(),
-            Type::F64 => "double".into(),
-            Type::Char => "uint".into(),
-            Type::Id(id) => {
-                let def = &self.resolve.types[*id];
-                match &def.kind {
-                    TypeDefKind::Type(ty) => self.type_name_boxed(ty, qualifier),
-                    _ => self.type_name_with_qualifier(ty, qualifier),
-                }
-            }
-            _ => self.type_name_with_qualifier(ty, qualifier),
         }
     }
 
@@ -1198,50 +1353,220 @@ impl InterfaceGenerator<'_> {
         }
     }
 
-    fn sig_string(&mut self, func: &Function, qualifier: bool) -> String {
-        let name = func.name.to_csharp_ident();
+    fn start_resource(&mut self, id: TypeId, key: Option<&WorldKey>) {
+        let qualified = self.type_name_with_qualifier(&Type::Id(id), true);
+        let info = &self.gen.all_resources[&id];
+        let name = info.name.clone();
+        let upper_camel = name.to_upper_camel_case();
+        let docs = info.docs.clone();
+        self.print_docs(&docs);
 
-        let result_type = match func.results.len() {
-            0 => "void".into(),
-            1 => {
-                let global_prefix =
-                    self.global_if_user_type(func.results.iter_types().next().unwrap());
-                format!(
-                    "{}{}",
-                    global_prefix,
-                    self.type_name_with_qualifier(
-                        func.results.iter_types().next().unwrap(),
-                        qualifier
-                    )
-                )
+        match self.direction {
+            Direction::Import => {
+                let module_name = key
+                    .map(|key| self.resolve.name_world_key(key))
+                    .unwrap_or_else(|| "$root".into());
+
+                uwriteln!(
+                    self.src,
+                    r#"
+                    public class {upper_camel}: IDisposable {{
+                        internal int Handle {{ get; set; }}
+
+                        internal readonly record struct THandle(int Handle);
+
+                        internal {upper_camel}(THandle handle) {{
+                            Handle = handle.Handle;
+                        }}
+
+                        public void Dispose() {{
+                            Dispose(true);
+                            GC.SuppressFinalize(this);
+                        }}
+
+                        [DllImport("{module_name}", EntryPoint = "[resource-drop]{name}"), WasmImportLinkage]
+                        private static extern void wasmImportResourceDrop(int p0);
+        
+                        protected virtual void Dispose(bool disposing) {{
+                            if (Handle != 0) {{
+                                wasmImportResourceDrop(Handle);
+                                Handle = 0;
+                            }}
+                        }}
+
+                        ~{upper_camel}() {{
+                            Dispose(false);
+                        }}
+                    "#
+                );
             }
-            count => {
-                self.gen.tuple_counts.insert(count);
-                format!(
-                    "({})",
-                    func.results
-                        .iter_types()
-                        .map(|ty| self.type_name_boxed(ty, qualifier))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )
+            Direction::Export => {
+                let prefix = key
+                    .map(|s| format!("{}#", self.resolve.name_world_key(s)))
+                    .unwrap_or_else(String::new);
+
+                uwrite!(
+                    self.csharp_interop_src,
+                    r#"
+                    [UnmanagedCallersOnly(EntryPoint = "{prefix}[dtor]{name}")]
+                    public static unsafe void wasmExportResourceDtor{upper_camel}(int rep) {{
+                        var val = ({qualified}) {qualified}.repTable.Remove(rep);
+                        val.Dispose();
+                    }}
+                    "#
+                );
+
+                let module_name = key
+                    .map(|key| format!("[export]{}", self.resolve.name_world_key(key)))
+                    .unwrap_or_else(|| "[export]$root".into());
+
+                // The ergonomics of exported resources are not ideal, currently. Implementing such a resource
+                // requires both extending a class and implementing an interface. The reason for the class is to
+                // allow implementers to inherit code which tracks and disposes of the resource handle; the reason
+                // for the interface is to express the API contract which the implementation must fulfill,
+                // including static functions.
+                //
+                // We could remove the need for the class (and its `IDisposable` implementation) entirely if we
+                // were to dispose of the handle immediately when lifting an owned handle, in which case we would
+                // be left with nothing to keep track of or dispose later. However, we keep the handle alive in
+                // case we want to give ownership back to the host again, in which case we'll be able to reuse the
+                // same handle instead of calling `[resource-new]` to allocate a new one. Whether this optimization
+                // is worth the trouble is open to debate, but we currently consider it a worthwhile tradeoff.
+                //
+                // Note that applications which export resources are relatively rare compared to those which only
+                // import them, so in practice most developers won't encounter any of this anyway.
+                uwriteln!(
+                    self.src,
+                    r#"
+                    public abstract class {upper_camel}: IDisposable {{
+                        internal static RepTable<{upper_camel}> repTable = new ();
+                        internal int Handle {{ get; set; }}
+
+                        public void Dispose() {{
+                            Dispose(true);
+                            GC.SuppressFinalize(this);
+                        }}
+
+                        internal static class WasmInterop {{
+                            [DllImport("{module_name}", EntryPoint = "[resource-drop]{name}"), WasmImportLinkage]
+                            internal static extern void wasmImportResourceDrop(int p0);
+
+                            [DllImport("{module_name}", EntryPoint = "[resource-new]{name}"), WasmImportLinkage]
+                            internal static extern int wasmImportResourceNew(int p0);
+                    
+                            [DllImport("{module_name}", EntryPoint = "[resource-rep]{name}"), WasmImportLinkage]
+                            internal static extern int wasmImportResourceRep(int p0);
+                        }}
+
+                        protected virtual void Dispose(bool disposing) {{
+                            if (Handle != 0) {{
+                                var handle = Handle;
+                                Handle = 0;
+                                repTable.Remove(WasmInterop.wasmImportResourceRep(handle));
+                                WasmInterop.wasmImportResourceDrop(handle);
+                            }}
+                        }}
+
+                        ~{upper_camel}() {{
+                            Dispose(false);
+                        }}
+                    }}
+
+                    public interface I{upper_camel} {{
+                    "#
+                );
+
+                if self.gen.opts.generate_stub {
+                    let super_ = self.type_name_with_qualifier(&Type::Id(id), true);
+                    let interface = {
+                        let split = super_.split('.').collect::<Vec<_>>();
+                        split
+                            .iter()
+                            .map(|&v| v.to_owned())
+                            .take(split.len() - 1)
+                            .chain(split.last().map(|v| format!("I{v}")))
+                            .collect::<Vec<_>>()
+                            .join(".")
+                    };
+
+                    uwriteln!(
+                        self.stub,
+                        r#"
+                        public class {upper_camel}: {super_}, {interface} {{
+                        "#
+                    );
+                }
+            }
+        };
+    }
+
+    fn end_resource(&mut self) {
+        if self.direction == Direction::Export && self.gen.opts.generate_stub {
+            uwriteln!(
+                self.stub,
+                "
+                }}
+                "
+            );
+        }
+
+        uwriteln!(
+            self.src,
+            "
+            }}
+            "
+        );
+    }
+
+    fn sig_string(&mut self, func: &Function, qualifier: bool) -> String {
+        let result_type = if let FunctionKind::Constructor(_) = &func.kind {
+            String::new()
+        } else {
+            match func.results.len() {
+                0 => "void".into(),
+                1 => self
+                    .type_name_with_qualifier(func.results.iter_types().next().unwrap(), qualifier),
+                count => {
+                    self.gen.tuple_counts.insert(count);
+                    format!(
+                        "({})",
+                        func.results
+                            .iter_types()
+                            .map(|ty| self.type_name_with_qualifier(ty, qualifier))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )
+                }
             }
         };
 
         let params = func
             .params
             .iter()
+            .skip(if let FunctionKind::Method(_) = &func.kind {
+                1
+            } else {
+                0
+            })
             .map(|(name, ty)| {
-                let global_prefix = self.global_if_user_type(ty);
                 let ty = self.type_name_with_qualifier(ty, qualifier);
                 let name = name.to_csharp_ident();
-                format!("{global_prefix}{ty} {name}")
+                format!("{ty} {name}")
             })
             .collect::<Vec<_>>()
             .join(", ");
 
-        let camel_case = name.to_upper_camel_case();
-        format!("public static {result_type} {camel_case}({params})")
+        let (camel_name, modifiers) = match &func.kind {
+            FunctionKind::Freestanding | FunctionKind::Static(_) => {
+                (func.item_name().to_upper_camel_case(), "static")
+            }
+            FunctionKind::Method(_) => (func.item_name().to_upper_camel_case(), ""),
+            FunctionKind::Constructor(id) => {
+                (self.gen.all_resources[id].name.to_upper_camel_case(), "")
+            }
+        };
+
+        format!("public {modifiers} {result_type} {camel_name}({params})")
     }
 }
 
@@ -1482,28 +1807,19 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         unimplemented!();
     }
 
-    fn define_type(&mut self, name: &str, id: TypeId) {
-        let ty = &self.resolve().types[id];
-        match &ty.kind {
-            TypeDefKind::Record(record) => self.type_record(id, name, record, &ty.docs),
-            TypeDefKind::Flags(flags) => self.type_flags(id, name, flags, &ty.docs),
-            TypeDefKind::Tuple(tuple) => self.type_tuple(id, name, tuple, &ty.docs),
-            TypeDefKind::Enum(enum_) => self.type_enum(id, name, enum_, &ty.docs),
-            TypeDefKind::Variant(variant) => self.type_variant(id, name, variant, &ty.docs),
-            TypeDefKind::Option(t) => self.type_option(id, name, t, &ty.docs),
-            TypeDefKind::Result(r) => self.type_result(id, name, r, &ty.docs),
-            TypeDefKind::List(t) => self.type_list(id, name, t, &ty.docs),
-            TypeDefKind::Type(t) => self.type_alias(id, name, t, &ty.docs),
-            TypeDefKind::Future(_) => todo!("generate for future"),
-            TypeDefKind::Stream(_) => todo!("generate for stream"),
-            TypeDefKind::Resource => todo!("generate for resource"),
-            TypeDefKind::Handle(_) => todo!("generate for handle"),
-            TypeDefKind::Unknown => unreachable!(),
-        }
-    }
-
-    fn type_resource(&mut self, _id: TypeId, _name: &str, _docs: &Docs) {
-        todo!()
+    fn type_resource(&mut self, id: TypeId, name: &str, docs: &Docs) {
+        // Here we just record information about the resource; we don't actually emit any code until we're ready to
+        // visit any functions associated with the resource (e.g. in CSharp::import_interface, etc.).
+        self.gen
+            .all_resources
+            .entry(id)
+            .or_insert_with(|| ResourceInfo {
+                module: self.name.to_owned(),
+                name: name.to_owned(),
+                docs: docs.clone(),
+                direction: Direction::Import,
+            })
+            .direction = self.direction;
     }
 }
 
@@ -1533,6 +1849,7 @@ struct BlockStorage {
 struct FunctionBindgen<'a, 'b> {
     gen: &'b mut InterfaceGenerator<'a>,
     func_name: &'b str,
+    kind: &'b FunctionKind,
     params: Box<[String]>,
     src: String,
     locals: Ns,
@@ -1543,20 +1860,29 @@ struct FunctionBindgen<'a, 'b> {
     cleanup: Vec<Cleanup>,
     import_return_pointer_area_size: usize,
     import_return_pointer_area_align: usize,
+    resource_drops: Vec<(String, String)>,
 }
 
 impl<'a, 'b> FunctionBindgen<'a, 'b> {
     fn new(
         gen: &'b mut InterfaceGenerator<'a>,
         func_name: &'b str,
+        kind: &'b FunctionKind,
         params: Box<[String]>,
     ) -> FunctionBindgen<'a, 'b> {
+        let mut locals = Ns::default();
+        // Ensure temporary variable names don't clash with parameter names:
+        for param in &params[..] {
+            locals.tmp(param);
+        }
+
         Self {
             gen,
             func_name,
+            kind,
             params,
             src: String::new(),
-            locals: Ns::default(),
+            locals,
             block_storage: Vec::new(),
             blocks: Vec::new(),
             payloads: Vec::new(),
@@ -1564,6 +1890,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             cleanup: Vec::new(),
             import_return_pointer_area_size: 0,
             import_return_pointer_area_align: 0,
+            resource_drops: Vec::new(),
         }
     }
 
@@ -1675,7 +2002,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                     if let Some(ty) = case_ty.as_ref() {
                         format!("{}.INSTANCE", self.gen.type_name_with_qualifier(ty, true))
                     } else {
-                        format!("new {}None()", self.gen.gen.qualifier())
+                        format!("new global::{}None()", self.gen.gen.qualifier())
                     }
                 } else {
                     String::new()
@@ -1835,7 +2162,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::RecordLower { record, .. } => {
                 let op = &operands[0];
                 for f in record.fields.iter() {
-                    results.push(format!("({}).{}", op, f.name.to_csharp_ident()));
+                    results.push(format!("{}.{}", op, f.name.to_csharp_ident()));
                 }
             }
             Instruction::RecordLift { ty, name, .. } => {
@@ -1866,7 +2193,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     1 => results.push(format!("({})", op)),
                     _ => {
                         for i in 0..tuple.types.len() {
-                            results.push(format!("({}).Item{}", op, i + 1));
+                            results.push(format!("{}.Item{}", op, i + 1));
                         }
                     }
                 }
@@ -1932,7 +2259,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 let block = |ty: Option<&Type>, Block { body, results, .. }, payload| {
                     let payload = if let Some(_ty) = self.gen.non_empty_type(ty) {
-                        format!("var {payload} = ({op}).Value;")
+                        format!("var {payload} = {op}.Value;")
                     } else {
                         String::new()
                     };
@@ -1959,7 +2286,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     r#"
                     {declarations}
 
-                    if (({op}).HasValue) {{
+                    if ({op}.HasValue) {{
                         {some}
                     }} else {{
                         {none}
@@ -2139,8 +2466,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 let list = &operands[0];
                 let size = self.gen.gen.sizes.size(element);
-                let align = self.gen.gen.sizes.align(element);
-                let ty = self.gen.type_name(element);
+                let _align = self.gen.gen.sizes.align(element);
+                let ty = self.gen.type_name_with_qualifier(element, true);
                 let index = self.locals.tmp("index");
 
                 let buffer: String = self.locals.tmp("buffer");
@@ -2182,9 +2509,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let address = &operands[0];
                 let length = &operands[1];
                 let array = self.locals.tmp("array");
-                let ty = self.gen.type_name(element);
+                let ty = self.gen.type_name_with_qualifier(element, true);
                 let size = self.gen.gen.sizes.size(element);
-                let align = self.gen.gen.sizes.align(element);
+                let _align = self.gen.gen.sizes.align(element);
                 let index = self.locals.tmp("index");
 
                 let result = match &block_results[..] {
@@ -2215,7 +2542,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.push(self.block_storage.last().unwrap().base.clone())
             }
 
-            Instruction::CallWasm { sig, name } => {
+            Instruction::CallWasm { sig, .. } => {
                 let assignment = match &sig.results[..] {
                     [_] => {
                         let result = self.locals.tmp("result");
@@ -2230,33 +2557,32 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 };
 
                 let func_name = self.func_name.to_upper_camel_case();
-                let name = name.to_upper_camel_case();
 
                 let operands = operands.join(", ");
 
                 uwriteln!(
                     self.src,
-                    "{assignment} {name}WasmInterop.wasmImport{func_name}({operands});"
+                    "{assignment} {func_name}WasmInterop.wasmImport{func_name}({operands});"
                 );
             }
 
             Instruction::CallInterface { func } => {
-                let module = self.gen.name.to_string();
+                let module = self.gen.name;
                 let func_name = self.func_name.to_upper_camel_case();
                 let interface_name = CSharp::get_class_name_from_qualified_name(module).1;
 
-                let class_name_root = (match self.gen.function_level {
-                    FunctionLevel::Interface => interface_name
-                        .strip_prefix("I")
-                        .unwrap()
-                        .to_upper_camel_case(),
-                    FunctionLevel::FreeStanding => interface_name,
-                })
-                .to_upper_camel_case();
+                let class_name_root = interface_name
+                    .strip_prefix("I")
+                    .unwrap()
+                    .to_upper_camel_case();
 
                 let mut oper = String::new();
 
                 for (i, param) in operands.iter().enumerate() {
+                    if i == 0 && matches!(self.kind, FunctionKind::Method(_)) {
+                        continue;
+                    }
+
                     oper.push_str(&format!("({param})"));
 
                     if i < operands.len() && operands.len() != i + 1 {
@@ -2264,30 +2590,48 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     }
                 }
 
-                match func.results.len() {
-                    0 => self
-                        .src
-                        .push_str(&format!("{class_name_root}Impl.{func_name}({oper});")),
-                    1 => {
-                        let ret = self.locals.tmp("ret");
-                        uwriteln!(
-                            self.src,
-                            "var {ret} = {class_name_root}Impl.{func_name}({oper});"
-                        );
-                        results.push(ret);
-                    }
-                    _ => {
-                        let ret = self.locals.tmp("ret");
-                        uwriteln!(
-                            self.src,
-                            "var {ret} = {class_name_root}Impl.{func_name}({oper});"
-                        );
-                        let mut i = 1;
-                        for _ in func.results.iter_types() {
-                            results.push(format!("{}.Item{}", ret, i));
-                            i += 1;
+                match self.kind {
+                    FunctionKind::Freestanding | FunctionKind::Static(_) | FunctionKind::Method(_) => {
+                        let target = match self.kind {
+                            FunctionKind::Static(id) => self.gen.gen.all_resources[id].export_impl_name(),
+                            FunctionKind::Method(_) => operands[0].clone(),
+                            _ => format!("{class_name_root}Impl")
+                        };
+
+                        match func.results.len() {
+                            0 => uwriteln!(self.src, "{target}.{func_name}({oper});"),
+                            1 => {
+                                let ret = self.locals.tmp("ret");
+                                uwriteln!(
+                                    self.src,
+                                    "var {ret} = {target}.{func_name}({oper});"
+                                );
+                                results.push(ret);
+                            }
+                            _ => {
+                                let ret = self.locals.tmp("ret");
+                                uwriteln!(
+                                    self.src,
+                                    "var {ret} = {target}.{func_name}({oper});"
+                                );
+                                let mut i = 1;
+                                for _ in func.results.iter_types() {
+                                    results.push(format!("{ret}.Item{i}"));
+                                    i += 1;
+                                }
+                            }
                         }
                     }
+                    FunctionKind::Constructor(id) => {
+                        let target = self.gen.gen.all_resources[id].export_impl_name();
+                        let ret = self.locals.tmp("ret");
+                        uwriteln!(self.src, "var {ret} = new {target}({oper});");
+                        results.push(ret);
+                    }
+                }
+
+                for (_,  drop) in &self.resource_drops {
+                    uwriteln!(self.src, "{drop}?.Dispose();");
                 }
             }
 
@@ -2296,35 +2640,134 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     uwriteln!(self.src, "{address}.Free();");
                 }
 
-                match func.results.len() {
-                    0 => (),
-                    1 => uwriteln!(self.src, "return {};", operands[0]),
-                    _ => {
-                        let results = operands.join(", ");
-                        uwriteln!(self.src, "return ({results});")
+                if !matches!((self.gen.direction, self.kind), (Direction::Import, FunctionKind::Constructor(_))) {
+                    match func.results.len() {
+                        0 => (),
+                        1 => uwriteln!(self.src, "return {};", operands[0]),
+                        _ => {
+                            let results = operands.join(", ");
+                            uwriteln!(self.src, "return ({results});")
+                        }
                     }
                 }
             }
 
             Instruction::Malloc { .. } => unimplemented!(),
 
-            Instruction::GuestDeallocate { .. } => todo!("GuestDeallocate"),
+            Instruction::GuestDeallocate { .. } => {
+                uwriteln!(self.src, r#"Console.WriteLine("TODO: deallocate buffer for indirect parameters");"#);
+            }
 
-            Instruction::GuestDeallocateString => todo!("GuestDeallocateString"),
+            Instruction::GuestDeallocateString => {
+                uwriteln!(self.src, r#"Console.WriteLine("TODO: deallocate buffer for string");"#);
+            }
 
-            Instruction::GuestDeallocateVariant { .. } => todo!("GuestDeallocateString"),
+            Instruction::GuestDeallocateVariant { .. } => {
+                uwriteln!(self.src, r#"Console.WriteLine("TODO: deallocate buffer for variant");"#);
+            }
 
-            Instruction::GuestDeallocateList { .. } => todo!("GuestDeallocateList"),
+            Instruction::GuestDeallocateList { .. } => {
+                uwriteln!(self.src, r#"Console.WriteLine("TODO: deallocate buffer for list");"#);
+            }
+
             Instruction::HandleLower {
-                handle: _,
-                name: _,
-                ty: _,
-            } => todo!(),
+                handle,
+                ..
+            } => {
+                let (Handle::Own(ty) | Handle::Borrow(ty)) = handle;
+                let is_own = matches!(handle, Handle::Own(_));
+                let handle = self.locals.tmp("handle");
+                let id = dealias(self.gen.resolve, *ty);
+                let ResourceInfo { direction, .. } = &self.gen.gen.all_resources[&id];
+                let op = &operands[0];
+
+                uwriteln!(self.src, "var {handle} = {op}.Handle;");
+
+                match direction {
+                    Direction::Import => {
+                        if is_own {
+                            uwriteln!(self.src, "{op}.Handle = 0;");
+                        }
+                    }
+                    Direction::Export => {
+                        self.gen.gen.needs_rep_table = true;
+                        let local_rep = self.locals.tmp("localRep");
+			let export_name = self.gen.gen.all_resources[&id].export_impl_name();
+                        if is_own {
+                            // Note that we set `{op}.Handle` to zero below to ensure that application code doesn't
+                            // try to use the instance while the host has ownership.  We'll set it back to non-zero
+                            // if and when the host gives ownership back to us.
+                            uwriteln!(
+                                self.src,
+                                "if ({handle} == 0) {{
+                                     var {local_rep} = {export_name}.repTable.Add({op});
+                                     {handle} = {export_name}.WasmInterop.wasmImportResourceNew({local_rep});
+                                 }}
+                                 {op}.Handle = 0;
+                                 "
+                            );
+                        } else {
+                            uwriteln!(
+                                self.src,
+                                "if ({handle} == 0) {{
+                                     var {local_rep} = {export_name}.repTable.Add({op});
+                                     {handle} = {export_name}.WasmInterop.wasmImportResourceNew({local_rep});
+                                     {op}.Handle = {handle};
+                                 }}"
+                            );
+                        }
+                    }
+                }
+                results.push(format!("{handle}"));
+            }
+
             Instruction::HandleLift {
-                handle: _,
-                name: _,
-                ty: _dir,
-            } => todo!("HandleLeft"),
+                handle,
+                ..
+            } => {
+                let (Handle::Own(ty) | Handle::Borrow(ty)) = handle;
+                let is_own = matches!(handle, Handle::Own(_));
+                let mut resource = self.locals.tmp("resource");
+                let id = dealias(self.gen.resolve, *ty);
+                let ResourceInfo { direction, .. } = &self.gen.gen.all_resources[&id];
+                let op = &operands[0];
+
+                match direction {
+                    Direction::Import => {
+			let import_name = self.gen.type_name_with_qualifier(&Type::Id(id), true);
+
+                        if let FunctionKind::Constructor(_) = self.kind {
+                            resource = "this".to_owned();
+                            uwriteln!(self.src,"{resource}.Handle = {op};");
+                        } else {
+                            let var = if is_own { "var" } else { "" };
+                            uwriteln!(
+                                self.src,
+                                "{var} {resource} = new {import_name}(new {import_name}.THandle({op}));"
+                            );
+                        }
+                        if !is_own {
+                            self.resource_drops.push((import_name, resource.clone()));
+                        }
+                    }
+                    Direction::Export => {
+                        self.gen.gen.needs_rep_table = true;
+
+			let export_name = self.gen.gen.all_resources[&id].export_impl_name();
+                        if is_own {
+                            uwriteln!(
+                                self.src,
+                                "var {resource} = ({export_name}) {export_name}.repTable.Get\
+				     ({export_name}.WasmInterop.wasmImportResourceRep({op}));
+                                 {resource}.Handle = {op};"
+                            );
+                        } else {
+                            uwriteln!(self.src, "var {resource} = ({export_name}) {export_name}.repTable.Get({op});");
+                        }
+                    }
+                }
+                results.push(resource);
+            }
         }
     }
 
@@ -2549,11 +2992,11 @@ fn interface_name(
         None => String::new(),
     };
 
-    let world_namespae = &csharp.qualifier();
+    let world_namespace = &csharp.qualifier();
 
     format!(
         "{}wit.{}.{}I{name}",
-        world_namespae,
+        world_namespace,
         match direction {
             Direction::Import => "imports",
             Direction::Export => "exports",
@@ -2589,15 +3032,54 @@ impl ToCSharpIdent for str {
 
         //TODO: Repace with actual keywords
         match self {
-            "abstract" | "continue" | "for" | "new" | "switch" | "assert" | "default" | "goto"
-            | "namespace" | "synchronized" | "boolean" | "do" | "if" | "private" | "this"
-            | "break" | "double" | "implements" | "protected" | "throw" | "byte" | "else"
-            | "import" | "public" | "throws" | "case" | "enum" | "instanceof" | "return"
-            | "transient" | "catch" | "extends" | "int" | "short" | "try" | "char" | "final"
-            | "interface" | "static" | "void" | "class" | "finally" | "long" | "strictfp"
-            | "volatile" | "const" | "float" | "super" | "while" | "extern" | "sizeof" | "type"
-            | "struct" => format!("@{self}"),
+            "abstract" | "as" | "base" | "bool" | "break" | "byte" | "case" | "catch" | "char"
+            | "checked" | "class" | "const" | "continue" | "decimal" | "default" | "delegate"
+            | "do" | "double" | "else" | "enum" | "event" | "explicit" | "extern" | "false"
+            | "finally" | "fixed" | "float" | "for" | "foreach" | "goto" | "if" | "implicit"
+            | "in" | "int" | "interface" | "internal" | "is" | "lock" | "long" | "namespace"
+            | "new" | "null" | "object" | "operator" | "out" | "override" | "params"
+            | "private" | "protected" | "public" | "readonly" | "ref" | "return" | "sbyte"
+            | "sealed" | "short" | "sizeof" | "stackalloc" | "static" | "string" | "struct"
+            | "switch" | "this" | "throw" | "true" | "try" | "typeof" | "uint" | "ulong"
+            | "unchecked" | "unsafe" | "ushort" | "using" | "virtual" | "void" | "volatile"
+            | "while" => format!("@{self}"),
             _ => self.to_lower_camel_case(),
+        }
+    }
+}
+
+/// Group the specified functions by resource (or `None` for freestanding functions).
+///
+/// The returned map is constructed by iterating over `funcs`, then iterating over `all_resources`, thereby
+/// ensuring that even resources with no associated functions will be represented in the result.
+fn by_resource<'a>(
+    funcs: impl Iterator<Item = (&'a str, &'a Function)>,
+    all_resources: impl Iterator<Item = TypeId>,
+) -> IndexMap<Option<TypeId>, Vec<&'a Function>> {
+    let mut by_resource = IndexMap::<_, Vec<_>>::new();
+    for (_, func) in funcs {
+        by_resource
+            .entry(match &func.kind {
+                FunctionKind::Freestanding => None,
+                FunctionKind::Method(resource)
+                | FunctionKind::Static(resource)
+                | FunctionKind::Constructor(resource) => Some(*resource),
+            })
+            .or_default()
+            .push(func);
+    }
+    for id in all_resources {
+        by_resource.entry(Some(id)).or_default();
+    }
+    by_resource
+}
+
+/// Dereference any number `TypeDefKind::Type` aliases to retrieve the target type.
+fn dealias(resolve: &Resolve, mut id: TypeId) -> TypeId {
+    loop {
+        match &resolve.types[id].kind {
+            TypeDefKind::Type(Type::Id(that_id)) => id = *that_id,
+            _ => break id,
         }
     }
 }

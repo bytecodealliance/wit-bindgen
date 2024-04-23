@@ -15,66 +15,11 @@ macro_rules! codegen_test {
                 "guest-csharp",
                 $test.as_ref(),
                 |resolve, world, files| {
-                    if [
-                        "conventions",
-                        "guest-name",
-                        "import-and-export-resource",
-                        "import-and-export-resource-alias",
-                        "import-func",
-                        "interface-has-golang-keyword",
-                        "issue544",
-                        "issue551",
-                        "issue569",
-                        "issue573",
-                        "issue607",
-                        "issue668",
-                        "enum-has-golang-keyword",
-                        "just-export",
-                        "lift-lower-foreign",
-                        "lists",
-                        "many-arguments",
-                        "option-result",
-                        "record-has-keyword-used-in-func",
-                        "rename-interface",
-                        "resource-alias",
-                        "resource-borrow-in-record",
-                        "resource-borrow-in-record-export",
-                        "resource-local-alias",
-                        "resource-local-alias-borrow",
-                        "resource-local-alias-borrow-import",
-                        "resource-own-in-other-interface",
-                        "resources",
-                        "resources-in-aggregates",
-                        "resources-with-lists",
-                        "result-empty",
-                        "return-resource-from-export",
-                        "same-names5",
-                        "simple-http",
-                        "small-anonymous",
-                        "unused-import",
-                        "use-across-interfaces",
-                        "worlds-with-types",
-                        "variants-unioning-types",
-                        "go_params",
-                        "wasi-cli",
-                        "wasi-clocks",
-                        "wasi-filesystem",
-                        "wasi-http",
-                        "wasi-io",
-                        "issue929",
-                        "issue929-no-import",
-                        "issue929-no-export",
-                        "issue929-only-methods",
-                    ]
-                    .contains(&$name)
-                    {
-                        return;
-                    }
-                    #[cfg(any(all(target_os = "windows", feature = "aot"), feature = "mono"))]
+                    #[cfg(any(feature = "aot", feature = "mono"))]
                     wit_bindgen_csharp::Opts {
                         generate_stub: true,
                         string_encoding: StringEncoding::UTF8,
-                        #[cfg(all(target_os = "windows", feature = "aot"))]
+                        #[cfg(feature = "aot")]
                         runtime: Default::default(),
                         #[cfg(feature = "mono")]
                         runtime: wit_bindgen_csharp::CSharpRuntime::Mono,
@@ -91,7 +36,7 @@ macro_rules! codegen_test {
 test_helpers::codegen_tests!();
 
 fn verify(dir: &Path, name: &str) {
-    #[cfg(all(target_os = "windows", feature = "aot"))]
+    #[cfg(feature = "aot")]
     aot_verify(dir, name);
 
     #[cfg(feature = "mono")]
@@ -182,7 +127,7 @@ fn mono_verify(dir: &Path, name: &str) {
     let wasm_filename = dir.join(name);
 
     cmd.arg("build")
-        .arg(dir.join(format!("TheWorld.csproj")))
+        .arg(dir.join(format!("TheWorldWorld.csproj")))
         .arg("-c")
         .arg("Debug")
         .arg("-o")

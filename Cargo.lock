@@ -2376,6 +2376,7 @@ dependencies = [
  "anyhow",
  "clap",
  "heck 0.5.0",
+ "indexmap",
  "test-helpers",
  "wasm-encoder 0.206.0",
  "wasm-metadata",
