@@ -100,7 +100,7 @@ where
 
         let mut store = Store::new(&engine, data);
 
-        wasmtime_wasi::command::sync::add_to_linker(&mut linker)?;
+        wasmtime_wasi::add_to_linker_sync(&mut linker)?;
 
         let (exports, _) = instantiate(&mut store, &component, &linker)?;
 
