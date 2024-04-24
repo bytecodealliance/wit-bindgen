@@ -1303,10 +1303,22 @@ impl CppInterfaceGenerator<'_> {
                 && abi::guest_export_needs_post_return(self.resolve, func)
             {
                 let sig = self.resolve.wasm_signature(variant, func);
-                let module_name = self.wasm_import_module.as_ref().map(|e| e.clone()).unwrap();
-                let export_name = func.core_export_name(Some(&module_name));
-                let import_name =
-                    make_external_symbol(&module_name, &func.name, AbiVariant::GuestExport);
+                let module_name = self.wasm_import_module.as_ref().map(|e| e.clone());
+                let export_name = match module_name {
+                    Some(ref module_name) => make_external_symbol(module_name, &func.name, variant),
+                    None => make_external_component(&func.name),
+                };
+                //let export_name = func.core_export_name(Some(&module_name));
+                let import_name = match module_name {
+                    Some(ref module_name) => make_external_symbol(module_name, &func.name, AbiVariant::GuestExport),
+                    None => make_external_component(&func.name),
+                };
+                    // make_external_symbol(&module_name, &func.name, AbiVariant::GuestExport);
+                // let module_prefix = module_name.as_ref().map_or(String::default(), |name| {
+                //         let mut res = name.clone();
+                //         res.push('#');
+                //         res
+                //     });        
                 uwriteln!(
                     self.gen.c_src.src,
                     "extern \"C\" __attribute__((__weak__, __export_name__(\"cabi_post_{export_name}\")))"
