@@ -99,9 +99,9 @@ jobs:
     - uses: actions/setup-go@v4
       with:
         go-version: '1.20'
-    - uses: acifani/setup-tinygo@v1
+    - uses: acifani/setup-tinygo@v2
       with:
-        tinygo-version: 0.30.0
+        tinygo-version: 0.31.0
     - name: All but Windows, cargo test --workspace
       if : matrix.os != 'windows-latest'
       run: cargo test --workspace
