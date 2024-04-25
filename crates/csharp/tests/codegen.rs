@@ -61,6 +61,10 @@ macro_rules! codegen_test {
                         "wasi-filesystem",
                         "wasi-http",
                         "wasi-io",
+                        "issue929",
+                        "issue929-no-import",
+                        "issue929-no-export",
+                        "issue929-only-methods",
                     ]
                     .contains(&$name)
                     {
