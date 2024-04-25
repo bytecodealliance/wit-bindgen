@@ -1,4 +1,4 @@
-package foo:bar;
+package foo:bar3;
 
 interface f {
     resource fd {
