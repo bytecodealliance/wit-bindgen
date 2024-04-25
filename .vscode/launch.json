@@ -1,0 +1,73 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "codgen",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceRoot}/target/debug/deps/codegen-current.exe",
+            "args": [],
+            "preLaunchTask": "Build codegen"
+        },
+        {
+            "name": "runtime",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceRoot}/target/debug/deps/runtime-current.exe",
+            "args": [
+                "records",
+                "--",
+                "--exact"
+            ],
+            "preLaunchTask": "Build Runtime"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug single runtime test with cargo and csharp-naot",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "-p",
+                    "wit-bindgen-cli",
+                    "--no-default-features",
+                    "-F",
+                    "csharp-naot",
+                ],
+                "filter": {
+                    "name": "runtime",
+                    "kind": "test"
+                }
+            },
+            "args": [
+                "records::run",
+                "--exact"
+            ],
+            "cwd": "${workspaceFolder}",
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug single codegen tests with cargo in library 'wit-bindgen-csharp'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "-p",
+                    "wit-bindgen-csharp",
+                ],
+                "filter": {
+                    "name": "codegen",
+                    "kind": "test"
+                }
+            },
+            "args": [
+                "result-option",
+                "--",
+                "--exact"
+            ],
+            "cwd": "${workspaceFolder}",
+        },
+    ]
+}

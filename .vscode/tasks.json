@@ -1,0 +1,82 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "type": "shell",
+            "command": "rm",
+            "args": [
+                "target/debug/deps/codegen-*",
+            ],
+            "label": "rm old"
+        },
+        {
+            "type": "cargo",
+            "command": "test",
+            "args": [
+                "-p",
+                "wit-bindgen-csharp",
+                " --no-run"
+            ],
+            "label": "cargo test",
+        },
+        {
+            "type": "shell",
+            "command": "mv",
+            "args": [
+                "-force",
+                "target/debug/deps/codegen-*.exe",
+                "target/debug/deps/codegen-current.exe",
+            ],
+            "label": "make current",
+        },
+        {
+            "label": "Build codegen",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "rm old",
+                "cargo test",
+                "make current"
+            ]
+        },
+        {
+            "label": "Build Runtime",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "rm old runtime",
+                "cargo test runtime",
+                "make current runtime"
+            ]
+        },
+        {
+            "type": "shell",
+            "command": "rm",
+            "args": [
+                "target/debug/deps/runtime-*",
+            ],
+            "label": "rm old runtime"
+        },
+        {
+            "type": "cargo",
+            "command": "test",
+            "args": [
+                "-p",
+                "wit-bindgen-cli",
+                "--no-default-features",
+                "-F",
+                "csharp",
+                "--no-run"
+            ],
+            "label": "cargo test runtime",
+        },
+        {
+            "type": "shell",
+            "command": "mv",
+            "args": [
+                "-force",
+                "target/debug/deps/runtime-*.exe",
+                "target/debug/deps/runtime-current.exe",
+            ],
+            "label": "make current runtime",
+        },
+    ]
+}

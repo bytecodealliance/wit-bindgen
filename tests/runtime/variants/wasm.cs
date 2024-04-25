@@ -18,7 +18,6 @@ namespace VariantsWorld
             Debug.Assert(TestInterop.RoundtripResult(Result<uint, float>.ok(4)).AsOk == 4.0);
             Debug.Assert(TestInterop.RoundtripResult(Result<uint, float>.err(5.3f)).AsErr == 5);
 
-            Console.WriteLine("test enums");
             Debug.Assert(TestInterop.RoundtripEnum(ITest.E1.A) == ITest.E1.A);
             Debug.Assert(TestInterop.RoundtripEnum(ITest.E1.B) == ITest.E1.B);
 
