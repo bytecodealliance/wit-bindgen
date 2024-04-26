@@ -1,0 +1,16 @@
+package foo:bar4;
+
+interface f {
+    resource fd;
+}
+
+interface utils {
+    use f.{fd};
+    my-func: func() -> own<fd>;
+}
+
+world test {
+    import f;
+    export f;
+    export utils;
+}

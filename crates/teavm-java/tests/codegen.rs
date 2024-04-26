@@ -25,6 +25,10 @@ macro_rules! codegen_test {
     (wasi_filesystem $name:tt $test:tt) => {};
     (wasi_http $name:tt $test:tt) => {};
     (wasi_io $name:tt $test:tt) => {};
+    (issue929 $name:tt $test:tt) => {};
+    (issue929_no_import $name:tt $test:tt) => {};
+    (issue929_no_export $name:tt $test:tt) => {};
+    (issue929_only_methods $name:tt $test:tt) => {};
 
     ($id:ident $name:tt $test:tt) => {
         #[test]

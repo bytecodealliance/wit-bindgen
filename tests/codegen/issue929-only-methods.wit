@@ -1,0 +1,19 @@
+package foo:bar3;
+
+interface f {
+    resource fd {
+        get-a: func() -> s32;
+        set-a: func(a: s32);
+    }
+}
+
+interface utils {
+    use f.{fd};
+    my-func: func() -> own<fd>;
+}
+
+world test {
+    import f;
+    export f;
+    export utils;
+}
