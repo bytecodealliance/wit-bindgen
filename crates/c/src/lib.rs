@@ -3140,7 +3140,8 @@ pub fn is_arg_by_pointer(resolve: &Resolve, ty: &Type) -> bool {
 }
 
 pub fn to_c_ident(name: &str) -> String {
-    match name {
+    let ident = name.to_snake_case();
+    match ident.as_str() {
         // Escape C and C++ keywords.
         // Source: https://en.cppreference.com/w/cpp/keyword
         "alignas" => "alignas_".into(),
@@ -3245,6 +3246,6 @@ pub fn to_c_ident(name: &str) -> String {
         //  variable names for option and result flattening.
         "ret" => "ret_".into(),
         "err" => "err_".into(),
-        s => s.to_snake_case(),
+        _ => ident,
     }
 }
