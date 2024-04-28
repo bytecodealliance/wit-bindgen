@@ -1171,7 +1171,8 @@ struct FnSig {
 }
 
 pub fn to_rust_ident(name: &str) -> String {
-    match name {
+    let ident = name.to_snake_case();
+    match ident.as_str() {
         // Escape Rust keywords.
         // Source: https://doc.rust-lang.org/reference/keywords.html
         "as" => "as_".into(),
@@ -1224,7 +1225,7 @@ pub fn to_rust_ident(name: &str) -> String {
         "virtual" => "virtual_".into(),
         "yield" => "yield_".into(),
         "try" => "try_".into(),
-        s => s.to_snake_case(),
+        _ => ident,
     }
 }
 
