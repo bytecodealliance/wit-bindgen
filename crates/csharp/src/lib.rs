@@ -2585,7 +2585,7 @@ trait ToCSharpIdent: ToOwned {
 impl ToCSharpIdent for str {
     fn to_csharp_ident(&self) -> String {
         let ident = self.to_lower_camel_case();
-        match ident {
+        match ident.as_str() {
             // Escape C# keywords
             // Source: https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/keywords/
             "abstract" | "as" | "base" | "bool" | "break" | "byte" | "case" | "catch" | "char"
