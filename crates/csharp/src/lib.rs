@@ -419,7 +419,8 @@ impl WorldGenerator for CSharp {
         if self.needs_export_return_area {
             let mut ret_area_str = String::new();
 
-            let (array_size, element_type) = dotnet_aligned_array(self.return_area_size, self.return_area_align);
+            let (array_size, element_type) =
+                dotnet_aligned_array(self.return_area_size, self.return_area_align);
             uwrite!(
                 ret_area_str,
                 "
@@ -2319,7 +2320,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.import_return_pointer_area_size.max(size);
                 self.import_return_pointer_area_align =
                     self.import_return_pointer_area_align.max(align);
-                let (array_size, element_type) = dotnet_aligned_array(self.import_return_pointer_area_size, self.import_return_pointer_area_align);
+                let (array_size, element_type) = dotnet_aligned_array(
+                    self.import_return_pointer_area_size,
+                    self.import_return_pointer_area_align,
+                );
                 uwrite!(
                     self.src,
                     "
@@ -2328,7 +2332,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     {{
                         var ptr = (nint)retArea;
                     ",
-                    element_type, 
+                    element_type,
                     array_size
                 );
                 self.fixed = self.fixed + 1;
@@ -2396,24 +2400,23 @@ impl Bindgen for FunctionBindgen<'_, '_> {
     }
 }
 
-
 // We cant use "StructLayout.Pack" as dotnet will use the minimum of the type and the "Pack" field,
 // so for byte it would always use 1 regardless of the "Pack".
 fn dotnet_aligned_array(array_size: usize, required_alignment: usize) -> (usize, String) {
     match required_alignment {
         1 => {
             return (array_size, "byte".to_owned());
-        },
+        }
         2 => {
             return ((array_size + 1) / 2, "ushort".to_owned());
-        },
+        }
         4 => {
             return ((array_size + 3) / 4, "uint".to_owned());
-        },
+        }
         8 => {
             return ((array_size + 7) / 8, "ulong".to_owned());
-        },
-        _ => todo!("unsupported return_area_align {}", required_alignment)
+        }
+        _ => todo!("unsupported return_area_align {}", required_alignment),
     }
 }
 
