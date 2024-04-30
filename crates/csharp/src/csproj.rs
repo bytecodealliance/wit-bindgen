@@ -80,7 +80,6 @@ impl CSProjectLLVMBuilder {
         <ItemGroup>
           <NativeLibrary Include=\"{camel}_component_type.o\" />
           <NativeLibrary Include=\"$(MSBuildProjectDirectory)/{camel}_cabi_realloc.o\" />
-   
         </ItemGroup>
 
         <ItemGroup>
