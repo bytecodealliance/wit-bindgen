@@ -2397,6 +2397,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 }
 
 
+// We cant use "StructLayout.Pack" as dotnet will use the minimum of the type and the "Pack" field,
+// so for byte it would always use 1 regardless of the "Pack".
 fn dotnet_aligned_array(array_size: usize, required_alignment: usize) -> (usize, String) {
     match required_alignment {
         1 => {
