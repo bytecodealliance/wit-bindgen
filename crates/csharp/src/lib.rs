@@ -1519,7 +1519,7 @@ struct FunctionBindgen<'a, 'b> {
     cleanup: Vec<Cleanup>,
     import_return_pointer_area_size: usize,
     import_return_pointer_area_align: usize,
-    fixed: usize, // level of current "fixed" nesting, 0 or 1.
+    fixed: usize, // Number of `fixed` blocks that need to be closed.
 }
 
 impl<'a, 'b> FunctionBindgen<'a, 'b> {
