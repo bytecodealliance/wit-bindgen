@@ -4,7 +4,7 @@ interface keywords-uppercase {
     record CONST {
         BREAK: u8,
         ELSE: u8,
-        co-RETURN: u8,
+        CONST-CAST: u8,
     }
     WHILE: func(ENUM: CONST) -> option<CONST>;
 }
