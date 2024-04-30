@@ -182,7 +182,7 @@ fn mono_verify(dir: &Path, name: &str) {
     let wasm_filename = dir.join(name);
 
     cmd.arg("build")
-        .arg(dir.join(format!("TheWorld.csproj")))
+        .arg(dir.join(format!("TheWorldWorld.csproj")))
         .arg("-c")
         .arg("Debug")
         .arg("-o")
