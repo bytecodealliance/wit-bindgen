@@ -2273,17 +2273,18 @@ trait ToJavaIdent: ToOwned {
 
 impl ToJavaIdent for str {
     fn to_java_ident(&self) -> String {
-        // Escape Java keywords
-        // Source: https://docs.oracle.com/javase/tutorial/java/nutsandbolts/_keywords.html
-        match self {
+        let ident = self.to_lower_camel_case();
+        match ident.as_str() {
+            // Escape Java keywords
+            // Source: https://docs.oracle.com/javase/tutorial/java/nutsandbolts/_keywords.html
             "abstract" | "continue" | "for" | "new" | "switch" | "assert" | "default" | "goto"
             | "package" | "synchronized" | "boolean" | "do" | "if" | "private" | "this"
             | "break" | "double" | "implements" | "protected" | "throw" | "byte" | "else"
             | "import" | "public" | "throws" | "case" | "enum" | "instanceof" | "return"
             | "transient" | "catch" | "extends" | "int" | "short" | "try" | "char" | "final"
             | "interface" | "static" | "void" | "class" | "finally" | "long" | "strictfp"
-            | "volatile" | "const" | "float" | "native" | "super" | "while" => format!("{self}_"),
-            _ => self.to_lower_camel_case(),
+            | "volatile" | "const" | "float" | "native" | "super" | "while" => format!("{ident}_"),
+            _ => ident,
         }
     }
 }

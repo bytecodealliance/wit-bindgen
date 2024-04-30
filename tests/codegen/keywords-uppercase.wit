@@ -1,0 +1,15 @@
+package foo:foo;
+
+interface keywords-uppercase {
+    record CONST {
+        BREAK: u8,
+        ELSE: u8,
+        CONST-CAST: u8,
+    }
+    WHILE: func(ENUM: CONST) -> option<CONST>;
+}
+
+world the-world {
+  import keywords-uppercase;
+  export keywords-uppercase;
+}
