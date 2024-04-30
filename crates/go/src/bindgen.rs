@@ -3,7 +3,7 @@ use std::fmt::Write as _;
 use heck::{ToSnakeCase, ToUpperCamelCase};
 use wit_bindgen_c::{flags_repr, int_repr};
 use wit_bindgen_core::wit_parser::Handle::{Borrow, Own};
-use wit_bindgen_core::wit_parser::{Field, Function, Handle, Type, TypeDefKind};
+use wit_bindgen_core::wit_parser::{Field, Function, Type, TypeDefKind};
 use wit_bindgen_core::{dealias, uwriteln, Direction, Source};
 
 use super::avoid_keyword;
@@ -334,8 +334,8 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                 let resource = dealias(
                                     self.interface.resolve,
                                     *match h {
-                                        Handle::Borrow(resource) => resource,
-                                        Handle::Own(resource) => resource,
+                                        Borrow(resource) => resource,
+                                        Own(resource) => resource,
                                     },
                                 );
                                 let ns = self.interface.c_namespace_of_resource(resource);
@@ -629,8 +629,8 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                 let resource = dealias(
                                     self.interface.resolve,
                                     *match h {
-                                        Handle::Borrow(resource) => resource,
-                                        Handle::Own(resource) => resource,
+                                        Borrow(resource) => resource,
+                                        Own(resource) => resource,
                                     },
                                 );
                                 // we want to get the namespace of the dealias resource since
