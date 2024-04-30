@@ -2281,9 +2281,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     }
                 }
 
-                if self.fixed > 0 {
+                // Close all the fixed blocks.
+                for _ in 0..self.fixed {
                     uwriteln!(self.src, "}}");
-                    self.fixed = self.fixed - 1;
                 }
             }
 
