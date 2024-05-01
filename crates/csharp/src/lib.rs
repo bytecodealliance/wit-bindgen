@@ -1839,7 +1839,7 @@ struct FunctionBindgen<'a, 'b> {
     cleanup: Vec<Cleanup>,
     import_return_pointer_area_size: usize,
     import_return_pointer_area_align: usize,
-    fixed: usize, // Number of fixed blocks open at point of return.
+    fixed: usize, // Number of `fixed` blocks that need to be closed.
     resource_drops: Vec<(String, String)>,
 }
 
@@ -2629,9 +2629,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         }
                     }
 
-                if self.fixed > 0 {
+                // Close all the fixed blocks.
+                for _ in 0..self.fixed {
                     uwriteln!(self.src, "}}");
-                    self.fixed = self.fixed - 1;
                 }
                 }
             }
@@ -2770,16 +2770,20 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.import_return_pointer_area_size,
                     self.import_return_pointer_area_align,
                 );
+                let ret_area = self.locals.tmp("retArea");
+                let ret_area_byte0 = self.locals.tmp("retAreaByte0");
                 uwrite!(
                     self.src,
                     "
-                    var returnArea = new {0}[{1}];
-                    fixed ({0}* retArea = &returnArea[0])
+                    var {2} = new {0}[{1}];
+                    fixed ({0}* {3} = &{2}[0])
                     {{
-                        var ptr = (nint)retArea;
+                        var {ptr} = (nint){3};
                     ",
                     element_type,
-                    array_size
+                    array_size,
+                    ret_area,
+                    ret_area_byte0
                 );
                 self.fixed = self.fixed + 1;
 
