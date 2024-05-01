@@ -30,17 +30,17 @@ internal class RepTable<T> {
         return rep;
     }
 
-    internal T Get(int rep) {
-        if (list[rep] is Vacant) {
+    internal T Get(nint rep) {
+        if (list[(int)rep] is Vacant) {
             throw new ArgumentException("invalid rep");
         }
-        return (T) list[rep];
+        return (T) list[(int)rep];
     }
 
-    internal T Remove(int rep) {
+    internal T Remove(nint rep) {
         var val = Get(rep);
-        list[rep] = new Vacant(firstVacant);
-        firstVacant = rep;
+        list[(int)rep] = new Vacant(firstVacant);
+        firstVacant = (int)rep;
         return (T) val;
     }
 }
