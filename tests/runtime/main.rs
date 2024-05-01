@@ -307,7 +307,7 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
                 .arg("-I")
                 .arg(&out_dir)
                 .arg("-I")
-                .arg(&(String::from(env!("CARGO_MANIFEST_DIR"))+"/crates/cpp/helper-types"))
+                .arg(&(String::from(env!("CARGO_MANIFEST_DIR")) + "/crates/cpp/helper-types"))
                 .arg("-Wall")
                 .arg("-Wextra")
                 .arg("-Werror")

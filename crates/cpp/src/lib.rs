@@ -1310,15 +1310,17 @@ impl CppInterfaceGenerator<'_> {
                 };
                 //let export_name = func.core_export_name(Some(&module_name));
                 let import_name = match module_name {
-                    Some(ref module_name) => make_external_symbol(module_name, &func.name, AbiVariant::GuestExport),
+                    Some(ref module_name) => {
+                        make_external_symbol(module_name, &func.name, AbiVariant::GuestExport)
+                    }
                     None => make_external_component(&func.name),
                 };
-                    // make_external_symbol(&module_name, &func.name, AbiVariant::GuestExport);
+                // make_external_symbol(&module_name, &func.name, AbiVariant::GuestExport);
                 // let module_prefix = module_name.as_ref().map_or(String::default(), |name| {
                 //         let mut res = name.clone();
                 //         res.push('#');
                 //         res
-                //     });        
+                //     });
                 uwriteln!(
                     self.gen.c_src.src,
                     "extern \"C\" __attribute__((__weak__, __export_name__(\"cabi_post_{export_name}\")))"
