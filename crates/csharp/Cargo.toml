@@ -23,6 +23,7 @@ wasm-metadata = { workspace = true }
 heck = { workspace = true }
 clap = { workspace = true, optional = true }
 anyhow = { workspace = true }
+indexmap = { workspace = true }
 
 [dev-dependencies]
 test-helpers = { path = '../test-helpers' }

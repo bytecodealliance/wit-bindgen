@@ -80,7 +80,6 @@ impl CSProjectLLVMBuilder {
         <ItemGroup>
           <NativeLibrary Include=\"{camel}_component_type.o\" />
           <NativeLibrary Include=\"$(MSBuildProjectDirectory)/{camel}_cabi_realloc.o\" />
-   
         </ItemGroup>
 
         <ItemGroup>
@@ -185,18 +184,6 @@ impl CSProjectMonoBuilder {
 
         let aot = self.aot;
 
-        fs::write(
-            self.dir.join("rd.xml"),
-            format!(
-                r#"<Directives xmlns="http://schemas.microsoft.com/netfx/2013/01/metadata">
-            <Application>
-                <Assembly Name="{name}">
-                </Assembly>
-            </Application>
-        </Directives>"#
-            ),
-        )?;
-
         let maybe_aot = match aot {
             true => format!("<WasmBuildNative>{aot}</WasmBuildNative>"),
             false => String::new(),
@@ -208,13 +195,11 @@ impl CSProjectMonoBuilder {
         <PropertyGroup>
             <TargetFramework>net9.0</TargetFramework>
             <RuntimeIdentifier>wasi-wasm</RuntimeIdentifier>
-
-            <TargetOs>wasi</TargetOs>
+            <OutputType>Library</OutputType>
             {maybe_aot}
+            <RunAOTCompilation>{aot}</RunAOTCompilation>
             <WasmNativeStrip>false</WasmNativeStrip>
-            <IsBrowserWasmProject>false</IsBrowserWasmProject>
             <WasmSingleFileBundle>true</WasmSingleFileBundle>
-
             <RootNamespace>{name}</RootNamespace>
             <ImplicitUsings>enable</ImplicitUsings>
             <Nullable>enable</Nullable>
@@ -227,32 +212,27 @@ impl CSProjectMonoBuilder {
         </PropertyGroup>
 
         <ItemGroup>
-          <NativeLibrary Include=\"{camel}_component_type.o\" />
+          <NativeFileReference Include=\"{camel}_component_type.o\" Condition=\"Exists('{camel}_component_type.o')\"/>
         </ItemGroup>
 
-        <ItemGroup>
-            <RdXmlFile Include=\"rd.xml\" />
-        </ItemGroup>
         "
         );
 
-        if self.aot {
-            fs::write(
-                self.dir.join("nuget.config"),
-                r#"<?xml version="1.0" encoding="utf-8"?>
-            <configuration>
-                <config>
-                    <add key="globalPackagesFolder" value=".packages" />
-                </config>
-                <packageSources>
-                    <!--To inherit the global NuGet package sources remove the <clear/> line below -->
-                    <clear />
-                    <add key="nuget" value="https://api.nuget.org/v3/index.json" />
-                    <add key="dotnet9" value="https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet9/nuget/v3/index.json" />
-                </packageSources>
-            </configuration>"#,
-            )?;
-        }
+        fs::write(
+            self.dir.join("nuget.config"),
+            r#"<?xml version="1.0" encoding="utf-8"?>
+        <configuration>
+            <config>
+                <add key="globalPackagesFolder" value=".packages" />
+            </config>
+            <packageSources>
+                <!--To inherit the global NuGet package sources remove the <clear/> line below -->
+                <clear />
+                <add key="nuget" value="https://api.nuget.org/v3/index.json" />
+                <add key="dotnet9" value="https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet9/nuget/v3/index.json" />
+            </packageSources>
+        </configuration>"#,
+        )?;
 
         if self.clean_targets {
             let mut wasm_filename = self.dir.join(name);
