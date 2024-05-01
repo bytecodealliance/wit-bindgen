@@ -519,6 +519,8 @@ impl WorldGenerator for CSharp {
         if self.needs_export_return_area {
             let mut ret_area_str = String::new();
 
+            let (array_size, element_type) =
+                dotnet_aligned_array(self.return_area_size, self.return_area_align);
             uwrite!(
                 ret_area_str,
                 "
@@ -528,23 +530,22 @@ impl WorldGenerator for CSharp {
                     [StructLayout(LayoutKind.Sequential, Pack = {1})]
                     internal struct ReturnArea
                     {{
-                        private byte buffer;
+                        private {2} buffer;
 
-                        internal unsafe int AddressOfReturnArea()
+                        internal unsafe nint AddressOfReturnArea()
                         {{
-                            fixed(byte* ptr = &buffer)
-                            {{
-                                return (int)ptr;
-                            }}
+                            return (nint)Unsafe.AsPointer(ref buffer);
                         }}
                     }}
 
                     [ThreadStatic]
+                    [FixedAddressValueType]
                     internal static ReturnArea returnArea = default;
                 }}
                 ",
-                self.return_area_size,
+                array_size,
                 self.return_area_align,
+                element_type
             );
 
             src.push_str(&ret_area_str);
@@ -984,8 +985,6 @@ impl InterfaceGenerator<'_> {
         );
 
         let src = bindgen.src;
-        let import_return_pointer_area_size = bindgen.import_return_pointer_area_size;
-        let import_return_pointer_area_align = bindgen.import_return_pointer_area_align;
 
         let params = func
             .params
@@ -1021,28 +1020,6 @@ impl InterfaceGenerator<'_> {
                 internal static extern {wasm_result_type} wasmImport{interop_camel_name}({wasm_params});
             "#
         );
-
-        if import_return_pointer_area_size > 0 {
-            uwrite!(
-                target,
-                r#"
-                [InlineArray({import_return_pointer_area_size})]
-                [StructLayout(LayoutKind.Sequential, Pack = {import_return_pointer_area_align})]
-                internal struct ImportReturnArea
-                {{
-                    private byte buffer;
-
-                    internal unsafe int AddressOfReturnArea()
-                    {{
-                        fixed(byte* ptr = &buffer)
-                        {{
-                            return (int)ptr;
-                        }}
-                    }}
-                }}
-                "#,
-            )
-        }
 
         uwrite!(
             target,
@@ -1862,6 +1839,7 @@ struct FunctionBindgen<'a, 'b> {
     cleanup: Vec<Cleanup>,
     import_return_pointer_area_size: usize,
     import_return_pointer_area_align: usize,
+    fixed: usize, // Number of `fixed` blocks that need to be closed.
     resource_drops: Vec<(String, String)>,
 }
 
@@ -1892,6 +1870,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             cleanup: Vec::new(),
             import_return_pointer_area_size: 0,
             import_return_pointer_area_align: 0,
+            fixed: 0,
             resource_drops: Vec::new(),
         }
     }
@@ -2468,7 +2447,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 let list = &operands[0];
                 let size = self.gen.gen.sizes.size(element);
-                let _align = self.gen.gen.sizes.align(element);
                 let ty = self.gen.type_name_with_qualifier(element, true);
                 let index = self.locals.tmp("index");
 
@@ -2513,7 +2491,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let array = self.locals.tmp("array");
                 let ty = self.gen.type_name_with_qualifier(element, true);
                 let size = self.gen.gen.sizes.size(element);
-                let _align = self.gen.gen.sizes.align(element);
                 let index = self.locals.tmp("index");
 
                 let result = match &block_results[..] {
@@ -2526,7 +2503,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     "
                     var {array} = new List<{ty}>({length});
                     for (int {index} = 0; {index} < {length}; ++{index}) {{
-                        int {base} = {address} + ({index} * {size});
+                        nint {base} = {address} + ({index} * {size});
                         {body}
                         {array}.Add({result});
                     }}
@@ -2651,6 +2628,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             uwriteln!(self.src, "return ({results});")
                         }
                     }
+
+                // Close all the fixed blocks.
+                for _ in 0..self.fixed {
+                    uwriteln!(self.src, "}}");
+                }
                 }
             }
 
@@ -2780,19 +2762,30 @@ impl Bindgen for FunctionBindgen<'_, '_> {
         // their return area to be live until the post-return call.
         match self.gen.direction {
             Direction::Import => {
-                let ret_area = self.locals.tmp("retArea");
-                let name = self.func_name.to_upper_camel_case();
                 self.import_return_pointer_area_size =
                     self.import_return_pointer_area_size.max(size);
                 self.import_return_pointer_area_align =
                     self.import_return_pointer_area_align.max(align);
+                let (array_size, element_type) = dotnet_aligned_array(
+                    self.import_return_pointer_area_size,
+                    self.import_return_pointer_area_align,
+                );
+                let ret_area = self.locals.tmp("retArea");
+                let ret_area_byte0 = self.locals.tmp("retAreaByte0");
                 uwrite!(
                     self.src,
                     "
-                    var {ret_area} = new {name}WasmInterop.ImportReturnArea();
-                    var {ptr} = {ret_area}.AddressOfReturnArea();
-                    "
+                    var {2} = new {0}[{1}];
+                    fixed ({0}* {3} = &{2}[0])
+                    {{
+                        var {ptr} = (nint){3};
+                    ",
+                    element_type,
+                    array_size,
+                    ret_area,
+                    ret_area_byte0
                 );
+                self.fixed = self.fixed + 1;
 
                 return format!("{ptr}");
             }
@@ -2857,6 +2850,26 @@ impl Bindgen for FunctionBindgen<'_, '_> {
     }
 }
 
+// We cant use "StructLayout.Pack" as dotnet will use the minimum of the type and the "Pack" field,
+// so for byte it would always use 1 regardless of the "Pack".
+fn dotnet_aligned_array(array_size: usize, required_alignment: usize) -> (usize, String) {
+    match required_alignment {
+        1 => {
+            return (array_size, "byte".to_owned());
+        }
+        2 => {
+            return ((array_size + 1) / 2, "ushort".to_owned());
+        }
+        4 => {
+            return ((array_size + 3) / 4, "uint".to_owned());
+        }
+        8 => {
+            return ((array_size + 7) / 8, "ulong".to_owned());
+        }
+        _ => todo!("unsupported return_area_align {}", required_alignment),
+    }
+}
+
 fn perform_cast(op: &String, cast: &Bitcast) -> String {
     match cast {
         Bitcast::I32ToF32 => format!("BitConverter.Int32BitsToSingle({op})"),
@@ -2900,7 +2913,7 @@ fn wasm_type(ty: WasmType) -> &'static str {
         WasmType::I64 => "long",
         WasmType::F32 => "float",
         WasmType::F64 => "double",
-        WasmType::Pointer => "int",
+        WasmType::Pointer => "nint",
         WasmType::PointerOrI64 => "long",
         WasmType::Length => "int",
     }
