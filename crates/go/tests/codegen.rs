@@ -8,6 +8,7 @@ use heck::*;
 macro_rules! codegen_test {
     (issue668 $name:tt $test:tt) => {};
     (multiversion $name:tt $test:tt) => {};
+    (keywords_uppercase $name:tt $test:tt) => {};
     ($id:ident $name:tt $test:tt) => {
         #[test]
         fn $id() {
