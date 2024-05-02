@@ -29,11 +29,11 @@ clap = { version = "4.3.19", features = ["derive"] }
 env_logger = "0.10.0"
 indexmap = "2.0.0"
 
-wasmparser = "0.201.0"
-wasm-encoder = "0.201.0"
-wasm-metadata = "0.201.0"
-wit-parser = "0.201.0"
-wit-component = "0.201.0"
+wasmparser = { git = "https://github.com/dicej/wasm-tools", branch = "async" }
+wasm-encoder = { git = "https://github.com/dicej/wasm-tools", branch = "async" }
+wasm-metadata = { git = "https://github.com/dicej/wasm-tools", branch = "async" }
+wit-parser = { git = "https://github.com/dicej/wasm-tools", branch = "async" }
+wit-component = { git = "https://github.com/dicej/wasm-tools", branch = "async" }
 
 wit-bindgen-core = { path = 'crates/core', version = '0.22.0' }
 wit-bindgen-c = { path = 'crates/c', version = '0.22.0' }

@@ -30,6 +30,7 @@ struct Config {
     resolve: Resolve,
     world: WorldId,
     files: Vec<PathBuf>,
+    debug: bool,
 }
 
 /// The source of the wit package definition
@@ -47,6 +48,7 @@ impl Parse for Config {
         let mut world = None;
         let mut source = None;
         let mut async_configured = false;
+        let mut debug = false;
 
         if input.peek(token::Brace) {
             let content;
@@ -114,6 +116,9 @@ impl Parse for Config {
                     Opt::PubExportMacro(enable) => {
                         opts.pub_export_macro = enable.value();
                     }
+                    Opt::Debug(enable) => {
+                        debug = enable.value();
+                    }
                     Opt::Async(val, span) => {
                         if async_configured {
                             return Err(Error::new(span, "cannot specify second async config"));
@@ -139,6 +144,7 @@ impl Parse for Config {
             resolve,
             world,
             files,
+            debug,
         })
     }
 }
@@ -164,6 +170,8 @@ fn parse_source(source: &Option<Source>) -> anyhow::Result<(Resolve, PackageId, 
         None => parse(&root.join("wit"))?,
     };
 
+    resolve.add_future_and_stream_results();
+
     Ok((resolve, pkg, files))
 }
 
@@ -181,7 +189,7 @@ impl Config {
         // place a formatted version of the expanded code into a file. This file
         // will then show up in rustc error messages for any codegen issues and can
         // be inspected manually.
-        if std::env::var("WIT_BINDGEN_DEBUG").is_ok() {
+        if std::env::var("WIT_BINDGEN_DEBUG").is_ok() || self.debug {
             static INVOCATION: AtomicUsize = AtomicUsize::new(0);
             let root = Path::new(env!("DEBUG_OUTPUT_DIR"));
             let world_name = &self.resolve.worlds[self.world].name;
@@ -240,6 +248,7 @@ mod kw {
     syn::custom_keyword!(export_macro_name);
     syn::custom_keyword!(pub_export_macro);
     syn::custom_keyword!(imports);
+    syn::custom_keyword!(debug);
 }
 
 #[derive(Clone)]
@@ -295,6 +304,7 @@ enum Opt {
     ExportMacroName(syn::LitStr),
     PubExportMacro(syn::LitBool),
     Async(AsyncConfig, Span),
+    Debug(syn::LitBool),
 }
 
 impl Parse for Opt {
@@ -413,6 +423,10 @@ impl Parse for Opt {
             input.parse::<kw::pub_export_macro>()?;
             input.parse::<Token![:]>()?;
             Ok(Opt::PubExportMacro(input.parse()?))
+        } else if l.peek(kw::debug) {
+            input.parse::<kw::debug>()?;
+            input.parse::<Token![:]>()?;
+            Ok(Opt::Debug(input.parse()?))
         } else if l.peek(Token![async]) {
             let span = input.parse::<Token![async]>()?.span;
             input.parse::<Token![:]>()?;

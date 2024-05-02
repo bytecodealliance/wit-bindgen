@@ -350,6 +350,40 @@ def_instruction! {
             ty: TypeId,
         } : [1] => [1],
 
+        /// Create an `i32` from a future.
+        FutureLower {
+            payload: &'a Option<Type>,
+            ty: TypeId,
+        } : [1] => [1],
+
+        /// Create a future from an `i32`.
+        FutureLift {
+            payload: &'a Option<Type>,
+            ty: TypeId,
+        } : [1] => [1],
+
+        /// Create an `i32` from a stream.
+        StreamLower {
+            payload: &'a Type,
+            ty: TypeId,
+        } : [1] => [1],
+
+        /// Create a stream from an `i32`.
+        StreamLift {
+            payload: &'a Type,
+            ty: TypeId,
+        } : [1] => [1],
+
+        /// Create an `i32` from an error.
+        ErrorLower {
+            ty: TypeId,
+        } : [1] => [1],
+
+        /// Create a error from an `i32`.
+        ErrorLift {
+            ty: TypeId,
+        } : [1] => [1],
+
         /// Pops a tuple value off the stack, decomposes the tuple to all of
         /// its fields, and then pushes the fields onto the stack.
         TupleLower {
@@ -534,6 +568,8 @@ def_instruction! {
         AsyncPostCallInterface { func: &'a Function } : [1] => [func.results.len() + 1],
 
         AsyncCallReturn { name: &'a str, params: &'a [WasmType] } : [params.len()] => [0],
+
+        Flush { amt: usize } : [*amt] => [*amt],
     }
 }
 
@@ -751,7 +787,9 @@ fn needs_post_return(resolve: &Resolve, ty: &Type) -> bool {
                 .filter_map(|t| t.as_ref())
                 .any(|t| needs_post_return(resolve, t)),
             TypeDefKind::Flags(_) | TypeDefKind::Enum(_) => false,
-            TypeDefKind::Future(_) | TypeDefKind::Stream(_) => unimplemented!(),
+            TypeDefKind::Future(_) | TypeDefKind::Stream(_) | TypeDefKind::Error => {
+                unimplemented!()
+            }
             TypeDefKind::Unknown => unreachable!(),
         },
 
@@ -764,8 +802,8 @@ fn needs_post_return(resolve: &Resolve, ty: &Type) -> bool {
         | Type::S32
         | Type::U64
         | Type::S64
-        | Type::Float32
-        | Type::Float64
+        | Type::F32
+        | Type::F64
         | Type::Char => false,
     }
 }
@@ -867,6 +905,9 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                                 });
                                 self.stack.pop().unwrap()
                             }
+                            AbiVariant::GuestImportAsync | AbiVariant::GuestExportAsync => {
+                                unreachable!()
+                            }
                         };
                         lower_to_memory(self, ptr);
                     }
@@ -920,7 +961,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     let ptr = match self.variant {
                         // imports into guests means it's a wasm module
                         // calling an imported function. We supplied the
-                        // return poitner as the last argument (saved in
+                        // return pointer as the last argument (saved in
                         // `self.return_pointer`) so we use that to read
                         // the result of the function from memory.
                         AbiVariant::GuestImport => {
@@ -932,9 +973,16 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         // calling wasm so wasm returned a pointer to where
                         // the result is stored
                         AbiVariant::GuestExport => self.stack.pop().unwrap(),
+
+                        AbiVariant::GuestImportAsync | AbiVariant::GuestExportAsync => {
+                            unreachable!()
+                        }
                     };
 
                     self.read_results_from_memory(&func.results, ptr.clone(), 0);
+                    self.emit(&Instruction::Flush {
+                        amt: func.results.len(),
+                    });
 
                     if let Some((size, align)) = dealloc_size_align {
                         self.stack.push(ptr);
@@ -1088,6 +1136,10 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                             self.write_params_to_memory(func.results.iter_types(), ptr.clone(), 0);
                             self.stack.push(ptr);
                         }
+
+                        AbiVariant::GuestImportAsync | AbiVariant::GuestExportAsync => {
+                            unreachable!()
+                        }
                     }
                 }
 
@@ -1204,8 +1256,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             Type::S64 => self.emit(&I64FromS64),
             Type::U64 => self.emit(&I64FromU64),
             Type::Char => self.emit(&I32FromChar),
-            Type::Float32 => self.emit(&F32FromFloat32),
-            Type::Float64 => self.emit(&F64FromFloat64),
+            Type::F32 => self.emit(&F32FromFloat32),
+            Type::F64 => self.emit(&F64FromFloat64),
             Type::String => {
                 let realloc = self.list_realloc();
                 self.emit(&StringLower { realloc });
@@ -1305,8 +1357,21 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         results: &results,
                     });
                 }
-                TypeDefKind::Future(_) => todo!("lower future"),
-                TypeDefKind::Stream(_) => todo!("lower stream"),
+                TypeDefKind::Future(ty) => {
+                    self.emit(&FutureLower {
+                        payload: ty,
+                        ty: id,
+                    });
+                }
+                TypeDefKind::Stream(ty) => {
+                    self.emit(&StreamLower {
+                        payload: ty,
+                        ty: id,
+                    });
+                }
+                TypeDefKind::Error => {
+                    self.emit(&ErrorLower { ty: id });
+                }
                 TypeDefKind::Unknown => unreachable!(),
             },
         }
@@ -1393,8 +1458,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             Type::S64 => self.emit(&S64FromI64),
             Type::U64 => self.emit(&U64FromI64),
             Type::Char => self.emit(&CharFromI32),
-            Type::Float32 => self.emit(&Float32FromF32),
-            Type::Float64 => self.emit(&Float64FromF64),
+            Type::F32 => self.emit(&Float32FromF32),
+            Type::F64 => self.emit(&Float64FromF64),
             Type::String => self.emit(&StringLift),
             Type::Id(id) => match &self.resolve.types[id].kind {
                 TypeDefKind::Type(t) => self.lift(t),
@@ -1490,8 +1555,21 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     self.emit(&ResultLift { result: r, ty: id });
                 }
 
-                TypeDefKind::Future(_) => todo!("lift future"),
-                TypeDefKind::Stream(_) => todo!("lift stream"),
+                TypeDefKind::Future(ty) => {
+                    self.emit(&FutureLift {
+                        payload: ty,
+                        ty: id,
+                    });
+                }
+                TypeDefKind::Stream(ty) => {
+                    self.emit(&StreamLift {
+                        payload: ty,
+                        ty: id,
+                    });
+                }
+                TypeDefKind::Error => {
+                    self.emit(&ErrorLift { ty: id });
+                }
                 TypeDefKind::Unknown => unreachable!(),
             },
         }
@@ -1551,15 +1629,18 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 self.lower_and_emit(ty, addr, &I32Store { offset })
             }
             Type::U64 | Type::S64 => self.lower_and_emit(ty, addr, &I64Store { offset }),
-            Type::Float32 => self.lower_and_emit(ty, addr, &F32Store { offset }),
-            Type::Float64 => self.lower_and_emit(ty, addr, &F64Store { offset }),
+            Type::F32 => self.lower_and_emit(ty, addr, &F32Store { offset }),
+            Type::F64 => self.lower_and_emit(ty, addr, &F64Store { offset }),
             Type::String => self.write_list_to_memory(ty, addr, offset),
 
             Type::Id(id) => match &self.resolve.types[id].kind {
                 TypeDefKind::Type(t) => self.write_to_memory(t, addr, offset),
                 TypeDefKind::List(_) => self.write_list_to_memory(ty, addr, offset),
 
-                TypeDefKind::Handle(_) => self.lower_and_emit(ty, addr, &I32Store { offset }),
+                TypeDefKind::Future(_)
+                | TypeDefKind::Stream(_)
+                | TypeDefKind::Error
+                | TypeDefKind::Handle(_) => self.lower_and_emit(ty, addr, &I32Store { offset }),
 
                 // Decompose the record into its components and then write all
                 // the components into memory one-by-one.
@@ -1649,8 +1730,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     self.store_intrepr(offset, e.tag());
                 }
 
-                TypeDefKind::Future(_) => todo!("write future to memory"),
-                TypeDefKind::Stream(_) => todo!("write stream to memory"),
                 TypeDefKind::Unknown => unreachable!(),
             },
         }
@@ -1739,8 +1818,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             Type::S16 => self.emit_and_lift(ty, addr, &I32Load16S { offset }),
             Type::U32 | Type::S32 | Type::Char => self.emit_and_lift(ty, addr, &I32Load { offset }),
             Type::U64 | Type::S64 => self.emit_and_lift(ty, addr, &I64Load { offset }),
-            Type::Float32 => self.emit_and_lift(ty, addr, &F32Load { offset }),
-            Type::Float64 => self.emit_and_lift(ty, addr, &F64Load { offset }),
+            Type::F32 => self.emit_and_lift(ty, addr, &F32Load { offset }),
+            Type::F64 => self.emit_and_lift(ty, addr, &F64Load { offset }),
             Type::String => self.read_list_from_memory(ty, addr, offset),
 
             Type::Id(id) => match &self.resolve.types[id].kind {
@@ -1748,7 +1827,10 @@ impl<'a, B: Bindgen> Generator<'a, B> {
 
                 TypeDefKind::List(_) => self.read_list_from_memory(ty, addr, offset),
 
-                TypeDefKind::Handle(_) => self.emit_and_lift(ty, addr, &I32Load { offset }),
+                TypeDefKind::Future(_)
+                | TypeDefKind::Stream(_)
+                | TypeDefKind::Error
+                | TypeDefKind::Handle(_) => self.emit_and_lift(ty, addr, &I32Load { offset }),
 
                 TypeDefKind::Resource => {
                     todo!();
@@ -1832,8 +1914,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     self.lift(ty);
                 }
 
-                TypeDefKind::Future(_) => todo!("read future from memory"),
-                TypeDefKind::Stream(_) => todo!("read stream from memory"),
                 TypeDefKind::Unknown => unreachable!(),
             },
         }
@@ -1936,8 +2016,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             | Type::Char
             | Type::U64
             | Type::S64
-            | Type::Float32
-            | Type::Float64 => {}
+            | Type::F32
+            | Type::F64 => {}
 
             Type::Id(id) => match &self.resolve.types[id].kind {
                 TypeDefKind::Type(t) => self.deallocate(t, addr, offset),
@@ -2004,6 +2084,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
 
                 TypeDefKind::Future(_) => todo!("read future from memory"),
                 TypeDefKind::Stream(_) => todo!("read stream from memory"),
+                TypeDefKind::Error => todo!("read error from memory"),
                 TypeDefKind::Unknown => unreachable!(),
             },
         }

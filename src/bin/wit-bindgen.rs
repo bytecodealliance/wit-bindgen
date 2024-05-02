@@ -156,6 +156,7 @@ fn gen_world(
 ) -> Result<()> {
     let mut resolve = Resolve::default();
     let (pkg, _files) = resolve.push_path(&opts.wit)?;
+    self.resolve.add_future_and_stream_results();
     let world = resolve.select_world(pkg, opts.world.as_deref())?;
     generator.generate(&resolve, world, files)?;
 

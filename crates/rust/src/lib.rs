@@ -46,6 +46,11 @@ struct RustWasm {
     rt_module: IndexSet<RuntimeItem>,
     export_macros: Vec<(String, String)>,
     with: HashMap<String, String>,
+
+    unit_result: Option<TypeId>,
+    payload_results: HashMap<TypeId, TypeId>,
+    future_payloads_emitted: HashSet<String>,
+    stream_payloads_emitted: HashSet<String>,
 }
 
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
@@ -339,6 +344,9 @@ impl RustWasm {
             }
         }
         self.src.push_str("}\n");
+        if emitted.contains(&RuntimeItem::AsyncSupport) {
+            self.src.push_str("pub use _rt::async_support;\n");
+        }
     }
 
     fn emit_runtime_item(&mut self, item: RuntimeItem) {
@@ -572,7 +580,9 @@ impl<T: WasmResource> Drop for Resource<T> {
             }
 
             RuntimeItem::AsyncSupport => {
+                self.src.push_str("pub mod async_support {");
                 self.src.push_str(include_str!("async_support.rs"));
+                self.src.push_str("}");
             }
         }
     }
@@ -893,6 +903,10 @@ impl WorldGenerator for RustWasm {
         for (k, v) in self.opts.with.iter() {
             self.with.insert(k.clone(), v.clone());
         }
+
+        let (unit_result, payload_results) = resolve.find_future_and_stream_results();
+        self.unit_result = unit_result;
+        self.payload_results = payload_results;
     }
 
     fn import_interface(
@@ -1163,6 +1177,7 @@ fn compute_module_path(name: &WorldKey, resolve: &Resolve, is_export: bool) -> V
 }
 
 enum Identifier<'a> {
+    None,
     World(WorldId),
     Interface(InterfaceId, &'a WorldKey),
 }
