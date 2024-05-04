@@ -930,8 +930,8 @@ impl CppInterfaceGenerator<'_> {
         };
         let mut module_name = self.wasm_import_module.as_ref().map(|e| e.clone());
         if matches!(
-            is_drop,
-            SpecialMethod::ResourceNew | SpecialMethod::ResourceDrop
+            (&is_drop, self.gen.opts.host_side()),
+            (SpecialMethod::ResourceNew, false) | (SpecialMethod::ResourceDrop, false) | (SpecialMethod::ResourceRep, false)
         ) {
             module_name = Some(String::from("[export]") + &module_name.unwrap());
         }
@@ -1167,8 +1167,8 @@ impl CppInterfaceGenerator<'_> {
             self.gen.h_src.src.push_str(" const");
         }
         let is_special = is_special_method(func);
-        match is_special {
-            SpecialMethod::Allocate => {
+        match (&is_special, self.gen.opts.host_side()) {
+            (SpecialMethod::Allocate, _) => {
                 uwrite!(
                     self.gen.h_src.src,
                     "{{\
@@ -1185,7 +1185,7 @@ impl CppInterfaceGenerator<'_> {
                 // body is inside the header
                 return Vec::default();
             }
-            SpecialMethod::Dtor => {
+            (SpecialMethod::Dtor, _) | (SpecialMethod::ResourceDrop, true) => {
                 uwrite!(
                     self.gen.h_src.src,
                     "{{\
@@ -1197,19 +1197,18 @@ impl CppInterfaceGenerator<'_> {
             // SpecialMethod::None => todo!(),
             // SpecialMethod::ResourceDrop => todo!(),
             // SpecialMethod::ResourceNew => todo!(),
-            _ => (),
+            _ => self.gen.h_src.src.push_str(";\n"),
         }
-        self.gen.h_src.src.push_str(";\n");
         drop(cpp_sig);
 
         // we want to separate the lowered signature (wasm) and the high level signature
         if !import
-            && !matches!(
-                is_special,
+            && matches!(
+                &is_special,
                 SpecialMethod::ResourceDrop
                     | SpecialMethod::ResourceNew
                     | SpecialMethod::ResourceRep
-            )
+            ) == self.gen.opts.host_side()
         {
             self.print_export_signature(func, variant)
         } else {
