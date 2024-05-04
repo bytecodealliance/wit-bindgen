@@ -25,6 +25,8 @@
 | | | record{string, list} | &T | T const& | a,l,a,l | 
 | | | large-struct (>16 args) | &T | T const& | &t |
 | | | result<string,list> | Result<&str, &[]> | std::expected<string_view, span> | d,a,l |
+| | | option\<string> | Option\<&str> | optional<string_view> const& | d,a,l|
+| | | list\<resrc> | &[\&Resrc]? | vector<string_view> const& | a,l|
 | GIR | t | string | String | wit::string[^2] | &(addr, len) | |
 | | | list | Vec | wit::vector | &(a,l) |
 | | | result<string,list> | Result<String, Vec> | std::expected<wit::string, wit::vector> | &(d,a,l) |
