@@ -107,6 +107,59 @@ struct Cpp {
     defined_types: HashSet<(Vec<String>, String)>,
 }
 
+#[derive(Default, Debug, Clone, Copy)]
+pub enum Ownership {
+    /// Generated types will be composed entirely of owning fields, regardless
+    /// of whether they are used as parameters to imports or not.
+    #[default]
+    Owning,
+
+    /// Generated types used as parameters to imports will be "deeply
+    /// borrowing", i.e. contain references rather than owned values when
+    /// applicable.
+    Borrowing {
+        /// Whether or not to generate "duplicate" type definitions for a single
+        /// WIT type if necessary, for example if it's used as both an import
+        /// and an export, or if it's used both as a parameter to an import and
+        /// a return value from an import.
+        duplicate_if_necessary: bool,
+    },
+}
+
+impl FromStr for Ownership {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "owning" => Ok(Self::Owning),
+            "borrowing" => Ok(Self::Borrowing {
+                duplicate_if_necessary: false,
+            }),
+            "borrowing-duplicate-if-necessary" => Ok(Self::Borrowing {
+                duplicate_if_necessary: true,
+            }),
+            _ => Err(format!(
+                "unrecognized ownership: `{s}`; \
+                 expected `owning`, `borrowing`, or `borrowing-duplicate-if-necessary`"
+            )),
+        }
+    }
+}
+
+impl core::fmt::Display for Ownership {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.write_str(match self {
+            Ownership::Owning => "owning",
+            Ownership::Borrowing {
+                duplicate_if_necessary: false,
+            } => "borrowing",
+            Ownership::Borrowing {
+                duplicate_if_necessary: true,
+            } => "borrowing-duplicate-if-necessary",
+        })
+    }
+}
+
 #[derive(Default, Debug, Clone)]
 #[cfg_attr(feature = "clap", derive(clap::Args))]
 pub struct Opts {
@@ -139,6 +192,22 @@ pub struct Opts {
     /// This avoids identical names across components, useful for native
     #[cfg_attr(feature = "clap", arg(long))]
     pub internal_prefix: Option<String>,
+
+    /// Whether to generate owning or borrowing type definitions.
+    ///
+    /// Valid values include:
+    ///
+    /// - `owning`: Generated types will be composed entirely of owning fields,
+    /// regardless of whether they are used as parameters to imports or not.
+    ///
+    /// - `borrowing`: Generated types used as parameters to imports will be
+    /// "deeply borrowing", i.e. contain references rather than owned values
+    /// when applicable.
+    ///
+    /// - `borrowing-duplicate-if-necessary`: As above, but generating distinct
+    /// types for borrowing and owning, if necessary.
+    #[cfg_attr(feature = "clap", arg(long, default_value_t = Ownership::Owning))]
+    pub ownership: Ownership,
 }
 
 impl Opts {
