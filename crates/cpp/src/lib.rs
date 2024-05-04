@@ -122,6 +122,23 @@ pub struct Opts {
     /// 64bit guest
     #[cfg_attr(feature = "clap", arg(long, default_value_t = bool::default()))]
     pub wasm64: bool,
+
+    /// Place each interface in its own file,
+    /// this enables sharing bindings across projects
+    #[cfg_attr(feature = "clap", arg(long, default_value_t = bool::default()))]
+    pub split_interfaces: bool,
+
+    /// Optionally prefix any export names with the specified value.
+    ///
+    /// This is useful to avoid name conflicts when testing.
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub export_prefix: Option<String>,
+
+    /// Wrap all C++ classes inside a custom namespace.
+    ///
+    /// This avoids identical names across components, useful for native
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub internal_prefix: Option<String>,
 }
 
 impl Opts {
@@ -304,7 +321,7 @@ impl WorldGenerator for Cpp {
         let mut gen = self.interface(resolve, binding, true, Some(wasm_import_module));
         gen.interface = Some(id);
         gen.types(id);
-        let namespace = namespace(resolve, &TypeOwner::Interface(id), false);
+        let namespace = namespace(resolve, &TypeOwner::Interface(id), false, &gen.gen.opts);
 
         for (_name, func) in resolve.interfaces[id].functions.iter() {
             if matches!(func.kind, FunctionKind::Freestanding) {
@@ -330,7 +347,7 @@ impl WorldGenerator for Cpp {
         let mut gen = self.interface(resolve, binding, false, Some(wasm_import_module));
         gen.interface = Some(id);
         gen.types(id);
-        let namespace = namespace(resolve, &TypeOwner::Interface(id), true);
+        let namespace = namespace(resolve, &TypeOwner::Interface(id), true, &gen.gen.opts);
 
         for (_name, func) in resolve.interfaces[id].functions.iter() {
             if matches!(func.kind, FunctionKind::Freestanding) {
@@ -352,7 +369,7 @@ impl WorldGenerator for Cpp {
         let wasm_import_module = resolve.name_world_key(&name);
         let binding = Some(name);
         let mut gen = self.interface(resolve, binding.as_ref(), true, Some(wasm_import_module));
-        let namespace = namespace(resolve, &TypeOwner::World(world), false);
+        let namespace = namespace(resolve, &TypeOwner::World(world), false, &gen.gen.opts);
 
         for (_name, func) in funcs.iter() {
             if matches!(func.kind, FunctionKind::Freestanding) {
@@ -373,7 +390,7 @@ impl WorldGenerator for Cpp {
         // let wasm_import_module = resolve.name_world_key(&name);
         let binding = Some(name);
         let mut gen = self.interface(resolve, binding.as_ref(), false, None);
-        let namespace = namespace(resolve, &TypeOwner::World(world), true);
+        let namespace = namespace(resolve, &TypeOwner::World(world), true, &gen.gen.opts);
 
         for (_name, func) in funcs.iter() {
             if matches!(func.kind, FunctionKind::Freestanding) {
@@ -620,8 +637,11 @@ impl WorldGenerator for Cpp {
 }
 
 // determine namespace (for the lifted C++ function)
-fn namespace(resolve: &Resolve, owner: &TypeOwner, guest_export: bool) -> Vec<String> {
+fn namespace(resolve: &Resolve, owner: &TypeOwner, guest_export: bool, opts: &Opts) -> Vec<String> {
     let mut result = Vec::default();
+    if let Some(prefix) = &opts.internal_prefix {
+        result.push(prefix.clone());
+    }
     if guest_export {
         result.push(String::from("exports"));
     }
@@ -757,7 +777,7 @@ impl CppInterfaceGenerator<'_> {
                 .map(|id| TypeOwner::Interface(id))
                 .unwrap_or(TypeOwner::World(self.gen.world_id.unwrap())),
         ));
-        let mut namespace = namespace(self.resolve, &owner, guest_export);
+        let mut namespace = namespace(self.resolve, &owner, guest_export, &self.gen.opts);
         let is_drop = is_special_method(func);
         let func_name_h = if !matches!(&func.kind, FunctionKind::Freestanding) {
             namespace.push(object.clone());
@@ -1152,6 +1172,7 @@ impl CppInterfaceGenerator<'_> {
                 cifg.resolve,
                 &owner.owner,
                 matches!(variant, AbiVariant::GuestExport),
+                &cifg.gen.opts,
             );
             namespace.push(owner.name.as_ref().unwrap().to_upper_camel_case());
             namespace
@@ -1249,6 +1270,7 @@ impl CppInterfaceGenerator<'_> {
                             self.resolve,
                             owner,
                             matches!(variant, AbiVariant::GuestExport),
+                            &self.gen.opts,
                         )
                     } else {
                         let owner = &self.resolve.types[match &func.kind {
@@ -1262,6 +1284,7 @@ impl CppInterfaceGenerator<'_> {
                             self.resolve,
                             &owner.owner,
                             matches!(variant, AbiVariant::GuestExport),
+                            &self.gen.opts,
                         );
                         namespace.push(owner.name.as_ref().unwrap().to_upper_camel_case());
                         namespace
@@ -1413,7 +1436,7 @@ impl CppInterfaceGenerator<'_> {
         guest_export: bool,
     ) -> String {
         let ty = &self.resolve.types[id];
-        let namespc = namespace(self.resolve, &ty.owner, guest_export);
+        let namespc = namespace(self.resolve, &ty.owner, guest_export, &self.gen.opts);
         let mut relative = SourceWithState::default();
         relative.namespace = from_namespace.clone();
         relative.qualify(&namespc);
@@ -1613,7 +1636,12 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
         docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
         let ty = &self.resolve.types[id];
-        let namespc = namespace(self.resolve, &ty.owner, NOT_IN_EXPORTED_NAMESPACE);
+        let namespc = namespace(
+            self.resolve,
+            &ty.owner,
+            NOT_IN_EXPORTED_NAMESPACE,
+            &self.gen.opts,
+        );
         if self.gen.is_first_definition(&namespc, name) {
             self.gen.h_src.change_namespace(&namespc);
             Self::docs(&mut self.gen.h_src.src, docs);
@@ -1642,7 +1670,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
             let mut world_name = self.gen.world.to_snake_case();
             world_name.push_str("::");
             let mut headerfile = SourceWithState::default();
-            let namespc = namespace(self.resolve, &type_.owner, !guest_import);
+            let namespc = namespace(self.resolve, &type_.owner, !guest_import, &self.gen.opts);
             let pascal = name.to_upper_camel_case();
             let user_filename = namespc.join("-") + "-" + &pascal + ".h";
             if definition {
@@ -1786,7 +1814,12 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
         docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
         let ty = &self.resolve.types[id];
-        let namespc = namespace(self.resolve, &ty.owner, NOT_IN_EXPORTED_NAMESPACE);
+        let namespc = namespace(
+            self.resolve,
+            &ty.owner,
+            NOT_IN_EXPORTED_NAMESPACE,
+            &self.gen.opts,
+        );
         if self.gen.is_first_definition(&namespc, name) {
             self.gen.h_src.change_namespace(&namespc);
             Self::docs(&mut self.gen.h_src.src, docs);
@@ -1826,7 +1859,12 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
         docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
         let ty = &self.resolve.types[id];
-        let namespc = namespace(self.resolve, &ty.owner, NOT_IN_EXPORTED_NAMESPACE);
+        let namespc = namespace(
+            self.resolve,
+            &ty.owner,
+            NOT_IN_EXPORTED_NAMESPACE,
+            &self.gen.opts,
+        );
         self.gen.h_src.change_namespace(&namespc);
         Self::docs(&mut self.gen.h_src.src, docs);
         let pascal = name.to_pascal_case();
@@ -1879,7 +1917,12 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
         docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
         let ty = &self.resolve.types[id];
-        let namespc = namespace(self.resolve, &ty.owner, NOT_IN_EXPORTED_NAMESPACE);
+        let namespc = namespace(
+            self.resolve,
+            &ty.owner,
+            NOT_IN_EXPORTED_NAMESPACE,
+            &self.gen.opts,
+        );
         if self.gen.is_first_definition(&namespc, name) {
             self.gen.h_src.change_namespace(&namespc);
             let pascal = name.to_pascal_case();
@@ -1906,7 +1949,12 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
         docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
         let ty = &self.resolve.types[id];
-        let namespc = namespace(self.resolve, &ty.owner, NOT_IN_EXPORTED_NAMESPACE);
+        let namespc = namespace(
+            self.resolve,
+            &ty.owner,
+            NOT_IN_EXPORTED_NAMESPACE,
+            &self.gen.opts,
+        );
         self.gen.h_src.change_namespace(&namespc);
         let pascal = name.to_pascal_case();
         Self::docs(&mut self.gen.h_src.src, docs);
