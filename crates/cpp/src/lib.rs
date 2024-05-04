@@ -75,6 +75,7 @@ struct Includes {
     needs_tuple: bool,
     // needs wit types
     needs_wit: bool,
+    needs_memory: bool,
 }
 
 #[derive(Clone)]
@@ -562,6 +563,9 @@ impl WorldGenerator for Cpp {
             } else {
                 self.include("<wit-guest.h>");
             }
+        }
+        if self.dependencies.needs_memory {
+            self.include("<memory>");
         }
 
         if self.opts.short_cut {
@@ -1145,9 +1149,9 @@ impl CppInterfaceGenerator<'_> {
                 uwrite!(
                     self.gen.h_src.src,
                     "{{\
-                        return new {}({});\
+                        return Owned(new {}({}));\
                     }}",
-                    cpp_sig.namespace.join("::"),
+                    cpp_sig.namespace.last().unwrap(), //join("::"),
                     cpp_sig
                         .arguments
                         .iter()
@@ -1786,6 +1790,8 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                 self.gen.dependencies.needs_exported_resources = true;
             }
             self.gen.dependencies.needs_wit = true;
+            // for unique_ptr
+            // self.gen.dependencies.needs_memory = true;
 
             let base_type = match (definition, self.gen.opts.host_side()) {
                 (true, false) => format!("wit::{RESOURCE_EXPORT_BASE_CLASS_NAME}<{pascal}>"),
@@ -1822,6 +1828,10 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                 };
                 self.generate_function(&func, &TypeOwner::Interface(intf), variant);
             }
+            // uwriteln!(self.gen.h_src.src, "struct Deleter {{
+            //             void operator()({pascal}* ptr) const {{ {pascal}::Dtor(ptr); }}
+            //         }};
+            //         typedef std::unique_ptr<{pascal}, {pascal}::Deleter> Owned;");
             let funcs = self.resolve.interfaces[intf].functions.values();
             for func in funcs {
                 if match &func.kind {

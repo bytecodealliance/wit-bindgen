@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <string_view>
 #include <string>
+#include <memory> // unique_ptr
 #include "wit-common.h"
 
 namespace wit {
@@ -82,6 +83,11 @@ public:
 
 template <class R> class ResourceExportBase {
   public:
+    struct Deleter {
+      void operator()(R* ptr) const { R::Dtor(ptr); }
+    };
+    typedef std::unique_ptr<R, Deleter> Owned;
+
     static const int32_t invalid = -1;
 
     int32_t handle;

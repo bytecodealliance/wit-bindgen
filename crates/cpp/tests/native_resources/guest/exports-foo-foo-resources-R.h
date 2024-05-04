@@ -12,10 +12,6 @@ class R : public wit::ResourceExportBase<R> {
 
 public:
   static void Dtor(R *self) { delete self; };
-  struct Deleter {
-    void operator()(R* ptr) const { R::Dtor(ptr); }
-  };
-  typedef std::unique_ptr<R, R::Deleter> Owned;
   R(uint32_t a) : value(a) {}
   static Owned New(uint32_t a) { return Owned(new R(a)); }
   void Add(uint32_t b) { value += b; }
