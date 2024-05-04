@@ -21,6 +21,7 @@ mod wamr;
 
 pub const RESOURCE_IMPORT_BASE_CLASS_NAME: &str = "ResourceImportBase";
 pub const RESOURCE_EXPORT_BASE_CLASS_NAME: &str = "ResourceExportBase";
+pub const RESOURCE_TABLE_NAME: &str = "ResourceTable";
 pub const OWNED_CLASS_NAME: &str = "Owned";
 // these types are always defined in the non-exports namespace
 const NOT_IN_EXPORTED_NAMESPACE: bool = false;
@@ -616,7 +617,10 @@ impl WorldGenerator for Cpp {
             }
         }
         if self.opts.host_side() && self.dependencies.needs_exported_resources {
-            uwriteln!(c_str.src, "template <class R> std::map<int32_t, R> wit::{RESOURCE_EXPORT_BASE_CLASS_NAME}<R>::resources;");
+            uwriteln!(
+                c_str.src,
+                "template <class R> std::map<int32_t, R> wit::{RESOURCE_TABLE_NAME}<R>::resources;"
+            );
         }
 
         h_str.change_namespace(&Vec::default());
@@ -863,7 +867,9 @@ impl CppInterfaceGenerator<'_> {
             } else {
                 match is_drop {
                     SpecialMethod::ResourceDrop => {
-                        if guest_export {
+                        if self.gen.opts.host_side() && !guest_export {
+                            "Dtor".to_string()
+                        } else if guest_export {
                             "ResourceDrop".to_string()
                         } else {
                             "~".to_string() + &object
@@ -1028,9 +1034,11 @@ impl CppInterfaceGenerator<'_> {
         let is_drop = is_special_method(func);
         // we might want to separate c_sig and h_sig
         // let mut sig = String::new();
+        // not for ctor nor imported dtor on guest
         if !matches!(&func.kind, FunctionKind::Constructor(_))
             && !(matches!(is_drop, SpecialMethod::ResourceDrop)
-                && matches!(abi_variant, AbiVariant::GuestImport))
+                && matches!(abi_variant, AbiVariant::GuestImport)
+                && !self.gen.opts.host_side())
         {
             match &func.results {
                 wit_bindgen_core::wit_parser::Results::Named(n) => {
@@ -1073,8 +1081,9 @@ impl CppInterfaceGenerator<'_> {
             }
         }
         if matches!(func.kind, FunctionKind::Static(_))
-            && !(matches!(is_drop, SpecialMethod::ResourceDrop)
-                && matches!(abi_variant, AbiVariant::GuestImport))
+            && !(matches!(&is_drop, SpecialMethod::ResourceDrop)
+                && matches!(abi_variant, AbiVariant::GuestImport)
+                && !self.gen.opts.host_side())
         {
             res.static_member = true;
         }
@@ -1082,13 +1091,19 @@ impl CppInterfaceGenerator<'_> {
             if i == 0
                 && name == "self"
                 && (matches!(&func.kind, FunctionKind::Method(_))
-                    || (matches!(is_drop, SpecialMethod::ResourceDrop)
-                        && matches!(abi_variant, AbiVariant::GuestImport)))
+                    || (matches!(&is_drop, SpecialMethod::ResourceDrop)
+                        && matches!(abi_variant, AbiVariant::GuestImport)
+                        && !self.gen.opts.host_side()))
             {
                 res.implicit_self = true;
                 continue;
             }
-            if matches!(is_drop, SpecialMethod::Dtor | SpecialMethod::ResourceNew) {
+            if matches!(
+                (&is_drop, self.gen.opts.host_side()),
+                (SpecialMethod::Dtor, _)
+                    | (SpecialMethod::ResourceNew, _)
+                    | (SpecialMethod::ResourceDrop, true)
+            ) {
                 res.arguments.push((
                     name.to_snake_case(),
                     self.type_name(param, &res.namespace, Flavor::Argument(abi_variant)) + "*",
@@ -1827,6 +1842,12 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                     AbiVariant::GuestImport => "[resource-drop]",
                     AbiVariant::GuestExport => "[dtor]",
                 }
+                // let name = match (variant, self.gen.opts.host_side()) {
+                //     (AbiVariant::GuestImport, false) | (AbiVariant::GuestExport, true) => {
+                //         "[resource-drop]"
+                //     }
+                //     (AbiVariant::GuestExport, false) | (AbiVariant::GuestImport, true) => "[dtor]",
+                // }
                 .to_string()
                     + &name;
                 let func = Function {
