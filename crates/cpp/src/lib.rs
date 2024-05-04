@@ -867,6 +867,7 @@ impl CppInterfaceGenerator<'_> {
                     }
                     SpecialMethod::Dtor => "Dtor".to_string(),
                     SpecialMethod::ResourceNew => "ResourceNew".to_string(),
+                    SpecialMethod::ResourceRep => "ResourceRep".to_string(),
                     SpecialMethod::Allocate => "New".to_string(),
                     // SpecialMethod::Deallocate => "Deallocate".to_string(),
                     SpecialMethod::None => func.item_name().to_pascal_case(),
@@ -885,6 +886,12 @@ impl CppInterfaceGenerator<'_> {
             SpecialMethod::ResourceDrop => WasmSignature {
                 params: vec![WasmType::I32],
                 results: Vec::new(),
+                indirect_params: false,
+                retptr: false,
+            },
+            SpecialMethod::ResourceRep => WasmSignature {
+                params: vec![WasmType::I32],
+                results: vec![WasmType::Pointer],
                 indirect_params: false,
                 retptr: false,
             },
@@ -1042,7 +1049,7 @@ impl CppInterfaceGenerator<'_> {
                 }
                 wit_bindgen_core::wit_parser::Results::Anon(ty) => {
                     res.result = self.type_name(ty, from_namespace, Flavor::Result(abi_variant));
-                    if matches!(is_drop, SpecialMethod::Allocate) {
+                    if matches!(is_drop, SpecialMethod::Allocate | SpecialMethod::ResourceRep) {
                         res.result.push('*');
                     }
                 }
@@ -1172,7 +1179,7 @@ impl CppInterfaceGenerator<'_> {
         if !import
             && !matches!(
                 is_special,
-                SpecialMethod::ResourceDrop | SpecialMethod::ResourceNew
+                SpecialMethod::ResourceDrop | SpecialMethod::ResourceNew | SpecialMethod::ResourceRep
             )
         {
             self.print_export_signature(func, variant)
@@ -1329,6 +1336,23 @@ impl CppInterfaceGenerator<'_> {
                     // );
                     // self.gen.c_src.src.push_str("// new logic: call r-new\n");
                     //let f = Function { name: String::new(), kind: FunctionKind::Static(Id), params: Vec::new(), results: Vec::new(), docs: Docs::default() };
+                }
+                SpecialMethod::ResourceRep => {
+                    let module_name = String::from("[export]")
+                        + &self.wasm_import_module.as_ref().map(|e| e.clone()).unwrap();
+                    let wasm_sig = self.declare_import(
+                        &module_name,
+                        &func.name,
+                        &[WasmType::I32],
+                        &[WasmType::Pointer],
+                    );
+                    let classname = class_namespace(self, func, variant).join("::");
+                    uwriteln!(
+                        self.gen.c_src.src,
+                        "return ({}*){wasm_sig}({});",
+                        classname,
+                        func.params.get(0).unwrap().0
+                    );
                 }
                 SpecialMethod::Allocate => unreachable!(),
                 // SpecialMethod::Deallocate => self.gen.c_src.src.push_str("// deallocate\n"),
@@ -1845,6 +1869,15 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                         kind: FunctionKind::Static(id),
                         params: vec![("self".into(), Type::Id(id))],
                         results: Results::Anon(Type::S32),
+                        docs: Docs::default(),
+                    };
+                    self.generate_function(&func, &TypeOwner::Interface(intf), variant);
+
+                    let func = Function {
+                        name: "[resource-rep]".to_string() + &name,
+                        kind: FunctionKind::Static(id),
+                        params: vec![("id".into(), Type::S32)],
+                        results: Results::Anon(Type::Id(id)),
                         docs: Docs::default(),
                     };
                     self.generate_function(&func, &TypeOwner::Interface(intf), variant);
@@ -3203,6 +3236,7 @@ enum SpecialMethod {
     None,
     ResourceDrop, // ([export]) [resource-drop]
     ResourceNew,  // [export][resource-new]
+    ResourceRep,  // [export][resource-rep]
     Dtor,         // [dtor] (guest export only)
     Allocate,     // internal: allocate new object (called from generated code)
 }
@@ -3213,6 +3247,8 @@ fn is_special_method(func: &Function) -> SpecialMethod {
             SpecialMethod::ResourceDrop
         } else if func.name.starts_with("[resource-new]") {
             SpecialMethod::ResourceNew
+        } else if func.name.starts_with("[resource-rep]") {
+            SpecialMethod::ResourceRep
         } else if func.name.starts_with("[dtor]") {
             SpecialMethod::Dtor
         } else if func.name == "$alloc" {
