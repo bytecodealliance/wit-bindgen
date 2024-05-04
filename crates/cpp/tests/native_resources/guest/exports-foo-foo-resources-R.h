@@ -16,8 +16,8 @@ public:
   static Owned New(uint32_t a) { return Owned(new R(a)); }
   void Add(uint32_t b) { value += b; }
   static int32_t ResourceNew(R *self);
-  static void ResourceDrop(int32_t id);
   static R* ResourceRep(int32_t id);
+  static void ResourceDrop(int32_t id);
 
   uint32_t GetValue() const { return value; }
 };

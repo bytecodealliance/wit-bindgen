@@ -917,7 +917,7 @@ impl CppInterfaceGenerator<'_> {
             }
             SpecialMethod::Allocate => WasmSignature {
                 params: vec![],
-                results: vec![WasmType::Pointer],
+                results: vec![],
                 indirect_params: false,
                 retptr: false,
             },
@@ -1052,9 +1052,17 @@ impl CppInterfaceGenerator<'_> {
                     }
                 }
                 wit_bindgen_core::wit_parser::Results::Anon(ty) => {
-                    res.result = self.type_name(ty, from_namespace, Flavor::Result(abi_variant));
-                    if matches!(is_drop, SpecialMethod::Allocate | SpecialMethod::ResourceRep) {
-                        res.result.push('*');
+                    if matches!(is_drop, SpecialMethod::Allocate) {
+                        res.result = OWNED_CLASS_NAME.into();
+                    } else {
+                        res.result =
+                            self.type_name(ty, from_namespace, Flavor::Result(abi_variant));
+                        if matches!(
+                            is_drop,
+                            SpecialMethod::Allocate | SpecialMethod::ResourceRep
+                        ) {
+                            res.result.push('*');
+                        }
                     }
                 }
             }
@@ -1149,7 +1157,7 @@ impl CppInterfaceGenerator<'_> {
                 uwrite!(
                     self.gen.h_src.src,
                     "{{\
-                        return Owned(new {}({}));\
+                        return {OWNED_CLASS_NAME}(new {}({}));\
                     }}",
                     cpp_sig.namespace.last().unwrap(), //join("::"),
                     cpp_sig
@@ -1183,7 +1191,9 @@ impl CppInterfaceGenerator<'_> {
         if !import
             && !matches!(
                 is_special,
-                SpecialMethod::ResourceDrop | SpecialMethod::ResourceNew | SpecialMethod::ResourceRep
+                SpecialMethod::ResourceDrop
+                    | SpecialMethod::ResourceNew
+                    | SpecialMethod::ResourceRep
             )
         {
             self.print_export_signature(func, variant)
@@ -1594,7 +1604,7 @@ impl CppInterfaceGenerator<'_> {
                         | (false, Flavor::Result(AbiVariant::GuestExport))
                         | (true, Flavor::Argument(AbiVariant::GuestImport))
                         | (true, Flavor::Result(AbiVariant::GuestImport)) => {
-                            typename.push_str("::Owned")
+                            typename.push_str(&format!("::{OWNED_CLASS_NAME}"))
                         }
                         (false, Flavor::Result(AbiVariant::GuestImport))
                         | (true, Flavor::Result(AbiVariant::GuestExport)) => (),
