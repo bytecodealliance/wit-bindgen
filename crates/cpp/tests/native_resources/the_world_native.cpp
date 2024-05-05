@@ -22,8 +22,8 @@ extern "C" __attribute__((import_module("foo:foo/resources")))
 __attribute__((import_name("consume"))) void
     fooX3AfooX2FresourcesX23consume(int32_t);
 
-extern "C" void fooX3AfooX2FresourcesX00X5Bresource_dropX5Dr(int32_t idx) {
-  auto ptr = foo::foo::resources::R::remove_resource(idx);
+extern "C" void fooX3AfooX2FresourcesX00X5Bresource_dropX5Dr(int32_t arg0) {
+  auto ptr = foo::foo::resources::R::remove_resource(arg0);
   assert(ptr.has_value());
   foo::foo::resources::R::Dtor(*ptr);
 }

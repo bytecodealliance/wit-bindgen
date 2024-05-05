@@ -74,6 +74,7 @@ struct Includes {
     needs_exported_resources: bool,
     needs_variant: bool,
     needs_tuple: bool,
+    needs_assert: bool,
     // needs wit types
     needs_wit: bool,
     needs_memory: bool,
@@ -621,6 +622,9 @@ impl WorldGenerator for Cpp {
                 c_str.src,
                 "template <class R> std::map<int32_t, R> wit::{RESOURCE_TABLE_NAME}<R>::resources;"
             );
+        }
+        if self.dependencies.needs_assert {
+            uwriteln!(c_str.src, "#include <assert.h>");
         }
 
         h_str.change_namespace(&Vec::default());
@@ -1302,8 +1306,17 @@ impl CppInterfaceGenerator<'_> {
                     LiftLower::LiftArgsLowerResults => {
                         if self.gen.opts.host_side() {
                             let namespace = class_namespace(self, func, variant);
+                            uwrite!(self.gen.c_src.src, "  auto ptr = ");
                             self.gen.c_src.qualify(&namespace);
-                            uwriteln!(self.gen.c_src.src, "  remove_resource({});", params[0]);
+                            uwriteln!(
+                                self.gen.c_src.src,
+                                "remove_resource({});
+                                assert(ptr.has_value());",
+                                params[0]
+                            );
+                            self.gen.dependencies.needs_assert = true;
+                            self.gen.c_src.qualify(&namespace);
+                            uwriteln!(self.gen.c_src.src, "Dtor(*ptr);")
                         } else {
                             let module_name = String::from("[export]")
                                 + &self.wasm_import_module.as_ref().map(|e| e.clone()).unwrap();
