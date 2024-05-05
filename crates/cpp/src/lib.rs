@@ -1917,7 +1917,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                 }
             }
 
-            if definition == self.gen.opts.host_side() {
+            if !definition {
                 // consuming constructor from handle (bindings)
                 uwriteln!(self.gen.h_src.src, "{pascal}({base_type} &&);",);
                 uwriteln!(self.gen.h_src.src, "{pascal}({pascal}&&) = default;");
@@ -1930,7 +1930,8 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                     self.gen.c_src.src,
                     "{pascal}::{pascal}({base_type}&&b) : {base_type}(std::move(b)) {{}}"
                 );
-            } else {
+            }
+            if matches!(variant, AbiVariant::GuestExport) {
                 let func = Function {
                     name: "[resource-new]".to_string() + &name,
                     kind: FunctionKind::Static(id),
