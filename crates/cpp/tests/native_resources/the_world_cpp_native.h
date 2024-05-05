@@ -16,37 +16,31 @@ namespace resources {
 R::Owned Create();
 void Borrows(std::reference_wrapper<const R> o);
 void Consume(R::Owned o);
+// export_interface Interface(Id { idx: 0 })
 } // namespace resources
 } // namespace foo
 } // namespace foo
-
-// guest exports
 namespace exports {
 namespace foo {
 namespace foo {
 namespace resources {
-// only a handle, no data, imported from guest
 class R : public wit::ResourceExportBase {
 
 public:
   ~R();
   R(uint32_t a);
   void Add(uint32_t b) const;
-  R(ResourceExportBase &&);
-
+  R(wit::ResourceExportBase &&);
   R(R &&) = default;
-  R(R const&) = delete;
-  R& operator=(R const&)=delete;
-  R& operator=(R &&)=default;
+  R &operator=(R &&) = default;
 };
 
 R Create();
 void Borrows(std::reference_wrapper<const R> o);
 void Consume(R &&o);
-// export_interface Interface(Id { idx: 0 })
 } // namespace resources
 } // namespace foo
 } // namespace foo
-}
+} // namespace exports
 
 #endif

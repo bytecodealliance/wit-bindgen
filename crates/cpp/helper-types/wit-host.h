@@ -5,6 +5,7 @@
 #include <string.h>
 #include <string_view>
 #include <optional>
+#include <memory> // unique_ptr
 #include "wit-common.h"
 
 #ifndef WIT_HOST_DIRECT

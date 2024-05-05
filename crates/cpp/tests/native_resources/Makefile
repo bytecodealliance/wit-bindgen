@@ -13,3 +13,6 @@ bindgen: wit/resources_simple.wit
 	
 clean:
 	-rm *.o app-resources
+
+run: app-resources
+	LD_LIBRARY_PATH=. ./app-resources

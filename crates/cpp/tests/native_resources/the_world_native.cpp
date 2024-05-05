@@ -22,6 +22,11 @@ extern "C" __attribute__((import_module("foo:foo/resources")))
 __attribute__((import_name("consume"))) void
     fooX3AfooX2FresourcesX23consume(int32_t);
 
+extern "C" void fooX3AfooX2FresourcesX00X5Bresource_dropX5Dr(int32_t idx) {
+  auto ptr = foo::foo::resources::R::remove_resource(idx);
+  assert(ptr.has_value());
+  foo::foo::resources::R::Dtor(*ptr);
+}
 extern "C" int32_t fooX3AfooX2FresourcesX00X5BconstructorX5Dr(int32_t arg0) {
   auto result0 = foo::foo::resources::R::New((uint32_t(arg0)));
   return result0.release()->get_handle();
@@ -41,11 +46,6 @@ extern "C" void fooX3AfooX2FresourcesX00consume(int32_t arg0) {
   auto objptr = foo::foo::resources::R::remove_resource(arg0);
   assert(objptr.has_value());
   foo::foo::resources::Consume(foo::foo::resources::R::Owned(*objptr));
-}
-extern "C" void fooX3AfooX2FresourcesX00X5Bresource_dropX5Dr(int32_t idx) {
-  auto ptr = foo::foo::resources::R::remove_resource(idx);
-  assert(ptr.has_value());
-  foo::foo::resources::R::Dtor(*ptr);
 }
 extern "C" int32_t X5BexportX5DfooX3AfooX2FresourcesX00X5Bresource_newX5Dr(uint8_t* rep) {
   return exports::foo::foo::resources::R::store_resource(std::move(rep));
