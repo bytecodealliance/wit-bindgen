@@ -900,6 +900,27 @@ impl CppInterfaceGenerator<'_> {
         (namespace, func_name_h)
     }
 
+    // local patching of borrows function needs more complex solution
+    fn patched_wasm_signature(&self, variant: AbiVariant, func: &Function) -> WasmSignature {
+        let res = self.resolve.wasm_signature(variant, func);
+        // if matches!(res.params.get(0), Some(WasmType::I32))
+        //     && matches!(func.kind, FunctionKind::Freestanding)
+        // {
+        //     if let Some((_, ty)) = func.params.get(0) {
+        //         if let Type::Id(id) = ty {
+        //             if let Some(td) = self.resolve.types.get(*id) {
+        //                 if let TypeDefKind::Handle(Handle::Borrow(id2)) = &td.kind {
+        //                     if let Some(ty2) = self.resolve.types.get(*id2) {
+        //                         dbg!((&self.gen.imported_interfaces, id2, ty2, &func));
+        //                     }
+        //                 }
+        //             }
+        //         }
+        //     }
+        // }
+        res
+    }
+
     // print the signature of the guest export (lowered (wasm) function calling into highlevel)
     fn print_export_signature(&mut self, func: &Function, variant: AbiVariant) -> Vec<String> {
         let is_drop = is_special_method(func);
@@ -930,7 +951,7 @@ impl CppInterfaceGenerator<'_> {
             },
             SpecialMethod::None => {
                 // TODO perhaps remember better names for the arguments
-                self.resolve.wasm_signature(variant, func)
+                self.patched_wasm_signature(variant, func)
             }
             SpecialMethod::Allocate => WasmSignature {
                 params: vec![],
@@ -1503,7 +1524,7 @@ impl CppInterfaceGenerator<'_> {
                 && matches!(variant, AbiVariant::GuestExport)
                 && abi::guest_export_needs_post_return(self.resolve, func)
             {
-                let sig = self.resolve.wasm_signature(variant, func);
+                let sig = self.patched_wasm_signature(variant, func);
                 let module_name = self.wasm_import_module.as_ref().map(|e| e.clone());
                 let export_name = match module_name {
                     Some(ref module_name) => make_external_symbol(module_name, &func.name, variant),
@@ -3096,7 +3117,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                         relative.qualify(&namespace);
                         uwrite!(
                             self.src,
-                            "{}lookup_resource({this})->",
+                            "(*{}lookup_resource({this}))->",
                             relative.src.to_string()
                         );
                     } else {
