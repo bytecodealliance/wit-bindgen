@@ -1210,13 +1210,12 @@ impl CppInterfaceGenerator<'_> {
         // we want to separate the lowered signature (wasm) and the high level signature
         if !import
             && (self.gen.opts.host_side()
-                || matches!(
+                || !matches!(
                     &is_special,
                     SpecialMethod::ResourceDrop
                         | SpecialMethod::ResourceNew
                         | SpecialMethod::ResourceRep
                 ))
-        // == self.gen.opts.host_side()
         {
             self.print_export_signature(func, variant)
         } else {
