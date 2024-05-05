@@ -224,6 +224,10 @@ impl Opts {
         self.short_cut || self.host
     }
 
+    fn is_only_handle(&self, variant: AbiVariant) -> bool {
+        self.host_side() == matches!(variant, AbiVariant::GuestExport)
+    }
+
     fn ptr_type(&self) -> &'static str {
         if !self.host {
             "uint8_t*"
@@ -2630,7 +2634,11 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             } => {
                 let op = &operands[0];
                 if self.gen.gen.opts.host_side() {
-                    results.push(format!("{op}.store_resource(std::move({op}))"));
+                    if matches!(self.variant, AbiVariant::GuestImport) {
+                        results.push(format!("{op}.get_handle()"));
+                    } else {
+                        results.push(format!("{op}.store_resource(std::move({op}))"));
+                    }
                 } else {
                     results.push(format!("{op}.into_handle()"));
                 }
@@ -3137,6 +3145,11 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     // self.gen.gen.c_src.qualify(&namespace);
                 }
                 self.src.push_str(&func_name_h);
+                if matches!(func.kind, FunctionKind::Constructor(_))
+                    && self.gen.gen.opts.host_side()
+                {
+                    self.push_str("::New");
+                }
                 self.push_str("(");
                 if self.gen.gen.opts.host {
                     if !matches!(func.kind, FunctionKind::Method(_)) {
@@ -3148,7 +3161,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 }
                 self.push_str(&operands.join(", "));
                 if matches!(func.kind, FunctionKind::Constructor(_))
-                    && !self.gen.gen.opts.host_side()
+                    && !self.gen.gen.opts.is_only_handle(self.variant)
                 {
                     // acquire object from unique_ptr
                     self.push_str(").release();");
@@ -3164,7 +3177,9 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     _ => {
                         assert!(*amt == operands.len());
                         match &func.kind {
-                            FunctionKind::Constructor(_) if guest_import => {
+                            FunctionKind::Constructor(_)
+                                if self.gen.gen.opts.is_only_handle(self.variant) =>
+                            {
                                 // strange but works
                                 self.src.push_str("this->handle = ");
                             }
@@ -3221,7 +3236,10 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                                 self.src.push_str(&format!(", ret, {})", cabi_post_name));
                             }
                         }
-                        if matches!(func.kind, FunctionKind::Constructor(_)) && guest_import {
+                        if matches!(func.kind, FunctionKind::Constructor(_))
+                            && guest_import
+                            && !self.gen.gen.opts.host_side()
+                        {
                             // we wrapped the handle in an object, so unpack it
                             self.src.push_str(".into_handle()");
                         }

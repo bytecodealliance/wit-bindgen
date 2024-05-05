@@ -28,8 +28,8 @@ extern "C" void fooX3AfooX2FresourcesX00X5Bresource_dropX5Dr(int32_t arg0) {
   foo::foo::resources::R::Dtor(*ptr);
 }
 extern "C" int32_t fooX3AfooX2FresourcesX00X5BconstructorX5Dr(int32_t arg0) {
-  auto result0 = foo::foo::resources::R::New((uint32_t(arg0)));
-  return result0.release()->get_handle();
+  auto result0 = (foo::foo::resources::R::New((uint32_t(arg0)))).release();
+  return (*(result0)).get_handle();
 }
 extern "C" void fooX3AfooX2FresourcesX00X5BmethodX5DrX2Eadd(int32_t arg0,
                                                             int32_t arg1) {
@@ -63,13 +63,16 @@ void exports::foo::foo::resources::R::Add(uint32_t b) const {
 }
 exports::foo::foo::resources::R::R(wit::ResourceExportBase&& b)
  : wit::ResourceExportBase(std::move(b)) {}
-extern "C" int32_t X5BexportX5DfooX3AfooX2FresourcesX00X5Bresource_newX5Dr(uint8_t *arg0) {
+extern "C" int32_t
+X5BexportX5DfooX3AfooX2FresourcesX00X5Bresource_newX5Dr(uint8_t *arg0) {
   return exports::foo::foo::resources::R::store_resource(std::move(arg0));
 }
-extern "C" uint8_t* X5BexportX5DfooX3AfooX2FresourcesX00X5Bresource_repX5Dr(int32_t arg0) {
+extern "C" uint8_t *
+X5BexportX5DfooX3AfooX2FresourcesX00X5Bresource_repX5Dr(int32_t arg0) {
   return *exports::foo::foo::resources::R::lookup_resource(arg0);
 }
-extern "C" void X5BexportX5DfooX3AfooX2FresourcesX00X5Bresource_dropX5Dr(int32_t arg0) {
+extern "C" void
+X5BexportX5DfooX3AfooX2FresourcesX00X5Bresource_dropX5Dr(int32_t arg0) {
   exports::foo::foo::resources::R::remove_resource(arg0);
 }
 exports::foo::foo::resources::R exports::foo::foo::resources::Create() {
@@ -81,7 +84,6 @@ void exports::foo::foo::resources::Borrows(std::reference_wrapper<const R> o) {
 }
 void exports::foo::foo::resources::Consume(R &&o) {
   auto rep = o.take_rep();
-  //R::remove_resource(o.get_handle());
   fooX3AfooX2FresourcesX23consume(o.get_handle());
 }
 
