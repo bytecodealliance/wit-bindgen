@@ -3196,7 +3196,11 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                                 if self.gen.gen.opts.is_only_handle(self.variant) =>
                             {
                                 // strange but works
-                                self.src.push_str("this->handle = ");
+                                if matches!(self.variant, AbiVariant::GuestExport) {
+                                    self.src.push_str("this->index = ");
+                                } else {
+                                    self.src.push_str("this->handle = ");
+                                }
                             }
                             _ => self.src.push_str("return "),
                         }
@@ -3252,11 +3256,17 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                             }
                         }
                         if matches!(func.kind, FunctionKind::Constructor(_))
-                            && guest_import
-                            && !self.gen.gen.opts.host_side()
+                            && self.gen.gen.opts.is_only_handle(self.variant)
                         {
                             // we wrapped the handle in an object, so unpack it
-                            self.src.push_str(".into_handle()");
+                            if self.gen.gen.opts.host_side() {
+                                self.src.push_str(
+                                    ".get_handle();
+                                    this->rep = *lookup_resource(ret)",
+                                );
+                            } else {
+                                self.src.push_str(".into_handle()");
+                            }
                         }
                         self.src.push_str(";\n");
                     }
