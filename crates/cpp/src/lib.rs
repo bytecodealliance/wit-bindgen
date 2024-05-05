@@ -836,6 +836,7 @@ impl CppInterfaceGenerator<'_> {
         }
     }
 
+    /// This describes the C++ side name
     fn func_namespace_name(
         &self,
         func: &Function,
@@ -879,7 +880,13 @@ impl CppInterfaceGenerator<'_> {
                             "~".to_string() + &object
                         }
                     }
-                    SpecialMethod::Dtor => "Dtor".to_string(),
+                    SpecialMethod::Dtor => {
+                        if self.gen.opts.host_side() && guest_export {
+                            "~".to_string() + &object
+                        } else {
+                            "Dtor".to_string()
+                        }
+                    }
                     SpecialMethod::ResourceNew => "ResourceNew".to_string(),
                     SpecialMethod::ResourceRep => "ResourceRep".to_string(),
                     SpecialMethod::Allocate => "New".to_string(),
@@ -1047,6 +1054,9 @@ impl CppInterfaceGenerator<'_> {
             && !(matches!(is_drop, SpecialMethod::ResourceDrop)
                 && matches!(abi_variant, AbiVariant::GuestImport)
                 && !self.gen.opts.host_side())
+            && !(matches!(is_drop, SpecialMethod::Dtor)
+                && matches!(abi_variant, AbiVariant::GuestExport)
+                && self.gen.opts.host_side())
         {
             match &func.results {
                 wit_bindgen_core::wit_parser::Results::Named(n) => {
@@ -1092,6 +1102,9 @@ impl CppInterfaceGenerator<'_> {
             && !(matches!(&is_drop, SpecialMethod::ResourceDrop)
                 && matches!(abi_variant, AbiVariant::GuestImport)
                 && !self.gen.opts.host_side())
+            && !(matches!(&is_drop, SpecialMethod::Dtor)
+                && matches!(abi_variant, AbiVariant::GuestExport)
+                && self.gen.opts.host_side())
         {
             res.static_member = true;
         }
@@ -1101,7 +1114,10 @@ impl CppInterfaceGenerator<'_> {
                 && (matches!(&func.kind, FunctionKind::Method(_))
                     || (matches!(&is_drop, SpecialMethod::ResourceDrop)
                         && matches!(abi_variant, AbiVariant::GuestImport)
-                        && !self.gen.opts.host_side()))
+                        && !self.gen.opts.host_side())
+                    || (matches!(&is_drop, SpecialMethod::Dtor)
+                        && matches!(abi_variant, AbiVariant::GuestExport)
+                        && self.gen.opts.host_side()))
             {
                 res.implicit_self = true;
                 continue;
@@ -1184,8 +1200,8 @@ impl CppInterfaceGenerator<'_> {
             if cpp_sig.const_member {
                 self.gen.h_src.src.push_str(" const");
             }
-            match (&is_special, self.gen.opts.host_side()) {
-                (SpecialMethod::Allocate, _) => {
+            match (&is_special, self.gen.opts.host_side(), &variant) {
+                (SpecialMethod::Allocate, _, _) => {
                     uwrite!(
                         self.gen.h_src.src,
                         "{{\
@@ -1202,7 +1218,8 @@ impl CppInterfaceGenerator<'_> {
                     // body is inside the header
                     return Vec::default();
                 }
-                (SpecialMethod::Dtor, _) | (SpecialMethod::ResourceDrop, true) => {
+                (SpecialMethod::Dtor, _, AbiVariant::GuestImport)
+                | (SpecialMethod::ResourceDrop, true, _) => {
                     uwrite!(
                         self.gen.h_src.src,
                         "{{\
@@ -3299,6 +3316,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
     }
 }
 
+/// This describes the common ABI function referenced or implemented, the C++ side might correspond to a different type
 enum SpecialMethod {
     None,
     ResourceDrop, // ([export]) [resource-drop]
