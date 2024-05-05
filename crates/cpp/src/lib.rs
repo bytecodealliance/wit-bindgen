@@ -933,12 +933,14 @@ impl CppInterfaceGenerator<'_> {
             },
         };
         let mut module_name = self.wasm_import_module.as_ref().map(|e| e.clone());
-        if matches!(
-            (&is_drop, self.gen.opts.host_side()),
-            (SpecialMethod::ResourceNew, false)
-                | (SpecialMethod::ResourceDrop, false)
-                | (SpecialMethod::ResourceRep, false)
-        ) {
+        if matches!(variant, AbiVariant::GuestExport)
+            && matches!(
+                is_drop,
+                SpecialMethod::ResourceNew
+                    | SpecialMethod::ResourceDrop
+                    | SpecialMethod::ResourceRep
+            )
+        {
             module_name = Some(String::from("[export]") + &module_name.unwrap());
         }
         if self.gen.opts.short_cut {
@@ -1135,77 +1137,87 @@ impl CppInterfaceGenerator<'_> {
         variant: AbiVariant,
         import: bool,
     ) -> Vec<String> {
-        let from_namespace = self.gen.h_src.namespace.clone();
-        let cpp_sig = self.high_level_signature(func, variant, &from_namespace);
-        if cpp_sig.static_member {
-            self.gen.h_src.src.push_str("static ");
-        }
-        if cpp_sig.post_return && self.gen.opts.host_side() {
-            self.gen.h_src.src.push_str("wit::guest_owned<");
-        }
-        self.gen.h_src.src.push_str(&cpp_sig.result);
-        if cpp_sig.post_return && self.gen.opts.host_side() {
-            self.gen.h_src.src.push_str(">");
-        }
-        if !cpp_sig.result.is_empty() {
-            self.gen.h_src.src.push_str(" ");
-        }
-        self.gen.h_src.src.push_str(&cpp_sig.name);
-        self.gen.h_src.src.push_str("(");
-        if
-        /*import &&*/
-        self.gen.opts.host && !matches!(func.kind, FunctionKind::Method(_)) {
-            self.gen.h_src.src.push_str("WASMExecEnv* exec_env");
-            if !cpp_sig.arguments.is_empty() {
-                self.gen.h_src.src.push_str(", ");
-            }
-        }
-        for (num, (arg, typ)) in cpp_sig.arguments.iter().enumerate() {
-            if num > 0 {
-                self.gen.h_src.src.push_str(", ");
-            }
-            self.gen.h_src.src.push_str(typ);
-            self.gen.h_src.src.push_str(" ");
-            self.gen.h_src.src.push_str(arg);
-        }
-        self.gen.h_src.src.push_str(")");
-        if cpp_sig.const_member {
-            self.gen.h_src.src.push_str(" const");
-        }
         let is_special = is_special_method(func);
-        match (&is_special, self.gen.opts.host_side()) {
-            (SpecialMethod::Allocate, _) => {
-                uwrite!(
-                    self.gen.h_src.src,
-                    "{{\
+        if !(import == false
+            && self.gen.opts.host_side()
+            && matches!(
+                &is_special,
+                SpecialMethod::ResourceDrop
+                    | SpecialMethod::ResourceNew
+                    | SpecialMethod::ResourceRep
+            ))
+        {
+            let from_namespace = self.gen.h_src.namespace.clone();
+            let cpp_sig = self.high_level_signature(func, variant, &from_namespace);
+            if cpp_sig.static_member {
+                self.gen.h_src.src.push_str("static ");
+            }
+            if cpp_sig.post_return && self.gen.opts.host_side() {
+                self.gen.h_src.src.push_str("wit::guest_owned<");
+            }
+            self.gen.h_src.src.push_str(&cpp_sig.result);
+            if cpp_sig.post_return && self.gen.opts.host_side() {
+                self.gen.h_src.src.push_str(">");
+            }
+            if !cpp_sig.result.is_empty() {
+                self.gen.h_src.src.push_str(" ");
+            }
+            self.gen.h_src.src.push_str(&cpp_sig.name);
+            self.gen.h_src.src.push_str("(");
+            if
+            /*import &&*/
+            self.gen.opts.host && !matches!(func.kind, FunctionKind::Method(_)) {
+                self.gen.h_src.src.push_str("WASMExecEnv* exec_env");
+                if !cpp_sig.arguments.is_empty() {
+                    self.gen.h_src.src.push_str(", ");
+                }
+            }
+            for (num, (arg, typ)) in cpp_sig.arguments.iter().enumerate() {
+                if num > 0 {
+                    self.gen.h_src.src.push_str(", ");
+                }
+                self.gen.h_src.src.push_str(typ);
+                self.gen.h_src.src.push_str(" ");
+                self.gen.h_src.src.push_str(arg);
+            }
+            self.gen.h_src.src.push_str(")");
+            if cpp_sig.const_member {
+                self.gen.h_src.src.push_str(" const");
+            }
+            match (&is_special, self.gen.opts.host_side()) {
+                (SpecialMethod::Allocate, _) => {
+                    uwrite!(
+                        self.gen.h_src.src,
+                        "{{\
                         return {OWNED_CLASS_NAME}(new {}({}));\
                     }}",
-                    cpp_sig.namespace.last().unwrap(), //join("::"),
-                    cpp_sig
-                        .arguments
-                        .iter()
-                        .map(|(arg, _)| arg.clone())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                );
-                // body is inside the header
-                return Vec::default();
-            }
-            (SpecialMethod::Dtor, _) | (SpecialMethod::ResourceDrop, true) => {
-                uwrite!(
-                    self.gen.h_src.src,
-                    "{{\
+                        cpp_sig.namespace.last().unwrap(), //join("::"),
+                        cpp_sig
+                            .arguments
+                            .iter()
+                            .map(|(arg, _)| arg.clone())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    );
+                    // body is inside the header
+                    return Vec::default();
+                }
+                (SpecialMethod::Dtor, _) | (SpecialMethod::ResourceDrop, true) => {
+                    uwrite!(
+                        self.gen.h_src.src,
+                        "{{\
                         delete {};\
                     }}",
-                    cpp_sig.arguments.get(0).unwrap().0
-                );
+                        cpp_sig.arguments.get(0).unwrap().0
+                    );
+                }
+                // SpecialMethod::None => todo!(),
+                // SpecialMethod::ResourceDrop => todo!(),
+                // SpecialMethod::ResourceNew => todo!(),
+                _ => self.gen.h_src.src.push_str(";\n"),
             }
-            // SpecialMethod::None => todo!(),
-            // SpecialMethod::ResourceDrop => todo!(),
-            // SpecialMethod::ResourceNew => todo!(),
-            _ => self.gen.h_src.src.push_str(";\n"),
         }
-        drop(cpp_sig);
+        //        drop(cpp_sig);
 
         // we want to separate the lowered signature (wasm) and the high level signature
         if !import
@@ -1905,7 +1917,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                 }
             }
 
-            if !definition {
+            if definition==self.gen.opts.host_side() {
                 // consuming constructor from handle (bindings)
                 uwriteln!(self.gen.h_src.src, "{pascal}({base_type} &&);",);
                 uwriteln!(self.gen.h_src.src, "{pascal}({pascal}&&) = default;");
@@ -1928,14 +1940,14 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                 };
                 self.generate_function(&func, &TypeOwner::Interface(intf), variant);
 
-                let func = Function {
+                let func1 = Function {
                     name: "[resource-rep]".to_string() + &name,
                     kind: FunctionKind::Static(id),
                     params: vec![("id".into(), Type::S32)],
                     results: Results::Anon(Type::Id(id)),
                     docs: Docs::default(),
                 };
-                self.generate_function(&func, &TypeOwner::Interface(intf), variant);
+                self.generate_function(&func1, &TypeOwner::Interface(intf), variant);
 
                 let func2 = Function {
                     name: "[resource-drop]".to_string() + &name,
