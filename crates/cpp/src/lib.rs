@@ -1401,16 +1401,26 @@ impl CppInterfaceGenerator<'_> {
                         }
                     }
                     LiftLower::LowerArgsLiftResults => {
-                        let module_name =
-                            self.wasm_import_module.as_ref().map(|e| e.clone()).unwrap();
-                        let name =
-                            self.declare_import(&module_name, &func.name, &[WasmType::I32], &[]);
-                        uwriteln!(
-                            self.gen.c_src.src,
-                            "   if (handle>=0) {{
+                        if self.gen.opts.host_side() {
+                            let namespace = class_namespace(self, func, variant);
+                            self.gen.c_src.qualify(&namespace);
+                            uwriteln!(self.gen.c_src.src, "remove_resource(arg0);");
+                        } else {
+                            let module_name =
+                                self.wasm_import_module.as_ref().map(|e| e.clone()).unwrap();
+                            let name = self.declare_import(
+                                &module_name,
+                                &func.name,
+                                &[WasmType::I32],
+                                &[],
+                            );
+                            uwriteln!(
+                                self.gen.c_src.src,
+                                "   if (handle>=0) {{
                                 {name}(handle);
                             }}"
-                        );
+                            );
+                        }
                     }
                 },
                 SpecialMethod::Dtor => {
@@ -1434,53 +1444,53 @@ impl CppInterfaceGenerator<'_> {
                     }
                 }
                 SpecialMethod::ResourceNew => {
-                    let module_name = String::from("[export]")
-                        + &self.wasm_import_module.as_ref().map(|e| e.clone()).unwrap();
-                    let wasm_sig = self.declare_import(
-                        &module_name,
-                        &func.name,
-                        &[WasmType::Pointer],
-                        &[WasmType::I32],
-                    );
-                    uwriteln!(
-                        self.gen.c_src.src,
-                        "return {wasm_sig}(({}){});",
-                        self.gen.opts.ptr_type(),
-                        func.params.get(0).unwrap().0
-                    );
-                    // let classname = class_namespace(self, func, variant).join("::");
-                    // let args = func
-                    //     .params
-                    //     .iter()
-                    //     .map(|(nm, _ty)| nm.clone())
-                    //     .collect::<Vec<_>>()
-                    //     .join(",");
-                    // uwriteln!(
-                    //     self.gen.c_src.src,
-                    //     "return {classname}::New({args})->handle;"
-                    // );
-                    // self.gen.c_src.src.push_str("// new logic: call r-new\n");
-                    //let f = Function { name: String::new(), kind: FunctionKind::Static(Id), params: Vec::new(), results: Vec::new(), docs: Docs::default() };
+                    if !self.gen.opts.host_side() {
+                        let module_name = String::from("[export]")
+                            + &self.wasm_import_module.as_ref().map(|e| e.clone()).unwrap();
+                        let wasm_sig = self.declare_import(
+                            &module_name,
+                            &func.name,
+                            &[WasmType::Pointer],
+                            &[WasmType::I32],
+                        );
+                        uwriteln!(
+                            self.gen.c_src.src,
+                            "return {wasm_sig}(({}){});",
+                            self.gen.opts.ptr_type(),
+                            func.params.get(0).unwrap().0
+                        );
+                    } else {
+                        uwriteln!(self.gen.c_src.src, "return ");
+                        let namespace = class_namespace(self, func, variant);
+                        self.gen.c_src.qualify(&namespace);
+                        uwriteln!(self.gen.c_src.src, "store_resource(std::move(arg0));");
+                    }
                 }
                 SpecialMethod::ResourceRep => {
-                    let module_name = String::from("[export]")
-                        + &self.wasm_import_module.as_ref().map(|e| e.clone()).unwrap();
-                    let wasm_sig = self.declare_import(
-                        &module_name,
-                        &func.name,
-                        &[WasmType::I32],
-                        &[WasmType::Pointer],
-                    );
-                    let classname = class_namespace(self, func, variant).join("::");
-                    uwriteln!(
-                        self.gen.c_src.src,
-                        "return ({}*){wasm_sig}({});",
-                        classname,
-                        func.params.get(0).unwrap().0
-                    );
+                    if !self.gen.opts.host_side() {
+                        let module_name = String::from("[export]")
+                            + &self.wasm_import_module.as_ref().map(|e| e.clone()).unwrap();
+                        let wasm_sig = self.declare_import(
+                            &module_name,
+                            &func.name,
+                            &[WasmType::I32],
+                            &[WasmType::Pointer],
+                        );
+                        let classname = class_namespace(self, func, variant).join("::");
+                        uwriteln!(
+                            self.gen.c_src.src,
+                            "return ({}*){wasm_sig}({});",
+                            classname,
+                            func.params.get(0).unwrap().0
+                        );
+                    } else {
+                        uwriteln!(self.gen.c_src.src, "return *");
+                        let namespace = class_namespace(self, func, variant);
+                        self.gen.c_src.qualify(&namespace);
+                        uwriteln!(self.gen.c_src.src, "lookup_resource(arg0);",);
+                    }
                 }
                 SpecialMethod::Allocate => unreachable!(),
-                // SpecialMethod::Deallocate => self.gen.c_src.src.push_str("// deallocate\n"),
                 SpecialMethod::None => {
                     // normal methods
                     let namespace = if matches!(func.kind, FunctionKind::Freestanding) {
