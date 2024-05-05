@@ -61,6 +61,8 @@ void exports::foo::foo::resources::R::Add(uint32_t b) const {
   fooX3AfooX2FresourcesX23X5BmethodX5DrX2Eadd((*this).get_rep(),
                                               (int32_t(b)));
 }
+exports::foo::foo::resources::R::R(wit::ResourceExportBase&& b)
+ : wit::ResourceExportBase(std::move(b)) {}
 extern "C" int32_t X5BexportX5DfooX3AfooX2FresourcesX00X5Bresource_newX5Dr(uint8_t *arg0) {
   return exports::foo::foo::resources::R::store_resource(std::move(arg0));
 }
@@ -70,8 +72,6 @@ extern "C" uint8_t* X5BexportX5DfooX3AfooX2FresourcesX00X5Bresource_repX5Dr(int3
 extern "C" void X5BexportX5DfooX3AfooX2FresourcesX00X5Bresource_dropX5Dr(int32_t arg0) {
   exports::foo::foo::resources::R::remove_resource(arg0);
 }
-exports::foo::foo::resources::R::R(wit::ResourceExportBase&& b)
- : wit::ResourceExportBase(std::move(b)) {}
 exports::foo::foo::resources::R exports::foo::foo::resources::Create() {
   auto ret = fooX3AfooX2FresourcesX23create();
   return wit::ResourceExportBase{ret};

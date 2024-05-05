@@ -940,6 +940,7 @@ impl CppInterfaceGenerator<'_> {
             },
         };
         let mut module_name = self.wasm_import_module.as_ref().map(|e| e.clone());
+        let mut symbol_variant = variant;
         if matches!(variant, AbiVariant::GuestExport)
             && matches!(
                 is_drop,
@@ -949,6 +950,9 @@ impl CppInterfaceGenerator<'_> {
             )
         {
             module_name = Some(String::from("[export]") + &module_name.unwrap());
+            if self.gen.opts.host_side() {
+                symbol_variant = AbiVariant::GuestImport;
+            }
         }
         if self.gen.opts.short_cut {
             uwrite!(self.gen.c_src.src, "extern \"C\" ");
@@ -977,7 +981,7 @@ impl CppInterfaceGenerator<'_> {
             });
         self.gen.c_src.src.push_str(" ");
         let export_name = match module_name {
-            Some(ref module_name) => make_external_symbol(&module_name, &func.name, variant),
+            Some(ref module_name) => make_external_symbol(&module_name, &func.name, symbol_variant),
             None => make_external_component(&func.name),
         };
         self.gen.c_src.src.push_str(&export_name);
@@ -1154,7 +1158,7 @@ impl CppInterfaceGenerator<'_> {
         import: bool,
     ) -> Vec<String> {
         let is_special = is_special_method(func);
-        if !(import == false
+        if !(import == true
             && self.gen.opts.host_side()
             && matches!(
                 &is_special,
@@ -1237,9 +1241,17 @@ impl CppInterfaceGenerator<'_> {
         //        drop(cpp_sig);
 
         // we want to separate the lowered signature (wasm) and the high level signature
-        if !import
+        if (!import
             && (self.gen.opts.host_side()
                 || !matches!(
+                    &is_special,
+                    SpecialMethod::ResourceDrop
+                        | SpecialMethod::ResourceNew
+                        | SpecialMethod::ResourceRep
+                )))
+            || (import
+                && self.gen.opts.host_side()
+                && matches!(
                     &is_special,
                     SpecialMethod::ResourceDrop
                         | SpecialMethod::ResourceNew
