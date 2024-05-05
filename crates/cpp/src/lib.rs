@@ -1929,8 +1929,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                 } {
                     self.generate_function(func, &TypeOwner::Interface(intf), variant);
                     if matches!(func.kind, FunctionKind::Constructor(_))
-                        && matches!(variant, AbiVariant::GuestExport)
-                        && !self.gen.opts.host_side()
+                        && matches!(variant, AbiVariant::GuestExport) != self.gen.opts.host_side()
                     {
                         // functional safety requires the option to use a different allocator, so move new into the implementation
                         let func2 = Function {
