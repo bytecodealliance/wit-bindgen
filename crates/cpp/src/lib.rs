@@ -1414,9 +1414,24 @@ impl CppInterfaceGenerator<'_> {
                     }
                 },
                 SpecialMethod::Dtor => {
-                    let classname = class_namespace(self, func, variant).join("::");
-                    uwriteln!(self.gen.c_src.src, "(({classname}*)arg0)->handle=-1;");
-                    uwriteln!(self.gen.c_src.src, "{0}::Dtor(({0}*)arg0);", classname);
+                    if self.gen.opts.host_side() {
+                        let module_name =
+                            self.wasm_import_module.as_ref().map(|e| e.clone()).unwrap();
+                        let name = self.declare_import(
+                            &module_name,
+                            &func.name,
+                            &[WasmType::Pointer],
+                            &[],
+                        );
+                        uwriteln!(
+                            self.gen.c_src.src,
+                            "if (this->rep) {{ {name}(this->rep); }}"
+                        );
+                    } else {
+                        let classname = class_namespace(self, func, variant).join("::");
+                        uwriteln!(self.gen.c_src.src, "(({classname}*)arg0)->handle=-1;");
+                        uwriteln!(self.gen.c_src.src, "{0}::Dtor(({0}*)arg0);", classname);
+                    }
                 }
                 SpecialMethod::ResourceNew => {
                     let module_name = String::from("[export]")
