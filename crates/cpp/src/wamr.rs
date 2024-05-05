@@ -115,7 +115,11 @@ fn wamr_add_result(sig: &mut WamrSig, resolve: &Resolve, ty: &Type) {
             TypeDefKind::Stream(_) => todo!(),
             TypeDefKind::Type(ty) => wamr_add_result(sig, resolve, &ty),
             TypeDefKind::Unknown => todo!(),
-            TypeDefKind::Resource => todo!(),
+            TypeDefKind::Resource => {
+                // resource-rep is returning a pointer
+                // perhaps i???
+                sig.wamr_result = "*".into();
+            }
             TypeDefKind::Handle(_h) => {
                 sig.wamr_result = "i".into();
             }

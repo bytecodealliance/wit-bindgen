@@ -35,6 +35,15 @@ extern "C" void fooX3AfooX2FresourcesX00X5BmethodX5DrX2Eadd(int32_t arg0,
                                                             int32_t arg1) {
   (*foo::foo::resources::R::lookup_resource(arg0))->Add((uint32_t(arg1)));
 }
+extern "C" int32_t X5BexportX5DfooX3AfooX2FresourcesX00X5Bresource_newX5Dr(uint8_t* rep) {
+  return exports::foo::foo::resources::R::store_resource(std::move(rep));
+}
+extern "C" void X5BexportX5DfooX3AfooX2FresourcesX00X5Bresource_dropX5Dr(int32_t idx) {
+  exports::foo::foo::resources::R::remove_resource(idx);
+}
+extern "C" uint8_t* X5BexportX5DfooX3AfooX2FresourcesX00X5Bresource_repX5Dr(int32_t idx) {
+  return *exports::foo::foo::resources::R::lookup_resource(idx);
+}
 extern "C" int32_t fooX3AfooX2FresourcesX00create() {
   auto result0 = foo::foo::resources::Create();
   return result0.release()->get_handle();
@@ -46,15 +55,6 @@ extern "C" void fooX3AfooX2FresourcesX00consume(int32_t arg0) {
   auto objptr = foo::foo::resources::R::remove_resource(arg0);
   assert(objptr.has_value());
   foo::foo::resources::Consume(foo::foo::resources::R::Owned(*objptr));
-}
-extern "C" int32_t X5BexportX5DfooX3AfooX2FresourcesX00X5Bresource_newX5Dr(uint8_t* rep) {
-  return exports::foo::foo::resources::R::store_resource(std::move(rep));
-}
-extern "C" void X5BexportX5DfooX3AfooX2FresourcesX00X5Bresource_dropX5Dr(int32_t idx) {
-  exports::foo::foo::resources::R::remove_resource(idx);
-}
-extern "C" uint8_t* X5BexportX5DfooX3AfooX2FresourcesX00X5Bresource_repX5Dr(int32_t idx) {
-  return *exports::foo::foo::resources::R::lookup_resource(idx);
 }
 
 exports::foo::foo::resources::R::~R() {

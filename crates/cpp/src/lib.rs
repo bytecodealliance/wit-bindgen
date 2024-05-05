@@ -1919,34 +1919,32 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                     "{pascal}::{pascal}({base_type}&&b) : {base_type}(std::move(b)) {{}}"
                 );
             } else {
-                if !self.gen.opts.host_side() {
-                    let func = Function {
-                        name: "[resource-new]".to_string() + &name,
-                        kind: FunctionKind::Static(id),
-                        params: vec![("self".into(), Type::Id(id))],
-                        results: Results::Anon(Type::S32),
-                        docs: Docs::default(),
-                    };
-                    self.generate_function(&func, &TypeOwner::Interface(intf), variant);
+                let func = Function {
+                    name: "[resource-new]".to_string() + &name,
+                    kind: FunctionKind::Static(id),
+                    params: vec![("self".into(), Type::Id(id))],
+                    results: Results::Anon(Type::S32),
+                    docs: Docs::default(),
+                };
+                self.generate_function(&func, &TypeOwner::Interface(intf), variant);
 
-                    let func = Function {
-                        name: "[resource-rep]".to_string() + &name,
-                        kind: FunctionKind::Static(id),
-                        params: vec![("id".into(), Type::S32)],
-                        results: Results::Anon(Type::Id(id)),
-                        docs: Docs::default(),
-                    };
-                    self.generate_function(&func, &TypeOwner::Interface(intf), variant);
+                let func = Function {
+                    name: "[resource-rep]".to_string() + &name,
+                    kind: FunctionKind::Static(id),
+                    params: vec![("id".into(), Type::S32)],
+                    results: Results::Anon(Type::Id(id)),
+                    docs: Docs::default(),
+                };
+                self.generate_function(&func, &TypeOwner::Interface(intf), variant);
 
-                    let func2 = Function {
-                        name: "[resource-drop]".to_string() + &name,
-                        kind: FunctionKind::Static(id),
-                        params: vec![("id".into(), Type::S32)],
-                        results: Results::Named(vec![]),
-                        docs: Docs::default(),
-                    };
-                    self.generate_function(&func2, &TypeOwner::Interface(intf), variant);
-                }
+                let func2 = Function {
+                    name: "[resource-drop]".to_string() + &name,
+                    kind: FunctionKind::Static(id),
+                    params: vec![("id".into(), Type::S32)],
+                    results: Results::Named(vec![]),
+                    docs: Docs::default(),
+                };
+                self.generate_function(&func2, &TypeOwner::Interface(intf), variant);
             }
             uwriteln!(self.gen.h_src.src, "}};\n");
             if definition {
