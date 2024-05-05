@@ -931,7 +931,9 @@ impl CppInterfaceGenerator<'_> {
         let mut module_name = self.wasm_import_module.as_ref().map(|e| e.clone());
         if matches!(
             (&is_drop, self.gen.opts.host_side()),
-            (SpecialMethod::ResourceNew, false) | (SpecialMethod::ResourceDrop, false) | (SpecialMethod::ResourceRep, false)
+            (SpecialMethod::ResourceNew, false)
+                | (SpecialMethod::ResourceDrop, false)
+                | (SpecialMethod::ResourceRep, false)
         ) {
             module_name = Some(String::from("[export]") + &module_name.unwrap());
         }
