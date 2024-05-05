@@ -1917,7 +1917,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                 }
             }
 
-            if definition==self.gen.opts.host_side() {
+            if definition == self.gen.opts.host_side() {
                 // consuming constructor from handle (bindings)
                 uwriteln!(self.gen.h_src.src, "{pascal}({base_type} &&);",);
                 uwriteln!(self.gen.h_src.src, "{pascal}({pascal}&&) = default;");
