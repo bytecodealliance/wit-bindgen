@@ -27,6 +27,8 @@ world resources {
 
     add: func(a: borrow<z>, b: borrow<z>) -> own<z>;
 
+    consume: func(x: x);
+
     resource kebab-case {
       constructor(a: u32);
       get-a: func() -> u32;

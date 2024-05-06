@@ -32,6 +32,11 @@ impl exports::exports::Guest for Test {
         let b = b.get::<ComponentZ>();
         Z::new(ComponentZ { val: a.val + b.val })
     }
+
+    fn consume(x: exports::exports::X) {
+        drop(x);
+    }
+
     fn test_imports() -> Result<(), String> {
         use imports::*;
         let y = Y::new(10);

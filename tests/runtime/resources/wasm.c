@@ -53,6 +53,10 @@ exports_own_z_t exports_add(exports_z_t* a, exports_z_t* b) {
     return exports_constructor_z(c);
 }
 
+void exports_consume(exports_own_x_t x) {
+    exports_x_drop_own(x);
+}
+
 void exports_x_destructor(exports_x_t* x) {
     free(x);
 }
