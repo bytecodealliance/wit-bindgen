@@ -60,6 +60,10 @@ func (e ExportsImpl) Add(z ExportsZ, b ExportsZ) ExportsZ {
 	return &MyZ{a: z.MethodZGetA() + b.MethodZGetA()}
 }
 
+func (e ExportsImpl) Consume(x ExportsX) {
+	DropExportsX(x)
+}
+
 func (k *MyKebabCase) MethodKebabCaseGetA() uint32 {
 	return k.a
 }

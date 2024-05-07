@@ -10,6 +10,11 @@ namespace ResourcesWorld.wit.exports
         {
             return new Z(((Z) a).val + ((Z) b).val);
         }
+
+        public static void Consume(IExports.X x)
+        {
+            x.Dispose();
+        }
         
         public static Result<None, string> TestImports()
         {
