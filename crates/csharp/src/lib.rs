@@ -1390,6 +1390,9 @@ impl InterfaceGenerator<'_> {
                     [UnmanagedCallersOnly(EntryPoint = "{prefix}[dtor]{name}")]
                     public static unsafe void wasmExportResourceDtor{upper_camel}(int rep) {{
                         var val = ({qualified}) {qualified}.repTable.Remove(rep);
+                        val.Handle = 0;
+                        // Note we call `Dispose` here even though the handle has already been disposed in case
+                        // the implementation has overridden `Dispose(bool)`.
                         val.Dispose();
                     }}
                     "#
@@ -1441,7 +1444,6 @@ impl InterfaceGenerator<'_> {
                             if (Handle != 0) {{
                                 var handle = Handle;
                                 Handle = 0;
-                                repTable.Remove(WasmInterop.wasmImportResourceRep(handle));
                                 WasmInterop.wasmImportResourceDrop(handle);
                             }}
                         }}
