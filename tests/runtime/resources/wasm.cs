@@ -13,8 +13,7 @@ namespace ResourcesWorld.wit.exports
 
         public static void Consume(IExports.X x)
         {
-          // FIXME: c-sharp generator seems wrong here
-          // x.Dispose();
+            x.Dispose();
         }
         
         public static Result<None, string> TestImports()
