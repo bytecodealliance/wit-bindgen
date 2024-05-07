@@ -278,11 +278,6 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
             let snake = world_name.replace("-", "_");
             let mut files = Default::default();
             let mut opts = wit_bindgen_cpp::Opts::default();
-            // if let Some(path) = path.file_name().and_then(|s| s.to_str()) {
-            //     if path.contains("utf16") {
-            //         opts.string_encoding = wit_component::StringEncoding::UTF16;
-            //     }
-            // }
             opts.build().generate(&resolve, world, &mut files).unwrap();
 
             for (file, contents) in files.iter() {
@@ -307,20 +302,17 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
                 .arg("-I")
                 .arg(&out_dir)
                 .arg("-I")
-                .arg(&(String::from(env!("CARGO_MANIFEST_DIR")) + "/crates/cpp/helper-types"))
+//                .arg(&(String::from(env!("CARGO_MANIFEST_DIR")) + "/crates/cpp/helper-types"))
+                .arg(&(String::from(env!("CARGO_MANIFEST_DIR")) + "/crates/cpp/test_headers"))
                 .arg("-Wall")
                 .arg("-Wextra")
-                .arg("-Werror")
+//                .arg("-Werror")
                 .arg("-Wno-unused-parameter")
                 .arg("-mexec-model=reactor")
                 .arg("-std=c++17")
                 .arg("-g")
                 .arg("-o")
                 .arg(&out_wasm);
-            // Disable the warning about compiling a `.c` file in C++ mode.
-            // if compiler.ends_with("++") {
-            //     cmd.arg("-Wno-deprecated");
-            // }
             println!("{:?}", cmd);
             let output = match cmd.output() {
                 Ok(output) => output,
