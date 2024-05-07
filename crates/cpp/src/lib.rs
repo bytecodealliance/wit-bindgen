@@ -2673,7 +2673,11 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 ..
             } => {
                 let op = &operands[0];
-                results.push(format!("{op}.get_handle()"));
+                if self.gen.gen.opts.host_side() {
+                    results.push(format!("{op}.get_rep()"));
+                } else {
+                    results.push(format!("{op}.get_handle()"));
+                }
             }
             abi::Instruction::HandleLift { handle, .. } => {
                 let op = &operands[0];
