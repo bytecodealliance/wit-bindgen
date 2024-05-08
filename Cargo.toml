@@ -28,11 +28,11 @@ pulldown-cmark = { version = "0.9", default-features = false }
 clap = { version = "4.3.19", features = ["derive"] }
 indexmap = "2.0.0"
 
-wasmparser = "0.206.0"
-wasm-encoder = "0.206.0"
-wasm-metadata = "0.206.0"
-wit-parser = "0.206.0"
-wit-component = "0.206.0"
+wasmparser = "0.207.0"
+wasm-encoder = "0.207.0"
+wasm-metadata = "0.207.0"
+wit-parser = "0.207.0"
+wit-component = "0.207.0"
 
 wit-bindgen-core = { path = 'crates/core', version = '0.24.0' }
 wit-bindgen-c = { path = 'crates/c', version = '0.24.0' }
