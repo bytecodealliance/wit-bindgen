@@ -2692,8 +2692,26 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     (Handle::Own(_), true) => {
                         results.push(format!("wit::{RESOURCE_EXPORT_BASE_CLASS_NAME}{{{op}}}"))
                     }
-                    (Handle::Own(_), false) => {
-                        results.push(format!("wit::{RESOURCE_IMPORT_BASE_CLASS_NAME}{{{op}}}"))
+                    (Handle::Own(ty), false) => {
+                        match self.variant {
+                            AbiVariant::GuestImport => results
+                                .push(format!("wit::{RESOURCE_IMPORT_BASE_CLASS_NAME}{{{op}}}")),
+                            AbiVariant::GuestExport => {
+                                let tmp = self.tmp();
+                                let var = self.tempname("obj", tmp);
+                                let tname = self.gen.type_name(
+                                    &Type::Id(*ty),
+                                    &self.namespace,
+                                    Flavor::Argument(self.variant),
+                                );
+                                uwriteln!(
+                                    self.src,
+                                    "auto {var} = {tname}::Owned({tname}::ResourceRep({op}));
+                                {var}->into_handle();"
+                                );
+                                results.push(format!("std::move({var})"))
+                            }
+                        }
                     }
                     (Handle::Borrow(_), _) => results.push(op.clone()),
                 }
