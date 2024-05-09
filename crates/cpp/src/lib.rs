@@ -2665,7 +2665,11 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                         results.push(format!("{op}.store_resource(std::move({op}))"));
                     }
                 } else {
-                    results.push(format!("{op}.into_handle()"));
+                    if matches!(self.variant, AbiVariant::GuestImport) {
+                        results.push(format!("{op}.into_handle()"));
+                    } else {
+                        results.push(format!("{op}.release()->handle"));
+                    }
                 }
             }
             abi::Instruction::HandleLower {
@@ -2675,6 +2679,9 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let op = &operands[0];
                 if self.gen.gen.opts.host_side() {
                     results.push(format!("{op}.get_rep()"));
+                } else if op == "(*this)" {
+                    // TODO is there a better way to decide?
+                    results.push(format!("{op}.get_handle()"));
                 } else {
                     results.push(format!("{op}.get().get_handle()"));
                 }
@@ -3189,7 +3196,8 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     }
                 }
                 self.push_str(&operands.join(", "));
-                if matches!(func.kind, FunctionKind::Constructor(_))
+                if false
+                    && matches!(func.kind, FunctionKind::Constructor(_))
                     && !self.gen.gen.opts.is_only_handle(self.variant)
                 {
                     // acquire object from unique_ptr
