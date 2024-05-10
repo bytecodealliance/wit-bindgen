@@ -92,7 +92,7 @@ world my-game {
 
 Here the `my-plugin-api` interface encapsulates a group of functions, types,
 etc. This can then be imported wholesale into the `my-game` world via the
-`plugin` namespace. The structure of a [WIT] document and world will affect the
+`my-plugin-api` namespace. The structure of a [WIT] document and world will affect the
 generated bindings per-language.
 
 For more information about WIT and its syntax see the [online documentation for
