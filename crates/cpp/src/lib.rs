@@ -2660,7 +2660,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let op = &operands[0];
                 if self.gen.gen.opts.host_side() {
                     if matches!(self.variant, AbiVariant::GuestImport) {
-                        results.push(format!("{op}.get_handle()"));
+                        results.push(format!("{op}.release()->get_handle()"));
                     } else {
                         results.push(format!("{op}.store_resource(std::move({op}))"));
                     }
@@ -2692,27 +2692,26 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     (Handle::Own(_), true) => {
                         results.push(format!("wit::{RESOURCE_EXPORT_BASE_CLASS_NAME}{{{op}}}"))
                     }
-                    (Handle::Own(ty), false) => {
-                        match self.variant {
-                            AbiVariant::GuestImport => results
-                                .push(format!("wit::{RESOURCE_IMPORT_BASE_CLASS_NAME}{{{op}}}")),
-                            AbiVariant::GuestExport => {
-                                let tmp = self.tmp();
-                                let var = self.tempname("obj", tmp);
-                                let tname = self.gen.type_name(
-                                    &Type::Id(*ty),
-                                    &self.namespace,
-                                    Flavor::Argument(self.variant),
-                                );
-                                uwriteln!(
-                                    self.src,
-                                    "auto {var} = {tname}::Owned({tname}::ResourceRep({op}));
-                                {var}->into_handle();"
-                                );
-                                results.push(format!("std::move({var})"))
-                            }
+                    (Handle::Own(ty), false) => match self.variant {
+                        AbiVariant::GuestImport => {
+                            results.push(format!("wit::{RESOURCE_IMPORT_BASE_CLASS_NAME}{{{op}}}"))
                         }
-                    }
+                        AbiVariant::GuestExport => {
+                            let tmp = self.tmp();
+                            let var = self.tempname("obj", tmp);
+                            let tname = self.gen.type_name(
+                                &Type::Id(*ty),
+                                &self.namespace,
+                                Flavor::Argument(self.variant),
+                            );
+                            uwriteln!(
+                                self.src,
+                                "auto {var} = {tname}::Owned({tname}::ResourceRep({op}));
+                                {var}->into_handle();"
+                            );
+                            results.push(format!("std::move({var})"))
+                        }
+                    },
                     (Handle::Borrow(_), _) => results.push(op.clone()),
                 }
             }
