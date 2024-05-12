@@ -31,7 +31,7 @@ extern "C" int32_t fooX3AfooX2FresourcesX00X5BconstructorX5Dr(int32_t arg0) {
 }
 extern "C" void fooX3AfooX2FresourcesX00X5BmethodX5DrX2Eadd(int32_t arg0,
                                                             int32_t arg1) {
-  (*foo::foo::resources::R::lookup_resource(arg0))->Add((uint32_t(arg1)));
+  (**foo::foo::resources::R::lookup_resource(arg0)).Add((uint32_t(arg1)));
 }
 extern "C" int32_t fooX3AfooX2FresourcesX00create() {
   auto result0 = foo::foo::resources::Create();
@@ -41,9 +41,9 @@ extern "C" void fooX3AfooX2FresourcesX00borrows(int32_t arg0) {
   foo::foo::resources::Borrows(**foo::foo::resources::R::lookup_resource(arg0));
 }
 extern "C" void fooX3AfooX2FresourcesX00consume(int32_t arg0) {
-  auto objptr = foo::foo::resources::R::remove_resource(arg0);
-  assert(objptr.has_value());
-  foo::foo::resources::Consume(foo::foo::resources::R::Owned(*objptr));
+  auto obj0 = foo::foo::resources::R::remove_resource(arg0);
+  assert(obj0.has_value());
+  foo::foo::resources::Consume(foo::foo::resources::R::Owned(*obj0));
 }
 exports::foo::foo::resources::R::~R() {
   if (this->rep) {
@@ -56,7 +56,8 @@ exports::foo::foo::resources::R::R(uint32_t a) {
   this->rep = *lookup_resource(ret);
 }
 void exports::foo::foo::resources::R::Add(uint32_t b) const {
-  fooX3AfooX2FresourcesX23X5BmethodX5DrX2Eadd((*this).get_rep(), (int32_t(b)));
+  fooX3AfooX2FresourcesX23X5BmethodX5DrX2Eadd((*this).get_rep(),
+                                              (int32_t(b)));
 }
 exports::foo::foo::resources::R::R(wit::ResourceExportBase &&b)
     : wit::ResourceExportBase(std::move(b)) {}
@@ -80,7 +81,7 @@ void exports::foo::foo::resources::Borrows(std::reference_wrapper<const R> o) {
   fooX3AfooX2FresourcesX23borrows(o.get().get_rep());
 }
 void exports::foo::foo::resources::Consume(R &&o) {
-  auto rep = o.take_rep();
+  auto rep0 = o.take_rep();
   fooX3AfooX2FresourcesX23consume(o.get_handle());
 }
 
