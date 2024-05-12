@@ -2744,7 +2744,17 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                         );
                         results.push(format!("**{tname}::lookup_resource({op})"));
                     }
-                    (Handle::Borrow(_), false) => results.push(op.clone()),
+                    (Handle::Borrow(ty), false) => match self.variant {
+                        AbiVariant::GuestImport => results.push(op.clone()),
+                        AbiVariant::GuestExport => {
+                            let tname = self.gen.type_name(
+                                &Type::Id(*ty),
+                                &self.namespace,
+                                Flavor::Argument(self.variant),
+                            );
+                            results.push(format!("std::ref(*({tname} *){op})"));
+                        }
+                    },
                 }
             }
             abi::Instruction::TupleLower { tuple, .. } => {
@@ -3203,19 +3213,12 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                         .func_namespace_name(func, !self.gen.gen.opts.host_side(), true);
                 if matches!(func.kind, FunctionKind::Method(_)) {
                     let this = operands.remove(0);
-                    //self.gen.gen.c_src.qualify(&namespace);
-                    // relative.namespace = self.namespace.clone();
                     if self.gen.gen.opts.host_side() {
-                        // let mut relative = SourceWithState::default();
-                        // relative.qualify(&namespace);
-                        uwrite!(
-                            self.src,
-                            "({this}).",
-                            //                            relative.src.to_string()
-                        );
+                        uwrite!(self.src, "({this}).");
                     } else {
-                        let objtype = namespace.join("::");
-                        uwrite!(self.src, "(({objtype}*){this})->",);
+                        //let objtype = namespace.join("::");
+                        uwrite!(self.src, "({this}).get().");
+                        // uwrite!(self.src, "(({objtype}*){this})->",);
                     }
                 } else {
                     if matches!(func.kind, FunctionKind::Constructor(_))
