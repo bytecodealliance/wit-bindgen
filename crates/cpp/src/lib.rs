@@ -2681,7 +2681,11 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             } => {
                 let op = &operands[0];
                 if self.gen.gen.opts.host_side() {
-                    results.push(format!("{op}.get().get_rep()"));
+                    if op == "(*this)" {
+                        results.push(format!("{op}.get_rep()"));
+                    } else {
+                        results.push(format!("{op}.get().get_rep()"));
+                    }
                 } else if op == "(*this)" {
                     // TODO is there a better way to decide?
                     results.push(format!("{op}.get_handle()"));

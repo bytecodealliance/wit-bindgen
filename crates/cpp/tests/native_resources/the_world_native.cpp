@@ -56,8 +56,7 @@ exports::foo::foo::resources::R::R(uint32_t a) {
   this->rep = *lookup_resource(ret);
 }
 void exports::foo::foo::resources::R::Add(uint32_t b) const {
-  fooX3AfooX2FresourcesX23X5BmethodX5DrX2Eadd((*this).get_rep(),
-                                              (int32_t(b)));
+  fooX3AfooX2FresourcesX23X5BmethodX5DrX2Eadd((*this).get_rep(), (int32_t(b)));
 }
 exports::foo::foo::resources::R::R(wit::ResourceExportBase &&b)
     : wit::ResourceExportBase(std::move(b)) {}
