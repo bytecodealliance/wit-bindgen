@@ -2227,7 +2227,8 @@ impl<'a> {camel}Borrow<'a>{{
             self.src,
             r#"
                 impl {name} {{
-                    pub(crate) unsafe fn _lift(val: {repr}) -> {name} {{
+                    #[doc(hidden)]
+                    pub unsafe fn _lift(val: {repr}) -> {name} {{
                         if !cfg!(debug_assertions) {{
                             return ::core::mem::transmute(val);
                         }}
