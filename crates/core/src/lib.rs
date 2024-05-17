@@ -195,7 +195,7 @@ pub trait AnonymousTypeGenerator<'a> {
     fn define_anonymous_type(&mut self, id: TypeId) {
         let ty = &self.resolve().types[id];
         match &ty.kind {
-            | TypeDefKind::Flags(_)
+            TypeDefKind::Flags(_)
             | TypeDefKind::Record(_)
             | TypeDefKind::Resource
             | TypeDefKind::Enum(_)

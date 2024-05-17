@@ -1346,7 +1346,39 @@ impl<'a> wit_bindgen_core::AnonymousTypeGenerator<'a> for InterfaceGenerator<'a>
         self.resolve
     }
 
-    
+    // fn define_anonymous_type(&mut self, id: TypeId) {
+    //     // skip `typedef handle_x handle_y` where `handle_x` is the same as `handle_y`
+    //     let kind = &self.resolve.types[id].kind;
+    //     if let TypeDefKind::Handle(handle) = kind {
+    //         let resource = match handle {
+    //             Handle::Borrow(id) | Handle::Own(id) => id,
+    //         };
+    //         let origin = dealias(self.resolve, *resource);
+    //         if origin == *resource {
+    //             return;
+    //         }
+    //     }
+
+    //     let ty = &self.resolve.types[id];
+    //     match &ty.kind {
+    //         | TypeDefKind::Flags(_)
+    //         | TypeDefKind::Record(_)
+    //         | TypeDefKind::Resource
+    //         | TypeDefKind::Enum(_)
+    //         | TypeDefKind::Variant(_) => {
+    //             unreachable!()
+    //         }
+    //         TypeDefKind::Type(t) => self.anonymous_typ_type(id, t, &ty.docs),
+    //         TypeDefKind::Tuple(tuple) => self.anonymous_type_tuple(id, tuple, &ty.docs),
+    //         TypeDefKind::Option(t) => self.anonymous_type_option(id, t, &ty.docs),
+    //         TypeDefKind::Result(r) => self.anonymous_type_result(id, r, &ty.docs),
+    //         TypeDefKind::List(t) => self.anonymous_type_list(id, t, &ty.docs),
+    //         TypeDefKind::Future(f) => self.anonymous_type_future(id, f, &ty.docs),
+    //         TypeDefKind::Stream(s) => self.anonymous_type_stream(id, s, &ty.docs),
+    //         TypeDefKind::Handle(handle) => self.anonymous_type_handle(id, handle, &ty.docs),
+    //         TypeDefKind::Unknown => unreachable!(),
+    //     }
+    // }
 
     fn anonymous_type_handle(&mut self, id: TypeId, handle: &Handle, docs: &Docs) {
         self.src.h_defs("\ntypedef ");
@@ -1429,7 +1461,7 @@ impl<'a> wit_bindgen_core::AnonymousTypeGenerator<'a> for InterfaceGenerator<'a>
     fn anonymous_type_stream(&mut self, id: TypeId, ty: &Stream, docs: &Docs) {
         todo!("print_anonymous_type for stream");
     }
-    
+
     fn anonymous_typ_type(&mut self, id: TypeId, ty: &Type, docs: &Docs) {
         todo!("print_anonymous_type for typ");
     }
@@ -1507,7 +1539,6 @@ impl InterfaceGenerator<'_> {
                         continue;
                     }
 
-                    // skip `typedef handle_x handle_y` where `handle_x` is the same as `handle_y`
                     let kind = &self.resolve.types[ty].kind;
                     if let TypeDefKind::Handle(handle) = kind {
                         let resource = match handle {
@@ -1515,9 +1546,10 @@ impl InterfaceGenerator<'_> {
                         };
                         let origin = dealias(self.resolve, *resource);
                         if origin == *resource {
-                            return;
+                            continue;
                         }
                     }
+
                     self.define_anonymous_type(ty)
                 }
             }
