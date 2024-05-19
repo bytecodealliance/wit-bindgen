@@ -104,12 +104,8 @@ fn main() -> Result<()> {
         Opt::Markdown { opts, args } => (opts.build(), args),
         #[cfg(feature = "c")]
         Opt::C { opts, args } => (opts.build(), args),
-        #[cfg(feature = "c-host")]
-        Opt::CHost { opts, args } => (opts.build(), args),
         #[cfg(feature = "cpp")]
         Opt::Cpp { opts, args } => (opts.build(), args),
-        #[cfg(feature = "cpp-host")]
-        Opt::CppHost { opts, args } => (opts.build(), args),
         #[cfg(feature = "rust")]
         Opt::Rust { opts, args } => (opts.build(), args),
         #[cfg(feature = "teavm-java")]

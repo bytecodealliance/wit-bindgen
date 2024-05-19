@@ -2323,6 +2323,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "wit-bindgen-bridge"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "heck 0.5.0",
+ "wit-bindgen-core",
+ "wit-component",
+]
+
+[[package]]
 name = "wit-bindgen-c"
 version = "0.24.0"
 dependencies = [
@@ -2349,6 +2360,7 @@ dependencies = [
  "wasmparser 0.207.0",
  "wasmtime",
  "wasmtime-wasi",
+ "wit-bindgen-bridge",
  "wit-bindgen-c",
  "wit-bindgen-core",
  "wit-bindgen-cpp",

@@ -43,6 +43,7 @@ wit-bindgen-csharp = { path = 'crates/csharp', version = '0.24.0' }
 wit-bindgen-markdown = { path = 'crates/markdown', version = '0.24.0' }
 wit-bindgen = { path = 'crates/guest-rust', version = '0.24.0', default-features = false }
 wit-bindgen-cpp = { path = 'crates/cpp', version = '0.3.0' }
+wit-bindgen-bridge = { path = 'crates/bridge', version = '0.1.0' }
 
 [[bin]]
 name = "wit-bindgen"
@@ -53,13 +54,14 @@ clap = { workspace = true }
 wit-bindgen-core = { workspace = true }
 wit-bindgen-rust = { workspace = true, features = ['clap'], optional = true }
 wit-bindgen-c = { workspace = true, features = ['clap'], optional = true }
-wit-bindgen-cpp = { workspace = true, features = ['clap'], optional = true }
 wit-bindgen-markdown = { workspace = true, features = ['clap'], optional = true }
 wit-bindgen-teavm-java = { workspace = true, features = ['clap'], optional = true }
 wit-bindgen-go = { workspace = true, features = ['clap'], optional = true }
 wit-bindgen-csharp = { workspace = true, features = ['clap'], optional = true }
 wit-component = { workspace = true }
 wasm-encoder = { workspace = true }
+wit-bindgen-cpp = { workspace = true, features = ['clap'], optional = true }
+wit-bindgen-bridge = { workspace = true, features = ['clap'], optional = true }
 
 [features]
 default = [
@@ -70,7 +72,9 @@ default = [
   'go',
   'csharp-naot',
   'cpp',
+  'bridge',
 ]
+bridge = ['dep:wit-bindgen-bridge']
 c = ['dep:wit-bindgen-c']
 cpp = ['dep:wit-bindgen-cpp']
 rust = ['dep:wit-bindgen-rust']
