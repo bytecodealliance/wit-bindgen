@@ -1,7 +1,8 @@
 use std::fmt::Write;
 use wit_bindgen_core::{
+    abi::AbiVariant,
     uwriteln,
-    wit_parser::{self, WorldKey},
+    wit_parser::{self, Function, Resolve, TypeOwner, WorldKey},
     Source, WorldGenerator,
 };
 
@@ -33,13 +34,18 @@ impl WorldGenerator for Bridge {
         resolve: &wit_parser::Resolve,
         name: &WorldKey,
         iface: wit_parser::InterfaceId,
-        files: &mut wit_bindgen_core::Files,
+        _files: &mut wit_bindgen_core::Files,
     ) {
         let world = match name {
             WorldKey::Name(n) => n.clone(),
             WorldKey::Interface(i) => resolve.interfaces[*i].name.clone().unwrap_or_default(),
         };
         uwriteln!(self.src, "Import IF {world}");
+
+        let mut gen = self.interface(resolve);
+        for (_name, func) in resolve.interfaces[iface].functions.iter() {
+            gen.generate_function(func, &TypeOwner::Interface(iface), AbiVariant::GuestImport);
+        }
     }
 
     fn export_interface(
@@ -100,5 +106,22 @@ impl WorldGenerator for Bridge {
         let world = &resolve.worlds[world];
         files.push(&format!("{}_bridge.c", world.name), self.src.as_bytes());
         Ok(())
+    }
+}
+
+impl Bridge {
+    fn interface<'a>(&'a mut self, resolve: &'a Resolve) -> BridgeInterfaceGenerator<'a> {
+        BridgeInterfaceGenerator { gen: self, resolve }
+    }
+}
+
+struct BridgeInterfaceGenerator<'a> {
+    gen: &'a mut Bridge,
+    resolve: &'a Resolve,
+}
+
+impl<'a> BridgeInterfaceGenerator<'a> {
+    fn generate_function(&mut self, func: &Function, owner: &TypeOwner, variant: AbiVariant) {
+        uwriteln!(self.gen.src, "Func {} {:?}", func.name, variant);
     }
 }
