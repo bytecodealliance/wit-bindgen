@@ -18,6 +18,9 @@ pub struct Opts {
     /// Output bridge code for webassembly micro runtime
     #[cfg_attr(feature = "clap", arg(long))]
     wamr: bool,
+    /// w2c2 Instance name (derived from wasm file)
+    #[cfg_attr(feature = "clap", arg(long))]
+    instance: String,
 }
 
 impl Opts {
@@ -31,7 +34,11 @@ impl Opts {
 impl WorldGenerator for Bridge {
     fn preprocess(&mut self, resolve: &Resolve, world: WorldId) {
         let world = &resolve.worlds[world];
-        let name = world.name.clone();
+        let name = if self.opts.instance.is_empty() {
+            world.name.clone()
+        } else {
+            self.opts.instance.clone()
+        };
         uwriteln!(
             self.src,
             r#"
@@ -68,7 +75,7 @@ impl WorldGenerator for Bridge {
             WorldKey::Name(n) => n.clone(),
             WorldKey::Interface(i) => resolve.interfaces[*i].name.clone().unwrap_or_default(),
         };
-        uwriteln!(self.src, "Import IF {world}");
+        uwriteln!(self.src, "// Import IF {world}");
 
         let mut gen = self.interface(resolve);
         for (_name, func) in resolve.interfaces[iface].functions.iter() {
@@ -87,7 +94,7 @@ impl WorldGenerator for Bridge {
             WorldKey::Name(n) => n.clone(),
             WorldKey::Interface(i) => resolve.interfaces[*i].name.clone().unwrap_or_default(),
         };
-        uwriteln!(self.src, "Export IF {world}");
+        uwriteln!(self.src, "// Export IF {world}");
 
         let mut gen = self.interface(resolve);
         for (_name, func) in resolve.interfaces[iface].functions.iter() {
@@ -104,7 +111,7 @@ impl WorldGenerator for Bridge {
         _files: &mut wit_bindgen_core::Files,
     ) {
         let world = &resolve.worlds[worldid];
-        uwriteln!(self.src, "Import Funcs {}", world.name);
+        uwriteln!(self.src, "// Import Funcs {}", world.name);
         let mut gen = self.interface(resolve);
         for (_name, func) in funcs.iter() {
             gen.generate_function(func, &TypeOwner::World(worldid), AbiVariant::GuestImport);
@@ -119,7 +126,7 @@ impl WorldGenerator for Bridge {
         _files: &mut wit_bindgen_core::Files,
     ) -> anyhow::Result<()> {
         let world = &resolve.worlds[worldid];
-        uwriteln!(self.src, "Export Funcs {}", world.name);
+        uwriteln!(self.src, "// Export Funcs {}", world.name);
         let mut gen = self.interface(resolve);
         for (_name, func) in funcs.iter() {
             gen.generate_function(func, &TypeOwner::World(worldid), AbiVariant::GuestExport);
