@@ -2,7 +2,7 @@ use std::fmt::Write;
 use wit_bindgen_core::{
     abi::AbiVariant,
     uwriteln,
-    wit_parser::{self, Function, Resolve, TypeOwner, WorldKey},
+    wit_parser::{self, Function, Resolve, TypeOwner, WorldId, WorldKey},
     Source, WorldGenerator,
 };
 
@@ -29,6 +29,34 @@ impl Opts {
 }
 
 impl WorldGenerator for Bridge {
+    fn preprocess(&mut self, resolve: &Resolve, world: WorldId) {
+        let world = &resolve.worlds[world];
+        let name = world.name.clone();
+        uwriteln!(
+            self.src,
+            r#"
+        #include <stdint.h>
+        #include <stdio.h>
+        #include "{name}.h"
+        
+        static {name}Instance* instance;
+        static {name}Instance app_instance;
+        
+        void trap(Trap trap) {{
+            abort();
+        }}
+        
+        {name}Instance* get_app() {{
+            if (!instance) {{
+                {name}Instantiate(&app_instance, NULL);
+                instance = &app_instance;
+            }}
+            return instance;
+        }}
+        "#
+        );
+    }
+
     fn import_interface(
         &mut self,
         resolve: &wit_parser::Resolve,
@@ -53,36 +81,49 @@ impl WorldGenerator for Bridge {
         resolve: &wit_parser::Resolve,
         name: &WorldKey,
         iface: wit_parser::InterfaceId,
-        files: &mut wit_bindgen_core::Files,
+        _files: &mut wit_bindgen_core::Files,
     ) -> anyhow::Result<()> {
         let world = match name {
             WorldKey::Name(n) => n.clone(),
             WorldKey::Interface(i) => resolve.interfaces[*i].name.clone().unwrap_or_default(),
         };
         uwriteln!(self.src, "Export IF {world}");
+
+        let mut gen = self.interface(resolve);
+        for (_name, func) in resolve.interfaces[iface].functions.iter() {
+            gen.generate_function(func, &TypeOwner::Interface(iface), AbiVariant::GuestExport);
+        }
         Ok(())
     }
 
     fn import_funcs(
         &mut self,
         resolve: &wit_parser::Resolve,
-        world: wit_parser::WorldId,
+        worldid: wit_parser::WorldId,
         funcs: &[(&str, &wit_parser::Function)],
-        files: &mut wit_bindgen_core::Files,
+        _files: &mut wit_bindgen_core::Files,
     ) {
-        let world = &resolve.worlds[world];
+        let world = &resolve.worlds[worldid];
         uwriteln!(self.src, "Import Funcs {}", world.name);
+        let mut gen = self.interface(resolve);
+        for (_name, func) in funcs.iter() {
+            gen.generate_function(func, &TypeOwner::World(worldid), AbiVariant::GuestImport);
+        }
     }
 
     fn export_funcs(
         &mut self,
         resolve: &wit_parser::Resolve,
-        world: wit_parser::WorldId,
+        worldid: wit_parser::WorldId,
         funcs: &[(&str, &wit_parser::Function)],
-        files: &mut wit_bindgen_core::Files,
+        _files: &mut wit_bindgen_core::Files,
     ) -> anyhow::Result<()> {
-        let world = &resolve.worlds[world];
+        let world = &resolve.worlds[worldid];
         uwriteln!(self.src, "Export Funcs {}", world.name);
+        let mut gen = self.interface(resolve);
+        for (_name, func) in funcs.iter() {
+            gen.generate_function(func, &TypeOwner::World(worldid), AbiVariant::GuestExport);
+        }
         Ok(())
     }
 
@@ -94,7 +135,7 @@ impl WorldGenerator for Bridge {
         files: &mut wit_bindgen_core::Files,
     ) {
         let world = &resolve.worlds[world];
-        uwriteln!(self.src, "Import Types {}", world.name);
+        uwriteln!(self.src, "// Import Types {}", world.name);
     }
 
     fn finish(
