@@ -1,7 +1,7 @@
 use std::fmt::Write;
 use wit_bindgen_core::{
-    abi::AbiVariant,
-    uwriteln,
+    abi::{AbiVariant, WasmType},
+    make_external_symbol, uwriteln,
     wit_parser::{self, Function, Resolve, TypeOwner, WorldId, WorldKey},
     Source, WorldGenerator,
 };
@@ -161,6 +161,33 @@ impl Bridge {
     fn interface<'a>(&'a mut self, resolve: &'a Resolve) -> BridgeInterfaceGenerator<'a> {
         BridgeInterfaceGenerator { gen: self, resolve }
     }
+
+    fn wasm_type(&self, ty: WasmType, var: TypeVariant) -> String {
+        match ty {
+            WasmType::I32 => todo!(),
+            WasmType::I64 => todo!(),
+            WasmType::F32 => todo!(),
+            WasmType::F64 => todo!(),
+            WasmType::Pointer => todo!(),
+            WasmType::PointerOrI64 => todo!(),
+            WasmType::Length => todo!(),
+        }
+    }
+
+    fn func_name(
+        &self,
+        resolve: &Resolve,
+        func: &Function,
+        owner: &TypeOwner,
+        variant: AbiVariant,
+    ) -> String {
+        let module_name = match owner {
+            TypeOwner::World(_) => todo!(),
+            TypeOwner::Interface(i) => resolve.interfaces[*i].name.clone().unwrap_or_default(),
+            TypeOwner::None => todo!(),
+        };
+        make_external_symbol(&module_name, &func.name, variant)
+    }
 }
 
 struct BridgeInterfaceGenerator<'a> {
@@ -168,8 +195,28 @@ struct BridgeInterfaceGenerator<'a> {
     resolve: &'a Resolve,
 }
 
+enum TypeVariant {
+    W2C2,
+    Native,
+}
+
 impl<'a> BridgeInterfaceGenerator<'a> {
     fn generate_function(&mut self, func: &Function, owner: &TypeOwner, variant: AbiVariant) {
-        uwriteln!(self.gen.src, "Func {} {:?}", func.name, variant);
+        uwriteln!(self.gen.src, "// Func {} {:?}", func.name, variant);
+        let result_var = match variant {
+            AbiVariant::GuestImport => TypeVariant::W2C2,
+            AbiVariant::GuestExport => TypeVariant::Native,
+        };
+        let signature = self.resolve.wasm_signature(variant, func);
+        let return_via_pointer = signature.retptr;
+        let res = if signature.results.is_empty() || return_via_pointer {
+            "void".into()
+        } else {
+            self.gen.wasm_type(signature.results[0], result_var)
+        };
+        self.gen.src.push_str(&res);
+        self.gen.src.push_str(" ");
+        let fname = self.gen.func_name(self.resolve, func, owner, variant);
+        self.gen.src.push_str(&fname);
     }
 }
