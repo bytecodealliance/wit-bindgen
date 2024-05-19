@@ -38,6 +38,14 @@ enum Opt {
         #[clap(flatten)]
         args: Common,
     },
+    /// Generates bindings for bridge modules between wasm and native.
+    #[cfg(feature = "bridge")]
+    Bridge {
+        #[clap(flatten)]
+        opts: wit_bindgen_bridge::Opts,
+        #[clap(flatten)]
+        args: Common,
+    },
     /// Generates bindings for C/CPP host modules.
     #[cfg(feature = "cpp")]
     Cpp {
@@ -46,7 +54,6 @@ enum Opt {
         #[clap(flatten)]
         args: Common,
     },
-
     /// Generates bindings for TeaVM-based Java guest modules.
     #[cfg(feature = "teavm-java")]
     TeavmJava {
@@ -104,6 +111,8 @@ fn main() -> Result<()> {
         Opt::Markdown { opts, args } => (opts.build(), args),
         #[cfg(feature = "c")]
         Opt::C { opts, args } => (opts.build(), args),
+        #[cfg(feature = "bridge")]
+        Opt::Bridge { opts, args } => (opts.build(), args),
         #[cfg(feature = "cpp")]
         Opt::Cpp { opts, args } => (opts.build(), args),
         #[cfg(feature = "rust")]

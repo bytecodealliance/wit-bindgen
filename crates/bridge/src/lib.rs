@@ -1,4 +1,9 @@
-use wit_bindgen_core::{Source, WorldGenerator};
+use std::fmt::Write;
+use wit_bindgen_core::{
+    uwriteln,
+    wit_parser::{self, WorldKey},
+    Source, WorldGenerator,
+};
 
 #[derive(Default)]
 struct Bridge {
@@ -25,55 +30,75 @@ impl Opts {
 impl WorldGenerator for Bridge {
     fn import_interface(
         &mut self,
-        resolve: &wit_bindgen_core::wit_parser::Resolve,
-        name: &wit_bindgen_core::wit_parser::WorldKey,
-        iface: wit_bindgen_core::wit_parser::InterfaceId,
+        resolve: &wit_parser::Resolve,
+        name: &WorldKey,
+        iface: wit_parser::InterfaceId,
         files: &mut wit_bindgen_core::Files,
     ) {
-        todo!()
+        let world = match name {
+            WorldKey::Name(n) => n.clone(),
+            WorldKey::Interface(i) => resolve.interfaces[*i].name.clone().unwrap_or_default(),
+        };
+        uwriteln!(self.src, "Import IF {world}");
     }
 
     fn export_interface(
         &mut self,
-        resolve: &wit_bindgen_core::wit_parser::Resolve,
-        name: &wit_bindgen_core::wit_parser::WorldKey,
-        iface: wit_bindgen_core::wit_parser::InterfaceId,
+        resolve: &wit_parser::Resolve,
+        name: &WorldKey,
+        iface: wit_parser::InterfaceId,
         files: &mut wit_bindgen_core::Files,
     ) -> anyhow::Result<()> {
-        todo!()
+        let world = match name {
+            WorldKey::Name(n) => n.clone(),
+            WorldKey::Interface(i) => resolve.interfaces[*i].name.clone().unwrap_or_default(),
+        };
+        uwriteln!(self.src, "Export IF {world}");
+        Ok(())
     }
 
     fn import_funcs(
         &mut self,
-        resolve: &wit_bindgen_core::wit_parser::Resolve,
-        world: wit_bindgen_core::wit_parser::WorldId,
-        funcs: &[(&str, &wit_bindgen_core::wit_parser::Function)],
+        resolve: &wit_parser::Resolve,
+        world: wit_parser::WorldId,
+        funcs: &[(&str, &wit_parser::Function)],
         files: &mut wit_bindgen_core::Files,
     ) {
-        todo!()
+        let world = &resolve.worlds[world];
+        uwriteln!(self.src, "Import Funcs {}", world.name);
     }
 
     fn export_funcs(
         &mut self,
-        resolve: &wit_bindgen_core::wit_parser::Resolve,
-        world: wit_bindgen_core::wit_parser::WorldId,
-        funcs: &[(&str, &wit_bindgen_core::wit_parser::Function)],
+        resolve: &wit_parser::Resolve,
+        world: wit_parser::WorldId,
+        funcs: &[(&str, &wit_parser::Function)],
         files: &mut wit_bindgen_core::Files,
     ) -> anyhow::Result<()> {
-        todo!()
+        let world = &resolve.worlds[world];
+        uwriteln!(self.src, "Export Funcs {}", world.name);
+        Ok(())
     }
 
     fn import_types(
         &mut self,
-        resolve: &wit_bindgen_core::wit_parser::Resolve,
-        world: wit_bindgen_core::wit_parser::WorldId,
-        types: &[(&str, wit_bindgen_core::wit_parser::TypeId)],
+        resolve: &wit_parser::Resolve,
+        world: wit_parser::WorldId,
+        types: &[(&str, wit_parser::TypeId)],
         files: &mut wit_bindgen_core::Files,
     ) {
-        todo!()
+        let world = &resolve.worlds[world];
+        uwriteln!(self.src, "Import Types {}", world.name);
     }
 
-    fn finish(&mut self, resolve: &wit_bindgen_core::wit_parser::Resolve, world: wit_bindgen_core::wit_parser::WorldId, files: &mut wit_bindgen_core::Files) -> anyhow::Result<()> {
-        todo!()
+    fn finish(
+        &mut self,
+        resolve: &wit_parser::Resolve,
+        world: wit_parser::WorldId,
+        files: &mut wit_bindgen_core::Files,
+    ) -> anyhow::Result<()> {
+        let world = &resolve.worlds[world];
+        files.push(&format!("{}_bridge.c", world.name), self.src.as_bytes());
+        Ok(())
     }
 }
