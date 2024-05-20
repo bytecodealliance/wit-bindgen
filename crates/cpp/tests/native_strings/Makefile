@@ -20,5 +20,17 @@ bindgen: wit/strings.wit
 guest.wasm: the_world.cpp guest.cpp
 	/opt/wasi-sdk/bin/clang++ -o $@ $^ $(CXXFLAGS) 
 	
+guest_release.wasm: the_world.cpp guest.cpp
+	/opt/wasi-sdk/bin/clang++ -o $@ $^ $(CXXFLAGS) -g0 -O3
+	
 clean:
 	-rm *.o libstrings.so app-strings
+
+run:
+	LD_LIBRARY_PATH=. ./app-strings
+
+valgrind:
+	LD_LIBRARY_PATH=. valgrind ./app-strings
+
+w2c2_guest.c: guest_release.wasm
+	w2c2 $^ $@
