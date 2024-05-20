@@ -219,7 +219,9 @@ impl<'a> BridgeInterfaceGenerator<'a> {
         let return_via_pointer = signature.retptr;
         let is_export = matches!(variant, AbiVariant::GuestExport);
         if is_export {
-            self.gen.src.push_str(r#"__attribute__ ((visibility ("default"))) "#);
+            self.gen
+                .src
+                .push_str(r#"__attribute__ ((visibility ("default"))) "#);
         }
         let res = if signature.results.is_empty() || return_via_pointer {
             "void".into()
