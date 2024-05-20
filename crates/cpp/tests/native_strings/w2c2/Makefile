@@ -10,7 +10,7 @@ w2c2_base.h: $(W2C2_PATH)/w2c2/w2c2_base.h
 %.pie.o: %.c
 	$(CC) $(CXXFLAGS) -fPIE -o $@ -c $^
 
-libstrings.so: w2c2_guest.pie.o
+libstrings.so: w2c2_guest.pie.o the-world_bridge.pie.o wasi_dummy.pie.o
 	$(CC) $(CXXFLAGS) -shared -o $@ $^ -Wl,--version-script=../guest.lds
 	
 guest_release.wasm: ../the_world.cpp ../guest.cpp
@@ -28,5 +28,5 @@ valgrind:
 w2c2_guest.c: guest_release.wasm
 	$(W2C2_PATH)/build/w2c2/w2c2 $^ $@
 
-x.c:
-	$(WIT_BINDGEN) bridge ../wit --instance guestrelease
+the-world_bridge.c: $(WIT_BINDGEN)
+	$(WIT_BINDGEN) bridge ../wit --instance guestrelease --include w2c2_guest.h

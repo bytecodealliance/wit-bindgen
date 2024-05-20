@@ -19,8 +19,11 @@ pub struct Opts {
     #[cfg_attr(feature = "clap", arg(long))]
     wamr: bool,
     /// w2c2 Instance name (derived from wasm file)
-    #[cfg_attr(feature = "clap", arg(long))]
+    #[cfg_attr(feature = "clap", arg(long, default_value_t = String::default()))]
     instance: String,
+    /// w2c2 Include name
+    #[cfg_attr(feature = "clap", arg(long, default_value_t = String::default()))]
+    include: String,
 }
 
 impl Opts {
@@ -39,12 +42,17 @@ impl WorldGenerator for Bridge {
         } else {
             self.opts.instance.clone()
         };
+        let include = if self.opts.include.is_empty() {
+            name.clone() + ".h"
+        } else {
+            self.opts.include.clone()
+        };
         uwriteln!(
             self.src,
             r#"
         #include <stdint.h>
         #include <stdio.h>
-        #include "{name}.h"
+        #include "{include}"
         
         static {name}Instance* instance;
         static {name}Instance app_instance;
@@ -209,6 +217,10 @@ impl<'a> BridgeInterfaceGenerator<'a> {
         };
         let signature = self.resolve.wasm_signature(variant, func);
         let return_via_pointer = signature.retptr;
+        let is_export = matches!(variant, AbiVariant::GuestExport);
+        if is_export {
+            self.gen.src.push_str(r#"__attribute__ ((visibility ("default"))) "#);
+        }
         let res = if signature.results.is_empty() || return_via_pointer {
             "void".into()
         } else {

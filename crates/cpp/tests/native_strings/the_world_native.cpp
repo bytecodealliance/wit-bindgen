@@ -20,7 +20,7 @@ extern "C" void fooX3AfooX2FstringsX00a(uint8_t *arg0, size_t arg1) {
 
   foo::foo::strings::A(std::string_view((char const *)(arg0), len0));
 }
-extern "C" void fooX3AfooX2FstringsX00b(uint8_t *arg0, uint8_t *resultptr) {
+extern "C" void fooX3AfooX2FstringsX00b(uint8_t *arg0) {
   auto result0 = foo::foo::strings::B();
   auto const &vec1 = result0;
   auto ptr1 = vec1.data();
@@ -30,7 +30,7 @@ extern "C" void fooX3AfooX2FstringsX00b(uint8_t *arg0, uint8_t *resultptr) {
 }
 extern "C" void fooX3AfooX2FstringsX00c(uint8_t *arg0, size_t arg1,
                                         uint8_t *arg2, size_t arg3,
-                                        uint8_t *arg4, uint8_t *resultptr) {
+                                        uint8_t *arg4) {
   auto len0 = arg1;
 
   auto len1 = arg3;
