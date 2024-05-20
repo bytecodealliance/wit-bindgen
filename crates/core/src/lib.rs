@@ -152,7 +152,6 @@ pub trait InterfaceGenerator<'a> {
     fn type_alias(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs);
     fn type_list(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs);
     fn type_builtin(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs);
-
     fn types(&mut self, iface: InterfaceId) {
         let iface = &self.resolve().interfaces[iface];
         for (name, id) in iface.types.iter() {
@@ -176,6 +175,41 @@ pub trait InterfaceGenerator<'a> {
             TypeDefKind::Future(_) => todo!("generate for future"),
             TypeDefKind::Stream(_) => todo!("generate for stream"),
             TypeDefKind::Handle(_) => todo!("generate for handle"),
+            TypeDefKind::Unknown => unreachable!(),
+        }
+    }
+}
+
+pub trait AnonymousTypeGenerator<'a> {
+    fn resolve(&self) -> &'a Resolve;
+
+    fn anonymous_type_handle(&mut self, id: TypeId, handle: &Handle, docs: &Docs);
+    fn anonymous_type_tuple(&mut self, id: TypeId, ty: &Tuple, docs: &Docs);
+    fn anonymous_type_option(&mut self, id: TypeId, ty: &Type, docs: &Docs);
+    fn anonymous_type_result(&mut self, id: TypeId, ty: &Result_, docs: &Docs);
+    fn anonymous_type_list(&mut self, id: TypeId, ty: &Type, docs: &Docs);
+    fn anonymous_type_future(&mut self, id: TypeId, ty: &Option<Type>, docs: &Docs);
+    fn anonymous_type_stream(&mut self, id: TypeId, ty: &Stream, docs: &Docs);
+    fn anonymous_typ_type(&mut self, id: TypeId, ty: &Type, docs: &Docs);
+
+    fn define_anonymous_type(&mut self, id: TypeId) {
+        let ty = &self.resolve().types[id];
+        match &ty.kind {
+            TypeDefKind::Flags(_)
+            | TypeDefKind::Record(_)
+            | TypeDefKind::Resource
+            | TypeDefKind::Enum(_)
+            | TypeDefKind::Variant(_) => {
+                unreachable!()
+            }
+            TypeDefKind::Type(t) => self.anonymous_typ_type(id, t, &ty.docs),
+            TypeDefKind::Tuple(tuple) => self.anonymous_type_tuple(id, tuple, &ty.docs),
+            TypeDefKind::Option(t) => self.anonymous_type_option(id, t, &ty.docs),
+            TypeDefKind::Result(r) => self.anonymous_type_result(id, r, &ty.docs),
+            TypeDefKind::List(t) => self.anonymous_type_list(id, t, &ty.docs),
+            TypeDefKind::Future(f) => self.anonymous_type_future(id, f, &ty.docs),
+            TypeDefKind::Stream(s) => self.anonymous_type_stream(id, s, &ty.docs),
+            TypeDefKind::Handle(handle) => self.anonymous_type_handle(id, handle, &ty.docs),
             TypeDefKind::Unknown => unreachable!(),
         }
     }
