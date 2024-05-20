@@ -28,5 +28,9 @@ valgrind:
 w2c2_guest.c: guest_release.wasm
 	$(W2C2_PATH)/build/w2c2/w2c2 $^ $@
 
-the-world_bridge.c: $(WIT_BINDGEN)
-	$(WIT_BINDGEN) bridge ../wit --instance guestrelease --include w2c2_guest.h
+the-world_bridge.c: the-world_bridge_target.c
+	cp $^ $@
+
+# not yet up to the task
+#the-world_bridge.c: $(WIT_BINDGEN)
+#	$(WIT_BINDGEN) bridge ../wit --instance guestrelease --include w2c2_guest.h
