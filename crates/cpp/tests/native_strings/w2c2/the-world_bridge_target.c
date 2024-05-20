@@ -60,23 +60,31 @@ __attribute__ ((visibility ("default"))) uint8_t *
 fooX3AfooX2FstringsX23b() {
   uint8_t *linmem = guestrelease_memory(get_app())->data;
   uint32_t result = guestrelease_fooX3AfooX2FstringsX23b(get_app());
-  return result+linmem;
+  static size_t ret_area[3];
+  ret_area[0] = (size_t)(((uint32_t*)(linmem+result))[0]+linmem);
+  ret_area[1] = ((uint32_t*)(linmem+result))[1];
+  ret_area[2] = result;
+  return (uint8_t*)ret_area;
 }
 __attribute__ ((visibility ("default"))) 
 void cabi_post_fooX3AfooX2FstringsX23b(uint8_t * arg0) {
-  uint8_t *linmem = guestrelease_memory(get_app())->data;
-  guestrelease_cabi_post_fooX583AfooX582FstringsX5823b(get_app(), arg0-linmem);
+  //uint8_t *linmem = guestrelease_memory(get_app())->data;
+  guestrelease_cabi_post_fooX583AfooX582FstringsX5823b(get_app(), ((size_t*)arg0)[2]);
 }
 // Func c GuestExport
 __attribute__ ((visibility ("default"))) 
 uint8_t * fooX3AfooX2FstringsX23c(uint8_t * arg0, size_t arg1, uint8_t *arg2, size_t arg3) {
   uint8_t *linmem = guestrelease_memory(get_app())->data;
   uint32_t result = guestrelease_fooX3AfooX2FstringsX23c(get_app(), arg0-linmem, arg1, arg2-linmem, arg3);
-  return result+linmem;
+  static size_t ret_area[3];
+  ret_area[0] = (size_t)(((uint32_t*)(linmem+result))[0]+linmem);
+  ret_area[1] = ((uint32_t*)(linmem+result))[1];
+  ret_area[2] = result;
+  return (uint8_t*)ret_area;
 }
 __attribute__ ((visibility ("default"))) 
 extern void
 cabi_post_fooX3AfooX2FstringsX23c(uint8_t * arg0) {
-  uint8_t *linmem = guestrelease_memory(get_app())->data;
-  guestrelease_cabi_post_fooX583AfooX582FstringsX5823c(get_app(), arg0-linmem);
+  //uint8_t *linmem = guestrelease_memory(get_app())->data;
+  guestrelease_cabi_post_fooX583AfooX582FstringsX5823c(get_app(), ((size_t*)arg0)[2]);
 }
