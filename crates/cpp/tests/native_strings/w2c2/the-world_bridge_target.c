@@ -38,7 +38,11 @@ void fooX3AfooX2Fstrings__a(void*app,U32 arg0,U32 arg1) {
 extern void fooX3AfooX2FstringsX00b(uint8_t *arg0);
 void fooX3AfooX2Fstrings__b(void*app,U32 arg0) {
   uint8_t *linmem = guestrelease_memory(get_app())->data;
-  fooX3AfooX2FstringsX00b(linmem+arg0);
+  static size_t result[2];
+  fooX3AfooX2FstringsX00b((uint8_t*)&result);
+  uint32_t *result_out = (uint32_t*)(linmem+arg0);
+  result_out[0] = ((uint8_t*)(result[0]))-linmem;
+  result_out[1] = result[1];
 }
 // Func c GuestImport
 extern void fooX3AfooX2FstringsX00c(uint8_t *arg0, size_t arg1,
@@ -46,7 +50,11 @@ extern void fooX3AfooX2FstringsX00c(uint8_t *arg0, size_t arg1,
                                         uint8_t *arg4);
 void fooX3AfooX2Fstrings__c(void*app,U32 arg0,U32 arg1,U32 arg2,U32 arg3,U32 arg4) {
   uint8_t *linmem = guestrelease_memory(get_app())->data;
-  fooX3AfooX2FstringsX00c(linmem+arg0, arg1, linmem+arg2, arg3, linmem+arg4);
+  static size_t result[2];
+  fooX3AfooX2FstringsX00c(linmem+arg0, arg1, linmem+arg2, arg3, (uint8_t*)&result);
+  uint32_t *result_out = (uint32_t*)(linmem+arg4);
+  result_out[0] = ((uint8_t*)(result[0]))-linmem;
+  result_out[1] = result[1];
 }
 // Export IF strings
 // Func a GuestExport
