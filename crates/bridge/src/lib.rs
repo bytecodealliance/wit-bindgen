@@ -146,8 +146,8 @@ impl WorldGenerator for Bridge {
         &mut self,
         resolve: &wit_parser::Resolve,
         world: wit_parser::WorldId,
-        types: &[(&str, wit_parser::TypeId)],
-        files: &mut wit_bindgen_core::Files,
+        _types: &[(&str, wit_parser::TypeId)],
+        _files: &mut wit_bindgen_core::Files,
     ) {
         let world = &resolve.worlds[world];
         uwriteln!(self.src, "// Import Types {}", world.name);
