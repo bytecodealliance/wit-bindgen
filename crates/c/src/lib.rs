@@ -7,8 +7,8 @@ use std::fmt::Write;
 use std::mem;
 use wit_bindgen_core::abi::{self, AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType};
 use wit_bindgen_core::{
-    dealias, uwrite, uwriteln, wit_parser::*, Direction, Files, InterfaceGenerator as _, Ns,
-    WorldGenerator,
+    dealias, uwrite, uwriteln, wit_parser::*, AnonymousTypeGenerator, Direction, Files,
+    InterfaceGenerator as _, Ns, WorldGenerator,
 };
 use wit_component::StringEncoding;
 
@@ -1341,6 +1341,98 @@ void __wasm_export_{ns}_{snake}_dtor({ns}_{snake}_t* arg) {{
     }
 }
 
+impl<'a> wit_bindgen_core::AnonymousTypeGenerator<'a> for InterfaceGenerator<'a> {
+    fn resolve(&self) -> &'a Resolve {
+        self.resolve
+    }
+
+    fn anonymous_type_handle(&mut self, id: TypeId, handle: &Handle, docs: &Docs) {
+        self.src.h_defs("\ntypedef ");
+        let resource = match handle {
+            Handle::Borrow(id) | Handle::Own(id) => id,
+        };
+        let info = &self.gen.resources[&dealias(self.resolve, *resource)];
+        match handle {
+            Handle::Borrow(_) => self.src.h_defs(&info.borrow),
+            Handle::Own(_) => self.src.h_defs(&info.own),
+        }
+        self.src.h_defs(" ");
+        self.print_typedef_target(id);
+    }
+
+    fn anonymous_type_tuple(&mut self, id: TypeId, ty: &Tuple, docs: &Docs) {
+        self.src.h_defs("\ntypedef ");
+        self.src.h_defs("struct {\n");
+        for (i, t) in ty.types.iter().enumerate() {
+            let ty = self.gen.type_name(t);
+            uwriteln!(self.src.h_defs, "{ty} f{i};");
+        }
+        self.src.h_defs("}");
+        self.src.h_defs(" ");
+        self.print_typedef_target(id);
+    }
+
+    fn anonymous_type_option(&mut self, id: TypeId, ty: &Type, docs: &Docs) {
+        self.src.h_defs("\ntypedef ");
+        self.src.h_defs("struct {\n");
+        self.src.h_defs("bool is_some;\n");
+        let ty = self.gen.type_name(ty);
+        uwriteln!(self.src.h_defs, "{ty} val;");
+        self.src.h_defs("}");
+        self.src.h_defs(" ");
+        self.print_typedef_target(id);
+    }
+
+    fn anonymous_type_result(&mut self, id: TypeId, ty: &Result_, docs: &Docs) {
+        self.src.h_defs("\ntypedef ");
+        self.src.h_defs(
+            "struct {
+                bool is_err;
+            ",
+        );
+        let ok_ty = ty.ok.as_ref();
+        let err_ty = ty.err.as_ref();
+        if ok_ty.is_some() || err_ty.is_some() {
+            self.src.h_defs("union {\n");
+            if let Some(ok) = ok_ty {
+                let ty = self.gen.type_name(ok);
+                uwriteln!(self.src.h_defs, "{ty} ok;");
+            }
+            if let Some(err) = err_ty {
+                let ty = self.gen.type_name(err);
+                uwriteln!(self.src.h_defs, "{ty} err;");
+            }
+            self.src.h_defs("} val;\n");
+        }
+        self.src.h_defs("}");
+        self.src.h_defs(" ");
+        self.print_typedef_target(id);
+    }
+
+    fn anonymous_type_list(&mut self, id: TypeId, ty: &Type, docs: &Docs) {
+        self.src.h_defs("\ntypedef ");
+        self.src.h_defs("struct {\n");
+        let ty = self.gen.type_name(ty);
+        uwriteln!(self.src.h_defs, "{ty} *ptr;");
+        self.src.h_defs("size_t len;\n");
+        self.src.h_defs("}");
+        self.src.h_defs(" ");
+        self.print_typedef_target(id);
+    }
+
+    fn anonymous_type_future(&mut self, id: TypeId, ty: &Option<Type>, docs: &Docs) {
+        todo!("print_anonymous_type for future");
+    }
+
+    fn anonymous_type_stream(&mut self, id: TypeId, ty: &Stream, docs: &Docs) {
+        todo!("print_anonymous_type for stream");
+    }
+
+    fn anonymous_typ_type(&mut self, id: TypeId, ty: &Type, docs: &Docs) {
+        todo!("print_anonymous_type for typ");
+    }
+}
+
 pub enum CTypeNameInfo<'a> {
     Named { name: &'a str },
     Anonymous { is_prim: bool },
@@ -1413,95 +1505,23 @@ impl InterfaceGenerator<'_> {
                         continue;
                     }
 
+                    let kind = &self.resolve.types[ty].kind;
+                    if let TypeDefKind::Handle(handle) = kind {
+                        let resource = match handle {
+                            Handle::Borrow(id) | Handle::Own(id) => id,
+                        };
+                        let origin = dealias(self.resolve, *resource);
+                        if origin == *resource {
+                            continue;
+                        }
+                    }
+
                     self.define_anonymous_type(ty)
                 }
             }
 
             self.define_dtor(ty);
         }
-    }
-
-    fn define_anonymous_type(&mut self, ty: TypeId) {
-        // skip `typedef handle_x handle_y` where `handle_x` is the same as `handle_y`
-        let kind = &self.resolve.types[ty].kind;
-        if let TypeDefKind::Handle(handle) = kind {
-            let resource = match handle {
-                Handle::Borrow(id) | Handle::Own(id) => id,
-            };
-            let origin = dealias(self.resolve, *resource);
-            if origin == *resource {
-                return;
-            }
-        }
-
-        self.src.h_defs("\ntypedef ");
-        let name = &self.gen.type_names[&ty];
-        match kind {
-            TypeDefKind::Type(_)
-            | TypeDefKind::Flags(_)
-            | TypeDefKind::Record(_)
-            | TypeDefKind::Resource
-            | TypeDefKind::Enum(_)
-            | TypeDefKind::Variant(_) => {
-                unreachable!()
-            }
-            TypeDefKind::Handle(handle) => {
-                let resource = match handle {
-                    Handle::Borrow(id) | Handle::Own(id) => id,
-                };
-                let info = &self.gen.resources[&dealias(self.resolve, *resource)];
-                match handle {
-                    Handle::Borrow(_) => self.src.h_defs(&info.borrow),
-                    Handle::Own(_) => self.src.h_defs(&info.own),
-                }
-            }
-            TypeDefKind::Tuple(t) => {
-                self.src.h_defs(&format!("struct {name} {{\n"));
-                for (i, t) in t.types.iter().enumerate() {
-                    let ty = self.gen.type_name(t);
-                    uwriteln!(self.src.h_defs, "{ty} f{i};");
-                }
-                self.src.h_defs("}");
-            }
-            TypeDefKind::Option(t) => {
-                self.src.h_defs(&format!("struct {name} {{\n"));
-                self.src.h_defs("bool is_some;\n");
-                let ty = self.gen.type_name(t);
-                uwriteln!(self.src.h_defs, "{ty} val;");
-                self.src.h_defs("}");
-            }
-            TypeDefKind::Result(r) => {
-                self.src.h_defs(&format!("struct {name} {{\n"));
-                self.src.h_defs("bool is_err;\n");
-                let ok_ty = r.ok.as_ref();
-                let err_ty = r.err.as_ref();
-                if ok_ty.is_some() || err_ty.is_some() {
-                    self.src.h_defs("union {\n");
-                    if let Some(ok) = ok_ty {
-                        let ty = self.gen.type_name(ok);
-                        uwriteln!(self.src.h_defs, "{ty} ok;");
-                    }
-                    if let Some(err) = err_ty {
-                        let ty = self.gen.type_name(err);
-                        uwriteln!(self.src.h_defs, "{ty} err;");
-                    }
-                    self.src.h_defs("} val;\n");
-                }
-                self.src.h_defs("}");
-            }
-            TypeDefKind::List(t) => {
-                self.src.h_defs(&format!("struct {name} {{\n"));
-                let ty = self.gen.type_name(t);
-                uwriteln!(self.src.h_defs, "{ty} *ptr;");
-                self.src.h_defs("size_t len;\n");
-                self.src.h_defs("}");
-            }
-            TypeDefKind::Future(_) => todo!("print_anonymous_type for future"),
-            TypeDefKind::Stream(_) => todo!("print_anonymous_type for stream"),
-            TypeDefKind::Unknown => unreachable!(),
-        }
-        self.src.h_defs(" ");
-        self.print_typedef_target(ty);
     }
 
     fn define_dtor(&mut self, id: TypeId) {
