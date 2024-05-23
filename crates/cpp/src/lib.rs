@@ -298,7 +298,7 @@ impl Cpp {
         }
     }
 
-    fn clang_format(code: &mut Source) {
+    fn clang_format(code: &mut String) {
         let mut child = Command::new("clang-format")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -310,13 +310,8 @@ impl Cpp {
             .unwrap()
             .write_all(code.as_bytes())
             .unwrap();
-        code.as_mut_string().truncate(0);
-        child
-            .stdout
-            .take()
-            .unwrap()
-            .read_to_string(code.as_mut_string())
-            .unwrap();
+        code.truncate(0);
+        child.stdout.take().unwrap().read_to_string(code).unwrap();
         let status = child.wait().unwrap();
         assert!(status.success());
     }
@@ -401,8 +396,8 @@ impl Cpp {
         }
     }
 
-    fn start_new_file(&mut self) -> FileContext {
-        if self.opts.split_interfaces {
+    fn start_new_file(&mut self, condition: Option<bool>) -> FileContext {
+        if condition == Some(true) || self.opts.split_interfaces {
             FileContext {
                 includes: std::mem::replace(&mut self.includes, Default::default()),
                 src: std::mem::replace(&mut self.h_src, Default::default()),
@@ -413,9 +408,10 @@ impl Cpp {
         }
     }
 
-    fn finish_file(&mut self, files: &mut Files, namespace: &[String], store: FileContext) {
-        if self.opts.split_interfaces {
-            let mut header = Source::default();
+    fn finish_file(&mut self, namespace: &[String], store: FileContext) {
+        if !store.src.src.is_empty() {
+            //        self.opts.split_interfaces {
+            let mut header = String::default();
             self.finish_includes();
             self.h_src.change_namespace(&Default::default());
             uwriteln!(header, "#pragma once");
@@ -423,12 +419,12 @@ impl Cpp {
                 uwriteln!(header, "#include {include}");
             }
             header.push_str(&self.h_src.src);
-            let mut filename = namespace.join("_");
+            let mut filename = namespace.join("-");
             filename.push_str(".h");
             if self.opts.format {
                 Self::clang_format(&mut header);
             }
-            files.push(&filename, header.as_bytes());
+            self.user_class_files.insert(filename.clone(), header);
 
             let _ = std::mem::replace(&mut self.includes, store.includes);
             let _ = std::mem::replace(&mut self.h_src, store.src);
@@ -479,9 +475,9 @@ impl WorldGenerator for Cpp {
         resolve: &Resolve,
         name: &WorldKey,
         id: InterfaceId,
-        files: &mut Files,
+        _files: &mut Files,
     ) {
-        let store = self.start_new_file();
+        let store = self.start_new_file(None);
         self.imported_interfaces.insert(id);
         let wasm_import_module = resolve.name_world_key(name);
         let binding = Some(name);
@@ -496,7 +492,7 @@ impl WorldGenerator for Cpp {
                 gen.generate_function(func, &TypeOwner::Interface(id), AbiVariant::GuestImport);
             }
         }
-        self.finish_file(files, &namespace, store);
+        self.finish_file(&namespace, store);
     }
 
     fn export_interface(
@@ -504,9 +500,9 @@ impl WorldGenerator for Cpp {
         resolve: &Resolve,
         name: &WorldKey,
         id: InterfaceId,
-        files: &mut Files,
+        _files: &mut Files,
     ) -> anyhow::Result<()> {
-        let store = self.start_new_file();
+        let store = self.start_new_file(None);
         self.h_src
             .src
             .push_str(&format!("// export_interface {name:?}\n"));
@@ -524,7 +520,7 @@ impl WorldGenerator for Cpp {
                 gen.generate_function(func, &TypeOwner::Interface(id), AbiVariant::GuestExport);
             }
         }
-        self.finish_file(files, &namespace, store);
+        self.finish_file(&namespace, store);
         Ok(())
     }
 
@@ -736,8 +732,8 @@ impl WorldGenerator for Cpp {
         );
 
         if self.opts.format {
-            Self::clang_format(&mut c_str.src);
-            Self::clang_format(&mut h_str.src);
+            Self::clang_format(&mut c_str.src.as_mut_string());
+            Self::clang_format(&mut h_str.src.as_mut_string());
         }
 
         if self.opts.short_cut {
@@ -1948,21 +1944,24 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
         if let TypeOwner::Interface(intf) = type_.owner {
             let guest_import = self.gen.imported_interfaces.contains(&intf);
             let definition = !(guest_import ^ self.gen.opts.host_side());
+            let store = self.gen.start_new_file(Some(definition));
             let mut world_name = self.gen.world.to_snake_case();
             world_name.push_str("::");
-            let mut headerfile = SourceWithState::default();
+            // let mut headerfile = SourceWithState::default();
             let namespc = namespace(self.resolve, &type_.owner, !guest_import, &self.gen.opts);
             let pascal = name.to_upper_camel_case();
-            let user_filename = namespc.join("-") + "-" + &pascal + ".h";
+            let mut user_filename = namespc.clone();
+            user_filename.push(pascal.clone());
+            //namespc.join("-") + "-" + &pascal + ".h";
             if definition {
                 // includes should be outside of namespaces
-                self.gen.h_src.change_namespace(&Vec::default());
+                //self.gen.h_src.change_namespace(&Vec::default());
                 // temporarily redirect header file declarations to an user controlled include file
-                std::mem::swap(&mut headerfile, &mut self.gen.h_src);
+                //std::mem::swap(&mut headerfile, &mut self.gen.h_src);
                 uwriteln!(
                     self.gen.h_src.src,
                     r#"/* User class definition file, autogenerated once, then user modified
-                    * Updated versions of this file are generated into {user_filename}.template.
+                    * Updated versions of this file are generated into {pascal}.template.
                     */"#
                 );
             }
@@ -2091,18 +2090,19 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                 self.generate_function(&func2, &TypeOwner::Interface(intf), variant);
             }
             uwriteln!(self.gen.h_src.src, "}};\n");
-            if definition {
-                // Finish the user controlled class template
-                self.gen.h_src.change_namespace(&Vec::default());
-                std::mem::swap(&mut headerfile, &mut self.gen.h_src);
-                uwriteln!(self.gen.h_src.src, "#include \"{user_filename}\"");
-                if self.gen.opts.format {
-                    Cpp::clang_format(&mut headerfile.src);
-                }
-                self.gen
-                    .user_class_files
-                    .insert(user_filename, headerfile.src.to_string());
-            }
+            self.gen.finish_file(&user_filename, store);
+            // if definition {
+            //     // Finish the user controlled class template
+            //     self.gen.h_src.change_namespace(&Vec::default());
+            //     std::mem::swap(&mut headerfile, &mut self.gen.h_src);
+            //     uwriteln!(self.gen.h_src.src, "#include \"{user_filename}\"");
+            //     if self.gen.opts.format {
+            //         Cpp::clang_format(&mut headerfile.src);
+            //     }
+            //     self.gen
+            //         .user_class_files
+            //         .insert(user_filename, headerfile.src.to_string());
+            // }
         }
     }
 
