@@ -372,3 +372,40 @@ pub fn new_stream<T: StreamPayload>() -> (StreamSender<T>, StreamReceiver<T>) {
 pub fn spawn(future: impl Future<Output = ()> + 'static) {
     unsafe { SPAWNED.push(Box::pin(future)) }
 }
+
+fn wait(state: &mut FutureState) {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        unreachable!();
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        #[link(wasm_import_module = "$root")]
+        extern "C" {
+            #[link_name = "[task-wait]"]
+            fn wait(_: *mut i32) -> i32;
+        }
+        let mut payload = [0i32; 2];
+        unsafe {
+            let event0 = wait(payload.as_mut_ptr());
+            callback(state as *mut _ as _, event0, payload[0], payload[1]);
+        }
+    }
+}
+
+// TODO: refactor so `'static` bounds aren't necessary
+pub fn block_on<T: 'static>(future: impl Future<Output = T> + 'static) -> T {
+    let (mut tx, mut rx) = oneshot::channel();
+    let state = &mut FutureState(
+        [Box::pin(future.map(move |v| drop(tx.send(v)))) as BoxFuture]
+            .into_iter()
+            .collect(),
+    );
+    loop {
+        match unsafe { poll(state) } {
+            Poll::Ready(()) => break rx.try_recv().unwrap().unwrap(),
+            Poll::Pending => wait(state),
+        }
+    }
+}
