@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <utility>
 #include <wit-host.h>
+namespace mesh {
 namespace exports {
 namespace foo {
 namespace foo {
@@ -22,3 +23,4 @@ public:
 } // namespace foo
 } // namespace foo
 } // namespace exports
+} // namespace mesh

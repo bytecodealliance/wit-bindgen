@@ -1,8 +1,9 @@
 #pragma once
-#include "exports-foo-foo-resources-R.h"
+#include "mesh-exports-foo-foo-resources-R.h"
 #include <cstdint>
 #include <utility>
 // export_interface Interface(Id { idx: 0 })
+namespace mesh {
 namespace exports {
 namespace foo {
 namespace foo {
@@ -13,3 +14,4 @@ void Consume(R &&o);
 } // namespace foo
 } // namespace foo
 } // namespace exports
+} // namespace mesh
