@@ -2188,11 +2188,11 @@ impl<'a, 'b> wit_bindgen_core::AnonymousTypeGenerator<'a> for AnonTypeGenerator<
         self.resolve
     }
 
-    fn anonymous_typ_type(&mut self, id: TypeId, ty: &Type, docs: &Docs) {
+    fn anonymous_typ_type(&mut self, _id: TypeId, ty: &Type, _docs: &Docs) {
         self.interface.print_ty(ty, self.mode);
     }
 
-    fn anonymous_type_handle(&mut self, id: TypeId, handle: &Handle, docs: &Docs) {
+    fn anonymous_type_handle(&mut self, _id: TypeId, handle: &Handle, _docs: &Docs) {
         match handle {
             Handle::Own(ty) => {
                 self.interface.print_ty(&Type::Id(*ty), self.mode);
@@ -2226,7 +2226,7 @@ impl<'a, 'b> wit_bindgen_core::AnonymousTypeGenerator<'a> for AnonTypeGenerator<
         }
     }
 
-    fn anonymous_type_tuple(&mut self, id: TypeId, ty: &Tuple, docs: &Docs) {
+    fn anonymous_type_tuple(&mut self, _id: TypeId, ty: &Tuple, _docs: &Docs) {
         self.interface.push_str("(");
         for ty in ty.types.iter() {
             let mode = self.interface.filter_mode_preserve_top(ty, self.mode);
@@ -2236,14 +2236,14 @@ impl<'a, 'b> wit_bindgen_core::AnonymousTypeGenerator<'a> for AnonTypeGenerator<
         self.interface.push_str(")");
     }
 
-    fn anonymous_type_option(&mut self, id: TypeId, t: &Type, docs: &Docs) {
+    fn anonymous_type_option(&mut self, _id: TypeId, t: &Type, _docs: &Docs) {
         self.interface.push_str("Option<");
         let mode = self.interface.filter_mode_preserve_top(t, self.mode);
         self.interface.print_ty(t, mode);
         self.interface.push_str(">");
     }
 
-    fn anonymous_type_result(&mut self, id: TypeId, r: &Result_, docs: &Docs) {
+    fn anonymous_type_result(&mut self, _id: TypeId, r: &Result_, _docs: &Docs) {
         self.interface.push_str("Result<");
         self.interface.print_optional_ty(r.ok.as_ref(), self.mode);
         self.interface.push_str(",");
@@ -2251,17 +2251,17 @@ impl<'a, 'b> wit_bindgen_core::AnonymousTypeGenerator<'a> for AnonTypeGenerator<
         self.interface.push_str(">");
     }
 
-    fn anonymous_type_list(&mut self, id: TypeId, ty: &Type, docs: &Docs) {
+    fn anonymous_type_list(&mut self, _id: TypeId, ty: &Type, _docs: &Docs) {
         self.interface.print_list(ty, self.mode)
     }
 
-    fn anonymous_type_future(&mut self, id: TypeId, ty: &Option<Type>, docs: &Docs) {
+    fn anonymous_type_future(&mut self, _id: TypeId, ty: &Option<Type>, _docs: &Docs) {
         self.interface.push_str("Future<");
         self.interface.print_optional_ty(ty.as_ref(), self.mode);
         self.interface.push_str(">");
     }
 
-    fn anonymous_type_stream(&mut self, id: TypeId, stream: &Stream, docs: &Docs) {
+    fn anonymous_type_stream(&mut self, _id: TypeId, stream: &Stream, _docs: &Docs) {
         self.interface.push_str("Stream<");
         self.interface
             .print_optional_ty(stream.element.as_ref(), self.mode);

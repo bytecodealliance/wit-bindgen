@@ -790,6 +790,13 @@
 ///     // By default, they will not be generated unless they are used as input
 ///     // or return value of a function.
 ///     generate_unused_types: false,
+///
+///     // A list of "features" which correspond to WIT features to activate
+///     // when parsing WIT files. This enables `@unstable` annotations showing
+///     // up and having bindings generated for them.
+///     //
+///     // By default this is an empty list.
+///     features: ["foo", "bar", "baz"],
 /// });
 /// ```
 ///

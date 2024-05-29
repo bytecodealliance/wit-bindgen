@@ -656,9 +656,9 @@ pub fn imported_types_used_by_exported_interfaces(
     for (_, export) in resolve.worlds[world].exports.iter() {
         match export {
             WorldItem::Function(_) => {}
-            WorldItem::Interface(i) => {
-                exported_interfaces.insert(*i);
-                live_export_types.add_interface(resolve, *i)
+            WorldItem::Interface { id, .. } => {
+                exported_interfaces.insert(*id);
+                live_export_types.add_interface(resolve, *id)
             }
             WorldItem::Type(_) => unreachable!(),
         }
@@ -1346,7 +1346,7 @@ impl<'a> wit_bindgen_core::AnonymousTypeGenerator<'a> for InterfaceGenerator<'a>
         self.resolve
     }
 
-    fn anonymous_type_handle(&mut self, id: TypeId, handle: &Handle, docs: &Docs) {
+    fn anonymous_type_handle(&mut self, id: TypeId, handle: &Handle, _docs: &Docs) {
         self.src.h_defs("\ntypedef ");
         let resource = match handle {
             Handle::Borrow(id) | Handle::Own(id) => id,
@@ -1360,7 +1360,7 @@ impl<'a> wit_bindgen_core::AnonymousTypeGenerator<'a> for InterfaceGenerator<'a>
         self.print_typedef_target(id);
     }
 
-    fn anonymous_type_tuple(&mut self, id: TypeId, ty: &Tuple, docs: &Docs) {
+    fn anonymous_type_tuple(&mut self, id: TypeId, ty: &Tuple, _docs: &Docs) {
         self.src.h_defs("\ntypedef ");
         self.src.h_defs("struct {\n");
         for (i, t) in ty.types.iter().enumerate() {
@@ -1372,7 +1372,7 @@ impl<'a> wit_bindgen_core::AnonymousTypeGenerator<'a> for InterfaceGenerator<'a>
         self.print_typedef_target(id);
     }
 
-    fn anonymous_type_option(&mut self, id: TypeId, ty: &Type, docs: &Docs) {
+    fn anonymous_type_option(&mut self, id: TypeId, ty: &Type, _docs: &Docs) {
         self.src.h_defs("\ntypedef ");
         self.src.h_defs("struct {\n");
         self.src.h_defs("bool is_some;\n");
@@ -1383,7 +1383,7 @@ impl<'a> wit_bindgen_core::AnonymousTypeGenerator<'a> for InterfaceGenerator<'a>
         self.print_typedef_target(id);
     }
 
-    fn anonymous_type_result(&mut self, id: TypeId, ty: &Result_, docs: &Docs) {
+    fn anonymous_type_result(&mut self, id: TypeId, ty: &Result_, _docs: &Docs) {
         self.src.h_defs("\ntypedef ");
         self.src.h_defs(
             "struct {
@@ -1409,7 +1409,7 @@ impl<'a> wit_bindgen_core::AnonymousTypeGenerator<'a> for InterfaceGenerator<'a>
         self.print_typedef_target(id);
     }
 
-    fn anonymous_type_list(&mut self, id: TypeId, ty: &Type, docs: &Docs) {
+    fn anonymous_type_list(&mut self, id: TypeId, ty: &Type, _docs: &Docs) {
         self.src.h_defs("\ntypedef ");
         self.src.h_defs("struct {\n");
         let ty = self.gen.type_name(ty);
@@ -1420,15 +1420,15 @@ impl<'a> wit_bindgen_core::AnonymousTypeGenerator<'a> for InterfaceGenerator<'a>
         self.print_typedef_target(id);
     }
 
-    fn anonymous_type_future(&mut self, id: TypeId, ty: &Option<Type>, docs: &Docs) {
+    fn anonymous_type_future(&mut self, _id: TypeId, _ty: &Option<Type>, _docs: &Docs) {
         todo!("print_anonymous_type for future");
     }
 
-    fn anonymous_type_stream(&mut self, id: TypeId, ty: &Stream, docs: &Docs) {
+    fn anonymous_type_stream(&mut self, _id: TypeId, _ty: &Stream, _docs: &Docs) {
         todo!("print_anonymous_type for stream");
     }
 
-    fn anonymous_typ_type(&mut self, id: TypeId, ty: &Type, docs: &Docs) {
+    fn anonymous_typ_type(&mut self, _id: TypeId, _ty: &Type, _docs: &Docs) {
         todo!("print_anonymous_type for typ");
     }
 }
@@ -3095,16 +3095,6 @@ impl Source {
     }
     fn c_adapters(&mut self, s: &str) {
         self.c_adapters.push_str(s);
-    }
-}
-
-trait SourceExt {
-    fn as_source(&mut self) -> &mut wit_bindgen_core::Source;
-}
-
-impl SourceExt for wit_bindgen_core::Source {
-    fn as_source(&mut self) -> &mut wit_bindgen_core::Source {
-        self
     }
 }
 
