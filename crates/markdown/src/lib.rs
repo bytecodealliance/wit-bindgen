@@ -66,7 +66,7 @@ impl WorldGenerator for Markdown {
             }
             let name = &resolve.name_world_key(name);
             match import {
-                WorldItem::Interface(_) => {
+                WorldItem::Interface { .. } => {
                     gen.push_str("    - interface `");
                     gen.push_str(name);
                     gen.push_str("`\n");
@@ -91,7 +91,7 @@ impl WorldGenerator for Markdown {
             }
             let name = &resolve.name_world_key(name);
             match export {
-                WorldItem::Interface(_) => {
+                WorldItem::Interface { .. } => {
                     gen.push_str("    - interface `");
                     gen.push_str(name);
                     gen.push_str("`\n");

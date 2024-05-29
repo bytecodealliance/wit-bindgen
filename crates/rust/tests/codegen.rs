@@ -486,3 +486,27 @@ mod generate_unused_types {
         generate_unused_types: true,
     });
 }
+
+#[allow(unused)]
+mod gated_features {
+    wit_bindgen::generate!({
+        inline: r#"
+            package foo:bar;
+
+            world bindings {
+                @unstable(feature = x)
+                import x: func();
+                @unstable(feature = y)
+                import y: func();
+                @since(version = 1.2.3)
+                import z: func();
+            }
+        "#,
+        features: ["y"],
+    });
+
+    fn _foo() {
+        y();
+        z();
+    }
+}
