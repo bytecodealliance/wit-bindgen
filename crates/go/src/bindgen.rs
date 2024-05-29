@@ -690,7 +690,8 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
     }
 
     pub(crate) fn get_c_field_name(&mut self, field: &Field) -> String {
-        avoid_keyword(field.name.to_snake_case().as_str())
+        let name = wit_bindgen_c::to_c_ident(field.name.to_snake_case().as_str());
+        avoid_keyword(&name)
     }
 
     pub(crate) fn get_go_field_name(&mut self, field: &Field) -> String {
