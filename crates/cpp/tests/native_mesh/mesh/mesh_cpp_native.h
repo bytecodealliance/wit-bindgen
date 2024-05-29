@@ -15,12 +15,16 @@ namespace foo {
 namespace foo {
 namespace resources {
 class R : public wit::ResourceImportBase<R> {
-
+  exports::foo::foo::resources::R impl;
 public:
   static void Dtor(R *self) { delete self; }
   R(uint32_t a);
+  R(exports::foo::foo::resources::R && a);
   static Owned New(uint32_t a) { return Owned(new R(a)); }
   void Add(uint32_t b);
+  exports::foo::foo::resources::R into_inner() {
+    return std::move(impl);
+  }
 };
 
 R::Owned Create();

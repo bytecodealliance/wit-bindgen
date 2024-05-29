@@ -2,7 +2,7 @@ CXXFLAGS=-fPIC -g -O0 -I../../../helper-types
 
 all: libmesh.so
 
-libmesh.so: mesh_native.cpp
+libmesh.so: mesh_native.cpp impl.cpp
 	$(CXX) -shared $(CXXFLAGS) -o $@ $^ libcomponent_b.so
 
 bindgen:
