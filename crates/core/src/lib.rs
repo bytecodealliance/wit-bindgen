@@ -37,7 +37,7 @@ pub trait WorldGenerator {
         for (name, import) in world.imports.iter() {
             match import {
                 WorldItem::Function(f) => funcs.push((unwrap_name(name), f)),
-                WorldItem::Interface(id) => self.import_interface(resolve, name, *id, files),
+                WorldItem::Interface { id, .. } => self.import_interface(resolve, name, *id, files),
                 WorldItem::Type(id) => types.push((unwrap_name(name), *id)),
             }
         }
@@ -61,7 +61,7 @@ pub trait WorldGenerator {
         for (name, export) in world.exports.iter() {
             match export {
                 WorldItem::Function(f) => funcs.push((unwrap_name(name), f)),
-                WorldItem::Interface(id) => interfaces.push((name, id)),
+                WorldItem::Interface { id, .. } => interfaces.push((name, id)),
                 WorldItem::Type(_) => unreachable!(),
             }
         }

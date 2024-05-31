@@ -18,7 +18,7 @@ resolver = "2"
 
 [workspace.package]
 edition = "2021"
-version = "0.25.0"
+version = "0.26.0"
 
 [workspace.dependencies]
 anyhow = "1.0.75"
@@ -28,20 +28,20 @@ pulldown-cmark = { version = "0.9", default-features = false }
 clap = { version = "4.3.19", features = ["derive"] }
 indexmap = "2.0.0"
 
-wasmparser = "0.208.0"
-wasm-encoder = "0.208.0"
-wasm-metadata = "0.208.0"
-wit-parser = "0.208.0"
-wit-component = "0.208.0"
+wasmparser = "0.209.0"
+wasm-encoder = "0.209.0"
+wasm-metadata = "0.209.0"
+wit-parser = "0.209.0"
+wit-component = "0.209.0"
 
-wit-bindgen-core = { path = 'crates/core', version = '0.25.0' }
-wit-bindgen-c = { path = 'crates/c', version = '0.25.0' }
-wit-bindgen-rust = { path = "crates/rust", version = "0.25.0" }
-wit-bindgen-teavm-java = { path = 'crates/teavm-java', version = '0.25.0' }
-wit-bindgen-go = { path = 'crates/go', version = '0.25.0' }
-wit-bindgen-csharp = { path = 'crates/csharp', version = '0.25.0' }
-wit-bindgen-markdown = { path = 'crates/markdown', version = '0.25.0' }
-wit-bindgen = { path = 'crates/guest-rust', version = '0.25.0', default-features = false }
+wit-bindgen-core = { path = 'crates/core', version = '0.26.0' }
+wit-bindgen-c = { path = 'crates/c', version = '0.26.0' }
+wit-bindgen-rust = { path = "crates/rust", version = "0.26.0" }
+wit-bindgen-teavm-java = { path = 'crates/teavm-java', version = '0.26.0' }
+wit-bindgen-go = { path = 'crates/go', version = '0.26.0' }
+wit-bindgen-csharp = { path = 'crates/csharp', version = '0.26.0' }
+wit-bindgen-markdown = { path = 'crates/markdown', version = '0.26.0' }
+wit-bindgen = { path = 'crates/guest-rust', version = '0.26.0', default-features = false }
 wit-bindgen-cpp = { path = 'crates/cpp', version = '0.3.0' }
 wit-bindgen-bridge = { path = 'crates/bridge', version = '0.1.0' }
 

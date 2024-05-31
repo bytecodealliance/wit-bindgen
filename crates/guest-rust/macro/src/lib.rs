@@ -46,6 +46,7 @@ impl Parse for Config {
         let mut opts = Opts::default();
         let mut world = None;
         let mut source = None;
+        let mut features = Vec::new();
 
         if input.peek(token::Brace) {
             let content;
@@ -119,6 +120,9 @@ impl Parse for Config {
                     Opt::GenerateUnusedTypes(enable) => {
                         opts.generate_unused_types = enable.value();
                     }
+                    Opt::Features(f) => {
+                        features.extend(f.into_iter().map(|f| f.value()));
+                    }
                 }
             }
         } else {
@@ -128,7 +132,7 @@ impl Parse for Config {
             }
         }
         let (resolve, pkg, files) =
-            parse_source(&source).map_err(|err| anyhow_to_syn(call_site, err))?;
+            parse_source(&source, &features).map_err(|err| anyhow_to_syn(call_site, err))?;
         let world = resolve
             .select_world(pkg, world.as_deref())
             .map_err(|e| anyhow_to_syn(call_site, e))?;
@@ -142,8 +146,12 @@ impl Parse for Config {
 }
 
 /// Parse the source
-fn parse_source(source: &Option<Source>) -> anyhow::Result<(Resolve, PackageId, Vec<PathBuf>)> {
+fn parse_source(
+    source: &Option<Source>,
+    features: &[String],
+) -> anyhow::Result<(Resolve, PackageId, Vec<PathBuf>)> {
     let mut resolve = Resolve::default();
+    resolve.features.extend(features.iter().cloned());
     let mut files = Vec::new();
     let root = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
     let mut parse = |path: &Path| -> anyhow::Result<_> {
@@ -239,6 +247,7 @@ mod kw {
     syn::custom_keyword!(pub_export_macro);
     syn::custom_keyword!(wasm64);
     syn::custom_keyword!(generate_unused_types);
+    syn::custom_keyword!(features);
 }
 
 #[derive(Clone)]
@@ -290,6 +299,7 @@ enum Opt {
     PubExportMacro(syn::LitBool),
     Wasm64,
     GenerateUnusedTypes(syn::LitBool),
+    Features(Vec<syn::LitStr>),
 }
 
 impl Parse for Opt {
@@ -415,6 +425,13 @@ impl Parse for Opt {
             input.parse::<kw::generate_unused_types>()?;
             input.parse::<Token![:]>()?;
             Ok(Opt::GenerateUnusedTypes(input.parse()?))
+        } else if l.peek(kw::features) {
+            input.parse::<kw::features>()?;
+            input.parse::<Token![:]>()?;
+            let contents;
+            syn::bracketed!(contents in input);
+            let list = Punctuated::<_, Token![,]>::parse_terminated(&contents)?;
+            Ok(Opt::Features(list.into_iter().collect()))
         } else {
             Err(l.error())
         }
