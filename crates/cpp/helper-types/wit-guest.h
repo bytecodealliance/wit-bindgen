@@ -6,6 +6,10 @@
 #include "wit-common.h"
 
 namespace wit {
+/// A string in linear memory, freed unconditionally using free
+///
+/// A normal C++ string makes no guarantees about where the characters
+/// are stored and how this is freed.
 class string {
   uint8_t const *data_;
   size_t length;
@@ -43,6 +47,10 @@ public:
   }
 };
 
+/// A vector in linear memory, freed unconditionally using free
+///
+/// You can't detach the data memory from a vector, nor create one
+/// in a portable way from a buffer and lenght without copying.
 template <class T>
 class vector {
   T *data_;
@@ -81,6 +89,10 @@ public:
   }
 };
 
+/// @brief  A Resource defined within the guest (guest side)
+/// 
+/// It registers with the host and should remain in a static location.
+/// Typically referenced by the Owned type
 template <class R> class ResourceExportBase {
   public:
     struct Deleter {
@@ -102,6 +114,9 @@ template <class R> class ResourceExportBase {
     int32_t into_handle() { int32_t result = handle; handle=invalid; return result; }
 };
 
+/// @brief A Resource imported from the host (guest side)
+///
+/// Wraps the identifier and can be forwarded but not duplicated
 class ResourceImportBase {
 public:
   static const int32_t invalid = -1;

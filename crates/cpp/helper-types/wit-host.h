@@ -43,6 +43,7 @@ typedef guest_address (*guest_alloc_t)(WASMExecEnv *, guest_size size,
                                        guest_size align);
 #endif
 
+/// A string in linear memory (host-side handle)
 // host code never de-allocates directly
 class string {
   guest_address data_;
@@ -102,6 +103,7 @@ public:
 #endif
 };
 
+/// A vector in linear memory (host-side handle)
 template <class T>
 class vector {
   guest_address data_;
@@ -124,6 +126,7 @@ public:
   guest_size size() const { return length; }
 };
 
+/// Wrapper for specialized de-allocation of a returned type (calling cabi_post_*)
 template <class T> class guest_owned : public T {
   guest_address data_;
 #ifdef WIT_HOST_WAMR
@@ -183,6 +186,8 @@ public:
 #endif
 };
 
+/// @brief Helper class to map between IDs and resources
+/// @tparam R Type of the Resource
 template <class R> class ResourceTable {
   static std::map<int32_t, R> resources;
 
@@ -208,7 +213,7 @@ public:
   }
 };
 
-// guest exported resource
+/// Guest exported resource (host side handle)
 class ResourceExportBase : public ResourceTable<guest_address> {
   protected:
     guest_address rep;
@@ -230,6 +235,7 @@ class ResourceExportBase : public ResourceTable<guest_address> {
     guest_address take_rep() { guest_address res = rep; rep=0; return res; }
 };
 
+/// Host defined resource (host side definition)
 template <class R>
 class ResourceImportBase : public ResourceTable<R*> {
     int32_t index;

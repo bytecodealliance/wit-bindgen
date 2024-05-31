@@ -13,7 +13,7 @@ namespace wit {
 #if __cplusplus > 202001L
 using std::span;
 #else
-// minimal implementation to get things going
+/// Minimal span (vector view) implementation for older C++ environments
 template <class T> class span {
   T const *address;
   size_t length;
@@ -32,8 +32,4 @@ public:
   span(std::vector<U> const&vec) : address(vec.data()), length(vec.size()) {}
 };
 #endif
-
-template <typename T> struct Owned {
-  T *ptr;
-};
 } // namespace wit
