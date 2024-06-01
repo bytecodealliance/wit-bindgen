@@ -257,4 +257,22 @@ class ResourceImportBase : public ResourceTable<R*> {
     }
 };
 
+/// Host representation of a resource defined in another component
+///
+/// Acts like ResourceImportBase (e.g. definition);
+/// R should derive from ResourceExportBase
+template <class R>
+class ResourceForwarder : public R {
+  typedef R Owned;
+  ResourceForwarder(int32_t id) : R(ResourceExportBase(id)) {}
+  std::optional<Owned> lookup_resource(int32_t id) {
+    // TODO: Handle not found
+    return R(ResourceExportBase(id));
+  }
+  std::optional<Owned> remove_resource(int32_t id) {
+    std::optional<R*> result = R::remove_resource(id);
+    if (!result.has_value()) return std::optional<Owned>();
+    return *result;
+  }
+};
 } // namespace wit

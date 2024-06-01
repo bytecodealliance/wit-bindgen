@@ -7,3 +7,6 @@ libcomponent_b.so: b.cpp impl.cpp
 
 bindgen:
 	../../../../../target/debug/wit-bindgen cpp ../wit -w b --wasm64 --format
+
+clean:
+	-rm *~ *.so *.o

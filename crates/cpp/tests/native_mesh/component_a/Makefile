@@ -7,3 +7,6 @@ component_a: a.cpp main.cpp
 
 bindgen:
 	../../../../../target/debug/wit-bindgen cpp ../wit -w a --wasm64 --format
+
+clean:
+	-rm *~ component_a *.o

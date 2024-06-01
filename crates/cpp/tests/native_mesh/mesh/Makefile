@@ -7,3 +7,6 @@ libmesh.so: mesh_native.cpp impl.cpp
 
 bindgen:
 	../../../../../target/debug/wit-bindgen cpp ../wit -w mesh --wasm64 --format --direct --split-interfaces --internal-prefix mesh
+
+clean:
+	-rm *~ libmesh.so *.o
