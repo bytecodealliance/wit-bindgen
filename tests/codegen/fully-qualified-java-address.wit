@@ -1,0 +1,14 @@
+package foo:bar;
+
+interface my-import {
+    record address {
+        field: u32,
+        attribute: bool,
+    }
+}
+
+world bindings {
+    import my-import;
+
+    export init: func(baz: string);
+}
