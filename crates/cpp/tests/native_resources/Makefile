@@ -16,3 +16,6 @@ clean:
 
 run: app-resources
 	LD_LIBRARY_PATH=. ./app-resources
+
+valgrind: app-resources
+	LD_LIBRARY_PATH=. valgrind --leak-check=full ./app-resources

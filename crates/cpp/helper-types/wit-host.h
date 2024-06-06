@@ -219,7 +219,7 @@ class ResourceExportBase : public ResourceTable<guest_address> {
     guest_address rep;
     int32_t index;
   public:
-    ResourceExportBase() : rep(0), index(-1) {}
+    ResourceExportBase() : rep(nullptr), index(-1) {}
     ResourceExportBase(int32_t i) : rep(*lookup_resource(i)), index(i) {}
     ResourceExportBase(ResourceExportBase &&b) : rep(b.rep), index(b.index) {b.rep=0;}
     ResourceExportBase(ResourceExportBase const&) = delete;
@@ -229,6 +229,11 @@ class ResourceExportBase : public ResourceTable<guest_address> {
       rep = b.rep;
       index = b.index;
       b.rep = 0;
+    }
+    ~ResourceExportBase() {
+      if (index>=0 && rep!=nullptr) {
+        remove_resource(index);
+      }
     }
     int32_t get_handle() const { return index; }
     guest_address get_rep() const { return rep; }
