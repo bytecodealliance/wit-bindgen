@@ -1,9 +1,9 @@
-#include <malloc.h>
-#include <stdint.h>
-#include <string_view>
-#include <string>
-#include <memory> // unique_ptr
 #include "wit-common.h"
+#include <malloc.h>
+#include <memory> // unique_ptr
+#include <stdint.h>
+#include <string>
+#include <string_view>
 
 namespace wit {
 /// A string in linear memory, freed unconditionally using free
@@ -51,8 +51,7 @@ public:
 ///
 /// You can't detach the data memory from a vector, nor create one
 /// in a portable way from a buffer and lenght without copying.
-template <class T>
-class vector {
+template <class T> class vector {
   T *data_;
   size_t length;
 
@@ -72,8 +71,8 @@ public:
   vector(T *d, size_t l) : data_(d), length(l) {}
   T const *data() const { return data_; }
   T *data() { return data_; }
-  T& operator[](size_t n) { return data_[n]; }
-  T const& operator[](size_t n) const { return data_[n]; }
+  T &operator[](size_t n) { return data_[n]; }
+  T const &operator[](size_t n) const { return data_[n]; }
   size_t size() const { return length; }
   ~vector() {
     if (data_) {
@@ -84,34 +83,40 @@ public:
   void leak() { data_ = nullptr; }
   // typically called by post
   static void drop_raw(void *ptr) { free(ptr); }
-  wit::span<T> get_view() const {
-    return wit::span<T>(data_, length);
-  }
+  wit::span<T> get_view() const { return wit::span<T>(data_, length); }
 };
 
 /// @brief  A Resource defined within the guest (guest side)
-/// 
+///
 /// It registers with the host and should remain in a static location.
 /// Typically referenced by the Owned type
 template <class R> class ResourceExportBase {
-  public:
-    struct Deleter {
-      void operator()(R* ptr) const { R::Dtor(ptr); }
-    };
-    typedef std::unique_ptr<R, Deleter> Owned;
+public:
+  struct Deleter {
+    void operator()(R *ptr) const { R::Dtor(ptr); }
+  };
+  typedef std::unique_ptr<R, Deleter> Owned;
 
-    static const int32_t invalid = -1;
+  static const int32_t invalid = -1;
 
-    int32_t handle;
+  int32_t handle;
 
-    ResourceExportBase() : handle(R::ResourceNew((R*)this)) {}
-    ~ResourceExportBase() { if (handle>=0) { R::ResourceDrop(handle); } }
-    ResourceExportBase(ResourceExportBase const&) = delete;
-    ResourceExportBase(ResourceExportBase &&) = delete;
-    ResourceExportBase& operator=(ResourceExportBase &&b) = delete;
-    ResourceExportBase& operator=(ResourceExportBase const&) = delete;
-    int32_t get_handle() const { return handle; }
-    int32_t into_handle() { int32_t result = handle; handle=invalid; return result; }
+  ResourceExportBase() : handle(R::ResourceNew((R *)this)) {}
+  ~ResourceExportBase() {
+    if (handle >= 0) {
+      R::ResourceDrop(handle);
+    }
+  }
+  ResourceExportBase(ResourceExportBase const &) = delete;
+  ResourceExportBase(ResourceExportBase &&) = delete;
+  ResourceExportBase &operator=(ResourceExportBase &&b) = delete;
+  ResourceExportBase &operator=(ResourceExportBase const &) = delete;
+  int32_t get_handle() const { return handle; }
+  int32_t into_handle() {
+    int32_t result = handle;
+    handle = invalid;
+    return result;
+  }
 };
 
 /// @brief A Resource imported from the host (guest side)

@@ -1,12 +1,12 @@
 #pragma once
 
+#include "wit-common.h"
 #include <malloc.h>
+#include <memory> // unique_ptr
+#include <optional>
 #include <stdint.h>
 #include <string.h>
 #include <string_view>
-#include <optional>
-#include <memory> // unique_ptr
-#include "wit-common.h"
 
 #ifndef WIT_HOST_DIRECT
 #define WIT_HOST_WAMR
@@ -18,7 +18,7 @@
 
 namespace wit {
 #ifdef WIT_HOST_DIRECT
-typedef uint8_t* guest_address;
+typedef uint8_t *guest_address;
 typedef size_t guest_size;
 extern "C" void *cabi_realloc(void *ptr, size_t old_size, size_t align,
                               size_t new_size);
@@ -32,8 +32,8 @@ typedef uint32_t guest_size;
 } // namespace wit
 
 #ifdef WIT_HOST_WAMR
-#include <wasm_export.h>
 #include <wasm_c_api.h>
+#include <wasm_export.h>
 #endif
 
 namespace wit {
@@ -68,35 +68,33 @@ public:
 
 #if defined(WIT_HOST_DIRECT)
   static string from_view(std::string_view v) {
-    void* addr = cabi_realloc(nullptr, 0, 1, v.length());
+    void *addr = cabi_realloc(nullptr, 0, 1, v.length());
     memcpy(addr, v.data(), v.length());
     return string((guest_address)addr, v.length());
   }
 #endif
 #if defined(WIT_HOST_WAMR)
   static string from_view(wasm_exec_env_t exec_env, std::string_view v) {
-    void* addr = nullptr;
-    wasm_function_inst_t wasm_func = wasm_runtime_lookup_function(wasm_runtime_get_module_inst(exec_env), 
-  "cabi_realloc", "(*$ii)*");
+    void *addr = nullptr;
+    wasm_function_inst_t wasm_func = wasm_runtime_lookup_function(
+        wasm_runtime_get_module_inst(exec_env), "cabi_realloc", "(*$ii)*");
 
-    wasm_val_t wasm_results[1] = {
-      WASM_INIT_VAL
-    };
+    wasm_val_t wasm_results[1] = {WASM_INIT_VAL};
     wasm_val_t wasm_args[4] = {
-      WASM_I32_VAL(0 /*nullptr*/),
-      WASM_I32_VAL(0),
-      WASM_I32_VAL(1),
-      WASM_I32_VAL(0 /*v.length()*/),
+        WASM_I32_VAL(0 /*nullptr*/),
+        WASM_I32_VAL(0),
+        WASM_I32_VAL(1),
+        WASM_I32_VAL(0 /*v.length()*/),
     };
     bool wasm_ok;
     wasm_args[3].of.i32 = v.length();
     wasm_ok = wasm_runtime_call_wasm_a(exec_env, wasm_func, 1, wasm_results, 4,
-                              wasm_args);
+                                       wasm_args);
     assert(wasm_ok);
-    assert(wasm_results[0].kind==WASM_I32);
+    assert(wasm_results[0].kind == WASM_I32);
     auto ret = wasm_results[0].of.i32;
-    addr = (void*)wasm_runtime_addr_app_to_native(wasm_runtime_get_module_inst(exec_env), 
-      ret);
+    addr = (void *)wasm_runtime_addr_app_to_native(
+        wasm_runtime_get_module_inst(exec_env), ret);
     memcpy(addr, v.data(), v.length());
     return string((guest_address)ret, v.length());
   }
@@ -104,8 +102,7 @@ public:
 };
 
 /// A vector in linear memory (host-side handle)
-template <class T>
-class vector {
+template <class T> class vector {
   guest_address data_;
   guest_size length;
 
@@ -113,8 +110,8 @@ public:
 #ifdef WIT_HOST_WAMR
   std::string_view get_view(WASMExecEnv *inst) const {
     return wit::span((T const *)wasm_runtime_addr_app_to_native(
-                                wasm_runtime_get_module_inst(inst), data_),
-                            length);
+                         wasm_runtime_get_module_inst(inst), data_),
+                     length);
   }
 #elif defined(WIT_HOST_DIRECT)
   std::string_view get_view() const {
@@ -126,7 +123,8 @@ public:
   guest_size size() const { return length; }
 };
 
-/// Wrapper for specialized de-allocation of a returned type (calling cabi_post_*)
+/// Wrapper for specialized de-allocation of a returned type (calling
+/// cabi_post_*)
 template <class T> class guest_owned : public T {
   guest_address data_;
 #ifdef WIT_HOST_WAMR
@@ -175,7 +173,7 @@ public:
 #endif
   {
   }
-  T const& inner() const { return *static_cast<T const*>(this); }
+  T const &inner() const { return *static_cast<T const *>(this); }
 
 #ifdef WIT_HOST_WAMR
   // not necessary? as the only way to get a guest_owned object
@@ -202,10 +200,10 @@ public:
     resources.insert(std::pair<int32_t, R>(id, std::move(value)));
     return id;
   }
-  static std::optional<R> remove_resource(int32_t id) { 
+  static std::optional<R> remove_resource(int32_t id) {
     auto iter = resources.find(id);
     std::optional<R> result;
-    if (iter!=resources.end()) {
+    if (iter != resources.end()) {
       result = std::move(iter->second);
       resources.erase(iter);
     }
@@ -215,59 +213,63 @@ public:
 
 /// Guest exported resource (host side handle)
 class ResourceExportBase : public ResourceTable<guest_address> {
-  protected:
-    guest_address rep;
-    int32_t index;
-  public:
-    ResourceExportBase() : rep(nullptr), index(-1) {}
-    ResourceExportBase(int32_t i) : rep(*lookup_resource(i)), index(i) {}
-    ResourceExportBase(ResourceExportBase &&b) : rep(b.rep), index(b.index) {b.rep=0;}
-    ResourceExportBase(ResourceExportBase const&) = delete;
-    ResourceExportBase& operator=(ResourceExportBase const&)=delete;
-    ResourceExportBase& operator=(ResourceExportBase &&b) {
-      assert(rep==0);
-      rep = b.rep;
-      index = b.index;
-      b.rep = 0;
+protected:
+  guest_address rep;
+  int32_t index;
+
+public:
+  ResourceExportBase() : rep(nullptr), index(-1) {}
+  ResourceExportBase(int32_t i) : rep(*lookup_resource(i)), index(i) {}
+  ResourceExportBase(ResourceExportBase &&b) : rep(b.rep), index(b.index) {
+    b.rep = 0;
+  }
+  ResourceExportBase(ResourceExportBase const &) = delete;
+  ResourceExportBase &operator=(ResourceExportBase const &) = delete;
+  ResourceExportBase &operator=(ResourceExportBase &&b) {
+    assert(rep == 0);
+    rep = b.rep;
+    index = b.index;
+    b.rep = 0;
+  }
+  ~ResourceExportBase() {
+    if (index >= 0 && rep != nullptr) {
+      remove_resource(index);
     }
-    ~ResourceExportBase() {
-      if (index>=0 && rep!=nullptr) {
-        remove_resource(index);
-      }
-    }
-    int32_t get_handle() const { return index; }
-    guest_address get_rep() const { return rep; }
-    guest_address take_rep() { guest_address res = rep; rep=0; return res; }
+  }
+  int32_t get_handle() const { return index; }
+  guest_address get_rep() const { return rep; }
+  guest_address take_rep() {
+    guest_address res = rep;
+    rep = 0;
+    return res;
+  }
 };
 
 /// Host defined resource (host side definition)
-template <class R>
-class ResourceImportBase : public ResourceTable<R*> {
-    int32_t index;
-  public:
-    struct Deleter {
-      void operator()(R* ptr) const { R::Dtor(ptr); }
-    };
-    typedef std::unique_ptr<R, Deleter> Owned;
+template <class R> class ResourceImportBase : public ResourceTable<R *> {
+  int32_t index;
 
-    static const int32_t invalid=-1;
-    ResourceImportBase() : index(this->store_resource((R*)this)) {}
-    ~ResourceImportBase() {}
-    ResourceImportBase(ResourceImportBase &&b) = delete;
-    ResourceImportBase(ResourceImportBase const&) = delete;
-    ResourceImportBase& operator=(ResourceImportBase const&)=delete;
-    ResourceImportBase& operator=(ResourceImportBase &&)=delete;
-    int32_t get_handle() {
-      return index;
-    }
+public:
+  struct Deleter {
+    void operator()(R *ptr) const { R::Dtor(ptr); }
+  };
+  typedef std::unique_ptr<R, Deleter> Owned;
+
+  static const int32_t invalid = -1;
+  ResourceImportBase() : index(this->store_resource((R *)this)) {}
+  ~ResourceImportBase() {}
+  ResourceImportBase(ResourceImportBase &&b) = delete;
+  ResourceImportBase(ResourceImportBase const &) = delete;
+  ResourceImportBase &operator=(ResourceImportBase const &) = delete;
+  ResourceImportBase &operator=(ResourceImportBase &&) = delete;
+  int32_t get_handle() { return index; }
 };
 
 /// Host representation of a resource defined in another component
 ///
 /// Acts like ResourceImportBase (e.g. definition);
 /// R should derive from ResourceExportBase
-template <class R>
-class ResourceForwarder : public R {
+template <class R> class ResourceForwarder : public R {
   typedef R Owned;
   ResourceForwarder(int32_t id) : R(ResourceExportBase(id)) {}
   std::optional<Owned> lookup_resource(int32_t id) {
@@ -275,8 +277,9 @@ class ResourceForwarder : public R {
     return R(ResourceExportBase(id));
   }
   std::optional<Owned> remove_resource(int32_t id) {
-    std::optional<R*> result = R::remove_resource(id);
-    if (!result.has_value()) return std::optional<Owned>();
+    std::optional<R *> result = R::remove_resource(id);
+    if (!result.has_value())
+      return std::optional<Owned>();
     return *result;
   }
 };

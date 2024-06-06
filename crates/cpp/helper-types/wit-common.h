@@ -1,8 +1,9 @@
 #pragma once
 
 #include <assert.h>
-#include <stdint.h>
 #include <map>
+#include <stdint.h>
+#include <stddef.h> // size_t
 #if __cplusplus > 202001L
 #include <span>
 #else
@@ -29,7 +30,7 @@ public:
   T const &operator[](size_t index) { return address[index]; }
   // create from any compatible vector (borrows data!)
   template <class U>
-  span(std::vector<U> const&vec) : address(vec.data()), length(vec.size()) {}
+  span(std::vector<U> const &vec) : address(vec.data()), length(vec.size()) {}
 };
 #endif
 } // namespace wit
