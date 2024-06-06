@@ -14,6 +14,8 @@ interface test {
   variant-error: func(a: f64) -> result<f64, e3>;
 
   empty-error: func(a: u32) -> result<u32>;
+
+  double-error: func(a: u32) -> result<result<_, string>, string>;
 }
 
 world results {
