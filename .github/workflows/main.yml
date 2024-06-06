@@ -80,12 +80,6 @@ jobs:
         echo $LOCALAPPDATA'\Microsoft\dotnet' >> $GITHUB_PATH
         echo $LOCALAPPDATA'\Microsoft\dotnet\tools' >> $GITHUB_PATH
         $LOCALAPPDATA/Microsoft/dotnet/dotnet --info
-        echo nativeaot-llvm requires emscripten for its version of clang as wasi-sdk 20 does not work see https://github.com/WebAssembly/wasi-sdk/issues/326
-        curl.exe -OL https://github.com/emscripten-core/emsdk/archive/refs/heads/main.zip
-        unzip main.zip
-        cd emsdk-main
-        ./emsdk.bat install 3.1.47
-        ./emsdk.bat activate 3.1.47
       if : matrix.os == 'windows-latest'
 
     - run: ci/download-teavm.sh
@@ -103,14 +97,8 @@ jobs:
     - uses: acifani/setup-tinygo@v2
       with:
         tinygo-version: 0.31.0
-    - name: All but Windows, cargo test --workspace
-      if : matrix.os != 'windows-latest'
+    - name: cargo test --workspace
       run: cargo test --workspace
-    - name: Windows, set EMSDK and run cargo test
-      if : matrix.os == 'windows-latest'
-      run: |
-        source ./emsdk-main/emsdk_env.sh
-        cargo test --workspace
 
   check:
     name: Check
