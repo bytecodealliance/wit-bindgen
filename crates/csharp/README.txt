@@ -11,5 +11,5 @@ cd .\emsdk-main\main\emsdk-main
 .\emsdk_env.ps1 activate 3.1.23 --permanant
 
 // install wasi-sdk and set env
-curl.exe -L https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-20/wasi-sdk-20.0.m-mingw.tar.gz | tar xzvf -
-$env:WASI_SDK_PATH="c:\users\jstur\wasi-sdk-20.0+m\"
+curl.exe -L https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-22/wasi-sdk-22.0.m-mingw.tar.gz | tar xzvf -
+$env:WASI_SDK_PATH="c:\users\jstur\wasi-sdk-22.0+m\"

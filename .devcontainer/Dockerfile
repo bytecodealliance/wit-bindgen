@@ -20,9 +20,9 @@ RUN if [ "${NODE_VERSION}" != "none" ]; then su vscode -c "umask 0002 && . /usr/
 # [Optional] Uncomment this line to install global node packages.
 # RUN su vscode -c "source /usr/local/share/nvm/nvm.sh && npm install -g <your-package-here>" 2>&1
 
-RUN cd /opt && curl -L https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-20/wasi-sdk-20.0-linux.tar.gz \
+RUN cd /opt && curl -L https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-22/wasi-sdk-22.0-linux.tar.gz \
     | tar -xz
-ENV WASI_SDK_PATH=/opt/wasi-sdk-20.0
+ENV WASI_SDK_PATH=/opt/wasi-sdk-22.0
 
-RUN echo 'alias clang=/opt/wasi-sdk-20.0/bin/clang' >> /etc/bash.bashrc
-RUN echo 'alias clang++=/opt/wasi-sdk-20.0/bin/clang++' >> /etc/bash.bashrc
+RUN echo 'alias clang=/opt/wasi-sdk-22.0/bin/clang' >> /etc/bash.bashrc
+RUN echo 'alias clang++=/opt/wasi-sdk-22.0/bin/clang++' >> /etc/bash.bashrc
