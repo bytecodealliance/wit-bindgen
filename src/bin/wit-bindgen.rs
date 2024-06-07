@@ -72,14 +72,24 @@ struct Common {
     #[clap(long = "out-dir")]
     out_dir: Option<PathBuf>,
 
-    /// WIT document to generate bindings for.
-    #[clap(value_name = "DOCUMENT", index = 1)]
+    /// Location of WIT file(s) to generate bindings for.
+    ///
+    /// This path can be either a directory containing `*.wit` files, a `*.wit`
+    /// file itself, or a `*.wasm` file which is a wasm-encoded WIT package.
+    /// Most of the time it's likely to be a directory containing `*.wit` files
+    /// with an optional `deps` folder inside of it.
+    #[clap(value_name = "WIT", index = 1)]
     wit: PathBuf,
 
-    /// World within the WIT document specified to generate bindings for.
+    /// Optionally specified world that bindings are generated for.
     ///
-    /// This can either be `foo` which is the default world in document `foo` or
-    /// it's `foo.bar` which is the world named `bar` within document `foo`.
+    /// Bindings are always generated for a world but this option can be omitted
+    /// when the WIT package pointed to by the `WIT` option only has a single
+    /// world. If there's more than one world in the package then this option
+    /// must be specified to name the world that bindings are generated for.
+    /// This option can also use the fully qualified syntax such as
+    /// `wasi:http/proxy` to select a world from a dependency of the main WIT
+    /// package.
     #[clap(short, long)]
     world: Option<String>,
 
