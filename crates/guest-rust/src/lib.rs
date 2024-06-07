@@ -668,25 +668,30 @@
 ///     // By default this set is empty.
 ///     additional_derives: [PartialEq, Eq, Hash, Clone],
 ///
-///     // When generating bindings for imports it might be the case that
-///     // bindings were already generated in a different crate. For example
-///     // if your world refers to WASI types then the `wasi` crate already
-///     // has generated bindings for all WASI types and structures. In this
+///     // When generating bindings for interfaces that are not defined in the
+///     // same package as `world`, this option can be used to either generate
+///     // those bindings or point to already generated bindings.
+///     // For example, if your world refers to WASI types then the `wasi` crate
+///     // already has generated bindings for all WASI types and structures. In this
 ///     // situation the key `with` here can be used to use those types
 ///     // elsewhere rather than regenerating types.
 ///     //
-///     // The `with` key here only works for interfaces referred to by imported
-///     // functions. Additionally it only supports replacing types at the
-///     // interface level at this time.
+///     // If, however, your world refers to interfaces for which you don't have
+///     // already generated bindings then you can use the special `generate` value
+///     // to have those bindings generated.
 ///     //
-///     // When an interface is specified here no bindings will be generated at
-///     // all. It's assumed bindings are fully generated upstream. This is an
+///     // The `with` key only supports replacing types at the interface level
+///     // at this time.
+///     //
+///     // When an interface is specified no bindings will be generated at
+///     // all. It's assumed bindings are fully generated somewhere else. This is an
 ///     // indicator that any further references to types defined in these
 ///     // interfaces should use the upstream paths specified here instead.
 ///     //
 ///     // Any unused keys in this map are considered an error.
 ///     with: {
 ///         "wasi:io/poll": wasi::io::poll,
+///         "some:package/my-interface": generate,
 ///     },
 ///
 ///     // An optional list of function names to skip generating bindings for.

@@ -7,7 +7,7 @@ use syn::parse::{Error, Parse, ParseStream, Result};
 use syn::punctuated::Punctuated;
 use syn::{braced, token, Token};
 use wit_bindgen_core::wit_parser::{PackageId, Resolve, UnresolvedPackage, WorldId};
-use wit_bindgen_rust::{Opts, Ownership};
+use wit_bindgen_rust::{Opts, Ownership, WithOption};
 
 #[proc_macro]
 pub fn generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
@@ -287,7 +287,7 @@ enum Opt {
     ExportPrefix(syn::LitStr),
     // Parse as paths so we can take the concrete types/macro names rather than raw strings
     AdditionalDerives(Vec<syn::Path>),
-    With(HashMap<String, String>),
+    With(HashMap<String, WithOption>),
     TypeSectionSuffix(syn::LitStr),
     DisableRunCtorsOnceWorkaround(syn::LitBool),
     DefaultBindingsModule(syn::LitStr),
@@ -430,7 +430,7 @@ impl Parse for Opt {
     }
 }
 
-fn with_field_parse(input: ParseStream<'_>) -> Result<(String, String)> {
+fn with_field_parse(input: ParseStream<'_>) -> Result<(String, WithOption)> {
     let interface = input.parse::<syn::LitStr>()?.value();
     input.parse::<Token![:]>()?;
     let start = input.span();
@@ -440,6 +440,10 @@ fn with_field_parse(input: ParseStream<'_>) -> Result<(String, String)> {
     let span = start
         .join(path.segments.last().unwrap().ident.span())
         .unwrap_or(start);
+
+    if path.is_ident("generate") {
+        return Ok((interface, WithOption::Generate));
+    }
 
     let mut buf = String::new();
     let append = |buf: &mut String, segment: syn::PathSegment| -> Result<()> {
@@ -470,5 +474,5 @@ fn with_field_parse(input: ParseStream<'_>) -> Result<(String, String)> {
         append(&mut buf, segment)?;
     }
 
-    Ok((interface, buf))
+    Ok((interface, WithOption::Path(buf)))
 }

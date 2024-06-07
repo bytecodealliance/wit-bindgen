@@ -117,7 +117,7 @@ impl WorldGenerator for Markdown {
         name: &WorldKey,
         id: InterfaceId,
         _files: &mut Files,
-    ) {
+    ) -> Result<()> {
         let name = resolve.name_world_key(name);
         uwriteln!(
             self.src,
@@ -131,6 +131,8 @@ impl WorldGenerator for Markdown {
         gen.push_str("\n");
         gen.types(id);
         gen.funcs(id);
+
+        Ok(())
     }
 
     fn import_funcs(

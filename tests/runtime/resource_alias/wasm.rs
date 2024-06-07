@@ -6,6 +6,7 @@ pub struct Test {}
 
 export!(Test);
 
+#[allow(dead_code)]
 pub struct E1X(u32);
 
 impl exports::test::resource_alias::e1::Guest for Test {

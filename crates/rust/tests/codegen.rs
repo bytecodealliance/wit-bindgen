@@ -5,6 +5,10 @@ mod codegen_tests {
     macro_rules! codegen_test {
         (wasi_cli $name:tt $test:tt) => {};
         (wasi_http $name:tt $test:tt) => {};
+        (wasi_clocks $name:tt $test:tt) => {};
+        (wasi_filesystem $name:tt $test:tt) => {};
+        (issue569 $name:tt $test:tt) => {};
+        (multiversion $name:tt $test:tt) => {};
         ($id:ident $name:tt $test:tt) => {
             mod $id {
                 wit_bindgen::generate!({

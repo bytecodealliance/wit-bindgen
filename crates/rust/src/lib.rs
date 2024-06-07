@@ -46,7 +46,16 @@ struct RustWasm {
 
     rt_module: IndexSet<RuntimeItem>,
     export_macros: Vec<(String, String)>,
-    with: HashMap<String, String>,
+    /// Interface names to how they should be generated
+    with: HashMap<String, InterfaceGeneration>,
+}
+
+/// How an interface should be generated.
+enum InterfaceGeneration {
+    // Remapped to some other type
+    Remap(String),
+    // Generate as normal
+    Generate,
 }
 
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
@@ -158,7 +167,7 @@ pub struct Opts {
     /// multiple times or one option can be comma separated, for example
     /// `k1=v1,k2=v2`.
     #[cfg_attr(feature = "clap", arg(long, value_parser = parse_with, value_delimiter = ','))]
-    pub with: Vec<(String, String)>,
+    pub with: Vec<(String, WithOption)>,
 
     /// Add the specified suffix to the name of the custome section containing
     /// the component type.
@@ -282,30 +291,39 @@ impl RustWasm {
         id: InterfaceId,
         name: &WorldKey,
         is_export: bool,
-    ) -> bool {
+    ) -> Result<bool> {
         let with_name = resolve.name_world_key(name);
-        let entry = if let Some(remapped_path) = self.with.get(&with_name) {
-            let name = format!("__with_name{}", self.with_name_counter);
-            self.used_with_opts.insert(with_name);
-            self.with_name_counter += 1;
-            uwriteln!(self.src, "use {remapped_path} as {name};");
-            InterfaceName {
-                remapped: true,
-                path: name,
+        let Some(remapping) = self.with.get(&with_name) else {
+            bail!("no remapping found for {with_name:?} - use the `generate!` macro's `with` option to force the interface to be generated or specify where it is already defined:
+```
+with: {{\n\t{with_name:?}: generate\n}}
+```")
+        };
+        let entry = match remapping {
+            InterfaceGeneration::Remap(remapped_path) => {
+                let name = format!("__with_name{}", self.with_name_counter);
+                self.used_with_opts.insert(with_name);
+                self.with_name_counter += 1;
+                uwriteln!(self.src, "use {remapped_path} as {name};");
+                InterfaceName {
+                    remapped: true,
+                    path: name,
+                }
             }
-        } else {
-            let path = compute_module_path(name, resolve, is_export).join("::");
+            InterfaceGeneration::Generate => {
+                let path = compute_module_path(name, resolve, is_export).join("::");
 
-            InterfaceName {
-                remapped: false,
-                path,
+                InterfaceName {
+                    remapped: false,
+                    path,
+                }
             }
         };
 
         let remapped = entry.remapped;
         self.interface_names.insert(id, entry);
 
-        remapped
+        Ok(remapped)
     }
 
     fn finish_runtime_module(&mut self) {
@@ -808,7 +826,7 @@ impl WorldGenerator for RustWasm {
             );
         }
         for (k, v) in self.opts.with.iter() {
-            uwriteln!(self.src, "//   * with {k:?} = {v:?}");
+            uwriteln!(self.src, "//   * with {k:?} = {v}");
         }
         if let Some(default) = &self.opts.default_bindings_module {
             uwriteln!(self.src, "//   * default-bindings-module: {default:?}");
@@ -825,8 +843,19 @@ impl WorldGenerator for RustWasm {
         self.types.analyze(resolve);
         self.world = Some(world);
 
+        let world = &resolve.worlds[world];
+        // Specify that all imports local to the world's package should be generated
+        for (key, item) in world.imports.iter().chain(world.exports.iter()) {
+            if let WorldItem::Interface { id, .. } = item {
+                if resolve.interfaces[*id].package == world.package {
+                    let name = resolve.name_world_key(key);
+                    self.with.insert(name, InterfaceGeneration::Generate);
+                }
+            }
+        }
+
         for (k, v) in self.opts.with.iter() {
-            self.with.insert(k.clone(), v.clone());
+            self.with.insert(k.clone(), v.clone().into());
         }
     }
 
@@ -836,7 +865,7 @@ impl WorldGenerator for RustWasm {
         name: &WorldKey,
         id: InterfaceId,
         _files: &mut Files,
-    ) {
+    ) -> Result<()> {
         self.interface_last_seen_as_import.insert(id, true);
         let wasm_import_module = resolve.name_world_key(name);
         let mut gen = self.interface(
@@ -846,14 +875,16 @@ impl WorldGenerator for RustWasm {
             true,
         );
         let (snake, module_path) = gen.start_append_submodule(name);
-        if gen.gen.name_interface(resolve, id, name, false) {
-            return;
+        if gen.gen.name_interface(resolve, id, name, false)? {
+            return Ok(());
         }
         gen.types(id);
 
         gen.generate_imports(resolve.interfaces[id].functions.values());
 
         gen.finish_append_submodule(&snake, module_path);
+
+        Ok(())
     }
 
     fn import_funcs(
@@ -883,7 +914,7 @@ impl WorldGenerator for RustWasm {
         self.interface_last_seen_as_import.insert(id, false);
         let mut gen = self.interface(Identifier::Interface(id, name), None, resolve, false);
         let (snake, module_path) = gen.start_append_submodule(name);
-        if gen.gen.name_interface(resolve, id, name, true) {
+        if gen.gen.name_interface(resolve, id, name, true)? {
             return Ok(());
         }
         gen.types(id);
@@ -1049,9 +1080,15 @@ impl WorldGenerator for RustWasm {
         let module_name = name.to_snake_case();
         files.push(&format!("{module_name}.rs"), src.as_bytes());
 
-        let remapping_keys = self.with.keys().cloned().collect::<HashSet<String>>();
+        let remapped_keys = self
+            .with
+            .iter()
+            .filter(|(_, r)| matches!(r, InterfaceGeneration::Remap(_)))
+            .map(|(k, _)| k)
+            .cloned()
+            .collect::<HashSet<String>>();
 
-        let mut unused_keys = remapping_keys
+        let mut unused_keys = remapped_keys
             .difference(&self.used_with_opts)
             .collect::<Vec<&String>>();
 
@@ -1156,6 +1193,31 @@ impl fmt::Display for Ownership {
                 duplicate_if_necessary: true,
             } => "borrowing-duplicate-if-necessary",
         })
+    }
+}
+
+/// Options for with "with" remappings.
+#[derive(Debug, Clone)]
+pub enum WithOption {
+    Path(String),
+    Generate,
+}
+
+impl std::fmt::Display for WithOption {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            WithOption::Path(p) => f.write_fmt(format_args!("\"{p}\"")),
+            WithOption::Generate => f.write_str("generate"),
+        }
+    }
+}
+
+impl From<WithOption> for InterfaceGeneration {
+    fn from(opt: WithOption) -> Self {
+        match opt {
+            WithOption::Path(p) => InterfaceGeneration::Remap(p),
+            WithOption::Generate => InterfaceGeneration::Generate,
+        }
     }
 }
 
