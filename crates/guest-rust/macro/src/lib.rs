@@ -191,15 +191,12 @@ impl Config {
             let n = INVOCATION.fetch_add(1, Relaxed);
             let path = root.join(format!("{world_name}{n}.rs"));
 
-            std::fs::write(&path, &src).unwrap();
-
             // optimistically format the code but don't require success
-            drop(
-                std::process::Command::new("rustfmt")
-                    .arg(&path)
-                    .arg("--edition=2021")
-                    .output(),
-            );
+            let contents = match fmt(&src) {
+                Ok(formatted) => formatted,
+                Err(_) => src.clone(),
+            };
+            std::fs::write(&path, contents.as_bytes()).unwrap();
 
             src = format!("include!({path:?});");
         }
@@ -471,4 +468,10 @@ fn with_field_parse(input: ParseStream<'_>) -> Result<(String, String)> {
     }
 
     Ok((interface, buf))
+}
+
+/// Format a valid Rust string
+fn fmt(input: &str) -> Result<String> {
+    let syntax_tree = syn::parse_file(&input)?;
+    Ok(prettyplease::unparse(&syntax_tree))
 }

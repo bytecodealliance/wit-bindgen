@@ -118,6 +118,10 @@ impl Source {
     pub fn as_mut_string(&mut self) -> &mut String {
         &mut self.s
     }
+
+    pub fn as_str(&self) -> &str {
+        &self.s
+    }
 }
 
 impl Write for Source {

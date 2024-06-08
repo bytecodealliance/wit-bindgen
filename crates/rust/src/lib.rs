@@ -4,9 +4,7 @@ use heck::*;
 use indexmap::IndexSet;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::{self, Write as _};
-use std::io::{Read, Write};
 use std::mem;
-use std::process::{Command, Stdio};
 use std::str::FromStr;
 use wit_bindgen_core::abi::{Bitcast, WasmType};
 use wit_bindgen_core::{
@@ -86,7 +84,7 @@ fn parse_with(s: &str) -> Result<(String, String), String> {
 #[derive(Default, Debug, Clone)]
 #[cfg_attr(feature = "clap", derive(clap::Args))]
 pub struct Opts {
-    /// Whether or not `rustfmt` is executed to format generated code.
+    /// Whether or not a formatter is executed to format generated code.
     #[cfg_attr(feature = "clap", arg(long))]
     pub rustfmt: bool,
 
@@ -1023,27 +1021,8 @@ impl WorldGenerator for RustWasm {
 
         let mut src = mem::take(&mut self.src);
         if self.opts.rustfmt {
-            let mut child = Command::new("rustfmt")
-                .arg("--edition=2018")
-                .stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .spawn()
-                .expect("failed to spawn `rustfmt`");
-            child
-                .stdin
-                .take()
-                .unwrap()
-                .write_all(src.as_bytes())
-                .unwrap();
-            src.as_mut_string().truncate(0);
-            child
-                .stdout
-                .take()
-                .unwrap()
-                .read_to_string(src.as_mut_string())
-                .unwrap();
-            let status = child.wait().unwrap();
-            assert!(status.success());
+            let syntax_tree = syn::parse_file(src.as_str()).unwrap();
+            *src.as_mut_string() = prettyplease::unparse(&syntax_tree);
         }
 
         let module_name = name.to_snake_case();
