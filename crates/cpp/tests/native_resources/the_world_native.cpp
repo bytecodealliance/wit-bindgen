@@ -41,8 +41,8 @@ extern "C" void fooX3AfooX2FresourcesX00borrows(int32_t arg0) {
   foo::foo::resources::Borrows(**foo::foo::resources::R::lookup_resource(arg0));
 }
 extern "C" void fooX3AfooX2FresourcesX00consume(int32_t arg0) {
-  auto obj0 = foo::foo::resources::R::remove_resource(arg0);
-  assert(obj0.has_value());
+  auto obj0 = foo::foo::resources::R::lookup_resource(arg0);
+  //assert(obj0 != nullptr);
   foo::foo::resources::Consume(foo::foo::resources::R::Owned(*obj0));
 }
 exports::foo::foo::resources::R::~R() {

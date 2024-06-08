@@ -114,7 +114,7 @@ fooX3AfooX2FresourcesX23create() {
   return result0.release()->handle;
 }
 extern "C" __attribute__((__export_name__("foo:foo/resources#borrows"))) void
-fooX3AfooX2FresourcesX23borrows(int32_t arg0) {
+fooX3AfooX2FresourcesX23borrows(uint8_t* arg0) {
   exports::foo::foo::resources::Borrows(
       std::ref(*(exports::foo::foo::resources::R *)arg0));
 }
@@ -122,7 +122,7 @@ extern "C" __attribute__((__export_name__("foo:foo/resources#consume"))) void
 fooX3AfooX2FresourcesX23consume(int32_t arg0) {
   auto obj0 = exports::foo::foo::resources::R::Owned(
       exports::foo::foo::resources::R::ResourceRep(arg0));
-  obj0->into_handle();
+//  obj0->into_handle();
   exports::foo::foo::resources::Consume(std::move(obj0));
 }
 
