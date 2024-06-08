@@ -86,7 +86,7 @@ fn parse_with(s: &str) -> Result<(String, String), String> {
 pub struct Opts {
     /// Whether or not a formatter is executed to format generated code.
     #[cfg_attr(feature = "clap", arg(long))]
-    pub rustfmt: bool,
+    pub format: bool,
 
     /// If true, code generation should qualify any features that depend on
     /// `std` with `cfg(feature = "std")`.
@@ -1020,7 +1020,7 @@ impl WorldGenerator for RustWasm {
         }
 
         let mut src = mem::take(&mut self.src);
-        if self.opts.rustfmt {
+        if self.opts.format {
             let syntax_tree = syn::parse_file(src.as_str()).unwrap();
             *src.as_mut_string() = prettyplease::unparse(&syntax_tree);
         }
