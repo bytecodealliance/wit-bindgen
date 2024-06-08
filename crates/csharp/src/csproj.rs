@@ -104,8 +104,10 @@ impl CSProjectLLVMBuilder {
                 </ItemGroup>
 
                 <Target Name="CheckWasmSdks">
-                    <Error Text="Emscripten not found, not compiling to WebAssembly. To enable WebAssembly compilation, install Emscripten and ensure the EMSDK environment variable points to the directory containing upstream/emscripten/emcc.bat"
-                        Condition="'$(EMSDK)' == ''" />
+                    <Error Text="Wasi SDK not found, not compiling to WebAssembly. To enable WebAssembly compilation, install Wasi SDK and ensure the WASI_SDK_PATH environment variable points to the directory containing share/wasi-sysroot"
+                        Condition="'$(WASI_SDK_PATH)' == ''" />
+                    <Warning Text="The WASI SDK version is too low. Please use WASI SDK 22 or newer with a 64 bit Clang."
+                        Condition="!Exists('$(WASI_SDK_PATH)/VERSION')" />
                 </Target>
                 "#,
             );
@@ -115,7 +117,7 @@ impl CSProjectLLVMBuilder {
                 Inputs=\"$(MSBuildProjectDirectory)/{camel}_cabi_realloc.c\"
                 Outputs=\"$(MSBuildProjectDirectory)/{camel}_cabi_realloc.o\"
                 >
-                <Exec Command=\"emcc.bat &quot;$(MSBuildProjectDirectory)/{camel}_cabi_realloc.c&quot; -c -o &quot;$(MSBuildProjectDirectory)/{camel}_cabi_realloc.o&quot;\"/>
+                <Exec Command=\"&quot;$(WASI_SDK_PATH)/bin/clang&quot; --target=wasm32-wasi &quot;$(MSBuildProjectDirectory)/{camel}_cabi_realloc.c&quot; -c -o &quot;$(MSBuildProjectDirectory)/{camel}_cabi_realloc.o&quot;\"/>
               </Target>
             "
             ));
