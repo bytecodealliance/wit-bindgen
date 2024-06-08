@@ -71,7 +71,8 @@ X5BexportX5DfooX3AfooX2FresourcesX00X5Bresource_repX5Dr(int32_t arg0) {
 }
 extern "C" void
 X5BexportX5DfooX3AfooX2FresourcesX00X5Bresource_dropX5Dr(int32_t arg0) {
-  exports::foo::foo::resources::R::remove_resource(arg0);
+  auto obj = exports::foo::foo::resources::R::remove_resource(arg0);
+  fooX3AfooX2FresourcesX23X5BdtorX5Dr(*obj);
 }
 exports::foo::foo::resources::R exports::foo::foo::resources::Create() {
   auto ret = fooX3AfooX2FresourcesX23create();
