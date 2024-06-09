@@ -2,8 +2,8 @@
 
 #include <assert.h>
 #include <map>
-#include <stdint.h>
 #include <stddef.h> // size_t
+#include <stdint.h>
 #if __cplusplus > 202001L
 #include <span>
 #else

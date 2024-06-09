@@ -90,23 +90,29 @@ public:
 ///
 /// It registers with the host and should remain in a static location.
 /// Typically referenced by the Owned type
+///
+/// Note that deregistering will cause the host to call Dtor which
+/// in turn frees the object.
 template <class R> class ResourceExportBase {
 public:
-  struct Deleter {
-    void operator()(R *ptr) const { R::Dtor(ptr); }
+  struct Deregister {
+    void operator()(R *ptr) const {
+      // probably always true because of unique_ptr wrapping, TODO: check
+      if (ptr->handle >= 0) {
+        // we can't deallocate because the host calls Dtor
+        R::ResourceDrop(ptr->handle);
+      }
+    }
   };
-  typedef std::unique_ptr<R, Deleter> Owned;
+  typedef std::unique_ptr<R, Deregister> Owned;
 
   static const int32_t invalid = -1;
 
   int32_t handle;
 
   ResourceExportBase() : handle(R::ResourceNew((R *)this)) {}
-  ~ResourceExportBase() {
-    if (handle >= 0) {
-      R::ResourceDrop(handle);
-    }
-  }
+  // because this function is called by the host via Dtor we must not deregister
+  ~ResourceExportBase() {}
   ResourceExportBase(ResourceExportBase const &) = delete;
   ResourceExportBase(ResourceExportBase &&) = delete;
   ResourceExportBase &operator=(ResourceExportBase &&b) = delete;
