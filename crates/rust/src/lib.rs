@@ -47,7 +47,30 @@ struct RustWasm {
     rt_module: IndexSet<RuntimeItem>,
     export_macros: Vec<(String, String)>,
     /// Interface names to how they should be generated
-    with: HashMap<String, InterfaceGeneration>,
+    with: GenerationConfiguration,
+}
+
+#[derive(Default)]
+struct GenerationConfiguration {
+    map: HashMap<String, InterfaceGeneration>,
+    generate_by_default: bool,
+}
+
+impl GenerationConfiguration {
+    fn get(&self, key: &str) -> Option<&InterfaceGeneration> {
+        self.map.get(key).or_else(|| {
+            self.generate_by_default
+                .then_some(&InterfaceGeneration::Generate)
+        })
+    }
+
+    fn insert(&mut self, name: String, generate: InterfaceGeneration) {
+        self.map.insert(name, generate);
+    }
+
+    fn iter(&self) -> impl Iterator<Item = (&String, &InterfaceGeneration)> {
+        self.map.iter()
+    }
 }
 
 /// How an interface should be generated.
@@ -82,14 +105,6 @@ enum RuntimeItem {
 pub enum ExportKey {
     World,
     Name(String),
-}
-
-#[cfg(feature = "clap")]
-fn parse_with(s: &str) -> Result<(String, String), String> {
-    let (k, v) = s.split_once('=').ok_or_else(|| {
-        format!("expected string of form `<key>=<value>[,<key>=<value>...]`; got `{s}`")
-    })?;
-    Ok((k.to_string(), v.to_string()))
 }
 
 #[derive(Default, Debug, Clone)]
@@ -166,8 +181,8 @@ pub struct Opts {
     /// Argument must be of the form `k=v` and this option can be passed
     /// multiple times or one option can be comma separated, for example
     /// `k1=v1,k2=v2`.
-    #[cfg_attr(feature = "clap", arg(long, value_parser = parse_with, value_delimiter = ','))]
-    pub with: Vec<(String, WithOption)>,
+    #[cfg_attr(feature = "clap", arg(long, value_parser = clap::value_parser!(WithGeneration), value_delimiter = ','))]
+    pub with: WithGeneration,
 
     /// Add the specified suffix to the name of the custome section containing
     /// the component type.
@@ -849,7 +864,9 @@ impl WorldGenerator for RustWasm {
             if let WorldItem::Interface { id, .. } = item {
                 if resolve.interfaces[*id].package == world.package {
                     let name = resolve.name_world_key(key);
-                    self.with.insert(name, InterfaceGeneration::Generate);
+                    if self.with.get(&name).is_none() {
+                        self.with.insert(name, InterfaceGeneration::Generate);
+                    }
                 }
             }
         }
@@ -857,6 +874,7 @@ impl WorldGenerator for RustWasm {
         for (k, v) in self.opts.with.iter() {
             self.with.insert(k.clone(), v.clone().into());
         }
+        self.with.generate_by_default = self.opts.with.generate_by_default;
     }
 
     fn import_interface(
@@ -1192,6 +1210,51 @@ impl fmt::Display for Ownership {
             Ownership::Borrowing {
                 duplicate_if_necessary: true,
             } => "borrowing-duplicate-if-necessary",
+        })
+    }
+}
+
+/// Configuration for how interfaces are generated.
+#[derive(Debug, Clone, Default)]
+pub struct WithGeneration {
+    /// How interface should be generated
+    with: HashMap<String, WithOption>,
+    /// Whether to generate interfaces not present in the `with` map
+    pub generate_by_default: bool,
+}
+
+impl WithGeneration {
+    fn iter(&self) -> impl Iterator<Item = (&String, &WithOption)> {
+        self.with.iter()
+    }
+
+    pub fn extend(&mut self, with: HashMap<String, WithOption>) {
+        self.with.extend(with);
+    }
+}
+
+impl FromStr for WithGeneration {
+    type Err = String;
+
+    fn from_str(s: &str) -> std::prelude::v1::Result<Self, Self::Err> {
+        let with = s
+            .trim()
+            .split(',')
+            .map(|s| {
+                let (k, v) = s.trim().split_once('=').ok_or_else(|| {
+                    format!("expected string of form `<key>=<value>[,<key>=<value>...]`; got `{s}`")
+                })?;
+                let k = k.trim().to_string();
+                let v = match v.trim() {
+                    "generate" => WithOption::Generate,
+                    v => WithOption::Path(v.to_string()),
+                };
+                Ok((k, v))
+            })
+            .collect::<Result<HashMap<_, _>, Self::Err>>()?;
+        Ok(WithGeneration {
+            with,
+            generate_by_default: false,
         })
     }
 }

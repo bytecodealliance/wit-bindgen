@@ -5,15 +5,12 @@ mod codegen_tests {
     macro_rules! codegen_test {
         (wasi_cli $name:tt $test:tt) => {};
         (wasi_http $name:tt $test:tt) => {};
-        (wasi_clocks $name:tt $test:tt) => {};
-        (wasi_filesystem $name:tt $test:tt) => {};
-        (issue569 $name:tt $test:tt) => {};
-        (multiversion $name:tt $test:tt) => {};
         ($id:ident $name:tt $test:tt) => {
             mod $id {
                 wit_bindgen::generate!({
                     path: $test,
-                    stubs
+                    stubs,
+                    generate_all
                 });
 
                 // This empty module named 'core' is here to catch module path
@@ -33,6 +30,7 @@ mod codegen_tests {
                         },
                         stubs,
                         export_prefix: "[borrowed]",
+                        generate_all
                     });
 
                     #[test]
@@ -47,6 +45,7 @@ mod codegen_tests {
                         },
                         stubs,
                         export_prefix: "[duplicate]",
+                        generate_all
                     });
 
                     #[test]
