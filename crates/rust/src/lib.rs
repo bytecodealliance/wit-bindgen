@@ -39,9 +39,9 @@ struct RustWasm {
     interface_last_seen_as_import: HashMap<InterfaceId, bool>,
     import_funcs_called: bool,
     with_name_counter: usize,
-    // Track the with options that were used. Remapped interfaces provided via `with`
+    // Track which interfaces were generated. Remapped interfaces provided via `with`
     // are required to be used.
-    used_with_opts: HashSet<String>,
+    generated_interfaces: HashSet<String>,
     world: Option<WorldId>,
 
     rt_module: IndexSet<RuntimeItem>,
@@ -75,9 +75,9 @@ impl GenerationConfiguration {
 
 /// How an interface should be generated.
 enum InterfaceGeneration {
-    // Remapped to some other type
+    /// Remapped to some other type
     Remap(String),
-    // Generate as normal
+    /// Generate the interface
     Generate,
 }
 
@@ -314,10 +314,10 @@ impl RustWasm {
 with: {{\n\t{with_name:?}: generate\n}}
 ```")
         };
+        self.generated_interfaces.insert(with_name);
         let entry = match remapping {
             InterfaceGeneration::Remap(remapped_path) => {
                 let name = format!("__with_name{}", self.with_name_counter);
-                self.used_with_opts.insert(with_name);
                 self.with_name_counter += 1;
                 uwriteln!(self.src, "use {remapped_path} as {name};");
                 InterfaceName {
@@ -1101,13 +1101,12 @@ impl WorldGenerator for RustWasm {
         let remapped_keys = self
             .with
             .iter()
-            .filter(|(_, r)| matches!(r, InterfaceGeneration::Remap(_)))
             .map(|(k, _)| k)
             .cloned()
             .collect::<HashSet<String>>();
 
         let mut unused_keys = remapped_keys
-            .difference(&self.used_with_opts)
+            .difference(&self.generated_interfaces)
             .collect::<Vec<&String>>();
 
         unused_keys.sort();
