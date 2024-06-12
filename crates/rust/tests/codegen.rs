@@ -9,7 +9,8 @@ mod codegen_tests {
             mod $id {
                 wit_bindgen::generate!({
                     path: $test,
-                    stubs
+                    stubs,
+                    generate_all
                 });
 
                 // This empty module named 'core' is here to catch module path
@@ -29,6 +30,7 @@ mod codegen_tests {
                         },
                         stubs,
                         export_prefix: "[borrowed]",
+                        generate_all
                     });
 
                     #[test]
@@ -43,6 +45,7 @@ mod codegen_tests {
                         },
                         stubs,
                         export_prefix: "[duplicate]",
+                        generate_all
                     });
 
                     #[test]

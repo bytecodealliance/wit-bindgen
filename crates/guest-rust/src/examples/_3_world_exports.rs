@@ -37,4 +37,11 @@ crate::generate!({
 
     // provided to specify the path to `wasi:*` dependencies referenced above.
     path: "wasi-cli@0.2.0.wasm",
+
+    // specify that these interface dependencies should be generated as well.
+    with: {
+        "wasi:random/insecure@0.2.0": generate,
+        "wasi:clocks/monotonic-clock@0.2.0": generate,
+        "wasi:io/poll@0.2.0": generate
+    }
 });

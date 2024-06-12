@@ -169,7 +169,7 @@ impl WorldGenerator for TinyGo {
         name: &WorldKey,
         id: InterfaceId,
         _files: &mut Files,
-    ) {
+    ) -> Result<()> {
         let name_raw = &resolve.name_world_key(name);
         self.src
             .push_str(&format!("// Import functions from {name_raw}\n"));
@@ -187,6 +187,8 @@ impl WorldGenerator for TinyGo {
         let preamble = mem::take(&mut gen.preamble);
         self.src.push_str(&src);
         self.preamble.append_src(&preamble);
+
+        Ok(())
     }
 
     fn import_funcs(

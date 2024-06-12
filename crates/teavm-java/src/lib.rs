@@ -92,7 +92,7 @@ impl WorldGenerator for TeaVmJava {
         key: &WorldKey,
         id: InterfaceId,
         _files: &mut Files,
-    ) {
+    ) -> Result<()> {
         let name = interface_name(resolve, key, Direction::Import);
         self.interface_names.insert(id, name.clone());
         let mut gen = self.interface(resolve, &name);
@@ -103,6 +103,8 @@ impl WorldGenerator for TeaVmJava {
         }
 
         gen.add_interface_fragment();
+
+        Ok(())
     }
 
     fn import_funcs(

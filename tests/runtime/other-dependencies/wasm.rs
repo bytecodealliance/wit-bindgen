@@ -7,4 +7,7 @@ wit_bindgen::generate!({
     }
     "#,
     path: "../../tests/runtime/other-dependencies/other",
+    with: {
+        "other:test/test": generate,
+    }
 });

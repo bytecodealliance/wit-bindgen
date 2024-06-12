@@ -176,7 +176,7 @@ impl WorldGenerator for C {
         name: &WorldKey,
         id: InterfaceId,
         _files: &mut Files,
-    ) {
+    ) -> Result<()> {
         let wasm_import_module = resolve.name_world_key(name);
         let mut gen = self.interface(resolve, true, Some(&wasm_import_module));
         gen.interface = Some((id, name));
@@ -192,6 +192,8 @@ impl WorldGenerator for C {
         }
 
         gen.gen.src.append(&gen.src);
+
+        Ok(())
     }
 
     fn import_funcs(
