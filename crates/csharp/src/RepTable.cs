@@ -22,10 +22,10 @@ internal class RepTable<T> {
         if (firstVacant.HasValue) {
             rep = firstVacant.Value;
             firstVacant = ((Vacant) list[rep]).next;
-            list[rep] = v;
+            list[rep] = v!;
         } else {
             rep = list.Count;
-            list.Add(v);
+            list.Add(v!);
         }
         return rep;
     }

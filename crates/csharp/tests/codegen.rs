@@ -23,6 +23,8 @@ macro_rules! codegen_test {
                         runtime: Default::default(),
                         #[cfg(feature = "mono")]
                         runtime: wit_bindgen_csharp::CSharpRuntime::Mono,
+                        internal: false,
+                        skip_support_files: false,
                     }
                     .build()
                     .generate(resolve, world, files)
