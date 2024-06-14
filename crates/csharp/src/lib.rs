@@ -196,7 +196,7 @@ impl WorldGenerator for CSharp {
         key: &WorldKey,
         id: InterfaceId,
         _files: &mut Files,
-    ) {
+    ) -> Result<()> {
         let name = interface_name(self, resolve, key, Direction::Import);
         self.interface_names.insert(id, name.clone());
         let mut gen = self.interface(resolve, &name, Direction::Import);
@@ -232,6 +232,8 @@ impl WorldGenerator for CSharp {
         gen.define_interface_types(id);
 
         gen.add_interface_fragment(false);
+
+        Ok(())
     }
 
     fn import_funcs(

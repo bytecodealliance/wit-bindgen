@@ -27,6 +27,8 @@ heck =  { version = "0.5" }
 pulldown-cmark = { version = "0.9", default-features = false }
 clap = { version = "4.3.19", features = ["derive"] }
 indexmap = "2.0.0"
+prettyplease = "0.2.20"
+syn = { version = "2.0", features = ["printing"] }
 
 wasmparser = "0.209.0"
 wasm-encoder = "0.209.0"

@@ -21,7 +21,8 @@ mod codegen_tests {
                 wit_bindgen::generate!({
                     path: $test,
                     std_feature,
-                    stubs
+                    stubs,
+                    generate_all
                 });
 
                 #[test]

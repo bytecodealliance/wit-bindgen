@@ -1,5 +1,9 @@
 wit_bindgen::generate!({
     path: "../../tests/runtime/versions",
+    with: {
+        "test:dep/test@0.1.0": generate,
+        "test:dep/test@0.2.0": generate,
+    }
 });
 
 use exports::test::dep0_1_0::test::Guest as v1;
