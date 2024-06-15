@@ -2,7 +2,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include "executor.h"
+#include "wamr_env.h"
 
 #define nullptr 0
 

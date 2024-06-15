@@ -18,6 +18,7 @@ include (${WAMR_ROOT_DIR}/build-scripts/runtime_lib.cmake)
 add_library(vmlib ${WAMR_RUNTIME_LIB_SOURCE})
 
 add_library(strings SHARED 
-    executor.c the-world_bridge.c wasi_dummy.c)
-target_include_directories(strings PUBLIC ${CMAKE_CURRENT_LIST_DIR})
+    wamr_env.c the-world_bridge.c 
+    ${WAMR_ROOT_DIR}/core/shared/utils/uncommon/bh_read_file.c)
+target_include_directories(strings PUBLIC ${CMAKE_CURRENT_LIST_DIR} ${WAMR_ROOT_DIR}/core/shared/utils/uncommon)
 target_link_libraries (strings vmlib)
