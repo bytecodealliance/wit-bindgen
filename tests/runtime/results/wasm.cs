@@ -9,7 +9,7 @@ namespace ResultsWorld.wit.exports.test.results
             return ResultsWorld.wit.imports.test.results.TestInterop.StringError(a);
         }
 
-        public static double EnumError(double a)
+        public static float EnumError(float a)
         {
             try {
                 return ResultsWorld.wit.imports.test.results.TestInterop.EnumError(a);
@@ -27,7 +27,7 @@ namespace ResultsWorld.wit.exports.test.results
             }
         }
 
-        public static double RecordError(double a)
+        public static float RecordError(float a)
         {
             try {
                 return ResultsWorld.wit.imports.test.results.TestInterop.RecordError(a);
@@ -37,7 +37,7 @@ namespace ResultsWorld.wit.exports.test.results
             }
         }
 
-        public static double VariantError(double a)
+        public static float VariantError(float a)
         {
             try {
                 return ResultsWorld.wit.imports.test.results.TestInterop.VariantError(a);
@@ -69,9 +69,9 @@ namespace ResultsWorld.wit.exports.test.results
             return ResultsWorld.wit.imports.test.results.TestInterop.EmptyError(a);
         }
 
-        public static void DoubleError(uint a)
+        public static void FloatError(uint a)
         {
-            ResultsWorld.wit.imports.test.results.TestInterop.DoubleError(a);
+            ResultsWorld.wit.imports.test.results.TestInterop.FloatError(a);
         }
     }
 }

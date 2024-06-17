@@ -19,11 +19,11 @@ impl test::results::test::Host for MyImports {
         })
     }
 
-    fn enum_error(&mut self, a: f64) -> Result<Result<f64, imports::E>> {
+    fn enum_error(&mut self, a: f32) -> Result<Result<f32, imports::E>> {
         Ok(if a == 0.0 { Err(imports::E::A) } else { Ok(a) })
     }
 
-    fn record_error(&mut self, a: f64) -> Result<Result<f64, imports::E2>> {
+    fn record_error(&mut self, a: f32) -> Result<Result<f32, imports::E2>> {
         Ok(if a == 0.0 {
             Err(imports::E2 {
                 line: 420,
@@ -39,7 +39,7 @@ impl test::results::test::Host for MyImports {
         })
     }
 
-    fn variant_error(&mut self, a: f64) -> Result<Result<f64, imports::E3>> {
+    fn variant_error(&mut self, a: f32) -> Result<Result<f32, imports::E3>> {
         Ok(if a == 0.0 {
             Err(imports::E3::E2(imports::E2 {
                 line: 420,
