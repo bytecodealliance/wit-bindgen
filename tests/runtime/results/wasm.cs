@@ -69,9 +69,9 @@ namespace ResultsWorld.wit.exports.test.results
             return ResultsWorld.wit.imports.test.results.TestInterop.EmptyError(a);
         }
 
-        public static void FloatError(uint a)
+        public static void DoubleError(uint a)
         {
-            ResultsWorld.wit.imports.test.results.TestInterop.FloatError(a);
-        }
+            ResultsWorld.wit.imports.test.results.TestInterop.DoubleError(a);
+        }    
     }
 }
