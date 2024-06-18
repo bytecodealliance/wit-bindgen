@@ -7,6 +7,8 @@ interface test {
   option-some-result: func() -> option<string>;
 
   option-roundtrip: func(a: option<string>) -> option<string>;
+
+  double-option-roundtrip: func(a: option<option<u32>>) -> option<option<u32>>;
 }
 
 world options {

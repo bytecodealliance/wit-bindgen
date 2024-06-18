@@ -1298,16 +1298,16 @@ impl InterfaceGenerator<'_> {
                     }
                     TypeDefKind::Option(base_ty) => {
                         self.gen.needs_option = true;
-                        if let Some(_name) = &ty.name {
-                            format!(
-                                "Option<{}>",
-                                self.type_name_with_qualifier(base_ty, qualifier)
-                            )
+                        let nesting = if let Type::Id(id) = base_ty {
+                            matches!(&self.resolve.types[*id].kind, TypeDefKind::Option(_))
                         } else {
-                            format!(
-                                "Option<{}>",
-                                self.type_name_with_qualifier(base_ty, qualifier)
-                            )
+                            false
+                        };
+                        let base_ty = self.type_name_with_qualifier(base_ty, qualifier);
+                        if nesting {
+                            format!("Option<{base_ty}>")
+                        } else {
+                            format!("{base_ty}?")
                         }
                     }
                     TypeDefKind::Result(result) => {
@@ -2300,9 +2300,20 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 let op = &operands[0];
 
-                let block = |ty: Option<&Type>, Block { body, results, .. }, payload| {
-                    let payload = if let Some(_ty) = self.gen.non_empty_type(ty) {
-                        format!("var {payload} = {op}.Value;")
+                let nesting = if let Type::Id(id) = payload {
+                    matches!(&self.gen.resolve.types[*id].kind, TypeDefKind::Option(_))
+                } else {
+                    false
+                };
+
+                let mut block = |ty: Option<&Type>, Block { body, results, .. }, payload, nesting| {
+                    let payload = if let Some(ty) = self.gen.non_empty_type(ty) {
+                        let ty = self.gen.type_name_with_qualifier(ty, true);
+                        if nesting {
+                            format!("var {payload} = {op}.Value;")
+                        } else {
+                            format!("var {payload} = ({ty}) {op};")
+                        }
                     } else {
                         String::new()
                     };
@@ -2321,15 +2332,21 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     )
                 };
 
-                let none = block(None, none, none_payload);
-                let some = block(Some(payload), some, some_payload);
+                let none = block(None, none, none_payload, nesting);
+                let some = block(Some(payload), some, some_payload, nesting);
+
+                let test = if nesting {
+                    ".HasValue"
+                } else {
+                    " != null"
+                };
 
                 uwrite!(
                     self.src,
                     r#"
                     {declarations}
 
-                    if ({op}.HasValue) {{
+                    if ({op}{test}) {{
                         {some}
                     }} else {{
                         {none}
@@ -2346,6 +2363,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let lifted = self.locals.tmp("lifted");
                 let op = &operands[0];
 
+                let nesting = if let Type::Id(id) = payload {
+                    matches!(&self.gen.resolve.types[*id].kind, TypeDefKind::Option(_))
+                } else {
+                    false
+                };
+
                 let payload = if self.gen.non_empty_type(Some(*payload)).is_some() {
                     some.results.into_iter().next().unwrap()
                 } else {
@@ -2354,6 +2377,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 let some = some.body;
 
+                let (none_value, some_value) = if nesting {
+                    (format!("{ty}.None"), format!("new ({payload})"))
+                } else {
+                    ("null".into(), payload)
+                };
+
                 uwrite!(
                     self.src,
                     r#"
@@ -2361,13 +2390,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                     switch ({op}) {{
                         case 0: {{
-                            {lifted} = {ty}.None;
+                            {lifted} = {none_value};
                             break;
                         }}
 
                         case 1: {{
                             {some}
-                            {lifted} = new ({payload});
+                            {lifted} = {some_value};
                             break;
                         }}
 
