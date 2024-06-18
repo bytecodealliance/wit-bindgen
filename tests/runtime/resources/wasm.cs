@@ -16,7 +16,7 @@ namespace ResourcesWorld.wit.exports
             x.Dispose();
         }
         
-        public static Result<None, string> TestImports()
+        public static void TestImports()
         {
             var y1 = new IImports.Y(10);
             Debug.Assert(y1.GetA() == 10);
@@ -36,9 +36,7 @@ namespace ResourcesWorld.wit.exports
 	    var y5 = IImports.Y.Add(y3, 20);
 	    var y6 = IImports.Y.Add(y4, 30);	    
             Debug.Assert(y5.GetA() == 30);
-            Debug.Assert(y6.GetA() == 50);	    
-	    
-            return Result<None, string>.ok(new None());
+            Debug.Assert(y6.GetA() == 50);
         }
 
         public class X : IExports.X, IExports.IX {

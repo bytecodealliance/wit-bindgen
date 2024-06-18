@@ -33,6 +33,7 @@ mod resource_import_and_export;
 mod resource_into_inner;
 mod resource_with_lists;
 mod resources;
+mod results;
 mod rust_xcrate;
 mod smoke;
 mod strings;

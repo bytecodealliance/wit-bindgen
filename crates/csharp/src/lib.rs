@@ -135,6 +135,7 @@ pub struct CSharp {
     needs_interop_string: bool,
     needs_export_return_area: bool,
     needs_rep_table: bool,
+    needs_wit_exception: bool,
     interface_fragments: HashMap<String, InterfaceTypeAndFragments>,
     world_fragments: Vec<InterfaceFragment>,
     sizes: SizeAlign,
@@ -509,6 +510,23 @@ impl WorldGenerator for CSharp {
                         length = utf8Bytes.Length;
                         var gcHandle = GCHandle.Alloc(utf8Bytes, GCHandleType.Pinned);
                         return gcHandle.AddrOfPinnedObject();
+                    }
+                }
+                "#,
+            )
+        }
+
+        if self.needs_wit_exception {
+            src.push_str(
+                r#"
+                public class WitException: Exception {
+                    public object Value { get; }
+                    public uint NestingLevel { get; }
+
+                    public WitException(object v, uint level)
+                    {
+                        Value = v;
+                        NestingLevel = level;
                     }
                 }
                 "#,
@@ -929,14 +947,25 @@ impl InterfaceGenerator<'_> {
             _ => unreachable!(),
         };
 
-        let result_type = if let FunctionKind::Constructor(_) = &func.kind {
-            String::new()
+        let (result_type, results) = if let FunctionKind::Constructor(_) = &func.kind {
+            (String::new(), Vec::new())
         } else {
             match func.results.len() {
-                0 => "void".to_string(),
+                0 => ("void".to_string(), Vec::new()),
                 1 => {
-                    let ty = func.results.iter_types().next().unwrap();
-                    self.type_name_with_qualifier(ty, true)
+                    let (payload, results) = payload_and_results(
+                        self.resolve,
+                        *func.results.iter_types().next().unwrap(),
+                    );
+                    (
+                        if let Some(ty) = payload {
+                            self.gen.needs_result = true;
+                            self.type_name_with_qualifier(&ty, true)
+                        } else {
+                            "void".to_string()
+                        },
+                        results,
+                    )
                 }
                 _ => {
                     let types = func
@@ -945,7 +974,7 @@ impl InterfaceGenerator<'_> {
                         .map(|ty| self.type_name_with_qualifier(ty, true))
                         .collect::<Vec<_>>()
                         .join(", ");
-                    format!("({})", types)
+                    (format!("({})", types), Vec::new())
                 }
             }
         };
@@ -976,6 +1005,7 @@ impl InterfaceGenerator<'_> {
                     }
                 })
                 .collect(),
+            results,
         );
 
         abi::call(
@@ -1055,11 +1085,44 @@ impl InterfaceGenerator<'_> {
 
         let sig = self.resolve.wasm_signature(AbiVariant::GuestExport, func);
 
+        let (result_type, results) = if let FunctionKind::Constructor(_) = &func.kind {
+            (String::new(), Vec::new())
+        } else {
+            match func.results.len() {
+                0 => ("void".to_owned(), Vec::new()),
+                1 => {
+                    let (payload, results) = payload_and_results(
+                        self.resolve,
+                        *func.results.iter_types().next().unwrap(),
+                    );
+                    (
+                        if let Some(ty) = payload {
+                            self.gen.needs_result = true;
+                            self.type_name(&ty)
+                        } else {
+                            "void".to_string()
+                        },
+                        results,
+                    )
+                }
+                _ => {
+                    let types = func
+                        .results
+                        .iter_types()
+                        .map(|ty| self.type_name(ty))
+                        .collect::<Vec<String>>()
+                        .join(", ");
+                    (format!("({}) ", types), Vec::new())
+                }
+            }
+        };
+
         let mut bindgen = FunctionBindgen::new(
             self,
             &func.item_name(),
             &func.kind,
             (0..sig.params.len()).map(|i| format!("p{i}")).collect(),
+            results,
         );
 
         abi::call(
@@ -1085,24 +1148,6 @@ impl InterfaceGenerator<'_> {
             [] => "void",
             [result] => wasm_type(*result),
             _ => unreachable!(),
-        };
-
-        let result_type = if let FunctionKind::Constructor(_) = &func.kind {
-            String::new()
-        } else {
-            match func.results.len() {
-                0 => "void".to_owned(),
-                1 => self.type_name(func.results.iter_types().next().unwrap()),
-                _ => {
-                    let types = func
-                        .results
-                        .iter_types()
-                        .map(|ty| self.type_name(ty))
-                        .collect::<Vec<String>>()
-                        .join(", ");
-                    format!("({}) ", types)
-                }
-            }
         };
 
         let wasm_params = sig
@@ -1507,8 +1552,18 @@ impl InterfaceGenerator<'_> {
         } else {
             match func.results.len() {
                 0 => "void".into(),
-                1 => self
-                    .type_name_with_qualifier(func.results.iter_types().next().unwrap(), qualifier),
+                1 => {
+                    let (payload, _) = payload_and_results(
+                        self.resolve,
+                        *func.results.iter_types().next().unwrap(),
+                    );
+                    if let Some(ty) = payload {
+                        self.gen.needs_result = true;
+                        self.type_name_with_qualifier(&ty, qualifier)
+                    } else {
+                        "void".to_string()
+                    }
+                }
                 count => {
                     self.gen.tuple_counts.insert(count);
                     format!(
@@ -1834,6 +1889,7 @@ struct FunctionBindgen<'a, 'b> {
     func_name: &'b str,
     kind: &'b FunctionKind,
     params: Box<[String]>,
+    results: Vec<TypeId>,
     src: String,
     locals: Ns,
     block_storage: Vec<BlockStorage>,
@@ -1853,6 +1909,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         func_name: &'b str,
         kind: &'b FunctionKind,
         params: Box<[String]>,
+        results: Vec<TypeId>,
     ) -> FunctionBindgen<'a, 'b> {
         let mut locals = Ns::default();
         // Ensure temporary variable names don't clash with parameter names:
@@ -1865,6 +1922,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             func_name,
             kind,
             params,
+            results,
             src: String::new(),
             locals,
             block_storage: Vec::new(),
@@ -2585,10 +2643,69 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             0 => uwriteln!(self.src, "{target}.{func_name}({oper});"),
                             1 => {
                                 let ret = self.locals.tmp("ret");
+                                let ty = self.gen.type_name_with_qualifier(
+                                    func.results.iter_types().next().unwrap(),
+                                    true
+                                );
+                                uwriteln!(self.src, "{ty} {ret};");
+                                let mut cases = Vec::with_capacity(self.results.len());
+                                let mut oks = Vec::with_capacity(self.results.len());
+                                let mut payload_is_void = false;
+                                for (index, ty) in self.results.iter().enumerate() {
+                                    let TypeDefKind::Result(result) = &self.gen.resolve.types[*ty].kind else {
+                                        unreachable!();
+                                    };
+                                    let err_ty = if let Some(ty) = result.err {
+                                        self.gen.type_name_with_qualifier(&ty, true)
+                                    } else {
+                                        "None".to_owned()
+                                    };
+                                    let ty = self.gen.type_name_with_qualifier(&Type::Id(*ty), true);
+                                    let head = oks.concat();
+                                    let tail = oks.iter().map(|_| ")").collect::<Vec<_>>().concat();
+                                    cases.push(
+                                        format!(
+                                            "\
+                                            case {index}: {{
+                                                ret = {head}{ty}.err(({err_ty}) e.Value){tail};
+                                                break;
+                                            }}
+                                            "
+                                        )
+                                    );
+                                    oks.push(format!("{ty}.ok("));
+                                    payload_is_void = result.ok.is_none();
+                                }
+                                if !self.results.is_empty() {
+                                    self.src.push_str("try {\n");
+                                }
+                                let head = oks.concat();
+                                let tail = oks.iter().map(|_| ")").collect::<Vec<_>>().concat();
+                                let val = if payload_is_void {
+                                    uwriteln!(self.src, "{target}.{func_name}({oper});");
+                                    "new None()".to_owned()
+                                } else {
+                                    format!("{target}.{func_name}({oper})")
+                                };
                                 uwriteln!(
                                     self.src,
-                                    "var {ret} = {target}.{func_name}({oper});"
+                                    "{ret} = {head}{val}{tail};"
                                 );
+                                if !self.results.is_empty() {
+                                    self.gen.gen.needs_wit_exception = true;
+                                    let cases = cases.join("\n");
+                                    uwriteln!(
+                                        self.src,
+                                        r#"}} catch (WitException e) {{
+                                            switch (e.NestingLevel) {{
+                                                {cases}
+
+                                                default: throw new ArgumentException($"invalid nesting level: {{e.NestingLevel}}");
+                                            }}
+                                        }}
+                                        "#
+                                    );
+                                }
                                 results.push(ret);
                             }
                             _ => {
@@ -2626,17 +2743,51 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 if !matches!((self.gen.direction, self.kind), (Direction::Import, FunctionKind::Constructor(_))) {
                     match func.results.len() {
                         0 => (),
-                        1 => uwriteln!(self.src, "return {};", operands[0]),
+                        1 => {
+                            let mut payload_is_void = false;
+                            let mut previous = operands[0].clone();
+                            let mut vars = Vec::with_capacity(self.results.len());
+                            if let Direction::Import = self.gen.direction {
+                                for ty in &self.results {
+                                    vars.push(previous.clone());
+                                    let tmp = self.locals.tmp("tmp");
+                                    uwrite!(
+                                        self.src,
+                                        "\
+                                        if ({previous}.IsOk) {{
+                                        var {tmp} = {previous}.AsOk;
+                                    "
+                                    );
+                                    previous = tmp;
+                                    let TypeDefKind::Result(result) = &self.gen.resolve.types[*ty].kind else {
+                                        unreachable!();
+                                    };
+                                    payload_is_void = result.ok.is_none();
+                                }
+                            }
+                            uwriteln!(self.src, "return {};", if payload_is_void { "" } else { &previous });
+                            for (level, var) in vars.iter().enumerate().rev() {
+                                self.gen.gen.needs_wit_exception = true;
+                                uwrite!(
+                                    self.src,
+                                    "\
+                                    }} else {{
+                                        throw new WitException({var}.AsErr, {level});
+                                    }}
+                                    "
+                                );
+                            }
+                        }
                         _ => {
                             let results = operands.join(", ");
                             uwriteln!(self.src, "return ({results});")
                         }
                     }
 
-                // Close all the fixed blocks.
-                for _ in 0..self.fixed {
-                    uwriteln!(self.src, "}}");
-                }
+                    // Close all the fixed blocks.
+                    for _ in 0..self.fixed {
+                        uwriteln!(self.src, "}}");
+                    }
                 }
             }
 
@@ -3101,4 +3252,27 @@ fn dealias(resolve: &Resolve, mut id: TypeId) -> TypeId {
             _ => break id,
         }
     }
+}
+
+fn payload_and_results(resolve: &Resolve, ty: Type) -> (Option<Type>, Vec<TypeId>) {
+    fn recurse(resolve: &Resolve, ty: Type, results: &mut Vec<TypeId>) -> Option<Type> {
+        if let Type::Id(id) = ty {
+            if let TypeDefKind::Result(result) = &resolve.types[id].kind {
+                results.push(id);
+                if let Some(ty) = result.ok {
+                    recurse(resolve, ty, results)
+                } else {
+                    None
+                }
+            } else {
+                Some(ty)
+            }
+        } else {
+            Some(ty)
+        }
+    }
+
+    let mut results = Vec::new();
+    let payload = recurse(resolve, ty, &mut results);
+    (payload, results)
 }
