@@ -26,6 +26,10 @@ impl test::options::test::Host for MyImports {
     fn option_roundtrip(&mut self, a: Option<String>) -> Option<String> {
         a
     }
+
+    fn double_option_roundtrip(&mut self, a: Option<Option<u32>>) -> Result<Option<Option<u32>>> {
+        Ok(a)
+    }
 }
 
 #[test]
@@ -51,6 +55,18 @@ fn run_test(exports: Options, store: &mut Store<crate::Wasi<MyImports>>) -> Resu
     assert_eq!(
         exports.call_option_roundtrip(&mut *store, Some("foo"))?,
         Some("foo".to_string())
+    );
+    assert_eq!(
+        exports.call_double_option_roundtrip(&mut *store, Some(Some(42)))?,
+        Some(Some(42))
+    );
+    assert_eq!(
+        exports.call_double_option_roundtrip(&mut *store, Some(None))?,
+        Some(None)
+    );
+    assert_eq!(
+        exports.call_double_option_roundtrip(&mut *store, None)?,
+        None
     );
     Ok(())
 }
