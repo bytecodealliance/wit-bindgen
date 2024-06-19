@@ -20,44 +20,39 @@ pub struct MyImports {
 pub struct MyResource;
 
 impl lists::Host for MyImports {
-    fn foo(&mut self, list: Vec<Vec<String>>) -> Result<Vec<Vec<String>>> {
+    fn foo(&mut self, list: Vec<Vec<String>>) -> Vec<Vec<String>> {
         self.called_foo = true;
-        Ok(list)
+        list
     }
 }
 
 impl thing_in::Host for MyImports {
-    fn bar(&mut self, _value: thing_in::Thing) -> Result<()> {
+    fn bar(&mut self, _value: thing_in::Thing) {
         self.called_bar = true;
-        Ok(())
     }
 }
 
 impl thing_in_and_out::Host for MyImports {
-    fn baz(&mut self, value: thing_in_and_out::Thing) -> Result<thing_in_and_out::Thing> {
+    fn baz(&mut self, value: thing_in_and_out::Thing) -> thing_in_and_out::Thing {
         self.called_baz = true;
-        Ok(value)
+        value
     }
 }
 
 impl test::ownership::both_list_and_resource::Host for MyImports {
-    fn list_and_resource(
-        &mut self,
-        value: test::ownership::both_list_and_resource::Thing,
-    ) -> Result<()> {
+    fn list_and_resource(&mut self, value: test::ownership::both_list_and_resource::Thing) {
         assert_eq!(value.b.rep(), 100);
         assert!(value.b.owned());
         let expected = self.last_resource_list.as_ref().unwrap();
         assert_eq!(value.a, *expected);
-        Ok(())
     }
 }
 
 impl test::ownership::both_list_and_resource::HostTheResource for MyImports {
-    fn new(&mut self, list: Vec<String>) -> Result<Resource<MyResource>> {
+    fn new(&mut self, list: Vec<String>) -> Resource<MyResource> {
         assert!(self.last_resource_list.is_none());
         self.last_resource_list = Some(list);
-        Ok(Resource::new_own(100))
+        Resource::new_own(100)
     }
 
     fn drop(&mut self, _val: Resource<MyResource>) -> Result<()> {

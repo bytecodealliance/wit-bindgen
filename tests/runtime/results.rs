@@ -11,20 +11,24 @@ use test::results::test as imports;
 pub struct MyImports;
 
 impl test::results::test::Host for MyImports {
-    fn string_error(&mut self, a: f32) -> Result<Result<f32, String>> {
-        Ok(if a == 0.0 {
+    fn string_error(&mut self, a: f32) -> Result<f32, String> {
+        if a == 0.0 {
             Err("zero".to_owned())
         } else {
             Ok(a)
-        })
+        }
     }
 
-    fn enum_error(&mut self, a: f32) -> Result<Result<f32, imports::E>> {
-        Ok(if a == 0.0 { Err(imports::E::A) } else { Ok(a) })
+    fn enum_error(&mut self, a: f32) -> Result<f32, imports::E> {
+        if a == 0.0 {
+            Err(imports::E::A)
+        } else {
+            Ok(a)
+        }
     }
 
-    fn record_error(&mut self, a: f32) -> Result<Result<f32, imports::E2>> {
-        Ok(if a == 0.0 {
+    fn record_error(&mut self, a: f32) -> Result<f32, imports::E2> {
+        if a == 0.0 {
             Err(imports::E2 {
                 line: 420,
                 column: 0,
@@ -36,11 +40,11 @@ impl test::results::test::Host for MyImports {
             })
         } else {
             Ok(a)
-        })
+        }
     }
 
-    fn variant_error(&mut self, a: f32) -> Result<Result<f32, imports::E3>> {
-        Ok(if a == 0.0 {
+    fn variant_error(&mut self, a: f32) -> Result<f32, imports::E3> {
+        if a == 0.0 {
             Err(imports::E3::E2(imports::E2 {
                 line: 420,
                 column: 0,
@@ -51,27 +55,27 @@ impl test::results::test::Host for MyImports {
             Err(imports::E3::E1(imports::E::C))
         } else {
             Ok(a)
-        })
+        }
     }
 
-    fn empty_error(&mut self, a: u32) -> Result<Result<u32, ()>> {
-        Ok(if a == 0 {
+    fn empty_error(&mut self, a: u32) -> Result<u32, ()> {
+        if a == 0 {
             Err(())
         } else if a == 1 {
             Ok(42)
         } else {
             Ok(a)
-        })
+        }
     }
 
-    fn double_error(&mut self, a: u32) -> Result<Result<Result<(), String>, String>> {
-        Ok(if a == 0 {
+    fn double_error(&mut self, a: u32) -> Result<Result<(), String>, String> {
+        if a == 0 {
             Ok(Ok(()))
         } else if a == 1 {
             Ok(Err("one".into()))
         } else {
             Err("two".into())
-        })
+        }
     }
 }
 

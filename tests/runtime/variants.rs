@@ -9,53 +9,46 @@ use test::variants::test as test_imports;
 pub struct MyImports;
 
 impl test_imports::Host for MyImports {
-    fn roundtrip_option(&mut self, a: Option<f32>) -> anyhow::Result<Option<u8>> {
-        Ok(a.map(|x| x as u8))
+    fn roundtrip_option(&mut self, a: Option<f32>) -> Option<u8> {
+        a.map(|x| x as u8)
     }
 
-    fn roundtrip_result(&mut self, a: Result<u32, f32>) -> anyhow::Result<Result<f64, u8>> {
-        Ok(match a {
+    fn roundtrip_result(&mut self, a: Result<u32, f32>) -> Result<f64, u8> {
+        match a {
             Ok(a) => Ok(a.into()),
             Err(b) => Err(b as u8),
-        })
+        }
     }
 
-    fn roundtrip_enum(&mut self, a: test_imports::E1) -> anyhow::Result<test_imports::E1> {
+    fn roundtrip_enum(&mut self, a: test_imports::E1) -> test_imports::E1 {
         assert_eq!(a, a);
-        Ok(a)
+        a
     }
 
-    fn invert_bool(&mut self, a: bool) -> anyhow::Result<bool> {
-        Ok(!a)
+    fn invert_bool(&mut self, a: bool) -> bool {
+        !a
     }
 
-    fn variant_casts(&mut self, a: test_imports::Casts) -> anyhow::Result<test_imports::Casts> {
-        Ok(a)
+    fn variant_casts(&mut self, a: test_imports::Casts) -> test_imports::Casts {
+        a
     }
 
-    fn variant_zeros(&mut self, a: test_imports::Zeros) -> anyhow::Result<test_imports::Zeros> {
-        Ok(a)
+    fn variant_zeros(&mut self, a: test_imports::Zeros) -> test_imports::Zeros {
+        a
     }
 
-    fn variant_typedefs(
-        &mut self,
-        _: Option<u32>,
-        _: bool,
-        _: Result<u32, ()>,
-    ) -> anyhow::Result<()> {
-        Ok(())
-    }
+    fn variant_typedefs(&mut self, _: Option<u32>, _: bool, _: Result<u32, ()>) {}
 
     fn variant_enums(
         &mut self,
         a: bool,
         b: Result<(), ()>,
         c: test_imports::MyErrno,
-    ) -> anyhow::Result<(bool, Result<(), ()>, test_imports::MyErrno)> {
+    ) -> (bool, Result<(), ()>, test_imports::MyErrno) {
         assert_eq!(a, true);
         assert_eq!(b, Ok(()));
         assert_eq!(c, test_imports::MyErrno::Success);
-        Ok((false, Err(()), test_imports::MyErrno::A))
+        (false, Err(()), test_imports::MyErrno::A)
     }
 }
 
