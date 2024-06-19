@@ -1,0 +1,23 @@
+[package]
+name = "wit-bindgen-haskell"
+version.workspace = true
+edition.workspace = true
+repository = 'https://github.com/bytecodealliance/wit-bindgen'
+license = "Apache-2.0 WITH LLVM-exception"
+homepage = 'https://github.com/bytecodealliance/wit-bindgen'
+description = """
+Haskell bindings generator for WIT and the component model, typically used
+through the `wit-bindgen-cli` crate.
+"""
+
+[lib]
+test = false
+doctest = false
+
+[dependencies]
+wit-bindgen-core = { workspace = true }
+wit-parser = { workspace = true }
+anyhow = { workspace = true }
+heck = { workspace = true }
+clap = { workspace = true, optional = true }
+indexmap = { workspace = true }

@@ -2365,6 +2365,7 @@ dependencies = [
  "wit-bindgen-core",
  "wit-bindgen-csharp",
  "wit-bindgen-go",
+ "wit-bindgen-haskell",
  "wit-bindgen-markdown",
  "wit-bindgen-rust",
  "wit-bindgen-teavm-java",
@@ -2407,6 +2408,18 @@ dependencies = [
  "test-helpers",
  "wit-bindgen-c",
  "wit-bindgen-core",
+]
+
+[[package]]
+name = "wit-bindgen-haskell"
+version = "0.26.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "heck 0.5.0",
+ "indexmap",
+ "wit-bindgen-core",
+ "wit-parser 0.209.0",
 ]
 
 [[package]]

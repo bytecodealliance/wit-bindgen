@@ -64,6 +64,15 @@ enum Opt {
         #[clap(flatten)]
         args: Common,
     },
+
+    /// Generates bindings for Haskell guest modules.
+    #[cfg(feature = "haskell")]
+    Haskell {
+        #[clap(flatten)]
+        opts: wit_bindgen_haskell::Opts,
+        #[clap(flatten)]
+        args: Common,
+    },
 }
 
 #[derive(Debug, Parser)]
@@ -121,6 +130,8 @@ fn main() -> Result<()> {
         Opt::TinyGo { opts, args } => (opts.build(), args),
         #[cfg(feature = "csharp")]
         Opt::CSharp { opts, args } => (opts.build(), args),
+        #[cfg(feature = "haskell")]
+        Opt::Haskell { opts, args } => (opts.build(), args),
     };
 
     gen_world(generator, &opt, &mut files)?;

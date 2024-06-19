@@ -43,6 +43,7 @@ wit-bindgen-teavm-java = { path = 'crates/teavm-java', version = '0.26.0' }
 wit-bindgen-go = { path = 'crates/go', version = '0.26.0' }
 wit-bindgen-csharp = { path = 'crates/csharp', version = '0.26.0' }
 wit-bindgen-markdown = { path = 'crates/markdown', version = '0.26.0' }
+wit-bindgen-haskell = { path = 'crates/haskell', version = '0.26.0' }
 wit-bindgen = { path = 'crates/guest-rust', version = '0.26.0', default-features = false }
 
 [[bin]]
@@ -58,6 +59,7 @@ wit-bindgen-markdown = { workspace = true, features = ['clap'], optional = true 
 wit-bindgen-teavm-java = { workspace = true, features = ['clap'], optional = true }
 wit-bindgen-go = { workspace = true, features = ['clap'], optional = true }
 wit-bindgen-csharp = { workspace = true, features = ['clap'], optional = true }
+wit-bindgen-haskell = { workspace = true, features = ['clap'], optional = true} 
 wit-component = { workspace = true }
 wasm-encoder = { workspace = true }
 
@@ -69,6 +71,7 @@ default = [
   'teavm-java',
   'go',
   'csharp-naot',
+  'haskell',
 ]
 c = ['dep:wit-bindgen-c']
 rust = ['dep:wit-bindgen-rust']
@@ -78,6 +81,7 @@ go = ['dep:wit-bindgen-go']
 csharp = ['dep:wit-bindgen-csharp']
 csharp-naot = ['csharp']
 csharp-mono = ['csharp']
+haskell = ['dep:wit-bindgen-haskell']
 
 [dev-dependencies]
 heck = { workspace = true }
