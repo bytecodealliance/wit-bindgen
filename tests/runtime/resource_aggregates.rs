@@ -17,11 +17,11 @@ pub struct MyHostThing {
 }
 
 impl HostThing for MyHostThing {
-    fn new(&mut self, v: u32) -> wasmtime::Result<wasmtime::component::Resource<Thing>> {
+    fn new(&mut self, v: u32) -> wasmtime::component::Resource<Thing> {
         let id = self.next_id;
         self.next_id += 1;
         self.map_a.insert(id, v + 2);
-        Ok(wasmtime::component::Resource::new_own(id))
+        wasmtime::component::Resource::new_own(id)
     }
 
     fn drop(&mut self, rep: wasmtime::component::Resource<Thing>) -> wasmtime::Result<()> {
@@ -54,7 +54,7 @@ impl Host for MyHostThing {
         o2: Option<wasmtime::component::Resource<Thing>>,
         result1: Result<wasmtime::component::Resource<Thing>, ()>,
         result2: Result<wasmtime::component::Resource<Thing>, ()>,
-    ) -> wasmtime::Result<u32> {
+    ) -> u32 {
         let res = self.get_value(r1.thing)
             + self.get_value(r2.thing)
             + self.get_value(r3.thing1)
@@ -75,7 +75,7 @@ impl Host for MyHostThing {
             + result1.map(|o| self.get_value(o)).unwrap_or_default()
             + result2.map(|o| self.get_value(o)).unwrap_or_default()
             + 3;
-        Ok(res)
+        res
     }
 }
 

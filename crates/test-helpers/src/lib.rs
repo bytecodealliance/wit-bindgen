@@ -143,10 +143,10 @@ pub fn run_component_codegen_test(
 
 fn parse_wit(path: &Path) -> (Resolve, WorldId) {
     let mut resolve = Resolve::default();
-    let (pkg, _files) = resolve.push_path(path).unwrap();
-    let world = resolve.select_world(pkg, None).unwrap_or_else(|_| {
+    let (pkgs, _files) = resolve.push_path(path).unwrap();
+    let world = resolve.select_world(&pkgs, None).unwrap_or_else(|_| {
         // note: if there are multiples worlds in the wit package, we assume the "imports" world
-        resolve.select_world(pkg, Some("imports")).unwrap()
+        resolve.select_world(&pkgs, Some("imports")).unwrap()
     });
     (resolve, world)
 }

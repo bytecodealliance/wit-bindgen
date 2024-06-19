@@ -8,9 +8,7 @@ use self::test::suffix::imports::Host;
 pub struct MyFoo;
 
 impl Host for MyFoo {
-    fn foo(&mut self) -> wasmtime::Result<()> {
-        Ok(())
-    }
+    fn foo(&mut self) {}
 }
 
 #[test]
