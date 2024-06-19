@@ -129,9 +129,6 @@ impl TinyGo {
                 }
             }
         };
-        if res == "bool" {
-            return res;
-        }
         format!("C.{res}")
     }
 

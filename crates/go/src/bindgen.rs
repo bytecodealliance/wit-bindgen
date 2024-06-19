@@ -172,7 +172,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
     pub(crate) fn lower_value(&mut self, param: &str, ty: &Type, lower_name: &str) {
         match ty {
             Type::Bool => {
-                uwriteln!(self.lower_src, "{lower_name} := {param}",);
+                uwriteln!(self.lower_src, "{lower_name} := (C._Bool)({param})",);
             }
             Type::String => {
                 self.interface.gen.with_import_unsafe(true);
@@ -185,7 +185,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                     self.lower_src,
                     "
                     // use unsafe.Pointer to avoid copy
-                    {lower_name}.ptr = (*uint8)(unsafe.Pointer(C.CString({param})))
+                    {lower_name}.ptr = (*C.uint8_t)(unsafe.Pointer(C.CString({param})))
                     {lower_name}.len = C.size_t(len({param}))"
                 );
             }
@@ -416,7 +416,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
     pub(crate) fn lift_value(&mut self, param: &str, ty: &Type, lift_name: &str) {
         match ty {
             Type::Bool => {
-                uwriteln!(self.lift_src, "{lift_name} := {param}");
+                uwriteln!(self.lift_src, "{lift_name} := (bool)({param})");
             }
             Type::String => {
                 self.interface.gen.with_import_unsafe(true);
