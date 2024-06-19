@@ -27,8 +27,8 @@ impl test::options::test::Host for MyImports {
         a
     }
 
-    fn double_option_roundtrip(&mut self, a: Option<Option<u32>>) -> Result<Option<Option<u32>>> {
-        Ok(a)
+    fn double_option_roundtrip(&mut self, a: Option<Option<u32>>) -> Option<Option<u32>> {
+        a
     }
 }
 
