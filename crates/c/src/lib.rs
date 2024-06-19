@@ -416,6 +416,7 @@ impl WorldGenerator for C {
 
         uwriteln!(h_str, "#include <stdint.h>");
         uwriteln!(h_str, "#include <stdbool.h>");
+        uwriteln!(h_str, "#include <stddef.h>");
         for include in self.h_includes.iter() {
             uwriteln!(h_str, "#include {include}");
         }
