@@ -3,7 +3,7 @@ use heck::*;
 use std::env;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use wit_parser::{Resolve, UnresolvedPackage};
+use wit_parser::{Resolve, UnresolvedPackageGroup};
 
 macro_rules! codegen_test {
     ($id:ident $name:tt $test:tt) => {
@@ -94,8 +94,8 @@ fn rename_option() -> Result<()> {
     opts.rename.push(("c".to_string(), "rename3".to_string()));
 
     let mut resolve = Resolve::default();
-    let pkg = resolve.push(UnresolvedPackage::parse(
-        "input.wit".as_ref(),
+    let pkgs = resolve.push_group(UnresolvedPackageGroup::parse(
+        "input.wit",
         r#"
             package foo:bar;
 
@@ -118,7 +118,7 @@ fn rename_option() -> Result<()> {
             }
         "#,
     )?)?;
-    let world = resolve.select_world(pkg, None)?;
+    let world = resolve.select_world(&pkgs, None)?;
     let mut files = Default::default();
     opts.build().generate(&resolve, world, &mut files)?;
     for (file, contents) in files.iter() {
