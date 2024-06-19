@@ -15,6 +15,9 @@ impl Guest for Component {
         assert!(option_none_result().is_none());
         assert_eq!(option_some_result(), Some("foo".to_string()));
         assert_eq!(option_roundtrip(Some("foo")), Some("foo".to_string()));
+        assert_eq!(double_option_roundtrip(Some(Some(42))), Some(Some(42)));
+        assert_eq!(double_option_roundtrip(Some(None)), Some(None));
+        assert_eq!(double_option_roundtrip(None), None);
     }
 }
 
@@ -36,6 +39,10 @@ impl exports::test::options::test::Guest for Component {
     }
 
     fn option_roundtrip(a: Option<String>) -> Option<String> {
+        a
+    }
+
+    fn double_option_roundtrip(a: Option<Option<u32>>) -> Option<Option<u32>> {
         a
     }
 }

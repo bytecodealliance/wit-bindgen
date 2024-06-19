@@ -22,8 +22,8 @@ namespace ResourceAggregatesWorld.wit.exports.test.resourceAggregates
 	    ITest.V2 v2,
 	    List<ITest.Thing> l1,
 	    List<ITest.Thing> l2,
-	    Option<ITest.Thing> o1,
-	    Option<ITest.Thing> o2,
+	    ITest.Thing? o1,
+	    ITest.Thing? o2,
 	    Result<ITest.Thing, None> result1,
 	    Result<ITest.Thing, None> result2
 	)
@@ -45,12 +45,12 @@ namespace ResourceAggregatesWorld.wit.exports.test.resourceAggregates
 	    {
 		il2.Add(((Thing) thing).val);
 	    }
-	    var io1 = o1.HasValue
-		? new Option<Import.Thing>(((Thing) o1.Value).val)
-		: Option<Import.Thing>.None;
-	    var io2 = o2.HasValue
-		? new Option<Import.Thing>(((Thing) o2.Value).val)
-		: Option<Import.Thing>.None;
+	    var io1 = o1 != null
+		? ((Thing) o1).val
+		: null;
+	    var io2 = o2 != null
+		? ((Thing) o2).val
+		: null;
 	    var iresult1 = result1.IsOk
 		? Result<Import.Thing, None>.ok(((Thing) result1.AsOk).val)
 		: Result<Import.Thing, None>.err(new None());
