@@ -11,19 +11,15 @@ use test::xcrate::b_imports::X as B_X;
 pub struct MyImports;
 
 impl test::xcrate::a_imports::Host for MyImports {
-    fn a(&mut self) -> Result<()> {
-        Ok(())
-    }
+    fn a(&mut self) {}
 }
 
 impl test::xcrate::a_imports::HostX for MyImports {
-    fn new(&mut self) -> Result<Resource<A_X>> {
-        Ok(Resource::new_own(2))
+    fn new(&mut self) -> Resource<A_X> {
+        Resource::new_own(2)
     }
 
-    fn foo(&mut self, _resource: Resource<A_X>) -> Result<()> {
-        Ok(())
-    }
+    fn foo(&mut self, _resource: Resource<A_X>) {}
 
     fn drop(&mut self, _resource: Resource<A_X>) -> Result<()> {
         Ok(())
@@ -31,19 +27,15 @@ impl test::xcrate::a_imports::HostX for MyImports {
 }
 
 impl test::xcrate::b_imports::Host for MyImports {
-    fn b(&mut self) -> Result<()> {
-        Ok(())
-    }
+    fn b(&mut self) {}
 }
 
 impl test::xcrate::b_imports::HostX for MyImports {
-    fn new(&mut self) -> Result<Resource<B_X>> {
-        Ok(Resource::new_own(2))
+    fn new(&mut self) -> Resource<B_X> {
+        Resource::new_own(2)
     }
 
-    fn foo(&mut self, _resource: Resource<B_X>) -> Result<()> {
-        Ok(())
-    }
+    fn foo(&mut self, _resource: Resource<B_X>) {}
 
     fn drop(&mut self, _resource: Resource<B_X>) -> Result<()> {
         Ok(())

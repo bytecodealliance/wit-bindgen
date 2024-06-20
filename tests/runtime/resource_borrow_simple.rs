@@ -7,8 +7,8 @@ wasmtime::component::bindgen!(in "tests/runtime/resource_borrow_simple");
 pub struct MyHostRImpl {}
 
 impl HostR for MyHostRImpl {
-    fn new(&mut self) -> std::result::Result<wasmtime::component::Resource<R>, anyhow::Error> {
-        Ok(Resource::new_own(0))
+    fn new(&mut self) -> wasmtime::component::Resource<R> {
+        Resource::new_own(0)
     }
 
     fn drop(
@@ -20,9 +20,7 @@ impl HostR for MyHostRImpl {
 }
 
 impl ResourceBorrowSimpleImports for MyHostRImpl {
-    fn test(&mut self, _: wasmtime::component::Resource<R>) -> wasmtime::Result<()> {
-        Ok(())
-    }
+    fn test(&mut self, _: wasmtime::component::Resource<R>) {}
 }
 
 #[test]

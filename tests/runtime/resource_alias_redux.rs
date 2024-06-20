@@ -23,16 +23,16 @@ impl MyHost {
 }
 
 impl HostThing for MyHost {
-    fn new(&mut self, s: String) -> wasmtime::Result<wasmtime::component::Resource<Thing>> {
+    fn new(&mut self, s: String) -> wasmtime::component::Resource<Thing> {
         let id = self.next_id;
         self.next_id += 1;
         self.map_l.insert(id, s + " HostThing");
-        Ok(Resource::new_own(id))
+        Resource::new_own(id)
     }
 
-    fn get(&mut self, self_: wasmtime::component::Resource<Thing>) -> wasmtime::Result<String> {
+    fn get(&mut self, self_: wasmtime::component::Resource<Thing>) -> String {
         let id = self_.rep();
-        Ok(self.map_l[&id].clone() + " HostThing.get")
+        self.map_l[&id].clone() + " HostThing.get"
     }
 
     fn drop(&mut self, rep: wasmtime::component::Resource<Thing>) -> wasmtime::Result<()> {
@@ -43,18 +43,14 @@ impl HostThing for MyHost {
 }
 
 impl Host1 for MyHost {
-    fn a(&mut self, f: Foo1) -> wasmtime::Result<Vec<wasmtime::component::Resource<Thing>>> {
-        Ok(vec![f.thing])
+    fn a(&mut self, f: Foo1) -> Vec<wasmtime::component::Resource<Thing>> {
+        vec![f.thing]
     }
 }
 
 impl Host2 for MyHost {
-    fn b(
-        &mut self,
-        f: Foo2,
-        g: Bar,
-    ) -> wasmtime::Result<Vec<wasmtime::component::Resource<Thing>>> {
-        Ok(vec![f.thing, g.thing])
+    fn b(&mut self, f: Foo2, g: Bar) -> Vec<wasmtime::component::Resource<Thing>> {
+        vec![f.thing, g.thing]
     }
 }
 
@@ -76,7 +72,7 @@ fn run_test(
     store: &mut Store<crate::Wasi<MyHost>>,
 ) -> anyhow::Result<()> {
     let mut thing = MyHost::default();
-    let thing1 = HostThing::new(&mut thing, "Ni Hao".to_string())?;
+    let thing1 = HostThing::new(&mut thing, "Ni Hao".to_string());
     let res: Vec<String> = instance
         .call_test(&mut *store, &[thing1])?
         .into_iter()

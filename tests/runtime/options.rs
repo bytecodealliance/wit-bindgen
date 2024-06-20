@@ -7,26 +7,28 @@ wasmtime::component::bindgen!(in "tests/runtime/options");
 pub struct MyImports;
 
 impl test::options::test::Host for MyImports {
-    fn option_none_param(&mut self, a: Option<String>) -> Result<()> {
+    fn option_none_param(&mut self, a: Option<String>) {
         assert!(a.is_none());
-        Ok(())
     }
 
-    fn option_none_result(&mut self) -> Result<Option<String>> {
-        Ok(None)
+    fn option_none_result(&mut self) -> Option<String> {
+        None
     }
 
-    fn option_some_param(&mut self, a: Option<String>) -> Result<()> {
+    fn option_some_param(&mut self, a: Option<String>) {
         assert_eq!(a, Some("foo".to_string()));
-        Ok(())
     }
 
-    fn option_some_result(&mut self) -> Result<Option<String>> {
-        Ok(Some("foo".to_string()))
+    fn option_some_result(&mut self) -> Option<String> {
+        Some("foo".to_string())
     }
 
-    fn option_roundtrip(&mut self, a: Option<String>) -> Result<Option<String>> {
-        Ok(a)
+    fn option_roundtrip(&mut self, a: Option<String>) -> Option<String> {
+        a
+    }
+
+    fn double_option_roundtrip(&mut self, a: Option<Option<u32>>) -> Option<Option<u32>> {
+        a
     }
 }
 
@@ -53,6 +55,18 @@ fn run_test(exports: Options, store: &mut Store<crate::Wasi<MyImports>>) -> Resu
     assert_eq!(
         exports.call_option_roundtrip(&mut *store, Some("foo"))?,
         Some("foo".to_string())
+    );
+    assert_eq!(
+        exports.call_double_option_roundtrip(&mut *store, Some(Some(42)))?,
+        Some(Some(42))
+    );
+    assert_eq!(
+        exports.call_double_option_roundtrip(&mut *store, Some(None))?,
+        Some(None)
+    );
+    assert_eq!(
+        exports.call_double_option_roundtrip(&mut *store, None)?,
+        None
     );
     Ok(())
 }

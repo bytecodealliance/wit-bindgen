@@ -25,7 +25,7 @@ impl imports::Host for MyImports {
         a14: u64,
         a15: u64,
         a16: u64,
-    ) -> Result<()> {
+    ) {
         assert_eq!(a1, 1);
         assert_eq!(a2, 2);
         assert_eq!(a3, 3);
@@ -42,7 +42,6 @@ impl imports::Host for MyImports {
         assert_eq!(a14, 14);
         assert_eq!(a15, 15);
         assert_eq!(a16, 16);
-        Ok(())
     }
 }
 

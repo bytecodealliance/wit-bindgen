@@ -13,11 +13,11 @@ pub struct MyHostThing {
 }
 
 impl HostThing for MyHostThing {
-    fn new(&mut self, v: u32) -> wasmtime::Result<wasmtime::component::Resource<Thing>> {
+    fn new(&mut self, v: u32) -> wasmtime::component::Resource<Thing> {
         let id = self.next_id;
         self.next_id += 1;
         self.map_l.insert(id, v + 2);
-        Ok(Resource::new_own(id))
+        Resource::new_own(id)
     }
 
     fn drop(&mut self, rep: wasmtime::component::Resource<Thing>) -> wasmtime::Result<()> {
@@ -28,9 +28,9 @@ impl HostThing for MyHostThing {
 }
 
 impl Host for MyHostThing {
-    fn foo(&mut self, v: wasmtime::component::Resource<Thing>) -> wasmtime::Result<u32> {
+    fn foo(&mut self, v: wasmtime::component::Resource<Thing>) -> u32 {
         let id = v.rep();
-        Ok(self.map_l[&id] + 3)
+        self.map_l[&id] + 3
     }
 }
 

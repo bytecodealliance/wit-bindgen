@@ -9,10 +9,9 @@ pub struct MyImports {
 }
 
 impl test::smoke::imports::Host for MyImports {
-    fn thunk(&mut self) -> Result<()> {
+    fn thunk(&mut self) {
         self.hit = true;
         println!("in the host");
-        Ok(())
     }
 }
 

@@ -9,22 +9,22 @@ use crate::versions::test::dep0_2_0::test::Host as v2;
 pub struct MyFoo;
 
 impl v1 for MyFoo {
-    fn x(&mut self) -> wasmtime::Result<f32> {
-        Ok(1.0)
+    fn x(&mut self) -> f32 {
+        1.0
     }
 
-    fn y(&mut self, a: f32) -> wasmtime::Result<f32> {
-        Ok(1.0 + a)
+    fn y(&mut self, a: f32) -> f32 {
+        1.0 + a
     }
 }
 
 impl v2 for MyFoo {
-    fn x(&mut self) -> wasmtime::Result<f32> {
-        Ok(2.0)
+    fn x(&mut self) -> f32 {
+        2.0
     }
 
-    fn z(&mut self, a: f32, b: f32) -> wasmtime::Result<f32> {
-        Ok(2.0 + a + b)
+    fn z(&mut self, a: f32, b: f32) -> f32 {
+        2.0 + a + b
     }
 }
 

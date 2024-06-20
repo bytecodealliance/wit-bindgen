@@ -16,23 +16,23 @@ pub struct MyHostFloats {
 
 impl Host for MyHostFloats {}
 impl HostFloat for MyHostFloats {
-    fn new(&mut self, v: f64) -> wasmtime::Result<wasmtime::component::Resource<ImportFloat1>> {
+    fn new(&mut self, v: f64) -> wasmtime::component::Resource<ImportFloat1> {
         let id = self.next_id;
         self.next_id += 1;
         self.map_l.insert(id, v + 2.0);
-        Ok(Resource::new_own(id))
+        Resource::new_own(id)
     }
 
-    fn get(&mut self, self_: wasmtime::component::Resource<ImportFloat1>) -> wasmtime::Result<f64> {
+    fn get(&mut self, self_: wasmtime::component::Resource<ImportFloat1>) -> f64 {
         let id = self_.rep();
-        Ok(self.map_l[&id] + 4.0)
+        self.map_l[&id] + 4.0
     }
 
     fn add(
         &mut self,
         a: wasmtime::component::Resource<ImportFloat1>,
         b: f64,
-    ) -> wasmtime::Result<wasmtime::component::Resource<ImportFloat1>> {
+    ) -> wasmtime::component::Resource<ImportFloat1> {
         let id = a.rep();
         let a_value = self.map_l[&id];
         (self as &mut dyn HostFloat).new(a_value + b + 6.0)
@@ -47,16 +47,16 @@ impl HostFloat for MyHostFloats {
 impl Host2 for MyHostFloats {}
 
 impl HostFloat2 for MyHostFloats {
-    fn new(&mut self, v: f64) -> wasmtime::Result<wasmtime::component::Resource<Float>> {
+    fn new(&mut self, v: f64) -> wasmtime::component::Resource<Float> {
         let id = self.next_id;
         self.next_id += 1;
         self.map_l.insert(id, v + 1.0);
-        Ok(Resource::new_own(id))
+        Resource::new_own(id)
     }
 
-    fn get(&mut self, self_: wasmtime::component::Resource<Float>) -> wasmtime::Result<f64> {
+    fn get(&mut self, self_: wasmtime::component::Resource<Float>) -> f64 {
         let id = self_.rep();
-        Ok(self.map_l[&id] + 3.0)
+        self.map_l[&id] + 3.0
     }
 
     fn drop(&mut self, rep: wasmtime::component::Resource<Float>) -> wasmtime::Result<()> {

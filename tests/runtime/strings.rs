@@ -7,13 +7,12 @@ wasmtime::component::bindgen!(in "tests/runtime/strings");
 pub struct MyImports;
 
 impl test::strings::imports::Host for MyImports {
-    fn take_basic(&mut self, s: String) -> Result<()> {
+    fn take_basic(&mut self, s: String) {
         assert_eq!(s, "latin utf16");
-        Ok(())
     }
 
-    fn return_unicode(&mut self) -> Result<String> {
-        Ok("🚀🚀🚀 𠈄𓀀".to_string())
+    fn return_unicode(&mut self) -> String {
+        "🚀🚀🚀 𠈄𓀀".to_string()
     }
 }
 
