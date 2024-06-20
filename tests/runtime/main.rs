@@ -497,7 +497,7 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
         result.push(component_path);
     }
 
-    #[cfg(feature = "csharp")]
+    #[cfg(feature = "csharp-mono")]
     if cfg!(windows) && !c_sharp.is_empty() {
         let (resolve, world) = resolve_wit_dir(&dir);
         for path in c_sharp.iter() {
