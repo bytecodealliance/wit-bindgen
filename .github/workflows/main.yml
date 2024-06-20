@@ -72,7 +72,7 @@ jobs:
       if: matrix.lang == 'rust'
 
     - uses: ./.github/actions/install-wasi-sdk
-      if: matrix.lang == 'c' || (matrix.lang == 'csharp' && matrix.os == 'windows-latest')
+      if: matrix.lang == 'c'
 
     - run: |
         curl.exe -LO https://dotnet.microsoft.com/download/dotnet/scripts/v1/dotnet-install.ps1
