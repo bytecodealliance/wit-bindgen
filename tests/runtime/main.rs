@@ -658,7 +658,7 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
         }
     }
 
-    #[cfg(feature = "csharp-naot")]
+    #[cfg(feature = "csharp")]
     if cfg!(windows) && !c_sharp.is_empty() {
         let (resolve, world) = resolve_wit_dir(&dir);
         for path in c_sharp.iter() {
