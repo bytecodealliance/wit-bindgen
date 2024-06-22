@@ -72,7 +72,7 @@ default = [
   'markdown',
   'teavm-java',
   'go',
-  'csharp-naot',
+  'csharp',
   'cpp',
   'bridge',
 ]
@@ -84,7 +84,6 @@ markdown = ['dep:wit-bindgen-markdown']
 teavm-java = ['dep:wit-bindgen-teavm-java']
 go = ['dep:wit-bindgen-go']
 csharp = ['dep:wit-bindgen-csharp']
-csharp-naot = ['csharp']
 csharp-mono = ['csharp']
 
 [dev-dependencies]
