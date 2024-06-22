@@ -78,7 +78,7 @@ impl WorldGenerator for Bridge {
         name: &WorldKey,
         iface: wit_parser::InterfaceId,
         _files: &mut wit_bindgen_core::Files,
-    ) {
+    ) -> anyhow::Result<()> {
         let world = match name {
             WorldKey::Name(n) => n.clone(),
             WorldKey::Interface(i) => resolve.interfaces[*i].name.clone().unwrap_or_default(),
@@ -89,6 +89,7 @@ impl WorldGenerator for Bridge {
         for (_name, func) in resolve.interfaces[iface].functions.iter() {
             gen.generate_function(func, &TypeOwner::Interface(iface), AbiVariant::GuestImport);
         }
+        Ok(())
     }
 
     fn export_interface(

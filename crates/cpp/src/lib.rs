@@ -476,7 +476,7 @@ impl WorldGenerator for Cpp {
         name: &WorldKey,
         id: InterfaceId,
         _files: &mut Files,
-    ) {
+    ) -> anyhow::Result<()> {
         let store = self.start_new_file(None);
         self.imported_interfaces.insert(id);
         let wasm_import_module = resolve.name_world_key(name);
@@ -493,6 +493,7 @@ impl WorldGenerator for Cpp {
             }
         }
         self.finish_file(&namespace, store);
+        Ok(())
     }
 
     fn export_interface(
