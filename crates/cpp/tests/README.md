@@ -18,3 +18,6 @@ both guest and host defined ones. This doesn't include a wasm2c deployment.
 
 The `native_mesh` folder shows an example with resources and more than one
 component. Optimizing this is work in progress.
+
+The `meshless_resources` folder experiments with directly linking
+two components in a shared everything environment.
