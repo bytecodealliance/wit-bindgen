@@ -3,7 +3,6 @@
 #include "wit-common.h"
 #include <malloc.h>
 #include <memory> // unique_ptr
-#include <optional>
 #include <stdint.h>
 #include <string.h>
 #include <string_view>
@@ -182,33 +181,6 @@ public:
   //     return exec_env;
   // }
 #endif
-};
-
-/// @brief Helper class to map between IDs and resources
-/// @tparam R Type of the Resource
-template <class R> class ResourceTable {
-  static std::map<int32_t, R> resources;
-
-public:
-  static R *lookup_resource(int32_t id) {
-    auto result = resources.find(id);
-    return result == resources.end() ? nullptr : &result->second;
-  }
-  static int32_t store_resource(R &&value) {
-    auto last = resources.rbegin();
-    int32_t id = last == resources.rend() ? 0 : last->first + 1;
-    resources.insert(std::pair<int32_t, R>(id, std::move(value)));
-    return id;
-  }
-  static std::optional<R> remove_resource(int32_t id) {
-    auto iter = resources.find(id);
-    std::optional<R> result;
-    if (iter != resources.end()) {
-      result = std::move(iter->second);
-      resources.erase(iter);
-    }
-    return std::move(result);
-  }
 };
 
 /// Guest exported resource (host side handle)

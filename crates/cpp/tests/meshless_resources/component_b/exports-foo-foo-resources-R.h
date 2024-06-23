@@ -1,0 +1,1 @@
+../../native_mesh/component_b/exports-foo-foo-resources-R.h
