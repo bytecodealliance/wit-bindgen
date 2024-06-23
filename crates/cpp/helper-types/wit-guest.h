@@ -45,6 +45,10 @@ public:
   std::string to_string() const {
     return std::string((const char *)data_, length);
   }
+  static string from_view(std::string_view v) {
+    char* addr = (char*)malloc(v.size());
+    return string(addr, v.size());
+  }
 };
 
 /// A vector in linear memory, freed unconditionally using free
