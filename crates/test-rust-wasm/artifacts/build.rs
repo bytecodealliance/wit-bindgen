@@ -12,7 +12,7 @@ fn main() {
 
     let target_to_test = match std::env::var("WIT_BINDGEN_WASI_TEST_TARGET") {
         Ok(s) => s,
-        Err(_) => "wasm32-wasi".to_string(),
+        Err(_) => "wasm32-wasip1".to_string(),
     };
 
     let mut cmd = Command::new("cargo");
