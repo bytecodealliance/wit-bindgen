@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <string>
 #include <string_view>
+#include <string.h> // memcpy
 
 namespace wit {
 /// A string in linear memory, freed unconditionally using free
@@ -47,6 +48,7 @@ public:
   }
   static string from_view(std::string_view v) {
     char* addr = (char*)malloc(v.size());
+    memcpy(addr, v.data(), v.size());
     return string(addr, v.size());
   }
 };

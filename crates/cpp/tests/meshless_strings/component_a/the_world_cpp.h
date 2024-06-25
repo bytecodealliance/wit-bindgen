@@ -27,7 +27,7 @@ wit::string C(wit::string &&a, wit::string &&b);
 } // namespace foo
 } // namespace foo
 } // namespace exports
-}
+} // namespace comp_a
 using namespace comp_a;
-//using namespace A::foo;
+// using namespace A::foo;
 #endif
