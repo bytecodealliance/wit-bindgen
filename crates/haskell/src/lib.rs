@@ -22,7 +22,8 @@ impl Opts {
 
 #[derive(Default)]
 struct Module {
-    funcs: Source,
+    funcs_imp: Source,
+    funcs_exp: Source,
     tydefs: IndexSet<String>,
     docs: Option<String>,
     imports_exports: bool,
@@ -60,14 +61,14 @@ impl WorldGenerator for Haskell {
             module.tydefs.insert(gen_typedef(resolve, name, *ty));
         }
         for (_name, func) in &iface.functions {
-            module.funcs.push_str(&gen_func_core(
+            module.funcs_imp.push_str(&gen_func_core(
                 resolve,
                 func,
                 &iname,
                 AbiVariant::GuestImport,
             ));
-            module.funcs.push_str("\n");
-            module.funcs.push_str(&gen_func(resolve, &func, &iname));
+            module.funcs_imp.push_str("\n");
+            module.funcs_imp.push_str(&gen_func(resolve, &func, &iname));
             self.c_header
                 .push_str(&gen_func_c(resolve, func, &iname, Direction::Import));
         }
@@ -101,8 +102,8 @@ impl WorldGenerator for Haskell {
             module.imports_exports = true;
         }
         for (_name, func) in &iface.functions {
-            module.funcs.push_str("\n");
-            module.funcs.push_str(&gen_func_core(
+            module.funcs_exp.push_str("\n");
+            module.funcs_exp.push_str(&gen_func_core(
                 resolve,
                 func,
                 &iname,
@@ -111,7 +112,6 @@ impl WorldGenerator for Haskell {
             self.c_header
                 .push_str(&gen_func_c(resolve, func, &iname, Direction::Export));
         }
-
         Ok(())
     }
 
@@ -131,15 +131,17 @@ impl WorldGenerator for Haskell {
         };
         module.docs = world.docs.contents.clone();
         for (_name, func) in funcs {
-            module.funcs.push_str(&gen_func_core(
+            module.funcs_imp.push_str(&gen_func_core(
                 resolve,
                 func,
                 &world.name,
                 AbiVariant::GuestImport,
             ));
-            module.funcs.push_str("\n");
-            module.funcs.push_str(&gen_func(resolve, func, &world.name));
-            module.funcs.push_str("\n");
+            module.funcs_imp.push_str("\n");
+            module
+                .funcs_imp
+                .push_str(&gen_func(resolve, func, &world.name));
+            module.funcs_imp.push_str("\n");
             self.c_header
                 .push_str(&gen_func_c(resolve, func, &world.name, Direction::Import));
         }
@@ -164,13 +166,13 @@ impl WorldGenerator for Haskell {
         }
         module.docs = world.docs.contents.clone();
         for (_name, func) in funcs {
-            module.funcs.push_str(&gen_func_core(
+            module.funcs_exp.push_str(&gen_func_core(
                 resolve,
                 func,
                 &world.name,
                 AbiVariant::GuestExport,
             ));
-            module.funcs.push_str("\n");
+            module.funcs_exp.push_str("\n");
             self.c_header
                 .push_str(&gen_func_c(resolve, func, &world.name, Direction::Export));
         }
@@ -204,31 +206,42 @@ impl WorldGenerator for Haskell {
     fn finish(&mut self, _resolve: &Resolve, _world: WorldId, files: &mut Files) -> Result<()> {
         for (name, module) in self.modules.iter_mut() {
             let name = upper_ident(name);
-            let contents = gen_module(
-                &name,
-                &module.funcs,
-                module.imports_exports,
-                !module.tydefs.is_empty(),
-                &module.docs,
-            );
-            files.push(&format!("{}.hs", name.replace('.', "/")), &contents);
-            if module.tydefs.is_empty() {
-                continue;
+            if !module.funcs_imp.is_empty() {
+                let contents = gen_module(
+                    &name,
+                    &module.funcs_imp,
+                    ModuleKind::Imports {
+                        imports_types: !module.tydefs.is_empty(),
+                    },
+                    &module.docs,
+                );
+                files.push(&format!("{}/Imports.hs", name.replace('.', "/")), &contents);
             }
-            let name = format!("{name}.Types");
-            let contents = gen_module(
-                &name,
-                &module
-                    .tydefs
-                    .iter()
-                    .map(|m| m.clone())
-                    .collect::<Vec<String>>()
-                    .join("\n"),
-                false,
-                false,
-                &module.docs,
-            );
-            files.push(&format!("{}.hs", name.replace('.', "/")), &contents);
+            if !module.funcs_exp.is_empty() {
+                let contents = gen_module(
+                    &name,
+                    &module.funcs_exp,
+                    ModuleKind::Exports {
+                        imports_types: !module.tydefs.is_empty(),
+                    },
+                    &module.docs,
+                );
+                files.push(&format!("{}/Exports.hs", name.replace('.', "/")), &contents);
+            }
+            if !module.tydefs.is_empty() {
+                let contents = gen_module(
+                    &name,
+                    &module
+                        .tydefs
+                        .iter()
+                        .cloned()
+                        .collect::<Vec<String>>()
+                        .join("\n"),
+                    ModuleKind::Types,
+                    &module.docs,
+                );
+                files.push(&format!("{}/Types.hs", name.replace('.', "/")), &contents);
+            }
         }
         let c_header = format!("#include <stdint.h>\n\n{}", self.c_header);
         files.push("bg_foreign.h", c_header.as_bytes());
@@ -236,20 +249,25 @@ impl WorldGenerator for Haskell {
     }
 }
 
-fn gen_module(
-    name: &str,
-    src: &str,
-    imports_exports: bool,
-    imports_types: bool,
-    docs: &Option<String>,
-) -> Vec<u8> {
+enum ModuleKind {
+    Imports { imports_types: bool },
+    Exports { imports_types: bool },
+    Types,
+}
+
+fn gen_module(name: &str, src: &str, module_kind: ModuleKind, docs: &Option<String>) -> Vec<u8> {
+    let module_name = match module_kind {
+        ModuleKind::Imports { .. } => format!("{name}.Imports"),
+        ModuleKind::Exports { .. } => format!("{name}.Exports"),
+        ModuleKind::Types => format!("{name}.Types"),
+    };
     format!(
         "\
 {{-# LANGUAGE CApiFFI #-}}
 -- Generated by wit-bindgen.
 
 {}
-module {name} where
+module {module_name} where
 
 import Data.Word;
 import Data.Int;
@@ -273,13 +291,20 @@ import Foreign.Marshal.Array;
         } else {
             "".to_owned()
         },
-        if imports_types {
+        if matches!(
+            module_kind,
+            ModuleKind::Imports {
+                imports_types: true
+            } | ModuleKind::Exports {
+                imports_types: true
+            }
+        ) {
             format!("import {name}.Types;\n")
         } else {
             "".to_owned()
         },
-        if imports_exports {
-            format!("import qualified {name}.Exports;\n")
+        if matches!(module_kind, ModuleKind::Exports { .. }) {
+            format!("import qualified {name};\n")
         } else {
             "".to_owned()
         },
@@ -635,18 +660,13 @@ impl<'a> Bindgen for HsFunc<'a> {
                 let list = operands[0].clone();
                 let ptr = self.var();
                 let len = self.var();
-                self.blocks
-                    .last_mut()
-                    .unwrap()
-                    .push_str(&format!("{len} <- length {list};\n"));
-                self.blocks.last_mut().unwrap().push_str(&format!(
+                let current_block = self.blocks.last_mut().unwrap();
+                current_block.push_str(&format!("{len} <- length {list};\n"));
+                current_block.push_str(&format!(
                     "{ptr} <- (callocBytes :: Int -> IO (Ptr [{}])) {len};\n",
                     ty_name(resolve, false, element)
                 ));
-                self.blocks
-                    .last_mut()
-                    .unwrap()
-                    .push_str(&format!("pokeArray {ptr} {list};\n",));
+                current_block.push_str(&format!("pokeArray {ptr} {list};\n",));
                 results.extend([
                     format!("((fromIntegral :: WordPtr -> Word32) (ptrToWordPtr {ptr}))"),
                     format!("((fromIntegral :: Int -> Word32) {len})"),
@@ -655,21 +675,16 @@ impl<'a> Bindgen for HsFunc<'a> {
             Instruction::StringLower { realloc } => {
                 let ptr: String = self.var();
                 let len = self.var();
-                self.blocks
-                    .last_mut()
-                    .unwrap()
-                    .push_str(&format!("bg_tmp <- unpack (encodeUtf8 {});\n", operands[0]));
-                self.blocks
-                    .last_mut()
-                    .unwrap()
-                    .push_str(&format!("{len} <- length bg_tmp;\n"));
-                self.blocks.last_mut().unwrap().push_str(&format!(
+                let current_block = self.blocks.last_mut().unwrap();
+                current_block.push_str(&format!(
+                    "bg_tmp <- return (unpack (encodeUtf8 {}));\n",
+                    operands[0]
+                ));
+                current_block.push_str(&format!("{len} <- return (length bg_tmp);\n"));
+                current_block.push_str(&format!(
                     "{ptr} <- (callocBytes :: Int -> IO (Ptr Word8)) {len};\n"
                 ));
-                self.blocks
-                    .last_mut()
-                    .unwrap()
-                    .push_str(&format!("pokeArray {ptr} bg_tmp;\n"));
+                current_block.push_str(&format!("pokeArray {ptr} bg_tmp;\n"));
                 results.extend([
                     format!("((fromIntegral :: WordPtr -> Word32) (ptrToWordPtr {ptr}))"),
                     format!("((fromIntegral :: Int -> Word32) {len})"),
@@ -681,15 +696,13 @@ impl<'a> Bindgen for HsFunc<'a> {
                 let block = self.blocks.pop().unwrap();
                 let list_len = self.var();
                 let list_ptr = self.var();
-                self.blocks
-                    .last_mut()
-                    .unwrap()
-                    .push_str(&format!("{list_len} <- length {list};\n",));
-                self.blocks.last_mut().unwrap().push_str(&format!(
+                let current_block = self.blocks.last_mut().unwrap();
+                current_block.push_str(&format!("{list_len} <- length {list};\n",));
+                current_block.push_str(&format!(
                     "{list_ptr} <- (callocBytes :: Int -> IO (Ptr Word8)) ({list_len} * {});\n",
                     size
                 ));
-                self.blocks.last_mut().unwrap().push_str(&format!(
+                current_block.push_str(&format!(
                     "mapM_ (\\(bg_base_ptr, bg_elem) -> do {{\n{}\n}}) (zip (enumFromThenTo {list_ptr} ({list_ptr} + {size}) ({list_len} * {size} - {size})) {list});\n",
                     block.to_string()
                 ));
@@ -700,35 +713,34 @@ impl<'a> Bindgen for HsFunc<'a> {
             }
             Instruction::ListCanonLift { element, ty } => {
                 let ty = ty_name(resolve, false, element);
-                let len = operands[0].clone();
-                let ptr = operands[1].clone();
+                let ptr = operands[0].clone();
+                let len = operands[1].clone();
                 let var = self.var();
                 self.blocks.last_mut().unwrap().push_str(&format!(
-                    "{var} <- ((peekArray :: Int -> Ptr {ty} -> IO [ty]) {len} (wordPtrToPtr {ptr}));\n"
+                    "{var} <- ((peekArray :: Int -> Ptr {ty} -> IO [ty]) (fromIntegral {len}) (wordPtrToPtr {ptr}));\n"
                 ));
                 results.push(var);
             }
             Instruction::StringLift => {
-                let len: String = operands[0].clone();
-                let ptr = operands[1].clone();
+                let ptr = operands[0].clone();
+                let len: String = operands[1].clone();
                 let var = self.var();
-                self.blocks
-                    .last_mut()
-                    .unwrap()
-                    .push_str(&format!("{var} <- return (decodeUtf8 ((pack :: [Word8] -> ByteString) ((peekArray :: Int -> Ptr Word8 -> IO [Word8]) {len} (wordPtrToPtr {ptr}))));\n"));
+                let current_block = self.blocks.last_mut().unwrap();
+                current_block.push_str(&format!("bg_tmp <- (peekArray :: Int -> Ptr Word8 -> IO [Word8]) (fromIntegral {len}) (wordPtrToPtr {ptr});\n"));
+                current_block.push_str(&format!("{var} <- return (decodeUtf8 (pack bg_tmp));\n"));
                 results.push(var);
             }
             Instruction::ListLift { element, ty } => {
                 let size = self.size_align.size(element);
-                let len = operands[0].clone();
-                let ptr = operands[1].clone();
+                let ptr = operands[0].clone();
+                let len = operands[1].clone();
                 let block = self.blocks.pop().unwrap();
                 let var = self.var();
                 self.blocks
                     .last_mut()
                     .unwrap()
                     .push_str(&format!(
-                        "{var} <- mapM (\\bg_base_ptr -> do {{\n{};\nreturn bg_v\n}}) (enumFromThenTo {ptr} ({ptr} + {size}) ({len} * {size} - {size}));\n",
+                        "{var} <- mapM (\\bg_base_ptr -> do {{\n{}return bg_v\n}}) (enumFromThenTo {ptr} ({ptr} + {size}) ({len} * {size} - {size}));\n",
                         block.to_string()
                     ));
                 results.push(var);
@@ -810,7 +822,7 @@ impl<'a> Bindgen for HsFunc<'a> {
                     .zip(blocks)
                     .map(|(case, block)| {
                         format!(
-                            "{}{}{} -> do {{\n{}; return bg_v }}",
+                            "{}{}{} -> do {{\n{}return bg_v }}",
                             upper_ident(name),
                             upper_ident(&case.name),
                             if case.ty.is_some() { " bg_payload" } else { "" },
@@ -821,7 +833,7 @@ impl<'a> Bindgen for HsFunc<'a> {
                     .join(";\n");
                 let vars = self.vars(types.len());
                 self.blocks.last_mut().unwrap().push_str(&format!(
-                    "({}) <- (case {} of {{\n{cases} }});\n",
+                    "({}) <- case {} of {{\n{cases} }};\n",
                     vars.join(", "),
                     operands[0]
                 ));
@@ -836,7 +848,7 @@ impl<'a> Bindgen for HsFunc<'a> {
                     .zip(blocks)
                     .map(|((i, case), block)| {
                         format!(
-                            "{i} -> do {{ {};\n(return ({}{} bg_v))\n}}\n",
+                            "{i} -> do {{ {}\n(return ({}{} bg_v)) }}",
                             block.to_string(),
                             upper_ident(name),
                             upper_ident(&case.name),
@@ -846,7 +858,7 @@ impl<'a> Bindgen for HsFunc<'a> {
                     .join(";\n");
                 let var = self.var();
                 self.blocks.last_mut().unwrap().push_str(&format!(
-                    "{var} <- (case {} of {{\n{cases} }})",
+                    "{var} <- case {} of {{\n{cases} }};\n",
                     operands[0]
                 ));
                 results.push(var);
@@ -897,7 +909,7 @@ impl<'a> Bindgen for HsFunc<'a> {
                 let none = self.blocks.pop().unwrap().to_string();
                 let vars = self.vars(types.len());
                 self.blocks.last_mut().unwrap().push_str(&format!(
-                    "({}) <- case {} of {{\nNothing -> do {{\n{none}\n}};\nJust bg_payload -> do {{\n{some}\n}} }}\n",
+                    "({}) <- case {} of {{\nNothing -> do {{\n{none}\n}};\nJust bg_payload -> do {{\n{some}\n}} }};\n",
                     vars.join(", "),
                     operands[0]
                 ));
@@ -908,7 +920,7 @@ impl<'a> Bindgen for HsFunc<'a> {
                 let none = self.blocks.pop().unwrap().to_string();
                 let var = self.var();
                 self.blocks.last_mut().unwrap().push_str(&format!(
-                    "{var} <- (case {} of\n0 -> (do {{\n{none};\nreturn Nothing\n}});\n_ -> (do {{\n{some});\nreturn (Just bg_v)\n}})))",
+                    "{var} <- case {} of {{\n0 -> (do {{\n{none}return Nothing\n}});\n_ -> (do {{\n{some}return (Just bg_v)\n}}) }};\n",
                     operands[0]
                 ));
                 results.push(var);
@@ -922,7 +934,7 @@ impl<'a> Bindgen for HsFunc<'a> {
                 let err = self.blocks.pop().unwrap().to_string();
                 let vars = self.vars(types.len());
                 self.blocks.last_mut().unwrap().push_str(&format!(
-                    "({}) <- case {} of {{\nLeft bg_payload -> do {{\n{err}\n}};\nRight bg_payload -> do {{\n{ok}\n}} }}\n",
+                    "({}) <- case {} of {{\nLeft bg_payload -> do {{\n{err}\n}};\nRight bg_payload -> do {{\n{ok}\n}}\n}};\n",
                     vars.join(", "),
                     operands[0]
                 ));
@@ -933,7 +945,7 @@ impl<'a> Bindgen for HsFunc<'a> {
                 let ok = self.blocks.pop().unwrap().to_string();
                 let var = self.var();
                 self.blocks.last_mut().unwrap().push_str(&format!(
-                    "{var} <- (case {} of\n0 -> (do {{\n{ok};\nreturn (Right bg_v)\n}});\n_ -> (do {{\n{err});\nreturn (Left bg_v)\n}})))",
+                    "{var} <- case {} of {{\n0 -> (do {{\n{ok}return (Right bg_v)\n}});\n_ -> (do {{\n{err}return (Left bg_v)\n}}) }};\n",
                     operands[0]
                 ));
                 results.push(var);
@@ -982,8 +994,12 @@ impl<'a> Bindgen for HsFunc<'a> {
     }
 
     fn return_pointer(&mut self, size: usize, align: usize) -> Self::Operand {
-        self.blocks.last_mut().unwrap().push_str(&format!(
-            "bg_ret_ptr <- (callocBytes :: Int -> IO (Ptr Word8)) {size};\n"
+        let current_block = self.blocks.last_mut().unwrap();
+        current_block.push_str(&format!(
+            "bg_tmp <- (callocBytes :: Int -> IO (Ptr Word8)) {size};\n"
+        ));
+        current_block.push_str(&format!(
+            "bg_ret_ptr <- return ((fromIntegral :: WordPtr -> Word32) (ptrToWordPtr bg_tmp));\n"
         ));
         "bg_ret_ptr".to_owned()
     }
@@ -996,7 +1012,7 @@ impl<'a> Bindgen for HsFunc<'a> {
         self.blocks
             .last_mut()
             .unwrap()
-            .push_str(&format!("bg_v <- return ({})", operand.join(", ")));
+            .push_str(&format!("bg_v <- return ({});\n", operand.join(", ")));
     }
 
     fn sizes(&self) -> &SizeAlign {
@@ -1275,7 +1291,7 @@ fn func_name_foreign(func: &Function, ns: &str, dir: Direction) -> String {
 
 fn func_name(func: &Function, ns: Option<&str>) -> String {
     if let Some(ns) = ns {
-        format!("{}.Exports.{}", upper_ident(ns), lower_ident(&func.name))
+        format!("{}.{}", upper_ident(ns), lower_ident(&func.name))
     } else {
         lower_ident(&func.name)
     }
@@ -1321,7 +1337,7 @@ fn ty_name(resolve: &Resolve, with_ns: bool, ty: &Type) -> String {
             } else {
                 None
             };
-            let ns = ns.map(|n| format!("Types.{}", upper_ident(&n)));
+            let ns = ns.map(|n| format!("{}.Types", upper_ident(&n)));
             if let Some(name) = &ty.name {
                 if let Some(ns) = ns {
                     format!("{ns}.{}", upper_ident(name))
