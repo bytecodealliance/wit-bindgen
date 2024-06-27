@@ -43,7 +43,7 @@ func (r *RecordImpl) TestImports() {
 		panic("TestRecordsTestRoundtripFlags2")
 	}
 
-	if a, b, c, d := TestRecordsTestRoundtripFlags3(TestRecordsTestFlag8_B0, TestRecordsTestFlag16_B1, TestRecordsTestFlag32_B2); a != TestRecordsTestFlag8_B0 && b != TestRecordsTestFlag16_B1 && c != TestRecordsTestFlag32_B2 {
+	if a, b, c := TestRecordsTestRoundtripFlags3(TestRecordsTestFlag8_B0, TestRecordsTestFlag16_B1, TestRecordsTestFlag32_B2); a != TestRecordsTestFlag8_B0 && b != TestRecordsTestFlag16_B1 && c != TestRecordsTestFlag32_B2 {
 		panic("TestRecordsTestRoundtripFlags3")
 	}
 

@@ -2,7 +2,7 @@ package wit.worlds;
 
 import wit.worlds.Records.Tuple1;
 import wit.worlds.Records.Tuple2;
-import wit.worlds.Records.Tuple4;
+import wit.worlds.Records.Tuple3;
 import wit.imports.test.records.Test;
 
 public class RecordsImpl {
@@ -34,7 +34,7 @@ public class RecordsImpl {
                == (byte) (Test.F2.C.value | Test.F2.E.value));
 
         {
-            Tuple4<Test.Flag8, Test.Flag16, Test.Flag32> results =
+            Tuple3<Test.Flag8, Test.Flag16, Test.Flag32> results =
                 Test.roundtripFlags3(Test.Flag8.B0, Test.Flag16.B1, Test.Flag32.B2);
 
             expect(results.f0.value == Test.Flag8.B0.value);
