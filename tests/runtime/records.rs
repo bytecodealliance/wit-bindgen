@@ -32,14 +32,12 @@ impl test_imports::Host for MyImports {
         a: test_imports::Flag8,
         b: test_imports::Flag16,
         c: test_imports::Flag32,
-        d: test_imports::Flag64,
     ) -> (
         test_imports::Flag8,
         test_imports::Flag16,
         test_imports::Flag32,
-        test_imports::Flag64,
     ) {
-        (a, b, c, d)
+        (a, b, c)
     }
 
     fn roundtrip_record1(&mut self, a: test_imports::R1) -> test_imports::R1 {

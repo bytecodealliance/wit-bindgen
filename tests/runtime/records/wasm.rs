@@ -26,8 +26,8 @@ impl Guest for Component {
         assert_eq!(roundtrip_flags2(F2::C | F2::E), F2::C | F2::E);
 
         assert_eq!(
-            roundtrip_flags3(Flag8::B0, Flag16::B1, Flag32::B2, Flag64::B3),
-            (Flag8::B0, Flag16::B1, Flag32::B2, Flag64::B3)
+            roundtrip_flags3(Flag8::B0, Flag16::B1, Flag32::B2),
+            (Flag8::B0, Flag16::B1, Flag32::B2)
         );
 
         let r = roundtrip_record1(R1 {
@@ -65,13 +65,8 @@ impl exports::test::records::test::Guest for Component {
         a
     }
 
-    fn roundtrip_flags3(
-        a: Flag8,
-        b: Flag16,
-        c: Flag32,
-        d: Flag64,
-    ) -> (Flag8, Flag16, Flag32, Flag64) {
-        (a, b, c, d)
+    fn roundtrip_flags3(a: Flag8, b: Flag16, c: Flag32) -> (Flag8, Flag16, Flag32) {
+        (a, b, c)
     }
 
     fn roundtrip_record1(a: R1) -> R1 {
