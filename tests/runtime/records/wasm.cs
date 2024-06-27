@@ -30,11 +30,10 @@ namespace RecordsWorld
 
             {
                 var result = TestInterop.RoundtripFlags3(ITest.Flag8.B0, ITest.Flag16.B1,
-                    ITest.Flag32.B2, ITest.Flag64.B3);
+                    ITest.Flag32.B2);
                 Debug.Assert(result.Item1 == ITest.Flag8.B0);
                 Debug.Assert(result.Item2 == ITest.Flag16.B1);
                 Debug.Assert(result.Item3 == ITest.Flag32.B2);
-                Debug.Assert(result.Item4 == ITest.Flag64.B3);
             }
 
             {
@@ -89,14 +88,12 @@ namespace RecordsWorld.wit.exports.test.records
 
         public static (ITest.Flag8,
             ITest.Flag16,
-            ITest.Flag32,
-            ITest.Flag64) RoundtripFlags3(
+            ITest.Flag32) RoundtripFlags3(
                 ITest.Flag8 a,
                 ITest.Flag16 b,
-                ITest.Flag32 c,
-                ITest.Flag64 d)
+                ITest.Flag32 c)
         {
-            return (a, b, c, d);
+            return (a, b, c);
         }
 
         public static ITest.R1 RoundtripRecord1(

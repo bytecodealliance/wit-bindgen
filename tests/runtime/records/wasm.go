@@ -43,7 +43,7 @@ func (r *RecordImpl) TestImports() {
 		panic("TestRecordsTestRoundtripFlags2")
 	}
 
-	if a, b, c, d := TestRecordsTestRoundtripFlags3(TestRecordsTestFlag8_B0, TestRecordsTestFlag16_B1, TestRecordsTestFlag32_B2, TestRecordsTestFlag64_B3); a != TestRecordsTestFlag8_B0 && b != TestRecordsTestFlag16_B1 && c != TestRecordsTestFlag32_B2 && d != TestRecordsTestFlag64_B3 {
+	if a, b, c := TestRecordsTestRoundtripFlags3(TestRecordsTestFlag8_B0, TestRecordsTestFlag16_B1, TestRecordsTestFlag32_B2); a != TestRecordsTestFlag8_B0 && b != TestRecordsTestFlag16_B1 && c != TestRecordsTestFlag32_B2 {
 		panic("TestRecordsTestRoundtripFlags3")
 	}
 
@@ -78,8 +78,8 @@ func (r *RecordImpl) RoundtripFlags2(a ExportsTestRecordsTestF2) ExportsTestReco
 	return a
 }
 
-func (r *RecordImpl) RoundtripFlags3(a ExportsTestRecordsTestFlag8, b ExportsTestRecordsTestFlag16, c ExportsTestRecordsTestFlag32, d ExportsTestRecordsTestFlag64) (ExportsTestRecordsTestFlag8, ExportsTestRecordsTestFlag16, ExportsTestRecordsTestFlag32, ExportsTestRecordsTestFlag64) {
-	return a, b, c, d
+func (r *RecordImpl) RoundtripFlags3(a ExportsTestRecordsTestFlag8, b ExportsTestRecordsTestFlag16, c ExportsTestRecordsTestFlag32) (ExportsTestRecordsTestFlag8, ExportsTestRecordsTestFlag16, ExportsTestRecordsTestFlag32) {
+	return a, b, c
 }
 
 func (r *RecordImpl) RoundtripRecord1(a ExportsTestRecordsTestR1) ExportsTestRecordsTestR1 {
