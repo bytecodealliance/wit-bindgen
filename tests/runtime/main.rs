@@ -540,7 +540,7 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
                 fs::write(dst, contents).unwrap();
             }
 
-            let mut csproj = wit_bindgen_csharp::CSProject::new_mono(
+            let csproj = wit_bindgen_csharp::CSProject::new_mono(
                 out_dir.clone(),
                 &assembly_name,
                 world_name,
@@ -563,7 +563,7 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
 
             cmd.current_dir(&out_dir);
 
-            cmd.arg("build")
+            cmd.arg("publish")
                 .arg(out_dir.join(format!("{camel}.csproj")))
                 .arg("-c")
                 .arg("Debug")
@@ -586,7 +586,7 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
                 panic!("failed to compile");
             }
 
-            let out_wasm = out_wasm.join("AppBundle").join(assembly_name);
+            let out_wasm = out_wasm.join(assembly_name);
             let mut wasm_filename = out_wasm.clone();
             wasm_filename.set_extension("wasm");
 
