@@ -2,7 +2,7 @@ package wit.exports.test.records;
 
 import wit.worlds.Records.Tuple1;
 import wit.worlds.Records.Tuple2;
-import wit.worlds.Records.Tuple4;
+import wit.worlds.Records.Tuple3;
 
 public class TestImpl {
     public static Tuple2<Byte, Short> multipleResults() {
@@ -21,10 +21,10 @@ public class TestImpl {
         return a;
     }
 
-    public static Tuple4<Test.Flag8, Test.Flag16, Test.Flag32, Test.Flag64> roundtripFlags3
-        (Test.Flag8 a, Test.Flag16 b, Test.Flag32 c, Test.Flag64 d)
+    public static Tuple3<Test.Flag8, Test.Flag16, Test.Flag32> roundtripFlags3
+        (Test.Flag8 a, Test.Flag16 b, Test.Flag32 c)
     {
-        return new Tuple4<>(a, b, c, d);
+        return new Tuple3<>(a, b, c);
     }
 
     public static Test.R1 roundtripRecord1(Test.R1 a) {

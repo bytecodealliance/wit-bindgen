@@ -31,13 +31,11 @@ void records_test_imports() {
   test_records_test_flag8_t flag8;
   test_records_test_flag16_t flag16;
   test_records_test_flag32_t flag32;
-  test_records_test_flag64_t flag64;
-  test_records_test_roundtrip_flags3(TEST_RECORDS_TEST_FLAG8_B0, TEST_RECORDS_TEST_FLAG16_B1, TEST_RECORDS_TEST_FLAG32_B2, TEST_RECORDS_TEST_FLAG64_B3,
-      &flag8, &flag16, &flag32, &flag64);
+  test_records_test_roundtrip_flags3(TEST_RECORDS_TEST_FLAG8_B0, TEST_RECORDS_TEST_FLAG16_B1, TEST_RECORDS_TEST_FLAG32_B2,
+      &flag8, &flag16, &flag32);
   assert(flag8 == TEST_RECORDS_TEST_FLAG8_B0);
   assert(flag16 == TEST_RECORDS_TEST_FLAG16_B1);
   assert(flag32 == TEST_RECORDS_TEST_FLAG32_B2);
-  assert(flag64 == TEST_RECORDS_TEST_FLAG64_B3);
 
   {
     test_records_test_r1_t a, b;
@@ -85,15 +83,12 @@ void exports_test_records_test_roundtrip_flags3(
       exports_test_records_test_flag8_t a,
       exports_test_records_test_flag16_t b,
       exports_test_records_test_flag32_t c,
-      exports_test_records_test_flag64_t d,
       exports_test_records_test_flag8_t *ret0,
       exports_test_records_test_flag16_t *ret1,
-      exports_test_records_test_flag32_t *ret2,
-      exports_test_records_test_flag64_t *ret3) {
+      exports_test_records_test_flag32_t *ret2) {
   *ret0 = a;
   *ret1 = b;
   *ret2 = c;
-  *ret3 = d;
 }
 
 void exports_test_records_test_roundtrip_record1(exports_test_records_test_r1_t *a, exports_test_records_test_r1_t *ret0) {
