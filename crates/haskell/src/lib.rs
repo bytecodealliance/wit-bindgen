@@ -2,9 +2,8 @@ use abi::{AbiVariant, WasmType};
 use anyhow::Result;
 use heck::{ToLowerCamelCase as _, ToSnakeCase as _, ToUpperCamelCase as _};
 use indexmap::{IndexMap, IndexSet};
-use wit_bindgen_core;
 use wit_bindgen_core::abi::{call, Bindgen, Bitcast, Instruction, LiftLower};
-use wit_bindgen_core::{Direction, Files, Source, WorldGenerator};
+use wit_bindgen_core::{dealias, Direction, Files, Source, WorldGenerator};
 
 use wit_parser::*;
 
@@ -25,6 +24,7 @@ struct Module {
     funcs_imp: Source,
     funcs_exp: Source,
     tydefs: IndexSet<String>,
+    user: Source,
     docs: Option<String>,
     imports_exports: bool,
 }
@@ -109,6 +109,7 @@ impl WorldGenerator for Haskell {
                 &iname,
                 AbiVariant::GuestExport,
             ));
+            module.user.push_str(&gen_func_placeholder(resolve, func));
             self.c_header
                 .push_str(&gen_func_c(resolve, func, &iname, Direction::Export));
         }
@@ -173,6 +174,7 @@ impl WorldGenerator for Haskell {
                 AbiVariant::GuestExport,
             ));
             module.funcs_exp.push_str("\n");
+            module.user.push_str(&gen_func_placeholder(resolve, func));
             self.c_header
                 .push_str(&gen_func_c(resolve, func, &world.name, Direction::Export));
         }
@@ -242,6 +244,16 @@ impl WorldGenerator for Haskell {
                 );
                 files.push(&format!("{}/Types.hs", name.replace('.', "/")), &contents);
             }
+            let user = gen_module(
+                &name,
+                &module.user,
+                ModuleKind::User {
+                    imports_types: !module.tydefs.is_empty(),
+                    imports_imports: !module.funcs_imp.is_empty(),
+                },
+                &module.docs,
+            );
+            files.push(&format!("{name}.hs"), &user);
         }
         let c_header = format!("#include <stdint.h>\n\n{}", self.c_header);
         files.push("bg_foreign.h", c_header.as_bytes());
@@ -250,9 +262,17 @@ impl WorldGenerator for Haskell {
 }
 
 enum ModuleKind {
-    Imports { imports_types: bool },
-    Exports { imports_types: bool },
+    Imports {
+        imports_types: bool,
+    },
+    Exports {
+        imports_types: bool,
+    },
     Types,
+    User {
+        imports_types: bool,
+        imports_imports: bool,
+    },
 }
 
 fn gen_module(name: &str, src: &str, module_kind: ModuleKind, docs: &Option<String>) -> Vec<u8> {
@@ -260,6 +280,7 @@ fn gen_module(name: &str, src: &str, module_kind: ModuleKind, docs: &Option<Stri
         ModuleKind::Imports { .. } => format!("{name}.Imports"),
         ModuleKind::Exports { .. } => format!("{name}.Exports"),
         ModuleKind::Types => format!("{name}.Types"),
+        ModuleKind::User { .. } => name.to_owned(),
     };
     format!(
         "\
@@ -271,14 +292,16 @@ module {module_name} where
 
 import Data.Word;
 import Data.Int;
+import Data.Char;
 import Data.Bits;
-import Data.Text;
+import Data.Text hiding (length, unpack);
 import Data.Text.Encoding;
-import Data.ByteString;
+import Data.ByteString hiding (length);
 import GHC.Float;
 import Foreign.Ptr;
 import Foreign.Storable;
 import Foreign.Marshal.Array;
+import Foreign.Marshal.Alloc;
 
 {}
 {}
@@ -291,22 +314,26 @@ import Foreign.Marshal.Array;
         } else {
             "".to_owned()
         },
-        if matches!(
-            module_kind,
+        match module_kind {
             ModuleKind::Imports {
-                imports_types: true
-            } | ModuleKind::Exports {
-                imports_types: true
+                imports_types: true,
             }
-        ) {
-            format!("import {name}.Types;\n")
-        } else {
-            "".to_owned()
+            | ModuleKind::Exports {
+                imports_types: true,
+            }
+            | ModuleKind::User {
+                imports_types: true,
+                ..
+            } => format!("import {name}.Types;\n"),
+            _ => "".to_owned(),
         },
-        if matches!(module_kind, ModuleKind::Exports { .. }) {
-            format!("import qualified {name};\n")
-        } else {
-            "".to_owned()
+        match module_kind {
+            ModuleKind::Exports { .. } => format!("import qualified {name};\n"),
+            ModuleKind::User {
+                imports_imports: true,
+                ..
+            } => format!("import qualified {name}.Imports;\n"),
+            _ => "".to_owned(),
         },
         src.to_string()
     )
@@ -661,9 +688,9 @@ impl<'a> Bindgen for HsFunc<'a> {
                 let ptr = self.var();
                 let len = self.var();
                 let current_block = self.blocks.last_mut().unwrap();
-                current_block.push_str(&format!("{len} <- length {list};\n"));
+                current_block.push_str(&format!("let {{ {len} = length {list} }};\n"));
                 current_block.push_str(&format!(
-                    "{ptr} <- (callocBytes :: Int -> IO (Ptr [{}])) {len};\n",
+                    "{ptr} <- (callocBytes :: Int -> IO (Ptr ({}))) {len};\n",
                     ty_name(resolve, false, element)
                 ));
                 current_block.push_str(&format!("pokeArray {ptr} {list};\n",));
@@ -673,14 +700,14 @@ impl<'a> Bindgen for HsFunc<'a> {
                 ]);
             }
             Instruction::StringLower { realloc } => {
-                let ptr: String = self.var();
+                let ptr = self.var();
                 let len = self.var();
                 let current_block = self.blocks.last_mut().unwrap();
                 current_block.push_str(&format!(
-                    "bg_tmp <- return (unpack (encodeUtf8 {}));\n",
+                    "let {{ bg_tmp = unpack (encodeUtf8 {}) }};\n",
                     operands[0]
                 ));
-                current_block.push_str(&format!("{len} <- return (length bg_tmp);\n"));
+                current_block.push_str(&format!("let {{ {len} = length bg_tmp }};\n"));
                 current_block.push_str(&format!(
                     "{ptr} <- (callocBytes :: Int -> IO (Ptr Word8)) {len};\n"
                 ));
@@ -697,7 +724,7 @@ impl<'a> Bindgen for HsFunc<'a> {
                 let list_len = self.var();
                 let list_ptr = self.var();
                 let current_block = self.blocks.last_mut().unwrap();
-                current_block.push_str(&format!("{list_len} <- length {list};\n",));
+                current_block.push_str(&format!("let {{ {list_len} = length {list} }};\n",));
                 current_block.push_str(&format!(
                     "{list_ptr} <- (callocBytes :: Int -> IO (Ptr Word8)) ({list_len} * {});\n",
                     size
@@ -723,11 +750,11 @@ impl<'a> Bindgen for HsFunc<'a> {
             }
             Instruction::StringLift => {
                 let ptr = operands[0].clone();
-                let len: String = operands[1].clone();
+                let len = operands[1].clone();
                 let var = self.var();
                 let current_block = self.blocks.last_mut().unwrap();
                 current_block.push_str(&format!("bg_tmp <- (peekArray :: Int -> Ptr Word8 -> IO [Word8]) (fromIntegral {len}) (wordPtrToPtr {ptr});\n"));
-                current_block.push_str(&format!("{var} <- return (decodeUtf8 (pack bg_tmp));\n"));
+                current_block.push_str(&format!("let {{ {var} = decodeUtf8 (pack bg_tmp) }};\n"));
                 results.push(var);
             }
             Instruction::ListLift { element, ty } => {
@@ -999,7 +1026,7 @@ impl<'a> Bindgen for HsFunc<'a> {
             "bg_tmp <- (callocBytes :: Int -> IO (Ptr Word8)) {size};\n"
         ));
         current_block.push_str(&format!(
-            "bg_ret_ptr <- return ((fromIntegral :: WordPtr -> Word32) (ptrToWordPtr bg_tmp));\n"
+            "let {{ bg_ret_ptr = (fromIntegral :: WordPtr -> Word32) (ptrToWordPtr bg_tmp) }};\n"
         ));
         "bg_ret_ptr".to_owned()
     }
@@ -1012,14 +1039,14 @@ impl<'a> Bindgen for HsFunc<'a> {
         self.blocks
             .last_mut()
             .unwrap()
-            .push_str(&format!("bg_v <- return ({});\n", operand.join(", ")));
+            .push_str(&format!("let {{ bg_v = ({}) }};\n", operand.join(", ")));
     }
 
     fn sizes(&self) -> &SizeAlign {
         &self.size_align
     }
 
-    fn is_list_canonical(&self, _resolve: &Resolve, element: &Type) -> bool {
+    fn is_list_canonical(&self, resolve: &Resolve, element: &Type) -> bool {
         match element {
             Type::U8
             | Type::U16
@@ -1032,7 +1059,18 @@ impl<'a> Bindgen for HsFunc<'a> {
             | Type::F32
             | Type::F64
             | Type::Char => true,
-            Type::Bool | Type::String | Type::Id(_) => false,
+            Type::Id(id) => {
+                let ty = resolve
+                    .types
+                    .get(dealias(resolve, *id))
+                    .map(|ty| ty.kind.clone());
+                if let Some(TypeDefKind::Type(ty)) = ty {
+                    self.is_list_canonical(resolve, &ty)
+                } else {
+                    false
+                }
+            }
+            Type::Bool | Type::String => false,
         }
     }
 }
@@ -1043,7 +1081,7 @@ fn bitcast(op: &String, cast: &Bitcast) -> String {
         Bitcast::F64ToI64 => format!("(castDoubleToWord64 {op})"),
         Bitcast::I32ToI64 => format!("((fromIntegral :: Word32 -> Word64) {op})"),
         Bitcast::F32ToI64 => {
-            format!("((fromIntegral :: Word32 -> Word64) (castFloatToWord32) {op})")
+            format!("((fromIntegral :: Word32 -> Word64) (castFloatToWord32 {op}))")
         }
         Bitcast::I32ToF32 => format!("(castWord32ToFloat {op})"),
         Bitcast::I64ToF64 => format!("(castWord64ToDouble {op})"),
@@ -1125,7 +1163,7 @@ fn gen_func(resolve: &Resolve, func: &Function, ns: &str) -> String {
         size_align,
         variant: AbiVariant::GuestImport,
     };
-    src.push('\n');
+    src.push_str(";\n");
     src.push_str(&format!(
         "{} {} = ",
         func_name(func, None),
@@ -1160,7 +1198,7 @@ fn gen_func_core(resolve: &Resolve, func: &Function, ns: &str, variant: AbiVaria
         &(if variant == AbiVariant::GuestExport {
             format!("foreign export capi \"{name_foreign}\" {name_foreign} :: ")
         } else {
-            format!("foreign import capi \"bg_foreign.h {name_foreign}\" {name_foreign} :: ")
+            format!("foreign import capi \"../bg_foreign.h {name_foreign}\" {name_foreign} :: ")
         }),
     );
     src.push_str(
@@ -1183,6 +1221,7 @@ fn gen_func_core(resolve: &Resolve, func: &Function, ns: &str, variant: AbiVaria
         )
     };
     src.push_str(&results);
+    src.push_str(";");
     if variant == AbiVariant::GuestExport {
         let mut size_align = SizeAlign::new(AddressSize::Wasm32);
         size_align.fill(resolve);
@@ -1214,8 +1253,50 @@ fn gen_func_core(resolve: &Resolve, func: &Function, ns: &str, variant: AbiVaria
     src
 }
 
+fn gen_func_placeholder(resolve: &Resolve, func: &Function) -> String {
+    let mut src = String::new();
+    let name = lower_ident(&func.name);
+    src.push_str(&format!("\n{name} :: "));
+    for (_, ty) in &func.params {
+        src.push_str(&ty_name(resolve, false, &ty));
+        src.push_str(" -> ");
+    }
+    src.push_str("IO ");
+    match &func.results {
+        Results::Named(params) => {
+            src.push_str(&format!(
+                "({})",
+                params
+                    .iter()
+                    .map(|(_, ty)| ty_name(resolve, false, ty))
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ));
+        }
+        Results::Anon(ty) => {
+            src.push_str(&ty_name(resolve, false, &ty));
+        }
+    }
+    src.push_str(&format!(
+        "\n{name} {} = undefined\n",
+        func.params
+            .iter()
+            .map(|(name, _)| lower_ident(name))
+            .collect::<Vec<String>>()
+            .join(" ")
+    ));
+    src
+}
+
 fn gen_func_c(resolve: &Resolve, func: &Function, ns: &str, dir: Direction) -> String {
-    let sig = resolve.wasm_signature(AbiVariant::GuestImport, func);
+    let sig = resolve.wasm_signature(
+        if dir == Direction::Import {
+            AbiVariant::GuestImport
+        } else {
+            AbiVariant::GuestExport
+        },
+        func,
+    );
     let func_name_foreign = func_name_foreign(func, ns, dir);
     let symbol = func.core_export_name(Some(ns));
     let ret_ty = match sig.results.as_slice() {
@@ -1255,10 +1336,15 @@ fn gen_func_c(resolve: &Resolve, func: &Function, ns: &str, dir: Direction) -> S
   __export_name__(\"{symbol}\")
 ));
 {ret_ty} {func_name_export}({params}) {{
-  return {func_name_foreign}({vars});
+  {}{func_name_foreign}({vars});
 }}
 
 ",
+            if func.results.len() == 0 {
+                ""
+            } else {
+                "return "
+            },
         )
     }
 }
