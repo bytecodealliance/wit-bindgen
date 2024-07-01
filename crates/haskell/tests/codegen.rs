@@ -27,7 +27,7 @@ test_helpers::codegen_tests!();
 fn verify(dir: &Path, name: &str) {
     let name = name.to_upper_camel_case();
     let mut cmd = Command::new("wasm32-wasi-ghc");
-    cmd.arg(format!("{name}.hs"));
+    cmd.arg(format!("{name}/Exports.hs"));
     cmd.arg("-o");
     cmd.arg(format!("{name}.wasm"));
     cmd.arg("-no-hs-main");

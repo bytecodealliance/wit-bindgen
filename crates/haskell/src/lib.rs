@@ -294,9 +294,9 @@ import Data.Word;
 import Data.Int;
 import Data.Char;
 import Data.Bits;
-import Data.Text hiding (length, unpack);
+import Data.Text hiding (length, unpack, pack, zip);
 import Data.Text.Encoding;
-import Data.ByteString hiding (length);
+import Data.ByteString hiding (length, zip);
 import GHC.Float;
 import Foreign.Ptr;
 import Foreign.Storable;
@@ -491,7 +491,7 @@ impl<'a> Bindgen for HsFunc<'a> {
             Instruction::I32Load { offset } => {
                 let var = self.var();
                 self.blocks.last_mut().unwrap().push_str(&format!(
-                    "{var} <- (peek :: Ptr Word32 -> IO Word32) (wordPtrToPtr (WordPtr ({} + {offset})));\n",
+                    "{var} <- (peek :: Ptr Word32 -> IO Word32) (wordPtrToPtr (WordPtr (fromIntegral ({} + {offset}))));\n",
                     operands[0]
                 ));
                 results.push(var);
@@ -499,14 +499,14 @@ impl<'a> Bindgen for HsFunc<'a> {
             Instruction::I32Load8U { offset } => {
                 let var = self.var();
                 self.blocks.last_mut().unwrap().push_str(&format!(
-                    "{var} <- (peek :: Ptr Word8 -> IO Word8) (wordPtrToPtr (WordPtr ({} + {offset})));\n", operands[0]
+                    "{var} <- (peek :: Ptr Word8 -> IO Word8) (wordPtrToPtr (WordPtr (fromIntegral ({} + {offset}))));\n", operands[0]
                 ));
                 results.push(format!("((fromIntegral :: Word8 -> Word32) {var})"));
             }
             Instruction::I32Load8S { offset } => {
                 let var = self.var();
                 self.blocks.last_mut().unwrap().push_str(&format!(
-                    "{var} <- (peek :: Ptr Int8 -> IO Int8) (wordPtrToPtr (WordPtr ({} + {offset})));\n",
+                    "{var} <- (peek :: Ptr Int8 -> IO Int8) (wordPtrToPtr (WordPtr (fromIntegral ({} + {offset}))));\n",
                      operands[0]
                 ));
                 results.push(format!("((fromIntegral :: Int8 -> Word32) {var})"));
@@ -514,7 +514,7 @@ impl<'a> Bindgen for HsFunc<'a> {
             Instruction::I32Load16U { offset } => {
                 let var = self.var();
                 self.blocks.last_mut().unwrap().push_str(&format!(
-                    "{var} <- (peek :: Ptr Word16 -> IO Word16) (wordPtrToPtr (WordPtr ({} + {offset})));\n",
+                    "{var} <- (peek :: Ptr Word16 -> IO Word16) (wordPtrToPtr (WordPtr (fromIntegral ({} + {offset}))));\n",
                      operands[0]
                 ));
                 results.push(format!("((fromIntegral :: Word16 -> Word32) {var})"));
@@ -522,7 +522,7 @@ impl<'a> Bindgen for HsFunc<'a> {
             Instruction::I32Load16S { offset } => {
                 let var = self.var();
                 self.blocks.last_mut().unwrap().push_str(&format!(
-                    "{var} <- (peek :: Ptr Int16 -> IO Int16) (wordPtrToPtr (WordPtr ({} + {offset})));\n",
+                    "{var} <- (peek :: Ptr Int16 -> IO Int16) (wordPtrToPtr (WordPtr (fromIntegral ({} + {offset}))));\n",
                     operands[0]
                 ));
                 results.push(format!("((fromIntegral :: Int16 -> Word32) {var})"));
@@ -530,7 +530,7 @@ impl<'a> Bindgen for HsFunc<'a> {
             Instruction::I64Load { offset } => {
                 let var = self.var();
                 self.blocks.last_mut().unwrap().push_str(&format!(
-                    "{var} <- (peek :: Ptr Word64 -> IO Word64) (wordPtrToPtr (WordPtr ({} + {offset})));\n",
+                    "{var} <- (peek :: Ptr Word64 -> IO Word64) (wordPtrToPtr (WordPtr (fromIntegral ({} + {offset}))));\n",
                   operands[0]
                 ));
                 results.push(var);
@@ -538,7 +538,7 @@ impl<'a> Bindgen for HsFunc<'a> {
             Instruction::F32Load { offset } => {
                 let var = self.var();
                 self.blocks.last_mut().unwrap().push_str(&format!(
-                    "{var} <- (peek :: Ptr Float -> IO Float) (wordPtrToPtr (WordPtr ({} + {offset})));\n",
+                    "{var} <- (peek :: Ptr Float -> IO Float) (wordPtrToPtr (WordPtr (fromIntegral ({} + {offset}))));\n",
                     operands[0]
                 ));
                 results.push(var);
@@ -546,7 +546,7 @@ impl<'a> Bindgen for HsFunc<'a> {
             Instruction::F64Load { offset } => {
                 let var = self.var();
                 self.blocks.last_mut().unwrap().push_str(&format!(
-                    "{var} <- (peek :: Ptr Double -> IO Double) (wordPtrToPtr (WordPtr ({} + {offset})));\n",
+                    "{var} <- (peek :: Ptr Double -> IO Double) (wordPtrToPtr (WordPtr (fromIntegral ({} + {offset}))));\n",
                     operands[0]
                 ));
                 results.push(var);
@@ -554,7 +554,7 @@ impl<'a> Bindgen for HsFunc<'a> {
             Instruction::PointerLoad { offset } => {
                 let var = self.var();
                 self.blocks.last_mut().unwrap().push_str(&format!(
-                    "{var} <- (peek :: Ptr Word32 -> IO Word32) (wordPtrToPtr (WordPtr ({} + {offset})));\n",
+                    "{var} <- (peek :: Ptr Word32 -> IO Word32) (wordPtrToPtr (WordPtr (fromIntegral ({} + {offset}))));\n",
                     operands[0]
                 ));
                 results.push(var);
@@ -562,56 +562,56 @@ impl<'a> Bindgen for HsFunc<'a> {
             Instruction::LengthLoad { offset } => {
                 let var = self.var();
                 self.blocks.last_mut().unwrap().push_str(&format!(
-                    "{var} <- (peek :: Ptr Word32 -> IO Word32) (wordPtrToPtr (WordPtr ({} + {offset})));\n",
+                    "{var} <- (peek :: Ptr Word32 -> IO Word32) (wordPtrToPtr (WordPtr (fromIntegral ({} + {offset}))));\n",
                     operands[0]
                 ));
                 results.push(var);
             }
             Instruction::I32Store { offset } => {
                 self.blocks.last_mut().unwrap().push_str(&format!(
-                    "(poke :: Ptr 32 -> IO ()) (wordPtrToPtr (WordPtr ({} + {offset}))) {};\n",
+                    "(poke :: Ptr Word32 -> IO ()) (wordPtrToPtr (WordPtr (fromIntegral ({} + {offset})))) {};\n",
                     operands[1], operands[0]
                 ));
             }
             Instruction::I32Store8 { offset } => {
                 self.blocks.last_mut().unwrap().push_str(&format!(
-                    "(poke :: Ptr Word8 -> Word8 -> IO ()) (wordPtrToPtr (WordPtr ({} + {offset}))) ((fromIntegral :: Word32 -> Word8) {});\n",
+                    "(poke :: Ptr Word8 -> Word8 -> IO ()) (wordPtrToPtr (WordPtr (fromIntegral ({} + {offset})))) ((fromIntegral :: Word32 -> Word8) {});\n",
                     operands[1], operands[0]
                 ));
             }
             Instruction::I32Store16 { offset } => {
                 self.blocks.last_mut().unwrap().push_str(&format!(
-                    "(poke :: Ptr Word16 -> Word16 -> IO ()) (wordPtrToPtr (WordPtr ({} + {offset}))) ((fromIntegral :: Word32 -> Word16) {});\n",
+                    "(poke :: Ptr Word16 -> Word16 -> IO ()) (wordPtrToPtr (WordPtr (fromIntegral ({} + {offset})))) ((fromIntegral :: Word32 -> Word16) {});\n",
                     operands[1], operands[0]
                 ));
             }
             Instruction::I64Store { offset } => {
                 self.blocks.last_mut().unwrap().push_str(&format!(
-                    "(poke :: Ptr Word64 -> Word64 -> IO ()) (wordPtrToPtr (WordPtr ({} + {offset}))) {};\n",
+                    "(poke :: Ptr Word64 -> Word64 -> IO ()) (wordPtrToPtr (WordPtr (fromIntegral ({} + {offset})))) {};\n",
                     operands[1], operands[0]
                 ));
             }
             Instruction::F32Store { offset } => {
                 self.blocks.last_mut().unwrap().push_str(&format!(
-                    "(poke :: Ptr Float -> Float -> IO ()) (wordPtrToPtr (WordPtr ({} + {offset}))) {};\n",
+                    "(poke :: Ptr Float -> Float -> IO ()) (wordPtrToPtr (WordPtr (fromIntegral ({} + {offset})))) {};\n",
                     operands[1], operands[0]
                 ));
             }
             Instruction::F64Store { offset } => {
                 self.blocks.last_mut().unwrap().push_str(&format!(
-                    "(poke :: Ptr Double -> Double -> IO ()) (wordPtrToPtr (WordPtr ({} + {offset}))) {};\n",
+                    "(poke :: Ptr Double -> Double -> IO ()) (wordPtrToPtr (WordPtr (fromIntegral ({} + {offset})))) {};\n",
                     operands[1], operands[0]
                 ));
             }
             Instruction::PointerStore { offset } => {
                 self.blocks.last_mut().unwrap().push_str(&format!(
-                    "(poke :: Ptr Word32 -> Word32 -> IO ()) (wordPtrToPtr (WordPtr ({} + {offset})))  {};\n",
+                    "(poke :: Ptr Word32 -> Word32 -> IO ()) (wordPtrToPtr (WordPtr (fromIntegral ({} + {offset}))))  {};\n",
                     operands[1], operands[0]
                 ));
             }
             Instruction::LengthStore { offset } => {
                 self.blocks.last_mut().unwrap().push_str(&format!(
-                    "(poke :: Ptr Word32 -> Word32 -> IO ()) (wordPtrToPtr (WordPtr ({} + {offset}))) {};\n",
+                    "(poke :: Ptr Word32 -> Word32 -> IO ()) (wordPtrToPtr (WordPtr (fromIntegral ({} + {offset})))) {};\n",
                     operands[1], operands[0]
                 ));
             }
@@ -729,12 +729,14 @@ impl<'a> Bindgen for HsFunc<'a> {
                     "{list_ptr} <- (callocBytes :: Int -> IO (Ptr Word8)) ({list_len} * {});\n",
                     size
                 ));
+                let ptr_as_word32 =
+                    format!("((fromIntegral :: WordPtr -> Word32) (ptrToWordPtr {list_ptr}))");
                 current_block.push_str(&format!(
-                    "mapM_ (\\(bg_base_ptr, bg_elem) -> do {{\n{}\n}}) (zip (enumFromThenTo {list_ptr} ({list_ptr} + {size}) ({list_len} * {size} - {size})) {list});\n",
+                    "mapM_ (\\(bg_base_ptr, bg_elem) -> do {{\n{}return bg_v\n}}) (zip (enumFromThenTo {ptr_as_word32} ({ptr_as_word32} + {size}) ((fromIntegral {list_len}) * {size} - {size})) {list});\n",
                     block.to_string()
                 ));
                 results.extend([
-                    format!("((fromIntegral :: WordPtr -> Word32) (ptrToWordPtr {list_ptr}))"),
+                    ptr_as_word32,
                     format!("((fromIntegral :: Int -> Word32) {list_len})"),
                 ]);
             }
@@ -744,7 +746,7 @@ impl<'a> Bindgen for HsFunc<'a> {
                 let len = operands[1].clone();
                 let var = self.var();
                 self.blocks.last_mut().unwrap().push_str(&format!(
-                    "{var} <- ((peekArray :: Int -> Ptr {ty} -> IO [ty]) (fromIntegral {len}) (wordPtrToPtr {ptr}));\n"
+                    "{var} <- (peekArray :: Int -> Ptr {ty} -> IO [{ty}]) (fromIntegral {len}) (wordPtrToPtr (WordPtr (fromIntegral {ptr})));\n"
                 ));
                 results.push(var);
             }
@@ -753,7 +755,7 @@ impl<'a> Bindgen for HsFunc<'a> {
                 let len = operands[1].clone();
                 let var = self.var();
                 let current_block = self.blocks.last_mut().unwrap();
-                current_block.push_str(&format!("bg_tmp <- (peekArray :: Int -> Ptr Word8 -> IO [Word8]) (fromIntegral {len}) (wordPtrToPtr {ptr});\n"));
+                current_block.push_str(&format!("bg_tmp <- (peekArray :: Int -> Ptr Word8 -> IO [Word8]) (fromIntegral {len}) (wordPtrToPtr (WordPtr (fromIntegral {ptr})));\n"));
                 current_block.push_str(&format!("let {{ {var} = decodeUtf8 (pack bg_tmp) }};\n"));
                 results.push(var);
             }
@@ -936,7 +938,7 @@ impl<'a> Bindgen for HsFunc<'a> {
                 let none = self.blocks.pop().unwrap().to_string();
                 let vars = self.vars(types.len());
                 self.blocks.last_mut().unwrap().push_str(&format!(
-                    "({}) <- case {} of {{\nNothing -> do {{\n{none}\n}};\nJust bg_payload -> do {{\n{some}\n}} }};\n",
+                    "({}) <- case {} of {{\nNothing -> do {{\n{none}return bg_v\n}};\nJust bg_payload -> do {{\n{some}return bg_v\n}} }};\n",
                     vars.join(", "),
                     operands[0]
                 ));
@@ -957,11 +959,11 @@ impl<'a> Bindgen for HsFunc<'a> {
                 ty,
                 results: types,
             } => {
-                let ok = self.blocks.pop().unwrap().to_string();
                 let err = self.blocks.pop().unwrap().to_string();
+                let ok = self.blocks.pop().unwrap().to_string();
                 let vars = self.vars(types.len());
                 self.blocks.last_mut().unwrap().push_str(&format!(
-                    "({}) <- case {} of {{\nLeft bg_payload -> do {{\n{err}\n}};\nRight bg_payload -> do {{\n{ok}\n}}\n}};\n",
+                    "({}) <- case {} of {{\nLeft bg_payload -> do {{\n{err}return bg_v\n}};\nRight bg_payload -> do {{\n{ok}return bg_v\n}}\n}};\n",
                     vars.join(", "),
                     operands[0]
                 ));
@@ -1143,7 +1145,7 @@ fn gen_func(resolve: &Resolve, func: &Function, ns: &str) -> String {
         }
         Results::Anon(ty) => {
             let mut name = ty_name(resolve, false, &ty);
-            if name.contains(" ") && !name.starts_with("(") && !name.starts_with("[") {
+            if name.contains(' ') && !name.starts_with('(') && !name.starts_with('[') {
                 name = format!("({name})");
             }
             src.push_str(&name);
@@ -1274,7 +1276,11 @@ fn gen_func_placeholder(resolve: &Resolve, func: &Function) -> String {
             ));
         }
         Results::Anon(ty) => {
-            src.push_str(&ty_name(resolve, false, &ty));
+            let mut name = ty_name(resolve, false, &ty);
+            if name.contains(' ') && !name.starts_with('(') && !name.starts_with('[') {
+                name = format!("({})", name);
+            }
+            src.push_str(&name);
         }
     }
     src.push_str(&format!(
