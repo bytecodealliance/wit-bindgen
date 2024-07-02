@@ -10,13 +10,18 @@ namespace VariantsWorld
     {
         public static void TestImports()
         {
-            Debug.Assert(TestInterop.RoundtripOption(new Option<float>(1.0f)).Value == 1);
-            Debug.Assert(TestInterop.RoundtripOption(Option<float>.None).HasValue == false);
-            Debug.Assert(TestInterop.RoundtripOption(new Option<float>(2.0f)).Value == 2);
+            Debug.Assert(TestInterop.RoundtripOption(1.0f).Value == 1);
+            Debug.Assert(TestInterop.RoundtripOption(null).HasValue == false);
+            Debug.Assert(TestInterop.RoundtripOption(2.0f).Value == 2);
 
-            Debug.Assert(TestInterop.RoundtripResult(Result<uint, float>.ok(2)).AsOk == 2.0);
-            Debug.Assert(TestInterop.RoundtripResult(Result<uint, float>.ok(4)).AsOk == 4.0);
-            Debug.Assert(TestInterop.RoundtripResult(Result<uint, float>.err(5.3f)).AsErr == 5);
+            Debug.Assert(TestInterop.RoundtripResult(Result<uint, float>.ok(2)) == 2.0);
+            Debug.Assert(TestInterop.RoundtripResult(Result<uint, float>.ok(4)) == 4.0);
+            try {
+                TestInterop.RoundtripResult(Result<uint, float>.err(5.3f));
+                throw new Exception();
+            } catch (WitException e) {
+                Debug.Assert((byte)e.Value == 5);
+            }
 
             Debug.Assert(TestInterop.RoundtripEnum(ITest.E1.A) == ITest.E1.A);
             Debug.Assert(TestInterop.RoundtripEnum(ITest.E1.B) == ITest.E1.B);
@@ -57,7 +62,7 @@ TestInterop.VariantZeros((ITest.Z1.b(), ITest.Z2.b(), ITest.Z3.b(), ITest.Z4.b()
             //Debug.Assert(zb3.AsB == ITest.Z3.b());
             //Debug.Assert(zb4.AsB == ITest.Z4.b());
 
-            TestInterop.VariantTypedefs(Option<uint>.None, false, Result<uint, None>.err(new None()));
+            TestInterop.VariantTypedefs(null, false, Result<uint, None>.err(new None()));
 
             var (a, b, c) = TestInterop.VariantEnums(true, Result<None, None>.ok(new None()), ITest.MyErrno.SUCCESS);
             Debug.Assert(a == false);
@@ -71,17 +76,17 @@ namespace VariantsWorld.wit.exports.test.variants
 {
     public class TestImpl : ITest
     {
-        public static Option<byte> RoundtripOption(Option<float> a)
+        public static byte? RoundtripOption(float? a)
         {
-            return a.HasValue ? new Option<byte>((byte)a.Value) : Option<byte>.None;
+            return a is null ? null : (byte)a;
         }
 
-        public static Result<double, byte> RoundtripResult(Result<uint, float> a)
+        public static double RoundtripResult(Result<uint, float> a)
         {
             switch (a.Tag)
             {
-                case Result<double, byte>.OK: return Result<double, byte>.ok((double)a.AsOk);
-                case Result<double, byte>.ERR: return Result<double, byte>.err((byte)a.AsErr);
+                case Result<double, byte>.OK: return (double)a.AsOk;
+                case Result<double, byte>.ERR: throw new WitException((byte)a.AsErr, 0);
                 default: throw new ArgumentException();
             }
         }
@@ -108,7 +113,7 @@ namespace VariantsWorld.wit.exports.test.variants
             return new(a, b, c);
         }
 
-        public static void VariantTypedefs(Option<uint> a, bool b, Result<uint, None> c) { }
+        public static void VariantTypedefs(uint? a, bool b, Result<uint, None> c) { }
 
         public static (ITest.Z1, ITest.Z2, ITest.Z3, ITest.Z4) VariantZeros((ITest.Z1, ITest.Z2, ITest.Z3, ITest.Z4) a)
         {
