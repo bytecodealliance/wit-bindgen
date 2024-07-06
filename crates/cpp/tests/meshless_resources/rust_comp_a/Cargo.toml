@@ -6,3 +6,4 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+rust_comp_b = { path = "../rust_comp_b" }
