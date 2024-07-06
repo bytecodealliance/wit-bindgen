@@ -39,6 +39,10 @@ pub struct Haskell {
 }
 
 impl WorldGenerator for Haskell {
+    fn preprocess(&mut self, resolve: &Resolve, world: WorldId) {
+        self.modules
+            .insert(resolve.worlds[world].name.clone(), Module::default());
+    }
     fn import_interface(
         &mut self,
         resolve: &Resolve,
@@ -237,7 +241,7 @@ impl WorldGenerator for Haskell {
                 );
                 files.push(&format!("{}/Imports.hs", name.replace('.', "/")), &contents);
             }
-            if !module.funcs_exp.is_empty() {
+            {
                 let contents = gen_module(
                     &name,
                     &module.funcs_exp,
@@ -394,7 +398,7 @@ fn gen_typedef(resolve: &Resolve, name: &str, id: TypeId) -> String {
         TypeDefKind::Record(record) => {
             let record_name = upper_ident(name);
             src.push_str(&format!(
-                "data {record_name} = {record_name} {{ {} }};\n",
+                "data {record_name} = {record_name} {{ {} }} deriving (Eq, Show);\n",
                 record
                     .fields
                     .iter()
@@ -402,7 +406,7 @@ fn gen_typedef(resolve: &Resolve, name: &str, id: TypeId) -> String {
                         format!(
                             "{} :: {}",
                             lower_ident(&[name, &field.name].join("-")),
-                            ty_name(resolve, false, &field.ty)
+                            ty_name(resolve, false, &field.ty, false)
                         )
                     })
                     .collect::<Vec<String>>()
@@ -412,14 +416,13 @@ fn gen_typedef(resolve: &Resolve, name: &str, id: TypeId) -> String {
         TypeDefKind::Resource => {
             let resource_name = upper_ident(name);
             src.push_str(&format!(
-                "newtype {resource_name} = {resource_name} Word32;\n"
+                "newtype {resource_name} = {resource_name} Word32 deriving (Eq, Show);\n"
             ));
         }
-        TypeDefKind::Handle(_) => todo!(),
         TypeDefKind::Flags(flags) => {
             let flags_name = upper_ident(name);
             src.push_str(&format!(
-                "data {flags_name} = {flags_name} {{ {} }};\n",
+                "data {flags_name} = {flags_name} {{ {} }} deriving (Eq, Show);\n",
                 flags
                     .flags
                     .iter()
@@ -428,7 +431,6 @@ fn gen_typedef(resolve: &Resolve, name: &str, id: TypeId) -> String {
                     .join(", ")
             ));
         }
-        TypeDefKind::Tuple(_) => todo!(),
         TypeDefKind::Variant(var) => {
             let cases = var
                 .cases
@@ -438,7 +440,7 @@ fn gen_typedef(resolve: &Resolve, name: &str, id: TypeId) -> String {
                         "{} {}",
                         upper_ident(&[name, &case.name].join("-")),
                         if let Some(ty) = case.ty {
-                            ty_name(resolve, false, &ty)
+                            ty_name(resolve, false, &ty, true)
                         } else {
                             "".to_owned()
                         }
@@ -446,7 +448,10 @@ fn gen_typedef(resolve: &Resolve, name: &str, id: TypeId) -> String {
                 })
                 .collect::<Vec<String>>()
                 .join(" | ");
-            src.push_str(&format!("data {} = {cases};\n", upper_ident(name)))
+            src.push_str(&format!(
+                "data {} = {cases} deriving (Eq, Show);\n",
+                upper_ident(name)
+            ))
         }
         TypeDefKind::Enum(enu) => {
             let cases = enu
@@ -455,21 +460,23 @@ fn gen_typedef(resolve: &Resolve, name: &str, id: TypeId) -> String {
                 .map(|case| upper_ident(&[name, &case.name].join("-")))
                 .collect::<Vec<String>>()
                 .join(" | ");
-            src.push_str(&format!("data {} = {cases};\n", upper_ident(name)))
+            src.push_str(&format!(
+                "data {} = {cases} deriving (Eq, Show);\n",
+                upper_ident(name)
+            ))
         }
-        TypeDefKind::Option(_) => todo!(),
-        TypeDefKind::Result(_) => todo!(),
-        TypeDefKind::List(_) => todo!(),
-        TypeDefKind::Future(_) => todo!(),
-        TypeDefKind::Stream(_) => todo!(),
         TypeDefKind::Type(ty) => {
             src.push_str(&format!(
                 "type {} = {};\n",
                 upper_ident(name),
-                ty_name(resolve, false, ty)
+                ty_name(resolve, false, ty, false)
             ));
         }
-        TypeDefKind::Unknown => todo!(),
+        _ => src.push_str(&format!(
+            "type {} = {};\n",
+            upper_ident(name),
+            ty_name(resolve, false, &Type::Id(id), false)
+        )),
     }
     src
 }
@@ -587,7 +594,7 @@ impl<'a> Bindgen for HsFunc<'a> {
             }
             Instruction::I32Store { offset } => {
                 self.blocks.last_mut().unwrap().push_str(&format!(
-                    "(poke :: Ptr Word32 -> Word 32 -> IO ()) (wordPtrToPtr (WordPtr (fromIntegral ({} + {offset})))) {};\n",
+                    "(poke :: Ptr Word32 -> Word32 -> IO ()) (wordPtrToPtr (WordPtr (fromIntegral ({} + {offset})))) {};\n",
                     operands[1], operands[0]
                 ));
             }
@@ -709,7 +716,7 @@ impl<'a> Bindgen for HsFunc<'a> {
                 current_block.push_str(&format!("let {{ {len} = length {list} }};\n"));
                 current_block.push_str(&format!(
                     "{ptr} <- (callocBytes :: Int -> IO (Ptr ({}))) {len};\n",
-                    ty_name(resolve, false, element)
+                    ty_name(resolve, false, element, false)
                 ));
                 current_block.push_str(&format!("pokeArray {ptr} {list};\n",));
                 results.extend([
@@ -759,7 +766,7 @@ impl<'a> Bindgen for HsFunc<'a> {
                 ]);
             }
             Instruction::ListCanonLift { element, ty } => {
-                let ty = ty_name(resolve, false, element);
+                let ty = ty_name(resolve, false, element, false);
                 let ptr = operands[0].clone();
                 let len = operands[1].clone();
                 let var = self.var();
@@ -819,8 +826,42 @@ impl<'a> Bindgen for HsFunc<'a> {
                     .join(", ");
                 results.push(format!("({} {{ {} }})", upper_ident(name), fields));
             }
-            Instruction::HandleLower { handle, name, ty } => todo!(),
-            Instruction::HandleLift { handle, name, ty } => todo!(),
+            Instruction::HandleLower {
+                handle: Handle::Own(_),
+                name,
+                ty,
+            } => {
+                results.push(format!(
+                    "(case {} of {} bg_v -> bg_v)",
+                    operands[0],
+                    upper_ident(name)
+                ));
+            }
+            Instruction::HandleLower {
+                handle: Handle::Borrow(_),
+                name,
+                ty,
+            } => {
+                results.push(format!(
+                    "(case {} of {} bg_v -> bg_v)",
+                    operands[0],
+                    upper_ident(name)
+                ));
+            }
+            Instruction::HandleLift {
+                handle: Handle::Own(_),
+                name,
+                ty,
+            } => {
+                results.push(format!("({} {})", upper_ident(name), operands[0]));
+            }
+            Instruction::HandleLift {
+                handle: Handle::Borrow(_),
+                name,
+                ty,
+            } => {
+                results.push(format!("({} {})", upper_ident(name), operands[0]));
+            }
             Instruction::TupleLower { tuple, ty } => {
                 let fields = self.vars(tuple.types.len());
                 self.blocks.last_mut().unwrap().push_str(&format!(
@@ -1059,13 +1100,13 @@ impl<'a> Bindgen for HsFunc<'a> {
             } => todo!(),
             Instruction::GuestDeallocate { size, align } => {
                 self.blocks.last_mut().unwrap().push_str(&format!(
-                    "(free :: Ptr Word8 -> IO ()) (wordPtrToPtr (WordPtr {}));\n",
+                    "(free :: Ptr Word8 -> IO ()) (wordPtrToPtr (WordPtr (fromIntegral {})));\n",
                     operands[0]
                 ));
             }
             Instruction::GuestDeallocateString => {
                 self.blocks.last_mut().unwrap().push_str(&format!(
-                    "(free :: Ptr Word8 -> IO ()) (wordPtrToPtr (WordPtr {}));\n",
+                    "(free :: Ptr Word8 -> IO ()) (wordPtrToPtr (WordPtr (fromIntegral {})));\n",
                     operands[0]
                 ));
             }
@@ -1079,8 +1120,9 @@ impl<'a> Bindgen for HsFunc<'a> {
                     "mapM_ (\\bg_base_ptr -> do {{\n{}return bg_v\n}}) (if {len} == 0 then [] else enumFromThenTo {ptr} ({ptr} + {size}) ((fromIntegral {len}) * {size} + {ptr} - {size}));\n",
                     block.to_string()
                 ));
-                current_block
-                    .push_str("(free :: Ptr Word8 -> IO ()) (wordPtrToPtr (WordPtr {ptr}));\n");
+                current_block.push_str(&format!(
+                    "(free :: Ptr Word8 -> IO ()) (wordPtrToPtr (WordPtr (fromIntegral {ptr})));\n"
+                ));
             }
             Instruction::GuestDeallocateVariant {
                 blocks: blocks_count,
@@ -1090,7 +1132,7 @@ impl<'a> Bindgen for HsFunc<'a> {
                     .enumerate()
                     .map(|(i, block)| {
                         format!(
-                            "{} -> do {{\n{}\n}}",
+                            "{} -> do {{\n{}\nreturn bg_v\n}}",
                             if i == blocks_count - 1 {
                                 "_".to_owned()
                             } else {
@@ -1214,7 +1256,7 @@ fn gen_func(resolve: &Resolve, func: &Function, ns: &str) -> String {
         &func
             .params
             .iter()
-            .map(|(_name, ty)| format!("{} ->", ty_name(resolve, false, ty)))
+            .map(|(_name, ty)| format!("{} ->", ty_name(resolve, false, ty, false)))
             .collect::<Vec<String>>()
             .join(" "),
     );
@@ -1225,16 +1267,13 @@ fn gen_func(resolve: &Resolve, func: &Function, ns: &str) -> String {
                 "({})",
                 results
                     .iter()
-                    .map(|(_name, ty)| ty_name(resolve, false, ty))
+                    .map(|(_name, ty)| ty_name(resolve, false, ty, false))
                     .collect::<Vec<String>>()
                     .join(", ")
             ));
         }
         Results::Anon(ty) => {
-            let mut name = ty_name(resolve, false, &ty);
-            if name.contains(' ') && !name.starts_with('(') && !name.starts_with('[') {
-                name = format!("({name})");
-            }
+            let name = ty_name(resolve, false, &ty, true);
             src.push_str(&name);
         }
     }
@@ -1393,7 +1432,7 @@ fn gen_func_placeholder(resolve: &Resolve, func: &Function) -> String {
     }
     src.push_str(&format!("{name} :: "));
     for (_, ty) in &func.params {
-        src.push_str(&ty_name(resolve, false, &ty));
+        src.push_str(&ty_name(resolve, false, &ty, false));
         src.push_str(" -> ");
     }
     src.push_str("IO ");
@@ -1403,16 +1442,13 @@ fn gen_func_placeholder(resolve: &Resolve, func: &Function) -> String {
                 "({})",
                 params
                     .iter()
-                    .map(|(_, ty)| ty_name(resolve, false, ty))
+                    .map(|(_, ty)| ty_name(resolve, false, ty, false))
                     .collect::<Vec<String>>()
                     .join(", ")
             ));
         }
         Results::Anon(ty) => {
-            let mut name = ty_name(resolve, false, &ty);
-            if name.contains(' ') && !name.starts_with('(') && !name.starts_with('[') {
-                name = format!("({})", name);
-            }
+            let name = ty_name(resolve, false, &ty, true);
             src.push_str(&name);
         }
     }
@@ -1556,7 +1592,10 @@ fn func_name(func: &Function, ns: Option<&str>) -> String {
     }
 }
 
-fn lower_ident(name: &str) -> String {
+fn lower_ident(mut name: &str) -> String {
+    if name.starts_with('[') {
+        name = &name[name.find(']').unwrap() + 1..];
+    }
     name.to_lower_camel_case()
 }
 
@@ -1564,7 +1603,7 @@ fn upper_ident(name: &str) -> String {
     name.to_upper_camel_case()
 }
 
-fn ty_name(resolve: &Resolve, with_ns: bool, ty: &Type) -> String {
+fn ty_name(resolve: &Resolve, with_ns: bool, ty: &Type, parens: bool) -> String {
     match ty {
         Type::Bool => "Bool".to_owned(),
         Type::U8 => "Word8".to_owned(),
@@ -1604,10 +1643,15 @@ fn ty_name(resolve: &Resolve, with_ns: bool, ty: &Type) -> String {
                     upper_ident(name)
                 }
             } else {
-                match &ty.kind {
+                let name = match &ty.kind {
                     TypeDefKind::Record(_) => todo!(),
                     TypeDefKind::Resource => todo!(),
-                    TypeDefKind::Handle(_) => todo!(),
+                    TypeDefKind::Handle(handle) => match handle {
+                        Handle::Own(id) => upper_ident(&resolve.types[*id].name.clone().unwrap()),
+                        Handle::Borrow(id) => {
+                            upper_ident(&resolve.types[*id].name.clone().unwrap())
+                        }
+                    },
                     TypeDefKind::Flags(_) => todo!(),
                     TypeDefKind::Tuple(tuple) => {
                         format!(
@@ -1615,7 +1659,7 @@ fn ty_name(resolve: &Resolve, with_ns: bool, ty: &Type) -> String {
                             tuple
                                 .types
                                 .iter()
-                                .map(|ty| { ty_name(resolve, with_ns, ty) })
+                                .map(|ty| { ty_name(resolve, with_ns, ty, false) })
                                 .collect::<Vec<String>>()
                                 .join(", ")
                         )
@@ -1623,28 +1667,33 @@ fn ty_name(resolve: &Resolve, with_ns: bool, ty: &Type) -> String {
                     TypeDefKind::Variant(_) => todo!(),
                     TypeDefKind::Enum(_) => todo!(),
                     TypeDefKind::Option(ty) => {
-                        format!("Maybe {}", ty_name(resolve, with_ns, ty))
+                        format!("Maybe {}", ty_name(resolve, with_ns, ty, true))
                     }
                     TypeDefKind::Result(result) => {
                         let ok_ty = if let Some(ty) = result.ok {
-                            ty_name(resolve, with_ns, &ty)
+                            ty_name(resolve, with_ns, &ty, true)
                         } else {
                             "()".to_owned()
                         };
                         let err_ty = if let Some(ty) = result.err {
-                            ty_name(resolve, with_ns, &ty)
+                            ty_name(resolve, with_ns, &ty, true)
                         } else {
                             "()".to_owned()
                         };
                         format!("Either {err_ty} {ok_ty}")
                     }
                     TypeDefKind::List(ty) => {
-                        format!("[{}]", ty_name(resolve, with_ns, ty))
+                        format!("[{}]", ty_name(resolve, with_ns, ty, false))
                     }
                     TypeDefKind::Future(_) => todo!(),
                     TypeDefKind::Stream(_) => todo!(),
-                    TypeDefKind::Type(ty) => ty_name(resolve, with_ns, ty),
+                    TypeDefKind::Type(ty) => ty_name(resolve, with_ns, ty, parens),
                     TypeDefKind::Unknown => todo!(),
+                };
+                if parens && name.contains(" ") && !name.starts_with(['(', '[']) {
+                    format!("({name})")
+                } else {
+                    name
                 }
             }
         }
