@@ -25,7 +25,7 @@ impl Guest for MyWorld {
     type R = MyResource;
 
     fn create() -> resources::R {
-        resources::R::new(MyResource::new(1))
+        resources::R::new(MyResource::new(17))
     }
 
     fn consume(o: resources::R) {

@@ -150,7 +150,6 @@ pub mod exports {
                     unsafe fn drop(handle: u32) {
                       let rep = RESOURCE_MAP.lock().unwrap().remove(&handle);
                       assert!(rep.is_some());
-                      R::dtor::<R>(rep.unwrap().0);
                     }
                 }
 
@@ -167,9 +166,10 @@ pub mod exports {
                 pub unsafe fn _export_method_r_add_cabi<T: GuestR>(arg0: i32, arg1: i32) {
                     #[cfg(target_arch = "wasm32")]
                     _rt::run_ctors_once();
-                    let a = R::from_handle(arg0 as u32).as_ptr::<T>();
+                    let r = R::from_handle(arg0 as u32);
+                    let a = r.as_ptr::<T>();
+                    r.take_handle();
                     (*a).as_ref().unwrap().add(arg1 as u32);
-//                    T::add(RESOURCE_MAP.lock().unwrap().get(&arg0), arg1 as u32);
                 }
                 #[doc(hidden)]
                 #[allow(non_snake_case)]
@@ -189,10 +189,11 @@ pub mod exports {
 
                 #[doc(hidden)]
                 #[allow(non_snake_case)]
-                pub unsafe fn _export_drop_cabi<T: Guest>(arg0: i32) {
+                pub unsafe fn _export_drop_cabi<T: GuestR>(arg0: i32) {
                     #[cfg(target_arch = "wasm32")]
                     _rt::run_ctors_once();
-                    drop(R::from_handle(arg0 as u32));
+                    let rep = RESOURCE_MAP.lock().unwrap().remove(&(arg0 as u32));
+                    R::dtor::<T>(rep.unwrap().0);
                 }
 
                 pub trait Guest {
@@ -253,7 +254,7 @@ pub mod exports {
 
     #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
     unsafe extern "C" fn fooX3AfooX2FresourcesX00X5Bresource_dropX5Dr(arg0: i32) {
-      $($path_to_types)*::_export_drop_cabi::<$ty>(arg0)
+      $($path_to_types)*::_export_drop_cabi::<<$ty as $($path_to_types)*::Guest>::R>(arg0)
     }
   };);
 }
