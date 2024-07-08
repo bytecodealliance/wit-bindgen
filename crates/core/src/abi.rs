@@ -1806,16 +1806,17 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 TypeDefKind::Type(t) => self.deallocate(t, addr, offset),
 
                 TypeDefKind::List(element) => {
+                    self.stack.push(addr.clone());
+                    self.emit(&Instruction::PointerLoad { offset });
+                    self.stack.push(addr);
+                    self.emit(&Instruction::LengthLoad { offset: offset + 4 });
+
                     self.push_block();
                     self.emit(&IterBasePointer);
                     let elemaddr = self.stack.pop().unwrap();
                     self.deallocate(element, elemaddr, 0);
                     self.finish_block(0);
 
-                    self.stack.push(addr.clone());
-                    self.emit(&Instruction::PointerLoad { offset });
-                    self.stack.push(addr);
-                    self.emit(&Instruction::LengthLoad { offset: offset + 4 });
                     self.emit(&Instruction::GuestDeallocateList { element });
                 }
 
