@@ -513,3 +513,46 @@ mod gated_features {
         z();
     }
 }
+
+#[allow(unused)]
+mod simple_with_option {
+    mod a {
+        wit_bindgen::generate!({
+            inline: r#"
+                package foo:bar {
+                    interface a {
+                        x: func();
+                    }
+                }
+
+                package foo:baz {
+                    world w {
+                        import foo:bar/a;
+                    }
+                }
+            "#,
+            world: "foo:baz/w",
+            generate_all,
+        });
+    }
+
+    mod b {
+        wit_bindgen::generate!({
+            inline: r#"
+                package foo:bar {
+                    interface a {
+                        x: func();
+                    }
+                }
+
+                package foo:baz {
+                    world w {
+                        import foo:bar/a;
+                    }
+                }
+            "#,
+            world: "foo:baz/w",
+            with: { "foo:bar/a": generate },
+        });
+    }
+}

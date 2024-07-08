@@ -18,11 +18,26 @@ pub fn generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 }
 
 fn anyhow_to_syn(span: Span, err: anyhow::Error) -> Error {
+    let err = attach_with_context(err);
     let mut msg = err.to_string();
     for cause in err.chain().skip(1) {
         msg.push_str(&format!("\n\nCaused by:\n  {cause}"));
     }
     Error::new(span, msg)
+}
+
+fn attach_with_context(err: anyhow::Error) -> anyhow::Error {
+    if let Some(e) = err.downcast_ref::<wit_bindgen_rust::MissingWith>() {
+        let option = e.0.clone();
+        return err.context(format!(
+            "missing one of:\n\
+            * `generate_all` option\n\
+            * `with: {{ \"{option}\": path::to::bindings, }}`\n\
+            * `with: {{ \"{option}\": generate, }}`\
+            "
+        ));
+    }
+    err
 }
 
 struct Config {
@@ -100,7 +115,7 @@ impl Parse for Config {
                     }
                     Opt::With(with) => opts.with.extend(with),
                     Opt::GenerateAll => {
-                        opts.with.generate_by_default = true;
+                        opts.generate_all = true;
                     }
                     Opt::TypeSectionSuffix(suffix) => {
                         opts.type_section_suffix = Some(suffix.value());
@@ -186,7 +201,7 @@ impl Config {
         let mut generator = self.opts.build();
         generator
             .generate(&self.resolve, self.world, &mut files)
-            .map_err(|e| Error::new(Span::call_site(), e))?;
+            .map_err(|e| anyhow_to_syn(Span::call_site(), e))?;
         let (_, src) = files.iter().next().unwrap();
         let mut src = std::str::from_utf8(src).unwrap().to_string();
 
