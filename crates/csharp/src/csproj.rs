@@ -71,6 +71,8 @@ impl CSProjectLLVMBuilder {
             <ImplicitUsings>enable</ImplicitUsings>
             <Nullable>enable</Nullable>
             <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+            <RuntimeIdentifier>wasi-wasm</RuntimeIdentifier>
+            <OutputType>Library</OutputType>
         </PropertyGroup>
         
         <PropertyGroup>
@@ -109,6 +111,7 @@ impl CSProjectLLVMBuilder {
                 <!--To inherit the global NuGet package sources remove the <clear/> line below -->
                 <clear />
                 <add key="nuget" value="https://api.nuget.org/v3/index.json" />
+                <add key="dotnet9" value="https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet9/nuget/v3/index.json" />
                 <add key="dotnet-experimental" value="https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json" />
                 <!--<add key="dotnet-experimental" value="C:\github\runtimelab\artifacts\packages\Debug\Shipping" />-->
               </packageSources>
@@ -168,7 +171,7 @@ impl CSProjectMonoBuilder {
         };
 
         let mut csproj = format!(
-            "<Project Sdk=\"Microsoft.NET.Sdk\">
+            "<Project Sdk=\"Microsoft.NET.Sdk.WebAssembly\">
     
         <PropertyGroup>
             <TargetFramework>net9.0</TargetFramework>
@@ -182,6 +185,7 @@ impl CSProjectMonoBuilder {
             <ImplicitUsings>enable</ImplicitUsings>
             <Nullable>enable</Nullable>
             <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+            <WasmGenerateAppBundle>true</WasmGenerateAppBundle>
         </PropertyGroup>
         
         <PropertyGroup>
@@ -190,9 +194,14 @@ impl CSProjectMonoBuilder {
         </PropertyGroup>
 
         <ItemGroup>
-          <NativeFileReference Include=\"{camel}_component_type.o\" Condition=\"Exists('{camel}_component_type.o')\"/>
+          <NativeLibrary Include=\"{camel}_component_type.o\" />
         </ItemGroup>
 
+        <Target Name=\"_FixRootAssembly\" AfterTargets=\"PrepareForILLink\">
+            <ItemGroup>
+                <TrimmerRootAssembly Update=\"@(TrimmerRootAssembly)\" Condition=\" '%(RootMode)' == 'EntryPoint' \" RootMode=\"Library\" />
+            </ItemGroup>
+        </Target>
         "
         );
 
