@@ -39,7 +39,7 @@
 
 set -ex
 
-version=$(grep '^version =' ./Cargo.toml | sed 's/.*"\(.*\)"/\1/' | sed 's/\./_/g')
+version=$(./ci/print-current-version.sh | sed 's/\./_/g')
 
 sym=cabi_realloc_wit_bindgen_$version
 

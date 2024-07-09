@@ -1,10 +1,10 @@
 [package]
 name = "wit-bindgen-cli"
 authors = ["Alex Crichton <alex@alexcrichton.com>"]
-version.workspace = true
+version = { workspace = true }
 edition = { workspace = true }
-repository = 'https://github.com/bytecodealliance/wit-bindgen'
-license = "Apache-2.0 WITH LLVM-exception"
+repository = { workspace = true }
+license = { workspace = true }
 homepage = 'https://github.com/bytecodealliance/wit-bindgen'
 description = """
 CLI tool to generate bindings for WIT documents and the component model.
@@ -19,6 +19,8 @@ resolver = "2"
 [workspace.package]
 edition = "2021"
 version = "0.27.0"
+license = "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT"
+repository = "https://github.com/bytecodealliance/wasi-rs"
 
 [workspace.dependencies]
 anyhow = "1.0.72"
