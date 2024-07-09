@@ -586,7 +586,7 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
                 panic!("failed to compile");
             }
 
-            let out_wasm = out_wasm.join(assembly_name);
+            //let out_wasm = out_wasm.join(assembly_name);
             let mut wasm_filename = out_wasm.clone();
             wasm_filename.set_extension("wasm");
 
