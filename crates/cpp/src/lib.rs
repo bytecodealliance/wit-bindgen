@@ -1418,7 +1418,9 @@ impl CppInterfaceGenerator<'_> {
         let special = is_special_method(func);
         if !matches!(special, SpecialMethod::Allocate) {
             self.gen.c_src.src.push_str("{\n");
-            let lift_lower = if export {
+            let lift_lower = if self.gen.opts.symmetric {
+                LiftLower::Symmetric
+            } else if export {
                 LiftLower::LiftArgsLowerResults
             } else {
                 LiftLower::LowerArgsLiftResults
@@ -1455,7 +1457,7 @@ impl CppInterfaceGenerator<'_> {
                             );
                         }
                     }
-                    LiftLower::LowerArgsLiftResults => {
+                    LiftLower::LowerArgsLiftResults | LiftLower::Symmetric => {
                         if self.gen.opts.host_side() {
                             let namespace = class_namespace(self, func, variant);
                             self.gen.c_src.qualify(&namespace);
@@ -2554,7 +2556,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 if realloc.is_none() {
                     results.push(ptr);
                 } else {
-                    if !self.gen.gen.opts.host {
+                    if !self.gen.gen.opts.host_side() && !self.gen.gen.opts.symmetric {
                         uwriteln!(self.src, "{}.leak();\n", operands[0]);
                     }
                     results.push(ptr);
@@ -2583,7 +2585,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 if realloc.is_none() {
                     results.push(ptr);
                 } else {
-                    if !self.gen.gen.opts.host_side() {
+                    if !self.gen.gen.opts.host_side() && !self.gen.gen.opts.symmetric {
                         uwriteln!(self.src, "{}.leak();\n", operands[0]);
                     }
                     results.push(ptr);

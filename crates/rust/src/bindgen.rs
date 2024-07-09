@@ -188,6 +188,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         let owned = match self.lift_lower() {
             LiftLower::LowerArgsLiftResults => false,
             LiftLower::LiftArgsLowerResults => true,
+            LiftLower::Symmetric => todo!(),
         };
         self.gen.type_path(id, owned)
     }
