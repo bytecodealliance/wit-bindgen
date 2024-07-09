@@ -213,6 +213,11 @@ pub struct Opts {
     /// types for borrowing and owning, if necessary.
     #[cfg_attr(feature = "clap", arg(long, default_value_t = Ownership::Owning))]
     pub ownership: Ownership,
+
+    /// Symmetric ABI, this enables to directly link components to each
+    /// other and removes the primary distinction between host and guest.
+    #[cfg_attr(feature = "clap", arg(long, default_value_t = bool::default()))]
+    pub symmetric: bool,
 }
 
 impl Opts {
