@@ -462,6 +462,7 @@ def_instruction! {
         CallWasm {
             name: &'a str,
             sig: &'a WasmSignature,
+            module_prefix: &'a str,
         } : [sig.params.len()] => [sig.results.len()],
 
         /// Same as `CallWasm`, except the dual where an interface is being
@@ -860,12 +861,12 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             self.emit(&Instruction::CallWasm {
                 name: &func.name,
                 sig: &sig,
+                module_prefix: "",
             });
 
             if matches!(self.lift_lower, LiftLower::Symmetric) && func.results.len() != 0 {
                 let ptr = self.stack.pop().unwrap();
                 self.read_results_from_memory(&func.results, ptr.clone(), 0);
-                let post_name = String::from("cabi_post_") + &func.name;
                 let post_sig = WasmSignature {
                     params: vec![WasmType::Pointer],
                     results: Vec::new(),
@@ -875,8 +876,9 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 // TODO: can we get this name from somewhere?
                 self.stack.push(ptr);
                 self.emit(&Instruction::CallWasm {
-                    name: &post_name,
+                    name: &func.name,
                     sig: &post_sig,
+                    module_prefix: "cabi_post_",
                 });
             } else if !sig.retptr {
                 // With no return pointer in use we can simply lift the

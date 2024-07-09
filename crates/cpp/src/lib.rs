@@ -3177,12 +3177,12 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 );
                 results.push(resultname);
             }
-            abi::Instruction::CallWasm { name, sig } => {
+            abi::Instruction::CallWasm { name, sig, module_prefix } => {
                 let module_name = self
                     .gen
                     .wasm_import_module
                     .as_ref()
-                    .map(|e| e.clone())
+                    .map(|e| String::from(*module_prefix) + e)
                     .unwrap();
                 if self.gen.gen.opts.host {
                     uwriteln!(self.src, "wasm_function_inst_t wasm_func = wasm_runtime_lookup_function(wasm_runtime_get_module_inst(exec_env), \n\
