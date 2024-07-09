@@ -862,9 +862,22 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 sig: &sig,
             });
 
-            if matches!(self.lift_lower, LiftLower::Symmetric) && func.results.len()!=0 {
+            if matches!(self.lift_lower, LiftLower::Symmetric) && func.results.len() != 0 {
                 let ptr = self.stack.pop().unwrap();
-                self.read_results_from_memory(&func.results, ptr, 0);
+                self.read_results_from_memory(&func.results, ptr.clone(), 0);
+                let post_name = String::from("cabi_post_") + &func.name;
+                let post_sig = WasmSignature {
+                    params: vec![WasmType::Pointer],
+                    results: Vec::new(),
+                    indirect_params: false,
+                    retptr: false,
+                };
+                // TODO: can we get this name from somewhere?
+                self.stack.push(ptr);
+                self.emit(&Instruction::CallWasm {
+                    name: &post_name,
+                    sig: &post_sig,
+                });
             } else if !sig.retptr {
                 // With no return pointer in use we can simply lift the
                 // result(s) of the function from the result of the core
