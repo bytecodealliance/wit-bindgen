@@ -157,7 +157,10 @@ fn read_crate(ws: Option<&Workspace>, manifest: &Path) -> Crate {
             );
         }
         if let Some(ws) = ws {
-            if version.is_none() && line.starts_with("version.workspace = true") {
+            if version.is_none()
+                && line.starts_with("version =")
+                && line.contains("workspace = true")
+            {
                 version = Some(ws.version.clone());
             }
         }
