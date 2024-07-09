@@ -194,7 +194,7 @@ impl CSProjectMonoBuilder {
         </PropertyGroup>
 
         <ItemGroup>
-          <NativeLibrary Include=\"{camel}_component_type.o\" />
+          <NativeLibrary Include=\"$(MSBuildProjectDirectory)/{camel}_cabi_realloc.c\" />
         </ItemGroup>
 
         <Target Name=\"_FixRootAssembly\" AfterTargets=\"PrepareForILLink\">
