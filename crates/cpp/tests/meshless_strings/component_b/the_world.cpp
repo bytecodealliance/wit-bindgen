@@ -31,11 +31,15 @@ a_fooX3AfooX2FstringsX00a(uint8_t *, size_t);
 extern "C" __attribute__((import_module("foo:foo/strings")))
 __attribute__((import_name("b"))) uint8_t *
 a_fooX3AfooX2FstringsX00b();
+extern "C" __attribute__((import_module("cabi_post_foo:foo/strings")))
+__attribute__((import_name("b"))) void
+a_cabi_post_fooX3AfooX2FstringsX00b(uint8_t *);
 extern "C" __attribute__((import_module("foo:foo/strings")))
 __attribute__((import_name("c"))) uint8_t *
 a_fooX3AfooX2FstringsX00c(uint8_t *, size_t, uint8_t *, size_t);
-extern "C" void a_cabi_post_fooX3AfooX2FstringsX00b(uint8_t *);
-extern "C" void a_cabi_post_fooX3AfooX2FstringsX00c(uint8_t *);
+extern "C" __attribute__((import_module("cabi_post_foo:foo/strings")))
+__attribute__((import_name("c"))) void
+a_cabi_post_fooX3AfooX2FstringsX00c(uint8_t *);
 void foo::foo::strings::A(std::string_view x) {
   auto const &vec0 = x;
   auto ptr0 = (uint8_t *)(vec0.data());
@@ -43,12 +47,14 @@ void foo::foo::strings::A(std::string_view x) {
   a_fooX3AfooX2FstringsX00a(ptr0, len0);
 }
 wit::string foo::foo::strings::B() {
-  uint8_t *ptr0 = a_fooX3AfooX2FstringsX00b();
-  auto len1 = *((size_t *)(ptr0 + sizeof(size_t)));
-  auto res = wit::string::from_view(
-      std::string_view((char const *)(*((uint8_t **)(ptr0 + 0))), len1));
-  a_cabi_post_fooX3AfooX2FstringsX00b(ptr0);
-  return res;
+  auto ret = a_fooX3AfooX2FstringsX00b();
+  auto len0 = *((size_t *)(ret + 8));
+
+  auto string0 = wit::string::from_view(
+      std::string_view((char const *)(*((uint8_t **)(ret + 0))), len0));
+
+  a_cabi_post_fooX3AfooX2FstringsX00b(ret);
+  return string0;
 }
 wit::string foo::foo::strings::C(std::string_view a, std::string_view b) {
   auto const &vec0 = a;
@@ -57,39 +63,43 @@ wit::string foo::foo::strings::C(std::string_view a, std::string_view b) {
   auto const &vec1 = b;
   auto ptr1 = (uint8_t *)(vec1.data());
   auto len1 = (size_t)(vec1.size());
-  uint8_t *ptr2 = a_fooX3AfooX2FstringsX00c(ptr0, len0, ptr1, len1);
-  auto len3 = *((size_t *)(ptr2 + sizeof(size_t)));
-  auto res = wit::string::from_view(
-      std::string_view((char const *)(*((uint8_t **)(ptr2 + 0))), len3));
-  a_cabi_post_fooX3AfooX2FstringsX00c(ptr2);
-  return res;
+  auto ret = a_fooX3AfooX2FstringsX00c(ptr0, len0, ptr1, len1);
+  auto len2 = *((size_t *)(ret + 8));
+
+  auto string2 = wit::string::from_view(
+      std::string_view((char const *)(*((uint8_t **)(ret + 0))), len2));
+
+  a_cabi_post_fooX3AfooX2FstringsX00c(ret);
+  return string2;
 }
 extern "C" __attribute__((__export_name__("foo:foo/strings#a"))) void
 fooX3AfooX2FstringsX00a(uint8_t *arg0, size_t arg1) {
   auto len0 = arg1;
 
-  exports::foo::foo::strings::A(
-      wit::string::from_view(std::string_view((char const *)(arg0), len0)));
+  auto string0 =
+      wit::string::from_view(std::string_view((char const *)(arg0), len0));
+
+  exports::foo::foo::strings::A(std::move(string0));
 }
 extern "C" __attribute__((__export_name__("foo:foo/strings#b"))) uint8_t *
 fooX3AfooX2FstringsX00b() {
   auto result0 = exports::foo::foo::strings::B();
-  static size_t ret_area[2];
+  static uint64_t ret_area[2];
   uint8_t *ptr1 = (uint8_t *)(&ret_area);
   auto const &vec2 = result0;
   auto ptr2 = (uint8_t *)(vec2.data());
   auto len2 = (size_t)(vec2.size());
   result0.leak();
 
-  *((size_t *)(ptr1 + sizeof(size_t))) = len2;
+  *((size_t *)(ptr1 + 8)) = len2;
   *((uint8_t **)(ptr1 + 0)) = ptr2;
   return ptr1;
 }
 extern "C"
     __attribute__((__weak__,
-                   __export_name__("cabi_post_fooX3AfooX2FstringsX23b"))) void
+                   __export_name__("cabi_post_fooX3AfooX2FstringsX00b"))) void
     cabi_post_fooX3AfooX2FstringsX00b(uint8_t *arg0) {
-  if ((*((size_t *)(arg0 + sizeof(size_t)))) > 0) {
+  if ((*((size_t *)(arg0 + 8))) > 0) {
     wit::string::drop_raw((void *)(*((uint8_t **)(arg0 + 0))));
   }
 }
@@ -98,27 +108,32 @@ fooX3AfooX2FstringsX00c(uint8_t *arg0, size_t arg1, uint8_t *arg2,
                         size_t arg3) {
   auto len0 = arg1;
 
+  auto string0 =
+      wit::string::from_view(std::string_view((char const *)(arg0), len0));
+
   auto len1 = arg3;
 
-  auto result2 = exports::foo::foo::strings::C(
-      wit::string::from_view(std::string_view((char const *)(arg0), len0)),
-      wit::string::from_view(std::string_view((char const *)(arg2), len1)));
-  static size_t ret_area[2];
+  auto string1 =
+      wit::string::from_view(std::string_view((char const *)(arg2), len1));
+
+  auto result2 =
+      exports::foo::foo::strings::C(std::move(string0), std::move(string1));
+  static uint64_t ret_area[2];
   uint8_t *ptr3 = (uint8_t *)(&ret_area);
   auto const &vec4 = result2;
   auto ptr4 = (uint8_t *)(vec4.data());
   auto len4 = (size_t)(vec4.size());
   result2.leak();
 
-  *((size_t *)(ptr3 + sizeof(size_t))) = len4;
+  *((size_t *)(ptr3 + 8)) = len4;
   *((uint8_t **)(ptr3 + 0)) = ptr4;
   return ptr3;
 }
 extern "C"
     __attribute__((__weak__,
-                   __export_name__("cabi_post_fooX3AfooX2FstringsX23c"))) void
+                   __export_name__("cabi_post_fooX3AfooX2FstringsX00c"))) void
     cabi_post_fooX3AfooX2FstringsX00c(uint8_t *arg0) {
-  if ((*((size_t *)(arg0 + sizeof(size_t)))) > 0) {
+  if ((*((size_t *)(arg0 + 8))) > 0) {
     wit::string::drop_raw((void *)(*((uint8_t **)(arg0 + 0))));
   }
 }

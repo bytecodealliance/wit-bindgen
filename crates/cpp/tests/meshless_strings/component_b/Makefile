@@ -6,7 +6,7 @@ libcomponent_b.a: the_world.o guest.o
 	ar rcvs $@ $^
 
 bindgen:
-	../../../../../target/debug/wit-bindgen cpp ../wit -w b --wasm64 --format
+	../../../../../target/debug/wit-bindgen cpp ../wit --symmetric --wasm64 --format
 
 clean:
 	-rm *~ *.a *.o
