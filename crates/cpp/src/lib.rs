@@ -1021,6 +1021,10 @@ impl CppInterfaceGenerator<'_> {
         };
         let mut module_name = self.wasm_import_module.as_ref().map(|e| e.clone());
         let mut symbol_variant = variant;
+        if self.gen.opts.symmetric && matches!(variant, AbiVariant::GuestExport) {
+            // symmetric doesn't distinguish
+            symbol_variant = AbiVariant::GuestImport;
+        }
         if matches!(variant, AbiVariant::GuestExport)
             && matches!(
                 is_drop,
@@ -1613,14 +1617,27 @@ impl CppInterfaceGenerator<'_> {
                 let sig = self.patched_wasm_signature(variant, func);
                 let module_name = self.wasm_import_module.as_ref().map(|e| e.clone());
                 let export_name = match module_name {
-                    Some(ref module_name) => make_external_symbol(module_name, &func.name, variant),
+                    Some(ref module_name) => {
+                        let symbol_variant = if self.gen.opts.symmetric {
+                            AbiVariant::GuestImport
+                        } else {
+                            variant
+                        };
+                        make_external_symbol(module_name, &func.name, symbol_variant)
+                    }
                     None => make_external_component(&func.name),
                 };
                 //let export_name = func.core_export_name(Some(&module_name));
                 let import_name = match module_name {
-                    Some(ref module_name) => {
-                        make_external_symbol(module_name, &func.name, AbiVariant::GuestExport)
-                    }
+                    Some(ref module_name) => make_external_symbol(
+                        module_name,
+                        &func.name,
+                        if self.gen.opts.symmetric {
+                            AbiVariant::GuestImport
+                        } else {
+                            AbiVariant::GuestExport
+                        },
+                    ),
                     None => make_external_component(&func.name),
                 };
                 // make_external_symbol(&module_name, &func.name, AbiVariant::GuestExport);
@@ -2585,7 +2602,10 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 if realloc.is_none() {
                     results.push(ptr);
                 } else {
-                    if !self.gen.gen.opts.host_side() && !(self.gen.gen.opts.symmetric && matches!(self.variant, AbiVariant::GuestImport)) {
+                    if !self.gen.gen.opts.host_side()
+                        && !(self.gen.gen.opts.symmetric
+                            && matches!(self.variant, AbiVariant::GuestImport))
+                    {
                         uwriteln!(self.src, "{}.leak();\n", operands[0]);
                     }
                     results.push(ptr);
@@ -2651,7 +2671,11 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 uwriteln!(self.src, "auto {} = {};\n", len, operands[1]);
                 let result = if self.gen.gen.opts.symmetric {
                     uwriteln!(self.src, "auto string{tmp} = wit::string::from_view(std::string_view((char const *)({}), {len}));\n", operands[0]);
-                    format!("string{tmp}")
+                    if matches!(self.variant, AbiVariant::GuestExport) {
+                        format!("std::move(string{tmp})")
+                    } else {
+                        format!("string{tmp}")
+                    }
                 } else if self.gen.gen.opts.host {
                     uwriteln!(self.src, "char const* ptr{} = (char const*)wasm_runtime_addr_app_to_native(wasm_runtime_get_module_inst(exec_env), {});\n", tmp, operands[0]);
                     format!("std::string_view(ptr{}, {len})", tmp)
@@ -3177,7 +3201,11 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 );
                 results.push(resultname);
             }
-            abi::Instruction::CallWasm { name, sig, module_prefix } => {
+            abi::Instruction::CallWasm {
+                name,
+                sig,
+                module_prefix,
+            } => {
                 let module_name = self
                     .gen
                     .wasm_import_module
