@@ -2585,7 +2585,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 if realloc.is_none() {
                     results.push(ptr);
                 } else {
-                    if !self.gen.gen.opts.host_side() && !self.gen.gen.opts.symmetric {
+                    if !self.gen.gen.opts.host_side() && !(self.gen.gen.opts.symmetric && matches!(self.variant, AbiVariant::GuestImport)) {
                         uwriteln!(self.src, "{}.leak();\n", operands[0]);
                     }
                     results.push(ptr);
