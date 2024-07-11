@@ -631,6 +631,8 @@ impl WorldGenerator for Cpp {
 
         if self.opts.short_cut {
             uwriteln!(h_str.src, "#define WIT_HOST_DIRECT");
+        } else if self.opts.symmetric {
+            uwriteln!(h_str.src, "#define WIT_SYMMETRIC");
         }
         for include in self.includes.iter() {
             uwriteln!(h_str.src, "#include {include}");
@@ -961,23 +963,26 @@ impl CppInterfaceGenerator<'_> {
 
     // local patching of borrows function needs more complex solution
     fn patched_wasm_signature(&self, variant: AbiVariant, func: &Function) -> WasmSignature {
-        let res = self.resolve.wasm_signature(variant, func);
-        // if matches!(res.params.get(0), Some(WasmType::I32))
-        //     && matches!(func.kind, FunctionKind::Freestanding)
-        // {
-        //     if let Some((_, ty)) = func.params.get(0) {
-        //         if let Type::Id(id) = ty {
-        //             if let Some(td) = self.resolve.types.get(*id) {
-        //                 if let TypeDefKind::Handle(Handle::Borrow(id2)) = &td.kind {
-        //                     if let Some(ty2) = self.resolve.types.get(*id2) {
-        //                         dbg!((&self.gen.imported_interfaces, id2, ty2, &func));
-        //                     }
-        //                 }
-        //             }
-        //         }
-        //     }
-        // }
-        res
+        if self.gen.opts.symmetric {
+            abi::wasm_signature_symmetric(self.resolve, variant, func)
+        } else {
+            self.resolve.wasm_signature(variant, func)
+            // if matches!(res.params.get(0), Some(WasmType::I32))
+            //     && matches!(func.kind, FunctionKind::Freestanding)
+            // {
+            //     if let Some((_, ty)) = func.params.get(0) {
+            //         if let Type::Id(id) = ty {
+            //             if let Some(td) = self.resolve.types.get(*id) {
+            //                 if let TypeDefKind::Handle(Handle::Borrow(id2)) = &td.kind {
+            //                     if let Some(ty2) = self.resolve.types.get(*id2) {
+            //                         dbg!((&self.gen.imported_interfaces, id2, ty2, &func));
+            //                     }
+            //                 }
+            //             }
+            //         }
+            //     }
+            // }
+        }
     }
 
     // print the signature of the guest export (lowered (wasm) function calling into highlevel)
@@ -985,7 +990,11 @@ impl CppInterfaceGenerator<'_> {
         let is_drop = is_special_method(func);
         let signature = match is_drop {
             SpecialMethod::ResourceDrop => WasmSignature {
-                params: vec![WasmType::I32],
+                params: vec![if self.gen.opts.symmetric {
+                    WasmType::Pointer
+                } else {
+                    WasmType::I32
+                }],
                 results: Vec::new(),
                 indirect_params: false,
                 retptr: false,
@@ -1472,15 +1481,28 @@ impl CppInterfaceGenerator<'_> {
                             let name = self.declare_import(
                                 &module_name,
                                 &func.name,
-                                &[WasmType::I32],
+                                &[if self.gen.opts.symmetric {
+                                    WasmType::Pointer
+                                } else {
+                                    WasmType::I32
+                                }],
                                 &[],
                             );
-                            uwriteln!(
-                                self.gen.c_src.src,
-                                "   if (handle>=0) {{
+                            if self.gen.opts.symmetric {
+                                uwriteln!(
+                                    self.gen.c_src.src,
+                                    "   if (handle!=nullptr) {{
                                 {name}(handle);
                             }}"
-                            );
+                                );
+                            } else {
+                                uwriteln!(
+                                    self.gen.c_src.src,
+                                    "   if (handle>=0) {{
+                                {name}(handle);
+                            }}"
+                                );
+                            }
                         }
                     }
                 },

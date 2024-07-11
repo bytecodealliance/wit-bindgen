@@ -27,21 +27,21 @@ cabi_realloc(void *ptr, size_t old_size, size_t align, size_t new_size) {
 
 extern "C" __attribute__((import_module("foo:foo/resources")))
 __attribute__((import_name("[resource-drop]r"))) void
-    fooX3AfooX2FresourcesX00X5Bresource_dropX5Dr(int32_t);
+fooX3AfooX2FresourcesX00X5Bresource_dropX5Dr(uint8_t *);
 extern "C" __attribute__((import_module("foo:foo/resources")))
 __attribute__((import_name("[constructor]r")))
-int32_t fooX3AfooX2FresourcesX00X5BconstructorX5Dr(int32_t);
+uint8_t *fooX3AfooX2FresourcesX00X5BconstructorX5Dr(int32_t);
 extern "C" __attribute__((import_module("foo:foo/resources")))
 __attribute__((import_name("[method]r.add"))) void
-    fooX3AfooX2FresourcesX00X5BmethodX5DrX2Eadd(int32_t, int32_t);
+fooX3AfooX2FresourcesX00X5BmethodX5DrX2Eadd(uint8_t *, int32_t);
 extern "C" __attribute__((import_module("foo:foo/resources")))
-__attribute__((import_name("create"))) int32_t
+__attribute__((import_name("create"))) uint8_t *
 fooX3AfooX2FresourcesX00create();
 extern "C" __attribute__((import_module("foo:foo/resources")))
 __attribute__((import_name("consume"))) void
-    fooX3AfooX2FresourcesX00consume(int32_t);
+fooX3AfooX2FresourcesX00consume(uint8_t *);
 foo::foo::resources::R::~R() {
-  if (handle >= 0) {
+  if (handle != nullptr) {
     fooX3AfooX2FresourcesX00X5Bresource_dropX5Dr(handle);
   }
 }

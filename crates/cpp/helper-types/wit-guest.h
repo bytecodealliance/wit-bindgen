@@ -136,26 +136,32 @@ public:
 /// Wraps the identifier and can be forwarded but not duplicated
 class ResourceImportBase {
 public:
-  static const int32_t invalid = -1;
+#ifdef WIT_SYMMETRIC
+  typedef uint8_t *handle_t;
+  static constexpr handle_t invalid = nullptr;
+#else
+  typedef int32_t handle_t;
+  static const handle_t invalid = -1;
+#endif
 
 protected:
-  int32_t handle;
+  handle_t handle;
 
 public:
-  ResourceImportBase(int32_t h = invalid) : handle(h) {}
+  ResourceImportBase(handle_t h = invalid) : handle(h) {}
   ResourceImportBase(ResourceImportBase &&r) : handle(r.handle) {
     r.handle = invalid;
   }
   ResourceImportBase(ResourceImportBase const &) = delete;
-  void set_handle(int32_t h) { handle = h; }
-  int32_t get_handle() const { return handle; }
-  int32_t into_handle() {
-    int32_t h = handle;
+  void set_handle(handle_t h) { handle = h; }
+  handle_t get_handle() const { return handle; }
+  handle_t into_handle() {
+    handle_t h = handle;
     handle = invalid;
     return h;
   }
   ResourceImportBase &operator=(ResourceImportBase &&r) {
-    assert(handle < 0);
+    assert(handle == invalid);
     handle = r.handle;
     r.handle = invalid;
     return *this;

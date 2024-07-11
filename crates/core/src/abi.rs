@@ -687,7 +687,12 @@ pub fn call(
     func: &Function,
     bindgen: &mut impl Bindgen,
 ) {
-    Generator::new(resolve, variant, lift_lower, bindgen).call(func);
+    if matches!(lift_lower, LiftLower::Symmetric) {
+        let sig = wasm_signature_symmetric(resolve, variant, func);
+        Generator::new(resolve, variant, lift_lower, bindgen).call_with_signature(func, sig);
+    } else {
+        Generator::new(resolve, variant, lift_lower, bindgen).call(func);
+    }
 }
 
 /// Used in a similar manner as the `Interface::call` function except is
@@ -788,7 +793,10 @@ impl<'a, B: Bindgen> Generator<'a, B> {
 
     fn call(&mut self, func: &Function) {
         let sig = self.resolve.wasm_signature(self.variant, func);
+        self.call_with_signature(func, sig);
+    }
 
+    fn call_with_signature(&mut self, func: &Function, sig: WasmSignature) {
         let language_to_abi = matches!(self.lift_lower, LiftLower::LowerArgsLiftResults)
             || (matches!(self.lift_lower, LiftLower::Symmetric)
                 && matches!(self.variant, AbiVariant::GuestImport));
@@ -1998,4 +2006,69 @@ fn cast(from: WasmType, to: WasmType) -> Bitcast {
 
 fn align_to(val: usize, align: usize) -> usize {
     (val + align - 1) & !(align - 1)
+}
+
+fn push_flat_symmetric(resolve: &Resolve, ty: &Type, vec: &mut Vec<WasmType>) {
+    if let Type::Id(id) = ty {
+        if matches!(&resolve.types[*id].kind, TypeDefKind::Handle(_)) {
+            vec.push(WasmType::Pointer);
+        } else {
+            resolve.push_flat(ty, vec);
+        }
+    } else {
+        resolve.push_flat(ty, vec);
+    }
+}
+
+// another hack
+pub fn wasm_signature_symmetric(
+    resolve: &Resolve,
+    variant: AbiVariant,
+    func: &Function,
+) -> WasmSignature {
+    const MAX_FLAT_PARAMS: usize = 16;
+    const MAX_FLAT_RESULTS: usize = 1;
+
+    let mut params = Vec::new();
+    let mut indirect_params = false;
+    for (_, param) in func.params.iter() {
+        push_flat_symmetric(resolve, param, &mut params);
+    }
+
+    if params.len() > MAX_FLAT_PARAMS {
+        params.truncate(0);
+        params.push(WasmType::Pointer);
+        indirect_params = true;
+    }
+
+    let mut results = Vec::new();
+    for ty in func.results.iter_types() {
+        push_flat_symmetric(resolve, ty, &mut results)
+    }
+
+    let mut retptr = false;
+
+    // Rust/C don't support multi-value well right now, so if a function
+    // would have multiple results then instead truncate it. Imports take a
+    // return pointer to write into and exports return a pointer they wrote
+    // into.
+    if results.len() > MAX_FLAT_RESULTS {
+        retptr = true;
+        results.truncate(0);
+        match variant {
+            AbiVariant::GuestImport => {
+                params.push(WasmType::Pointer);
+            }
+            AbiVariant::GuestExport => {
+                results.push(WasmType::Pointer);
+            }
+        }
+    }
+
+    WasmSignature {
+        params,
+        indirect_params,
+        results,
+        retptr,
+    }
 }
