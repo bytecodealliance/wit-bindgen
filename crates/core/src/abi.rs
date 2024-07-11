@@ -864,7 +864,9 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 module_prefix: "",
             });
 
-            if matches!(self.lift_lower, LiftLower::Symmetric) && func.results.len() != 0 {
+            if matches!(self.lift_lower, LiftLower::Symmetric)
+                && guest_export_needs_post_return(self.resolve, func)
+            {
                 let ptr = self.stack.pop().unwrap();
                 self.read_results_from_memory(&func.results, ptr.clone(), 0);
                 let post_sig = WasmSignature {
