@@ -1151,7 +1151,7 @@ impl CppInterfaceGenerator<'_> {
         // we might want to separate c_sig and h_sig
         // let mut sig = String::new();
         if self.gen.opts.symmetric && matches!(is_drop, SpecialMethod::ResourceNew) {
-            res.result= "uint8_t*".into();
+            res.result = "uint8_t*".into();
         } else
         // not for ctor nor imported dtor on guest
         if !matches!(&func.kind, FunctionKind::Constructor(_))
