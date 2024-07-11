@@ -104,7 +104,12 @@ public:
   struct Deregister {
     void operator()(R *ptr) const {
       // probably always true because of unique_ptr wrapping, TODO: check
-      if (ptr->handle >= 0) {
+#ifdef WIT_SYMMETRIC
+      if (ptr->handle != nullptr)
+#else
+      if (ptr->handle >= 0)
+#endif
+      {
         // we can't deallocate because the host calls Dtor
         R::ResourceDrop(ptr->handle);
       }
@@ -112,9 +117,15 @@ public:
   };
   typedef std::unique_ptr<R, Deregister> Owned;
 
-  static const int32_t invalid = -1;
+#ifdef WIT_SYMMETRIC
+  typedef uint8_t *handle_t;
+  static constexpr handle_t invalid = nullptr;
+#else
+  typedef int32_t handle_t;
+  static const handle_t invalid = -1;
+#endif
 
-  int32_t handle;
+  handle_t handle;
 
   ResourceExportBase() : handle(R::ResourceNew((R *)this)) {}
   // because this function is called by the host via Dtor we must not deregister
@@ -123,9 +134,9 @@ public:
   ResourceExportBase(ResourceExportBase &&) = delete;
   ResourceExportBase &operator=(ResourceExportBase &&b) = delete;
   ResourceExportBase &operator=(ResourceExportBase const &) = delete;
-  int32_t get_handle() const { return handle; }
-  int32_t into_handle() {
-    int32_t result = handle;
+  handle_t get_handle() const { return handle; }
+  handle_t into_handle() {
+    handle_t result = handle;
     handle = invalid;
     return result;
   }
