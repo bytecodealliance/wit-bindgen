@@ -105,6 +105,18 @@ pub enum ExportKey {
     Name(String),
 }
 
+#[cfg(feature = "clap")]
+fn parse_with(s: &str) -> Result<(String, WithOption), String> {
+    let (k, v) = s.split_once('=').ok_or_else(|| {
+        format!("expected string of form `<key>=<value>[,<key>=<value>...]`; got `{s}`")
+    })?;
+    let v = match v {
+        "generate" => WithOption::Generate,
+        other => WithOption::Path(other.to_string()),
+    };
+    Ok((k.to_string(), v))
+}
+
 #[derive(Default, Debug, Clone)]
 #[cfg_attr(feature = "clap", derive(clap::Args))]
 pub struct Opts {
@@ -179,8 +191,13 @@ pub struct Opts {
     /// Argument must be of the form `k=v` and this option can be passed
     /// multiple times or one option can be comma separated, for example
     /// `k1=v1,k2=v2`.
-    #[cfg_attr(feature = "clap", arg(long, value_parser = clap::value_parser!(WithGeneration), value_delimiter = ','))]
-    pub with: WithGeneration,
+    #[cfg_attr(feature = "clap", arg(long, value_parser = parse_with, value_delimiter = ','))]
+    pub with: Vec<(String, WithOption)>,
+
+    /// Indicates that all interfaces not specified in `with` should be
+    /// generated.
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub generate_all: bool,
 
     /// Add the specified suffix to the name of the custome section containing
     /// the component type.
@@ -307,10 +324,7 @@ impl RustWasm {
     ) -> Result<bool> {
         let with_name = resolve.name_world_key(name);
         let Some(remapping) = self.with.get(&with_name) else {
-            bail!("no remapping found for {with_name:?} - use the `generate!` macro's `with` option to force the interface to be generated or specify where it is already defined:
-```
-with: {{\n\t{with_name:?}: generate\n}}
-```")
+            bail!(MissingWith(with_name));
         };
         self.generated_interfaces.insert(with_name);
         let entry = match remapping {
@@ -872,7 +886,7 @@ impl WorldGenerator for RustWasm {
         for (k, v) in self.opts.with.iter() {
             self.with.insert(k.clone(), v.clone().into());
         }
-        self.with.generate_by_default = self.opts.with.generate_by_default;
+        self.with.generate_by_default = self.opts.generate_all;
     }
 
     fn import_interface(
@@ -1192,51 +1206,6 @@ impl fmt::Display for Ownership {
     }
 }
 
-/// Configuration for how interfaces are generated.
-#[derive(Debug, Clone, Default)]
-pub struct WithGeneration {
-    /// How interface should be generated
-    with: HashMap<String, WithOption>,
-    /// Whether to generate interfaces not present in the `with` map
-    pub generate_by_default: bool,
-}
-
-impl WithGeneration {
-    fn iter(&self) -> impl Iterator<Item = (&String, &WithOption)> {
-        self.with.iter()
-    }
-
-    pub fn extend(&mut self, with: HashMap<String, WithOption>) {
-        self.with.extend(with);
-    }
-}
-
-impl FromStr for WithGeneration {
-    type Err = String;
-
-    fn from_str(s: &str) -> std::prelude::v1::Result<Self, Self::Err> {
-        let with = s
-            .trim()
-            .split(',')
-            .map(|s| {
-                let (k, v) = s.trim().split_once('=').ok_or_else(|| {
-                    format!("expected string of form `<key>=<value>[,<key>=<value>...]`; got `{s}`")
-                })?;
-                let k = k.trim().to_string();
-                let v = match v.trim() {
-                    "generate" => WithOption::Generate,
-                    v => WithOption::Path(v.to_string()),
-                };
-                Ok((k, v))
-            })
-            .collect::<Result<HashMap<_, _>, Self::Err>>()?;
-        Ok(WithGeneration {
-            with,
-            generate_by_default: false,
-        })
-    }
-}
-
 /// Options for with "with" remappings.
 #[derive(Debug, Clone)]
 pub enum WithOption {
@@ -1462,3 +1431,19 @@ impl fmt::Display for RustFlagsRepr {
         }
     }
 }
+
+#[derive(Debug, Clone)]
+pub struct MissingWith(pub String);
+
+impl fmt::Display for MissingWith {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "missing `with` mapping for the key `{}`", self.0)
+    }
+}
+
+impl std::error::Error for MissingWith {}
+
+// bail!("no remapping found for {with_name:?} - use the `generate!` macro's `with` option to force the interface to be generated or specify where it is already defined:
+// ```
+// with: {{\n\t{with_name:?}: generate\n}}
+// ```")

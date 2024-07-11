@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Context, Error, Result};
 use clap::Parser;
 use std::path::PathBuf;
 use std::str;
@@ -123,7 +123,7 @@ fn main() -> Result<()> {
         Opt::CSharp { opts, args } => (opts.build(), args),
     };
 
-    gen_world(generator, &opt, &mut files)?;
+    gen_world(generator, &opt, &mut files).map_err(attach_with_context)?;
 
     for (name, contents) in files.iter() {
         let dst = match &opt.out_dir {
@@ -164,6 +164,17 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn attach_with_context(err: Error) -> Error {
+    #[cfg(feature = "rust")]
+    if let Some(e) = err.downcast_ref::<wit_bindgen_rust::MissingWith>() {
+        let option = e.0.clone();
+        return err.context(format!(
+            "missing either `--generate-all` or `--with {option}=(...|generate)`"
+        ));
+    }
+    err
 }
 
 fn gen_world(
