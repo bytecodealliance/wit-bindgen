@@ -420,6 +420,9 @@ impl Cpp {
             self.finish_includes();
             self.h_src.change_namespace(&Default::default());
             uwriteln!(header, "#pragma once");
+            if self.opts.symmetric {
+                uwriteln!(header, "#define WIT_SYMMETRIC");
+            }
             for include in self.includes.iter() {
                 uwriteln!(header, "#include {include}");
             }
@@ -988,19 +991,20 @@ impl CppInterfaceGenerator<'_> {
     // print the signature of the guest export (lowered (wasm) function calling into highlevel)
     fn print_export_signature(&mut self, func: &Function, variant: AbiVariant) -> Vec<String> {
         let is_drop = is_special_method(func);
+        let id_type = if self.gen.opts.symmetric {
+            WasmType::Pointer
+        } else {
+            WasmType::I32
+        };
         let signature = match is_drop {
             SpecialMethod::ResourceDrop => WasmSignature {
-                params: vec![if self.gen.opts.symmetric {
-                    WasmType::Pointer
-                } else {
-                    WasmType::I32
-                }],
+                params: vec![id_type],
                 results: Vec::new(),
                 indirect_params: false,
                 retptr: false,
             },
             SpecialMethod::ResourceRep => WasmSignature {
-                params: vec![WasmType::I32],
+                params: vec![id_type],
                 results: vec![WasmType::Pointer],
                 indirect_params: false,
                 retptr: false,
@@ -1013,7 +1017,7 @@ impl CppInterfaceGenerator<'_> {
             },
             SpecialMethod::ResourceNew => WasmSignature {
                 params: vec![WasmType::Pointer],
-                results: vec![WasmType::I32],
+                results: vec![id_type],
                 indirect_params: false,
                 retptr: false,
             },
@@ -1146,6 +1150,9 @@ impl CppInterfaceGenerator<'_> {
         let is_drop = is_special_method(func);
         // we might want to separate c_sig and h_sig
         // let mut sig = String::new();
+        if self.gen.opts.symmetric && matches!(is_drop, SpecialMethod::ResourceNew) {
+            res.result= "uint8_t*".into();
+        } else
         // not for ctor nor imported dtor on guest
         if !matches!(&func.kind, FunctionKind::Constructor(_))
             && !(matches!(is_drop, SpecialMethod::ResourceDrop)
@@ -1219,7 +1226,15 @@ impl CppInterfaceGenerator<'_> {
                 res.implicit_self = true;
                 continue;
             }
-            if matches!(
+            if self.gen.opts.symmetric
+                && matches!(
+                    &is_drop,
+                    SpecialMethod::ResourceRep | SpecialMethod::ResourceDrop
+                )
+            {
+                res.arguments
+                    .push((name.to_snake_case(), "uint8_t*".into()));
+            } else if matches!(
                 (&is_drop, self.gen.opts.host_side()),
                 (SpecialMethod::Dtor, _)
                     | (SpecialMethod::ResourceNew, _)
@@ -2111,11 +2126,16 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                 );
             }
             if matches!(variant, AbiVariant::GuestExport) {
+                let id_type = if self.gen.opts.symmetric {
+                    Type::Id(id)
+                } else {
+                    Type::S32
+                };
                 let func = Function {
                     name: "[resource-new]".to_string() + &name,
                     kind: FunctionKind::Static(id),
                     params: vec![("self".into(), Type::Id(id))],
-                    results: Results::Anon(Type::S32),
+                    results: Results::Anon(id_type),
                     docs: Docs::default(),
                     stability: Stability::Unknown,
                 };
@@ -2124,7 +2144,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                 let func1 = Function {
                     name: "[resource-rep]".to_string() + &name,
                     kind: FunctionKind::Static(id),
-                    params: vec![("id".into(), Type::S32)],
+                    params: vec![("id".into(), id_type)],
                     results: Results::Anon(Type::Id(id)),
                     docs: Docs::default(),
                     stability: Stability::Unknown,
@@ -2134,7 +2154,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                 let func2 = Function {
                     name: "[resource-drop]".to_string() + &name,
                     kind: FunctionKind::Static(id),
-                    params: vec![("id".into(), Type::S32)],
+                    params: vec![("id".into(), id_type)],
                     results: Results::Named(vec![]),
                     docs: Docs::default(),
                     stability: Stability::Unknown,
