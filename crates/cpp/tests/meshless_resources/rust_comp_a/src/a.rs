@@ -21,19 +21,19 @@ pub mod foo {
 
       impl R{
         #[doc(hidden)]
-        pub unsafe fn from_handle(handle: u32) -> Self {
+        pub unsafe fn from_handle(handle: usize) -> Self {
           Self {
             handle: _rt::Resource::from_handle(handle),
           }
         }
 
         #[doc(hidden)]
-        pub fn take_handle(&self) -> u32 {
+        pub fn take_handle(&self) -> usize {
           _rt::Resource::take_handle(&self.handle)
         }
 
         #[doc(hidden)]
-        pub fn handle(&self) -> u32 {
+        pub fn handle(&self) -> usize {
           _rt::Resource::handle(&self.handle)
         }
       }
@@ -41,12 +41,12 @@ pub mod foo {
 
       unsafe impl _rt::WasmResource for R{
         #[inline]
-        unsafe fn drop(_handle: u32) {
+        unsafe fn drop(_handle: usize) {
           {
             #[link(wasm_import_module = "foo:foo/resources")]
             extern "C" {
               #[cfg_attr(target_arch = "wasm32", link_name = "[resource-drop]r")]
-              fn fooX3AfooX2FresourcesX00X5Bresource_dropX5Dr(_: u32);
+              fn fooX3AfooX2FresourcesX00X5Bresource_dropX5Dr(_: usize);
             }
 
             fooX3AfooX2FresourcesX00X5Bresource_dropX5Dr(_handle);
@@ -62,10 +62,10 @@ pub mod foo {
             #[link(wasm_import_module = "foo:foo/resources")]
             extern "C" {
               #[cfg_attr(target_arch = "wasm32", link_name = "[constructor]r")]
-              fn fooX3AfooX2FresourcesX00X5BconstructorX5Dr(_: i32, ) -> i32;
+              fn fooX3AfooX2FresourcesX00X5BconstructorX5Dr(_: i32, ) -> usize;
             }
             let ret = fooX3AfooX2FresourcesX00X5BconstructorX5Dr(_rt::as_i32(&a));
-            R::from_handle(ret as u32)
+            R::from_handle(ret)
           }
         }
       }
@@ -77,9 +77,9 @@ pub mod foo {
             #[link(wasm_import_module = "foo:foo/resources")]
             extern "C" {
               #[cfg_attr(target_arch = "wasm32", link_name = "[method]r.add")]
-              fn fooX3AfooX2FresourcesX00X5BmethodX5DrX2Eadd(_: i32, _: i32, );
+              fn fooX3AfooX2FresourcesX00X5BmethodX5DrX2Eadd(_: usize, _: i32, );
             }
-            fooX3AfooX2FresourcesX00X5BmethodX5DrX2Eadd((self).handle() as i32, _rt::as_i32(&b));
+            fooX3AfooX2FresourcesX00X5BmethodX5DrX2Eadd((self).handle(), _rt::as_i32(&b));
           }
         }
       }
@@ -90,10 +90,10 @@ pub mod foo {
           #[link(wasm_import_module = "foo:foo/resources")]
           extern "C" {
             #[cfg_attr(target_arch = "wasm32", link_name = "create")]
-            fn fooX3AfooX2FresourcesX00create() -> i32;
+            fn fooX3AfooX2FresourcesX00create() -> usize;
           }
           let ret = fooX3AfooX2FresourcesX00create();
-          R::from_handle(ret as u32)
+          R::from_handle(ret)
         }
       }
       #[allow(unused_unsafe, clippy::all)]
@@ -104,9 +104,9 @@ pub mod foo {
           #[link(wasm_import_module = "foo:foo/resources")]
           extern "C" {
             #[cfg_attr(target_arch = "wasm32", link_name = "consume")]
-            fn fooX3AfooX2FresourcesX00consume(_: i32, );
+            fn fooX3AfooX2FresourcesX00consume(_: usize, );
           }
-          fooX3AfooX2FresourcesX00consume((&o).take_handle() as i32);
+          fooX3AfooX2FresourcesX00consume((&o).take_handle());
         }
       }
 
@@ -119,7 +119,7 @@ mod _rt {
 
   use core::fmt;
   use core::marker;
-  use core::sync::atomic::{AtomicU32, Ordering::Relaxed};
+  use core::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 
   /// A type which represents a component model resource, either imported or
   /// exported into this component.
@@ -141,7 +141,7 @@ mod _rt {
     //
     // This represents, almost all the time, a valid handle value. When it's
     // invalid it's stored as `u32::MAX`.
-    handle: AtomicU32,
+    handle: AtomicUsize,
     _marker: marker::PhantomData<T>,
   }
 
@@ -152,15 +152,15 @@ mod _rt {
   #[allow(clippy::missing_safety_doc)]
   pub unsafe trait WasmResource {
     /// Invokes the `[resource-drop]...` intrinsic.
-    unsafe fn drop(handle: u32);
+    unsafe fn drop(handle: usize);
   }
 
   impl<T: WasmResource> Resource<T> {
     #[doc(hidden)]
-    pub unsafe fn from_handle(handle: u32) -> Self {
-      debug_assert!(handle != u32::MAX);
+    pub unsafe fn from_handle(handle: usize) -> Self {
+      debug_assert!(handle != 0);
       Self {
-        handle: AtomicU32::new(handle),
+        handle: AtomicUsize::new(handle),
         _marker: marker::PhantomData,
       }
     }
@@ -178,12 +178,12 @@ mod _rt {
     /// `take_handle` should only be exposed internally to generated code, not
     /// to user code.
     #[doc(hidden)]
-    pub fn take_handle(resource: &Resource<T>) -> u32 {
-      resource.handle.swap(u32::MAX, Relaxed)
+    pub fn take_handle(resource: &Resource<T>) -> usize {
+      resource.handle.swap(0, Relaxed)
     }
 
     #[doc(hidden)]
-    pub fn handle(resource: &Resource<T>) -> u32 {
+    pub fn handle(resource: &Resource<T>) -> usize {
       resource.handle.load(Relaxed)
     }
   }
@@ -202,7 +202,7 @@ mod _rt {
         match self.handle.load(Relaxed) {
           // If this handle was "taken" then don't do anything in the
           // destructor.
-          u32::MAX => {}
+          0 => {}
 
           // ... but otherwise do actually destroy it with the imported
           // component model intrinsic as defined through `T`.
