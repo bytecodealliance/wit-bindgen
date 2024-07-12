@@ -18,10 +18,10 @@ pub mod exports {
 
                 use super::super::super::super::_rt;
 
-                struct Representation(*mut u8);
-                unsafe impl Send for Representation {}
+                // struct Representation(*mut u8);
+                // unsafe impl Send for Representation {}
 
-                static RESOURCE_MAP: Mutex<BTreeMap<u32, Representation>> = Mutex::new(BTreeMap::new());
+                // static RESOURCE_MAP: Mutex<BTreeMap<u32, Representation>> = Mutex::new(BTreeMap::new());
                 //Default::default();
 
                 #[derive(Debug)]
@@ -65,19 +65,19 @@ pub mod exports {
                     }
 
                     #[doc(hidden)]
-                    pub unsafe fn from_handle(handle: u32) -> Self {
+                    pub unsafe fn from_handle(handle: usize) -> Self {
                         Self {
                             handle: _rt::Resource::from_handle(handle),
                         }
                     }
 
                     #[doc(hidden)]
-                    pub fn take_handle(&self) -> u32 {
+                    pub fn take_handle(&self) -> usize {
                         _rt::Resource::take_handle(&self.handle)
                     }
 
                     #[doc(hidden)]
-                    pub fn handle(&self) -> u32 {
+                    pub fn handle(&self) -> usize {
                         _rt::Resource::handle(&self.handle)
                     }
 
@@ -147,53 +147,55 @@ pub mod exports {
 
                 unsafe impl _rt::WasmResource for R {
                     #[inline]
-                    unsafe fn drop(handle: u32) {
-                      let rep = RESOURCE_MAP.lock().unwrap().remove(&handle);
-                      assert!(rep.is_some());
+                    unsafe fn drop(handle: usize) {
+                    //   let rep = RESOURCE_MAP.lock().unwrap().remove(&handle);
+                    //   assert!(rep.is_some());
+                        //R::dtor::<R>(handle as *mut u8);
+                        //let _ = _rt::Box::from_raw(handle as *mut _RRep<R>);
                     }
                 }
 
                 #[doc(hidden)]
                 #[allow(non_snake_case)]
-                pub unsafe fn _export_constructor_r_cabi<T: GuestR>(arg0: i32) -> i32 {
+                pub unsafe fn _export_constructor_r_cabi<T: GuestR>(arg0: i32) -> usize {
                     #[cfg(target_arch = "wasm32")]
                     _rt::run_ctors_once();
                     let result0 = R::new(T::new(arg0 as u32));
-                    (result0).take_handle() as i32
+                    (result0).take_handle()
                 }
                 #[doc(hidden)]
                 #[allow(non_snake_case)]
-                pub unsafe fn _export_method_r_add_cabi<T: GuestR>(arg0: i32, arg1: i32) {
+                pub unsafe fn _export_method_r_add_cabi<T: GuestR>(arg0: usize, arg1: i32) {
                     #[cfg(target_arch = "wasm32")]
                     _rt::run_ctors_once();
-                    let r = R::from_handle(arg0 as u32);
+                    let r = R::from_handle(arg0);
                     let a = r.as_ptr::<T>();
                     r.take_handle();
                     (*a).as_ref().unwrap().add(arg1 as u32);
                 }
                 #[doc(hidden)]
                 #[allow(non_snake_case)]
-                pub unsafe fn _export_create_cabi<T: Guest>() -> i32 {
+                pub unsafe fn _export_create_cabi<T: Guest>() -> usize {
                     #[cfg(target_arch = "wasm32")]
                     _rt::run_ctors_once();
                     let result0 = T::create();
-                    (result0).take_handle() as i32
+                    (result0).take_handle()
                 }
                 #[doc(hidden)]
                 #[allow(non_snake_case)]
-                pub unsafe fn _export_consume_cabi<T: Guest>(arg0: i32) {
+                pub unsafe fn _export_consume_cabi<T: Guest>(arg0: usize) {
                     #[cfg(target_arch = "wasm32")]
                     _rt::run_ctors_once();
-                    T::consume(R::from_handle(arg0 as u32));
+                    T::consume(R::from_handle(arg0));
                 }
 
                 #[doc(hidden)]
                 #[allow(non_snake_case)]
-                pub unsafe fn _export_drop_cabi<T: GuestR>(arg0: i32) {
+                pub unsafe fn _export_drop_cabi<T: GuestR>(arg0: usize) {
                     #[cfg(target_arch = "wasm32")]
                     _rt::run_ctors_once();
-                    let rep = RESOURCE_MAP.lock().unwrap().remove(&(arg0 as u32));
-                    R::dtor::<T>(rep.unwrap().0);
+                    //let rep = RESOURCE_MAP.lock().unwrap().remove(&(arg0 as u32));
+                    R::dtor::<T>(arg0 as *mut u8);
                 }
 
                 pub trait Guest {
@@ -204,23 +206,25 @@ pub mod exports {
                 }
                 pub trait GuestR: 'static {
                     #[doc(hidden)]
-                    unsafe fn _resource_new(val: *mut u8) -> u32
+                    unsafe fn _resource_new(val: *mut u8) -> usize
                     where
                         Self: Sized,
                     {
-                      let mut lock = RESOURCE_MAP.lock().unwrap();
-                      let new_index = lock.iter().next_back().map_or(1, |elem| elem.0+1);
-                      let old = lock.insert(new_index, Representation(val));
-                      assert!(old.is_none());
-                      new_index
+                    //   let mut lock = RESOURCE_MAP.lock().unwrap();
+                    //   let new_index = lock.iter().next_back().map_or(1, |elem| elem.0+1);
+                    //   let old = lock.insert(new_index, Representation(val));
+                    //   assert!(old.is_none());
+                    //   new_index
+                        val as usize
                     }
 
                     #[doc(hidden)]
-                    fn _resource_rep(handle: u32) -> *mut u8
+                    fn _resource_rep(handle: usize) -> *mut u8
                     where
                         Self: Sized,
                     {
-                      RESOURCE_MAP.lock().unwrap().get(&handle).unwrap().0
+                      //RESOURCE_MAP.lock().unwrap().get(&handle).unwrap().0
+                      handle as *mut u8
                     }
 
                     fn new(a: u32) -> Self;
@@ -233,27 +237,27 @@ pub mod exports {
 
     #[cfg_attr(target_arch = "wasm32", export_name = "foo:foo/resources#[constructor]r")]
     #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
-    unsafe extern "C" fn fooX3AfooX2FresourcesX00X5BconstructorX5Dr(arg0: i32,) -> i32 {
+    unsafe extern "C" fn fooX3AfooX2FresourcesX00X5BconstructorX5Dr(arg0: i32,) -> usize {
       $($path_to_types)*::_export_constructor_r_cabi::<<$ty as $($path_to_types)*::Guest>::R>(arg0)
     }
     #[cfg_attr(target_arch = "wasm32", export_name = "foo:foo/resources#[method]r.add")]
     #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
-    unsafe extern "C" fn fooX3AfooX2FresourcesX00X5BmethodX5DrX2Eadd(arg0: i32,arg1: i32,) {
+    unsafe extern "C" fn fooX3AfooX2FresourcesX00X5BmethodX5DrX2Eadd(arg0: usize,arg1: i32,) {
       $($path_to_types)*::_export_method_r_add_cabi::<<$ty as $($path_to_types)*::Guest>::R>(arg0, arg1)
     }
     #[cfg_attr(target_arch = "wasm32", export_name = "foo:foo/resources#create")]
     #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
-    unsafe extern "C" fn fooX3AfooX2FresourcesX00create() -> i32 {
+    unsafe extern "C" fn fooX3AfooX2FresourcesX00create() -> usize {
       $($path_to_types)*::_export_create_cabi::<$ty>()
     }
     #[cfg_attr(target_arch = "wasm32", export_name = "foo:foo/resources#consume")]
     #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
-    unsafe extern "C" fn fooX3AfooX2FresourcesX00consume(arg0: i32,) {
+    unsafe extern "C" fn fooX3AfooX2FresourcesX00consume(arg0: usize,) {
       $($path_to_types)*::_export_consume_cabi::<$ty>(arg0)
     }
 
     #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
-    unsafe extern "C" fn fooX3AfooX2FresourcesX00X5Bresource_dropX5Dr(arg0: i32) {
+    unsafe extern "C" fn fooX3AfooX2FresourcesX00X5Bresource_dropX5Dr(arg0: usize) {
       $($path_to_types)*::_export_drop_cabi::<<$ty as $($path_to_types)*::Guest>::R>(arg0)
     }
   };);
@@ -268,7 +272,7 @@ mod _rt {
 
     use core::fmt;
     use core::marker;
-    use core::sync::atomic::{AtomicU32, Ordering::Relaxed};
+    use core::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 
     /// A type which represents a component model resource, either imported or
     /// exported into this component.
@@ -290,7 +294,7 @@ mod _rt {
         //
         // This represents, almost all the time, a valid handle value. When it's
         // invalid it's stored as `u32::MAX`.
-        handle: AtomicU32,
+        handle: AtomicUsize,
         _marker: marker::PhantomData<T>,
     }
 
@@ -301,15 +305,15 @@ mod _rt {
     #[allow(clippy::missing_safety_doc)]
     pub unsafe trait WasmResource {
         /// Invokes the `[resource-drop]...` intrinsic.
-        unsafe fn drop(handle: u32);
+        unsafe fn drop(handle: usize);
     }
 
     impl<T: WasmResource> Resource<T> {
         #[doc(hidden)]
-        pub unsafe fn from_handle(handle: u32) -> Self {
-            debug_assert!(handle != u32::MAX);
+        pub unsafe fn from_handle(handle: usize) -> Self {
+            debug_assert!(handle != 0);
             Self {
-                handle: AtomicU32::new(handle),
+                handle: AtomicUsize::new(handle),
                 _marker: marker::PhantomData,
             }
         }
@@ -327,12 +331,12 @@ mod _rt {
         /// `take_handle` should only be exposed internally to generated code, not
         /// to user code.
         #[doc(hidden)]
-        pub fn take_handle(resource: &Resource<T>) -> u32 {
-            resource.handle.swap(u32::MAX, Relaxed)
+        pub fn take_handle(resource: &Resource<T>) -> usize {
+            resource.handle.swap(0, Relaxed)
         }
 
         #[doc(hidden)]
-        pub fn handle(resource: &Resource<T>) -> u32 {
+        pub fn handle(resource: &Resource<T>) -> usize {
             resource.handle.load(Relaxed)
         }
     }
@@ -351,7 +355,7 @@ mod _rt {
                 match self.handle.load(Relaxed) {
                     // If this handle was "taken" then don't do anything in the
                     // destructor.
-                    u32::MAX => {}
+                    0 => {}
 
                     // ... but otherwise do actually destroy it with the imported
                     // component model intrinsic as defined through `T`.
