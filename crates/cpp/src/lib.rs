@@ -1051,12 +1051,17 @@ impl CppInterfaceGenerator<'_> {
                 symbol_variant = AbiVariant::GuestImport;
             }
         }
+        let func_name = if self.gen.opts.symmetric && matches!(is_drop, SpecialMethod::Dtor) {
+            // replace [dtor] with [resource_drop]
+            format!("[resource_drop]{}", &func.name[6..])
+        } else {
+            func.name.clone()
+        };
         if self.gen.opts.short_cut {
             uwrite!(self.gen.c_src.src, "extern \"C\" ");
         } else if self.gen.opts.host {
             self.gen.c_src.src.push_str("static ");
         } else {
-            let func_name = &func.name;
             let module_prefix = module_name.as_ref().map_or(String::default(), |name| {
                 let mut res = name.clone();
                 res.push('#');
@@ -1078,8 +1083,8 @@ impl CppInterfaceGenerator<'_> {
             });
         self.gen.c_src.src.push_str(" ");
         let export_name = match module_name {
-            Some(ref module_name) => make_external_symbol(&module_name, &func.name, symbol_variant),
-            None => make_external_component(&func.name),
+            Some(ref module_name) => make_external_symbol(&module_name, &func_name, symbol_variant),
+            None => make_external_component(&func_name),
         };
         self.gen.c_src.src.push_str(&export_name);
         self.gen.c_src.src.push_str("(");
@@ -1116,7 +1121,7 @@ impl CppInterfaceGenerator<'_> {
         if self.gen.opts.host_side() {
             let signature = wamr::wamr_signature(self.resolve, func);
             let remember = HostFunction {
-                wasm_name: func.name.clone(),
+                wasm_name: func_name.clone(),
                 wamr_signature: signature.to_string(),
                 host_name: export_name.clone(),
             };
