@@ -1490,7 +1490,7 @@ impl CppInterfaceGenerator<'_> {
                             );
                         }
                     }
-                    LiftLower::LowerArgsLiftResults | LiftLower::Symmetric => {
+                    LiftLower::LowerArgsLiftResults => {
                         if self.gen.opts.host_side() {
                             let namespace = class_namespace(self, func, variant);
                             self.gen.c_src.qualify(&namespace);
@@ -1508,21 +1508,40 @@ impl CppInterfaceGenerator<'_> {
                                 }],
                                 &[],
                             );
-                            if self.gen.opts.symmetric {
-                                uwriteln!(
-                                    self.gen.c_src.src,
-                                    "   if (handle!=nullptr) {{
+                            uwriteln!(
+                                self.gen.c_src.src,
+                                "   if (handle>=0) {{
                                 {name}(handle);
                             }}"
-                                );
-                            } else {
-                                uwriteln!(
-                                    self.gen.c_src.src,
-                                    "   if (handle>=0) {{
+                            );
+                        }
+                    }
+                    LiftLower::Symmetric => {
+                        let module_name =
+                            self.wasm_import_module.as_ref().map(|e| e.clone()).unwrap();
+                        if matches!(variant, AbiVariant::GuestExport) {
+                            let namespace = class_namespace(self, func, variant);
+                            self.gen.c_src.qualify(&namespace);
+                            self.gen.c_src.src.push_str("Dtor((");
+                            self.gen.c_src.qualify(&namespace);
+                            uwriteln!(self.gen.c_src.src, "*){});", func.params.get(0).unwrap().0);
+                        } else {
+                            let name = self.declare_import(
+                                &module_name,
+                                &func.name,
+                                &[if self.gen.opts.symmetric {
+                                    WasmType::Pointer
+                                } else {
+                                    WasmType::I32
+                                }],
+                                &[],
+                            );
+                            uwriteln!(
+                                self.gen.c_src.src,
+                                "   if (handle!=nullptr) {{
                                 {name}(handle);
                             }}"
-                                );
-                            }
+                            );
                         }
                     }
                 },
@@ -1542,12 +1561,27 @@ impl CppInterfaceGenerator<'_> {
                         );
                     } else {
                         let classname = class_namespace(self, func, variant).join("::");
-                        uwriteln!(self.gen.c_src.src, "(({classname}*)arg0)->handle=-1;");
-                        uwriteln!(self.gen.c_src.src, "{0}::Dtor(({0}*)arg0);", classname);
+                        if self.gen.opts.symmetric {
+                            uwriteln!(
+                                self.gen.c_src.src,
+                                "{0}::ResourceDrop(({0}*)arg0);",
+                                classname
+                            );
+                        } else {
+                            uwriteln!(self.gen.c_src.src, "(({classname}*)arg0)->handle=-1;");
+                            uwriteln!(self.gen.c_src.src, "{0}::Dtor(({0}*)arg0);", classname);
+                        }
                     }
                 }
                 SpecialMethod::ResourceNew => {
-                    if !self.gen.opts.host_side() {
+                    if self.gen.opts.symmetric {
+                        uwriteln!(
+                            self.gen.c_src.src,
+                            "return ({}){};",
+                            self.gen.opts.ptr_type(),
+                            func.params.get(0).unwrap().0
+                        );
+                    } else if !self.gen.opts.host_side() {
                         let module_name = String::from("[export]")
                             + &self.wasm_import_module.as_ref().map(|e| e.clone()).unwrap();
                         let wasm_sig = self.declare_import(
@@ -1570,7 +1604,15 @@ impl CppInterfaceGenerator<'_> {
                     }
                 }
                 SpecialMethod::ResourceRep => {
-                    if !self.gen.opts.host_side() {
+                    if self.gen.opts.symmetric {
+                        let classname = class_namespace(self, func, variant).join("::");
+                        uwriteln!(
+                            self.gen.c_src.src,
+                            "return ({}*){};",
+                            classname,
+                            func.params.get(0).unwrap().0
+                        );
+                    } else if !self.gen.opts.host_side() {
                         let module_name = String::from("[export]")
                             + &self.wasm_import_module.as_ref().map(|e| e.clone()).unwrap();
                         let wasm_sig = self.declare_import(
