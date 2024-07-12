@@ -694,6 +694,10 @@
 ///         "some:package/my-interface": generate,
 ///     },
 ///
+///     // Indicates that all interfaces not present in `with` should be assumed
+///     // to be marked with `generate`.
+///     generate_all,
+///
 ///     // An optional list of function names to skip generating bindings for.
 ///     // This is only applicable to imports and the name specified is the name
 ///     // of the function.
