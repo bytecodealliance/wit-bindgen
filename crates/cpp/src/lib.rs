@@ -1501,11 +1501,7 @@ impl CppInterfaceGenerator<'_> {
                             let name = self.declare_import(
                                 &module_name,
                                 &func.name,
-                                &[if self.gen.opts.symmetric {
-                                    WasmType::Pointer
-                                } else {
-                                    WasmType::I32
-                                }],
+                                &[WasmType::I32],
                                 &[],
                             );
                             uwriteln!(
@@ -1520,20 +1516,21 @@ impl CppInterfaceGenerator<'_> {
                         let module_name =
                             self.wasm_import_module.as_ref().map(|e| e.clone()).unwrap();
                         if matches!(variant, AbiVariant::GuestExport) {
-                            let namespace = class_namespace(self, func, variant);
+                            let mut namespace = class_namespace(self, func, variant);
                             self.gen.c_src.qualify(&namespace);
                             self.gen.c_src.src.push_str("Dtor((");
+                            let classname = namespace.pop().unwrap_or_default();
                             self.gen.c_src.qualify(&namespace);
-                            uwriteln!(self.gen.c_src.src, "*){});", func.params.get(0).unwrap().0);
+                            uwriteln!(
+                                self.gen.c_src.src,
+                                "{classname}*){});",
+                                func.params.get(0).unwrap().0
+                            );
                         } else {
                             let name = self.declare_import(
                                 &module_name,
                                 &func.name,
-                                &[if self.gen.opts.symmetric {
-                                    WasmType::Pointer
-                                } else {
-                                    WasmType::I32
-                                }],
+                                &[WasmType::Pointer],
                                 &[],
                             );
                             uwriteln!(
@@ -1564,8 +1561,9 @@ impl CppInterfaceGenerator<'_> {
                         if self.gen.opts.symmetric {
                             uwriteln!(
                                 self.gen.c_src.src,
-                                "{0}::ResourceDrop(({0}*)arg0);",
-                                classname
+                                "{}::ResourceDrop(({})arg0);",
+                                classname,
+                                self.gen.opts.ptr_type()
                             );
                         } else {
                             uwriteln!(self.gen.c_src.src, "(({classname}*)arg0)->handle=-1;");
@@ -2912,9 +2910,11 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                             );
                             uwriteln!(
                                 self.src,
-                                "auto {var} = {tname}::Owned({tname}::ResourceRep({op}));
-                                {var}->into_handle();"
+                                "auto {var} = {tname}::Owned({tname}::ResourceRep({op}));"
                             );
+                            if !self.gen.gen.opts.symmetric {
+                                uwriteln!(self.src, "{var}->into_handle();");
+                            }
                             results.push(format!("std::move({var})"))
                         }
                     },

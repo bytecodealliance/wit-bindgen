@@ -25,65 +25,45 @@ cabi_realloc(void *ptr, size_t old_size, size_t align, size_t new_size) {
   return ret;
 }
 
-//static wit::ResourceTable<exports::foo::foo::resources::R*> r_table;
-//template <class R> std::map<int32_t, R> wit::ResourceTable<R>::resources;
-
-// extern "C" __attribute__((import_module("[export]foo:foo/resources")))
-// __attribute__((import_name("[resource-new]r"))) int32_t
-// X5BexportX5DfooX3AfooX2FresourcesX00X5Bresource_newX5Dr(uint8_t *);
-// extern "C" __attribute__((import_module("[export]foo:foo/resources")))
-// __attribute__((import_name("[resource-rep]r")))
-// uint8_t *X5BexportX5DfooX3AfooX2FresourcesX00X5Bresource_repX5Dr(int32_t);
-// extern "C" __attribute__((import_module("[export]foo:foo/resources")))
-// __attribute__((import_name("[resource-drop]r"))) void
-//     X5BexportX5DfooX3AfooX2FresourcesX00X5Bresource_dropX5Dr(int32_t);
-// extern "C" __attribute__((__export_name__("foo:foo/resources#[dtor]r"))) void
-// fooX3AfooX2FresourcesX23X5BdtorX5Dr(uint8_t *arg0) {
-//   ((exports::foo::foo::resources::R *)arg0)->handle = -1;
-//   exports::foo::foo::resources::R::Dtor(
-//       (exports::foo::foo::resources::R *)arg0);
-// }
 extern "C"
-    uint8_t*
-    fooX3AfooX2FresourcesX00X5BconstructorX5Dr(int32_t arg0) {
+    __attribute__((__export_name__("foo:foo/resources#[resource_drop]r"))) void
+    fooX3AfooX2FresourcesX00X5Bresource_dropX5Dr(uint8_t *arg0) {
+  exports::foo::foo::resources::R::ResourceDrop((uint8_t *)arg0);
+}
+extern "C" __attribute__((__export_name__("foo:foo/resources#[constructor]r")))
+uint8_t *
+fooX3AfooX2FresourcesX00X5BconstructorX5Dr(int32_t arg0) {
   auto result0 = exports::foo::foo::resources::R::New((uint32_t(arg0)));
   return result0.release()->handle;
 }
 extern "C"
-    void
-    fooX3AfooX2FresourcesX00X5BmethodX5DrX2Eadd(uint8_t* arg0, int32_t arg1) {
-  exports::foo::foo::resources::R::ResourceRep(arg0)
-      ->Add((uint32_t(arg1)));
+    __attribute__((__export_name__("foo:foo/resources#[method]r.add"))) void
+    fooX3AfooX2FresourcesX00X5BmethodX5DrX2Eadd(uint8_t *arg0, int32_t arg1) {
+  (std::ref(*(exports::foo::foo::resources::R *)arg0))
+      .get()
+      .Add((uint32_t(arg1)));
 }
-uint8_t* exports::foo::foo::resources::R::ResourceNew(R *self) {
-  return (uint8_t*)self;
-  //wit::ResourceTable<exports::foo::foo::resources::R*>::store_resource(std::move(self));
+uint8_t *exports::foo::foo::resources::R::ResourceNew(R *self) {
+  return (uint8_t *)self;
 }
 exports::foo::foo::resources::R *
-exports::foo::foo::resources::R::ResourceRep(uint8_t* id) {
+exports::foo::foo::resources::R::ResourceRep(uint8_t *id) {
   return (exports::foo::foo::resources::R *)id;
-//  *wit::ResourceTable<exports::foo::foo::resources::R*>::lookup_resource(id);
 }
-void exports::foo::foo::resources::R::ResourceDrop(uint8_t* id) {
-  //auto obj = wit::ResourceTable<exports::foo::foo::resources::R*>::remove_resource(id);
-  //assert(obj.has_value());
-  exports::foo::foo::resources::R::Dtor((exports::foo::foo::resources::R*)id);
+void exports::foo::foo::resources::R::ResourceDrop(uint8_t *id) {
+  exports::foo::foo::resources::R::Dtor((exports::foo::foo::resources::R *)id);
 }
-extern "C" uint8_t*
+extern "C" __attribute__((__export_name__("foo:foo/resources#create")))
+uint8_t *
 fooX3AfooX2FresourcesX00create() {
   auto result0 = exports::foo::foo::resources::Create();
   return result0.release()->handle;
 }
-extern "C" void
-fooX3AfooX2FresourcesX00consume(uint8_t* arg0) {
+extern "C" __attribute__((__export_name__("foo:foo/resources#consume"))) void
+fooX3AfooX2FresourcesX00consume(uint8_t *arg0) {
   auto obj0 = exports::foo::foo::resources::R::Owned(
       exports::foo::foo::resources::R::ResourceRep(arg0));
-  //obj0->into_handle();
   exports::foo::foo::resources::Consume(std::move(obj0));
 }
 
-extern "C" void
-fooX3AfooX2FresourcesX00X5Bresource_dropX5Dr(uint8_t* arg0) {
-  exports::foo::foo::resources::R::ResourceDrop(arg0);
-}
 // Component Adapters
