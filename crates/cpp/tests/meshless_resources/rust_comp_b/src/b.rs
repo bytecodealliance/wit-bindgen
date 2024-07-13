@@ -14,16 +14,8 @@ pub mod exports {
                 #[cfg(target_arch = "wasm32")]
                 static __FORCE_SECTION_REF: fn() =
                     super::super::super::super::__link_custom_section_describing_imports;
-                use std::{collections::BTreeMap, sync::Mutex};
 
                 use super::super::super::super::_rt;
-
-                // struct Representation(*mut u8);
-                // unsafe impl Send for Representation {}
-
-                // static RESOURCE_MAP: Mutex<BTreeMap<u32, Representation>> = Mutex::new(BTreeMap::new());
-                //Default::default();
-
                 #[derive(Debug)]
                 #[repr(transparent)]
                 pub struct R {
@@ -148,10 +140,10 @@ pub mod exports {
                 unsafe impl _rt::WasmResource for R {
                     #[inline]
                     unsafe fn drop(handle: usize) {
-                    //   let rep = RESOURCE_MAP.lock().unwrap().remove(&handle);
-                    //   assert!(rep.is_some());
-                        //R::dtor::<R>(handle as *mut u8);
-                        //let _ = _rt::Box::from_raw(handle as *mut _RRep<R>);
+                        extern "C" {
+                            fn fooX3AfooX2FresourcesX00X5Bresource_dropX5Dr(arg0: usize);
+                        }
+                        unsafe { fooX3AfooX2FresourcesX00X5Bresource_dropX5Dr(handle) };
                     }
                 }
 
@@ -194,7 +186,6 @@ pub mod exports {
                 pub unsafe fn _export_drop_cabi<T: GuestR>(arg0: usize) {
                     #[cfg(target_arch = "wasm32")]
                     _rt::run_ctors_once();
-                    //let rep = RESOURCE_MAP.lock().unwrap().remove(&(arg0 as u32));
                     R::dtor::<T>(arg0 as *mut u8);
                 }
 
@@ -210,11 +201,6 @@ pub mod exports {
                     where
                         Self: Sized,
                     {
-                    //   let mut lock = RESOURCE_MAP.lock().unwrap();
-                    //   let new_index = lock.iter().next_back().map_or(1, |elem| elem.0+1);
-                    //   let old = lock.insert(new_index, Representation(val));
-                    //   assert!(old.is_none());
-                    //   new_index
                         val as usize
                     }
 
@@ -223,8 +209,7 @@ pub mod exports {
                     where
                         Self: Sized,
                     {
-                      //RESOURCE_MAP.lock().unwrap().get(&handle).unwrap().0
-                      handle as *mut u8
+                        handle as *mut u8
                     }
 
                     fn new(a: u32) -> Self;
