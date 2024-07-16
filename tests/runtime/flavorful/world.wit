@@ -28,10 +28,10 @@ interface test {
   type list-typedef = string;
   type list-typedef2 = list<u8>;
   type list-typedef3 = list<string>;
-  list-typedefs: func(a: list-typedef, c: list-typedef3) -> (a: list-typedef2, b: list-typedef3);
+  list-typedefs: func(a: list-typedef, c: list-typedef3) -> tuple<list-typedef2, list-typedef3>;
 
   list-of-variants: func(a: list<bool>, b: list<result>, c: list<my-errno>)
-    -> (a: list<bool>, b: list<result>, c: list<my-errno>);
+    -> tuple<list<bool>, list<result>, list<my-errno>>;
 }
 
 world flavorful {

@@ -1,7 +1,7 @@
 package test:records;
 
 interface test {
-  multiple-results: func() -> (a: u8, b: u16);
+  multiple-results: func() -> tuple<u8, u16>;
 
   swap-tuple: func(a: tuple<u8, u32>) -> tuple<u32, u8>;
 
@@ -29,7 +29,7 @@ interface test {
 
 
   roundtrip-flags3: func(a: flag8, b: flag16, c: flag32) ->
-    (f8: flag8, f16: flag16, %f32: flag32);
+    tuple<flag8, flag16, flag32>;
 
   record r1 { a: u8, b: f1 }
   roundtrip-record1: func(a: r1) -> r1;
