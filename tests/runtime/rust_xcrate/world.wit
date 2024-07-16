@@ -31,10 +31,19 @@ interface b-imports {
   }
 }
 
+interface b-types {
+  enum b-enum {
+    b,
+    bb,
+    bbb,
+  }
+}
+
 world b {
   import b-imports;
 
-  export b: func();
+  use b-types.{b-enum};
+  export b: func(e: b-enum);
 
   export an-exported-interface: interface {
     resource x {

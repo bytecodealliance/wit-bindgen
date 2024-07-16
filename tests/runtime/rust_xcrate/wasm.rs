@@ -16,7 +16,7 @@ struct Exports;
 rust_xcrate_test::b::export_b!(Exports);
 
 impl rust_xcrate_test::b::Guest for Exports {
-    fn b() {
+    fn b(_: rust_xcrate_test::b::BEnum) {
         rust_xcrate_test::a::test::xcrate::a_imports::a();
         rust_xcrate_test::b::test::xcrate::b_imports::b();
 

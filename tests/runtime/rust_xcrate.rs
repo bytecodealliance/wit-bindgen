@@ -26,6 +26,8 @@ impl test::xcrate::a_imports::HostX for MyImports {
     }
 }
 
+impl test::xcrate::b_types::Host for MyImports {}
+
 impl test::xcrate::b_imports::Host for MyImports {
     fn b(&mut self) {}
 }
@@ -53,7 +55,7 @@ fn run() -> Result<()> {
 }
 
 fn run_test(exports: C, store: &mut Store<crate::Wasi<MyImports>>) -> Result<()> {
-    exports.call_b(&mut *store)?;
+    exports.call_b(&mut *store, BEnum::Bbb)?;
 
     let x = exports.an_exported_interface().x();
     let resource = x.call_constructor(&mut *store)?;
