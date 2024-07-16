@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 use syn::parse::{Error, Parse, ParseStream, Result};
 use syn::punctuated::Punctuated;
-use syn::{braced, token, Token};
+use syn::spanned::Spanned;
+use syn::{braced, token, LitStr, Token};
 use wit_bindgen_core::wit_parser::{PackageId, Resolve, UnresolvedPackageGroup, WorldId};
 use wit_bindgen_rust::{Opts, Ownership, WithOption};
 
@@ -50,9 +51,9 @@ struct Config {
 /// The source of the wit package definition
 enum Source {
     /// A path to a wit directory
-    Path(String),
+    Paths(Vec<PathBuf>),
     /// Inline sources have an optional path to a directory of their dependencies
-    Inline(String, Option<PathBuf>),
+    Inline(String, Option<Vec<PathBuf>>),
 }
 
 impl Parse for Config {
@@ -69,15 +70,15 @@ impl Parse for Config {
             let fields = Punctuated::<Opt, Token![,]>::parse_terminated(&content)?;
             for field in fields.into_pairs() {
                 match field.into_value() {
-                    Opt::Path(s) => {
+                    Opt::Path(span, p) => {
+                        let paths = p.into_iter().map(|f| PathBuf::from(f.value())).collect();
+
                         source = Some(match source {
-                            Some(Source::Path(_)) | Some(Source::Inline(_, Some(_))) => {
-                                return Err(Error::new(s.span(), "cannot specify second source"));
+                            Some(Source::Paths(_)) | Some(Source::Inline(_, Some(_))) => {
+                                return Err(Error::new(span, "cannot specify second source"));
                             }
-                            Some(Source::Inline(i, None)) => {
-                                Source::Inline(i, Some(PathBuf::from(s.value())))
-                            }
-                            None => Source::Path(s.value()),
+                            Some(Source::Inline(i, None)) => Source::Inline(i, Some(paths)),
+                            None => Source::Paths(paths),
                         })
                     }
                     Opt::World(s) => {
@@ -91,9 +92,7 @@ impl Parse for Config {
                             Some(Source::Inline(_, _)) => {
                                 return Err(Error::new(s.span(), "cannot specify second source"));
                             }
-                            Some(Source::Path(p)) => {
-                                Source::Inline(s.value(), Some(PathBuf::from(p)))
-                            }
+                            Some(Source::Paths(p)) => Source::Inline(s.value(), Some(p)),
                             None => Source::Inline(s.value(), None),
                         })
                     }
@@ -143,7 +142,9 @@ impl Parse for Config {
         } else {
             world = input.parse::<Option<syn::LitStr>>()?.map(|s| s.value());
             if input.parse::<Option<syn::token::In>>()?.is_some() {
-                source = Some(Source::Path(input.parse::<syn::LitStr>()?.value()));
+                source = Some(Source::Paths(vec![PathBuf::from(
+                    input.parse::<syn::LitStr>()?.value(),
+                )]));
             }
         }
         let (resolve, pkgs, files) =
@@ -168,31 +169,36 @@ fn parse_source(
     let mut resolve = Resolve::default();
     resolve.features.extend(features.iter().cloned());
     let mut files = Vec::new();
+    let mut pkgs = Vec::new();
     let root = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
-    let mut parse = |path: &Path| -> anyhow::Result<_> {
-        // Try to normalize the path to make the error message more understandable when
-        // the path is not correct. Fallback to the original path if normalization fails
-        // (probably return an error somewhere else).
-        let normalized_path = match std::fs::canonicalize(path) {
-            Ok(p) => p,
-            Err(_) => path.to_path_buf(),
-        };
-        let (pkg, sources) = resolve.push_path(normalized_path)?;
-        files.extend(sources);
-        Ok(pkg)
+    let mut parse = |paths: &[PathBuf]| -> anyhow::Result<()> {
+        for path in paths {
+            let p = root.join(path);
+            // Try to normalize the path to make the error message more understandable when
+            // the path is not correct. Fallback to the original path if normalization fails
+            // (probably return an error somewhere else).
+            let normalized_path = match std::fs::canonicalize(&p) {
+                Ok(p) => p,
+                Err(_) => p.to_path_buf(),
+            };
+            let (pkg, sources) = resolve.push_path(normalized_path)?;
+            pkgs.extend(pkg);
+            files.extend(sources);
+        }
+        Ok(())
     };
-    let pkg = match source {
+    match source {
         Some(Source::Inline(s, path)) => {
             if let Some(p) = path {
-                parse(&root.join(p))?;
+                parse(p)?;
             }
-            resolve.push_group(UnresolvedPackageGroup::parse("macro-input", s)?)?
+            pkgs = resolve.push_group(UnresolvedPackageGroup::parse("macro-input", s)?)?;
         }
-        Some(Source::Path(s)) => parse(&root.join(s))?,
-        None => parse(&root.join("wit"))?,
+        Some(Source::Paths(p)) => parse(p)?,
+        None => parse(&vec![root.join("wit")])?,
     };
 
-    Ok((resolve, pkg, files))
+    Ok((resolve, pkgs, files))
 }
 
 impl Config {
@@ -298,7 +304,7 @@ impl From<ExportKey> for wit_bindgen_rust::ExportKey {
 
 enum Opt {
     World(syn::LitStr),
-    Path(syn::LitStr),
+    Path(Span, Vec<syn::LitStr>),
     Inline(syn::LitStr),
     UseStdFeature,
     RawStrings,
@@ -327,7 +333,18 @@ impl Parse for Opt {
         if l.peek(kw::path) {
             input.parse::<kw::path>()?;
             input.parse::<Token![:]>()?;
-            Ok(Opt::Path(input.parse()?))
+            // the `path` supports two forms:
+            // * path: "xxx"
+            // * path: ["aaa", "bbb"]
+            if input.peek(token::Bracket) {
+                let contents;
+                syn::bracketed!(contents in input);
+                let list = Punctuated::<_, Token![,]>::parse_terminated(&contents)?;
+                Ok(Opt::Path(list.span(), list.into_iter().collect()))
+            } else {
+                let path: LitStr = input.parse()?;
+                Ok(Opt::Path(path.span(), vec![path]))
+            }
         } else if l.peek(kw::inline) {
             input.parse::<kw::inline>()?;
             input.parse::<Token![:]>()?;
