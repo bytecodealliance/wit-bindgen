@@ -2436,6 +2436,7 @@ dependencies = [
  "wasmparser 0.213.0",
  "wit-bindgen-core",
  "wit-component",
+ "wit-parser 0.213.0",
 ]
 
 [[package]]

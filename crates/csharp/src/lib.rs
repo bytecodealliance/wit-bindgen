@@ -23,7 +23,7 @@ use wit_bindgen_core::{
     },
     Files, InterfaceGenerator as _, Ns, WorldGenerator,
 };
-use wit_component::StringEncoding;
+use wit_component::{StringEncoding, WitPrinter};
 mod csproj;
 pub use csproj::CSProject;
 
@@ -730,6 +730,51 @@ impl WorldGenerator for CSharp {
                         "#
                     ))
                     .as_bytes(),
+                );
+            }
+
+            // For the time being, we generate both a .wit file and a .o file to
+            // represent the component type.  Newer releases of the .NET runtime
+            // will be able to use the former, but older ones will need the
+            // latter.
+            //
+            // TODO: stop generating the .o file once a new-enough release is
+            // available for us to test using only the .wit file.
+
+            {
+                // When generating a WIT file, we first round-trip through the
+                // binary encoding.  This has the effect of flattening any
+                // `include`d worlds into the specified world and excluding
+                // unrelated worlds, ensuring the output WIT contains no extra
+                // information beyond what the binary representation contains.
+                //
+                // This is important because including more than one world in
+                // the output would make it ambigious, and since this file is
+                // intended to be used non-interactively at link time, the
+                // linker will have no additional information to resolve such
+                // ambiguity.
+                let (resolve, _) =
+                    wit_parser::decoding::decode_world(&wit_component::metadata::encode(
+                        &resolve,
+                        id,
+                        self.opts.string_encoding,
+                        None,
+                    )?)?;
+
+                files.push(
+                    &format!("{world_namespace}_component_type.wit"),
+                    WitPrinter::default()
+                        .emit_docs(false)
+                        .print(
+                            &resolve,
+                            &resolve
+                                .packages
+                                .iter()
+                                .map(|(id, _)| id)
+                                .collect::<Vec<_>>(),
+                            false,
+                        )?
+                        .as_bytes(),
                 );
             }
 
