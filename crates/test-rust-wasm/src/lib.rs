@@ -5,6 +5,8 @@
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
 
+pub mod rust_bincrate;
+
 #[global_allocator]
 static ALLOC: A = A;
 
