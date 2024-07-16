@@ -13,8 +13,8 @@ func init() {
 type RecordImpl struct{}
 
 func (r *RecordImpl) TestImports() {
-	a, b := TestRecordsTestMultipleResults()
-	if a != 4 && b != 5 {
+	ret := TestRecordsTestMultipleResults()
+	if ret.F0 != 4 && ret.F1 != 5 {
 		panic("TestRecordsTestMultipleResults")
 	}
 	t := TestRecordsTestSwapTuple(TestRecordsTestTuple2U8U32T{1, 2})
@@ -43,7 +43,8 @@ func (r *RecordImpl) TestImports() {
 		panic("TestRecordsTestRoundtripFlags2")
 	}
 
-	if a, b, c := TestRecordsTestRoundtripFlags3(TestRecordsTestFlag8_B0, TestRecordsTestFlag16_B1, TestRecordsTestFlag32_B2); a != TestRecordsTestFlag8_B0 && b != TestRecordsTestFlag16_B1 && c != TestRecordsTestFlag32_B2 {
+        ret2 := TestRecordsTestRoundtripFlags3(TestRecordsTestFlag8_B0, TestRecordsTestFlag16_B1, TestRecordsTestFlag32_B2)
+	if ret2.F0 != TestRecordsTestFlag8_B0 && ret2.F1 != TestRecordsTestFlag16_B1 && ret2.F2 != TestRecordsTestFlag32_B2 {
 		panic("TestRecordsTestRoundtripFlags3")
 	}
 
@@ -62,8 +63,8 @@ func (r *RecordImpl) TestImports() {
 	}
 }
 
-func (r *RecordImpl) MultipleResults() (uint8, uint16) {
-	return 100, 200
+func (r *RecordImpl) MultipleResults() ExportsTestRecordsTestTuple2U8U16T {
+        return ExportsTestRecordsTestTuple2U8U16T{100, 200}
 }
 
 func (r *RecordImpl) SwapTuple(a ExportsTestRecordsTestTuple2U8U32T) ExportsTestRecordsTestTuple2U32U8T {
@@ -78,8 +79,8 @@ func (r *RecordImpl) RoundtripFlags2(a ExportsTestRecordsTestF2) ExportsTestReco
 	return a
 }
 
-func (r *RecordImpl) RoundtripFlags3(a ExportsTestRecordsTestFlag8, b ExportsTestRecordsTestFlag16, c ExportsTestRecordsTestFlag32) (ExportsTestRecordsTestFlag8, ExportsTestRecordsTestFlag16, ExportsTestRecordsTestFlag32) {
-	return a, b, c
+func (r *RecordImpl) RoundtripFlags3(a ExportsTestRecordsTestFlag8, b ExportsTestRecordsTestFlag16, c ExportsTestRecordsTestFlag32) ExportsTestRecordsTestTuple3Flag8Flag16Flag32T {
+        return ExportsTestRecordsTestTuple3Flag8Flag16Flag32T{a, b, c}
 }
 
 func (r *RecordImpl) RoundtripRecord1(a ExportsTestRecordsTestR1) ExportsTestRecordsTestR1 {

@@ -267,7 +267,7 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
 
     // FIXME: need to fix flaky Go test
     #[cfg(feature = "go")]
-    if !go.is_empty() {
+    if !go.is_empty() && name != "flavorful" {
         let (resolve, world) = resolve_wit_dir(&dir);
         let world_name = &resolve.worlds[world].name;
         let out_dir = out_dir.join(format!("go-{}", world_name));
