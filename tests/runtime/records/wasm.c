@@ -3,11 +3,10 @@
 
 void records_test_imports() {
   {
-    uint8_t a;
-    uint16_t b;
-    test_records_test_multiple_results(&a, &b);
-    assert(a == 4);
-    assert(b == 5);
+    records_tuple2_u8_u16_t ret;
+    test_records_test_multiple_results(&ret);
+    assert(ret.f0 == 4);
+    assert(ret.f1 == 5);
   }
 
   records_tuple2_u8_u32_t input;
@@ -28,14 +27,12 @@ void records_test_imports() {
   assert(test_records_test_roundtrip_flags2(TEST_RECORDS_TEST_F2_D) == TEST_RECORDS_TEST_F2_D);
   assert(test_records_test_roundtrip_flags2(TEST_RECORDS_TEST_F2_C | TEST_RECORDS_TEST_F2_E) == (TEST_RECORDS_TEST_F2_C | TEST_RECORDS_TEST_F2_E));
 
-  test_records_test_flag8_t flag8;
-  test_records_test_flag16_t flag16;
-  test_records_test_flag32_t flag32;
+  test_records_test_tuple3_flag8_flag16_flag32_t ret;
   test_records_test_roundtrip_flags3(TEST_RECORDS_TEST_FLAG8_B0, TEST_RECORDS_TEST_FLAG16_B1, TEST_RECORDS_TEST_FLAG32_B2,
-      &flag8, &flag16, &flag32);
-  assert(flag8 == TEST_RECORDS_TEST_FLAG8_B0);
-  assert(flag16 == TEST_RECORDS_TEST_FLAG16_B1);
-  assert(flag32 == TEST_RECORDS_TEST_FLAG32_B2);
+      &ret);
+  assert(ret.f0 == TEST_RECORDS_TEST_FLAG8_B0);
+  assert(ret.f1 == TEST_RECORDS_TEST_FLAG16_B1);
+  assert(ret.f2 == TEST_RECORDS_TEST_FLAG32_B2);
 
   {
     test_records_test_r1_t a, b;
@@ -61,9 +58,9 @@ void records_test_imports() {
   assert(t2.f0 == 1);
 }
 
-void exports_test_records_test_multiple_results(uint8_t *ret0, uint16_t *ret1) {
-  *ret0 = 100;
-  *ret1 = 200;
+void exports_test_records_test_multiple_results(records_tuple2_u8_u16_t *ret) {
+  ret->f0 = 100;
+  ret->f1 = 200;
 }
 
 void exports_test_records_test_swap_tuple(records_tuple2_u8_u32_t *a, records_tuple2_u32_u8_t *b) {
@@ -83,12 +80,10 @@ void exports_test_records_test_roundtrip_flags3(
       exports_test_records_test_flag8_t a,
       exports_test_records_test_flag16_t b,
       exports_test_records_test_flag32_t c,
-      exports_test_records_test_flag8_t *ret0,
-      exports_test_records_test_flag16_t *ret1,
-      exports_test_records_test_flag32_t *ret2) {
-  *ret0 = a;
-  *ret1 = b;
-  *ret2 = c;
+      exports_test_records_test_tuple3_flag8_flag16_flag32_t *ret) {
+  ret->f0 = a;
+  ret->f1 = b;
+  ret->f2 = c;
 }
 
 void exports_test_records_test_roundtrip_record1(exports_test_records_test_r1_t *a, exports_test_records_test_r1_t *ret0) {
