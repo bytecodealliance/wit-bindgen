@@ -801,17 +801,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             || (matches!(self.lift_lower, LiftLower::Symmetric)
                 && matches!(self.variant, AbiVariant::GuestImport));
         if language_to_abi {
-            // bad symmetric hack
-            let sig = if sig.retptr && matches!(self.lift_lower, LiftLower::Symmetric) {
-                WasmSignature {
-                    params: Vec::from(&sig.params[0..sig.params.len() - 1]),
-                    results: Vec::from(&sig.params[sig.params.len() - 1..]),
-                    indirect_params: sig.indirect_params,
-                    retptr: false,
-                }
-            } else {
-                sig
-            };
             if !sig.indirect_params {
                 // If the parameters for this function aren't indirect
                 // (there aren't too many) then we simply do a normal lower
@@ -856,7 +845,10 @@ impl<'a, B: Bindgen> Generator<'a, B> {
 
             // If necessary we may need to prepare a return pointer for
             // this ABI.
-            if self.variant == AbiVariant::GuestImport && sig.retptr {
+            if self.variant == AbiVariant::GuestImport
+                && sig.retptr
+                && !matches!(self.lift_lower, LiftLower::Symmetric)
+            {
                 let (size, align) = self.bindgen.sizes().params(func.results.iter_types());
                 let ptr = self.bindgen.return_pointer(size, align);
                 self.return_pointer = Some(ptr.clone());
@@ -872,24 +864,24 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 module_prefix: "",
             });
 
-            if matches!(self.lift_lower, LiftLower::Symmetric)
-                && guest_export_needs_post_return(self.resolve, func)
-            {
+            if matches!(self.lift_lower, LiftLower::Symmetric) && sig.retptr {
                 let ptr = self.stack.pop().unwrap();
                 self.read_results_from_memory(&func.results, ptr.clone(), 0);
-                let post_sig = WasmSignature {
-                    params: vec![WasmType::Pointer],
-                    results: Vec::new(),
-                    indirect_params: false,
-                    retptr: false,
-                };
-                // TODO: can we get this name from somewhere?
-                self.stack.push(ptr);
-                self.emit(&Instruction::CallWasm {
-                    name: &func.name,
-                    sig: &post_sig,
-                    module_prefix: "cabi_post_",
-                });
+                if guest_export_needs_post_return(self.resolve, func) {
+                    let post_sig = WasmSignature {
+                        params: vec![WasmType::Pointer],
+                        results: Vec::new(),
+                        indirect_params: false,
+                        retptr: false,
+                    };
+                    // TODO: can we get this name from somewhere?
+                    self.stack.push(ptr);
+                    self.emit(&Instruction::CallWasm {
+                        name: &func.name,
+                        sig: &post_sig,
+                        module_prefix: "cabi_post_",
+                    });
+                }
             } else if !sig.retptr {
                 // With no return pointer in use we can simply lift the
                 // result(s) of the function from the result of the core
@@ -2023,7 +2015,7 @@ fn push_flat_symmetric(resolve: &Resolve, ty: &Type, vec: &mut Vec<WasmType>) {
 // another hack
 pub fn wasm_signature_symmetric(
     resolve: &Resolve,
-    variant: AbiVariant,
+    _variant: AbiVariant,
     func: &Function,
 ) -> WasmSignature {
     const MAX_FLAT_PARAMS: usize = 16;
@@ -2055,14 +2047,7 @@ pub fn wasm_signature_symmetric(
     if results.len() > MAX_FLAT_RESULTS {
         retptr = true;
         results.truncate(0);
-        match variant {
-            AbiVariant::GuestImport => {
-                params.push(WasmType::Pointer);
-            }
-            AbiVariant::GuestExport => {
-                results.push(WasmType::Pointer);
-            }
-        }
+        results.push(WasmType::Pointer);
     }
 
     WasmSignature {
