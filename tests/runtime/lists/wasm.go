@@ -71,59 +71,59 @@ func (i ListImpl) TestImports() {
 		panic("TestListsTestStringRoundtrip")
 	}
 
-	u8, i8 := TestListsTestListMinmax8([]uint8{0, math.MaxUint8}, []int8{math.MinInt8, math.MaxInt8})
-	if u8[0] != uint8(0) {
+        ret8 := TestListsTestListMinmax8([]uint8{0, math.MaxUint8}, []int8{math.MinInt8, math.MaxInt8})
+	if ret8.F0[0] != uint8(0) {
 		panic("TestListsTestListMinmax8")
 	}
-	if u8[1] != math.MaxUint8 {
+	if ret8.F0[1] != math.MaxUint8 {
 		panic("TestListsTestListMinmax8")
 	}
-	if i8[0] != math.MinInt8 {
+	if ret8.F1[0] != math.MinInt8 {
 		panic("TestListsTestListMinmax8")
 	}
-	if i8[1] != math.MaxInt8 {
+	if ret8.F1[1] != math.MaxInt8 {
 		panic("TestListsTestListMinmax8")
 	}
 
-	u16, i16 := TestListsTestListMinmax16([]uint16{0, math.MaxUint16}, []int16{math.MinInt16, math.MaxInt16})
-	if u16[0] != uint16(0) {
+	ret16 := TestListsTestListMinmax16([]uint16{0, math.MaxUint16}, []int16{math.MinInt16, math.MaxInt16})
+	if ret16.F0[0] != uint16(0) {
 		panic("TestListsTestListMinmax16")
 	}
-	if u16[1] != math.MaxUint16 {
+	if ret16.F0[1] != math.MaxUint16 {
 		panic("TestListsTestListMinmax16")
 	}
-	if i16[0] != math.MinInt16 {
+	if ret16.F1[0] != math.MinInt16 {
 		panic("TestListsTestListMinmax16")
 	}
-	if i16[1] != math.MaxInt16 {
+	if ret16.F1[1] != math.MaxInt16 {
 		panic("TestListsTestListMinmax16")
 	}
 
-	u32, i32 := TestListsTestListMinmax32([]uint32{0, math.MaxUint32}, []int32{math.MinInt32, math.MaxInt32})
-	if u32[0] != uint32(0) {
+	ret32 := TestListsTestListMinmax32([]uint32{0, math.MaxUint32}, []int32{math.MinInt32, math.MaxInt32})
+	if ret32.F0[0] != uint32(0) {
 		panic("TestListsTestListMinmax32")
 	}
-	if u32[1] != math.MaxUint32 {
+	if ret32.F0[1] != math.MaxUint32 {
 		panic("TestListsTestListMinmax32")
 	}
-	if i32[0] != math.MinInt32 {
+	if ret32.F1[0] != math.MinInt32 {
 		panic("TestListsTestListMinmax32")
 	}
-	if i32[1] != math.MaxInt32 {
+	if ret32.F1[1] != math.MaxInt32 {
 		panic("TestListsTestListMinmax32")
 	}
 
-	u64, i64 := TestListsTestListMinmax64([]uint64{0, math.MaxUint64}, []int64{math.MinInt64, math.MaxInt64})
-	if u64[0] != uint64(0) {
+	ret64 := TestListsTestListMinmax64([]uint64{0, math.MaxUint64}, []int64{math.MinInt64, math.MaxInt64})
+	if ret64.F0[0] != uint64(0) {
 		panic("TestListsTestListMinmax64")
 	}
-	if u64[1] != math.MaxUint64 {
+	if ret64.F0[1] != math.MaxUint64 {
 		panic("TestListsTestListMinmax64")
 	}
-	if i64[0] != math.MinInt64 {
+	if ret64.F1[0] != math.MinInt64 {
 		panic("TestListsTestListMinmax64")
 	}
-	if i64[1] != math.MaxInt64 {
+	if ret64.F1[1] != math.MaxInt64 {
 		panic("TestListsTestListMinmax64")
 	}
 
@@ -212,24 +212,24 @@ func (i ListImpl) ListResult3() []string {
 	return []string{"hello,", "world!"}
 }
 
-func (i ListImpl) ListMinmax8(a []uint8, b []int8) ([]uint8, []int8) {
-	return a, b
+func (i ListImpl) ListMinmax8(a []uint8, b []int8) ExportsTestListsTestTuple2ListU8TListS8TT {
+        return ExportsTestListsTestTuple2ListU8TListS8TT{a, b}
 }
 
-func (i ListImpl) ListMinmax16(a []uint16, b []int16) ([]uint16, []int16) {
-	return a, b
+func (i ListImpl) ListMinmax16(a []uint16, b []int16) ExportsTestListsTestTuple2ListU16TListS16TT {
+        return ExportsTestListsTestTuple2ListU16TListS16TT{a, b}
 }
 
-func (i ListImpl) ListMinmax32(a []uint32, b []int32) ([]uint32, []int32) {
-	return a, b
+func (i ListImpl) ListMinmax32(a []uint32, b []int32) ExportsTestListsTestTuple2ListU32TListS32TT {
+        return ExportsTestListsTestTuple2ListU32TListS32TT{a, b}
 }
 
-func (i ListImpl) ListMinmax64(a []uint64, b []int64) ([]uint64, []int64) {
-	return a, b
+func (i ListImpl) ListMinmax64(a []uint64, b []int64) ExportsTestListsTestTuple2ListU64TListS64TT {
+        return ExportsTestListsTestTuple2ListU64TListS64TT{a, b}
 }
 
-func (i ListImpl) ListMinmaxFloat(a []float32, b []float64) ([]float32, []float64) {
-	return a, b
+func (i ListImpl) ListMinmaxFloat(a []float32, b []float64) ExportsTestListsTestTuple2ListF32TListF64TT {
+	return ExportsTestListsTestTuple2ListF32TListF64TT{a, b}
 }
 
 func (i ListImpl) ListRoundtrip(a []uint8) []uint8 {
