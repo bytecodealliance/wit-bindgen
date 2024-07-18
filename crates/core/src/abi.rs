@@ -975,33 +975,31 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     self.lower(ty);
                 }
             } else {
-                match self.variant {
+                if self.variant == AbiVariant::GuestImport
+                    || self.lift_lower == LiftLower::Symmetric
+                {
                     // When a function is imported to a guest this means
                     // it's a host providing the implementation of the
                     // import. The result is stored in the pointer
                     // specified in the last argument, so we get the
                     // pointer here and then write the return value into
                     // it.
-                    AbiVariant::GuestImport => {
-                        self.emit(&Instruction::GetArg {
-                            nth: sig.params.len() - 1,
-                        });
-                        let ptr = self.stack.pop().unwrap();
-                        self.write_params_to_memory(func.results.iter_types(), ptr, 0);
-                    }
-
+                    self.emit(&Instruction::GetArg {
+                        nth: sig.params.len() - 1,
+                    });
+                    let ptr = self.stack.pop().unwrap();
+                    self.write_params_to_memory(func.results.iter_types(), ptr, 0);
+                } else {
                     // For a guest import this is a function defined in
                     // wasm, so we're returning a pointer where the
                     // value was stored at. Allocate some space here
                     // (statically) and then write the result into that
                     // memory, returning the pointer at the end.
-                    AbiVariant::GuestExport => {
-                        let (size, align) = self.bindgen.sizes().params(func.results.iter_types());
-                        let ptr = self.bindgen.return_pointer(size, align);
-                        self.write_params_to_memory(func.results.iter_types(), ptr.clone(), 0);
-                        if !matches!(self.lift_lower, LiftLower::Symmetric) {
-                            self.stack.push(ptr);
-                        }
+                    let (size, align) = self.bindgen.sizes().params(func.results.iter_types());
+                    let ptr = self.bindgen.return_pointer(size, align);
+                    self.write_params_to_memory(func.results.iter_types(), ptr.clone(), 0);
+                    if !matches!(self.lift_lower, LiftLower::Symmetric) {
+                        self.stack.push(ptr);
                     }
                 }
             }

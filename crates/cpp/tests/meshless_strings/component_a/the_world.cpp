@@ -87,15 +87,15 @@ a_fooX3AfooX2FstringsX00a(uint8_t *arg0, size_t arg1) {
   comp_a::exports::foo::foo::strings::A(std::move(string0));
 }
 extern "C" __attribute__((__export_name__("foo:foo/strings#b"))) void
-a_fooX3AfooX2FstringsX00b(uint8_t *ptr1) {
+a_fooX3AfooX2FstringsX00b(uint8_t *arg0) {
   auto result0 = comp_a::exports::foo::foo::strings::B();
-  auto const &vec2 = result0;
-  auto ptr2 = (uint8_t *)(vec2.data());
-  auto len2 = (size_t)(vec2.size());
+  auto const &vec1 = result0;
+  auto ptr1 = (uint8_t *)(vec1.data());
+  auto len1 = (size_t)(vec1.size());
   result0.leak();
 
-  *((size_t *)(ptr1 + 8)) = len2;
-  *((uint8_t **)(ptr1 + 0)) = ptr2;
+  *((size_t *)(arg0 + 8)) = len1;
+  *((uint8_t **)(arg0 + 0)) = ptr1;
 }
 extern "C"
     __attribute__((__weak__,
@@ -107,7 +107,7 @@ extern "C"
 }
 extern "C" __attribute__((__export_name__("foo:foo/strings#c"))) void
 a_fooX3AfooX2FstringsX00c(uint8_t *arg0, size_t arg1, uint8_t *arg2, size_t arg3,
-                        uint8_t *ptr3) {
+                        uint8_t *arg4) {
   auto len0 = arg1;
 
   auto string0 =
@@ -120,13 +120,13 @@ a_fooX3AfooX2FstringsX00c(uint8_t *arg0, size_t arg1, uint8_t *arg2, size_t arg3
 
   auto result2 = comp_a::exports::foo::foo::strings::C(std::move(string0),
                                                        std::move(string1));
-  auto const &vec4 = result2;
-  auto ptr4 = (uint8_t *)(vec4.data());
-  auto len4 = (size_t)(vec4.size());
+  auto const &vec3 = result2;
+  auto ptr3 = (uint8_t *)(vec3.data());
+  auto len3 = (size_t)(vec3.size());
   result2.leak();
 
-  *((size_t *)(ptr3 + 8)) = len4;
-  *((uint8_t **)(ptr3 + 0)) = ptr4;
+  *((size_t *)(arg4 + 8)) = len3;
+  *((uint8_t **)(arg4 + 0)) = ptr3;
 }
 extern "C"
     __attribute__((__weak__,
