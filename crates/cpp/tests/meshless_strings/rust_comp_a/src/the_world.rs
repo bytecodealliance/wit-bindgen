@@ -30,19 +30,21 @@ pub mod foo {
       #[allow(unused_unsafe, clippy::all)]
       pub fn b() -> _rt::String{
         unsafe {
+          #[repr(align(8))]
+          struct RetArea([::core::mem::MaybeUninit::<u8>; 16]);
+          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 16]);
+          let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
           #[link(wasm_import_module = "foo:foo/strings")]
           extern "C" {
             #[cfg_attr(target_arch = "wasm32", link_name = "b")]
-            fn fooX3AfooX2FstringsX00b() -> *mut u8;
+            fn fooX3AfooX2FstringsX00b(_: *mut u8);
             #[cfg_attr(target_arch = "wasm32", link_name = "cabi_post_b")]
             fn cabi_post_fooX3AfooX2FstringsX00b(_: *mut u8);
           }
-          let ptr0 = fooX3AfooX2FstringsX00b();
+          fooX3AfooX2FstringsX00b(ptr0);
           let l1 = *ptr0.add(0).cast::<*mut u8>();
           let l2 = *ptr0.add(8).cast::<usize>();
           let len3 = l2;
-          // let bytes3 = _rt::Vec::from_raw_parts(l1.cast(), len3, len3);
-          // _rt::string_lift(bytes3)
           let res = String::from(std::str::from_utf8(std::slice::from_raw_parts(l1, len3)).unwrap());
           cabi_post_fooX3AfooX2FstringsX00b(ptr0);
           res
@@ -51,30 +53,28 @@ pub mod foo {
       #[allow(unused_unsafe, clippy::all)]
       pub fn c(a: &str,b: &str,) -> _rt::String{
         unsafe {
-          // #[repr(align(4))]
-          // struct RetArea([::core::mem::MaybeUninit::<u8>; 8]);
-          // let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 8]);
+          #[repr(align(8))]
+          struct RetArea([::core::mem::MaybeUninit::<u8>; 16]);
+          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 16]);
           let vec0 = a;
           let ptr0 = vec0.as_ptr().cast::<u8>();
           let len0 = vec0.len();
           let vec1 = b;
           let ptr1 = vec1.as_ptr().cast::<u8>();
           let len1 = vec1.len();
-          // let ptr2 = ret_area.0.as_mut_ptr().cast::<u8>();
+          let ptr2 = ret_area.0.as_mut_ptr().cast::<u8>();
           #[link(wasm_import_module = "foo:foo/strings")]
           extern "C" {
             #[cfg_attr(target_arch = "wasm32", link_name = "c")]
-            fn fooX3AfooX2FstringsX00c(_: *mut u8, _: usize, _: *mut u8, _: usize, ) -> *mut u8;
+            fn fooX3AfooX2FstringsX00c(_: *mut u8, _: usize, _: *mut u8, _: usize, _: *mut u8);
             #[cfg_attr(target_arch = "wasm32", link_name = "cabi_post_c")]
             fn cabi_post_fooX3AfooX2FstringsX00c(_: *mut u8);
           }
-          let ptr2 = fooX3AfooX2FstringsX00c(ptr0.cast_mut(), len0, ptr1.cast_mut(), len1);
+          fooX3AfooX2FstringsX00c(ptr0.cast_mut(), len0, ptr1.cast_mut(), len1, ptr2);
           let l3 = *ptr2.add(0).cast::<*mut u8>();
           let l4 = *ptr2.add(8).cast::<usize>();
           let len5 = l4;
           let res = String::from(std::str::from_utf8(std::slice::from_raw_parts(l3, len5)).unwrap());
-          // let bytes5 = _rt::Vec::from_raw_parts(l3.cast(), len5, len5);
-          // _rt::string_lift(bytes5)
           cabi_post_fooX3AfooX2FstringsX00c(ptr2);
           res
         }
@@ -107,16 +107,14 @@ pub mod exports {
       }
       #[doc(hidden)]
       #[allow(non_snake_case)]
-      pub unsafe fn _export_b_cabi<T: Guest>() -> *mut u8 {#[cfg(target_arch="wasm32")]
+      pub unsafe fn _export_b_cabi<T: Guest>(ptr1: *mut u8) {#[cfg(target_arch="wasm32")]
       _rt::run_ctors_once();let result0 = T::b();
-      let ptr1 = _RET_AREA.0.as_mut_ptr().cast::<u8>();
       let vec2 = (result0.into_bytes()).into_boxed_slice();
       let ptr2 = vec2.as_ptr().cast::<u8>();
       let len2 = vec2.len();
       ::core::mem::forget(vec2);
       *ptr1.add(8).cast::<usize>() = len2;
       *ptr1.add(0).cast::<*mut u8>() = ptr2.cast_mut();
-      ptr1
     }
     #[doc(hidden)]
     #[allow(non_snake_case)]
@@ -127,21 +125,18 @@ pub mod exports {
     }
     #[doc(hidden)]
     #[allow(non_snake_case)]
-    pub unsafe fn _export_c_cabi<T: Guest>(arg0: *mut u8,arg1: usize,arg2: *mut u8,arg3: usize,) -> *mut u8 {#[cfg(target_arch="wasm32")]
+    pub unsafe fn _export_c_cabi<T: Guest>(arg0: *mut u8,arg1: usize,arg2: *mut u8,arg3: usize, ptr3: *mut u8) {#[cfg(target_arch="wasm32")]
     _rt::run_ctors_once();let len0 = arg1;
     let bytes0 = String::from(std::str::from_utf8(std::slice::from_raw_parts(arg0, len0)).unwrap());
-    //_rt::Vec::from_raw_parts(arg0.cast(), len0, len0);
     let len1 = arg3;
     let bytes1 = String::from(std::str::from_utf8(std::slice::from_raw_parts(arg2, len1)).unwrap());
     let result2 = T::c(bytes0, bytes1);
-    let ptr3 = _RET_AREA.0.as_mut_ptr().cast::<u8>();
     let vec4 = (result2.into_bytes()).into_boxed_slice();
     let ptr4 = vec4.as_ptr().cast::<u8>();
     let len4 = vec4.len();
     ::core::mem::forget(vec4);
     *ptr3.add(8).cast::<usize>() = len4;
     *ptr3.add(0).cast::<*mut u8>() = ptr4.cast_mut();
-    ptr3
   }
   #[doc(hidden)]
   #[allow(non_snake_case)]
@@ -167,8 +162,8 @@ pub mod exports {
       }
       #[cfg_attr(target_arch = "wasm32", export_name = "foo:foo/strings#b")]
       #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
-      unsafe extern "C" fn a_fooX3AfooX2FstringsX00b() -> *mut u8 {
-        $($path_to_types)*::_export_b_cabi::<$ty>()
+      unsafe extern "C" fn a_fooX3AfooX2FstringsX00b(ptr: *mut u8) {
+        $($path_to_types)*::_export_b_cabi::<$ty>(ptr)
       }
       #[cfg_attr(target_arch = "wasm32", export_name = "cabi_post_foo:foo/strings#b")]
       #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
@@ -177,8 +172,8 @@ pub mod exports {
       }
       #[cfg_attr(target_arch = "wasm32", export_name = "foo:foo/strings#c")]
       #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
-      unsafe extern "C" fn a_fooX3AfooX2FstringsX00c(arg0: *mut u8,arg1: usize,arg2: *mut u8,arg3: usize,) -> *mut u8 {
-        $($path_to_types)*::_export_c_cabi::<$ty>(arg0, arg1, arg2, arg3)
+      unsafe extern "C" fn a_fooX3AfooX2FstringsX00c(arg0: *mut u8,arg1: usize,arg2: *mut u8,arg3: usize, arg4: *mut u8) {
+        $($path_to_types)*::_export_c_cabi::<$ty>(arg0, arg1, arg2, arg3, arg4)
       }
       #[cfg_attr(target_arch = "wasm32", export_name = "cabi_post_foo:foo/strings#c")]
       #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
@@ -189,9 +184,6 @@ pub mod exports {
   }
   #[doc(hidden)]
   pub(crate) use __export_foo_foo_strings_cabi;
-  #[repr(align(8))]
-  struct _RetArea([::core::mem::MaybeUninit::<u8>; 16]);
-  static mut _RET_AREA: _RetArea = _RetArea([::core::mem::MaybeUninit::uninit(); 16]);
 
 }
 
@@ -200,14 +192,6 @@ pub mod exports {
 }
 mod _rt {
   pub use alloc_crate::string::String;
-  // pub use alloc_crate::vec::Vec;
-  // pub unsafe fn string_lift(bytes: Vec<u8>) -> String {
-  //   if cfg!(debug_assertions) {
-  //     String::from_utf8(bytes).unwrap()
-  //   } else {
-  //     String::from_utf8_unchecked(bytes)
-  //   }
-  // }
   
   #[cfg(target_arch = "wasm32")]
   pub fn run_ctors_once() {

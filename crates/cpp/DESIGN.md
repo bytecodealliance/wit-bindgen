@@ -51,3 +51,34 @@ Complex (non-POD) struct elements on the host will need exec_env to decode or co
 [^4]: A host side wit::string doesn't own the data (not free in dtor), thus no move semantics.
 
 [^5]: std::span requires C++-20, this alias should give minimal functionality with older compiler targets.
+
+# Symmetric ABI
+
+The idea is to directly connect (link) components to each other.
+
+Thus imported and exported functions and resources need to be compatible
+at the ABI level.
+
+For now for functions the following convention is used in both directions:
+
+ - The imported function ABI is used with the following properties
+
+    - (unchanged) List and string arguments are passed as Views, no free
+      required, lifetime is constrained until the end of the call
+
+    - (unchanged) Owned resources in arguments or results pass ownership
+      to the callee
+
+    - (unchanged) If there are too many (>1) flat results, a local
+      uninitialized ret_area is passed via the last argument
+
+    - (change) Returned strings and lists become views, valid until a
+      cabi_post on the ret_area ptr which was passed to the first call.
+      This is mostly a concession to functional safety, avoiding all
+      allocations in the hot path. Caller provided buffers or custom realloc
+      would solve this in a different way.
+
+ - The imported resource ABI is used also for exporting
+   with one modification:
+
+   Resource IDs are usize, so you can optimize the resource table away.
