@@ -1744,6 +1744,15 @@ impl CppInterfaceGenerator<'_> {
                     );
                     params.push(name);
                 }
+                if sig.retptr && self.gen.opts.symmetric {
+                    let name = "retptr";
+                    uwrite!(
+                        self.gen.c_src.src,
+                        "{} {name}",
+                        self.gen.opts.wasm_type(WasmType::Pointer)
+                    );
+                    params.push(name.into());
+                }
                 self.gen.c_src.src.push_str(") {\n");
 
                 let mut f = FunctionBindgen::new(self, params.clone());
