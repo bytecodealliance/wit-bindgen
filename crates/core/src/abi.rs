@@ -1028,6 +1028,11 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         self.emit(&Instruction::GuestDeallocate { size, align });
                     }
                 }
+
+                self.emit(&Instruction::Return {
+                    func,
+                    amt: func.results.len(),
+                });
             }
             false => {
                 if let (AbiVariant::GuestImport, true) = (self.variant, self.async_) {

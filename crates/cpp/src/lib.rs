@@ -3614,22 +3614,25 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 self.store(ptr_type, *offset, operands)
             }
             abi::Instruction::LengthStore { offset } => self.store("size_t", *offset, operands),
-            abi::Instruction::FutureLower { payload, ty } => todo!(),
-            abi::Instruction::FutureLift { payload, ty } => todo!(),
-            abi::Instruction::StreamLower { payload, ty } => todo!(),
-            abi::Instruction::StreamLift { payload, ty } => todo!(),
-            abi::Instruction::ErrorLower { ty } => todo!(),
-            abi::Instruction::ErrorLift { ty } => todo!(),
-            abi::Instruction::AsyncMalloc { size, align } => todo!(),
-            abi::Instruction::AsyncCallWasm { name, size, align } => todo!(),
-            abi::Instruction::AsyncCallStart {
-                name,
-                params,
-                results,
-            } => todo!(),
-            abi::Instruction::AsyncPostCallInterface { func } => todo!(),
-            abi::Instruction::AsyncCallReturn { name, params } => todo!(),
-            abi::Instruction::Flush { amt } => todo!(),
+            abi::Instruction::FutureLower { .. } => todo!(),
+            abi::Instruction::FutureLift { .. } => todo!(),
+            abi::Instruction::StreamLower { .. } => todo!(),
+            abi::Instruction::StreamLift { .. } => todo!(),
+            abi::Instruction::ErrorLower { .. } => todo!(),
+            abi::Instruction::ErrorLift { .. } => todo!(),
+            abi::Instruction::AsyncMalloc { .. } => todo!(),
+            abi::Instruction::AsyncCallWasm { .. } => todo!(),
+            abi::Instruction::AsyncCallStart { .. } => todo!(),
+            abi::Instruction::AsyncPostCallInterface { .. } => todo!(),
+            abi::Instruction::AsyncCallReturn { .. } => todo!(),
+            abi::Instruction::Flush { amt } => {
+                for i in 0..*amt {
+                    let tmp = self.tmp();
+                    let result = format!("result{}", tmp);
+                    uwriteln!(self.src, "auto {result} = {};", operands[i]);
+                    results.push(result);
+                }
+            }
         }
     }
 
