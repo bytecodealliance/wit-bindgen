@@ -215,6 +215,8 @@ impl<'a> BridgeInterfaceGenerator<'a> {
         let result_var = match variant {
             AbiVariant::GuestImport => TypeVariant::W2C2,
             AbiVariant::GuestExport => TypeVariant::Native,
+            AbiVariant::GuestImportAsync => todo!(),
+            AbiVariant::GuestExportAsync => todo!(),
         };
         let signature = self.resolve.wasm_signature(variant, func);
         let return_via_pointer = signature.retptr;

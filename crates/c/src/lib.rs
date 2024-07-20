@@ -717,6 +717,7 @@ fn is_prim_type_id(resolve: &Resolve, id: TypeId) -> bool {
         | TypeDefKind::Result(_)
         | TypeDefKind::Future(_)
         | TypeDefKind::Stream(_)
+        | TypeDefKind::Error
         | TypeDefKind::Unknown => false,
     }
 }
@@ -747,6 +748,7 @@ pub fn push_ty_name(resolve: &Resolve, ty: &Type, src: &mut String) {
                 | TypeDefKind::Resource
                 | TypeDefKind::Flags(_)
                 | TypeDefKind::Enum(_)
+                | TypeDefKind::Error
                 | TypeDefKind::Variant(_) => {
                     unimplemented!()
                 }
@@ -993,6 +995,7 @@ impl Return {
             TypeDefKind::Stream(_) => todo!("return_single for stream"),
             TypeDefKind::Resource => todo!("return_single for resource"),
             TypeDefKind::Unknown => unreachable!(),
+            TypeDefKind::Error => todo!(),
         }
 
         self.retptrs.push(*orig_ty);
@@ -1426,12 +1429,16 @@ impl<'a> wit_bindgen_core::AnonymousTypeGenerator<'a> for InterfaceGenerator<'a>
         todo!("print_anonymous_type for future");
     }
 
-    fn anonymous_type_stream(&mut self, _id: TypeId, _ty: &Stream, _docs: &Docs) {
+    fn anonymous_type_stream(&mut self, _id: TypeId, _ty: &Type, _docs: &Docs) {
         todo!("print_anonymous_type for stream");
     }
 
     fn anonymous_typ_type(&mut self, _id: TypeId, _ty: &Type, _docs: &Docs) {
         todo!("print_anonymous_type for typ");
+    }
+
+    fn anonymous_type_error(&mut self, _id: TypeId, _docs: &Docs) {
+        todo!()
     }
 }
 
@@ -1609,6 +1616,7 @@ impl InterfaceGenerator<'_> {
                 self.free(&Type::Id(*id), "*ptr");
             }
             TypeDefKind::Unknown => unreachable!(),
+            TypeDefKind::Error => todo!(),
         }
         if c_helpers_body_start == self.src.c_helpers.len() {
             self.src.c_helpers.as_mut_string().truncate(c_helpers_start);
@@ -1749,6 +1757,7 @@ impl InterfaceGenerator<'_> {
             LiftLower::LowerArgsLiftResults,
             func,
             &mut f,
+            false,
         );
 
         let FunctionBindgen {
@@ -1821,6 +1830,7 @@ impl InterfaceGenerator<'_> {
             LiftLower::LiftArgsLowerResults,
             func,
             &mut f,
+            false,
         );
         let FunctionBindgen { src, .. } = f;
         self.src.c_adapters(&src);
@@ -1851,7 +1861,7 @@ impl InterfaceGenerator<'_> {
 
             let mut f = FunctionBindgen::new(self, c_sig, &import_name);
             f.params = params;
-            abi::post_return(f.gen.resolve, func, &mut f);
+            abi::post_return(f.gen.resolve, func, &mut f, false);
             let FunctionBindgen { src, .. } = f;
             self.src.c_fns(&src);
             self.src.c_fns("}\n");
@@ -2078,18 +2088,12 @@ impl InterfaceGenerator<'_> {
                     .as_ref()
                     .map_or(false, |ty| self.contains_droppable_borrow(ty)),
 
-                TypeDefKind::Stream(s) => {
-                    s.element
-                        .as_ref()
-                        .map_or(false, |ty| self.contains_droppable_borrow(ty))
-                        || s.end
-                            .as_ref()
-                            .map_or(false, |ty| self.contains_droppable_borrow(ty))
-                }
+                TypeDefKind::Stream(s) => self.contains_droppable_borrow(s),
 
                 TypeDefKind::Type(ty) => self.contains_droppable_borrow(ty),
 
                 TypeDefKind::Unknown => false,
+                TypeDefKind::Error => todo!(),
             }
         } else {
             false
@@ -2752,7 +2756,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.src.push_str(");\n");
             }
 
-            Instruction::CallInterface { func } => {
+            Instruction::CallInterface { func, .. } => {
                 let mut args = String::new();
                 for (i, (op, (byref, _))) in operands.iter().zip(&self.sig.params).enumerate() {
                     if i > 0 {
@@ -3146,6 +3150,7 @@ pub fn is_arg_by_pointer(resolve: &Resolve, ty: &Type) -> bool {
             TypeDefKind::Stream(_) => todo!("is_arg_by_pointer for stream"),
             TypeDefKind::Resource => todo!("is_arg_by_pointer for resource"),
             TypeDefKind::Unknown => unreachable!(),
+            TypeDefKind::Error => todo!(),
         },
         Type::String => true,
         _ => false,

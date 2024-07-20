@@ -212,6 +212,7 @@ fn gen_world(
         }
     }
     let (pkgs, _files) = resolve.push_path(&opts.wit)?;
+    resolve.add_future_and_stream_results();
     let world = resolve.select_world(&pkgs, opts.world.as_deref())?;
     generator.generate(&resolve, world, files)?;
 

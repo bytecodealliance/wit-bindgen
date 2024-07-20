@@ -322,8 +322,7 @@ impl InterfaceGenerator<'_> {
                     TypeDefKind::Stream(t) => {
                         let mut src = String::new();
                         src.push_str("Stream");
-                        src.push_str(&self.optional_ty_name(t.element.as_ref()));
-                        src.push_str(&self.optional_ty_name(t.end.as_ref()));
+                        src.push_str(&self.ty_name(t));
                         src.push('T');
                         src
                     }
@@ -347,6 +346,7 @@ impl InterfaceGenerator<'_> {
                         src
                     }
                     TypeDefKind::Unknown => unreachable!(),
+                    TypeDefKind::Error => todo!(),
                 }
             }
         }
@@ -679,6 +679,7 @@ impl InterfaceGenerator<'_> {
             TypeDefKind::Future(_) => todo!("anonymous_type for future"),
             TypeDefKind::Stream(_) => todo!("anonymous_type for stream"),
             TypeDefKind::Unknown => unreachable!(),
+            TypeDefKind::Error => todo!(),
         }
     }
 

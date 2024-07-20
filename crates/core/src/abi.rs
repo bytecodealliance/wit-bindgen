@@ -350,6 +350,40 @@ def_instruction! {
             ty: TypeId,
         } : [1] => [1],
 
+        /// Create an `i32` from a future.
+        FutureLower {
+            payload: &'a Option<Type>,
+            ty: TypeId,
+        } : [1] => [1],
+
+        /// Create a future from an `i32`.
+        FutureLift {
+            payload: &'a Option<Type>,
+            ty: TypeId,
+        } : [1] => [1],
+
+        /// Create an `i32` from a stream.
+        StreamLower {
+            payload: &'a Type,
+            ty: TypeId,
+        } : [1] => [1],
+
+        /// Create a stream from an `i32`.
+        StreamLift {
+            payload: &'a Type,
+            ty: TypeId,
+        } : [1] => [1],
+
+        /// Create an `i32` from an error.
+        ErrorLower {
+            ty: TypeId,
+        } : [1] => [1],
+
+        /// Create a error from an `i32`.
+        ErrorLift {
+            ty: TypeId,
+        } : [1] => [1],
+
         /// Pops a tuple value off the stack, decomposes the tuple to all of
         /// its fields, and then pushes the fields onto the stack.
         TupleLower {
@@ -471,7 +505,8 @@ def_instruction! {
         /// Note that this will be used for async functions.
         CallInterface {
             func: &'a Function,
-        } : [func.params.len()] => [func.results.len()],
+            async_: bool,
+        } : [func.params.len()] => [if *async_ { 1 } else { func.results.len() }],
 
         /// Returns `amt` values on the stack. This is always the last
         /// instruction.
@@ -520,6 +555,22 @@ def_instruction! {
         GuestDeallocateVariant {
             blocks: usize,
         } : [1] => [0],
+
+        AsyncMalloc { size: usize, align: usize } : [0] => [1],
+
+        AsyncCallWasm { name: &'a str, size: usize, align: usize } : [3] => [0],
+
+        AsyncCallStart {
+            name: &'a str,
+            params: &'a [WasmType],
+            results: &'a [WasmType]
+        } : [params.len()] => [results.len()],
+
+        AsyncPostCallInterface { func: &'a Function } : [1] => [func.results.len() + 1],
+
+        AsyncCallReturn { name: &'a str, params: &'a [WasmType] } : [params.len()] => [0],
+
+        Flush { amt: usize } : [*amt] => [*amt],
     }
 }
 
@@ -686,12 +737,14 @@ pub fn call(
     lift_lower: LiftLower,
     func: &Function,
     bindgen: &mut impl Bindgen,
+    async_: bool,
 ) {
     if matches!(lift_lower, LiftLower::Symmetric) {
         let sig = wasm_signature_symmetric(resolve, variant, func);
-        Generator::new(resolve, variant, lift_lower, bindgen).call_with_signature(func, sig);
+        Generator::new(resolve, variant, lift_lower, bindgen, async_)
+            .call_with_signature(func, sig);
     } else {
-        Generator::new(resolve, variant, lift_lower, bindgen).call(func);
+        Generator::new(resolve, variant, lift_lower, bindgen, async_).call(func);
     }
 }
 
@@ -701,12 +754,13 @@ pub fn call(
 /// This is only intended to be used in guest generators for exported
 /// functions and will primarily generate `GuestDeallocate*` instructions,
 /// plus others used as input to those instructions.
-pub fn post_return(resolve: &Resolve, func: &Function, bindgen: &mut impl Bindgen) {
+pub fn post_return(resolve: &Resolve, func: &Function, bindgen: &mut impl Bindgen, async_: bool) {
     Generator::new(
         resolve,
         AbiVariant::GuestExport,
         LiftLower::LiftArgsLowerResults,
         bindgen,
+        async_,
     )
     .post_return(func);
 }
@@ -742,7 +796,9 @@ fn needs_post_return(resolve: &Resolve, ty: &Type) -> bool {
                 .filter_map(|t| t.as_ref())
                 .any(|t| needs_post_return(resolve, t)),
             TypeDefKind::Flags(_) | TypeDefKind::Enum(_) => false,
-            TypeDefKind::Future(_) | TypeDefKind::Stream(_) => unimplemented!(),
+            TypeDefKind::Future(_) | TypeDefKind::Stream(_) | TypeDefKind::Error => {
+                unimplemented!()
+            }
             TypeDefKind::Unknown => unreachable!(),
         },
 
@@ -765,6 +821,7 @@ struct Generator<'a, B: Bindgen> {
     variant: AbiVariant,
     lift_lower: LiftLower,
     bindgen: &'a mut B,
+    async_: bool,
     resolve: &'a Resolve,
     operands: Vec<B::Operand>,
     results: Vec<B::Operand>,
@@ -778,12 +835,14 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         variant: AbiVariant,
         lift_lower: LiftLower,
         bindgen: &'a mut B,
+        async_: bool,
     ) -> Generator<'a, B> {
         Generator {
             resolve,
             variant,
             lift_lower,
             bindgen,
+            async_,
             operands: Vec::new(),
             results: Vec::new(),
             stack: Vec::new(),
@@ -797,217 +856,353 @@ impl<'a, B: Bindgen> Generator<'a, B> {
     }
 
     fn call_with_signature(&mut self, func: &Function, sig: WasmSignature) {
+        const MAX_FLAT_PARAMS: usize = 16;
+        const MAX_FLAT_RESULTS: usize = 1;
+
         let language_to_abi = matches!(self.lift_lower, LiftLower::LowerArgsLiftResults)
             || (matches!(self.lift_lower, LiftLower::Symmetric)
                 && matches!(self.variant, AbiVariant::GuestImport));
-        if language_to_abi {
-            if !sig.indirect_params {
-                // If the parameters for this function aren't indirect
-                // (there aren't too many) then we simply do a normal lower
-                // operation for them all.
-                for (nth, (_, ty)) in func.params.iter().enumerate() {
-                    self.emit(&Instruction::GetArg { nth });
-                    self.lower(ty);
-                }
-            } else {
-                // ... otherwise if parameters are indirect space is
-                // allocated from them and each argument is lowered
-                // individually into memory.
-                let (size, align) = self
-                    .bindgen
-                    .sizes()
-                    .record(func.params.iter().map(|t| &t.1));
-                let ptr = match self.variant {
-                    // When a wasm module calls an import it will provide
-                    // space that isn't explicitly deallocated.
-                    AbiVariant::GuestImport => self.bindgen.return_pointer(size, align),
-                    // When calling a wasm module from the outside, though,
-                    // malloc needs to be called.
-                    AbiVariant::GuestExport => {
-                        self.emit(&Instruction::Malloc {
-                            realloc: "cabi_realloc",
-                            size,
-                            align,
-                        });
-                        self.stack.pop().unwrap()
-                    }
-                };
-                let mut offset = 0usize;
-                for (nth, (_, ty)) in func.params.iter().enumerate() {
-                    self.emit(&Instruction::GetArg { nth });
-                    offset = align_to(offset, self.bindgen.sizes().align(ty));
-                    self.write_to_memory(ty, ptr.clone(), offset as i32);
-                    offset += self.bindgen.sizes().size(ty);
+        match language_to_abi {
+            true => {
+                if let (AbiVariant::GuestExport, true) = (self.variant, self.async_) {
+                    todo!("implement host-side support for async lift/lower");
                 }
 
-                self.stack.push(ptr);
-            }
-
-            // If necessary we may need to prepare a return pointer for
-            // this ABI.
-            let retptr = if sig.retptr
-                && (matches!(self.lift_lower, LiftLower::Symmetric)
-                    || self.variant == AbiVariant::GuestImport)
-            {
-                let (size, align) = self.bindgen.sizes().params(func.results.iter_types());
-                let ptr = self.bindgen.return_pointer(size, align);
-                self.return_pointer = Some(ptr.clone());
-                self.stack.push(ptr.clone());
-                Some(ptr)
-            } else {
-                None
-            };
-
-            // Now that all the wasm args are prepared we can call the
-            // actual wasm function.
-            assert_eq!(self.stack.len(), sig.params.len());
-            self.emit(&Instruction::CallWasm {
-                name: &func.name,
-                sig: &sig,
-                module_prefix: "",
-            });
-
-            if matches!(self.lift_lower, LiftLower::Symmetric) && sig.retptr {
-                //let ptr = self.stack.pop().unwrap();
-                self.read_results_from_memory(&func.results, retptr.clone().unwrap(), 0);
-                if guest_export_needs_post_return(self.resolve, func) {
-                    let post_sig = WasmSignature {
-                        params: vec![WasmType::Pointer],
-                        results: Vec::new(),
-                        indirect_params: false,
-                        retptr: false,
-                    };
-                    // TODO: can we get this name from somewhere?
-                    self.stack.push(retptr.unwrap());
-                    self.emit(&Instruction::CallWasm {
-                        name: &func.name,
-                        sig: &post_sig,
-                        module_prefix: "cabi_post_",
-                    });
-                }
-            } else if !sig.retptr {
-                // With no return pointer in use we can simply lift the
-                // result(s) of the function from the result of the core
-                // wasm function.
-                for ty in func.results.iter_types() {
-                    self.lift(ty)
-                }
-            } else {
-                let ptr = match self.variant {
-                    // imports into guests means it's a wasm module
-                    // calling an imported function. We supplied the
-                    // return poitner as the last argument (saved in
-                    // `self.return_pointer`) so we use that to read
-                    // the result of the function from memory.
-                    AbiVariant::GuestImport => {
-                        assert!(sig.results.is_empty());
-                        self.return_pointer.take().unwrap()
+                let lower_to_memory = |self_: &mut Self, ptr: B::Operand| {
+                    let mut offset = 0usize;
+                    for (nth, (_, ty)) in func.params.iter().enumerate() {
+                        self_.emit(&Instruction::GetArg { nth });
+                        offset = align_to(offset, self_.bindgen.sizes().align(ty));
+                        self_.write_to_memory(ty, ptr.clone(), offset as i32);
+                        offset += self_.bindgen.sizes().size(ty);
                     }
 
-                    // guest exports means that this is a host
-                    // calling wasm so wasm returned a pointer to where
-                    // the result is stored
-                    AbiVariant::GuestExport => self.stack.pop().unwrap(),
+                    self_.stack.push(ptr);
                 };
 
-                self.read_results_from_memory(&func.results, ptr, 0);
-            }
-
-            self.emit(&Instruction::Return {
-                func,
-                amt: func.results.len(),
-            });
-        } else {
-            if !sig.indirect_params {
-                // If parameters are not passed indirectly then we lift each
-                // argument in succession from the component wasm types that
-                // make-up the type.
-                let mut offset = 0;
-                let mut temp = Vec::new();
-                for (_, ty) in func.params.iter() {
-                    temp.truncate(0);
-                    self.resolve.push_flat(ty, &mut temp);
-                    for _ in 0..temp.len() {
-                        self.emit(&Instruction::GetArg { nth: offset });
-                        offset += 1;
-                    }
-                    self.lift(ty);
-                }
-            } else {
-                // ... otherwise argument is read in succession from memory
-                // where the pointer to the arguments is the first argument
-                // to the function.
-                let mut offset = 0usize;
-                self.emit(&Instruction::GetArg { nth: 0 });
-                let ptr = self.stack.pop().unwrap();
-                for (_, ty) in func.params.iter() {
-                    offset = align_to(offset, self.bindgen.sizes().align(ty));
-                    self.read_from_memory(ty, ptr.clone(), offset as i32);
-                    offset += self.bindgen.sizes().size(ty);
-                }
-            }
-
-            // ... and that allows us to call the interface types function
-            self.emit(&Instruction::CallInterface { func });
-
-            // This was dynamically allocated by the caller so after
-            // it's been read by the guest we need to deallocate it.
-            if let AbiVariant::GuestExport = self.variant {
-                if sig.indirect_params {
+                let params_size_align = if self.async_ {
                     let (size, align) = self
                         .bindgen
                         .sizes()
-                        .record(func.params.iter().map(|t| &t.1));
-                    self.emit(&Instruction::GetArg { nth: 0 });
-                    self.emit(&Instruction::GuestDeallocate { size, align });
-                }
-            }
-
-            if !sig.retptr {
-                // With no return pointer in use we simply lower the
-                // result(s) and return that directly from the function.
-                let results = self
-                    .stack
-                    .drain(self.stack.len() - func.results.len()..)
-                    .collect::<Vec<_>>();
-                for (ty, result) in func.results.iter_types().zip(results) {
-                    self.stack.push(result);
-                    self.lower(ty);
-                }
-            } else {
-                if self.variant == AbiVariant::GuestImport
-                    || self.lift_lower == LiftLower::Symmetric
-                {
-                    // When a function is imported to a guest this means
-                    // it's a host providing the implementation of the
-                    // import. The result is stored in the pointer
-                    // specified in the last argument, so we get the
-                    // pointer here and then write the return value into
-                    // it.
-                    self.emit(&Instruction::GetArg {
-                        nth: sig.params.len() - 1,
-                    });
+                        .record(func.params.iter().map(|(_, ty)| ty));
+                    self.emit(&Instruction::AsyncMalloc { size, align });
                     let ptr = self.stack.pop().unwrap();
-                    self.write_params_to_memory(func.results.iter_types(), ptr, 0);
+                    lower_to_memory(self, ptr);
+                    Some((size, align))
                 } else {
-                    // For a guest import this is a function defined in
-                    // wasm, so we're returning a pointer where the
-                    // value was stored at. Allocate some space here
-                    // (statically) and then write the result into that
-                    // memory, returning the pointer at the end.
-                    let (size, align) = self.bindgen.sizes().params(func.results.iter_types());
-                    let ptr = self.bindgen.return_pointer(size, align);
-                    self.write_params_to_memory(func.results.iter_types(), ptr.clone(), 0);
-                    if !matches!(self.lift_lower, LiftLower::Symmetric) {
+                    if !sig.indirect_params {
+                        // If the parameters for this function aren't indirect
+                        // (there aren't too many) then we simply do a normal lower
+                        // operation for them all.
+                        for (nth, (_, ty)) in func.params.iter().enumerate() {
+                            self.emit(&Instruction::GetArg { nth });
+                            self.lower(ty);
+                        }
+                    } else {
+                        // ... otherwise if parameters are indirect space is
+                        // allocated from them and each argument is lowered
+                        // individually into memory.
+                        let (size, align) = self
+                            .bindgen
+                            .sizes()
+                            .record(func.params.iter().map(|t| &t.1));
+                        let ptr = match self.variant {
+                            // When a wasm module calls an import it will provide
+                            // space that isn't explicitly deallocated.
+                            AbiVariant::GuestImport => self.bindgen.return_pointer(size, align),
+                            // When calling a wasm module from the outside, though,
+                            // malloc needs to be called.
+                            AbiVariant::GuestExport => {
+                                self.emit(&Instruction::Malloc {
+                                    realloc: "cabi_realloc",
+                                    size,
+                                    align,
+                                });
+                                self.stack.pop().unwrap()
+                            }
+                            AbiVariant::GuestImportAsync | AbiVariant::GuestExportAsync => {
+                                unreachable!()
+                            }
+                        };
+                        lower_to_memory(self, ptr);
+                    }
+                    None
+                };
+
+                let mut retptr = None;
+                // If necessary we may need to prepare a return pointer for
+                // this ABI.
+                let dealloc_size_align = if let Some((params_size, params_align)) =
+                    params_size_align
+                {
+                    let (size, align) = self.bindgen.sizes().record(func.results.iter_types());
+                    self.emit(&Instruction::AsyncMalloc { size, align });
+                    let ptr = self.stack.pop().unwrap();
+                    self.return_pointer = Some(ptr.clone());
+                    self.stack.push(ptr);
+                    // ... and another return pointer for the call handle
+                    self.stack.push(self.bindgen.return_pointer(4, 4));
+
+                    assert_eq!(self.stack.len(), 3);
+                    self.emit(&Instruction::AsyncCallWasm {
+                        name: &format!("[async]{}", func.name),
+                        size: params_size,
+                        align: params_align,
+                    });
+                    Some((size, align))
+                } else {
+                    if (self.variant == AbiVariant::GuestImport
+                        || matches!(self.lift_lower, LiftLower::Symmetric))
+                        && sig.retptr
+                    {
+                        let (size, align) = self.bindgen.sizes().params(func.results.iter_types());
+                        let ptr = self.bindgen.return_pointer(size, align);
+                        self.return_pointer = Some(ptr.clone());
+                        self.stack.push(ptr.clone());
+                        retptr = Some(ptr);
+                    }
+
+                    assert_eq!(self.stack.len(), sig.params.len());
+                    self.emit(&Instruction::CallWasm {
+                        name: &func.name,
+                        sig: &sig,
+                        module_prefix: Default::default(),
+                    });
+                    None
+                };
+
+                if matches!(self.lift_lower, LiftLower::Symmetric) && sig.retptr {
+                    //let ptr = self.stack.pop().unwrap();
+                    self.read_results_from_memory(&func.results, retptr.clone().unwrap(), 0);
+                    if guest_export_needs_post_return(self.resolve, func) {
+                        let post_sig = WasmSignature {
+                            params: vec![WasmType::Pointer],
+                            results: Vec::new(),
+                            indirect_params: false,
+                            retptr: false,
+                        };
+                        // TODO: can we get this name from somewhere?
+                        self.stack.push(retptr.unwrap());
+                        self.emit(&Instruction::CallWasm {
+                            name: &func.name,
+                            sig: &post_sig,
+                            module_prefix: "cabi_post_",
+                        });
+                    }
+                } else if !(sig.retptr || self.async_) {
+                    // With no return pointer in use we can simply lift the
+                    // result(s) of the function from the result of the core
+                    // wasm function.
+                    for ty in func.results.iter_types() {
+                        self.lift(ty)
+                    }
+                } else {
+                    let ptr = match self.variant {
+                        // imports into guests means it's a wasm module
+                        // calling an imported function. We supplied the
+                        // return pointer as the last argument (saved in
+                        // `self.return_pointer`) so we use that to read
+                        // the result of the function from memory.
+                        AbiVariant::GuestImport => {
+                            assert!(sig.results.is_empty());
+                            self.return_pointer.take().unwrap()
+                        }
+
+                        // guest exports means that this is a host
+                        // calling wasm so wasm returned a pointer to where
+                        // the result is stored
+                        AbiVariant::GuestExport => self.stack.pop().unwrap(),
+
+                        AbiVariant::GuestImportAsync | AbiVariant::GuestExportAsync => {
+                            unreachable!()
+                        }
+                    };
+
+                    self.read_results_from_memory(&func.results, ptr.clone(), 0);
+                    self.emit(&Instruction::Flush {
+                        amt: func.results.len(),
+                    });
+
+                    if let Some((size, align)) = dealloc_size_align {
                         self.stack.push(ptr);
+                        self.emit(&Instruction::GuestDeallocate { size, align });
                     }
                 }
             }
+            false => {
+                if let (AbiVariant::GuestImport, true) = (self.variant, self.async_) {
+                    todo!("implement host-side support for async lift/lower");
+                }
 
-            self.emit(&Instruction::Return {
-                func,
-                amt: sig.results.len(),
-            });
+                let read_from_memory = |self_: &mut Self| {
+                    let mut offset = 0usize;
+                    let ptr = self_.stack.pop().unwrap();
+                    for (_, ty) in func.params.iter() {
+                        offset = align_to(offset, self_.bindgen.sizes().align(ty));
+                        self_.read_from_memory(ty, ptr.clone(), offset as i32);
+                        offset += self_.bindgen.sizes().size(ty);
+                    }
+                };
+
+                if self.async_ {
+                    let mut params = Vec::new();
+                    for (_, ty) in func.params.iter() {
+                        self.resolve.push_flat(ty, &mut params);
+                    }
+
+                    let name = &format!("[async-start]{}", func.name);
+
+                    if params.len() > MAX_FLAT_RESULTS {
+                        let (size, align) = self
+                            .bindgen
+                            .sizes()
+                            .params(func.params.iter().map(|(_, ty)| ty));
+                        let ptr = self.bindgen.return_pointer(size, align);
+                        self.stack.push(ptr.clone());
+                        self.emit(&Instruction::AsyncCallStart {
+                            name,
+                            params: &[WasmType::Pointer],
+                            results: &[],
+                        });
+                        self.stack.push(ptr);
+                        read_from_memory(self);
+                    } else {
+                        self.emit(&Instruction::AsyncCallStart {
+                            name,
+                            params: &[],
+                            results: &params,
+                        });
+                        for (_, ty) in func.params.iter() {
+                            self.lift(ty);
+                        }
+                    }
+                } else if !sig.indirect_params {
+                    // If parameters are not passed indirectly then we lift each
+                    // argument in succession from the component wasm types that
+                    // make-up the type.
+                    let mut offset = 0;
+                    let mut temp = Vec::new();
+                    for (_, ty) in func.params.iter() {
+                        temp.truncate(0);
+                        self.resolve.push_flat(ty, &mut temp);
+                        for _ in 0..temp.len() {
+                            self.emit(&Instruction::GetArg { nth: offset });
+                            offset += 1;
+                        }
+                        self.lift(ty);
+                    }
+                } else {
+                    // ... otherwise argument is read in succession from memory
+                    // where the pointer to the arguments is the first argument
+                    // to the function.
+                    self.emit(&Instruction::GetArg { nth: 0 });
+                    read_from_memory(self);
+                }
+
+                // ... and that allows us to call the interface types function
+                self.emit(&Instruction::CallInterface {
+                    func,
+                    async_: self.async_,
+                });
+
+                let (lower_to_memory, async_results) = if self.async_ {
+                    self.emit(&Instruction::AsyncPostCallInterface { func });
+
+                    let mut results = Vec::new();
+                    for ty in func.results.iter_types() {
+                        self.resolve.push_flat(ty, &mut results);
+                    }
+                    (results.len() > MAX_FLAT_PARAMS, Some(results))
+                } else {
+                    (sig.retptr, None)
+                };
+
+                // This was dynamically allocated by the caller (or async start
+                // function) so after it's been read by the guest we need to
+                // deallocate it.
+                if let AbiVariant::GuestExport = self.variant {
+                    if sig.indirect_params && !self.async_ {
+                        let (size, align) = self
+                            .bindgen
+                            .sizes()
+                            .record(func.params.iter().map(|t| &t.1));
+                        self.emit(&Instruction::GetArg { nth: 0 });
+                        self.emit(&Instruction::GuestDeallocate { size, align });
+                    }
+                }
+
+                if !lower_to_memory {
+                    // With no return pointer in use we simply lower the
+                    // result(s) and return that directly from the function.
+                    let results = self
+                        .stack
+                        .drain(self.stack.len() - func.results.len()..)
+                        .collect::<Vec<_>>();
+                    for (ty, result) in func.results.iter_types().zip(results) {
+                        self.stack.push(result);
+                        self.lower(ty);
+                    }
+                } else {
+                    match self.variant == AbiVariant::GuestImport
+                        || self.lift_lower == LiftLower::Symmetric
+                    {
+                        // When a function is imported to a guest this means
+                        // it's a host providing the implementation of the
+                        // import. The result is stored in the pointer
+                        // specified in the last argument, so we get the
+                        // pointer here and then write the return value into
+                        // it.
+                        true => {
+                            self.emit(&Instruction::GetArg {
+                                nth: sig.params.len() - 1,
+                            });
+                            let ptr = self.stack.pop().unwrap();
+                            self.write_params_to_memory(func.results.iter_types(), ptr, 0);
+                        }
+
+                        // For a guest import this is a function defined in
+                        // wasm, so we're returning a pointer where the
+                        // value was stored at. Allocate some space here
+                        // (statically) and then write the result into that
+                        // memory, returning the pointer at the end.
+                        false => {
+                            let (size, align) =
+                                self.bindgen.sizes().params(func.results.iter_types());
+                            let ptr = self.bindgen.return_pointer(size, align);
+                            self.write_params_to_memory(func.results.iter_types(), ptr.clone(), 0);
+                            if !matches!(self.lift_lower, LiftLower::Symmetric) {
+                                self.stack.push(ptr);
+                            }
+                        }
+                    }
+
+                    if matches!(
+                        self.variant,
+                        AbiVariant::GuestImportAsync | AbiVariant::GuestExportAsync
+                    ) {
+                        unreachable!()
+                    }
+                }
+
+                if let Some(results) = async_results {
+                    let name = &format!("[async-return]{}", func.name);
+
+                    self.emit(&Instruction::AsyncCallReturn {
+                        name,
+                        params: &if results.len() > MAX_FLAT_PARAMS {
+                            vec![WasmType::Pointer]
+                        } else {
+                            results
+                        },
+                    });
+                    self.emit(&Instruction::Return { func, amt: 1 });
+                } else {
+                    self.emit(&Instruction::Return {
+                        func,
+                        amt: sig.results.len(),
+                    });
+                }
+            }
         }
 
         assert!(
@@ -1203,8 +1398,21 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         results: &results,
                     });
                 }
-                TypeDefKind::Future(_) => todo!("lower future"),
-                TypeDefKind::Stream(_) => todo!("lower stream"),
+                TypeDefKind::Future(ty) => {
+                    self.emit(&FutureLower {
+                        payload: ty,
+                        ty: id,
+                    });
+                }
+                TypeDefKind::Stream(ty) => {
+                    self.emit(&StreamLower {
+                        payload: ty,
+                        ty: id,
+                    });
+                }
+                TypeDefKind::Error => {
+                    self.emit(&ErrorLower { ty: id });
+                }
                 TypeDefKind::Unknown => unreachable!(),
             },
         }
@@ -1388,8 +1596,21 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     self.emit(&ResultLift { result: r, ty: id });
                 }
 
-                TypeDefKind::Future(_) => todo!("lift future"),
-                TypeDefKind::Stream(_) => todo!("lift stream"),
+                TypeDefKind::Future(ty) => {
+                    self.emit(&FutureLift {
+                        payload: ty,
+                        ty: id,
+                    });
+                }
+                TypeDefKind::Stream(ty) => {
+                    self.emit(&StreamLift {
+                        payload: ty,
+                        ty: id,
+                    });
+                }
+                TypeDefKind::Error => {
+                    self.emit(&ErrorLift { ty: id });
+                }
                 TypeDefKind::Unknown => unreachable!(),
             },
         }
@@ -1457,7 +1678,10 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 TypeDefKind::Type(t) => self.write_to_memory(t, addr, offset),
                 TypeDefKind::List(_) => self.write_list_to_memory(ty, addr, offset),
 
-                TypeDefKind::Handle(_) => self.lower_and_emit(ty, addr, &I32Store { offset }),
+                TypeDefKind::Future(_)
+                | TypeDefKind::Stream(_)
+                | TypeDefKind::Error
+                | TypeDefKind::Handle(_) => self.lower_and_emit(ty, addr, &I32Store { offset }),
 
                 // Decompose the record into its components and then write all
                 // the components into memory one-by-one.
@@ -1547,8 +1771,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     self.store_intrepr(offset, e.tag());
                 }
 
-                TypeDefKind::Future(_) => todo!("write future to memory"),
-                TypeDefKind::Stream(_) => todo!("write stream to memory"),
                 TypeDefKind::Unknown => unreachable!(),
             },
         }
@@ -1648,7 +1870,10 @@ impl<'a, B: Bindgen> Generator<'a, B> {
 
                 TypeDefKind::List(_) => self.read_list_from_memory(ty, addr, offset),
 
-                TypeDefKind::Handle(_) => self.emit_and_lift(ty, addr, &I32Load { offset }),
+                TypeDefKind::Future(_)
+                | TypeDefKind::Stream(_)
+                | TypeDefKind::Error
+                | TypeDefKind::Handle(_) => self.emit_and_lift(ty, addr, &I32Load { offset }),
 
                 TypeDefKind::Resource => {
                     todo!();
@@ -1732,8 +1957,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     self.lift(ty);
                 }
 
-                TypeDefKind::Future(_) => todo!("read future from memory"),
-                TypeDefKind::Stream(_) => todo!("read stream from memory"),
                 TypeDefKind::Unknown => unreachable!(),
             },
         }
@@ -1911,6 +2134,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
 
                 TypeDefKind::Future(_) => todo!("read future from memory"),
                 TypeDefKind::Stream(_) => todo!("read stream from memory"),
+                TypeDefKind::Error => todo!("read error from memory"),
                 TypeDefKind::Unknown => unreachable!(),
             },
         }

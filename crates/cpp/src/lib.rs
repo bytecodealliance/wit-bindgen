@@ -897,6 +897,7 @@ impl CppInterfaceGenerator<'_> {
             TypeDefKind::Stream(_) => todo!("generate for stream"),
             TypeDefKind::Handle(_) => todo!("generate for handle"),
             TypeDefKind::Unknown => unreachable!(),
+            TypeDefKind::Error => todo!(),
         }
     }
 
@@ -1446,6 +1447,8 @@ impl CppInterfaceGenerator<'_> {
         let export = match variant {
             AbiVariant::GuestImport => self.gen.opts.host_side(),
             AbiVariant::GuestExport => !self.gen.opts.host_side(),
+            AbiVariant::GuestImportAsync => todo!(),
+            AbiVariant::GuestExportAsync => todo!(),
         };
         let params = self.print_signature(func, variant, !export);
         let special = is_special_method(func);
@@ -1685,7 +1688,7 @@ impl CppInterfaceGenerator<'_> {
                     } else {
                         None
                     };
-                    abi::call(f.gen.resolve, variant, lift_lower, func, &mut f);
+                    abi::call(f.gen.resolve, variant, lift_lower, func, &mut f, false);
                     let code = String::from(f.src);
                     self.gen.c_src.src.push_str(&code);
                 }
@@ -1757,7 +1760,7 @@ impl CppInterfaceGenerator<'_> {
 
                 let mut f = FunctionBindgen::new(self, params.clone());
                 f.params = params;
-                abi::post_return(f.gen.resolve, func, &mut f);
+                abi::post_return(f.gen.resolve, func, &mut f, false);
                 let FunctionBindgen { src, .. } = f;
                 self.gen.c_src.src.push_str(&src);
                 self.gen.c_src.src.push_str("}\n");
@@ -1895,6 +1898,7 @@ impl CppInterfaceGenerator<'_> {
                         (false, Flavor::Result(AbiVariant::GuestImport))
                         | (true, Flavor::Result(AbiVariant::GuestExport)) => (),
                         (_, Flavor::InStruct) => (),
+                        (_, _) => todo!(),
                     }
                     typename
                 }
@@ -1960,6 +1964,7 @@ impl CppInterfaceGenerator<'_> {
                 TypeDefKind::Stream(_) => todo!(),
                 TypeDefKind::Type(ty) => self.type_name(ty, from_namespace, flavor),
                 TypeDefKind::Unknown => todo!(),
+                TypeDefKind::Error => todo!(),
             },
         }
     }
@@ -2115,6 +2120,8 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                 let name = match variant {
                     AbiVariant::GuestImport => "[resource-drop]",
                     AbiVariant::GuestExport => "[dtor]",
+                    AbiVariant::GuestImportAsync => todo!(),
+                    AbiVariant::GuestExportAsync => todo!(),
                 }
                 // let name = match (variant, self.gen.opts.host_side()) {
                 //     (AbiVariant::GuestImport, false) | (AbiVariant::GuestExport, true) => {
@@ -2542,6 +2549,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                 _ => false,
             },
             TypeDefKind::Unknown => todo!(),
+            TypeDefKind::Error => todo!(),
         }
     }
 }
@@ -2904,6 +2912,8 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                             );
                             results.push(format!("{tname}::Owned(*{var})"));
                         }
+                        AbiVariant::GuestImportAsync => todo!(),
+                        AbiVariant::GuestExportAsync => todo!(),
                     },
                     (Handle::Own(ty), false) => match self.variant {
                         AbiVariant::GuestImport => {
@@ -2926,6 +2936,8 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                             }
                             results.push(format!("std::move({var})"))
                         }
+                        AbiVariant::GuestImportAsync => todo!(),
+                        AbiVariant::GuestExportAsync => todo!(),
                     },
                     (Handle::Borrow(ty), true) => {
                         let tname = self.gen.type_name(
@@ -2945,6 +2957,8 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                             );
                             results.push(format!("std::ref(*({tname} *){op})"));
                         }
+                        AbiVariant::GuestImportAsync => todo!(),
+                        AbiVariant::GuestExportAsync => todo!(),
                     },
                 }
             }
@@ -3400,7 +3414,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     self.src.push_str(");\n");
                 }
             }
-            abi::Instruction::CallInterface { func } => {
+            abi::Instruction::CallInterface { func, .. } => {
                 // dbg!(func);
                 self.let_results(func.results.len(), results);
                 let (mut namespace, func_name_h) =
@@ -3600,6 +3614,22 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 self.store(ptr_type, *offset, operands)
             }
             abi::Instruction::LengthStore { offset } => self.store("size_t", *offset, operands),
+            abi::Instruction::FutureLower { payload, ty } => todo!(),
+            abi::Instruction::FutureLift { payload, ty } => todo!(),
+            abi::Instruction::StreamLower { payload, ty } => todo!(),
+            abi::Instruction::StreamLift { payload, ty } => todo!(),
+            abi::Instruction::ErrorLower { ty } => todo!(),
+            abi::Instruction::ErrorLift { ty } => todo!(),
+            abi::Instruction::AsyncMalloc { size, align } => todo!(),
+            abi::Instruction::AsyncCallWasm { name, size, align } => todo!(),
+            abi::Instruction::AsyncCallStart {
+                name,
+                params,
+                results,
+            } => todo!(),
+            abi::Instruction::AsyncPostCallInterface { func } => todo!(),
+            abi::Instruction::AsyncCallReturn { name, params } => todo!(),
+            abi::Instruction::Flush { amt } => todo!(),
         }
     }
 

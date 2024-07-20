@@ -1,7 +1,7 @@
 use crate::bindgen::FunctionBindgen;
 use crate::{
-    int_repr, to_rust_ident, to_upper_camel_case, wasm_type, FnSig, Identifier, InterfaceName,
-    Ownership, RuntimeItem, RustFlagsRepr, RustWasm,
+    int_repr, to_rust_ident, to_upper_camel_case, wasm_type, AsyncConfig, FnSig, Identifier,
+    InterfaceName, Ownership, RuntimeItem, RustFlagsRepr, RustWasm,
 };
 use anyhow::Result;
 use heck::*;
@@ -20,7 +20,7 @@ pub struct InterfaceGenerator<'a> {
     pub in_import: bool,
     pub sizes: SizeAlign,
     pub(super) gen: &'a mut RustWasm,
-    pub wasm_import_module: Option<&'a str>,
+    pub wasm_import_module: &'a str,
     pub resolve: &'a Resolve,
     pub return_pointer_area_size: usize,
     pub return_pointer_area_align: usize,
@@ -157,6 +157,17 @@ impl InterfaceGenerator<'_> {
                 continue;
             }
 
+            let async_ = match &self.gen.opts.async_ {
+                AsyncConfig::None => false,
+                AsyncConfig::All => true,
+                AsyncConfig::Some { exports, .. } => {
+                    exports.contains(&if let Some((_, key)) = interface {
+                        format!("{}#{}", self.resolve.name_world_key(key), func.name)
+                    } else {
+                        func.name.clone()
+                    })
+                }
+            };
             let resource = match func.kind {
                 FunctionKind::Freestanding => None,
                 FunctionKind::Method(id)
@@ -164,12 +175,13 @@ impl InterfaceGenerator<'_> {
                 | FunctionKind::Static(id) => Some(id),
             };
 
-            funcs_to_export.push((func, resource));
+            funcs_to_export.push((func, resource, async_));
             let (trait_name, methods) = traits.get_mut(&resource).unwrap();
-            self.generate_guest_export(func, &trait_name);
+            self.generate_guest_export(func, interface.map(|(_, k)| k), &trait_name, async_);
 
             let prev = mem::take(&mut self.src);
             let mut sig = FnSig {
+                async_,
                 use_item_name: true,
                 private: true,
                 ..Default::default()
@@ -178,7 +190,7 @@ impl InterfaceGenerator<'_> {
                 sig.self_arg = Some("&self".into());
                 sig.self_is_first_param = true;
             }
-            self.print_signature(func, true, &sig);
+            self.print_signature(func, true, &sig, false);
             self.src.push_str(";\n");
             let trait_method = mem::replace(&mut self.src, prev);
             methods.push(trait_method);
@@ -189,9 +201,9 @@ impl InterfaceGenerator<'_> {
             self.generate_interface_trait(
                 &name,
                 &methods,
-                traits.iter().map(|(resource, (trait_name, _methods))| {
-                    (resource.unwrap(), trait_name.as_str())
-                }),
+                traits
+                    .iter()
+                    .map(|(resource, (trait_name, ..))| (resource.unwrap(), trait_name.as_str())),
             )
         }
 
@@ -252,7 +264,7 @@ fn _resource_rep(handle: u32) -> *mut u8
             None => {
                 let world = match self.identifier {
                     Identifier::World(w) => w,
-                    Identifier::Interface(..) => unreachable!(),
+                    Identifier::None | Identifier::Interface(..) => unreachable!(),
                 };
                 let world = self.resolve.worlds[world].name.to_snake_case();
                 format!("__export_world_{world}_cabi")
@@ -285,7 +297,7 @@ macro_rules! {macro_name} {{
 "
         );
 
-        for (func, resource) in funcs_to_export {
+        for (func, resource, async_) in funcs_to_export {
             let ty = match resource {
                 None => "$ty".to_string(),
                 Some(id) => {
@@ -297,13 +309,13 @@ macro_rules! {macro_name} {{
                     format!("<$ty as $($path_to_types)*::Guest>::{name}")
                 }
             };
-            self.generate_raw_cabi_export(func, &ty, "$($path_to_types)*");
+            self.generate_raw_cabi_export(func, &ty, "$($path_to_types)*", async_);
         }
         let export_prefix = self.gen.opts.export_prefix.as_deref().unwrap_or("");
         for name in resources_to_drop {
             let module = match self.identifier {
                 Identifier::Interface(_, key) => self.resolve.name_world_key(key),
-                Identifier::World(_) => unreachable!(),
+                Identifier::None | Identifier::World(_) => unreachable!(),
             };
             let camel = name.to_upper_camel_case();
             let dtor_symbol = make_external_symbol(
@@ -356,9 +368,13 @@ macro_rules! {macro_name} {{
         uwriteln!(self.src, "}}");
     }
 
-    pub fn generate_imports<'a>(&mut self, funcs: impl Iterator<Item = &'a Function>) {
+    pub fn generate_imports<'a>(
+        &mut self,
+        funcs: impl Iterator<Item = &'a Function>,
+        interface: Option<&WorldKey>,
+    ) {
         for func in funcs {
-            self.generate_guest_import(func);
+            self.generate_guest_import(func, interface);
         }
     }
 
@@ -444,12 +460,320 @@ macro_rules! {macro_name} {{
         map.push((module, module_path))
     }
 
-    fn generate_guest_import(&mut self, func: &Function) {
+    fn generate_payloads(&mut self, prefix: &str, func: &Function, interface: Option<&WorldKey>) {
+        for (index, ty) in func
+            .find_futures_and_streams(self.resolve)
+            .into_iter()
+            .enumerate()
+        {
+            let payload_result = self.gen.payload_results[&ty];
+            let module = format!(
+                "{prefix}{}",
+                interface
+                    .map(|name| self.resolve.name_world_key(name))
+                    .unwrap_or_else(|| "$root".into())
+            );
+            let func_name = &func.name;
+            let type_mode = TypeMode {
+                lifetime: None,
+                lists_borrowed: false,
+                style: TypeOwnershipStyle::Owned,
+            };
+            let async_support = self.path_to_async_support();
+
+            match &self.resolve.types[ty].kind {
+                TypeDefKind::Future(payload_type) => {
+                    let (name, full_name) = if let Some(payload_type) = payload_type {
+                        (
+                            {
+                                let old = mem::take(&mut self.src);
+                                self.print_ty(&payload_type, type_mode);
+                                String::from(mem::replace(&mut self.src, old))
+                            },
+                            {
+                                let old = mem::take(&mut self.src);
+                                let old_identifier =
+                                    mem::replace(&mut self.identifier, Identifier::None);
+                                self.print_ty(&payload_type, type_mode);
+                                self.identifier = old_identifier;
+                                String::from(mem::replace(&mut self.src, old))
+                            },
+                        )
+                    } else {
+                        ("()".into(), "()".into())
+                    };
+
+                    if self.gen.future_payloads_emitted.insert(full_name) {
+                        let send = Function {
+                            name: format!("[future-send-{index}]{func_name}"),
+                            kind: FunctionKind::Freestanding,
+                            params: if let Some(payload_type) = payload_type {
+                                vec![
+                                    ("sender".into(), Type::U32),
+                                    ("value".into(), *payload_type),
+                                ]
+                            } else {
+                                vec![("sender".into(), Type::U32)]
+                            },
+                            results: Results::Anon(Type::Id(self.gen.unit_result.unwrap())),
+                            docs: Default::default(),
+                            stability: Stability::default(),
+                        };
+                        let old = mem::take(&mut self.src);
+                        self.generate_guest_import_body(
+                            &module,
+                            &send,
+                            if payload_type.is_some() {
+                                vec!["sender".into(), "value".into()]
+                            } else {
+                                vec!["sender".into()]
+                            },
+                            true,
+                        );
+                        let send = String::from(mem::replace(&mut self.src, old));
+
+                        let receive = Function {
+                            name: format!("[future-receive-{index}]{func_name}"),
+                            kind: FunctionKind::Freestanding,
+                            params: vec![("receiver".into(), Type::U32)],
+                            results: Results::Anon(Type::Id(payload_result)),
+                            docs: Default::default(),
+                            stability: Stability::default(),
+                        };
+                        let old = mem::take(&mut self.src);
+                        self.generate_guest_import_body(
+                            &module,
+                            &receive,
+                            vec!["receiver".into()],
+                            true,
+                        );
+                        let receive = String::from(mem::replace(&mut self.src, old));
+
+                        uwriteln!(
+                            self.src,
+                            r#"
+impl {async_support}::FuturePayload for {name} {{
+    fn new() -> (u32, u32) {{
+        #[cfg(not(target_arch = "wasm32"))]
+        {{
+            unreachable!();
+        }}
+
+        #[cfg(target_arch = "wasm32")]
+        {{
+            #[link(wasm_import_module = "{module}")]
+            extern "C" {{
+                #[link_name = "[future-new-{index}]{func_name}"]
+                fn new(_: *mut u32);
+            }}
+            let mut results = [0u32; 2];
+            unsafe {{ new(results.as_mut_ptr()) }};
+            (results[0], results[1])
+        }}
+    }}
+
+    async fn send(sender: u32, value: Self) -> Result<(), {async_support}::Error> {{
+        unsafe {{ {send} }}
+    }}
+
+    async fn receive(receiver: u32) -> Result<Self, {async_support}::Error> {{
+        unsafe {{ {receive} }}
+    }}
+
+    fn drop_sender(sender: u32) {{
+        #[cfg(not(target_arch = "wasm32"))]
+        {{
+            unreachable!();
+        }}
+
+        #[cfg(target_arch = "wasm32")]
+        {{
+            #[link(wasm_import_module = "{module}")]
+            extern "C" {{
+                #[link_name = "[future-drop-sender-{index}]{func_name}"]
+                fn drop(_: u32);
+            }}
+            unsafe {{ drop(sender) }}
+        }}
+    }}
+
+    fn drop_receiver(receiver: u32) {{
+        #[cfg(not(target_arch = "wasm32"))]
+        {{
+            unreachable!();
+        }}
+
+        #[cfg(target_arch = "wasm32")]
+        {{
+            #[link(wasm_import_module = "{module}")]
+            extern "C" {{
+                #[link_name = "[future-drop-receiver-{index}]{func_name}"]
+                fn drop(_: u32);
+            }}
+            unsafe {{ drop(receiver) }}
+        }}
+    }}                             
+}}
+                        "#,
+                        );
+                    }
+                }
+                TypeDefKind::Stream(payload_type) => {
+                    let name = {
+                        let old = mem::take(&mut self.src);
+                        self.print_ty(&payload_type, type_mode);
+                        String::from(mem::replace(&mut self.src, old))
+                    };
+
+                    let full_name = {
+                        let old = mem::take(&mut self.src);
+                        let old_identifier = mem::replace(&mut self.identifier, Identifier::None);
+                        self.print_ty(&payload_type, type_mode);
+                        self.identifier = old_identifier;
+                        String::from(mem::replace(&mut self.src, old))
+                    };
+
+                    let TypeDefKind::Option(Type::Id(result_ty)) =
+                        &self.resolve.types[payload_result].kind
+                    else {
+                        unreachable!()
+                    };
+                    let TypeDefKind::Result(Result_ {
+                        ok: Some(list_ty), ..
+                    }) = &self.resolve.types[*result_ty].kind
+                    else {
+                        unreachable!()
+                    };
+
+                    if self.gen.stream_payloads_emitted.insert(full_name) {
+                        let send = Function {
+                            name: format!("[stream-send-{index}]{func_name}"),
+                            kind: FunctionKind::Freestanding,
+                            params: vec![("sender".into(), Type::U32), ("values".into(), *list_ty)],
+                            results: Results::Anon(Type::Id(self.gen.unit_result.unwrap())),
+                            docs: Default::default(),
+                            stability: Stability::default(),
+                        };
+                        let old = mem::take(&mut self.src);
+                        self.generate_guest_import_body(
+                            &module,
+                            &send,
+                            vec!["sender".into(), "values".into()],
+                            true,
+                        );
+                        let send = String::from(mem::replace(&mut self.src, old));
+
+                        let receive = Function {
+                            name: format!("[stream-receive-{index}]{func_name}"),
+                            kind: FunctionKind::Freestanding,
+                            params: vec![("receiver".into(), Type::U32)],
+                            results: Results::Anon(Type::Id(payload_result)),
+                            docs: Default::default(),
+                            stability: Stability::default(),
+                        };
+                        let old_src = mem::take(&mut self.src);
+                        self.generate_guest_import_body(
+                            &module,
+                            &receive,
+                            vec!["receiver".into()],
+                            true,
+                        );
+                        let receive = String::from(mem::replace(&mut self.src, old_src));
+
+                        uwriteln!(
+                            self.src,
+                            r#"
+impl {async_support}::StreamPayload for {name} {{
+    fn new() -> (u32, u32) {{
+        #[cfg(not(target_arch = "wasm32"))]
+        {{
+            unreachable!();
+        }}
+
+        #[cfg(target_arch = "wasm32")]
+        {{
+            #[link(wasm_import_module = "{module}")]
+            extern "C" {{
+                #[link_name = "[stream-new-{index}]{func_name}"]
+                fn new(_: *mut u32);
+            }}
+            let mut results = [0u32; 2];
+            unsafe {{ new(results.as_mut_ptr()) }};
+            (results[0], results[1])
+        }}
+    }}
+
+    async fn send(sender: u32, values: Vec<Self>) -> Result<(), {async_support}::Error> {{
+        unsafe {{ {send} }}
+    }}
+
+    async fn receive(receiver: u32) -> Option<Result<Vec<Self>, {async_support}::Error>> {{
+        unsafe {{ {receive} }}
+    }}
+
+    fn drop_sender(sender: u32) {{
+        #[cfg(not(target_arch = "wasm32"))]
+        {{
+            unreachable!();
+        }}
+
+        #[cfg(target_arch = "wasm32")]
+        {{
+            #[link(wasm_import_module = "{module}")]
+            extern "C" {{
+                #[link_name = "[stream-drop-sender-{index}]{func_name}"]
+                fn drop(_: u32);
+            }}
+            unsafe {{ drop(sender) }}
+        }}
+    }}
+
+    fn drop_receiver(receiver: u32) {{
+        #[cfg(not(target_arch = "wasm32"))]
+        {{
+            unreachable!();
+        }}
+
+        #[cfg(target_arch = "wasm32")]
+        {{
+            #[link(wasm_import_module = "{module}")]
+            extern "C" {{
+                #[link_name = "[stream-drop-receiver-{index}]{func_name}"]
+                fn drop(_: u32);
+            }}
+            unsafe {{ drop(receiver) }}
+        }}
+    }}                             
+}}
+                        "#
+                        );
+                    }
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    fn generate_guest_import(&mut self, func: &Function, interface: Option<&WorldKey>) {
         if self.gen.skip.contains(&func.name) {
             return;
         }
 
-        let mut sig = FnSig::default();
+        self.generate_payloads("[import-payload]", func, interface);
+
+        let async_ = match &self.gen.opts.async_ {
+            AsyncConfig::None => false,
+            AsyncConfig::All => true,
+            AsyncConfig::Some { imports, .. } => imports.contains(&if let Some(key) = interface {
+                format!("{}#{}", self.resolve.name_world_key(key), func.name)
+            } else {
+                func.name.clone()
+            }),
+        };
+        let mut sig = FnSig {
+            async_,
+            ..Default::default()
+        };
         match func.kind {
             FunctionKind::Freestanding => {}
             FunctionKind::Method(id) | FunctionKind::Static(id) | FunctionKind::Constructor(id) => {
@@ -464,17 +788,38 @@ macro_rules! {macro_name} {{
             }
         }
         self.src.push_str("#[allow(unused_unsafe, clippy::all)]\n");
-        let params = self.print_signature(func, false, &sig);
+        let params = self.print_signature(func, false, &sig, true);
         self.src.push_str("{\n");
         self.src.push_str("unsafe {\n");
 
-        let mut f = FunctionBindgen::new(self, params);
+        self.generate_guest_import_body(&self.wasm_import_module, func, params, async_);
+
+        self.src.push_str("}\n");
+        self.src.push_str("}\n");
+
+        match func.kind {
+            FunctionKind::Freestanding => {}
+            FunctionKind::Method(_) | FunctionKind::Static(_) | FunctionKind::Constructor(_) => {
+                self.src.push_str("}\n");
+            }
+        }
+    }
+
+    fn generate_guest_import_body(
+        &mut self,
+        module: &str,
+        func: &Function,
+        params: Vec<String>,
+        async_: bool,
+    ) {
+        let mut f = FunctionBindgen::new(self, params, async_, module);
         abi::call(
             f.gen.resolve,
             AbiVariant::GuestImport,
             LiftLower::LowerArgsLiftResults,
             func,
             &mut f,
+            async_,
         );
         let FunctionBindgen {
             needs_cleanup_list,
@@ -501,29 +846,33 @@ macro_rules! {macro_name} {{
             );
         }
         self.src.push_str(&String::from(src));
-
-        self.src.push_str("}\n");
-        self.src.push_str("}\n");
-
-        match func.kind {
-            FunctionKind::Freestanding => {}
-            FunctionKind::Method(_) | FunctionKind::Static(_) | FunctionKind::Constructor(_) => {
-                self.src.push_str("}\n");
-            }
-        }
     }
 
-    fn generate_guest_export(&mut self, func: &Function, trait_name: &str) {
+    fn generate_guest_export(
+        &mut self,
+        func: &Function,
+        interface: Option<&WorldKey>,
+        trait_name: &str,
+        async_: bool,
+    ) {
         let name_snake = func.name.to_snake_case().replace('.', "_");
+
+        self.generate_payloads("[export-payload]", func, interface);
+
         uwrite!(
             self.src,
             "\
                 #[doc(hidden)]
                 #[allow(non_snake_case)]
                 pub unsafe fn _export_{name_snake}_cabi<T: {trait_name}>\
-",
+            ",
         );
-        let params = self.print_export_sig(func);
+        let params = if async_ {
+            self.push_str("() -> *mut u8");
+            Vec::new()
+        } else {
+            self.print_export_sig(func)
+        };
         self.push_str(" {");
 
         if !self.gen.opts.disable_run_ctors_once_workaround {
@@ -542,13 +891,14 @@ macro_rules! {macro_name} {{
             );
         }
 
-        let mut f = FunctionBindgen::new(self, params);
+        let mut f = FunctionBindgen::new(self, params, async_, self.wasm_import_module);
         abi::call(
             f.gen.resolve,
             AbiVariant::GuestExport,
             LiftLower::LiftArgsLowerResults,
             func,
             &mut f,
+            async_,
         );
         let FunctionBindgen {
             needs_cleanup_list,
@@ -564,20 +914,32 @@ macro_rules! {macro_name} {{
         self.src.push_str(&String::from(src));
         self.src.push_str("}\n");
 
-        if abi::guest_export_needs_post_return(self.resolve, func) {
+        if async_ {
+            let async_support = self.path_to_async_support();
+            uwrite!(
+                self.src,
+                "\
+                    #[doc(hidden)]
+                    #[allow(non_snake_case)]
+                    pub unsafe fn __callback_{name_snake}(ctx: *mut u8, event0: i32, event1: i32, event2: i32) -> i32 {{
+                        {async_support}::callback(ctx, event0, event1, event2)
+                    }}
+                "
+            );
+        } else if abi::guest_export_needs_post_return(self.resolve, func) {
             uwrite!(
                 self.src,
                 "\
                     #[doc(hidden)]
                     #[allow(non_snake_case)]
                     pub unsafe fn __post_return_{name_snake}<T: {trait_name}>\
-"
+                "
             );
             let params = self.print_post_return_sig(func);
             self.src.push_str("{\n");
 
-            let mut f = FunctionBindgen::new(self, params);
-            abi::post_return(f.gen.resolve, func, &mut f);
+            let mut f = FunctionBindgen::new(self, params, async_, self.wasm_import_module);
+            abi::post_return(f.gen.resolve, func, &mut f, async_);
             let FunctionBindgen {
                 needs_cleanup_list,
                 src,
@@ -591,14 +953,26 @@ macro_rules! {macro_name} {{
         }
     }
 
-    fn generate_raw_cabi_export(&mut self, func: &Function, ty: &str, path_to_self: &str) {
+    fn generate_raw_cabi_export(
+        &mut self,
+        func: &Function,
+        ty: &str,
+        path_to_self: &str,
+        async_: bool,
+    ) {
         let name_snake = func.name.to_snake_case().replace('.', "_");
         let wasm_module_export_name = match self.identifier {
             Identifier::Interface(_, key) => Some(self.resolve.name_world_key(key)),
             Identifier::World(_) => None,
+            Identifier::None => unreachable!(),
         };
         let export_prefix = self.gen.opts.export_prefix.as_deref().unwrap_or("");
         let export_name = func.core_export_name(wasm_module_export_name.as_deref());
+        let export_name = if async_ {
+            format!("[async]{export_name}")
+        } else {
+            export_name.to_string()
+        };
         let external_name = make_external_component(&(String::from(export_prefix) + &export_name));
         uwrite!(
             self.src,
@@ -609,7 +983,12 @@ macro_rules! {macro_name} {{
         ",
         );
 
-        let params = self.print_export_sig(func);
+        let params = if async_ {
+            self.push_str("() -> *mut u8");
+            Vec::new()
+        } else {
+            self.print_export_sig(func)
+        };
         self.push_str(" {\n");
         uwriteln!(
             self.src,
@@ -618,7 +997,18 @@ macro_rules! {macro_name} {{
         );
         self.push_str("}\n");
 
-        if abi::guest_export_needs_post_return(self.resolve, func) {
+        let export_prefix = self.gen.opts.export_prefix.as_deref().unwrap_or("");
+        if async_ {
+            uwrite!(
+                self.src,
+                "\
+                    #[export_name = \"{export_prefix}[callback]{export_name}\"]
+                    unsafe extern \"C\" fn _callback_{name_snake}(ctx: *mut u8, event0: i32, event1: i32, event2: i32) -> i32 {{
+                        {path_to_self}::__callback_{name_snake}(ctx, event0, event1, event2)
+                    }}
+                "
+            );
+        } else if abi::guest_export_needs_post_return(self.resolve, func) {
             let export_prefix = self.gen.opts.export_prefix.as_deref().unwrap_or("");
             let external_name = make_external_component(export_prefix)
                 + "cabi_post_"
@@ -736,7 +1126,7 @@ macro_rules! {macro_name} {{
                 sig.self_arg = Some("&self".into());
                 sig.self_is_first_param = true;
             }
-            self.print_signature(func, true, &sig);
+            self.print_signature(func, true, &sig, true);
             self.src.push_str("{ unreachable!() }\n");
         }
 
@@ -794,12 +1184,18 @@ macro_rules! {macro_name} {{
         // }
     }
 
-    fn print_signature(&mut self, func: &Function, params_owned: bool, sig: &FnSig) -> Vec<String> {
-        let params = self.print_docs_and_params(func, params_owned, sig);
+    fn print_signature(
+        &mut self,
+        func: &Function,
+        params_owned: bool,
+        sig: &FnSig,
+        use_async_sugar: bool,
+    ) -> Vec<String> {
+        let params = self.print_docs_and_params(func, params_owned, sig, use_async_sugar);
         if let FunctionKind::Constructor(_) = &func.kind {
             self.push_str(" -> Self")
         } else {
-            self.print_results(&func.results);
+            self.print_results(&func.results, sig.async_ && !use_async_sugar);
         }
         params
     }
@@ -809,6 +1205,7 @@ macro_rules! {macro_name} {{
         func: &Function,
         params_owned: bool,
         sig: &FnSig,
+        use_async_sugar: bool,
     ) -> Vec<String> {
         self.rustdoc(&func.docs);
         self.rustdoc_params(&func.params, "Parameters");
@@ -821,7 +1218,7 @@ macro_rules! {macro_name} {{
         if sig.unsafe_ {
             self.push_str("unsafe ");
         }
-        if sig.async_ {
+        if sig.async_ && use_async_sugar {
             self.push_str("async ");
         }
         self.push_str("fn ");
@@ -911,18 +1308,24 @@ macro_rules! {macro_name} {{
         params
     }
 
-    fn print_results(&mut self, results: &Results) {
+    fn print_results(&mut self, results: &Results, async_: bool) {
+        self.push_str(" -> ");
+        if async_ {
+            self.push_str("impl ::core::future::Future<Output = ");
+        }
+
         match results.len() {
-            0 => {}
+            0 => {
+                self.push_str("()");
+            }
             1 => {
-                self.push_str(" -> ");
                 let ty = results.iter_types().next().unwrap();
                 let mode = self.type_mode_for(ty, TypeOwnershipStyle::Owned, "'INVALID");
                 assert!(mode.lifetime.is_none());
                 self.print_ty(ty, mode);
             }
             _ => {
-                self.push_str(" -> (");
+                self.push_str("(");
                 for ty in results.iter_types() {
                     let mode = self.type_mode_for(ty, TypeOwnershipStyle::Owned, "'INVALID");
                     assert!(mode.lifetime.is_none());
@@ -931,6 +1334,10 @@ macro_rules! {macro_name} {{
                 }
                 self.push_str(")")
             }
+        }
+
+        if async_ {
+            self.push_str("> + 'static");
         }
     }
 
@@ -1859,6 +2266,10 @@ macro_rules! {macro_name} {{
         self.path_from_runtime_module(RuntimeItem::StdAllocModule, "alloc")
     }
 
+    pub fn path_to_async_support(&mut self) -> String {
+        self.path_from_runtime_module(RuntimeItem::AsyncSupport, "async_support")
+    }
+
     fn path_from_runtime_module(
         &mut self,
         item: RuntimeItem,
@@ -1916,11 +2327,12 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                     }}
                 "#
             );
-            self.wasm_import_module.unwrap().to_string()
+            self.wasm_import_module.to_string()
         } else {
             let module = match self.identifier {
                 Identifier::Interface(_, key) => self.resolve.name_world_key(key),
                 Identifier::World(_) => unimplemented!("resource exports from worlds"),
+                Identifier::None => unreachable!(),
             };
             let box_path = self.path_to_box();
             uwriteln!(
@@ -2262,18 +2674,23 @@ impl<'a, 'b> wit_bindgen_core::AnonymousTypeGenerator<'a> for AnonTypeGenerator<
     }
 
     fn anonymous_type_future(&mut self, _id: TypeId, ty: &Option<Type>, _docs: &Docs) {
-        self.interface.push_str("Future<");
+        let async_support = self.interface.path_to_async_support();
+        self.interface
+            .push_str(&format!("{async_support}::FutureReceiver<"));
         self.interface.print_optional_ty(ty.as_ref(), self.mode);
         self.interface.push_str(">");
     }
 
-    fn anonymous_type_stream(&mut self, _id: TypeId, stream: &Stream, _docs: &Docs) {
-        self.interface.push_str("Stream<");
+    fn anonymous_type_stream(&mut self, _id: TypeId, stream: &Type, _docs: &Docs) {
+        let async_support = self.interface.path_to_async_support();
         self.interface
-            .print_optional_ty(stream.element.as_ref(), self.mode);
-        self.interface.push_str(",");
-        self.interface
-            .print_optional_ty(stream.end.as_ref(), self.mode);
+            .push_str(&format!("{async_support}::StreamReceiver<"));
+        self.interface.print_ty(stream, self.mode);
         self.interface.push_str(">");
+    }
+
+    fn anonymous_type_error(&mut self, _id: TypeId, _docs: &Docs) {
+        let async_support = self.interface.path_to_async_support();
+        self.interface.push_str(&format!("{async_support}::Error"));
     }
 }

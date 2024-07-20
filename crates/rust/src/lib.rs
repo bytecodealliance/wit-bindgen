@@ -46,6 +46,11 @@ struct RustWasm {
     export_macros: Vec<(String, String)>,
     /// Interface names to how they should be generated
     with: GenerationConfiguration,
+
+    unit_result: Option<TypeId>,
+    payload_results: HashMap<TypeId, TypeId>,
+    future_payloads_emitted: HashSet<String>,
+    stream_payloads_emitted: HashSet<String>,
 }
 
 #[derive(Default)]
@@ -97,6 +102,7 @@ enum RuntimeItem {
     AsF64,
     ResourceType,
     BoxType,
+    AsyncSupport,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -115,6 +121,23 @@ fn parse_with(s: &str) -> Result<(String, WithOption), String> {
         other => WithOption::Path(other.to_string()),
     };
     Ok((k.to_string(), v))
+}
+
+#[derive(Default, Debug, Clone)]
+pub enum AsyncConfig {
+    #[default]
+    None,
+    Some {
+        imports: Vec<String>,
+        exports: Vec<String>,
+    },
+    All,
+}
+
+#[cfg(feature = "clap")]
+fn parse_async(s: &str) -> Result<AsyncConfig, String> {
+    _ = s;
+    Err("todo: parse `AsyncConfig`".into())
 }
 
 #[derive(Default, Debug, Clone)]
@@ -235,6 +258,10 @@ pub struct Opts {
     /// other and removes the primary distinction between host and guest.
     #[cfg_attr(feature = "clap", arg(long, default_value_t = bool::default()))]
     pub symmetric: bool,
+
+    /// Determines which functions to lift or lower `async`, if any.
+    #[cfg_attr(feature = "clap", arg(long = "async", value_parser = parse_async))]
+    pub async_: AsyncConfig,
 }
 
 impl Opts {
@@ -254,7 +281,7 @@ impl RustWasm {
     fn interface<'a>(
         &'a mut self,
         identifier: Identifier<'a>,
-        wasm_import_module: Option<&'a str>,
+        wasm_import_module: &'a str,
         resolve: &'a Resolve,
         in_import: bool,
     ) -> InterfaceGenerator<'a> {
@@ -380,6 +407,9 @@ impl RustWasm {
             }
         }
         self.src.push_str("}\n");
+        if emitted.contains(&RuntimeItem::AsyncSupport) {
+            self.src.push_str("pub use _rt::async_support;\n");
+        }
     }
 
     fn emit_runtime_item(&mut self, item: RuntimeItem) {
@@ -611,6 +641,12 @@ impl<T: WasmResource> Drop for Resource<T> {
 }
                     "#,
                 );
+            }
+
+            RuntimeItem::AsyncSupport => {
+                self.src.push_str("pub mod async_support {");
+                self.src.push_str(include_str!("async_support.rs"));
+                self.src.push_str("}");
             }
         }
     }
@@ -900,6 +936,10 @@ impl WorldGenerator for RustWasm {
             self.with.insert(k.clone(), v.clone().into());
         }
         self.with.generate_by_default = self.opts.generate_all;
+
+        let (unit_result, payload_results) = resolve.find_future_and_stream_results();
+        self.unit_result = unit_result;
+        self.payload_results = payload_results;
     }
 
     fn import_interface(
@@ -913,7 +953,7 @@ impl WorldGenerator for RustWasm {
         let wasm_import_module = resolve.name_world_key(name);
         let mut gen = self.interface(
             Identifier::Interface(id, name),
-            Some(&wasm_import_module),
+            &wasm_import_module,
             resolve,
             true,
         );
@@ -923,7 +963,7 @@ impl WorldGenerator for RustWasm {
         }
         gen.types(id);
 
-        gen.generate_imports(resolve.interfaces[id].functions.values());
+        gen.generate_imports(resolve.interfaces[id].functions.values(), Some(name));
 
         gen.finish_append_submodule(&snake, module_path);
 
@@ -939,9 +979,9 @@ impl WorldGenerator for RustWasm {
     ) {
         self.import_funcs_called = true;
 
-        let mut gen = self.interface(Identifier::World(world), Some("$root"), resolve, true);
+        let mut gen = self.interface(Identifier::World(world), "$root", resolve, true);
 
-        gen.generate_imports(funcs.iter().map(|(_, func)| *func));
+        gen.generate_imports(funcs.iter().map(|(_, func)| *func), None);
 
         let src = gen.finish();
         self.src.push_str(&src);
@@ -955,7 +995,13 @@ impl WorldGenerator for RustWasm {
         _files: &mut Files,
     ) -> Result<()> {
         self.interface_last_seen_as_import.insert(id, false);
-        let mut gen = self.interface(Identifier::Interface(id, name), None, resolve, false);
+        let wasm_import_module = format!("[export]{}", resolve.name_world_key(name));
+        let mut gen = self.interface(
+            Identifier::Interface(id, name),
+            &wasm_import_module,
+            resolve,
+            false,
+        );
         let (snake, module_path) = gen.start_append_submodule(name);
         if gen.gen.name_interface(resolve, id, name, true)? {
             return Ok(());
@@ -969,7 +1015,12 @@ impl WorldGenerator for RustWasm {
 
         if self.opts.stubs {
             let world_id = self.world.unwrap();
-            let mut gen = self.interface(Identifier::World(world_id), None, resolve, false);
+            let mut gen = self.interface(
+                Identifier::World(world_id),
+                &wasm_import_module,
+                resolve,
+                false,
+            );
             gen.generate_stub(Some((id, name)), resolve.interfaces[id].functions.values());
             let stub = gen.finish();
             self.src.push_str(&stub);
@@ -984,14 +1035,14 @@ impl WorldGenerator for RustWasm {
         funcs: &[(&str, &Function)],
         _files: &mut Files,
     ) -> Result<()> {
-        let mut gen = self.interface(Identifier::World(world), None, resolve, false);
+        let mut gen = self.interface(Identifier::World(world), "[export]$root", resolve, false);
         let macro_name = gen.generate_exports(None, funcs.iter().map(|f| f.1))?;
         let src = gen.finish();
         self.src.push_str(&src);
         self.export_macros.push((macro_name, String::new()));
 
         if self.opts.stubs {
-            let mut gen = self.interface(Identifier::World(world), None, resolve, false);
+            let mut gen = self.interface(Identifier::World(world), "[export]$root", resolve, false);
             gen.generate_stub(None, funcs.iter().map(|f| f.1));
             let stub = gen.finish();
             self.src.push_str(&stub);
@@ -1006,7 +1057,7 @@ impl WorldGenerator for RustWasm {
         types: &[(&str, TypeId)],
         _files: &mut Files,
     ) {
-        let mut gen = self.interface(Identifier::World(world), Some("$root"), resolve, true);
+        let mut gen = self.interface(Identifier::World(world), "$root", resolve, true);
         for (name, ty) in types {
             gen.define_type(name, *ty);
         }
@@ -1147,6 +1198,7 @@ fn compute_module_path(name: &WorldKey, resolve: &Resolve, is_export: bool) -> V
 }
 
 enum Identifier<'a> {
+    None,
     World(WorldId),
     Interface(InterfaceId, &'a WorldKey),
 }
