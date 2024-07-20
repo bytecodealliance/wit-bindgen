@@ -137,7 +137,15 @@ pub enum AsyncConfig {
 #[cfg(feature = "clap")]
 fn parse_async(s: &str) -> Result<AsyncConfig, String> {
     _ = s;
-    Err("todo: parse `AsyncConfig`".into())
+    //Err("todo: parse `AsyncConfig`".into())
+    Ok(AsyncConfig::None)
+}
+
+#[cfg(feature = "clap")]
+impl std::fmt::Display for AsyncConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
 }
 
 #[derive(Default, Debug, Clone)]
@@ -260,7 +268,7 @@ pub struct Opts {
     pub symmetric: bool,
 
     /// Determines which functions to lift or lower `async`, if any.
-    #[cfg_attr(feature = "clap", arg(long = "async", value_parser = parse_async))]
+    #[cfg_attr(feature = "clap", arg(long = "async", value_parser = parse_async, default_value_t = Default::default()))]
     pub async_: AsyncConfig,
 }
 
