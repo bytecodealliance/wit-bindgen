@@ -1898,7 +1898,13 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 TypeDefKind::Future(_)
                 | TypeDefKind::Stream(_)
                 | TypeDefKind::Error
-                | TypeDefKind::Handle(_) => self.emit_and_lift(ty, addr, &I32Load { offset }),
+                | TypeDefKind::Handle(_) => {
+                    if matches!(self.lift_lower, LiftLower::Symmetric) {
+                        self.emit_and_lift(ty, addr, &PointerLoad { offset })
+                    } else {
+                        self.emit_and_lift(ty, addr, &I32Load { offset })
+                    }
+                }
 
                 TypeDefKind::Resource => {
                     todo!();
