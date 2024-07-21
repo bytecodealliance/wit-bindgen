@@ -1770,9 +1770,11 @@ impl InterfaceGenerator<'_> {
         if !import_return_pointer_area_size.is_empty() {
             self.src.c_adapters(&format!(
                 "\
-                    __attribute__((__aligned__({import_return_pointer_area_align})))
-                    uint8_t ret_area[{import_return_pointer_area_size}];
+                    __attribute__((__aligned__({})))
+                    uint8_t ret_area[{}];
                 ",
+                import_return_pointer_area_align.align_wasm32(),
+                import_return_pointer_area_size.size_wasm32(),
             ));
         }
 
@@ -2194,7 +2196,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             "*(({}*)({} + {})) = {};",
             ty,
             operands[1],
-            offset,
+            offset.format("sizeof(void*)"),
             operands[0]
         );
     }
@@ -3049,7 +3051,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let i = self.locals.tmp("i");
                 uwriteln!(self.src, "for (size_t {i} = 0; {i} < {len}; {i}++) {{");
                 let size = self.gen.gen.sizes.size(element);
-                uwriteln!(self.src, "uint8_t *base = {ptr} + {i} * {size};");
+                uwriteln!(
+                    self.src,
+                    "uint8_t *base = {ptr} + {i} * {};",
+                    size.format("sizeof(void*)")
+                );
                 uwriteln!(self.src, "(void) base;");
                 uwrite!(self.src, "{body}");
                 uwriteln!(self.src, "}}");

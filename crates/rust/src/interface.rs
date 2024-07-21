@@ -1,4 +1,4 @@
-use crate::bindgen::FunctionBindgen;
+use crate::bindgen::{FunctionBindgen, POINTER_SIZE_EXPRESSION};
 use crate::{
     int_repr, to_rust_ident, to_upper_camel_case, wasm_type, AsyncConfig, FnSig, Identifier,
     InterfaceName, Ownership, RuntimeItem, RustFlagsRepr, RustWasm,
@@ -399,7 +399,7 @@ macro_rules! {macro_name} {{
                     "struct _RetArea([::core::mem::MaybeUninit::<u8>; {size}]);
                     static mut _RET_AREA: _RetArea = _RetArea([::core::mem::MaybeUninit::uninit(); {size}]);
 ",
-                size = self.return_pointer_area_size,
+                size = self.return_pointer_area_size.format("std::sizeof(usize)"),
             );
         }
 
@@ -853,7 +853,8 @@ impl {async_support}::StreamPayload for {name} {{
                     #[repr(align({import_return_pointer_area_align}))]
                     struct RetArea([::core::mem::MaybeUninit::<u8>; {import_return_pointer_area_size}]);
                     let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); {import_return_pointer_area_size}]);
-",
+", import_return_pointer_area_size = import_return_pointer_area_size.format(POINTER_SIZE_EXPRESSION),
+import_return_pointer_area_align = import_return_pointer_area_align.format(POINTER_SIZE_EXPRESSION)
             );
         }
         self.src.push_str(&String::from(src));

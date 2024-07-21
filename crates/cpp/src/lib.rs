@@ -24,6 +24,7 @@ pub const RESOURCE_IMPORT_BASE_CLASS_NAME: &str = "ResourceImportBase";
 pub const RESOURCE_EXPORT_BASE_CLASS_NAME: &str = "ResourceExportBase";
 pub const RESOURCE_TABLE_NAME: &str = "ResourceTable";
 pub const OWNED_CLASS_NAME: &str = "Owned";
+pub const POINTER_SIZE_EXPRESSION: &str = "sizeof(void*)";
 // these types are always defined in the non-exports namespace
 const NOT_IN_EXPORTED_NAMESPACE: bool = false;
 
@@ -2499,9 +2500,14 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         results: &mut Vec<String>,
     ) {
         if self.gen.gen.opts.host {
-            results.push(format!("*(({}*) wasm_runtime_addr_app_to_native(wasm_runtime_get_module_inst(exec_env), ({} + {})))", ty, operands[0], offset));
+            results.push(format!("*(({}*) wasm_runtime_addr_app_to_native(wasm_runtime_get_module_inst(exec_env), ({} + {})))", ty, operands[0], offset.format(POINTER_SIZE_EXPRESSION)));
         } else {
-            results.push(format!("*(({}*) ({} + {}))", ty, operands[0], offset));
+            results.push(format!(
+                "*(({}*) ({} + {}))",
+                ty,
+                operands[0],
+                offset.format(POINTER_SIZE_EXPRESSION)
+            ));
         }
     }
 
@@ -2524,7 +2530,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                 "*(({}*)wasm_runtime_addr_app_to_native(wasm_runtime_get_module_inst(exec_env), ({} + {}))) = {};",
                 ty,
                 operands[1],
-                offset,
+                offset.format(POINTER_SIZE_EXPRESSION),
                 operands[0]
             );
         } else {
@@ -2533,7 +2539,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                 "*(({}*)({} + {})) = {};",
                 ty,
                 operands[1],
-                offset,
+                offset.format(POINTER_SIZE_EXPRESSION),
                 operands[0]
             );
         }
@@ -2614,7 +2620,8 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 uwriteln!(
                     self.src,
                     "int32_t l{tmp} = *((int32_t const*)({} + {offset}));",
-                    operands[0]
+                    operands[0],
+                    offset = offset.format(POINTER_SIZE_EXPRESSION)
                 );
                 results.push(format!("l{tmp}"));
             }
@@ -2825,7 +2832,11 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 ));
 
                 uwriteln!(self.src, "for (unsigned i=0; i<{len}; ++i) {{");
-                uwriteln!(self.src, "auto base = {base} + i * {size};");
+                uwriteln!(
+                    self.src,
+                    "auto base = {base} + i * {size};",
+                    size = size.format(POINTER_SIZE_EXPRESSION)
+                );
                 uwriteln!(self.src, "auto e{tmp} = todo();");
                 // inplace construct
                 uwriteln!(self.src, "{result}.push_back(e{tmp});");
@@ -3588,7 +3599,11 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let i = self.tempname("i", tmp);
                 uwriteln!(self.src, "for (size_t {i} = 0; {i} < {len}; {i}++) {{");
                 let size = self.gen.sizes.size(element);
-                uwriteln!(self.src, "uint8_t* base = {ptr} + {i} * {size};");
+                uwriteln!(
+                    self.src,
+                    "uint8_t* base = {ptr} + {i} * {size};",
+                    size = size.format(POINTER_SIZE_EXPRESSION)
+                );
                 uwriteln!(self.src, "(void) base;");
                 uwrite!(self.src, "{body}");
                 uwriteln!(self.src, "}}");
@@ -3647,7 +3662,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
 
     fn return_pointer(&mut self, size: ArchitectureSize, align: Alignment) -> Self::Operand {
         let tmp = self.tmp();
-        let size_string = size.format("sizeof(void*)");
+        let size_string = size.format(POINTER_SIZE_EXPRESSION);
         //let elems = (size + (align - 1)) / align;
         let tp = match align {
             Alignment::Bytes(bytes) => match bytes.get() {
