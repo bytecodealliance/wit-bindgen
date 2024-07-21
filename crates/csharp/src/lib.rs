@@ -24,6 +24,7 @@ use wit_bindgen_core::{
     Files, InterfaceGenerator as _, Ns, WorldGenerator,
 };
 use wit_component::{StringEncoding, WitPrinter};
+use wit_parser::{Alignment, ArchitectureSize};
 mod csproj;
 pub use csproj::CSProject;
 
@@ -1990,8 +1991,8 @@ struct FunctionBindgen<'a, 'b> {
     payloads: Vec<String>,
     needs_cleanup_list: bool,
     cleanup: Vec<Cleanup>,
-    import_return_pointer_area_size: usize,
-    import_return_pointer_area_align: usize,
+    import_return_pointer_area_size: ArchitectureSize,
+    import_return_pointer_area_align: Alignment,
     fixed: usize, // Number of `fixed` blocks that need to be closed.
     resource_drops: Vec<(String, String)>,
 }
@@ -3045,7 +3046,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
         }
     }
 
-    fn return_pointer(&mut self, size: usize, align: usize) -> String {
+    fn return_pointer(&mut self, size: ArchitectureSize, align: Alignment) -> String {
         let ptr = self.locals.tmp("ptr");
 
         // Use a stack-based return area for imports, because exports need
@@ -3057,8 +3058,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.import_return_pointer_area_align =
                     self.import_return_pointer_area_align.max(align);
                 let (array_size, element_type) = dotnet_aligned_array(
-                    self.import_return_pointer_area_size,
-                    self.import_return_pointer_area_align,
+                    self.import_return_pointer_area_size.size_wasm32(),
+                    self.import_return_pointer_area_align.align_wasm32(),
                 );
                 let ret_area = self.locals.tmp("retArea");
                 let ret_area_byte0 = self.locals.tmp("retAreaByte0");

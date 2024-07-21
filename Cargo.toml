@@ -32,11 +32,11 @@ indexmap = "2.0.0"
 prettyplease = "0.2.20"
 syn = { version = "2.0", features = ["printing"] }
 
-wasmparser = { git = "https://github.com/cpetig/wasm-tools", branch = "async" }
-wasm-encoder = { git = "https://github.com/cpetig/wasm-tools", branch = "async" }
-wasm-metadata = { git = "https://github.com/cpetig/wasm-tools", branch = "async" }
-wit-parser = { git = "https://github.com/cpetig/wasm-tools", branch = "async" }
-wit-component = { git = "https://github.com/cpetig/wasm-tools", branch = "async" }
+wasmparser = { git = "https://github.com/cpetig/wasm-tools", branch = "symmetric" }
+wasm-encoder = { git = "https://github.com/cpetig/wasm-tools", branch = "symmetric" }
+wasm-metadata = { git = "https://github.com/cpetig/wasm-tools", branch = "symmetric" }
+wit-parser = { git = "https://github.com/cpetig/wasm-tools", branch = "symmetric" }
+wit-component = { git = "https://github.com/cpetig/wasm-tools", branch = "symmetric" }
 
 wit-bindgen-core = { path = 'crates/core', version = '0.28.0' }
 wit-bindgen-c = { path = 'crates/c', version = '0.28.0' }
@@ -73,9 +73,9 @@ default = [
   'c',
   'rust',
   'markdown',
-  'teavm-java',
-  'go',
-  'csharp',
+#  'teavm-java',
+#  'go',
+#  'csharp',
   'cpp',
   'bridge',
 ]
@@ -105,3 +105,7 @@ wasm-encoder = { workspace = true }
 #wasm-metadata = { git = "https://github.com/bytecodealliance/wasm-tools" }
 #wasmparser = { git = "https://github.com/bytecodealliance/wasm-tools" }
 #wasmprinter = { git = "https://github.com/bytecodealliance/wasm-tools" }
+
+#[patch."https://github.com/cpetig/wasm-tools"]
+#wit-parser = { path = "../wasm-tools/crates/wit-parser" }
+#wasmparser = { path = "../wasm-tools/crates/wasmparser" }

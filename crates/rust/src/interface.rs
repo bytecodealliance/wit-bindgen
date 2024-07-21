@@ -22,8 +22,8 @@ pub struct InterfaceGenerator<'a> {
     pub(super) gen: &'a mut RustWasm,
     pub wasm_import_module: &'a str,
     pub resolve: &'a Resolve,
-    pub return_pointer_area_size: usize,
-    pub return_pointer_area_align: usize,
+    pub return_pointer_area_size: ArchitectureSize,
+    pub return_pointer_area_align: Alignment,
     pub(super) needs_runtime_module: bool,
 }
 
@@ -379,15 +379,26 @@ macro_rules! {macro_name} {{
     }
 
     pub fn finish(&mut self) -> String {
-        if self.return_pointer_area_align > 0 {
+        if !self.return_pointer_area_size.is_empty() {
+            match self.return_pointer_area_align {
+                Alignment::Pointer => uwriteln!(
+                    self.src,
+                    "\
+                        #[cgf_attr(target_pointer_width=\"64\", repr(align(8))]
+                        #[cgf_attr(target_pointer_width=\"32\", repr(align(4))]"
+                ),
+                Alignment::Bytes(bytes) => uwriteln!(
+                    self.src,
+                    "\
+                        #[repr(align({align}))]",
+                    align = bytes.get()
+                ),
+            }
             uwrite!(
                 self.src,
-                "\
-                    #[repr(align({align}))]
-                    struct _RetArea([::core::mem::MaybeUninit::<u8>; {size}]);
+                    "struct _RetArea([::core::mem::MaybeUninit::<u8>; {size}]);
                     static mut _RET_AREA: _RetArea = _RetArea([::core::mem::MaybeUninit::uninit(); {size}]);
 ",
-                align = self.return_pointer_area_align,
                 size = self.return_pointer_area_size,
             );
         }
@@ -835,7 +846,7 @@ impl {async_support}::StreamPayload for {name} {{
             uwriteln!(self.src, "let mut cleanup_list = {vec}::new();");
         }
         assert!(handle_decls.is_empty());
-        if import_return_pointer_area_size > 0 {
+        if !import_return_pointer_area_size.is_empty() {
             uwrite!(
                 self.src,
                 "\

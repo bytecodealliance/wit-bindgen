@@ -20,7 +20,7 @@ extern "C" void fooX3AfooX2FstringsX00a(uint8_t *arg0, size_t arg1) {
 
   foo::foo::strings::A(std::string_view((char const *)(arg0), len0));
 }
-extern "C" void fooX3AfooX2FstringsX00b(uint8_t *arg0) {
+extern "C" void fooX3AfooX2FstringsX00b(uint8_t *arg0, uint8_t *resultptr) {
   auto result0 = foo::foo::strings::B();
   auto const &vec1 = result0;
   auto ptr1 = vec1.data();
@@ -30,7 +30,7 @@ extern "C" void fooX3AfooX2FstringsX00b(uint8_t *arg0) {
 }
 extern "C" void fooX3AfooX2FstringsX00c(uint8_t *arg0, size_t arg1,
                                         uint8_t *arg2, size_t arg3,
-                                        uint8_t *arg4) {
+                                        uint8_t *arg4, uint8_t *resultptr) {
   auto len0 = arg1;
 
   auto len1 = arg3;
@@ -54,9 +54,10 @@ wit::guest_owned<std::string_view> exports::foo::foo::strings::B() {
   auto ret = fooX3AfooX2FstringsX23b();
   auto len0 = *((size_t *)(ret + 8));
 
-  return wit::guest_owned<std::string_view>(
-      std::string_view((char const *)(*((uint8_t **)(ret + 0))), len0), ret,
-      cabi_post_fooX3AfooX2FstringsX23b);
+  auto result1 =
+      std::string_view((char const *)(*((uint8_t **)(ret + 0))), len0);
+  return wit::guest_owned<std::string_view>(result1, ret,
+                                            cabi_post_fooX3AfooX2FstringsX23b);
 }
 wit::guest_owned<std::string_view>
 exports::foo::foo::strings::C(wit::string a, wit::string b) {
@@ -69,9 +70,10 @@ exports::foo::foo::strings::C(wit::string a, wit::string b) {
   auto ret = fooX3AfooX2FstringsX23c(ptr0, len0, ptr1, len1);
   auto len2 = *((size_t *)(ret + 8));
 
-  return wit::guest_owned<std::string_view>(
-      std::string_view((char const *)(*((uint8_t **)(ret + 0))), len2), ret,
-      cabi_post_fooX3AfooX2FstringsX23c);
+  auto result3 =
+      std::string_view((char const *)(*((uint8_t **)(ret + 0))), len2);
+  return wit::guest_owned<std::string_view>(result3, ret,
+                                            cabi_post_fooX3AfooX2FstringsX23c);
 }
 
 // Component Adapters

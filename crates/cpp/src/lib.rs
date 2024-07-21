@@ -11,8 +11,9 @@ use wit_bindgen_core::{
     abi::{self, AbiVariant, Bindgen, Bitcast, LiftLower, WasmSignature, WasmType},
     make_external_component, make_external_symbol, uwrite, uwriteln,
     wit_parser::{
-        AddressSize, Docs, Function, FunctionKind, Handle, Int, InterfaceId, Resolve, Results,
-        SizeAlign, Stability, Type, TypeDefKind, TypeId, TypeOwner, WorldId, WorldKey,
+        Alignment, ArchitectureSize, Docs, Function, FunctionKind, Handle, Int, InterfaceId,
+        Resolve, Results, SizeAlign, Stability, Type, TypeDefKind, TypeId, TypeOwner, WorldId,
+        WorldKey,
     },
     Files, InterfaceGenerator, Source, WorldGenerator,
 };
@@ -280,11 +281,7 @@ impl Cpp {
         in_guest_import: bool,
         wasm_import_module: Option<String>,
     ) -> CppInterfaceGenerator<'a> {
-        let mut sizes = SizeAlign::new(if self.opts.wasm64 {
-            AddressSize::Wasm64
-        } else {
-            AddressSize::Wasm32
-        });
+        let mut sizes = SizeAlign::new();
         sizes.fill(resolve);
 
         CppInterfaceGenerator {
@@ -2494,7 +2491,13 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         }
     }
 
-    fn load(&mut self, ty: &str, offset: i32, operands: &[String], results: &mut Vec<String>) {
+    fn load(
+        &mut self,
+        ty: &str,
+        offset: ArchitectureSize,
+        operands: &[String],
+        results: &mut Vec<String>,
+    ) {
         if self.gen.gen.opts.host {
             results.push(format!("*(({}*) wasm_runtime_addr_app_to_native(wasm_runtime_get_module_inst(exec_env), ({} + {})))", ty, operands[0], offset));
         } else {
@@ -2502,13 +2505,19 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         }
     }
 
-    fn load_ext(&mut self, ty: &str, offset: i32, operands: &[String], results: &mut Vec<String>) {
+    fn load_ext(
+        &mut self,
+        ty: &str,
+        offset: ArchitectureSize,
+        operands: &[String],
+        results: &mut Vec<String>,
+    ) {
         self.load(ty, offset, operands, results);
         let result = results.pop().unwrap();
         results.push(format!("(int32_t) ({})", result));
     }
 
-    fn store(&mut self, ty: &str, offset: i32, operands: &[String]) {
+    fn store(&mut self, ty: &str, offset: ArchitectureSize, operands: &[String]) {
         if self.gen.gen.opts.host {
             uwriteln!(
                 self.src,
@@ -3636,22 +3645,29 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
         }
     }
 
-    fn return_pointer(&mut self, size: usize, align: usize) -> Self::Operand {
+    fn return_pointer(&mut self, size: ArchitectureSize, align: Alignment) -> Self::Operand {
         let tmp = self.tmp();
-        let elems = (size + (align - 1)) / align;
+        let size_string = size.format("sizeof(void*)");
+        //let elems = (size + (align - 1)) / align;
         let tp = match align {
-            1 => "uint8_t",
-            2 => "uint16_t",
-            4 => "uint32_t",
-            8 => "uint64_t",
-            _ => todo!(),
+            Alignment::Bytes(bytes) => match bytes.get() {
+                1 => "uint8_t",
+                2 => "uint16_t",
+                4 => "uint32_t",
+                8 => "uint64_t",
+                _ => todo!(),
+            },
+            Alignment::Pointer => "uintptr_t",
         };
         let static_var = if self.gen.in_guest_import {
             ""
         } else {
             "static "
         };
-        uwriteln!(self.src, "{static_var}{tp} ret_area[{elems}];");
+        uwriteln!(
+            self.src,
+            "{static_var}{tp} ret_area[({size_string}+sizeof({tp})-1)/sizeof({tp})];"
+        );
         uwriteln!(
             self.src,
             "{} ptr{tmp} = ({0})(&ret_area);",

@@ -16,8 +16,8 @@ pub(super) struct FunctionBindgen<'a, 'b> {
     tmp: usize,
     pub needs_cleanup_list: bool,
     cleanup: Vec<(String, String)>,
-    pub import_return_pointer_area_size: usize,
-    pub import_return_pointer_area_align: usize,
+    pub import_return_pointer_area_size: ArchitectureSize,
+    pub import_return_pointer_area_align: Alignment,
     pub handle_decls: Vec<String>,
 }
 
@@ -39,8 +39,8 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             tmp: 0,
             needs_cleanup_list: false,
             cleanup: Vec::new(),
-            import_return_pointer_area_size: 0,
-            import_return_pointer_area_align: 0,
+            import_return_pointer_area_size: Default::default(),
+            import_return_pointer_area_align: Default::default(),
             handle_decls: Vec::new(),
         }
     }
@@ -257,7 +257,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
         }
     }
 
-    fn return_pointer(&mut self, size: usize, align: usize) -> String {
+    fn return_pointer(&mut self, size: ArchitectureSize, align: Alignment) -> String {
         let tmp = self.tmp();
 
         // Imports get a per-function return area to facilitate using the

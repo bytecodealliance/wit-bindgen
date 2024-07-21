@@ -293,11 +293,7 @@ impl RustWasm {
         resolve: &'a Resolve,
         in_import: bool,
     ) -> InterfaceGenerator<'a> {
-        let mut sizes = SizeAlign::new(if self.opts.wasm64 {
-            AddressSize::Wasm64
-        } else {
-            AddressSize::Wasm32
-        });
+        let mut sizes = SizeAlign::new();
         sizes.fill(resolve);
 
         InterfaceGenerator {
@@ -308,8 +304,8 @@ impl RustWasm {
             gen: self,
             sizes,
             resolve,
-            return_pointer_area_size: 0,
-            return_pointer_area_align: 0,
+            return_pointer_area_size: Default::default(),
+            return_pointer_area_align: Default::default(),
             needs_runtime_module: false,
         }
     }

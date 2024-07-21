@@ -78,7 +78,7 @@ wit::string comp_a::foo::foo::strings::C(std::string_view a,
   return string3;
 }
 extern "C" __attribute__((__export_name__("foo:foo/strings#a"))) void
-a_fooX3AfooX2FstringsX00a(uint8_t *arg0, size_t arg1) {
+fooX3AfooX2FstringsX00a(uint8_t *arg0, size_t arg1) {
   auto len0 = arg1;
 
   auto string0 =
@@ -87,7 +87,7 @@ a_fooX3AfooX2FstringsX00a(uint8_t *arg0, size_t arg1) {
   comp_a::exports::foo::foo::strings::A(std::move(string0));
 }
 extern "C" __attribute__((__export_name__("foo:foo/strings#b"))) void
-a_fooX3AfooX2FstringsX00b(uint8_t *arg0) {
+fooX3AfooX2FstringsX00b(uint8_t *arg0) {
   auto result0 = comp_a::exports::foo::foo::strings::B();
   auto const &vec1 = result0;
   auto ptr1 = (uint8_t *)(vec1.data());
@@ -100,13 +100,13 @@ a_fooX3AfooX2FstringsX00b(uint8_t *arg0) {
 extern "C"
     __attribute__((__weak__,
                    __export_name__("cabi_post_fooX3AfooX2FstringsX00b"))) void
-    a_cabi_post_fooX3AfooX2FstringsX00b(uint8_t *retptr) {
+    cabi_post_fooX3AfooX2FstringsX00b(uint8_t *retptr) {
   if ((*((size_t *)(retptr + 8))) > 0) {
     wit::string::drop_raw((void *)(*((uint8_t **)(retptr + 0))));
   }
 }
 extern "C" __attribute__((__export_name__("foo:foo/strings#c"))) void
-a_fooX3AfooX2FstringsX00c(uint8_t *arg0, size_t arg1, uint8_t *arg2, size_t arg3,
+fooX3AfooX2FstringsX00c(uint8_t *arg0, size_t arg1, uint8_t *arg2, size_t arg3,
                         uint8_t *arg4) {
   auto len0 = arg1;
 
@@ -131,7 +131,7 @@ a_fooX3AfooX2FstringsX00c(uint8_t *arg0, size_t arg1, uint8_t *arg2, size_t arg3
 extern "C"
     __attribute__((__weak__,
                    __export_name__("cabi_post_fooX3AfooX2FstringsX00c"))) void
-    a_cabi_post_fooX3AfooX2FstringsX00c(uint8_t *retptr) {
+    cabi_post_fooX3AfooX2FstringsX00c(uint8_t *retptr) {
   if ((*((size_t *)(retptr + 8))) > 0) {
     wit::string::drop_raw((void *)(*((uint8_t **)(retptr + 0))));
   }

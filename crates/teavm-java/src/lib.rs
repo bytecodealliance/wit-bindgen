@@ -10,9 +10,9 @@ use wit_bindgen_core::{
     abi::{self, AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType},
     uwrite, uwriteln,
     wit_parser::{
-        Docs, Enum, Flags, FlagsRepr, Function, FunctionKind, Int, InterfaceId, Record, Resolve,
-        Result_, SizeAlign, Tuple, Type, TypeDef, TypeDefKind, TypeId, TypeOwner, Variant, WorldId,
-        WorldKey,
+        Alignment, ArchitectureSize, Docs, Enum, Flags, FlagsRepr, Function, FunctionKind, Int,
+        InterfaceId, Record, Resolve, Result_, SizeAlign, Tuple, Type, TypeDef, TypeDefKind,
+        TypeId, TypeOwner, Variant, WorldId, WorldKey,
     },
     Direction, Files, InterfaceGenerator as _, Ns, Source, WorldGenerator,
 };
@@ -1690,8 +1690,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 if realloc.is_none() {
                     self.cleanup.push(Cleanup {
                         address: address.clone(),
-                        size: format!("({op}).size() * {size}"),
-                        align,
+                        size: format!("({op}).size() * {size}", size = size.size_wasm32()),
+                        align: align.align_wasm32(),
                     });
                 }
 
@@ -2046,7 +2046,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
         }
     }
 
-    fn return_pointer(&mut self, size: usize, align: usize) -> String {
+    fn return_pointer(&mut self, size: ArchitectureSize, align: Alignment) -> String {
         self.gen.gen.return_area_size = self.gen.gen.return_area_size.max(size);
         self.gen.gen.return_area_align = self.gen.gen.return_area_align.max(align);
         format!("{}RETURN_AREA", self.gen.gen.qualifier())
