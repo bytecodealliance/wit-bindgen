@@ -282,7 +282,11 @@ impl Cpp {
         in_guest_import: bool,
         wasm_import_module: Option<String>,
     ) -> CppInterfaceGenerator<'a> {
-        let mut sizes = SizeAlign::new();
+        let mut sizes = if self.opts.symmetric {
+            SizeAlign::new_symmetric()
+        } else {
+            SizeAlign::new()
+        };
         sizes.fill(resolve);
 
         CppInterfaceGenerator {
