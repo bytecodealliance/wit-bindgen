@@ -399,7 +399,7 @@ macro_rules! {macro_name} {{
                     "struct _RetArea([::core::mem::MaybeUninit::<u8>; {size}]);
                     static mut _RET_AREA: _RetArea = _RetArea([::core::mem::MaybeUninit::uninit(); {size}]);
 ",
-                size = self.return_pointer_area_size.format("std::sizeof(usize)"),
+                size = self.return_pointer_area_size.format(POINTER_SIZE_EXPRESSION),
             );
         }
 

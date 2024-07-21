@@ -470,8 +470,10 @@ impl WorldGenerator for C {
                 __attribute__((__aligned__({})))
                 static uint8_t RET_AREA[{}];
                 ",
-                self.return_pointer_area_align.align_wasm32(),
-                self.return_pointer_area_size.size_wasm32(),
+                self.return_pointer_area_align
+                    .format(POINTER_SIZE_EXPRESSION),
+                self.return_pointer_area_size
+                    .format(POINTER_SIZE_EXPRESSION),
             );
         }
         c_str.push_str(&self.src.c_adapters);
@@ -1773,8 +1775,8 @@ impl InterfaceGenerator<'_> {
                     __attribute__((__aligned__({})))
                     uint8_t ret_area[{}];
                 ",
-                import_return_pointer_area_align.align_wasm32(),
-                import_return_pointer_area_size.size_wasm32(),
+                import_return_pointer_area_align.format(POINTER_SIZE_EXPRESSION),
+                import_return_pointer_area_size.format(POINTER_SIZE_EXPRESSION),
             ));
         }
 
@@ -2174,7 +2176,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             "*(({}*) ({} + {}))",
             ty,
             operands[0],
-            offset.format("sizeof(void*)")
+            offset.format(POINTER_SIZE_EXPRESSION)
         ));
     }
 
@@ -2196,7 +2198,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             "*(({}*)({} + {})) = {};",
             ty,
             operands[1],
-            offset.format("sizeof(void*)"),
+            offset.format(POINTER_SIZE_EXPRESSION),
             operands[0]
         );
     }
@@ -3054,13 +3056,19 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwriteln!(
                     self.src,
                     "uint8_t *base = {ptr} + {i} * {};",
-                    size.format("sizeof(void*)")
+                    size.format(POINTER_SIZE_EXPRESSION)
                 );
                 uwriteln!(self.src, "(void) base;");
                 uwrite!(self.src, "{body}");
                 uwriteln!(self.src, "}}");
                 uwriteln!(self.src, "free({ptr});");
                 uwriteln!(self.src, "}}");
+            }
+            Instruction::Flush { amt } => {
+                for i in 0..*amt {
+                    // no easy way to create a temporary?
+                    results.push(operands[i].clone());
+                }
             }
 
             i => unimplemented!("{:?}", i),
@@ -3289,3 +3297,5 @@ pub fn to_c_ident(name: &str) -> String {
         s => s.to_snake_case(),
     }
 }
+
+pub const POINTER_SIZE_EXPRESSION: &str = "sizeof(void*)";
