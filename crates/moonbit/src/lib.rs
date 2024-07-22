@@ -15,6 +15,44 @@ use wit_bindgen_core::{
 // Assumptions:
 // Data: u8 -> Byte, s8 | s16 | u16 | s32 -> Int, u32 -> UInt, s64 -> Int64, u64 -> UInt64
 
+/* FFI:
+extern "wasm" fn extend16(value : Int) -> Int =
+  #|(func (param i32) (result i32) local.get 0 i32.extend16_s)
+
+extern "wasm" fn extend8(value : Int) -> Int =
+  #|(func (param i32) (result i32) local.get 0 i32.extend8_s)
+
+extern "wasm" fn store32(offset : Int, value : Int) =
+  #|(func (param i32) (param i32) local.get 0 local.get 1 i32.store)
+
+extern "wasm" fn store16(offset : Int, value : Int) =
+  #|(func (param i32) (param i32) local.get 0 local.get 1 i32.store16)
+
+extern "wasm" fn load16(offset : Int) -> Int =
+  #|(func (param i32) (result i32) local.get 0 i32.load16)
+
+extern "wasm" fn load16_u(offset : Int) -> Int =
+  #|(func (param i32) (result i32) local.get 0 i32.load16_u)
+
+extern "wasm" fn load32(offset : Int) -> Int =
+  #|(func (param i32) (result i32) local.get 0 i32.load)
+
+extern "wasm" fn store8(offset : Int, byte : Byte) =
+  #|(func (param i32) (param i32) local.get 0 local.get 1 i32.store8)
+
+extern "wasm" fn load8(offset : Int) -> Byte =
+  #|(func (param i32) (result i32) local.get 0 i32.load8_u)
+
+extern "wasm" fn malloc(size : Int) -> Int =
+  #|(func (param i32) (result i32) local.get 0 call $rael.malloc)
+
+extern "wasm" fn free(position : Int) =
+  #|(func (param i32) local.get 0 call $rael.free)
+
+extern "wasm" fn copy(dest : Int, src : Int, len : Int) =
+  #|(func (param i32) (param i32) (param i32) local.get 0 local.get 1 local.get 2 memory.copy)
+ */
+
 #[derive(Default, Debug, Clone)]
 #[cfg_attr(feature = "clap", derive(clap::Args))]
 pub struct Opts {
@@ -319,6 +357,13 @@ impl WorldGenerator for MoonBit {
             }
         }
 
+        let mut body = Source::default();
+        uwriteln!(&mut body, "{{\"name\": \"wasi-bindgen\"}}");
+        files.push(
+            &format!("moon.mod.json"),
+            indent(&body).as_bytes(),
+        );
+
         Ok(())
     }
 }
@@ -393,7 +438,10 @@ impl InterfaceGenerator<'_> {
         let cleanup_list = if bindgen.needs_cleanup_list {
             self.gen.needs_cleanup = true;
 
-            format!("let cleanupList : Array[{}Cleanup] = []\n", self.gen.qualifier())
+            format!(
+                "let cleanupList : Array[{}Cleanup] = []\n",
+                self.gen.qualifier()
+            )
         } else {
             String::new()
         };
@@ -1061,47 +1109,19 @@ impl Bindgen for FunctionBindgen<'_, '_> {
     ) {
         match inst {
             Instruction::GetArg { nth } => results.push(self.params[*nth].clone()),
-            Instruction::I32Const { val } => results.push(val.to_string()),
+            Instruction::I32Const { val } => results.push(format!("({})", val.to_string())),
             Instruction::ConstZero { tys } => results.extend(tys.iter().map(|ty| {
                 match ty {
                     WasmType::I32 => "0",
                     WasmType::I64 => "0L",
-                    WasmType::F32 => "0.0F",
-                    WasmType::F64 => "0.0D",
+                    WasmType::F32 => "0.0",
+                    WasmType::F64 => "0.0",
                     WasmType::Pointer => "0",
                     WasmType::PointerOrI64 => "0L",
                     WasmType::Length => "0",
                 }
                 .to_owned()
             })),
-
-            // TODO: checked
-            Instruction::U8FromI32 => results.push(format!("(byte) ({})", operands[0])),
-            Instruction::S8FromI32 => results.push(format!("(byte) ({})", operands[0])),
-            Instruction::U16FromI32 => results.push(format!("(short) ({})", operands[0])),
-            Instruction::S16FromI32 => results.push(format!("(short) ({})", operands[0])),
-
-            Instruction::I32FromU8 => results.push(format!("((int) ({})) & 0xFF", operands[0])),
-            Instruction::I32FromU16 => results.push(format!("((int) ({})) & 0xFFFF", operands[0])),
-
-            Instruction::I32FromS8 | Instruction::I32FromS16 => {
-                results.push(format!("(int) ({})", operands[0]))
-            }
-
-            Instruction::CharFromI32
-            | Instruction::I32FromChar
-            | Instruction::U32FromI32
-            | Instruction::S32FromI32
-            | Instruction::S64FromI64
-            | Instruction::U64FromI64
-            | Instruction::I32FromU32
-            | Instruction::I32FromS32
-            | Instruction::I64FromS64
-            | Instruction::I64FromU64
-            | Instruction::CoreF32FromF32
-            | Instruction::CoreF64FromF64
-            | Instruction::F32FromCoreF32
-            | Instruction::F64FromCoreF64 => results.push(operands[0].clone()),
 
             Instruction::Bitcasts { casts } => results.extend(
                 casts
@@ -1110,35 +1130,63 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     .map(|(cast, op)| perform_cast(op, cast)),
             ),
 
+            Instruction::I32FromU16
+            | Instruction::I32FromS32
+            | Instruction::I64FromS64
+            | Instruction::S32FromI32
+            | Instruction::S64FromI64
+            | Instruction::CharFromI32
+            | Instruction::I32FromChar
+            | Instruction::CoreF32FromF32
+            | Instruction::CoreF64FromF64
+            | Instruction::F32FromCoreF32
+            | Instruction::F64FromCoreF64 => results.push(operands[0].clone()),
+
+            Instruction::I32FromU8 => results.push(format!("({}).to_int()", operands[0])),
+            Instruction::U8FromI32 => results.push(format!("({}).to_byte()", operands[0])),
+
+            Instruction::I32FromS8 => results.push(format!("extend8({})", operands[0])),
+            Instruction::S8FromI32 => results.push(format!("({}.land(0xFF))", operands[0])),
+
+            Instruction::U16FromI32 | Instruction::S16FromI32 => {
+                results.push(format!("({}.land(0xFFFF))", operands[0]))
+            }
+            Instruction::I32FromS16 => results.push(format!("extend16({})", operands[0])),
+
+            Instruction::U32FromI32 => results.push(format!("({}).to_uint()", operands[0])),
+            Instruction::I32FromU32 => results.push(format!("({}).to_int()", operands[0])),
+
+            Instruction::U64FromI64 => results.push(format!("({}).to_uint64()", operands[0])),
+            Instruction::I64FromU64 => results.push(format!("({}).to_int64()", operands[0])),
+
             Instruction::I32FromBool => {
-                results.push(format!("({} ? 1 : 0)", operands[0]));
+                results.push(format!("(if {} {{ 1 }} else {{ 0 }})", operands[0]));
             }
             Instruction::BoolFromI32 => results.push(format!("({} != 0)", operands[0])),
 
             // TODO: checked
             Instruction::FlagsLower { flags, .. } => match flags_repr(flags) {
                 Int::U8 | Int::U16 | Int::U32 => {
-                    results.push(format!("({}).value", operands[0]));
+                    results.push(format!("({}).0", operands[0]));
                 }
                 Int::U64 => {
                     let op = &operands[0];
-                    results.push(format!("(int) (({op}).value & 0xffffffffL)"));
-                    results.push(format!("(int) ((({op}).value >>> 32) & 0xffffffffL)"));
+                    results.push(format!("(({op}).0.to_uint())"));
+                    results.push(format!("((({op}).0.lsr(32)).to_uint())"));
                 }
             },
 
             Instruction::FlagsLift { flags, ty, .. } => match flags_repr(flags) {
                 Int::U8 | Int::U16 | Int::U32 => {
                     results.push(format!(
-                        "new {}(({}) {})",
+                        "{}({})",
                         self.gen.type_name(&Type::Id(*ty)),
-                        int_type(flags_repr(flags)),
                         operands[0]
                     ));
                 }
                 Int::U64 => {
                     results.push(format!(
-                        "new {}(((long) ({})) | (((long) ({})) << 32))",
+                        "{}(({}).lor(({}).lsl(32)))",
                         self.gen.type_name(&Type::Id(*ty)),
                         operands[0],
                         operands[1]
@@ -1154,21 +1202,36 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     results.push(format!("({op}).{}", field.name.to_moonbit_ident()));
                 }
             }
-            Instruction::RecordLift { ty, .. } | Instruction::TupleLift { ty, .. } => {
+            Instruction::RecordLift { ty, record, .. } => {
                 let ops = operands
                     .iter()
-                    .map(|op| op.to_string())
+                    .enumerate()
+                    .map(|(i, op)| {
+                        format!(
+                            "{} : {}",
+                            record.fields[i].name.to_moonbit_ident(),
+                            op.to_string()
+                        )
+                    })
                     .collect::<Vec<_>>()
                     .join(", ");
 
-                results.push(format!("new {}({ops})", self.gen.type_name(&Type::Id(*ty))));
+                results.push(format!("{}::({ops})", self.gen.type_name(&Type::Id(*ty))));
             }
 
             Instruction::TupleLower { tuple, .. } => {
                 let op = &operands[0];
                 for i in 0..tuple.types.len() {
-                    results.push(format!("({op}).f{i}"));
+                    results.push(format!("({op}).{i}"));
                 }
+            }
+            Instruction::TupleLift { .. } => {
+                let ops = operands
+                    .iter()
+                    .map(|op| op.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                results.push(format!("({ops})"));
             }
 
             Instruction::VariantPayloadName => {
