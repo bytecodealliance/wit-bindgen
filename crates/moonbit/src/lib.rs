@@ -500,7 +500,7 @@ impl InterfaceGenerator<'_> {
                 .enumerate()
                 .map(|(i, param)| {
                     let ty = wasm_type(*param);
-                    format!("{ty} p{i}")
+                    format!("p{i} : {ty}")
                 })
                 .collect::<Vec<_>>()
                 .join(", ");
@@ -580,7 +580,7 @@ impl InterfaceGenerator<'_> {
                         let mut name = |ty: &Option<Type>| {
                             ty.as_ref()
                                 .map(|ty| self.type_name_boxed(ty, qualifier))
-                                .unwrap_or_else(|| "()".into())
+                                .unwrap_or_else(|| "Unit".into())
                         };
                         let ok = name(&result.ok);
                         let err = name(&result.err);
@@ -820,6 +820,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
         let name = name.to_upper_camel_case();
 
+        // Type definition
         let cases = enum_
             .cases
             .iter()
@@ -831,7 +832,48 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             self.src,
             "
             pub enum {name} {{
-              {cases}
+                {cases}
+            }}
+            "
+        );
+
+        // Case to integer
+        let cases = enum_
+            .cases
+            .iter()
+            .enumerate()
+            .map(|(i, case)| format!("{} => {i}", case.name.to_shouty_snake_case()))
+            .collect::<Vec<_>>()
+            .join("\n  ");
+
+        uwrite!(
+            self.src,
+            "
+            pub fn ordinal(self : {name}) -> Int {{
+              match self {{
+                {cases}
+              }}
+            }}
+            "
+        );
+
+        // Integer to case
+        let cases = enum_
+            .cases
+            .iter()
+            .enumerate()
+            .map(|(i, case)| format!("{i} => {}", case.name.to_shouty_snake_case()))
+            .collect::<Vec<_>>()
+            .join("\n  ");
+
+        uwrite!(
+            self.src,
+            "
+            pub fn {name}::from(self : Int) -> {name} {{
+              match self {{
+                {cases}
+                _ => panic()
+              }}
             }}
             "
         );
@@ -928,61 +970,51 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
 
         results.extend(lowered.iter().cloned());
 
-        let declarations = lowered
-            .iter()
-            .zip(lowered_types)
-            .map(|(lowered, ty)| format!("{} {lowered};", wasm_type(*ty)))
-            .collect::<Vec<_>>()
-            .join("\n");
+        let declarations = lowered.join(",");
 
         let cases = cases
             .iter()
             .zip(blocks)
             .zip(payloads)
-            .enumerate()
-            .map(
-                |(i, (((name, ty), Block { body, results, .. }), payload))| {
-                    let payload = if let Some(ty) = self.gen.non_empty_type(ty.as_ref()) {
-                        let ty = self.gen.type_name(ty);
-                        let name = name.to_upper_camel_case();
+            .map(|(((name, _ty), Block { body, results, .. }), payload)| {
+                let name = name.to_upper_camel_case();
+                let assignments = results
+                    .iter()
+                    .map(|result| format!("{result}"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
 
-                        format!("{ty} {payload} = ({op}).get{name}();")
-                    } else {
-                        String::new()
-                    };
-
-                    let assignments = lowered
-                        .iter()
-                        .zip(&results)
-                        .map(|(lowered, result)| format!("{lowered} = {result};\n"))
-                        .collect::<Vec<_>>()
-                        .concat();
-
-                    format!(
-                        "case {i}: {{
-                         {payload}
-                         {body}
-                         {assignments}
-                         break;
-                     }}"
-                    )
-                },
-            )
+                format!(
+                    "{name}({payload}) => {{
+                      {body}
+                      ({assignments})
+                    }}"
+                )
+            })
             .collect::<Vec<_>>()
             .join("\n");
 
-        uwrite!(
-            self.src,
-            r#"
-            {declarations}
-
-            switch (({op}).tag) {{
-                {cases}
-
-                default: throw new AssertionError("invalid discriminant: " + ({op}).tag);
-            }}
-            "#
-        );
+        if declarations.is_empty() {
+            uwrite!(
+                self.src,
+                r#"
+                match {op} {{
+                    {cases}
+                    _ => panic()
+                }}
+                "#
+            );
+        } else {
+            uwrite!(
+                self.src,
+                r#"
+                let ({declarations}) = match {op} {{
+                    {cases}
+                    _ => panic()
+                }}
+                "#
+            );
+        }
     }
 
     fn lift_variant(
@@ -1018,20 +1050,14 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                     String::new()
                 };
 
-                let method = case_name.to_moonbit_ident();
+                let constructor = case_name.to_upper_camel_case();
 
-                let call = if let Some(position) = generics_position {
-                    let (ty, generics) = ty.split_at(position);
-                    format!("{ty}.{generics}{method}")
-                } else {
-                    format!("{ty}.{method}")
-                };
+                let call = format!("{ty}::{constructor}");
 
                 format!(
-                    "case {i}: {{
+                    "{i} => {{
                          {body}
-                         {lifted} = {call}({payload});
-                         break;
+                         {call}({payload})
                      }}"
                 )
             })
@@ -1041,12 +1067,9 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         uwrite!(
             self.src,
             r#"
-            {ty} {lifted};
-
-            switch ({op}) {{
+            let {lifted} = match ({op}) {{
                 {cases}
-
-                default: throw new AssertionError("invalid discriminant: " + ({op}));
+                _ => panic()
             }}
             "#
         );
@@ -1174,7 +1197,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     .collect::<Vec<_>>()
                     .join(", ");
 
-                results.push(format!("{}::({ops})", self.gen.type_name(&Type::Id(*ty))));
+                results.push(format!("{}::{{{ops}}}", self.gen.type_name(&Type::Id(*ty))));
             }
 
             Instruction::TupleLower { tuple, .. } => {
@@ -1352,7 +1375,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::EnumLower { .. } => results.push(format!("{}.ordinal()", operands[0])),
 
             Instruction::EnumLift { ty, .. } => results.push(format!(
-                "{}.values()[{}]",
+                "{}::from({})",
                 self.gen.type_name(&Type::Id(*ty)),
                 operands[0]
             )),
@@ -1733,12 +1756,15 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     .enumerate()
                     .map(|(i, Block { body, results, .. })| {
                         assert!(results.is_empty());
-
-                        format!(
-                            "{i} => {{
-                               {body}
-                             }}"
-                        )
+                        if body.is_empty() {
+                            format!("{i} => ()")
+                        } else {
+                            format!(
+                                "{i} => {{
+                                   {body}
+                                 }}"
+                            )
+                        }
                     })
                     .collect::<Vec<_>>()
                     .join("\n");
