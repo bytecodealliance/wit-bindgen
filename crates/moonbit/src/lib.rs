@@ -540,6 +540,37 @@ impl InterfaceGenerator<'_> {
         }
     }
 
+    fn constructor_name(&mut self, ty: &Type) -> String {
+        match ty {
+            Type::Bool => "Bool".into(),
+            Type::U8 => "Byte".into(),
+            Type::S32 | Type::S8 | Type::U16 | Type::S16 => "Int".into(),
+            Type::U32 => "UInt".into(),
+            Type::Char => "Char".into(),
+            Type::U64 => "UInt64".into(),
+            Type::S64 => "Int64".into(),
+            Type::F32 | Type::F64 => "Double".into(),
+            Type::String => "String".into(),
+            Type::Id(id) => {
+                let ty = &self.resolve.types[*id];
+                match &ty.kind {
+                    TypeDefKind::Type(ty) => self.constructor_name(ty),
+                    TypeDefKind::List(_) => "Array".into(),
+                    TypeDefKind::Tuple(_) => panic!(),
+                    TypeDefKind::Option(_) => "Option".into(),
+                    TypeDefKind::Result(_) => "Result".into(),
+                    _ => {
+                        if let Some(name) = &ty.name {
+                            name.to_upper_camel_case()
+                        } else {
+                            unreachable!()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     fn type_name(&mut self, ty: &Type) -> String {
         self.type_name_with_qualifier(ty, false)
     }
@@ -553,7 +584,7 @@ impl InterfaceGenerator<'_> {
             Type::Char => "Char".into(),
             Type::U64 => "UInt64".into(),
             Type::S64 => "Int64".into(),
-            Type::F32 | Type::F64 => "double".into(),
+            Type::F32 | Type::F64 => "Double".into(),
             Type::String => "String".into(),
             Type::Id(id) => {
                 let ty = &self.resolve.types[*id];
@@ -976,7 +1007,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             .iter()
             .zip(blocks)
             .zip(payloads)
-            .map(|(((name, _ty), Block { body, results, .. }), payload)| {
+            .map(|(((name, ty), Block { body, results, .. }), payload)| {
                 let name = name.to_upper_camel_case();
                 let assignments = results
                     .iter()
@@ -984,12 +1015,28 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                     .collect::<Vec<_>>()
                     .join(", ");
 
-                format!(
-                    "{name}({payload}) => {{
-                      {body}
-                      ({assignments})
-                    }}"
-                )
+                let payload = if self.gen.non_empty_type(ty.as_ref()).is_some() {
+                    payload
+                } else {
+                    String::new()
+                };
+
+                // TODO: This may cause empty constructor of Result::OK
+                if payload.is_empty() {
+                    format!(
+                        "{name} => {{
+                          {body}
+                          ({assignments})
+                        }}"
+                    )
+                } else {
+                    format!(
+                        "{name}({payload}) => {{
+                          {body}
+                          ({assignments})
+                        }}"
+                    )
+                }
             })
             .collect::<Vec<_>>()
             .join("\n");
@@ -1029,8 +1076,8 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             .drain(self.blocks.len() - cases.len()..)
             .collect::<Vec<_>>();
 
-        let ty = self.gen.type_name(ty);
-        let generics_position = ty.find('<');
+        // Hacky way to get the type name without type parameter
+        let ty = self.gen.constructor_name(ty);
         let lifted = self.locals.tmp("lifted");
 
         let cases = cases
@@ -1040,26 +1087,27 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             .map(|(i, ((case_name, case_ty), Block { body, results, .. }))| {
                 let payload = if self.gen.non_empty_type(case_ty.as_ref()).is_some() {
                     results.into_iter().next().unwrap()
-                } else if generics_position.is_some() {
-                    if let Some(ty) = case_ty.as_ref() {
-                        format!("{}.INSTANCE", self.gen.type_name(ty))
-                    } else {
-                        format!("{}Tuple0.INSTANCE", self.gen.gen.qualifier())
-                    }
                 } else {
                     String::new()
                 };
 
-                let constructor = case_name.to_upper_camel_case();
+                let constructor = format!("{ty}::{}", case_name.to_upper_camel_case());
 
-                let call = format!("{ty}::{constructor}");
-
-                format!(
-                    "{i} => {{
-                         {body}
-                         {call}({payload})
-                     }}"
-                )
+                if payload.is_empty() {
+                    format!(
+                        "{i} => {{
+                             {body}
+                             {constructor}
+                         }}"
+                    )
+                } else {
+                    format!(
+                        "{i} => {{
+                             {body}
+                             {constructor}({payload})
+                         }}"
+                    )
+                }
             })
             .collect::<Vec<_>>()
             .join("\n");
@@ -1255,7 +1303,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let some = self.blocks.pop().unwrap();
                 let none = self.blocks.pop().unwrap();
                 let some_payload = self.payloads.pop().unwrap();
-                let none_payload = self.payloads.pop().unwrap();
 
                 let lowered = lowered_types
                     .iter()
@@ -1266,22 +1313,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 let declarations = lowered
                     .iter()
-                    .zip(lowered_types.iter())
-                    .map(|(lowered, ty)| format!("{} {lowered};", wasm_type(*ty)))
+                    .map(|lowered| format!("{lowered}"))
                     .collect::<Vec<_>>()
-                    .join("\n");
+                    .join(", ");
 
                 let op = &operands[0];
 
-                let mut block = |ty: Option<&Type>, Block { body, results, .. }, payload| {
-                    let payload = if let Some(ty) = self.gen.non_empty_type(ty) {
-                        let ty = self.gen.type_name(ty);
-
-                        format!("{ty} {payload} = ({ty}) ({op});")
-                    } else {
-                        String::new()
-                    };
-
+                let block = |ty: Option<&Type>, Block { body, results, .. }| {
                     let assignments = lowered
                         .iter()
                         .zip(&results)
@@ -1290,24 +1328,22 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         .concat();
 
                     format!(
-                        "{payload}
-                         {body}
+                        "{body}
                          {assignments}"
                     )
                 };
 
-                let none = block(None, none, none_payload);
-                let some = block(Some(payload), some, some_payload);
+                let none = block(None, none);
+                let some = block(Some(payload), some);
 
                 uwrite!(
                     self.src,
                     r#"
-                    {declarations}
-
-                    if (({op}) == null) {{
-                        {none}
-                    }} else {{
-                        {some}
+                    let {declarations} = match (({op})) {{
+                        None => {none}
+                        Some({some_payload}) => {{
+                            {some}
+                        }}
                     }}
                     "#
                 );
@@ -1324,7 +1360,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let payload = if self.gen.non_empty_type(Some(*payload)).is_some() {
                     some.results.into_iter().next().unwrap()
                 } else {
-                    "null".into()
+                    "None".into()
                 };
 
                 let some = some.body;
@@ -1332,21 +1368,15 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwrite!(
                     self.src,
                     r#"
-                    {ty} {lifted};
+                    let {lifted} : {ty} = match ({op}) {{
+                        0 => Option::None
 
-                    switch ({op}) {{
-                        case 0: {{
-                            {lifted} = null;
-                            break;
-                        }}
-
-                        case 1: {{
+                        1 => {{
                             {some}
-                            {lifted} = {payload};
-                            break;
+                            Option::Some({payload})
                         }}
 
-                        default: throw new AssertionError("invalid discriminant: " + ({op}));
+                        _ => panic()
                     }}
                     "#
                 );
@@ -1359,7 +1389,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 result,
                 ..
             } => self.lower_variant(
-                &[("ok", result.ok), ("err", result.err)],
+                &[("Ok", result.ok), ("Err", result.err)],
                 lowered_types,
                 &operands[0],
                 results,
@@ -1367,7 +1397,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::ResultLift { result, ty } => self.lift_variant(
                 &Type::Id(*ty),
-                &[("ok", result.ok), ("err", result.err)],
+                &[("Ok", result.ok), ("Err", result.err)],
                 &operands[0],
                 results,
             ),
@@ -1562,7 +1592,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     [result] => {
                         let ty = wasm_type(*result);
                         let result = self.locals.tmp("result");
-                        let assignment = format!("{ty} {result} = ");
+                        let assignment = format!("let {result} : {ty} = ");
                         results.push(result);
                         assignment
                     }
@@ -1587,7 +1617,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             .gen
                             .type_name(func.results.iter_types().next().unwrap());
                         let result = self.locals.tmp("result");
-                        let assignment = format!("{ty} {result} = ");
+                        let assignment = format!("let {result} : {ty} = ");
                         results.push(result);
                         (assignment, String::new())
                     }
@@ -1603,7 +1633,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         );
 
                         let result = self.locals.tmp("result");
-                        let assignment = format!("{ty} {result} = ");
+                        let assignment = format!("let {result} : {ty} = ");
 
                         let destructure = func
                             .results
@@ -1612,7 +1642,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             .map(|(index, ty)| {
                                 let ty = self.gen.type_name(ty);
                                 let my_result = self.locals.tmp("result");
-                                let assignment = format!("{ty} {my_result} = {result}.f{index};");
+                                let assignment =
+                                    format!("let {my_result} : {ty} = {result}.f{index};");
                                 results.push(my_result);
                                 assignment
                             })
