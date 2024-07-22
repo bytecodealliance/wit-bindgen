@@ -1529,8 +1529,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwrite!(
                     self.src,
                     "
-                    let {address} = malloc(({op}).size() * {size});
-                    for {index} = 0; {index} < ({op}).size(); {index} = {index} + 1 {{
+                    let {address} = malloc(({op}).length() * {size});
+                    for {index} = 0; {index} < ({op}).length(); {index} = {index} + 1 {{
                         let {block_element} : {ty} = ({op})[({index})]
                         let {base} = {address} + ({index} * {size});
                         {body}
@@ -1541,13 +1541,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 if realloc.is_none() {
                     self.cleanup.push(Cleanup {
                         address: address.clone(),
-                        size: format!("({op}).size() * {size}"),
+                        size: format!("({op}).length() * {size}"),
                         align,
                     });
                 }
 
                 results.push(address);
-                results.push(format!("({op}).size()"));
+                results.push(format!("({op}).length()"));
             }
 
             Instruction::ListLift { element, .. } => {
