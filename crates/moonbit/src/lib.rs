@@ -770,7 +770,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     }
 
     fn type_tuple(&mut self, _id: TypeId, _name: &str, _tuple: &Tuple, _docs: &Docs) {
-        // self.type_name(&Type::Id(id));
+        // Not needed
     }
 
     fn type_variant(&mut self, _id: TypeId, name: &str, variant: &Variant, docs: &Docs) {
@@ -796,19 +796,19 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         uwrite!(
             self.src,
             "
-            pub eum {name} {{
+            pub enum {name} {{
               {cases}
             }}
             "
         );
     }
 
-    fn type_option(&mut self, id: TypeId, _name: &str, _payload: &Type, _docs: &Docs) {
-        self.type_name(&Type::Id(id));
+    fn type_option(&mut self, _id: TypeId, _name: &str, _payload: &Type, _docs: &Docs) {
+        // Not needed
     }
 
-    fn type_result(&mut self, id: TypeId, _name: &str, _result: &Result_, _docs: &Docs) {
-        self.type_name(&Type::Id(id));
+    fn type_result(&mut self, _id: TypeId, _name: &str, _result: &Result_, _docs: &Docs) {
+        // Not needed
     }
 
     fn type_enum(&mut self, _id: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
@@ -834,11 +834,12 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     }
 
     fn type_alias(&mut self, id: TypeId, _name: &str, _ty: &Type, _docs: &Docs) {
+        // TODO: Implement correct type aliasing
         self.type_name(&Type::Id(id));
     }
 
-    fn type_list(&mut self, id: TypeId, _name: &str, _ty: &Type, _docs: &Docs) {
-        self.type_name(&Type::Id(id));
+    fn type_list(&mut self, _id: TypeId, _name: &str, _ty: &Type, _docs: &Docs) {
+        // Not needed
     }
 
     fn type_builtin(&mut self, _id: TypeId, _name: &str, _ty: &Type, _docs: &Docs) {
