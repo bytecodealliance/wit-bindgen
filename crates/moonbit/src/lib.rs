@@ -17,6 +17,9 @@ use wit_bindgen_core::{
     Direction, Files, InterfaceGenerator as _, Ns, Source, WorldGenerator,
 };
 
+// Assumptions:
+// Data: u8 -> Byte, s8 | s16 | u16 | s32 -> Int, u32 -> UInt, s64 -> Int64, u64 -> UInt64
+
 #[derive(Default, Debug, Clone)]
 #[cfg_attr(feature = "clap", derive(clap::Args))]
 pub struct Opts {
@@ -347,7 +350,7 @@ impl WorldGenerator for MoonBit {
         src.push_str("}\n");
 
         let directory = package.replace('.', "/");
-        files.push(&format!("{directory}/{name}.java"), indent(&src).as_bytes());
+        files.push(&format!("{directory}/{name}.mbt"), indent(&src).as_bytes());
 
         let generate_stub =
             |package: &str, name, fragments: &[InterfaceFragment], files: &mut Files| {
@@ -370,10 +373,7 @@ impl WorldGenerator for MoonBit {
                 );
 
                 let directory = package.replace('.', "/");
-                files.push(
-                    &format!("{directory}/{name}.java"),
-                    indent(&body).as_bytes(),
-                );
+                files.push(&format!("{directory}/{name}.mbt"), indent(&body).as_bytes());
             };
 
         if self.opts.generate_stub {
@@ -409,10 +409,7 @@ impl WorldGenerator for MoonBit {
             );
 
             let directory = package.replace('.', "/");
-            files.push(
-                &format!("{directory}/{name}.java"),
-                indent(&body).as_bytes(),
-            );
+            files.push(&format!("{directory}/{name}.mbt"), indent(&body).as_bytes());
 
             if self.opts.generate_stub {
                 generate_stub(&package, format!("{name}Impl"), fragments, files);
@@ -519,7 +516,7 @@ impl InterfaceGenerator<'_> {
             .enumerate()
             .map(|(i, param)| {
                 let ty = wasm_type(*param);
-                format!("{ty} p{i}")
+                format!("p{i} : {ty}")
             })
             .collect::<Vec<_>>()
             .join(", ");
@@ -575,7 +572,7 @@ impl InterfaceGenerator<'_> {
             .enumerate()
             .map(|(i, param)| {
                 let ty = wasm_type(*param);
-                format!("{ty} p{i}")
+                format!("p{i} : {ty}")
             })
             .collect::<Vec<_>>()
             .join(", ");
@@ -643,46 +640,39 @@ impl InterfaceGenerator<'_> {
 
     fn type_name_with_qualifier(&mut self, ty: &Type, qualifier: bool) -> String {
         match ty {
-            Type::Bool => "boolean".into(),
-            Type::U8 | Type::S8 => "byte".into(),
-            Type::U16 | Type::S16 => "short".into(),
-            Type::U32 | Type::S32 | Type::Char => "int".into(),
-            Type::U64 | Type::S64 => "long".into(),
-            Type::F32 => "float".into(),
-            Type::F64 => "double".into(),
+            Type::Bool => "Bool".into(),
+            Type::U8 => "Byte".into(),
+            Type::S32 | Type::S8 | Type::U16 | Type::S16 => "Int".into(),
+            Type::U32 => "UInt".into(),
+            Type::Char => "Char".into(),
+            Type::U64 => "UInt64".into(),
+            Type::S64 => "Int64".into(),
+            Type::F32 | Type::F64 => "double".into(),
             Type::String => "String".into(),
             Type::Id(id) => {
                 let ty = &self.resolve.types[*id];
                 match &ty.kind {
                     TypeDefKind::Type(ty) => self.type_name_with_qualifier(ty, qualifier),
                     TypeDefKind::List(ty) => {
-                        if is_primitive(ty) {
-                            format!("{}[]", self.type_name(ty))
-                        } else {
-                            format!("ArrayList<{}>", self.type_name_boxed(ty, qualifier))
-                        }
+                        format!("Array[{}]", self.type_name_boxed(ty, qualifier))
                     }
                     TypeDefKind::Tuple(tuple) => {
                         let count = tuple.types.len();
                         self.gen.tuple_counts.insert(count);
 
-                        let params = if count == 0 {
-                            String::new()
-                        } else {
-                            format!(
-                                "<{}>",
-                                tuple
-                                    .types
-                                    .iter()
-                                    .map(|ty| self.type_name_boxed(ty, qualifier))
-                                    .collect::<Vec<_>>()
-                                    .join(", ")
-                            )
-                        };
-
-                        format!("{}Tuple{count}{params}", self.gen.qualifier())
+                        format!(
+                            "({})",
+                            tuple
+                                .types
+                                .iter()
+                                .map(|ty| self.type_name_boxed(ty, qualifier))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        )
                     }
-                    TypeDefKind::Option(ty) => self.type_name_boxed(ty, qualifier),
+                    TypeDefKind::Option(ty) => {
+                        format!("{}?", self.type_name_boxed(ty, qualifier))
+                    }
                     TypeDefKind::Result(result) => {
                         self.gen.needs_result = true;
                         let mut name = |ty: &Option<Type>| {
@@ -691,13 +681,13 @@ impl InterfaceGenerator<'_> {
                                 .unwrap_or_else(|| {
                                     self.gen.tuple_counts.insert(0);
 
-                                    format!("{}Tuple0", self.gen.qualifier())
+                                    "()".into()
                                 })
                         };
                         let ok = name(&result.ok);
                         let err = name(&result.err);
 
-                        format!("{}Result<{ok}, {err}>", self.gen.qualifier())
+                        format!("Result[{ok}, {err}]")
                     }
                     _ => {
                         if let Some(name) = &ty.name {
@@ -717,13 +707,14 @@ impl InterfaceGenerator<'_> {
 
     fn type_name_boxed(&mut self, ty: &Type, qualifier: bool) -> String {
         match ty {
-            Type::Bool => "Boolean".into(),
-            Type::U8 | Type::S8 => "Byte".into(),
-            Type::U16 | Type::S16 => "Short".into(),
-            Type::U32 | Type::S32 | Type::Char => "Integer".into(),
-            Type::U64 | Type::S64 => "Long".into(),
-            Type::F32 => "Float".into(),
-            Type::F64 => "Double".into(),
+            Type::Bool => "Bool".into(),
+            Type::U8 => "Byte".into(),
+            Type::S8 | Type::U16 | Type::S16 | Type::S32 => "Int".into(),
+            Type::U32 => "UInt".into(),
+            Type::Char => "Char".into(),
+            Type::U64 => "UInt64".into(),
+            Type::S64 => "Int64".into(),
+            Type::F32 | Type::F64 => "Double".into(),
             Type::Id(id) => {
                 let def = &self.resolve.types[*id];
                 match &def.kind {
@@ -740,18 +731,11 @@ impl InterfaceGenerator<'_> {
             let lines = docs
                 .trim()
                 .lines()
-                .map(|line| format!("* {line}"))
+                .map(|line| format!("/// {line}"))
                 .collect::<Vec<_>>()
                 .join("\n");
 
-            uwrite!(
-                self.src,
-                "
-                /**
-                 {lines}
-                 */
-                "
-            )
+            uwrite!(self.src, "{}", lines)
         }
     }
 
@@ -776,15 +760,14 @@ impl InterfaceGenerator<'_> {
         let name = func.name.to_moonbit_ident();
 
         let result_type = match func.results.len() {
-            0 => "void".into(),
+            0 => "Unit".into(),
             1 => {
                 self.type_name_with_qualifier(func.results.iter_types().next().unwrap(), qualifier)
             }
             count => {
                 self.gen.tuple_counts.insert(count);
                 format!(
-                    "{}Tuple{count}<{}>",
-                    self.gen.qualifier(),
+                    "({})",
                     func.results
                         .iter_types()
                         .map(|ty| self.type_name_boxed(ty, qualifier))
@@ -800,12 +783,12 @@ impl InterfaceGenerator<'_> {
             .map(|(name, ty)| {
                 let ty = self.type_name_with_qualifier(ty, qualifier);
                 let name = name.to_moonbit_ident();
-                format!("{ty} {name}")
+                format!("{name} : {ty}")
             })
             .collect::<Vec<_>>()
             .join(", ");
 
-        format!("public static {result_type} {name}({params})")
+        format!("pub fn {name}({params}) -> {result_type}")
     }
 }
 
@@ -873,9 +856,10 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         );
     }
 
-    fn type_resource(&mut self, id: TypeId, name: &str, docs: &Docs) {
-        _ = (id, name, docs);
-        todo!()
+    fn type_resource(&mut self, _id: TypeId, name: &str, docs: &Docs) {
+        self.print_docs(docs);
+
+        uwrite!(self.src, "pub type {name} UInt")
     }
 
     fn type_flags(&mut self, _id: TypeId, name: &str, flags: &Flags, docs: &Docs) {
@@ -884,10 +868,9 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         let name = name.to_upper_camel_case();
 
         let ty = match flags.repr() {
-            FlagsRepr::U8 => "byte",
-            FlagsRepr::U16 => "short",
-            FlagsRepr::U32(1) => "int",
-            FlagsRepr::U32(2) => "long",
+            FlagsRepr::U8 => "Byte",
+            FlagsRepr::U16 | FlagsRepr::U32(1) => "UInt",
+            FlagsRepr::U32(2) => "UInt64",
             repr => todo!("flags {repr:?}"),
         };
 
@@ -898,13 +881,16 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .map(|(i, flag)| {
                 let flag_name = flag.name.to_shouty_snake_case();
                 let suffix = if matches!(flags.repr(), FlagsRepr::U32(2)) {
-                    "L"
+                    "UL"
+                } else {
+                    "U"
+                };
+                let cast = if matches!(flags.repr(), FlagsRepr::U8) {
+                    ".to_byte()"
                 } else {
                     ""
                 };
-                format!(
-                    "public static final {name} {flag_name} = new {name}(({ty}) (1{suffix} << {i}));"
-                )
+                format!("let {flag_name} : {name} = {name}((1{suffix} << {i}){cast})")
             })
             .collect::<Vec<_>>()
             .join("\n");
@@ -912,21 +898,17 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         uwrite!(
             self.src,
             "
-            public static final class {name} {{
-                public final {ty} value;
-
-                public {name}({ty} value) {{
-                    this.value = value;
-                }}
-
-                {flags}
+            pub type {name} {ty}
+            pub fn {name}::lor(self : {name}, other: {name}) -> {name} {{
+              self.0 | other.0
             }}
+            {flags}
             "
         );
     }
 
-    fn type_tuple(&mut self, id: TypeId, _name: &str, _tuple: &Tuple, _docs: &Docs) {
-        self.type_name(&Type::Id(id));
+    fn type_tuple(&mut self, _id: TypeId, _name: &str, _tuple: &Tuple, _docs: &Docs) {
+        // self.type_name(&Type::Id(id));
     }
 
     fn type_variant(&mut self, _id: TypeId, name: &str, variant: &Variant, docs: &Docs) {
@@ -2078,25 +2060,23 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 fn perform_cast(op: &str, cast: &Bitcast) -> String {
     match cast {
         Bitcast::I32ToF32 => {
-            format!("Float.intBitsToFloat({op})")
+            format!("Int::to_double({op})")
         }
-        Bitcast::I64ToF32 => format!("Float.intBitsToFloat((int) ({op}))"),
+        Bitcast::I64ToF32 => format!("Int64::to_double({op})"),
         Bitcast::F32ToI32 => {
-            format!("Float.floatToIntBits({op})")
+            format!("Double::to_int({op})")
         }
-        Bitcast::F32ToI64 => format!("(long) Float.floatToIntBits({op})"),
+        Bitcast::F32ToI64 => format!("Double::to_int64({op})"),
         Bitcast::I64ToF64 => {
-            format!("Double.longBitsToDouble({op})")
+            format!("Int64::to_double({op})")
         }
         Bitcast::F64ToI64 => {
-            format!("Double.doubleToLongBits({op})")
+            format!("Double::to_int64({op})")
         }
-        Bitcast::I32ToI64 => format!("(long) ({op})"),
-        Bitcast::I64ToI32 => format!("(int) ({op})"),
+        Bitcast::LToI64 | Bitcast::PToP64 | Bitcast::I32ToI64 => format!("Int::to_int64({op})"),
+        Bitcast::I64ToL | Bitcast::P64ToP | Bitcast::I64ToI32 => format!("Int64::to_int({op})"),
         Bitcast::I64ToP64 => format!("{op}"),
         Bitcast::P64ToI64 => format!("{op}"),
-        Bitcast::LToI64 | Bitcast::PToP64 => format!("(long) ({op})"),
-        Bitcast::I64ToL | Bitcast::P64ToP => format!("(int) ({op})"),
         Bitcast::I32ToP
         | Bitcast::PToI32
         | Bitcast::I32ToL
