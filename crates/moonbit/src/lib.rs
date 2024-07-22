@@ -393,10 +393,7 @@ impl InterfaceGenerator<'_> {
         let cleanup_list = if bindgen.needs_cleanup_list {
             self.gen.needs_cleanup = true;
 
-            format!(
-                "ArrayList<{}Cleanup> cleanupList = new ArrayList<>();\n",
-                self.gen.qualifier()
-            )
+            format!("let cleanupList : Array[{}Cleanup] = []\n", self.gen.qualifier())
         } else {
             String::new()
         };
@@ -431,7 +428,8 @@ impl InterfaceGenerator<'_> {
             r#"fn wasmImport{camel_name}({params}) {result_type} = "{module}" "{name}";
 
             {sig} {{
-                {cleanup_list} {src}
+              {cleanup_list}
+              {src}
             }}
             "#
         );
@@ -461,7 +459,7 @@ impl InterfaceGenerator<'_> {
         let src = bindgen.src;
 
         let result_type = match &sig.results[..] {
-            [] => "void",
+            [] => "Unit",
             [result] => wasm_type(*result),
             _ => unreachable!(),
         };
@@ -482,8 +480,8 @@ impl InterfaceGenerator<'_> {
         uwrite!(
             self.src,
             r#"
-            @Export(name = "{export_name}")
-            private static {result_type} wasmExport{camel_name}({params}) {{
+            /// @Export(name = "{export_name}")
+            pub fn wasmExport{camel_name}({params}) -> {result_type} {{
                 {src}
             }}
             "#
@@ -514,8 +512,8 @@ impl InterfaceGenerator<'_> {
             uwrite!(
                 self.src,
                 r#"
-                @Export(name = "cabi_post_{export_name}")
-                private static void wasmExport{camel_name}PostReturn({params}) {{
+                /// @Export(name = "cabi_post_{export_name}")
+                pub fn wasmExport{camel_name}PostReturn({params}) -> Unit {{
                     {src}
                 }}
                 "#
@@ -529,7 +527,7 @@ impl InterfaceGenerator<'_> {
                 self.stub,
                 r#"
                 {sig} {{
-                    throw new RuntimeException("todo");
+                    abort("todo")
                 }}
                 "#
             );
