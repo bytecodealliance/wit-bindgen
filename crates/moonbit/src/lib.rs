@@ -700,50 +700,19 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .iter()
             .map(|field| {
                 format!(
-                    "{} {}",
+                    "{} : {}",
+                    field.name.to_moonbit_ident(),
                     self.type_name(&field.ty),
-                    field.name.to_moonbit_ident()
                 )
             })
             .collect::<Vec<_>>()
-            .join(", ");
-
-        let assignments = record
-            .fields
-            .iter()
-            .map(|field| {
-                let name = field.name.to_moonbit_ident();
-                format!("this.{name} = {name};")
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-
-        let fields = if record.fields.is_empty() {
-            format!("public static final {name} INSTANCE = new {name}();")
-        } else {
-            record
-                .fields
-                .iter()
-                .map(|field| {
-                    format!(
-                        "public final {} {};",
-                        self.type_name(&field.ty),
-                        field.name.to_moonbit_ident()
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join("\n")
-        };
+            .join("; ");
 
         uwrite!(
             self.src,
             "
-            public static final class {name} {{
-                {fields}
-
-                public {name}({parameters}) {{
-                    {assignments}
-                }}
+            pub struct {name} {{
+                {parameters}
             }}
             "
         );
