@@ -1,11 +1,6 @@
 use anyhow::Result;
 use heck::{ToLowerCamelCase, ToShoutySnakeCase, ToUpperCamelCase};
-use std::{
-    collections::{HashMap, HashSet},
-    fmt::Write,
-    iter, mem,
-    ops::Deref,
-};
+use std::{collections::HashMap, fmt::Write, iter, mem, ops::Deref};
 use wit_bindgen_core::{
     abi::{self, AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType},
     uwrite, uwriteln,
@@ -48,9 +43,7 @@ pub struct MoonBit {
     name: String,
     return_area_size: usize,
     return_area_align: usize,
-    tuple_counts: HashSet<usize>,
     needs_cleanup: bool,
-    needs_result: bool,
     interface_fragments: HashMap<String, Vec<InterfaceFragment>>,
     world_fragments: Vec<InterfaceFragment>,
     sizes: SizeAlign,
@@ -228,96 +221,6 @@ impl WorldGenerator for MoonBit {
             private static final String __WIT_BINDGEN_COMPONENT_TYPE = "{component_type}";
             "#
         );
-
-        for &count in &self.tuple_counts {
-            let (type_params, instance) = if count == 0 {
-                (
-                    String::new(),
-                    "public static final Tuple0 INSTANCE = new Tuple0();",
-                )
-            } else {
-                (
-                    format!(
-                        "<{}>",
-                        (0..count)
-                            .map(|index| format!("T{index}"))
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    ),
-                    "",
-                )
-            };
-            let value_params = (0..count)
-                .map(|index| format!("T{index} f{index}"))
-                .collect::<Vec<_>>()
-                .join(", ");
-            let fields = (0..count)
-                .map(|index| format!("public final T{index} f{index};"))
-                .collect::<Vec<_>>()
-                .join("\n");
-            let inits = (0..count)
-                .map(|index| format!("this.f{index} = f{index};"))
-                .collect::<Vec<_>>()
-                .join("\n");
-
-            uwrite!(
-                src,
-                "
-                public static final class Tuple{count}{type_params} {{
-                    {fields}
-
-                    public Tuple{count}({value_params}) {{
-                        {inits}
-                    }}
-
-                    {instance}
-                }}
-                "
-            )
-        }
-
-        if self.needs_result {
-            src.push_str(
-                r#"
-                public static final class Result<Ok, Err> {
-                    public final byte tag;
-                    private final Object value;
-
-                    private Result(byte tag, Object value) {
-                        this.tag = tag;
-                        this.value = value;
-                    }
-
-                    public static <Ok, Err> Result<Ok, Err> ok(Ok ok) {
-                        return new Result<>(OK, ok);
-                    }
-
-                    public static <Ok, Err> Result<Ok, Err> err(Err err) {
-                        return new Result<>(ERR, err);
-                    }
-
-                    public Ok getOk() {
-                        if (this.tag == OK) {
-                            return (Ok) this.value;
-                        } else {
-                            throw new RuntimeException("expected OK, got " + this.tag);
-                        }
-                    }
-
-                    public Err getErr() {
-                        if (this.tag == ERR) {
-                            return (Err) this.value;
-                        } else {
-                            throw new RuntimeException("expected ERR, got " + this.tag);
-                        }
-                    }
-
-                    public static final byte OK = 0;
-                    public static final byte ERR = 1;
-                }
-                "#,
-            )
-        }
 
         if self.needs_cleanup {
             src.push_str(
@@ -503,8 +406,8 @@ impl InterfaceGenerator<'_> {
         let sig = self.resolve.wasm_signature(AbiVariant::GuestImport, func);
 
         let result_type = match &sig.results[..] {
-            [] => "void",
-            [result] => wasm_type(*result),
+            [] => "".into(),
+            [result] => format!("-> {}", wasm_type(*result)),
             _ => unreachable!(),
         };
 
@@ -525,12 +428,11 @@ impl InterfaceGenerator<'_> {
 
         uwrite!(
             self.src,
-            r#"@Import(name = "{name}", module = "{module}")
-               private static native {result_type} wasmImport{camel_name}({params});
+            r#"fn wasmImport{camel_name}({params}) {result_type} = "{module}" "{name}";
 
-               {sig} {{
-                   {cleanup_list} {src}
-               }}
+            {sig} {{
+                {cleanup_list} {src}
+            }}
             "#
         );
     }
@@ -657,9 +559,6 @@ impl InterfaceGenerator<'_> {
                         format!("Array[{}]", self.type_name_boxed(ty, qualifier))
                     }
                     TypeDefKind::Tuple(tuple) => {
-                        let count = tuple.types.len();
-                        self.gen.tuple_counts.insert(count);
-
                         format!(
                             "({})",
                             tuple
@@ -674,15 +573,10 @@ impl InterfaceGenerator<'_> {
                         format!("{}?", self.type_name_boxed(ty, qualifier))
                     }
                     TypeDefKind::Result(result) => {
-                        self.gen.needs_result = true;
                         let mut name = |ty: &Option<Type>| {
                             ty.as_ref()
                                 .map(|ty| self.type_name_boxed(ty, qualifier))
-                                .unwrap_or_else(|| {
-                                    self.gen.tuple_counts.insert(0);
-
-                                    "()".into()
-                                })
+                                .unwrap_or_else(|| "()".into())
                         };
                         let ok = name(&result.ok);
                         let err = name(&result.err);
@@ -764,8 +658,7 @@ impl InterfaceGenerator<'_> {
             1 => {
                 self.type_name_with_qualifier(func.results.iter_types().next().unwrap(), qualifier)
             }
-            count => {
-                self.gen.tuple_counts.insert(count);
+            _ => {
                 format!(
                     "({})",
                     func.results
@@ -915,83 +808,27 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.print_docs(docs);
 
         let name = name.to_upper_camel_case();
-        let tag_type = int_type(variant.tag());
 
-        let constructors = variant
+        let cases = variant
             .cases
             .iter()
             .map(|case| {
-                let case_name = case.name.to_moonbit_ident();
-                let tag = case.name.to_shouty_snake_case();
-                let (parameter, argument) = if let Some(ty) = self.non_empty_type(case.ty.as_ref())
-                {
-                    (
-                        format!("{} {case_name}", self.type_name(ty)),
-                        case_name.deref(),
-                    )
+                let name = case.name.to_upper_camel_case();
+                if let Some(ty) = case.ty {
+                    let ty = self.type_name(&ty);
+                    format!("{name}({ty})")
                 } else {
-                    (String::new(), "null")
-                };
-
-                format!(
-                    "public static {name} {case_name}({parameter}) {{
-                         return new {name}({tag}, {argument});
-                     }}
-                    "
-                )
+                    format!("{name}")
+                }
             })
             .collect::<Vec<_>>()
-            .join("\n");
-
-        let accessors = variant
-            .cases
-            .iter()
-            .filter_map(|case| {
-                self.non_empty_type(case.ty.as_ref()).map(|ty| {
-                    let case_name = case.name.to_upper_camel_case();
-                    let tag = case.name.to_shouty_snake_case();
-                    let ty = self.type_name(ty);
-                    format!(
-                        r#"public {ty} get{case_name}() {{
-                               if (this.tag == {tag}) {{
-                                   return ({ty}) this.value;
-                               }} else {{
-                                   throw new RuntimeException("expected {tag}, got " + this.tag);
-                               }}
-                           }}
-                        "#
-                    )
-                })
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-
-        let tags = variant
-            .cases
-            .iter()
-            .enumerate()
-            .map(|(i, case)| {
-                let tag = case.name.to_shouty_snake_case();
-                format!("public static final {tag_type} {tag} = {i};")
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
+            .join("\n  ");
 
         uwrite!(
             self.src,
             "
-            public static final class {name} {{
-                public final {tag_type} tag;
-                private final Object value;
-
-                private {name}({tag_type} tag, Object value) {{
-                    this.tag = tag;
-                    this.value = value;
-                }}
-
-                {constructors}
-                {accessors}
-                {tags}
+            pub eum {name} {{
+              {cases}
             }}
             "
         );
@@ -1015,13 +852,13 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .iter()
             .map(|case| case.name.to_shouty_snake_case())
             .collect::<Vec<_>>()
-            .join(", ");
+            .join("; ");
 
         uwrite!(
             self.src,
             "
-            public static enum {name} {{
-                {cases}
+            pub enum {name} {{
+              {cases}
             }}
             "
         );
@@ -1743,7 +1580,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         (assignment, String::new())
                     }
                     count => {
-                        self.gen.gen.tuple_counts.insert(count);
                         let ty = format!(
                             "{}Tuple{count}<{}>",
                             self.gen.gen.qualifier(),
