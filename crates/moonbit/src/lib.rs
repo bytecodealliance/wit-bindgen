@@ -232,17 +232,6 @@ impl WorldGenerator for MoonBit {
         let version = env!("CARGO_PKG_VERSION");
         wit_bindgen_core::generated_preamble(&mut src, version);
 
-        uwrite!(
-            src,
-            "package {package};
-
-             import org.teavm.interop.CustomSection;
-
-             public final class {name} {{
-                private {name}() {{}}
-            "
-        );
-
         src.push_str(
             &self
                 .world_fragments
@@ -250,35 +239,6 @@ impl WorldGenerator for MoonBit {
                 .map(|f| f.src.deref())
                 .collect::<Vec<_>>()
                 .join("\n"),
-        );
-
-        let mut producers = wasm_metadata::Producers::empty();
-        producers.add(
-            "processed-by",
-            env!("CARGO_PKG_NAME"),
-            env!("CARGO_PKG_VERSION"),
-        );
-
-        let component_type = wit_component::metadata::encode(
-            resolve,
-            id,
-            wit_component::StringEncoding::UTF8,
-            Some(&producers),
-        )
-        .unwrap();
-
-        let component_type = component_type
-            .into_iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect::<Vec<_>>()
-            .concat();
-
-        uwriteln!(
-            src,
-            r#"
-            @CustomSection(name = "component-type:{name}")
-            private static final String __WIT_BINDGEN_COMPONENT_TYPE = "{component_type}";
-            "#
         );
 
         if self.needs_cleanup {
@@ -309,8 +269,6 @@ impl WorldGenerator for MoonBit {
             );
         }
 
-        src.push_str("}\n");
-
         let directory = package.replace('.', "/");
         files.push(&format!("{directory}/{name}.mbt"), indent(&src).as_bytes());
 
@@ -324,15 +282,7 @@ impl WorldGenerator for MoonBit {
 
                 let mut body = Source::default();
                 wit_bindgen_core::generated_preamble(&mut body, version);
-                uwriteln!(
-                    &mut body,
-                    "package {package};
-
-                 public class {name} {{
-                     {b}
-                 }}
-                "
-                );
+                uwriteln!(&mut body, "{b}");
 
                 let directory = package.replace('.', "/");
                 files.push(&format!("{directory}/{name}.mbt"), indent(&body).as_bytes());
@@ -358,17 +308,7 @@ impl WorldGenerator for MoonBit {
 
             let mut body = Source::default();
             wit_bindgen_core::generated_preamble(&mut body, version);
-            uwriteln!(
-                &mut body,
-                "package {package};
-
-                 public final class {name} {{
-                     private {name}() {{}}
-
-                     {b}
-                 }}
-                "
-            );
+            uwriteln!(&mut body, "{b}");
 
             let directory = package.replace('.', "/");
             files.push(&format!("{directory}/{name}.mbt"), indent(&body).as_bytes());
@@ -2024,7 +1964,7 @@ fn is_primitive(ty: &Type) -> bool {
 
 fn world_name(resolve: &Resolve, world: WorldId) -> String {
     format!(
-        "wit.worlds.{}",
+        "worlds.{}",
         resolve.worlds[world].name.to_upper_camel_case()
     )
 }
