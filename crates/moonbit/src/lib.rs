@@ -13,7 +13,7 @@ use wit_bindgen_core::{
 };
 
 // Assumptions:
-// Data: u8 -> Byte, s8 | s16 | u16 | s32 -> Int, u32 -> UInt, s64 -> Int64, u64 -> UInt64
+// Data: u8 -> Byte, s8 | s16 | u16 | s32 -> Int, u32 -> UInt, s64 -> Int64, u64 -> UInt64, f32 | f64 -> Double, address -> Int
 
 /* FFI:
 extern "wasm" fn extend16(value : Int) -> Int =
@@ -22,26 +22,47 @@ extern "wasm" fn extend16(value : Int) -> Int =
 extern "wasm" fn extend8(value : Int) -> Int =
   #|(func (param i32) (result i32) local.get 0 i32.extend8_s)
 
-extern "wasm" fn store32(offset : Int, value : Int) =
-  #|(func (param i32) (param i32) local.get 0 local.get 1 i32.store)
+extern "wasm" fn store8(offset : Int, value : Int) =
+  #|(func (param i32) (param i32) local.get 0 local.get 1 i32.store8)
+
+extern "wasm" fn load8_u(offset : Int) -> Int =
+  #|(func (param i32) (result i32) local.get 0 i32.load8_u)
+
+extern "wasm" fn load8(offset : Int) -> Int =
+  #|(func (param i32) (result i32) local.get 0 i32.load8_s)
 
 extern "wasm" fn store16(offset : Int, value : Int) =
   #|(func (param i32) (param i32) local.get 0 local.get 1 i32.store16)
 
 extern "wasm" fn load16(offset : Int) -> Int =
-  #|(func (param i32) (result i32) local.get 0 i32.load16)
+  #|(func (param i32) (result i32) local.get 0 i32.load16_s)
 
 extern "wasm" fn load16_u(offset : Int) -> Int =
   #|(func (param i32) (result i32) local.get 0 i32.load16_u)
 
+extern "wasm" fn store32(offset : Int, value : Int) =
+  #|(func (param i32) (param i32) local.get 0 local.get 1 i32.store)
+
 extern "wasm" fn load32(offset : Int) -> Int =
   #|(func (param i32) (result i32) local.get 0 i32.load)
 
-extern "wasm" fn store8(offset : Int, byte : Byte) =
-  #|(func (param i32) (param i32) local.get 0 local.get 1 i32.store8)
+extern "wasm" fn store64(offset : Int, value : Int64) =
+  #|(func (param i32) (param i64) local.get 0 local.get 1 i64.store)
 
-extern "wasm" fn load8(offset : Int) -> Byte =
-  #|(func (param i32) (result i32) local.get 0 i32.load8_u)
+extern "wasm" fn load64(offset : Int) -> Int =
+  #|(func (param i32) (result i64) local.get 0 i64.load)
+
+extern "wasm" fn storef32(offset : Int, value : Double) =
+  #|(func (param i32) (param i64) local.get 0 local.get 1 f32.demote_f64 f32.store)
+
+extern "wasm" fn loadf32(offset : Int) -> Double =
+  #|(func (param i32) (result f64) local.get 0 f32.load f64.promote_f32)
+
+extern "wasm" fn storef64(offset : Int, value : Double) =
+  #|(func (param i32) (param f64) local.get 0 local.get 1 f64.store)
+
+extern "wasm" fn loadf64(offset : Int) -> Int =
+  #|(func (param i32) (result f64) local.get 0 f64.load)
 
 extern "wasm" fn malloc(size : Int) -> Int =
   #|(func (param i32) (result i32) local.get 0 call $rael.malloc)
@@ -359,10 +380,7 @@ impl WorldGenerator for MoonBit {
 
         let mut body = Source::default();
         uwriteln!(&mut body, "{{\"name\": \"wasi-bindgen\"}}");
-        files.push(
-            &format!("moon.mod.json"),
-            indent(&body).as_bytes(),
-        );
+        files.push(&format!("moon.mod.json"), indent(&body).as_bytes());
 
         Ok(())
     }
@@ -1511,10 +1529,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwrite!(
                     self.src,
                     "
-                    int {address} = Memory.malloc(({op}).size() * {size}, {align}).toInt();
-                    for (int {index} = 0; {index} < ({op}).size(); ++{index}) {{
-                        {ty} {block_element} = ({op}).get({index});
-                        int {base} = {address} + ({index} * {size});
+                    let {address} = malloc(({op}).size() * {size});
+                    for {index} = 0; {index} < ({op}).size(); {index} = {index} + 1 {{
+                        let {block_element} : {ty} = ({op})[({index})]
+                        let {base} = {address} + ({index} * {size});
                         {body}
                     }}
                     "
@@ -1544,7 +1562,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let array = self.locals.tmp("array");
                 let ty = self.gen.type_name(element);
                 let size = self.gen.gen.sizes.size(element);
-                let align = self.gen.gen.sizes.align(element);
+                // let align = self.gen.gen.sizes.align(element);
                 let index = self.locals.tmp("index");
 
                 let result = match &block_results[..] {
@@ -1555,13 +1573,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwrite!(
                     self.src,
                     "
-                    ArrayList<{ty}> {array} = new ArrayList<>({length});
-                    for (int {index} = 0; {index} < ({length}); ++{index}) {{
-                        int {base} = ({address}) + ({index} * {size});
+                    let {array} : Array[{ty}] = [];
+                    for {index} = 0; {index} < ({length}); {index} = {index} + 1 {{
+                        let {base} = ({address}) + ({index} * {size})
                         {body}
-                        {array}.add({result});
+                        {array}.push({result})
                     }}
-                    Memory.free(org.teavm.interop.Address.fromInt({address}), ({length}) * {size}, {align});
+                    free({address})
                     "
                 );
 
@@ -1657,146 +1675,116 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::Return { amt, .. } => {
-                for Cleanup {
-                    address,
-                    size,
-                    align,
-                } in &self.cleanup
-                {
-                    uwriteln!(
-                        self.src,
-                        "Memory.free(org.teavm.interop.Address.fromInt({address}), {size}, {align});"
-                    );
+                for Cleanup { address, .. } in &self.cleanup {
+                    uwriteln!(self.src, "free({address})");
                 }
 
                 if self.needs_cleanup_list {
                     uwrite!(
                         self.src,
                         "
-                        for ({}Cleanup cleanup : cleanupList) {{
-                            Memory.free(org.teavm.interop.Address.fromInt(cleanup.address), cleanup.size, cleanup.align);
-                        }}
-                        ",
-                        self.gen.gen.qualifier()
+                        cleanupList.each(fn(cleanup) {{
+                            free(cleanup.address);
+                        }})
+                        "
                     );
                 }
 
                 match *amt {
                     0 => (),
-                    1 => uwriteln!(self.src, "return {};", operands[0]),
-                    count => {
+                    1 => uwriteln!(self.src, "return {}", operands[0]),
+                    _ => {
                         let results = operands.join(", ");
-                        uwriteln!(
-                            self.src,
-                            "return new {}Tuple{count}<>({results});",
-                            self.gen.gen.qualifier()
-                        )
+                        uwriteln!(self.src, "return ({results})");
                     }
                 }
             }
 
             Instruction::I32Load { offset }
             | Instruction::PointerLoad { offset }
-            | Instruction::LengthLoad { offset } => results.push(format!(
-                "org.teavm.interop.Address.fromInt(({}) + {offset}).getInt()",
-                operands[0]
-            )),
+            | Instruction::LengthLoad { offset } => {
+                results.push(format!("load32(({}) + {offset})", operands[0]))
+            }
 
-            Instruction::I32Load8U { offset } => results.push(format!(
-                "(((int) org.teavm.interop.Address.fromInt(({}) + {offset}).getByte()) & 0xFF)",
-                operands[0]
-            )),
+            Instruction::I32Load8U { offset } => {
+                results.push(format!("load8_u(({}) + {offset})", operands[0]))
+            }
 
-            Instruction::I32Load8S { offset } => results.push(format!(
-                "((int) org.teavm.interop.Address.fromInt(({}) + {offset}).getByte())",
-                operands[0]
-            )),
+            Instruction::I32Load8S { offset } => {
+                results.push(format!("load8(({}) + {offset})", operands[0]))
+            }
 
-            Instruction::I32Load16U { offset } => results.push(format!(
-                "(((int) org.teavm.interop.Address.fromInt(({}) + {offset}).getShort()) & 0xFFFF)",
-                operands[0]
-            )),
+            Instruction::I32Load16U { offset } => {
+                results.push(format!("load16_u(({}) + {offset})", operands[0]))
+            }
 
-            Instruction::I32Load16S { offset } => results.push(format!(
-                "((int) org.teavm.interop.Address.fromInt(({}) + {offset}).getShort())",
-                operands[0]
-            )),
+            Instruction::I32Load16S { offset } => {
+                results.push(format!("load16(({}) + {offset})", operands[0]))
+            }
 
-            Instruction::I64Load { offset } => results.push(format!(
-                "org.teavm.interop.Address.fromInt(({}) + {offset}).getLong()",
-                operands[0]
-            )),
+            Instruction::I64Load { offset } => {
+                results.push(format!("load64(({}) + {offset})", operands[0]))
+            }
 
-            Instruction::F32Load { offset } => results.push(format!(
-                "org.teavm.interop.Address.fromInt(({}) + {offset}).getFloat()",
-                operands[0]
-            )),
+            Instruction::F32Load { offset } => {
+                results.push(format!("loadf32(({}) + {offset}).", operands[0]))
+            }
 
-            Instruction::F64Load { offset } => results.push(format!(
-                "org.teavm.interop.Address.fromInt(({}) + {offset}).getDouble()",
-                operands[0]
-            )),
+            Instruction::F64Load { offset } => {
+                results.push(format!("loadf64(({}) + {offset})", operands[0]))
+            }
 
             Instruction::I32Store { offset }
             | Instruction::PointerStore { offset }
             | Instruction::LengthStore { offset } => uwriteln!(
                 self.src,
-                "org.teavm.interop.Address.fromInt(({}) + {offset}).putInt({});",
+                "store32(({}) + {offset}, {})",
                 operands[1],
                 operands[0]
             ),
 
             Instruction::I32Store8 { offset } => uwriteln!(
                 self.src,
-                "org.teavm.interop.Address.fromInt(({}) + {offset}).putByte((byte) ({}));",
+                "store8(({}) + {offset}, {})",
                 operands[1],
                 operands[0]
             ),
 
             Instruction::I32Store16 { offset } => uwriteln!(
                 self.src,
-                "org.teavm.interop.Address.fromInt(({}) + {offset}).putShort((short) ({}));",
+                "store16(({}) + {offset}, {})",
                 operands[1],
                 operands[0]
             ),
 
             Instruction::I64Store { offset } => uwriteln!(
                 self.src,
-                "org.teavm.interop.Address.fromInt(({}) + {offset}).putLong({});",
+                "store64(({}) + {offset}, {})",
                 operands[1],
                 operands[0]
             ),
 
             Instruction::F32Store { offset } => uwriteln!(
                 self.src,
-                "org.teavm.interop.Address.fromInt(({}) + {offset}).putFloat({});",
+                "storef32(({}) + {offset}, {})",
                 operands[1],
                 operands[0]
             ),
 
             Instruction::F64Store { offset } => uwriteln!(
                 self.src,
-                "org.teavm.interop.Address.fromInt(({}) + {offset}).putDouble({});",
+                "storef64(({}) + {offset}, {})",
                 operands[1],
                 operands[0]
             ),
+            // TODO: see what we can do with align
+            Instruction::Malloc { size, .. } => uwriteln!(self.src, "malloc({})", size),
 
-            Instruction::Malloc { .. } => unimplemented!(),
-
-            Instruction::GuestDeallocate { size, align } => {
-                uwriteln!(
-                    self.src,
-                    "Memory.free(org.teavm.interop.Address.fromInt({}), {size}, {align});",
-                    operands[0]
-                )
+            Instruction::GuestDeallocate { .. } => {
+                uwriteln!(self.src, "free({})", operands[0])
             }
 
-            Instruction::GuestDeallocateString => uwriteln!(
-                self.src,
-                "Memory.free(org.teavm.interop.Address.fromInt({}), {}, 1);",
-                operands[0],
-                operands[1]
-            ),
+            Instruction::GuestDeallocateString => uwriteln!(self.src, "free({})", operands[0]),
 
             Instruction::GuestDeallocateVariant { blocks } => {
                 let cases = self
@@ -1807,9 +1795,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         assert!(results.is_empty());
 
                         format!(
-                            "case {i}: {{
-                                 {body}
-                                 break;
+                            "{i} => {{
+                               {body}
                              }}"
                         )
                     })
@@ -1821,7 +1808,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwrite!(
                     self.src,
                     "
-                    switch ({op}) {{
+                    match ({op}) {{
                         {cases}
                     }}
                     "
@@ -1841,7 +1828,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let length = &operands[1];
 
                 let size = self.gen.gen.sizes.size(element);
-                let align = self.gen.gen.sizes.align(element);
+                // let align = self.gen.gen.sizes.align(element);
 
                 if !body.trim().is_empty() {
                     let index = self.locals.tmp("index");
@@ -1849,18 +1836,15 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     uwrite!(
                         self.src,
                         "
-                        for (int {index} = 0; {index} < ({length}); ++{index}) {{
-                            int {base} = ({address}) + ({index} * {size});
+                        for {index} = 0; {index} < ({length}); {index} = {index} + 1 {{
+                            let {base} = ({address}) + ({index} * {size})
                             {body}
                         }}
                         "
                     );
                 }
 
-                uwriteln!(
-                    self.src,
-                    "Memory.free(org.teavm.interop.Address.fromInt({address}), ({length}) * {size}, {align});"
-                );
+                uwriteln!(self.src, "free({address})");
             }
         }
     }
@@ -1899,7 +1883,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             {
                 uwriteln!(
                     self.src,
-                    "cleanupList.add(new {}Cleanup({address}, {size}, {align}));",
+                    "cleanupList.push({}Cleanup::{{address: {address}, size: {size}, align: {align}}})",
                     self.gen.gen.qualifier()
                 );
             }
