@@ -1,6 +1,11 @@
 use anyhow::Result;
 use heck::{ToLowerCamelCase, ToShoutySnakeCase, ToUpperCamelCase};
-use std::{collections::HashMap, fmt::Write, iter, mem, ops::Deref};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Write,
+    iter, mem,
+    ops::Deref,
+};
 use wit_bindgen_core::{
     abi::{self, AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType},
     uwrite, uwriteln,
@@ -334,6 +339,8 @@ impl WorldGenerator for MoonBit {
 
             let directory = package.replace('.', "/");
             files.push(&format!("{directory}/{name}.mbt"), indent(&body).as_bytes());
+            // Avoid conflict between fragments
+            files.remove(&format!("{directory}/moon.pkg.json"));
             files.push(
                 &format!("{directory}/moon.pkg.json"),
                 "{\"import\": [\"wasi-bindgen/ffi\"]}".as_bytes(),
@@ -392,6 +399,9 @@ impl WorldGenerator for MoonBit {
                     path.iter().nth_back(1).unwrap()
                 )
             })
+            .collect::<HashSet<_>>()
+            .iter()
+            .cloned()
             .collect::<Vec<_>>()
             .join(", ");
         uwrite!(
@@ -426,22 +436,30 @@ struct InterfaceGenerator<'a> {
 }
 
 impl InterfaceGenerator<'_> {
-    fn qualifier(&self, when: bool, ty: &TypeDef) -> String {
+    fn qualifier(&self, ty: &TypeDef) -> String {
         if let TypeOwner::Interface(id) = &ty.owner {
             if let Some(name) = self.gen.import_interface_names.get(id) {
-                if name != self.name {
-                    let path = name.split(".").collect::<Vec<_>>();
-                    return format!("@{}.", path[path.len() - 2]);
+                let name_path = name.split('.').collect::<Vec<_>>();
+                let self_name_path = self.name.split('.').collect::<Vec<_>>();
+                if name_path
+                    .iter()
+                    .copied()
+                    .take(name_path.len() - 1)
+                    .collect::<Vec<_>>()
+                    .join("/")
+                    != self_name_path
+                        .iter()
+                        .copied()
+                        .take(self_name_path.len() - 1)
+                        .collect::<Vec<_>>()
+                        .join("/")
+                {
+                    return format!("@{}.", name_path[name_path.len() - 2]);
                 }
             }
         }
 
-        if when {
-            let path = self.name.split(".").collect::<Vec<_>>();
-            format!("@{}.", path[path.len() - 2])
-        } else {
-            String::new()
-        }
+        String::new()
     }
 
     fn add_interface_fragment(self, direction: Direction) {
@@ -543,7 +561,7 @@ impl InterfaceGenerator<'_> {
             .collect::<Vec<_>>()
             .join(", ");
 
-        let sig = self.sig_string(func, false);
+        let sig = self.sig_string(func);
 
         uwrite!(
             self.src,
@@ -650,7 +668,7 @@ impl InterfaceGenerator<'_> {
         }
 
         if self.gen.opts.generate_stub {
-            let sig = self.sig_string(func, true);
+            let sig = self.sig_string(func);
 
             uwrite!(
                 self.stub,
@@ -695,10 +713,6 @@ impl InterfaceGenerator<'_> {
     }
 
     fn type_name(&mut self, ty: &Type) -> String {
-        self.type_name_with_qualifier(ty, false)
-    }
-
-    fn type_name_with_qualifier(&mut self, ty: &Type, qualifier: bool) -> String {
         match ty {
             Type::Bool => "Bool".into(),
             Type::U8 => "Byte".into(),
@@ -712,9 +726,9 @@ impl InterfaceGenerator<'_> {
             Type::Id(id) => {
                 let ty = &self.resolve.types[*id];
                 match &ty.kind {
-                    TypeDefKind::Type(ty) => self.type_name_with_qualifier(ty, qualifier),
+                    TypeDefKind::Type(ty) => self.type_name(ty),
                     TypeDefKind::List(ty) => {
-                        format!("Array[{}]", self.type_name_with_qualifier(ty, qualifier))
+                        format!("Array[{}]", self.type_name(ty))
                     }
                     TypeDefKind::Tuple(tuple) => {
                         format!(
@@ -722,18 +736,18 @@ impl InterfaceGenerator<'_> {
                             tuple
                                 .types
                                 .iter()
-                                .map(|ty| self.type_name_with_qualifier(ty, qualifier))
+                                .map(|ty| self.type_name(ty))
                                 .collect::<Vec<_>>()
                                 .join(", ")
                         )
                     }
                     TypeDefKind::Option(ty) => {
-                        format!("{}?", self.type_name_with_qualifier(ty, qualifier))
+                        format!("{}?", self.type_name(ty))
                     }
                     TypeDefKind::Result(result) => {
                         let mut name = |ty: &Option<Type>| {
                             ty.as_ref()
-                                .map(|ty| self.type_name_with_qualifier(ty, qualifier))
+                                .map(|ty| self.type_name(ty))
                                 .unwrap_or_else(|| "Unit".into())
                         };
                         let ok = name(&result.ok);
@@ -743,11 +757,7 @@ impl InterfaceGenerator<'_> {
                     }
                     _ => {
                         if let Some(name) = &ty.name {
-                            format!(
-                                "{}{}",
-                                self.qualifier(qualifier, ty),
-                                name.to_upper_camel_case()
-                            )
+                            format!("{}{}", self.qualifier(ty), name.to_upper_camel_case())
                         } else {
                             unreachable!()
                         }
@@ -787,20 +797,18 @@ impl InterfaceGenerator<'_> {
         }
     }
 
-    fn sig_string(&mut self, func: &Function, qualifier: bool) -> String {
+    fn sig_string(&mut self, func: &Function) -> String {
         let name = func.name.to_moonbit_ident();
 
         let result_type = match func.results.len() {
             0 => "Unit".into(),
-            1 => {
-                self.type_name_with_qualifier(func.results.iter_types().next().unwrap(), qualifier)
-            }
+            1 => self.type_name(func.results.iter_types().next().unwrap()),
             _ => {
                 format!(
                     "({})",
                     func.results
                         .iter_types()
-                        .map(|ty| self.type_name_with_qualifier(ty, qualifier))
+                        .map(|ty| self.type_name(ty))
                         .collect::<Vec<_>>()
                         .join(", ")
                 )
@@ -811,7 +819,7 @@ impl InterfaceGenerator<'_> {
             .params
             .iter()
             .map(|(name, ty)| {
-                let ty = self.type_name_with_qualifier(ty, qualifier);
+                let ty = self.type_name(ty);
                 let name = name.to_moonbit_ident();
                 format!("{name} : {ty}")
             })
@@ -1699,7 +1707,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             "({})",
                             func.results
                                 .iter_types()
-                                .map(|ty| self.gen.type_name_with_qualifier(ty, false))
+                                .map(|ty| self.gen.type_name(ty))
                                 .collect::<Vec<_>>()
                                 .join(", ")
                         );
