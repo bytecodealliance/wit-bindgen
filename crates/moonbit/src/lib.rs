@@ -15,7 +15,7 @@ use wit_bindgen_core::{
 // Assumptions:
 // Data: u8 -> Byte, s8 | s16 | u16 | s32 -> Int, u32 -> UInt, s64 -> Int64, u64 -> UInt64, f32 | f64 -> Double, address -> Int
 
-/* FFI:
+const FFI: &str = r#"
 extern "wasm" fn extend16(value : Int) -> Int =
   #|(func (param i32) (result i32) local.get 0 i32.extend16_s)
 
@@ -72,7 +72,7 @@ extern "wasm" fn free(position : Int) =
 
 extern "wasm" fn copy(dest : Int, src : Int, len : Int) =
   #|(func (param i32) (param i32) (param i32) local.get 0 local.get 1 local.get 2 memory.copy)
- */
+"#;
 
 #[derive(Default, Debug, Clone)]
 #[cfg_attr(feature = "clap", derive(clap::Args))]
@@ -101,8 +101,10 @@ pub struct MoonBit {
     opts: Opts,
     name: String,
     needs_cleanup: bool,
-    interface_fragments: HashMap<String, Vec<InterfaceFragment>>,
-    world_fragments: Vec<InterfaceFragment>,
+    import_interface_fragments: HashMap<String, Vec<InterfaceFragment>>,
+    export_interface_fragments: HashMap<String, Vec<InterfaceFragment>>,
+    import_world_fragments: Vec<InterfaceFragment>,
+    export_world_fragments: Vec<InterfaceFragment>,
     sizes: SizeAlign,
     interface_names: HashMap<InterfaceId, String>,
     export: HashMap<String, String>,
@@ -146,7 +148,7 @@ impl WorldGenerator for MoonBit {
             gen.import(&resolve.name_world_key(key), func);
         }
 
-        gen.add_interface_fragment();
+        gen.add_interface_fragment(Direction::Import);
 
         Ok(())
     }
@@ -165,7 +167,7 @@ impl WorldGenerator for MoonBit {
             gen.import("$root", func);
         }
 
-        gen.add_world_fragment();
+        gen.add_world_fragment(Direction::Import);
     }
 
     fn export_interface(
@@ -184,7 +186,7 @@ impl WorldGenerator for MoonBit {
             gen.export(Some(&resolve.name_world_key(key)), func);
         }
 
-        gen.add_interface_fragment();
+        gen.add_interface_fragment(Direction::Export);
         Ok(())
     }
 
@@ -202,7 +204,7 @@ impl WorldGenerator for MoonBit {
             gen.export(None, func);
         }
 
-        gen.add_world_fragment();
+        gen.add_world_fragment(Direction::Export);
         Ok(())
     }
 
@@ -220,7 +222,7 @@ impl WorldGenerator for MoonBit {
             gen.define_type(ty_name, *ty);
         }
 
-        gen.add_world_fragment();
+        gen.add_world_fragment(Direction::Import);
     }
 
     fn finish(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) -> Result<()> {
@@ -231,9 +233,10 @@ impl WorldGenerator for MoonBit {
         let version = env!("CARGO_PKG_VERSION");
         wit_bindgen_core::generated_preamble(&mut src, version);
 
+        // Import world fragments
         src.push_str(
             &self
-                .world_fragments
+                .import_world_fragments
                 .iter()
                 .map(|f| f.src.deref())
                 .collect::<Vec<_>>()
@@ -243,7 +246,7 @@ impl WorldGenerator for MoonBit {
         if self.needs_cleanup {
             src.push_str(
                 "
-                pub struct Cleanup {
+                struct Cleanup {
                     address : Int
                     size : Int
                     align : Int
@@ -254,33 +257,53 @@ impl WorldGenerator for MoonBit {
 
         let directory = package.replace('.', "/");
         files.push(&format!("{directory}/{name}.mbt"), indent(&src).as_bytes());
+        files.push(&format!("{directory}/wasi_ffi.mbt"), FFI.as_bytes());
+        files.push(&format!("{directory}/moon.pkg.json"), "{}".as_bytes());
 
-        let generate_stub =
-            |package: &str, name, fragments: &[InterfaceFragment], files: &mut Files| {
-                let b = fragments
-                    .iter()
-                    .map(|f| f.stub.deref())
-                    .collect::<Vec<_>>()
-                    .join("\n");
+        // Export world fragments
+        src.push_str(
+            &self
+                .export_world_fragments
+                .iter()
+                .map(|f| f.src.deref())
+                .collect::<Vec<_>>()
+                .join("\n"),
+        );
 
-                let mut body = Source::default();
-                wit_bindgen_core::generated_preamble(&mut body, version);
-                uwriteln!(&mut body, "{b}");
-
-                let directory = package.replace('.', "/");
-                files.push(&format!("{directory}/{name}.mbt"), indent(&body).as_bytes());
-            };
-
-        if self.opts.generate_stub {
-            generate_stub(
-                &package,
-                format!("{name}Impl"),
-                &self.world_fragments,
-                files,
+        if self.needs_cleanup {
+            src.push_str(
+                "
+                struct Cleanup {
+                    address : Int
+                    size : Int
+                    align : Int
+                }
+                ",
             );
         }
 
-        for (name, fragments) in &self.interface_fragments {
+        files.push(&format!("{name}.mbt"), indent(&src).as_bytes());
+
+        let generate_stub = |name, fragments: &[InterfaceFragment], files: &mut Files| {
+            let b = fragments
+                .iter()
+                .map(|f| f.stub.deref())
+                .collect::<Vec<_>>()
+                .join("\n");
+
+            let mut body = Source::default();
+            wit_bindgen_core::generated_preamble(&mut body, version);
+            uwriteln!(&mut body, "{b}");
+
+            files.push(&format!("{name}.mbt"), indent(&body).as_bytes());
+        };
+
+        if self.opts.generate_stub {
+            generate_stub(format!("{name}Impl"), &self.export_world_fragments, files);
+        }
+
+        // Import interface fragments
+        for (name, fragments) in &self.import_interface_fragments {
             let (package, name) = split_qualified_name(name);
 
             let b = fragments
@@ -295,15 +318,34 @@ impl WorldGenerator for MoonBit {
 
             let directory = package.replace('.', "/");
             files.push(&format!("{directory}/{name}.mbt"), indent(&body).as_bytes());
+            files.push(&format!("{directory}/wasi_ffi.mbt"), FFI.as_bytes());
+            files.push(&format!("{directory}/moon.pkg.json"), "{}".as_bytes());
+        }
+
+        // Export interface fragments
+        for (name, fragments) in &self.export_interface_fragments {
+            let (package, name) = split_qualified_name(name);
+
+            let b = fragments
+                .iter()
+                .map(|f| f.src.deref())
+                .collect::<Vec<_>>()
+                .join("\n");
+
+            let mut body = Source::default();
+            wit_bindgen_core::generated_preamble(&mut body, version);
+            uwriteln!(&mut body, "{b}");
+
+            files.push(&format!("{name}.mbt"), indent(&body).as_bytes());
 
             if self.opts.generate_stub {
-                generate_stub(&package, format!("{name}Impl"), fragments, files);
+                generate_stub(format!("{name}Impl"), fragments, files);
             }
         }
 
         let mut body = Source::default();
         uwriteln!(&mut body, "{{\"name\": \"wasi-bindgen\"}}");
-        files.push(&format!("moon.mod.json"), indent(&body).as_bytes());
+        files.push(&format!("moon.mod.json"), body.as_bytes());
 
         let mut body = Source::default();
         let exports = self
@@ -324,7 +366,8 @@ impl WorldGenerator for MoonBit {
             }}
             "#
         );
-        files.push(&format!("moon.pkg.json"), indent(&body).as_bytes());
+        files.push(&format!("moon.pkg.json"), body.as_bytes());
+        files.push(&format!("wasi_ffi.mbt"), FFI.as_bytes());
 
         Ok(())
     }
@@ -355,22 +398,46 @@ impl InterfaceGenerator<'_> {
         }
     }
 
-    fn add_interface_fragment(self) {
-        self.gen
-            .interface_fragments
-            .entry(self.name.to_owned())
-            .or_default()
-            .push(InterfaceFragment {
-                src: self.src,
-                stub: self.stub,
-            });
+    fn add_interface_fragment(self, direction: Direction) {
+        match direction {
+            Direction::Import => {
+                self.gen
+                    .import_interface_fragments
+                    .entry(self.name.to_owned())
+                    .or_default()
+                    .push(InterfaceFragment {
+                        src: self.src,
+                        stub: self.stub,
+                    });
+            }
+            Direction::Export => {
+                self.gen
+                    .export_interface_fragments
+                    .entry(self.name.to_owned())
+                    .or_default()
+                    .push(InterfaceFragment {
+                        src: self.src,
+                        stub: self.stub,
+                    });
+            }
+        }
     }
 
-    fn add_world_fragment(self) {
-        self.gen.world_fragments.push(InterfaceFragment {
-            src: self.src,
-            stub: self.stub,
-        });
+    fn add_world_fragment(self, direction: Direction) {
+        match direction {
+            Direction::Import => {
+                self.gen.import_world_fragments.push(InterfaceFragment {
+                    src: self.src,
+                    stub: self.stub,
+                });
+            }
+            Direction::Export => {
+                self.gen.export_world_fragments.push(InterfaceFragment {
+                    src: self.src,
+                    stub: self.stub,
+                });
+            }
+        }
     }
 
     fn import(&mut self, module: &str, func: &Function) {
@@ -1175,12 +1242,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             | Instruction::I64FromS64
             | Instruction::S32FromI32
             | Instruction::S64FromI64
-            | Instruction::CharFromI32
-            | Instruction::I32FromChar
             | Instruction::CoreF32FromF32
             | Instruction::CoreF64FromF64
             | Instruction::F32FromCoreF32
             | Instruction::F64FromCoreF64 => results.push(operands[0].clone()),
+
+            Instruction::CharFromI32 => results.push(format!("Char::from_int({})", operands[0])),
+            Instruction::I32FromChar => results.push(format!("({}).to_int()", operands[0])),
 
             Instruction::I32FromU8 => results.push(format!("({}).to_int()", operands[0])),
             Instruction::U8FromI32 => results.push(format!("({}).to_byte()", operands[0])),
