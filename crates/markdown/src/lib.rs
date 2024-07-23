@@ -43,7 +43,7 @@ impl WorldGenerator for Markdown {
         let world = &resolve.worlds[world];
         uwriteln!(
             self.src,
-            "# <a name=\"{}\">World {}</a>\n",
+            "# <a name=\"{}\"></a>World {}\n",
             world.name.to_snake_case(),
             world.name
         );
