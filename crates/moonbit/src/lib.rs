@@ -100,8 +100,6 @@ struct InterfaceFragment {
 pub struct MoonBit {
     opts: Opts,
     name: String,
-    return_area_size: usize,
-    return_area_align: usize,
     needs_cleanup: bool,
     interface_fragments: HashMap<String, Vec<InterfaceFragment>>,
     world_fragments: Vec<InterfaceFragment>,
@@ -254,13 +252,6 @@ impl WorldGenerator for MoonBit {
             );
         }
 
-        if self.return_area_align > 0 {
-            let size = self.return_area_size;
-            // let align = self.return_area_align;
-
-            uwriteln!(src, "let wasi_RETURN_AREA : Int = malloc({size})",);
-        }
-
         let directory = package.replace('.', "/");
         files.push(&format!("{directory}/{name}.mbt"), indent(&src).as_bytes());
 
@@ -334,7 +325,7 @@ impl WorldGenerator for MoonBit {
             "#
         );
         files.push(&format!("moon.pkg.json"), indent(&body).as_bytes());
-        
+
         Ok(())
     }
 }
@@ -1866,10 +1857,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
         }
     }
 
-    fn return_pointer(&mut self, size: usize, align: usize) -> String {
-        self.gen.gen.return_area_size = self.gen.gen.return_area_size.max(size);
-        self.gen.gen.return_area_align = self.gen.gen.return_area_align.max(align);
-        format!("{}wasi_RETURN_AREA", self.gen.gen.qualifier())
+    fn return_pointer(&mut self, size: usize, _align: usize) -> String {
+        let address = self.locals.tmp("return_area");
+        uwriteln!(self.src, "let {address} = malloc({})", size,);
+        address
     }
 
     fn push_block(&mut self) {
