@@ -17,64 +17,64 @@ use wit_bindgen_core::{
 // Encoding: UTF16
 
 const FFI: &str = r#"
-extern "wasm" fn extend16(value : Int) -> Int =
+pub extern "wasm" fn extend16(value : Int) -> Int =
   #|(func (param i32) (result i32) local.get 0 i32.extend16_s)
 
-extern "wasm" fn extend8(value : Int) -> Int =
+pub extern "wasm" fn extend8(value : Int) -> Int =
   #|(func (param i32) (result i32) local.get 0 i32.extend8_s)
 
-extern "wasm" fn store8(offset : Int, value : Int) =
+pub extern "wasm" fn store8(offset : Int, value : Int) =
   #|(func (param i32) (param i32) local.get 0 local.get 1 i32.store8)
 
-extern "wasm" fn load8_u(offset : Int) -> Int =
+pub extern "wasm" fn load8_u(offset : Int) -> Int =
   #|(func (param i32) (result i32) local.get 0 i32.load8_u)
 
-extern "wasm" fn load8(offset : Int) -> Int =
+pub extern "wasm" fn load8(offset : Int) -> Int =
   #|(func (param i32) (result i32) local.get 0 i32.load8_s)
 
-extern "wasm" fn store16(offset : Int, value : Int) =
+pub extern "wasm" fn store16(offset : Int, value : Int) =
   #|(func (param i32) (param i32) local.get 0 local.get 1 i32.store16)
 
-extern "wasm" fn load16(offset : Int) -> Int =
+pub extern "wasm" fn load16(offset : Int) -> Int =
   #|(func (param i32) (result i32) local.get 0 i32.load16_s)
 
-extern "wasm" fn load16_u(offset : Int) -> Int =
+pub extern "wasm" fn load16_u(offset : Int) -> Int =
   #|(func (param i32) (result i32) local.get 0 i32.load16_u)
 
-extern "wasm" fn store32(offset : Int, value : Int) =
+pub extern "wasm" fn store32(offset : Int, value : Int) =
   #|(func (param i32) (param i32) local.get 0 local.get 1 i32.store)
 
-extern "wasm" fn load32(offset : Int) -> Int =
+pub extern "wasm" fn load32(offset : Int) -> Int =
   #|(func (param i32) (result i32) local.get 0 i32.load)
 
-extern "wasm" fn store64(offset : Int, value : Int64) =
+pub extern "wasm" fn store64(offset : Int, value : Int64) =
   #|(func (param i32) (param i64) local.get 0 local.get 1 i64.store)
 
-extern "wasm" fn load64(offset : Int) -> Int64 =
+pub extern "wasm" fn load64(offset : Int) -> Int64 =
   #|(func (param i32) (result i64) local.get 0 i64.load)
 
-extern "wasm" fn storef32(offset : Int, value : Double) =
+pub extern "wasm" fn storef32(offset : Int, value : Double) =
   #|(func (param i32) (param i64) local.get 0 local.get 1 f32.demote_f64 f32.store)
 
-extern "wasm" fn loadf32(offset : Int) -> Double =
+pub extern "wasm" fn loadf32(offset : Int) -> Double =
   #|(func (param i32) (result f64) local.get 0 f32.load f64.promote_f32)
 
-extern "wasm" fn storef64(offset : Int, value : Double) =
+pub extern "wasm" fn storef64(offset : Int, value : Double) =
   #|(func (param i32) (param f64) local.get 0 local.get 1 f64.store)
 
-extern "wasm" fn loadf64(offset : Int) -> Double =
+pub extern "wasm" fn loadf64(offset : Int) -> Double =
   #|(func (param i32) (result f64) local.get 0 f64.load)
 
-extern "wasm" fn malloc(size : Int) -> Int =
+pub extern "wasm" fn malloc(size : Int) -> Int =
   #|(func (param i32) (result i32) local.get 0 call $rael.malloc)
 
-extern "wasm" fn free(position : Int) =
+pub extern "wasm" fn free(position : Int) =
   #|(func (param i32) local.get 0 call $rael.free)
 
-extern "wasm" fn copy(dest : Int, src : Int, len : Int) =
+pub extern "wasm" fn copy(dest : Int, src : Int, len : Int) =
   #|(func (param i32) (param i32) (param i32) local.get 0 local.get 1 local.get 2 memory.copy)
 
-fn read_utf16(buffer : Int, offset : Int) -> (Char, Int) {
+pub fn read_utf16(buffer : Int, offset : Int) -> (Char, Int) {
   let value = load16_u(buffer + offset)
   if value < 0xD800 || value >= 0xE000 {
     (Char::from_int(value), 2)
@@ -85,7 +85,7 @@ fn read_utf16(buffer : Int, offset : Int) -> (Char, Int) {
   }
 }
 
-fn write_utf16(char : Char, buffer : Int, offset : Int) -> Int {
+pub fn write_utf16(char : Char, buffer : Int, offset : Int) -> Int {
   let code = char.to_int()
   if code < 0x10000 {
     store16(buffer + offset, code & 0xFFFF)
@@ -99,11 +99,11 @@ fn write_utf16(char : Char, buffer : Int, offset : Int) -> Int {
   }
 }
 
-extern "wasm" fn str2ptr(str: String) -> Int =
+pub extern "wasm" fn str2ptr(str: String) -> Int =
   #|(func (param i32) (result i32) local.get 0 call $rael.decref local.get 0 i32.const 8 i32.add)
 
-trait Any {}
-struct Cleanup {
+pub trait Any {}
+pub struct Cleanup {
     address : Int
     size : Int
     align : Int
@@ -142,15 +142,12 @@ pub struct MoonBit {
     import_world_fragments: Vec<InterfaceFragment>,
     export_world_fragments: Vec<InterfaceFragment>,
     sizes: SizeAlign,
-    interface_names: HashMap<InterfaceId, String>,
+    import_interface_names: HashMap<InterfaceId, String>,
+    export_interface_names: HashMap<InterfaceId, String>,
     export: HashMap<String, String>,
 }
 
 impl MoonBit {
-    fn qualifier(&self) -> String {
-        format!("{}.", self.name)
-    }
-
     fn interface<'a>(&'a mut self, resolve: &'a Resolve, name: &'a str) -> InterfaceGenerator<'a> {
         InterfaceGenerator {
             src: String::new(),
@@ -176,7 +173,7 @@ impl WorldGenerator for MoonBit {
         _files: &mut Files,
     ) -> Result<()> {
         let name = interface_name(resolve, key, Direction::Import);
-        self.interface_names.insert(id, name.clone());
+        self.import_interface_names.insert(id, name.clone());
         let mut gen = self.interface(resolve, &name);
         gen.types(id);
 
@@ -214,7 +211,7 @@ impl WorldGenerator for MoonBit {
         _files: &mut Files,
     ) -> Result<()> {
         let name = interface_name(resolve, key, Direction::Export);
-        self.interface_names.insert(id, name.clone());
+        self.export_interface_names.insert(id, name.clone());
         let mut gen = self.interface(resolve, &name);
         gen.types(id);
 
@@ -285,7 +282,6 @@ impl WorldGenerator for MoonBit {
 
         let directory = package.replace('.', "/");
         files.push(&format!("{directory}/{name}.mbt"), indent(&src).as_bytes());
-        files.push(&format!("{directory}/wasi_ffi.mbt"), FFI.as_bytes());
         files.push(&format!("{directory}/moon.pkg.json"), "{}".as_bytes());
 
         // Export world fragments
@@ -338,8 +334,10 @@ impl WorldGenerator for MoonBit {
 
             let directory = package.replace('.', "/");
             files.push(&format!("{directory}/{name}.mbt"), indent(&body).as_bytes());
-            files.push(&format!("{directory}/wasi_ffi.mbt"), FFI.as_bytes());
-            files.push(&format!("{directory}/moon.pkg.json"), "{}".as_bytes());
+            files.push(
+                &format!("{directory}/moon.pkg.json"),
+                "{\"import\": [\"wasi-bindgen/ffi\"]}".as_bytes(),
+            );
         }
 
         // Export interface fragments
@@ -363,6 +361,11 @@ impl WorldGenerator for MoonBit {
             }
         }
 
+        // Export project files
+        // ffi utils
+        files.push(&format!("ffi/ffi.mbt"), FFI.as_bytes());
+        files.push(&format!("ffi/moon.pkg.json"), "{}".as_bytes());
+
         let mut body = Source::default();
         uwriteln!(&mut body, "{{\"name\": \"wasi-bindgen\"}}");
         files.push(&format!("moon.mod.json"), body.as_bytes());
@@ -374,20 +377,41 @@ impl WorldGenerator for MoonBit {
             .map(|(k, v)| format!("\"{k}:{v}\""))
             .collect::<Vec<_>>()
             .join(", ");
+        let imports = self
+            .import_interface_names
+            .values()
+            .map(|v| {
+                let path = v.split(".").collect::<Vec<_>>();
+                format!(
+                    "{{\"path\" : \"wasi-bindgen/{}\", \"alias\" : \"{}\" }}",
+                    path.iter()
+                        .copied()
+                        .take(path.len() - 1)
+                        .collect::<Vec<_>>()
+                        .join("/"),
+                    path.iter().nth_back(1).unwrap()
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
         uwrite!(
             &mut body,
             r#"
             {{
+                "import": [
+                    {imports}
+                    {}"wasi-bindgen/ffi"
+                ],
                 "link": {{
                     "wasm": {{
                         "export": [{exports}]
                     }}
                 }}
             }}
-            "#
+            "#,
+            if imports.is_empty() { "" } else { "," },
         );
         files.push(&format!("moon.pkg.json"), body.as_bytes());
-        files.push(&format!("wasi_ffi.mbt"), FFI.as_bytes());
 
         Ok(())
     }
@@ -404,15 +428,17 @@ struct InterfaceGenerator<'a> {
 impl InterfaceGenerator<'_> {
     fn qualifier(&self, when: bool, ty: &TypeDef) -> String {
         if let TypeOwner::Interface(id) = &ty.owner {
-            if let Some(name) = self.gen.interface_names.get(id) {
+            if let Some(name) = self.gen.import_interface_names.get(id) {
                 if name != self.name {
-                    return format!("{name}.");
+                    let path = name.split(".").collect::<Vec<_>>();
+                    return format!("@{}.", path[path.len() - 2]);
                 }
             }
         }
 
         if when {
-            format!("{}.", self.name)
+            let path = self.name.split(".").collect::<Vec<_>>();
+            format!("@{}.", path[path.len() - 2])
         } else {
             String::new()
         }
@@ -487,7 +513,9 @@ impl InterfaceGenerator<'_> {
         let cleanup_list = if bindgen.needs_cleanup_list {
             self.gen.needs_cleanup = true;
 
-            "let cleanupList : Array[Cleanup] = []\nlet ignoreList : Array[Any] = []".into()
+            r#"let cleanupList : Array[@ffi.Cleanup] = []
+               let ignoreList : Array[@ffi.Any] = []"#
+                .into()
         } else {
             String::new()
         };
@@ -686,7 +714,7 @@ impl InterfaceGenerator<'_> {
                 match &ty.kind {
                     TypeDefKind::Type(ty) => self.type_name_with_qualifier(ty, qualifier),
                     TypeDefKind::List(ty) => {
-                        format!("Array[{}]", self.type_name_boxed(ty, qualifier))
+                        format!("Array[{}]", self.type_name_with_qualifier(ty, qualifier))
                     }
                     TypeDefKind::Tuple(tuple) => {
                         format!(
@@ -694,18 +722,18 @@ impl InterfaceGenerator<'_> {
                             tuple
                                 .types
                                 .iter()
-                                .map(|ty| self.type_name_boxed(ty, qualifier))
+                                .map(|ty| self.type_name_with_qualifier(ty, qualifier))
                                 .collect::<Vec<_>>()
                                 .join(", ")
                         )
                     }
                     TypeDefKind::Option(ty) => {
-                        format!("{}?", self.type_name_boxed(ty, qualifier))
+                        format!("{}?", self.type_name_with_qualifier(ty, qualifier))
                     }
                     TypeDefKind::Result(result) => {
                         let mut name = |ty: &Option<Type>| {
                             ty.as_ref()
-                                .map(|ty| self.type_name_boxed(ty, qualifier))
+                                .map(|ty| self.type_name_with_qualifier(ty, qualifier))
                                 .unwrap_or_else(|| "Unit".into())
                         };
                         let ok = name(&result.ok);
@@ -726,27 +754,6 @@ impl InterfaceGenerator<'_> {
                     }
                 }
             }
-        }
-    }
-
-    fn type_name_boxed(&mut self, ty: &Type, qualifier: bool) -> String {
-        match ty {
-            Type::Bool => "Bool".into(),
-            Type::U8 => "Byte".into(),
-            Type::S8 | Type::U16 | Type::S16 | Type::S32 => "Int".into(),
-            Type::U32 => "UInt".into(),
-            Type::Char => "Char".into(),
-            Type::U64 => "UInt64".into(),
-            Type::S64 => "Int64".into(),
-            Type::F32 | Type::F64 => "Double".into(),
-            Type::Id(id) => {
-                let def = &self.resolve.types[*id];
-                match &def.kind {
-                    TypeDefKind::Type(ty) => self.type_name_boxed(ty, qualifier),
-                    _ => self.type_name_with_qualifier(ty, qualifier),
-                }
-            }
-            _ => self.type_name_with_qualifier(ty, qualifier),
         }
     }
 
@@ -793,7 +800,7 @@ impl InterfaceGenerator<'_> {
                     "({})",
                     func.results
                         .iter_types()
-                        .map(|ty| self.type_name_boxed(ty, qualifier))
+                        .map(|ty| self.type_name_with_qualifier(ty, qualifier))
                         .collect::<Vec<_>>()
                         .join(", ")
                 )
@@ -1272,13 +1279,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::I32FromU8 => results.push(format!("({}).to_int()", operands[0])),
             Instruction::U8FromI32 => results.push(format!("({}).to_byte()", operands[0])),
 
-            Instruction::I32FromS8 => results.push(format!("extend8({})", operands[0])),
+            Instruction::I32FromS8 => results.push(format!("@ffi.extend8({})", operands[0])),
             Instruction::S8FromI32 => results.push(format!("({}.land(0xFF))", operands[0])),
 
             Instruction::U16FromI32 | Instruction::S16FromI32 => {
                 results.push(format!("({}.land(0xFFFF))", operands[0]))
             }
-            Instruction::I32FromS16 => results.push(format!("extend16({})", operands[0])),
+            Instruction::I32FromS16 => results.push(format!("@ffi.extend16({})", operands[0])),
 
             Instruction::U32FromI32 => results.push(format!("({}).to_uint()", operands[0])),
             Instruction::I32FromU32 => results.push(format!("({}).to_int()", operands[0])),
@@ -1525,7 +1532,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let op = &operands[0];
 
                 if realloc.is_none() {
-                    results.push(format!("str2ptr({op})"));
+                    results.push(format!("@ffi.str2ptr({op})"));
                     self.cleanup.push(Cleanup::Object(op.clone()));
                 } else {
                     let address = self.locals.tmp("address");
@@ -1535,9 +1542,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     uwrite!(
                         self.src,
                         "
-                        let {address} = malloc({op}.length() * 6)
+                        let {address} = @ffi.malloc({op}.length() * 6)
                         let mut {offset} = 0
-                        {op}.iter().each(fn({ch}) {{ {offset} += write_utf16({ch}, {address}, {offset}) }})
+                        {op}.iter().each(fn({ch}) {{ {offset} += @ffi.write_utf16({ch}, {address}, {offset}) }})
                         "
                     );
 
@@ -1561,7 +1568,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     let {addr} = {address}
                     let {len} = {length}
                     for {index} = {addr}; {index} < {addr} + {len}; {index} = {index} + 1 {{
-                        {buffer}.write_byte(load8_u({index}).to_byte())
+                        {buffer}.write_byte(@ffi.load8_u({index}).to_byte())
                     }}
                     "
                 );
@@ -1588,7 +1595,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwrite!(
                     self.src,
                     "
-                    let {address} = malloc(({op}).length() * {size});
+                    let {address} = @ffi.malloc(({op}).length() * {size});
                     for {index} = 0; {index} < ({op}).length(); {index} = {index} + 1 {{
                         let {block_element} : {ty} = ({op})[({index})]
                         let {base} = {address} + ({index} * {size});
@@ -1638,7 +1645,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         {body}
                         {array}.push({result})
                     }}
-                    free({address})
+                    @ffi.free({address})
                     "
                 );
 
@@ -1687,13 +1694,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         results.push(result);
                         (assignment, String::new())
                     }
-                    count => {
+                    _ => {
                         let ty = format!(
-                            "{}Tuple{count}<{}>",
-                            self.gen.gen.qualifier(),
+                            "({})",
                             func.results
                                 .iter_types()
-                                .map(|ty| self.gen.type_name_boxed(ty, false))
+                                .map(|ty| self.gen.type_name_with_qualifier(ty, false))
                                 .collect::<Vec<_>>()
                                 .join(", ")
                         );
@@ -1720,7 +1726,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     }
                 };
 
-                let module = self.gen.name;
                 let name = func.name.to_moonbit_ident();
 
                 let args = operands.join(", ");
@@ -1728,7 +1733,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwrite!(
                     self.src,
                     "
-                    {assignment}{module}Impl.{name}({args});
+                    {assignment}{name}({args});
                     {destructure}
                     "
                 );
@@ -1741,7 +1746,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             address,
                             size: _,
                             align: _,
-                        } => uwriteln!(self.src, "free({address})"),
+                        } => uwriteln!(self.src, "@ffi.free({address})"),
                         Cleanup::Object(obj) => uwriteln!(self.src, "ignore({obj})"),
                     }
                 }
@@ -1751,7 +1756,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         self.src,
                         "
                         cleanupList.each(fn(cleanup) {{
-                            free(cleanup.address);
+                            @ffi.free(cleanup.address);
                         }})
                         ignore(ignoreList)
                         "
@@ -1771,88 +1776,88 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::I32Load { offset }
             | Instruction::PointerLoad { offset }
             | Instruction::LengthLoad { offset } => {
-                results.push(format!("load32(({}) + {offset})", operands[0]))
+                results.push(format!("@ffi.load32(({}) + {offset})", operands[0]))
             }
 
             Instruction::I32Load8U { offset } => {
-                results.push(format!("load8_u(({}) + {offset})", operands[0]))
+                results.push(format!("@ffi.load8_u(({}) + {offset})", operands[0]))
             }
 
             Instruction::I32Load8S { offset } => {
-                results.push(format!("load8(({}) + {offset})", operands[0]))
+                results.push(format!("@ffi.load8(({}) + {offset})", operands[0]))
             }
 
             Instruction::I32Load16U { offset } => {
-                results.push(format!("load16_u(({}) + {offset})", operands[0]))
+                results.push(format!("@ffi.load16_u(({}) + {offset})", operands[0]))
             }
 
             Instruction::I32Load16S { offset } => {
-                results.push(format!("load16(({}) + {offset})", operands[0]))
+                results.push(format!("@ffi.load16(({}) + {offset})", operands[0]))
             }
 
             Instruction::I64Load { offset } => {
-                results.push(format!("load64(({}) + {offset})", operands[0]))
+                results.push(format!("@ffi.load64(({}) + {offset})", operands[0]))
             }
 
             Instruction::F32Load { offset } => {
-                results.push(format!("loadf32(({}) + {offset})", operands[0]))
+                results.push(format!("@ffi.loadf32(({}) + {offset})", operands[0]))
             }
 
             Instruction::F64Load { offset } => {
-                results.push(format!("loadf64(({}) + {offset})", operands[0]))
+                results.push(format!("@ffi.loadf64(({}) + {offset})", operands[0]))
             }
 
             Instruction::I32Store { offset }
             | Instruction::PointerStore { offset }
             | Instruction::LengthStore { offset } => uwriteln!(
                 self.src,
-                "store32(({}) + {offset}, {})",
+                "@ffi.store32(({}) + {offset}, {})",
                 operands[1],
                 operands[0]
             ),
 
             Instruction::I32Store8 { offset } => uwriteln!(
                 self.src,
-                "store8(({}) + {offset}, {})",
+                "@ffi.store8(({}) + {offset}, {})",
                 operands[1],
                 operands[0]
             ),
 
             Instruction::I32Store16 { offset } => uwriteln!(
                 self.src,
-                "store16(({}) + {offset}, {})",
+                "@ffi.store16(({}) + {offset}, {})",
                 operands[1],
                 operands[0]
             ),
 
             Instruction::I64Store { offset } => uwriteln!(
                 self.src,
-                "store64(({}) + {offset}, {})",
+                "@ffi.store64(({}) + {offset}, {})",
                 operands[1],
                 operands[0]
             ),
 
             Instruction::F32Store { offset } => uwriteln!(
                 self.src,
-                "storef32(({}) + {offset}, {})",
+                "@ffi.storef32(({}) + {offset}, {})",
                 operands[1],
                 operands[0]
             ),
 
             Instruction::F64Store { offset } => uwriteln!(
                 self.src,
-                "storef64(({}) + {offset}, {})",
+                "@ffi.storef64(({}) + {offset}, {})",
                 operands[1],
                 operands[0]
             ),
             // TODO: see what we can do with align
-            Instruction::Malloc { size, .. } => uwriteln!(self.src, "malloc({})", size),
+            Instruction::Malloc { size, .. } => uwriteln!(self.src, "@ffi.malloc({})", size),
 
             Instruction::GuestDeallocate { .. } => {
-                uwriteln!(self.src, "free({})", operands[0])
+                uwriteln!(self.src, "@ffi.free({})", operands[0])
             }
 
-            Instruction::GuestDeallocateString => uwriteln!(self.src, "free({})", operands[0]),
+            Instruction::GuestDeallocateString => uwriteln!(self.src, "@ffi.free({})", operands[0]),
 
             Instruction::GuestDeallocateVariant { blocks } => {
                 let cases = self
@@ -1915,14 +1920,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     );
                 }
 
-                uwriteln!(self.src, "free({address})");
+                uwriteln!(self.src, "@ffi.free({address})");
             }
         }
     }
 
     fn return_pointer(&mut self, size: usize, _align: usize) -> String {
         let address = self.locals.tmp("return_area");
-        uwriteln!(self.src, "let {address} = malloc({})", size,);
+        uwriteln!(self.src, "let {address} = @ffi.malloc({})", size,);
         address
     }
 
