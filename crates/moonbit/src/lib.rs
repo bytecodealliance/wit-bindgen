@@ -14,6 +14,7 @@ use wit_bindgen_core::{
 
 // Assumptions:
 // Data: u8 -> Byte, s8 | s16 | u16 | s32 -> Int, u32 -> UInt, s64 -> Int64, u64 -> UInt64, f32 | f64 -> Double, address -> Int
+// Encoding: UTF16
 
 const FFI: &str = r#"
 extern "wasm" fn extend16(value : Int) -> Int =
@@ -72,6 +73,41 @@ extern "wasm" fn free(position : Int) =
 
 extern "wasm" fn copy(dest : Int, src : Int, len : Int) =
   #|(func (param i32) (param i32) (param i32) local.get 0 local.get 1 local.get 2 memory.copy)
+
+fn read_utf16(buffer : Int, offset : Int) -> (Char, Int) {
+  let value = load16_u(buffer + offset)
+  if value < 0xD800 || value >= 0xE000 {
+    (Char::from_int(value), 2)
+  } else {
+    let hi = value & 0x3FF
+    let lo = load16_u(buffer + offset + 2) & 0x3FF
+    (Char::from_int(0x10000 | (hi << 10) | lo), 4)
+  }
+}
+
+fn write_utf16(char : Char, buffer : Int, offset : Int) -> Int {
+  let code = char.to_int()
+  if code < 0x10000 {
+    store16(buffer + offset, code & 0xFFFF)
+    2
+  } else if code < 0x110000 {
+    store16(buffer + offset, ((code - 0x10000) >> 10) + 0xD800)
+    store16(buffer + offset + 2, ((code - 0x10000) & 0x3FF) + 0xDC00)
+    4
+  } else {
+    panic()
+  }
+}
+
+extern "wasm" fn str2ptr(str: String) -> Int =
+  #|(func (param i32) (result i32) local.get 0 call $rael.decref local.get 0 i32.const 8 i32.add)
+
+trait Any {}
+struct Cleanup {
+    address : Int
+    size : Int
+    align : Int
+}
 "#;
 
 #[derive(Default, Debug, Clone)]
@@ -244,15 +280,7 @@ impl WorldGenerator for MoonBit {
         );
 
         if self.needs_cleanup {
-            src.push_str(
-                "
-                struct Cleanup {
-                    address : Int
-                    size : Int
-                    align : Int
-                }
-                ",
-            );
+            // TODO: generate on demand
         }
 
         let directory = package.replace('.', "/");
@@ -271,15 +299,7 @@ impl WorldGenerator for MoonBit {
         );
 
         if self.needs_cleanup {
-            src.push_str(
-                "
-                struct Cleanup {
-                    address : Int
-                    size : Int
-                    align : Int
-                }
-                ",
-            );
+            // TODO: generate on demand
         }
 
         files.push(&format!("{name}.mbt"), indent(&src).as_bytes());
@@ -324,7 +344,7 @@ impl WorldGenerator for MoonBit {
 
         // Export interface fragments
         for (name, fragments) in &self.export_interface_fragments {
-            let (package, name) = split_qualified_name(name);
+            let (_package, name) = split_qualified_name(name);
 
             let b = fragments
                 .iter()
@@ -467,10 +487,7 @@ impl InterfaceGenerator<'_> {
         let cleanup_list = if bindgen.needs_cleanup_list {
             self.gen.needs_cleanup = true;
 
-            format!(
-                "let cleanupList : Array[{}Cleanup] = []\n",
-                self.gen.qualifier()
-            )
+            "let cleanupList : Array[Cleanup] = []\nlet ignoreList : Array[Any] = []".into()
         } else {
             String::new()
         };
@@ -1008,11 +1025,13 @@ struct Block {
     element: String,
     base: String,
 }
-
-struct Cleanup {
-    address: String,
-    size: String,
-    align: usize,
+enum Cleanup {
+    Memory {
+        address: String,
+        size: String,
+        align: usize,
+    },
+    Object(String),
 }
 
 struct BlockStorage {
@@ -1489,97 +1508,65 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 operands[0]
             )),
 
-            Instruction::ListCanonLower { element, realloc } => {
-                let op = &operands[0];
-                let (size, ty) = list_element_info(element);
-
-                // Note that we can only reliably use `Address.ofData` for elements with alignment <= 4 because as
-                // of this writing TeaVM does not guarantee 64 bit items are aligned on 8 byte boundaries.
-                if realloc.is_none() && size <= 4 {
-                    results.push(format!("org.teavm.interop.Address.ofData({op}).toInt()"));
-                } else {
-                    let address = self.locals.tmp("address");
-                    let ty = ty.to_upper_camel_case();
-
-                    uwrite!(
-                        self.src,
-                        "
-                        org.teavm.interop.Address {address} = Memory.malloc({size} * ({op}).length, {size});
-                        Memory.put{ty}s({address}, {op}, 0, ({op}).length);
-                        "
-                    );
-
-                    if realloc.is_none() {
-                        self.cleanup.push(Cleanup {
-                            address: format!("{address}.toInt()"),
-                            size: format!("{size} * ({op}).length"),
-                            align: size,
-                        });
-                    }
-
-                    results.push(format!("{address}.toInt()"));
-                }
-                results.push(format!("({op}).length"));
+            Instruction::ListCanonLower {
+                element,
+                realloc: _,
+            } => {
+                let (_size, _ty) = list_element_info(element);
+                unimplemented!()
             }
 
             Instruction::ListCanonLift { element, .. } => {
-                let (_, ty) = list_element_info(element);
-                let ty_upper = ty.to_upper_camel_case();
-                let array = self.locals.tmp("array");
-                let address = &operands[0];
-                let length = &operands[1];
-
-                uwrite!(
-                    self.src,
-                    "
-                    {ty}[] {array} = new {ty}[{length}];
-                    Memory.get{ty_upper}s(org.teavm.interop.Address.fromInt({address}), {array}, 0, ({array}).length);
-                    "
-                );
-
-                results.push(array);
+                let (_, _ty) = list_element_info(element);
+                unimplemented!()
             }
 
             Instruction::StringLower { realloc } => {
                 let op = &operands[0];
-                let bytes = self.locals.tmp("bytes");
-                uwriteln!(
-                    self.src,
-                    "byte[] {bytes} = ({op}).getBytes(StandardCharsets.UTF_8);"
-                );
 
                 if realloc.is_none() {
-                    results.push(format!("org.teavm.interop.Address.ofData({bytes}).toInt()"));
+                    results.push(format!("str2ptr({op})"));
+                    self.cleanup.push(Cleanup::Object(op.clone()));
                 } else {
                     let address = self.locals.tmp("address");
+                    let offset = self.locals.tmp("offset");
+                    let ch = self.locals.tmp("ch");
 
                     uwrite!(
                         self.src,
                         "
-                        org.teavm.interop.Address {address} = Memory.malloc({bytes}.length, 1);
-                        Memory.putBytes({address}, {bytes}, 0, {bytes}.length);
+                        let {address} = malloc({op}.length() * 6)
+                        let mut {offset} = 0
+                        {op}.iter().each(fn({ch}) {{ {offset} += write_utf16({ch}, {address}, {offset}) }})
                         "
                     );
 
-                    results.push(format!("{address}.toInt()"));
+                    results.push(format!("{address}"));
                 }
-                results.push(format!("{bytes}.length"));
+                results.push(format!("{op}.length()"));
             }
 
             Instruction::StringLift { .. } => {
-                let bytes = self.locals.tmp("bytes");
+                let buffer = self.locals.tmp("bytes");
+                let index = self.locals.tmp("i");
+                let addr = self.locals.tmp("addr");
+                let len = self.locals.tmp("length");
                 let address = &operands[0];
                 let length = &operands[1];
 
                 uwrite!(
                     self.src,
                     "
-                    byte[] {bytes} = new byte[{length}];
-                    Memory.getBytes(org.teavm.interop.Address.fromInt({address}), {bytes}, 0, {length});
+                    let {buffer} : Buffer = Buffer::new()
+                    let {addr} = {address}
+                    let {len} = {length}
+                    for {index} = {addr}; {index} < {addr} + {len}; {index} = {index} + 1 {{
+                        {buffer}.write_byte(load8_u({index}).to_byte())
+                    }}
                     "
                 );
 
-                results.push(format!("new String({bytes}, StandardCharsets.UTF_8)"));
+                results.push(format!("{buffer}.to_string()"));
             }
 
             Instruction::ListLower { element, realloc } => {
@@ -1611,7 +1598,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 );
 
                 if realloc.is_none() {
-                    self.cleanup.push(Cleanup {
+                    self.cleanup.push(Cleanup::Memory {
                         address: address.clone(),
                         size: format!("({op}).length() * {size}"),
                         align,
@@ -1748,8 +1735,15 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::Return { amt, .. } => {
-                for Cleanup { address, .. } in &self.cleanup {
-                    uwriteln!(self.src, "free({address})");
+                for clean in &self.cleanup {
+                    match clean {
+                        Cleanup::Memory {
+                            address,
+                            size: _,
+                            align: _,
+                        } => uwriteln!(self.src, "free({address})"),
+                        Cleanup::Object(obj) => uwriteln!(self.src, "ignore({obj})"),
+                    }
                 }
 
                 if self.needs_cleanup_list {
@@ -1759,6 +1753,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         cleanupList.each(fn(cleanup) {{
                             free(cleanup.address);
                         }})
+                        ignore(ignoreList)
                         "
                     );
                 }
@@ -1951,17 +1946,18 @@ impl Bindgen for FunctionBindgen<'_, '_> {
         if !self.cleanup.is_empty() {
             self.needs_cleanup_list = true;
 
-            for Cleanup {
-                address,
-                size,
-                align,
-            } in &self.cleanup
-            {
-                uwriteln!(
-                    self.src,
-                    "cleanupList.push({}Cleanup::{{address: {address}, size: {size}, align: {align}}})",
-                    self.gen.gen.qualifier()
-                );
+            for cleanup in &self.cleanup {
+                match cleanup {
+                    Cleanup::Memory {
+                        address,
+                        size,
+                        align,
+                    } => uwriteln!(
+                        self.src,
+                        "cleanupList.push({{address: {address}, size: {size}, align: {align}}})",
+                    ),
+                    Cleanup::Object(obj) => uwriteln!(self.src, "ignoreList.push({obj})",),
+                }
             }
         }
 
@@ -2091,11 +2087,13 @@ fn indent(code: &str) -> String {
     indented
 }
 
-fn is_primitive(ty: &Type) -> bool {
-    matches!(
-        ty,
-        Type::U8 | Type::U32 | Type::S32 | Type::U64 | Type::S64 | Type::F64 | Type::Char
-    )
+fn is_primitive(_ty: &Type) -> bool {
+    // TODO: treat primitives
+    false
+    // matches!(
+    //     ty,
+    //     Type::U8 | Type::U32 | Type::S32 | Type::U64 | Type::S64 | Type::F64 | Type::Char
+    // )
 }
 
 fn world_name(resolve: &Resolve, world: WorldId) -> String {
