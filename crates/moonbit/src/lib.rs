@@ -10,9 +10,9 @@ use wit_bindgen_core::{
     abi::{self, AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType},
     uwrite, uwriteln,
     wit_parser::{
-        Docs, Enum, Flags, FlagsRepr, Function, FunctionKind, Int, InterfaceId, Record, Resolve,
-        Result_, SizeAlign, Tuple, Type, TypeDef, TypeDefKind, TypeId, TypeOwner, Variant, WorldId,
-        WorldKey,
+        Docs, Enum, Flags, FlagsRepr, Function, FunctionKind, Handle, Int, InterfaceId, Record,
+        Resolve, Result_, SizeAlign, Tuple, Type, TypeDef, TypeDefKind, TypeId, TypeOwner, Variant,
+        WorldId, WorldKey,
     },
     Direction, Files, InterfaceGenerator as _, Ns, Source, WorldGenerator,
 };
@@ -505,10 +505,6 @@ impl InterfaceGenerator<'_> {
     }
 
     fn import(&mut self, module: &str, func: &Function) {
-        if func.kind != FunctionKind::Freestanding {
-            todo!("resources");
-        }
-
         let mut bindgen = FunctionBindgen::new(
             self,
             &func.name,
@@ -700,6 +696,18 @@ impl InterfaceGenerator<'_> {
                     TypeDefKind::Tuple(_) => panic!(),
                     TypeDefKind::Option(_) => "Option".into(),
                     TypeDefKind::Result(_) => "Result".into(),
+                    TypeDefKind::Handle(handle) => {
+                        let ty = match handle {
+                            Handle::Own(ty) => ty,
+                            Handle::Borrow(ty) => ty,
+                        };
+                        let ty = &self.resolve.types[*ty];
+                        if let Some(name) = &ty.name {
+                            name.to_upper_camel_case()
+                        } else {
+                            unreachable!()
+                        }
+                    }
                     _ => {
                         if let Some(name) = &ty.name {
                             name.to_upper_camel_case()
@@ -755,6 +763,18 @@ impl InterfaceGenerator<'_> {
 
                         format!("Result[{ok}, {err}]")
                     }
+                    TypeDefKind::Handle(handle) => {
+                        let ty = match handle {
+                            Handle::Own(ty) => ty,
+                            Handle::Borrow(ty) => ty,
+                        };
+                        let ty = &self.resolve.types[*ty];
+                        if let Some(name) = &ty.name {
+                            format!("{}{}", self.qualifier(ty), name.to_upper_camel_case())
+                        } else {
+                            unreachable!()
+                        }
+                    }
                     _ => {
                         if let Some(name) = &ty.name {
                             format!("{}{}", self.qualifier(ty), name.to_upper_camel_case())
@@ -798,7 +818,19 @@ impl InterfaceGenerator<'_> {
     }
 
     fn sig_string(&mut self, func: &Function) -> String {
-        let name = func.name.to_moonbit_ident();
+        let name = match func.kind {
+            FunctionKind::Freestanding => func.name.to_moonbit_ident(),
+            FunctionKind::Constructor(_) => {
+                func.name.replace("[constructor]", "").to_moonbit_ident()
+            }
+            _ => func.name.split(".").last().unwrap().to_moonbit_ident(),
+        };
+        let type_name = match func.kind {
+            FunctionKind::Freestanding => "".into(),
+            FunctionKind::Method(ty) | FunctionKind::Constructor(ty) | FunctionKind::Static(ty) => {
+                format!("{}::", self.type_name(&Type::Id(ty)))
+            }
+        };
 
         let result_type = match func.results.len() {
             0 => "Unit".into(),
@@ -826,7 +858,7 @@ impl InterfaceGenerator<'_> {
             .collect::<Vec<_>>()
             .join(", ");
 
-        format!("pub fn {name}({params}) -> {result_type}")
+        format!("pub fn {type_name}{name}({params}) -> {result_type}")
     }
 }
 
@@ -866,7 +898,13 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     fn type_resource(&mut self, _id: TypeId, name: &str, docs: &Docs) {
         self.print_docs(docs);
 
-        uwrite!(self.src, "pub type {name} UInt")
+        let name = name.to_upper_camel_case();
+        uwrite!(
+            self.src,
+            "
+            pub type {name} Int
+            "
+        )
     }
 
     fn type_flags(&mut self, _id: TypeId, name: &str, flags: &Flags, docs: &Docs) {
@@ -1042,7 +1080,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
     fn type_alias(&mut self, id: TypeId, _name: &str, _ty: &Type, _docs: &Docs) {
         // TODO: Implement correct type aliasing
-        self.type_name(&Type::Id(id));
+        // self.type_name(&Type::Id(id));
     }
 
     fn type_list(&mut self, _id: TypeId, _name: &str, _ty: &Type, _docs: &Docs) {
@@ -1375,7 +1413,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
             },
 
-            Instruction::HandleLower { .. } | Instruction::HandleLift { .. } => todo!(),
+            Instruction::HandleLower { .. } => {
+                let op = &operands[0];
+                results.push(format!("{op}.0"));
+            }
+            Instruction::HandleLift { ty, .. } => {
+                let op = &operands[0];
+                results.push(format!("{}({})", self.gen.type_name(&Type::Id(*ty)), op));
+            }
 
             Instruction::RecordLower { record, .. } => {
                 let op = &operands[0];
@@ -1783,7 +1828,25 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     }
                 };
 
-                let name = func.name.to_moonbit_ident();
+                let name = match func.kind {
+                    FunctionKind::Freestanding => func.name.to_moonbit_ident(),
+                    FunctionKind::Constructor(ty) => {
+                        let name = self.gen.constructor_name(&Type::Id(ty));
+                        format!(
+                            "{}::{}",
+                            name,
+                            func.name.replace("[constructor]", "").to_moonbit_ident()
+                        )
+                    }
+                    FunctionKind::Method(ty) | FunctionKind::Static(ty) => {
+                        let name = self.gen.constructor_name(&Type::Id(ty));
+                        format!(
+                            "{}::{}",
+                            name,
+                            func.name.split(".").last().unwrap().to_moonbit_ident()
+                        )
+                    }
+                };
 
                 let args = operands.join(", ");
 
@@ -2221,9 +2284,9 @@ impl ToMoonBitIdent for str {
     fn to_moonbit_ident(&self) -> String {
         // Escape MoonBit keywords
         match self {
-            "continue" | "for" | "match" | "if" | "pub" | "priv" | "readonly" | "self"
-            | "break" | "raise" | "try" | "except" | "catch" | "else" | "enum" | "struct"
-            | "type" | "trait" | "return" | "let" | "mut" | "while" | "loop" => {
+            "continue" | "for" | "match" | "if" | "pub" | "priv" | "readonly" | "break"
+            | "raise" | "try" | "except" | "catch" | "else" | "enum" | "struct" | "type"
+            | "trait" | "return" | "let" | "mut" | "while" | "loop" => {
                 format!("{self}_")
             }
             _ => self.to_lower_camel_case(),
