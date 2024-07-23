@@ -244,16 +244,10 @@ impl WorldGenerator for MoonBit {
         if self.needs_cleanup {
             src.push_str(
                 "
-                public static final class Cleanup {
-                    public final int address;
-                    public final int size;
-                    public final int align;
-
-                    public Cleanup(int address, int size, int align) {
-                        this.address = address;
-                        this.size = size;
-                        this.align = align;
-                    }
+                pub struct Cleanup {
+                    address : Int
+                    size : Int
+                    align : Int
                 }
                 ",
             );
@@ -261,12 +255,9 @@ impl WorldGenerator for MoonBit {
 
         if self.return_area_align > 0 {
             let size = self.return_area_size;
-            let align = self.return_area_align;
+            // let align = self.return_area_align;
 
-            uwriteln!(
-                src,
-                "public static final int RETURN_AREA = Memory.malloc({size}, {align}).toInt();",
-            );
+            uwriteln!(src, "let wasi_RETURN_AREA : Int = malloc({size})",);
         }
 
         let directory = package.replace('.', "/");
@@ -1849,7 +1840,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
     fn return_pointer(&mut self, size: usize, align: usize) -> String {
         self.gen.gen.return_area_size = self.gen.gen.return_area_size.max(size);
         self.gen.gen.return_area_align = self.gen.gen.return_area_align.max(align);
-        format!("{}RETURN_AREA", self.gen.gen.qualifier())
+        format!("{}wasi_RETURN_AREA", self.gen.gen.qualifier())
     }
 
     fn push_block(&mut self) {
