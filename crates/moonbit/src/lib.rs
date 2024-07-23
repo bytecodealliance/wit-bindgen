@@ -1309,26 +1309,33 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             // TODO: checked
             Instruction::FlagsLower { flags, .. } => match flags_repr(flags) {
                 Int::U8 | Int::U16 | Int::U32 => {
-                    results.push(format!("({}).0", operands[0]));
+                    results.push(format!("({}).0.to_int()", operands[0]));
                 }
                 Int::U64 => {
                     let op = &operands[0];
-                    results.push(format!("(({op}).0.to_uint())"));
-                    results.push(format!("((({op}).0.lsr(32)).to_uint())"));
+                    results.push(format!("(({op}).0.to_int())"));
+                    results.push(format!("((({op}).0.lsr(32)).to_int())"));
                 }
             },
 
             Instruction::FlagsLift { flags, ty, .. } => match flags_repr(flags) {
-                Int::U8 | Int::U16 | Int::U32 => {
+                Int::U8 => {
                     results.push(format!(
-                        "{}({})",
+                        "{}({}.to_byte())",
+                        self.gen.type_name(&Type::Id(*ty)),
+                        operands[0]
+                    ));
+                }
+                Int::U16 | Int::U32 => {
+                    results.push(format!(
+                        "{}({}.to_uint())",
                         self.gen.type_name(&Type::Id(*ty)),
                         operands[0]
                     ));
                 }
                 Int::U64 => {
                     results.push(format!(
-                        "{}(({}).lor(({}).lsl(32)))",
+                        "{}(({}).to_uint().to_uint64().lor(({}).to_uint().to_uint64.lsl(32)))",
                         self.gen.type_name(&Type::Id(*ty)),
                         operands[0],
                         operands[1]
@@ -1410,7 +1417,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::OptionLower {
                 results: lowered_types,
-                payload,
                 ..
             } => {
                 let some = self.blocks.pop().unwrap();
@@ -1432,27 +1438,26 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 let op = &operands[0];
 
-                let block = |ty: Option<&Type>, Block { body, results, .. }| {
-                    let assignments = lowered
+                let block = |Block { body, results, .. }| {
+                    let assignments = results
                         .iter()
-                        .zip(&results)
-                        .map(|(lowered, result)| format!("{lowered} = {result};\n"))
+                        .map(|result| format!("{result}"))
                         .collect::<Vec<_>>()
-                        .concat();
+                        .join(", ");
 
                     format!(
                         "{body}
-                         {assignments}"
+                         ({assignments})"
                     )
                 };
 
-                let none = block(None, none);
-                let some = block(Some(payload), some);
+                let none = block(none);
+                let some = block(some);
 
                 uwrite!(
                     self.src,
                     r#"
-                    let {declarations} = match (({op})) {{
+                    let ({declarations}) = match (({op})) {{
                         None => {none}
                         Some({some_payload}) => {{
                             {some}
