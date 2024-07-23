@@ -881,7 +881,14 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             repr => todo!("flags {repr:?}"),
         };
 
-        let flags = flags
+        let cases = flags
+            .flags
+            .iter()
+            .map(|flag| flag.name.to_shouty_snake_case())
+            .collect::<Vec<_>>()
+            .join("; ");
+
+        let map_to_int = flags
             .flags
             .iter()
             .enumerate()
@@ -897,19 +904,32 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 } else {
                     ""
                 };
-                format!("let {flag_name} : {name} = {name}((1{suffix} << {i}){cast})")
+                format!("{flag_name} => ((1{suffix} << {i}){cast})")
             })
             .collect::<Vec<_>>()
-            .join("\n");
+            .join("\n    ");
 
         uwrite!(
             self.src,
             "
-            pub type {name} {ty}
-            pub fn {name}::lor(self : {name}, other: {name}) -> {name} {{
-              self.0 | other.0
+            type {name} {ty} derive(Default)
+            pub enum {name}Flag {{
+                {cases}
             }}
-            {flags}
+            fn {name}Flag::value(self : {name}Flag) -> {ty} {{
+              match self {{
+                {map_to_int}
+              }}
+            }}
+            pub fn {name}::set(self : {name}, other: {name}Flag) -> {name} {{
+              self.0.lor(other.value())
+            }}
+            pub fn {name}::unset(self : {name}, other: {name}Flag) -> {name} {{
+              self.0.land(other.value().lnot())
+            }}
+            pub fn {name}::is_set(self : {name}, other: {name}Flag) -> Bool {{
+              (self.0.land(other.value()) == other.value())
+            }}
             "
         );
     }
