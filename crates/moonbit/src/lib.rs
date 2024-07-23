@@ -50,7 +50,7 @@ extern "wasm" fn load32(offset : Int) -> Int =
 extern "wasm" fn store64(offset : Int, value : Int64) =
   #|(func (param i32) (param i64) local.get 0 local.get 1 i64.store)
 
-extern "wasm" fn load64(offset : Int) -> Int =
+extern "wasm" fn load64(offset : Int) -> Int64 =
   #|(func (param i32) (result i64) local.get 0 i64.load)
 
 extern "wasm" fn storef32(offset : Int, value : Double) =
@@ -62,7 +62,7 @@ extern "wasm" fn loadf32(offset : Int) -> Double =
 extern "wasm" fn storef64(offset : Int, value : Double) =
   #|(func (param i32) (param f64) local.get 0 local.get 1 f64.store)
 
-extern "wasm" fn loadf64(offset : Int) -> Int =
+extern "wasm" fn loadf64(offset : Int) -> Double =
   #|(func (param i32) (result f64) local.get 0 f64.load)
 
 extern "wasm" fn malloc(size : Int) -> Int =
@@ -1795,7 +1795,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::F32Load { offset } => {
-                results.push(format!("loadf32(({}) + {offset}).", operands[0]))
+                results.push(format!("loadf32(({}) + {offset})", operands[0]))
             }
 
             Instruction::F64Load { offset } => {
