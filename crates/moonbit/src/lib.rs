@@ -1115,6 +1115,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         lowered_types: &[WasmType],
         op: &str,
         results: &mut Vec<String>,
+        is_result: bool,
     ) {
         let blocks = self
             .blocks
@@ -1154,7 +1155,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                 };
 
                 // TODO: This may cause empty constructor of Result::OK
-                if payload.is_empty() {
+                if payload.is_empty() && !is_result {
                     format!(
                         "{name} => {{
                           {body}
@@ -1163,10 +1164,15 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                     )
                 } else {
                     format!(
-                        "{name}({payload}) => {{
+                        "{name}({}) => {{
                           {body}
                           ({assignments})
-                        }}"
+                        }}",
+                        if payload.is_empty() {
+                            "_".into()
+                        } else {
+                            payload
+                        }
                     )
                 }
             })
@@ -1202,6 +1208,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         cases: &[(&str, Option<Type>)],
         op: &str,
         results: &mut Vec<String>,
+        is_result: bool,
     ) {
         let blocks = self
             .blocks
@@ -1225,7 +1232,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
 
                 let constructor = format!("{ty}::{}", case_name.to_upper_camel_case());
 
-                if payload.is_empty() {
+                if payload.is_empty() && !is_result {
                     format!(
                         "{i} => {{
                              {body}
@@ -1236,8 +1243,13 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                     format!(
                         "{i} => {{
                              {body}
-                             {constructor}({payload})
-                         }}"
+                             {constructor}({})
+                         }}",
+                        if payload.is_empty() {
+                            "()".into()
+                        } else {
+                            payload
+                        }
                     )
                 }
             })
@@ -1390,8 +1402,16 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::TupleLower { tuple, .. } => {
                 let op = &operands[0];
-                for i in 0..tuple.types.len() {
-                    results.push(format!("({op}).{i}"));
+                // Empty tuple is Unit
+                // (T) is T
+                if tuple.types.len() == 0 {
+                    results.push("()".into());
+                } else if tuple.types.len() == 1 {
+                    results.push(format!("{}", operands[0]));
+                } else {
+                    for i in 0..tuple.types.len() {
+                        results.push(format!("({op}).{i}"));
+                    }
                 }
             }
             Instruction::TupleLift { .. } => {
@@ -1422,6 +1442,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 lowered_types,
                 &operands[0],
                 results,
+                false,
             ),
 
             Instruction::VariantLift { variant, ty, .. } => self.lift_variant(
@@ -1433,6 +1454,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     .collect::<Vec<_>>(),
                 &operands[0],
                 results,
+                false,
             ),
 
             Instruction::OptionLower {
@@ -1531,6 +1553,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 lowered_types,
                 &operands[0],
                 results,
+                true,
             ),
 
             Instruction::ResultLift { result, ty } => self.lift_variant(
@@ -1538,6 +1561,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 &[("Ok", result.ok), ("Err", result.err)],
                 &operands[0],
                 results,
+                true,
             ),
 
             Instruction::EnumLower { .. } => results.push(format!("{}.ordinal()", operands[0])),
