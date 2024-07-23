@@ -107,6 +107,7 @@ pub struct MoonBit {
     world_fragments: Vec<InterfaceFragment>,
     sizes: SizeAlign,
     interface_names: HashMap<InterfaceId, String>,
+    export: HashMap<String, String>,
 }
 
 impl MoonBit {
@@ -313,6 +314,27 @@ impl WorldGenerator for MoonBit {
         uwriteln!(&mut body, "{{\"name\": \"wasi-bindgen\"}}");
         files.push(&format!("moon.mod.json"), indent(&body).as_bytes());
 
+        let mut body = Source::default();
+        let exports = self
+            .export
+            .iter()
+            .map(|(k, v)| format!("\"{k}:{v}\""))
+            .collect::<Vec<_>>()
+            .join(", ");
+        uwrite!(
+            &mut body,
+            r#"
+            {{
+                "link": {{
+                    "wasm": {{
+                        "export": [{exports}]
+                    }}
+                }}
+            }}
+            "#
+        );
+        files.push(&format!("moon.pkg.json"), indent(&body).as_bytes());
+        
         Ok(())
     }
 }
@@ -483,6 +505,9 @@ impl InterfaceGenerator<'_> {
             }}
             "#
         );
+        self.gen
+            .export
+            .insert(format!("wasmExport{camel_name}"), format!("{export_name}"));
 
         if abi::guest_export_needs_post_return(self.resolve, func) {
             let params = sig
@@ -514,6 +539,10 @@ impl InterfaceGenerator<'_> {
                     {src}
                 }}
                 "#
+            );
+            self.gen.export.insert(
+                format!("wasmExport{camel_name}PostReturn"),
+                format!("cabi_post_{export_name}"),
             );
         }
 
