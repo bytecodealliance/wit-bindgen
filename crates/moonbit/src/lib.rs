@@ -1186,14 +1186,13 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                     .collect::<Vec<_>>()
                     .join(", ");
 
-                let payload = if self.gen.non_empty_type(ty.as_ref()).is_some() {
+                let payload = if self.gen.non_empty_type(ty.as_ref()).is_some() || is_result {
                     payload
                 } else {
                     String::new()
                 };
 
-                // TODO: This may cause empty constructor of Result::OK
-                if payload.is_empty() && !is_result {
+                if payload.is_empty() {
                     format!(
                         "{name} => {{
                           {body}
@@ -1202,15 +1201,10 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                     )
                 } else {
                     format!(
-                        "{name}({}) => {{
+                        "{name}({payload}) => {{
                           {body}
                           ({assignments})
                         }}",
-                        if payload.is_empty() {
-                            "_".into()
-                        } else {
-                            payload
-                        }
                     )
                 }
             })
@@ -1509,6 +1503,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let some = self.blocks.pop().unwrap();
                 let none = self.blocks.pop().unwrap();
                 let some_payload = self.payloads.pop().unwrap();
+                let _none_payload = self.payloads.pop().unwrap();
 
                 let lowered = lowered_types
                     .iter()
@@ -1541,17 +1536,35 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let none = block(none);
                 let some = block(some);
 
-                uwrite!(
-                    self.src,
-                    r#"
-                    let ({declarations}) = match (({op})) {{
-                        None => {none}
-                        Some({some_payload}) => {{
-                            {some}
+                if declarations.is_empty() {
+                    uwrite!(
+                        self.src,
+                        r#"
+                        match (({op})) {{
+                            None => {{
+                                {none}
+                            }}
+                            Some({some_payload}) => {{
+                                {some}
+                            }}
                         }}
-                    }}
-                    "#
-                );
+                        "#
+                    );
+                } else {
+                    uwrite!(
+                        self.src,
+                        r#"
+                        let ({declarations}) = match (({op})) {{
+                            None => {{
+                                {none}
+                            }}
+                            Some({some_payload}) => {{
+                                {some}
+                            }}
+                        }}
+                        "#
+                    );
+                }
             }
 
             Instruction::OptionLift { payload, ty } => {
@@ -1817,7 +1830,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                                 let ty = self.gen.type_name(ty);
                                 let my_result = self.locals.tmp("result");
                                 let assignment =
-                                    format!("let {my_result} : {ty} = {result}.f{index};");
+                                    format!("let {my_result} : {ty} = {result}.{index};");
                                 results.push(my_result);
                                 assignment
                             })
