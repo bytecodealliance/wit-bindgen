@@ -20,6 +20,8 @@ use wit_bindgen_core::{
 // Assumptions:
 // Data: u8 -> Byte, s8 | s16 | u16 | s32 -> Int, u32 -> UInt, s64 -> Int64, u64 -> UInt64, f32 | f64 -> Double, address -> Int
 // Encoding: UTF16
+// Organization: one package per interface (export and import are treated as different interfaces)
+// Export will share the type signatures with the import by using a newtype alias
 
 const FFI: &str = r#"
 pub extern "wasm" fn extend16(value : Int) -> Int =
@@ -117,11 +119,7 @@ pub struct Cleanup {
 
 #[derive(Default, Debug, Clone)]
 #[cfg_attr(feature = "clap", derive(clap::Args))]
-pub struct Opts {
-    /// Whether or not to generate a stub class for exported functions
-    #[cfg_attr(feature = "clap", arg(long))]
-    pub generate_stub: bool,
-}
+pub struct Opts {}
 
 impl Opts {
     pub fn build(&self) -> Box<dyn WorldGenerator> {
@@ -281,10 +279,6 @@ impl WorldGenerator for MoonBit {
                 .join("\n"),
         );
 
-        if self.needs_cleanup {
-            // TODO: generate on demand
-        }
-
         let directory = package.replace('.', "/");
         files.push(&format!("{directory}/{name}.mbt"), indent(&src).as_bytes());
         files.push(
@@ -302,10 +296,6 @@ impl WorldGenerator for MoonBit {
                 .join("\n"),
         );
 
-        if self.needs_cleanup {
-            // TODO: generate on demand
-        }
-
         files.push(&format!("{name}.mbt"), indent(&src).as_bytes());
 
         let generate_stub = |name, fragments: &[InterfaceFragment], files: &mut Files| {
@@ -322,9 +312,7 @@ impl WorldGenerator for MoonBit {
             files.push(&format!("{name}.mbt"), indent(&body).as_bytes());
         };
 
-        if self.opts.generate_stub {
-            generate_stub(format!("{name}Impl"), &self.export_world_fragments, files);
-        }
+        generate_stub(format!("{name}Export"), &self.export_world_fragments, files);
 
         // Import interface fragments
         for (name, fragments) in &self.import_interface_fragments {
@@ -366,9 +354,7 @@ impl WorldGenerator for MoonBit {
 
             files.push(&format!("{name}.mbt"), indent(&body).as_bytes());
 
-            if self.opts.generate_stub {
-                generate_stub(format!("{name}Impl"), fragments, files);
-            }
+            generate_stub(format!("{name}Export"), fragments, files);
         }
 
         // Export project files
@@ -577,6 +563,8 @@ impl InterfaceGenerator<'_> {
     fn export(&mut self, interface_name: Option<&str>, func: &Function) {
         let sig = self.resolve.wasm_signature(AbiVariant::GuestExport, func);
 
+        let func_sig = self.sig_string(func);
+
         let export_name = func.core_export_name(interface_name);
 
         let mut bindgen = FunctionBindgen::new(
@@ -617,13 +605,14 @@ impl InterfaceGenerator<'_> {
             .join(", ");
 
         uwrite!(
-            self.src,
+            self.stub,
             r#"
-            /// @Export(name = "{export_name}")
+            /// exportation name: "{export_name}")
+            /// implementation : "{func_sig}"
             pub fn wasmExport{camel_name}({params}) -> {result_type} {{
                 {src}
             }}
-            "#
+            "#,
         );
         self.gen
             .export
@@ -652,9 +641,9 @@ impl InterfaceGenerator<'_> {
             let src = bindgen.src;
 
             uwrite!(
-                self.src,
+                self.stub,
                 r#"
-                /// @Export(name = "cabi_post_{export_name}")
+                /// exportation name: "cabi_post_{export_name}")  
                 pub fn wasmExport{camel_name}PostReturn({params}) -> Unit {{
                     {src}
                 }}
@@ -666,18 +655,14 @@ impl InterfaceGenerator<'_> {
             );
         }
 
-        if self.gen.opts.generate_stub {
-            let sig = self.sig_string(func);
-
-            uwrite!(
-                self.stub,
-                r#"
-                {sig} {{
-                    abort("todo")
-                }}
-                "#
-            );
-        }
+        uwrite!(
+            self.src,
+            r#"
+            {func_sig} {{
+                abort("todo")
+            }}
+            "#
+        );
     }
 
     fn type_name(&mut self, ty: &Type, type_variable: bool) -> String {

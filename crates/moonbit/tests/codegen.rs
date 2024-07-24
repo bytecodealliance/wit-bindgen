@@ -9,12 +9,10 @@ macro_rules! codegen_test {
                 "guest-moonbit",
                 $test.as_ref(),
                 |resolve, world, files| {
-                    wit_bindgen_moonbit::Opts {
-                        generate_stub: true,
-                    }
-                    .build()
-                    .generate(resolve, world, files)
-                    .unwrap()
+                    wit_bindgen_moonbit::Opts {}
+                        .build()
+                        .generate(resolve, world, files)
+                        .unwrap()
                 },
                 verify,
             )
