@@ -2278,7 +2278,8 @@ impl ToMoonBitIdent for str {
         match self {
             "continue" | "for" | "match" | "if" | "pub" | "priv" | "readonly" | "break"
             | "raise" | "try" | "except" | "catch" | "else" | "enum" | "struct" | "type"
-            | "trait" | "return" | "let" | "mut" | "while" | "loop" => {
+            | "trait" | "return" | "let" | "mut" | "while" | "loop" | "extern" | "with"
+            | "throw" => {
                 format!("{self}_")
             }
             _ => self.to_lower_camel_case(),
