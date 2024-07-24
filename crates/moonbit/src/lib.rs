@@ -276,9 +276,7 @@ impl WorldGenerator for MoonBit {
     fn finish(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) -> Result<()> {
         let name = world_name(resolve, id);
 
-        let mut src = Source::default();
         let version = env!("CARGO_PKG_VERSION");
-        wit_bindgen_core::generated_preamble(&mut src, version);
 
         let mut generate_pkg_definition = |name: &str, files: &mut Files| {
             let directory = name.replace('.', "/");
@@ -312,6 +310,8 @@ impl WorldGenerator for MoonBit {
         };
 
         // Import world fragments
+        let mut src = Source::default();
+        wit_bindgen_core::generated_preamble(&mut src, version);
         src.push_str(
             &self
                 .import_world_fragments
@@ -326,6 +326,8 @@ impl WorldGenerator for MoonBit {
         generate_pkg_definition(&name, files);
 
         // Export world fragments
+        let mut src = Source::default();
+        wit_bindgen_core::generated_preamble(&mut src, version);
         src.push_str(
             &self
                 .export_world_fragments
@@ -495,6 +497,11 @@ impl InterfaceGenerator<'_> {
                 if name != self.name {
                     return self.qualify_package(&name.clone());
                 }
+            }
+        } else if let TypeOwner::World(id) = &ty.owner {
+            let name = world_name(self.resolve, *id);
+            if name != self.name {
+                return self.qualify_package(&name.clone());
             }
         }
 
