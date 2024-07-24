@@ -677,7 +677,7 @@ impl InterfaceGenerator<'_> {
         }
     }
 
-    fn constructor_name(&mut self, ty: &Type) -> String {
+    fn type_name(&mut self, ty: &Type, type_variable: bool) -> String {
         match ty {
             Type::Bool => "Bool".into(),
             Type::U8 => "Byte".into(),
@@ -691,77 +691,50 @@ impl InterfaceGenerator<'_> {
             Type::Id(id) => {
                 let ty = &self.resolve.types[*id];
                 match &ty.kind {
-                    TypeDefKind::Type(ty) => self.constructor_name(ty),
-                    TypeDefKind::List(_) => "Array".into(),
-                    TypeDefKind::Tuple(_) => panic!(),
-                    TypeDefKind::Option(_) => "Option".into(),
-                    TypeDefKind::Result(_) => "Result".into(),
-                    TypeDefKind::Handle(handle) => {
-                        let ty = match handle {
-                            Handle::Own(ty) => ty,
-                            Handle::Borrow(ty) => ty,
-                        };
-                        let ty = &self.resolve.types[*ty];
-                        if let Some(name) = &ty.name {
-                            name.to_upper_camel_case()
-                        } else {
-                            unreachable!()
-                        }
-                    }
-                    _ => {
-                        if let Some(name) = &ty.name {
-                            name.to_upper_camel_case()
-                        } else {
-                            unreachable!()
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    fn type_name(&mut self, ty: &Type) -> String {
-        match ty {
-            Type::Bool => "Bool".into(),
-            Type::U8 => "Byte".into(),
-            Type::S32 | Type::S8 | Type::U16 | Type::S16 => "Int".into(),
-            Type::U32 => "UInt".into(),
-            Type::Char => "Char".into(),
-            Type::U64 => "UInt64".into(),
-            Type::S64 => "Int64".into(),
-            Type::F32 | Type::F64 => "Double".into(),
-            Type::String => "String".into(),
-            Type::Id(id) => {
-                let ty = &self.resolve.types[*id];
-                match &ty.kind {
-                    TypeDefKind::Type(ty) => self.type_name(ty),
+                    TypeDefKind::Type(ty) => self.type_name(ty, type_variable),
                     TypeDefKind::List(ty) => {
-                        format!("Array[{}]", self.type_name(ty))
+                        if type_variable {
+                            format!("Array[{}]", self.type_name(ty, type_variable))
+                        } else {
+                            "Array".into()
+                        }
                     }
                     TypeDefKind::Tuple(tuple) => {
-                        format!(
-                            "({})",
-                            tuple
-                                .types
-                                .iter()
-                                .map(|ty| self.type_name(ty))
-                                .collect::<Vec<_>>()
-                                .join(", ")
-                        )
+                        if type_variable {
+                            format!(
+                                "({})",
+                                tuple
+                                    .types
+                                    .iter()
+                                    .map(|ty| self.type_name(ty, type_variable))
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            )
+                        } else {
+                            unreachable!()
+                        }
                     }
                     TypeDefKind::Option(ty) => {
-                        format!("{}?", self.type_name(ty))
+                        if type_variable {
+                            format!("{}?", self.type_name(ty, type_variable))
+                        } else {
+                            "Option".into()
+                        }
                     }
                     TypeDefKind::Result(result) => {
-                        let mut name = |ty: &Option<Type>| {
-                            ty.as_ref()
-                                .map(|ty| self.type_name(ty))
-                                .unwrap_or_else(|| "Unit".into())
-                        };
-                        let ok = name(&result.ok);
-                        let err = name(&result.err);
+                        if type_variable {
+                            let mut name = |ty: &Option<Type>| {
+                                ty.as_ref()
+                                    .map(|ty| self.type_name(ty, true))
+                                    .unwrap_or_else(|| "Unit".into())
+                            };
+                            let ok = name(&result.ok);
+                            let err = name(&result.err);
 
-                        format!("Result[{ok}, {err}]")
+                            format!("Result[{ok}, {err}]")
+                        } else {
+                            "Result".into()
+                        }
                     }
                     TypeDefKind::Handle(handle) => {
                         let ty = match handle {
@@ -828,19 +801,19 @@ impl InterfaceGenerator<'_> {
         let type_name = match func.kind {
             FunctionKind::Freestanding => "".into(),
             FunctionKind::Method(ty) | FunctionKind::Constructor(ty) | FunctionKind::Static(ty) => {
-                format!("{}::", self.type_name(&Type::Id(ty)))
+                format!("{}::", self.type_name(&Type::Id(ty), true))
             }
         };
 
         let result_type = match func.results.len() {
             0 => "Unit".into(),
-            1 => self.type_name(func.results.iter_types().next().unwrap()),
+            1 => self.type_name(func.results.iter_types().next().unwrap(), true),
             _ => {
                 format!(
                     "({})",
                     func.results
                         .iter_types()
-                        .map(|ty| self.type_name(ty))
+                        .map(|ty| self.type_name(ty, true))
                         .collect::<Vec<_>>()
                         .join(", ")
                 )
@@ -851,7 +824,7 @@ impl InterfaceGenerator<'_> {
             .params
             .iter()
             .map(|(name, ty)| {
-                let ty = self.type_name(ty);
+                let ty = self.type_name(ty, true);
                 let name = name.to_moonbit_ident();
                 format!("{name} : {ty}")
             })
@@ -879,7 +852,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 format!(
                     "{} : {}",
                     field.name.to_moonbit_ident(),
-                    self.type_name(&field.ty),
+                    self.type_name(&field.ty, true),
                 )
             })
             .collect::<Vec<_>>()
@@ -987,7 +960,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .map(|case| {
                 let name = case.name.to_upper_camel_case();
                 if let Some(ty) = case.ty {
-                    let ty = self.type_name(&ty);
+                    let ty = self.type_name(&ty, true);
                     format!("{name}({ty})")
                 } else {
                     format!("{name}")
@@ -1248,7 +1221,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             .collect::<Vec<_>>();
 
         // Hacky way to get the type name without type parameter
-        let ty = self.gen.constructor_name(ty);
+        let ty = self.gen.type_name(ty, false);
         let lifted = self.locals.tmp("lifted");
 
         let cases = cases
@@ -1386,21 +1359,21 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 Int::U8 => {
                     results.push(format!(
                         "{}({}.to_byte())",
-                        self.gen.type_name(&Type::Id(*ty)),
+                        self.gen.type_name(&Type::Id(*ty), true),
                         operands[0]
                     ));
                 }
                 Int::U16 | Int::U32 => {
                     results.push(format!(
                         "{}({}.to_uint())",
-                        self.gen.type_name(&Type::Id(*ty)),
+                        self.gen.type_name(&Type::Id(*ty), true),
                         operands[0]
                     ));
                 }
                 Int::U64 => {
                     results.push(format!(
                         "{}(({}).to_uint().to_uint64().lor(({}).to_uint().to_uint64.lsl(32)))",
-                        self.gen.type_name(&Type::Id(*ty)),
+                        self.gen.type_name(&Type::Id(*ty), true),
                         operands[0],
                         operands[1]
                     ));
@@ -1413,7 +1386,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
             Instruction::HandleLift { ty, .. } => {
                 let op = &operands[0];
-                results.push(format!("{}({})", self.gen.type_name(&Type::Id(*ty)), op));
+                results.push(format!(
+                    "{}({})",
+                    self.gen.type_name(&Type::Id(*ty), true),
+                    op
+                ));
             }
 
             Instruction::RecordLower { record, .. } => {
@@ -1436,7 +1413,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     .collect::<Vec<_>>()
                     .join(", ");
 
-                results.push(format!("{}::{{{ops}}}", self.gen.type_name(&Type::Id(*ty))));
+                results.push(format!(
+                    "{}::{{{ops}}}",
+                    self.gen.type_name(&Type::Id(*ty), true)
+                ));
             }
 
             Instruction::TupleLower { tuple, .. } => {
@@ -1571,7 +1551,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let some = self.blocks.pop().unwrap();
                 let _none = self.blocks.pop().unwrap();
 
-                let ty = self.gen.type_name(&Type::Id(*ty));
+                let ty = self.gen.type_name(&Type::Id(*ty), true);
                 let lifted = self.locals.tmp("lifted");
                 let op = &operands[0];
 
@@ -1620,7 +1600,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::EnumLift { ty, .. } => results.push(format!(
                 "{}::from({})",
-                self.gen.type_name(&Type::Id(*ty)),
+                self.gen.type_name(&Type::Id(*ty), true),
                 operands[0]
             )),
 
@@ -1698,7 +1678,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let size = self.gen.gen.sizes.size(element);
                 let align = self.gen.gen.sizes.align(element);
                 let address = self.locals.tmp("address");
-                let ty = self.gen.type_name(element);
+                let ty = self.gen.type_name(element, true);
                 let index = self.locals.tmp("index");
 
                 uwrite!(
@@ -1735,7 +1715,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let address = &operands[0];
                 let length = &operands[1];
                 let array = self.locals.tmp("array");
-                let ty = self.gen.type_name(element);
+                let ty = self.gen.type_name(element, true);
                 let size = self.gen.gen.sizes.size(element);
                 // let align = self.gen.gen.sizes.align(element);
                 let index = self.locals.tmp("index");
@@ -1799,7 +1779,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             "({})",
                             func.results
                                 .iter_types()
-                                .map(|ty| self.gen.type_name(ty))
+                                .map(|ty| self.gen.type_name(ty, true))
                                 .collect::<Vec<_>>()
                                 .join(", ")
                         );
@@ -1824,7 +1804,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let name = match func.kind {
                     FunctionKind::Freestanding => func.name.to_moonbit_ident(),
                     FunctionKind::Constructor(ty) => {
-                        let name = self.gen.constructor_name(&Type::Id(ty));
+                        let name = self.gen.type_name(&Type::Id(ty), false);
                         format!(
                             "{}::{}",
                             name,
@@ -1832,7 +1812,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         )
                     }
                     FunctionKind::Method(ty) | FunctionKind::Static(ty) => {
-                        let name = self.gen.constructor_name(&Type::Id(ty));
+                        let name = self.gen.type_name(&Type::Id(ty), false);
                         format!(
                             "{}::{}",
                             name,
