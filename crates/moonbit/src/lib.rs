@@ -287,7 +287,10 @@ impl WorldGenerator for MoonBit {
 
         let directory = package.replace('.', "/");
         files.push(&format!("{directory}/{name}.mbt"), indent(&src).as_bytes());
-        files.push(&format!("{directory}/moon.pkg.json"), "{}".as_bytes());
+        files.push(
+            &format!("{directory}/moon.pkg.json"),
+            "{\"import\": [\"wasi-bindgen/ffi\"]}".as_bytes(),
+        );
 
         // Export world fragments
         src.push_str(
