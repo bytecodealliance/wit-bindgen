@@ -1586,16 +1586,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwrite!(
                     self.src,
                     r#"
-                    let {lifted} : {ty} = match ({op}) {{
-                        0 => Option::None
-
-                        1 => {{
-                            {some}
-                            Option::Some({payload})
-                        }}
-
-                        _ => panic()
-                    }}
+                    let {lifted} : {ty} = @option.unless(({op}) == 0, fn () {{
+                        {some}
+                        {payload}
+                    }})
                     "#
                 );
 
@@ -1798,17 +1792,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::CallInterface { func, .. } => {
-                let (assignment, destructure) = match func.results.len() {
-                    0 => (String::new(), String::new()),
-                    1 => {
-                        let ty = self
-                            .gen
-                            .type_name(func.results.iter_types().next().unwrap());
-                        let result = self.locals.tmp("result");
-                        let assignment = format!("let {result} : {ty} = ");
-                        results.push(result);
-                        (assignment, String::new())
-                    }
+                let assignment = match func.results.len() {
+                    0 => "let _ = ".into(),
                     _ => {
                         let ty = format!(
                             "({})",
@@ -1819,25 +1804,20 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                                 .join(", ")
                         );
 
-                        let result = self.locals.tmp("result");
-                        let assignment = format!("let {result} : {ty} = ");
-
-                        let destructure = func
+                        let result = func
                             .results
                             .iter_types()
-                            .enumerate()
-                            .map(|(index, ty)| {
-                                let ty = self.gen.type_name(ty);
-                                let my_result = self.locals.tmp("result");
-                                let assignment =
-                                    format!("let {my_result} : {ty} = {result}.{index};");
-                                results.push(my_result);
-                                assignment
+                            .map(|_ty| {
+                                let result = self.locals.tmp("result");
+                                results.push(result.clone());
+                                result
                             })
                             .collect::<Vec<_>>()
-                            .join("\n");
+                            .join(", ");
 
-                        (assignment, destructure)
+                        let assignment = format!("let ({result}) : {ty} = ");
+
+                        assignment
                     }
                 };
 
@@ -1867,7 +1847,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.src,
                     "
                     {assignment}{name}({args});
-                    {destructure}
                     "
                 );
             }
