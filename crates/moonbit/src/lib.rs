@@ -976,7 +976,10 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         uwrite!(
             self.src,
             "
-            type {name} {ty} derive(Default)
+            pub type {name} {ty}
+            pub fn {name}::default() -> {name} {{
+                {}
+            }}
             pub enum {name}Flag {{
                 {cases}
             }}
@@ -994,7 +997,13 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             pub fn {name}::is_set(self : {name}, other: {name}Flag) -> Bool {{
               (self.0.land(other.value()) == other.value())
             }}
-            "
+            ",
+            match ty {
+                "Byte" => "b'\\x00'",
+                "UInt" => "0U",
+                "UInt64" => "0UL",
+                _ => unreachable!(),
+            }
         );
     }
 
