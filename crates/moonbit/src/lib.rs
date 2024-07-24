@@ -2262,7 +2262,7 @@ impl ToMoonBitIdent for str {
             "continue" | "for" | "match" | "if" | "pub" | "priv" | "readonly" | "break"
             | "raise" | "try" | "except" | "catch" | "else" | "enum" | "struct" | "type"
             | "trait" | "return" | "let" | "mut" | "while" | "loop" | "extern" | "with"
-            | "throw" => {
+            | "throw" | "init" | "main" | "test" => {
                 format!("{self}_")
             }
             _ => self.to_lower_camel_case(),
