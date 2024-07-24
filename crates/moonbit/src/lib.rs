@@ -8,7 +8,7 @@ use std::{
 };
 use wit_bindgen_core::{
     abi::{self, AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType},
-    uwrite, uwriteln,
+    dealias, uwrite, uwriteln,
     wit_parser::{
         Docs, Enum, Flags, FlagsRepr, Function, FunctionKind, Handle, Int, InterfaceId, Record,
         Resolve, Result_, SizeAlign, Tuple, Type, TypeDef, TypeDefKind, TypeId, TypeOwner, Variant,
@@ -22,6 +22,8 @@ use wit_bindgen_core::{
 // Encoding: UTF16
 // Organization: one package per interface (export and import are treated as different interfaces)
 // Export will share the type signatures with the import by using a newtype alias
+
+const PROJECT_NAME: &str = "wasi-bindgen";
 
 const FFI: &str = r#"
 pub extern "wasm" fn extend16(value : Int) -> Int =
@@ -136,6 +138,12 @@ struct InterfaceFragment {
 }
 
 #[derive(Default)]
+struct Imports {
+    packages: HashMap<String, String>,
+    ns: Ns,
+}
+
+#[derive(Default)]
 pub struct MoonBit {
     opts: Opts,
     name: String,
@@ -147,6 +155,8 @@ pub struct MoonBit {
     sizes: SizeAlign,
     import_interface_names: HashMap<InterfaceId, String>,
     export_interface_names: HashMap<InterfaceId, String>,
+    // dependencies between packages
+    package_import: HashMap<String, Imports>,
     export: HashMap<String, String>,
 }
 
@@ -263,11 +273,41 @@ impl WorldGenerator for MoonBit {
 
     fn finish(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) -> Result<()> {
         let name = world_name(resolve, id);
-        let (package, name) = split_qualified_name(&name);
 
         let mut src = Source::default();
         let version = env!("CARGO_PKG_VERSION");
         wit_bindgen_core::generated_preamble(&mut src, version);
+
+        let mut generate_pkg_definition = |name: &str, files: &mut Files| {
+            let directory = name.replace('.', "/");
+            let imports: Option<&mut Imports> = self.package_import.get_mut(name);
+            if let Some(imports) = imports {
+                let mut deps = imports
+                    .packages
+                    .iter()
+                    .map(|(k, v)| {
+                        format!(
+                            "{{ \"path\" : \"{PROJECT_NAME}/{}\", \"alias\" : \"{}\" }}",
+                            k.replace(".", "/"),
+                            v
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                deps.push(format!(
+                    "{{ \"path\" : \"{PROJECT_NAME}/ffi\", \"alias\" : \"{}\" }}",
+                    imports.ns.tmp("ffi")
+                ));
+                files.push(
+                    &format!("{directory}/moon.pkg.json"),
+                    format!("{{ \"import\": [{}] }}", deps.join(", ")).as_bytes(),
+                );
+            } else {
+                files.push(
+                    &format!("{directory}/moon.pkg.json"),
+                    format!("{{\"import\": [\"{PROJECT_NAME}/ffi\"]}}").as_bytes(),
+                );
+            }
+        };
 
         // Import world fragments
         src.push_str(
@@ -279,12 +319,9 @@ impl WorldGenerator for MoonBit {
                 .join("\n"),
         );
 
-        let directory = package.replace('.', "/");
-        files.push(&format!("{directory}/{name}.mbt"), indent(&src).as_bytes());
-        files.push(
-            &format!("{directory}/moon.pkg.json"),
-            "{\"import\": [\"wasi-bindgen/ffi\"]}".as_bytes(),
-        );
+        let directory = name.replace('.', "/");
+        files.push(&format!("{directory}/import.mbt"), indent(&src).as_bytes());
+        generate_pkg_definition(&name, files);
 
         // Export world fragments
         src.push_str(
@@ -296,9 +333,9 @@ impl WorldGenerator for MoonBit {
                 .join("\n"),
         );
 
-        files.push(&format!("{name}.mbt"), indent(&src).as_bytes());
+        files.push(&format!("{directory}/top.mbt"), indent(&src).as_bytes());
 
-        let generate_stub = |name, fragments: &[InterfaceFragment], files: &mut Files| {
+        let generate_stub = |directory, fragments: &[InterfaceFragment], files: &mut Files| {
             let b = fragments
                 .iter()
                 .map(|f| f.stub.deref())
@@ -309,15 +346,13 @@ impl WorldGenerator for MoonBit {
             wit_bindgen_core::generated_preamble(&mut body, version);
             uwriteln!(&mut body, "{b}");
 
-            files.push(&format!("{name}.mbt"), indent(&body).as_bytes());
+            files.push(&format!("{directory}/export.mbt"), indent(&body).as_bytes());
         };
 
-        generate_stub(format!("{name}Export"), &self.export_world_fragments, files);
+        generate_stub(directory, &self.export_world_fragments, files);
 
         // Import interface fragments
         for (name, fragments) in &self.import_interface_fragments {
-            let (package, name) = split_qualified_name(name);
-
             let b = fragments
                 .iter()
                 .map(|f| f.src.deref())
@@ -328,20 +363,13 @@ impl WorldGenerator for MoonBit {
             wit_bindgen_core::generated_preamble(&mut body, version);
             uwriteln!(&mut body, "{b}");
 
-            let directory = package.replace('.', "/");
-            files.push(&format!("{directory}/{name}.mbt"), indent(&body).as_bytes());
-            // Avoid conflict between fragments
-            files.remove(&format!("{directory}/moon.pkg.json"));
-            files.push(
-                &format!("{directory}/moon.pkg.json"),
-                "{\"import\": [\"wasi-bindgen/ffi\"]}".as_bytes(),
-            );
+            let directory = name.replace('.', "/");
+            files.push(&format!("{directory}/top.mbt"), indent(&body).as_bytes());
+            generate_pkg_definition(&name, files);
         }
 
         // Export interface fragments
         for (name, fragments) in &self.export_interface_fragments {
-            let (_package, name) = split_qualified_name(name);
-
             let b = fragments
                 .iter()
                 .map(|f| f.src.deref())
@@ -352,9 +380,10 @@ impl WorldGenerator for MoonBit {
             wit_bindgen_core::generated_preamble(&mut body, version);
             uwriteln!(&mut body, "{b}");
 
-            files.push(&format!("{name}.mbt"), indent(&body).as_bytes());
-
-            generate_stub(format!("{name}Export"), fragments, files);
+            let directory = name.replace('.', "/");
+            files.push(&format!("{directory}/top.mbt"), indent(&body).as_bytes());
+            generate_pkg_definition(&name, files);
+            generate_stub(directory, fragments, files);
         }
 
         // Export project files
@@ -373,42 +402,42 @@ impl WorldGenerator for MoonBit {
             .map(|(k, v)| format!("\"{k}:{v}\""))
             .collect::<Vec<_>>()
             .join(", ");
-        let imports = self
-            .import_interface_names
-            .values()
-            .map(|v| {
-                let path = v.split(".").collect::<Vec<_>>();
-                format!(
-                    "{{\"path\" : \"wasi-bindgen/{}\", \"alias\" : \"{}\" }}",
-                    path.iter()
-                        .copied()
-                        .take(path.len() - 1)
-                        .collect::<Vec<_>>()
-                        .join("/"),
-                    path.iter().nth_back(1).unwrap()
-                )
-            })
-            .collect::<HashSet<_>>()
-            .iter()
-            .cloned()
-            .collect::<Vec<_>>()
-            .join(", ");
         uwrite!(
             &mut body,
             r#"
             {{
-                "import": [
-                    {imports}
-                    {}"wasi-bindgen/ffi"
-                ],
                 "link": {{
                     "wasm": {{
                         "export": [{exports}]
                     }}
                 }}
+            "#
+        );
+        if let Some(imports) = self.package_import.get_mut("") {
+            let mut deps = imports
+                .packages
+                .iter()
+                .map(|(k, v)| {
+                    format!(
+                        "{{ \"path\" : \"{PROJECT_NAME}/{}\", \"alias\" : \"{}\" }}",
+                        k.replace(".", "/"),
+                        v
+                    )
+                })
+                .collect::<Vec<_>>();
+            deps.push(format!(
+                "{{ \"path\" : \"{PROJECT_NAME}/ffi\", \"alias\" : \"{}\" }}",
+                imports.ns.tmp("ffi")
+            ));
+            uwrite!(&mut body, "    ,\"import\": [{}]", deps.join(", "));
+        } else {
+            uwrite!(&mut body, "    ,\"import\": [\"{PROJECT_NAME}/ffi\"]");
+        }
+        uwrite!(
+            &mut body,
+            "
             }}
-            "#,
-            if imports.is_empty() { "" } else { "," },
+            ",
         );
         files.push(&format!("moon.pkg.json"), body.as_bytes());
 
@@ -425,25 +454,35 @@ struct InterfaceGenerator<'a> {
 }
 
 impl InterfaceGenerator<'_> {
-    fn qualifier(&self, ty: &TypeDef) -> String {
+    fn qualifier(&mut self, ty: &TypeDef) -> String {
         if let TypeOwner::Interface(id) = &ty.owner {
             if let Some(name) = self.gen.import_interface_names.get(id) {
-                let name_path = name.split('.').collect::<Vec<_>>();
-                let self_name_path = self.name.split('.').collect::<Vec<_>>();
-                if name_path
-                    .iter()
-                    .copied()
-                    .take(name_path.len() - 1)
-                    .collect::<Vec<_>>()
-                    .join("/")
-                    != self_name_path
-                        .iter()
-                        .copied()
-                        .take(self_name_path.len() - 1)
-                        .collect::<Vec<_>>()
-                        .join("/")
-                {
-                    return format!("@{}.", name_path[name_path.len() - 2]);
+                if name != self.name {
+                    let imports = self
+                        .gen
+                        .package_import
+                        .entry(self.name.to_string())
+                        .or_default();
+                    let alias = name.split(".").last().unwrap();
+                    imports
+                        .packages
+                        .entry(name.to_string())
+                        .or_insert(imports.ns.tmp(alias));
+                    return format!("@{}.", name.split('.').last().unwrap());
+                }
+            } else if let Some(name) = self.gen.export_interface_names.get(id) {
+                if name != self.name {
+                    let imports = self
+                        .gen
+                        .package_import
+                        .entry(self.name.to_string())
+                        .or_default();
+                    let alias = name.split(".").last().unwrap();
+                    imports
+                        .packages
+                        .entry(name.to_string())
+                        .or_insert(imports.ns.tmp(alias));
+                    return format!("@{}.", name.split('.').last().unwrap());
                 }
             }
         }
@@ -677,7 +716,7 @@ impl InterfaceGenerator<'_> {
             Type::F32 | Type::F64 => "Double".into(),
             Type::String => "String".into(),
             Type::Id(id) => {
-                let ty = &self.resolve.types[*id];
+                let ty = &self.resolve.types[dealias(self.resolve, *id)];
                 match &ty.kind {
                     TypeDefKind::Type(ty) => self.type_name(ty, type_variable),
                     TypeDefKind::List(ty) => {
@@ -729,7 +768,7 @@ impl InterfaceGenerator<'_> {
                             Handle::Own(ty) => ty,
                             Handle::Borrow(ty) => ty,
                         };
-                        let ty = &self.resolve.types[*ty];
+                        let ty = &self.resolve.types[dealias(self.resolve, *ty)];
                         if let Some(name) = &ty.name {
                             format!("{}{}", self.qualifier(ty), name.to_upper_camel_case())
                         } else {
