@@ -1,5 +1,5 @@
 use anyhow::Result;
-use heck::{ToLowerCamelCase, ToShoutySnakeCase, ToUpperCamelCase};
+use heck::{ToLowerCamelCase, ToShoutySnakeCase, ToSnekCase, ToUpperCamelCase};
 use std::{
     collections::{HashMap, HashSet},
     fmt::Write,
@@ -158,6 +158,7 @@ pub struct MoonBit {
     // dependencies between packages
     package_import: HashMap<String, Imports>,
     export: HashMap<String, String>,
+    export_ns: Ns,
 }
 
 impl MoonBit {
@@ -168,6 +169,7 @@ impl MoonBit {
             gen: self,
             resolve,
             name,
+            scope: name,
         }
     }
 }
@@ -335,19 +337,23 @@ impl WorldGenerator for MoonBit {
 
         files.push(&format!("{directory}/top.mbt"), indent(&src).as_bytes());
 
-        let generate_stub = |directory, fragments: &[InterfaceFragment], files: &mut Files| {
-            let b = fragments
-                .iter()
-                .map(|f| f.stub.deref())
-                .collect::<Vec<_>>()
-                .join("\n");
+        let generate_stub =
+            |directory: String, fragments: &[InterfaceFragment], files: &mut Files| {
+                let b = fragments
+                    .iter()
+                    .map(|f| f.stub.deref())
+                    .collect::<Vec<_>>()
+                    .join("\n");
 
-            let mut body = Source::default();
-            wit_bindgen_core::generated_preamble(&mut body, version);
-            uwriteln!(&mut body, "{b}");
+                let mut body = Source::default();
+                wit_bindgen_core::generated_preamble(&mut body, version);
+                uwriteln!(&mut body, "{b}");
 
-            files.push(&format!("{directory}/export.mbt"), indent(&body).as_bytes());
-        };
+                files.push(
+                    &format!("gen/{}_export.mbt", directory.to_snek_case()),
+                    indent(&body).as_bytes(),
+                );
+            };
 
         generate_stub(directory, &self.export_world_fragments, files);
 
@@ -439,7 +445,7 @@ impl WorldGenerator for MoonBit {
             }}
             ",
         );
-        files.push(&format!("moon.pkg.json"), body.as_bytes());
+        files.push(&format!("gen/moon.pkg.json"), body.as_bytes());
 
         Ok(())
     }
@@ -450,39 +456,44 @@ struct InterfaceGenerator<'a> {
     stub: String,
     gen: &'a mut MoonBit,
     resolve: &'a Resolve,
+    // The current interface getting generated
     name: &'a str,
+    // The original interface getting generated.
+    // Used only for Bindgen to get qualifier for functions to be exported
+    scope: &'a str,
 }
 
 impl InterfaceGenerator<'_> {
+    fn qualify_package(&mut self, name: &String) -> String {
+        if name != self.name {
+            let imports = self
+                .gen
+                .package_import
+                .entry(self.name.to_string())
+                .or_default();
+            if let Some(alias) = imports.packages.get(name) {
+                return format!("@{}.", alias);
+            } else {
+                let alias = imports.ns.tmp(name.split(".").last().unwrap());
+                imports
+                    .packages
+                    .entry(name.to_string())
+                    .or_insert(alias.clone());
+                return format!("@{}.", alias);
+            }
+        } else {
+            "".into()
+        }
+    }
     fn qualifier(&mut self, ty: &TypeDef) -> String {
         if let TypeOwner::Interface(id) = &ty.owner {
             if let Some(name) = self.gen.import_interface_names.get(id) {
                 if name != self.name {
-                    let imports = self
-                        .gen
-                        .package_import
-                        .entry(self.name.to_string())
-                        .or_default();
-                    let alias = name.split(".").last().unwrap();
-                    imports
-                        .packages
-                        .entry(name.to_string())
-                        .or_insert(imports.ns.tmp(alias));
-                    return format!("@{}.", name.split('.').last().unwrap());
+                    return self.qualify_package(&name.clone());
                 }
             } else if let Some(name) = self.gen.export_interface_names.get(id) {
                 if name != self.name {
-                    let imports = self
-                        .gen
-                        .package_import
-                        .entry(self.name.to_string())
-                        .or_default();
-                    let alias = name.split(".").last().unwrap();
-                    imports
-                        .packages
-                        .entry(name.to_string())
-                        .or_insert(imports.ns.tmp(alias));
-                    return format!("@{}.", name.split('.').last().unwrap());
+                    return self.qualify_package(&name.clone());
                 }
             }
         }
@@ -606,8 +617,17 @@ impl InterfaceGenerator<'_> {
 
         let export_name = func.core_export_name(interface_name);
 
+        let mut toplevel_generator = InterfaceGenerator {
+            src: String::new(),
+            stub: String::new(),
+            gen: self.gen,
+            resolve: self.resolve,
+            name: "",
+            scope: self.name,
+        };
+
         let mut bindgen = FunctionBindgen::new(
-            self,
+            &mut toplevel_generator,
             &func.name,
             (0..sig.params.len()).map(|i| format!("p{i}")).collect(),
         );
@@ -624,6 +644,9 @@ impl InterfaceGenerator<'_> {
 
         let src = bindgen.src;
 
+        assert!(toplevel_generator.src.is_empty());
+        assert!(toplevel_generator.stub.is_empty());
+
         let result_type = match &sig.results[..] {
             [] => "Unit",
             [result] => wasm_type(*result),
@@ -631,6 +654,8 @@ impl InterfaceGenerator<'_> {
         };
 
         let camel_name = func.name.to_upper_camel_case();
+
+        let func_name = self.gen.export_ns.tmp(&format!("wasmExport{camel_name}"));
 
         let params = sig
             .params
@@ -647,15 +672,12 @@ impl InterfaceGenerator<'_> {
             self.stub,
             r#"
             /// exportation name: "{export_name}")
-            /// implementation : "{func_sig}"
-            pub fn wasmExport{camel_name}({params}) -> {result_type} {{
+            pub fn {func_name}({params}) -> {result_type} {{
                 {src}
             }}
             "#,
         );
-        self.gen
-            .export
-            .insert(format!("wasmExport{camel_name}"), format!("{export_name}"));
+        self.gen.export.insert(func_name, format!("{export_name}"));
 
         if abi::guest_export_needs_post_return(self.resolve, func) {
             let params = sig
@@ -679,19 +701,23 @@ impl InterfaceGenerator<'_> {
 
             let src = bindgen.src;
 
+            let func_name = self
+                .gen
+                .export_ns
+                .tmp(&format!("wasmExport{camel_name}PostReturn"));
+
             uwrite!(
                 self.stub,
                 r#"
                 /// exportation name: "cabi_post_{export_name}")  
-                pub fn wasmExport{camel_name}PostReturn({params}) -> Unit {{
+                pub fn {func_name}({params}) -> Unit {{
                     {src}
                 }}
                 "#
             );
-            self.gen.export.insert(
-                format!("wasmExport{camel_name}PostReturn"),
-                format!("cabi_post_{export_name}"),
-            );
+            self.gen
+                .export
+                .insert(func_name, format!("cabi_post_{export_name}"));
         }
 
         uwrite!(
@@ -1853,8 +1879,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwrite!(
                     self.src,
                     "
-                    {assignment}{name}({args});
-                    "
+                    {assignment}{}{name}({args});
+                    ",
+                    self.r#gen.qualify_package(&self.r#gen.scope.to_string())
                 );
             }
 
