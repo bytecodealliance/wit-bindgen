@@ -1455,9 +1455,16 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
             Instruction::HandleLift { ty, .. } => {
                 let op = &operands[0];
+                let ty = self.gen.type_name(&Type::Id(*ty), false);
+
                 results.push(format!(
-                    "{}({})",
-                    self.gen.type_name(&Type::Id(*ty), true),
+                    "{}::{}({})",
+                    ty,
+                    if ty.starts_with("@") {
+                        ty.split('.').last().unwrap()
+                    } else {
+                        &ty
+                    },
                     op
                 ));
             }
@@ -1897,7 +1904,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     "
                     {assignment}{}{name}({args});
                     ",
-                    self.r#gen.qualify_package(&self.r#gen.scope.to_string())
+                    if name.starts_with("@") {
+                        "".into()
+                    } else {
+                        self.r#gen.qualify_package(&self.r#gen.scope.to_string())
+                    }
                 );
             }
 
