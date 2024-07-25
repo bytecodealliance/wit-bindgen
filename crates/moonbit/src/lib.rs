@@ -1,6 +1,6 @@
 use anyhow::Result;
 use heck::{ToLowerCamelCase, ToShoutySnakeCase, ToSnekCase, ToUpperCamelCase};
-use std::{collections::HashMap, fmt::Write, iter, mem, ops::Deref};
+use std::{collections::HashMap, fmt::Write, mem, ops::Deref};
 use wit_bindgen_core::{
     abi::{self, AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType},
     dealias, uwrite, uwriteln,
@@ -166,6 +166,7 @@ impl MoonBit {
         &'a mut self,
         resolve: &'a Resolve,
         name: &'a str,
+        module: &'a str,
         direction: Direction,
     ) -> InterfaceGenerator<'a> {
         InterfaceGenerator {
@@ -174,6 +175,7 @@ impl MoonBit {
             gen: self,
             resolve,
             name,
+            module,
             direction,
         }
     }
@@ -195,11 +197,12 @@ impl WorldGenerator for MoonBit {
         let name = interface_name(resolve, key, Direction::Import);
         let name = self.interface_ns.tmp(&name);
         self.import_interface_names.insert(id, name.clone());
-        let mut gen = self.interface(resolve, &name, Direction::Import);
+        let module = &resolve.name_world_key(key);
+        let mut gen = self.interface(resolve, &name, module, Direction::Import);
         gen.types(id);
 
         for (_, func) in resolve.interfaces[id].functions.iter() {
-            gen.import(&resolve.name_world_key(key), func);
+            gen.import(module, func);
         }
 
         gen.add_interface_fragment();
@@ -215,7 +218,7 @@ impl WorldGenerator for MoonBit {
         _files: &mut Files,
     ) {
         let name = world_name(resolve, world);
-        let mut gen = self.interface(resolve, &name, Direction::Import);
+        let mut gen = self.interface(resolve, &name, "$root", Direction::Import);
 
         for (_, func) in funcs {
             gen.import("$root", func);
@@ -234,11 +237,12 @@ impl WorldGenerator for MoonBit {
         let name = interface_name(resolve, key, Direction::Export);
         let name = self.interface_ns.tmp(&name);
         self.export_interface_names.insert(id, name.clone());
-        let mut gen = self.interface(resolve, &name, Direction::Export);
+        let module = &resolve.name_world_key(key);
+        let mut gen = self.interface(resolve, &name, module, Direction::Export);
         gen.types(id);
 
         for (_, func) in resolve.interfaces[id].functions.iter() {
-            gen.export(Some(&resolve.name_world_key(key)), func);
+            gen.export(Some(module), func);
         }
 
         gen.add_interface_fragment();
@@ -253,7 +257,7 @@ impl WorldGenerator for MoonBit {
         _files: &mut Files,
     ) -> Result<()> {
         let name = world_name(resolve, world);
-        let mut gen = self.interface(resolve, &name, Direction::Export);
+        let mut gen = self.interface(resolve, &name, "$root", Direction::Export);
 
         for (_, func) in funcs {
             gen.export(None, func);
@@ -271,7 +275,7 @@ impl WorldGenerator for MoonBit {
         _files: &mut Files,
     ) {
         let name = world_name(resolve, world);
-        let mut gen = self.interface(resolve, &name, Direction::Import);
+        let mut gen = self.interface(resolve, &name, "$root", Direction::Import);
 
         for (ty_name, ty) in types {
             gen.define_type(ty_name, *ty);
@@ -289,7 +293,7 @@ impl WorldGenerator for MoonBit {
             let directory = name.replace('.', "/");
             let imports: Option<&mut Imports> = self.package_import.get_mut(name);
             if let Some(imports) = imports {
-                let deps = imports
+                let mut deps = imports
                     .packages
                     .iter()
                     .map(|(k, v)| {
@@ -299,11 +303,12 @@ impl WorldGenerator for MoonBit {
                             v
                         )
                     })
-                    .collect::<Vec<_>>()
-                    .join(", ");
+                    .collect::<Vec<_>>();
+                deps.sort();
+
                 files.push(
                     &format!("{directory}/moon.pkg.json"),
-                    format!("{{ \"import\": [{}] }}", deps).as_bytes(),
+                    format!("{{ \"import\": [{}] }}", deps.join(", ")).as_bytes(),
                 );
             } else {
                 files.push(
@@ -403,31 +408,64 @@ impl WorldGenerator for MoonBit {
         files.push(&format!("{FFI_DIR}/top.mbt"), FFI.as_bytes());
         files.push(&format!("{FFI_DIR}/moon.pkg.json"), "{}".as_bytes());
 
+        let mut gen = self.interface(resolve, "gen", "", Direction::Export);
+        let ffi_qualifier = gen.qualify_package(&FFI_DIR.to_string());
+
         let mut body = Source::default();
-        uwriteln!(&mut body, "{{\"name\": \"wasi-bindgen\"}}");
+        uwriteln!(
+            &mut body,
+            "
+            pub fn cabi_realloc(
+                src_offset : Int,
+                src_size : Int,
+                _dst_alignment : Int,
+                dst_size : Int
+            ) -> Int {{
+                if dst_size <= 0 {{
+                    {ffi_qualifier}free(src_offset)
+                    return 0
+                }}
+                let dest = {ffi_qualifier}malloc(dst_size)
+                if src_size != 0 {{
+                    let min = if src_size < dst_size {{ src_size }} else {{ dst_size }}
+                    {ffi_qualifier}copy(dest, src_offset, min)
+                    {ffi_qualifier}free(src_offset)
+                }}
+                dest
+            }}
+            "
+        );
+        files.push(&format!("{EXPORT_DIR}/ffi.mbt"), indent(&body).as_bytes());
+        self.export
+            .insert("cabi_realloc".into(), "cabi_realloc".into());
+
+        let mut body = Source::default();
+        uwriteln!(&mut body, "{{ \"name\": \"wasi-bindgen\" }}");
         files.push(&format!("moon.mod.json"), body.as_bytes());
 
         let mut body = Source::default();
-        let exports = self
+        let mut exports = self
             .export
             .iter()
             .map(|(k, v)| format!("\"{k}:{v}\""))
-            .collect::<Vec<_>>()
-            .join(", ");
+            .collect::<Vec<_>>();
+        exports.sort();
+
         uwrite!(
             &mut body,
             r#"
             {{
                 "link": {{
                     "wasm": {{
-                        "exports": [{exports}],
+                        "exports": [{}],
                         "export-memory-name": "memory"
                     }}
                 }}
-            "#
+            "#,
+            exports.join(", ")
         );
         if let Some(imports) = self.package_import.get_mut(EXPORT_DIR) {
-            let deps = imports
+            let mut deps = imports
                 .packages
                 .iter()
                 .map(|(k, v)| {
@@ -437,9 +475,10 @@ impl WorldGenerator for MoonBit {
                         v
                     )
                 })
-                .collect::<Vec<_>>()
-                .join(", ");
-            uwrite!(&mut body, "    ,\"import\": [{}]", deps);
+                .collect::<Vec<_>>();
+            deps.sort();
+
+            uwrite!(&mut body, "    ,\"import\": [{}]", deps.join(", "));
         }
         uwrite!(
             &mut body,
@@ -447,7 +486,10 @@ impl WorldGenerator for MoonBit {
             }}
             ",
         );
-        files.push(&format!("{EXPORT_DIR}/moon.pkg.json"), body.as_bytes());
+        files.push(
+            &format!("{EXPORT_DIR}/moon.pkg.json"),
+            indent(&body).as_bytes(),
+        );
 
         Ok(())
     }
@@ -460,6 +502,7 @@ struct InterfaceGenerator<'a> {
     resolve: &'a Resolve,
     // The current interface getting generated
     name: &'a str,
+    module: &'a str,
     direction: Direction,
 }
 
@@ -607,10 +650,16 @@ impl InterfaceGenerator<'_> {
 
         let sig = self.sig_string(func);
 
+        uwriteln!(
+            self.src,
+            r#"fn wasmImport{camel_name}({params}) {result_type} = "{module}" "{name}""#
+        );
+
+        self.print_docs(&func.docs);
+
         uwrite!(
             self.src,
-            r#"fn wasmImport{camel_name}({params}) {result_type} = "{module}" "{name}";
-
+            r#"
             {sig} {{
               {cleanup_list}
               {src}
@@ -628,7 +677,7 @@ impl InterfaceGenerator<'_> {
 
         let mut toplevel_generator =
             self.gen
-                .interface(self.resolve, EXPORT_DIR, Direction::Export);
+                .interface(self.resolve, EXPORT_DIR, self.module, Direction::Export);
 
         let mut bindgen = FunctionBindgen::new(
             &mut toplevel_generator,
@@ -673,10 +722,11 @@ impl InterfaceGenerator<'_> {
             .collect::<Vec<_>>()
             .join(", ");
 
+        self.print_docs(&func.docs);
+
         uwrite!(
             self.stub,
             r#"
-            /// exportation name: "{export_name}")
             pub fn {func_name}({params}) -> {result_type} {{
                 {src}
             }}
@@ -929,13 +979,20 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
     fn type_resource(&mut self, _id: TypeId, name: &str, docs: &Docs) {
         self.print_docs(docs);
-
+        let type_name = name;
         let name = name.to_upper_camel_case();
         uwrite!(
             self.src,
-            "
+            r#"
             pub type {name} Int
-            "
+
+            fn wasmImportResourceDrop{name}(resource : Int) = "{}" "[resource-drop]{type_name}"
+
+            pub fn {name}::drop(self : {name}) -> Unit {{
+                wasmImportResourceDrop{name}(self.0)
+            }}
+            "#,
+            self.module
         )
     }
 
@@ -2126,10 +2183,15 @@ impl Bindgen for FunctionBindgen<'_, '_> {
         }
     }
 
-    fn return_pointer(&mut self, size: usize, _align: usize) -> String {
+    fn return_pointer(&mut self, size: usize, align: usize) -> String {
         let ffi_qualifier = self.gen.qualify_package(&FFI_DIR.to_string());
         let address = self.locals.tmp("return_area");
         uwriteln!(self.src, "let {address} = {ffi_qualifier}malloc({})", size,);
+        self.cleanup.push(Cleanup::Memory {
+            address: address.clone(),
+            size: size.to_string(),
+            align,
+        });
         address
     }
 
@@ -2257,9 +2319,8 @@ fn list_element_info(ty: &Type) -> (usize, &'static str) {
     }
 }
 
-fn indent(code: &str) -> String {
-    let mut indented = String::with_capacity(code.len());
-    let mut indent = 0;
+fn indent(code: &str) -> Source {
+    let mut indented = Source::default();
     let mut was_empty = false;
     for line in code.lines() {
         let trimmed = line.trim();
@@ -2273,14 +2334,13 @@ fn indent(code: &str) -> String {
         }
 
         if trimmed.starts_with('}') {
-            indent -= 1;
+            indented.deindent(2)
         }
-        indented.extend(iter::repeat(' ').take(indent * 4));
         indented.push_str(trimmed);
-        if trimmed.ends_with('{') {
-            indent += 1;
+        if trimmed.ends_with('{') && !trimmed.starts_with("///") {
+            indented.indent(2)
         }
-        indented.push('\n');
+        indented.push_str("\n");
     }
     indented
 }
