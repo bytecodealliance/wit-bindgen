@@ -161,13 +161,19 @@ pub struct MoonBit {
 }
 
 impl MoonBit {
-    fn interface<'a>(&'a mut self, resolve: &'a Resolve, name: &'a str) -> InterfaceGenerator<'a> {
+    fn interface<'a>(
+        &'a mut self,
+        resolve: &'a Resolve,
+        name: &'a str,
+        direction: Direction,
+    ) -> InterfaceGenerator<'a> {
         InterfaceGenerator {
             src: String::new(),
             stub: String::new(),
             gen: self,
             resolve,
             name,
+            direction,
         }
     }
 }
@@ -187,14 +193,14 @@ impl WorldGenerator for MoonBit {
     ) -> Result<()> {
         let name = interface_name(resolve, key, Direction::Import);
         self.import_interface_names.insert(id, name.clone());
-        let mut gen = self.interface(resolve, &name);
+        let mut gen = self.interface(resolve, &name, Direction::Import);
         gen.types(id);
 
         for (_, func) in resolve.interfaces[id].functions.iter() {
             gen.import(&resolve.name_world_key(key), func);
         }
 
-        gen.add_interface_fragment(Direction::Import);
+        gen.add_interface_fragment();
 
         Ok(())
     }
@@ -207,13 +213,13 @@ impl WorldGenerator for MoonBit {
         _files: &mut Files,
     ) {
         let name = world_name(resolve, world);
-        let mut gen = self.interface(resolve, &name);
+        let mut gen = self.interface(resolve, &name, Direction::Import);
 
         for (_, func) in funcs {
             gen.import("$root", func);
         }
 
-        gen.add_world_fragment(Direction::Import);
+        gen.add_world_fragment();
     }
 
     fn export_interface(
@@ -225,14 +231,14 @@ impl WorldGenerator for MoonBit {
     ) -> Result<()> {
         let name = interface_name(resolve, key, Direction::Export);
         self.export_interface_names.insert(id, name.clone());
-        let mut gen = self.interface(resolve, &name);
+        let mut gen = self.interface(resolve, &name, Direction::Export);
         gen.types(id);
 
         for (_, func) in resolve.interfaces[id].functions.iter() {
             gen.export(Some(&resolve.name_world_key(key)), func);
         }
 
-        gen.add_interface_fragment(Direction::Export);
+        gen.add_interface_fragment();
         Ok(())
     }
 
@@ -244,13 +250,13 @@ impl WorldGenerator for MoonBit {
         _files: &mut Files,
     ) -> Result<()> {
         let name = world_name(resolve, world);
-        let mut gen = self.interface(resolve, &name);
+        let mut gen = self.interface(resolve, &name, Direction::Export);
 
         for (_, func) in funcs {
             gen.export(None, func);
         }
 
-        gen.add_world_fragment(Direction::Export);
+        gen.add_world_fragment();
         Ok(())
     }
 
@@ -262,13 +268,13 @@ impl WorldGenerator for MoonBit {
         _files: &mut Files,
     ) {
         let name = world_name(resolve, world);
-        let mut gen = self.interface(resolve, &name);
+        let mut gen = self.interface(resolve, &name, Direction::Import);
 
         for (ty_name, ty) in types {
             gen.define_type(ty_name, *ty);
         }
 
-        gen.add_world_fragment(Direction::Import);
+        gen.add_world_fragment();
     }
 
     fn finish(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) -> Result<()> {
@@ -451,6 +457,7 @@ struct InterfaceGenerator<'a> {
     resolve: &'a Resolve,
     // The current interface getting generated
     name: &'a str,
+    direction: Direction,
 }
 
 impl InterfaceGenerator<'_> {
@@ -477,11 +484,11 @@ impl InterfaceGenerator<'_> {
     }
     fn qualifier(&mut self, ty: &TypeDef) -> String {
         if let TypeOwner::Interface(id) = &ty.owner {
-            if let Some(name) = self.gen.import_interface_names.get(id) {
+            if let Some(name) = self.gen.export_interface_names.get(id) {
                 if name != self.name {
                     return self.qualify_package(&name.clone());
                 }
-            } else if let Some(name) = self.gen.export_interface_names.get(id) {
+            } else if let Some(name) = self.gen.import_interface_names.get(id) {
                 if name != self.name {
                     return self.qualify_package(&name.clone());
                 }
@@ -496,8 +503,8 @@ impl InterfaceGenerator<'_> {
         String::new()
     }
 
-    fn add_interface_fragment(self, direction: Direction) {
-        match direction {
+    fn add_interface_fragment(self) {
+        match self.direction {
             Direction::Import => {
                 self.gen
                     .import_interface_fragments
@@ -521,8 +528,8 @@ impl InterfaceGenerator<'_> {
         }
     }
 
-    fn add_world_fragment(self, direction: Direction) {
-        match direction {
+    fn add_world_fragment(self) {
+        match self.direction {
             Direction::Import => {
                 self.gen.import_world_fragments.push(InterfaceFragment {
                     src: self.src,
@@ -616,13 +623,9 @@ impl InterfaceGenerator<'_> {
 
         let export_name = func.core_export_name(interface_name);
 
-        let mut toplevel_generator = InterfaceGenerator {
-            src: String::new(),
-            stub: String::new(),
-            gen: self.gen,
-            resolve: self.resolve,
-            name: EXPORT_DIR,
-        };
+        let mut toplevel_generator =
+            self.gen
+                .interface(self.resolve, EXPORT_DIR, Direction::Export);
 
         let mut bindgen = FunctionBindgen::new(
             &mut toplevel_generator,
