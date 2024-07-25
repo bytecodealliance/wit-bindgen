@@ -1,11 +1,6 @@
 use anyhow::Result;
 use heck::{ToLowerCamelCase, ToShoutySnakeCase, ToSnekCase, ToUpperCamelCase};
-use std::{
-    collections::{HashMap, HashSet},
-    fmt::Write,
-    iter, mem,
-    ops::Deref,
-};
+use std::{collections::HashMap, fmt::Write, iter, mem, ops::Deref};
 use wit_bindgen_core::{
     abi::{self, AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType},
     dealias, uwrite, uwriteln,
@@ -130,7 +125,7 @@ pub struct Opts {}
 impl Opts {
     pub fn build(&self) -> Box<dyn WorldGenerator> {
         Box::new(MoonBit {
-            opts: self.clone(),
+            // opts: self.clone(),
             ..MoonBit::default()
         })
     }
@@ -149,7 +144,7 @@ struct Imports {
 
 #[derive(Default)]
 pub struct MoonBit {
-    opts: Opts,
+    // opts: Opts,
     name: String,
     needs_cleanup: bool,
     import_interface_fragments: HashMap<String, Vec<InterfaceFragment>>,
@@ -1118,7 +1113,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         );
     }
 
-    fn type_alias(&mut self, id: TypeId, _name: &str, _ty: &Type, _docs: &Docs) {
+    fn type_alias(&mut self, _id: TypeId, _name: &str, _ty: &Type, _docs: &Docs) {
         // TODO: Implement correct type aliasing
         // self.type_name(&Type::Id(id));
     }
@@ -2217,15 +2212,6 @@ fn perform_cast(op: &str, cast: &Bitcast) -> String {
     }
 }
 
-fn int_type(int: Int) -> &'static str {
-    match int {
-        Int::U8 => "Byte",
-        Int::U16 => "UInt32",
-        Int::U32 => "UInt32",
-        Int::U64 => "UInt64",
-    }
-}
-
 fn wasm_type(ty: WasmType) -> &'static str {
     match ty {
         WasmType::I32 => "Int",
@@ -2321,7 +2307,7 @@ fn interface_name(resolve: &Resolve, name: &WorldKey, direction: Direction) -> S
     .to_upper_camel_case();
 
     format!(
-        "wit.{}.{}{name}",
+        "interface.{}.{}{name}",
         match direction {
             Direction::Import => "imports",
             Direction::Export => "exports",
@@ -2336,21 +2322,6 @@ fn interface_name(resolve: &Resolve, name: &WorldKey, direction: Direction) -> S
             String::new()
         }
     )
-}
-
-fn split_qualified_name(name: &str) -> (String, &str) {
-    let tokens = name.split('.').collect::<Vec<_>>();
-
-    let package = tokens
-        .iter()
-        .copied()
-        .take(tokens.len() - 1)
-        .collect::<Vec<_>>()
-        .join(".");
-
-    let name = tokens.last().unwrap();
-
-    (package, name)
 }
 
 trait ToMoonBitIdent: ToOwned {
