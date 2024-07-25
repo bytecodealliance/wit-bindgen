@@ -827,7 +827,11 @@ impl {async_support}::StreamPayload for {name} {{
         abi::call(
             f.gen.resolve,
             AbiVariant::GuestImport,
-            LiftLower::LowerArgsLiftResults,
+            if f.gen.gen.opts.symmetric {
+                LiftLower::Symmetric
+            } else {
+                LiftLower::LowerArgsLiftResults
+            },
             func,
             &mut f,
             async_,

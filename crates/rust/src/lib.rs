@@ -293,7 +293,11 @@ impl RustWasm {
         resolve: &'a Resolve,
         in_import: bool,
     ) -> InterfaceGenerator<'a> {
-        let mut sizes = SizeAlign::new();
+        let mut sizes = if self.opts.symmetric {
+            SizeAlign::new_symmetric()
+        } else {
+            SizeAlign::new()
+        };
         sizes.fill(resolve);
 
         InterfaceGenerator {

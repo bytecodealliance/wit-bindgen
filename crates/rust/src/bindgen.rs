@@ -685,7 +685,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
                 self.push_str(&format!("let {} = {}.as_ptr().cast::<u8>();\n", ptr, val));
                 self.push_str(&format!("let {} = {}.len();\n", len, val));
-                if realloc.is_some() {
+                if realloc.is_some() && !self.gen.gen.opts.symmetric {
                     self.push_str(&format!("::core::mem::forget({});\n", val));
                 }
                 results.push(format!("{ptr}.cast_mut()"));
@@ -717,7 +717,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
                 self.push_str(&format!("let {} = {}.as_ptr().cast::<u8>();\n", ptr, val));
                 self.push_str(&format!("let {} = {}.len();\n", len, val));
-                if realloc.is_some() {
+                if realloc.is_some() && !self.gen.gen.opts.symmetric {
                     self.push_str(&format!("::core::mem::forget({});\n", val));
                 }
                 results.push(format!("{ptr}.cast_mut()"));
@@ -729,15 +729,24 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let tmp = self.tmp();
                 let len = format!("len{}", tmp);
                 uwriteln!(self.src, "let {len} = {};", operands[1]);
-                uwriteln!(
-                    self.src,
-                    "let bytes{tmp} = {vec}::from_raw_parts({}.cast(), {len}, {len});",
-                    operands[0],
-                );
-                if self.gen.gen.opts.raw_strings {
-                    results.push(format!("bytes{tmp}"));
+                if self.gen.gen.opts.symmetric {
+                    uwriteln!(
+                        self.src,
+                        "let string{tmp} = String::from(std::str::from_utf8(std::slice::from_raw_parts({}, {len}).unwrap());",
+                        operands[0],
+                    );
+                    results.push(format!("string{tmp}"));
                 } else {
-                    results.push(format!("{}(bytes{tmp})", self.gen.path_to_string_lift()));
+                    uwriteln!(
+                        self.src,
+                        "let bytes{tmp} = {vec}::from_raw_parts({}.cast(), {len}, {len});",
+                        operands[0],
+                    );
+                    if self.gen.gen.opts.raw_strings {
+                        results.push(format!("bytes{tmp}"));
+                    } else {
+                        results.push(format!("{}(bytes{tmp})", self.gen.path_to_string_lift()));
+                    }
                 }
             }
 
