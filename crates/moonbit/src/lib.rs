@@ -411,9 +411,9 @@ impl WorldGenerator for MoonBit {
             {{
                 "link": {{
                     "wasm": {{
-                        "exports": [{exports}]
-                    }},
-                    "export-memory-name": "memory"
+                        "exports": [{exports}],
+                        "export-memory-name": "memory"
+                    }}
                 }}
             "#
         );
@@ -1170,13 +1170,17 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         func_interface: &'b str,
         params: Box<[String]>,
     ) -> FunctionBindgen<'a, 'b> {
+        let mut locals = Ns::default();
+        params.iter().for_each(|str| {
+            locals.tmp(str);
+        });
         Self {
             gen,
             func_name,
             func_interface,
             params,
             src: String::new(),
-            locals: Ns::default(),
+            locals,
             block_storage: Vec::new(),
             blocks: Vec::new(),
             payloads: Vec::new(),
