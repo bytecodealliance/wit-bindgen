@@ -66,7 +66,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         }
     }
 
-    fn declare_import(&mut self, name: &str, params: &[WasmType], results: &[WasmType]) -> String {
+    fn declare_import(&mut self, module_prefix: &str, name: &str, params: &[WasmType], results: &[WasmType]) -> String {
         // Define the actual function we're calling inline
         // let tmp = self.tmp();
         let mut sig = "(".to_owned();
@@ -82,11 +82,11 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             sig.push_str(wasm_type(*result));
         }
         let module_name = self.wasm_import_module;
-        let export_name = make_external_symbol(module_name, name, AbiVariant::GuestImport);
+        let export_name = String::from(module_prefix) + &make_external_symbol(module_name, name, AbiVariant::GuestImport);
         uwrite!(
             self.src,
             "
-                #[link(wasm_import_module = \"{module_name}\")]
+                #[link(wasm_import_module = \"{module_prefix}{module_name}\")]
                 extern \"C\" {{
                     #[cfg_attr(target_arch = \"wasm32\", link_name = \"{name}\")]
                     fn {export_name}{sig};
@@ -677,7 +677,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let val = format!("vec{}", tmp);
                 let ptr = format!("ptr{}", tmp);
                 let len = format!("len{}", tmp);
-                if realloc.is_none() {
+                if realloc.is_none() || self.gen.gen.opts.symmetric {
                     self.push_str(&format!("let {} = {};\n", val, operands[0]));
                 } else {
                     let op0 = operands.pop().unwrap();
@@ -709,7 +709,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let val = format!("vec{}", tmp);
                 let ptr = format!("ptr{}", tmp);
                 let len = format!("len{}", tmp);
-                if realloc.is_none() {
+                if realloc.is_none() || self.gen.gen.opts.symmetric {
                     self.push_str(&format!("let {} = {};\n", val, operands[0]));
                 } else {
                     let op0 = format!("{}.into_bytes()", operands[0]);
@@ -732,7 +732,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 if self.gen.gen.opts.symmetric {
                     uwriteln!(
                         self.src,
-                        "let string{tmp} = String::from(std::str::from_utf8(std::slice::from_raw_parts({}, {len}).unwrap());",
+                        "let string{tmp} = String::from(std::str::from_utf8(std::slice::from_raw_parts({}, {len})).unwrap());",
                         operands[0],
                     );
                     results.push(format!("string{tmp}"));
@@ -838,8 +838,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::IterBasePointer => results.push("base".to_string()),
 
-            Instruction::CallWasm { name, sig, .. } => {
-                let func = self.declare_import(name, &sig.params, &sig.results);
+            Instruction::CallWasm { name, sig, module_prefix, .. } => {
+                let func = self.declare_import(module_prefix, name, &sig.params, &sig.results);
 
                 // ... then call the function with all our operands
                 if !sig.results.is_empty() {
@@ -853,7 +853,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::AsyncCallWasm { name, size, align } => {
-                let func = self.declare_import(name, &[WasmType::Pointer; 3], &[WasmType::I32]);
+                let func = self.declare_import("", name, &[WasmType::Pointer; 3], &[WasmType::I32]);
 
                 let async_support = self.gen.path_to_async_support();
                 let tmp = self.tmp();
@@ -940,7 +940,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 params,
                 results: call_results,
             } => {
-                let func = self.declare_import(name, params, call_results);
+                let func = self.declare_import("", name, params, call_results);
 
                 if !call_results.is_empty() {
                     self.push_str("let ret = ");
@@ -971,7 +971,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::AsyncCallReturn { name, params } => {
-                let func = self.declare_import(name, params, &[]);
+                let func = self.declare_import("", name, params, &[]);
 
                 uwriteln!(
                     self.src,
