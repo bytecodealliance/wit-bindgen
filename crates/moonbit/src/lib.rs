@@ -154,6 +154,7 @@ pub struct MoonBit {
     sizes: SizeAlign,
     import_interface_names: HashMap<InterfaceId, String>,
     export_interface_names: HashMap<InterfaceId, String>,
+    interface_ns: Ns,
     // dependencies between packages
     package_import: HashMap<String, Imports>,
     export: HashMap<String, String>,
@@ -192,6 +193,7 @@ impl WorldGenerator for MoonBit {
         _files: &mut Files,
     ) -> Result<()> {
         let name = interface_name(resolve, key, Direction::Import);
+        let name = self.interface_ns.tmp(&name);
         self.import_interface_names.insert(id, name.clone());
         let mut gen = self.interface(resolve, &name, Direction::Import);
         gen.types(id);
@@ -230,6 +232,7 @@ impl WorldGenerator for MoonBit {
         _files: &mut Files,
     ) -> Result<()> {
         let name = interface_name(resolve, key, Direction::Export);
+        let name = self.interface_ns.tmp(&name);
         self.export_interface_names.insert(id, name.clone());
         let mut gen = self.interface(resolve, &name, Direction::Export);
         gen.types(id);
