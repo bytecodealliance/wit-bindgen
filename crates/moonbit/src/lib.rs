@@ -416,8 +416,9 @@ impl WorldGenerator for MoonBit {
             {{
                 "link": {{
                     "wasm": {{
-                        "export": [{exports}]
-                    }}
+                        "exports": [{exports}]
+                    }},
+                    "export-memory-name": "memory"
                 }}
             "#
         );
