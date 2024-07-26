@@ -227,32 +227,37 @@ impl InterfaceGenerator<'_> {
                 self.src,
                 r#"
 #[doc(hidden)]
-unsafe fn _resource_new(val: *mut u8) -> u32
+unsafe fn _resource_new(val: *mut u8) -> {handle_type}
     where Self: Sized
 {{
     #[link(wasm_import_module = "[export]{module}")]
     extern "C" {{
         #[cfg_attr(target_arch = "wasm32", link_name = "[resource-new]{resource_name}")]
-        fn {external_new}(_: *mut u8) -> u32;
+        fn {external_new}(_: *mut u8) -> {handle_type};
     }}
     {external_new}(val)
 }}
 
 #[doc(hidden)]
-fn _resource_rep(handle: u32) -> *mut u8
+fn _resource_rep(handle: {handle_type}) -> *mut u8
     where Self: Sized
 {{
     #[link(wasm_import_module = "[export]{module}")]
     extern "C" {{
         #[cfg_attr(target_arch = "wasm32", link_name = "[resource-rep]{resource_name}")]
-        fn {external_rep}(_: u32) -> *mut u8;
+        fn {external_rep}(_: {handle_type}) -> *mut u8;
     }}
     unsafe {{
         {external_rep}(handle)
     }}
 }}
 
-                    "#
+                    "#,
+                handle_type = if self.gen.opts.symmetric {
+                    "usize"
+                } else {
+                    "u32"
+                }
             );
             for method in methods {
                 self.src.push_str(method);
@@ -2334,23 +2339,28 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
                     impl {camel} {{
                         #[doc(hidden)]
-                        pub unsafe fn from_handle(handle: u32) -> Self {{
+                        pub unsafe fn from_handle(handle: {handle_type}) -> Self {{
                             Self {{
                                 handle: {resource}::from_handle(handle),
                             }}
                         }}
 
                         #[doc(hidden)]
-                        pub fn take_handle(&self) -> u32 {{
+                        pub fn take_handle(&self) -> {handle_type} {{
                             {resource}::take_handle(&self.handle)
                         }}
 
                         #[doc(hidden)]
-                        pub fn handle(&self) -> u32 {{
+                        pub fn handle(&self) -> {handle_type} {{
                             {resource}::handle(&self.handle)
                         }}
                     }}
-                "#
+                "#,
+                handle_type = if self.gen.opts.symmetric {
+                    "usize"
+                } else {
+                    "u32"
+                }
             );
             self.wasm_import_module.to_string()
         } else {
@@ -2407,19 +2417,19 @@ impl {camel} {{
     }}
 
     #[doc(hidden)]
-    pub unsafe fn from_handle(handle: u32) -> Self {{
+    pub unsafe fn from_handle(handle: {handle_type}) -> Self {{
         Self {{
             handle: {resource}::from_handle(handle),
         }}
     }}
 
     #[doc(hidden)]
-    pub fn take_handle(&self) -> u32 {{
+    pub fn take_handle(&self) -> {handle_type} {{
         {resource}::take_handle(&self.handle)
     }}
 
     #[doc(hidden)]
-    pub fn handle(&self) -> u32 {{
+    pub fn handle(&self) -> {handle_type} {{
         {resource}::handle(&self.handle)
     }}
 
@@ -2483,7 +2493,12 @@ impl<'a> {camel}Borrow<'a>{{
        self.rep.cast()
     }}
 }}
-                "#
+                "#,
+                handle_type = if self.gen.opts.symmetric {
+                    "usize"
+                } else {
+                    "u32"
+                }
             );
             format!("[export]{module}")
         };
@@ -2499,19 +2514,24 @@ impl<'a> {camel}Borrow<'a>{{
             r#"
                 unsafe impl {wasm_resource} for {camel} {{
                      #[inline]
-                     unsafe fn drop(_handle: u32) {{
+                     unsafe fn drop(_handle: {handle_type}) {{
                          {{
                              #[link(wasm_import_module = "{wasm_import_module}")]
                              extern "C" {{
                                  #[cfg_attr(target_arch = "wasm32", link_name = "[resource-drop]{name}")]
-                                 fn {export_name}(_: u32);
+                                 fn {export_name}(_: {handle_type});
                              }}
 
                              {export_name}(_handle);
                          }}
                      }}
                 }}
-            "#
+            "#,
+            handle_type = if self.gen.opts.symmetric {
+                "usize"
+            } else {
+                "u32"
+            }
         );
     }
 

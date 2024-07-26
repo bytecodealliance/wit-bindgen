@@ -420,7 +420,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 ..
             } => {
                 let op = &operands[0];
-                let result = format!("({op}).take_handle() as i32");
+                let result = format!(
+                    "({op}).take_handle(){cast}",
+                    cast = if self.gen.gen.opts.symmetric {
+                        ""
+                    } else {
+                        " as i32"
+                    }
+                );
                 results.push(result);
             }
 
@@ -429,7 +436,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 ..
             } => {
                 let op = &operands[0];
-                results.push(format!("({op}).handle() as i32"))
+                results.push(format!(
+                    "({op}).handle(){cast}",
+                    cast = if self.gen.gen.opts.symmetric {
+                        ""
+                    } else {
+                        " as i32"
+                    }
+                ))
             }
 
             Instruction::HandleLift { handle, .. } => {
@@ -443,7 +457,15 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 let result = if is_own {
                     let name = self.gen.type_path(dealiased_resource, true);
-                    format!("{name}::from_handle({op} as u32)")
+
+                    format!(
+                        "{name}::from_handle({op}{cast})",
+                        cast = if self.gen.gen.opts.symmetric {
+                            ""
+                        } else {
+                            " as u32"
+                        }
+                    )
                 } else if self.gen.is_exported_resource(*resource) {
                     let name = resolve.types[*resource]
                         .name
@@ -457,9 +479,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     let name = self.gen.type_path(dealiased_resource, true);
                     format!(
                         "{{\n
-                            {tmp} = {name}::from_handle({op} as u32);
+                            {tmp} = {name}::from_handle({op}{cast});
                             &{tmp}
-                        }}"
+                        }}",
+                        cast = if self.gen.gen.opts.symmetric {
+                            ""
+                        } else {
+                            " as u32"
+                        }
                     )
                 };
                 results.push(result);
