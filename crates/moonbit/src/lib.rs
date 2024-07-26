@@ -16,7 +16,7 @@ use wit_bindgen_core::{
 // Data: u8 -> Byte, s8 | s16 | u16 | s32 -> Int, u32 -> UInt, s64 -> Int64, u64 -> UInt64, f32 | f64 -> Double, address -> Int
 // Encoding: UTF16
 // Organization: one package per interface (export and import are treated as different interfaces)
-// Export will share the type signatures with the import by using a newtype alias
+// TODO: Export will share the type signatures with the import by using a newtype alias
 
 const PROJECT_NAME: &str = "wasi-bindgen";
 
@@ -120,12 +120,16 @@ pub struct Cleanup {
 
 #[derive(Default, Debug, Clone)]
 #[cfg_attr(feature = "clap", derive(clap::Args))]
-pub struct Opts {}
+pub struct Opts {
+    /// Whether or not to derive Show for all types
+    #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
+    pub derive_show: bool,
+}
 
 impl Opts {
     pub fn build(&self) -> Box<dyn WorldGenerator> {
         Box::new(MoonBit {
-            // opts: self.clone(),
+            opts: self.clone(),
             ..MoonBit::default()
         })
     }
@@ -144,7 +148,7 @@ struct Imports {
 
 #[derive(Default)]
 pub struct MoonBit {
-    // opts: Opts,
+    opts: Opts,
     name: String,
     needs_cleanup: bool,
     import_interface_fragments: HashMap<String, Vec<InterfaceFragment>>,
@@ -974,8 +978,13 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             "
             pub struct {name} {{
                 {parameters}
-            }}
-            "
+            }} {}
+            ",
+            if self.gen.opts.derive_show {
+                "derive (Show)"
+            } else {
+                ""
+            }
         );
     }
 
@@ -986,7 +995,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         uwrite!(
             self.src,
             r#"
-            pub type {name} Int
+            pub type {name} Int {}
 
             fn wasmImportResourceDrop{name}(resource : Int) = "{}" "[resource-drop]{type_name}"
 
@@ -994,6 +1003,11 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 wasmImportResourceDrop{name}(self.0)
             }}
             "#,
+            if self.gen.opts.derive_show {
+                "derive (Show)"
+            } else {
+                ""
+            },
             self.module
         )
     }
@@ -1041,7 +1055,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         uwrite!(
             self.src,
             "
-            pub type {name} {ty}
+            pub type {name} {ty} {}
             pub fn {name}::default() -> {name} {{
                 {}
             }}
@@ -1063,6 +1077,11 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
               (self.0.land(other.value()) == other.value())
             }}
             ",
+            if self.gen.opts.derive_show {
+                "derive (Show)"
+            } else {
+                ""
+            },
             match ty {
                 "Byte" => "b'\\x00'",
                 "UInt" => "0U",
@@ -1101,8 +1120,13 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             "
             pub enum {name} {{
               {cases}
-            }}
-            "
+            }} {}
+            ",
+            if self.gen.opts.derive_show {
+                "derive (Show)"
+            } else {
+                ""
+            }
         );
     }
 
@@ -1132,8 +1156,13 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             "
             pub enum {name} {{
                 {cases}
-            }}
-            "
+            }} {}
+            ",
+            if self.gen.opts.derive_show {
+                "derive (Show)"
+            } else {
+                ""
+            }
         );
 
         // Case to integer
