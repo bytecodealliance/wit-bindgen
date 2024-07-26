@@ -1,12 +1,12 @@
-use the_world::foo::foo::strings;
 use the_world::exports::foo::foo::strings::Guest;
+use the_world::foo::foo::strings;
 
 mod the_world;
 
 struct MyWorld;
 
 impl Guest for MyWorld {
-    fn a(x: String,) {
+    fn a(x: String) {
         println!("{x}");
     }
 
@@ -14,7 +14,7 @@ impl Guest for MyWorld {
         String::from("hello B")
     }
 
-    fn c(a: String,b: String,) -> String {
+    fn c(a: String, b: String) -> String {
         println!("{a}|{b}");
         "hello C".into()
     }

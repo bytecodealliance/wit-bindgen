@@ -2,167 +2,203 @@
 // Options used:
 #[allow(dead_code)]
 pub mod foo {
-  #[allow(dead_code)]
-  pub mod foo {
-    #[allow(dead_code, clippy::all)]
-    pub mod strings {
-      #[used]
-      #[doc(hidden)]
-      #[cfg(target_arch = "wasm32")]
-      static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
-      use super::super::super::_rt;
-      #[allow(unused_unsafe, clippy::all)]
-      pub fn a(x: &str,) -> (){
-        unsafe {
-          let vec0 = x;
-          let ptr0 = vec0.as_ptr().cast::<u8>();
-          let len0 = vec0.len();
+    #[allow(dead_code)]
+    pub mod foo {
+        #[allow(dead_code, clippy::all)]
+        pub mod strings {
+            #[used]
+            #[doc(hidden)]
+            #[cfg(target_arch = "wasm32")]
+            static __FORCE_SECTION_REF: fn() =
+                super::super::super::__link_custom_section_describing_imports;
+            use super::super::super::_rt;
+            #[allow(unused_unsafe, clippy::all)]
+            pub fn a(x: &str) -> () {
+                unsafe {
+                    let vec0 = x;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
 
-          #[link(wasm_import_module = "foo:foo/strings")]
-          extern "C" {
-            #[cfg_attr(target_arch = "wasm32", link_name = "a")]
-            fn fooX3AfooX2FstringsX00a(_: *mut u8, _: usize, );
-          }
-          fooX3AfooX2FstringsX00a(ptr0.cast_mut(), len0);
+                    #[link(wasm_import_module = "foo:foo/strings")]
+                    extern "C" {
+                        #[cfg_attr(target_arch = "wasm32", link_name = "a")]
+                        fn fooX3AfooX2FstringsX00a(_: *mut u8, _: usize);
+                    }
+                    fooX3AfooX2FstringsX00a(ptr0.cast_mut(), len0);
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            pub fn b() -> _rt::String {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; (2 * core::mem::size_of::<*const u8>())],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            (2 * core::mem::size_of::<*const u8>())],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[link(wasm_import_module = "foo:foo/strings")]
+                    extern "C" {
+                        #[cfg_attr(target_arch = "wasm32", link_name = "b")]
+                        fn fooX3AfooX2FstringsX00b(_: *mut u8);
+                    }
+                    fooX3AfooX2FstringsX00b(ptr0);
+                    let l1 = *ptr0.add(0).cast::<*mut u8>();
+                    let l2 = *ptr0.add(core::mem::size_of::<*const u8>()).cast::<usize>();
+                    let len3 = l2;
+                    let string3 = String::from(
+                        std::str::from_utf8(std::slice::from_raw_parts(l1, len3)).unwrap(),
+                    );
+
+                    #[link(wasm_import_module = "cabi_post_foo:foo/strings")]
+                    extern "C" {
+                        #[cfg_attr(target_arch = "wasm32", link_name = "b")]
+                        fn cabi_post_fooX3AfooX2FstringsX00b(_: *mut u8);
+                    }
+                    cabi_post_fooX3AfooX2FstringsX00b(ptr0);
+                    string3
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            pub fn c(a: &str, b: &str) -> _rt::String {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; (2 * core::mem::size_of::<*const u8>())],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            (2 * core::mem::size_of::<*const u8>())],
+                    );
+                    let vec0 = a;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let vec1 = b;
+                    let ptr1 = vec1.as_ptr().cast::<u8>();
+                    let len1 = vec1.len();
+                    let ptr2 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[link(wasm_import_module = "foo:foo/strings")]
+                    extern "C" {
+                        #[cfg_attr(target_arch = "wasm32", link_name = "c")]
+                        fn fooX3AfooX2FstringsX00c(
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                        );
+                    }
+                    fooX3AfooX2FstringsX00c(ptr0.cast_mut(), len0, ptr1.cast_mut(), len1, ptr2);
+                    let l3 = *ptr2.add(0).cast::<*mut u8>();
+                    let l4 = *ptr2.add(core::mem::size_of::<*const u8>()).cast::<usize>();
+                    let len5 = l4;
+                    let string5 = String::from(
+                        std::str::from_utf8(std::slice::from_raw_parts(l3, len5)).unwrap(),
+                    );
+
+                    #[link(wasm_import_module = "cabi_post_foo:foo/strings")]
+                    extern "C" {
+                        #[cfg_attr(target_arch = "wasm32", link_name = "c")]
+                        fn cabi_post_fooX3AfooX2FstringsX00c(_: *mut u8);
+                    }
+                    cabi_post_fooX3AfooX2FstringsX00c(ptr2);
+                    string5
+                }
+            }
         }
-      }
-      #[allow(unused_unsafe, clippy::all)]
-      pub fn b() -> _rt::String{
-        unsafe {
-
-          #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-          #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-          struct RetArea([::core::mem::MaybeUninit::<u8>; (2*core::mem::size_of::<*const u8>())]);
-          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); (2*core::mem::size_of::<*const u8>())]);
-          let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
-          #[link(wasm_import_module = "foo:foo/strings")]
-          extern "C" {
-            #[cfg_attr(target_arch = "wasm32", link_name = "b")]
-            fn fooX3AfooX2FstringsX00b(_: *mut u8, );
-          }
-          fooX3AfooX2FstringsX00b(ptr0);
-          let l1 = *ptr0.add(0).cast::<*mut u8>();
-          let l2 = *ptr0.add(core::mem::size_of::<*const u8>()).cast::<usize>();
-          let len3 = l2;
-          let string3 = String::from(std::str::from_utf8(std::slice::from_raw_parts(l1, len3)).unwrap());
-
-          #[link(wasm_import_module = "cabi_post_foo:foo/strings")]
-          extern "C" {
-            #[cfg_attr(target_arch = "wasm32", link_name = "b")]
-            fn cabi_post_fooX3AfooX2FstringsX00b(_: *mut u8, );
-          }
-          cabi_post_fooX3AfooX2FstringsX00b(ptr0);
-          string3
-        }
-      }
-      #[allow(unused_unsafe, clippy::all)]
-      pub fn c(a: &str,b: &str,) -> _rt::String{
-        unsafe {
-
-          #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-          #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-          struct RetArea([::core::mem::MaybeUninit::<u8>; (2*core::mem::size_of::<*const u8>())]);
-          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); (2*core::mem::size_of::<*const u8>())]);
-          let vec0 = a;
-          let ptr0 = vec0.as_ptr().cast::<u8>();
-          let len0 = vec0.len();
-          let vec1 = b;
-          let ptr1 = vec1.as_ptr().cast::<u8>();
-          let len1 = vec1.len();
-          let ptr2 = ret_area.0.as_mut_ptr().cast::<u8>();
-          #[link(wasm_import_module = "foo:foo/strings")]
-          extern "C" {
-            #[cfg_attr(target_arch = "wasm32", link_name = "c")]
-            fn fooX3AfooX2FstringsX00c(_: *mut u8, _: usize, _: *mut u8, _: usize, _: *mut u8, );
-          }
-          fooX3AfooX2FstringsX00c(ptr0.cast_mut(), len0, ptr1.cast_mut(), len1, ptr2);
-          let l3 = *ptr2.add(0).cast::<*mut u8>();
-          let l4 = *ptr2.add(core::mem::size_of::<*const u8>()).cast::<usize>();
-          let len5 = l4;
-          let string5 = String::from(std::str::from_utf8(std::slice::from_raw_parts(l3, len5)).unwrap());
-
-          #[link(wasm_import_module = "cabi_post_foo:foo/strings")]
-          extern "C" {
-            #[cfg_attr(target_arch = "wasm32", link_name = "c")]
-            fn cabi_post_fooX3AfooX2FstringsX00c(_: *mut u8, );
-          }
-          cabi_post_fooX3AfooX2FstringsX00c(ptr2);
-          string5
-        }
-      }
-
     }
-
-  }
 }
 #[allow(dead_code)]
 pub mod exports {
-  #[allow(dead_code)]
-  pub mod foo {
     #[allow(dead_code)]
     pub mod foo {
-      #[allow(dead_code, clippy::all)]
-      pub mod strings {
-        #[used]
-        #[doc(hidden)]
-        #[cfg(target_arch = "wasm32")]
-        static __FORCE_SECTION_REF: fn() = super::super::super::super::__link_custom_section_describing_imports;
-        use super::super::super::super::_rt;
-        #[doc(hidden)]
-        #[allow(non_snake_case)]
-        pub unsafe fn _export_a_cabi<T: Guest>(arg0: *mut u8,arg1: usize,) {#[cfg(target_arch="wasm32")]
-        _rt::run_ctors_once();let len0 = arg1;
-        let string0 = String::from(std::str::from_utf8(std::slice::from_raw_parts(arg0, len0)).unwrap());
-        T::a(string0);
-      }
-      #[doc(hidden)]
-      #[allow(non_snake_case)]
-      pub unsafe fn _export_b_cabi<T: Guest>(arg0: *mut u8,) {#[cfg(target_arch="wasm32")]
-      _rt::run_ctors_once();let result0 = T::b();
-      let vec1 = (result0.into_bytes()).into_boxed_slice();
-      let ptr1 = vec1.as_ptr().cast::<u8>();
-      let len1 = vec1.len();
-      ::core::mem::forget(vec1);
-      *arg0.add(core::mem::size_of::<*const u8>()).cast::<usize>() = len1;
-      *arg0.add(0).cast::<*mut u8>() = ptr1.cast_mut();
-    }
-    #[doc(hidden)]
-    #[allow(non_snake_case)]
-    pub unsafe fn __post_return_b<T: Guest>(arg0: *mut u8,) {
-      let l0 = *arg0.add(0).cast::<*mut u8>();
-      let l1 = *arg0.add(core::mem::size_of::<*const u8>()).cast::<usize>();
-      _rt::cabi_dealloc(l0, l1, 1);
-    }
-    #[doc(hidden)]
-    #[allow(non_snake_case)]
-    pub unsafe fn _export_c_cabi<T: Guest>(arg0: *mut u8,arg1: usize,arg2: *mut u8,arg3: usize,arg4: *mut u8,) {#[cfg(target_arch="wasm32")]
-    _rt::run_ctors_once();let len0 = arg1;
-    let string0 = String::from(std::str::from_utf8(std::slice::from_raw_parts(arg0, len0)).unwrap());
-    let len1 = arg3;
-    let string1 = String::from(std::str::from_utf8(std::slice::from_raw_parts(arg2, len1)).unwrap());
-    let result2 = T::c(string0, string1);
-    let vec3 = (result2.into_bytes()).into_boxed_slice();
-    let ptr3 = vec3.as_ptr().cast::<u8>();
-    let len3 = vec3.len();
-    ::core::mem::forget(vec3);
-    *arg4.add(core::mem::size_of::<*const u8>()).cast::<usize>() = len3;
-    *arg4.add(0).cast::<*mut u8>() = ptr3.cast_mut();
-  }
-  #[doc(hidden)]
-  #[allow(non_snake_case)]
-  pub unsafe fn __post_return_c<T: Guest>(arg0: *mut u8,) {
-    let l0 = *arg0.add(0).cast::<*mut u8>();
-    let l1 = *arg0.add(core::mem::size_of::<*const u8>()).cast::<usize>();
-    _rt::cabi_dealloc(l0, l1, 1);
-  }
-  pub trait Guest {
-    fn a(x: _rt::String,) -> ();
-    fn b() -> _rt::String;
-    fn c(a: _rt::String,b: _rt::String,) -> _rt::String;
-  }
-  #[doc(hidden)]
+        #[allow(dead_code)]
+        pub mod foo {
+            #[allow(dead_code, clippy::all)]
+            pub mod strings {
+                #[used]
+                #[doc(hidden)]
+                #[cfg(target_arch = "wasm32")]
+                static __FORCE_SECTION_REF: fn() =
+                    super::super::super::super::__link_custom_section_describing_imports;
+                use super::super::super::super::_rt;
+                #[doc(hidden)]
+                #[allow(non_snake_case)]
+                pub unsafe fn _export_a_cabi<T: Guest>(arg0: *mut u8, arg1: usize) {
+                    #[cfg(target_arch = "wasm32")]
+                    _rt::run_ctors_once();
+                    let len0 = arg1;
+                    let string0 = String::from(
+                        std::str::from_utf8(std::slice::from_raw_parts(arg0, len0)).unwrap(),
+                    );
+                    T::a(string0);
+                }
+                #[doc(hidden)]
+                #[allow(non_snake_case)]
+                pub unsafe fn _export_b_cabi<T: Guest>(arg0: *mut u8) {
+                    #[cfg(target_arch = "wasm32")]
+                    _rt::run_ctors_once();
+                    let result0 = T::b();
+                    let vec1 = (result0.into_bytes()).into_boxed_slice();
+                    let ptr1 = vec1.as_ptr().cast::<u8>();
+                    let len1 = vec1.len();
+                    ::core::mem::forget(vec1);
+                    *arg0.add(core::mem::size_of::<*const u8>()).cast::<usize>() = len1;
+                    *arg0.add(0).cast::<*mut u8>() = ptr1.cast_mut();
+                }
+                #[doc(hidden)]
+                #[allow(non_snake_case)]
+                pub unsafe fn __post_return_b<T: Guest>(arg0: *mut u8) {
+                    let l0 = *arg0.add(0).cast::<*mut u8>();
+                    let l1 = *arg0.add(core::mem::size_of::<*const u8>()).cast::<usize>();
+                    _rt::cabi_dealloc(l0, l1, 1);
+                }
+                #[doc(hidden)]
+                #[allow(non_snake_case)]
+                pub unsafe fn _export_c_cabi<T: Guest>(
+                    arg0: *mut u8,
+                    arg1: usize,
+                    arg2: *mut u8,
+                    arg3: usize,
+                    arg4: *mut u8,
+                ) {
+                    #[cfg(target_arch = "wasm32")]
+                    _rt::run_ctors_once();
+                    let len0 = arg1;
+                    let string0 = String::from(
+                        std::str::from_utf8(std::slice::from_raw_parts(arg0, len0)).unwrap(),
+                    );
+                    let len1 = arg3;
+                    let string1 = String::from(
+                        std::str::from_utf8(std::slice::from_raw_parts(arg2, len1)).unwrap(),
+                    );
+                    let result2 = T::c(string0, string1);
+                    let vec3 = (result2.into_bytes()).into_boxed_slice();
+                    let ptr3 = vec3.as_ptr().cast::<u8>();
+                    let len3 = vec3.len();
+                    ::core::mem::forget(vec3);
+                    *arg4.add(core::mem::size_of::<*const u8>()).cast::<usize>() = len3;
+                    *arg4.add(0).cast::<*mut u8>() = ptr3.cast_mut();
+                }
+                #[doc(hidden)]
+                #[allow(non_snake_case)]
+                pub unsafe fn __post_return_c<T: Guest>(arg0: *mut u8) {
+                    let l0 = *arg0.add(0).cast::<*mut u8>();
+                    let l1 = *arg0.add(core::mem::size_of::<*const u8>()).cast::<usize>();
+                    _rt::cabi_dealloc(l0, l1, 1);
+                }
+                pub trait Guest {
+                    fn a(x: _rt::String) -> ();
+                    fn b() -> _rt::String;
+                    fn c(a: _rt::String, b: _rt::String) -> _rt::String;
+                }
+                #[doc(hidden)]
 
-  macro_rules! __export_foo_foo_strings_cabi{
+                macro_rules! __export_foo_foo_strings_cabi{
     ($ty:ident with_types_in $($path_to_types:tt)*) => (const _: () = {
 
       #[cfg_attr(target_arch = "wasm32", export_name = "foo:foo/strings#a")]
@@ -192,31 +228,29 @@ pub mod exports {
       }
     };);
   }
-  #[doc(hidden)]
-  pub(crate) use __export_foo_foo_strings_cabi;
-
-}
-
-}
-}
+                #[doc(hidden)]
+                pub(crate) use __export_foo_foo_strings_cabi;
+            }
+        }
+    }
 }
 mod _rt {
-  pub use alloc_crate::string::String;
-  pub use alloc_crate::vec::Vec;
+    pub use alloc_crate::string::String;
+    pub use alloc_crate::vec::Vec;
 
-  #[cfg(target_arch = "wasm32")]
-  pub fn run_ctors_once() {
-    wit_bindgen::rt::run_ctors_once();
-  }
-  pub unsafe fn cabi_dealloc(ptr: *mut u8, size: usize, align: usize) {
-    if size == 0 {
-      return;
+    #[cfg(target_arch = "wasm32")]
+    pub fn run_ctors_once() {
+        wit_bindgen::rt::run_ctors_once();
     }
-    let layout = alloc::Layout::from_size_align_unchecked(size, align);
-    alloc::dealloc(ptr, layout);
-  }
-  extern crate alloc as alloc_crate;
-  pub use alloc_crate::alloc;
+    pub unsafe fn cabi_dealloc(ptr: *mut u8, size: usize, align: usize) {
+        if size == 0 {
+            return;
+        }
+        let layout = alloc::Layout::from_size_align_unchecked(size, align);
+        alloc::dealloc(ptr, layout);
+    }
+    extern crate alloc as alloc_crate;
+    pub use alloc_crate::alloc;
 }
 
 /// Generates `#[no_mangle]` functions to export the specified type as the
@@ -263,6 +297,5 @@ processed-by\x02\x0dwit-component\x070.214.0\x10wit-bindgen-rust\x060.28.0";
 #[doc(hidden)]
 #[cfg(target_arch = "wasm32")]
 pub fn __link_custom_section_describing_imports() {
-  wit_bindgen::rt::maybe_link_cabi_realloc();
+    wit_bindgen::rt::maybe_link_cabi_realloc();
 }
-
