@@ -423,7 +423,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let result = format!(
                     "({op}).take_handle(){cast}",
                     cast = if self.gen.gen.opts.symmetric {
-                        ""
+                        " as *mut u8"
                     } else {
                         " as i32"
                     }
@@ -439,7 +439,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.push(format!(
                     "({op}).handle(){cast}",
                     cast = if self.gen.gen.opts.symmetric {
-                        ""
+                        " as *mut u8"
                     } else {
                         " as i32"
                     }
@@ -461,7 +461,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     format!(
                         "{name}::from_handle({op}{cast})",
                         cast = if self.gen.gen.opts.symmetric {
-                            ""
+                            " as usize"
                         } else {
                             " as u32"
                         }
