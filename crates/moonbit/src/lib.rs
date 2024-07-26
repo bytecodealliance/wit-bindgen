@@ -1,5 +1,5 @@
 use anyhow::Result;
-use heck::{ToLowerCamelCase, ToShoutySnakeCase, ToSnekCase, ToUpperCamelCase};
+use heck::{ToLowerCamelCase, ToShoutySnakeCase, ToSnakeCase, ToUpperCamelCase};
 use std::{collections::HashMap, fmt::Write, mem, ops::Deref};
 use wit_bindgen_core::{
     abi::{self, AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType},
@@ -361,7 +361,7 @@ impl WorldGenerator for MoonBit {
                 uwriteln!(&mut body, "{b}");
 
                 files.push(
-                    &format!("{EXPORT_DIR}/{}_export.mbt", directory.to_snek_case()),
+                    &format!("{EXPORT_DIR}/{}_export.mbt", directory.to_snake_case()),
                     indent(&body).as_bytes(),
                 );
             };
@@ -517,7 +517,9 @@ impl InterfaceGenerator<'_> {
             if let Some(alias) = imports.packages.get(name) {
                 return format!("@{}.", alias);
             } else {
-                let alias = imports.ns.tmp(name.split(".").last().unwrap());
+                let alias = imports
+                    .ns
+                    .tmp(&name.split(".").last().unwrap().to_lower_camel_case());
                 imports
                     .packages
                     .entry(name.to_string())
@@ -2408,7 +2410,7 @@ impl ToMoonBitIdent for str {
             | "throw" | "init" | "main" | "test" => {
                 format!("{self}_")
             }
-            _ => self.to_lower_camel_case(),
+            _ => self.to_snake_case(),
         }
     }
 }
