@@ -550,12 +550,12 @@ pub fn run_ctors_once() {{
             }
 
             RuntimeItem::ResourceType => {
-                self.src.push_str(
+                self.src.push_str(&format!(
                     r#"
 
 use core::fmt;
 use core::marker;
-use core::sync::atomic::{AtomicU32, Ordering::Relaxed};
+use core::sync::atomic::{{{atomic_type}, Ordering::Relaxed}};
 
 /// A type which represents a component model resource, either imported or
 /// exported into this component.
@@ -570,36 +570,36 @@ use core::sync::atomic::{AtomicU32, Ordering::Relaxed};
 /// This type is primarily used in generated code for exported and imported
 /// resources.
 #[repr(transparent)]
-pub struct Resource<T: WasmResource> {
-    // NB: This would ideally be `u32` but it is not. The fact that this has
+pub struct Resource<T: WasmResource> {{
+    // NB: This would ideally be `{handle_type}` but it is not. The fact that this has
     // interior mutability is not exposed in the API of this type except for the
     // `take_handle` method which is supposed to in theory be private.
     //
     // This represents, almost all the time, a valid handle value. When it's
-    // invalid it's stored as `u32::MAX`.
-    handle: AtomicU32,
+    // invalid it's stored as `{invalid_value}`.
+    handle: {atomic_type},
     _marker: marker::PhantomData<T>,
-}
+}}
 
 /// A trait which all wasm resources implement, namely providing the ability to
 /// drop a resource.
 ///
 /// This generally is implemented by generated code, not user-facing code.
 #[allow(clippy::missing_safety_doc)]
-pub unsafe trait WasmResource {
+pub unsafe trait WasmResource {{
     /// Invokes the `[resource-drop]...` intrinsic.
-    unsafe fn drop(handle: u32);
-}
+    unsafe fn drop(handle: {handle_type});
+}}
 
-impl<T: WasmResource> Resource<T> {
+impl<T: WasmResource> Resource<T> {{
     #[doc(hidden)]
-    pub unsafe fn from_handle(handle: u32) -> Self {
-        debug_assert!(handle != u32::MAX);
-        Self {
-            handle: AtomicU32::new(handle),
+    pub unsafe fn from_handle(handle: {handle_type}) -> Self {{
+        debug_assert!(handle != {invalid_value});
+        Self {{
+            handle: {atomic_type}::new(handle),
             _marker: marker::PhantomData,
-        }
-    }
+        }}
+    }}
 
     /// Takes ownership of the handle owned by `resource`.
     ///
@@ -614,41 +614,48 @@ impl<T: WasmResource> Resource<T> {
     /// `take_handle` should only be exposed internally to generated code, not
     /// to user code.
     #[doc(hidden)]
-    pub fn take_handle(resource: &Resource<T>) -> u32 {
-        resource.handle.swap(u32::MAX, Relaxed)
-    }
+    pub fn take_handle(resource: &Resource<T>) -> {handle_type} {{
+        resource.handle.swap({invalid_value}, Relaxed)
+    }}
 
     #[doc(hidden)]
-    pub fn handle(resource: &Resource<T>) -> u32 {
+    pub fn handle(resource: &Resource<T>) -> {handle_type} {{
         resource.handle.load(Relaxed)
-    }
-}
+    }}
+}}
 
-impl<T: WasmResource> fmt::Debug for Resource<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl<T: WasmResource> fmt::Debug for Resource<T> {{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {{
         f.debug_struct("Resource")
             .field("handle", &self.handle)
             .finish()
-    }
-}
+    }}
+}}
 
-impl<T: WasmResource> Drop for Resource<T> {
-    fn drop(&mut self) {
-        unsafe {
-            match self.handle.load(Relaxed) {
+impl<T: WasmResource> Drop for Resource<T> {{
+    fn drop(&mut self) {{
+        unsafe {{
+            match self.handle.load(Relaxed) {{
                 // If this handle was "taken" then don't do anything in the
                 // destructor.
-                u32::MAX => {}
+                {invalid_value} => {{}}
 
                 // ... but otherwise do actually destroy it with the imported
                 // component model intrinsic as defined through `T`.
                 other => T::drop(other),
-            }
-        }
-    }
-}
+            }}
+        }}
+    }}
+}}
                     "#,
-                );
+                    atomic_type = if self.opts.symmetric {
+                        "AtomicUsize"
+                    } else {
+                        "AtomicU32"
+                    },
+                    invalid_value = if self.opts.symmetric { "0" } else { "u32::MAX" },
+                    handle_type = if self.opts.symmetric { "usize" } else { "u32" }
+                ));
             }
 
             RuntimeItem::AsyncSupport => {
