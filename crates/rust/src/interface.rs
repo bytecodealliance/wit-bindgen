@@ -378,22 +378,23 @@ macro_rules! {macro_name} {{
         }
     }
 
+    pub fn align_area(&mut self, alignment: Alignment) {
+        match alignment {
+            Alignment::Pointer => uwriteln!(
+                self.src,
+                "#[cfg_attr(target_pointer_width=\"64\", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width=\"32\", repr(align(4)))]"
+            ),
+            Alignment::Bytes(bytes) => {
+                uwriteln!(self.src, "#[repr(align({align}))]", align = bytes.get())
+            }
+        }
+    }
+
     pub fn finish(&mut self) -> String {
         if !self.return_pointer_area_size.is_empty() {
-            match self.return_pointer_area_align {
-                Alignment::Pointer => uwriteln!(
-                    self.src,
-                    "\
-                        #[cgf_attr(target_pointer_width=\"64\", repr(align(8))]
-                        #[cgf_attr(target_pointer_width=\"32\", repr(align(4))]"
-                ),
-                Alignment::Bytes(bytes) => uwriteln!(
-                    self.src,
-                    "\
-                        #[repr(align({align}))]",
-                    align = bytes.get()
-                ),
-            }
+            uwriteln!(self.src,);
+            self.align_area(self.return_pointer_area_align);
             uwrite!(
                 self.src,
                     "struct _RetArea([::core::mem::MaybeUninit::<u8>; {size}]);
@@ -851,14 +852,13 @@ impl {async_support}::StreamPayload for {name} {{
         }
         assert!(handle_decls.is_empty());
         if !import_return_pointer_area_size.is_empty() {
+            uwriteln!(self.src,);
+            self.align_area(import_return_pointer_area_align);
             uwrite!(
                 self.src,
-                "\
-                    #[repr(align({import_return_pointer_area_align}))]
-                    struct RetArea([::core::mem::MaybeUninit::<u8>; {import_return_pointer_area_size}]);
+                "struct RetArea([::core::mem::MaybeUninit::<u8>; {import_return_pointer_area_size}]);
                     let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); {import_return_pointer_area_size}]);
-", import_return_pointer_area_size = import_return_pointer_area_size.format(POINTER_SIZE_EXPRESSION),
-import_return_pointer_area_align = import_return_pointer_area_align.format(POINTER_SIZE_EXPRESSION)
+", import_return_pointer_area_size = import_return_pointer_area_size.format(POINTER_SIZE_EXPRESSION)
             );
         }
         self.src.push_str(&String::from(src));
@@ -911,7 +911,11 @@ import_return_pointer_area_align = import_return_pointer_area_align.format(POINT
         abi::call(
             f.gen.resolve,
             AbiVariant::GuestExport,
-            LiftLower::LiftArgsLowerResults,
+            if f.gen.gen.opts.symmetric {
+                LiftLower::Symmetric
+            } else {
+                LiftLower::LiftArgsLowerResults
+            },
             func,
             &mut f,
             async_,
@@ -1050,7 +1054,12 @@ import_return_pointer_area_align = import_return_pointer_area_align.format(POINT
 
     fn print_export_sig(&mut self, func: &Function) -> Vec<String> {
         self.src.push_str("(");
-        let sig = self.resolve.wasm_signature(AbiVariant::GuestExport, func);
+        let sig = abi::wasm_signature_symmetric(
+            self.resolve,
+            AbiVariant::GuestExport,
+            func,
+            self.gen.opts.symmetric,
+        );
         let mut params = Vec::new();
         for (i, param) in sig.params.iter().enumerate() {
             let name = format!("arg{}", i);

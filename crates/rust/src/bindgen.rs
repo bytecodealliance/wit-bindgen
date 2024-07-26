@@ -66,7 +66,13 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         }
     }
 
-    fn declare_import(&mut self, module_prefix: &str, name: &str, params: &[WasmType], results: &[WasmType]) -> String {
+    fn declare_import(
+        &mut self,
+        module_prefix: &str,
+        name: &str,
+        params: &[WasmType],
+        results: &[WasmType],
+    ) -> String {
         // Define the actual function we're calling inline
         // let tmp = self.tmp();
         let mut sig = "(".to_owned();
@@ -82,7 +88,8 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             sig.push_str(wasm_type(*result));
         }
         let module_name = self.wasm_import_module;
-        let export_name = String::from(module_prefix) + &make_external_symbol(module_name, name, AbiVariant::GuestImport);
+        let export_name = String::from(module_prefix)
+            + &make_external_symbol(module_name, name, AbiVariant::GuestImport);
         uwrite!(
             self.src,
             "
@@ -709,7 +716,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let val = format!("vec{}", tmp);
                 let ptr = format!("ptr{}", tmp);
                 let len = format!("len{}", tmp);
-                if realloc.is_none() || self.gen.gen.opts.symmetric {
+                if realloc.is_none() || (self.gen.in_import && self.gen.gen.opts.symmetric) {
                     self.push_str(&format!("let {} = {};\n", val, operands[0]));
                 } else {
                     let op0 = format!("{}.into_bytes()", operands[0]);
@@ -717,7 +724,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
                 self.push_str(&format!("let {} = {}.as_ptr().cast::<u8>();\n", ptr, val));
                 self.push_str(&format!("let {} = {}.len();\n", len, val));
-                if realloc.is_some() && !self.gen.gen.opts.symmetric {
+                if realloc.is_some() && !(self.gen.in_import && self.gen.gen.opts.symmetric) {
                     self.push_str(&format!("::core::mem::forget({});\n", val));
                 }
                 results.push(format!("{ptr}.cast_mut()"));
@@ -838,7 +845,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::IterBasePointer => results.push("base".to_string()),
 
-            Instruction::CallWasm { name, sig, module_prefix, .. } => {
+            Instruction::CallWasm {
+                name,
+                sig,
+                module_prefix,
+                ..
+            } => {
                 let func = self.declare_import(module_prefix, name, &sig.params, &sig.results);
 
                 // ... then call the function with all our operands

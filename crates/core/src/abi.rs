@@ -741,7 +741,7 @@ pub fn call(
     async_: bool,
 ) {
     if matches!(lift_lower, LiftLower::Symmetric) {
-        let sig = wasm_signature_symmetric(resolve, variant, func);
+        let sig = wasm_signature_symmetric(resolve, variant, func, true);
         Generator::new(resolve, variant, lift_lower, bindgen, async_)
             .call_with_signature(func, sig);
     } else {
@@ -2276,9 +2276,13 @@ fn push_flat_symmetric(resolve: &Resolve, ty: &Type, vec: &mut Vec<WasmType>) {
 // another hack
 pub fn wasm_signature_symmetric(
     resolve: &Resolve,
-    _variant: AbiVariant,
+    variant: AbiVariant,
     func: &Function,
+    symmetric: bool,
 ) -> WasmSignature {
+    if !symmetric {
+        return resolve.wasm_signature(variant, func);
+    }
     const MAX_FLAT_PARAMS: usize = 16;
     const MAX_FLAT_RESULTS: usize = 1;
 
