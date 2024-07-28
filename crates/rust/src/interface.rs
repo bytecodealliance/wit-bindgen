@@ -208,9 +208,24 @@ impl InterfaceGenerator<'_> {
         }
 
         for (resource, (trait_name, methods)) in traits.iter() {
-            uwriteln!(self.src, "pub trait {trait_name}: 'static {{");
             let resource = resource.unwrap();
             let resource_name = self.resolve.types[resource].name.as_ref().unwrap();
+            if self.gen.opts.symmetric {
+                let resource_type = resource_name.to_pascal_case();
+                let resource_lowercase = resource_name.to_lower_camel_case();
+                uwriteln!(
+                    self.src,
+                    r#"#[doc(hidden)]
+            #[allow(non_snake_case)]
+            pub unsafe fn _export_drop_{resource_lowercase}_cabi<T: {trait_name}>(arg0: usize) {{
+                #[cfg(target_arch = "wasm32")]
+                _rt::run_ctors_once();
+                {resource_type}::dtor::<T>(arg0 as *mut u8);
+            }}"#
+                );
+            }
+
+            uwriteln!(self.src, "pub trait {trait_name}: 'static {{");
             let (_, interface_name) = interface.unwrap();
             let module = self.resolve.name_world_key(interface_name);
             let external_new = make_external_symbol(
@@ -223,9 +238,31 @@ impl InterfaceGenerator<'_> {
                 &(String::from("[resource-rep]") + &resource_name),
                 AbiVariant::GuestImport,
             );
-            uwriteln!(
-                self.src,
-                r#"
+            if self.gen.opts.symmetric {
+                uwriteln!(
+                    self.src,
+                    r#"
+    #[doc(hidden)]
+    unsafe fn _resource_new(val: *mut u8) -> {handle_type}
+        where Self: Sized
+    {{
+        val as {handle_type}
+    }}
+    
+    #[doc(hidden)]
+    fn _resource_rep(handle: {handle_type}) -> *mut u8
+        where Self: Sized
+    {{
+        handle as *mut u8
+    }}
+    
+                        "#,
+                    handle_type = "usize"
+                );
+            } else {
+                uwriteln!(
+                    self.src,
+                    r#"
 #[doc(hidden)]
 unsafe fn _resource_new(val: *mut u8) -> {handle_type}
     where Self: Sized
@@ -253,15 +290,13 @@ fn _resource_rep(handle: {handle_type}) -> *mut u8
 }}
 
                     "#,
-                handle_type = if self.gen.opts.symmetric {
-                    "usize"
-                } else {
-                    "u32"
-                }
-            );
+                    handle_type = "u32"
+                );
+            }
             for method in methods {
                 self.src.push_str(method);
             }
+
             uwriteln!(self.src, "}}");
         }
 
@@ -323,14 +358,29 @@ macro_rules! {macro_name} {{
                 Identifier::None | Identifier::World(_) => unreachable!(),
             };
             let camel = name.to_upper_camel_case();
-            let dtor_symbol = make_external_symbol(
-                &module,
-                &(String::from("[dtor]") + &name),
-                AbiVariant::GuestExport,
-            );
-            uwriteln!(
-                self.src,
-                r#"
+            if self.gen.opts.symmetric {
+                let dtor_symbol = make_external_symbol(
+                    &module,
+                    &(String::from("[resource-drop]") + &name),
+                    AbiVariant::GuestImport,
+                );
+                uwriteln!(
+                    self.src,
+                    r#"    #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
+    unsafe extern "C" fn {dtor_symbol}(arg0: usize) {{
+      $($path_to_types)*::_export_drop_{name}_cabi::<<$ty as $($path_to_types)*::Guest>::{camel}>(arg0)
+    }}
+"#
+                );
+            } else {
+                let dtor_symbol = make_external_symbol(
+                    &module,
+                    &(String::from("[dtor]") + &name),
+                    AbiVariant::GuestExport,
+                );
+                uwriteln!(
+                    self.src,
+                    r#"
                 const _: () = {{
                     #[doc(hidden)]
                     #[cfg_attr(target_arch = "wasm32", export_name = "{export_prefix}{module}#[dtor]{name}")]
@@ -343,7 +393,8 @@ macro_rules! {macro_name} {{
                     }}
                 }};
                 "#
-            );
+                );
+            }
         }
         uwriteln!(self.src, "}};);");
         uwriteln!(self.src, "}}");
@@ -992,13 +1043,25 @@ impl {async_support}::StreamPayload for {name} {{
             Identifier::None => unreachable!(),
         };
         let export_prefix = self.gen.opts.export_prefix.as_deref().unwrap_or("");
-        let export_name = func.core_export_name(wasm_module_export_name.as_deref());
-        let export_name = if async_ {
-            format!("[async]{export_name}")
+        let (export_name, external_name) = if self.gen.opts.symmetric {
+            let export_name = func.name.clone(); // item_name().to_owned();
+            let external_name = make_external_symbol(
+                &wasm_module_export_name.unwrap_or_default(),
+                &func.name,
+                AbiVariant::GuestImport,
+            );
+            (export_name, external_name)
         } else {
-            export_name.to_string()
+            let export_name = func.core_export_name(wasm_module_export_name.as_deref());
+            let export_name = if async_ {
+                format!("[async]{export_name}")
+            } else {
+                export_name.to_string()
+            };
+            let external_name =
+                make_external_component(&(String::from(export_prefix) + &export_name));
+            (export_name, external_name)
         };
-        let external_name = make_external_component(&(String::from(export_prefix) + &export_name));
         uwrite!(
             self.src,
             "\
@@ -2500,7 +2563,11 @@ impl<'a> {camel}Borrow<'a>{{
                     "u32"
                 }
             );
-            format!("[export]{module}")
+            if self.gen.opts.symmetric {
+                module.clone()
+            } else {
+                format!("[export]{module}")
+            }
         };
 
         let wasm_resource = self.path_to_wasm_resource();
