@@ -43,7 +43,7 @@ impl WorldGenerator for Markdown {
         let world = &resolve.worlds[world];
         uwriteln!(
             self.src,
-            "# <a name=\"{}\"></a>World {}\n",
+            "# <a id=\"{}\"></a>World {}\n",
             world.name.to_snake_case(),
             world.name
         );
@@ -121,7 +121,7 @@ impl WorldGenerator for Markdown {
         let name = resolve.name_world_key(name);
         uwriteln!(
             self.src,
-            "## <a name=\"{}\"></a>Import interface {name}\n",
+            "## <a id=\"{}\"></a>Import interface {name}\n",
             name.to_snake_case()
         );
         self.hrefs
@@ -160,7 +160,7 @@ impl WorldGenerator for Markdown {
         let name = resolve.name_world_key(name);
         uwriteln!(
             self.src,
-            "## <a name=\"{}\"></a>Export interface {name}\n",
+            "## <a id=\"{}\"></a>Export interface {name}\n",
             name.to_snake_case()
         );
         self.hrefs
@@ -265,7 +265,7 @@ impl InterfaceGenerator<'_> {
 
     fn func(&mut self, func: &Function) {
         self.push_str(&format!(
-            "#### <a name=\"{0}\"></a>`",
+            "#### <a id=\"{0}\"></a>`",
             func.name.to_snake_case()
         ));
         self.gen
@@ -281,7 +281,7 @@ impl InterfaceGenerator<'_> {
             self.push_str("##### Params\n\n");
             for (name, ty) in func.params.iter() {
                 self.push_str(&format!(
-                    "- <a name=\"{f}.{p}\"></a>`{}`: ",
+                    "- <a id=\"{f}.{p}\"></a>`{}`: ",
                     name,
                     f = func.name.to_snake_case(),
                     p = name.to_snake_case(),
@@ -297,7 +297,7 @@ impl InterfaceGenerator<'_> {
                 Results::Named(params) => {
                     for (name, ty) in params.iter() {
                         self.push_str(&format!(
-                            "- <a name=\"{f}.{p}\"></a>`{}`: ",
+                            "- <a id=\"{f}.{p}\"></a>`{}`: ",
                             name,
                             f = func.name.to_snake_case(),
                             p = name,
@@ -308,7 +308,7 @@ impl InterfaceGenerator<'_> {
                 }
                 Results::Anon(ty) => {
                     self.push_str(&format!(
-                        "- <a name=\"{f}.0\"></a> ",
+                        "- <a id=\"{f}.0\"></a> ",
                         f = func.name.to_snake_case(),
                     ));
                     self.print_ty(ty);
@@ -469,7 +469,7 @@ impl InterfaceGenerator<'_> {
             self.types_header_printed = true;
         }
         self.push_str(&format!(
-            "#### <a name=\"{}\"></a>`{} {}`\n",
+            "#### <a id=\"{}\"></a>`{} {}`\n",
             name.to_snake_case(),
             type_,
             name,
@@ -492,7 +492,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.push_str("\n##### Record Fields\n\n");
         for field in record.fields.iter() {
             self.push_str(&format!(
-                "- <a name=\"{r}.{f}\"></a>`{name}`: ",
+                "- <a id=\"{r}.{f}\"></a>`{name}`: ",
                 r = name.to_snake_case(),
                 f = field.name.to_snake_case(),
                 name = field.name,
@@ -525,7 +525,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.push_str("\n##### Tuple Fields\n\n");
         for (i, ty) in tuple.types.iter().enumerate() {
             self.push_str(&format!(
-                "- <a name=\"{r}.{f}\"></a>`{name}`: ",
+                "- <a id=\"{r}.{f}\"></a>`{name}`: ",
                 r = name.to_snake_case(),
                 f = i,
                 name = i,
@@ -546,7 +546,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.push_str("\n##### Flags members\n\n");
         for flag in flags.flags.iter() {
             self.push_str(&format!(
-                "- <a name=\"{r}.{f}\"></a>`{name}`: ",
+                "- <a id=\"{r}.{f}\"></a>`{name}`: ",
                 r = name.to_snake_case(),
                 f = flag.name.to_snake_case(),
                 name = flag.name,
@@ -572,7 +572,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.push_str("\n##### Variant Cases\n\n");
         for case in variant.cases.iter() {
             self.push_str(&format!(
-                "- <a name=\"{v}.{c}\"></a>`{name}`",
+                "- <a id=\"{v}.{c}\"></a>`{name}`",
                 v = name.to_snake_case(),
                 c = case.name.to_snake_case(),
                 name = case.name,
@@ -602,7 +602,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.push_str("\n##### Enum Cases\n\n");
         for case in enum_.cases.iter() {
             self.push_str(&format!(
-                "- <a name=\"{v}.{c}\"></a>`{name}`",
+                "- <a id=\"{v}.{c}\"></a>`{name}`",
                 v = name.to_snake_case(),
                 c = case.name.to_snake_case(),
                 name = case.name,
