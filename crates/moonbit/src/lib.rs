@@ -80,14 +80,25 @@ pub extern "wasm" fn free(position : Int) =
 pub extern "wasm" fn copy(dest : Int, src : Int, len : Int) =
   #|(func (param i32) (param i32) (param i32) local.get 0 local.get 1 local.get 2 memory.copy)
 
-pub fn read_utf16(buffer : Int, offset : Int) -> (Char, Int) {
-  let value = load16_u(buffer + offset)
-  if value < 0xD800 || value >= 0xE000 {
-    (Char::from_int(value), 2)
+pub fn lift_string(addr : Int, length : Int) -> String {
+  for buffer = Buffer::new(), i = 0, offset = 0
+      i < length
+      i = i + 1, offset = offset + 2 {
+    let value = load16_u(addr + offset)
+    if value < 0xD800 || value >= 0xE000 {
+      buffer.write_byte(value.land(0xFF).to_byte())
+      buffer.write_byte(value.lsr(8).land(0xFF).to_byte())
+    } else {
+      let hi = value
+      let lo = load16_u(addr + offset + 2)
+      buffer.write_byte(lo.land(0xFF).to_byte())
+      buffer.write_byte(lo.lsr(8).land(0xFF).to_byte())
+      buffer.write_byte(hi.land(0xFF).to_byte())
+      buffer.write_byte(hi.lsr(8).land(0xFF).to_byte())
+      continue buffer, i + 1, offset + 4
+    }
   } else {
-    let hi = value & 0x3FF
-    let lo = load16_u(buffer + offset + 2) & 0x3FF
-    (Char::from_int(0x10000 | (hi << 10) | lo), 4)
+    buffer.to_string()
   }
 }
 
@@ -1852,30 +1863,22 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                     results.push(format!("{address}"));
                 }
-                results.push(format!("{op}.length()"));
+                results.push(format!("{op}.iter().count()"));
             }
 
             Instruction::StringLift { .. } => {
-                let buffer = self.locals.tmp("bytes");
-                let index = self.locals.tmp("i");
-                let addr = self.locals.tmp("addr");
-                let len = self.locals.tmp("length");
+                let result = self.locals.tmp("result");
                 let address = &operands[0];
                 let length = &operands[1];
 
                 uwrite!(
                     self.src,
                     "
-                    let {buffer} : Buffer = Buffer::new()
-                    let {addr} = {address}
-                    let {len} = {length}
-                    for {index} = {addr}; {index} < {addr} + {len}; {index} = {index} + 1 {{
-                        {buffer}.write_byte({ffi_qualifier}load8_u({index}).to_byte())
-                    }}
+                    let {result} = {ffi_qualifier}lift_string({address}, {length})
                     "
                 );
 
-                results.push(format!("{buffer}.to_string()"));
+                results.push(result);
             }
 
             Instruction::ListLower { element, realloc } => {
