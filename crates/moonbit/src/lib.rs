@@ -2425,7 +2425,7 @@ fn is_primitive(_ty: &Type) -> bool {
 fn world_name(resolve: &Resolve, world: WorldId) -> String {
     format!(
         "worlds.{}",
-        resolve.worlds[world].name.to_upper_camel_case()
+        resolve.worlds[world].name.to_lower_camel_case()
     )
 }
 
@@ -2442,7 +2442,7 @@ fn interface_name(resolve: &Resolve, name: &WorldKey, direction: Direction) -> S
         WorldKey::Name(name) => name,
         WorldKey::Interface(id) => resolve.interfaces[*id].name.as_ref().unwrap(),
     }
-    .to_upper_camel_case();
+    .to_lower_camel_case();
 
     format!(
         "interface.{}.{}{name}",
