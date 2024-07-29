@@ -18,8 +18,6 @@ use wit_bindgen_core::{
 // Organization: one package per interface (export and import are treated as different interfaces)
 // TODO: Export will share the type signatures with the import by using a newtype alias
 
-const PROJECT_NAME: &str = "wasi-bindgen";
-
 const EXPORT_DIR: &str = "gen";
 
 const FFI_DIR: &str = "ffi";
@@ -196,11 +194,21 @@ impl WorldGenerator for MoonBit {
         resolve: &Resolve,
         key: &WorldKey,
         id: InterfaceId,
-        _files: &mut Files,
+        files: &mut Files,
     ) -> Result<()> {
         let name = interface_name(resolve, key, Direction::Import);
         let name = self.interface_ns.tmp(&name);
         self.import_interface_names.insert(id, name.clone());
+
+        if let Some(content) = &resolve.interfaces[id].docs.contents {
+            if !content.is_empty() {
+                files.push(
+                    &format!("{}/README.md", name.replace(".", "/")),
+                    content.as_bytes(),
+                );
+            }
+        }
+
         let module = &resolve.name_world_key(key);
         let mut gen = self.interface(resolve, &name, module, Direction::Import);
         gen.types(id);
@@ -236,11 +244,21 @@ impl WorldGenerator for MoonBit {
         resolve: &Resolve,
         key: &WorldKey,
         id: InterfaceId,
-        _files: &mut Files,
+        files: &mut Files,
     ) -> Result<()> {
         let name = interface_name(resolve, key, Direction::Export);
         let name = self.interface_ns.tmp(&name);
         self.export_interface_names.insert(id, name.clone());
+
+        if let Some(content) = &resolve.interfaces[id].docs.contents {
+            if !content.is_empty() {
+                files.push(
+                    &format!("{}/README.md", name.replace(".", "/")),
+                    content.as_bytes(),
+                );
+            }
+        }
+
         let module = &resolve.name_world_key(key);
         let mut gen = self.interface(resolve, &name, module, Direction::Export);
         gen.types(id);
@@ -289,7 +307,23 @@ impl WorldGenerator for MoonBit {
     }
 
     fn finish(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) -> Result<()> {
+        let project_name = resolve.worlds[id]
+            .package
+            .map(|id| {
+                let package = &resolve.packages[id].name;
+                format!("{}/{}", package.namespace, package.name)
+            })
+            .unwrap_or("generated".into());
         let name = world_name(resolve, id);
+
+        if let Some(content) = &resolve.worlds[id].docs.contents {
+            if !content.is_empty() {
+                files.push(
+                    &format!("{}/README.md", name.replace(".", "/")),
+                    content.as_bytes(),
+                );
+            }
+        }
 
         let version = env!("CARGO_PKG_VERSION");
 
@@ -302,7 +336,7 @@ impl WorldGenerator for MoonBit {
                     .iter()
                     .map(|(k, v)| {
                         format!(
-                            "{{ \"path\" : \"{PROJECT_NAME}/{}\", \"alias\" : \"{}\" }}",
+                            "{{ \"path\" : \"{project_name}/{}\", \"alias\" : \"{}\" }}",
                             k.replace(".", "/"),
                             v
                         )
@@ -444,7 +478,7 @@ impl WorldGenerator for MoonBit {
             .insert("cabi_realloc".into(), "cabi_realloc".into());
 
         let mut body = Source::default();
-        uwriteln!(&mut body, "{{ \"name\": \"wasi-bindgen\" }}");
+        uwriteln!(&mut body, "{{ \"name\": \"{project_name}\" }}");
         files.push(&format!("moon.mod.json"), body.as_bytes());
 
         let mut body = Source::default();
@@ -474,7 +508,7 @@ impl WorldGenerator for MoonBit {
                 .iter()
                 .map(|(k, v)| {
                     format!(
-                        "{{ \"path\" : \"{PROJECT_NAME}/{}\", \"alias\" : \"{}\" }}",
+                        "{{ \"path\" : \"{project_name}/{}\", \"alias\" : \"{}\" }}",
                         k.replace(".", "/"),
                         v
                     )
