@@ -13,7 +13,7 @@ use wit_bindgen_core::{
 };
 
 // Assumptions:
-// Data: u8 -> Byte, s8 | s16 | u16 | s32 -> Int, u32 -> UInt, s64 -> Int64, u64 -> UInt64, f32 | f64 -> Double, address -> Int
+// Data: u8 -> Byte, s8 | s16 | s32 -> Int, u16 | u32 -> UInt, s64 -> Int64, u64 -> UInt64, f32 | f64 -> Double, address -> Int
 // Encoding: UTF16
 // Organization: one package per interface (export and import are treated as different interfaces)
 // TODO: Export will share the type signatures with the import by using a newtype alias
@@ -841,8 +841,8 @@ impl InterfaceGenerator<'_> {
         match ty {
             Type::Bool => "Bool".into(),
             Type::U8 => "Byte".into(),
-            Type::S32 | Type::S8 | Type::U16 | Type::S16 => "Int".into(),
-            Type::U32 => "UInt".into(),
+            Type::S32 | Type::S8 | Type::S16 => "Int".into(),
+            Type::U16 | Type::U32 => "UInt".into(),
             Type::Char => "Char".into(),
             Type::U64 => "UInt64".into(),
             Type::S64 => "Int64".into(),
@@ -1517,8 +1517,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     .map(|(cast, op)| perform_cast(op, cast)),
             ),
 
-            Instruction::I32FromU16
-            | Instruction::I32FromS32
+            Instruction::I32FromS32
             | Instruction::I64FromS64
             | Instruction::S32FromI32
             | Instruction::S64FromI64
@@ -1530,7 +1529,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::CharFromI32 => results.push(format!("Char::from_int({})", operands[0])),
             Instruction::I32FromChar => results.push(format!("({}).to_int()", operands[0])),
 
-            Instruction::I32FromU8 => results.push(format!("({}).to_int()", operands[0])),
+            Instruction::I32FromU8 | Instruction::I32FromU16 => {
+                results.push(format!("({}).to_int()", operands[0]))
+            }
             Instruction::U8FromI32 => results.push(format!("({}).to_byte()", operands[0])),
 
             Instruction::I32FromS8 => {
@@ -1538,13 +1539,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
             Instruction::S8FromI32 => results.push(format!("({}.land(0xFF))", operands[0])),
 
-            Instruction::U16FromI32 | Instruction::S16FromI32 => {
-                results.push(format!("({}.land(0xFFFF))", operands[0]))
-            }
+            Instruction::S16FromI32 => results.push(format!("({}.land(0xFFFF))", operands[0])),
             Instruction::I32FromS16 => {
                 results.push(format!("{ffi_qualifier}extend16({})", operands[0]))
             }
-
+            Instruction::U16FromI32 => results.push(format!("({}.land(0xFFFF).to_uint())", operands[0])),
             Instruction::U32FromI32 => results.push(format!("({}).to_uint()", operands[0])),
             Instruction::I32FromU32 => results.push(format!("({}).to_int()", operands[0])),
 
