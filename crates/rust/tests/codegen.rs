@@ -494,7 +494,7 @@ mod generate_unused_types {
 mod gated_features {
     wit_bindgen::generate!({
         inline: r#"
-            package foo:bar;
+            package foo:bar@1.2.3;
 
             world bindings {
                 @unstable(feature = x)
@@ -519,10 +519,10 @@ mod simple_with_option {
     mod a {
         wit_bindgen::generate!({
             inline: r#"
-                package foo:bar {
-                    interface a {
-                        x: func();
-                    }
+                package foo:bar;
+
+                interface a {
+                    x: func();
                 }
 
                 package foo:baz {
@@ -539,10 +539,10 @@ mod simple_with_option {
     mod b {
         wit_bindgen::generate!({
             inline: r#"
-                package foo:bar {
-                    interface a {
-                        x: func();
-                    }
+                package foo:bar;
+
+                interface a {
+                    x: func();
                 }
 
                 package foo:baz {

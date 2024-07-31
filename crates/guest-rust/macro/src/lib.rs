@@ -149,8 +149,7 @@ impl Parse for Config {
         }
         let (resolve, pkgs, files) =
             parse_source(&source, &features).map_err(|err| anyhow_to_syn(call_site, err))?;
-        let world = resolve
-            .select_world(&pkgs, world.as_deref())
+        let world = select_world(&resolve, &pkgs, world.as_deref())
             .map_err(|e| anyhow_to_syn(call_site, e))?;
         Ok(Config {
             opts,
@@ -158,6 +157,43 @@ impl Parse for Config {
             world,
             files,
         })
+    }
+}
+
+fn select_world(
+    resolve: &Resolve,
+    pkgs: &[PackageId],
+    world: Option<&str>,
+) -> anyhow::Result<WorldId> {
+    if pkgs.len() == 1 {
+        resolve.select_world(pkgs[0], world)
+    } else {
+        assert!(!pkgs.is_empty());
+        match world {
+            Some(name) => {
+                if !name.contains(":") {
+                    anyhow::bail!(
+                        "with multiple packages a fully qualified \
+                         world name must be specified"
+                    )
+                }
+
+                // This will ignore the package argument due to the fully
+                // qualified name being used.
+                resolve.select_world(pkgs[0], world)
+            }
+            None => {
+                let worlds = pkgs
+                    .iter()
+                    .filter_map(|p| resolve.select_world(*p, None).ok())
+                    .collect::<Vec<_>>();
+                match &worlds[..] {
+                    [] => anyhow::bail!("no packages have a world"),
+                    [world] => Ok(*world),
+                    _ => anyhow::bail!("multiple packages have a world, must specify which to use"),
+                }
+            }
+        }
     }
 }
 
@@ -182,7 +218,7 @@ fn parse_source(
                 Err(_) => p.to_path_buf(),
             };
             let (pkg, sources) = resolve.push_path(normalized_path)?;
-            pkgs.extend(pkg);
+            pkgs.push(pkg);
             files.extend(sources);
         }
         Ok(())
@@ -192,7 +228,7 @@ fn parse_source(
             if let Some(p) = path {
                 parse(p)?;
             }
-            pkgs = resolve.push_group(UnresolvedPackageGroup::parse("macro-input", s)?)?;
+            pkgs.push(resolve.push_group(UnresolvedPackageGroup::parse("macro-input", s)?)?);
         }
         Some(Source::Paths(p)) => parse(p)?,
         None => parse(&vec![root.join("wit")])?,

@@ -6,10 +6,6 @@
 #![allow(unused_macros)]
 #![allow(dead_code, unused_variables)]
 
-// This test expects `"std"` to be absent.
-#[cfg(feature = "std")]
-fn std_enabled() -> CompileError;
-
 extern crate alloc;
 
 mod codegen_tests {
