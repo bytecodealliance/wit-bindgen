@@ -24,7 +24,7 @@ enum Opt {
     },
     /// Generates bindings for MoonBit guest modules.
     #[cfg(feature = "moonbit")]
-    MoonBit {
+    Moonbit {
         #[clap(flatten)]
         opts: wit_bindgen_moonbit::Opts,
         #[clap(flatten)]
@@ -126,7 +126,7 @@ fn main() -> Result<()> {
         #[cfg(feature = "markdown")]
         Opt::Markdown { opts, args } => (opts.build(), args),
         #[cfg(feature = "moonbit")]
-        Opt::MoonBit { opts, args } => (opts.build(), args),
+        Opt::Moonbit { opts, args } => (opts.build(), args),
         #[cfg(feature = "c")]
         Opt::C { opts, args } => (opts.build(), args),
         #[cfg(feature = "rust")]
