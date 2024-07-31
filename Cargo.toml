@@ -47,13 +47,6 @@ wit-bindgen-csharp = { path = 'crates/csharp', version = '0.28.0' }
 wit-bindgen-markdown = { path = 'crates/markdown', version = '0.28.0' }
 wit-bindgen = { path = 'crates/guest-rust', version = '0.28.0', default-features = false }
 
-[patch.crates-io]
-wasmparser = { git = 'https://github.com/bytecodealliance/wasm-tools', branch = 'ci/release-1.215.0' }
-wasm-encoder = { git = 'https://github.com/bytecodealliance/wasm-tools', branch = 'ci/release-1.215.0' }
-wasm-metadata = { git = 'https://github.com/bytecodealliance/wasm-tools', branch = 'ci/release-1.215.0' }
-wit-parser = { git = 'https://github.com/bytecodealliance/wasm-tools', branch = 'ci/release-1.215.0' }
-wit-component = { git = 'https://github.com/bytecodealliance/wasm-tools', branch = 'ci/release-1.215.0' }
-
 [[bin]]
 name = "wit-bindgen"
 
