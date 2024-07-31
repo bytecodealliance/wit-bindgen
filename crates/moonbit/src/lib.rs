@@ -72,10 +72,10 @@ pub extern "wasm" fn loadf64(offset : Int) -> Double =
   #|(func (param i32) (result f64) local.get 0 f64.load)
 
 pub extern "wasm" fn malloc(size : Int) -> Int =
-  #|(func (param i32) (result i32) local.get 0 call $rael.malloc)
+  #|(func (param i32) (result i32) local.get 0 call $moonbit.malloc)
 
 pub extern "wasm" fn free(position : Int) =
-  #|(func (param i32) local.get 0 call $rael.free)
+  #|(func (param i32) local.get 0 call $moonbit.free)
 
 pub extern "wasm" fn copy(dest : Int, src : Int, len : Int) =
   #|(func (param i32) (param i32) (param i32) local.get 0 local.get 1 local.get 2 memory.copy)
@@ -117,7 +117,7 @@ pub fn write_utf16(char : Char, buffer : Int, offset : Int) -> Int {
 }
 
 pub extern "wasm" fn str2ptr(str: String) -> Int =
-  #|(func (param i32) (result i32) local.get 0 call $rael.decref local.get 0 i32.const 8 i32.add)
+  #|(func (param i32) (result i32) local.get 0 call $moonbit.decref local.get 0 i32.const 8 i32.add)
 
 pub trait Any {}
 pub struct Cleanup {
