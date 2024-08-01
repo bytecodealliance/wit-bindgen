@@ -133,6 +133,9 @@ pub struct Opts {
     /// Whether or not to derive Show for all types
     #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
     pub derive_show: bool,
+    /// Whether or not to derive Eq for all types
+    #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
+    pub derive_eq: bool,
 }
 
 impl Opts {
@@ -1018,18 +1021,22 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .collect::<Vec<_>>()
             .join("; ");
 
+        let mut deriviation: Vec<_> = Vec::new();
+        if self.gen.opts.derive_show {
+            deriviation.push("Show")
+        }
+        if self.gen.opts.derive_eq {
+            deriviation.push("Eq")
+        }
+
         uwrite!(
             self.src,
             "
             pub struct {name} {{
                 {parameters}
-            }} {}
+            }} derive({})
             ",
-            if self.gen.opts.derive_show {
-                "derive (Show)"
-            } else {
-                ""
-            }
+            deriviation.join(", ")
         );
     }
 
@@ -1037,10 +1044,19 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.print_docs(docs);
         let type_name = name;
         let name = name.to_upper_camel_case();
+
+        let mut deriviation: Vec<_> = Vec::new();
+        if self.gen.opts.derive_show {
+            deriviation.push("Show")
+        }
+        if self.gen.opts.derive_eq {
+            deriviation.push("Eq")
+        }
+
         uwrite!(
             self.src,
             r#"
-            pub type {name} Int {}
+            pub type {name} Int derive({})
 
             fn wasmImportResourceDrop{name}(resource : Int) = "{}" "[resource-drop]{type_name}"
 
@@ -1048,11 +1064,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 wasmImportResourceDrop{name}(self.0)
             }}
             "#,
-            if self.gen.opts.derive_show {
-                "derive (Show)"
-            } else {
-                ""
-            },
+            deriviation.join(", "),
             self.module
         )
     }
@@ -1097,10 +1109,18 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .collect::<Vec<_>>()
             .join("\n    ");
 
+        let mut deriviation: Vec<_> = Vec::new();
+        if self.gen.opts.derive_show {
+            deriviation.push("Show")
+        }
+        if self.gen.opts.derive_eq {
+            deriviation.push("Eq")
+        }
+
         uwrite!(
             self.src,
             "
-            pub type {name} {ty} {}
+            pub type {name} {ty} derive({})
             pub fn {name}::default() -> {name} {{
                 {}
             }}
@@ -1122,11 +1142,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
               (self.0.land(other.value()) == other.value())
             }}
             ",
-            if self.gen.opts.derive_show {
-                "derive (Show)"
-            } else {
-                ""
-            },
+            deriviation.join(", "),
             match ty {
                 "Byte" => "b'\\x00'",
                 "UInt" => "0U",
@@ -1160,18 +1176,22 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .collect::<Vec<_>>()
             .join("\n  ");
 
+        let mut deriviation: Vec<_> = Vec::new();
+        if self.gen.opts.derive_show {
+            deriviation.push("Show")
+        }
+        if self.gen.opts.derive_eq {
+            deriviation.push("Eq")
+        }
+
         uwrite!(
             self.src,
             "
             pub enum {name} {{
               {cases}
-            }} {}
+            }} derive({})
             ",
-            if self.gen.opts.derive_show {
-                "derive (Show)"
-            } else {
-                ""
-            }
+            deriviation.join(", ")
         );
     }
 
@@ -1196,18 +1216,22 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .collect::<Vec<_>>()
             .join("; ");
 
+        let mut deriviation: Vec<_> = Vec::new();
+        if self.gen.opts.derive_show {
+            deriviation.push("Show")
+        }
+        if self.gen.opts.derive_eq {
+            deriviation.push("Eq")
+        }
+
         uwrite!(
             self.src,
             "
             pub enum {name} {{
                 {cases}
-            }} {}
+            }} derive({})
             ",
-            if self.gen.opts.derive_show {
-                "derive (Show)"
-            } else {
-                ""
-            }
+            deriviation.join(", ")
         );
 
         // Case to integer
@@ -1543,7 +1567,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::I32FromS16 => {
                 results.push(format!("{ffi_qualifier}extend16({})", operands[0]))
             }
-            Instruction::U16FromI32 => results.push(format!("({}.land(0xFFFF).to_uint())", operands[0])),
+            Instruction::U16FromI32 => {
+                results.push(format!("({}.land(0xFFFF).to_uint())", operands[0]))
+            }
             Instruction::U32FromI32 => results.push(format!("({}).to_uint()", operands[0])),
             Instruction::I32FromU32 => results.push(format!("({}).to_int()", operands[0])),
 

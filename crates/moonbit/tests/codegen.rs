@@ -9,10 +9,13 @@ macro_rules! codegen_test {
                 "guest-moonbit",
                 $test.as_ref(),
                 |resolve, world, files| {
-                    wit_bindgen_moonbit::Opts { derive_show: true }
-                        .build()
-                        .generate(resolve, world, files)
-                        .unwrap()
+                    wit_bindgen_moonbit::Opts {
+                        derive_show: true,
+                        derive_eq: true,
+                    }
+                    .build()
+                    .generate(resolve, world, files)
+                    .unwrap()
                 },
                 verify,
             )
