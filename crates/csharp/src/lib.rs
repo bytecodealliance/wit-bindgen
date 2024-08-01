@@ -1482,9 +1482,9 @@ impl InterfaceGenerator<'_> {
                     {access} class {upper_camel}: IDisposable {{
                         internal int Handle {{ get; set; }}
 
-                        internal readonly record struct THandle(int Handle);
+                        {access} readonly record struct THandle(int Handle);
 
-                        internal {upper_camel}(THandle handle) {{
+                        {access} {upper_camel}(THandle handle) {{
                             Handle = handle.Handle;
                         }}
 
