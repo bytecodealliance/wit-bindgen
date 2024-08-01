@@ -104,6 +104,12 @@ struct Common {
     /// This enables using `@unstable` annotations in WIT files.
     #[clap(long)]
     features: Vec<String>,
+
+    /// Whether or not to activate all WIT features when processing WIT files.
+    ///
+    /// This enables using `@unstable` annotations in WIT files.
+    #[clap(long)]
+    all_features: bool,
 }
 
 fn main() -> Result<()> {
@@ -183,6 +189,7 @@ fn gen_world(
     files: &mut Files,
 ) -> Result<()> {
     let mut resolve = Resolve::default();
+    resolve.all_features = opts.all_features;
     for features in opts.features.iter() {
         for feature in features
             .split(',')
