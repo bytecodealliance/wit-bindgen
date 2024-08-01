@@ -983,21 +983,21 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         retptr.clone().unwrap(),
                         Default::default(),
                     );
-                    if guest_export_needs_post_return(self.resolve, func) {
-                        let post_sig = WasmSignature {
-                            params: vec![WasmType::Pointer],
-                            results: Vec::new(),
-                            indirect_params: false,
-                            retptr: false,
-                        };
-                        // TODO: can we get this name from somewhere?
-                        self.stack.push(retptr.unwrap());
-                        self.emit(&Instruction::CallWasm {
-                            name: &func.name,
-                            sig: &post_sig,
-                            module_prefix: "cabi_post_",
-                        });
-                    }
+                    // if guest_export_needs_post_return(self.resolve, func) {
+                    //     let post_sig = WasmSignature {
+                    //         params: vec![WasmType::Pointer],
+                    //         results: Vec::new(),
+                    //         indirect_params: false,
+                    //         retptr: false,
+                    //     };
+                    //     // TODO: can we get this name from somewhere?
+                    //     self.stack.push(retptr.unwrap());
+                    //     self.emit(&Instruction::CallWasm {
+                    //         name: &func.name,
+                    //         sig: &post_sig,
+                    //         module_prefix: "cabi_post_",
+                    //     });
+                    // }
                 } else if !(sig.retptr || self.async_) {
                     // With no return pointer in use we can simply lift the
                     // result(s) of the function from the result of the core

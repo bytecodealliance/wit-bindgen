@@ -47,8 +47,7 @@ wit::string comp_a::foo::foo::strings::B() {
   fooX3AfooX2FstringsX00b(ptr0);
   auto len1 = *((size_t *)(ptr0 + sizeof(void *)));
 
-  auto string1 = wit::string((char const *)(*((uint8_t **)(ptr0 + 0))), len1);
-  return string1;
+  return wit::string((char const *)(*((uint8_t **)(ptr0 + 0))), len1);
 }
 wit::string comp_a::foo::foo::strings::C(std::string_view a,
                                          std::string_view b) {
@@ -64,8 +63,7 @@ wit::string comp_a::foo::foo::strings::C(std::string_view a,
   fooX3AfooX2FstringsX00c(ptr0, len0, ptr1, len1, ptr2);
   auto len3 = *((size_t *)(ptr2 + sizeof(void *)));
 
-  auto string3 = wit::string((char const *)(*((uint8_t **)(ptr2 + 0))), len3);
-  return string3;
+  return wit::string((char const *)(*((uint8_t **)(ptr2 + 0))), len3);
 }
 extern "C" __attribute__((__export_name__("foo:foo/strings#a"))) void
 a_fooX3AfooX2FstringsX00a(uint8_t *arg0, size_t arg1) {
