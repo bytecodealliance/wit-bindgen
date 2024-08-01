@@ -72,11 +72,9 @@ For now for functions the following convention is used in both directions:
     - (unchanged) If there are too many (>1) flat results, a local
       uninitialized ret_area is passed via the last argument
 
-    - (change) Returned strings and lists become views, valid until a
-      cabi_post on the ret_area ptr which was passed to the first call.
-      This is mostly a concession to functional safety, avoiding all
-      allocations in the hot path. Caller provided buffers or custom realloc
-      would solve this in a different way.
+    - (unchanged) Returned objects are owned.
+      For functional safety, i.e. avoiding all
+      allocations in the hot path, the hope is with #385.
 
  - The imported resource ABI is used also for exporting
    with one modification:
