@@ -94,7 +94,7 @@ fn rename_option() -> Result<()> {
     opts.rename.push(("c".to_string(), "rename3".to_string()));
 
     let mut resolve = Resolve::default();
-    let pkgs = resolve.push_group(UnresolvedPackageGroup::parse(
+    let pkg = resolve.push_group(UnresolvedPackageGroup::parse(
         "input.wit",
         r#"
             package foo:bar;
@@ -118,7 +118,7 @@ fn rename_option() -> Result<()> {
             }
         "#,
     )?)?;
-    let world = resolve.select_world(&pkgs, None)?;
+    let world = resolve.select_world(pkg, None)?;
     let mut files = Default::default();
     opts.build().generate(&resolve, world, &mut files)?;
     for (file, contents) in files.iter() {

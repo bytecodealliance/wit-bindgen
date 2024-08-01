@@ -472,9 +472,9 @@ impl WorldGenerator for CSharp {
                     {{
                         get
                         {{
-                            if (Tag == OK) 
+                            if (Tag == OK)
                                 return (Ok)value;
-                            else 
+                            else
                                 throw new ArgumentException("expected OK, got " + Tag);
                         }}
                     }}
@@ -504,23 +504,23 @@ impl WorldGenerator for CSharp {
 
                 {access} class Option<T> {{
                     private static Option<T> none = new ();
-                    
+
                     private Option()
                     {{
                         HasValue = false;
                     }}
-                    
+
                     {access} Option(T v)
                     {{
                         HasValue = true;
                         Value = v;
                     }}
-                    
+
                     {access} static Option<T> None => none;
-                    
+
                     [MemberNotNullWhen(true, nameof(Value))]
                     {access} bool HasValue {{ get; }}
-                    
+
                     {access} T? Value {{ get; }}
                 }}
                 "#,
@@ -754,13 +754,14 @@ impl WorldGenerator for CSharp {
                 // intended to be used non-interactively at link time, the
                 // linker will have no additional information to resolve such
                 // ambiguity.
-                let (resolve, _) =
+                let (resolve, world) =
                     wit_parser::decoding::decode_world(&wit_component::metadata::encode(
                         &resolve,
                         id,
                         self.opts.string_encoding,
                         None,
                     )?)?;
+                let pkg = resolve.worlds[world].package.unwrap();
 
                 files.push(
                     &format!("{world_namespace}_component_type.wit"),
@@ -768,12 +769,12 @@ impl WorldGenerator for CSharp {
                         .emit_docs(false)
                         .print(
                             &resolve,
+                            pkg,
                             &resolve
                                 .packages
                                 .iter()
-                                .map(|(id, _)| id)
+                                .filter_map(|(id, _)| if id == pkg { None } else { Some(id) })
                                 .collect::<Vec<_>>(),
-                            false,
                         )?
                         .as_bytes(),
                 );
@@ -1484,9 +1485,9 @@ impl InterfaceGenerator<'_> {
                     {access} class {upper_camel}: IDisposable {{
                         internal int Handle {{ get; set; }}
 
-                        internal readonly record struct THandle(int Handle);
+                        {access} readonly record struct THandle(int Handle);
 
-                        internal {upper_camel}(THandle handle) {{
+                        {access} {upper_camel}(THandle handle) {{
                             Handle = handle.Handle;
                         }}
 
@@ -1497,7 +1498,7 @@ impl InterfaceGenerator<'_> {
 
                         [DllImport("{module_name}", EntryPoint = "[resource-drop]{name}"), WasmImportLinkage]
                         private static extern void wasmImportResourceDrop(int p0);
-        
+
                         protected virtual void Dispose(bool disposing) {{
                             if (Handle != 0) {{
                                 wasmImportResourceDrop(Handle);
@@ -1567,7 +1568,7 @@ impl InterfaceGenerator<'_> {
 
                             [DllImport("{module_name}", EntryPoint = "[resource-new]{name}"), WasmImportLinkage]
                             internal static extern int wasmImportResourceNew(int p0);
-                    
+
                             [DllImport("{module_name}", EntryPoint = "[resource-rep]{name}"), WasmImportLinkage]
                             internal static extern int wasmImportResourceRep(int p0);
                         }}
@@ -1847,15 +1848,15 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                     let tag = case.name.to_shouty_snake_case();
                     let ty = self.type_name(ty);
                     format!(
-                        r#"{access} {ty} As{case_name} 
-                        {{ 
-                            get 
+                        r#"{access} {ty} As{case_name}
+                        {{
+                            get
                             {{
-                                if (Tag == {tag}) 
+                                if (Tag == {tag})
                                     return ({ty})value!;
-                                else 
+                                else
                                     throw new ArgumentException("expected {tag}, got " + Tag);
-                            }} 
+                            }}
                         }}
                         "#
                     )
@@ -2587,8 +2588,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwrite!(
                     self.src,
                     "
-                    var {array} = new {ty}[{length}];         
-                    new Span<{ty}>((void*)({address}), {length}).CopyTo(new Span<{ty}>({array}));          
+                    var {array} = new {ty}[{length}];
+                    new Span<{ty}>((void*)({address}), {length}).CopyTo(new Span<{ty}>({array}));
                     "
                 );
 
