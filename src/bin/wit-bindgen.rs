@@ -211,9 +211,9 @@ fn gen_world(
             resolve.features.insert(feature.to_string());
         }
     }
-    let (pkgs, _files) = resolve.push_path(&opts.wit)?;
+    let (pkg, _files) = resolve.push_path(&opts.wit)?;
     resolve.add_future_and_stream_results();
-    let world = resolve.select_world(&pkgs, opts.world.as_deref())?;
+    let world = resolve.select_world(pkg, opts.world.as_deref())?;
     generator.generate(&resolve, world, files)?;
 
     Ok(())
