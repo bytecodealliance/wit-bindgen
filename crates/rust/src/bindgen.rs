@@ -763,7 +763,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let tmp = self.tmp();
                 let len = format!("len{}", tmp);
                 uwriteln!(self.src, "let {len} = {};", operands[1]);
-                if self.gen.gen.opts.symmetric {
+                if self.gen.gen.opts.symmetric && !self.gen.in_import {
                     uwriteln!(
                         self.src,
                         "let string{tmp} = String::from(std::str::from_utf8(std::slice::from_raw_parts({}, {len})).unwrap());",
