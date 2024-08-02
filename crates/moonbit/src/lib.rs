@@ -906,14 +906,14 @@ impl InterfaceGenerator<'_> {
                         };
                         let ty = &self.resolve.types[dealias(self.resolve, *ty)];
                         if let Some(name) = &ty.name {
-                            format!("{}{}", self.qualifier(ty), name.to_upper_camel_case())
+                            format!("{}{}", self.qualifier(ty), name.to_moonbit_type_ident())
                         } else {
                             unreachable!()
                         }
                     }
                     _ => {
                         if let Some(name) = &ty.name {
-                            format!("{}{}", self.qualifier(ty), name.to_upper_camel_case())
+                            format!("{}{}", self.qualifier(ty), name.to_moonbit_type_ident())
                         } else {
                             unreachable!()
                         }
@@ -1006,7 +1006,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     fn type_record(&mut self, _id: TypeId, name: &str, record: &Record, docs: &Docs) {
         self.print_docs(docs);
 
-        let name = name.to_upper_camel_case();
+        let name = name.to_moonbit_type_ident();
 
         let parameters = record
             .fields
@@ -1043,7 +1043,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     fn type_resource(&mut self, _id: TypeId, name: &str, docs: &Docs) {
         self.print_docs(docs);
         let type_name = name;
-        let name = name.to_upper_camel_case();
+        let name = name.to_moonbit_type_ident();
 
         let mut deriviation: Vec<_> = Vec::new();
         if self.gen.opts.derive_show {
@@ -1072,7 +1072,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     fn type_flags(&mut self, _id: TypeId, name: &str, flags: &Flags, docs: &Docs) {
         self.print_docs(docs);
 
-        let name = name.to_upper_camel_case();
+        let name = name.to_moonbit_type_ident();
 
         let ty = match flags.repr() {
             FlagsRepr::U8 => "Byte",
@@ -1159,7 +1159,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     fn type_variant(&mut self, _id: TypeId, name: &str, variant: &Variant, docs: &Docs) {
         self.print_docs(docs);
 
-        let name = name.to_upper_camel_case();
+        let name = name.to_moonbit_type_ident();
 
         let cases = variant
             .cases
@@ -1206,7 +1206,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     fn type_enum(&mut self, _id: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
         self.print_docs(docs);
 
-        let name = name.to_upper_camel_case();
+        let name = name.to_moonbit_type_ident();
 
         // Type definition
         let cases = enum_
@@ -2502,6 +2502,24 @@ impl ToMoonBitIdent for str {
                 format!("{self}_")
             }
             _ => self.to_snake_case(),
+        }
+    }
+}
+
+trait ToMoonBitTypeIdent: ToOwned {
+    fn to_moonbit_type_ident(&self) -> Self::Owned;
+}
+
+impl ToMoonBitTypeIdent for str {
+    fn to_moonbit_type_ident(&self) -> String {
+        // Escape MoonBit builtin types
+        match self.to_upper_camel_case().as_str() {
+            type_name @ ("Bool" | "Byte" | "Int" | "Int64" | "UInt" | "UInt64" | "Float"
+            | "Double" | "Error" | "Buffer" | "Bytes" | "Array" | "FixedArray"
+            | "Map" | "String" | "Option" | "Result" | "Char") => {
+                format!("{type_name}_")
+            }
+            type_name => type_name.to_owned(),
         }
     }
 }
