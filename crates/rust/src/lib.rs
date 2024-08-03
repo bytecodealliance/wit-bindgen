@@ -294,9 +294,9 @@ impl RustWasm {
         in_import: bool,
     ) -> InterfaceGenerator<'a> {
         let mut sizes = if self.opts.symmetric {
-            SizeAlign::new_symmetric()
+            SizeAlign64::new_symmetric()
         } else {
-            SizeAlign::new()
+            SizeAlign64::default()
         };
         sizes.fill(resolve);
 

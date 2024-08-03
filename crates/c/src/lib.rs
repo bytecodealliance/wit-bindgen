@@ -28,7 +28,7 @@ struct C {
     needs_union_double_int64: bool,
     prim_names: HashSet<String>,
     world: String,
-    sizes: SizeAlign,
+    sizes: SizeAlign64,
     renamed_interfaces: HashMap<WorldKey, String>,
 
     world_id: Option<WorldId>,
@@ -2233,7 +2233,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
 impl Bindgen for FunctionBindgen<'_, '_> {
     type Operand = String;
 
-    fn sizes(&self) -> &SizeAlign {
+    fn sizes(&self) -> &SizeAlign64 {
         &self.gen.gen.sizes
     }
 

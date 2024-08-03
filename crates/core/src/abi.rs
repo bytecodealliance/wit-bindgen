@@ -1,7 +1,7 @@
 pub use wit_parser::abi::{AbiVariant, WasmSignature, WasmType};
 use wit_parser::{
     align_to_arch, Alignment, ArchitectureSize, ElementInfo, Enum, Flags, FlagsRepr, Function,
-    Handle, Int, Record, Resolve, Result_, Results, SizeAlign, Tuple, Type, TypeDefKind, TypeId,
+    Handle, Int, Record, Resolve, Result_, Results, SizeAlign64, Tuple, Type, TypeDefKind, TypeId,
     Variant,
 };
 
@@ -709,7 +709,7 @@ pub trait Bindgen {
     fn finish_block(&mut self, operand: &mut Vec<Self::Operand>);
 
     /// Returns size information that was previously calculated for all types.
-    fn sizes(&self) -> &SizeAlign;
+    fn sizes(&self) -> &SizeAlign64;
 
     /// Returns whether or not the specified element type is represented in a
     /// "canonical" form for lists. This dictates whether the `ListCanonLower`

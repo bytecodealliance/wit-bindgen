@@ -292,7 +292,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
         format!("ptr{}", tmp)
     }
 
-    fn sizes(&self) -> &SizeAlign {
+    fn sizes(&self) -> &SizeAlign64 {
         &self.gen.sizes
     }
 

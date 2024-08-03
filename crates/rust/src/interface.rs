@@ -18,7 +18,7 @@ pub struct InterfaceGenerator<'a> {
     pub src: Source,
     pub(super) identifier: Identifier<'a>,
     pub in_import: bool,
-    pub sizes: SizeAlign,
+    pub sizes: SizeAlign64,
     pub(super) gen: &'a mut RustWasm,
     pub wasm_import_module: &'a str,
     pub resolve: &'a Resolve,
