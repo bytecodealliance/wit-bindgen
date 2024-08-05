@@ -498,7 +498,8 @@ impl WorldGenerator for MoonBit {
                 "link": {{
                     "wasm": {{
                         "exports": [{}],
-                        "export-memory-name": "memory"
+                        "export-memory-name": "memory",
+                        "heap-start-address": 0
                     }}
                 }}
             "#,
