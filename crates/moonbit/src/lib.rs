@@ -71,53 +71,38 @@ pub extern "wasm" fn storef64(offset : Int, value : Double) =
 pub extern "wasm" fn loadf64(offset : Int) -> Double =
   #|(func (param i32) (result f64) local.get 0 f64.load)
 
-pub extern "wasm" fn malloc(size : Int) -> Int =
+extern "wasm" fn malloc_inline(size : Int) -> Int =
   #|(func (param i32) (result i32) local.get 0 call $moonbit.malloc)
 
+pub fn malloc(size : Int) -> Int {
+  let words = size / 4 + 1
+  let address = malloc_inline(8 + words * 4)
+  store32(address, 1)
+  store32(address + 4, words.lsl(8).lor(246))
+  store8(address + words * 4 + 7, 3 - size % 4)
+  address + 8
+}
+
 pub extern "wasm" fn free(position : Int) =
-  #|(func (param i32) local.get 0 call $moonbit.free)
+  #|(func (param i32) local.get 0 i32.const 8 i32.sub call $moonbit.decref)
 
-pub extern "wasm" fn copy(dest : Int, src : Int, len : Int) =
+pub fn copy(dest : Int, src : Int) -> Unit {
+  let src = src - 8
+  let dest = dest - 8
+  let src_len = load32(src + 4).land(0xFFFFFF)
+  let dest_len = load32(dest + 4).land(0xFFFFFF)
+  let min = if src_len < dest_len { src_len } else { dest_len }
+  copy_inline(dest, src, min)
+}
+
+extern "wasm" fn copy_inline(dest : Int, src : Int, len : Int) =
   #|(func (param i32) (param i32) (param i32) local.get 0 local.get 1 local.get 2 memory.copy)
-
-pub fn lift_string(addr : Int, length : Int) -> String {
-  for buffer = Buffer::new(), i = 0, offset = 0
-      i < length
-      i = i + 1, offset = offset + 2 {
-    let value = load16_u(addr + offset)
-    if value < 0xD800 || value >= 0xE000 {
-      buffer.write_byte(value.land(0xFF).to_byte())
-      buffer.write_byte(value.lsr(8).land(0xFF).to_byte())
-    } else {
-      let hi = value
-      let lo = load16_u(addr + offset + 2)
-      buffer.write_byte(lo.land(0xFF).to_byte())
-      buffer.write_byte(lo.lsr(8).land(0xFF).to_byte())
-      buffer.write_byte(hi.land(0xFF).to_byte())
-      buffer.write_byte(hi.lsr(8).land(0xFF).to_byte())
-      continue buffer, i + 1, offset + 4
-    }
-  } else {
-    buffer.to_string()
-  }
-}
-
-pub fn write_utf16(char : Char, buffer : Int, offset : Int) -> Int {
-  let code = char.to_int()
-  if code < 0x10000 {
-    store16(buffer + offset, code & 0xFFFF)
-    2
-  } else if code < 0x110000 {
-    store16(buffer + offset, ((code - 0x10000) >> 10) + 0xD800)
-    store16(buffer + offset + 2, ((code - 0x10000) & 0x3FF) + 0xDC00)
-    4
-  } else {
-    panic()
-  }
-}
 
 pub extern "wasm" fn str2ptr(str: String) -> Int =
   #|(func (param i32) (result i32) local.get 0 call $moonbit.decref local.get 0 i32.const 8 i32.add)
+
+pub extern "wasm" fn ptr2str(ptr: Int) -> String =
+  #|(func (param i32) (result i32) local.get 0 i32.const 4 i32.sub i32.const 243 i32.store8 local.get 0 i32.const 8 i32.sub)
 
 pub trait Any {}
 pub struct Cleanup {
@@ -473,17 +458,20 @@ impl WorldGenerator for MoonBit {
                 _dst_alignment : Int,
                 dst_size : Int
             ) -> Int {{
+                // malloc
+                if src_offset == 0 && src_size == 0 {{
+                    return {ffi_qualifier}malloc(dst_size)
+                }}
+                // free
                 if dst_size <= 0 {{
                     {ffi_qualifier}free(src_offset)
                     return 0
                 }}
-                let dest = {ffi_qualifier}malloc(dst_size)
-                if src_size != 0 {{
-                    let min = if src_size < dst_size {{ src_size }} else {{ dst_size }}
-                    {ffi_qualifier}copy(dest, src_offset, min)
-                    {ffi_qualifier}free(src_offset)
-                }}
-                dest
+                // realloc
+                let dst = {ffi_qualifier}malloc(dst_size)
+                {ffi_qualifier}copy(dst, src_offset)
+                {ffi_qualifier}free(src_offset)
+                dst
             }}
             "
         );
@@ -1869,37 +1857,22 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::StringLower { realloc } => {
                 let op = &operands[0];
 
-                if realloc.is_none() {
-                    results.push(format!("{ffi_qualifier}str2ptr({op})"));
-                    self.cleanup.push(Cleanup::Object(op.clone()));
-                } else {
-                    let address = self.locals.tmp("address");
-                    let offset = self.locals.tmp("offset");
-                    let ch = self.locals.tmp("ch");
-
-                    uwrite!(
-                        self.src,
-                        "
-                        let {address} = {ffi_qualifier}malloc({op}.length() * 6)
-                        let mut {offset} = 0
-                        {op}.iter().each(fn({ch}) {{ {offset} += {ffi_qualifier}write_utf16({ch}, {address}, {offset}) }})
-                        "
-                    );
-
-                    results.push(format!("{address}"));
-                }
+                results.push(format!("{ffi_qualifier}str2ptr({op})"));
                 results.push(format!("{op}.iter().count()"));
+                if realloc.is_none() {
+                    self.cleanup.push(Cleanup::Object(op.clone()));
+                }
             }
 
             Instruction::StringLift { .. } => {
                 let result = self.locals.tmp("result");
                 let address = &operands[0];
-                let length = &operands[1];
+                let _length = &operands[1];
 
                 uwrite!(
                     self.src,
                     "
-                    let {result} = {ffi_qualifier}lift_string({address}, {length})
+                    let {result} = {ffi_qualifier}ptr2str({address})
                     "
                 );
 
