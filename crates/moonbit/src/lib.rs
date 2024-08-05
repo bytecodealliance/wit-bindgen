@@ -1,4 +1,5 @@
 use anyhow::Result;
+use core::panic;
 use heck::{ToLowerCamelCase, ToShoutySnakeCase, ToSnakeCase, ToUpperCamelCase};
 use std::{collections::HashMap, fmt::Write, mem, ops::Deref};
 use wit_bindgen_core::{
@@ -98,11 +99,17 @@ pub fn copy(dest : Int, src : Int) -> Unit {
 extern "wasm" fn copy_inline(dest : Int, src : Int, len : Int) =
   #|(func (param i32) (param i32) (param i32) local.get 0 local.get 1 local.get 2 memory.copy)
 
-pub extern "wasm" fn str2ptr(str: String) -> Int =
+pub extern "wasm" fn str2ptr(str : String) -> Int =
   #|(func (param i32) (result i32) local.get 0 call $moonbit.decref local.get 0 i32.const 8 i32.add)
 
-pub extern "wasm" fn ptr2str(ptr: Int) -> String =
+pub extern "wasm" fn ptr2str(ptr : Int) -> String =
   #|(func (param i32) (result i32) local.get 0 i32.const 4 i32.sub i32.const 243 i32.store8 local.get 0 i32.const 8 i32.sub)
+
+pub extern "wasm" fn bytes2ptr(bytes : Bytes) -> Int =
+  #|(func (param i32) (result i32) local.get 0 call $moonbit.decref local.get 0 i32.const 8 i32.add)
+
+pub extern "wasm" fn ptr2bytes(ptr : Int) -> Bytes =
+  #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.sub)
 
 pub trait Any {}
 pub struct Cleanup {
@@ -846,7 +853,10 @@ impl InterfaceGenerator<'_> {
                     TypeDefKind::Type(ty) => self.type_name(ty, type_variable),
                     TypeDefKind::List(ty) => {
                         if type_variable {
-                            format!("Array[{}]", self.type_name(ty, type_variable))
+                            match ty {
+                                Type::U8 => "Bytes".into(),
+                                _ => format!("Array[{}]", self.type_name(ty, type_variable)),
+                            }
                         } else {
                             "Array".into()
                         }
@@ -1842,18 +1852,36 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 operands[0]
             )),
 
-            Instruction::ListCanonLower {
-                element,
-                realloc: _,
-            } => {
-                let (_size, _ty) = list_element_info(element);
-                unimplemented!()
-            }
+            Instruction::ListCanonLower { element, realloc } => match element {
+                Type::U8 => {
+                    let op = &operands[0];
 
-            Instruction::ListCanonLift { element, .. } => {
-                let (_, _ty) = list_element_info(element);
-                unimplemented!()
-            }
+                    results.push(format!("{ffi_qualifier}bytes2ptr({op})"));
+                    results.push(format!("{op}.length()"));
+                    if realloc.is_none() {
+                        self.cleanup.push(Cleanup::Object(op.clone()));
+                    }
+                }
+                _ => panic!("unsupported list element type"),
+            },
+
+            Instruction::ListCanonLift { element, .. } => match element {
+                Type::U8 => {
+                    let result = self.locals.tmp("result");
+                    let address = &operands[0];
+                    let _length = &operands[1];
+
+                    uwrite!(
+                        self.src,
+                        "
+                    let {result} = {ffi_qualifier}ptr2bytes({address})
+                    "
+                    );
+
+                    results.push(result);
+                }
+                _ => panic!("unsupported list element type"),
+            },
 
             Instruction::StringLower { realloc } => {
                 let op = &operands[0];
@@ -2412,13 +2440,9 @@ fn indent(code: &str) -> Source {
     indented
 }
 
-fn is_primitive(_ty: &Type) -> bool {
+fn is_primitive(ty: &Type) -> bool {
     // TODO: treat primitives
-    false
-    // matches!(
-    //     ty,
-    //     Type::U8 | Type::U32 | Type::S32 | Type::U64 | Type::S64 | Type::F64 | Type::Char
-    // )
+    matches!(ty, Type::U8)
 }
 
 fn world_name(resolve: &Resolve, world: WorldId) -> String {
