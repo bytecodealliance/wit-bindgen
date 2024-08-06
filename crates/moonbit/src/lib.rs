@@ -60,17 +60,35 @@ pub extern "wasm" fn store64(offset : Int, value : Int64) =
 pub extern "wasm" fn load64(offset : Int) -> Int64 =
   #|(func (param i32) (result i64) local.get 0 i64.load)
 
-pub extern "wasm" fn storef32(offset : Int, value : Double) =
-  #|(func (param i32) (param i64) local.get 0 local.get 1 f32.demote_f64 f32.store)
+pub extern "wasm" fn storef32(offset : Int, value : Float) =
+  #|(func (param i32) (param f32) local.get 0 local.get 1 f32.store)
 
-pub extern "wasm" fn loadf32(offset : Int) -> Double =
-  #|(func (param i32) (result f64) local.get 0 f32.load f64.promote_f32)
+pub extern "wasm" fn loadf32(offset : Int) -> Float =
+  #|(func (param i32) (result f32) local.get 0 f32.load)
 
 pub extern "wasm" fn storef64(offset : Int, value : Double) =
   #|(func (param i32) (param f64) local.get 0 local.get 1 f64.store)
 
 pub extern "wasm" fn loadf64(offset : Int) -> Double =
   #|(func (param i32) (result f64) local.get 0 f64.load)
+
+pub extern "wasm" fn f32_to_i32(value : Float) -> Int =
+  #|(func (param f32) (result i32) local.get 0 f32.convert_i32_s)
+
+pub extern "wasm" fn i32_to_f32(value : Int) -> Float =
+  #|(func (param i32) (result f32) local.get 0 i32.trunc_f32_s)
+
+pub extern "wasm" fn f32_to_i64(value : Float) -> Int64 =
+  #|(func (param f32) (result i64) local.get 0 f32.convert_i64_s)
+
+pub extern "wasm" fn i64_to_f32(value : Int64) -> Float =
+  #|(func (param i64) (result f32) local.get 0 i64.trunc_f32_s)
+
+pub extern "wasm" fn f32_to_f64(value : Float) -> Double =
+  #|(func (param f32) (result f64) local.get 0 f64.promote_f32)
+
+pub extern "wasm" fn f64_to_f32(value : Double) -> Float =
+  #|(func (param f64) (result f32) local.get 0 f32.demote_f64)
 
 extern "wasm" fn malloc_inline(size : Int) -> Int =
   #|(func (param i32) (result i32) local.get 0 call $moonbit.malloc)
@@ -1524,7 +1542,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 match ty {
                     WasmType::I32 => "0",
                     WasmType::I64 => "0L",
-                    WasmType::F32 => "0.0",
+                    WasmType::F32 => "(0.0 : Float)",
                     WasmType::F64 => "0.0",
                     WasmType::Pointer => "0",
                     WasmType::PointerOrI64 => "0L",
@@ -1544,10 +1562,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             | Instruction::I64FromS64
             | Instruction::S32FromI32
             | Instruction::S64FromI64
-            | Instruction::CoreF32FromF32
             | Instruction::CoreF64FromF64
-            | Instruction::F32FromCoreF32
             | Instruction::F64FromCoreF64 => results.push(operands[0].clone()),
+
+            Instruction::F32FromCoreF32 => results.push(format!("{ffi_qualifier}f32_to_f64({})", operands[0])),
+            Instruction::CoreF32FromF32 => results.push(format!("{ffi_qualifier}f64_to_f32({})", operands[0])),
 
             Instruction::CharFromI32 => results.push(format!("Char::from_int({})", operands[0])),
             Instruction::I32FromChar => results.push(format!("({}).to_int()", operands[0])),
@@ -2347,13 +2366,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 fn perform_cast(op: &str, cast: &Bitcast) -> String {
     match cast {
         Bitcast::I32ToF32 => {
-            format!("Int::to_double({op})")
+            format!("@ffi.i32_to_f32({op})")
         }
-        Bitcast::I64ToF32 => format!("Int64::to_double({op})"),
+        Bitcast::I64ToF32 => format!("@ffi.i64_to_f32({op})"),
         Bitcast::F32ToI32 => {
-            format!("Double::to_int({op})")
+            format!("@ffi.f32_to_i32({op})")
         }
-        Bitcast::F32ToI64 => format!("Double::to_int64({op})"),
+        Bitcast::F32ToI64 => format!("@ffi.f32_to_i64({op})"),
         Bitcast::I64ToF64 => {
             format!("Int64::to_double({op})")
         }
@@ -2362,9 +2381,9 @@ fn perform_cast(op: &str, cast: &Bitcast) -> String {
         }
         Bitcast::LToI64 | Bitcast::PToP64 | Bitcast::I32ToI64 => format!("Int::to_int64({op})"),
         Bitcast::I64ToL | Bitcast::P64ToP | Bitcast::I64ToI32 => format!("Int64::to_int({op})"),
-        Bitcast::I64ToP64 => format!("{op}"),
-        Bitcast::P64ToI64 => format!("{op}"),
-        Bitcast::I32ToP
+        Bitcast::I64ToP64
+        | Bitcast::P64ToI64
+        | Bitcast::I32ToP
         | Bitcast::PToI32
         | Bitcast::I32ToL
         | Bitcast::LToI32
@@ -2383,7 +2402,7 @@ fn wasm_type(ty: WasmType) -> &'static str {
     match ty {
         WasmType::I32 => "Int",
         WasmType::I64 => "Int64",
-        WasmType::F32 => "Double",
+        WasmType::F32 => "Float",
         WasmType::F64 => "Double",
         WasmType::Pointer => "Int",
         WasmType::PointerOrI64 => "Int64",
@@ -2398,19 +2417,6 @@ fn flags_repr(flags: &Flags) -> Int {
         FlagsRepr::U32(1) => Int::U32,
         FlagsRepr::U32(2) => Int::U64,
         repr => panic!("unimplemented flags {repr:?}"),
-    }
-}
-
-fn list_element_info(ty: &Type) -> (usize, &'static str) {
-    match ty {
-        Type::U8 => (1, "byte"),
-        Type::S32 => (4, "Int"),
-        Type::U32 => (4, "UInt"),
-        Type::S64 => (8, "Int64"),
-        Type::U64 => (8, "UInt64"),
-        Type::F64 => (8, "Double"),
-        Type::Char => (4, "Char"),
-        _ => unreachable!(),
     }
 }
 
