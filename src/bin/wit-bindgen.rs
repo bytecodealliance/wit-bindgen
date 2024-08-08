@@ -22,6 +22,14 @@ enum Opt {
         #[clap(flatten)]
         args: Common,
     },
+    /// Generates bindings for MoonBit guest modules.
+    #[cfg(feature = "moonbit")]
+    Moonbit {
+        #[clap(flatten)]
+        opts: wit_bindgen_moonbit::Opts,
+        #[clap(flatten)]
+        args: Common,
+    },
     /// Generates bindings for Rust guest modules.
     #[cfg(feature = "rust")]
     Rust {
@@ -117,6 +125,8 @@ fn main() -> Result<()> {
     let (generator, opt) = match Opt::parse() {
         #[cfg(feature = "markdown")]
         Opt::Markdown { opts, args } => (opts.build(), args),
+        #[cfg(feature = "moonbit")]
+        Opt::Moonbit { opts, args } => (opts.build(), args),
         #[cfg(feature = "c")]
         Opt::C { opts, args } => (opts.build(), args),
         #[cfg(feature = "rust")]

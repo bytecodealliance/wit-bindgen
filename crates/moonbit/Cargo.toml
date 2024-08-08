@@ -1,0 +1,23 @@
+[package]
+name = "wit-bindgen-moonbit"
+authors = ["YE Zihang <ye.zihang@idea.edu.cn>"]
+version = { workspace = true }
+edition = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+homepage = 'https://github.com/bytecodealliance/wit-bindgen'
+description = """
+MoonBit bindings generator for WIT and the component model, typically used
+through the `wit-bindgen-cli` crate.
+"""
+
+[dependencies]
+anyhow = { workspace = true }
+wit-bindgen-core = { workspace = true }
+wit-component = { workspace = true }
+wasm-metadata = { workspace = true }
+heck = { workspace = true }
+clap = { workspace = true, optional = true }
+
+[dev-dependencies]
+test-helpers = { path = '../test-helpers' }
