@@ -1565,8 +1565,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             | Instruction::CoreF64FromF64
             | Instruction::F64FromCoreF64 => results.push(operands[0].clone()),
 
-            Instruction::F32FromCoreF32 => results.push(format!("{ffi_qualifier}f32_to_f64({})", operands[0])),
-            Instruction::CoreF32FromF32 => results.push(format!("{ffi_qualifier}f64_to_f32({})", operands[0])),
+            Instruction::F32FromCoreF32 => {
+                results.push(format!("{ffi_qualifier}f32_to_f64({})", operands[0]))
+            }
+            Instruction::CoreF32FromF32 => {
+                results.push(format!("{ffi_qualifier}f64_to_f32({})", operands[0]))
+            }
 
             Instruction::CharFromI32 => results.push(format!("Char::from_int({})", operands[0])),
             Instruction::I32FromChar => results.push(format!("({}).to_int()", operands[0])),
@@ -2502,7 +2506,7 @@ impl ToMoonBitIdent for str {
             "continue" | "for" | "match" | "if" | "pub" | "priv" | "readonly" | "break"
             | "raise" | "try" | "except" | "catch" | "else" | "enum" | "struct" | "type"
             | "trait" | "return" | "let" | "mut" | "while" | "loop" | "extern" | "with"
-            | "throw" | "init" | "main" | "test" => {
+            | "throw" | "init" | "main" | "test" | "in" => {
                 format!("{self}_")
             }
             _ => self.to_snake_case(),
