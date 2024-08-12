@@ -1,5 +1,3 @@
-mod component_type_object;
-
 use anyhow::Result;
 use heck::{ToLowerCamelCase, ToShoutySnakeCase, ToUpperCamelCase};
 use indexmap::IndexMap;
@@ -753,13 +751,6 @@ impl WorldGenerator for CSharp {
                         .as_bytes(),
                 );
             }
-
-            files.push(
-                &format!("{world_namespace}_component_type.o",),
-                component_type_object::object(resolve, id, self.opts.string_encoding)
-                    .unwrap()
-                    .as_slice(),
-            );
 
             // TODO: remove when we switch to dotnet 9
             let mut wasm_import_linakge_src = String::new();
