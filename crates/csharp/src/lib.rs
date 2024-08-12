@@ -978,6 +978,8 @@ impl InterfaceGenerator<'_> {
             }
         };
 
+        let access = self.gen.access_modifier();
+
         let extra_modifiers = extra_modifiers(func, &camel_name);
 
         let interop_camel_name = func.item_name().to_upper_camel_case();
@@ -1106,7 +1108,7 @@ impl InterfaceGenerator<'_> {
         uwrite!(
             target,
             r#"
-                internal {extra_modifiers} {modifiers} unsafe {result_type} {camel_name}({params})
+                {access} {extra_modifiers} {modifiers} unsafe {result_type} {camel_name}({params})
                 {{
                     {src}
                     //TODO: free alloc handle (interopString) if exists
