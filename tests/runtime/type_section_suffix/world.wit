@@ -6,6 +6,8 @@ interface imports {
 
 world available-imports {
   import imports;
+  include test:a/imports;
+  include test:b/imports;
 }
 
 world required-exports {
