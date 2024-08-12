@@ -75,20 +75,8 @@ pub extern "wasm" fn loadf64(offset : Int) -> Double =
 pub extern "wasm" fn f32_to_i32(value : Float) -> Int =
   #|(func (param f32) (result i32) local.get 0 f32.convert_i32_s)
 
-pub extern "wasm" fn i32_to_f32(value : Int) -> Float =
-  #|(func (param i32) (result f32) local.get 0 i32.trunc_f32_s)
-
 pub extern "wasm" fn f32_to_i64(value : Float) -> Int64 =
   #|(func (param f32) (result i64) local.get 0 f32.convert_i64_s)
-
-pub extern "wasm" fn i64_to_f32(value : Int64) -> Float =
-  #|(func (param i64) (result f32) local.get 0 i64.trunc_f32_s)
-
-pub extern "wasm" fn f32_to_f64(value : Float) -> Double =
-  #|(func (param f32) (result f64) local.get 0 f64.promote_f32)
-
-pub extern "wasm" fn f64_to_f32(value : Double) -> Float =
-  #|(func (param f64) (result f32) local.get 0 f32.demote_f64)
 
 extern "wasm" fn malloc_inline(size : Int) -> Int =
   #|(func (param i32) (result i32) local.get 0 call $moonbit.malloc)
@@ -1565,12 +1553,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             | Instruction::CoreF64FromF64
             | Instruction::F64FromCoreF64 => results.push(operands[0].clone()),
 
-            Instruction::F32FromCoreF32 => {
-                results.push(format!("{ffi_qualifier}f32_to_f64({})", operands[0]))
-            }
-            Instruction::CoreF32FromF32 => {
-                results.push(format!("{ffi_qualifier}f64_to_f32({})", operands[0]))
-            }
+            Instruction::F32FromCoreF32 => results.push(format!("({}).to_double()", operands[0])),
+            Instruction::CoreF32FromF32 => results.push(format!("({}).to_float()", operands[0])),
 
             Instruction::CharFromI32 => results.push(format!("Char::from_int({})", operands[0])),
             Instruction::I32FromChar => results.push(format!("({}).to_int()", operands[0])),
@@ -2370,9 +2354,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 fn perform_cast(op: &str, cast: &Bitcast) -> String {
     match cast {
         Bitcast::I32ToF32 => {
-            format!("@ffi.i32_to_f32({op})")
+            format!("({op}).to_float()")
         }
-        Bitcast::I64ToF32 => format!("@ffi.i64_to_f32({op})"),
+        Bitcast::I64ToF32 => format!("Int64::to_int({op}).to_float()"),
         Bitcast::F32ToI32 => {
             format!("@ffi.f32_to_i32({op})")
         }
