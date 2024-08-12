@@ -77,50 +77,26 @@ impl CSProjectLLVMBuilder {
             <PublishTrimmed>true</PublishTrimmed>
             <AssemblyName>{name}</AssemblyName>
         </PropertyGroup>
-        <ItemGroup>
-          <NativeLibrary Include=\"{camel}_component_type.o\" />
-          <NativeLibrary Include=\"$(MSBuildProjectDirectory)/{camel}_cabi_realloc.o\" />
-        </ItemGroup>
 
         <ItemGroup>
             <RdXmlFile Include=\"rd.xml\" />
+        </ItemGroup>
+
+        <ItemGroup>
+            <CustomLinkerArg Include=\"-Wl,--component-type,{camel}_component_type.wit\" />
         </ItemGroup>
         "
         );
 
         if self.aot {
-            //TODO: Is this handled by the source generator? (Temporary just to test with numbers and strings)
             csproj.push_str(
                 r#"
                 <ItemGroup>
-                    <CustomLinkerArg Include="-Wl,--export,_initialize" />
-                    <CustomLinkerArg Include="-Wl,--no-entry" />
-                    <CustomLinkerArg Include="-mexec-model=reactor" />
+                    <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="9.0.0-rc.1.24412.1" />
+                    <PackageReference Include="runtime.win-x64.Microsoft.DotNet.ILCompiler.LLVM" Version="9.0.0-rc.1.24412.1" />
                 </ItemGroup>
-   
-                <ItemGroup>
-                    <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="9.0.0-*" />
-                    <PackageReference Include="runtime.win-x64.Microsoft.DotNet.ILCompiler.LLVM" Version="9.0.0-*" />
-                </ItemGroup>
-
-                <Target Name="CheckWasmSdks">
-                    <Error Text="Wasi SDK not found, not compiling to WebAssembly. To enable WebAssembly compilation, install Wasi SDK and ensure the WASI_SDK_PATH environment variable points to the directory containing share/wasi-sysroot"
-                        Condition="'$(WASI_SDK_PATH)' == ''" />
-                    <Warning Text="The WASI SDK version is too low. Please use WASI SDK 22 or newer with a 64 bit Clang."
-                        Condition="!Exists('$(WASI_SDK_PATH)/VERSION')" />
-                </Target>
                 "#,
             );
-
-            csproj.push_str(&format!("
-              <Target Name=\"CompileCabiRealloc\" BeforeTargets=\"IlcCompile\" DependsOnTargets=\"CheckWasmSdks\" 
-                Inputs=\"$(MSBuildProjectDirectory)/{camel}_cabi_realloc.c\"
-                Outputs=\"$(MSBuildProjectDirectory)/{camel}_cabi_realloc.o\"
-                >
-                <Exec Command=\"&quot;$(WASI_SDK_PATH)/bin/clang&quot; --target=wasm32-wasi &quot;$(MSBuildProjectDirectory)/{camel}_cabi_realloc.c&quot; -c -o &quot;$(MSBuildProjectDirectory)/{camel}_cabi_realloc.o&quot;\"/>
-              </Target>
-            "
-            ));
 
             fs::write(
                 self.dir.join("nuget.config"),
