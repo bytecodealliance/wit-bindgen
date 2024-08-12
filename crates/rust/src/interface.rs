@@ -1988,7 +1988,7 @@ impl {camel} {{
         use core::any::TypeId;
         static mut LAST_TYPE: Option<TypeId> = None;
         unsafe {{
-            assert!(!cfg!(target_feature = "threads"));
+            assert!(!cfg!(target_feature = "atomics"));
             let id = TypeId::of::<T>();
             match LAST_TYPE {{
                 Some(ty) => assert!(ty == id, "cannot use two types with this resource type"),
