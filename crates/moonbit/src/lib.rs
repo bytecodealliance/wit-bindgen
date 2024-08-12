@@ -117,6 +117,42 @@ pub extern "wasm" fn bytes2ptr(bytes : Bytes) -> Int =
 pub extern "wasm" fn ptr2bytes(ptr : Int) -> Bytes =
   #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.sub)
 
+pub extern "wasm" fn uint_array2ptr(array : FixedArray[UInt]) -> Int =
+  #|(func (param i32) (result i32) local.get 0 call $moonbit.decref local.get 0 i32.const 8 i32.add)
+
+pub extern "wasm" fn uint64_array2ptr(array : FixedArray[UInt64]) -> Int =
+  #|(func (param i32) (result i32) local.get 0 call $moonbit.decref local.get 0 i32.const 8 i32.add)
+
+pub extern "wasm" fn int_array2ptr(array : FixedArray[Int]) -> Int =
+  #|(func (param i32) (result i32) local.get 0 call $moonbit.decref local.get 0 i32.const 8 i32.add)
+
+pub extern "wasm" fn int64_array2ptr(array : FixedArray[Int64]) -> Int =
+  #|(func (param i32) (result i32) local.get 0 call $moonbit.decref local.get 0 i32.const 8 i32.add)
+
+pub extern "wasm" fn float_array2ptr(array : FixedArray[Float]) -> Int =
+  #|(func (param i32) (result i32) local.get 0 call $moonbit.decref local.get 0 i32.const 8 i32.add)
+
+pub extern "wasm" fn double_array2ptr(array : FixedArray[Double]) -> Int =
+  #|(func (param i32) (result i32) local.get 0 call $moonbit.decref local.get 0 i32.const 8 i32.add)
+
+pub extern "wasm" fn ptr2uint_array(ptr : Int) -> FixedArray[UInt] =
+  #|(func (param i32) (result i32) local.get 0 i32.const 4 i32.sub i32.const 241 i32.store8 local.get 0 i32.const 8 i32.sub)
+
+pub extern "wasm" fn ptr2int_array(ptr : Int) -> FixedArray[Int] =
+  #|(func (param i32) (result i32) local.get 0 i32.const 4 i32.sub i32.const 241 i32.store8 local.get 0 i32.const 8 i32.sub)
+
+pub extern "wasm" fn ptr2float_array(ptr : Int) -> FixedArray[Float] =
+  #|(func (param i32) (result i32) local.get 0 i32.const 4 i32.sub i32.const 241 i32.store8 local.get 0 i32.const 8 i32.sub)
+
+pub extern "wasm" fn ptr2uint64_array(ptr : Int) -> FixedArray[UInt64] =
+  #|(func (param i32) (result i32) local.get 0 i32.const 4 i32.sub i32.load i32.const 2 i32.lsr i32.const 241 i32.lor local.get 0 i32.const 4 i32.sub i32.store local.get 0 i32.const 8 i32.sub)
+
+pub extern "wasm" fn ptr2int64_array(ptr : Int) -> FixedArray[Int64] =
+  #|(func (param i32) (result i32) local.get 0 i32.const 4 i32.sub i32.load i32.const 2 i32.lsr i32.const 241 i32.lor local.get 0 i32.const 4 i32.sub i32.store local.get 0 i32.const 8 i32.sub)
+
+pub extern "wasm" fn ptr2double_array(ptr : Int) -> FixedArray[Double] =
+  #|(func (param i32) (result i32) local.get 0 i32.const 4 i32.sub i32.load i32.const 2 i32.lsr i32.const 241 i32.lor local.get 0 i32.const 4 i32.sub i32.store local.get 0 i32.const 8 i32.sub)
+
 pub trait Any {}
 pub struct Cleanup {
     address : Int
@@ -861,6 +897,9 @@ impl InterfaceGenerator<'_> {
                         if type_variable {
                             match ty {
                                 Type::U8 => "Bytes".into(),
+                                Type::U32 | Type::U64 | Type::S32 | Type::S64 | Type::F64 => {
+                                    format!("FixedArray[{}]", self.type_name(ty, type_variable))
+                                }
                                 _ => format!("Array[{}]", self.type_name(ty, type_variable)),
                             }
                         } else {
@@ -1869,7 +1908,25 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         self.cleanup.push(Cleanup::Object(op.clone()));
                     }
                 }
-                _ => panic!("unsupported list element type"),
+                Type::U32 | Type::U64 | Type::S32 | Type::S64 | Type::F64 => {
+                    let op = &operands[0];
+
+                    let ty = match element {
+                        Type::U32 => "uint",
+                        Type::U64 => "uint64",
+                        Type::S32 => "int",
+                        Type::S64 => "int64",
+                        Type::F64 => "double",
+                        _ => unreachable!(),
+                    };
+
+                    results.push(format!("{ffi_qualifier}{ty}_array2ptr({op})"));
+                    results.push(format!("{op}.length()"));
+                    if realloc.is_none() {
+                        self.cleanup.push(Cleanup::Object(op.clone()));
+                    }
+                }
+                _ => unreachable!("unsupported list element type"),
             },
 
             Instruction::ListCanonLift { element, .. } => match element {
@@ -1887,7 +1944,30 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                     results.push(result);
                 }
-                _ => panic!("unsupported list element type"),
+                Type::U32 | Type::U64 | Type::S32 | Type::S64 | Type::F64 => {
+                    let ty = match element {
+                        Type::U32 => "uint",
+                        Type::U64 => "uint64",
+                        Type::S32 => "int",
+                        Type::S64 => "int64",
+                        Type::F64 => "double",
+                        _ => unreachable!(),
+                    };
+
+                    let result = self.locals.tmp("result");
+                    let address = &operands[0];
+                    let _length = &operands[1];
+
+                    uwrite!(
+                        self.src,
+                        "
+                    let {result} = {ffi_qualifier}ptr2{ty}_array({address})
+                    "
+                    );
+
+                    results.push(result);
+                }
+                _ => unreachable!("unsupported list element type"),
             },
 
             Instruction::StringLower { realloc } => {
@@ -2347,7 +2427,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
     }
 
     fn is_list_canonical(&self, _resolve: &Resolve, element: &Type) -> bool {
-        is_primitive(element)
+        matches!(
+            element,
+            Type::U8 | Type::U32 | Type::U64 | Type::S32 | Type::S64 | Type::F64
+        )
     }
 }
 
@@ -2432,11 +2515,6 @@ fn indent(code: &str) -> Source {
         indented.push_str("\n");
     }
     indented
-}
-
-fn is_primitive(ty: &Type) -> bool {
-    // TODO: treat primitives
-    matches!(ty, Type::U8)
 }
 
 fn world_name(resolve: &Resolve, world: WorldId) -> String {
