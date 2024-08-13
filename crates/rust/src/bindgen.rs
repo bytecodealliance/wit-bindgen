@@ -727,7 +727,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.push_str(&format!(
                     "if ptr.is_null()\n{{\n{alloc}::handle_alloc_error({layout});\n}}\nptr\n}}",
                 ));
-                self.push_str("else {{\n::core::ptr::null_mut()\n}};\n");
+                self.push_str("else {\n::core::ptr::null_mut()\n};\n");
                 self.push_str(&format!("for (i, e) in {vec}.into_iter().enumerate() {{\n",));
                 self.push_str(&format!("let base = {result}.add(i * {size});\n",));
                 self.push_str(&body);
