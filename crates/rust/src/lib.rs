@@ -744,7 +744,7 @@ macro_rules! __export_{world_name}_impl {{
     fn emit_custom_section(
         &mut self,
         resolve: &Resolve,
-        world: WorldId,
+        world_id: WorldId,
         section_suffix: &str,
         func_name: Option<&str>,
     ) {
@@ -755,11 +755,13 @@ macro_rules! __export_{world_name}_impl {{
         // concatenated to other custom sections by LLD by accident since LLD will
         // concatenate custom sections of the same name.
         let opts_suffix = self.opts.type_section_suffix.as_deref().unwrap_or("");
-        let world_name = &resolve.worlds[world].name;
+        let world = &resolve.worlds[world_id];
+        let world_name = &world.name;
+        let pkg = &resolve.packages[world.package.unwrap()].name;
         let version = env!("CARGO_PKG_VERSION");
         self.src.push_str(&format!(
             "#[link_section = \"component-type:wit-bindgen:{version}:\
-             {world_name}:{section_suffix}{opts_suffix}\"]\n"
+             {pkg}:{world_name}:{section_suffix}{opts_suffix}\"]\n"
         ));
 
         let mut producers = wasm_metadata::Producers::empty();
@@ -771,7 +773,7 @@ macro_rules! __export_{world_name}_impl {{
 
         let component_type = wit_component::metadata::encode(
             resolve,
-            world,
+            world_id,
             wit_component::StringEncoding::UTF8,
             Some(&producers),
         )
