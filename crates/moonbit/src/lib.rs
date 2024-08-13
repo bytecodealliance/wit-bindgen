@@ -18,6 +18,7 @@ use wit_bindgen_core::{
 // Encoding: UTF16
 // Organization: one package per interface (export and import are treated as different interfaces)
 // TODO: Export will share the type signatures with the import by using a newtype alias
+// TODO: Export resource is not handled correctly : resource.new / resource.drop / resource.rep
 
 const EXPORT_DIR: &str = "gen";
 
@@ -1122,7 +1123,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             FlagsRepr::U8 => "Byte",
             FlagsRepr::U16 | FlagsRepr::U32(1) => "UInt",
             FlagsRepr::U32(2) => "UInt64",
-            repr => todo!("flags {repr:?}"),
+            _ => unreachable!() // https://github.com/WebAssembly/component-model/issues/370
         };
 
         let cases = flags
@@ -1626,7 +1627,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
             Instruction::BoolFromI32 => results.push(format!("({} != 0)", operands[0])),
 
-            // TODO: checked
             Instruction::FlagsLower { flags, .. } => match flags_repr(flags) {
                 Int::U8 | Int::U16 | Int::U32 => {
                     results.push(format!("({}).0.to_int()", operands[0]));
