@@ -184,6 +184,7 @@ impl Opts {
 
 struct InterfaceFragment {
     src: String,
+    ffi: String,
     stub: String,
 }
 
@@ -223,6 +224,7 @@ impl MoonBit {
         InterfaceGenerator {
             src: String::new(),
             stub: String::new(),
+            ffi: String::new(),
             gen: self,
             resolve,
             name,
@@ -407,44 +409,46 @@ impl WorldGenerator for MoonBit {
 
         // Import world fragments
         let mut src = Source::default();
+        let mut ffi = Source::default();
         wit_bindgen_core::generated_preamble(&mut src, version);
-        src.push_str(
-            &self
-                .import_world_fragments
-                .iter()
-                .map(|f| f.src.deref())
-                .collect::<Vec<_>>()
-                .join("\n"),
-        );
+        wit_bindgen_core::generated_preamble(&mut ffi, version);
+        self.import_world_fragments.iter().for_each(|f| {
+            uwriteln!(src, "{}", f.src);
+            uwriteln!(ffi, "{}", f.ffi);
+            assert!(f.stub.is_empty());
+        });
 
         let directory = name.replace('.', "/");
         files.push(&format!("{directory}/import.mbt"), indent(&src).as_bytes());
+        files.push(
+            &format!("{directory}/ffi_import.mbt"),
+            indent(&ffi).as_bytes(),
+        );
         generate_pkg_definition(&name, files);
 
         // Export world fragments
         let mut src = Source::default();
-        generated_preamble(&mut src, version);
-        src.push_str(
-            &self
-                .export_world_fragments
-                .iter()
-                .map(|f| f.src.deref())
-                .collect::<Vec<_>>()
-                .join("\n"),
-        );
+        let mut stub = Source::default();
+        wit_bindgen_core::generated_preamble(&mut src, version);
+        generated_preamble(&mut stub, version);
+        self.export_world_fragments.iter().for_each(|f| {
+            uwriteln!(src, "{}", f.src);
+            uwriteln!(stub, "{}", f.stub);
+        });
 
         files.push(&format!("{directory}/top.mbt"), indent(&src).as_bytes());
+        files.push(&format!("{directory}/stub.mbt"), indent(&stub).as_bytes());
 
-        let generate_stub =
+        let generate_ffi =
             |directory: String, fragments: &[InterfaceFragment], files: &mut Files| {
                 let b = fragments
                     .iter()
-                    .map(|f| f.stub.deref())
+                    .map(|f| f.ffi.deref())
                     .collect::<Vec<_>>()
                     .join("\n");
 
                 let mut body = Source::default();
-                generated_preamble(&mut body, version);
+                wit_bindgen_core::generated_preamble(&mut body, version);
                 uwriteln!(&mut body, "{b}");
 
                 files.push(
@@ -453,41 +457,42 @@ impl WorldGenerator for MoonBit {
                 );
             };
 
-        generate_stub(directory, &self.export_world_fragments, files);
+        generate_ffi(directory, &self.export_world_fragments, files);
 
         // Import interface fragments
         for (name, fragments) in &self.import_interface_fragments {
-            let b = fragments
-                .iter()
-                .map(|f| f.src.deref())
-                .collect::<Vec<_>>()
-                .join("\n");
-
-            let mut body = Source::default();
-            wit_bindgen_core::generated_preamble(&mut body, version);
-            uwriteln!(&mut body, "{b}");
+            let mut src = Source::default();
+            let mut ffi = Source::default();
+            wit_bindgen_core::generated_preamble(&mut src, version);
+            wit_bindgen_core::generated_preamble(&mut ffi, version);
+            fragments.iter().for_each(|f| {
+                uwriteln!(src, "{}", f.src);
+                uwriteln!(ffi, "{}", f.ffi);
+                assert!(f.stub.is_empty());
+            });
 
             let directory = name.replace('.', "/");
-            files.push(&format!("{directory}/top.mbt"), indent(&body).as_bytes());
+            files.push(&format!("{directory}/top.mbt"), indent(&src).as_bytes());
+            files.push(&format!("{directory}/ffi.mbt"), indent(&ffi).as_bytes());
             generate_pkg_definition(&name, files);
         }
 
         // Export interface fragments
         for (name, fragments) in &self.export_interface_fragments {
-            let b = fragments
-                .iter()
-                .map(|f| f.src.deref())
-                .collect::<Vec<_>>()
-                .join("\n");
-
-            let mut body = Source::default();
-            generated_preamble(&mut body, version);
-            uwriteln!(&mut body, "{b}");
+            let mut src = Source::default();
+            let mut stub = Source::default();
+            wit_bindgen_core::generated_preamble(&mut src, version);
+            generated_preamble(&mut stub, version);
+            fragments.iter().for_each(|f| {
+                uwriteln!(src, "{}", f.src);
+                uwriteln!(stub, "{}", f.stub);
+            });
 
             let directory = name.replace('.', "/");
-            files.push(&format!("{directory}/top.mbt"), indent(&body).as_bytes());
+            files.push(&format!("{directory}/top.mbt"), indent(&src).as_bytes());
+            files.push(&format!("{directory}/stub.mbt"), indent(&stub).as_bytes());
             generate_pkg_definition(&name, files);
-            generate_stub(directory, fragments, files);
+            generate_ffi(directory, fragments, files);
         }
 
         // Export project files
@@ -589,6 +594,7 @@ impl WorldGenerator for MoonBit {
 struct InterfaceGenerator<'a> {
     src: String,
     stub: String,
+    ffi: String,
     gen: &'a mut MoonBit,
     resolve: &'a Resolve,
     // The current interface getting generated
@@ -652,6 +658,7 @@ impl InterfaceGenerator<'_> {
                     .push(InterfaceFragment {
                         src: self.src,
                         stub: self.stub,
+                        ffi: self.ffi,
                     });
             }
             Direction::Export => {
@@ -662,6 +669,7 @@ impl InterfaceGenerator<'_> {
                     .push(InterfaceFragment {
                         src: self.src,
                         stub: self.stub,
+                        ffi: self.ffi,
                     });
             }
         }
@@ -673,12 +681,14 @@ impl InterfaceGenerator<'_> {
                 self.gen.import_world_fragments.push(InterfaceFragment {
                     src: self.src,
                     stub: self.stub,
+                    ffi: self.ffi,
                 });
             }
             Direction::Export => {
                 self.gen.export_world_fragments.push(InterfaceFragment {
                     src: self.src,
                     stub: self.stub,
+                    ffi: self.ffi,
                 });
             }
         }
@@ -744,11 +754,11 @@ impl InterfaceGenerator<'_> {
         let sig = self.sig_string(func);
 
         uwriteln!(
-            self.src,
+            self.ffi,
             r#"fn wasmImport{camel_name}({params}) {result_type} = "{module}" "{name}""#
         );
 
-        self.print_docs(&func.docs);
+        print_docs(&mut self.src, &func.docs);
 
         uwrite!(
             self.src,
@@ -792,7 +802,7 @@ impl InterfaceGenerator<'_> {
         let src = bindgen.src;
 
         assert!(toplevel_generator.src.is_empty());
-        assert!(toplevel_generator.stub.is_empty());
+        assert!(toplevel_generator.ffi.is_empty());
 
         let result_type = match &sig.results[..] {
             [] => "Unit",
@@ -815,10 +825,8 @@ impl InterfaceGenerator<'_> {
             .collect::<Vec<_>>()
             .join(", ");
 
-        self.print_docs(&func.docs);
-
         uwrite!(
-            self.stub,
+            self.ffi,
             r#"
             pub fn {func_name}({params}) -> {result_type} {{
                 {src}
@@ -856,9 +864,8 @@ impl InterfaceGenerator<'_> {
                 .tmp(&format!("wasmExport{camel_name}PostReturn"));
 
             uwrite!(
-                self.stub,
+                self.ffi,
                 r#"
-                /// exportation name: "cabi_post_{export_name}")  
                 pub fn {func_name}({params}) -> Unit {{
                     {src}
                 }}
@@ -869,8 +876,9 @@ impl InterfaceGenerator<'_> {
                 .insert(func_name, format!("cabi_post_{export_name}"));
         }
 
+        print_docs(&mut self.stub, &func.docs);
         uwrite!(
-            self.src,
+            self.stub,
             r#"
             {func_sig} {{
                 abort("todo")
@@ -968,19 +976,6 @@ impl InterfaceGenerator<'_> {
         }
     }
 
-    fn print_docs(&mut self, docs: &Docs) {
-        if let Some(docs) = &docs.contents {
-            let lines = docs
-                .trim()
-                .lines()
-                .map(|line| format!("/// {line}"))
-                .collect::<Vec<_>>()
-                .join("\n");
-
-            uwrite!(self.src, "{}", lines)
-        }
-    }
-
     fn non_empty_type<'a>(&self, ty: Option<&'a Type>) -> Option<&'a Type> {
         if let Some(ty) = ty {
             let id = match ty {
@@ -1049,7 +1044,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     }
 
     fn type_record(&mut self, _id: TypeId, name: &str, record: &Record, docs: &Docs) {
-        self.print_docs(docs);
+        print_docs(&mut self.src, docs);
 
         let name = name.to_moonbit_type_ident();
 
@@ -1086,7 +1081,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     }
 
     fn type_resource(&mut self, _id: TypeId, name: &str, docs: &Docs) {
-        self.print_docs(docs);
+        print_docs(&mut self.src, docs);
         let type_name = name;
         let name = name.to_moonbit_type_ident();
 
@@ -1115,7 +1110,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     }
 
     fn type_flags(&mut self, _id: TypeId, name: &str, flags: &Flags, docs: &Docs) {
-        self.print_docs(docs);
+        print_docs(&mut self.src, docs);
 
         let name = name.to_moonbit_type_ident();
 
@@ -1123,7 +1118,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             FlagsRepr::U8 => "Byte",
             FlagsRepr::U16 | FlagsRepr::U32(1) => "UInt",
             FlagsRepr::U32(2) => "UInt64",
-            _ => unreachable!() // https://github.com/WebAssembly/component-model/issues/370
+            _ => unreachable!(), // https://github.com/WebAssembly/component-model/issues/370
         };
 
         let cases = flags
@@ -1202,7 +1197,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     }
 
     fn type_variant(&mut self, _id: TypeId, name: &str, variant: &Variant, docs: &Docs) {
-        self.print_docs(docs);
+        print_docs(&mut self.src, docs);
 
         let name = name.to_moonbit_type_ident();
 
@@ -1249,7 +1244,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     }
 
     fn type_enum(&mut self, _id: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
-        self.print_docs(docs);
+        print_docs(&mut self.src, docs);
 
         let name = name.to_moonbit_type_ident();
 
@@ -2596,4 +2591,17 @@ impl ToMoonBitTypeIdent for str {
 
 fn generated_preamble(src: &mut Source, version: &str) {
     uwriteln!(src, "// Generated by `wit-bindgen` {version}.")
+}
+
+fn print_docs(src: &mut String, docs: &Docs) {
+    if let Some(docs) = &docs.contents {
+        let lines = docs
+            .trim()
+            .lines()
+            .map(|line| format!("/// {line}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        uwrite!(src, "{}", lines)
+    }
 }
