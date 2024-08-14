@@ -572,3 +572,19 @@ mod multiple_paths {
         generate_all,
     });
 }
+
+#[allow(unused)]
+mod generate_custom_section_link_helpers {
+    wit_bindgen::generate!({
+        inline: r#"
+            package a:b;
+
+            world test {
+                import a: interface {
+                    x: func();
+                }
+            }
+        "#,
+        disable_custom_section_link_helpers: true,
+    });
+}

@@ -425,14 +425,23 @@ macro_rules! {macro_name} {{
     pub fn finish_append_submodule(mut self, snake: &str, module_path: Vec<String>) {
         let module = self.finish();
         let path_to_root = self.path_to_root();
+        let used_static = if self.gen.opts.disable_custom_section_link_helpers {
+            String::new()
+        } else {
+            format!(
+                "\
+                    #[used]
+                    #[doc(hidden)]
+                    static __FORCE_SECTION_REF: fn() =
+                        {path_to_root}__link_custom_section_describing_imports;
+                "
+            )
+        };
         let module = format!(
             "\
                 #[allow(dead_code, clippy::all)]
                 pub mod {snake} {{
-                    #[used]
-                    #[doc(hidden)]
-                    #[cfg(target_arch = \"wasm32\")]
-                    static __FORCE_SECTION_REF: fn() = {path_to_root}__link_custom_section_describing_imports;
+                    {used_static}
                     {module}
                 }}
 ",
@@ -1988,7 +1997,7 @@ impl {camel} {{
         use core::any::TypeId;
         static mut LAST_TYPE: Option<TypeId> = None;
         unsafe {{
-            assert!(!cfg!(target_feature = "threads"));
+            assert!(!cfg!(target_feature = "atomics"));
             let id = TypeId::of::<T>();
             match LAST_TYPE {{
                 Some(ty) => assert!(ty == id, "cannot use two types with this resource type"),

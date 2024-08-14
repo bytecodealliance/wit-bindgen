@@ -137,6 +137,9 @@ impl Parse for Config {
                     Opt::Features(f) => {
                         features.extend(f.into_iter().map(|f| f.value()));
                     }
+                    Opt::DisableCustomSectionLinkHelpers(disable) => {
+                        opts.disable_custom_section_link_helpers = disable.value();
+                    }
                 }
             }
         } else {
@@ -309,6 +312,7 @@ mod kw {
     syn::custom_keyword!(pub_export_macro);
     syn::custom_keyword!(generate_unused_types);
     syn::custom_keyword!(features);
+    syn::custom_keyword!(disable_custom_section_link_helpers);
 }
 
 #[derive(Clone)]
@@ -361,6 +365,7 @@ enum Opt {
     PubExportMacro(syn::LitBool),
     GenerateUnusedTypes(syn::LitBool),
     Features(Vec<syn::LitStr>),
+    DisableCustomSectionLinkHelpers(syn::LitBool),
 }
 
 impl Parse for Opt {
@@ -504,6 +509,10 @@ impl Parse for Opt {
             syn::bracketed!(contents in input);
             let list = Punctuated::<_, Token![,]>::parse_terminated(&contents)?;
             Ok(Opt::Features(list.into_iter().collect()))
+        } else if l.peek(kw::disable_custom_section_link_helpers) {
+            input.parse::<kw::disable_custom_section_link_helpers>()?;
+            input.parse::<Token![:]>()?;
+            Ok(Opt::DisableCustomSectionLinkHelpers(input.parse()?))
         } else {
             Err(l.error())
         }

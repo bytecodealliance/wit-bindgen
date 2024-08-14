@@ -22,11 +22,26 @@ mod b {
     });
 }
 
+mod c {
+    wit_bindgen::generate!({
+        world: "test:a/imports",
+        path: "../../tests/runtime/type_section_suffix",
+    });
+}
+mod d {
+    wit_bindgen::generate!({
+        world: "test:b/imports",
+        path: "../../tests/runtime/type_section_suffix",
+    });
+}
+
 struct Exports;
 
 impl Guest for Exports {
     fn run() {
         a::test::suffix::imports::foo();
         b::test::suffix::imports::foo();
+        c::foo();
+        d::bar();
     }
 }

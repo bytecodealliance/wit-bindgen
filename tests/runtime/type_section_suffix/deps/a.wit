@@ -1,0 +1,5 @@
+package test:a ;
+
+world imports {
+  import foo: func();
+}
