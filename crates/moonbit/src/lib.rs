@@ -14,11 +14,15 @@ use wit_bindgen_core::{
 };
 
 // Assumptions:
-// Data: u8 -> Byte, s8 | s16 | s32 -> Int, u16 | u32 -> UInt, s64 -> Int64, u64 -> UInt64, f32 | f64 -> Double, address -> Int
-// Encoding: UTF16
-// Organization: one package per interface (export and import are treated as different interfaces)
+// - Data: u8 -> Byte, s8 | s16 | s32 -> Int, u16 | u32 -> UInt, s64 -> Int64, u64 -> UInt64, f32 | f64 -> Double, address -> Int
+// - Encoding: UTF16
+// - Lift/Lower list<T>: T == Int/UInt/Int64/UInt64/Float/Double -> FixedArray[T], T == Byte -> Bytes, T == Char -> String
+// Organization:
+// - one package per interface (export and import are treated as different interfaces)
+// - ffi utils are under `./ffi`, and the project entrance (package as link target) is under `./gen`
+// TODO: Migrate f32 to Float when the support becomes mature
 // TODO: Export will share the type signatures with the import by using a newtype alias
-// TODO: Export resource is not handled correctly : resource.new / resource.drop / resource.rep
+// TODO: Export resource is not handled correctly : resource.new / resource.drop / resource.rep / dtor
 
 const EXPORT_DIR: &str = "gen";
 
