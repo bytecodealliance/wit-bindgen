@@ -175,6 +175,9 @@ pub struct Opts {
     /// Whether or not to derive Eq for all types
     #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
     pub derive_eq: bool,
+    /// Whether or not to generate stub files ; useful for update after WIT change
+    #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
+    pub ignore_stub: bool,
 }
 
 impl Opts {
@@ -444,7 +447,9 @@ impl WorldGenerator for MoonBit {
         });
 
         files.push(&format!("{directory}/top.mbt"), indent(&src).as_bytes());
-        files.push(&format!("{directory}/stub.mbt"), indent(&stub).as_bytes());
+        if !self.opts.ignore_stub {
+            files.push(&format!("{directory}/stub.mbt"), indent(&stub).as_bytes());
+        }
 
         let generate_ffi =
             |directory: String, fragments: &[InterfaceFragment], files: &mut Files| {
@@ -497,7 +502,9 @@ impl WorldGenerator for MoonBit {
 
             let directory = name.replace('.', "/");
             files.push(&format!("{directory}/top.mbt"), indent(&src).as_bytes());
-            files.push(&format!("{directory}/stub.mbt"), indent(&stub).as_bytes());
+            if !self.opts.ignore_stub {
+                files.push(&format!("{directory}/stub.mbt"), indent(&stub).as_bytes());
+            }
             generate_pkg_definition(&name, files);
             generate_ffi(directory, fragments, files);
         }
