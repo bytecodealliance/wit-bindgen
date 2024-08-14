@@ -211,6 +211,9 @@ pub struct MoonBit {
     package_import: HashMap<String, Imports>,
     export: HashMap<String, String>,
     export_ns: Ns,
+    // return area allocation
+    return_area_size: usize,
+    return_area_align: usize,
 }
 
 impl MoonBit {
@@ -495,12 +498,17 @@ impl WorldGenerator for MoonBit {
             generate_ffi(directory, fragments, files);
         }
 
-        // Export project files
-        // ffi utils
+        // Export FFI Utils
         files.push(&format!("{FFI_DIR}/top.mbt"), FFI.as_bytes());
         files.push(&format!("{FFI_DIR}/moon.pkg.json"), "{}".as_bytes());
 
-        let mut gen = self.interface(resolve, "gen", "", Direction::Export);
+        // Export project files
+        let mut body = Source::default();
+        uwriteln!(&mut body, "{{ \"name\": \"{project_name}\" }}");
+        files.push(&format!("moon.mod.json"), body.as_bytes());
+
+        // Export project entry point
+        let mut gen = self.interface(resolve, EXPORT_DIR, "", Direction::Export);
         let ffi_qualifier = gen.qualify_package(&FFI_DIR.to_string());
 
         let mut body = Source::default();
@@ -528,15 +536,14 @@ impl WorldGenerator for MoonBit {
                 {ffi_qualifier}free(src_offset)
                 dst
             }}
-            "
+
+            let return_area : Int = {ffi_qualifier}malloc({})
+            ",
+            self.return_area_size,
         );
         files.push(&format!("{EXPORT_DIR}/ffi.mbt"), indent(&body).as_bytes());
         self.export
             .insert("cabi_realloc".into(), "cabi_realloc".into());
-
-        let mut body = Source::default();
-        uwriteln!(&mut body, "{{ \"name\": \"{project_name}\" }}");
-        files.push(&format!("moon.mod.json"), body.as_bytes());
 
         let mut body = Source::default();
         let mut exports = self
@@ -2361,15 +2368,21 @@ impl Bindgen for FunctionBindgen<'_, '_> {
     }
 
     fn return_pointer(&mut self, size: usize, align: usize) -> String {
-        let ffi_qualifier = self.gen.qualify_package(&FFI_DIR.to_string());
-        let address = self.locals.tmp("return_area");
-        uwriteln!(self.src, "let {address} = {ffi_qualifier}malloc({})", size,);
-        self.cleanup.push(Cleanup::Memory {
-            address: address.clone(),
-            size: size.to_string(),
-            align,
-        });
-        address
+        if self.gen.direction == Direction::Import {
+            let ffi_qualifier = self.gen.qualify_package(&FFI_DIR.to_string());
+            let address = self.locals.tmp("return_area");
+            uwriteln!(self.src, "let {address} = {ffi_qualifier}malloc({})", size,);
+            self.cleanup.push(Cleanup::Memory {
+                address: address.clone(),
+                size: size.to_string(),
+                align,
+            });
+            address
+        } else {
+            self.gen.gen.return_area_size = self.gen.gen.return_area_size.max(size);
+            self.gen.gen.return_area_align = self.gen.gen.return_area_align.max(align);
+            "return_area".into()
+        }
     }
 
     fn push_block(&mut self) {
