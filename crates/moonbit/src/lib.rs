@@ -1116,15 +1116,24 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             r#"
             pub type {name} Int derive({})
 
-            fn wasmImportResourceDrop{name}(resource : Int) = "{}" "[resource-drop]{type_name}"
-
             pub fn {name}::drop(self : {name}) -> Unit {{
                 wasmImportResourceDrop{name}(self.0)
             }}
             "#,
             deriviation.join(", "),
+        );
+
+        uwrite!(
+            if self.direction == Direction::Import {
+                &mut self.ffi
+            } else {
+                &mut self.src
+            },
+            r#"
+            fn wasmImportResourceDrop{name}(resource : Int) = "{}" "[resource-drop]{type_name}"
+            "#,
             self.module
-        )
+        );
     }
 
     fn type_flags(&mut self, _id: TypeId, name: &str, flags: &Flags, docs: &Docs) {
