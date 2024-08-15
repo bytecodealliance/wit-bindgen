@@ -1560,7 +1560,7 @@ macro_rules! {macro_name} {{
             .cloned()
             .collect();
         derives.extend(
-            ["Clone", "Copy", "PartialEq", "Eq"]
+            ["Clone", "Copy", "PartialEq", "Eq", "PartialOrd", "Ord"]
                 .into_iter()
                 .map(|s| s.to_string()),
         );
