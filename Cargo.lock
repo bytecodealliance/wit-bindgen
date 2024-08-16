@@ -2306,6 +2306,7 @@ dependencies = [
  "wit-bindgen-csharp",
  "wit-bindgen-go",
  "wit-bindgen-markdown",
+ "wit-bindgen-moonbit",
  "wit-bindgen-rust",
  "wit-bindgen-teavm-java",
  "wit-component",
@@ -2358,6 +2359,19 @@ dependencies = [
  "clap",
  "heck 0.5.0",
  "pulldown-cmark",
+ "wit-bindgen-core",
+ "wit-component",
+]
+
+[[package]]
+name = "wit-bindgen-moonbit"
+version = "0.30.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "heck 0.5.0",
+ "test-helpers",
+ "wasm-metadata",
  "wit-bindgen-core",
  "wit-component",
 ]
