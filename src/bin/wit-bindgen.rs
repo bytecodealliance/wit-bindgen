@@ -146,7 +146,7 @@ fn main() -> Result<()> {
             Some(path) => path.join(name),
             None => name.into(),
         };
-        println!("Generating {:?}", dst);
+        eprintln!("Generating {:?}", dst);
 
         if opt.check {
             let prev = std::fs::read(&dst).with_context(|| format!("failed to read {:?}", dst))?;
