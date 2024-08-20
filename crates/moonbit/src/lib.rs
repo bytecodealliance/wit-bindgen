@@ -150,13 +150,13 @@ pub extern "wasm" fn ptr2float_array(ptr : Int) -> FixedArray[Float] =
   #|(func (param i32) (result i32) local.get 0 i32.const 4 i32.sub i32.const 241 i32.store8 local.get 0 i32.const 8 i32.sub)
 
 pub extern "wasm" fn ptr2uint64_array(ptr : Int) -> FixedArray[UInt64] =
-  #|(func (param i32) (result i32) local.get 0 i32.const 4 i32.sub i32.load i32.const 2 i32.lsr i32.const 241 i32.lor local.get 0 i32.const 4 i32.sub i32.store local.get 0 i32.const 8 i32.sub)
+  #|(func (param i32) (result i32) local.get 0 i32.const 4 i32.sub i32.load i32.const 1 i32.shr_u i32.const 241 i32.or local.get 0 i32.const 4 i32.sub i32.store local.get 0 i32.const 8 i32.sub)
 
 pub extern "wasm" fn ptr2int64_array(ptr : Int) -> FixedArray[Int64] =
-  #|(func (param i32) (result i32) local.get 0 i32.const 4 i32.sub i32.load i32.const 2 i32.lsr i32.const 241 i32.lor local.get 0 i32.const 4 i32.sub i32.store local.get 0 i32.const 8 i32.sub)
+  #|(func (param i32) (result i32) local.get 0 i32.const 4 i32.sub i32.load i32.const 1 i32.shr_u i32.const 241 i32.or local.get 0 i32.const 4 i32.sub i32.store local.get 0 i32.const 8 i32.sub)
 
 pub extern "wasm" fn ptr2double_array(ptr : Int) -> FixedArray[Double] =
-  #|(func (param i32) (result i32) local.get 0 i32.const 4 i32.sub i32.load i32.const 2 i32.lsr i32.const 241 i32.lor local.get 0 i32.const 4 i32.sub i32.store local.get 0 i32.const 8 i32.sub)
+  #|(func (param i32) (result i32) local.get 0 i32.const 4 i32.sub i32.load i32.const 1 i32.shr_u i32.const 241 i32.or local.get 0 i32.const 4 i32.sub i32.store local.get 0 i32.const 8 i32.sub)
 
 pub trait Any {}
 pub struct Cleanup {
@@ -1629,9 +1629,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::I32FromS8 => {
                 results.push(format!("{ffi_qualifier}extend8({})", operands[0]))
             }
-            Instruction::S8FromI32 => results.push(format!("({}.land(0xFF))", operands[0])),
-
-            Instruction::S16FromI32 => results.push(format!("({}.land(0xFFFF))", operands[0])),
+            Instruction::S8FromI32 => results.push(format!("({} - 0x100)", operands[0])),
+            Instruction::S16FromI32 => results.push(format!("({} - 0x10000)", operands[0])),
             Instruction::I32FromS16 => {
                 results.push(format!("{ffi_qualifier}extend16({})", operands[0]))
             }
