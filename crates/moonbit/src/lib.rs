@@ -1136,25 +1136,83 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             self.src,
             r#"
             pub type {name} Int derive({})
-
-            pub fn {name}::drop(self : {name}) -> Unit {{
-                wasmImportResourceDrop{name}(self.0)
-            }}
             "#,
             deriviation.join(", "),
         );
 
-        uwrite!(
-            if self.direction == Direction::Import {
-                &mut self.ffi
-            } else {
-                &mut self.src
-            },
-            r#"
-            fn wasmImportResourceDrop{name}(resource : Int) = "{}" "[resource-drop]{type_name}"
-            "#,
-            self.module
-        );
+        let module = self.module;
+
+        if self.direction == Direction::Import {
+            uwrite!(
+                &mut self.src,
+                r#"
+                /// Drops a resource handle.
+                pub fn {name}::drop(self : {name}) -> Unit {{
+                    wasmImportResourceDrop{name}(self.0)
+                }}
+                "#,
+            );
+
+            uwrite!(
+                &mut self.ffi,
+                r#"
+                fn wasmImportResourceDrop{name}(resource : Int) = "{module}" "[resource-drop]{type_name}"
+                "#,
+            )
+        } else {
+            uwrite!(
+                &mut self.src,
+                r#"
+                /// Creates a new resource with the given `rep` as its representation and returning the handle to this resource.
+                pub fn {name}::new(rep : Int) -> {name} {{
+                    {name}::{name}(wasmExportResourceNew{name}(rep))
+                }}
+                fn wasmExportResourceNew{name}(rep : Int) -> Int = "[export]{module}" "[resource-new]{type_name}"
+
+                /// Drops a resource handle.
+                pub fn {name}::drop(self : {name}) -> Unit {{
+                    wasmExportResourceDrop{name}(self.0)
+                }}
+                fn wasmExportResourceDrop{name}(resource : Int) = "[export]{module}" "[resource-drop]{type_name}"
+
+                /// Gets the `Int` representation of the resource pointed to the given handle.
+                pub fn {name}::rep(self : {name}) -> Int {{
+                    wasmExportResourceRep{name}(self.0)
+                }}
+                fn wasmExportResourceRep{name}(resource : Int) -> Int = "[export]{module}" "[resource-rep]{type_name}"
+                "#,
+            );
+
+            uwrite!(
+                &mut self.stub,
+                r#"
+                /// Destructor of the resource.
+                pub fn {name}::dtor(self : {name}) -> Unit {{
+                  abort("todo")
+                }}
+                "#
+            );
+
+            let func_name = self.gen.export_ns.tmp(&format!("wasmExport{name}Dtor"));
+
+            let mut gen = self
+                .gen
+                .interface(self.resolve, EXPORT_DIR, "", Direction::Export);
+
+            uwrite!(
+                self.ffi,
+                r#"
+                pub fn {func_name}(handle : Int) -> Unit {{
+                    {}{name}::dtor(handle)
+                }}
+                "#,
+                gen.qualify_package(&self.name.to_string())
+            );
+
+            self.gen
+                .export
+                .insert(func_name, format!("{module}#[dtor]{type_name}"));
+        }
     }
 
     fn type_flags(&mut self, _id: TypeId, name: &str, flags: &Flags, docs: &Docs) {
