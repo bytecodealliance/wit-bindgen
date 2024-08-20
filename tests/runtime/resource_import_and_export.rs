@@ -57,8 +57,7 @@ fn run() -> anyhow::Result<()> {
         "resource_import_and_export",
         |linker| ResourceImportAndExport::add_to_linker(linker, |x| &mut x.0),
         |store, component, linker| {
-            let (u, e) = ResourceImportAndExport::instantiate(store, component, linker)?;
-            Ok((u.interface1, e))
+            Ok(ResourceImportAndExport::instantiate(store, component, linker)?.interface1)
         },
         run_test,
     )

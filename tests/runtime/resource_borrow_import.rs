@@ -39,10 +39,7 @@ fn run() -> anyhow::Result<()> {
     crate::run_test(
         "resource_borrow_import",
         |linker| ResourceBorrowImport::add_to_linker(linker, |x| &mut x.0),
-        |store, component, linker| {
-            let (u, e) = ResourceBorrowImport::instantiate(store, component, linker)?;
-            Ok((u, e))
-        },
+        |store, component, linker| ResourceBorrowImport::instantiate(store, component, linker),
         run_test,
     )
 }

@@ -59,10 +59,7 @@ fn run() -> anyhow::Result<()> {
     crate::run_test(
         "resource_alias_redux",
         |linker| ResourceAliasRedux::add_to_linker(linker, |x| &mut x.0),
-        |store, component, linker| {
-            let (u, e) = ResourceAliasRedux::instantiate(store, component, linker)?;
-            Ok((u, e))
-        },
+        |store, component, linker| ResourceAliasRedux::instantiate(store, component, linker),
         run_test,
     )
 }
