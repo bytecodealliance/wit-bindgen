@@ -32,11 +32,11 @@ indexmap = "2.0.0"
 prettyplease = "0.2.20"
 syn = { version = "2.0", features = ["printing"] }
 
-wasmparser = "0.215.0"
-wasm-encoder = "0.215.0"
-wasm-metadata = "0.215.0"
-wit-parser = "0.215.0"
-wit-component = "0.215.0"
+wasmparser = { version = "0.215.0", git = "https://github.com/bytecodealliance/wasm-tools.git" }
+wasm-encoder = { version = "0.215.0", git = "https://github.com/bytecodealliance/wasm-tools.git" }
+wasm-metadata = { version = "0.215.0", git = "https://github.com/bytecodealliance/wasm-tools.git" }
+wit-parser = { version = "0.215.0", git = "https://github.com/bytecodealliance/wasm-tools.git" }
+wit-component = { version = "0.215.0", git = "https://github.com/bytecodealliance/wasm-tools.git" }
 
 wit-bindgen-core = { path = 'crates/core', version = '0.30.0' }
 wit-bindgen-c = { path = 'crates/c', version = '0.30.0' }
