@@ -1629,9 +1629,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::I32FromS8 => {
                 results.push(format!("{ffi_qualifier}extend8({})", operands[0]))
             }
-            Instruction::S8FromI32 => results.push(format!("({}.land(0xFF))", operands[0])),
-
-            Instruction::S16FromI32 => results.push(format!("({}.land(0xFFFF))", operands[0])),
+            Instruction::S8FromI32 => results.push(format!("({} - 0x100)", operands[0])),
+            Instruction::S16FromI32 => results.push(format!("({} - 0x10000)", operands[0])),
             Instruction::I32FromS16 => {
                 results.push(format!("{ffi_qualifier}extend16({})", operands[0]))
             }
