@@ -29,8 +29,7 @@ fn run() -> anyhow::Result<()> {
         "resource_borrow_simple",
         |linker| ResourceBorrowSimple::add_to_linker(linker, |x| &mut x.0),
         |store, component: &wasmtime::component::Component, linker| {
-            let (u, e) = ResourceBorrowSimple::instantiate(store, component, linker)?;
-            Ok((u, e))
+            ResourceBorrowSimple::instantiate(store, component, linker)
         },
         run_test,
     )

@@ -10,8 +10,7 @@ fn run() -> anyhow::Result<()> {
         "resource_borrow_export",
         |_| Ok(()),
         |store, component, linker| {
-            let (u, e) = ResourceBorrowExport::instantiate(store, component, linker)?;
-            Ok((u.interface0, e))
+            Ok(ResourceBorrowExport::instantiate(store, component, linker)?.interface0)
         },
         run_test,
     )

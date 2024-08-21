@@ -10,10 +10,7 @@ fn run() -> anyhow::Result<()> {
     crate::run_test(
         "resource_alias",
         |_| Ok(()),
-        |store, component, linker| {
-            let (u, e) = ResourceAlias::instantiate(store, component, linker)?;
-            Ok((u, e))
-        },
+        |store, component, linker| ResourceAlias::instantiate(store, component, linker),
         run_test,
     )
 }

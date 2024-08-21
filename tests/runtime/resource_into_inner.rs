@@ -10,8 +10,7 @@ fn run() -> anyhow::Result<()> {
         "resource_into_inner",
         |_| Ok(()),
         |store, component, linker| {
-            let (u, e) = ResourceIntoInner::instantiate(store, component, linker)?;
-            Ok((u.interface0, e))
+            Ok(ResourceIntoInner::instantiate(store, component, linker)?.interface0)
         },
         run_test,
     )
