@@ -58,7 +58,7 @@ impl<T: Send> WasiView for Wasi<T> {
 fn run_test<T, U>(
     name: &str,
     add_to_linker: fn(&mut Linker<Wasi<T>>) -> Result<()>,
-    instantiate: fn(&mut Store<Wasi<T>>, &Component, &Linker<Wasi<T>>) -> Result<(U, Instance)>,
+    instantiate: fn(&mut Store<Wasi<T>>, &Component, &Linker<Wasi<T>>) -> Result<U>,
     test: fn(U, &mut Store<Wasi<T>>) -> Result<()>,
 ) -> Result<()>
 where
@@ -72,7 +72,7 @@ fn run_test_from_dir<T, U>(
     dir_name: &str,
     name: &str,
     add_to_linker: fn(&mut Linker<Wasi<T>>) -> Result<()>,
-    instantiate: fn(&mut Store<Wasi<T>>, &Component, &Linker<Wasi<T>>) -> Result<(U, Instance)>,
+    instantiate: fn(&mut Store<Wasi<T>>, &Component, &Linker<Wasi<T>>) -> Result<U>,
     test: fn(U, &mut Store<Wasi<T>>) -> Result<()>,
 ) -> Result<()>
 where
@@ -103,7 +103,7 @@ where
 
         wasmtime_wasi::add_to_linker_sync(&mut linker)?;
 
-        let (exports, _) = instantiate(&mut store, &component, &linker)?;
+        let exports = instantiate(&mut store, &component, &linker)?;
 
         println!("testing {wasm:?}");
         test(exports, &mut store)?;

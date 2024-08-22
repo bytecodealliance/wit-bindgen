@@ -84,10 +84,7 @@ fn run() -> Result<()> {
     crate::run_test(
         "resource_aggregates",
         |linker| ResourceAggregates::add_to_linker(linker, |x| &mut x.0),
-        |store, component, linker| {
-            let (u, e) = ResourceAggregates::instantiate(store, component, linker)?;
-            Ok((u, e))
-        },
+        |store, component, linker| ResourceAggregates::instantiate(store, component, linker),
         run_test,
     )
 }

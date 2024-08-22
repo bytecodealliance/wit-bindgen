@@ -59,8 +59,7 @@ fn run() -> anyhow::Result<()> {
         "resource_borrow_in_record",
         |linker| ResourceBorrowInRecord::add_to_linker(linker, |x| &mut x.0),
         |store, component, linker| {
-            let (u, e) = ResourceBorrowInRecord::instantiate(store, component, linker)?;
-            Ok((u.interface0, e))
+            Ok(ResourceBorrowInRecord::instantiate(store, component, linker)?.interface0)
         },
         run_test,
     )

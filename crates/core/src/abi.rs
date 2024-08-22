@@ -1008,7 +1008,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             .sizes()
             .field_offsets(func.results.iter_types())
         {
-            //let offset = i32::try_from(offset).unwrap();
             self.deallocate(ty, addr.clone(), offset);
         }
         self.emit(&Instruction::Return { func, amt: 0 });

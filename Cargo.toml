@@ -32,11 +32,11 @@ indexmap = "2.0.0"
 prettyplease = "0.2.20"
 syn = { version = "2.0", features = ["printing"] }
 
-wasmparser = { version = "0.215.0", git = "https://github.com/bytecodealliance/wasm-tools.git" }
-wasm-encoder = { version = "0.215.0", git = "https://github.com/bytecodealliance/wasm-tools.git" }
-wasm-metadata = { version = "0.215.0", git = "https://github.com/bytecodealliance/wasm-tools.git" }
-wit-parser = { version = "0.215.0", git = "https://github.com/bytecodealliance/wasm-tools.git" }
-wit-component = { version = "0.215.0", git = "https://github.com/bytecodealliance/wasm-tools.git" }
+wasmparser = "0.216.0"
+wasm-encoder = "0.216.0"
+wasm-metadata = "0.216.0"
+wit-parser = "0.216.0"
+wit-component = "0.216.0"
 
 wit-bindgen-core = { path = 'crates/core', version = '0.30.0' }
 wit-bindgen-c = { path = 'crates/c', version = '0.30.0' }
@@ -86,8 +86,8 @@ moonbit = ['dep:wit-bindgen-moonbit']
 
 [dev-dependencies]
 heck = { workspace = true }
-wasmtime = { version = "22.0.0", features = ['component-model'] }
-wasmtime-wasi =  { version = "22.0.0" }
+wasmtime = { version = "24.0.0", features = ['component-model'] }
+wasmtime-wasi =  { version = "24.0.0" }
 test-artifacts = { path = 'crates/test-rust-wasm/artifacts' }
 wit-parser = { workspace = true }
 wasmparser = { workspace = true }

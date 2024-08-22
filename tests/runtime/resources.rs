@@ -62,10 +62,7 @@ fn run() -> Result<()> {
     crate::run_test(
         "resources",
         |linker| Resources::add_to_linker(linker, |x| &mut x.0),
-        |store, component, linker| {
-            let (u, e) = Resources::instantiate(store, component, linker)?;
-            Ok((u.interface0, e))
-        },
+        |store, component, linker| Ok(Resources::instantiate(store, component, linker)?.interface0),
         run_test,
     )
 }
