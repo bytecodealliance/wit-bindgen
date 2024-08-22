@@ -800,21 +800,23 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     // ... otherwise if parameters are indirect space is
                     // allocated from them and each argument is lowered
                     // individually into memory.
-                    let (size, align) = self
+                    let info = self
                         .bindgen
                         .sizes()
                         .record(func.params.iter().map(|t| &t.1));
                     let ptr = match self.variant {
                         // When a wasm module calls an import it will provide
                         // space that isn't explicitly deallocated.
-                        AbiVariant::GuestImport => self.bindgen.return_pointer(size, align),
+                        AbiVariant::GuestImport => self
+                            .bindgen
+                            .return_pointer(info.size.size_wasm32(), info.align.align_wasm32()),
                         // When calling a wasm module from the outside, though,
                         // malloc needs to be called.
                         AbiVariant::GuestExport => {
                             self.emit(&Instruction::Malloc {
                                 realloc: "cabi_realloc",
-                                size,
-                                align,
+                                size: info.size.size_wasm32(),
+                                align: info.align.align_wasm32(),
                             });
                             self.stack.pop().unwrap()
                         }
@@ -822,9 +824,9 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     let mut offset = 0usize;
                     for (nth, (_, ty)) in func.params.iter().enumerate() {
                         self.emit(&Instruction::GetArg { nth });
-                        offset = align_to(offset, self.bindgen.sizes().align(ty));
+                        offset = align_to(offset, self.bindgen.sizes().align(ty).align_wasm32());
                         self.write_to_memory(ty, ptr.clone(), offset as i32);
-                        offset += self.bindgen.sizes().size(ty);
+                        offset += self.bindgen.sizes().size(ty).size_wasm32();
                     }
 
                     self.stack.push(ptr);
@@ -833,8 +835,10 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 // If necessary we may need to prepare a return pointer for
                 // this ABI.
                 if self.variant == AbiVariant::GuestImport && sig.retptr {
-                    let (size, align) = self.bindgen.sizes().params(func.results.iter_types());
-                    let ptr = self.bindgen.return_pointer(size, align);
+                    let info = self.bindgen.sizes().params(func.results.iter_types());
+                    let ptr = self
+                        .bindgen
+                        .return_pointer(info.size.size_wasm32(), info.align.align_wasm32());
                     self.return_pointer = Some(ptr.clone());
                     self.stack.push(ptr);
                 }
@@ -904,9 +908,9 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     self.emit(&Instruction::GetArg { nth: 0 });
                     let ptr = self.stack.pop().unwrap();
                     for (_, ty) in func.params.iter() {
-                        offset = align_to(offset, self.bindgen.sizes().align(ty));
+                        offset = align_to(offset, self.bindgen.sizes().align(ty).align_wasm32());
                         self.read_from_memory(ty, ptr.clone(), offset as i32);
-                        offset += self.bindgen.sizes().size(ty);
+                        offset += self.bindgen.sizes().size(ty).size_wasm32();
                     }
                 }
 
@@ -917,12 +921,15 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 // it's been read by the guest we need to deallocate it.
                 if let AbiVariant::GuestExport = self.variant {
                     if sig.indirect_params {
-                        let (size, align) = self
+                        let info = self
                             .bindgen
                             .sizes()
                             .record(func.params.iter().map(|t| &t.1));
                         self.emit(&Instruction::GetArg { nth: 0 });
-                        self.emit(&Instruction::GuestDeallocate { size, align });
+                        self.emit(&Instruction::GuestDeallocate {
+                            size: info.size.size_wasm32(),
+                            align: info.align.align_wasm32(),
+                        });
                     }
                 }
 
@@ -959,9 +966,10 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         // (statically) and then write the result into that
                         // memory, returning the pointer at the end.
                         AbiVariant::GuestExport => {
-                            let (size, align) =
-                                self.bindgen.sizes().params(func.results.iter_types());
-                            let ptr = self.bindgen.return_pointer(size, align);
+                            let info = self.bindgen.sizes().params(func.results.iter_types());
+                            let ptr = self
+                                .bindgen
+                                .return_pointer(info.size.size_wasm32(), info.align.align_wasm32());
                             self.write_params_to_memory(func.results.iter_types(), ptr.clone(), 0);
                             self.stack.push(ptr);
                         }
@@ -998,6 +1006,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             .sizes()
             .field_offsets(func.results.iter_types())
         {
+            let offset = offset.size_wasm32();
             let offset = i32::try_from(offset).unwrap();
             self.deallocate(ty, addr.clone(), offset);
         }
@@ -1535,8 +1544,12 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         tag: Int,
         cases: impl IntoIterator<Item = Option<&'b Type>> + Clone,
     ) {
-        let payload_offset =
-            offset + (self.bindgen.sizes().payload_offset(tag, cases.clone()) as i32);
+        let payload_offset = offset
+            + (self
+                .bindgen
+                .sizes()
+                .payload_offset(tag, cases.clone())
+                .size_wasm32() as i32);
         for (i, ty) in cases.into_iter().enumerate() {
             self.push_block();
             self.emit(&Instruction::VariantPayloadName);
@@ -1581,6 +1594,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             .zip(fields)
         {
             self.stack.push(op);
+            let field_offset = field_offset.size_wasm32();
             self.write_to_memory(ty, addr.clone(), offset + (field_offset as i32));
         }
     }
@@ -1715,8 +1729,12 @@ impl<'a, B: Bindgen> Generator<'a, B> {
     ) {
         self.stack.push(addr.clone());
         self.load_intrepr(offset, tag);
-        let payload_offset =
-            offset + (self.bindgen.sizes().payload_offset(tag, cases.clone()) as i32);
+        let payload_offset = offset
+            + (self
+                .bindgen
+                .sizes()
+                .payload_offset(tag, cases.clone())
+                .size_wasm32() as i32);
         for ty in cases {
             self.push_block();
             if let Some(ty) = ty {
@@ -1743,7 +1761,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         offset: i32,
     ) {
         for (field_offset, ty) in self.bindgen.sizes().field_offsets(tys).iter() {
-            self.read_from_memory(ty, addr.clone(), offset + (*field_offset as i32));
+            let field_offset = field_offset.size_wasm32();
+            self.read_from_memory(ty, addr.clone(), offset + (field_offset as i32));
         }
     }
 
@@ -1882,8 +1901,12 @@ impl<'a, B: Bindgen> Generator<'a, B> {
     ) {
         self.stack.push(addr.clone());
         self.load_intrepr(offset, tag);
-        let payload_offset =
-            offset + (self.bindgen.sizes().payload_offset(tag, cases.clone()) as i32);
+        let payload_offset = offset
+            + (self
+                .bindgen
+                .sizes()
+                .payload_offset(tag, cases.clone())
+                .size_wasm32() as i32);
         for ty in cases {
             self.push_block();
             if let Some(ty) = ty {
@@ -1895,6 +1918,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
 
     fn deallocate_fields(&mut self, tys: &[Type], addr: B::Operand, offset: i32) {
         for (field_offset, ty) in self.bindgen.sizes().field_offsets(tys) {
+            let field_offset = field_offset.size_wasm32();
             self.deallocate(ty, addr.clone(), offset + (field_offset as i32));
         }
     }

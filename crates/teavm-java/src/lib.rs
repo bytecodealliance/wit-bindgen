@@ -1667,8 +1667,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 assert!(block_results.is_empty());
 
                 let op = &operands[0];
-                let size = self.gen.gen.sizes.size(element);
-                let align = self.gen.gen.sizes.align(element);
+                let size = self.gen.gen.sizes.size(element).size_wasm32();
+                let align = self.gen.gen.sizes.align(element).align_wasm32();
                 let address = self.locals.tmp("address");
                 let ty = self.gen.type_name(element);
                 let index = self.locals.tmp("index");

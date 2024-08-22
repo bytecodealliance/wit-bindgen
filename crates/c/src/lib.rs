@@ -3028,7 +3028,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwriteln!(self.src, "uint8_t *{ptr} = {};", operands[0]);
                 let i = self.locals.tmp("i");
                 uwriteln!(self.src, "for (size_t {i} = 0; {i} < {len}; {i}++) {{");
-                let size = self.gen.gen.sizes.size(element);
+                let size = self.gen.gen.sizes.size(element).size_wasm32();
                 uwriteln!(self.src, "uint8_t *base = {ptr} + {i} * {size};");
                 uwriteln!(self.src, "(void) base;");
                 uwrite!(self.src, "{body}");
