@@ -149,14 +149,35 @@ pub extern "wasm" fn ptr2int_array(ptr : Int) -> FixedArray[Int] =
 pub extern "wasm" fn ptr2float_array(ptr : Int) -> FixedArray[Float] =
   #|(func (param i32) (result i32) local.get 0 i32.const 4 i32.sub i32.const 241 i32.store8 local.get 0 i32.const 8 i32.sub)
 
-pub extern "wasm" fn ptr2uint64_array(ptr : Int) -> FixedArray[UInt64] =
-  #|(func (param i32) (result i32) local.get 0 i32.const 4 i32.sub i32.load i32.const 1 i32.shr_u i32.const 241 i32.or local.get 0 i32.const 4 i32.sub i32.store local.get 0 i32.const 8 i32.sub)
+extern "wasm" fn ptr2uint64_array_ffi(ptr : Int) -> FixedArray[UInt64] =
+  #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.sub)
 
-pub extern "wasm" fn ptr2int64_array(ptr : Int) -> FixedArray[Int64] =
-  #|(func (param i32) (result i32) local.get 0 i32.const 4 i32.sub i32.load i32.const 1 i32.shr_u i32.const 241 i32.or local.get 0 i32.const 4 i32.sub i32.store local.get 0 i32.const 8 i32.sub)
+pub fn ptr2uint64_array(ptr : Int) -> FixedArray[UInt64] {
+  set_64_header_ffi(ptr - 4)
+  ptr2uint64_array_ffi(ptr)
+}
 
-pub extern "wasm" fn ptr2double_array(ptr : Int) -> FixedArray[Double] =
-  #|(func (param i32) (result i32) local.get 0 i32.const 4 i32.sub i32.load i32.const 1 i32.shr_u i32.const 241 i32.or local.get 0 i32.const 4 i32.sub i32.store local.get 0 i32.const 8 i32.sub)
+extern "wasm" fn ptr2int64_array_ffi(ptr : Int) -> FixedArray[Int64] =
+  #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.sub)
+
+pub fn ptr2int64_array(ptr : Int) -> FixedArray[Int64] {
+  set_64_header_ffi(ptr - 4)
+  ptr2int64_array_ffi(ptr)
+}
+
+extern "wasm" fn ptr2double_array_ffi(ptr : Int) -> FixedArray[Double] =
+  #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.sub)
+
+pub fn ptr2double_array(ptr : Int) -> FixedArray[Double] {
+  set_64_header_ffi(ptr - 4)
+  ptr2double_array_ffi(ptr)
+}
+
+fn set_64_header_ffi(offset : Int) -> Unit {
+  let len = load32(offset)
+  store32(offset, len.lsr(1))
+  store8(offset, 241)
+}
 
 pub trait Any {}
 pub struct Cleanup {
