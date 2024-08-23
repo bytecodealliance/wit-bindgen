@@ -1667,8 +1667,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 assert!(block_results.is_empty());
 
                 let op = &operands[0];
-                let size = self.gen.gen.sizes.size(element);
-                let align = self.gen.gen.sizes.align(element);
+                let size = self.gen.gen.sizes.size(element).size_wasm32();
+                let align = self.gen.gen.sizes.align(element).align_wasm32();
                 let address = self.locals.tmp("address");
                 let ty = self.gen.type_name(element);
                 let index = self.locals.tmp("index");
@@ -1708,8 +1708,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let length = &operands[1];
                 let array = self.locals.tmp("array");
                 let ty = self.gen.type_name(element);
-                let size = self.gen.gen.sizes.size(element);
-                let align = self.gen.gen.sizes.align(element);
+                let size = self.gen.gen.sizes.size(element).size_wasm32();
+                let align = self.gen.gen.sizes.align(element).align_wasm32();
                 let index = self.locals.tmp("index");
 
                 let result = match &block_results[..] {
@@ -2006,8 +2006,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let address = &operands[0];
                 let length = &operands[1];
 
-                let size = self.gen.gen.sizes.size(element);
-                let align = self.gen.gen.sizes.align(element);
+                let size = self.gen.gen.sizes.size(element).size_wasm32();
+                let align = self.gen.gen.sizes.align(element).align_wasm32();
 
                 if !body.trim().is_empty() {
                     let index = self.locals.tmp("index");
