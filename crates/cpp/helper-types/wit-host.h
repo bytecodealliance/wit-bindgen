@@ -21,12 +21,15 @@ typedef uint8_t *guest_address;
 typedef size_t guest_size;
 extern "C" void *cabi_realloc(void *ptr, size_t old_size, size_t align,
                               size_t new_size);
+#define INVALID_GUEST_ADDRESS nullptr
 #elif defined(WIT_WASI64)
 typedef uint64_t guest_address;
 typedef uint64_t guest_size;
+#define INVALID_GUEST_ADDRESS 0
 #else
 typedef uint32_t guest_address;
 typedef uint32_t guest_size;
+#define INVALID_GUEST_ADDRESS 0
 #endif
 } // namespace wit
 
@@ -76,7 +79,7 @@ public:
   static string from_view(wasm_exec_env_t exec_env, std::string_view v) {
     void *addr = nullptr;
     wasm_function_inst_t wasm_func = wasm_runtime_lookup_function(
-        wasm_runtime_get_module_inst(exec_env), "cabi_realloc", "(*$ii)*");
+        wasm_runtime_get_module_inst(exec_env), "cabi_realloc"/*, "(*$ii)*"*/);
 
     wasm_val_t wasm_results[1] = {WASM_INIT_VAL};
     wasm_val_t wasm_args[4] = {
@@ -190,7 +193,7 @@ protected:
   int32_t index;
 
 public:
-  ResourceExportBase() : rep(nullptr), index(-1) {}
+  ResourceExportBase() : rep(INVALID_GUEST_ADDRESS), index(-1) {}
   ResourceExportBase(int32_t i) : rep(*lookup_resource(i)), index(i) {}
   ResourceExportBase(ResourceExportBase &&b) : rep(b.rep), index(b.index) {
     b.rep = 0;
@@ -204,7 +207,7 @@ public:
     b.rep = 0;
   }
   ~ResourceExportBase() {
-    if (index >= 0 && rep != nullptr) {
+    if (index >= 0 && rep != INVALID_GUEST_ADDRESS) {
       remove_resource(index);
     }
   }
