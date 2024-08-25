@@ -1,3 +1,4 @@
+#pragma once
 #include "wit-common.h"
 #include <malloc.h>
 #include <memory> // unique_ptr
