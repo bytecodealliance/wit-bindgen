@@ -18,7 +18,7 @@ pub struct InterfaceGenerator<'a> {
     pub src: Source,
     pub(super) identifier: Identifier<'a>,
     pub in_import: bool,
-    pub sizes: SizeAlign64,
+    pub sizes: SizeAlign,
     pub(super) gen: &'a mut RustWasm,
     pub wasm_import_module: &'a str,
     pub resolve: &'a Resolve,
@@ -1011,7 +1011,9 @@ impl {async_support}::StreamPayload for {name} {{
                     }}
                 "
             );
-        } else if abi::guest_export_needs_post_return(self.resolve, func) && !self.gen.opts.symmetric {
+        } else if abi::guest_export_needs_post_return(self.resolve, func)
+            && !self.gen.opts.symmetric
+        {
             uwrite!(
                 self.src,
                 "\
@@ -1105,7 +1107,9 @@ impl {async_support}::StreamPayload for {name} {{
                     }}
                 "
             );
-        } else if abi::guest_export_needs_post_return(self.resolve, func) && !self.gen.opts.symmetric {
+        } else if abi::guest_export_needs_post_return(self.resolve, func)
+            && !self.gen.opts.symmetric
+        {
             let export_prefix = self.gen.opts.export_prefix.as_deref().unwrap_or("");
             let external_name = make_external_component(export_prefix)
                 + "cabi_post_"

@@ -12,7 +12,7 @@ use wit_bindgen_core::{
     make_external_component, make_external_symbol, uwrite, uwriteln,
     wit_parser::{
         Alignment, ArchitectureSize, Docs, Function, FunctionKind, Handle, Int, InterfaceId,
-        Resolve, Results, SizeAlign64, Stability, Type, TypeDefKind, TypeId, TypeOwner, WorldId,
+        Resolve, Results, SizeAlign, Stability, Type, TypeDefKind, TypeId, TypeOwner, WorldId,
         WorldKey,
     },
     Files, InterfaceGenerator, Source, WorldGenerator,
@@ -283,9 +283,9 @@ impl Cpp {
         wasm_import_module: Option<String>,
     ) -> CppInterfaceGenerator<'a> {
         let mut sizes = if self.opts.symmetric {
-            SizeAlign64::new_symmetric()
+            SizeAlign::new_symmetric()
         } else {
-            SizeAlign64::default()
+            SizeAlign::default()
         };
         sizes.fill(resolve);
 
@@ -862,7 +862,7 @@ struct CppInterfaceGenerator<'a> {
     resolve: &'a Resolve,
     interface: Option<InterfaceId>,
     _name: Option<&'a WorldKey>,
-    sizes: SizeAlign64,
+    sizes: SizeAlign,
     in_guest_import: bool,
     // return_pointer_area_size: usize,
     // return_pointer_area_align: usize,
@@ -3708,7 +3708,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
         //       uwriteln!(self.src, "// finish_block()");
     }
 
-    fn sizes(&self) -> &wit_bindgen_core::wit_parser::SizeAlign64 {
+    fn sizes(&self) -> &wit_bindgen_core::wit_parser::SizeAlign {
         &self.gen.sizes
     }
 
