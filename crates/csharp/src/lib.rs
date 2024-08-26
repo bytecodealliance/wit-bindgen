@@ -1,5 +1,3 @@
-mod component_type_object;
-
 use anyhow::Result;
 use heck::{ToLowerCamelCase, ToShoutySnakeCase, ToUpperCamelCase};
 use indexmap::IndexMap;
@@ -693,31 +691,6 @@ impl WorldGenerator for CSharp {
         }
 
         if !self.opts.skip_support_files {
-            let cabi_relloc_src = r#"
-                #include <stdlib.h>
-
-                /* Done in C so we can avoid initializing the dotnet runtime and hence WASI libc */
-                /* It would be preferable to do this in C# but the constraints of cabi_realloc and the demands */
-                /* of WASI libc prevent us doing so. */
-                /* See https://github.com/bytecodealliance/wit-bindgen/issues/777  */
-                /* and https://github.com/WebAssembly/wasi-libc/issues/452 */
-                /* The component model `start` function might be an alternative to this depending on whether it */
-                /* has the same constraints as `cabi_realloc` */
-                __attribute__((__weak__, __export_name__("cabi_realloc")))
-                void *cabi_realloc(void *ptr, size_t old_size, size_t align, size_t new_size) {
-                    (void) old_size;
-                    if (new_size == 0) return (void*) align;
-                    void *ret = realloc(ptr, new_size);
-                    if (!ret) abort();
-                    return ret;
-                }
-            "#;
-
-            files.push(
-                &format!("{name}World_cabi_realloc.c"),
-                indent(cabi_relloc_src).as_bytes(),
-            );
-
             //TODO: This is currently needed for mono even if it's built as a library.
             if self.opts.runtime == CSharpRuntime::Mono {
                 files.push(
@@ -779,13 +752,6 @@ impl WorldGenerator for CSharp {
                         .as_bytes(),
                 );
             }
-
-            files.push(
-                &format!("{world_namespace}_component_type.o",),
-                component_type_object::object(resolve, id, self.opts.string_encoding)
-                    .unwrap()
-                    .as_slice(),
-            );
 
             // TODO: remove when we switch to dotnet 9
             let mut wasm_import_linakge_src = String::new();
@@ -1013,6 +979,8 @@ impl InterfaceGenerator<'_> {
             }
         };
 
+        let access = self.gen.access_modifier();
+
         let extra_modifiers = extra_modifiers(func, &camel_name);
 
         let interop_camel_name = func.item_name().to_upper_camel_case();
@@ -1142,7 +1110,7 @@ impl InterfaceGenerator<'_> {
         uwrite!(
             target,
             r#"
-                internal {extra_modifiers} {modifiers} unsafe {result_type} {camel_name}({params})
+                {access} {extra_modifiers} {modifiers} unsafe {result_type} {camel_name}({params})
                 {{
                     {src}
                     //TODO: free alloc handle (interopString) if exists
@@ -2557,7 +2525,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         let address = self.locals.tmp("address");
                         let buffer = self.locals.tmp("buffer");
                         let gc_handle = self.locals.tmp("gcHandle");
-                        let size = self.gen.gen.sizes.size(element);
+                        let size = self.gen.gen.sizes.size(element).size_wasm32();
                         uwrite!(
                             self.src,
                             "
@@ -2632,7 +2600,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 assert!(block_results.is_empty());
 
                 let list = &operands[0];
-                let size = self.gen.gen.sizes.size(element);
+                let size = self.gen.gen.sizes.size(element).size_wasm32();
                 let ty = self.gen.type_name_with_qualifier(element, true);
                 let index = self.locals.tmp("index");
 
@@ -2676,7 +2644,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let length = &operands[1];
                 let array = self.locals.tmp("array");
                 let ty = self.gen.type_name_with_qualifier(element, true);
-                let size = self.gen.gen.sizes.size(element);
+                let size = self.gen.gen.sizes.size(element).size_wasm32();
                 let index = self.locals.tmp("index");
 
                 let result = match &block_results[..] {

@@ -392,6 +392,25 @@ This relies on wasi-SDK for guest compilation.
 A separate subcommand (cpp-host) will generate C++ host code for 
 WebAssembly micro runtime.
 
+### Guest: MoonBit
+
+MoonBit can be compiled to WebAssembly using [its toolchain](https://moonbitlang.com/download):
+
+```sh
+moon build --target wasm # -g to keep symbols
+```
+
+The generarted core wasm will be found under `target/wasm/release/build/gen/gen.wasm` by default. Then you can use `wasm-tools` to componentize the module:
+
+```
+wasm-tools component embed wit target/wasm/release/build/gen/gen.wasm -o target/gen.wasm
+wasm-tools component new target/gen.wasm -o target/gen.component.wasm
+```
+
+When using `wit-bindgen moonbit`, you may use `--derive-show` or `--derive-eq` to derive `Show` or `Eq` for all types.
+
+You will find the files to be modified with the name `**/stub.mbt`.
+
 ### Guest: Other Languages
 
 Other languages such as JS, Ruby, Python, etc, are hoped to be supported one day

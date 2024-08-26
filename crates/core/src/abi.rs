@@ -1145,7 +1145,10 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                             .sizes()
                             .record(func.params.iter().map(|t| &t.1));
                         self.emit(&Instruction::GetArg { nth: 0 });
-                        self.emit(&Instruction::GuestDeallocate { size, align });
+                        self.emit(&Instruction::GuestDeallocate {
+                            size: info.size.size_wasm32(),
+                            align: info.align.align_wasm32(),
+                        });
                     }
                 }
 
@@ -1254,7 +1257,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             .sizes()
             .field_offsets(func.results.iter_types())
         {
-            //let offset = i32::try_from(offset).unwrap();
             self.deallocate(ty, addr.clone(), offset);
         }
         self.emit(&Instruction::Return { func, amt: 0 });

@@ -18,7 +18,7 @@ resolver = "2"
 
 [workspace.package]
 edition = "2021"
-version = "0.29.0"
+version = "0.30.0"
 license = "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT"
 repository = "https://github.com/bytecodealliance/wasi-rs"
 
@@ -38,14 +38,15 @@ wasm-metadata = { git = "https://github.com/cpetig/wasm-tools", branch = "symmet
 wit-parser = { git = "https://github.com/cpetig/wasm-tools", branch = "symmetric" }
 wit-component = { git = "https://github.com/cpetig/wasm-tools", branch = "symmetric" }
 
-wit-bindgen-core = { path = 'crates/core', version = '0.29.0' }
-wit-bindgen-c = { path = 'crates/c', version = '0.29.0' }
-wit-bindgen-rust = { path = "crates/rust", version = "0.29.0" }
-wit-bindgen-teavm-java = { path = 'crates/teavm-java', version = '0.29.0' }
-wit-bindgen-go = { path = 'crates/go', version = '0.29.0' }
-wit-bindgen-csharp = { path = 'crates/csharp', version = '0.29.0' }
-wit-bindgen-markdown = { path = 'crates/markdown', version = '0.29.0' }
-wit-bindgen = { path = 'crates/guest-rust', version = '0.29.0', default-features = false }
+wit-bindgen-core = { path = 'crates/core', version = '0.30.0' }
+wit-bindgen-c = { path = 'crates/c', version = '0.30.0' }
+wit-bindgen-rust = { path = "crates/rust", version = "0.30.0" }
+wit-bindgen-teavm-java = { path = 'crates/teavm-java', version = '0.30.0' }
+wit-bindgen-go = { path = 'crates/go', version = '0.30.0' }
+wit-bindgen-csharp = { path = 'crates/csharp', version = '0.30.0' }
+wit-bindgen-markdown = { path = 'crates/markdown', version = '0.30.0' }
+wit-bindgen-moonbit = { path = 'crates/moonbit', version = '0.30.0' }
+wit-bindgen = { path = 'crates/guest-rust', version = '0.30.0', default-features = false }
 
 wit-bindgen-cpp = { path = 'crates/cpp', version = '0.3.0' }
 wit-bindgen-bridge = { path = 'crates/bridge', version = '0.1.0' }
@@ -60,6 +61,7 @@ wit-bindgen-core = { workspace = true }
 wit-bindgen-rust = { workspace = true, features = ['clap'], optional = true }
 wit-bindgen-c = { workspace = true, features = ['clap'], optional = true }
 wit-bindgen-markdown = { workspace = true, features = ['clap'], optional = true }
+wit-bindgen-moonbit = { workspace = true, features = ['clap'], optional = true }
 wit-bindgen-teavm-java = { workspace = true, features = ['clap'], optional = true }
 wit-bindgen-go = { workspace = true, features = ['clap'], optional = true }
 wit-bindgen-csharp = { workspace = true, features = ['clap'], optional = true }
@@ -73,11 +75,12 @@ default = [
   'c',
   'rust',
   'markdown',
-#  'teavm-java',
-#  'go',
-#  'csharp',
+  'teavm-java',
+  'go',
+  'csharp',
   'cpp',
   'bridge',
+  'moonbit',
 ]
 bridge = ['dep:wit-bindgen-bridge']
 c = ['dep:wit-bindgen-c']
@@ -88,11 +91,12 @@ teavm-java = ['dep:wit-bindgen-teavm-java']
 go = ['dep:wit-bindgen-go']
 csharp = ['dep:wit-bindgen-csharp']
 csharp-mono = ['csharp']
+moonbit = ['dep:wit-bindgen-moonbit']
 
 [dev-dependencies]
 heck = { workspace = true }
-wasmtime = { version = "22.0.0", features = ['component-model'] }
-wasmtime-wasi =  { version = "22.0.0" }
+wasmtime = { version = "24.0.0", features = ['component-model'] }
+wasmtime-wasi =  { version = "24.0.0" }
 test-artifacts = { path = 'crates/test-rust-wasm/artifacts' }
 wit-parser = { workspace = true }
 wasmparser = { workspace = true }

@@ -71,10 +71,7 @@ fn run() -> anyhow::Result<()> {
     crate::run_test(
         "resource_floats",
         |linker| ResourceFloats::add_to_linker(linker, |x| &mut x.0),
-        |store, component, linker| {
-            let (u, e) = ResourceFloats::instantiate(store, component, linker)?;
-            Ok((u, e))
-        },
+        |store, component, linker| ResourceFloats::instantiate(store, component, linker),
         run_test,
     )
 }

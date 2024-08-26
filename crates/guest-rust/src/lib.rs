@@ -812,6 +812,12 @@
 ///     //
 ///     // By default this is an empty list.
 ///     features: ["foo", "bar", "baz"],
+///
+///     // Disables generation of a `#[used]` static to try harder to get the
+///     // custom section describing WIT types linked into the binary when
+///     // used in library-like situations. This is `false` by default with
+///     // `#[used]` statics being emitted.
+///     disable_custom_section_link_helpers: false,
 /// });
 /// ```
 ///

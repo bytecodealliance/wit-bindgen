@@ -58,7 +58,7 @@ impl<T: Send> WasiView for Wasi<T> {
 fn run_test<T, U>(
     name: &str,
     add_to_linker: fn(&mut Linker<Wasi<T>>) -> Result<()>,
-    instantiate: fn(&mut Store<Wasi<T>>, &Component, &Linker<Wasi<T>>) -> Result<(U, Instance)>,
+    instantiate: fn(&mut Store<Wasi<T>>, &Component, &Linker<Wasi<T>>) -> Result<U>,
     test: fn(U, &mut Store<Wasi<T>>) -> Result<()>,
 ) -> Result<()>
 where
@@ -72,7 +72,7 @@ fn run_test_from_dir<T, U>(
     dir_name: &str,
     name: &str,
     add_to_linker: fn(&mut Linker<Wasi<T>>) -> Result<()>,
-    instantiate: fn(&mut Store<Wasi<T>>, &Component, &Linker<Wasi<T>>) -> Result<(U, Instance)>,
+    instantiate: fn(&mut Store<Wasi<T>>, &Component, &Linker<Wasi<T>>) -> Result<U>,
     test: fn(U, &mut Store<Wasi<T>>) -> Result<()>,
 ) -> Result<()>
 where
@@ -103,7 +103,7 @@ where
 
         wasmtime_wasi::add_to_linker_sync(&mut linker)?;
 
-        let (exports, _) = instantiate(&mut store, &component, &linker)?;
+        let exports = instantiate(&mut store, &component, &linker)?;
 
         println!("testing {wasm:?}");
         test(exports, &mut store)?;
@@ -833,25 +833,7 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
                 panic!("failed to compile");
             }
 
-            // Translate the canonical ABI module into a component.
-
-            let module = fs::read(&wasm_filename).expect("failed to read wasm file");
-            let component = ComponentEncoder::default()
-                .module(module.as_slice())
-                .expect("pull custom sections from module")
-                .validate(true)
-                .adapter("wasi_snapshot_preview1", &wasi_adapter)
-                .expect("adapter failed to get loaded")
-                .realloc_via_memory_grow(true)
-                .encode()
-                .expect(&format!(
-                    "module {:?} can be translated to a component",
-                    out_wasm
-                ));
-            let component_path = out_wasm.with_extension("component.wasm");
-            fs::write(&component_path, component).expect("write component to disk");
-
-            result.push(component_path);
+            result.push(wasm_filename);
         }
     }
 

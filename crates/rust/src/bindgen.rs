@@ -797,8 +797,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     operand0 = operands[0]
                 ));
                 self.push_str(&format!("let {len} = {vec}.len();\n"));
-                let size = self.gen.sizes.size(element);
-                let align = self.gen.sizes.align(element);
+                let size = self.gen.sizes.size(element).size_wasm32();
+                let align = self.gen.sizes.align(element).align_wasm32();
                 self.push_str(&format!(
                     "let {layout} = {alloc}::Layout::from_size_align_unchecked({vec}.len() * {}, {});\n",
                     size.format(POINTER_SIZE_EXPRESSION), align.format(POINTER_SIZE_EXPRESSION),
@@ -810,7 +810,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.push_str(&format!(
                     "if ptr.is_null()\n{{\n{alloc}::handle_alloc_error({layout});\n}}\nptr\n}}",
                 ));
-                self.push_str("else {{\n::core::ptr::null_mut()\n}};\n");
+                self.push_str("else {\n::core::ptr::null_mut()\n};\n");
                 self.push_str(&format!("for (i, e) in {vec}.into_iter().enumerate() {{\n",));
                 self.push_str(&format!(
                     "let base = {result}.add(i * {});\n",
@@ -832,8 +832,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::ListLift { element, .. } => {
                 let body = self.blocks.pop().unwrap();
                 let tmp = self.tmp();
-                let size = self.gen.sizes.size(element);
-                let align = self.gen.sizes.align(element);
+                let size = self.gen.sizes.size(element).size_wasm32();
+                let align = self.gen.sizes.align(element).align_wasm32();
                 let len = format!("len{tmp}");
                 let base = format!("base{tmp}");
                 let result = format!("result{tmp}");
@@ -1258,8 +1258,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::GuestDeallocateList { element } => {
                 let body = self.blocks.pop().unwrap();
                 let tmp = self.tmp();
-                let size = self.gen.sizes.size(element);
-                let align = self.gen.sizes.align(element);
+                let size = self.gen.sizes.size(element).size_wasm32();
+                let align = self.gen.sizes.align(element).align_wasm32();
                 let len = format!("len{tmp}");
                 let base = format!("base{tmp}");
                 self.push_str(&format!(

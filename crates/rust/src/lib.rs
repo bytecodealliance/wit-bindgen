@@ -270,6 +270,14 @@ pub struct Opts {
     /// Determines which functions to lift or lower `async`, if any.
     #[cfg_attr(feature = "clap", arg(long = "async", value_parser = parse_async, default_value_t = Default::default()))]
     pub async_: AsyncConfig,
+
+    /// Whether or not to generate helper function/constants to help link custom
+    /// sections into the final output.
+    ///
+    /// Disabling this can shave a few bytes off a binary but makes
+    /// library-based usage of `generate!` prone to breakage.
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub disable_custom_section_link_helpers: bool,
 }
 
 impl Opts {
@@ -800,7 +808,7 @@ macro_rules! __export_{world_name}_impl {{
     fn emit_custom_section(
         &mut self,
         resolve: &Resolve,
-        world: WorldId,
+        world_id: WorldId,
         section_suffix: &str,
         func_name: Option<&str>,
     ) {
@@ -811,11 +819,13 @@ macro_rules! __export_{world_name}_impl {{
         // concatenated to other custom sections by LLD by accident since LLD will
         // concatenate custom sections of the same name.
         let opts_suffix = self.opts.type_section_suffix.as_deref().unwrap_or("");
-        let world_name = &resolve.worlds[world].name;
+        let world = &resolve.worlds[world_id];
+        let world_name = &world.name;
+        let pkg = &resolve.packages[world.package.unwrap()].name;
         let version = env!("CARGO_PKG_VERSION");
         self.src.push_str(&format!(
             "#[link_section = \"component-type:wit-bindgen:{version}:\
-             {world_name}:{section_suffix}{opts_suffix}\"]\n"
+             {pkg}:{world_name}:{section_suffix}{opts_suffix}\"]\n"
         ));
 
         let mut producers = wasm_metadata::Producers::empty();
@@ -827,7 +837,7 @@ macro_rules! __export_{world_name}_impl {{
 
         let component_type = wit_component::metadata::encode(
             resolve,
-            world,
+            world_id,
             wit_component::StringEncoding::UTF8,
             Some(&producers),
         )
@@ -880,7 +890,6 @@ macro_rules! __export_{world_name}_impl {{
                 "
                 #[inline(never)]
                 #[doc(hidden)]
-                #[cfg(target_arch = \"wasm32\")]
                 pub fn {func_name}() {{
                     {rt}::maybe_link_cabi_realloc();
                 }}
@@ -1154,7 +1163,11 @@ impl WorldGenerator for RustWasm {
             resolve_to_encode,
             world_to_encode,
             "encoded world",
-            Some("__link_custom_section_describing_imports"),
+            if self.opts.disable_custom_section_link_helpers {
+                None
+            } else {
+                Some("__link_custom_section_describing_imports")
+            },
         );
 
         if self.opts.stubs {

@@ -153,6 +153,9 @@ impl Parse for Config {
                         async_configured = true;
                         opts.async_ = val;
                     }
+                    Opt::DisableCustomSectionLinkHelpers(disable) => {
+                        opts.disable_custom_section_link_helpers = disable.value();
+                    }
                 }
             }
         } else {
@@ -331,6 +334,7 @@ mod kw {
     syn::custom_keyword!(features);
     syn::custom_keyword!(imports);
     syn::custom_keyword!(debug);
+    syn::custom_keyword!(disable_custom_section_link_helpers);
 }
 
 #[derive(Clone)]
@@ -391,6 +395,7 @@ enum Opt {
     Features(Vec<syn::LitStr>),
     Async(AsyncConfig, Span),
     Debug(syn::LitBool),
+    DisableCustomSectionLinkHelpers(syn::LitBool),
 }
 
 impl Parse for Opt {
@@ -565,6 +570,10 @@ impl Parse for Opt {
                 }
                 Ok(Opt::Async(AsyncConfig::Some { imports, exports }, span))
             }
+        } else if l.peek(kw::disable_custom_section_link_helpers) {
+            input.parse::<kw::disable_custom_section_link_helpers>()?;
+            input.parse::<Token![:]>()?;
+            Ok(Opt::DisableCustomSectionLinkHelpers(input.parse()?))
         } else {
             Err(l.error())
         }

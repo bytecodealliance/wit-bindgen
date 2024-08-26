@@ -7,6 +7,11 @@ use self::test::suffix::imports::Host;
 #[derive(Default)]
 pub struct MyFoo;
 
+impl RequiredExportsImports for MyFoo {
+    fn foo(&mut self) {}
+    fn bar(&mut self) {}
+}
+
 impl Host for MyFoo {
     fn foo(&mut self) {}
 }
