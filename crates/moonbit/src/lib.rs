@@ -6,9 +6,9 @@ use wit_bindgen_core::{
     abi::{self, AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType},
     dealias, uwrite, uwriteln,
     wit_parser::{
-        Docs, Enum, Flags, FlagsRepr, Function, FunctionKind, Handle, Int, InterfaceId, Record,
-        Resolve, Result_, SizeAlign, Tuple, Type, TypeDef, TypeDefKind, TypeId, TypeOwner, Variant,
-        WorldId, WorldKey,
+        Alignment, ArchitectureSize, Docs, Enum, Flags, FlagsRepr, Function, FunctionKind, Handle,
+        Int, InterfaceId, Record, Resolve, Result_, SizeAlign, Tuple, Type, TypeDef, TypeDefKind,
+        TypeId, TypeOwner, Variant, WorldId, WorldKey,
     },
     Direction, Files, InterfaceGenerator as _, Ns, Source, WorldGenerator,
 };
@@ -240,8 +240,8 @@ pub struct MoonBit {
     export: HashMap<String, String>,
     export_ns: Ns,
     // return area allocation
-    return_area_size: usize,
-    return_area_align: usize,
+    return_area_size: ArchitectureSize,
+    return_area_align: Alignment,
 }
 
 impl MoonBit {
@@ -571,7 +571,7 @@ impl WorldGenerator for MoonBit {
 
             let return_area : Int = {ffi_qualifier}malloc({})
             ",
-            self.return_area_size,
+            self.return_area_size.size_wasm32(),
         );
         files.push(&format!("{EXPORT_DIR}/ffi.mbt"), indent(&body).as_bytes());
         self.export
@@ -750,6 +750,7 @@ impl InterfaceGenerator<'_> {
             LiftLower::LowerArgsLiftResults,
             func,
             &mut bindgen,
+            false,
         );
 
         let src = bindgen.src;
@@ -834,6 +835,7 @@ impl InterfaceGenerator<'_> {
             LiftLower::LiftArgsLowerResults,
             func,
             &mut bindgen,
+            false,
         );
 
         assert!(!bindgen.needs_cleanup_list);
@@ -893,7 +895,7 @@ impl InterfaceGenerator<'_> {
                 (0..sig.results.len()).map(|i| format!("p{i}")).collect(),
             );
 
-            abi::post_return(bindgen.gen.resolve, func, &mut bindgen);
+            abi::post_return(bindgen.gen.resolve, func, &mut bindgen, false);
 
             let src = bindgen.src;
 
@@ -2247,42 +2249,50 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             | Instruction::PointerLoad { offset }
             | Instruction::LengthLoad { offset } => results.push(format!(
                 "{ffi_qualifier}load32(({}) + {offset})",
-                operands[0]
+                operands[0],
+                offset = offset.size_wasm32()
             )),
 
             Instruction::I32Load8U { offset } => results.push(format!(
                 "{ffi_qualifier}load8_u(({}) + {offset})",
-                operands[0]
+                operands[0],
+                offset = offset.size_wasm32()
             )),
 
             Instruction::I32Load8S { offset } => results.push(format!(
                 "{ffi_qualifier}load8(({}) + {offset})",
-                operands[0]
+                operands[0],
+                offset = offset.size_wasm32()
             )),
 
             Instruction::I32Load16U { offset } => results.push(format!(
                 "{ffi_qualifier}load16_u(({}) + {offset})",
-                operands[0]
+                operands[0],
+                offset = offset.size_wasm32()
             )),
 
             Instruction::I32Load16S { offset } => results.push(format!(
                 "{ffi_qualifier}load16(({}) + {offset})",
-                operands[0]
+                operands[0],
+                offset = offset.size_wasm32()
             )),
 
             Instruction::I64Load { offset } => results.push(format!(
                 "{ffi_qualifier}load64(({}) + {offset})",
-                operands[0]
+                operands[0],
+                offset = offset.size_wasm32()
             )),
 
             Instruction::F32Load { offset } => results.push(format!(
                 "{ffi_qualifier}loadf32(({}) + {offset})",
-                operands[0]
+                operands[0],
+                offset = offset.size_wasm32()
             )),
 
             Instruction::F64Load { offset } => results.push(format!(
                 "{ffi_qualifier}loadf64(({}) + {offset})",
-                operands[0]
+                operands[0],
+                offset = offset.size_wasm32()
             )),
 
             Instruction::I32Store { offset }
@@ -2291,46 +2301,52 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.src,
                 "{ffi_qualifier}store32(({}) + {offset}, {})",
                 operands[1],
-                operands[0]
+                operands[0],
+                offset = offset.size_wasm32()
             ),
 
             Instruction::I32Store8 { offset } => uwriteln!(
                 self.src,
                 "{ffi_qualifier}store8(({}) + {offset}, {})",
                 operands[1],
-                operands[0]
+                operands[0],
+                offset = offset.size_wasm32()
             ),
 
             Instruction::I32Store16 { offset } => uwriteln!(
                 self.src,
                 "{ffi_qualifier}store16(({}) + {offset}, {})",
                 operands[1],
-                operands[0]
+                operands[0],
+                offset = offset.size_wasm32()
             ),
 
             Instruction::I64Store { offset } => uwriteln!(
                 self.src,
                 "{ffi_qualifier}store64(({}) + {offset}, {})",
                 operands[1],
-                operands[0]
+                operands[0],
+                offset = offset.size_wasm32()
             ),
 
             Instruction::F32Store { offset } => uwriteln!(
                 self.src,
                 "{ffi_qualifier}storef32(({}) + {offset}, {})",
                 operands[1],
-                operands[0]
+                operands[0],
+                offset = offset.size_wasm32()
             ),
 
             Instruction::F64Store { offset } => uwriteln!(
                 self.src,
                 "{ffi_qualifier}storef64(({}) + {offset}, {})",
                 operands[1],
-                operands[0]
+                operands[0],
+                offset = offset.size_wasm32()
             ),
             // TODO: see what we can do with align
             Instruction::Malloc { size, .. } => {
-                uwriteln!(self.src, "{ffi_qualifier}malloc({})", size)
+                uwriteln!(self.src, "{ffi_qualifier}malloc({})", size.size_wasm32())
             }
 
             Instruction::GuestDeallocate { .. } => {
@@ -2404,18 +2420,38 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 uwriteln!(self.src, "{ffi_qualifier}free({address})");
             }
+            Instruction::FutureLower { payload, ty } => todo!(),
+            Instruction::FutureLift { payload, ty } => todo!(),
+            Instruction::StreamLower { payload, ty } => todo!(),
+            Instruction::StreamLift { payload, ty } => todo!(),
+            Instruction::ErrorLower { ty } => todo!(),
+            Instruction::ErrorLift { ty } => todo!(),
+            Instruction::AsyncMalloc { size, align } => todo!(),
+            Instruction::AsyncCallWasm { name, size, align } => todo!(),
+            Instruction::AsyncCallStart {
+                name,
+                params,
+                results,
+            } => todo!(),
+            Instruction::AsyncPostCallInterface { func } => todo!(),
+            Instruction::AsyncCallReturn { name, params } => todo!(),
+            Instruction::Flush { amt } => todo!(),
         }
     }
 
-    fn return_pointer(&mut self, size: usize, align: usize) -> String {
+    fn return_pointer(&mut self, size: ArchitectureSize, align: Alignment) -> String {
         if self.gen.direction == Direction::Import {
             let ffi_qualifier = self.gen.qualify_package(&FFI_DIR.to_string());
             let address = self.locals.tmp("return_area");
-            uwriteln!(self.src, "let {address} = {ffi_qualifier}malloc({})", size,);
+            uwriteln!(
+                self.src,
+                "let {address} = {ffi_qualifier}malloc({})",
+                size.size_wasm32(),
+            );
             self.cleanup.push(Cleanup::Memory {
                 address: address.clone(),
-                size: size.to_string(),
-                align,
+                size: size.size_wasm32().to_string(),
+                align: align.align_wasm32(),
             });
             address
         } else {
