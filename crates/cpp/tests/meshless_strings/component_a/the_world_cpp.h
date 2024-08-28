@@ -21,9 +21,9 @@ namespace exports {
 namespace foo {
 namespace foo {
 namespace strings {
-void A(wit::string &&x);
+void A(std::string_view x);
 wit::string B();
-wit::string C(wit::string &&a, wit::string &&b);
+wit::string C(std::string_view a, std::string_view b);
 } // namespace strings
 } // namespace foo
 } // namespace foo

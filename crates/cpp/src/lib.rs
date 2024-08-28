@@ -220,6 +220,11 @@ pub struct Opts {
     /// other and removes the primary distinction between host and guest.
     #[cfg_attr(feature = "clap", arg(long, default_value_t = bool::default()))]
     pub symmetric: bool,
+
+    /// Symmetric API, same API for imported and exported functions.
+    /// Reduces the allocation overhead for symmetric ABI.
+    #[cfg_attr(feature = "clap", arg(long, default_value_t = bool::default()))]
+    pub new_api: bool,
 }
 
 impl Opts {

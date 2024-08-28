@@ -70,9 +70,9 @@ a_fooX3AfooX2FstringsX00a(uint8_t *arg0, size_t arg1) {
   auto len0 = arg1;
 
   auto string0 =
-      wit::string::from_view(std::string_view((char const *)(arg0), len0));
+      std::string_view((char const *)(arg0), len0);
 
-  comp_a::exports::foo::foo::strings::A(std::move(string0));
+  comp_a::exports::foo::foo::strings::A(string0);
 }
 extern "C" __attribute__((__export_name__("foo:foo/strings#b"))) void
 a_fooX3AfooX2FstringsX00b(uint8_t *arg0) {
@@ -91,15 +91,15 @@ a_fooX3AfooX2FstringsX00c(uint8_t *arg0, size_t arg1, uint8_t *arg2, size_t arg3
   auto len0 = arg1;
 
   auto string0 =
-      wit::string::from_view(std::string_view((char const *)(arg0), len0));
+      std::string_view((char const *)(arg0), len0);
 
   auto len1 = arg3;
 
   auto string1 =
-      wit::string::from_view(std::string_view((char const *)(arg2), len1));
+      std::string_view((char const *)(arg2), len1);
 
-  auto result2 = comp_a::exports::foo::foo::strings::C(std::move(string0),
-                                                       std::move(string1));
+  auto result2 = comp_a::exports::foo::foo::strings::C(string0,
+                                                       string1);
   auto const &vec3 = result2;
   auto ptr3 = (uint8_t *)(vec3.data());
   auto len3 = (size_t)(vec3.size());
