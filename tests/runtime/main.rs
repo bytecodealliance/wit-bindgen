@@ -278,7 +278,7 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
 
             let snake = world_name.replace("-", "_");
             let mut files = Default::default();
-            let mut opts = wit_bindgen_cpp::Opts::default();
+            let opts = wit_bindgen_cpp::Opts::default();
             opts.build().generate(&resolve, world, &mut files).unwrap();
 
             for (file, contents) in files.iter() {
