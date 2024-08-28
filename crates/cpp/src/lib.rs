@@ -1862,7 +1862,9 @@ impl CppInterfaceGenerator<'_> {
             Type::F32 => "float".into(),
             Type::F64 => "double".into(),
             Type::String => match flavor {
-                Flavor::Argument(AbiVariant::GuestImport) => {
+                Flavor::Argument(var)
+                    if matches!(var, AbiVariant::GuestImport) || self.gen.opts.new_api =>
+                {
                     self.gen.dependencies.needs_string_view = true;
                     "std::string_view".into()
                 }
@@ -1946,7 +1948,9 @@ impl CppInterfaceGenerator<'_> {
                     let inner = self.type_name(ty, from_namespace, flavor);
                     match flavor {
                         //self.gen.dependencies.needs_vector = true;
-                        Flavor::Argument(AbiVariant::GuestImport) => {
+                        Flavor::Argument(var)
+                            if matches!(var, AbiVariant::GuestImport) || self.gen.opts.new_api =>
+                        {
                             self.gen.dependencies.needs_wit = true;
                             format!("wit::span<{inner} const>")
                         }
@@ -2795,7 +2799,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let tmp = self.tmp();
                 let len = format!("len{}", tmp);
                 uwriteln!(self.src, "auto {} = {};\n", len, operands[1]);
-                let result = if self.gen.gen.opts.symmetric
+                let result = if self.gen.gen.opts.symmetric && !self.gen.gen.opts.new_api
                     && matches!(self.variant, AbiVariant::GuestExport)
                 {
                     uwriteln!(self.src, "auto string{tmp} = wit::string::from_view(std::string_view((char const *)({}), {len}));\n", operands[0]);
@@ -2807,7 +2811,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 } else if self.gen.gen.opts.host {
                     uwriteln!(self.src, "char const* ptr{} = (char const*)wasm_runtime_addr_app_to_native(wasm_runtime_get_module_inst(exec_env), {});\n", tmp, operands[0]);
                     format!("std::string_view(ptr{}, {len})", tmp)
-                } else if self.gen.gen.opts.short_cut {
+                } else if self.gen.gen.opts.short_cut || (self.gen.gen.opts.new_api && matches!(self.variant, AbiVariant::GuestExport)) {
                     format!("std::string_view((char const*)({}), {len})", operands[0])
                 } else {
                     format!("wit::string((char const*)({}), {len})", operands[0])
