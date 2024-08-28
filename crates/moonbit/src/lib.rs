@@ -2420,22 +2420,18 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 uwriteln!(self.src, "{ffi_qualifier}free({address})");
             }
-            Instruction::FutureLower { payload, ty } => todo!(),
-            Instruction::FutureLift { payload, ty } => todo!(),
-            Instruction::StreamLower { payload, ty } => todo!(),
-            Instruction::StreamLift { payload, ty } => todo!(),
-            Instruction::ErrorLower { ty } => todo!(),
-            Instruction::ErrorLift { ty } => todo!(),
-            Instruction::AsyncMalloc { size, align } => todo!(),
-            Instruction::AsyncCallWasm { name, size, align } => todo!(),
-            Instruction::AsyncCallStart {
-                name,
-                params,
-                results,
-            } => todo!(),
-            Instruction::AsyncPostCallInterface { func } => todo!(),
-            Instruction::AsyncCallReturn { name, params } => todo!(),
-            Instruction::Flush { amt } => todo!(),
+            Instruction::FutureLower { .. } => todo!(),
+            Instruction::FutureLift { .. } => todo!(),
+            Instruction::StreamLower { .. } => todo!(),
+            Instruction::StreamLift { .. } => todo!(),
+            Instruction::ErrorLower { .. } => todo!(),
+            Instruction::ErrorLift { .. } => todo!(),
+            Instruction::AsyncMalloc { .. } => todo!(),
+            Instruction::AsyncCallWasm { .. } => todo!(),
+            Instruction::AsyncCallStart { .. } => todo!(),
+            Instruction::AsyncPostCallInterface { .. } => todo!(),
+            Instruction::AsyncCallReturn { .. } => todo!(),
+            Instruction::Flush { .. } => todo!(),
         }
     }
 
