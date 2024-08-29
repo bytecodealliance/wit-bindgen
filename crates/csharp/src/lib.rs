@@ -1463,7 +1463,6 @@ impl InterfaceGenerator<'_> {
 
                         public void Dispose() {{
                             Dispose(true);
-                            GC.SuppressFinalize(this);
                         }}
 
                         [DllImport("{module_name}", EntryPoint = "[resource-drop]{name}"), WasmImportLinkage]
@@ -1474,10 +1473,6 @@ impl InterfaceGenerator<'_> {
                                 wasmImportResourceDrop(Handle);
                                 Handle = 0;
                             }}
-                        }}
-
-                        ~{upper_camel}() {{
-                            Dispose(false);
                         }}
                     "#
                 );
