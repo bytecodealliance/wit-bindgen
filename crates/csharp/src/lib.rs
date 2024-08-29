@@ -1444,6 +1444,11 @@ impl InterfaceGenerator<'_> {
                     .map(|key| self.resolve.name_world_key(key))
                     .unwrap_or_else(|| "$root".into());
 
+                // As of this writing, we cannot safely drop a handle to an imported resource from a .NET finalizer
+                // because it may still have one or more open child resources.  Once WIT has explicit syntax for
+                // indicating parent/child relationships, we should be able to use that information to keep track
+                // of child resources automatically in generated code, at which point we'll be able to drop them in
+                // the correct order from finalizers.
                 uwriteln!(
                     self.src,
                     r#"
@@ -1458,21 +1463,16 @@ impl InterfaceGenerator<'_> {
 
                         public void Dispose() {{
                             Dispose(true);
-                            GC.SuppressFinalize(this);
                         }}
 
                         [DllImport("{module_name}", EntryPoint = "[resource-drop]{name}"), WasmImportLinkage]
                         private static extern void wasmImportResourceDrop(int p0);
 
                         protected virtual void Dispose(bool disposing) {{
-                            if (Handle != 0) {{
+                            if (disposing && Handle != 0) {{
                                 wasmImportResourceDrop(Handle);
                                 Handle = 0;
                             }}
-                        }}
-
-                        ~{upper_camel}() {{
-                            Dispose(false);
                         }}
                     "#
                 );
