@@ -180,8 +180,6 @@ impl CSProjectMonoBuilder {
             <ImplicitUsings>enable</ImplicitUsings>
             <Nullable>enable</Nullable>
             <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-            <WasmGenerateAppBundle>true</WasmGenerateAppBundle>
-            <WasmBuildNative>true</WasmBuildNative>
         </PropertyGroup>
         
         <PropertyGroup>
