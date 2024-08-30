@@ -502,7 +502,7 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
         let (resolve, world) = resolve_wit_dir(&dir);
         for path in c_sharp.iter() {
             let world_name = &resolve.worlds[world].name;
-            let out_dir = out_dir.join(format!("csharp-{}", world_name));
+            let out_dir = out_dir.join(format!("csharp-mono-{}", world_name));
             drop(fs::remove_dir_all(&out_dir));
             fs::create_dir_all(&out_dir).unwrap();
 
@@ -595,7 +595,6 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
                 .join(assembly_name);
             let mut wasm_filename = out_wasm.clone();
             wasm_filename.set_extension("wasm");
-
 
             result.push(wasm_filename);
         }
