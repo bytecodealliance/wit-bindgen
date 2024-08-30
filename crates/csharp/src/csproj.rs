@@ -71,8 +71,6 @@ impl CSProjectLLVMBuilder {
             <ImplicitUsings>enable</ImplicitUsings>
             <Nullable>enable</Nullable>
             <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-            <RuntimeIdentifier>wasi-wasm</RuntimeIdentifier>
-            <OutputType>Library</OutputType>
         </PropertyGroup>
         
         <PropertyGroup>
@@ -164,23 +162,20 @@ impl CSProjectMonoBuilder {
         let camel = format!("{}World", world.to_upper_camel_case());
 
         let aot = self.aot;
-
-        let maybe_aot = match aot {
-            true => format!("<WasmBuildNative>{aot}</WasmBuildNative>"),
-            false => String::new(),
-        };
+        let tfm = "net9.0";
 
         let mut csproj = format!(
             "<Project Sdk=\"Microsoft.NET.Sdk.WebAssembly\">
     
         <PropertyGroup>
-            <TargetFramework>net9.0</TargetFramework>
+            <TargetFramework>{tfm}</TargetFramework>
             <RuntimeIdentifier>wasi-wasm</RuntimeIdentifier>
             <OutputType>Library</OutputType>
-            {maybe_aot}
             <RunAOTCompilation>{aot}</RunAOTCompilation>
             <WasmNativeStrip>false</WasmNativeStrip>
             <WasmSingleFileBundle>true</WasmSingleFileBundle>
+            <WasmGenerateAppBundle>true</WasmGenerateAppBundle>
+            <WasmBuildNative>true</WasmBuildNative>
             <RootNamespace>{name}</RootNamespace>
             <ImplicitUsings>enable</ImplicitUsings>
             <Nullable>enable</Nullable>
