@@ -553,6 +553,7 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
             csproj.generate()?;
 
             let dotnet_root_env = "DOTNET_ROOT";
+            let configuration = "Debug";
             let dotnet_cmd: PathBuf;
             match env::var(dotnet_root_env) {
                 Ok(val) => dotnet_cmd = Path::new(&val).join("dotnet"),
@@ -566,7 +567,7 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
             cmd.arg("publish")
                 .arg(out_dir.join(format!("{camel}.csproj")))
                 .arg("-c")
-                .arg("Debug")
+                .arg(configuration)
                 .arg("/p:PlatformTarget=AnyCPU")
                 .arg("--self-contained")
                 .arg("-o")
@@ -586,7 +587,7 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
                 panic!("failed to compile");
             }
 
-            //let out_wasm = out_wasm.join(assembly_name);
+            let out_wasm = out_dir.join("bin").join(configuration).join("net9.0").join("AppBundle").join(assembly_name);
             let mut wasm_filename = out_wasm.clone();
             wasm_filename.set_extension("wasm");
 

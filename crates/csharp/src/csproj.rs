@@ -186,6 +186,7 @@ impl CSProjectMonoBuilder {
             <Nullable>enable</Nullable>
             <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
             <WasmGenerateAppBundle>true</WasmGenerateAppBundle>
+            <WasmBuildNative>true</WasmBuildNative>
         </PropertyGroup>
         
         <PropertyGroup>
@@ -194,7 +195,10 @@ impl CSProjectMonoBuilder {
         </PropertyGroup>
 
         <ItemGroup>
-          <NativeLibrary Include=\"$(MSBuildProjectDirectory)/{camel}_cabi_realloc.c\" />
+          <_WasiLinkStepArgs Include=\"-Wl,--component-type,{camel}_component_type.wit\" />
+          <!-- both versions of these seem to fail to find the .o
+          <_WasiLinkStepArgs Include=\"-Wl,--component-type,&quot;$([MSBuild]::NormalizePath('$(MSBuildProjectDirectory)', '{camel}_component_type.wit').Replace('\\','/'))&quot;\" />
+          -->
         </ItemGroup>
 
         <Target Name=\"_FixRootAssembly\" AfterTargets=\"PrepareForILLink\">
