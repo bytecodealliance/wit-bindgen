@@ -587,21 +587,16 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
                 panic!("failed to compile");
             }
 
-            let out_wasm = out_dir.join("bin").join(configuration).join("net9.0").join("AppBundle").join(assembly_name);
+            let out_wasm = out_dir.join("bin")
+                .join(configuration)
+                .join("net9.0")
+                .join("AppBundle")
+                .join(assembly_name);
             let mut wasm_filename = out_wasm.clone();
             wasm_filename.set_extension("wasm");
 
             let module = fs::read(&wasm_filename).with_context(|| {
                 format!("failed to read wasm file: {}", wasm_filename.display())
-            })?;
-
-            // Translate the canonical ABI module into a component.
-            let component_type_filename = out_dir.join(format!("{camel}_component_type.o"));
-            let component_type = fs::read(&component_type_filename).with_context(|| {
-                format!(
-                    "failed to read component type file: {}",
-                    component_type_filename.display()
-                )
             })?;
 
             let mut new_module = wasm_encoder::Module::new();
