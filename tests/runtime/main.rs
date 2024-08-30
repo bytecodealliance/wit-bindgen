@@ -587,7 +587,8 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
                 panic!("failed to compile");
             }
 
-            let out_wasm = out_dir.join("bin")
+            let out_wasm = out_dir
+                .join("bin")
                 .join(configuration)
                 .join("net9.0")
                 .join("AppBundle")
@@ -595,62 +596,8 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
             let mut wasm_filename = out_wasm.clone();
             wasm_filename.set_extension("wasm");
 
-            let module = fs::read(&wasm_filename).with_context(|| {
-                format!("failed to read wasm file: {}", wasm_filename.display())
-            })?;
 
-            let mut new_module = wasm_encoder::Module::new();
-
-            for payload in wasmparser::Parser::new(0).parse_all(&module) {
-                let payload = payload.unwrap();
-                match payload {
-                    _ => {
-                        if let Some((id, range)) = payload.as_section() {
-                            new_module.section(&wasm_encoder::RawSection {
-                                id,
-                                data: &module[range],
-                            });
-                        }
-                    }
-                }
-            }
-
-            for payload in wasmparser::Parser::new(0).parse_all(&component_type) {
-                let payload = payload.unwrap();
-                match payload {
-                    wasmparser::Payload::CustomSection(_) => {
-                        if let Some((id, range)) = payload.as_section() {
-                            new_module.section(&wasm_encoder::RawSection {
-                                id,
-                                data: &component_type[range],
-                            });
-                        }
-                    }
-                    _ => {
-                        continue;
-                    }
-                }
-            }
-
-            let module = new_module.finish();
-
-            let component = ComponentEncoder::default()
-                .module(&module)
-                .expect("pull custom sections from module")
-                .validate(true)
-                .adapter("wasi_snapshot_preview1", &wasi_adapter)
-                .expect("adapter failed to get loaded")
-                .realloc_via_memory_grow(true)
-                .encode()
-                .expect(&format!(
-                    "module {:?} can be translated to a component",
-                    out_wasm
-                ));
-            let component_path = out_wasm.with_extension("component.wasm");
-            println!("COMPONENT WASM File name: {}", component_path.display());
-            fs::write(&component_path, component).expect("write component to disk");
-
-            result.push(component_path);
+            result.push(wasm_filename);
         }
     }
 
