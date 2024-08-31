@@ -22,4 +22,13 @@ impl exports::test::smoke::imports::Guest for MyExports {
 pub fn main() {
     thunk();
     assert!(HIT.load(std::sync::atomic::Ordering::SeqCst));
+    {
+        #[link(name = "smoke")]
+        extern "C" {
+            fn thunk();
+        }
+        let _ = || {
+            unsafe { thunk() };
+        };
+    }
 }
