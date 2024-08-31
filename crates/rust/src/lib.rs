@@ -267,6 +267,10 @@ pub struct Opts {
     #[cfg_attr(feature = "clap", arg(long, default_value_t = bool::default()))]
     pub symmetric: bool,
 
+    /// Flip import and export on world (used for symmetric testing)
+    #[cfg_attr(feature = "clap", arg(long, default_value_t = bool::default()))]
+    pub invert_direction: bool,
+
     /// Determines which functions to lift or lower `async`, if any.
     #[cfg_attr(feature = "clap", arg(long = "async", value_parser = parse_async, default_value_t = Default::default()))]
     pub async_: AsyncConfig,

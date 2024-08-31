@@ -156,6 +156,12 @@ impl Parse for Config {
                     Opt::DisableCustomSectionLinkHelpers(disable) => {
                         opts.disable_custom_section_link_helpers = disable.value();
                     }
+                    Opt::Symmetric(enable) => {
+                        opts.symmetric = enable.value();
+                    }
+                    Opt::InvertDirection(enable) => {
+                        opts.invert_direction = enable.value();
+                    }
                 }
             }
         } else {
@@ -166,10 +172,13 @@ impl Parse for Config {
                 )]));
             }
         }
-        let (resolve, pkgs, files) =
+        let (mut resolve, pkgs, files) =
             parse_source(&source, &features).map_err(|err| anyhow_to_syn(call_site, err))?;
         let world = select_world(&resolve, &pkgs, world.as_deref())
             .map_err(|e| anyhow_to_syn(call_site, e))?;
+        if opts.invert_direction {
+            resolve.invert_direction(world);
+        }
         Ok(Config {
             opts,
             resolve,
@@ -260,8 +269,12 @@ fn parse_source(
 }
 
 impl Config {
-    fn expand(self) -> Result<TokenStream> {
+    fn expand(mut self) -> Result<TokenStream> {
         let mut files = Default::default();
+        // for testing the symmetric ABI (modify guest code)
+        if std::env::var("SYMMETRIC_ABI").is_ok() {
+            self.opts.symmetric = true;
+        }
         let mut generator = self.opts.build();
         generator
             .generate(&self.resolve, self.world, &mut files)
@@ -335,6 +348,8 @@ mod kw {
     syn::custom_keyword!(imports);
     syn::custom_keyword!(debug);
     syn::custom_keyword!(disable_custom_section_link_helpers);
+    syn::custom_keyword!(symmetric);
+    syn::custom_keyword!(invert_direction);
 }
 
 #[derive(Clone)]
@@ -396,6 +411,8 @@ enum Opt {
     Async(AsyncConfig, Span),
     Debug(syn::LitBool),
     DisableCustomSectionLinkHelpers(syn::LitBool),
+    Symmetric(syn::LitBool),
+    InvertDirection(syn::LitBool),
 }
 
 impl Parse for Opt {
@@ -574,6 +591,14 @@ impl Parse for Opt {
             input.parse::<kw::disable_custom_section_link_helpers>()?;
             input.parse::<Token![:]>()?;
             Ok(Opt::DisableCustomSectionLinkHelpers(input.parse()?))
+        } else if l.peek(kw::symmetric) {
+            input.parse::<kw::symmetric>()?;
+            input.parse::<Token![:]>()?;
+            Ok(Opt::Symmetric(input.parse()?))
+        } else if l.peek(kw::invert_direction) {
+            input.parse::<kw::invert_direction>()?;
+            input.parse::<Token![:]>()?;
+            Ok(Opt::InvertDirection(input.parse()?))
         } else {
             Err(l.error())
         }
