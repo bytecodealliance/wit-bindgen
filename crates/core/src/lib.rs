@@ -485,12 +485,16 @@ pub fn make_external_component(input: &str) -> String {
 
 /// encode symbol as alphanumeric by hex-encoding special characters
 pub fn make_external_symbol(module_name: &str, name: &str, variant: abi::AbiVariant) -> String {
-    let mut res = make_external_component(module_name);
-    res.push_str(if matches!(variant, abi::AbiVariant::GuestExport) {
-        "X23" // Hash character
+    if module_name.is_empty() || module_name=="$root" {
+        make_external_component(name)
     } else {
-        "X00" // NUL character (some tools use '.' for display)
-    });
-    res.push_str(&make_external_component(name));
-    res
+        let mut res = make_external_component(module_name);
+        res.push_str(if matches!(variant, abi::AbiVariant::GuestExport) {
+            "X23" // Hash character
+        } else {
+            "X00" // NUL character (some tools use '.' for display)
+        });
+        res.push_str(&make_external_component(name));
+        res
+    }
 }
