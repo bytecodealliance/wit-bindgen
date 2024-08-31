@@ -15,6 +15,13 @@ fn tests(
     tester_source_dir: &PathBuf,
 ) -> io::Result<()> {
     // modelled after wit-bindgen/tests/runtime/main.rs
+    let mut tester_source_file = tester_source_dir.clone();
+    tester_source_file.push(&format!("{dir_name}.rs"));
+    if !std::fs::exists(&tester_source_file) {
+        println!("Skipping {}", dir_name);
+        return Ok(())
+    }
+
     let mut dir = source_files.clone();
     dir.push(dir_name);
 
@@ -61,7 +68,7 @@ fn tests(
     filename.push(format!("lib.rs"));
     let mut original = dir.clone();
     original.push("wasm.rs");
-    std::os::unix::fs::symlink(original, filename);
+    std::os::unix::fs::symlink(original, filename)?;
     drop(testee_cargo);
 
     let tester_cargo = format!(
@@ -87,9 +94,7 @@ fn tests(
     filename.push("src");
     std::fs::create_dir(&filename)?;
     filename.push(format!("main.rs"));
-    let mut original = tester_source_dir.clone();
-    original.push(&format!("{dir_name}.rs"));
-    std::os::unix::fs::symlink(original, &filename);
+    std::os::unix::fs::symlink(tester_source_file, &filename)?;
 
     let mut cmd = Command::new("cargo");
     cmd.arg("build")
@@ -201,7 +206,7 @@ fn symmetric_integration() -> io::Result<()> {
     out_dir.pop();
     out_dir.push("symmetric-tests");
 
-    let mut manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 
     let mut toplevel = manifest_dir.clone();
     toplevel.pop();
@@ -212,7 +217,7 @@ fn symmetric_integration() -> io::Result<()> {
     if !fs::exists(&test_link)? {
         let mut original = toplevel.clone();
         original.push("tests");
-        std::os::unix::fs::symlink(original, &test_link);
+        std::os::unix::fs::symlink(original, &test_link)?;
     }
 
     let mut source_files = toplevel.clone();
