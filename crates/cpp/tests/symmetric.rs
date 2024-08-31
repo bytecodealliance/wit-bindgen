@@ -17,9 +17,9 @@ fn tests(
     // modelled after wit-bindgen/tests/runtime/main.rs
     let mut tester_source_file = tester_source_dir.clone();
     tester_source_file.push(&format!("{dir_name}.rs"));
-    if !std::fs::exists(&tester_source_file) {
+    if !std::fs::exists(&tester_source_file)? {
         println!("Skipping {}", dir_name);
-        return Ok(())
+        return Ok(());
     }
 
     let mut dir = source_files.clone();
@@ -228,12 +228,17 @@ fn symmetric_integration() -> io::Result<()> {
     tester_source_dir.push("tests");
     tester_source_dir.push("symmetric_tests");
 
-    tests(
-        "smoke",
-        &out_dir,
-        &toplevel,
-        &source_files,
-        &tester_source_dir,
-    )?;
+    let testcases = vec!["smoke", "strings", "numbers"];
+
+    for dir_name in testcases {
+        tests(
+            dir_name,
+            &out_dir,
+            &toplevel,
+            &source_files,
+            &tester_source_dir,
+        )?;
+    }
+
     Ok(())
 }
