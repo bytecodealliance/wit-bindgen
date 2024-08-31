@@ -92,6 +92,16 @@ fn tests(
     let mut cmd = Command::new("cargo");
     cmd.arg("build")
         .current_dir(testee_dir)
+        .env("RUSTFLAGS", "-Ltarget/debug")
+        .env("SYMMETRIC_ABI", "1")
+        .env("WIT_BINDGEN_DEBUG", "1");
+    let status = cmd.status().unwrap();
+    assert!(status.success());
+
+    let mut cmd = Command::new("cargo");
+    cmd.arg("run")
+        .current_dir(out_dir)
+        .env("RUSTFLAGS", "-Ltarget/debug")
         .env("SYMMETRIC_ABI", "1")
         .env("WIT_BINDGEN_DEBUG", "1");
     let status = cmd.status().unwrap();
