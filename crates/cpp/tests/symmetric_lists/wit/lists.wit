@@ -2,6 +2,7 @@ package test:test;
 
 interface i {
     f: func(a: list<string>) -> list<string>;
+    g: func(a: list<u8>) -> list<u8>;
 }
 
 world w {

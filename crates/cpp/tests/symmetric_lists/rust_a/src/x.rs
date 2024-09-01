@@ -85,6 +85,33 @@ pub mod test {
                     result8
                 }
             }
+            #[allow(unused_unsafe, clippy::all)]
+            pub fn g(a: &[u8]) -> _rt::Vec<u8> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 2 * core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 2 * core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = a;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[link(wasm_import_module = "test:test/i")]
+                    extern "C" {
+                        #[cfg_attr(target_arch = "wasm32", link_name = "g")]
+                        fn testX3AtestX2FiX00g(_: *mut u8, _: usize, _: *mut u8);
+                    }
+                    testX3AtestX2FiX00g(ptr0.cast_mut(), len0, ptr1);
+                    let l2 = *ptr1.add(0).cast::<*mut u8>();
+                    let l3 = *ptr1.add(core::mem::size_of::<*const u8>()).cast::<usize>();
+                    let len4 = l3;
+                    _rt::Vec::from_raw_parts(l2.cast(), len4, len4)
+                }
+            }
         }
     }
 }
@@ -112,11 +139,12 @@ mod _rt {
 #[cfg(target_arch = "wasm32")]
 #[link_section = "component-type:wit-bindgen:0.30.0:test:test:x:encoded world"]
 #[doc(hidden)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 177] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07:\x01A\x02\x01A\x02\x01\
-B\x03\x01ps\x01@\x01\x01a\0\0\0\x04\0\x01f\x01\x01\x03\x01\x0btest:test/i\x05\0\x04\
-\x01\x0btest:test/x\x04\0\x0b\x07\x01\0\x01x\x03\0\0\0G\x09producers\x01\x0cproc\
-essed-by\x02\x0dwit-component\x070.216.0\x10wit-bindgen-rust\x060.30.0";
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 194] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07K\x01A\x02\x01A\x02\x01\
+B\x06\x01ps\x01@\x01\x01a\0\0\0\x04\0\x01f\x01\x01\x01p}\x01@\x01\x01a\x02\0\x02\
+\x04\0\x01g\x01\x03\x03\x01\x0btest:test/i\x05\0\x04\x01\x0btest:test/x\x04\0\x0b\
+\x07\x01\0\x01x\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwit-component\
+\x070.216.0\x10wit-bindgen-rust\x060.30.0";
 
 #[inline(never)]
 #[doc(hidden)]

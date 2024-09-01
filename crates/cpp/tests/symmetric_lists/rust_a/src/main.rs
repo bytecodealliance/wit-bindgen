@@ -16,4 +16,7 @@ fn main() {
     let input = vec!["hello".into(), "world".into()];
     let output = x::test::test::i::f(&input);
     println!("{output:?}");
+    let input2 = vec![1,2,3];
+    let output2 = x::test::test::i::g(&input2);
+    println!("{output2:?}");
 }
