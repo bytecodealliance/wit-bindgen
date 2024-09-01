@@ -1064,7 +1064,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.src,
                     "let l{tmp} = *{}.add({offset}).cast::<i32>();",
                     operands[0],
-                    offset = offset.format(POINTER_SIZE_EXPRESSION)
+                    offset = offset.format_term(POINTER_SIZE_EXPRESSION, true)
                 );
                 results.push(format!("l{tmp}"));
             }
@@ -1074,7 +1074,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.src,
                     "let l{tmp} = i32::from(*{0}.add({offset}).cast::<u8>());",
                     operands[0],
-                    offset = offset.format(POINTER_SIZE_EXPRESSION)
+                    offset = offset.format_term(POINTER_SIZE_EXPRESSION, true)
                 );
                 results.push(format!("l{tmp}"));
             }
@@ -1084,7 +1084,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.src,
                     "let l{tmp} = i32::from(*{}.add({offset}).cast::<i8>());",
                     operands[0],
-                    offset = offset.format(POINTER_SIZE_EXPRESSION)
+                    offset = offset.format_term(POINTER_SIZE_EXPRESSION, true)
                 );
                 results.push(format!("l{tmp}"));
             }
@@ -1094,7 +1094,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.src,
                     "let l{tmp} = i32::from(*{}.add({offset}).cast::<u16>());",
                     operands[0],
-                    offset = offset.format(POINTER_SIZE_EXPRESSION)
+                    offset = offset.format_term(POINTER_SIZE_EXPRESSION, true)
                 );
                 results.push(format!("l{tmp}"));
             }
@@ -1104,7 +1104,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.src,
                     "let l{tmp} = i32::from(*{}.add({offset}).cast::<i16>());",
                     operands[0],
-                    offset = offset.format(POINTER_SIZE_EXPRESSION)
+                    offset = offset.format_term(POINTER_SIZE_EXPRESSION, true)
                 );
                 results.push(format!("l{tmp}"));
             }
@@ -1114,7 +1114,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.src,
                     "let l{tmp} = *{}.add({offset}).cast::<i64>();",
                     operands[0],
-                    offset = offset.format(POINTER_SIZE_EXPRESSION)
+                    offset = offset.format_term(POINTER_SIZE_EXPRESSION, true)
                 );
                 results.push(format!("l{tmp}"));
             }
@@ -1124,7 +1124,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.src,
                     "let l{tmp} = *{}.add({offset}).cast::<f32>();",
                     operands[0],
-                    offset = offset.format(POINTER_SIZE_EXPRESSION)
+                    offset = offset.format_term(POINTER_SIZE_EXPRESSION, true)
                 );
                 results.push(format!("l{tmp}"));
             }
@@ -1134,7 +1134,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.src,
                     "let l{tmp} = *{}.add({offset}).cast::<f64>();",
                     operands[0],
-                    offset = offset.format(POINTER_SIZE_EXPRESSION)
+                    offset = offset.format_term(POINTER_SIZE_EXPRESSION, true)
                 );
                 results.push(format!("l{tmp}"));
             }
@@ -1145,7 +1145,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.src,
                     "let l{tmp} = *{}.add({offset}).cast::<*mut u8>();",
                     operands[0],
-                    offset = offset.format(POINTER_SIZE_EXPRESSION)
+                    offset = offset.format_term(POINTER_SIZE_EXPRESSION, true)
                 );
                 results.push(format!("l{tmp}"));
             }
@@ -1155,7 +1155,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.src,
                     "let l{tmp} = *{}.add({}).cast::<usize>();",
                     operands[0],
-                    offset.format(POINTER_SIZE_EXPRESSION)
+                    offset.format_term(POINTER_SIZE_EXPRESSION, true)
                 );
                 results.push(format!("l{tmp}"));
             }
@@ -1164,7 +1164,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.push_str(&format!(
                     "*{}.add({}).cast::<i32>() = {};\n",
                     operands[1],
-                    offset.format(POINTER_SIZE_EXPRESSION),
+                    offset.format_term(POINTER_SIZE_EXPRESSION, true),
                     operands[0]
                 ));
             }
@@ -1172,7 +1172,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.push_str(&format!(
                     "*{}.add({}).cast::<u8>() = ({}) as u8;\n",
                     operands[1],
-                    offset.format(POINTER_SIZE_EXPRESSION),
+                    offset.format_term(POINTER_SIZE_EXPRESSION, true),
                     operands[0]
                 ));
             }
@@ -1180,7 +1180,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.push_str(&format!(
                     "*{}.add({}).cast::<u16>() = ({}) as u16;\n",
                     operands[1],
-                    offset.format(POINTER_SIZE_EXPRESSION),
+                    offset.format_term(POINTER_SIZE_EXPRESSION, true),
                     operands[0]
                 ));
             }
@@ -1188,7 +1188,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.push_str(&format!(
                     "*{}.add({}).cast::<i64>() = {};\n",
                     operands[1],
-                    offset.format(POINTER_SIZE_EXPRESSION),
+                    offset.format_term(POINTER_SIZE_EXPRESSION, true),
                     operands[0]
                 ));
             }
@@ -1196,7 +1196,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.push_str(&format!(
                     "*{}.add({}).cast::<f32>() = {};\n",
                     operands[1],
-                    offset.format(POINTER_SIZE_EXPRESSION),
+                    offset.format_term(POINTER_SIZE_EXPRESSION, true),
                     operands[0]
                 ));
             }
@@ -1204,7 +1204,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.push_str(&format!(
                     "*{}.add({}).cast::<f64>() = {};\n",
                     operands[1],
-                    offset.format(POINTER_SIZE_EXPRESSION),
+                    offset.format_term(POINTER_SIZE_EXPRESSION, true),
                     operands[0]
                 ));
             }
@@ -1213,7 +1213,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.push_str(&format!(
                     "*{}.add({}).cast::<*mut u8>() = {};\n",
                     operands[1],
-                    offset.format(POINTER_SIZE_EXPRESSION),
+                    offset.format_term(POINTER_SIZE_EXPRESSION, true),
                     operands[0]
                 ));
             }
@@ -1221,7 +1221,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.push_str(&format!(
                     "*{}.add({}).cast::<usize>() = {};\n",
                     operands[1],
-                    offset.format(POINTER_SIZE_EXPRESSION),
+                    offset.format_term(POINTER_SIZE_EXPRESSION, true),
                     operands[0]
                 ));
             }
@@ -1233,7 +1233,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.push_str(&format!(
                     "{dealloc}({op}, {size}, {align});\n",
                     op = operands[0],
-                    size = size.format(POINTER_SIZE_EXPRESSION),
+                    size = size.format_term(POINTER_SIZE_EXPRESSION, true),
                     align = align.format(POINTER_SIZE_EXPRESSION)
                 ));
             }

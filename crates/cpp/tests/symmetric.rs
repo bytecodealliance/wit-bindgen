@@ -53,6 +53,7 @@ fn tests(
             \n\
             [dependencies]\n\
             wit-bindgen = {{ path = \"{toplevel}/crates/guest-rust\" }}\n\
+            test-rust-wasm = {{ path = \"{toplevel}/crates/cpp/tests/symmetric_tests/test-rust-wasm\" }}\n\
             \n\
             [lib]\n\
             crate-type = [\"cdylib\"]\n\
@@ -228,7 +229,7 @@ fn symmetric_integration() -> io::Result<()> {
     tester_source_dir.push("tests");
     tester_source_dir.push("symmetric_tests");
 
-    let testcases = vec!["smoke", "strings", "numbers"];
+    let testcases = vec!["smoke", "strings", "numbers", "lists"];
 
     for dir_name in testcases {
         tests(

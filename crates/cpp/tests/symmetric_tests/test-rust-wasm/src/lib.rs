@@ -1,0 +1,1 @@
+../../../../../../crates/test-rust-wasm/src/lib.rs
