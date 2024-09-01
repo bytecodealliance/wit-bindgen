@@ -711,7 +711,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let val = format!("vec{}", tmp);
                 let ptr = format!("ptr{}", tmp);
                 let len = format!("len{}", tmp);
-                if realloc.is_none() || self.gen.gen.opts.symmetric {
+                if realloc.is_none() || (self.gen.in_import && self.gen.gen.opts.symmetric) {
                     self.push_str(&format!("let {} = {};\n", val, operands[0]));
                 } else {
                     let op0 = operands.pop().unwrap();
@@ -719,7 +719,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
                 self.push_str(&format!("let {} = {}.as_ptr().cast::<u8>();\n", ptr, val));
                 self.push_str(&format!("let {} = {}.len();\n", len, val));
-                if realloc.is_some() && !self.gen.gen.opts.symmetric {
+                if realloc.is_some() && !(self.gen.in_import && self.gen.gen.opts.symmetric) {
                     self.push_str(&format!("::core::mem::forget({});\n", val));
                 }
                 results.push(format!("{ptr}.cast_mut()"));
@@ -731,10 +731,17 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let len = format!("len{}", tmp);
                 self.push_str(&format!("let {} = {};\n", len, operands[1]));
                 let vec = self.gen.path_to_vec();
-                let result = format!(
-                    "{vec}::from_raw_parts({}.cast(), {1}, {1})",
-                    operands[0], len
-                );
+                let result = if !self.gen.gen.opts.symmetric || self.gen.in_import {
+                    format!(
+                        "{vec}::from_raw_parts({}.cast(), {1}, {1})",
+                        operands[0], len
+                    )
+                } else {
+                    format!(
+                        "unsafe {{ std::slice::from_raw_parts({}.cast(), {1}) }}.to_vec()",
+                        operands[0], len
+                    )
+                };
                 results.push(result);
             }
 
@@ -871,12 +878,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwriteln!(self.src, "{result}.push(e{tmp});");
                 uwriteln!(self.src, "}}");
                 results.push(result);
-                let dealloc = self.gen.path_to_cabi_dealloc();
-                self.push_str(&format!(
-                    "{dealloc}({base}, {len} * {size}, {align});\n",
-                    size = size.format(POINTER_SIZE_EXPRESSION),
-                    align = align.format(POINTER_SIZE_EXPRESSION)
-                ));
+                if !self.gen.gen.opts.symmetric || self.gen.in_import {
+                    let dealloc = self.gen.path_to_cabi_dealloc();
+                    self.push_str(&format!(
+                        "{dealloc}({base}, {len} * {size}, {align});\n",
+                        size = size.format(POINTER_SIZE_EXPRESSION),
+                        align = align.format(POINTER_SIZE_EXPRESSION)
+                    ));
+                }
             }
 
             Instruction::IterElem { .. } => results.push("e".to_string()),
