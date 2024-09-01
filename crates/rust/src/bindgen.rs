@@ -771,11 +771,22 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     );
                     results.push(format!("string{tmp}"));
                 } else {
-                    uwriteln!(
-                        self.src,
-                        "let bytes{tmp} = {vec}::from_raw_parts({}.cast(), {len}, {len});",
-                        operands[0],
-                    );
+                    if self.gen.gen.opts.symmetric {
+                        // symmetric must not access zero page memory
+                        uwriteln!(
+                            self.src,
+                            "let bytes{tmp} = if {len}>0 {{
+                               {vec}::from_raw_parts({}.cast(), {len}, {len})
+                            }} else {{ Default::default() }};",
+                            operands[0]
+                        );
+                    } else {
+                        uwriteln!(
+                            self.src,
+                            "let bytes{tmp} = {vec}::from_raw_parts({}.cast(), {len}, {len});",
+                            operands[0],
+                        );
+                    }
                     if self.gen.gen.opts.raw_strings {
                         results.push(format!("bytes{tmp}"));
                     } else {
