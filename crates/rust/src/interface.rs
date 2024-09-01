@@ -456,7 +456,7 @@ macro_rules! {macro_name} {{
                     "struct _RetArea([::core::mem::MaybeUninit::<u8>; {size}]);
                     static mut _RET_AREA: _RetArea = _RetArea([::core::mem::MaybeUninit::uninit(); {size}]);
 ",
-                size = self.return_pointer_area_size.format(POINTER_SIZE_EXPRESSION),
+                size = self.return_pointer_area_size.format_term(POINTER_SIZE_EXPRESSION, true),
             );
         }
 
@@ -923,7 +923,7 @@ impl {async_support}::StreamPayload for {name} {{
                 self.src,
                 "struct RetArea([::core::mem::MaybeUninit::<u8>; {import_return_pointer_area_size}]);
                     let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); {import_return_pointer_area_size}]);
-", import_return_pointer_area_size = import_return_pointer_area_size.format(POINTER_SIZE_EXPRESSION)
+", import_return_pointer_area_size = import_return_pointer_area_size.format_term(POINTER_SIZE_EXPRESSION, true)
             );
         }
         self.src.push_str(&String::from(src));

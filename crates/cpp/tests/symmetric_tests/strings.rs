@@ -29,10 +29,10 @@ pub fn main() {
     {
         #[link(name = "strings")]
         extern "C" {
-            fn roundtrip();
+            fn roundtrip(_: *mut u8, _: usize, _: *mut u8);
         }
         let _ = || {
-            unsafe { roundtrip() };
+            unsafe { roundtrip(core::ptr::null_mut(), 0, core::ptr::null_mut()) };
         };
     }
 }
