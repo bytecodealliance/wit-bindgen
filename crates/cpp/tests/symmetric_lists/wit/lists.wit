@@ -1,0 +1,13 @@
+package test:test;
+
+interface i {
+    f: func(a: list<string>) -> list<string>;
+}
+
+world w {
+    export i;
+}
+
+world x {
+    import i;
+}
