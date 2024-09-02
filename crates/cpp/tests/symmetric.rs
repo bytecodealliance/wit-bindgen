@@ -126,6 +126,11 @@ fn tests(
         let mut files = Default::default();
         let mut opts = wit_bindgen_cpp::Opts::default();
         opts.symmetric = true;
+        if let Some(path) = path.file_name().and_then(|s| s.to_str()) {
+            if path.contains(".new.") {
+                opts.new_api = true;
+            }
+        }
         opts.build().generate(&resolve, world, &mut files).unwrap();
 
         for (file, contents) in files.iter() {
