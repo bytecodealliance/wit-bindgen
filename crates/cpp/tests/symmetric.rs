@@ -205,6 +205,9 @@ fn symmetric_integration() -> io::Result<()> {
     out_dir.pop();
     out_dir.pop();
     out_dir.push("symmetric-tests");
+    if !out_dir.try_exists().unwrap_or(false) {
+        std::fs::create_dir_all(&out_dir)?;
+    }
 
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 
@@ -228,7 +231,12 @@ fn symmetric_integration() -> io::Result<()> {
     tester_source_dir.push("tests");
     tester_source_dir.push("symmetric_tests");
 
-    let testcases = vec![/*"smoke", "strings", "numbers",*/ "lists"];
+    let testcases = vec![
+        "smoke",
+        "strings",
+        "numbers",
+        "lists",
+    ];
 
     for dir_name in testcases {
         tests(
