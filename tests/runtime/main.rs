@@ -315,6 +315,8 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
                 //                .arg("-Werror")
                 .arg("-Wno-unused-parameter")
                 .arg("-mexec-model=reactor")
+                // for now avoid exceptions on allocation failures
+                .arg("-fno-exceptions")
                 .arg("-std=c++17")
                 .arg("-g")
                 .arg("-o")
