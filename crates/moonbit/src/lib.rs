@@ -534,7 +534,10 @@ impl WorldGenerator for MoonBit {
         }
 
         // Export FFI Utils
-        files.push(&format!("{FFI_DIR}/top.mbt"), FFI.as_bytes());
+        let mut body = Source::default();
+        wit_bindgen_core::generated_preamble(&mut body, version);
+        body.push_str(FFI);
+        files.push(&format!("{FFI_DIR}/top.mbt"), indent(&body).as_bytes());
         files.push(&format!("{FFI_DIR}/moon.pkg.json"), "{}".as_bytes());
 
         // Export project files
@@ -547,6 +550,7 @@ impl WorldGenerator for MoonBit {
         let ffi_qualifier = gen.qualify_package(&FFI_DIR.to_string());
 
         let mut body = Source::default();
+        wit_bindgen_core::generated_preamble(&mut body, version);
         uwriteln!(
             &mut body,
             "
