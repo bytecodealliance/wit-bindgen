@@ -1729,8 +1729,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::CharFromI32 => results.push(format!("Char::from_int({})", operands[0])),
             Instruction::I32FromChar => results.push(format!("({}).to_int()", operands[0])),
 
-            Instruction::I32FromU8 | Instruction::I32FromU16 => {
-                results.push(format!("({}).to_int()", operands[0]))
+            Instruction::I32FromU8 => results.push(format!("({}).to_int()", operands[0])),
+            Instruction::I32FromU16 => {
+                results.push(format!("({}).reinterpret_as_int()", operands[0]))
             }
             Instruction::U8FromI32 => results.push(format!("({}).to_byte()", operands[0])),
 
@@ -1742,11 +1743,16 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::I32FromS16 => {
                 results.push(format!("{ffi_qualifier}extend16({})", operands[0]))
             }
-            Instruction::U16FromI32 => {
-                results.push(format!("({}.land(0xFFFF).to_uint())", operands[0]))
+            Instruction::U16FromI32 => results.push(format!(
+                "({}.land(0xFFFF).reinterpret_as_uint())",
+                operands[0]
+            )),
+            Instruction::U32FromI32 => {
+                results.push(format!("({}).reinterpret_as_uint()", operands[0]))
             }
-            Instruction::U32FromI32 => results.push(format!("({}).to_uint()", operands[0])),
-            Instruction::I32FromU32 => results.push(format!("({}).to_int()", operands[0])),
+            Instruction::I32FromU32 => {
+                results.push(format!("({}).reinterpret_as_int()", operands[0]))
+            }
 
             Instruction::U64FromI64 => results.push(format!("({}).to_uint64()", operands[0])),
             Instruction::I64FromU64 => results.push(format!("({}).to_int64()", operands[0])),
@@ -1757,7 +1763,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::BoolFromI32 => results.push(format!("({} != 0)", operands[0])),
 
             Instruction::FlagsLower { flags, ty, .. } => match flags_repr(flags) {
-                Int::U8 | Int::U16 | Int::U32 => {
+                Int::U8 => {
                     let op = &operands[0];
                     let flag = self.locals.tmp("flag");
                     let ty = self.gen.type_name(&Type::Id(*ty), false);
@@ -1768,6 +1774,18 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         "#
                     );
                     results.push(format!("{flag}.to_int()"));
+                }
+                Int::U16 | Int::U32 => {
+                    let op = &operands[0];
+                    let flag = self.locals.tmp("flag");
+                    let ty = self.gen.type_name(&Type::Id(*ty), false);
+                    uwriteln!(
+                        self.src,
+                        r#"
+                        let {ty}({flag}) = {op}
+                        "#
+                    );
+                    results.push(format!("{flag}.reinterpret_as_int()"));
                 }
                 Int::U64 => {
                     let op = &operands[0];
@@ -1794,14 +1812,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
                 Int::U16 | Int::U32 => {
                     results.push(format!(
-                        "{}({}.to_uint())",
+                        "{}({}.reinterpret_as_uint())",
                         self.gen.type_name(&Type::Id(*ty), true),
                         operands[0]
                     ));
                 }
                 Int::U64 => {
                     results.push(format!(
-                        "{}(({}).to_uint().to_uint64().lor(({}).to_uint().to_uint64.lsl(32)))",
+                        "{}(({}).reinterpret_as_uint().to_uint64().lor(({}).reinterpret_as_uint().to_uint64.lsl(32)))",
                         self.gen.type_name(&Type::Id(*ty), true),
                         operands[0],
                         operands[1]
