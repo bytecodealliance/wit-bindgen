@@ -867,6 +867,12 @@ impl {async_support}::StreamPayload for {name} {{
         self.src.push_str("#[allow(unused_unsafe, clippy::all)]\n");
         let params = self.print_signature(func, false, &sig, true);
         self.src.push_str("{\n");
+        if self.gen.opts.symmetric {
+            uwriteln!(
+                self.src,
+                "let mut _deallocate: Vec<(*mut u8, _rt::alloc::Layout)> = Vec::new();"
+            );
+        }
         self.src.push_str("unsafe {\n");
 
         self.generate_guest_import_body(&self.wasm_import_module, func, params, async_);

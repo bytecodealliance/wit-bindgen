@@ -825,6 +825,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.push_str(&format!(
                     "let ptr = {alloc}::alloc({layout}).cast::<u8>();\n",
                 ));
+                if self.gen.gen.opts.symmetric && self.gen.in_import {
+                    self.push_str(&format!(
+                        "if !ptr.is_null() {{ _deallocate.push((ptr, {layout})); }}\n"
+                    ));
+                }
                 self.push_str(&format!(
                     "if ptr.is_null()\n{{\n{alloc}::handle_alloc_error({layout});\n}}\nptr\n}}",
                 ));
@@ -909,6 +914,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.push_str("(");
                 self.push_str(&operands.join(", "));
                 self.push_str(");\n");
+                if self.gen.gen.opts.symmetric && self.gen.in_import {
+                    self.push_str(&format!("for (ptr,layout) in _deallocate.drain(..) {{ _rt::alloc::dealloc(ptr, layout); }}\n"));
+                }
             }
 
             Instruction::AsyncCallWasm { name, size, align } => {
