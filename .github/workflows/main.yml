@@ -84,6 +84,10 @@ jobs:
         $LOCALAPPDATA/Microsoft/dotnet/dotnet --info
       if: matrix.os == 'windows-latest' && matrix.lang == 'csharp'
 
+      # Hacky work-around for https://github.com/dotnet/runtime/issues/80619
+    - run: dotnet new console -o /tmp/foo
+      if: matrix.os != 'windows-latest' && matrix.lang == 'csharp'
+
     - run: |
         curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
         echo "$HOME/.moon/bin" >> $GITHUB_PATH
