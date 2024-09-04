@@ -196,6 +196,9 @@ pub struct Opts {
     /// Whether or not to derive Eq for all types
     #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
     pub derive_eq: bool,
+    /// Whether or not to declare as Error type for types ".*error"
+    #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
+    pub derive_error: bool,
     /// Whether or not to generate stub files ; useful for update after WIT change
     #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
     pub ignore_stub: bool,
@@ -531,7 +534,10 @@ impl WorldGenerator for MoonBit {
         }
 
         // Export FFI Utils
-        files.push(&format!("{FFI_DIR}/top.mbt"), FFI.as_bytes());
+        let mut body = Source::default();
+        wit_bindgen_core::generated_preamble(&mut body, version);
+        body.push_str(FFI);
+        files.push(&format!("{FFI_DIR}/top.mbt"), indent(&body).as_bytes());
         files.push(&format!("{FFI_DIR}/moon.pkg.json"), "{}".as_bytes());
 
         // Export project files
@@ -544,6 +550,7 @@ impl WorldGenerator for MoonBit {
         let ffi_qualifier = gen.qualify_package(&FFI_DIR.to_string());
 
         let mut body = Source::default();
+        wit_bindgen_core::generated_preamble(&mut body, version);
         uwriteln!(
             &mut body,
             "
@@ -1131,30 +1138,96 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         if self.gen.opts.derive_eq {
             deriviation.push("Eq")
         }
+        let declaration = if self.gen.opts.derive_error && name.contains("Error") {
+            "type!"
+        } else {
+            "type"
+        };
 
         uwrite!(
             self.src,
             r#"
-            pub type {name} Int derive({})
-
-            pub fn {name}::drop(self : {name}) -> Unit {{
-                wasmImportResourceDrop{name}(self.0)
-            }}
+            pub {declaration} {name} Int derive({})
             "#,
             deriviation.join(", "),
         );
 
-        uwrite!(
-            if self.direction == Direction::Import {
-                &mut self.ffi
-            } else {
-                &mut self.src
-            },
-            r#"
-            fn wasmImportResourceDrop{name}(resource : Int) = "{}" "[resource-drop]{type_name}"
-            "#,
-            self.module
-        );
+        let module = self.module;
+
+        if self.direction == Direction::Import {
+            uwrite!(
+                &mut self.src,
+                r#"
+                /// Drops a resource handle.
+                pub fn {name}::drop(self : {name}) -> Unit {{
+                    let {name}(resource) = self
+                    wasmImportResourceDrop{name}(resource)
+                }}
+                "#,
+            );
+
+            uwrite!(
+                &mut self.ffi,
+                r#"
+                fn wasmImportResourceDrop{name}(resource : Int) = "{module}" "[resource-drop]{type_name}"
+                "#,
+            )
+        } else {
+            uwrite!(
+                &mut self.src,
+                r#"
+                /// Creates a new resource with the given `rep` as its representation and returning the handle to this resource.
+                pub fn {name}::new(rep : Int) -> {name} {{
+                    {name}::{name}(wasmExportResourceNew{name}(rep))
+                }}
+                fn wasmExportResourceNew{name}(rep : Int) -> Int = "[export]{module}" "[resource-new]{type_name}"
+
+                /// Drops a resource handle.
+                pub fn {name}::drop(self : {name}) -> Unit {{
+                    let {name}(resource) = self
+                    wasmExportResourceDrop{name}(resource)
+                }}
+                fn wasmExportResourceDrop{name}(resource : Int) = "[export]{module}" "[resource-drop]{type_name}"
+
+                /// Gets the `Int` representation of the resource pointed to the given handle.
+                pub fn {name}::rep(self : {name}) -> Int {{
+                    let {name}(resource) = self
+                    wasmExportResourceRep{name}(resource)
+                }}
+                fn wasmExportResourceRep{name}(resource : Int) -> Int = "[export]{module}" "[resource-rep]{type_name}"
+                "#,
+            );
+
+            uwrite!(
+                &mut self.stub,
+                r#"
+                /// Destructor of the resource.
+                pub fn {name}::dtor(self : {name}) -> Unit {{
+                  abort("todo")
+                }}
+                "#
+            );
+
+            let func_name = self.gen.export_ns.tmp(&format!("wasmExport{name}Dtor"));
+
+            let mut gen = self
+                .gen
+                .interface(self.resolve, EXPORT_DIR, "", Direction::Export);
+
+            uwrite!(
+                self.ffi,
+                r#"
+                pub fn {func_name}(handle : Int) -> Unit {{
+                    {}{name}::dtor(handle)
+                }}
+                "#,
+                gen.qualify_package(&self.name.to_string())
+            );
+
+            self.gen
+                .export
+                .insert(func_name, format!("{module}#[dtor]{type_name}"));
+        }
     }
 
     fn type_flags(&mut self, _id: TypeId, name: &str, flags: &Flags, docs: &Docs) {
@@ -1204,11 +1277,16 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         if self.gen.opts.derive_eq {
             deriviation.push("Eq")
         }
+        let declaration = if self.gen.opts.derive_error && name.contains("Error") {
+            "type!"
+        } else {
+            "type"
+        };
 
         uwrite!(
             self.src,
             "
-            pub type {name} {ty} derive({})
+            pub {declaration} {name} {ty} derive({})
             pub fn {name}::default() -> {name} {{
                 {}
             }}
@@ -1221,13 +1299,16 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
               }}
             }}
             pub fn {name}::set(self : {name}, other: {name}Flag) -> {name} {{
-              self.0.lor(other.value())
+              let {name}(flag) = self
+              flag.lor(other.value())
             }}
             pub fn {name}::unset(self : {name}, other: {name}Flag) -> {name} {{
-              self.0.land(other.value().lnot())
+              let {name}(flag) = self
+              flag.land(other.value().lnot())
             }}
             pub fn {name}::is_set(self : {name}, other: {name}Flag) -> Bool {{
-              (self.0.land(other.value()) == other.value())
+              let {name}(flag) = self
+              (flag.land(other.value()) == other.value())
             }}
             ",
             deriviation.join(", "),
@@ -1271,11 +1352,16 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         if self.gen.opts.derive_eq {
             deriviation.push("Eq")
         }
+        let declaration = if self.gen.opts.derive_error && name.contains("Error") {
+            "type!"
+        } else {
+            "enum"
+        };
 
         uwrite!(
             self.src,
             "
-            pub enum {name} {{
+            pub {declaration} {name} {{
               {cases}
             }} derive({})
             ",
@@ -1311,11 +1397,16 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         if self.gen.opts.derive_eq {
             deriviation.push("Eq")
         }
+        let declaration = if self.gen.opts.derive_error && name.contains("Error") {
+            "type!"
+        } else {
+            "enum"
+        };
 
         uwrite!(
             self.src,
             "
-            pub enum {name} {{
+            pub {declaration} {name} {{
                 {cases}
             }} derive({})
             ",
@@ -1642,8 +1733,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::CharFromI32 => results.push(format!("Char::from_int({})", operands[0])),
             Instruction::I32FromChar => results.push(format!("({}).to_int()", operands[0])),
 
-            Instruction::I32FromU8 | Instruction::I32FromU16 => {
-                results.push(format!("({}).to_int()", operands[0]))
+            Instruction::I32FromU8 => results.push(format!("({}).to_int()", operands[0])),
+            Instruction::I32FromU16 => {
+                results.push(format!("({}).reinterpret_as_int()", operands[0]))
             }
             Instruction::U8FromI32 => results.push(format!("({}).to_byte()", operands[0])),
 
@@ -1655,11 +1747,16 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::I32FromS16 => {
                 results.push(format!("{ffi_qualifier}extend16({})", operands[0]))
             }
-            Instruction::U16FromI32 => {
-                results.push(format!("({}.land(0xFFFF).to_uint())", operands[0]))
+            Instruction::U16FromI32 => results.push(format!(
+                "({}.land(0xFFFF).reinterpret_as_uint())",
+                operands[0]
+            )),
+            Instruction::U32FromI32 => {
+                results.push(format!("({}).reinterpret_as_uint()", operands[0]))
             }
-            Instruction::U32FromI32 => results.push(format!("({}).to_uint()", operands[0])),
-            Instruction::I32FromU32 => results.push(format!("({}).to_int()", operands[0])),
+            Instruction::I32FromU32 => {
+                results.push(format!("({}).reinterpret_as_int()", operands[0]))
+            }
 
             Instruction::U64FromI64 => results.push(format!("({}).to_uint64()", operands[0])),
             Instruction::I64FromU64 => results.push(format!("({}).to_int64()", operands[0])),
@@ -1669,14 +1766,43 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
             Instruction::BoolFromI32 => results.push(format!("({} != 0)", operands[0])),
 
-            Instruction::FlagsLower { flags, .. } => match flags_repr(flags) {
-                Int::U8 | Int::U16 | Int::U32 => {
-                    results.push(format!("({}).0.to_int()", operands[0]));
+            Instruction::FlagsLower { flags, ty, .. } => match flags_repr(flags) {
+                Int::U8 => {
+                    let op = &operands[0];
+                    let flag = self.locals.tmp("flag");
+                    let ty = self.gen.type_name(&Type::Id(*ty), false);
+                    uwriteln!(
+                        self.src,
+                        r#"
+                        let {ty}({flag}) = {op}
+                        "#
+                    );
+                    results.push(format!("{flag}.to_int()"));
+                }
+                Int::U16 | Int::U32 => {
+                    let op = &operands[0];
+                    let flag = self.locals.tmp("flag");
+                    let ty = self.gen.type_name(&Type::Id(*ty), false);
+                    uwriteln!(
+                        self.src,
+                        r#"
+                        let {ty}({flag}) = {op}
+                        "#
+                    );
+                    results.push(format!("{flag}.reinterpret_as_int()"));
                 }
                 Int::U64 => {
                     let op = &operands[0];
-                    results.push(format!("(({op}).0.to_int())"));
-                    results.push(format!("((({op}).0.lsr(32)).to_int())"));
+                    let flag = self.locals.tmp("flag");
+                    let ty = self.gen.type_name(&Type::Id(*ty), false);
+                    uwriteln!(
+                        self.src,
+                        r#"
+                        let {ty}({flag}) = {op}
+                        "#
+                    );
+                    results.push(format!("({flag}.to_int())"));
+                    results.push(format!("({flag}.lsr(32)).to_int())"));
                 }
             },
 
@@ -1690,14 +1816,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
                 Int::U16 | Int::U32 => {
                     results.push(format!(
-                        "{}({}.to_uint())",
+                        "{}({}.reinterpret_as_uint())",
                         self.gen.type_name(&Type::Id(*ty), true),
                         operands[0]
                     ));
                 }
                 Int::U64 => {
                     results.push(format!(
-                        "{}(({}).to_uint().to_uint64().lor(({}).to_uint().to_uint64.lsl(32)))",
+                        "{}(({}).reinterpret_as_uint().to_uint64().lor(({}).reinterpret_as_uint().to_uint64.lsl(32)))",
                         self.gen.type_name(&Type::Id(*ty), true),
                         operands[0],
                         operands[1]
@@ -1705,9 +1831,17 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
             },
 
-            Instruction::HandleLower { .. } => {
+            Instruction::HandleLower { ty, .. } => {
                 let op = &operands[0];
-                results.push(format!("{op}.0"));
+                let handle = self.locals.tmp("handle");
+                let ty = self.gen.type_name(&Type::Id(*ty), false);
+                uwrite!(
+                    self.src,
+                    r#"
+                    let {ty}({handle}) = {op}
+                    "#
+                );
+                results.push(handle);
             }
             Instruction::HandleLift { ty, .. } => {
                 let op = &operands[0];

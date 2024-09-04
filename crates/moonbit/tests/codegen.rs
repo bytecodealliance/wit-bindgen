@@ -12,6 +12,7 @@ macro_rules! codegen_test {
                     wit_bindgen_moonbit::Opts {
                         derive_show: true,
                         derive_eq: true,
+                        derive_error: true,
                         ignore_stub: false,
                     }
                     .build()
