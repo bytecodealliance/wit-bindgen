@@ -240,6 +240,7 @@ fn symmetric_integration() -> io::Result<()> {
         "smoke",
         "strings",
         "numbers",
+        "flavorful",
         "lists",
     ];
 
