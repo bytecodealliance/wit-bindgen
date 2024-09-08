@@ -94,6 +94,8 @@ public:
   // typically called by post
   static void drop_raw(void *ptr) { free(ptr); }
   wit::span<T> get_view() const { return wit::span<T>(data_, length); }
+  template <class U> static vector<T> from_view(wit::span<U> const& a); 
+//  static vector<T> from_view(wit::span<const T> const& a); 
 };
 
 /// @brief  A Resource defined within the guest (guest side)
