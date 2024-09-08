@@ -28,6 +28,7 @@ public:
 
   const_iterator begin() const { return address; }
   const_iterator end() const { return address + length; }
+  bool empty() const { return !length; }
   T const &operator[](size_t index) { return address[index]; }
   // create from any compatible vector (borrows data!)
   template <class U>
