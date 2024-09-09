@@ -1,5 +1,7 @@
 #include <assert.h>
 #include <lists_cpp.h>
+#include <float.h>
+#include <math.h>
 
 uint32_t exports::lists::AllocatedBytes() {
     return 0;
@@ -56,28 +58,28 @@ void exports::lists::TestImports() {
         test::lists::test::ListMinmax8(std::vector<uint8_t>{0, UINT8_MAX}, std::vector<int8_t>{INT8_MIN, INT8_MAX}),
         std::make_tuple(std::vector<uint8_t>{0, UINT8_MAX}, std::vector<int8_t>{INT8_MIN, INT8_MAX})
     ));
-    // assert(equal(
-    //     test::lists::test::ListMinmax16(&[u16::MIN, u16::MAX], &[i16::MIN, i16::MAX]),
-    //     (vec![u16::MIN, u16::MAX], vec![i16::MIN, i16::MAX]),
-    // ));
-    // assert(equal(
-    //     test::lists::test::ListMinmax32(&[u32::MIN, u32::MAX], &[i32::MIN, i32::MAX]),
-    //     (vec![u32::MIN, u32::MAX], vec![i32::MIN, i32::MAX]),
-    // ));
-    // assert(equal(
-    //     test::lists::test::ListMinmax64(&[u64::MIN, u64::MAX], &[i64::MIN, i64::MAX]),
-    //     (vec![u64::MIN, u64::MAX], vec![i64::MIN, i64::MAX]),
-    // ));
-    // assert(equal(
-    //     test::lists::test::ListMinmaxFloat(
-    //         &[f32::MIN, f32::MAX, f32::NEG_INFINITY, f32::INFINITY],
-    //         &[f64::MIN, f64::MAX, f64::NEG_INFINITY, f64::INFINITY]
-    //     ),
-    //     (
-    //         vec![f32::MIN, f32::MAX, f32::NEG_INFINITY, f32::INFINITY],
-    //         vec![f64::MIN, f64::MAX, f64::NEG_INFINITY, f64::INFINITY],
-    //     ),
-    // ));
+    assert(equal(
+        test::lists::test::ListMinmax16(std::vector<uint16_t>{0, UINT16_MAX}, std::vector<int16_t>{INT16_MIN, INT16_MAX}),
+        std::make_tuple(std::vector<uint16_t>{0, UINT16_MAX}, std::vector<int16_t>{INT16_MIN, INT16_MAX})
+    ));
+    assert(equal(
+        test::lists::test::ListMinmax32(std::vector<uint32_t>{0, UINT32_MAX}, std::vector<int32_t>{INT32_MIN, INT32_MAX}),
+        std::make_tuple(std::vector<uint32_t>{0, UINT32_MAX}, std::vector<int32_t>{INT32_MIN, INT32_MAX})
+    ));
+    assert(equal(
+        test::lists::test::ListMinmax64(std::vector<uint64_t>{0, UINT64_MAX}, std::vector<int64_t>{INT64_MIN, INT64_MAX}),
+        std::make_tuple(std::vector<uint64_t>{0, UINT64_MAX}, std::vector<int64_t>{INT64_MIN, INT64_MAX})
+    ));
+    assert(equal(
+        test::lists::test::ListMinmaxFloat(
+            std::vector<float>{FLT_MIN, FLT_MAX, -HUGE_VALF, HUGE_VALF},
+            std::vector<double>{DBL_MIN, DBL_MAX, -HUGE_VAL, HUGE_VAL}
+        ),
+        std::make_tuple(
+            std::vector<float>{FLT_MIN, FLT_MAX, -HUGE_VALF, HUGE_VALF},
+            std::vector<double>{DBL_MIN, DBL_MAX, -HUGE_VAL, HUGE_VAL}
+        )
+    ));
 }
 
 
