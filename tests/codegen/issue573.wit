@@ -57,12 +57,12 @@ interface api-imports {
     adult(tuple<string, option<option<string>>, tuple<s64>>),
   }
 
-  api-a1-b2: func(arg: list<human>) -> (h1: t7, val2: human);
+  api-a1-b2: func(arg: list<human>) -> tuple<t7, human>;
 }
 
 interface api {
   /// Comment for export function
-  f1: func() -> (val-one: tuple<s32>, val2: string);
+  f1: func() -> tuple<tuple<s32>, string>;
 
   /// Comment for t5 in api
   type t5 = result<_, option<errno>>;
@@ -76,7 +76,7 @@ interface api {
   }
 
   class: func(break: option<option<t5>>) -> tuple<u32>;
-  continue: func(abstract: option<result<_, errno>>, extends: tuple<u32>) -> (%implements: option<tuple<u32>>);
+  continue: func(abstract: option<result<_, errno>>, extends: tuple<u32>) -> tuple<option<tuple<u32>>>;
 }
 
 world types-example {
@@ -108,7 +108,7 @@ world types-example {
     }
 
     export f-f1: func(typedef: t10) -> t10;
-    export f1: func(f: f32, f-list: list<tuple<char, f64>>) -> (val-p1: s64, val2: string);
+    export f1: func(f: f32, f-list: list<tuple<char, f64>>) -> tuple<s64, string>;
     /// t2 has been renamed with `use self.types-interface.{t2 as t2-renamed}`
     export re-named: func(perm: option<permissions>, e: option<empty>) -> t2-renamed;
     export re-named2: func(tup: tuple<list<u16>>, e: empty) -> tuple<option<u8>, s8>;
