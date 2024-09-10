@@ -58,7 +58,7 @@ interface option-result {
    r7-arg: func(x: r7);
    r7-result: func() -> r7;
 
-   multi: func(x: r7, y: r7) -> (a: r7, b:r7, c: r7);
+   multi: func(x: r7, y: r7) -> tuple<r7, r7, r7>;
    multi-option: func(x: r7, y: r7) -> option<tuple<r7, r7>>;
 }
 
