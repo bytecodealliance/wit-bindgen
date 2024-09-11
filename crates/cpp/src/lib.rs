@@ -2911,7 +2911,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 results.push(result);
             }
             abi::Instruction::ListLift { element, .. } => {
-                // let body = self.blocks.pop().unwrap();
+                let body = self.blocks.pop().unwrap();
                 let tmp = self.tmp();
                 let size = self.gen.sizes.size(element);
                 let _align = self.gen.sizes.align(element);
@@ -2940,7 +2940,8 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     "auto base = {base} + i * {size};",
                     size = size.format(POINTER_SIZE_EXPRESSION)
                 );
-                uwriteln!(self.src, "auto e{tmp} = todo();");
+                uwrite!(self.src, "{}", body.0);
+                uwriteln!(self.src, "auto e{tmp} = {};", body.1[0]);
                 // inplace construct
                 uwriteln!(self.src, "{result}.initialize(i, std::move(e{tmp}));");
                 uwriteln!(self.src, "}}");
