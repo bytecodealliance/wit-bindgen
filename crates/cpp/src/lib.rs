@@ -2860,6 +2860,13 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let result = if self.gen.gen.opts.host {
                     uwriteln!(self.src, "{inner} const* ptr{tmp} = ({inner} const*)wasm_runtime_addr_app_to_native(wasm_runtime_get_module_inst(exec_env), {});\n", operands[0]);
                     format!("wit::span<{inner} const>(ptr{}, (size_t){len})", tmp)
+                } else if self.gen.gen.opts.new_api
+                    && matches!(self.variant, AbiVariant::GuestExport)
+                {
+                    format!(
+                        "wit::vector<{inner} const>(({inner}*)({}), {len}).get_view()",
+                        operands[0]
+                    )
                 } else {
                     format!("wit::vector<{inner}>(({inner}*)({}), {len})", operands[0])
                 };
