@@ -37,9 +37,9 @@ void exports::lists::TestImports() {
     test::lists::test::ListParam(std::vector<uint8_t>{1, 2, 3, 4});
     test::lists::test::ListParam2("foo");
     test::lists::test::ListParam3(std::vector<std::string_view>{"foo", "bar", "baz"});
-    test::lists::test::ListParam4(std::vector<wit::span<std::string_view>>{
-        std::vector<std::string_view>{"foo", "bar"},
-        std::vector<std::string_view>{"baz"},
+    test::lists::test::ListParam4(std::vector<const wit::span<const std::string_view>>{
+        std::vector<const std::string_view>{"foo", "bar"},
+        std::vector<const std::string_view>{"baz"},
     });
     assert(equal(test::lists::test::ListResult(), std::vector<uint8_t>{1, 2, 3, 4, 5}));
     assert(equal(test::lists::test::ListResult2(), "hello!"));

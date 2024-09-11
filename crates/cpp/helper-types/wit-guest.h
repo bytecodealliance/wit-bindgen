@@ -17,7 +17,8 @@ class string {
   size_t length;
 
 public:
-  string(string const &) = delete;
+  // this constructor is helpful for creating vector<string>
+  string(string const &b) : string(string::from_view(b.get_view())) {}
   string(string &&b) : data_(b.data_), length(b.length) { b.data_ = nullptr; }
   string &operator=(string const &) = delete;
   string &operator=(string &&b) {
