@@ -30,6 +30,7 @@ public:
   const_iterator end() const { return address + length; }
   bool empty() const { return !length; }
   T const &operator[](size_t index) const { return address[index]; }
+  span(T *a, size_t l) : address(a), length(l) {}
   // create from any compatible vector (borrows data!)
   template <class U>
   span(std::vector<U> const &vec) : address(vec.data()), length(vec.size()) {}

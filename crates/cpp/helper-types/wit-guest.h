@@ -90,6 +90,13 @@ public:
       free(data_);
     }
   }
+  // WARNING: vector contains uninitialized elements
+  static vector<T> allocate(size_t len) {
+    return vector<T>((T*)malloc(sizeof(T)*len), len);
+  }
+  void initialize(size_t n, T&& elem) {
+    new (data_+n) T(std::move(elem));
+  }
   // leak the memory
   void leak() { data_ = nullptr; }
   // typically called by post
