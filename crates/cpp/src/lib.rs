@@ -2923,8 +2923,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     operand1 = operands[1]
                 ));
                 self.push_str(&format!(
-                    r#"auto {result} = wit::vector<{vtype}>();
-                    {result}.allocate({len});
+                    r#"auto {result} = wit::vector<{vtype}>::allocate({len});
                     "#,
                 ));
 
@@ -2936,9 +2935,9 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 );
                 uwriteln!(self.src, "auto e{tmp} = todo();");
                 // inplace construct
-                uwriteln!(self.src, "{result}.push_back(e{tmp});");
+                uwriteln!(self.src, "{result}.initialize(i, std::move(e{tmp}));");
                 uwriteln!(self.src, "}}");
-                results.push(result);
+                results.push(format!("std::move({result})"));
                 // self.push_str(&format!(
                 //     "{rt}::dealloc({base}, ({len} as usize) * {size}, {align});\n",
                 //     rt = self.gen.gen.runtime_path(),
@@ -3099,7 +3098,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 self.src.push_str(">(");
                 self.src.push_str(&operands.join(", "));
                 self.src.push_str(");\n");
-                results.push(name);
+                results.push(format!("std::move({name})"));
             }
             abi::Instruction::FlagsLower { flags, ty, .. } => {
                 match wit_bindgen_c::flags_repr(flags) {
