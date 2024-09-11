@@ -4,7 +4,7 @@ interface keywords {
     record for {
       return: u32,
     }
-    %type: func(%type: u32) -> (%type: u32, %flags: s32);
+    %type: func(%type: u32) -> tuple<u32, s32>;
     %variant: func(%enum: s32) -> ();
     %interface: func(%interface: s32) -> ();
     throw: func(throw: s32) -> ();
