@@ -6,6 +6,8 @@
 #include <string>
 #include <string_view>
 #include <string.h> // memcpy
+#include <stdlib.h> // free
+#include <new>
 
 namespace wit {
 /// A string in linear memory, freed unconditionally using free
@@ -87,7 +89,7 @@ public:
   bool empty() const { return !length; }
   ~vector() {
     if (data_) {
-      free(data_);
+      free((void*)data_);
     }
   }
   // WARNING: vector contains uninitialized elements
@@ -95,14 +97,21 @@ public:
     return vector<T>((T*)malloc(sizeof(T)*len), len);
   }
   void initialize(size_t n, T&& elem) {
-    new (data_+n) T(std::move(elem));
+    new ((void*)(data_+n)) T(std::move(elem));
   }
   // leak the memory
-  void leak() { data_ = nullptr; }
+  T* leak() { T*result = data_; data_ = nullptr; return result; }
   // typically called by post
   static void drop_raw(void *ptr) { free(ptr); }
   wit::span<T> get_view() const { return wit::span<T>(data_, length); }
-  template <class U> static vector<T> from_view(wit::span<U> const& a); 
+  wit::span<const T> get_const_view() const { return wit::span<const T>(data_, length); }
+  template <class U> static vector<T> from_view(wit::span<U> const& a) {
+    auto result = vector<T>::allocate(a.size());
+    for (uint32_t i=0;i<a.size();++i) {
+      new ((void*)(result.data_+i)) T(a[i]);
+    }
+    return result;
+  } 
 //  static vector<T> from_view(wit::span<const T> const& a); 
 };
 
