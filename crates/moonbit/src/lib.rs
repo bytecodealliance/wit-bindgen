@@ -24,8 +24,6 @@ use wit_bindgen_core::{
 // TODO: Export will share the type signatures with the import by using a newtype alias
 // TODO: Export resource is not handled correctly : resource.new / resource.drop / resource.rep / dtor
 
-const EXPORT_DIR: &str = "gen";
-
 const FFI_DIR: &str = "ffi";
 
 const FFI: &str = r#"
@@ -202,6 +200,9 @@ pub struct Opts {
     /// Whether or not to generate stub files ; useful for update after WIT change
     #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
     pub ignore_stub: bool,
+    /// The package/dir to generate the program entrance
+    #[cfg_attr(feature = "clap", arg(long, default_value = "gen"))]
+    pub gen_dir: String,
 }
 
 impl Opts {
@@ -281,7 +282,7 @@ impl WorldGenerator for MoonBit {
         id: InterfaceId,
         files: &mut Files,
     ) -> Result<()> {
-        let name = interface_name(resolve, key, Direction::Import);
+        let name = interface_name(resolve, key);
         let name = self.interface_ns.tmp(&name);
         self.import_interface_names.insert(id, name.clone());
 
@@ -331,7 +332,7 @@ impl WorldGenerator for MoonBit {
         id: InterfaceId,
         files: &mut Files,
     ) -> Result<()> {
-        let name = interface_name(resolve, key, Direction::Export);
+        let name = format!("{}.{}", self.opts.gen_dir, interface_name(resolve, key));
         let name = self.interface_ns.tmp(&name);
         self.export_interface_names.insert(id, name.clone());
 
@@ -363,7 +364,7 @@ impl WorldGenerator for MoonBit {
         funcs: &[(&str, &Function)],
         _files: &mut Files,
     ) -> Result<()> {
-        let name = world_name(resolve, world);
+        let name = format!("{}.{}", self.opts.gen_dir, world_name(resolve, world));
         let mut gen = self.interface(resolve, &name, "$root", Direction::Export);
 
         for (_, func) in funcs {
@@ -412,7 +413,7 @@ impl WorldGenerator for MoonBit {
 
         let version = env!("CARGO_PKG_VERSION");
 
-        let mut generate_pkg_definition = |name: &str, files: &mut Files| {
+        let mut generate_pkg_definition = |name: &String, files: &mut Files| {
             let directory = name.replace('.', "/");
             let imports: Option<&mut Imports> = self.package_import.get_mut(name);
             if let Some(imports) = imports {
@@ -472,7 +473,11 @@ impl WorldGenerator for MoonBit {
 
         files.push(&format!("{directory}/top.mbt"), indent(&src).as_bytes());
         if !self.opts.ignore_stub {
-            files.push(&format!("{directory}/stub.mbt"), indent(&stub).as_bytes());
+            files.push(
+                &format!("{}/{directory}/stub.mbt", self.opts.gen_dir),
+                indent(&stub).as_bytes(),
+            );
+            generate_pkg_definition(&format!("{}.{}", self.opts.gen_dir, name), files);
         }
 
         let generate_ffi =
@@ -488,7 +493,11 @@ impl WorldGenerator for MoonBit {
                 uwriteln!(&mut body, "{b}");
 
                 files.push(
-                    &format!("{EXPORT_DIR}/{}_export.mbt", directory.to_snake_case()),
+                    &format!(
+                        "{}/{}_export.mbt",
+                        self.opts.gen_dir,
+                        directory.to_snake_case()
+                    ),
                     indent(&body).as_bytes(),
                 );
             };
@@ -541,12 +550,16 @@ impl WorldGenerator for MoonBit {
         files.push(&format!("{FFI_DIR}/moon.pkg.json"), "{}".as_bytes());
 
         // Export project files
-        let mut body = Source::default();
-        uwriteln!(&mut body, "{{ \"name\": \"{project_name}\" }}");
-        files.push(&format!("moon.mod.json"), body.as_bytes());
+        if !self.opts.ignore_stub {
+            let mut body = Source::default();
+            uwriteln!(&mut body, "{{ \"name\": \"{project_name}\" }}");
+            files.push(&format!("moon.mod.json"), body.as_bytes());
+        }
+
+        let export_dir = self.opts.gen_dir.clone();
 
         // Export project entry point
-        let mut gen = self.interface(resolve, EXPORT_DIR, "", Direction::Export);
+        let mut gen = self.interface(resolve, &export_dir.as_str(), "", Direction::Export);
         let ffi_qualifier = gen.qualify_package(&FFI_DIR.to_string());
 
         let mut body = Source::default();
@@ -586,7 +599,10 @@ impl WorldGenerator for MoonBit {
                 self.return_area_size,
             );
         }
-        files.push(&format!("{EXPORT_DIR}/ffi.mbt"), indent(&body).as_bytes());
+        files.push(
+            &format!("{}/ffi.mbt", self.opts.gen_dir),
+            indent(&body).as_bytes(),
+        );
         self.export
             .insert("cabi_realloc".into(), "cabi_realloc".into());
 
@@ -612,7 +628,7 @@ impl WorldGenerator for MoonBit {
             "#,
             exports.join(", ")
         );
-        if let Some(imports) = self.package_import.get_mut(EXPORT_DIR) {
+        if let Some(imports) = self.package_import.get_mut(&self.opts.gen_dir) {
             let mut deps = imports
                 .packages
                 .iter()
@@ -635,7 +651,7 @@ impl WorldGenerator for MoonBit {
             ",
         );
         files.push(
-            &format!("{EXPORT_DIR}/moon.pkg.json"),
+            &format!("{}/moon.pkg.json", self.opts.gen_dir,),
             indent(&body).as_bytes(),
         );
 
@@ -830,9 +846,14 @@ impl InterfaceGenerator<'_> {
 
         let export_name = func.legacy_core_export_name(interface_name);
 
-        let mut toplevel_generator =
-            self.gen
-                .interface(self.resolve, EXPORT_DIR, self.module, Direction::Export);
+        let export_dir = self.gen.opts.gen_dir.clone();
+
+        let mut toplevel_generator = self.gen.interface(
+            self.resolve,
+            export_dir.as_str(),
+            self.module,
+            Direction::Export,
+        );
 
         let mut bindgen = FunctionBindgen::new(
             &mut toplevel_generator,
@@ -1220,9 +1241,11 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
             let func_name = self.gen.export_ns.tmp(&format!("wasmExport{name}Dtor"));
 
-            let mut gen = self
-                .gen
-                .interface(self.resolve, EXPORT_DIR, "", Direction::Export);
+            let export_dir = self.gen.opts.gen_dir.clone();
+
+            let mut gen =
+                self.gen
+                    .interface(self.resolve, export_dir.as_str(), "", Direction::Export);
 
             uwrite!(
                 self.ffi,
@@ -2714,13 +2737,10 @@ fn indent(code: &str) -> Source {
 }
 
 fn world_name(resolve: &Resolve, world: WorldId) -> String {
-    format!(
-        "worlds.{}",
-        resolve.worlds[world].name.to_lower_camel_case()
-    )
+    format!("world.{}", resolve.worlds[world].name.to_lower_camel_case())
 }
 
-fn interface_name(resolve: &Resolve, name: &WorldKey, direction: Direction) -> String {
+fn interface_name(resolve: &Resolve, name: &WorldKey) -> String {
     let pkg = match name {
         WorldKey::Name(_) => None,
         WorldKey::Interface(id) => {
@@ -2736,11 +2756,7 @@ fn interface_name(resolve: &Resolve, name: &WorldKey, direction: Direction) -> S
     .to_lower_camel_case();
 
     format!(
-        "interface.{}.{}{name}",
-        match direction {
-            Direction::Import => "imports",
-            Direction::Export => "exports",
-        },
+        "interface.{}{name}",
         if let Some(name) = &pkg {
             format!(
                 "{}.{}.",
