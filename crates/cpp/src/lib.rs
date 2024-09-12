@@ -1775,12 +1775,13 @@ impl CppInterfaceGenerator<'_> {
                 let module_name = self.wasm_import_module.as_ref().map(|e| e.clone());
                 let export_name = match module_name {
                     Some(ref module_name) => {
-                        let symbol_variant = if self.gen.opts.symmetric {
-                            AbiVariant::GuestImport
-                        } else {
-                            variant
-                        };
-                        make_external_symbol(module_name, &func.name, symbol_variant)
+                        // let symbol_variant = if self.gen.opts.symmetric {
+                        //     AbiVariant::GuestImport
+                        // } else {
+                        //     variant
+                        // };
+                        // make_external_symbol(module_name, &func.name, symbol_variant)
+                        format!("{module_name}#{}", func.name)
                     }
                     None => make_external_component(&func.name),
                 };
