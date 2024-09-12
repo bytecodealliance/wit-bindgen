@@ -2948,6 +2948,9 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     r#"auto {result} = wit::vector<{vtype}>::allocate({len});
                     "#,
                 ));
+                if self.gen.gen.opts.new_api && matches!(self.variant, AbiVariant::GuestExport) {
+                    self.push_str(&format!("if ({len}>0) _deallocate.push_back({base});\n"));
+                }
 
                 uwriteln!(self.src, "for (unsigned i=0; i<{len}; ++i) {{");
                 uwriteln!(
