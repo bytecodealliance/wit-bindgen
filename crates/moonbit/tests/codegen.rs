@@ -31,6 +31,7 @@ fn verify(dir: &Path, _name: &str) {
     cmd.arg("check")
         .arg("--target")
         .arg("wasm")
+        .arg("--deny-warn")
         .arg("--source-dir")
         .arg(dir);
 

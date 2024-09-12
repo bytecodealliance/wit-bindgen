@@ -575,11 +575,17 @@ impl WorldGenerator for MoonBit {
                 {ffi_qualifier}free(src_offset)
                 dst
             }}
-
-            let return_area : Int = {ffi_qualifier}malloc({})
-            ",
-            self.return_area_size,
+            "
         );
+        if self.return_area_size != 0 {
+            uwriteln!(
+                &mut body,
+                "
+                let return_area : Int = {ffi_qualifier}malloc({})
+                ",
+                self.return_area_size,
+            );
+        }
         files.push(&format!("{EXPORT_DIR}/ffi.mbt"), indent(&body).as_bytes());
         self.export
             .insert("cabi_realloc".into(), "cabi_realloc".into());
@@ -797,7 +803,7 @@ impl InterfaceGenerator<'_> {
             .collect::<Vec<_>>()
             .join(", ");
 
-        let sig = self.sig_string(func);
+        let sig = self.sig_string(func, false);
 
         uwriteln!(
             self.ffi,
@@ -820,7 +826,7 @@ impl InterfaceGenerator<'_> {
     fn export(&mut self, interface_name: Option<&str>, func: &Function) {
         let sig = self.resolve.wasm_signature(AbiVariant::GuestExport, func);
 
-        let func_sig = self.sig_string(func);
+        let func_sig = self.sig_string(func, true);
 
         let export_name = func.core_export_name(interface_name);
 
@@ -1039,7 +1045,7 @@ impl InterfaceGenerator<'_> {
         }
     }
 
-    fn sig_string(&mut self, func: &Function) -> String {
+    fn sig_string(&mut self, func: &Function, ignore_param: bool) -> String {
         let name = match func.kind {
             FunctionKind::Freestanding => func.name.to_moonbit_ident(),
             FunctionKind::Constructor(_) => {
@@ -1074,7 +1080,11 @@ impl InterfaceGenerator<'_> {
             .iter()
             .map(|(name, ty)| {
                 let ty = self.type_name(ty, true);
-                let name = name.to_moonbit_ident();
+                let name = if ignore_param {
+                    format!("_{}", name.to_moonbit_ident())
+                } else {
+                    name.to_moonbit_ident()
+                };
                 format!("{name} : {ty}")
             })
             .collect::<Vec<_>>()
@@ -1202,7 +1212,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 &mut self.stub,
                 r#"
                 /// Destructor of the resource.
-                pub fn {name}::dtor(self : {name}) -> Unit {{
+                pub fn {name}::dtor(_self : {name}) -> Unit {{
                   abort("todo")
                 }}
                 "#
@@ -1570,8 +1580,10 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                     .collect::<Vec<_>>()
                     .join(", ");
 
-                let payload = if self.gen.non_empty_type(ty.as_ref()).is_some() || is_result {
+                let payload = if self.gen.non_empty_type(ty.as_ref()).is_some() {
                     payload
+                } else if is_result {
+                    format!("_{payload}")
                 } else {
                     String::new()
                 };
@@ -1601,7 +1613,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                 r#"
                 match {op} {{
                     {cases}
-                    _ => panic()
                 }}
                 "#
             );
@@ -1611,7 +1622,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                 r#"
                 let ({declarations}) = match {op} {{
                     {cases}
-                    _ => panic()
                 }}
                 "#
             );
@@ -2109,13 +2119,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 Type::U8 => {
                     let result = self.locals.tmp("result");
                     let address = &operands[0];
-                    let _length = &operands[1];
+                    let length = &operands[1];
 
                     uwrite!(
                         self.src,
                         "
-                    let {result} = {ffi_qualifier}ptr2bytes({address})
-                    "
+                        ignore({length})
+                        let {result} = {ffi_qualifier}ptr2bytes({address})
+                        "
                     );
 
                     results.push(result);
@@ -2132,13 +2143,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                     let result = self.locals.tmp("result");
                     let address = &operands[0];
-                    let _length = &operands[1];
+                    let length = &operands[1];
 
                     uwrite!(
                         self.src,
                         "
-                    let {result} = {ffi_qualifier}ptr2{ty}_array({address})
-                    "
+                        ignore({length})
+                        let {result} = {ffi_qualifier}ptr2{ty}_array({address})
+                        "
                     );
 
                     results.push(result);
@@ -2159,11 +2171,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::StringLift { .. } => {
                 let result = self.locals.tmp("result");
                 let address = &operands[0];
-                let _length = &operands[1];
+                let length = &operands[1];
 
                 uwrite!(
                     self.src,
                     "
+                    ignore({length})
                     let {result} = {ffi_qualifier}ptr2str({address})
                     "
                 );
@@ -2502,6 +2515,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     "
                     match ({op}) {{
                         {cases}
+                        _ => panic()
                     }}
                     "
                 );
