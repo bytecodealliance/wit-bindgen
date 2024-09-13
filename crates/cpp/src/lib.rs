@@ -2525,6 +2525,7 @@ struct FunctionBindgen<'a, 'b> {
     variant: AbiVariant,
     cabi_post: Option<CabiPostInformation>,
     needs_dealloc: bool,
+    leak_on_insertion: Option<String>,
 }
 
 impl<'a, 'b> FunctionBindgen<'a, 'b> {
@@ -2544,6 +2545,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             variant: AbiVariant::GuestImport,
             cabi_post: None,
             needs_dealloc: false,
+            leak_on_insertion: None,
         }
     }
 
@@ -2955,6 +2957,9 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 );
                 uwrite!(self.src, "{}", body.0);
                 uwriteln!(self.src, "auto e{tmp} = {};", body.1[0]);
+                if let Some(code) = self.leak_on_insertion.take() {
+                    uwriteln!(self.src, "{code}");
+                }
                 // inplace construct
                 uwriteln!(self.src, "{result}.initialize(i, std::move(e{tmp}));");
                 uwriteln!(self.src, "}}");
@@ -2964,6 +2969,9 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 }
                 if self.gen.gen.opts.new_api && matches!(self.variant, AbiVariant::GuestExport) {
                     results.push(format!("{result}.get_const_view()"));
+                    if !self.gen.gen.opts.symmetric {
+                        self.leak_on_insertion.replace(format!("_deallocate.push_back((void*){result}.leak());\n"));
+                    }
                 } else {
                     results.push(format!("std::move({result})"));
                 }
