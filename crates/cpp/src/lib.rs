@@ -2830,7 +2830,6 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let val = format!("vec{}", tmp);
                 let ptr = format!("ptr{}", tmp);
                 let len = format!("len{}", tmp);
-                // let result = format!("result{}", tmp);
                 self.push_str(&format!("auto const&{} = {};\n", val, operands[0]));
                 if self.gen.gen.opts.host_side() {
                     self.push_str(&format!("auto {} = {}.data();\n", ptr, val));
@@ -2847,7 +2846,10 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 if realloc.is_none() {
                     results.push(ptr);
                 } else {
-                    if !self.gen.gen.opts.host_side() {
+                    if !self.gen.gen.opts.host_side()
+                        && !(self.gen.gen.opts.symmetric
+                            && matches!(self.variant, AbiVariant::GuestImport))
+                    {
                         uwriteln!(self.src, "{}.leak();\n", operands[0]);
                     }
                     results.push(ptr);
@@ -2861,12 +2863,6 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     .gen
                     .type_name(element, &self.namespace, Flavor::InStruct);
                 self.push_str(&format!("auto {} = {};\n", len, operands[1]));
-                // let typecast = if self.gen.gen.opts.host {
-                //     String::new()
-                // } else {
-                //     format!("({inner} const *)")
-                // };
-                //                let result = format!("wit::vector<{inner}>({typecast}{}, {len})", operands[0]);
                 let result = if self.gen.gen.opts.host {
                     uwriteln!(self.src, "{inner} const* ptr{tmp} = ({inner} const*)wasm_runtime_addr_app_to_native(wasm_runtime_get_module_inst(exec_env), {});\n", operands[0]);
                     format!("wit::span<{inner} const>(ptr{}, (size_t){len})", tmp)
@@ -2891,11 +2887,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     && matches!(self.variant, AbiVariant::GuestExport)
                 {
                     uwriteln!(self.src, "auto string{tmp} = wit::string::from_view(std::string_view((char const *)({}), {len}));\n", operands[0]);
-                    // if matches!(self.variant, AbiVariant::GuestExport) {
                     format!("std::move(string{tmp})")
-                    // } else {
-                    //     format!("string{tmp}")
-                    // }
                 } else if self.gen.gen.opts.host {
                     uwriteln!(self.src, "char const* ptr{} = (char const*)wasm_runtime_addr_app_to_native(wasm_runtime_get_module_inst(exec_env), {});\n", tmp, operands[0]);
                     format!("std::string_view(ptr{}, {len})", tmp)
@@ -2948,7 +2940,10 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     r#"auto {result} = wit::vector<{vtype}>::allocate({len});
                     "#,
                 ));
-                if self.gen.gen.opts.new_api && matches!(self.variant, AbiVariant::GuestExport) {
+                if self.gen.gen.opts.new_api
+                    && matches!(self.variant, AbiVariant::GuestExport)
+                    && !self.gen.gen.opts.symmetric
+                {
                     self.push_str(&format!("if ({len}>0) _deallocate.push_back({base});\n"));
                 }
 
@@ -2963,15 +2958,15 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 // inplace construct
                 uwriteln!(self.src, "{result}.initialize(i, std::move(e{tmp}));");
                 uwriteln!(self.src, "}}");
+                if self.gen.gen.opts.new_api && matches!(self.variant, AbiVariant::GuestImport) && self.gen.gen.opts.symmetric {
+                    // we converted the result, free the returned vector
+                    uwriteln!(self.src, "free({base});");
+                }
                 if self.gen.gen.opts.new_api && matches!(self.variant, AbiVariant::GuestExport) {
                     results.push(format!("{result}.get_const_view()"));
                 } else {
                     results.push(format!("std::move({result})"));
                 }
-                // self.push_str(&format!(
-                //     "{rt}::dealloc({base}, ({len} as usize) * {size}, {align});\n",
-                //     rt = self.gen.gen.runtime_path(),
-                // ));
             }
             abi::Instruction::IterElem { .. } => results.push("IterElem".to_string()),
             abi::Instruction::IterBasePointer => results.push("base".to_string()),
@@ -3651,7 +3646,12 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                             self.src.push_str(">(");
                         }
                         if *amt == 1 {
-                            self.src.push_str(&operands[0]);
+                            if operands[0].starts_with("std::move(") {
+                                // remove the std::move due to return value optimization (and complex rules about when std::move harms)
+                                self.src.push_str(&operands[0][9..]);
+                            } else {
+                                self.src.push_str(&operands[0]);
+                            }
                         } else {
                             self.src.push_str("std::tuple<");
                             if let Results::Named(params) = &func.results {
