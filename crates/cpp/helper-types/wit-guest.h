@@ -89,6 +89,7 @@ public:
   bool empty() const { return !length; }
   ~vector() {
     if (data_) {
+      for (unsigned i=0;i<length;++i) { data_[i].~T(); }
       free((void*)data_);
     }
   }
