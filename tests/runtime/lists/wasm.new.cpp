@@ -52,7 +52,7 @@ static bool equal(std::tuple<R,S> const&a, std::tuple<T,U> const& b) {
 void exports::lists::TestImports() {
     //let _guard = testRust_wasm::guard();
 
-    test::lists::test::EmptyListParam(wit::span<const uint8_t>(std::vector<const uint8_t>()));
+    test::lists::test::EmptyListParam(wit::span<const uint8_t>(std::vector<uint8_t>()));
     test::lists::test::EmptyStringParam("");
     assert(test::lists::test::EmptyListResult().empty());
     assert(test::lists::test::EmptyStringResult().empty());
@@ -60,17 +60,17 @@ void exports::lists::TestImports() {
     test::lists::test::ListParam(std::vector<uint8_t>{1, 2, 3, 4});
     test::lists::test::ListParam2("foo");
     test::lists::test::ListParam3(std::vector<std::string_view>{"foo", "bar", "baz"});
-    test::lists::test::ListParam4(std::vector<const wit::span<const std::string_view>>{
-        std::vector<const std::string_view>{"foo", "bar"},
-        std::vector<const std::string_view>{"baz"},
+    test::lists::test::ListParam4(std::vector<wit::span<const std::string_view>>{
+        std::vector<std::string_view>{"foo", "bar"},
+        std::vector<std::string_view>{"baz"},
     });
     assert(equal(test::lists::test::ListResult(), std::vector<uint8_t>{1, 2, 3, 4, 5}));
     assert(equal(test::lists::test::ListResult2(), "hello!"));
     assert(equal(test::lists::test::ListResult3(), std::vector<std::string_view>{"hello,", "world!"}));
 
-    assert(equal(test::lists::test::ListRoundtrip(wit::span<const uint8_t>(std::vector<const uint8_t>())), std::vector<uint8_t>()));
-    assert(equal(test::lists::test::ListRoundtrip(wit::span<const uint8_t>(std::vector<const uint8_t>{'x'})), std::vector<uint8_t>{'x'}));
-    assert(equal(test::lists::test::ListRoundtrip(wit::span<const uint8_t>(std::vector<const uint8_t>{'h', 'e', 'l', 'l', 'o'})), std::vector<uint8_t>{'h', 'e', 'l', 'l', 'o'}));
+    assert(equal(test::lists::test::ListRoundtrip(wit::span<const uint8_t>(std::vector<uint8_t>())), std::vector<uint8_t>()));
+    assert(equal(test::lists::test::ListRoundtrip(wit::span<const uint8_t>(std::vector<uint8_t>{'x'})), std::vector<uint8_t>{'x'}));
+    assert(equal(test::lists::test::ListRoundtrip(wit::span<const uint8_t>(std::vector<uint8_t>{'h', 'e', 'l', 'l', 'o'})), std::vector<uint8_t>{'h', 'e', 'l', 'l', 'o'}));
 
     assert(equal(test::lists::test::StringRoundtrip("x"), "x"));
     assert(equal(test::lists::test::StringRoundtrip(""), ""));
