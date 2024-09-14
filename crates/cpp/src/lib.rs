@@ -2843,7 +2843,10 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 if realloc.is_none() {
                     results.push(ptr);
                 } else {
-                    if !self.gen.gen.opts.host_side() && !self.gen.gen.opts.symmetric {
+                    if !self.gen.gen.opts.host_side()
+                        && !(self.gen.gen.opts.symmetric
+                            && matches!(self.variant, AbiVariant::GuestImport))
+                    {
                         uwriteln!(self.src, "{}.leak();\n", operands[0]);
                     }
                     results.push(ptr);
@@ -2929,10 +2932,17 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 } else if self.gen.gen.opts.new_api
                     && matches!(self.variant, AbiVariant::GuestExport)
                 {
-                    format!(
-                        "wit::vector<{inner} const>(({inner}*)({}), {len}).get_view()",
-                        operands[0]
-                    )
+                    if self.gen.gen.opts.symmetric {
+                        format!(
+                            "wit::span<{inner} const>(({inner}*)({}), {len})",
+                            operands[0]
+                        )
+                    } else {
+                        format!(
+                            "wit::vector<{inner} const>(({inner}*)({}), {len}).get_view()",
+                            operands[0]
+                        )
+                    }
                 } else {
                     format!("wit::vector<{inner}>(({inner}*)({}), {len})", operands[0])
                 };
