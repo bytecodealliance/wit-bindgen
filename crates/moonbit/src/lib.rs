@@ -111,34 +111,34 @@ extern "wasm" fn copy_inline(dest : Int, src : Int, len : Int) =
   #|(func (param i32) (param i32) (param i32) local.get 0 local.get 1 local.get 2 memory.copy)
 
 pub extern "wasm" fn str2ptr(str : String) -> Int =
-  #|(func (param i32) (result i32) local.get 0 call $moonbit.decref local.get 0 i32.const 8 i32.add)
+  #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.add)
 
 pub extern "wasm" fn ptr2str(ptr : Int) -> String =
   #|(func (param i32) (result i32) local.get 0 i32.const 4 i32.sub i32.const 243 i32.store8 local.get 0 i32.const 8 i32.sub)
 
 pub extern "wasm" fn bytes2ptr(bytes : Bytes) -> Int =
-  #|(func (param i32) (result i32) local.get 0 call $moonbit.decref local.get 0 i32.const 8 i32.add)
+  #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.add)
 
 pub extern "wasm" fn ptr2bytes(ptr : Int) -> Bytes =
   #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.sub)
 
 pub extern "wasm" fn uint_array2ptr(array : FixedArray[UInt]) -> Int =
-  #|(func (param i32) (result i32) local.get 0 call $moonbit.decref local.get 0 i32.const 8 i32.add)
+  #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.add)
 
 pub extern "wasm" fn uint64_array2ptr(array : FixedArray[UInt64]) -> Int =
-  #|(func (param i32) (result i32) local.get 0 call $moonbit.decref local.get 0 i32.const 8 i32.add)
+  #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.add)
 
 pub extern "wasm" fn int_array2ptr(array : FixedArray[Int]) -> Int =
-  #|(func (param i32) (result i32) local.get 0 call $moonbit.decref local.get 0 i32.const 8 i32.add)
+  #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.add)
 
 pub extern "wasm" fn int64_array2ptr(array : FixedArray[Int64]) -> Int =
-  #|(func (param i32) (result i32) local.get 0 call $moonbit.decref local.get 0 i32.const 8 i32.add)
+  #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.add)
 
 pub extern "wasm" fn float_array2ptr(array : FixedArray[Float]) -> Int =
-  #|(func (param i32) (result i32) local.get 0 call $moonbit.decref local.get 0 i32.const 8 i32.add)
+  #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.add)
 
 pub extern "wasm" fn double_array2ptr(array : FixedArray[Double]) -> Int =
-  #|(func (param i32) (result i32) local.get 0 call $moonbit.decref local.get 0 i32.const 8 i32.add)
+  #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.add)
 
 pub extern "wasm" fn ptr2uint_array(ptr : Int) -> FixedArray[UInt] =
   #|(func (param i32) (result i32) local.get 0 i32.const 4 i32.sub i32.const 241 i32.store8 local.get 0 i32.const 8 i32.sub)
