@@ -17,6 +17,9 @@ namespace wit {
 class string {
   uint8_t const *data_;
   size_t length;
+  // C++ is horrible!
+  //constexpr uint8_t const *const empty_ptr = (uint8_t const *)1;
+  static uint8_t const* empty_ptr() { return (uint8_t const *)1; }
 
 public:
   // this constructor is helpful for creating vector<string>
@@ -24,7 +27,7 @@ public:
   string(string &&b) : data_(b.data_), length(b.length) { b.data_ = nullptr; }
   string &operator=(string const &) = delete;
   string &operator=(string &&b) {
-    if (data_) {
+    if (data_ && data_!=empty_ptr()) {
       free(const_cast<uint8_t *>(data_));
     }
     data_ = b.data_;
@@ -37,7 +40,7 @@ public:
   size_t size() const { return length; }
   bool empty() const { return !length; }
   ~string() {
-    if (data_) {
+    if (data_ && data_!=empty_ptr()) {
       free(const_cast<uint8_t *>(data_));
     }
   }
@@ -52,6 +55,7 @@ public:
     return std::string((const char *)data_, length);
   }
   static string from_view(std::string_view v) {
+    if (!v.size()) return string((char const*)empty_ptr(), 0);
     char* addr = (char*)malloc(v.size());
     memcpy(addr, v.data(), v.size());
     return string(addr, v.size());
@@ -66,12 +70,14 @@ template <class T> class vector {
   T *data_;
   size_t length;
 
+  static T* empty_ptr() { return (T*)alignof(T); }
+
 public:
   vector(vector const &) = delete;
   vector(vector &&b) : data_(b.data_), length(b.length) { b.data_ = nullptr; }
   vector &operator=(vector const &) = delete;
   vector &operator=(vector &&b) {
-    if (data_) {
+    if (data_ && length>0) {
       free(const_cast<uint8_t *>(data_));
     }
     data_ = b.data_;
@@ -80,7 +86,8 @@ public:
     return *this;
   }
   vector(T *d, size_t l) : data_(d), length(l) {}
-  vector() : data_(nullptr), length() {}
+  // Rust needs a nonzero pointer here (alignment is typical)
+  vector() : data_(empty_ptr()), length() {}
   T const *data() const { return data_; }
   T *data() { return data_; }
   T &operator[](size_t n) { return data_[n]; }
@@ -88,13 +95,14 @@ public:
   size_t size() const { return length; }
   bool empty() const { return !length; }
   ~vector() {
-    if (data_) {
+    if (data_ && length>0) {
       for (unsigned i=0;i<length;++i) { data_[i].~T(); }
       free((void*)data_);
     }
   }
   // WARNING: vector contains uninitialized elements
   static vector<T> allocate(size_t len) {
+    if (!len) return vector<T>(empty_ptr(), 0);
     return vector<T>((T*)malloc(sizeof(T)*len), len);
   }
   void initialize(size_t n, T&& elem) {
@@ -103,7 +111,7 @@ public:
   // leak the memory
   T* leak() { T*result = data_; data_ = nullptr; return result; }
   // typically called by post
-  static void drop_raw(void *ptr) { free(ptr); }
+  static void drop_raw(void *ptr) { if (ptr!=empty_ptr()) free(ptr); }
   wit::span<T> get_view() const { return wit::span<T>(data_, length); }
   wit::span<const T> get_const_view() const { return wit::span<const T>(data_, length); }
   template <class U> static vector<T> from_view(wit::span<U> const& a) {
@@ -113,7 +121,6 @@ public:
     }
     return result;
   } 
-//  static vector<T> from_view(wit::span<const T> const& a); 
 };
 
 /// @brief  A Resource defined within the guest (guest side)
