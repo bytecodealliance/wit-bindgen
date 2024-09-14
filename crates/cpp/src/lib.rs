@@ -96,6 +96,12 @@ struct SourceWithState {
     namespace: Vec<String>,
 }
 
+#[derive(Eq, Hash, PartialEq, Clone, Copy, Debug)]
+enum Direction {
+    Import,
+    Export,
+}
+
 #[derive(Default)]
 struct Cpp {
     opts: Opts,
@@ -113,6 +119,10 @@ struct Cpp {
     imported_interfaces: HashSet<InterfaceId>,
     user_class_files: HashMap<String, String>,
     defined_types: HashSet<(Vec<String>, String)>,
+
+    // needed for symmetric disambiguation
+    interface_prefixes: HashMap<(Direction, WorldKey), String>,
+    import_prefix: Option<String>,
 }
 
 #[derive(Default, Debug, Clone, Copy)]
@@ -493,6 +503,13 @@ impl WorldGenerator for Cpp {
         id: InterfaceId,
         _files: &mut Files,
     ) -> anyhow::Result<()> {
+        if let Some(prefix) = self
+            .interface_prefixes
+            .get(&(Direction::Import, name.clone()))
+        {
+            self.import_prefix = Some(prefix.clone());
+        }
+
         let store = self.start_new_file(None);
         self.imported_interfaces.insert(id);
         let wasm_import_module = resolve.name_world_key(name);
@@ -509,6 +526,7 @@ impl WorldGenerator for Cpp {
             }
         }
         self.finish_file(&namespace, store);
+        let _ = self.import_prefix.take();
         Ok(())
     }
 
@@ -519,6 +537,14 @@ impl WorldGenerator for Cpp {
         id: InterfaceId,
         _files: &mut Files,
     ) -> anyhow::Result<()> {
+        let old_prefix = self.opts.export_prefix.clone();
+        if let Some(prefix) = self
+            .interface_prefixes
+            .get(&(Direction::Export, name.clone()))
+        {
+            self.opts.export_prefix =
+                Some(prefix.clone() + old_prefix.as_ref().unwrap_or(&String::new()));
+        }
         let store = self.start_new_file(None);
         self.h_src
             .src
@@ -538,6 +564,7 @@ impl WorldGenerator for Cpp {
             }
         }
         self.finish_file(&namespace, store);
+        self.opts.export_prefix = old_prefix;
         Ok(())
     }
 
@@ -786,6 +813,30 @@ impl WorldGenerator for Cpp {
             .as_slice(),
         );
         Ok(())
+    }
+
+    fn apply_resolve_options(&mut self, resolve: &mut Resolve, world: &mut WorldId) {
+        if self.opts.symmetric {
+            let world = &resolve.worlds[*world];
+            let exports: HashMap<&WorldKey, &wit_bindgen_core::wit_parser::WorldItem> =
+                world.exports.iter().collect();
+            for (key, _item) in world.imports.iter() {
+                // duplicate found
+                if exports.contains_key(key)
+                    && !self
+                        .interface_prefixes
+                        .contains_key(&(Direction::Import, key.clone()))
+                    && !self
+                        .interface_prefixes
+                        .contains_key(&(Direction::Export, key.clone()))
+                {
+                    self.interface_prefixes
+                        .insert((Direction::Import, key.clone()), "imp_".into());
+                    self.interface_prefixes
+                        .insert((Direction::Export, key.clone()), "exp_".into());
+                }
+            }
+        }
     }
 }
 
@@ -1072,10 +1123,14 @@ impl CppInterfaceGenerator<'_> {
                 res.push('#');
                 res
             });
-            uwriteln!(
-                self.gen.c_src.src,
-                r#"extern "C" __attribute__((__export_name__("{module_prefix}{func_name}")))"#
-            );
+            if self.gen.opts.symmetric {
+                uwriteln!(self.gen.c_src.src, r#"extern "C" "#);
+            } else {
+                uwriteln!(
+                    self.gen.c_src.src,
+                    r#"extern "C" __attribute__((__export_name__("{module_prefix}{func_name}")))"#
+                );
+            }
         }
         let return_via_pointer = signature.retptr && self.gen.opts.host_side();
         self.gen
@@ -1091,6 +1146,9 @@ impl CppInterfaceGenerator<'_> {
             Some(ref module_name) => make_external_symbol(&module_name, &func_name, symbol_variant),
             None => make_external_component(&func_name),
         };
+        if let Some(prefix) = self.gen.opts.export_prefix.as_ref() {
+            self.gen.c_src.src.push_str(prefix);
+        }
         self.gen.c_src.src.push_str(&export_name);
         self.gen.c_src.src.push_str("(");
         let mut first_arg = true;
@@ -3475,7 +3533,16 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     .gen
                     .wasm_import_module
                     .as_ref()
-                    .map(|e| String::from(*module_prefix) + e)
+                    .map(|e| {
+                        self.gen
+                            .gen
+                            .import_prefix
+                            .as_ref()
+                            .cloned()
+                            .unwrap_or_default()
+                            + *module_prefix
+                            + e
+                    })
                     .unwrap();
                 if self.gen.gen.opts.host {
                     uwriteln!(self.src, "wasm_function_inst_t wasm_func = wasm_runtime_lookup_function(wasm_runtime_get_module_inst(exec_env), \n\

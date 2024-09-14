@@ -116,7 +116,7 @@ fn tests(
     assert!(status.success());
 
     for path in cpp.iter() {
-        let (resolve, world) = resolve_wit_dir(&dir);
+        let (mut resolve, mut world) = resolve_wit_dir(&dir);
         let world_name = &resolve.worlds[world].name;
         let cpp_dir = out_dir.join("cpp");
         drop(fs::remove_dir_all(&cpp_dir));
@@ -131,7 +131,9 @@ fn tests(
                 opts.new_api = true;
             }
         }
-        opts.build().generate(&resolve, world, &mut files).unwrap();
+        let mut cpp = opts.build();
+        cpp.apply_resolve_options(&mut resolve, &mut world);
+        cpp.generate(&resolve, world, &mut files).unwrap();
 
         for (file, contents) in files.iter() {
             let dst = cpp_dir.join(file);
