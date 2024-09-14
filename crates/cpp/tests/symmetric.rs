@@ -238,17 +238,26 @@ fn symmetric_integration() -> io::Result<()> {
     tester_source_dir.push("tests");
     tester_source_dir.push("symmetric_tests");
 
-    let testcases = vec![
-        "smoke",
-        "strings",
-        "numbers",
-        "flavorful",
-        "lists",
-    ];
+    let default_testcases = vec!["smoke", "strings", "numbers", "flavorful", "lists"];
+    let testcases: Vec<String> = std::env::var_os("SYMMETRIC_TESTS").map_or_else(
+        || {
+            default_testcases
+                .iter()
+                .map(|s| s.to_string())
+                .collect::<Vec<String>>()
+        },
+        |var| {
+            var.into_string()
+                .expect("UTF8 expected")
+                .split(',')
+                .map(|s| s.to_string())
+                .collect()
+        },
+    );
 
     for dir_name in testcases {
         tests(
-            dir_name,
+            &dir_name,
             &out_dir,
             &toplevel,
             &source_files,

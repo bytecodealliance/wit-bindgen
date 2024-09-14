@@ -826,6 +826,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     "let ptr = {alloc}::alloc({layout}).cast::<u8>();\n",
                 ));
                 if self.gen.gen.opts.symmetric && self.gen.in_import {
+                    assert!(self.gen.needs_deallocate);
                     self.push_str(&format!(
                         "if !ptr.is_null() {{ _deallocate.push((ptr, {layout})); }}\n"
                     ));
@@ -921,8 +922,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.push_str("(");
                 self.push_str(&operands.join(", "));
                 self.push_str(");\n");
-                if self.gen.gen.opts.symmetric && self.gen.in_import {
+                if self.gen.needs_deallocate {
                     self.push_str(&format!("for (ptr,layout) in _deallocate.drain(..) {{ _rt::alloc::dealloc(ptr, layout); }}\n"));
+                    self.gen.needs_deallocate = false;
                 }
             }
 

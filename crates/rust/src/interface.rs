@@ -10,8 +10,8 @@ use std::fmt::Write as _;
 use std::mem;
 use wit_bindgen_core::abi::{self, AbiVariant, LiftLower};
 use wit_bindgen_core::{
-    dealias, make_external_component, make_external_symbol, uwrite, uwriteln, wit_parser::*,
-    AnonymousTypeGenerator, Source, TypeInfo,
+    dealias, make_external_component, make_external_symbol, symmetric, uwrite, uwriteln,
+    wit_parser::*, AnonymousTypeGenerator, Source, TypeInfo,
 };
 
 pub struct InterfaceGenerator<'a> {
@@ -25,6 +25,7 @@ pub struct InterfaceGenerator<'a> {
     pub return_pointer_area_size: ArchitectureSize,
     pub return_pointer_area_align: Alignment,
     pub(super) needs_runtime_module: bool,
+    pub(super) needs_deallocate: bool,
 }
 
 /// A description of the "mode" in which a type is printed.
@@ -867,7 +868,9 @@ impl {async_support}::StreamPayload for {name} {{
         self.src.push_str("#[allow(unused_unsafe, clippy::all)]\n");
         let params = self.print_signature(func, false, &sig, true);
         self.src.push_str("{\n");
-        if self.gen.opts.symmetric {
+        if self.gen.opts.symmetric && symmetric::has_non_canonical_list(self.resolve, &func.params)
+        {
+            self.needs_deallocate = true;
             uwriteln!(
                 self.src,
                 "let mut _deallocate: Vec<(*mut u8, _rt::alloc::Layout)> = Vec::new();"

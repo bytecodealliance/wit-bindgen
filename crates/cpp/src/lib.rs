@@ -9,7 +9,7 @@ use std::{
 use wit_bindgen_c::to_c_ident;
 use wit_bindgen_core::{
     abi::{self, AbiVariant, Bindgen, Bitcast, LiftLower, WasmSignature, WasmType},
-    make_external_component, make_external_symbol, uwrite, uwriteln,
+    make_external_component, make_external_symbol, symmetric, uwrite, uwriteln,
     wit_parser::{
         Alignment, ArchitectureSize, Docs, Function, FunctionKind, Handle, Int, InterfaceId,
         Resolve, Results, SizeAlign, Stability, Type, TypeDefKind, TypeId, TypeOwner, WorldId,
@@ -1480,127 +1480,6 @@ impl CppInterfaceGenerator<'_> {
         }
     }
 
-    // figure out whether deallocation is needed in the caller
-    fn needs_dealloc2(resolve: &Resolve, tp: &Type) -> bool {
-        match tp {
-            Type::Bool
-            | Type::U8
-            | Type::U16
-            | Type::U32
-            | Type::U64
-            | Type::S8
-            | Type::S16
-            | Type::S32
-            | Type::S64
-            | Type::F32
-            | Type::F64
-            | Type::Char => false,
-            Type::String => true,
-            Type::Id(id) => match &resolve.types[*id].kind {
-                TypeDefKind::Enum(_) => false,
-                TypeDefKind::Record(r) => r
-                    .fields
-                    .iter()
-                    .any(|f| Self::needs_dealloc2(resolve, &f.ty)),
-                TypeDefKind::Resource => false,
-                TypeDefKind::Handle(_) => false,
-                TypeDefKind::Flags(_) => false,
-                TypeDefKind::Tuple(t) => t.types.iter().any(|f| Self::needs_dealloc2(resolve, f)),
-                TypeDefKind::Variant(_) => todo!(),
-                TypeDefKind::Option(_) => todo!(),
-                TypeDefKind::Result(r) => {
-                    r.ok.as_ref()
-                        .map_or(false, |tp| Self::needs_dealloc2(resolve, tp))
-                        || r.err
-                            .as_ref()
-                            .map_or(false, |tp| Self::needs_dealloc2(resolve, tp))
-                }
-                TypeDefKind::List(_l) => true,
-                TypeDefKind::Future(_) => todo!(),
-                TypeDefKind::Stream(_) => todo!(),
-                TypeDefKind::Error => false,
-                TypeDefKind::Type(tp) => Self::needs_dealloc2(resolve, tp),
-                TypeDefKind::Unknown => false,
-            },
-        }
-    }
-
-    fn needs_dealloc(resolve: &Resolve, args: &[(String, Type)]) -> bool {
-        for (_n, t) in args {
-            if Self::needs_dealloc2(resolve, t) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    fn has_non_canonical_list2(resolve: &Resolve, ty: &Type, maybe: bool) -> bool {
-        match ty {
-            Type::Bool
-            | Type::U8
-            | Type::U16
-            | Type::U32
-            | Type::U64
-            | Type::S8
-            | Type::S16
-            | Type::S32
-            | Type::S64
-            | Type::F32
-            | Type::F64
-            | Type::Char
-            | Type::String => false,
-            Type::Id(id) => match &resolve.types[*id].kind {
-                TypeDefKind::Record(r) => r
-                    .fields
-                    .iter()
-                    .any(|field| Self::has_non_canonical_list2(resolve, &field.ty, maybe)),
-                TypeDefKind::Resource | TypeDefKind::Handle(_) | TypeDefKind::Flags(_) => false,
-                TypeDefKind::Tuple(t) => t
-                    .types
-                    .iter()
-                    .any(|ty| Self::has_non_canonical_list2(resolve, ty, maybe)),
-                TypeDefKind::Variant(var) => var.cases.iter().any(|case| {
-                    case.ty.as_ref().map_or(false, |ty| {
-                        Self::has_non_canonical_list2(resolve, ty, maybe)
-                    })
-                }),
-                TypeDefKind::Enum(_) => false,
-                TypeDefKind::Option(ty) => Self::has_non_canonical_list2(resolve, ty, maybe),
-                TypeDefKind::Result(res) => {
-                    res.ok.as_ref().map_or(false, |ty| {
-                        Self::has_non_canonical_list2(resolve, ty, maybe)
-                    }) || res.err.as_ref().map_or(false, |ty| {
-                        Self::has_non_canonical_list2(resolve, ty, maybe)
-                    })
-                }
-                TypeDefKind::List(ty) => {
-                    if maybe {
-                        true
-                    } else {
-                        Self::has_non_canonical_list2(resolve, ty, true)
-                    }
-                }
-                TypeDefKind::Future(_) | TypeDefKind::Stream(_) | TypeDefKind::Error => false,
-                TypeDefKind::Type(ty) => Self::has_non_canonical_list2(resolve, ty, maybe),
-                TypeDefKind::Unknown => false,
-            },
-        }
-    }
-
-    // fn has_non_canonical_list(resolve: &Resolve, results: &Results) -> bool {
-    //     match results {
-    //         Results::Named(vec) => vec
-    //             .iter()
-    //             .any(|(_, ty)| Self::has_non_canonical_list2(resolve, ty, false)),
-    //         Results::Anon(one) => Self::has_non_canonical_list2(resolve, &one, false),
-    //     }
-    // }
-
-    fn has_non_canonical_list(resolve: &Resolve, args: &[(String, Type)]) -> bool {
-        args.iter()
-            .any(|(_, ty)| Self::has_non_canonical_list2(resolve, ty, false))
-    }
-
     fn generate_function(
         &mut self,
         func: &Function,
@@ -1639,9 +1518,10 @@ impl CppInterfaceGenerator<'_> {
             self.gen.c_src.src.push_str("{\n");
             let needs_dealloc = if self.gen.opts.new_api
                 && matches!(variant, AbiVariant::GuestExport)
-                && ((!self.gen.opts.symmetric && Self::needs_dealloc(self.resolve, &func.params))
+                && ((!self.gen.opts.symmetric
+                    && symmetric::needs_dealloc(self.resolve, &func.params))
                     || (self.gen.opts.symmetric
-                        && Self::has_non_canonical_list(self.resolve, &func.params)))
+                        && symmetric::has_non_canonical_list(self.resolve, &func.params)))
             {
                 self.gen
                     .c_src
