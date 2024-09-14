@@ -347,6 +347,8 @@ pub trait WorldGenerator {
         files: &mut Files,
     );
     fn finish(&mut self, resolve: &Resolve, world: WorldId, files: &mut Files) -> Result<()>;
+    // modify resolve by command line options
+    fn apply_resolve_options(&mut self, _resolve: &mut Resolve, _world: &mut WorldId) {}
 }
 
 /// This is a possible replacement for the `Generator` trait above, currently

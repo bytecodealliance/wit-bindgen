@@ -1062,11 +1062,14 @@ impl {async_support}::StreamPayload for {name} {{
         let export_prefix = self.gen.opts.export_prefix.as_deref().unwrap_or("");
         let (export_name, external_name) = if self.gen.opts.symmetric {
             let export_name = func.name.clone(); // item_name().to_owned();
-            let external_name = make_external_symbol(
+            let mut external_name = make_external_symbol(
                 &wasm_module_export_name.unwrap_or_default(),
                 &func.name,
                 AbiVariant::GuestImport,
             );
+            if let Some(export_prefix) = self.gen.opts.export_prefix.as_ref() {
+                external_name.insert_str(0, export_prefix);
+            }
             (export_name, external_name)
         } else {
             let export_name = func.core_export_name(wasm_module_export_name.as_deref());

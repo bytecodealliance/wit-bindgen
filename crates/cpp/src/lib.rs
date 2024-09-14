@@ -2963,14 +2963,18 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 // inplace construct
                 uwriteln!(self.src, "{result}.initialize(i, std::move(e{tmp}));");
                 uwriteln!(self.src, "}}");
-                if self.gen.gen.opts.new_api && matches!(self.variant, AbiVariant::GuestImport) && self.gen.gen.opts.symmetric {
+                if self.gen.gen.opts.new_api
+                    && matches!(self.variant, AbiVariant::GuestImport)
+                    && self.gen.gen.opts.symmetric
+                {
                     // we converted the result, free the returned vector
                     uwriteln!(self.src, "free({base});");
                 }
                 if self.gen.gen.opts.new_api && matches!(self.variant, AbiVariant::GuestExport) {
                     results.push(format!("{result}.get_const_view()"));
                     if !self.gen.gen.opts.symmetric {
-                        self.leak_on_insertion.replace(format!("_deallocate.push_back((void*){result}.leak());\n"));
+                        self.leak_on_insertion
+                            .replace(format!("_deallocate.push_back((void*){result}.leak());\n"));
                     }
                 } else {
                     results.push(format!("std::move({result})"));

@@ -176,9 +176,6 @@ impl Parse for Config {
             parse_source(&source, &features).map_err(|err| anyhow_to_syn(call_site, err))?;
         let world = select_world(&resolve, &pkgs, world.as_deref())
             .map_err(|e| anyhow_to_syn(call_site, e))?;
-        if opts.invert_direction {
-            resolve.invert_direction(world);
-        }
         Ok(Config {
             opts,
             resolve,
@@ -276,6 +273,7 @@ impl Config {
             self.opts.symmetric = true;
         }
         let mut generator = self.opts.build();
+        generator.apply_resolve_options(&mut self.resolve, &mut self.world);
         generator
             .generate(&self.resolve, self.world, &mut files)
             .map_err(|e| anyhow_to_syn(Span::call_site(), e))?;
