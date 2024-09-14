@@ -868,7 +868,8 @@ impl {async_support}::StreamPayload for {name} {{
         self.src.push_str("#[allow(unused_unsafe, clippy::all)]\n");
         let params = self.print_signature(func, false, &sig, true);
         self.src.push_str("{\n");
-        if self.gen.opts.symmetric && symmetric::has_non_canonical_list(self.resolve, &func.params)
+        if self.gen.opts.symmetric
+            && symmetric::has_non_canonical_list_rust(self.resolve, &func.params)
         {
             self.needs_deallocate = true;
             uwriteln!(
