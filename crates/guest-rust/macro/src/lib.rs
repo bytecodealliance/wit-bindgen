@@ -172,7 +172,7 @@ impl Parse for Config {
                 )]));
             }
         }
-        let (mut resolve, pkgs, files) =
+        let (resolve, pkgs, files) =
             parse_source(&source, &features).map_err(|err| anyhow_to_syn(call_site, err))?;
         let world = select_world(&resolve, &pkgs, world.as_deref())
             .map_err(|e| anyhow_to_syn(call_site, e))?;

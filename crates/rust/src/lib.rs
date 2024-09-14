@@ -60,6 +60,7 @@ struct RustWasm {
 
     // needed for symmetric disambiguation
     interface_prefixes: HashMap<(Direction, WorldKey), String>,
+    import_prefix: Option<String>,
 }
 
 #[derive(Default)]
@@ -986,6 +987,12 @@ impl WorldGenerator for RustWasm {
         id: InterfaceId,
         _files: &mut Files,
     ) -> Result<()> {
+        if let Some(prefix) = self
+            .interface_prefixes
+            .get(&(Direction::Import, name.clone()))
+        {
+            self.import_prefix = Some(prefix.clone());
+        }
         self.interface_last_seen_as_import.insert(id, true);
         let wasm_import_module = resolve.name_world_key(name);
         let mut gen = self.interface(
@@ -1003,7 +1010,7 @@ impl WorldGenerator for RustWasm {
         gen.generate_imports(resolve.interfaces[id].functions.values(), Some(name));
 
         gen.finish_append_submodule(&snake, module_path);
-
+        let _ = self.import_prefix.take();
         Ok(())
     }
 

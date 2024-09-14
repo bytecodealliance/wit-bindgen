@@ -903,7 +903,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 module_prefix,
                 ..
             } => {
-                let func = self.declare_import(module_prefix, name, &sig.params, &sig.results);
+                let module_prefix = if let Some(prefix) = self.gen.gen.import_prefix.as_ref() {
+                    let combined_prefix = prefix.clone() + module_prefix;
+                    std::borrow::Cow::Owned(combined_prefix)
+                } else {
+                    std::borrow::Cow::Borrowed(*module_prefix)
+                };
+                let func =
+                    self.declare_import(module_prefix.as_ref(), name, &sig.params, &sig.results);
 
                 // ... then call the function with all our operands
                 if !sig.results.is_empty() {
