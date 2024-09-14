@@ -1534,6 +1534,73 @@ impl CppInterfaceGenerator<'_> {
         return false;
     }
 
+    fn has_non_canonical_list2(resolve: &Resolve, ty: &Type, maybe: bool) -> bool {
+        match ty {
+            Type::Bool
+            | Type::U8
+            | Type::U16
+            | Type::U32
+            | Type::U64
+            | Type::S8
+            | Type::S16
+            | Type::S32
+            | Type::S64
+            | Type::F32
+            | Type::F64
+            | Type::Char
+            | Type::String => false,
+            Type::Id(id) => match &resolve.types[*id].kind {
+                TypeDefKind::Record(r) => r
+                    .fields
+                    .iter()
+                    .any(|field| Self::has_non_canonical_list2(resolve, &field.ty, maybe)),
+                TypeDefKind::Resource | TypeDefKind::Handle(_) | TypeDefKind::Flags(_) => false,
+                TypeDefKind::Tuple(t) => t
+                    .types
+                    .iter()
+                    .any(|ty| Self::has_non_canonical_list2(resolve, ty, maybe)),
+                TypeDefKind::Variant(var) => var.cases.iter().any(|case| {
+                    case.ty.as_ref().map_or(false, |ty| {
+                        Self::has_non_canonical_list2(resolve, ty, maybe)
+                    })
+                }),
+                TypeDefKind::Enum(_) => false,
+                TypeDefKind::Option(ty) => Self::has_non_canonical_list2(resolve, ty, maybe),
+                TypeDefKind::Result(res) => {
+                    res.ok.as_ref().map_or(false, |ty| {
+                        Self::has_non_canonical_list2(resolve, ty, maybe)
+                    }) || res.err.as_ref().map_or(false, |ty| {
+                        Self::has_non_canonical_list2(resolve, ty, maybe)
+                    })
+                }
+                TypeDefKind::List(ty) => {
+                    if maybe {
+                        true
+                    } else {
+                        Self::has_non_canonical_list2(resolve, ty, true)
+                    }
+                }
+                TypeDefKind::Future(_) | TypeDefKind::Stream(_) | TypeDefKind::Error => false,
+                TypeDefKind::Type(ty) => Self::has_non_canonical_list2(resolve, ty, maybe),
+                TypeDefKind::Unknown => false,
+            },
+        }
+    }
+
+    // fn has_non_canonical_list(resolve: &Resolve, results: &Results) -> bool {
+    //     match results {
+    //         Results::Named(vec) => vec
+    //             .iter()
+    //             .any(|(_, ty)| Self::has_non_canonical_list2(resolve, ty, false)),
+    //         Results::Anon(one) => Self::has_non_canonical_list2(resolve, &one, false),
+    //     }
+    // }
+
+    fn has_non_canonical_list(resolve: &Resolve, args: &[(String, Type)]) -> bool {
+        args.iter()
+            .any(|(_, ty)| Self::has_non_canonical_list2(resolve, ty, false))
+    }
+
     fn generate_function(
         &mut self,
         func: &Function,
@@ -1571,9 +1638,10 @@ impl CppInterfaceGenerator<'_> {
         if !matches!(special, SpecialMethod::Allocate) {
             self.gen.c_src.src.push_str("{\n");
             let needs_dealloc = if self.gen.opts.new_api
-                && !self.gen.opts.symmetric
                 && matches!(variant, AbiVariant::GuestExport)
-                && Self::needs_dealloc(self.resolve, &func.params)
+                && ((!self.gen.opts.symmetric && Self::needs_dealloc(self.resolve, &func.params))
+                    || (self.gen.opts.symmetric
+                        && Self::has_non_canonical_list(self.resolve, &func.params)))
             {
                 self.gen
                     .c_src
@@ -2114,6 +2182,7 @@ impl CppInterfaceGenerator<'_> {
     }
 
     fn declare_import2(
+        &self,
         module_name: &str,
         name: &str,
         args: &str,
@@ -2121,7 +2190,11 @@ impl CppInterfaceGenerator<'_> {
         variant: AbiVariant,
     ) -> (String, String) {
         let extern_name = make_external_symbol(module_name, name, variant);
-        let import = format!("extern \"C\" __attribute__((import_module(\"{module_name}\")))\n __attribute__((import_name(\"{name}\")))\n {result} {extern_name}({args});\n");
+        let import = if self.gen.opts.symmetric {
+            format!("extern \"C\" {result} {extern_name}({args});\n")
+        } else {
+            format!("extern \"C\" __attribute__((import_module(\"{module_name}\")))\n __attribute__((import_name(\"{name}\")))\n {result} {extern_name}({args});\n")
+        };
         (extern_name, import)
     }
 
@@ -2149,7 +2222,7 @@ impl CppInterfaceGenerator<'_> {
         } else {
             AbiVariant::GuestImport
         };
-        let (name, code) = Self::declare_import2(module_name, name, &args, result, variant);
+        let (name, code) = self.declare_import2(module_name, name, &args, result, variant);
         self.gen.extern_c_decls.push_str(&code);
         name
     }
@@ -3014,6 +3087,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     && matches!(self.variant, AbiVariant::GuestExport)
                     && !self.gen.gen.opts.symmetric
                 {
+                    assert!(self.needs_dealloc);
                     self.push_str(&format!("if ({len}>0) _deallocate.push_back({base});\n"));
                 }
 
@@ -3026,6 +3100,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 uwrite!(self.src, "{}", body.0);
                 uwriteln!(self.src, "auto e{tmp} = {};", body.1[0]);
                 if let Some(code) = self.leak_on_insertion.take() {
+                    assert!(self.needs_dealloc);
                     uwriteln!(self.src, "{code}");
                 }
                 // inplace construct
@@ -3040,9 +3115,13 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 }
                 if self.gen.gen.opts.new_api && matches!(self.variant, AbiVariant::GuestExport) {
                     results.push(format!("{result}.get_const_view()"));
-                    if !self.gen.gen.opts.symmetric {
-                        self.leak_on_insertion
-                            .replace(format!("_deallocate.push_back((void*){result}.leak());\n"));
+                    if !self.gen.gen.opts.symmetric
+                        || (self.gen.gen.opts.new_api
+                            && matches!(self.variant, AbiVariant::GuestExport))
+                    {
+                        self.leak_on_insertion.replace(format!(
+                            "if ({len}>0) _deallocate.push_back((void*){result}.leak());\n"
+                        ));
                     }
                 } else {
                     results.push(format!("std::move({result})"));
