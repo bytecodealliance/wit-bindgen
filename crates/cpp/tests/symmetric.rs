@@ -239,14 +239,15 @@ fn symmetric_integration() -> io::Result<()> {
     tester_source_dir.push("symmetric_tests");
 
     let default_testcases = vec![
-        "smoke",
-        "strings",
-        "numbers",
         "flavorful",
         "lists",
-        "options",
         "many_arguments",
+        "numbers",
+        "options",
         "records",
+        "results",
+        "smoke",
+        "strings",
     ];
     let testcases: Vec<String> = std::env::var_os("SYMMETRIC_TESTS").map_or_else(
         || {
