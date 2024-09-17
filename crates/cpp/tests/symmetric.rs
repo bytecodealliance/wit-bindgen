@@ -245,6 +245,8 @@ fn symmetric_integration() -> io::Result<()> {
         "flavorful",
         "lists",
         "options",
+        "many_arguments",
+        "records",
     ];
     let testcases: Vec<String> = std::env::var_os("SYMMETRIC_TESTS").map_or_else(
         || {
