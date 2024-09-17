@@ -50,7 +50,7 @@ macro_rules! codegen_test {
                 "return-resource-from-export",
                 "same-names5",
                 "simple-http",
-                "simple-lists",
+                // "simple-lists",
                 "use-across-interfaces",
                 "variants",
                 "variants-unioning-types",
@@ -68,8 +68,9 @@ macro_rules! codegen_test {
                 "cpp",
                 $test.as_ref(),
                 |resolve, world, files| {
-                    wit_bindgen_cpp::Opts::default()
-                        .build()
+                    let mut opts = wit_bindgen_cpp::Opts::default();
+                    opts.new_api = true;
+                    opts.build()
                         .generate(resolve, world, files)
                         .unwrap()
                 },

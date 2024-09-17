@@ -1527,6 +1527,7 @@ impl CppInterfaceGenerator<'_> {
                     .c_src
                     .src
                     .push_str("std::vector<void*> _deallocate;\n");
+                self.gen.dependencies.needs_vector = true;
                 true
             } else {
                 false
@@ -2648,13 +2649,31 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         }
     }
 
+    fn has_resources2(&self, ty: &Type) -> bool {
+        match ty {
+            Type::Bool |
+            Type::U8 |
+            Type::U16 |
+            Type::U32 |
+            Type::U64 |
+            Type::S8 |
+            Type::S16 |
+            Type::S32 |
+            Type::S64 |
+            Type::F32 |
+            Type::F64 |
+            Type::Char => false,
+            Type::String => false, // correct?
+            Type::Id(id) => self.has_resources(id),
+        }
+    }
     fn has_resources(&self, id: &TypeId) -> bool {
         match &self.gen.resolve.types[*id].kind {
             TypeDefKind::Record(_) => todo!(),
             TypeDefKind::Resource => true,
             TypeDefKind::Handle(_) => true,
             TypeDefKind::Flags(_) => false,
-            TypeDefKind::Tuple(_) => todo!(),
+            TypeDefKind::Tuple(t) => t.types.iter().any(|ty| self.has_resources2(ty)),
             TypeDefKind::Variant(_) => todo!(),
             TypeDefKind::Enum(_) => false,
             TypeDefKind::Option(_) => todo!(),
