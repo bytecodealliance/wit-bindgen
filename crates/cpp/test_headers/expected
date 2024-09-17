@@ -1,3 +1,7 @@
+// work around g++ system header limitation
+#define unexpected unexpected_old
+#include <exception>
+#undef unexpected
 #include <expected.hpp>
 
 namespace std {
