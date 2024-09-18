@@ -2824,7 +2824,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::Return { amt: _, func } => {
                 for Cleanup { address } in &self.cleanup {
-                        uwriteln!(self.src, "{address}.Free();");
+                    uwriteln!(self.src, "{address}.Free();");
                 }
 
                 if self.needs_native_alloc_list {
