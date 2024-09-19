@@ -1961,6 +1961,7 @@ struct FunctionBindgen<'a, 'b> {
     blocks: Vec<Block>,
     payloads: Vec<String>,
     needs_cleanup_list: bool,
+    needs_native_alloc_list: bool,
     cleanup: Vec<Cleanup>,
     import_return_pointer_area_size: ArchitectureSize,
     import_return_pointer_area_align: Alignment,
@@ -1994,6 +1995,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             blocks: Vec::new(),
             payloads: Vec::new(),
             needs_cleanup_list: false,
+            needs_native_alloc_list: false,
             cleanup: Vec::new(),
             import_return_pointer_area_size: Default::default(),
             import_return_pointer_area_align: Default::default(),
@@ -2606,16 +2608,18 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let ty = self.gen.type_name_with_qualifier(element, true);
                 let index = self.locals.tmp("index");
 
-                let buffer: String = self.locals.tmp("buffer");
-                let gc_handle = self.locals.tmp("gcHandle");
                 let address = self.locals.tmp("address");
+                let buffer_size = self.locals.tmp("bufferSize");
+                //TODO: wasm64
+                let align = self.gen.gen.sizes.align(element).align_wasm32();
+                self.needs_native_alloc_list = true;
 
                 uwrite!(
                     self.src,
                     "
-                    byte[] {buffer} = new byte[{size} * {list}.Count];
-                    var {gc_handle} = GCHandle.Alloc({buffer}, GCHandleType.Pinned);
-                    var {address} = {gc_handle}.AddrOfPinnedObject();
+                    var {buffer_size} = {size} * (nuint){list}.Count;
+                    var {address} = NativeMemory.AlignedAlloc({buffer_size}, {align});
+                    nativeAllocs.Add((IntPtr){address});
 
                     for (int {index} = 0; {index} < {list}.Count; ++{index}) {{
                         {ty} {block_element} = {list}[{index}];
@@ -2624,12 +2628,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     }}
                     "
                 );
-
-                if realloc.is_none() {
-                    self.cleanup.push(Cleanup {
-                        address: gc_handle.clone(),
-                    });
-                }
 
                 results.push(format!("(int){address}"));
                 results.push(format!("{list}.Count"));
@@ -2834,6 +2832,17 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     uwriteln!(self.src, "{address}.Free();");
                 }
 
+                if self.needs_native_alloc_list {
+                    self.src.insert_str(0, "var nativeAllocs = new List<IntPtr>();
+                        ");
+
+                    uwriteln!(self.src, "\
+                        foreach (var nativeAlloc in nativeAllocs)
+                        {{
+                            NativeMemory.AlignedFree((void*)nativeAlloc);
+                        }}");
+                }
+
                 if !matches!((self.gen.direction, self.kind), (Direction::Import, FunctionKind::Constructor(_))) {
                     match func.results.len() {
                         0 => (),
@@ -2925,7 +2934,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     Direction::Export => {
                         self.gen.gen.needs_rep_table = true;
                         let local_rep = self.locals.tmp("localRep");
-			let export_name = self.gen.gen.all_resources[&id].export_impl_name();
+                        let export_name = self.gen.gen.all_resources[&id].export_impl_name();
                         if is_own {
                             // Note that we set `{op}.Handle` to zero below to ensure that application code doesn't
                             // try to use the instance while the host has ownership.  We'll set it back to non-zero
