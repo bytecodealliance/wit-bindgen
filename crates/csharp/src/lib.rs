@@ -2192,7 +2192,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::F64Load { offset } => results.push(format!("BitConverter.ToDouble(new Span<byte>((void*)({} + {offset}), 8))",operands[0],offset=offset.size_wasm32())),
             Instruction::I32Store { offset }
             | Instruction::PointerStore { offset }
-            | Instruction::LengthStore { offset } => uwriteln!(self.src, "BitConverter.TryWriteBytes(new Span<byte>((void*)({} + {offset}), 4), unchecked((int){}));", operands[1], operands[0],offset=offset.size_wasm32()),
+            | Instruction::LengthStore { offset } => uwriteln!(self.src, "BitConverter.TryWriteBytes(new Span<byte>((void*)({} + {offset}), 4), {});", operands[1], operands[0],offset=offset.size_wasm32()),
             Instruction::I32Store8 { offset } => uwriteln!(self.src, "*(byte*)({} + {offset}) = (byte){};", operands[1], operands[0],offset=offset.size_wasm32()),
             Instruction::I32Store16 { offset } => uwriteln!(self.src, "BitConverter.TryWriteBytes(new Span<byte>((void*)({} + {offset}), 2), (short){});", operands[1], operands[0],offset=offset.size_wasm32()),
             Instruction::I64Store { offset } => uwriteln!(self.src, "BitConverter.TryWriteBytes(new Span<byte>((void*)({} + {offset}), 8), unchecked((long){}));", operands[1], operands[0],offset=offset.size_wasm32()),
