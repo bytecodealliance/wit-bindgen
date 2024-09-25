@@ -2764,7 +2764,7 @@ impl ToMoonBitIdent for str {
             "continue" | "for" | "match" | "if" | "pub" | "priv" | "readonly" | "break"
             | "raise" | "try" | "except" | "catch" | "else" | "enum" | "struct" | "type"
             | "trait" | "return" | "let" | "mut" | "while" | "loop" | "extern" | "with"
-            | "throw" | "init" | "main" | "test" | "in" => {
+            | "throw" | "init" | "main" | "test" | "in" | "guard" => {
                 format!("{self}_")
             }
             _ => self.to_snake_case(),
