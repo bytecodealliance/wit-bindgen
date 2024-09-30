@@ -23,7 +23,7 @@ pub fn object(
 
     // Build a module with one function that's a "dummy function"
     let mut types = TypeSection::new();
-    types.function([], []);
+    types.ty().function([], []);
     module.section(&types);
     let mut funcs = FunctionSection::new();
     funcs.function(0);
