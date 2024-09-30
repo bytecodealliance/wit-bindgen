@@ -59,7 +59,7 @@ impl test_imports::Host for MyImports {
             return Ok(());
         }
         test_imports::MyErrno::A.to_string();
-        format!("{:?}", test_imports::MyErrno::A);
+        let _ = format!("{:?}", test_imports::MyErrno::A);
         fn assert_error<T: std::error::Error>() {}
         assert_error::<test_imports::MyErrno>();
         self.errored = true;
@@ -162,7 +162,7 @@ fn run_test(exports: Flavorful, store: &mut Store<crate::Wasi<MyImports>>) -> Re
 
     assert!(exports.call_errno_result(&mut *store)?.is_err());
     MyErrno::A.to_string();
-    format!("{:?}", MyErrno::A);
+    let _ = format!("{:?}", MyErrno::A);
     fn assert_error<T: std::error::Error>() {}
     assert_error::<MyErrno>();
 
