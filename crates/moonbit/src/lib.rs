@@ -577,13 +577,13 @@ impl WorldGenerator for MoonBit {
             }}
             "
         );
-        if self.return_area_size != 0 {
+        if !self.return_area_size.is_empty() {
             uwriteln!(
                 &mut body,
                 "
                 let return_area : Int = {ffi_qualifier}malloc({})
                 ",
-                self.return_area_size,
+                self.return_area_size.size_wasm32(),
             );
         }
         files.push(&format!("{EXPORT_DIR}/ffi.mbt"), indent(&body).as_bytes());
