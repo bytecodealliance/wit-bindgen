@@ -31,6 +31,15 @@ fn verify(dir: &Path, _name: &str) {
     cmd.arg("check")
         .arg("--target")
         .arg("wasm")
+        .arg("--deny-warn")
+        .arg("--source-dir")
+        .arg(dir);
+
+    test_helpers::run_command(&mut cmd);
+    let mut cmd = Command::new("moon");
+    cmd.arg("build")
+        .arg("--target")
+        .arg("wasm")
         .arg("--source-dir")
         .arg(dir);
 
