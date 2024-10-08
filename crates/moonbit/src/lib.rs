@@ -828,7 +828,7 @@ impl InterfaceGenerator<'_> {
 
         let func_sig = self.sig_string(func, true);
 
-        let export_name = func.core_export_name(interface_name);
+        let export_name = func.legacy_core_export_name(interface_name);
 
         let mut toplevel_generator =
             self.gen

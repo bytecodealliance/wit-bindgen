@@ -608,7 +608,7 @@ macro_rules! {macro_name} {{
             Identifier::World(_) => None,
         };
         let export_prefix = self.gen.opts.export_prefix.as_deref().unwrap_or("");
-        let export_name = func.core_export_name(wasm_module_export_name.as_deref());
+        let export_name = func.legacy_core_export_name(wasm_module_export_name.as_deref());
         uwrite!(
             self.src,
             "\
