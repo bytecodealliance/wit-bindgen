@@ -556,7 +556,7 @@ impl InterfaceGenerator<'_> {
     fn export(&mut self, interface_name: Option<&str>, func: &Function) {
         let sig = self.resolve.wasm_signature(AbiVariant::GuestExport, func);
 
-        let export_name = func.core_export_name(interface_name);
+        let export_name = func.legacy_core_export_name(interface_name);
 
         let mut bindgen = FunctionBindgen::new(
             self,

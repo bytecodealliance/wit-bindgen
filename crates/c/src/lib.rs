@@ -1778,7 +1778,7 @@ impl InterfaceGenerator<'_> {
         self.src.c_fns("\n");
 
         let core_module_name = interface_name.map(|s| self.resolve.name_world_key(s));
-        let export_name = func.core_export_name(core_module_name.as_deref());
+        let export_name = func.legacy_core_export_name(core_module_name.as_deref());
 
         // Print the actual header for this function into the header file, and
         // it's what we'll be calling.

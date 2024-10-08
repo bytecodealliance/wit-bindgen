@@ -32,11 +32,11 @@ indexmap = "2.0.0"
 prettyplease = "0.2.20"
 syn = { version = "2.0", features = ["printing"] }
 
-wasmparser = "0.218.0"
-wasm-encoder = "0.218.0"
-wasm-metadata = "0.218.0"
-wit-parser = "0.218.0"
-wit-component = "0.218.0"
+wasmparser = "0.219.0"
+wasm-encoder = "0.219.0"
+wasm-metadata = "0.219.0"
+wit-parser = "0.219.0"
+wit-component = "0.219.0"
 
 wit-bindgen-core = { path = 'crates/core', version = '0.33.0' }
 wit-bindgen-c = { path = 'crates/c', version = '0.33.0' }
