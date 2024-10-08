@@ -7,38 +7,35 @@ use std::{
 
 use wit_bindgen_core::wit_parser::{Resolve, WorldId};
 
-fn tests(
+fn tester_source_file(
+    dir_name: &str,
+    tester_source_dir: &PathBuf,
+) -> Option<PathBuf> {
+    let mut tester_source_file = tester_source_dir.clone();
+    tester_source_file.push(&format!("{dir_name}.rs"));
+    if matches!(std::fs::exists(&tester_source_file), Ok(true)) {
+        Some(tester_source_file)
+    } else { None }
+}
+
+fn create_cargo_files(
     dir_name: &str,
     out_dir: &PathBuf,
     toplevel: &PathBuf,
     source_files: &PathBuf,
     tester_source_dir: &PathBuf,
 ) -> io::Result<()> {
-    // modelled after wit-bindgen/tests/runtime/main.rs
-    let mut tester_source_file = tester_source_dir.clone();
-    tester_source_file.push(&format!("{dir_name}.rs"));
-    if !std::fs::exists(&tester_source_file)? {
+    let Some(tester_source_file) = tester_source_file(dir_name, tester_source_dir) else {
         println!("Skipping {}", dir_name);
         return Ok(());
-    }
-
-    let mut dir = source_files.clone();
-    dir.push(dir_name);
-
-    // let mut rust = Vec::new();
-    let mut cpp = Vec::new();
-    for file in dir.read_dir()? {
-        let path = file?.path();
-        match path.extension().and_then(|s| s.to_str()) {
-            // Some("rs") => rust.push(path),
-            Some("cpp") => cpp.push(path),
-            _ => {}
-        }
-    }
+    };
 
     let mut out_dir = out_dir.clone();
     out_dir.push(dir_name);
     // println!("{cpp:?} {out_dir:?}");
+
+    let mut dir = source_files.clone();
+    dir.push(dir_name);
 
     drop(std::fs::remove_dir_all(&out_dir));
     std::fs::create_dir_all(&out_dir)?;
@@ -63,6 +60,10 @@ fn tests(
     let mut filename = testee_dir.clone();
     filename.push("Cargo.toml");
     File::create(&filename)?.write_all(testee_cargo.as_bytes())?;
+    drop(testee_cargo);
+    // let mut testee_dir = out_dir.clone();
+    // testee_dir.push("rust");
+    //let mut filename = testee_dir.clone();
     filename.pop();
     filename.push("src");
     std::fs::create_dir(&filename)?;
@@ -70,15 +71,10 @@ fn tests(
     let mut original = dir.clone();
     original.push("wasm.rs");
     std::os::unix::fs::symlink(original, filename)?;
-    drop(testee_cargo);
 
     let tester_cargo = format!(
-        "[workspace]\n\
-            members = [ \"rust\" ]\n\
-            resolver = \"2\"\n\
-            \n\
-            [package]\n\
-            name = \"tester\"\n\
+        "[package]\n\
+            name = \"tester-{dir_name}\"\n\
             publish = false\n\
             edition = \"2021\"\n\
             \n\
@@ -92,10 +88,61 @@ fn tests(
     filename.push("Cargo.toml");
     File::create(&filename)?.write_all(tester_cargo.as_bytes())?;
     filename.pop();
+    // let mut filename = out_dir.clone();
     filename.push("src");
     std::fs::create_dir(&filename)?;
     filename.push(format!("main.rs"));
     std::os::unix::fs::symlink(tester_source_file, &filename)?;
+
+    Ok(())
+}
+
+fn tests(
+    dir_name: &str,
+    out_dir: &PathBuf,
+    _toplevel: &PathBuf,
+    source_files: &PathBuf,
+    tester_source_dir: &PathBuf,
+) -> io::Result<()> {
+    // modelled after wit-bindgen/tests/runtime/main.rs
+    let Some(tester_source_file) = tester_source_file(dir_name, tester_source_dir) else {
+        println!("Skipping {}", dir_name);
+        return Ok(());
+    };
+
+    let mut dir = source_files.clone();
+    dir.push(dir_name);
+
+    // let mut rust = Vec::new();
+    let mut cpp = Vec::new();
+    for file in dir.read_dir()? {
+        let path = file?.path();
+        match path.extension().and_then(|s| s.to_str()) {
+            // Some("rs") => rust.push(path),
+            Some("cpp") => cpp.push(path),
+            _ => {}
+        }
+    }
+
+    let mut out_dir = out_dir.clone();
+    out_dir.push(dir_name);
+    // println!("{cpp:?} {out_dir:?}");
+
+    let mut testee_dir = out_dir.clone();
+    testee_dir.push("rust");
+    let mut filename = testee_dir.clone();
+    filename.push("src");
+//    std::fs::create_dir(&filename)?;
+    filename.push(format!("lib.rs"));
+    let mut original = dir.clone();
+    original.push("wasm.rs");
+//    std::os::unix::fs::symlink(original, filename)?;
+
+    let mut filename = out_dir.clone();
+    filename.push("src");
+//    std::fs::create_dir(&filename)?;
+    filename.push(format!("main.rs"));
+//    std::os::unix::fs::symlink(tester_source_file, &filename)?;
 
     let mut cmd = Command::new("cargo");
     cmd.arg("build")
@@ -264,7 +311,25 @@ fn symmetric_integration() -> io::Result<()> {
                 .collect()
         },
     );
-
+    // create workspace
+    {
+        let mut workspace = format!(
+            "[workspace]\n\
+                resolver = \"2\"\n\
+                \n\
+                members = [\n"
+        );
+        for dir_name in testcases.iter() {
+            if tester_source_file(dir_name, &tester_source_dir).is_some() {
+            workspace.push_str(&format!("    \"{}\",\n    \"{}/rust\",\n", dir_name, dir_name));
+            }
+            create_cargo_files(dir_name, &out_dir, &toplevel, &source_files, &tester_source_dir)?;
+        }
+        workspace.push_str("]\n");
+        let mut filename = out_dir.clone();
+        filename.push("Cargo.toml");
+        File::create(&filename)?.write_all(workspace.as_bytes())?;
+    }
     for dir_name in testcases {
         tests(
             &dir_name,
