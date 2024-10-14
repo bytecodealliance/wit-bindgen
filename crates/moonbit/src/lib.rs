@@ -88,7 +88,7 @@ pub fn malloc(size : Int) -> Int {
   let words = size / 4 + 1
   let address = malloc_inline(8 + words * 4)
   store32(address, 1)
-  store32(address + 4, words.lsl(8).lor(246))
+  store32(address + 4, (words << 8) | 246)
   store8(address + words * 4 + 7, 3 - size % 4)
   address + 8
 }
@@ -173,7 +173,7 @@ pub fn ptr2double_array(ptr : Int) -> FixedArray[Double] {
 
 fn set_64_header_ffi(offset : Int) -> Unit {
   let len = load32(offset)
-  store32(offset, len.lsr(1))
+  store32(offset, len >> 1)
   store8(offset, 241)
 }
 
@@ -1791,8 +1791,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.push(format!("({}).reinterpret_as_int()", operands[0]))
             }
 
-            Instruction::U64FromI64 => results.push(format!("({}).to_uint64()", operands[0])),
-            Instruction::I64FromU64 => results.push(format!("({}).to_int64()", operands[0])),
+            Instruction::U64FromI64 => {
+                results.push(format!("({}).reinterpret_as_uint64()", operands[0]))
+            }
+            Instruction::I64FromU64 => {
+                results.push(format!("({}).reinterpret_as_int64()", operands[0]))
+            }
 
             Instruction::I32FromBool => {
                 results.push(format!("(if {} {{ 1 }} else {{ 0 }})", operands[0]));
@@ -1856,7 +1860,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
                 Int::U64 => {
                     results.push(format!(
-                        "{}(({}).reinterpret_as_uint().to_uint64().lor(({}).reinterpret_as_uint().to_uint64.lsl(32)))",
+                        "{}(({}).reinterpret_as_uint().to_uint64() | (({}).reinterpret_as_uint().to_uint64() << 32))",
                         self.gen.type_name(&Type::Id(*ty), true),
                         operands[0],
                         operands[1]
