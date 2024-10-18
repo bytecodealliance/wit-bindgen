@@ -185,11 +185,11 @@ world host {
 
 ### Guest: Rust
 
-The Rust compiler supports a native `wasm32-wasip1` target and can be added to
+The Rust compiler since version 1.82 supports a native `wasm32-wasip2` target and can be added to
 any `rustup`-based toolchain with:
 
 ```sh
-rustup target add wasm32-wasip1
+rustup target add wasm32-wasip2
 ```
 
 In order to compile a wasi dynamic library, the following must be added to the
@@ -244,17 +244,15 @@ generated code (which is probably also a bug in `wit-bindgen`), you can use
 This project can then be built with:
 
 ```sh
-cargo build --target wasm32-wasip1
-wasm-tools component new ./target/wasm32-wasip1/debug/my-project.wasm \
-    -o my-component.wasm --adapt ./wasi_snapshot_preview1.reactor.wasm
+cargo build --target wasm32-wasip2
 ```
 
-This creates a `my-component.wasm` file which is suitable to execute in any
+This creates a `./target/wasm32-wasip2/debug/my-project.wasm` file which is suitable to execute in any
 component runtime. Using `wasm-tools` you can inspect the binary as well, for
 example inferring the WIT world that is the component:
 
 ```sh
-wasm-tools component wit my-component.wasm
+wasm-tools component wit ./target/wasm32-wasip2/debug/my-project.wasm
 # world my-component {
 #  import print: func(msg: string)
 #  export run: func()
