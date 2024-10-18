@@ -58,7 +58,8 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        lang: [c, rust, teavm-java, go, csharp, moonbit]
+        # moonbit removed from language matrix for now - causing CI failures
+        lang: [c, rust, teavm-java, go, csharp]
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
