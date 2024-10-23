@@ -2784,7 +2784,7 @@ impl ToMoonBitIdent for str {
             "continue" | "for" | "match" | "if" | "pub" | "priv" | "readonly" | "break"
             | "raise" | "try" | "except" | "catch" | "else" | "enum" | "struct" | "type"
             | "trait" | "return" | "let" | "mut" | "while" | "loop" | "extern" | "with"
-            | "throw" | "init" | "main" | "test" | "in" | "guard" => {
+            | "throw" | "init" | "main" | "test" | "in" | "guard" | "typealias" => {
                 format!("{self}_")
             }
             _ => self.to_snake_case(),
@@ -2802,7 +2802,7 @@ impl ToMoonBitTypeIdent for str {
         match self.to_upper_camel_case().as_str() {
             type_name @ ("Bool" | "Byte" | "Int" | "Int64" | "UInt" | "UInt64" | "Float"
             | "Double" | "Error" | "Buffer" | "Bytes" | "Array" | "FixedArray"
-            | "Map" | "String" | "Option" | "Result" | "Char") => {
+            | "Map" | "String" | "Option" | "Result" | "Char" | "Json") => {
                 format!("{type_name}_")
             }
             type_name => type_name.to_owned(),
