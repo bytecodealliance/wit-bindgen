@@ -25,18 +25,6 @@ use wit_component::{StringEncoding, WitPrinter};
 mod csproj;
 pub use csproj::CSProject;
 
-//TODO remove unused
-const CSHARP_IMPORTS: &str = "\
-using System;
-using System.Runtime.CompilerServices;
-using System.Collections;
-using System.Runtime.InteropServices;
-using System.Text;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
-";
-
 #[derive(Default, Debug, Clone)]
 #[cfg_attr(feature = "clap", derive(clap::Args))]
 pub struct Opts {
@@ -133,6 +121,8 @@ pub enum FunctionLevel {
 pub struct CSharp {
     opts: Opts,
     name: String,
+    //TODO remove unused
+    usings: HashSet<String>,
     return_area_size: usize,
     return_area_align: usize,
     tuple_counts: HashSet<usize>,
@@ -194,6 +184,13 @@ impl CSharp {
             (qualifier.unwrap_or("").to_string(), last_part.to_string())
         } else {
             (String::new(), String::new())
+        }
+    }
+
+    fn require_using(&mut self, using_ns: &str) {
+        if !self.usings.contains(using_ns) {
+            let using_ns_string = using_ns.to_string();
+            self.usings.insert(using_ns_string);
         }
     }
 }
@@ -405,9 +402,11 @@ impl WorldGenerator for CSharp {
 
         let access = self.access_modifier();
 
+        let using_pos = src.len();
+
         uwrite!(
             src,
-            "{CSHARP_IMPORTS}
+            "
 
              namespace {world_namespace} {{
 
@@ -434,6 +433,7 @@ impl WorldGenerator for CSharp {
         src.push_str("}\n");
 
         if self.needs_result {
+            self.require_using("System.Runtime.InteropServices");
             uwrite!(
                 src,
                 r#"
@@ -495,6 +495,7 @@ impl WorldGenerator for CSharp {
         }
 
         if self.needs_option {
+            self.require_using("System.Diagnostics.CodeAnalysis");
             uwrite!(
                 src,
                 r#"
@@ -525,6 +526,7 @@ impl WorldGenerator for CSharp {
         }
 
         if self.needs_interop_string {
+            self.require_using("System.Text");
             uwrite!(
                 src,
                 r#"
@@ -568,6 +570,8 @@ impl WorldGenerator for CSharp {
 
             let (array_size, element_type) =
                 dotnet_aligned_array(self.return_area_size, self.return_area_align);
+
+            self.require_using("System.Runtime.CompilerServices");
             uwrite!(
                 ret_area_str,
                 "
@@ -623,6 +627,16 @@ impl WorldGenerator for CSharp {
 
         src.push_str("}\n");
 
+        src.insert_str(
+            using_pos,
+            &self
+                .usings
+                .iter()
+                .map(|s| "using ".to_owned() + s + ";")
+                .collect::<Vec<String>>()
+                .join("\n"),
+        );
+
         files.push(&format!("{name}.cs"), indent(&src).as_bytes());
 
         let generate_stub = |name: String, files: &mut Files, stubs: Stubs| {
@@ -668,8 +682,6 @@ impl WorldGenerator for CSharp {
 
             let body = format!(
                 "{header}
-                 {CSHARP_IMPORTS}
-
                  namespace {fully_qualified_namespace};
 
                  {access} partial class {stub_class_name} : {interface_or_class_name} {{
@@ -789,14 +801,20 @@ impl WorldGenerator for CSharp {
             if body.len() > 0 {
                 let body = format!(
                     "{header}
-                    {CSHARP_IMPORTS}
+                    {0}
 
                     namespace {namespace};
 
                     {access} interface {interface_name} {{
                         {body}
                     }}
-                    "
+                    ",
+                    &self
+                        .usings
+                        .iter()
+                        .map(|s| "using ".to_owned() + s + ";")
+                        .collect::<Vec<String>>()
+                        .join("\n"),
                 );
 
                 files.push(&format!("{full_name}.cs"), indent(&body).as_bytes());
@@ -812,7 +830,7 @@ impl WorldGenerator for CSharp {
             let class_name = interface_name.strip_prefix("I").unwrap();
             let body = format!(
                 "{header}
-                {CSHARP_IMPORTS}
+                 {0}
 
                 namespace {namespace}
                 {{
@@ -820,7 +838,13 @@ impl WorldGenerator for CSharp {
                       {body}
                   }}
                 }}
-                "
+                ",
+                &self
+                    .usings
+                    .iter()
+                    .map(|s| "using ".to_owned() + s + ";\n")
+                    .collect::<Vec<String>>()
+                    .join("\n"),
             );
 
             files.push(
@@ -1082,6 +1106,8 @@ impl InterfaceGenerator<'_> {
 
         let import_name = &func.name;
 
+        self.gen.require_using("System.Runtime.InteropServices");
+
         let target = if let FunctionKind::Freestanding = &func.kind {
             &mut self.csharp_interop_src
         } else {
@@ -1229,6 +1255,7 @@ impl InterfaceGenerator<'_> {
         let export_name = func.legacy_core_export_name(core_module_name.as_deref());
         let access = self.gen.access_modifier();
 
+        self.gen.require_using("System.Runtime.InteropServices");
         uwrite!(
             self.csharp_interop_src,
             r#"
@@ -1482,6 +1509,7 @@ impl InterfaceGenerator<'_> {
                     .map(|s| format!("{}#", self.resolve.name_world_key(s)))
                     .unwrap_or_else(String::new);
 
+                self.gen.require_using("System.Runtime.InteropServices");
                 uwrite!(
                     self.csharp_interop_src,
                     r#"
@@ -2584,10 +2612,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.gen.gen.needs_interop_string = true;
             }
 
-            Instruction::StringLift { .. } => results.push(format!(
-                "Encoding.UTF8.GetString((byte*){}, {})",
-                operands[0], operands[1]
-            )),
+            Instruction::StringLift { .. } => {
+                self.gen.gen.require_using("System.Text");
+                results.push(format!(
+                    "Encoding.UTF8.GetString((byte*){}, {})",
+                    operands[0], operands[1]
+                ));
+            }
 
             Instruction::ListLower { element, realloc } => {
                 let Block {
