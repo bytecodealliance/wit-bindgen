@@ -537,8 +537,8 @@ impl WorldGenerator for MoonBit {
             files.push(&format!("{directory}/top.mbt"), indent(&src).as_bytes());
             if !self.opts.ignore_stub {
                 files.push(&format!("{directory}/stub.mbt"), indent(&stub).as_bytes());
+                generate_pkg_definition(&name, files);
             }
-            generate_pkg_definition(&name, files);
             generate_ffi(directory, fragments, files);
         }
 
