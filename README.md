@@ -400,7 +400,14 @@ You will find the files to be modified with the name `**/stub.mbt`.
 
 ### Guest: Other Languages
 
-Other languages such as JS, Ruby, Python, etc, are hoped to be supported one day
+Guest component support for JavaScript and Python is available in
+[componentize-js](https://github.com/bytecodealliance/ComponentizeJS) and
+[componentize-py](https://github.com/bytecodealliance/componentize-py), respectively.
+See also
+[The WebAssembly Component Model developer's guide](https://component-model.bytecodealliance.org/language-support.html)
+for examples of how to build components using various languages.
+
+Other languages such as Ruby, etc, are hoped to be supported one day
 with `wit-bindgen` or with components in general. It's recommended to reach out
 on [zulip] if you're intersted in contributing a generator for one of these
 langauges. It's worth noting, however, that turning an interpreted language into
