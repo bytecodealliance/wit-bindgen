@@ -318,65 +318,20 @@ e.g. Java, Kotlin, Clojure, Scala, etc.
 
 ### Guest: TinyGo
 
-You can compile Go code into a Wasm module using the [TinyGo](https://tinygo.org/) compiler. For example, the following command compiles `main.go` to a WASI module:
+The **new** TinyGo WIT bindings generator is currently in development at the
+[wasm-tools-go](https://github.com/bytecodealliance/wasm-tools-go) repository.
 
-`tinygo build -target=wasi main.go`
-
-> Note: the current TinyGo `bindgen` requires TinyGo version v0.27.0 or later.
-
-When using `wit-bindgen tiny-go` bindgen, `*.go` and `*.h` C header file are generated for your project. These files are generated with the [`wit-bindgen` CLI command][cli-install] in this repository.
+To install the `wit-bindgen-go` CLI, run:
 
 ```sh
-wit-bindgen tiny-go ./wit
-# Generating "host.go"
-# Generating "host.c"
-# Generating "host.h"
-# Generating "host_component_type.o"
+go install github.com/bytecodealliance/wasm-tools-go/cmd/wit-bindgen-go
 ```
+> Note: it requires `wasm-tools` to be installed.
 
-If your Go code uses `result` or `option` type, an additional Go file `host_types.go` will be generated. This file contains the Go types that correspond to the `result` and `option` types in the WIT file.
-
-An example of using the generated Go code would look like:
-
-Initialize Go:
-```bash
-go mod init example.com
-```
-
-Create your Go main file:
-
-```go
-// my-component.go
-package main
-
-import (
-	api "example.com/api"
-)
-
-func init() {
-    a := HostImpl{}
-    api.SetHost(a)
-}
-
-type HostImpl struct {
-}
-
-func (e HostImpl) Run() {
-  api.HostPrint("Hello, world!")
-}
-
-//go:generate wit-bindgen tiny-go wit --out-dir=api
-func main() {}
-```
-
-This setup allows you to invoke `go generate`, which generates the bindings for the Go code into an `api` directory. Afterward, you can compile your Go code into a WASI module using the TinyGo compiler. Lastly you can componentize the module using `wasm-tools`:
+Then, you can generate the bindings for your project:
 
 ```sh
-go generate # generate bindings for Go
-tinygo build -target=wasi -o main.wasm my-component.go # compile
-wasm-tools component embed --world host ./wit main.wasm -o main.embed.wasm # create a component
-wasm-tools component new main.embed.wasm --adapt wasi_snapshot_preview1.command.wasm -o main.component.wasm
-wasm-tools validate main.component.wasm --features component-model
+wit-bindgen-go generate <path-to-wit-pkg>
 ```
 
 ### Guest: MoonBit
