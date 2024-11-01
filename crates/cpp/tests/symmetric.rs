@@ -7,15 +7,14 @@ use std::{
 
 use wit_bindgen_core::wit_parser::{Resolve, WorldId};
 
-fn tester_source_file(
-    dir_name: &str,
-    tester_source_dir: &PathBuf,
-) -> Option<PathBuf> {
+fn tester_source_file(dir_name: &str, tester_source_dir: &PathBuf) -> Option<PathBuf> {
     let mut tester_source_file = tester_source_dir.clone();
     tester_source_file.push(&format!("{dir_name}.rs"));
     if matches!(std::fs::exists(&tester_source_file), Ok(true)) {
         Some(tester_source_file)
-    } else { None }
+    } else {
+        None
+    }
 }
 
 fn create_cargo_files(
@@ -132,17 +131,17 @@ fn tests(
     testee_dir.push("rust");
     let mut filename = testee_dir.clone();
     filename.push("src");
-//    std::fs::create_dir(&filename)?;
+    //    std::fs::create_dir(&filename)?;
     filename.push(format!("lib.rs"));
     let mut original = dir.clone();
     original.push("wasm.rs");
-//    std::os::unix::fs::symlink(original, filename)?;
+    //    std::os::unix::fs::symlink(original, filename)?;
 
     let mut filename = out_dir.clone();
     filename.push("src");
-//    std::fs::create_dir(&filename)?;
+    //    std::fs::create_dir(&filename)?;
     filename.push(format!("main.rs"));
-//    std::os::unix::fs::symlink(tester_source_file, &filename)?;
+    //    std::os::unix::fs::symlink(tester_source_file, &filename)?;
 
     let mut cmd = Command::new("cargo");
     cmd.arg("build")
@@ -321,9 +320,18 @@ fn symmetric_integration() -> io::Result<()> {
         );
         for dir_name in testcases.iter() {
             if tester_source_file(dir_name, &tester_source_dir).is_some() {
-            workspace.push_str(&format!("    \"{}\",\n    \"{}/rust\",\n", dir_name, dir_name));
+                workspace.push_str(&format!(
+                    "    \"{}\",\n    \"{}/rust\",\n",
+                    dir_name, dir_name
+                ));
             }
-            create_cargo_files(dir_name, &out_dir, &toplevel, &source_files, &tester_source_dir)?;
+            create_cargo_files(
+                dir_name,
+                &out_dir,
+                &toplevel,
+                &source_files,
+                &tester_source_dir,
+            )?;
         }
         workspace.push_str("]\n");
         let mut filename = out_dir.clone();

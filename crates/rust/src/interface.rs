@@ -1076,7 +1076,7 @@ impl {async_support}::StreamPayload for {name} {{
             }
             (export_name, external_name)
         } else {
-            let export_name = func.core_export_name(wasm_module_export_name.as_deref());
+            let export_name = func.legacy_core_export_name(wasm_module_export_name.as_deref());
             let export_name = if async_ {
                 format!("[async]{export_name}")
             } else {

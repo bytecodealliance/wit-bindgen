@@ -70,9 +70,7 @@ macro_rules! codegen_test {
                 |resolve, world, files| {
                     let mut opts = wit_bindgen_cpp::Opts::default();
                     opts.new_api = true;
-                    opts.build()
-                        .generate(resolve, world, files)
-                        .unwrap()
+                    opts.build().generate(resolve, world, files).unwrap()
                 },
                 verify,
             );

@@ -2651,18 +2651,18 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
 
     fn has_resources2(&self, ty: &Type) -> bool {
         match ty {
-            Type::Bool |
-            Type::U8 |
-            Type::U16 |
-            Type::U32 |
-            Type::U64 |
-            Type::S8 |
-            Type::S16 |
-            Type::S32 |
-            Type::S64 |
-            Type::F32 |
-            Type::F64 |
-            Type::Char => false,
+            Type::Bool
+            | Type::U8
+            | Type::U16
+            | Type::U32
+            | Type::U64
+            | Type::S8
+            | Type::S16
+            | Type::S32
+            | Type::S64
+            | Type::F32
+            | Type::F64
+            | Type::Char => false,
             Type::String => false, // correct?
             Type::Id(id) => self.has_resources(id),
         }
@@ -3404,9 +3404,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 } else {
                     Flavor::InStruct
                 };
-                let type_name = self
-                    .gen
-                    .type_name(*payload, &self.namespace, flavor);
+                let type_name = self.gen.type_name(*payload, &self.namespace, flavor);
                 let full_type = format!("std::optional<{type_name}>");
                 let op0 = &operands[0];
 

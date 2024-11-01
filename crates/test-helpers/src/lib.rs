@@ -6,7 +6,7 @@ use std::process::Command;
 use wasm_encoder::{Encode, Section};
 use wit_bindgen_core::Files;
 use wit_component::StringEncoding;
-use wit_parser::{Resolve, WorldId};
+use wit_parser::{Mangling, Resolve, WorldId};
 
 /// Returns a suitable directory to place output for tests within.
 ///
@@ -96,7 +96,7 @@ pub fn run_component_codegen_test(
 ) {
     let (resolve, world) = parse_wit(wit_path);
     let world_name = &resolve.worlds[world].name;
-    let mut wasm = wit_component::dummy_module(&resolve, world);
+    let mut wasm = wit_component::dummy_module(&resolve, world, Mangling::Standard32);
     let encoded =
         wit_component::metadata::encode(&resolve, world, StringEncoding::UTF8, None).unwrap();
     let section = wasm_encoder::CustomSection {
