@@ -1440,7 +1440,7 @@ impl<'a> wit_bindgen_core::AnonymousTypeGenerator<'a> for InterfaceGenerator<'a>
         todo!("print_anonymous_type for typ");
     }
 
-    fn anonymous_type_error(&mut self, _id: TypeId, _docs: &Docs) {
+    fn anonymous_type_error(&mut self) {
         todo!()
     }
 }
