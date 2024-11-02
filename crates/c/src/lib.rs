@@ -2093,7 +2093,14 @@ impl InterfaceGenerator<'_> {
                     .as_ref()
                     .map_or(false, |ty| self.contains_droppable_borrow(ty)),
 
-                TypeDefKind::Stream(s) => self.contains_droppable_borrow(s),
+                TypeDefKind::Stream(s) => {
+                    s.element
+                        .as_ref()
+                        .map_or(false, |ty| self.contains_droppable_borrow(ty))
+                        || s.end
+                            .as_ref()
+                            .map_or(false, |ty| self.contains_droppable_borrow(ty))
+                }
 
                 TypeDefKind::Type(ty) => self.contains_droppable_borrow(ty),
 

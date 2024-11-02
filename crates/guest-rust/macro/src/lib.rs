@@ -143,6 +143,15 @@ impl Parse for Config {
                     Opt::Features(f) => {
                         features.extend(f.into_iter().map(|f| f.value()));
                     }
+                    Opt::DisableCustomSectionLinkHelpers(disable) => {
+                        opts.disable_custom_section_link_helpers = disable.value();
+                    }
+                    Opt::Symmetric(enable) => {
+                        opts.symmetric = enable.value();
+                    }
+                    Opt::InvertDirection(enable) => {
+                        opts.invert_direction = enable.value();
+                    }
                     Opt::Debug(enable) => {
                         debug = enable.value();
                     }
@@ -152,15 +161,6 @@ impl Parse for Config {
                         }
                         async_configured = true;
                         opts.async_ = val;
-                    }
-                    Opt::DisableCustomSectionLinkHelpers(disable) => {
-                        opts.disable_custom_section_link_helpers = disable.value();
-                    }
-                    Opt::Symmetric(enable) => {
-                        opts.symmetric = enable.value();
-                    }
-                    Opt::InvertDirection(enable) => {
-                        opts.invert_direction = enable.value();
                     }
                 }
             }
@@ -245,7 +245,7 @@ fn parse_source(
             };
             let (pkg, sources) = resolve.push_path(normalized_path)?;
             pkgs.push(pkg);
-            files.extend(sources);
+            files.extend(sources.package_paths(pkg).unwrap().map(|v| v.to_owned()));
         }
         Ok(())
     };
@@ -259,8 +259,6 @@ fn parse_source(
         Some(Source::Paths(p)) => parse(p)?,
         None => parse(&vec![root.join("wit")])?,
     };
-
-    resolve.add_future_and_stream_results();
 
     Ok((resolve, pkgs, files))
 }
@@ -343,11 +341,11 @@ mod kw {
     syn::custom_keyword!(wasm64);
     syn::custom_keyword!(generate_unused_types);
     syn::custom_keyword!(features);
-    syn::custom_keyword!(imports);
-    syn::custom_keyword!(debug);
     syn::custom_keyword!(disable_custom_section_link_helpers);
     syn::custom_keyword!(symmetric);
     syn::custom_keyword!(invert_direction);
+    syn::custom_keyword!(imports);
+    syn::custom_keyword!(debug);
 }
 
 #[derive(Clone)]
@@ -406,11 +404,11 @@ enum Opt {
     Wasm64,
     GenerateUnusedTypes(syn::LitBool),
     Features(Vec<syn::LitStr>),
-    Async(AsyncConfig, Span),
-    Debug(syn::LitBool),
     DisableCustomSectionLinkHelpers(syn::LitBool),
     Symmetric(syn::LitBool),
     InvertDirection(syn::LitBool),
+    Async(AsyncConfig, Span),
+    Debug(syn::LitBool),
 }
 
 impl Parse for Opt {
@@ -557,6 +555,18 @@ impl Parse for Opt {
             syn::bracketed!(contents in input);
             let list = Punctuated::<_, Token![,]>::parse_terminated(&contents)?;
             Ok(Opt::Features(list.into_iter().collect()))
+        } else if l.peek(kw::disable_custom_section_link_helpers) {
+            input.parse::<kw::disable_custom_section_link_helpers>()?;
+            input.parse::<Token![:]>()?;
+            Ok(Opt::DisableCustomSectionLinkHelpers(input.parse()?))
+        } else if l.peek(kw::symmetric) {
+            input.parse::<kw::symmetric>()?;
+            input.parse::<Token![:]>()?;
+            Ok(Opt::Symmetric(input.parse()?))
+        } else if l.peek(kw::invert_direction) {
+            input.parse::<kw::invert_direction>()?;
+            input.parse::<Token![:]>()?;
+            Ok(Opt::InvertDirection(input.parse()?))
         } else if l.peek(kw::debug) {
             input.parse::<kw::debug>()?;
             input.parse::<Token![:]>()?;
@@ -585,18 +595,6 @@ impl Parse for Opt {
                 }
                 Ok(Opt::Async(AsyncConfig::Some { imports, exports }, span))
             }
-        } else if l.peek(kw::disable_custom_section_link_helpers) {
-            input.parse::<kw::disable_custom_section_link_helpers>()?;
-            input.parse::<Token![:]>()?;
-            Ok(Opt::DisableCustomSectionLinkHelpers(input.parse()?))
-        } else if l.peek(kw::symmetric) {
-            input.parse::<kw::symmetric>()?;
-            input.parse::<Token![:]>()?;
-            Ok(Opt::Symmetric(input.parse()?))
-        } else if l.peek(kw::invert_direction) {
-            input.parse::<kw::invert_direction>()?;
-            input.parse::<Token![:]>()?;
-            Ok(Opt::InvertDirection(input.parse()?))
         } else {
             Err(l.error())
         }

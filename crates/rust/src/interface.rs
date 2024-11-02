@@ -544,7 +544,6 @@ macro_rules! {macro_name} {{
             .into_iter()
             .enumerate()
         {
-            let payload_result = self.gen.payload_results[&ty];
             let module = format!(
                 "{prefix}{}",
                 interface
@@ -582,56 +581,40 @@ macro_rules! {macro_name} {{
                     };
 
                     if self.gen.future_payloads_emitted.insert(full_name) {
-                        let send = Function {
-                            name: format!("[future-send-{index}]{func_name}"),
-                            kind: FunctionKind::Freestanding,
-                            params: if let Some(payload_type) = payload_type {
-                                vec![
-                                    ("sender".into(), Type::U32),
-                                    ("value".into(), *payload_type),
-                                ]
-                            } else {
-                                vec![("sender".into(), Type::U32)]
-                            },
-                            results: Results::Anon(Type::Id(self.gen.unit_result.unwrap())),
-                            docs: Default::default(),
-                            stability: Stability::default(),
+                        // TODO: `future.read` and `future.write` should always read from and write to the heap,
+                        // and the return value will be either 0xffff_ffff (blocked), 0x8000_0000 (closed), or 0x1
+                        // (done).
+                        let (size, align) = if let Some(payload_type) = payload_type {
+                            (
+                                self.sizes.size(payload_type),
+                                self.sizes.align(payload_type),
+                            )
+                        } else {
+                            (
+                                ArchitectureSize {
+                                    bytes: 0,
+                                    pointers: 0,
+                                },
+                                Alignment::default(),
+                            )
                         };
-                        let old = mem::take(&mut self.src);
-                        self.generate_guest_import_body(
-                            &module,
-                            &send,
-                            if payload_type.is_some() {
-                                vec!["sender".into(), "value".into()]
-                            } else {
-                                vec!["sender".into()]
-                            },
-                            true,
-                        );
-                        let send = String::from(mem::replace(&mut self.src, old));
-
-                        let receive = Function {
-                            name: format!("[future-receive-{index}]{func_name}"),
-                            kind: FunctionKind::Freestanding,
-                            params: vec![("receiver".into(), Type::U32)],
-                            results: Results::Anon(Type::Id(payload_result)),
-                            docs: Default::default(),
-                            stability: Stability::default(),
+                        let size = size.size_wasm32();
+                        let align = align.align_wasm32();
+                        let (lower, lift) = if let Some(payload_type) = payload_type {
+                            let lower =
+                                self.lower_to_memory("address", "value", &payload_type, &module);
+                            let lift =
+                                self.lift_from_memory("address", "value", &payload_type, &module);
+                            (lower, lift)
+                        } else {
+                            (String::new(), "let value = ();\n".into())
                         };
-                        let old = mem::take(&mut self.src);
-                        self.generate_guest_import_body(
-                            &module,
-                            &receive,
-                            vec!["receiver".into()],
-                            true,
-                        );
-                        let receive = String::from(mem::replace(&mut self.src, old));
 
                         uwriteln!(
                             self.src,
                             r#"
 impl {async_support}::FuturePayload for {name} {{
-    fn new() -> (u32, u32) {{
+    fn new() -> u32 {{
         #[cfg(not(target_arch = "wasm32"))]
         {{
             unreachable!();
@@ -642,23 +625,64 @@ impl {async_support}::FuturePayload for {name} {{
             #[link(wasm_import_module = "{module}")]
             extern "C" {{
                 #[link_name = "[future-new-{index}]{func_name}"]
-                fn new(_: *mut u32);
+                fn new() -> u32;
             }}
-            let mut results = [0u32; 2];
-            unsafe {{ new(results.as_mut_ptr()) }};
-            (results[0], results[1])
+            unsafe {{ new() }}
         }}
     }}
 
-    async fn send(sender: u32, value: Self) -> Result<(), {async_support}::Error> {{
-        unsafe {{ {send} }}
+    async fn write(future: u32, value: Self) -> bool {{
+        #[cfg(not(target_arch = "wasm32"))]
+        {{
+            unreachable!();
+        }}
+
+        #[cfg(target_arch = "wasm32")]
+        {{
+            #[repr(align({align}))]
+            struct Buffer([::core::mem::MaybeUninit::<u8>; {size}]);
+            let mut buffer = Buffer([::core::mem::MaybeUninit::uninit(); {size}]);
+            let address = buffer.0.as_mut_ptr() as *mut u8;
+            {lower}
+        
+            #[link(wasm_import_module = "{module}")]
+            extern "C" {{
+                #[link_name = "[async][future-write-{index}]{func_name}"]
+                fn wit_import(_: u32, _: *mut u8) -> u32;
+            }}
+
+            unsafe {{ {async_support}::await_future_result(wit_import, future, address).await }}
+        }}
     }}
 
-    async fn receive(receiver: u32) -> Result<Self, {async_support}::Error> {{
-        unsafe {{ {receive} }}
+    async fn read(future: u32) -> Option<Self> {{
+        #[cfg(not(target_arch = "wasm32"))]
+        {{
+            unreachable!();
+        }}
+
+        #[cfg(target_arch = "wasm32")]
+        {{
+            struct Buffer([::core::mem::MaybeUninit::<u8>; {size}]);
+            let mut buffer = Buffer([::core::mem::MaybeUninit::uninit(); {size}]);
+            let address = buffer.0.as_mut_ptr() as *mut u8;
+        
+            #[link(wasm_import_module = "{module}")]
+            extern "C" {{
+                #[link_name = "[async][future-read-{index}]{func_name}"]
+                fn wit_import(_: u32, _: *mut u8) -> u32;
+            }}
+
+            if unsafe {{ {async_support}::await_future_result(wit_import, future, address).await }} {{
+                {lift}
+                Some(value)
+            }} else {{
+               None
+            }}
+        }}
     }}
 
-    fn drop_sender(sender: u32) {{
+    fn drop_writer(writer: u32) {{
         #[cfg(not(target_arch = "wasm32"))]
         {{
             unreachable!();
@@ -668,14 +692,14 @@ impl {async_support}::FuturePayload for {name} {{
         {{
             #[link(wasm_import_module = "{module}")]
             extern "C" {{
-                #[link_name = "[future-drop-sender-{index}]{func_name}"]
+                #[link_name = "[future-drop-writer-{index}]{func_name}"]
                 fn drop(_: u32);
             }}
-            unsafe {{ drop(sender) }}
+            unsafe {{ drop(writer) }}
         }}
     }}
 
-    fn drop_receiver(receiver: u32) {{
+    fn drop_reader(reader: u32) {{
         #[cfg(not(target_arch = "wasm32"))]
         {{
             unreachable!();
@@ -685,12 +709,12 @@ impl {async_support}::FuturePayload for {name} {{
         {{
             #[link(wasm_import_module = "{module}")]
             extern "C" {{
-                #[link_name = "[future-drop-receiver-{index}]{func_name}"]
+                #[link_name = "[future-drop-reader-{index}]{func_name}"]
                 fn drop(_: u32);
             }}
-            unsafe {{ drop(receiver) }}
+            unsafe {{ drop(reader) }}
         }}
-    }}                             
+    }}
 }}
                         "#,
                         );
@@ -711,58 +735,63 @@ impl {async_support}::FuturePayload for {name} {{
                         String::from(mem::replace(&mut self.src, old))
                     };
 
-                    let TypeDefKind::Option(Type::Id(result_ty)) =
-                        &self.resolve.types[payload_result].kind
-                    else {
-                        unreachable!()
-                    };
-                    let TypeDefKind::Result(Result_ {
-                        ok: Some(list_ty), ..
-                    }) = &self.resolve.types[*result_ty].kind
-                    else {
-                        unreachable!()
-                    };
-
                     if self.gen.stream_payloads_emitted.insert(full_name) {
-                        let send = Function {
-                            name: format!("[stream-send-{index}]{func_name}"),
-                            kind: FunctionKind::Freestanding,
-                            params: vec![("sender".into(), Type::U32), ("values".into(), *list_ty)],
-                            results: Results::Anon(Type::Id(self.gen.unit_result.unwrap())),
-                            docs: Default::default(),
-                            stability: Stability::default(),
-                        };
-                        let old = mem::take(&mut self.src);
-                        self.generate_guest_import_body(
-                            &module,
-                            &send,
-                            vec!["sender".into(), "values".into()],
-                            true,
-                        );
-                        let send = String::from(mem::replace(&mut self.src, old));
-
-                        let receive = Function {
-                            name: format!("[stream-receive-{index}]{func_name}"),
-                            kind: FunctionKind::Freestanding,
-                            params: vec![("receiver".into(), Type::U32)],
-                            results: Results::Anon(Type::Id(payload_result)),
-                            docs: Default::default(),
-                            stability: Stability::default(),
-                        };
-                        let old_src = mem::take(&mut self.src);
-                        self.generate_guest_import_body(
-                            &module,
-                            &receive,
-                            vec!["receiver".into()],
-                            true,
-                        );
-                        let receive = String::from(mem::replace(&mut self.src, old_src));
+                        let size = self.sizes.size(payload_type).size_wasm32();
+                        let align = self.sizes.align(payload_type).align_wasm32();
+                        let alloc = self.path_to_std_alloc_module();
+                        let (lower_address, lower, lift_address, lift) =
+                            if stream_direct(payload_type) {
+                                let lower_address = "let address = values.as_ptr() as _;".into();
+                                let lift_address = "let address = values.as_mut_ptr() as _;".into();
+                                (
+                                    lower_address,
+                                    String::new(),
+                                    lift_address,
+                                    "let value = ();\n".into(),
+                                )
+                            } else {
+                                let address = format!(
+                                    "let address = {alloc}::alloc\
+                                     ({alloc}::Layout::from_size_align_unchecked\
+                                     ({size} * values.len(), {align}));"
+                                );
+                                let lower = self.lower_to_memory(
+                                    "address",
+                                    "value",
+                                    &payload_type,
+                                    &module,
+                                );
+                                let lower = format!(
+                                    r#"
+for (index, value) in values.iter().enumerate() {{
+    let address = address + (index * size);
+    {lower}
+}}
+                                "#
+                                );
+                                let lift = self.lift_from_memory(
+                                    "address",
+                                    "value",
+                                    &payload_type,
+                                    &module,
+                                );
+                                let lift = format!(
+                                    r#"
+for (index, dst) in values.iter_mut().enumerate() {{
+    let address = address + (index * size);
+    {lift}
+    *dst = value;
+}}
+                                "#
+                                );
+                                (address.clone(), lower, address, lift)
+                            };
 
                         uwriteln!(
                             self.src,
                             r#"
 impl {async_support}::StreamPayload for {name} {{
-    fn new() -> (u32, u32) {{
+    fn new() -> u32 {{
         #[cfg(not(target_arch = "wasm32"))]
         {{
             unreachable!();
@@ -773,23 +802,62 @@ impl {async_support}::StreamPayload for {name} {{
             #[link(wasm_import_module = "{module}")]
             extern "C" {{
                 #[link_name = "[stream-new-{index}]{func_name}"]
-                fn new(_: *mut u32);
+                fn new() -> u32;
             }}
-            let mut results = [0u32; 2];
-            unsafe {{ new(results.as_mut_ptr()) }};
-            (results[0], results[1])
+            unsafe {{ new() }}
         }}
     }}
 
-    async fn send(sender: u32, values: Vec<Self>) -> Result<(), {async_support}::Error> {{
-        unsafe {{ {send} }}
+    async fn write(stream: u32, values: &[Self]) -> Option<usize> {{
+        #[cfg(not(target_arch = "wasm32"))]
+        {{
+            unreachable!();
+        }}
+
+        #[cfg(target_arch = "wasm32")]
+        {{
+            {lower_address}
+            {lower}
+        
+            #[link(wasm_import_module = "{module}")]
+            extern "C" {{
+                #[link_name = "[async][stream-write-{index}]{func_name}"]
+                fn wit_import(_: u32, _: *mut u8, _: u32) -> u32;
+            }}
+
+            unsafe {{
+                {async_support}::await_stream_result(wit_import, stream, address, u32::try_from(values.len()).unwrap()).await
+            }}
+        }}
     }}
 
-    async fn receive(receiver: u32) -> Option<Result<Vec<Self>, {async_support}::Error>> {{
-        unsafe {{ {receive} }}
+    async fn read(stream: u32, values: &mut [::core::mem::MaybeUninit::<Self>]) -> Option<usize> {{
+        #[cfg(not(target_arch = "wasm32"))]
+        {{
+            unreachable!();
+        }}
+
+        #[cfg(target_arch = "wasm32")]
+        {{
+            {lift_address}
+        
+            #[link(wasm_import_module = "{module}")]
+            extern "C" {{
+                #[link_name = "[async][stream-read-{index}]{func_name}"]
+                fn wit_import(_: u32, _: *mut u8, _: u32) -> u32;
+            }}
+
+            let count = unsafe {{
+                {async_support}::await_stream_result(wit_import, stream, address, u32::try_from(values.len()).unwrap()).await
+            }};
+            if let Some(count) = count {{
+                {lift}
+            }}
+            count
+        }}
     }}
 
-    fn drop_sender(sender: u32) {{
+    fn drop_writer(writer: u32) {{
         #[cfg(not(target_arch = "wasm32"))]
         {{
             unreachable!();
@@ -799,14 +867,14 @@ impl {async_support}::StreamPayload for {name} {{
         {{
             #[link(wasm_import_module = "{module}")]
             extern "C" {{
-                #[link_name = "[stream-drop-sender-{index}]{func_name}"]
+                #[link_name = "[stream-drop-writer-{index}]{func_name}"]
                 fn drop(_: u32);
             }}
-            unsafe {{ drop(sender) }}
+            unsafe {{ drop(writer) }}
         }}
     }}
 
-    fn drop_receiver(receiver: u32) {{
+    fn drop_reader(reader: u32) {{
         #[cfg(not(target_arch = "wasm32"))]
         {{
             unreachable!();
@@ -816,12 +884,12 @@ impl {async_support}::StreamPayload for {name} {{
         {{
             #[link(wasm_import_module = "{module}")]
             extern "C" {{
-                #[link_name = "[stream-drop-receiver-{index}]{func_name}"]
+                #[link_name = "[stream-drop-reader-{index}]{func_name}"]
                 fn drop(_: u32);
             }}
-            unsafe {{ drop(receiver) }}
+            unsafe {{ drop(reader) }}
         }}
-    }}                             
+    }}
 }}
                         "#
                         );
@@ -892,6 +960,21 @@ impl {async_support}::StreamPayload for {name} {{
         }
     }
 
+    fn lower_to_memory(&mut self, address: &str, value: &str, ty: &Type, module: &str) -> String {
+        let mut f = FunctionBindgen::new(self, Vec::new(), true, module);
+        abi::lower_to_memory(f.gen.resolve, &mut f, address.into(), value.into(), ty);
+        format!("unsafe {{ {} }}", String::from(f.src))
+    }
+
+    fn lift_from_memory(&mut self, address: &str, value: &str, ty: &Type, module: &str) -> String {
+        let mut f = FunctionBindgen::new(self, Vec::new(), true, module);
+        let result = abi::lift_from_memory(f.gen.resolve, &mut f, address.into(), ty);
+        format!(
+            "let {value} = unsafe {{ {}\n{result} }};",
+            String::from(f.src)
+        )
+    }
+
     fn generate_guest_import_body(
         &mut self,
         module: &str,
@@ -958,12 +1041,7 @@ impl {async_support}::StreamPayload for {name} {{
                 pub unsafe fn _export_{name_snake}_cabi<T: {trait_name}>\
             ",
         );
-        let params = if async_ {
-            self.push_str("() -> *mut u8");
-            Vec::new()
-        } else {
-            self.print_export_sig(func)
-        };
+        let params = self.print_export_sig(func, async_);
         self.push_str(" {");
 
         if !self.gen.opts.disable_run_ctors_once_workaround {
@@ -1095,12 +1173,7 @@ impl {async_support}::StreamPayload for {name} {{
         ",
         );
 
-        let params = if async_ {
-            self.push_str("() -> *mut u8");
-            Vec::new()
-        } else {
-            self.print_export_sig(func)
-        };
+        let params = self.print_export_sig(func, async_);
         self.push_str(" {\n");
         uwriteln!(
             self.src,
@@ -1146,7 +1219,7 @@ impl {async_support}::StreamPayload for {name} {{
         }
     }
 
-    fn print_export_sig(&mut self, func: &Function) -> Vec<String> {
+    fn print_export_sig(&mut self, func: &Function, async_: bool) -> Vec<String> {
         self.src.push_str("(");
         let sig = abi::wasm_signature_symmetric(
             self.resolve,
@@ -1162,13 +1235,18 @@ impl {async_support}::StreamPayload for {name} {{
         }
         self.src.push_str(")");
 
-        match sig.results.len() {
-            0 => {}
-            1 => {
-                uwrite!(self.src, " -> {}", wasm_type(sig.results[0]));
+        if async_ {
+            self.push_str(" -> *mut u8");
+        } else {
+            match sig.results.len() {
+                0 => {}
+                1 => {
+                    uwrite!(self.src, " -> {}", wasm_type(sig.results[0]));
+                }
+                _ => unimplemented!(),
             }
-            _ => unimplemented!(),
         }
+
         params
     }
 
@@ -2814,21 +2892,39 @@ impl<'a, 'b> wit_bindgen_core::AnonymousTypeGenerator<'a> for AnonTypeGenerator<
     fn anonymous_type_future(&mut self, _id: TypeId, ty: &Option<Type>, _docs: &Docs) {
         let async_support = self.interface.path_to_async_support();
         self.interface
-            .push_str(&format!("{async_support}::FutureReceiver<"));
+            .push_str(&format!("{async_support}::FutureReader<"));
         self.interface.print_optional_ty(ty.as_ref(), self.mode);
         self.interface.push_str(">");
     }
 
-    fn anonymous_type_stream(&mut self, _id: TypeId, stream: &Type, _docs: &Docs) {
+    fn anonymous_type_stream(&mut self, _id: TypeId, ty: &Type, _docs: &Docs) {
         let async_support = self.interface.path_to_async_support();
         self.interface
-            .push_str(&format!("{async_support}::StreamReceiver<"));
-        self.interface.print_ty(stream, self.mode);
+            .push_str(&format!("{async_support}::StreamReader<"));
+        self.interface.print_ty(ty, self.mode);
         self.interface.push_str(">");
     }
 
-    fn anonymous_type_error(&mut self, _id: TypeId, _docs: &Docs) {
+    fn anonymous_type_error(&mut self) {
         let async_support = self.interface.path_to_async_support();
         self.interface.push_str(&format!("{async_support}::Error"));
     }
+}
+
+fn stream_direct(ty: &Type) -> bool {
+    // TODO: might be able to return `true` for other types if the generated Rust versions of those types are
+    // guaranteed to be safely transmutable to and from their lowered form.
+    matches!(
+        ty,
+        Type::U8
+            | Type::S8
+            | Type::U16
+            | Type::S16
+            | Type::U32
+            | Type::S32
+            | Type::U64
+            | Type::S64
+            | Type::F32
+            | Type::F64
+    )
 }

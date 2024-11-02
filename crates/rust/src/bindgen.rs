@@ -501,7 +501,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let async_support = self.gen.path_to_async_support();
                 let op = &operands[0];
                 results.push(format!(
-                    "{async_support}::FutureReceiver::from_handle({op} as u32)"
+                    "{async_support}::FutureReader::from_handle({op} as u32)"
                 ))
             }
 
@@ -514,7 +514,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let async_support = self.gen.path_to_async_support();
                 let op = &operands[0];
                 results.push(format!(
-                    "{async_support}::StreamReceiver::from_handle({op} as u32)"
+                    "{async_support}::StreamReader::from_handle({op} as u32)"
                 ))
             }
 
@@ -943,6 +943,23 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     "let {layout} = {alloc}::Layout::from_size_align_unchecked({size}, {align});\n",
                     size = size.format(POINTER_SIZE_EXPRESSION),
                     align = align.format(POINTER_SIZE_EXPRESSION)
+                ));
+                let operands = operands.join(", ");
+                uwriteln!(
+                    self.src,
+                    "{async_support}::await_result({func}, {layout}, {operands}).await;"
+                );
+            }
+
+            Instruction::AsyncCallWasm { name, size, align } => {
+                let func = self.declare_import(name, &[WasmType::Pointer; 2], &[WasmType::I32]);
+
+                let async_support = self.gen.path_to_async_support();
+                let tmp = self.tmp();
+                let layout = format!("layout{tmp}");
+                let alloc = self.gen.path_to_std_alloc_module();
+                self.push_str(&format!(
+                    "let {layout} = {alloc}::Layout::from_size_align_unchecked({size}, {align});\n",
                 ));
                 let operands = operands.join(", ");
                 uwriteln!(

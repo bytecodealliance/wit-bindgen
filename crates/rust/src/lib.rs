@@ -50,17 +50,12 @@ struct RustWasm {
 
     rt_module: IndexSet<RuntimeItem>,
     export_macros: Vec<(String, String)>,
+
     /// Interface names to how they should be generated
     with: GenerationConfiguration,
 
-    unit_result: Option<TypeId>,
-    payload_results: HashMap<TypeId, TypeId>,
     future_payloads_emitted: HashSet<String>,
     stream_payloads_emitted: HashSet<String>,
-
-    // needed for symmetric disambiguation
-    interface_prefixes: HashMap<(Direction, WorldKey), String>,
-    import_prefix: Option<String>,
 }
 
 #[derive(Default)]
@@ -292,6 +287,10 @@ pub struct Opts {
     /// library-based usage of `generate!` prone to breakage.
     #[cfg_attr(feature = "clap", arg(long))]
     pub disable_custom_section_link_helpers: bool,
+
+    /// Determines which functions to lift or lower `async`, if any.
+    #[cfg_attr(feature = "clap", arg(long = "async", value_parser = parse_async))]
+    pub async_: AsyncConfig,
 }
 
 impl Opts {
@@ -425,6 +424,11 @@ impl RustWasm {
     }
 
     fn finish_runtime_module(&mut self) {
+        // TODO: This is a hack because there are currently functions and types in the `async_support` module that
+        // are useful to applications even if the generated bindings don't use it.  We should probably move those
+        // items to a library which the application can add as a dependency.
+        self.rt_module.insert(RuntimeItem::AsyncSupport);
+
         if self.rt_module.is_empty() {
             return;
         }
@@ -679,6 +683,12 @@ impl<T: WasmResource> Drop for Resource<T> {{
                     invalid_value = if self.opts.symmetric { "0" } else { "u32::MAX" },
                     handle_type = if self.opts.symmetric { "usize" } else { "u32" }
                 ));
+            }
+
+            RuntimeItem::AsyncSupport => {
+                self.src.push_str("pub mod async_support {");
+                self.src.push_str(include_str!("async_support.rs"));
+                self.src.push_str("}");
             }
 
             RuntimeItem::AsyncSupport => {

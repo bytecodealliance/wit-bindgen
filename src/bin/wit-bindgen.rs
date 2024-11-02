@@ -229,7 +229,6 @@ fn gen_world(
         }
     }
     let (pkg, _files) = resolve.push_path(&opts.wit)?;
-    resolve.add_future_and_stream_results();
     let mut world = resolve.select_world(pkg, opts.world.as_deref())?;
     generator.apply_resolve_options(&mut resolve, &mut world);
     generator.generate(&resolve, world, files)?;
