@@ -1517,6 +1517,8 @@ dependencies = [
 name = "test-rust-wasm"
 version = "0.0.0"
 dependencies = [
+ "futures",
+ "once_cell",
  "rust-xcrate-test",
  "wit-bindgen",
 ]
