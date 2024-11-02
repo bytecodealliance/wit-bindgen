@@ -50,6 +50,8 @@ fn create_cargo_files(
             [dependencies]\n\
             wit-bindgen = {{ path = \"{toplevel}/crates/guest-rust\" }}\n\
             test-rust-wasm = {{ path = \"{toplevel}/crates/cpp/tests/symmetric_tests/test-rust-wasm\" }}\n\
+            futures = \"0.3\"\n\
+            once_cell = \"1.20\"\n\
             \n\
             [lib]\n\
             crate-type = [\"cdylib\"]\n\
@@ -80,6 +82,8 @@ fn create_cargo_files(
             [dependencies]\n\
             wit-bindgen = {{ path = \"{toplevel}/crates/guest-rust\" }}\n\
             {dir_name} = {{ path = \"rust\" }}\n\
+            futures = \"0.3\"\n\
+            once_cell = \"1.20\"\n\
             ",
         toplevel = toplevel.display()
     );
@@ -104,7 +108,7 @@ fn tests(
     tester_source_dir: &PathBuf,
 ) -> io::Result<()> {
     // modelled after wit-bindgen/tests/runtime/main.rs
-    let Some(tester_source_file) = tester_source_file(dir_name, tester_source_dir) else {
+    let Some(_tester_source_file) = tester_source_file(dir_name, tester_source_dir) else {
         println!("Skipping {}", dir_name);
         return Ok(());
     };
@@ -219,9 +223,10 @@ fn tests(
             panic!("failed to compile");
         } else {
             let mut tester = out_dir.clone();
+            tester.pop();
             tester.push("target");
             tester.push("debug");
-            tester.push("tester");
+            tester.push(&format!("tester-{dir_name}"));
             let run = Command::new(tester)
                 .env("LD_LIBRARY_PATH", cpp_dir)
                 .output();

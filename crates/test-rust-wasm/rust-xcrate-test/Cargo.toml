@@ -3,5 +3,9 @@ name = "rust-xcrate-test"
 edition.workspace = true
 publish = false
 
+[build-dependencies]
+
 [dependencies]
 wit-bindgen = { path = '../../guest-rust' }
+futures = "0.3.31"
+once_cell = "1.20.2"

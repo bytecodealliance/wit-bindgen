@@ -1094,7 +1094,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 // } else {
                 self.emit(&Instruction::Return {
                     func,
-                    amt: sig.results.len(),
+                    amt: func.results.len(),
                 });
                 // }
             }
