@@ -2594,7 +2594,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 operands[0], operands[1]
             )),
 
-            Instruction::ListLower { element, realloc } => {
+            Instruction::ListLower { element, .. } => {
                 let Block {
                     body,
                     results: block_results,
@@ -3015,6 +3015,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             | Instruction::AsyncCallStart { .. }
             | Instruction::AsyncPostCallInterface { .. }
             | Instruction::AsyncCallReturn { .. } => todo!(),
+            Instruction::FutureLower { .. } |
+            Instruction::FutureLift { .. } |
+            Instruction::StreamLower { .. } |
+            Instruction::StreamLift { .. } |
+            Instruction::ErrorLower { .. } |
+            Instruction::ErrorLift { .. } |
+            Instruction::AsyncCallWasm { .. } |
+            Instruction::Flush { .. } => todo!(),
         }
     }
 

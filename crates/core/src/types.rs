@@ -195,7 +195,6 @@ impl Types {
             }
             TypeDefKind::Future(_) | TypeDefKind::Stream(_) | TypeDefKind::Error => {}
             TypeDefKind::Unknown => unreachable!(),
-            TypeDefKind::Error => {}
         }
         let prev = self.type_info.insert(ty, info);
         assert!(prev.is_none());

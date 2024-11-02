@@ -56,6 +56,10 @@ struct RustWasm {
 
     future_payloads_emitted: HashSet<String>,
     stream_payloads_emitted: HashSet<String>,
+
+    // needed for symmetric disambiguation
+    interface_prefixes: HashMap<(Direction, WorldKey), String>,
+    import_prefix: Option<String>,
 }
 
 #[derive(Default)]
@@ -276,10 +280,6 @@ pub struct Opts {
     #[cfg_attr(feature = "clap", arg(long, default_value_t = bool::default()))]
     pub invert_direction: bool,
 
-    /// Determines which functions to lift or lower `async`, if any.
-    #[cfg_attr(feature = "clap", arg(long = "async", value_parser = parse_async, default_value_t = Default::default()))]
-    pub async_: AsyncConfig,
-
     /// Whether or not to generate helper function/constants to help link custom
     /// sections into the final output.
     ///
@@ -289,7 +289,7 @@ pub struct Opts {
     pub disable_custom_section_link_helpers: bool,
 
     /// Determines which functions to lift or lower `async`, if any.
-    #[cfg_attr(feature = "clap", arg(long = "async", value_parser = parse_async))]
+    #[cfg_attr(feature = "clap", arg(long = "async", value_parser = parse_async, default_value_t = Default::default()))]
     pub async_: AsyncConfig,
 }
 
@@ -690,12 +690,6 @@ impl<T: WasmResource> Drop for Resource<T> {{
                 self.src.push_str(include_str!("async_support.rs"));
                 self.src.push_str("}");
             }
-
-            RuntimeItem::AsyncSupport => {
-                self.src.push_str("pub mod async_support {");
-                self.src.push_str(include_str!("async_support.rs"));
-                self.src.push_str("}");
-            }
         }
     }
 
@@ -985,10 +979,6 @@ impl WorldGenerator for RustWasm {
             self.with.insert(k.clone(), v.clone().into());
         }
         self.with.generate_by_default = self.opts.generate_all;
-
-        let (unit_result, payload_results) = resolve.find_future_and_stream_results();
-        self.unit_result = unit_result;
-        self.payload_results = payload_results;
     }
 
     fn import_interface(

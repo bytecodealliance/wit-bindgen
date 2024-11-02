@@ -2053,6 +2053,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             | Instruction::AsyncCallStart { .. }
             | Instruction::AsyncPostCallInterface { .. }
             | Instruction::AsyncCallReturn { .. } => todo!(),
+            Instruction::FutureLower { .. }
+            | Instruction::FutureLift { .. }
+            | Instruction::StreamLower { .. }
+            | Instruction::StreamLift { .. }
+            | Instruction::ErrorLower { .. }
+            | Instruction::ErrorLift { .. }
+            | Instruction::AsyncCallWasm { .. }
+            | Instruction::Flush { .. } => todo!(),
         }
     }
 

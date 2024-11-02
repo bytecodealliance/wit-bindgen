@@ -765,7 +765,7 @@ pub fn lower_to_memory<B: Bindgen>(
         true,
     );
     generator.stack.push(value);
-    generator.write_to_memory(ty, address, 0);
+    generator.write_to_memory(ty, address, Default::default());
 }
 
 pub fn lift_from_memory<B: Bindgen>(
@@ -782,7 +782,7 @@ pub fn lift_from_memory<B: Bindgen>(
         bindgen,
         true,
     );
-    generator.read_from_memory(ty, address, 0);
+    generator.read_from_memory(ty, address, Default::default());
     generator.stack.pop().unwrap()
 }
 
@@ -889,15 +889,13 @@ impl<'a, B: Bindgen> Generator<'a, B> {
     }
 
     fn call(&mut self, func: &Function) {
-        const MAX_FLAT_PARAMS: usize = 16;
-
         let sig = self.resolve.wasm_signature(self.variant, func);
         self.call_with_signature(func, sig);
     }
 
     fn call_with_signature(&mut self, func: &Function, sig: WasmSignature) {
         const MAX_FLAT_PARAMS: usize = 16;
-        const MAX_FLAT_RESULTS: usize = 1;
+        // const MAX_FLAT_RESULTS: usize = 1;
 
         let language_to_abi = matches!(self.lift_lower, LiftLower::LowerArgsLiftResults)
             || (matches!(self.lift_lower, LiftLower::Symmetric)
@@ -1081,24 +1079,24 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     }
                 }
 
-                if let Some(results) = async_results {
-                    let name = &format!("[task-return]{}", func.name);
+                // if let Some(results) = async_results {
+                //     let name = &format!("[task-return]{}", func.name);
 
-                    self.emit(&Instruction::AsyncCallReturn {
-                        name,
-                        params: &if results.len() > MAX_FLAT_PARAMS {
-                            vec![WasmType::Pointer]
-                        } else {
-                            results
-                        },
-                    });
-                    self.emit(&Instruction::Return { func, amt: 1 });
-                } else {
-                    self.emit(&Instruction::Return {
-                        func,
-                        amt: sig.results.len(),
-                    });
-                }
+                //     self.emit(&Instruction::AsyncCallReturn {
+                //         name,
+                //         params: &if results.len() > MAX_FLAT_PARAMS {
+                //             vec![WasmType::Pointer]
+                //         } else {
+                //             results
+                //         },
+                //     });
+                //     self.emit(&Instruction::Return { func, amt: 1 });
+                // } else {
+                self.emit(&Instruction::Return {
+                    func,
+                    amt: sig.results.len(),
+                });
+                // }
             }
             false => {
                 if let (AbiVariant::GuestImport, true) = (self.variant, self.async_) {
@@ -1147,7 +1145,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 //             self.lift(ty);
                 //         }
                 //     }
-                // } else 
+                // } else
                 if !sig.indirect_params {
                     // If parameters are not passed indirectly then we lift each
                     // argument in succession from the component wasm types that
@@ -1253,10 +1251,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                             if !matches!(self.lift_lower, LiftLower::Symmetric) {
                                 self.stack.push(ptr);
                             }
-                        }
-
-                        AbiVariant::GuestImportAsync | AbiVariant::GuestExportAsync => {
-                            unreachable!()
                         }
                     }
 
