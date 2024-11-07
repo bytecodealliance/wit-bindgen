@@ -52,11 +52,11 @@ namespace ResourceAggregatesWorld.wit.exports.test.resourceAggregates
 		? ((Thing) o2).val
 		: null;
 	    var iresult1 = result1.IsOk
-		? Result<Import.Thing, None>.ok(((Thing) result1.AsOk).val)
-		: Result<Import.Thing, None>.err(new None());
+		? Result<Import.Thing, None>.Ok(((Thing) result1.AsOk).val)
+		: Result<Import.Thing, None>.Err(new None());
 	    var iresult2 = result2.IsOk
-		? Result<Import.Thing, None>.ok(((Thing) result2.AsOk).val)
-		: Result<Import.Thing, None>.err(new None());
+		? Result<Import.Thing, None>.Ok(((Thing) result2.AsOk).val)
+		: Result<Import.Thing, None>.Err(new None());
 
 	    return Host.Foo(ir1, ir2, ir3, it1, it2, iv1, iv2, il1, il2, io1, io2, iresult1, iresult2) + 4;
 	}

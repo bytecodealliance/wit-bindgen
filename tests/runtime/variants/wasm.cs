@@ -14,10 +14,10 @@ namespace VariantsWorld
             Debug.Assert(TestInterop.RoundtripOption(null).HasValue == false);
             Debug.Assert(TestInterop.RoundtripOption(2.0f).Value == 2);
 
-            Debug.Assert(TestInterop.RoundtripResult(Result<uint, float>.ok(2)) == 2.0);
-            Debug.Assert(TestInterop.RoundtripResult(Result<uint, float>.ok(4)) == 4.0);
+            Debug.Assert(TestInterop.RoundtripResult(Result<uint, float>.Ok(2)) == 2.0);
+            Debug.Assert(TestInterop.RoundtripResult(Result<uint, float>.Ok(4)) == 4.0);
             try {
-                TestInterop.RoundtripResult(Result<uint, float>.err(5.3f));
+                TestInterop.RoundtripResult(Result<uint, float>.Err(5.3f));
                 throw new Exception();
             } catch (WitException e) {
                 Debug.Assert((byte)e.Value == 5);
@@ -62,9 +62,9 @@ TestInterop.VariantZeros((ITest.Z1.b(), ITest.Z2.b(), ITest.Z3.b(), ITest.Z4.b()
             //Debug.Assert(zb3.AsB == ITest.Z3.b());
             //Debug.Assert(zb4.AsB == ITest.Z4.b());
 
-            TestInterop.VariantTypedefs(null, false, Result<uint, None>.err(new None()));
+            TestInterop.VariantTypedefs(null, false, Result<uint, None>.Err(new None()));
 
-            var (a, b, c) = TestInterop.VariantEnums(true, Result<None, None>.ok(new None()), ITest.MyErrno.SUCCESS);
+            var (a, b, c) = TestInterop.VariantEnums(true, Result<None, None>.Ok(new None()), ITest.MyErrno.SUCCESS);
             Debug.Assert(a == false);
             var test = b.AsErr;
             Debug.Assert(c == ITest.MyErrno.A);
