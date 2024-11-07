@@ -454,22 +454,22 @@ impl WorldGenerator for CSharp {
 
                     {access} static Result<TOk, TErr> Ok(TOk ok)
                     {{
-                        return new Result<TOk, TErr>(TagOk, ok!);
+                        return new Result<TOk, TErr>(Tags.Ok, ok!);
                     }}
 
                     {access} static Result<TOk, TErr> Err(TErr err)
                     {{
-                        return new Result<TOk, TErr>(TagErr, err!);
+                        return new Result<TOk, TErr>(Tags.Err, err!);
                     }}
 
-                    {access} bool IsOk => Tag == TagOk;
-                    {access} bool IsErr => Tag == TagErr;
+                    {access} bool IsOk => Tag == Tags.Ok;
+                    {access} bool IsErr => Tag == Tags.Err;
 
                     {access} TOk AsOk
                     {{
                         get
                         {{
-                            if (Tag == TagOk)
+                            if (Tag == Tags.Ok)
                             {{
                                 return (TOk)value;
                             }}
@@ -482,7 +482,7 @@ impl WorldGenerator for CSharp {
                     {{
                         get
                         {{
-                            if (Tag == TagErr)
+                            if (Tag == Tags.Err)
                             {{
                                 return (TErr)value;
                             }}
@@ -491,8 +491,11 @@ impl WorldGenerator for CSharp {
                         }}
                     }}
 
-                    private const byte TagOk = 0;
-                    private const byte TagErr = 1;
+                    {access} class Tags
+                    {{
+                        {access} const byte Ok = 0;
+                        {access} const byte Err = 1;
+                    }}
                 }}
                 "#,
             )
