@@ -92,8 +92,8 @@ impl CSProjectLLVMBuilder {
             csproj.push_str(
                 r#"
                 <ItemGroup>
-                    <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="9.0.0-rc.1.24412.1" />
-                    <PackageReference Include="runtime.win-x64.Microsoft.DotNet.ILCompiler.LLVM" Version="9.0.0-rc.1.24412.1" />
+                    <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-*" />
+                    <PackageReference Include="runtime.win-x64.Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-*" />
                 </ItemGroup>
                 "#,
             );
