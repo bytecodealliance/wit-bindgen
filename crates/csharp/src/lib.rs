@@ -433,8 +433,15 @@ impl WorldGenerator for CSharp {
                 .join("\n"),
         );
 
-        let usings: Vec<_> = self.world_fragments .iter() .flat_map(|f| &f.usings) .cloned() .collect();
-        usings.iter().for_each(|u| { self.require_using(u); });
+        let usings: Vec<_> = self
+            .world_fragments
+            .iter()
+            .flat_map(|f| &f.usings)
+            .cloned()
+            .collect();
+        usings.iter().for_each(|u| {
+            self.require_using(u);
+        });
 
         let mut producers = wasm_metadata::Producers::empty();
         producers.add(
@@ -626,12 +633,15 @@ impl WorldGenerator for CSharp {
 
             src.push_str("namespace exports {\n");
 
-            src.push_str(&self.world_fragments
-                .iter()
-                .flat_map(|f| &f.interop_usings)
-                .map(|s| "using ".to_owned() + s + ";")
-                .collect::<Vec<String>>()
-                .join("\n"));
+            src.push_str(
+                &self
+                    .world_fragments
+                    .iter()
+                    .flat_map(|f| &f.interop_usings)
+                    .map(|s| "using ".to_owned() + s + ";")
+                    .collect::<Vec<String>>()
+                    .join("\n"),
+            );
 
             src.push_str(&format!("{access} static class {name}World\n"));
             src.push_str("{");
@@ -831,7 +841,8 @@ impl WorldGenerator for CSharp {
                         {body}
                     }}
                     ",
-                    fragments.iter()
+                    fragments
+                        .iter()
                         .flat_map(|f| &f.usings)
                         .map(|s| "using ".to_owned() + s + ";")
                         .collect::<Vec<String>>()
@@ -2660,8 +2671,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.gen.require_interop_using("System.Text");
                 } else {
                     self.gen.require_using("System.Text");
-                };
-        
+                }
+
                 results.push(format!(
                     "Encoding.UTF8.GetString((byte*){}, {})",
                     operands[0], operands[1]
