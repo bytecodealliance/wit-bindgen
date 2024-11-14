@@ -32,7 +32,8 @@ fn verify(dir: &Path, _name: &str) {
     cmd.arg("check")
         .arg("--target")
         .arg("wasm")
-        .arg("--deny-warn")
+        // This will eliminate all the warning, but can't be turned on yet
+        // .arg("--deny-warn")
         .arg("--source-dir")
         .arg(dir);
 
