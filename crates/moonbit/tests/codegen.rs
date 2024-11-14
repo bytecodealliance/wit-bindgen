@@ -14,7 +14,9 @@ macro_rules! codegen_test {
                         derive_eq: true,
                         derive_error: true,
                         ignore_stub: false,
+                        ignore_module_file: false,
                         gen_dir: "gen".to_string(),
+                        project_name: None,
                     }
                     .build()
                     .generate(resolve, world, files)

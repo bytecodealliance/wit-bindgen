@@ -200,9 +200,15 @@ pub struct Opts {
     /// Whether or not to generate stub files ; useful for update after WIT change
     #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
     pub ignore_stub: bool,
+    /// Whether or not to generate moon.mod.json ; useful if the project is part of a larger project
+    #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
+    pub ignore_module_file: bool,
     /// The package/dir to generate the program entrance
     #[cfg_attr(feature = "clap", arg(long, default_value = "gen"))]
     pub gen_dir: String,
+    /// The project name ; or the package path prefix if the project is part of a larger project
+    #[cfg_attr(feature = "clap", arg(long, default_value = None))]
+    pub project_name: Option<String>,
 }
 
 impl Opts {
@@ -393,12 +399,14 @@ impl WorldGenerator for MoonBit {
     }
 
     fn finish(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) -> Result<()> {
-        let project_name = resolve.worlds[id]
-            .package
-            .map(|id| {
+        let project_name = self
+            .opts
+            .project_name
+            .clone()
+            .or(resolve.worlds[id].package.map(|id| {
                 let package = &resolve.packages[id].name;
                 format!("{}/{}", package.namespace, package.name)
-            })
+            }))
             .unwrap_or("generated".into());
         let name = world_name(resolve, id);
 
@@ -550,7 +558,7 @@ impl WorldGenerator for MoonBit {
         files.push(&format!("{FFI_DIR}/moon.pkg.json"), "{}".as_bytes());
 
         // Export project files
-        if !self.opts.ignore_stub {
+        if !self.opts.ignore_stub && !self.opts.ignore_module_file {
             let mut body = Source::default();
             uwriteln!(&mut body, "{{ \"name\": \"{project_name}\" }}");
             files.push(&format!("moon.mod.json"), body.as_bytes());
