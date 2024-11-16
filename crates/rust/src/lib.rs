@@ -292,6 +292,14 @@ impl RustWasm {
             }
             cur.contents.push(module);
         }
+
+        // Disable rustfmt. By default we already format the code
+        // using prettyplease, so we don't want `cargo fmt` to create
+        // extra diffs for users to deal with.
+        if self.opts.format {
+            uwriteln!(self.src, "#[rustfmt::skip]");
+        }
+
         emit(&mut self.src, map);
         fn emit(me: &mut Source, module: Module) {
             for (name, submodule) in module.submodules {
@@ -366,6 +374,12 @@ impl RustWasm {
         if self.rt_module.is_empty() {
             return;
         }
+
+        // As above, disable rustfmt, as we use prettyplease.
+        if self.opts.format {
+            uwriteln!(self.src, "#[rustfmt::skip]");
+        }
+
         self.src.push_str("mod _rt {\n");
         let mut emitted = IndexSet::new();
         while !self.rt_module.is_empty() {
