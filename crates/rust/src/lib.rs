@@ -984,7 +984,9 @@ impl WorldGenerator for RustWasm {
 
         gen.generate_imports(resolve.interfaces[id].functions.values());
 
-        gen.finish_append_submodule(&snake, module_path);
+        let docs = &resolve.interfaces[id].docs;
+
+        gen.finish_append_submodule(&snake, module_path, docs);
 
         Ok(())
     }
@@ -1022,7 +1024,10 @@ impl WorldGenerator for RustWasm {
         gen.types(id);
         let macro_name =
             gen.generate_exports(Some((id, name)), resolve.interfaces[id].functions.values())?;
-        gen.finish_append_submodule(&snake, module_path);
+
+        let docs = &resolve.interfaces[id].docs;
+
+        gen.finish_append_submodule(&snake, module_path, docs);
         self.export_macros
             .push((macro_name, self.interface_names[&id].path.clone()));
 
