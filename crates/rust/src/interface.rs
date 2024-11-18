@@ -439,7 +439,6 @@ macro_rules! {macro_name} {{
         };
         let module = format!(
             "\
-                #[allow(dead_code, clippy::all)]
                 pub mod {snake} {{
                     {used_static}
                     {module}
