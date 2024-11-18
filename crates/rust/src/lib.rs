@@ -293,23 +293,25 @@ impl RustWasm {
             cur.contents.push(module);
         }
 
-        // Disable rustfmt. By default we already format the code
-        // using prettyplease, so we don't want `cargo fmt` to create
-        // extra diffs for users to deal with.
-        if self.opts.format {
-            uwriteln!(self.src, "#[rustfmt::skip]");
-        }
-
-        emit(&mut self.src, map);
-        fn emit(me: &mut Source, module: Module) {
+        emit(&mut self.src, map, &self.opts, true);
+        fn emit(me: &mut Source, module: Module, opts: &Opts, toplevel: bool) {
             for (name, submodule) in module.submodules {
-                // Ignore dead-code warnings. If the bindings are only used
-                // within a crate, and not exported to a different crate, some
-                // parts may be unused, and that's ok.
-                uwriteln!(me, "#[allow(dead_code)]");
+                if toplevel {
+                    // Disable rustfmt. By default we already format the code
+                    // using prettyplease, so we don't want `cargo fmt` to create
+                    // extra diffs for users to deal with.
+                    if opts.format {
+                        uwriteln!(me, "#[rustfmt::skip]");
+                    }
+
+                    // Ignore dead-code and clippy warnings. If the bindings are
+                    // only used within a crate, and not exported to a different
+                    // crate, some parts may be unused, and that's ok.
+                    uwriteln!(me, "#[allow(dead_code, clippy::all)]");
+                }
 
                 uwriteln!(me, "pub mod {name} {{");
-                emit(me, submodule);
+                emit(me, submodule, opts, false);
                 uwriteln!(me, "}}");
             }
             for submodule in module.contents {
