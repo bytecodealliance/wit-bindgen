@@ -506,8 +506,13 @@ macro_rules! {macro_name} {{
         (snake, module_path)
     }
 
-    pub fn finish_append_submodule(mut self, snake: &str, module_path: Vec<String>) {
+    pub fn finish_append_submodule(mut self, snake: &str, module_path: Vec<String>, docs: &Docs) {
         let module = self.finish();
+
+        self.rustdoc(docs);
+        let docs = mem::take(&mut self.src).to_string();
+        let docs = docs.trim_end();
+
         let path_to_root = self.path_to_root();
         let used_static = if self.gen.opts.disable_custom_section_link_helpers {
             String::new()
@@ -523,7 +528,7 @@ macro_rules! {macro_name} {{
         };
         let module = format!(
             "\
-                #[allow(dead_code, clippy::all)]
+                {docs}
                 pub mod {snake} {{
                     {used_static}
                     {module}
