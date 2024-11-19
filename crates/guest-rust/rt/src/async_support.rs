@@ -1,4 +1,5 @@
 #![deny(missing_docs)]
+#![allow(static_mut_refs)]
 
 use {
     futures::{
@@ -20,6 +21,8 @@ use {
         task::{Context, Poll, Wake, Waker},
     },
 };
+
+pub use futures;
 
 type BoxFuture = Pin<Box<dyn Future<Output = ()> + 'static>>;
 

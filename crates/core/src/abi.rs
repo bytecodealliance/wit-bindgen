@@ -1030,7 +1030,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         // `self.return_pointer`) so we use that to read
                         // the result of the function from memory.
                         AbiVariant::GuestImport => {
-                            assert!(sig.results.is_empty());
+                            assert!(sig.results.is_empty() || self.async_);
                             self.return_pointer.take().unwrap()
                         }
 

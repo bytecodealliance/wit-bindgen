@@ -859,24 +859,31 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 } else {
                     self.let_results(func.results.len(), results);
                 };
-                match &func.kind {
+                let constructor_type = match &func.kind {
                     FunctionKind::Freestanding => {
                         self.push_str(&format!("T::{}", to_rust_ident(&func.name)));
+                        None
                     }
                     FunctionKind::Method(_) | FunctionKind::Static(_) => {
                         self.push_str(&format!("T::{}", to_rust_ident(func.item_name())));
+                        None
                     }
                     FunctionKind::Constructor(ty) => {
-                        self.push_str(&format!(
-                            "{}::new(T::new",
-                            resolve.types[*ty]
-                                .name
-                                .as_deref()
-                                .unwrap()
-                                .to_upper_camel_case()
-                        ));
+                        let ty = resolve.types[*ty]
+                            .name
+                            .as_deref()
+                            .unwrap()
+                            .to_upper_camel_case();
+                        let call = if self.async_ {
+                            let async_support = self.gen.path_to_async_support();
+                            format!("{async_support}::futures::FutureExt::map(T::new")
+                        } else {
+                            format!("{ty}::new(T::new",)
+                        };
+                        self.push_str(&call);
+                        Some(ty)
                     }
-                }
+                };
                 self.push_str("(");
                 for (i, operand) in operands.iter().enumerate() {
                     if i > 0 {
@@ -893,8 +900,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     }
                 }
                 self.push_str(")");
-                if let FunctionKind::Constructor(_) = &func.kind {
-                    self.push_str(")");
+                if let Some(ty) = constructor_type {
+                    self.push_str(&if self.async_ {
+                        format!(", {ty}::new)")
+                    } else {
+                        ")".into()
+                    });
                 }
                 self.push_str(";\n");
             }

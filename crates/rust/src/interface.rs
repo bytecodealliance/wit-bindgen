@@ -1169,7 +1169,7 @@ impl {stream_and_future_support}::StreamPayload for {name} {{
 
                     let resource_methods = funcs.remove(&Some(*id)).unwrap_or(Vec::new());
                     let trait_name = format!("{path}::Guest{camel}");
-                    self.generate_stub_impl(&trait_name, "", &resource_methods);
+                    self.generate_stub_impl(&trait_name, "", &resource_methods, interface);
                 }
                 format!("{path}::Guest")
             }
@@ -1180,7 +1180,7 @@ impl {stream_and_future_support}::StreamPayload for {name} {{
         };
 
         if !root_methods.is_empty() || !extra_trait_items.is_empty() {
-            self.generate_stub_impl(&guest_trait, &extra_trait_items, &root_methods);
+            self.generate_stub_impl(&guest_trait, &extra_trait_items, &root_methods, interface);
         }
     }
 
@@ -1189,6 +1189,7 @@ impl {stream_and_future_support}::StreamPayload for {name} {{
         trait_name: &str,
         extra_trait_items: &str,
         funcs: &[&Function],
+        interface: Option<(InterfaceId, &WorldKey)>,
     ) {
         uwriteln!(self.src, "impl {trait_name} for Stub {{");
         self.src.push_str(extra_trait_items);
@@ -1197,7 +1198,19 @@ impl {stream_and_future_support}::StreamPayload for {name} {{
             if self.gen.skip.contains(&func.name) {
                 continue;
             }
+            let async_ = match &self.gen.opts.async_ {
+                AsyncConfig::None => false,
+                AsyncConfig::All => true,
+                AsyncConfig::Some { exports, .. } => {
+                    exports.contains(&if let Some((_, key)) = interface {
+                        format!("{}#{}", self.resolve.name_world_key(key), func.name)
+                    } else {
+                        func.name.clone()
+                    })
+                }
+            };
             let mut sig = FnSig {
+                async_,
                 use_item_name: true,
                 private: true,
                 ..Default::default()
@@ -1206,8 +1219,14 @@ impl {stream_and_future_support}::StreamPayload for {name} {{
                 sig.self_arg = Some("&self".into());
                 sig.self_is_first_param = true;
             }
-            self.print_signature(func, true, &sig, true);
-            self.src.push_str("{ unreachable!() }\n");
+            self.print_signature(func, true, &sig, false);
+            let call = if async_ {
+                let async_support = self.path_to_async_support();
+                format!("{{ #[allow(unreachable_code)]{async_support}::futures::future::ready(unreachable!()) }}\n")
+            } else {
+                "{ unreachable!() }\n".into()
+            };
+            self.src.push_str(&call);
         }
 
         self.src.push_str("}\n");
@@ -1273,7 +1292,11 @@ impl {stream_and_future_support}::StreamPayload for {name} {{
     ) -> Vec<String> {
         let params = self.print_docs_and_params(func, params_owned, sig, use_async_sugar);
         if let FunctionKind::Constructor(_) = &func.kind {
-            self.push_str(" -> Self")
+            self.push_str(if sig.async_ && !use_async_sugar {
+                " -> impl ::core::future::Future<Output = Self>"
+            } else {
+                " -> Self"
+            })
         } else {
             self.print_results(&func.results, sig.async_ && !use_async_sugar);
         }
