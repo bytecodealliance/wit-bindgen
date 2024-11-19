@@ -94,6 +94,8 @@ struct InterfaceFragment {
     csharp_src: String,
     csharp_interop_src: String,
     stub: String,
+    usings: HashSet<String>,
+    interop_usings: HashSet<String>,
 }
 
 pub struct InterfaceTypeAndFragments {
@@ -121,8 +123,8 @@ pub enum FunctionLevel {
 pub struct CSharp {
     opts: Opts,
     name: String,
-    //TODO remove unused
     usings: HashSet<String>,
+    interop_usings: HashSet<String>,
     return_area_size: usize,
     return_area_align: usize,
     tuple_counts: HashSet<usize>,
@@ -170,6 +172,8 @@ impl CSharp {
             resolve,
             name,
             direction,
+            usings: HashSet::<String>::new(),
+            interop_usings: HashSet::<String>::new(),
         }
     }
 
@@ -191,6 +195,13 @@ impl CSharp {
         if !self.usings.contains(using_ns) {
             let using_ns_string = using_ns.to_string();
             self.usings.insert(using_ns_string);
+        }
+    }
+
+    fn require_interop_using(&mut self, using_ns: &str) {
+        if !self.interop_usings.contains(using_ns) {
+            let using_ns_string = using_ns.to_string();
+            self.interop_usings.insert(using_ns_string);
         }
     }
 }
@@ -407,7 +418,6 @@ impl WorldGenerator for CSharp {
         uwrite!(
             src,
             "
-
              namespace {world_namespace} {{
 
              {access} interface I{name}World {{
@@ -422,6 +432,16 @@ impl WorldGenerator for CSharp {
                 .collect::<Vec<_>>()
                 .join("\n"),
         );
+
+        let usings: Vec<_> = self
+            .world_fragments
+            .iter()
+            .flat_map(|f| &f.usings)
+            .cloned()
+            .collect();
+        usings.iter().for_each(|u| {
+            self.require_using(u);
+        });
 
         let mut producers = wasm_metadata::Producers::empty();
         producers.add(
@@ -534,6 +554,7 @@ impl WorldGenerator for CSharp {
 
         if self.needs_interop_string {
             self.require_using("System.Text");
+            self.require_using("System.Runtime.InteropServices");
             uwrite!(
                 src,
                 r#"
@@ -618,6 +639,17 @@ impl WorldGenerator for CSharp {
             src.push_str("\n");
 
             src.push_str("namespace exports {\n");
+
+            src.push_str(
+                &self
+                    .world_fragments
+                    .iter()
+                    .flat_map(|f| &f.interop_usings)
+                    .map(|s| "using ".to_owned() + s + ";")
+                    .collect::<Vec<String>>()
+                    .join("\n"),
+            );
+
             src.push_str(&format!("{access} static class {name}World\n"));
             src.push_str("{");
 
@@ -816,9 +848,9 @@ impl WorldGenerator for CSharp {
                         {body}
                     }}
                     ",
-                    &self
-                        .usings
+                    fragments
                         .iter()
+                        .flat_map(|f| &f.usings)
                         .map(|s| "using ".to_owned() + s + ";")
                         .collect::<Vec<String>>()
                         .join("\n"),
@@ -846,12 +878,12 @@ impl WorldGenerator for CSharp {
                   }}
                 }}
                 ",
-                &self
-                    .usings
+                fragments
                     .iter()
+                    .flat_map(|f| &f.interop_usings)
                     .map(|s| "using ".to_owned() + s + ";\n")
                     .collect::<Vec<String>>()
-                    .join("\n"),
+                    .join(""),
             );
 
             files.push(
@@ -876,6 +908,8 @@ struct InterfaceGenerator<'a> {
     resolve: &'a Resolve,
     name: &'a str,
     direction: Direction,
+    usings: HashSet<String>,
+    interop_usings: HashSet<String>,
 }
 
 impl InterfaceGenerator<'_> {
@@ -987,6 +1021,8 @@ impl InterfaceGenerator<'_> {
                 csharp_src: self.src,
                 csharp_interop_src: self.csharp_interop_src,
                 stub: self.stub,
+                usings: self.usings,
+                interop_usings: self.interop_usings,
             });
     }
 
@@ -995,6 +1031,8 @@ impl InterfaceGenerator<'_> {
             csharp_src: self.src,
             csharp_interop_src: self.csharp_interop_src,
             stub: self.stub,
+            usings: self.usings,
+            interop_usings: self.interop_usings,
         });
     }
 
@@ -1116,8 +1154,10 @@ impl InterfaceGenerator<'_> {
         self.gen.require_using("System.Runtime.InteropServices");
 
         let target = if let FunctionKind::Freestanding = &func.kind {
+            self.require_interop_using("System.Runtime.InteropServices");
             &mut self.csharp_interop_src
         } else {
+            self.require_using("System.Runtime.InteropServices");
             &mut self.src
         };
 
@@ -1262,7 +1302,7 @@ impl InterfaceGenerator<'_> {
         let export_name = func.legacy_core_export_name(core_module_name.as_deref());
         let access = self.gen.access_modifier();
 
-        self.gen.require_using("System.Runtime.InteropServices");
+        self.require_interop_using("System.Runtime.InteropServices");
         uwrite!(
             self.csharp_interop_src,
             r#"
@@ -1463,6 +1503,20 @@ impl InterfaceGenerator<'_> {
         }
     }
 
+    fn require_using(&mut self, using_ns: &str) {
+        if !self.usings.contains(using_ns) {
+            let using_ns_string = using_ns.to_string();
+            self.usings.insert(using_ns_string);
+        }
+    }
+
+    fn require_interop_using(&mut self, using_ns: &str) {
+        if !self.interop_usings.contains(using_ns) {
+            let using_ns_string = using_ns.to_string();
+            self.interop_usings.insert(using_ns_string);
+        }
+    }
+
     fn start_resource(&mut self, id: TypeId, key: Option<&WorldKey>) {
         let access = self.gen.access_modifier();
         let qualified = self.type_name_with_qualifier(&Type::Id(id), true);
@@ -1478,6 +1532,7 @@ impl InterfaceGenerator<'_> {
                     .map(|key| self.resolve.name_world_key(key))
                     .unwrap_or_else(|| "$root".into());
 
+                self.require_using("System.Runtime.InteropServices");
                 // As of this writing, we cannot safely drop a handle to an imported resource from a .NET finalizer
                 // because it may still have one or more open child resources.  Once WIT has explicit syntax for
                 // indicating parent/child relationships, we should be able to use that information to keep track
@@ -1516,7 +1571,7 @@ impl InterfaceGenerator<'_> {
                     .map(|s| format!("{}#", self.resolve.name_world_key(s)))
                     .unwrap_or_else(String::new);
 
-                self.gen.require_using("System.Runtime.InteropServices");
+                self.require_interop_using("System.Runtime.InteropServices");
                 uwrite!(
                     self.csharp_interop_src,
                     r#"
@@ -1535,6 +1590,7 @@ impl InterfaceGenerator<'_> {
                     .map(|key| format!("[export]{}", self.resolve.name_world_key(key)))
                     .unwrap_or_else(|| "[export]$root".into());
 
+                self.require_using("System.Runtime.InteropServices");
                 // The ergonomics of exported resources are not ideal, currently. Implementing such a resource
                 // requires both extending a class and implementing an interface. The reason for the class is to
                 // allow implementers to inherit code which tracks and disposes of the resource handle; the reason
@@ -2623,7 +2679,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::StringLift { .. } => {
-                self.gen.gen.require_using("System.Text");
+                if FunctionKind::Freestanding == *self.kind || self.gen.direction == Direction::Export {
+                    self.gen.require_interop_using("System.Text");
+                } else {
+                    self.gen.require_using("System.Text");
+                }
+
                 results.push(format!(
                     "Encoding.UTF8.GetString((byte*){}, {})",
                     operands[0], operands[1]
