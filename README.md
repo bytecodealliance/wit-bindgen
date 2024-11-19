@@ -318,65 +318,20 @@ e.g. Java, Kotlin, Clojure, Scala, etc.
 
 ### Guest: TinyGo
 
-You can compile Go code into a Wasm module using the [TinyGo](https://tinygo.org/) compiler. For example, the following command compiles `main.go` to a WASI module:
+The **new** TinyGo WIT bindings generator is currently in development at the
+[wasm-tools-go](https://github.com/bytecodealliance/wasm-tools-go) repository.
 
-`tinygo build -target=wasi main.go`
-
-> Note: the current TinyGo `bindgen` requires TinyGo version v0.27.0 or later.
-
-When using `wit-bindgen tiny-go` bindgen, `*.go` and `*.h` C header file are generated for your project. These files are generated with the [`wit-bindgen` CLI command][cli-install] in this repository.
+To install the `wit-bindgen-go` CLI, run:
 
 ```sh
-wit-bindgen tiny-go ./wit
-# Generating "host.go"
-# Generating "host.c"
-# Generating "host.h"
-# Generating "host_component_type.o"
+go install github.com/bytecodealliance/wasm-tools-go/cmd/wit-bindgen-go
 ```
+> Note: it requires `wasm-tools` to be installed.
 
-If your Go code uses `result` or `option` type, an additional Go file `host_types.go` will be generated. This file contains the Go types that correspond to the `result` and `option` types in the WIT file.
-
-An example of using the generated Go code would look like:
-
-Initialize Go:
-```bash
-go mod init example.com
-```
-
-Create your Go main file:
-
-```go
-// my-component.go
-package main
-
-import (
-	api "example.com/api"
-)
-
-func init() {
-    a := HostImpl{}
-    api.SetHost(a)
-}
-
-type HostImpl struct {
-}
-
-func (e HostImpl) Run() {
-  api.HostPrint("Hello, world!")
-}
-
-//go:generate wit-bindgen tiny-go wit --out-dir=api
-func main() {}
-```
-
-This setup allows you to invoke `go generate`, which generates the bindings for the Go code into an `api` directory. Afterward, you can compile your Go code into a WASI module using the TinyGo compiler. Lastly you can componentize the module using `wasm-tools`:
+Then, you can generate the bindings for your project:
 
 ```sh
-go generate # generate bindings for Go
-tinygo build -target=wasi -o main.wasm my-component.go # compile
-wasm-tools component embed --world host ./wit main.wasm -o main.embed.wasm # create a component
-wasm-tools component new main.embed.wasm --adapt wasi_snapshot_preview1.command.wasm -o main.component.wasm
-wasm-tools validate main.component.wasm --features component-model
+wit-bindgen-go generate <path-to-wit-pkg>
 ```
 
 ### Guest: MoonBit
@@ -384,23 +339,37 @@ wasm-tools validate main.component.wasm --features component-model
 MoonBit can be compiled to WebAssembly using [its toolchain](https://moonbitlang.com/download):
 
 ```sh
-moon build --target wasm # -g to keep symbols
+moon build --target wasm # --debug to keep symbols
 ```
 
-The generarted core wasm will be found under `target/wasm/release/build/gen/gen.wasm` by default. Then you can use `wasm-tools` to componentize the module:
+The generated core wasm will be found under `target/wasm/release/build/gen/gen.wasm` by default. Then you can use `wasm-tools` to componentize the module:
 
 ```
 wasm-tools component embed wit target/wasm/release/build/gen/gen.wasm -o target/gen.wasm
 wasm-tools component new target/gen.wasm -o target/gen.component.wasm
 ```
 
-When using `wit-bindgen moonbit`, you may use `--derive-show` or `--derive-eq` to derive `Show` or `Eq` for all types.
+You may use `--gen-dir` to specify which package should be responsible for the exportation. The default is `gen` as mentioned above.
+This can be useful having one project that exports multiple worlds.
+
+When using `wit-bindgen moonbit`, you may use `--derive-show` or `--derive-eq` to derive `Show` or `Eq` traits for all types.
+You may also use `--derive-error`, which will make types containing `Error` as error types in MoonBit.
 
 You will find the files to be modified with the name `**/stub.mbt`.
+To avoid touching the files during regeneration (including `moon.pkg.json` or `moon.mod.json`) you may use `--ignore-stub`.
+
+/!\ MoonBit is still evolving, so please check out the [Weekly Updates](https://www.moonbitlang.com/weekly-updates/) for any breaking changes or deprecations.
 
 ### Guest: Other Languages
 
-Other languages such as JS, Ruby, Python, etc, are hoped to be supported one day
+Guest component support for JavaScript and Python is available in
+[componentize-js](https://github.com/bytecodealliance/ComponentizeJS) and
+[componentize-py](https://github.com/bytecodealliance/componentize-py), respectively.
+See also
+[The WebAssembly Component Model developer's guide](https://component-model.bytecodealliance.org/language-support.html)
+for examples of how to build components using various languages.
+
+Other languages such as Ruby, etc, are hoped to be supported one day
 with `wit-bindgen` or with components in general. It's recommended to reach out
 on [zulip] if you're intersted in contributing a generator for one of these
 langauges. It's worth noting, however, that turning an interpreted language into
