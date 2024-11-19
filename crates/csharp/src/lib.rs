@@ -3340,7 +3340,6 @@ trait ToCSharpIdent: ToOwned {
 
 impl ToCSharpIdent for str {
     // Source: https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/keywords/
-    // TODO: Repace with actual keywords
     fn csharp_keywords() -> Vec<&'static str> {
         vec![
             "abstract",
