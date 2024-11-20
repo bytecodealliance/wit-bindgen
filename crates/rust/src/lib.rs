@@ -467,7 +467,7 @@ impl RustWasm {
         // TODO: This is a hack because there are currently functions and types in the `async_support` module that
         // are useful to applications even if the generated bindings don't use it.  We should probably move those
         // items to a library which the application can add as a dependency.
-        self.rt_module.insert(RuntimeItem::AsyncSupport);
+        self.rt_module.insert(RuntimeItem::StreamAndFutureSupport);
 
         if self.rt_module.is_empty() {
             return;
@@ -731,19 +731,6 @@ impl<T: WasmResource> Drop for Resource<T> {{
                     invalid_value = if self.opts.symmetric { "0" } else { "u32::MAX" },
                     handle_type = if self.opts.symmetric { "usize" } else { "u32" }
                 ));
-            }
-
-            RuntimeItem::AsyncSupport => {
-                self.src.push_str("pub mod async_support {");
-                self.src.push_str(include_str!("async_support.rs"));
-                self.src.push_str("}");
-            }
-
-            RuntimeItem::StreamAndFutureSupport => {
-                self.src.push_str("pub mod stream_and_future_support {");
-                self.src
-                    .push_str(include_str!("stream_and_future_support.rs"));
-                self.src.push_str("}");
             }
 
             RuntimeItem::StreamAndFutureSupport => {

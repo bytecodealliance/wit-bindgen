@@ -395,7 +395,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                         }
                     }
                     TypeDefKind::Unknown => unreachable!(),
-                    TypeDefKind::Error => todo!(),
                 }
             }
             a => {
@@ -681,7 +680,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                         }
                     }
                     TypeDefKind::Unknown => unreachable!(),
-                    TypeDefKind::Error => todo!(),
                 }
             }
             a => {

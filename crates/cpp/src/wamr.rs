@@ -61,7 +61,7 @@ fn push_wamr(ty: &Type, resolve: &Resolve, params_str: &mut String) {
             TypeDefKind::Handle(_h) => {
                 params_str.push('i');
             }
-            TypeDefKind::Error => todo!(),
+            TypeDefKind::ErrorContext => todo!(),
         },
     }
 }
@@ -124,7 +124,7 @@ fn wamr_add_result(sig: &mut WamrSig, resolve: &Resolve, ty: &Type) {
             TypeDefKind::Handle(_h) => {
                 sig.wamr_result = "i".into();
             }
-            TypeDefKind::Error => todo!(),
+            TypeDefKind::ErrorContext => todo!(),
         },
     }
 }

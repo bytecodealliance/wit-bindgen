@@ -751,7 +751,6 @@ pub fn push_ty_name(resolve: &Resolve, ty: &Type, src: &mut String) {
                 | TypeDefKind::Resource
                 | TypeDefKind::Flags(_)
                 | TypeDefKind::Enum(_)
-                | TypeDefKind::Error
                 | TypeDefKind::Variant(_) => {
                     unimplemented!()
                 }
@@ -1000,7 +999,6 @@ impl Return {
             TypeDefKind::ErrorContext => todo!("return_single for error-context"),
             TypeDefKind::Resource => todo!("return_single for resource"),
             TypeDefKind::Unknown => unreachable!(),
-            TypeDefKind::Error => todo!(),
         }
 
         self.retptrs.push(*orig_ty);
@@ -1637,7 +1635,6 @@ impl InterfaceGenerator<'_> {
                 self.free(&Type::Id(*id), "*ptr");
             }
             TypeDefKind::Unknown => unreachable!(),
-            TypeDefKind::Error => todo!(),
         }
         if c_helpers_body_start == self.src.c_helpers.len() {
             self.src.c_helpers.as_mut_string().truncate(c_helpers_start);
@@ -2114,7 +2111,6 @@ impl InterfaceGenerator<'_> {
                 TypeDefKind::Type(ty) => self.contains_droppable_borrow(ty),
 
                 TypeDefKind::Unknown => false,
-                TypeDefKind::Error => todo!(),
             }
         } else {
             false
@@ -3081,16 +3077,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwriteln!(self.src, "free({ptr});");
                 uwriteln!(self.src, "}}");
             }
-            Instruction::Flush { amt } => {
-                for i in 0..*amt {
-                    // no easy way to create a temporary?
-                    results.push(operands[i].clone());
-                }
-            }
-
-            Instruction::Flush { amt } => {
-                results.extend(operands.iter().take(*amt).map(|v| v.clone()));
-            }
 
             Instruction::Flush { amt } => {
                 results.extend(operands.iter().take(*amt).map(|v| v.clone()));
@@ -3207,7 +3193,6 @@ pub fn is_arg_by_pointer(resolve: &Resolve, ty: &Type) -> bool {
             TypeDefKind::ErrorContext => todo!("is_arg_by_pointer for error-context"),
             TypeDefKind::Resource => todo!("is_arg_by_pointer for resource"),
             TypeDefKind::Unknown => unreachable!(),
-            TypeDefKind::Error => todo!(),
         },
         Type::String => true,
         _ => false,

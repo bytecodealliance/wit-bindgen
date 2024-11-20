@@ -347,7 +347,6 @@ impl InterfaceGenerator<'_> {
                         src
                     }
                     TypeDefKind::Unknown => unreachable!(),
-                    TypeDefKind::Error => todo!(),
                 }
             }
         }
@@ -681,7 +680,6 @@ impl InterfaceGenerator<'_> {
             TypeDefKind::Stream(_) => todo!("anonymous_type for stream"),
             TypeDefKind::ErrorContext => todo!("anonymous_type for error-context"),
             TypeDefKind::Unknown => unreachable!(),
-            TypeDefKind::Error => todo!(),
         }
     }
 

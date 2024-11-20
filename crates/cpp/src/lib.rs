@@ -956,7 +956,7 @@ impl CppInterfaceGenerator<'_> {
             TypeDefKind::Stream(_) => todo!("generate for stream"),
             TypeDefKind::Handle(_) => todo!("generate for handle"),
             TypeDefKind::Unknown => unreachable!(),
-            TypeDefKind::Error => todo!(),
+            TypeDefKind::ErrorContext => todo!(),
         }
     }
 
@@ -2057,7 +2057,7 @@ impl CppInterfaceGenerator<'_> {
                 TypeDefKind::Stream(_) => todo!(),
                 TypeDefKind::Type(ty) => self.type_name(ty, from_namespace, flavor),
                 TypeDefKind::Unknown => todo!(),
-                TypeDefKind::Error => todo!(),
+                TypeDefKind::ErrorContext => todo!(),
             },
         }
     }
@@ -2512,6 +2512,18 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
     ) {
         todo!()
     }
+    
+    fn type_future(&mut self, _id: TypeId, _name: &str, _ty: &Option<Type>, _docs: &Docs) {
+        todo!()
+    }
+    
+    fn type_stream(&mut self, _id: TypeId, _name: &str, _ty: &Type, _docs: &Docs) {
+        todo!()
+    }
+    
+    fn type_error_context(&mut self, _id: TypeId, _name: &str, _docs: &Docs) {
+        todo!()
+    }
 }
 
 struct CabiPostInformation {
@@ -2686,7 +2698,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                 _ => false,
             },
             TypeDefKind::Unknown => todo!(),
-            TypeDefKind::Error => todo!(),
+            TypeDefKind::ErrorContext => todo!(),
         }
     }
 }
@@ -3852,11 +3864,10 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             abi::Instruction::FutureLift { .. } => todo!(),
             abi::Instruction::StreamLower { .. } => todo!(),
             abi::Instruction::StreamLift { .. } => todo!(),
-            abi::Instruction::ErrorLower { .. } => todo!(),
-            abi::Instruction::ErrorLift { .. } => todo!(),
+            abi::Instruction::ErrorContextLower { .. } => todo!(),
+            abi::Instruction::ErrorContextLift { .. } => todo!(),
             abi::Instruction::AsyncMalloc { .. } => todo!(),
             abi::Instruction::AsyncCallWasm { .. } => todo!(),
-            abi::Instruction::AsyncCallStart { .. } => todo!(),
             abi::Instruction::AsyncPostCallInterface { .. } => todo!(),
             abi::Instruction::AsyncCallReturn { .. } => todo!(),
             abi::Instruction::Flush { amt } => {

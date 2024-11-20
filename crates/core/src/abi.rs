@@ -563,13 +563,13 @@ def_instruction! {
         /// This cannot be allocated on the (shadow-)stack since it needs to
         /// remain valid until the callee has finished using the buffers, which
         /// may be after we pop the current stack frame.
-        AsyncMalloc { size: usize, align: usize } : [0] => [1],
+        AsyncMalloc { size: ArchitectureSize, align: Alignment } : [0] => [1],
 
         /// Call an async-lowered import.
         ///
         /// `size` and `align` are used to deallocate the parameter area
         /// allocated using `AsyncMalloc` after the callee task returns a value.
-        AsyncCallWasm { name: &'a str, size: usize, align: usize } : [2] => [0],
+        AsyncCallWasm { name: &'a str, size: ArchitectureSize, align: Alignment } : [2] => [0],
 
         /// Generate code to run after `CallInterface` for an async-lifted export.
         ///
@@ -907,8 +907,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
     }
 
     fn call(&mut self, func: &Function) {
-        const MAX_FLAT_PARAMS: usize = 16;
-
         let sig = self.resolve.wasm_signature(self.variant, func);
         self.call_with_signature(func, sig);
     }

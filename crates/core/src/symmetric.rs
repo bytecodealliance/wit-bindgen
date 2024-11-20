@@ -37,7 +37,7 @@ fn needs_dealloc2(resolve: &Resolve, tp: &Type) -> bool {
             TypeDefKind::List(_l) => true,
             TypeDefKind::Future(_) => todo!(),
             TypeDefKind::Stream(_) => todo!(),
-            TypeDefKind::Error => false,
+            TypeDefKind::ErrorContext => false,
             TypeDefKind::Type(tp) => needs_dealloc2(resolve, tp),
             TypeDefKind::Unknown => false,
         },
@@ -101,7 +101,7 @@ fn has_non_canonical_list2(resolve: &Resolve, ty: &Type, maybe: bool) -> bool {
                     has_non_canonical_list2(resolve, ty, true)
                 }
             }
-            TypeDefKind::Future(_) | TypeDefKind::Stream(_) | TypeDefKind::Error => false,
+            TypeDefKind::Future(_) | TypeDefKind::Stream(_) | TypeDefKind::ErrorContext => false,
             TypeDefKind::Type(ty) => has_non_canonical_list2(resolve, ty, maybe),
             TypeDefKind::Unknown => false,
         },
@@ -164,7 +164,7 @@ fn has_non_canonical_list_rust2(resolve: &Resolve, ty: &Type) -> bool {
                         .map_or(false, |ty| has_non_canonical_list_rust2(resolve, ty))
             }
             TypeDefKind::List(_ty) => true,
-            TypeDefKind::Future(_) | TypeDefKind::Stream(_) | TypeDefKind::Error => false,
+            TypeDefKind::Future(_) | TypeDefKind::Stream(_) | TypeDefKind::ErrorContext => false,
             TypeDefKind::Type(ty) => has_non_canonical_list_rust2(resolve, ty),
             TypeDefKind::Unknown => false,
         },
