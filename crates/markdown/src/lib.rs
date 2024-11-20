@@ -413,10 +413,13 @@ impl InterfaceGenerator<'_> {
                             self.push_str("future");
                         }
                     },
-                    TypeDefKind::Stream(s) => {
+                    TypeDefKind::Stream(t) => {
                         self.push_str("stream<");
-                        self.print_ty(s);
+                        self.print_ty(t);
                         self.push_str(">");
+                    }
+                    TypeDefKind::ErrorContext => {
+                        self.push_str("error-context");
                     }
                     TypeDefKind::Handle(Handle::Own(ty)) => {
                         self.push_str("own<");
@@ -429,7 +432,6 @@ impl InterfaceGenerator<'_> {
                         self.push_str(">");
                     }
                     TypeDefKind::Unknown => unreachable!(),
-                    TypeDefKind::Error => todo!(),
                 }
             }
         }

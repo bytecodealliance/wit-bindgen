@@ -193,7 +193,7 @@ impl Types {
                 info = self.optional_type_info(resolve, r.ok.as_ref());
                 info |= self.optional_type_info(resolve, r.err.as_ref());
             }
-            TypeDefKind::Future(_) | TypeDefKind::Stream(_) | TypeDefKind::Error => {}
+            TypeDefKind::Future(_) | TypeDefKind::Stream(_) | TypeDefKind::ErrorContext => {}
             TypeDefKind::Unknown => unreachable!(),
         }
         let prev = self.type_info.insert(ty, info);

@@ -81,6 +81,7 @@ default = [
   'cpp',
   'bridge',
   'moonbit',
+  'async',
 ]
 bridge = ['dep:wit-bindgen-bridge']
 c = ['dep:wit-bindgen-c']
@@ -92,6 +93,7 @@ go = ['dep:wit-bindgen-go']
 csharp = ['dep:wit-bindgen-csharp']
 csharp-mono = ['csharp']
 moonbit = ['dep:wit-bindgen-moonbit']
+async = ["wit-bindgen-rust/async"]
 
 [dev-dependencies]
 heck = { workspace = true }

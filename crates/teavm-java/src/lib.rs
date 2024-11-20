@@ -2049,18 +2049,20 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 );
             }
 
+            Instruction::Flush { amt } => {
+                results.extend(operands.iter().take(*amt).map(|v| v.clone()));
+            }
+
             Instruction::AsyncMalloc { .. }
-            | Instruction::AsyncCallStart { .. }
             | Instruction::AsyncPostCallInterface { .. }
-            | Instruction::AsyncCallReturn { .. } => todo!(),
-            Instruction::FutureLower { .. }
+            | Instruction::AsyncCallReturn { .. }
+            | Instruction::FutureLower { .. }
             | Instruction::FutureLift { .. }
             | Instruction::StreamLower { .. }
             | Instruction::StreamLift { .. }
-            | Instruction::ErrorLower { .. }
-            | Instruction::ErrorLift { .. }
-            | Instruction::AsyncCallWasm { .. }
-            | Instruction::Flush { .. } => todo!(),
+            | Instruction::ErrorContextLower { .. }
+            | Instruction::ErrorContextLift { .. }
+            | Instruction::AsyncCallWasm { .. } => todo!(),
         }
     }
 

@@ -160,6 +160,12 @@ impl Parse for Config {
                             return Err(Error::new(span, "cannot specify second async config"));
                         }
                         async_configured = true;
+                        if !matches!(val, AsyncConfig::None) && !cfg!(feature = "async") {
+                            return Err(Error::new(
+                                span,
+                                "must enable `async` feature to enable async imports and/or exports",
+                            ));
+                        }
                         opts.async_ = val;
                     }
                 }
@@ -245,7 +251,7 @@ fn parse_source(
             };
             let (pkg, sources) = resolve.push_path(normalized_path)?;
             pkgs.push(pkg);
-            files.extend(sources.paths().map(|p| p.to_owned()));
+            files.extend(sources.package_paths(pkg).unwrap().map(|v| v.to_owned()));
         }
         Ok(())
     };

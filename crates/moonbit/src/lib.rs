@@ -2595,18 +2595,21 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 uwriteln!(self.src, "{ffi_qualifier}free({address})");
             }
-            Instruction::FutureLower { .. } => todo!(),
-            Instruction::FutureLift { .. } => todo!(),
-            Instruction::StreamLower { .. } => todo!(),
-            Instruction::StreamLift { .. } => todo!(),
-            Instruction::ErrorLower { .. } => todo!(),
-            Instruction::ErrorLift { .. } => todo!(),
-            Instruction::AsyncMalloc { .. } => todo!(),
-            Instruction::AsyncCallWasm { .. } => todo!(),
-            Instruction::AsyncCallStart { .. } => todo!(),
-            Instruction::AsyncPostCallInterface { .. } => todo!(),
-            Instruction::AsyncCallReturn { .. } => todo!(),
-            Instruction::Flush { .. } => todo!(),
+
+            Instruction::Flush { amt } => {
+                results.extend(operands.iter().take(*amt).map(|v| v.clone()));
+            }
+
+            Instruction::AsyncMalloc { .. }
+            | Instruction::AsyncPostCallInterface { .. }
+            | Instruction::AsyncCallReturn { .. }
+            | Instruction::FutureLower { .. }
+            | Instruction::FutureLift { .. }
+            | Instruction::StreamLower { .. }
+            | Instruction::StreamLift { .. }
+            | Instruction::ErrorContextLower { .. }
+            | Instruction::ErrorContextLift { .. }
+            | Instruction::AsyncCallWasm { .. } => todo!(),
         }
     }
 

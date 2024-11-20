@@ -231,10 +231,10 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
                 if compiler.ends_with("++") {
                     cmd.arg("-Wno-deprecated");
                 }
-                println!("{:?}", cmd);
+                let command = format!("{cmd:?}");
                 let output = match cmd.output() {
                     Ok(output) => output,
-                    Err(e) => panic!("failed to spawn compiler: {}", e),
+                    Err(e) => panic!("failed to spawn compiler: {e}; command was `{command}`"),
                 };
 
                 if !output.status.success() {
@@ -397,10 +397,10 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
         cmd.arg(&out_wasm);
         cmd.arg(format!("{snake}.go"));
         cmd.current_dir(&out_dir);
-
+        let command = format!("{cmd:?}");
         let output = match cmd.output() {
             Ok(output) => output,
-            Err(e) => panic!("failed to spawn compiler: {}", e),
+            Err(e) => panic!("failed to spawn compiler: {e}; command was `{command}`"),
         };
 
         if !output.status.success() {
@@ -667,10 +667,10 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
                 .arg("--self-contained")
                 .arg("-o")
                 .arg(&out_wasm);
-
+            let command = format!("{cmd:?}");
             let output = match cmd.output() {
                 Ok(output) => output,
-                Err(e) => panic!("failed to spawn compiler: {}", e),
+                Err(e) => panic!("failed to spawn compiler: {e}; command was `{command}`"),
             };
 
             if !output.status.success() {
@@ -831,9 +831,10 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
                 .arg("/p:UseAppHost=false")
                 .arg("-o")
                 .arg(&out_wasm);
+            let command = format!("{cmd:?}");
             let output = match cmd.output() {
                 Ok(output) => output,
-                Err(e) => panic!("failed to spawn compiler: {}", e),
+                Err(e) => panic!("failed to spawn compiler: {e}; command was `{command}`"),
             };
 
             if !output.status.success() {

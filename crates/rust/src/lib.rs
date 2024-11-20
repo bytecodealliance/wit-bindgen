@@ -112,7 +112,7 @@ enum RuntimeItem {
     AsF64,
     ResourceType,
     BoxType,
-    AsyncSupport,
+    StreamAndFutureSupport,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -146,16 +146,37 @@ pub enum AsyncConfig {
 
 #[cfg(feature = "clap")]
 fn parse_async(s: &str) -> Result<AsyncConfig, String> {
-    _ = s;
-    //Err("todo: parse `AsyncConfig`".into())
-    Ok(AsyncConfig::None)
-}
-
-#[cfg(feature = "clap")]
-impl std::fmt::Display for AsyncConfig {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", self)
-    }
+    Ok(match s {
+        "none" => AsyncConfig::None,
+        "all" => AsyncConfig::All,
+        _ => {
+            if let Some(values) = s.strip_prefix("some=") {
+                let mut imports = Vec::new();
+                let mut exports = Vec::new();
+                for value in values.split(',') {
+                    let error = || {
+                        Err(format!(
+                            "expected string of form `import:<name>` or `export:<name>`; got `{value}`"
+                        ))
+                    };
+                    if let Some((k, v)) = value.split_once(":") {
+                        match k {
+                            "import" => imports.push(v.into()),
+                            "export" => exports.push(v.into()),
+                            _ => return error(),
+                        }
+                    } else {
+                        return error();
+                    }
+                }
+                AsyncConfig::Some { imports, exports }
+            } else {
+                return Err(format!(
+                    "expected string of form `none`, `all`, or `some=<value>[,<value>...]`; got `{s}`"
+                ));
+            }
+        }
+    })
 }
 
 #[derive(Default, Debug, Clone)]
@@ -290,7 +311,15 @@ pub struct Opts {
     pub disable_custom_section_link_helpers: bool,
 
     /// Determines which functions to lift or lower `async`, if any.
-    #[cfg_attr(feature = "clap", arg(long = "async", value_parser = parse_async, default_value_t = Default::default()))]
+    ///
+    /// Accepted values are:
+    ///     - none
+    ///     - all
+    ///     - some=<value>[,<value>...], where each <value> is of the form:
+    ///         - import:<name> or
+    ///         - export:<name>
+    #[cfg_attr(all(feature = "clap", feature = "async"), arg(long = "async", value_parser = parse_async))]
+    #[cfg_attr(all(feature = "clap", not(feature = "async")), skip)]
     pub async_: AsyncConfig,
 }
 
@@ -450,6 +479,7 @@ impl RustWasm {
         }
 
         self.src.push_str("mod _rt {\n");
+        self.src.push_str("#![allow(dead_code, clippy::all)]\n");
         let mut emitted = IndexSet::new();
         while !self.rt_module.is_empty() {
             for item in mem::take(&mut self.rt_module) {
@@ -459,8 +489,9 @@ impl RustWasm {
             }
         }
         self.src.push_str("}\n");
-        if emitted.contains(&RuntimeItem::AsyncSupport) {
-            self.src.push_str("pub use _rt::async_support;\n");
+        if emitted.contains(&RuntimeItem::StreamAndFutureSupport) {
+            self.src
+                .push_str("pub use _rt::stream_and_future_support;\n");
         }
     }
 
@@ -707,6 +738,13 @@ impl<T: WasmResource> Drop for Resource<T> {{
                 self.src.push_str(include_str!("async_support.rs"));
                 self.src.push_str("}");
             }
+
+            RuntimeItem::StreamAndFutureSupport => {
+                self.src.push_str("pub mod stream_and_future_support {");
+                self.src
+                    .push_str(include_str!("stream_and_future_support.rs"));
+                self.src.push_str("}");
+            }
         }
     }
 
@@ -880,6 +918,7 @@ macro_rules! __export_{world_name}_impl {{
         .unwrap();
 
         self.src.push_str("#[doc(hidden)]\n");
+        self.src.push_str("#[allow(clippy::octal_escapes)]\n");
         self.src.push_str(&format!(
             "pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; {}] = *b\"\\\n",
             component_type.len()

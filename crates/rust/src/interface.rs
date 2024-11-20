@@ -561,6 +561,7 @@ macro_rules! {macro_name} {{
                 lists_borrowed: false,
                 style: TypeOwnershipStyle::Owned,
             };
+            let stream_and_future_support = self.path_to_stream_and_future_support();
             let async_support = self.path_to_async_support();
 
             match &self.resolve.types[ty].kind {
@@ -586,9 +587,6 @@ macro_rules! {macro_name} {{
                     };
 
                     if self.gen.future_payloads_emitted.insert(full_name) {
-                        // TODO: `future.read` and `future.write` should always read from and write to the heap,
-                        // and the return value will be either 0xffff_ffff (blocked), 0x8000_0000 (closed), or 0x1
-                        // (done).
                         let (size, align) = if let Some(payload_type) = payload_type {
                             (
                                 self.sizes.size(payload_type),
@@ -618,7 +616,7 @@ macro_rules! {macro_name} {{
                         uwriteln!(
                             self.src,
                             r#"
-impl {async_support}::FuturePayload for {name} {{
+impl {stream_and_future_support}::FuturePayload for {name} {{
     fn new() -> u32 {{
         #[cfg(not(target_arch = "wasm32"))]
         {{
@@ -649,7 +647,6 @@ impl {async_support}::FuturePayload for {name} {{
             let mut buffer = Buffer([::core::mem::MaybeUninit::uninit(); {size}]);
             let address = buffer.0.as_mut_ptr() as *mut u8;
             {lower}
-        
             #[link(wasm_import_module = "{module}")]
             extern "C" {{
                 #[link_name = "[async][future-write-{index}]{func_name}"]
@@ -687,7 +684,7 @@ impl {async_support}::FuturePayload for {name} {{
         }}
     }}
 
-    fn drop_writer(writer: u32) {{
+    fn close_writable(writer: u32) {{
         #[cfg(not(target_arch = "wasm32"))]
         {{
             unreachable!();
@@ -697,14 +694,14 @@ impl {async_support}::FuturePayload for {name} {{
         {{
             #[link(wasm_import_module = "{module}")]
             extern "C" {{
-                #[link_name = "[future-drop-writer-{index}]{func_name}"]
-                fn drop(_: u32);
+                #[link_name = "[future-close-writable-{index}]{func_name}"]
+                fn drop(_: u32, _: u32);
             }}
-            unsafe {{ drop(writer) }}
+            unsafe {{ drop(writer, 0) }}
         }}
     }}
 
-    fn drop_reader(reader: u32) {{
+    fn close_readable(reader: u32) {{
         #[cfg(not(target_arch = "wasm32"))]
         {{
             unreachable!();
@@ -714,7 +711,7 @@ impl {async_support}::FuturePayload for {name} {{
         {{
             #[link(wasm_import_module = "{module}")]
             extern "C" {{
-                #[link_name = "[future-drop-reader-{index}]{func_name}"]
+                #[link_name = "[future-close-readable-{index}]{func_name}"]
                 fn drop(_: u32);
             }}
             unsafe {{ drop(reader) }}
@@ -795,7 +792,7 @@ for (index, dst) in values.iter_mut().enumerate() {{
                         uwriteln!(
                             self.src,
                             r#"
-impl {async_support}::StreamPayload for {name} {{
+impl {stream_and_future_support}::StreamPayload for {name} {{
     fn new() -> u32 {{
         #[cfg(not(target_arch = "wasm32"))]
         {{
@@ -823,7 +820,6 @@ impl {async_support}::StreamPayload for {name} {{
         {{
             {lower_address}
             {lower}
-        
             #[link(wasm_import_module = "{module}")]
             extern "C" {{
                 #[link_name = "[async][stream-write-{index}]{func_name}"]
@@ -845,7 +841,6 @@ impl {async_support}::StreamPayload for {name} {{
         #[cfg(target_arch = "wasm32")]
         {{
             {lift_address}
-        
             #[link(wasm_import_module = "{module}")]
             extern "C" {{
                 #[link_name = "[async][stream-read-{index}]{func_name}"]
@@ -855,6 +850,7 @@ impl {async_support}::StreamPayload for {name} {{
             let count = unsafe {{
                 {async_support}::await_stream_result(wit_import, stream, address, u32::try_from(values.len()).unwrap()).await
             }};
+            #[allow(unused)]
             if let Some(count) = count {{
                 {lift}
             }}
@@ -862,7 +858,7 @@ impl {async_support}::StreamPayload for {name} {{
         }}
     }}
 
-    fn drop_writer(writer: u32) {{
+    fn close_writable(writer: u32) {{
         #[cfg(not(target_arch = "wasm32"))]
         {{
             unreachable!();
@@ -872,14 +868,14 @@ impl {async_support}::StreamPayload for {name} {{
         {{
             #[link(wasm_import_module = "{module}")]
             extern "C" {{
-                #[link_name = "[stream-drop-writer-{index}]{func_name}"]
-                fn drop(_: u32);
+                #[link_name = "[stream-close-writable-{index}]{func_name}"]
+                fn drop(_: u32, _: u32);
             }}
-            unsafe {{ drop(writer) }}
+            unsafe {{ drop(writer, 0) }}
         }}
     }}
 
-    fn drop_reader(reader: u32) {{
+    fn close_readable(reader: u32) {{
         #[cfg(not(target_arch = "wasm32"))]
         {{
             unreachable!();
@@ -889,7 +885,7 @@ impl {async_support}::StreamPayload for {name} {{
         {{
             #[link(wasm_import_module = "{module}")]
             extern "C" {{
-                #[link_name = "[stream-drop-reader-{index}]{func_name}"]
+                #[link_name = "[stream-close-readable-{index}]{func_name}"]
                 fn drop(_: u32);
             }}
             unsafe {{ drop(reader) }}
@@ -1291,7 +1287,7 @@ impl {async_support}::StreamPayload for {name} {{
 
                     let resource_methods = funcs.remove(&Some(*id)).unwrap_or(Vec::new());
                     let trait_name = format!("{path}::Guest{camel}");
-                    self.generate_stub_impl(&trait_name, "", &resource_methods);
+                    self.generate_stub_impl(&trait_name, "", &resource_methods, interface);
                 }
                 format!("{path}::Guest")
             }
@@ -1302,7 +1298,7 @@ impl {async_support}::StreamPayload for {name} {{
         };
 
         if !root_methods.is_empty() || !extra_trait_items.is_empty() {
-            self.generate_stub_impl(&guest_trait, &extra_trait_items, &root_methods);
+            self.generate_stub_impl(&guest_trait, &extra_trait_items, &root_methods, interface);
         }
     }
 
@@ -1311,6 +1307,7 @@ impl {async_support}::StreamPayload for {name} {{
         trait_name: &str,
         extra_trait_items: &str,
         funcs: &[&Function],
+        interface: Option<(InterfaceId, &WorldKey)>,
     ) {
         uwriteln!(self.src, "impl {trait_name} for Stub {{");
         self.src.push_str(extra_trait_items);
@@ -1319,7 +1316,19 @@ impl {async_support}::StreamPayload for {name} {{
             if self.gen.skip.contains(&func.name) {
                 continue;
             }
+            let async_ = match &self.gen.opts.async_ {
+                AsyncConfig::None => false,
+                AsyncConfig::All => true,
+                AsyncConfig::Some { exports, .. } => {
+                    exports.contains(&if let Some((_, key)) = interface {
+                        format!("{}#{}", self.resolve.name_world_key(key), func.name)
+                    } else {
+                        func.name.clone()
+                    })
+                }
+            };
             let mut sig = FnSig {
+                async_,
                 use_item_name: true,
                 private: true,
                 ..Default::default()
@@ -1328,8 +1337,14 @@ impl {async_support}::StreamPayload for {name} {{
                 sig.self_arg = Some("&self".into());
                 sig.self_is_first_param = true;
             }
-            self.print_signature(func, true, &sig, true);
-            self.src.push_str("{ unreachable!() }\n");
+            self.print_signature(func, true, &sig, false);
+            let call = if async_ {
+                let async_support = self.path_to_async_support();
+                format!("{{ #[allow(unreachable_code)]{async_support}::futures::future::ready(unreachable!()) }}\n")
+            } else {
+                "{ unreachable!() }\n".into()
+            };
+            self.src.push_str(&call);
         }
 
         self.src.push_str("}\n");
@@ -1395,7 +1410,11 @@ impl {async_support}::StreamPayload for {name} {{
     ) -> Vec<String> {
         let params = self.print_docs_and_params(func, params_owned, sig, use_async_sugar);
         if let FunctionKind::Constructor(_) = &func.kind {
-            self.push_str(" -> Self")
+            self.push_str(if sig.async_ && !use_async_sugar {
+                " -> impl ::core::future::Future<Output = Self>"
+            } else {
+                " -> Self"
+            })
         } else {
             self.print_results(&func.results, sig.async_ && !use_async_sugar);
         }
@@ -2468,8 +2487,15 @@ impl {async_support}::StreamPayload for {name} {{
         self.path_from_runtime_module(RuntimeItem::StdAllocModule, "alloc")
     }
 
+    pub fn path_to_stream_and_future_support(&mut self) -> String {
+        self.path_from_runtime_module(
+            RuntimeItem::StreamAndFutureSupport,
+            "stream_and_future_support",
+        )
+    }
+
     pub fn path_to_async_support(&mut self) -> String {
-        self.path_from_runtime_module(RuntimeItem::AsyncSupport, "async_support")
+        "::wit_bindgen_rt::async_support".into()
     }
 
     fn path_from_runtime_module(
@@ -2827,7 +2853,7 @@ impl<'a, 'b> wit_bindgen_core::AnonymousTypeGenerator<'a> for AnonTypeGenerator<
         self.resolve
     }
 
-    fn anonymous_typ_type(&mut self, _id: TypeId, ty: &Type, _docs: &Docs) {
+    fn anonymous_type_type(&mut self, _id: TypeId, ty: &Type, _docs: &Docs) {
         self.interface.print_ty(ty, self.mode);
     }
 
@@ -2895,24 +2921,25 @@ impl<'a, 'b> wit_bindgen_core::AnonymousTypeGenerator<'a> for AnonTypeGenerator<
     }
 
     fn anonymous_type_future(&mut self, _id: TypeId, ty: &Option<Type>, _docs: &Docs) {
-        let async_support = self.interface.path_to_async_support();
+        let stream_and_future_support = self.interface.path_to_stream_and_future_support();
         self.interface
-            .push_str(&format!("{async_support}::FutureReader<"));
+            .push_str(&format!("{stream_and_future_support}::FutureReader<"));
         self.interface.print_optional_ty(ty.as_ref(), self.mode);
         self.interface.push_str(">");
     }
 
     fn anonymous_type_stream(&mut self, _id: TypeId, ty: &Type, _docs: &Docs) {
-        let async_support = self.interface.path_to_async_support();
+        let stream_and_future_support = self.interface.path_to_stream_and_future_support();
         self.interface
-            .push_str(&format!("{async_support}::StreamReader<"));
+            .push_str(&format!("{stream_and_future_support}::StreamReader<"));
         self.interface.print_ty(ty, self.mode);
         self.interface.push_str(">");
     }
 
-    fn anonymous_type_error(&mut self) {
+    fn anonymous_type_error_context(&mut self) {
         let async_support = self.interface.path_to_async_support();
-        self.interface.push_str(&format!("{async_support}::Error"));
+        self.interface
+            .push_str(&format!("{async_support}::ErrorContext"));
     }
 }
 

@@ -326,6 +326,7 @@ impl InterfaceGenerator<'_> {
                         src.push('T');
                         src
                     }
+                    TypeDefKind::ErrorContext => "ErrorContext".to_owned(),
                     TypeDefKind::Handle(Handle::Own(ty)) => {
                         // Currently there is no different between Own and Borrow
                         // in the Go code. They are just represented as
@@ -678,6 +679,7 @@ impl InterfaceGenerator<'_> {
             }
             TypeDefKind::Future(_) => todo!("anonymous_type for future"),
             TypeDefKind::Stream(_) => todo!("anonymous_type for stream"),
+            TypeDefKind::ErrorContext => todo!("anonymous_type for error-context"),
             TypeDefKind::Unknown => unreachable!(),
             TypeDefKind::Error => todo!(),
         }
