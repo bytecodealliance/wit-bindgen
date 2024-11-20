@@ -1285,6 +1285,7 @@ dependencies = [
  "futures",
  "once_cell",
  "wit-bindgen",
+ "wit-bindgen-rt",
 ]
 
 [[package]]
@@ -1522,6 +1523,7 @@ dependencies = [
  "once_cell",
  "rust-xcrate-test",
  "wit-bindgen",
+ "wit-bindgen-rt",
 ]
 
 [[package]]

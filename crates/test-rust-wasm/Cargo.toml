@@ -6,6 +6,7 @@ publish = false
 
 [dependencies]
 wit-bindgen = { path = "../guest-rust" }
+wit-bindgen-rt = { path = '../guest-rust/rt' }
 rust-xcrate-test = { path = './rust-xcrate-test' }
 futures = "0.3"
 once_cell = "1.20"
