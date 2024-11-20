@@ -2833,6 +2833,48 @@ impl<'a> {camel}Borrow<'a>{{
         }
     }
 
+    fn type_future(&mut self, _id: TypeId, name: &str, ty: &Option<Type>, docs: &Docs) {
+        let stream_and_future_support = self.path_to_stream_and_future_support();
+        let mode = TypeMode {
+            style: TypeOwnershipStyle::Owned,
+            lists_borrowed: false,
+            lifetime: None,
+        };
+        self.rustdoc(docs);
+        self.push_str(&format!("pub type {}", name.to_upper_camel_case()));
+        self.print_generics(mode.lifetime);
+        self.push_str(" = ");
+        self.push_str(&format!("{stream_and_future_support}::FutureReader<"));
+        self.print_optional_ty(ty.as_ref(), mode);
+        self.push_str(">");
+        self.push_str(";\n");
+    }
+
+    fn type_stream(&mut self, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
+        let stream_and_future_support = self.path_to_stream_and_future_support();
+        let mode = TypeMode {
+            style: TypeOwnershipStyle::Owned,
+            lists_borrowed: false,
+            lifetime: None,
+        };
+        self.rustdoc(docs);
+        self.push_str(&format!("pub type {}", name.to_upper_camel_case()));
+        self.print_generics(mode.lifetime);
+        self.push_str(" = ");
+        self.push_str(&format!("{stream_and_future_support}::StreamReader<"));
+        self.print_ty(ty, mode);
+        self.push_str(">");
+        self.push_str(";\n");
+    }
+
+    fn type_error_context(&mut self, _id: TypeId, name: &str, docs: &Docs) {
+        let async_support = self.path_to_async_support();
+        self.rustdoc(docs);
+        self.push_str(&format!("pub type {} = ", name.to_upper_camel_case()));
+        self.push_str(&format!("{async_support}::ErrorContext"));
+        self.push_str(";\n");
+    }
+
     fn type_builtin(&mut self, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
         self.rustdoc(docs);
         self.src
@@ -2923,17 +2965,27 @@ impl<'a, 'b> wit_bindgen_core::AnonymousTypeGenerator<'a> for AnonTypeGenerator<
 
     fn anonymous_type_future(&mut self, _id: TypeId, ty: &Option<Type>, _docs: &Docs) {
         let stream_and_future_support = self.interface.path_to_stream_and_future_support();
+        let mode = TypeMode {
+            style: TypeOwnershipStyle::Owned,
+            lists_borrowed: false,
+            lifetime: None,
+        };
         self.interface
             .push_str(&format!("{stream_and_future_support}::FutureReader<"));
-        self.interface.print_optional_ty(ty.as_ref(), self.mode);
+        self.interface.print_optional_ty(ty.as_ref(), mode);
         self.interface.push_str(">");
     }
 
     fn anonymous_type_stream(&mut self, _id: TypeId, ty: &Type, _docs: &Docs) {
         let stream_and_future_support = self.interface.path_to_stream_and_future_support();
+        let mode = TypeMode {
+            style: TypeOwnershipStyle::Owned,
+            lists_borrowed: false,
+            lifetime: None,
+        };
         self.interface
             .push_str(&format!("{stream_and_future_support}::StreamReader<"));
-        self.interface.print_ty(ty, self.mode);
+        self.interface.print_ty(ty, mode);
         self.interface.push_str(">");
     }
 

@@ -390,6 +390,9 @@ pub trait InterfaceGenerator<'a> {
     fn type_alias(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs);
     fn type_list(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs);
     fn type_builtin(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs);
+    fn type_future(&mut self, id: TypeId, name: &str, ty: &Option<Type>, docs: &Docs);
+    fn type_stream(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs);
+    fn type_error_context(&mut self, id: TypeId, name: &str, docs: &Docs);
     fn types(&mut self, iface: InterfaceId) {
         let iface = &self.resolve().interfaces[iface];
         for (name, id) in iface.types.iter() {
@@ -410,12 +413,10 @@ pub trait InterfaceGenerator<'a> {
             TypeDefKind::Result(r) => self.type_result(id, name, r, &ty.docs),
             TypeDefKind::List(t) => self.type_list(id, name, t, &ty.docs),
             TypeDefKind::Type(t) => self.type_alias(id, name, t, &ty.docs),
-            TypeDefKind::Future(_) => panic!("future types do not require definition"),
-            TypeDefKind::Stream(_) => panic!("stream types do not require definition"),
+            TypeDefKind::Future(t) => self.type_future(id, name, t, &ty.docs),
+            TypeDefKind::Stream(t) => self.type_stream(id, name, t, &ty.docs),
             TypeDefKind::Handle(_) => panic!("handle types do not require definition"),
-            TypeDefKind::ErrorContext => {
-                panic!("the error-context type does not require definition")
-            }
+            TypeDefKind::ErrorContext => self.type_error_context(id, name, &ty.docs),
             TypeDefKind::Unknown => unreachable!(),
         }
     }

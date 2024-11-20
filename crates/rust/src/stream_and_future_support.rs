@@ -8,6 +8,7 @@ use {
     std::{
         collections::hash_map::Entry,
         convert::Infallible,
+        fmt,
         future::{Future, IntoFuture},
         iter,
         marker::PhantomData,
@@ -31,6 +32,14 @@ pub trait FuturePayload: Sized + 'static {
 pub struct FutureWriter<T: FuturePayload> {
     handle: u32,
     _phantom: PhantomData<T>,
+}
+
+impl<T: FuturePayload> fmt::Debug for FutureWriter<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("FutureWriter")
+            .field("handle", &self.handle)
+            .finish()
+    }
 }
 
 impl<T: FuturePayload> FutureWriter<T> {
@@ -99,6 +108,14 @@ impl<T: FuturePayload> Drop for FutureWriter<T> {
 pub struct FutureReader<T: FuturePayload> {
     handle: u32,
     _phantom: PhantomData<T>,
+}
+
+impl<T: FuturePayload> fmt::Debug for FutureReader<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("FutureReader")
+            .field("handle", &self.handle)
+            .finish()
+    }
 }
 
 impl<T: FuturePayload> FutureReader<T> {
@@ -219,6 +236,14 @@ pub struct StreamWriter<T: StreamPayload> {
     _phantom: PhantomData<T>,
 }
 
+impl<T: StreamPayload> fmt::Debug for StreamWriter<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("StreamWriter")
+            .field("handle", &self.handle)
+            .finish()
+    }
+}
+
 impl<T: StreamPayload> Sink<Vec<T>> for StreamWriter<T> {
     type Error = Infallible;
 
@@ -332,6 +357,14 @@ pub struct StreamReader<T: StreamPayload> {
     handle: u32,
     future: Option<Pin<Box<dyn Future<Output = Option<Vec<T>>> + 'static>>>,
     _phantom: PhantomData<T>,
+}
+
+impl<T: StreamPayload> fmt::Debug for StreamReader<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("StreamReader")
+            .field("handle", &self.handle)
+            .finish()
+    }
 }
 
 impl<T: StreamPayload> StreamReader<T> {

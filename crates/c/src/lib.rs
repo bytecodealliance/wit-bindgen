@@ -1346,6 +1346,21 @@ void __wasm_export_{ns}_{snake}_dtor({ns}_{snake}_t* arg) {{
         self.finish_typedef_struct(id);
     }
 
+    fn type_future(&mut self, id: TypeId, name: &str, ty: &Option<Type>, docs: &Docs) {
+        _ = (id, name, ty, docs);
+        todo!()
+    }
+
+    fn type_stream(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
+        _ = (id, name, ty, docs);
+        todo!()
+    }
+
+    fn type_error_context(&mut self, id: TypeId, name: &str, docs: &Docs) {
+        _ = (id, name, docs);
+        todo!()
+    }
+
     fn type_builtin(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
         let _ = (id, name, ty, docs);
     }
@@ -1444,10 +1459,6 @@ impl<'a> wit_bindgen_core::AnonymousTypeGenerator<'a> for InterfaceGenerator<'a>
 
     fn anonymous_type_type(&mut self, _id: TypeId, _ty: &Type, _docs: &Docs) {
         todo!("print_anonymous_type for type");
-    }
-
-    fn anonymous_type_error(&mut self) {
-        todo!()
     }
 }
 
@@ -3075,6 +3086,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     // no easy way to create a temporary?
                     results.push(operands[i].clone());
                 }
+            }
+
+            Instruction::Flush { amt } => {
+                results.extend(operands.iter().take(*amt).map(|v| v.clone()));
             }
 
             Instruction::Flush { amt } => {

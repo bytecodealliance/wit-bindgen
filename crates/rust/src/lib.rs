@@ -491,7 +491,7 @@ impl RustWasm {
         self.src.push_str("}\n");
         if emitted.contains(&RuntimeItem::StreamAndFutureSupport) {
             self.src
-                .push_str("pub use _rt::stream_and_future_support;\n");
+                .push_str("#[allow(unused_imports)]\npub use _rt::stream_and_future_support;\n");
         }
     }
 
@@ -736,6 +736,13 @@ impl<T: WasmResource> Drop for Resource<T> {{
             RuntimeItem::AsyncSupport => {
                 self.src.push_str("pub mod async_support {");
                 self.src.push_str(include_str!("async_support.rs"));
+                self.src.push_str("}");
+            }
+
+            RuntimeItem::StreamAndFutureSupport => {
+                self.src.push_str("pub mod stream_and_future_support {");
+                self.src
+                    .push_str(include_str!("stream_and_future_support.rs"));
                 self.src.push_str("}");
             }
 

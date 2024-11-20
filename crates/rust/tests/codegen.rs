@@ -57,9 +57,8 @@ mod codegen_tests {
                     wit_bindgen::generate!({
                         path: $test,
                         stubs,
-                        export_prefix: "[async]",
+                        export_prefix: "[async-prefix]",
                         generate_all,
-                        async: true
                     });
 
                     #[test]

@@ -27,6 +27,7 @@ syn = { workspace = true }
 prettyplease = { workspace = true }
 
 [dev-dependencies]
+futures = { workspace = true }
 wit-bindgen = { path = '../guest-rust' }
 wit-bindgen-rt = { path = '../guest-rust/rt' }
 test-helpers = { path = '../test-helpers' }
