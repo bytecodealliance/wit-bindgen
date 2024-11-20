@@ -33,8 +33,8 @@ namespace ResourceAggregatesWorld.wit.exports.test.resourceAggregates
 	    var ir3 = new Import.R3(((Thing) r3.thing1).val, ((Thing) r3.thing2).val);
 	    var it1 = (((Thing) t1.Item1).val, new Import.R1(((Thing) t1.Item2.thing).val));
 	    var it2 = ((Thing) t2).val;
-	    var iv1 = Import.V1.thing(((Thing) v1.AsThing).val);
-	    var iv2 = Import.V2.thing(((Thing) v2.AsThing).val);
+	    var iv1 = Import.V1.Thing(((Thing) v1.AsThing).val);
+	    var iv2 = Import.V2.Thing(((Thing) v2.AsThing).val);
 	    var il1 = new List<Import.Thing>();
 	    foreach (var thing in l1)
 	    {
@@ -52,11 +52,11 @@ namespace ResourceAggregatesWorld.wit.exports.test.resourceAggregates
 		? ((Thing) o2).val
 		: null;
 	    var iresult1 = result1.IsOk
-		? Result<Import.Thing, None>.ok(((Thing) result1.AsOk).val)
-		: Result<Import.Thing, None>.err(new None());
+		? Result<Import.Thing, None>.Ok(((Thing) result1.AsOk).val)
+		: Result<Import.Thing, None>.Err(new None());
 	    var iresult2 = result2.IsOk
-		? Result<Import.Thing, None>.ok(((Thing) result2.AsOk).val)
-		: Result<Import.Thing, None>.err(new None());
+		? Result<Import.Thing, None>.Ok(((Thing) result2.AsOk).val)
+		: Result<Import.Thing, None>.Err(new None());
 
 	    return Host.Foo(ir1, ir2, ir3, it1, it2, iv1, iv2, il1, il2, io1, io2, iresult1, iresult2) + 4;
 	}

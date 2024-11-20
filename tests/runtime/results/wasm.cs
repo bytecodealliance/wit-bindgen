@@ -44,19 +44,19 @@ namespace ResultsWorld.wit.exports.test.results
             } catch (WitException e) {
                 var value = (ResultsWorld.wit.imports.test.results.ITest.E3) e.Value;
                 switch (value.Tag) {
-                    case ResultsWorld.wit.imports.test.results.ITest.E3.E1:
+                    case ResultsWorld.wit.imports.test.results.ITest.E3.Tags.E1:
                         switch (value.AsE1) {
                             case ResultsWorld.wit.imports.test.results.ITest.E.A:
-                                throw new WitException(ITest.E3.e1(ITest.E.A), 0);
+                                throw new WitException(ITest.E3.E1(ITest.E.A), 0);
                             case ResultsWorld.wit.imports.test.results.ITest.E.B:
-                                throw new WitException(ITest.E3.e1(ITest.E.B), 0);
+                                throw new WitException(ITest.E3.E1(ITest.E.B), 0);
                             case ResultsWorld.wit.imports.test.results.ITest.E.C:
-                                throw new WitException(ITest.E3.e1(ITest.E.C), 0);
+                                throw new WitException(ITest.E3.E1(ITest.E.C), 0);
                             default:
                                 throw new Exception("unreachable");
                         }
-                    case ResultsWorld.wit.imports.test.results.ITest.E3.E2: {
-                        throw new WitException(ITest.E3.e2(new ITest.E2(value.AsE2.line, value.AsE2.column)), 0);
+                    case ResultsWorld.wit.imports.test.results.ITest.E3.Tags.E2: {
+                        throw new WitException(ITest.E3.E2(new ITest.E2(value.AsE2.line, value.AsE2.column)), 0);
                     }
                     default:
                         throw new Exception("unreachable");

@@ -462,7 +462,7 @@ impl WorldGenerator for CSharp {
                 {access} readonly struct None {{}}
 
                 [StructLayout(LayoutKind.Sequential)]
-                {access} readonly struct Result<Ok, Err>
+                {access} readonly struct Result<TOk, TErr>
                 {{
                     {access} readonly byte Tag;
                     private readonly object value;
@@ -473,43 +473,50 @@ impl WorldGenerator for CSharp {
                         this.value = value;
                     }}
 
-                    {access} static Result<Ok, Err> ok(Ok ok)
+                    {access} static Result<TOk, TErr> Ok(TOk ok)
                     {{
-                        return new Result<Ok, Err>(OK, ok!);
+                        return new Result<TOk, TErr>(Tags.Ok, ok!);
                     }}
 
-                    {access} static Result<Ok, Err> err(Err err)
+                    {access} static Result<TOk, TErr> Err(TErr err)
                     {{
-                        return new Result<Ok, Err>(ERR, err!);
+                        return new Result<TOk, TErr>(Tags.Err, err!);
                     }}
 
-                    {access} bool IsOk => Tag == OK;
-                    {access} bool IsErr => Tag == ERR;
+                    {access} bool IsOk => Tag == Tags.Ok;
+                    {access} bool IsErr => Tag == Tags.Err;
 
-                    {access} Ok AsOk
-                    {{
-                        get
-                        {{
-                            if (Tag == OK)
-                                return (Ok)value;
-                            else
-                                throw new ArgumentException("expected OK, got " + Tag);
-                        }}
-                    }}
-
-                    {access} Err AsErr
+                    {access} TOk AsOk
                     {{
                         get
                         {{
-                            if (Tag == ERR)
-                                return (Err)value;
-                            else
-                                throw new ArgumentException("expected ERR, got " + Tag);
+                            if (Tag == Tags.Ok)
+                            {{
+                                return (TOk)value;
+                            }}
+
+                            throw new ArgumentException("expected k, got " + Tag);
                         }}
                     }}
 
-                    {access} const byte OK = 0;
-                    {access} const byte ERR = 1;
+                    {access} TErr AsErr
+                    {{
+                        get
+                        {{
+                            if (Tag == Tags.Err)
+                            {{
+                                return (TErr)value;
+                            }}
+
+                            throw new ArgumentException("expected Err, got " + Tag);
+                        }}
+                    }}
+
+                    {access} class Tags
+                    {{
+                        {access} const byte Ok = 0;
+                        {access} const byte Err = 1;
+                    }}
                 }}
                 "#,
             )
@@ -1147,6 +1154,8 @@ impl InterfaceGenerator<'_> {
             .join(", ");
 
         let import_name = &func.name;
+
+        self.gen.require_using("System.Runtime.InteropServices");
 
         let target = if let FunctionKind::Freestanding = &func.kind {
             self.require_interop_using("System.Runtime.InteropServices");
@@ -1870,7 +1879,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .iter()
             .map(|case| {
                 let case_name = case.name.to_csharp_ident();
-                let tag = case.name.to_shouty_snake_case();
+                let tag = case.name.to_csharp_ident_upper();
                 let (parameter, argument) = if let Some(ty) = self.non_empty_type(case.ty.as_ref())
                 {
                     (
@@ -1882,8 +1891,8 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 };
 
                 format!(
-                    "{access} static {name} {case_name}({parameter}) {{
-                         return new {name}({tag}, {argument});
+                    "{access} static {name} {tag}({parameter}) {{
+                         return new {name}(Tags.{tag}, {argument});
                      }}
                     "
                 )
@@ -1897,14 +1906,14 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .filter_map(|case| {
                 self.non_empty_type(case.ty.as_ref()).map(|ty| {
                     let case_name = case.name.to_upper_camel_case();
-                    let tag = case.name.to_shouty_snake_case();
+                    let tag = case.name.to_csharp_ident_upper();
                     let ty = self.type_name(ty);
                     format!(
                         r#"{access} {ty} As{case_name}
                         {{
                             get
                             {{
-                                if (Tag == {tag})
+                                if (Tag == Tags.{tag})
                                     return ({ty})value!;
                                 else
                                     throw new ArgumentException("expected {tag}, got " + Tag);
@@ -1922,7 +1931,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .iter()
             .enumerate()
             .map(|(i, case)| {
-                let tag = case.name.to_shouty_snake_case();
+                let tag = case.name.to_csharp_ident_upper();
                 format!("{access} const {tag_type} {tag} = {i};")
             })
             .collect::<Vec<_>>()
@@ -1942,7 +1951,10 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
                 {constructors}
                 {accessors}
-                {tags}
+
+                {access} class Tags {{
+                    {tags}
+                }}
             }}
             "
         );
@@ -2200,7 +2212,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                     String::new()
                 };
 
-                let method = case_name.to_csharp_ident();
+                let method = case_name.to_csharp_ident_upper();
 
                 let call = if let Some(position) = generics_position {
                     let (ty, generics) = ty.split_at(position);
@@ -2562,7 +2574,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 result,
                 ..
             } => self.lower_variant(
-                &[("ok", result.ok), ("err", result.err)],
+                &[("Ok", result.ok), ("Err", result.err)],
                 lowered_types,
                 &operands[0],
                 results,
@@ -2570,7 +2582,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::ResultLift { result, ty } => self.lift_variant(
                 &Type::Id(*ty),
-                &[("ok", result.ok), ("err", result.err)],
+                &[("Ok", result.ok), ("Err", result.err)],
                 &operands[0],
                 results,
             ),
@@ -2849,13 +2861,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                                         format!(
                                             "\
                                             case {index}: {{
-                                                ret = {head}{ty}.err(({err_ty}) e.Value){tail};
+                                                ret = {head}{ty}.Err(({err_ty}) e.Value){tail};
                                                 break;
                                             }}
                                             "
                                         )
                                     );
-                                    oks.push(format!("{ty}.ok("));
+                                    oks.push(format!("{ty}.Ok("));
                                     payload_is_void = result.ok.is_none();
                                 }
                                 if !self.results.is_empty() {
@@ -3402,28 +3414,110 @@ fn is_primitive(ty: &Type) -> bool {
 }
 
 trait ToCSharpIdent: ToOwned {
+    fn csharp_keywords() -> Vec<&'static str>;
     fn to_csharp_ident(&self) -> Self::Owned;
+    fn to_csharp_ident_upper(&self) -> Self::Owned;
 }
 
 impl ToCSharpIdent for str {
+    // Source: https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/keywords/
+    fn csharp_keywords() -> Vec<&'static str> {
+        vec![
+            "abstract",
+            "as",
+            "base",
+            "bool",
+            "break",
+            "byte",
+            "case",
+            "catch",
+            "char",
+            "checked",
+            "class",
+            "const",
+            "continue",
+            "decimal",
+            "default",
+            "delegate",
+            "do",
+            "double",
+            "else",
+            "enum",
+            "event",
+            "explicit",
+            "extern",
+            "false",
+            "finally",
+            "fixed",
+            "float",
+            "for",
+            "foreach",
+            "goto",
+            "if",
+            "implicit",
+            "in",
+            "int",
+            "interface",
+            "internal",
+            "is",
+            "lock",
+            "long",
+            "namespace",
+            "new",
+            "null",
+            "object",
+            "operator",
+            "out",
+            "override",
+            "params",
+            "private",
+            "protected",
+            "public",
+            "readonly",
+            "ref",
+            "return",
+            "sbyte",
+            "sealed",
+            "short",
+            "sizeof",
+            "stackalloc",
+            "static",
+            "string",
+            "struct",
+            "switch",
+            "this",
+            "throw",
+            "true",
+            "try",
+            "typeof",
+            "uint",
+            "ulong",
+            "unchecked",
+            "unsafe",
+            "ushort",
+            "using",
+            "virtual",
+            "void",
+            "volatile",
+            "while",
+        ]
+    }
+
     fn to_csharp_ident(&self) -> String {
         // Escape C# keywords
-        // Source: https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/keywords/
+        if Self::csharp_keywords().contains(&self) {
+            format!("@{}", self)
+        } else {
+            self.to_lower_camel_case()
+        }
+    }
 
-        //TODO: Repace with actual keywords
-        match self {
-            "abstract" | "as" | "base" | "bool" | "break" | "byte" | "case" | "catch" | "char"
-            | "checked" | "class" | "const" | "continue" | "decimal" | "default" | "delegate"
-            | "do" | "double" | "else" | "enum" | "event" | "explicit" | "extern" | "false"
-            | "finally" | "fixed" | "float" | "for" | "foreach" | "goto" | "if" | "implicit"
-            | "in" | "int" | "interface" | "internal" | "is" | "lock" | "long" | "namespace"
-            | "new" | "null" | "object" | "operator" | "out" | "override" | "params"
-            | "private" | "protected" | "public" | "readonly" | "ref" | "return" | "sbyte"
-            | "sealed" | "short" | "sizeof" | "stackalloc" | "static" | "string" | "struct"
-            | "switch" | "this" | "throw" | "true" | "try" | "typeof" | "uint" | "ulong"
-            | "unchecked" | "unsafe" | "ushort" | "using" | "virtual" | "void" | "volatile"
-            | "while" => format!("@{self}"),
-            _ => self.to_lower_camel_case(),
+    fn to_csharp_ident_upper(&self) -> String {
+        // Escape C# keywords
+        if Self::csharp_keywords().contains(&self) {
+            format!("@{}", self)
+        } else {
+            self.to_upper_camel_case()
         }
     }
 }
