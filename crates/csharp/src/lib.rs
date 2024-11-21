@@ -124,6 +124,7 @@ pub struct CSharp {
     opts: Opts,
     name: String,
     usings: HashSet<String>,
+    #[allow(unused)]
     interop_usings: HashSet<String>,
     return_area_size: usize,
     return_area_align: usize,
@@ -198,6 +199,7 @@ impl CSharp {
         }
     }
 
+    #[allow(unused)]
     fn require_interop_using(&mut self, using_ns: &str) {
         if !self.interop_usings.contains(using_ns) {
             let using_ns_string = using_ns.to_string();
@@ -2691,7 +2693,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 ));
             }
 
-            Instruction::ListLower { element, realloc } => {
+            Instruction::ListLower { element, .. } => {
                 let Block {
                     body,
                     results: block_results,
