@@ -16,7 +16,6 @@ doctest = false
 test = false
 
 [dependencies]
-wasm-encoder = { workspace = true }
 wit-bindgen-core = { workspace = true }
 wit-component = { workspace = true }
 wit-parser = { workspace = true }
