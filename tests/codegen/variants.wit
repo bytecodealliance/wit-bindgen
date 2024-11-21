@@ -21,6 +21,7 @@ interface variants {
       e(empty),
       f,
       g(u32),
+      h(f32),
   }
 
   v1-arg: func(x: v1);

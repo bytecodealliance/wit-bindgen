@@ -3227,7 +3227,7 @@ fn dotnet_aligned_array(array_size: usize, required_alignment: usize) -> (usize,
 
 fn perform_cast(op: &String, cast: &Bitcast) -> String {
     match cast {
-        Bitcast::I32ToF32 => format!("BitConverter.Int32BitsToSingle({op})"),
+        Bitcast::I32ToF32 => format!("BitConverter.Int32BitsToSingle((int){op})"),
         Bitcast::I64ToF32 => format!("BitConverter.Int32BitsToSingle((int){op})"),
         Bitcast::F32ToI32 => format!("BitConverter.SingleToInt32Bits({op})"),
         Bitcast::F32ToI64 => format!("BitConverter.SingleToInt32Bits({op})"),
