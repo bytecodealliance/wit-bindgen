@@ -45,8 +45,12 @@ struct RustWasm {
 
     rt_module: IndexSet<RuntimeItem>,
     export_macros: Vec<(String, String)>,
+
     /// Interface names to how they should be generated
     with: GenerationConfiguration,
+
+    future_payloads_emitted: HashSet<String>,
+    stream_payloads_emitted: HashSet<String>,
 }
 
 #[derive(Default)]
@@ -98,6 +102,7 @@ enum RuntimeItem {
     AsF64,
     ResourceType,
     BoxType,
+    StreamAndFutureSupport,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -116,6 +121,52 @@ fn parse_with(s: &str) -> Result<(String, WithOption), String> {
         other => WithOption::Path(other.to_string()),
     };
     Ok((k.to_string(), v))
+}
+
+#[derive(Default, Debug, Clone)]
+pub enum AsyncConfig {
+    #[default]
+    None,
+    Some {
+        imports: Vec<String>,
+        exports: Vec<String>,
+    },
+    All,
+}
+
+#[cfg(feature = "clap")]
+fn parse_async(s: &str) -> Result<AsyncConfig, String> {
+    Ok(match s {
+        "none" => AsyncConfig::None,
+        "all" => AsyncConfig::All,
+        _ => {
+            if let Some(values) = s.strip_prefix("some=") {
+                let mut imports = Vec::new();
+                let mut exports = Vec::new();
+                for value in values.split(',') {
+                    let error = || {
+                        Err(format!(
+                            "expected string of form `import:<name>` or `export:<name>`; got `{value}`"
+                        ))
+                    };
+                    if let Some((k, v)) = value.split_once(":") {
+                        match k {
+                            "import" => imports.push(v.into()),
+                            "export" => exports.push(v.into()),
+                            _ => return error(),
+                        }
+                    } else {
+                        return error();
+                    }
+                }
+                AsyncConfig::Some { imports, exports }
+            } else {
+                return Err(format!(
+                    "expected string of form `none`, `all`, or `some=<value>[,<value>...]`; got `{s}`"
+                ));
+            }
+        }
+    })
 }
 
 #[derive(Default, Debug, Clone)]
@@ -235,6 +286,18 @@ pub struct Opts {
     /// library-based usage of `generate!` prone to breakage.
     #[cfg_attr(feature = "clap", arg(long))]
     pub disable_custom_section_link_helpers: bool,
+
+    /// Determines which functions to lift or lower `async`, if any.
+    ///
+    /// Accepted values are:
+    ///     - none
+    ///     - all
+    ///     - some=<value>[,<value>...], where each <value> is of the form:
+    ///         - import:<name> or
+    ///         - export:<name>
+    #[cfg_attr(all(feature = "clap", feature = "async"), arg(long = "async", value_parser = parse_async))]
+    #[cfg_attr(all(feature = "clap", not(feature = "async")), skip)]
+    pub async_: AsyncConfig,
 }
 
 impl Opts {
@@ -254,7 +317,7 @@ impl RustWasm {
     fn interface<'a>(
         &'a mut self,
         identifier: Identifier<'a>,
-        wasm_import_module: Option<&'a str>,
+        wasm_import_module: &'a str,
         resolve: &'a Resolve,
         in_import: bool,
     ) -> InterfaceGenerator<'a> {
@@ -383,6 +446,7 @@ impl RustWasm {
         }
 
         self.src.push_str("mod _rt {\n");
+        self.src.push_str("#![allow(dead_code, clippy::all)]\n");
         let mut emitted = IndexSet::new();
         while !self.rt_module.is_empty() {
             for item in mem::take(&mut self.rt_module) {
@@ -392,6 +456,10 @@ impl RustWasm {
             }
         }
         self.src.push_str("}\n");
+        if emitted.contains(&RuntimeItem::StreamAndFutureSupport) {
+            self.src
+                .push_str("#[allow(unused_imports)]\npub use _rt::stream_and_future_support;\n");
+        }
     }
 
     fn emit_runtime_item(&mut self, item: RuntimeItem) {
@@ -624,6 +692,13 @@ impl<T: WasmResource> Drop for Resource<T> {
                     "#,
                 );
             }
+
+            RuntimeItem::StreamAndFutureSupport => {
+                self.src.push_str("pub mod stream_and_future_support {");
+                self.src
+                    .push_str(include_str!("stream_and_future_support.rs"));
+                self.src.push_str("}");
+            }
         }
     }
 
@@ -797,6 +872,7 @@ macro_rules! __export_{world_name}_impl {{
         .unwrap();
 
         self.src.push_str("#[doc(hidden)]\n");
+        self.src.push_str("#[allow(clippy::octal_escapes)]\n");
         self.src.push_str(&format!(
             "pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; {}] = *b\"\\\n",
             component_type.len()
@@ -972,7 +1048,7 @@ impl WorldGenerator for RustWasm {
         let wasm_import_module = resolve.name_world_key(name);
         let mut gen = self.interface(
             Identifier::Interface(id, name),
-            Some(&wasm_import_module),
+            &wasm_import_module,
             resolve,
             true,
         );
@@ -982,7 +1058,7 @@ impl WorldGenerator for RustWasm {
         }
         gen.types(id);
 
-        gen.generate_imports(resolve.interfaces[id].functions.values());
+        gen.generate_imports(resolve.interfaces[id].functions.values(), Some(name));
 
         let docs = &resolve.interfaces[id].docs;
 
@@ -1000,9 +1076,9 @@ impl WorldGenerator for RustWasm {
     ) {
         self.import_funcs_called = true;
 
-        let mut gen = self.interface(Identifier::World(world), Some("$root"), resolve, true);
+        let mut gen = self.interface(Identifier::World(world), "$root", resolve, true);
 
-        gen.generate_imports(funcs.iter().map(|(_, func)| *func));
+        gen.generate_imports(funcs.iter().map(|(_, func)| *func), None);
 
         let src = gen.finish();
         self.src.push_str(&src);
@@ -1016,7 +1092,13 @@ impl WorldGenerator for RustWasm {
         _files: &mut Files,
     ) -> Result<()> {
         self.interface_last_seen_as_import.insert(id, false);
-        let mut gen = self.interface(Identifier::Interface(id, name), None, resolve, false);
+        let wasm_import_module = format!("[export]{}", resolve.name_world_key(name));
+        let mut gen = self.interface(
+            Identifier::Interface(id, name),
+            &wasm_import_module,
+            resolve,
+            false,
+        );
         let (snake, module_path) = gen.start_append_submodule(name);
         if gen.gen.name_interface(resolve, id, name, true)? {
             return Ok(());
@@ -1033,7 +1115,12 @@ impl WorldGenerator for RustWasm {
 
         if self.opts.stubs {
             let world_id = self.world.unwrap();
-            let mut gen = self.interface(Identifier::World(world_id), None, resolve, false);
+            let mut gen = self.interface(
+                Identifier::World(world_id),
+                &wasm_import_module,
+                resolve,
+                false,
+            );
             gen.generate_stub(Some((id, name)), resolve.interfaces[id].functions.values());
             let stub = gen.finish();
             self.src.push_str(&stub);
@@ -1048,14 +1135,14 @@ impl WorldGenerator for RustWasm {
         funcs: &[(&str, &Function)],
         _files: &mut Files,
     ) -> Result<()> {
-        let mut gen = self.interface(Identifier::World(world), None, resolve, false);
+        let mut gen = self.interface(Identifier::World(world), "[export]$root", resolve, false);
         let macro_name = gen.generate_exports(None, funcs.iter().map(|f| f.1))?;
         let src = gen.finish();
         self.src.push_str(&src);
         self.export_macros.push((macro_name, String::new()));
 
         if self.opts.stubs {
-            let mut gen = self.interface(Identifier::World(world), None, resolve, false);
+            let mut gen = self.interface(Identifier::World(world), "[export]$root", resolve, false);
             gen.generate_stub(None, funcs.iter().map(|f| f.1));
             let stub = gen.finish();
             self.src.push_str(&stub);
@@ -1070,7 +1157,7 @@ impl WorldGenerator for RustWasm {
         types: &[(&str, TypeId)],
         _files: &mut Files,
     ) {
-        let mut gen = self.interface(Identifier::World(world), Some("$root"), resolve, true);
+        let mut gen = self.interface(Identifier::World(world), "$root", resolve, true);
         for (name, ty) in types {
             gen.define_type(name, *ty);
         }
@@ -1220,6 +1307,7 @@ fn compute_module_path(name: &WorldKey, resolve: &Resolve, is_export: bool) -> V
 }
 
 enum Identifier<'a> {
+    None,
     World(WorldId),
     Interface(InterfaceId, &'a WorldKey),
 }

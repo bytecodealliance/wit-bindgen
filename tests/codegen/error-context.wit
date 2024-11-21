@@ -1,0 +1,12 @@
+package foo:foo;
+
+interface error-contexts {
+  type foo = error-context;
+
+  bar: func(x: foo, y: error-context, z: future<error-context>) -> result<stream<error-context>, error-context>;
+}
+
+world foo {
+  import error-contexts;
+  export error-contexts;
+}
