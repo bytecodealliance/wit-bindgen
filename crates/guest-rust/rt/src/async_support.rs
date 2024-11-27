@@ -409,60 +409,6 @@ pub fn block_on<T: 'static>(future: impl Future<Output = T> + 'static) -> T {
     }
 }
 
-fn task_poll(state: &mut FutureState) -> bool {
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        _ = state;
-        unreachable!();
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    {
-        #[link(wasm_import_module = "$root")]
-        extern "C" {
-            #[link_name = "[task-poll]"]
-            fn poll(_: *mut i32) -> i32;
-        }
-        let mut payload = [0i32; 3];
-        unsafe {
-            let got_event = poll(payload.as_mut_ptr()) != 0;
-            if got_event {
-                callback(state as *mut _ as _, payload[0], payload[1], payload[2]);
-            }
-            got_event
-        }
-    }
-}
-
-/// Attempt to run the specified future to completion without blocking,
-/// returning the result if it completes.
-///
-/// This is similar to `block_on` except that it uses `task.poll` instead of
-/// `task.wait` to check for progress on any in-progress calls to async-lowered
-/// imports, returning `None` if one or more of those calls remain pending.
-// TODO: refactor so `'static` bounds aren't necessary
-pub fn poll_future<T: 'static>(future: impl Future<Output = T> + 'static) -> Option<T> {
-    let (tx, mut rx) = oneshot::channel();
-    let state = &mut FutureState {
-        todo: 0,
-        tasks: Some(
-            [Box::pin(future.map(move |v| drop(tx.send(v)))) as BoxFuture]
-                .into_iter()
-                .collect(),
-        ),
-    };
-    loop {
-        match unsafe { poll(state) } {
-            Poll::Ready(()) => break Some(rx.try_recv().unwrap().unwrap()),
-            Poll::Pending => {
-                if !task_poll(state) {
-                    break None;
-                }
-            }
-        }
-    }
-}
-
 /// Call the `task.yield` canonical built-in function.
 ///
 /// This yields control to the host temporarily, allowing other tasks to make
