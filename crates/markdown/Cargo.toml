@@ -20,4 +20,3 @@ heck = { workspace = true }
 pulldown-cmark = { workspace = true }
 clap = { workspace = true, optional = true }
 wit-bindgen-core = { workspace = true }
-wit-component = { workspace = true }

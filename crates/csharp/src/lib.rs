@@ -125,6 +125,7 @@ pub struct CSharp {
     opts: Opts,
     name: String,
     usings: HashSet<String>,
+    #[allow(unused)]
     interop_usings: HashSet<String>,
     return_area_size: ArchitectureSize,
     return_area_align: Alignment,
@@ -199,6 +200,7 @@ impl CSharp {
         }
     }
 
+    #[allow(unused)]
     fn require_interop_using(&mut self, using_ns: &str) {
         if !self.interop_usings.contains(using_ns) {
             let using_ns_string = using_ns.to_string();
@@ -3262,7 +3264,7 @@ fn dotnet_aligned_array(array_size: usize, required_alignment: usize) -> (usize,
 
 fn perform_cast(op: &String, cast: &Bitcast) -> String {
     match cast {
-        Bitcast::I32ToF32 => format!("BitConverter.Int32BitsToSingle({op})"),
+        Bitcast::I32ToF32 => format!("BitConverter.Int32BitsToSingle((int){op})"),
         Bitcast::I64ToF32 => format!("BitConverter.Int32BitsToSingle((int){op})"),
         Bitcast::F32ToI32 => format!("BitConverter.SingleToInt32Bits({op})"),
         Bitcast::F32ToI64 => format!("BitConverter.SingleToInt32Bits({op})"),
