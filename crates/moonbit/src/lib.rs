@@ -20,9 +20,7 @@ use wit_bindgen_core::{
 // Organization:
 // - one package per interface (export and import are treated as different interfaces)
 // - ffi utils are under `./ffi`, and the project entrance (package as link target) is under `./gen`
-// TODO: Migrate f32 to Float when the support becomes mature
 // TODO: Export will share the type signatures with the import by using a newtype alias
-// TODO: Export resource is not handled correctly : resource.new / resource.drop / resource.rep / dtor
 
 const FFI_DIR: &str = "ffi";
 
@@ -88,7 +86,7 @@ pub fn malloc(size : Int) -> Int {
   let words = size / 4 + 1
   let address = malloc_inline(8 + words * 4)
   store32(address, 1)
-  store32(address + 4, (words << 8) | 246)
+  store32(address + 4, (words << 8) | 241)
   store8(address + words * 4 + 7, 3 - size % 4)
   address + 8
 }
@@ -114,10 +112,10 @@ pub extern "wasm" fn str2ptr(str : String) -> Int =
 pub extern "wasm" fn ptr2str(ptr : Int) -> String =
   #|(func (param i32) (result i32) local.get 0 i32.const 4 i32.sub i32.const 243 i32.store8 local.get 0 i32.const 8 i32.sub)
 
-pub extern "wasm" fn bytes2ptr(bytes : Bytes) -> Int =
+pub extern "wasm" fn bytes2ptr(bytes : FixedArray[Byte]) -> Int =
   #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.add)
 
-pub extern "wasm" fn ptr2bytes(ptr : Int) -> Bytes =
+pub extern "wasm" fn ptr2bytes(ptr : Int) -> FixedArray[Byte] =
   #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.sub)
 
 pub extern "wasm" fn uint_array2ptr(array : FixedArray[UInt]) -> Int =
@@ -139,13 +137,13 @@ pub extern "wasm" fn double_array2ptr(array : FixedArray[Double]) -> Int =
   #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.add)
 
 pub extern "wasm" fn ptr2uint_array(ptr : Int) -> FixedArray[UInt] =
-  #|(func (param i32) (result i32) local.get 0 i32.const 4 i32.sub i32.const 241 i32.store8 local.get 0 i32.const 8 i32.sub)
+  #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.sub)
 
 pub extern "wasm" fn ptr2int_array(ptr : Int) -> FixedArray[Int] =
-  #|(func (param i32) (result i32) local.get 0 i32.const 4 i32.sub i32.const 241 i32.store8 local.get 0 i32.const 8 i32.sub)
+  #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.sub)
 
 pub extern "wasm" fn ptr2float_array(ptr : Int) -> FixedArray[Float] =
-  #|(func (param i32) (result i32) local.get 0 i32.const 4 i32.sub i32.const 241 i32.store8 local.get 0 i32.const 8 i32.sub)
+  #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.sub)
 
 extern "wasm" fn ptr2uint64_array_ffi(ptr : Int) -> FixedArray[UInt64] =
   #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.sub)
@@ -178,7 +176,7 @@ fn set_64_header_ffi(offset : Int) -> Unit {
 }
 
 pub(open) trait Any {}
-pub struct Cleanup {
+pub(all) struct Cleanup {
     address : Int
     size : Int
     align : Int
@@ -984,7 +982,8 @@ impl InterfaceGenerator<'_> {
             Type::Char => "Char".into(),
             Type::U64 => "UInt64".into(),
             Type::S64 => "Int64".into(),
-            Type::F32 | Type::F64 => "Double".into(),
+            Type::F32 => "Float".into(),
+            Type::F64 => "Double".into(),
             Type::String => "String".into(),
             Type::Id(id) => {
                 let ty = &self.resolve.types[dealias(self.resolve, *id)];
@@ -993,8 +992,12 @@ impl InterfaceGenerator<'_> {
                     TypeDefKind::List(ty) => {
                         if type_variable {
                             match ty {
-                                Type::U8 => "Bytes".into(),
-                                Type::U32 | Type::U64 | Type::S32 | Type::S64 | Type::F64 => {
+                                Type::U8
+                                | Type::U32
+                                | Type::U64
+                                | Type::S32
+                                | Type::S64
+                                | Type::F64 => {
                                     format!("FixedArray[{}]", self.type_name(ty, type_variable))
                                 }
                                 _ => format!("Array[{}]", self.type_name(ty, type_variable)),
@@ -1164,7 +1167,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         uwrite!(
             self.src,
             "
-            pub struct {name} {{
+            pub(all) struct {name} {{
                 {parameters}
             }} derive({})
             ",
@@ -1193,7 +1196,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         uwrite!(
             self.src,
             r#"
-            pub {declaration} {name} Int derive({})
+            pub(all) {declaration} {name} Int derive({})
             "#,
             deriviation.join(", "),
         );
@@ -1334,11 +1337,11 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         uwrite!(
             self.src,
             "
-            pub {declaration} {name} {ty} derive({})
+            pub(all) {declaration} {name} {ty} derive({})
             pub fn {name}::default() -> {name} {{
                 {}
             }}
-            pub enum {name}Flag {{
+            pub(all) enum {name}Flag {{
                 {cases}
             }}
             fn {name}Flag::value(self : {name}Flag) -> {ty} {{
@@ -1409,7 +1412,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         uwrite!(
             self.src,
             "
-            pub {declaration} {name} {{
+            pub(all) {declaration} {name} {{
               {cases}
             }} derive({})
             ",
@@ -1454,7 +1457,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         uwrite!(
             self.src,
             "
-            pub {declaration} {name} {{
+            pub(all) {declaration} {name} {{
                 {cases}
             }} derive({})
             ",
@@ -1774,8 +1777,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             | Instruction::CoreF64FromF64
             | Instruction::F64FromCoreF64 => results.push(operands[0].clone()),
 
-            Instruction::F32FromCoreF32 => results.push(format!("({}).to_double()", operands[0])),
-            Instruction::CoreF32FromF32 => results.push(format!("({}).to_float()", operands[0])),
+            Instruction::F32FromCoreF32 => results.push(operands[0].clone()),
+            Instruction::CoreF32FromF32 => results.push(operands[0].clone()),
 
             Instruction::CharFromI32 => results.push(format!("Char::from_int({})", operands[0])),
             Instruction::I32FromChar => results.push(format!("({}).to_int()", operands[0])),
@@ -2854,7 +2857,8 @@ impl ToMoonBitIdent for str {
             "continue" | "for" | "match" | "if" | "pub" | "priv" | "readonly" | "break"
             | "raise" | "try" | "except" | "catch" | "else" | "enum" | "struct" | "type"
             | "trait" | "return" | "let" | "mut" | "while" | "loop" | "extern" | "with"
-            | "throw" | "init" | "main" | "test" | "in" | "guard" | "typealias" | "const" => {
+            | "throw" | "init" | "main" | "test" | "in" | "guard" | "typealias" | "const"
+            | "method" | "move" | "do" | "static" | "final" => {
                 format!("{self}_")
             }
             _ => self.to_snake_case(),
