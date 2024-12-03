@@ -47,10 +47,10 @@ std::expected<float, ::test::results::test::E3> exports::test::results::test::Va
     // }
 }
 
-std::expected<uint32_t, void> exports::test::results::test::EmptyError(uint32_t a) {
+std::expected<uint32_t, wit::Void> exports::test::results::test::EmptyError(uint32_t a) {
     return ::test::results::test::EmptyError(a);
 }
 
 std::expected<std::expected<void, wit::string>, wit::string> exports::test::results::test::DoubleError(uint32_t a) {
-    return ::test::results::test::DoubleError(a)
+    return ::test::results::test::DoubleError(a);
 }

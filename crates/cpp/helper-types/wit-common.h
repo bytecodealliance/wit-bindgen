@@ -63,4 +63,7 @@ public:
     return std::move(result);
   }
 };
+
+/// @brief Replaces void in the error position of a result
+struct Void {};
 } // namespace wit
