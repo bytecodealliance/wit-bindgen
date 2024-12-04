@@ -997,6 +997,7 @@ impl InterfaceGenerator<'_> {
                                 | Type::U64
                                 | Type::S32
                                 | Type::S64
+                                | Type::F32
                                 | Type::F64 => {
                                     format!("FixedArray[{}]", self.type_name(ty, type_variable))
                                 }
@@ -2145,7 +2146,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         self.cleanup.push(Cleanup::Object(op.clone()));
                     }
                 }
-                Type::U32 | Type::U64 | Type::S32 | Type::S64 | Type::F64 => {
+                Type::U32 | Type::U64 | Type::S32 | Type::S64 | Type::F32 | Type::F64 => {
                     let op = &operands[0];
 
                     let ty = match element {
@@ -2153,6 +2154,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         Type::U64 => "uint64",
                         Type::S32 => "int",
                         Type::S64 => "int64",
+                        Type::F32 => "float",
                         Type::F64 => "double",
                         _ => unreachable!(),
                     };
@@ -2186,12 +2188,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                     results.push(result);
                 }
-                Type::U32 | Type::U64 | Type::S32 | Type::S64 | Type::F64 => {
+                Type::U32 | Type::U64 | Type::S32 | Type::S64 | Type::F32 | Type::F64 => {
                     let ty = match element {
                         Type::U32 => "uint",
                         Type::U64 => "uint64",
                         Type::S32 => "int",
                         Type::S64 => "int64",
+                        Type::F32 => "float",
                         Type::F64 => "double",
                         _ => unreachable!(),
                     };
@@ -2725,7 +2728,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
     fn is_list_canonical(&self, _resolve: &Resolve, element: &Type) -> bool {
         matches!(
             element,
-            Type::U8 | Type::U32 | Type::U64 | Type::S32 | Type::S64 | Type::F64
+            Type::U8 | Type::U32 | Type::U64 | Type::S32 | Type::S64 | Type::F32 | Type::F64
         )
     }
 }
