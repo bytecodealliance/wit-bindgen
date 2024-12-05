@@ -86,7 +86,7 @@ pub fn malloc(size : Int) -> Int {
   let words = size / 4 + 1
   let address = malloc_inline(8 + words * 4)
   store32(address, 1)
-  store32(address + 4, (words << 8) | 241)
+  store32(address + 4, (words << 8) | 246)
   store8(address + words * 4 + 7, 3 - size % 4)
   address + 8
 }
@@ -115,8 +115,8 @@ pub extern "wasm" fn ptr2str(ptr : Int) -> String =
 pub extern "wasm" fn bytes2ptr(bytes : FixedArray[Byte]) -> Int =
   #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.add)
 
-pub extern "wasm" fn ptr2bytes(ptr : Int) -> FixedArray[Byte] =
-  #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.sub)
+pub extern "wasm" fn ptr2bytes(ptr : Int, _len : Int) -> FixedArray[Byte] =
+  #|(func (param i32) (param i32) (result i32) local.get 0 i32.const 8 i32.sub)
 
 pub extern "wasm" fn uint_array2ptr(array : FixedArray[UInt]) -> Int =
   #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.add)
@@ -136,43 +136,55 @@ pub extern "wasm" fn float_array2ptr(array : FixedArray[Float]) -> Int =
 pub extern "wasm" fn double_array2ptr(array : FixedArray[Double]) -> Int =
   #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.add)
 
-pub extern "wasm" fn ptr2uint_array(ptr : Int) -> FixedArray[UInt] =
+extern "wasm" fn ptr2uint_array_ffi(ptr : Int) -> FixedArray[UInt] =
   #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.sub)
 
-pub extern "wasm" fn ptr2int_array(ptr : Int) -> FixedArray[Int] =
+pub fn ptr2uint_array(ptr : Int, len : Int) -> FixedArray[UInt] {
+  set_header_ffi(ptr - 4, len)
+  ptr2uint_array_ffi(ptr)
+}
+
+extern "wasm" fn ptr2int_array_ffi(ptr : Int) -> FixedArray[Int] =
   #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.sub)
 
-pub extern "wasm" fn ptr2float_array(ptr : Int) -> FixedArray[Float] =
+pub fn ptr2int_array(ptr : Int, len : Int) -> FixedArray[Int] {
+  set_header_ffi(ptr - 4, len)
+  ptr2int_array_ffi(ptr)
+}
+
+extern "wasm" fn ptr2float_array_ffi(ptr : Int) -> FixedArray[Float] =
   #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.sub)
 
+pub fn ptr2float_array(ptr : Int, len : Int) -> FixedArray[Float] {
+  set_header_ffi(ptr - 4, len)
+  ptr2float_array_ffi(ptr)
+}
 extern "wasm" fn ptr2uint64_array_ffi(ptr : Int) -> FixedArray[UInt64] =
   #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.sub)
 
-pub fn ptr2uint64_array(ptr : Int) -> FixedArray[UInt64] {
-  set_64_header_ffi(ptr - 4)
+pub fn ptr2uint64_array(ptr : Int, len : Int) -> FixedArray[UInt64] {
+  set_header_ffi(ptr - 4, len)
   ptr2uint64_array_ffi(ptr)
 }
 
 extern "wasm" fn ptr2int64_array_ffi(ptr : Int) -> FixedArray[Int64] =
   #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.sub)
 
-pub fn ptr2int64_array(ptr : Int) -> FixedArray[Int64] {
-  set_64_header_ffi(ptr - 4)
+pub fn ptr2int64_array(ptr : Int, len : Int) -> FixedArray[Int64] {
+  set_header_ffi(ptr - 4, len)
   ptr2int64_array_ffi(ptr)
 }
 
 extern "wasm" fn ptr2double_array_ffi(ptr : Int) -> FixedArray[Double] =
   #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.sub)
 
-pub fn ptr2double_array(ptr : Int) -> FixedArray[Double] {
-  set_64_header_ffi(ptr - 4)
+pub fn ptr2double_array(ptr : Int, len : Int) -> FixedArray[Double] {
+  set_header_ffi(ptr - 4, len)
   ptr2double_array_ffi(ptr)
 }
 
-fn set_64_header_ffi(offset : Int) -> Unit {
-  let len = load32(offset)
-  store32(offset, len >> 1)
-  store8(offset, 241)
+fn set_header_ffi(offset : Int, len : Int) -> Unit {
+  store32(offset, len << 8 | 241)
 }
 
 pub(open) trait Any {}
@@ -2180,8 +2192,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     uwrite!(
                         self.src,
                         "
-                        ignore({length})
-                        let {result} = {}ptr2bytes({address})
+                        let {result} = {}ptr2bytes({address}, {length})
                         ",
                         self.gen.qualify_package(FFI_DIR)
                     );
@@ -2206,8 +2217,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     uwrite!(
                         self.src,
                         "
-                        ignore({length})
-                        let {result} = {}ptr2{ty}_array({address})
+                        let {result} = {}ptr2{ty}_array({address}, {length})
                         ",
                         self.gen.qualify_package(FFI_DIR)
                     );
