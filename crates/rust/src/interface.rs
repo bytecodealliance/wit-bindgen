@@ -1113,6 +1113,30 @@ macro_rules! {macro_name} {{
     }
 
     fn print_ty(&mut self, ty: &Type, mode: TypeMode) {
+        // If we have a typedef of a string or a list, the typedef is an alias
+        // for `String` or `Vec<T>`. If this is a borrow, instead of borrowing
+        // them as `&String` or `&Vec<T>`, use `&str` or `&[T]` so that callers
+        // don't need to create owned copies.
+        if let Type::Id(id) = ty {
+            let id = dealias(self.resolve, *id);
+            let typedef = &self.resolve.types[id];
+            match &typedef.kind {
+                TypeDefKind::Type(Type::String) => {
+                    if let Some(lt) = mode.lifetime {
+                        self.print_borrowed_str(lt);
+                        return;
+                    }
+                }
+                TypeDefKind::List(element) => {
+                    if mode.lifetime.is_some() {
+                        self.print_list(element, mode);
+                        return;
+                    }
+                }
+                _ => {}
+            }
+        }
+
         match ty {
             Type::Id(t) => self.print_tyid(*t, mode),
             Type::Bool => self.push_str("bool"),
