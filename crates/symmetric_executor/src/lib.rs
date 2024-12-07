@@ -1,3 +1,5 @@
+use std::{ffi::c_int, sync::{atomic::AtomicU32, Arc, Mutex}};
+
 use executor::exports::symmetric::runtime::symmetric_executor;
 
 mod executor;
@@ -15,7 +17,7 @@ impl symmetric_executor::GuestEventSubscription for EventSubscription {
         todo!()
     }
 
-    fn from_timeout(_nanoseconds: u64) -> symmetric_executor::EventSubscription {
+    fn from_timeout(nanoseconds: u64) -> symmetric_executor::EventSubscription {
         todo!()
     }
 }
@@ -45,12 +47,20 @@ impl symmetric_executor::Guest for Guest {
     }
 
     fn register(
-        _trigger: symmetric_executor::EventSubscription,
-        _callback: symmetric_executor::CallbackFunction,
-        _data: symmetric_executor::CallbackData,
+        trigger: symmetric_executor::EventSubscription,
+        callback: symmetric_executor::CallbackFunction,
+        data: symmetric_executor::CallbackData,
     ) -> () {
         todo!()
     }
+}
+
+type EventFd = c_int;
+type Count = u32;
+
+struct EventInner {
+    counter: Count,
+    waiting: Vec<EventFd>,
 }
 
 struct EventGenerator {
@@ -59,4 +69,12 @@ struct EventGenerator {
 
 struct EventSubscription {
 
+}
+
+enum EventType {
+    Manual {
+        last_counter: AtomicU32,
+        event_fd: EventFd,
+        object: Arc<Mutex<EventInner>>,
+    }
 }
