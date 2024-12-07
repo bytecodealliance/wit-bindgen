@@ -606,7 +606,7 @@ macro_rules! {macro_name} {{
                         let align = align.align_wasm32();
                         let (lower, lift) = if let Some(payload_type) = payload_type {
                             let lower =
-                                self.lower_to_memory("address", "value", &payload_type, &module);
+                                self.lower_to_memory("address", "&value", &payload_type, &module);
                             let lift =
                                 self.lift_from_memory("address", "value", &payload_type, &module);
                             (lower, lift)
@@ -685,6 +685,40 @@ impl {stream_and_future_support}::FuturePayload for {name} {{
         }}
     }}
 
+    fn cancel_write(writer: u32) {{
+        #[cfg(not(target_arch = "wasm32"))]
+        {{
+            unreachable!();
+        }}
+
+        #[cfg(target_arch = "wasm32")]
+        {{
+            #[link(wasm_import_module = "{module}")]
+            extern "C" {{
+                #[link_name = "[future-cancel-write-{index}]{func_name}"]
+                fn cancel(_: u32) -> u32;
+            }}
+            unsafe {{ cancel(writer) }};
+        }}
+    }}
+
+    fn cancel_read(reader: u32) {{
+        #[cfg(not(target_arch = "wasm32"))]
+        {{
+            unreachable!();
+        }}
+
+        #[cfg(target_arch = "wasm32")]
+        {{
+            #[link(wasm_import_module = "{module}")]
+            extern "C" {{
+                #[link_name = "[future-cancel-read-{index}]{func_name}"]
+                fn cancel(_: u32) -> u32;
+            }}
+            unsafe {{ cancel(reader) }};
+        }}
+    }}
+
     fn close_writable(writer: u32) {{
         #[cfg(not(target_arch = "wasm32"))]
         {{
@@ -754,9 +788,9 @@ impl {stream_and_future_support}::FuturePayload for {name} {{
                                 )
                             } else {
                                 let address = format!(
-                                    "let address = {alloc}::alloc\
+                                    "let address = unsafe {{ {alloc}::alloc\
                                      ({alloc}::Layout::from_size_align_unchecked\
-                                     ({size} * values.len(), {align}));"
+                                     ({size} * values.len(), {align})) }};"
                                 );
                                 let lower = self.lower_to_memory(
                                     "address",
@@ -767,7 +801,7 @@ impl {stream_and_future_support}::FuturePayload for {name} {{
                                 let lower = format!(
                                     r#"
 for (index, value) in values.iter().enumerate() {{
-    let address = address + (index * size);
+    let address = unsafe {{ address.add(index * {size}) }};
     {lower}
 }}
                                 "#
@@ -780,10 +814,10 @@ for (index, value) in values.iter().enumerate() {{
                                 );
                                 let lift = format!(
                                     r#"
-for (index, dst) in values.iter_mut().enumerate() {{
-    let address = address + (index * size);
+for (index, dst) in values.iter_mut().take(count).enumerate() {{
+    let address = unsafe {{ address.add(index * {size}) }};
     {lift}
-    *dst = value;
+    dst.write(value);
 }}
                                 "#
                                 );
@@ -856,6 +890,40 @@ impl {stream_and_future_support}::StreamPayload for {name} {{
                 {lift}
             }}
             count
+        }}
+    }}
+
+    fn cancel_write(writer: u32) {{
+        #[cfg(not(target_arch = "wasm32"))]
+        {{
+            unreachable!();
+        }}
+
+        #[cfg(target_arch = "wasm32")]
+        {{
+            #[link(wasm_import_module = "{module}")]
+            extern "C" {{
+                #[link_name = "[stream-cancel-write-{index}]{func_name}"]
+                fn cancel(_: u32) -> u32;
+            }}
+            unsafe {{ cancel(writer) }};
+        }}
+    }}
+
+    fn cancel_read(reader: u32) {{
+        #[cfg(not(target_arch = "wasm32"))]
+        {{
+            unreachable!();
+        }}
+
+        #[cfg(target_arch = "wasm32")]
+        {{
+            #[link(wasm_import_module = "{module}")]
+            extern "C" {{
+                #[link_name = "[stream-cancel-read-{index}]{func_name}"]
+                fn cancel(_: u32) -> u32;
+            }}
+            unsafe {{ cancel(reader) }};
         }}
     }}
 
