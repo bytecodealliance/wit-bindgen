@@ -95,6 +95,58 @@ mod strings {
     }
 }
 
+/// Like `strings` but with a type alias.
+mod aliased_strings {
+    wit_bindgen::generate!({
+        inline: "
+            package my:strings;
+
+            world not-used-name {
+                import cat: interface {
+                    type my-string = string;
+                    foo: func(x: my-string);
+                    bar: func() -> my-string;
+                }
+            }
+        ",
+    });
+
+    #[allow(dead_code)]
+    fn test() {
+        // Test the argument is `&str`.
+        cat::foo("hello");
+
+        // Test the return type is `String`.
+        let _t: String = cat::bar();
+    }
+}
+
+/// Like `aliased_string` but with lists instead of strings.
+mod aliased_lists {
+    wit_bindgen::generate!({
+        inline: "
+            package my:strings;
+
+            world not-used-name {
+                import cat: interface {
+                    type my-list = list<u8>;
+                    foo: func(x: my-list);
+                    bar: func() -> my-list;
+                }
+            }
+        ",
+    });
+
+    #[allow(dead_code)]
+    fn test() {
+        // Test the argument is `&[u8]`.
+        cat::foo(b"hello");
+
+        // Test the return type is `Vec<u8>`.
+        let _t: Vec<u8> = cat::bar();
+    }
+}
+
 mod run_ctors_once_workaround {
     wit_bindgen::generate!({
         inline: "
@@ -109,7 +161,7 @@ mod run_ctors_once_workaround {
     });
 }
 
-/// Like `strings` but with raw_strings`.
+/// Like `strings` but with `raw_strings`.
 mod raw_strings {
     wit_bindgen::generate!({
         inline: "
