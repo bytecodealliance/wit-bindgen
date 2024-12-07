@@ -58,39 +58,43 @@ pub mod exports {
                 #[allow(non_snake_case)]
                 pub unsafe fn _export_forward_cabi<T: Guest>(
                     arg0: *mut u8,
-                    arg1: usize,
                     arg2: *mut u8,
                 ) -> *mut u8 {
                     #[cfg(target_arch = "wasm32")]
                     _rt::run_ctors_once();
-                    let len0 = arg1;
+                    let arguments = arg0.cast_const().cast::<usize>();
+                    let len0 = unsafe{*(arguments.add(1))};
+                    let addr0 = unsafe{*arguments} as *mut u8;
                     let string0 = String::from(
-                        std::str::from_utf8(std::slice::from_raw_parts(arg0, len0)).unwrap(),
+                        std::str::from_utf8(std::slice::from_raw_parts(addr0, len0)).unwrap(),
                     );
                     let result1 = T::forward(string0);
                     let result = ::wit_bindgen_symmetric_rt::async_support::first_poll(
                         result1,
-                        |result2| {
+                        move |result2| {
                             let vec3 = (result2.into_bytes()).into_boxed_slice();
                             let ptr3 = vec3.as_ptr().cast::<u8>();
                             let len3 = vec3.len();
                             ::core::mem::forget(vec3);
+                            let output = arg2.cast::<usize>();
+                            *unsafe {&mut *output} = ptr3 as usize;
+                            *unsafe {&mut *output.add(1)} = len3;
 
-                            #[link(wasm_import_module = "[export]test:test/string-delay")]
-                            extern "C" {
-                                #[cfg_attr(
-                                    target_arch = "wasm32",
-                                    link_name = "[task-return]forward"
-                                )]
-                                fn X5BexportX5DtestX3AtestX2Fstring_delayX00X5Btask_returnX5Dforward(
-                                    _: *mut u8,
-                                    _: usize,
-                                );
-                            }
-                            X5BexportX5DtestX3AtestX2Fstring_delayX00X5Btask_returnX5Dforward(
-                                ptr3.cast_mut(),
-                                len3,
-                            );
+                            // #[link(wasm_import_module = "[export]test:test/string-delay")]
+                            // extern "C" {
+                            //     #[cfg_attr(
+                            //         target_arch = "wasm32",
+                            //         link_name = "[task-return]forward"
+                            //     )]
+                            //     fn X5BexportX5DtestX3AtestX2Fstring_delayX00X5Btask_returnX5Dforward(
+                            //         _: *mut u8,
+                            //         _: usize,
+                            //     );
+                            // }
+                            // X5BexportX5DtestX3AtestX2Fstring_delayX00X5Btask_returnX5Dforward(
+                            //     ptr3.cast_mut(),
+                            //     len3,
+                            // );
                         },
                     );
 
@@ -118,13 +122,13 @@ pub mod exports {
 
           #[cfg_attr(target_arch = "wasm32", export_name = "forward")]
           #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
-          unsafe extern "C" fn testX3AtestX2Fstring_delayX00forward(arg0: *mut u8,arg1: usize,arg2: *mut u8,) -> *mut u8 {
-            $($path_to_types)*::_export_forward_cabi::<$ty>(arg0, arg1, arg2)
+          unsafe extern "C" fn X5BasyncX5DtestX3AtestX2Fstring_delayX00forward(arg0: *mut u8,arg1: *mut u8,) -> *mut u8 {
+            $($path_to_types)*::_export_forward_cabi::<$ty>(arg0, arg1,)
           }
-          #[export_name = "[callback]forward"]
-          unsafe extern "C" fn _callback_forward(ctx: *mut u8, event0: i32, event1: i32, event2: i32) -> i32 {
-            $($path_to_types)*::__callback_forward(ctx, event0, event1, event2)
-          }
+        //   #[export_name = "[callback]forward"]
+        //   unsafe extern "C" fn _callback_forward(ctx: *mut u8, event0: i32, event1: i32, event2: i32) -> i32 {
+        //     $($path_to_types)*::__callback_forward(ctx, event0, event1, event2)
+        //   }
         };);
       }
                 #[doc(hidden)]
