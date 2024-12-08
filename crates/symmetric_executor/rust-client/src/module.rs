@@ -360,10 +360,7 @@ pub mod symmetric {
                 pub fn activate(&self) -> () {
                     unsafe {
                         #[link(wasm_import_module = "symmetric:runtime/symmetric-executor@0.1.0")]
-                        #[cfg_attr(
-                            not(target_arch = "wasm32"),
-                            link(name = "symmetric_executor"),
-                        )]
+                        #[cfg_attr(not(target_arch = "wasm32"), link(name = "symmetric_executor"))]
                         extern "C" {
                             #[cfg_attr(
                                 target_arch = "wasm32",

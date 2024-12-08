@@ -1,6 +1,9 @@
-use std::{ffi::c_int, sync::{atomic::AtomicU32, Arc, Mutex}};
+use std::{
+    ffi::c_int,
+    sync::{atomic::AtomicU32, Arc, Mutex}, time::{Duration, SystemTime},
+};
 
-use executor::exports::symmetric::runtime::symmetric_executor;
+use executor::exports::symmetric::runtime::symmetric_executor::{self, CallbackData, CallbackState};
 
 mod executor;
 
@@ -14,11 +17,15 @@ impl symmetric_executor::GuestCallbackData for Ignore {}
 
 impl symmetric_executor::GuestEventSubscription for EventSubscription {
     fn ready(&self) -> bool {
-        todo!()
+        match &self.inner {
+            EventType::Triggered { last_counter: _, event_fd: _, object: _ } => todo!(),
+            EventType::SystemTime(system_time) => *system_time <= SystemTime::now(),
+        }
     }
 
     fn from_timeout(nanoseconds: u64) -> symmetric_executor::EventSubscription {
-        todo!()
+        let when = SystemTime::now() + Duration::from_nanos(nanoseconds);
+        symmetric_executor::EventSubscription::new(EventSubscription{ inner: EventType::SystemTime(when), callback: None })
     }
 }
 
@@ -37,10 +44,10 @@ impl symmetric_executor::GuestEventGenerator for EventGenerator {
 }
 
 impl symmetric_executor::Guest for Guest {
-    type CallbackFunction=Ignore;
-    type CallbackData=Ignore;
+    type CallbackFunction = Ignore;
+    type CallbackData = Ignore;
     type EventSubscription = EventSubscription;
-    type EventGenerator= EventGenerator;
+    type EventGenerator = EventGenerator;
 
     fn run() -> () {
         todo!()
@@ -63,18 +70,20 @@ struct EventInner {
     waiting: Vec<EventFd>,
 }
 
-struct EventGenerator {
+struct EventGenerator {}
 
-}
+type CallbackEntry = (fn(*mut ()) -> CallbackState, CallbackData);
 
 struct EventSubscription {
-
+    inner: EventType,
+    callback: Option<CallbackEntry>,
 }
 
 enum EventType {
-    Manual {
+    Triggered {
         last_counter: AtomicU32,
         event_fd: EventFd,
         object: Arc<Mutex<EventInner>>,
-    }
+    },
+    SystemTime(SystemTime),
 }

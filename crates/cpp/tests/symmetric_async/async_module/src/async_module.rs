@@ -11,32 +11,34 @@ pub mod test {
             static __FORCE_SECTION_REF: fn() =
                 super::super::super::__link_custom_section_describing_imports;
 
-            use super::super::super::_rt;
+            // use super::super::super::_rt;
             #[allow(unused_unsafe, clippy::all)]
             pub async fn sleep(nanoseconds: u64) -> () {
                 unsafe {
-                    let layout0 = _rt::alloc::Layout::from_size_align_unchecked(8, 8);
-                    let ptr0 = _rt::alloc::alloc(layout0);
-                    *ptr0.add(0).cast::<i64>() = _rt::as_i64(&nanoseconds);
-                    let layout1 = _rt::alloc::Layout::from_size_align_unchecked(0, 1);
-                    let ptr1 = _rt::alloc::alloc(layout1);
+                    //let layout0 = _rt::alloc::Layout::from_size_align_unchecked(8, 8);
+                    let ptr0 = (&nanoseconds) as *const u64;
+                    //_rt::alloc::alloc(layout0);
+                    // *ptr0.add(0).cast::<i64>() = _rt::as_i64(&nanoseconds);
+                    // let layout1 = _rt::alloc::Layout::from_size_align_unchecked(0, 1);
+                    let ptr1 = core::ptr::null_mut();
+                    // _rt::alloc::alloc(layout1);
 
                     #[link(wasm_import_module = "test:test/wait")]
-                    #[link(name="sleep")]
+                    #[link(name = "sleep")]
                     extern "C" {
                         #[cfg_attr(target_arch = "wasm32", link_name = "[async]sleep")]
                         fn testX3AtestX2FwaitX00X5BasyncX5Dsleep(_: *mut u8, _: *mut u8)
                             -> *mut u8;
                     }
-                    let layout2 = _rt::alloc::Layout::from_size_align_unchecked(8, 8);
+                    // let layout2 = _rt::alloc::Layout::from_size_align_unchecked(8, 8);
                     ::wit_bindgen_symmetric_rt::async_support::await_result(
                         testX3AtestX2FwaitX00X5BasyncX5Dsleep,
-                        layout2,
-                        ptr0,
+                        // layout2,
+                        ptr0.cast_mut().cast(),
                         ptr1,
                     )
                     .await;
-                    _rt::cabi_dealloc(ptr1, 0, 1);
+                    // _rt::cabi_dealloc(ptr1, 0, 1);
                 }
             }
         }
@@ -64,8 +66,8 @@ pub mod exports {
                     #[cfg(target_arch = "wasm32")]
                     _rt::run_ctors_once();
                     let arguments = arg0.cast_const().cast::<usize>();
-                    let len0 = unsafe{*(arguments.add(1))};
-                    let addr0 = unsafe{*arguments} as *mut u8;
+                    let len0 = unsafe { *(arguments.add(1)) };
+                    let addr0 = unsafe { *arguments } as *mut u8;
                     let string0 = String::from(
                         std::str::from_utf8(std::slice::from_raw_parts(addr0, len0)).unwrap(),
                     );
@@ -78,8 +80,8 @@ pub mod exports {
                             let len3 = vec3.len();
                             ::core::mem::forget(vec3);
                             let output = arg2.cast::<usize>();
-                            *unsafe {&mut *output} = ptr3 as usize;
-                            *unsafe {&mut *output.add(1)} = len3;
+                            *unsafe { &mut *output } = ptr3 as usize;
+                            *unsafe { &mut *output.add(1) } = len3;
 
                             // #[link(wasm_import_module = "[export]test:test/string-delay")]
                             // extern "C" {
