@@ -6,7 +6,7 @@ use std::{
 };
 
 use executor::exports::symmetric::runtime::symmetric_executor::{
-    self, CallbackData, CallbackState, GuestEventSubscription,
+    self, CallbackState, GuestEventSubscription,
 };
 
 mod executor;
@@ -122,8 +122,8 @@ impl symmetric_executor::Guest for Guest {
                 let mut ex = EXECUTOR.lock().unwrap();
                 ex.active_tasks.iter_mut().for_each(|task| {
                     if task.ready() {
-                        task.callback.take_if(|(f, data)| {
-                            matches!((f)(data.handle() as *mut ()), CallbackState::Ready)
+                        task.callback.take_if(|CallbackEntry(f, data)| {
+                            matches!((f)(*data), CallbackState::Ready)
                         });
                     } else {
                         match &task.inner {
@@ -151,11 +151,8 @@ impl symmetric_executor::Guest for Guest {
                                     }
                                     tvptr = core::ptr::from_mut(&mut wait);
                                 } else {
-                                    task.callback.take_if(|(f, data)| {
-                                        matches!(
-                                            (f)(data.handle() as *mut ()),
-                                            CallbackState::Ready
-                                        )
+                                    task.callback.take_if(|CallbackEntry(f, data)| {
+                                        matches!((f)(*data), CallbackState::Ready)
                                     });
                                 }
                             }
@@ -216,7 +213,8 @@ impl symmetric_executor::Guest for Guest {
             &mut *(trigger.take_handle() as *mut EventSubscription)
         });
         let cb: fn(*mut ()) -> CallbackState = unsafe { transmute(callback.take_handle()) };
-        subscr.callback.replace((cb, data));
+        let data = data.take_handle() as *mut ();
+        subscr.callback.replace(CallbackEntry(cb, data));
         EXECUTOR.lock().unwrap().active_tasks.push(subscr);
     }
 }
@@ -231,7 +229,9 @@ struct EventInner {
 
 struct EventGenerator(Arc<Mutex<EventInner>>);
 
-type CallbackEntry = (fn(*mut ()) -> CallbackState, CallbackData);
+struct CallbackEntry(fn(*mut ()) -> CallbackState, *mut ());
+
+unsafe impl Send for CallbackEntry {}
 
 struct EventSubscription {
     inner: EventType,
