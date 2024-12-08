@@ -6,7 +6,7 @@ use std::{
 };
 
 use executor::exports::symmetric::runtime::symmetric_executor::{
-    self, CallbackData, CallbackState,
+    self, CallbackData, CallbackState, GuestEventSubscription,
 };
 
 mod executor;
@@ -23,10 +23,18 @@ impl symmetric_executor::GuestEventSubscription for EventSubscription {
     fn ready(&self) -> bool {
         match &self.inner {
             EventType::Triggered {
-                last_counter: _,
+                last_counter,
                 event_fd: _,
-                object: _,
-            } => todo!(),
+                event,
+            } => {
+                let current_counter = event.lock().unwrap().counter;
+                let active =
+                    current_counter != last_counter.load(std::sync::atomic::Ordering::Acquire);
+                if active {
+                    last_counter.store(current_counter, std::sync::atomic::Ordering::Release);
+                }
+                active
+            }
             EventType::SystemTime(system_time) => *system_time <= SystemTime::now(),
         }
     }
@@ -55,14 +63,32 @@ impl symmetric_executor::GuestEventGenerator for EventGenerator {
             inner: EventType::Triggered {
                 last_counter: AtomicU32::new(0),
                 event_fd,
-                object: Arc::clone(&self.0),
+                event: Arc::clone(&self.0),
             },
             callback: None,
         })
     }
 
-    fn activate(&self) -> () {
-        todo!()
+    fn activate(&self) {
+        if let Ok(mut event) = self.0.lock() {
+            event.counter += 1;
+            let file_signal: u64 = 1;
+            event.waiting.iter().for_each(|fd| {
+                let result = unsafe {
+                    libc::write(
+                        *fd,
+                        core::ptr::from_ref(&file_signal).cast(),
+                        core::mem::size_of_val(&file_signal),
+                    )
+                };
+                if result >= 0 {
+                    assert_eq!(
+                        result,
+                        core::mem::size_of_val(&file_signal).try_into().unwrap()
+                    );
+                }
+            });
+        }
     }
 }
 
@@ -80,8 +106,100 @@ impl symmetric_executor::Guest for Guest {
     type EventSubscription = EventSubscription;
     type EventGenerator = EventGenerator;
 
-    fn run() -> () {
-        todo!()
+    fn run() {
+        loop {
+            let mut wait = libc::timeval {
+                tv_sec: i64::MAX,
+                tv_usec: 999999,
+            };
+            let mut tvptr = core::ptr::null_mut();
+            let mut maxfd = 0;
+            let now = SystemTime::now();
+            let mut rfds = core::mem::MaybeUninit::<libc::fd_set>::uninit();
+            let rfd_ptr = unsafe { core::ptr::from_mut(rfds.assume_init_mut()) };
+            unsafe { libc::FD_ZERO(rfd_ptr) };
+            {
+                let mut ex = EXECUTOR.lock().unwrap();
+                ex.active_tasks.iter_mut().for_each(|task| {
+                    if task.ready() {
+                        task.callback.take_if(|(f, data)| {
+                            matches!((f)(data.handle() as *mut ()), CallbackState::Ready)
+                        });
+                    } else {
+                        match &task.inner {
+                            EventType::Triggered {
+                                last_counter: _,
+                                event_fd,
+                                event: _,
+                            } => {
+                                unsafe { libc::FD_SET(*event_fd, rfd_ptr) };
+                                if *event_fd > maxfd {
+                                    maxfd = *event_fd + 1;
+                                }
+                            }
+                            EventType::SystemTime(system_time) => {
+                                if *system_time > now {
+                                    let diff = system_time.duration_since(now).unwrap_or_default(); //.as_micros();
+                                    let secs = diff.as_secs() as i64;
+                                    let usecs = diff.subsec_micros() as i64;
+                                    if secs < wait.tv_sec
+                                        || (secs == wait.tv_sec && usecs < wait.tv_usec)
+                                    {
+                                        wait.tv_sec = secs;
+                                        wait.tv_usec = usecs;
+                                        // timeoutindex = n;
+                                    }
+                                    tvptr = core::ptr::from_mut(&mut wait);
+                                } else {
+                                    task.callback.take_if(|(f, data)| {
+                                        matches!(
+                                            (f)(data.handle() as *mut ()),
+                                            CallbackState::Ready
+                                        )
+                                    });
+                                }
+                            }
+                        }
+                    }
+                });
+                ex.active_tasks.retain(|task| task.callback.is_some());
+                if ex.active_tasks.is_empty() {
+                    break;
+                }
+            }
+            // with no work left the break should have occured
+            assert!(!tvptr.is_null() || maxfd > 0);
+            let selectresult = unsafe {
+                libc::select(
+                    maxfd,
+                    rfd_ptr,
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                    tvptr,
+                )
+            };
+            // we could look directly for the timeout
+            if selectresult > 0 {
+                let mut dummy: u64 = 0;
+                // reset active file descriptors
+                for i in 0..maxfd {
+                    if unsafe { libc::FD_ISSET(i, rfd_ptr) } {
+                        let readresult = unsafe {
+                            libc::read(
+                                i,
+                                core::ptr::from_mut(&mut dummy).cast(),
+                                core::mem::size_of_val(&dummy),
+                            )
+                        };
+                        assert!(
+                            readresult <= 0
+                                || readresult
+                                    == isize::try_from(core::mem::size_of_val(&dummy)).unwrap()
+                        );
+                    }
+                }
+            }
+        }
     }
 
     fn register(
@@ -124,7 +242,7 @@ enum EventType {
     Triggered {
         last_counter: AtomicU32,
         event_fd: EventFd,
-        object: Arc<Mutex<EventInner>>,
+        event: Arc<Mutex<EventInner>>,
     },
     SystemTime(SystemTime),
 }
