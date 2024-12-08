@@ -48,7 +48,16 @@ impl symmetric_executor::GuestEventGenerator for EventGenerator {
     }
 
     fn subscribe(&self) -> symmetric_executor::EventSubscription {
-        todo!()
+        let event_fd = unsafe { libc::eventfd(0, libc::EFD_NONBLOCK) };
+        self.0.lock().unwrap().waiting.push(event_fd);
+        symmetric_executor::EventSubscription::new(EventSubscription {
+            inner: EventType::Triggered {
+                last_counter: AtomicU32::new(0),
+                event_fd,
+                object: Arc::clone(&self.0),
+            },
+            callback: None,
+        })
     }
 
     fn activate(&self) -> () {
