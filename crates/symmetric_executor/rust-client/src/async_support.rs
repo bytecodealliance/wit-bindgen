@@ -74,7 +74,15 @@ async fn wait_on(wait_for: &EventSubscription) {
         if wait_for.ready() {
             Poll::Ready(())
         } else {
-            todo!();
+            let data = cx.waker().data();
+            // dangerous duplication?
+            let wait_for_copy = unsafe { EventSubscription::from_handle(wait_for.handle()) };
+            let old_waiting_for = unsafe { &mut *(data.cast::<Option<EventSubscription>>().cast_mut()) }
+                .replace(wait_for_copy);
+            // don't free the old subscription we found
+            if let Some(subscription) = old_waiting_for {
+                subscription.take_handle();
+            }
             Poll::Pending
         }
     })
