@@ -89,9 +89,15 @@ impl symmetric_executor::Guest for Guest {
         callback: symmetric_executor::CallbackFunction,
         data: symmetric_executor::CallbackData,
     ) -> () {
-        let mut subscr = unsafe { *(trigger.take_handle() as *mut EventSubscription) };
+        // TODO: Tidy this mess up
+        let mut subscr = EventSubscription {
+            inner: EventType::SystemTime(std::time::UNIX_EPOCH),
+            callback: None,
+        };
+        std::mem::swap(&mut subscr, unsafe {
+            &mut *(trigger.take_handle() as *mut EventSubscription)
+        });
         let cb: fn(*mut ()) -> CallbackState = unsafe { transmute(callback.take_handle()) };
-        // let data = data.take_handle() as *mut ();
         subscr.callback.replace((cb, data));
         EXECUTOR.lock().unwrap().active_tasks.push(subscr);
     }
