@@ -22,6 +22,7 @@ pub mod test {
                     let ptr1 = _rt::alloc::alloc(layout1);
 
                     #[link(wasm_import_module = "test:test/wait")]
+                    #[link(name="sleep")]
                     extern "C" {
                         #[cfg_attr(target_arch = "wasm32", link_name = "[async]sleep")]
                         fn testX3AtestX2FwaitX00X5BasyncX5Dsleep(_: *mut u8, _: *mut u8)

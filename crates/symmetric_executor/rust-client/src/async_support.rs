@@ -1,5 +1,17 @@
-use futures::{channel::oneshot, task::Waker};
-use std::{alloc::Layout, any::Any, collections::hash_map, future::Future};
+use futures::{channel::oneshot, task::Waker, FutureExt};
+use std::{alloc::Layout, any::Any, collections::hash_map, future::Future, pin::Pin, task::{Context, Poll, RawWaker, RawWakerVTable}};
+
+use crate::module::symmetric::runtime::symmetric_executor::EventGenerator;
+
+use super::module::symmetric::runtime::symmetric_executor::EventSubscription;
+
+type BoxFuture = Pin<Box<dyn Future<Output = ()> + 'static>>;
+
+struct FutureState {
+    future: BoxFuture,
+    sender: Option<EventGenerator>,
+    active_listener: Option<EventSubscription>,
+}
 
 #[doc(hidden)]
 pub enum Handle {
@@ -12,16 +24,53 @@ pub enum Handle {
 }
 
 #[doc(hidden)]
-pub fn with_entry<T>(h: u32, f: impl FnOnce(hash_map::Entry<'_, u32, Handle>) -> T) -> T {
+pub fn with_entry<T>(_h: u32, _f: impl FnOnce(hash_map::Entry<'_, u32, Handle>) -> T) -> T {
     todo!()
+}
+
+static VTABLE: RawWakerVTable = RawWakerVTable::new(
+    |_| RawWaker::new(core::ptr::null(), &VTABLE),
+    // `wake` does nothing
+    |_| {},
+    // `wake_by_ref` does nothing
+    |_| {},
+    // Dropping does nothing as we don't allocate anything
+    |_| {},
+);
+
+pub fn new_waker(call: *mut Option<EventSubscription>) -> Waker {
+    unsafe { Waker::from_raw(RawWaker::new(call.cast(), &VTABLE)) }
+}
+
+
+unsafe fn poll(state: *mut FutureState) -> Poll<()> {
+    let mut pinned = std::pin::pin!(&mut (*state).future);
+    let waker = new_waker(&mut (&mut *state).active_listener as *mut Option<EventSubscription>);
+    pinned.as_mut().poll(&mut Context::from_waker(&waker))
+    .map(|()| {
+        let dummy = Box::from_raw(state);
+        if let Some(waker) = dummy.sender {
+            waker.activate();
+        }
+    })
 }
 
 #[doc(hidden)]
 pub fn first_poll<T: 'static>(
-    _future: impl Future<Output = T> + 'static,
-    _fun: impl FnOnce(T) + 'static,
+    future: impl Future<Output = T> + 'static,
+    fun: impl FnOnce(T) + 'static,
 ) -> *mut u8 {
-    todo!()
+    let state = Box::into_raw(Box::new(FutureState {
+        future: Box::pin(future.map(fun)),
+        sender: None,
+        active_listener: None,
+    }));
+    match unsafe { poll(state) } {
+        Poll::Ready(()) => core::ptr::null_mut(),
+        Poll::Pending => {
+            todo!()
+        }
+    }
 }
 
 #[doc(hidden)]
