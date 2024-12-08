@@ -1,5 +1,6 @@
 use std::{
     ffi::c_int,
+    mem::transmute,
     sync::{atomic::AtomicU32, Arc, Mutex},
     time::{Duration, SystemTime},
 };
@@ -65,6 +66,14 @@ impl symmetric_executor::GuestEventGenerator for EventGenerator {
     }
 }
 
+struct Executor {
+    active_tasks: Vec<EventSubscription>,
+}
+
+static EXECUTOR: Mutex<Executor> = Mutex::new(Executor {
+    active_tasks: Vec::new(),
+});
+
 impl symmetric_executor::Guest for Guest {
     type CallbackFunction = Ignore;
     type CallbackData = Ignore;
@@ -80,7 +89,11 @@ impl symmetric_executor::Guest for Guest {
         callback: symmetric_executor::CallbackFunction,
         data: symmetric_executor::CallbackData,
     ) -> () {
-        todo!()
+        let mut subscr = unsafe { *(trigger.take_handle() as *mut EventSubscription) };
+        let cb: fn(*mut ()) -> CallbackState = unsafe { transmute(callback.take_handle()) };
+        // let data = data.take_handle() as *mut ();
+        subscr.callback.replace((cb, data));
+        EXECUTOR.lock().unwrap().active_tasks.push(subscr);
     }
 }
 
