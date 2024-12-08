@@ -99,7 +99,7 @@ pub mod exports {
                         },
                     );
 
-                    result
+                    result.cast()
                 }
                 #[doc(hidden)]
                 #[allow(non_snake_case)]

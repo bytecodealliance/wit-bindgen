@@ -8,16 +8,21 @@ use std::{
     task::{Context, Poll, RawWaker, RawWakerVTable},
 };
 
-use crate::module::symmetric::runtime::{self, symmetric_executor::EventGenerator};
-
-use super::module::symmetric::runtime::symmetric_executor::EventSubscription;
+use crate::module::symmetric::runtime::{
+    self,
+    symmetric_executor::{
+        self, CallbackData, CallbackFunction, CallbackState, EventGenerator, EventSubscription,
+    },
+};
 
 type BoxFuture = Pin<Box<dyn Future<Output = ()> + 'static>>;
 
 struct FutureState {
     future: BoxFuture,
-    trigger: Option<EventGenerator>,
-    active_subscription: Option<EventSubscription>,
+    // signal to activate once the current async future has finished
+    completion_event: Option<EventGenerator>,
+    // the event this future should wake on
+    waiting_for: Option<EventSubscription>,
 }
 
 #[doc(hidden)]
@@ -51,40 +56,50 @@ pub fn new_waker(call: *mut Option<EventSubscription>) -> Waker {
 
 unsafe fn poll(state: *mut FutureState) -> Poll<()> {
     let mut pinned = std::pin::pin!(&mut (*state).future);
-    let waker = new_waker(&mut (&mut *state).active_subscription as *mut Option<EventSubscription>);
+    let waker = new_waker(&mut (&mut *state).waiting_for as *mut Option<EventSubscription>);
     pinned
         .as_mut()
         .poll(&mut Context::from_waker(&waker))
         .map(|()| {
-            let dummy = Box::from_raw(state);
-            if let Some(waker) = dummy.trigger {
+            let state_owned = Box::from_raw(state);
+            if let Some(waker) = &state_owned.completion_event {
                 waker.activate();
             }
+            drop(state_owned);
         })
+}
+
+extern "C" fn symmetric_callback(obj: *mut ()) -> symmetric_executor::CallbackState {
+    match unsafe { poll(obj.cast()) } {
+        Poll::Ready(_) => CallbackState::Ready,
+        Poll::Pending => {
+            let state = obj.cast::<FutureState>();
+            let waiting_for = unsafe { &mut *state }.waiting_for.take();
+            super::register(waiting_for.unwrap(), symmetric_callback, obj);
+            CallbackState::Pending
+        }
+    }
 }
 
 #[doc(hidden)]
 pub fn first_poll<T: 'static>(
     future: impl Future<Output = T> + 'static,
     fun: impl FnOnce(T) + 'static,
-) -> *mut u8 {
+) -> *mut () {
     let state = Box::into_raw(Box::new(FutureState {
         future: Box::pin(future.map(fun)),
-        trigger: None,
-        active_subscription: None,
+        completion_event: None,
+        waiting_for: None,
     }));
     match unsafe { poll(state) } {
         Poll::Ready(()) => core::ptr::null_mut(),
         Poll::Pending => {
-            let trigger = EventGenerator::default();
-            let subscription = unsafe { &mut *state }.active_subscription.take();
-            assert!(!subscription.is_none());
-            runtime::symmetric_executor::register(subscription.unwrap(), callback, unsafe {
-                runtime::symmetric_executor::CallbackData::from_handle(state.cast())
-            });
-            let handle = trigger.subscribe().0.take_handle() as *mut ();
-            unsafe { &mut *state }.trigger.replace(trigger);
-            handle
+            let completion_event = EventGenerator::new();
+            let wait_chain = completion_event.subscribe().take_handle() as *mut ();
+            unsafe { &mut *state }.completion_event.replace(completion_event);
+            let waiting_for = unsafe { &mut *state }.waiting_for.take();
+            super::register(waiting_for.unwrap(), symmetric_callback, state.cast());
+            wait_chain
         }
     }
 }
