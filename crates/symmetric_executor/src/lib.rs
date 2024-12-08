@@ -205,11 +205,13 @@ impl symmetric_executor::Guest for Guest {
         data: symmetric_executor::CallbackData,
     ) -> () {
         // TODO: Tidy this mess up
+        // Note: Trigger is consumed, callback and data are managed elsewhere
         let mut subscr = EventSubscription {
             inner: EventType::SystemTime(std::time::UNIX_EPOCH),
             callback: None,
         };
         std::mem::swap(&mut subscr, unsafe {
+            // TODO: This should be handle to free the resource, but it is used later?
             &mut *(trigger.take_handle() as *mut EventSubscription)
         });
         let cb: fn(*mut ()) -> CallbackState = unsafe { transmute(callback.take_handle()) };

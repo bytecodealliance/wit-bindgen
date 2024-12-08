@@ -1,6 +1,5 @@
 use futures::{channel::oneshot, task::Waker, FutureExt};
 use std::{
-    alloc::Layout,
     any::Any,
     collections::hash_map,
     future::Future,
@@ -9,9 +8,8 @@ use std::{
 };
 
 use crate::module::symmetric::runtime::{
-    self,
     symmetric_executor::{
-        self, CallbackData, CallbackFunction, CallbackState, EventGenerator, EventSubscription,
+        self, CallbackState, EventGenerator, EventSubscription,
     },
 };
 

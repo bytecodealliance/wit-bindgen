@@ -1,6 +1,8 @@
 #[link(name = "symmetric_executor")]
 extern "C" {
-    fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5BstaticX5Devent_subscriptionX2Efrom_timeout(nanoseconds: u64) -> *mut ();
+    fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5BstaticX5Devent_subscriptionX2Efrom_timeout(
+        nanoseconds: u64,
+    ) -> *mut ();
 }
 
 #[no_mangle]

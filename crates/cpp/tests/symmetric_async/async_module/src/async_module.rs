@@ -184,7 +184,7 @@ mod _rt {
         wit_bindgen::rt::run_ctors_once();
     }
     pub use alloc_crate::string::String;
-    pub use alloc_crate::vec::Vec;
+    // pub use alloc_crate::vec::Vec;
     pub mod stream_and_future_support {
         use {
             futures::{
