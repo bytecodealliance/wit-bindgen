@@ -1,7 +1,14 @@
 use futures::{channel::oneshot, task::Waker, FutureExt};
-use std::{alloc::Layout, any::Any, collections::hash_map, future::Future, pin::Pin, task::{Context, Poll, RawWaker, RawWakerVTable}};
+use std::{
+    alloc::Layout,
+    any::Any,
+    collections::hash_map,
+    future::Future,
+    pin::Pin,
+    task::{Context, Poll, RawWaker, RawWakerVTable},
+};
 
-use crate::module::symmetric::runtime::symmetric_executor::EventGenerator;
+use crate::module::symmetric::runtime::{self, symmetric_executor::EventGenerator};
 
 use super::module::symmetric::runtime::symmetric_executor::EventSubscription;
 
@@ -9,8 +16,8 @@ type BoxFuture = Pin<Box<dyn Future<Output = ()> + 'static>>;
 
 struct FutureState {
     future: BoxFuture,
-    sender: Option<EventGenerator>,
-    active_listener: Option<EventSubscription>,
+    trigger: Option<EventGenerator>,
+    active_subscription: Option<EventSubscription>,
 }
 
 #[doc(hidden)]
@@ -42,17 +49,18 @@ pub fn new_waker(call: *mut Option<EventSubscription>) -> Waker {
     unsafe { Waker::from_raw(RawWaker::new(call.cast(), &VTABLE)) }
 }
 
-
 unsafe fn poll(state: *mut FutureState) -> Poll<()> {
     let mut pinned = std::pin::pin!(&mut (*state).future);
-    let waker = new_waker(&mut (&mut *state).active_listener as *mut Option<EventSubscription>);
-    pinned.as_mut().poll(&mut Context::from_waker(&waker))
-    .map(|()| {
-        let dummy = Box::from_raw(state);
-        if let Some(waker) = dummy.sender {
-            waker.activate();
-        }
-    })
+    let waker = new_waker(&mut (&mut *state).active_subscription as *mut Option<EventSubscription>);
+    pinned
+        .as_mut()
+        .poll(&mut Context::from_waker(&waker))
+        .map(|()| {
+            let dummy = Box::from_raw(state);
+            if let Some(waker) = dummy.trigger {
+                waker.activate();
+            }
+        })
 }
 
 #[doc(hidden)]
@@ -62,13 +70,21 @@ pub fn first_poll<T: 'static>(
 ) -> *mut u8 {
     let state = Box::into_raw(Box::new(FutureState {
         future: Box::pin(future.map(fun)),
-        sender: None,
-        active_listener: None,
+        trigger: None,
+        active_subscription: None,
     }));
     match unsafe { poll(state) } {
         Poll::Ready(()) => core::ptr::null_mut(),
         Poll::Pending => {
-            todo!()
+            let trigger = EventGenerator::default();
+            let subscription = unsafe { &mut *state }.active_subscription.take();
+            assert!(!subscription.is_none());
+            runtime::symmetric_executor::register(subscription.unwrap(), callback, unsafe {
+                runtime::symmetric_executor::CallbackData::from_handle(state.cast())
+            });
+            let handle = trigger.subscribe().0.take_handle() as *mut ();
+            unsafe { &mut *state }.trigger.replace(trigger);
+            handle
         }
     }
 }
