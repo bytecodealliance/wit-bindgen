@@ -1,9 +1,12 @@
 use std::{
     ffi::c_int,
-    sync::{atomic::AtomicU32, Arc, Mutex}, time::{Duration, SystemTime},
+    sync::{atomic::AtomicU32, Arc, Mutex},
+    time::{Duration, SystemTime},
 };
 
-use executor::exports::symmetric::runtime::symmetric_executor::{self, CallbackData, CallbackState};
+use executor::exports::symmetric::runtime::symmetric_executor::{
+    self, CallbackData, CallbackState,
+};
 
 mod executor;
 
@@ -18,20 +21,30 @@ impl symmetric_executor::GuestCallbackData for Ignore {}
 impl symmetric_executor::GuestEventSubscription for EventSubscription {
     fn ready(&self) -> bool {
         match &self.inner {
-            EventType::Triggered { last_counter: _, event_fd: _, object: _ } => todo!(),
+            EventType::Triggered {
+                last_counter: _,
+                event_fd: _,
+                object: _,
+            } => todo!(),
             EventType::SystemTime(system_time) => *system_time <= SystemTime::now(),
         }
     }
 
     fn from_timeout(nanoseconds: u64) -> symmetric_executor::EventSubscription {
         let when = SystemTime::now() + Duration::from_nanos(nanoseconds);
-        symmetric_executor::EventSubscription::new(EventSubscription{ inner: EventType::SystemTime(when), callback: None })
+        symmetric_executor::EventSubscription::new(EventSubscription {
+            inner: EventType::SystemTime(when),
+            callback: None,
+        })
     }
 }
 
 impl symmetric_executor::GuestEventGenerator for EventGenerator {
     fn new() -> Self {
-        todo!()
+        Self(Arc::new(Mutex::new(EventInner {
+            counter: 0,
+            waiting: Default::default(),
+        })))
     }
 
     fn subscribe(&self) -> symmetric_executor::EventSubscription {
@@ -70,7 +83,7 @@ struct EventInner {
     waiting: Vec<EventFd>,
 }
 
-struct EventGenerator {}
+struct EventGenerator(Arc<Mutex<EventInner>>);
 
 type CallbackEntry = (fn(*mut ()) -> CallbackState, CallbackData);
 
