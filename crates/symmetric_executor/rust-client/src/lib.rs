@@ -1,6 +1,7 @@
 use module::symmetric::runtime::symmetric_executor::{
-    self, CallbackData, CallbackFunction, CallbackState, EventSubscription,
+    self, CallbackData, CallbackFunction, 
 };
+pub use module::symmetric::runtime::symmetric_executor::{CallbackState, EventSubscription,run};
 
 pub mod async_support;
 mod module;

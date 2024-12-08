@@ -96,7 +96,9 @@ pub fn first_poll<T: 'static>(
         Poll::Pending => {
             let completion_event = EventGenerator::new();
             let wait_chain = completion_event.subscribe().take_handle() as *mut ();
-            unsafe { &mut *state }.completion_event.replace(completion_event);
+            unsafe { &mut *state }
+                .completion_event
+                .replace(completion_event);
             let waiting_for = unsafe { &mut *state }.waiting_for.take();
             super::register(waiting_for.unwrap(), symmetric_callback, state.cast());
             wait_chain
