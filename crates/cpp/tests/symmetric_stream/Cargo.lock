@@ -385,6 +385,7 @@ dependencies = [
  "source",
  "wit-bindgen",
  "wit-bindgen-rt",
+ "wit-bindgen-symmetric-rt",
 ]
 
 [[package]]
@@ -560,6 +561,14 @@ dependencies = [
  "syn",
  "wit-bindgen-core",
  "wit-bindgen-rust",
+]
+
+[[package]]
+name = "wit-bindgen-symmetric-rt"
+version = "0.36.0"
+dependencies = [
+ "futures",
+ "wit-bindgen",
 ]
 
 [[package]]

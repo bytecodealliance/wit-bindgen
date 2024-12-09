@@ -33,6 +33,29 @@ pub enum Handle {
     Write,
 }
 
+#[repr(C)]
+pub struct StreamVtable {
+    // magic value for EOF(-1) and block(-MAX)
+    // asynchronous function, if this blocks wait for read ready event
+    pub read: fn(stream: *mut (), buf: *mut (), size: usize) -> isize,
+    pub close_read: fn(stream: *mut ()),
+
+    pub write: fn(stream: *mut (), buf: *mut (), size: usize) -> isize,
+    pub close_write: fn(stream: *mut ()),
+    // post WASI 0.3, CPB
+    // pub allocate: fn(stream: *mut ()) -> (*mut (), isize),
+    // pub publish: fn(stream: *mut (), size: usize),
+}
+
+#[repr(C)]
+pub struct Stream {
+    vtable: *const StreamVtable,
+    read_ready_event_send: *mut (),
+    write_ready_event_send: *mut (),
+    read_addr: *mut (),
+    read_size: usize,
+}
+
 #[doc(hidden)]
 pub fn with_entry<T>(_h: u32, _f: impl FnOnce(hash_map::Entry<'_, u32, Handle>) -> T) -> T {
     todo!()

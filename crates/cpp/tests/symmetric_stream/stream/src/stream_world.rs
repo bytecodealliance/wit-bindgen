@@ -12,15 +12,10 @@ pub mod test {
       super::super::super::__link_custom_section_describing_imports;
       
       use super::super::super::_rt;
+      use _rt::stream_and_future_support::WitStream;
 
       impl _rt::stream_and_future_support::StreamPayload for u32{
-        fn new() -> u32 {
-          #[cfg(not(target_arch = "wasm32"))]
-          {
-            unreachable!();
-          }
-
-          #[cfg(target_arch = "wasm32")]
+        fn new() -> *mut WitStream {
           {
             #[link(wasm_import_module = "[import-payload]test:test/stream-source")]
             extern "C" {
@@ -31,13 +26,7 @@ pub mod test {
           }
         }
 
-        async fn write(stream: u32, values: &[Self]) -> Option<usize> {
-          #[cfg(not(target_arch = "wasm32"))]
-          {
-            unreachable!();
-          }
-
-          #[cfg(target_arch = "wasm32")]
+        async fn write(stream: *mut WitStream, values: &[Self]) -> Option<usize> {
           {
             let address = values.as_ptr() as _;
             
@@ -53,13 +42,7 @@ pub mod test {
           }
         }
 
-        async fn read(stream: u32, values: &mut [::core::mem::MaybeUninit::<Self>]) -> Option<usize> {
-          #[cfg(not(target_arch = "wasm32"))]
-          {
-            unreachable!();
-          }
-
-          #[cfg(target_arch = "wasm32")]
+        async fn read(stream: *mut WitStream, values: &mut [::core::mem::MaybeUninit::<Self>]) -> Option<usize> {
           {
             let address = values.as_mut_ptr() as _;
             #[link(wasm_import_module = "[import-payload]test:test/stream-source")]
@@ -80,13 +63,7 @@ pub mod test {
           }
         }
 
-        fn cancel_write(writer: u32) {
-          #[cfg(not(target_arch = "wasm32"))]
-          {
-            unreachable!();
-          }
-
-          #[cfg(target_arch = "wasm32")]
+        fn cancel_write(writer: *mut WitStream) {
           {
             #[link(wasm_import_module = "[import-payload]test:test/stream-source")]
             extern "C" {
@@ -97,13 +74,7 @@ pub mod test {
           }
         }
 
-        fn cancel_read(reader: u32) {
-          #[cfg(not(target_arch = "wasm32"))]
-          {
-            unreachable!();
-          }
-
-          #[cfg(target_arch = "wasm32")]
+        fn cancel_read(reader: *mut WitStream) {
           {
             #[link(wasm_import_module = "[import-payload]test:test/stream-source")]
             extern "C" {
@@ -114,13 +85,7 @@ pub mod test {
           }
         }
 
-        fn close_writable(writer: u32) {
-          #[cfg(not(target_arch = "wasm32"))]
-          {
-            unreachable!();
-          }
-
-          #[cfg(target_arch = "wasm32")]
+        fn close_writable(writer: *mut WitStream) {
           {
             #[link(wasm_import_module = "[import-payload]test:test/stream-source")]
             extern "C" {
@@ -131,13 +96,7 @@ pub mod test {
           }
         }
 
-        fn close_readable(reader: u32) {
-          #[cfg(not(target_arch = "wasm32"))]
-          {
-            unreachable!();
-          }
-
-          #[cfg(target_arch = "wasm32")]
+        fn close_readable(reader: *mut WitStream) {
           {
             #[link(wasm_import_module = "[import-payload]test:test/stream-source")]
             extern "C" {
@@ -258,8 +217,9 @@ mod _rt {
         pin::Pin,
         task::{Context, Poll},
       },
-      wit_bindgen_rt::async_support::{self, Handle},
+      wit_bindgen_symmetric_rt::async_support::{self, Handle},
     };
+    pub use wit_bindgen_symmetric_rt::async_support::Stream as WitStream;
 
     #[doc(hidden)]
     pub trait FuturePayload: Unpin + Sized + 'static {
@@ -585,17 +545,17 @@ mod _rt {
 
     #[doc(hidden)]
     pub trait StreamPayload: Unpin + Sized + 'static {
-      fn new() -> u32;
-      async fn write(stream: u32, values: &[Self]) -> Option<usize>;
-      async fn read(stream: u32, values: &mut [MaybeUninit<Self>]) -> Option<usize>;
-      fn cancel_write(stream: u32);
-      fn cancel_read(stream: u32);
-      fn close_writable(stream: u32);
-      fn close_readable(stream: u32);
+      fn new() -> *mut WitStream;
+      async fn write(stream: *mut WitStream, values: &[Self]) -> Option<usize>;
+      async fn read(stream: *mut WitStream, values: &mut [MaybeUninit<Self>]) -> Option<usize>;
+      fn cancel_write(stream: *mut WitStream);
+      fn cancel_read(stream: *mut WitStream);
+      fn close_writable(stream: *mut WitStream);
+      fn close_readable(stream: *mut WitStream);
     }
 
     struct CancelWriteOnDrop<T: StreamPayload> {
-      handle: Option<u32>,
+      handle: Option<*mut WitStream>,
       _phantom: PhantomData<T>,
     }
 
@@ -621,7 +581,7 @@ mod _rt {
 
     /// Represents the writable end of a Component Model `stream`.
     pub struct StreamWriter<T: StreamPayload> {
-      handle: u32,
+      handle: *mut WitStream,
       future: Option<Pin<Box<dyn Future<Output = ()> + 'static>>>,
       _phantom: PhantomData<T>,
     }
@@ -765,7 +725,7 @@ mod _rt {
     }
 
     struct CancelReadOnDrop<T: StreamPayload> {
-      handle: Option<u32>,
+      handle: Option<*mut WitStream>,
       _phantom: PhantomData<T>,
     }
 
@@ -791,7 +751,7 @@ mod _rt {
 
     /// Represents the readable end of a Component Model `stream`.
     pub struct StreamReader<T: StreamPayload> {
-      handle: u32,
+      handle: *mut WitStream,
       future: Option<Pin<Box<dyn Future<Output = Option<Vec<T>>> + 'static>>>,
       _phantom: PhantomData<T>,
     }
@@ -816,7 +776,7 @@ mod _rt {
 
     impl<T: StreamPayload> StreamReader<T> {
       #[doc(hidden)]
-      pub fn from_handle(handle: u32) -> Self {
+      pub fn from_handle(handle: *mut WitStream) -> Self {
         async_support::with_entry(handle, |entry| match entry {
           Entry::Vacant(entry) => {
             entry.insert(Handle::Read);
@@ -843,7 +803,7 @@ mod _rt {
       }
 
       #[doc(hidden)]
-      pub fn into_handle(self) -> u32 {
+      pub fn into_handle(self) -> *mut WitStream {
         async_support::with_entry(self.handle, |entry| match entry {
           Entry::Vacant(_) => unreachable!(),
           Entry::Occupied(mut entry) => match entry.get() {
