@@ -965,7 +965,9 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                                 });
                                 self.stack.pop().unwrap()
                             }
-                            AbiVariant::GuestImportAsync | AbiVariant::GuestExportAsync => {
+                            AbiVariant::GuestImportAsync
+                            | AbiVariant::GuestExportAsync
+                            | AbiVariant::GuestExportAsyncStackful => {
                                 unreachable!()
                             }
                         };
@@ -1037,7 +1039,9 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         // the result is stored
                         AbiVariant::GuestExport => self.stack.pop().unwrap(),
 
-                        AbiVariant::GuestImportAsync | AbiVariant::GuestExportAsync => {
+                        AbiVariant::GuestImportAsync
+                        | AbiVariant::GuestExportAsync
+                        | AbiVariant::GuestExportAsyncStackful => {
                             unreachable!()
                         }
                     };
@@ -1175,7 +1179,9 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                             self.stack.push(ptr);
                         }
 
-                        AbiVariant::GuestImportAsync | AbiVariant::GuestExportAsync => {
+                        AbiVariant::GuestImportAsync
+                        | AbiVariant::GuestExportAsync
+                        | AbiVariant::GuestExportAsyncStackful => {
                             unreachable!()
                         }
                     }
