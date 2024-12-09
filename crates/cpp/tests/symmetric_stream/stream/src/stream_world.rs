@@ -158,6 +158,7 @@ pub mod test {
           let ptr1 = _rt::alloc::alloc(layout1);
 
           #[link(wasm_import_module = "test:test/stream-source")]
+          #[link(name="source")]
           extern "C" {
             #[cfg_attr(target_arch = "wasm32", link_name = "[async]create")]
             fn testX3AtestX2Fstream_sourceX00X5BasyncX5Dcreate(_: *mut u8, _: *mut u8, ) -> i32;
@@ -200,7 +201,7 @@ pub mod exports {
             #[cfg_attr(target_arch = "wasm32", link_name = "[task-return]create")]
             fn X5BexportX5DtestX3AtestX2Fstream_testX00X5Btask_returnX5Dcreate(_: i32, );
           }
-          X5BexportX5DtestX3AtestX2Fstream_testX00X5Btask_returnX5Dcreate((result1).into_handle() as i32);
+          // X5BexportX5DtestX3AtestX2Fstream_testX00X5Btask_returnX5Dcreate((result1).into_handle() as i32);
         });
 
         result
@@ -220,7 +221,7 @@ pub mod exports {
 
           #[cfg_attr(target_arch = "wasm32", export_name = "create")]
           #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
-          unsafe extern "C" fn testX3AtestX2Fstream_testX00create() -> *mut u8 {
+          unsafe extern "C" fn testX3AtestX2Fstream_testX00X5BasyncX5Dcreate(args: *mut u8, results: *mut u8) -> *mut u8 {
             $($path_to_types)*::_export_create_cabi::<$ty>()
           }
           #[export_name = "[callback]create"]

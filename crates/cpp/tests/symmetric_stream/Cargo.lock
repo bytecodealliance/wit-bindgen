@@ -225,6 +225,9 @@ checksum = "a7a70ba024b9dc04c27ea2f0c0548feb474ec5c54bba33a7f72f873a39d07b24"
 [[package]]
 name = "main"
 version = "0.1.0"
+dependencies = [
+ "stream",
+]
 
 [[package]]
 name = "memchr"
@@ -379,6 +382,7 @@ name = "stream"
 version = "0.1.0"
 dependencies = [
  "futures",
+ "source",
  "wit-bindgen",
  "wit-bindgen-rt",
 ]
