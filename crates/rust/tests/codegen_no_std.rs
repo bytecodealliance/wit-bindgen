@@ -12,6 +12,16 @@ mod codegen_tests {
     macro_rules! codegen_test {
         (wasi_cli $name:tt $test:tt) => {};
         (wasi_http $name:tt $test:tt) => {};
+
+        // TODO: We should be able to support streams, futures, and
+        // error-contexts in no_std mode if desired, but haven't done the work
+        // yet.
+        (streams $name:tt $test:tt) => {};
+        (futures $name:tt $test:tt) => {};
+        (resources_with_streams $name:tt $test:tt) => {};
+        (resources_with_futures $name:tt $test:tt) => {};
+        (error_context $name:tt $test:tt) => {};
+
         ($id:ident $name:tt $test:tt) => {
             mod $id {
                 wit_bindgen::generate!({
