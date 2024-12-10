@@ -1,4 +1,4 @@
-#![no_std]
+#![cfg_attr(not(feature = "async"), no_std)]
 
 extern crate alloc;
 
@@ -112,3 +112,11 @@ pub fn run_ctors_once() {
         }
     }
 }
+
+/// Support for using the Component Model Async ABI
+#[cfg(not(feature = "async"))]
+pub mod async_support {}
+
+/// Support for using the Component Model Async ABI
+#[cfg(feature = "async")]
+pub mod async_support;
