@@ -17,93 +17,100 @@ pub mod test {
       impl _rt::stream_and_future_support::StreamPayload for u32{
         fn new() -> *mut WitStream {
           {
-            #[link(wasm_import_module = "[import-payload]test:test/stream-source")]
-            extern "C" {
-              #[link_name = "[stream-new-0]create"]
-              fn new() -> u32;
-            }
-            unsafe { new() }
+            // #[link(wasm_import_module = "[import-payload]test:test/stream-source")]
+            // extern "C" {
+            //   #[link_name = "[stream-new-0]create"]
+            //   fn new() -> u32;
+            // }
+            // unsafe { new() }
+            todo!()
           }
         }
 
         async fn write(stream: *mut WitStream, values: &[Self]) -> Option<usize> {
           {
-            let address = values.as_ptr() as _;
+            // let address = values.as_ptr() as _;
             
-            #[link(wasm_import_module = "[import-payload]test:test/stream-source")]
-            extern "C" {
-              #[link_name = "[async][stream-write-0]create"]
-              fn wit_import(_: u32, _: *mut u8, _: u32) -> u32;
-            }
+            // #[link(wasm_import_module = "[import-payload]test:test/stream-source")]
+            // extern "C" {
+            //   #[link_name = "[async][stream-write-0]create"]
+            //   fn wit_import(_: u32, _: *mut u8, _: u32) -> u32;
+            // }
 
-            unsafe {
-              ::wit_bindgen_rt::async_support::await_stream_result(wit_import, stream, address, u32::try_from(values.len()).unwrap()).await
-            }
+            // unsafe {
+            //   ::wit_bindgen_symmetric_rt::async_support::await_stream_result(wit_import, stream, address, u32::try_from(values.len()).unwrap()).await
+            // }
+            todo!()
           }
         }
 
         async fn read(stream: *mut WitStream, values: &mut [::core::mem::MaybeUninit::<Self>]) -> Option<usize> {
           {
-            let address = values.as_mut_ptr() as _;
-            #[link(wasm_import_module = "[import-payload]test:test/stream-source")]
-            extern "C" {
-              #[link_name = "[async][stream-read-0]create"]
-              fn wit_import(_: u32, _: *mut u8, _: u32) -> u32;
-            }
+            // let address = values.as_mut_ptr() as _;
+            // #[link(wasm_import_module = "[import-payload]test:test/stream-source")]
+            // extern "C" {
+            //   #[link_name = "[async][stream-read-0]create"]
+            //   fn wit_import(_: u32, _: *mut u8, _: u32) -> u32;
+            // }
 
-            let count = unsafe {
-              ::wit_bindgen_rt::async_support::await_stream_result(wit_import, stream, address, u32::try_from(values.len()).unwrap()).await
-            };
-            #[allow(unused)]
-            if let Some(count) = count {
-              let value = ();
+            // let count = unsafe {
+            //   ::wit_bindgen_symmetric_rt::async_support::await_stream_result(wit_import, stream, address, u32::try_from(values.len()).unwrap()).await
+            // };
+            // #[allow(unused)]
+            // if let Some(count) = count {
+            //   let value = ();
 
-            }
-            count
+            // }
+            // count
+            todo!()
           }
         }
 
         fn cancel_write(writer: *mut WitStream) {
           {
-            #[link(wasm_import_module = "[import-payload]test:test/stream-source")]
-            extern "C" {
-              #[link_name = "[stream-cancel-write-0]create"]
-              fn cancel(_: u32) -> u32;
-            }
-            unsafe { cancel(writer) };
+            // #[link(wasm_import_module = "[import-payload]test:test/stream-source")]
+            // extern "C" {
+            //   #[link_name = "[stream-cancel-write-0]create"]
+            //   fn cancel(_: u32) -> u32;
+            // }
+            // unsafe { cancel(writer) };
+            todo!()
           }
         }
 
         fn cancel_read(reader: *mut WitStream) {
           {
-            #[link(wasm_import_module = "[import-payload]test:test/stream-source")]
-            extern "C" {
-              #[link_name = "[stream-cancel-read-0]create"]
-              fn cancel(_: u32) -> u32;
-            }
-            unsafe { cancel(reader) };
+            // #[link(wasm_import_module = "[import-payload]test:test/stream-source")]
+            // extern "C" {
+            //   #[link_name = "[stream-cancel-read-0]create"]
+            //   fn cancel(_: u32) -> u32;
+            // }
+            // unsafe { cancel(reader) };
+            todo!()
           }
         }
 
         fn close_writable(writer: *mut WitStream) {
           {
-            #[link(wasm_import_module = "[import-payload]test:test/stream-source")]
-            extern "C" {
-              #[link_name = "[stream-close-writable-0]create"]
-              fn drop(_: u32, _: u32);
-            }
-            unsafe { drop(writer, 0) }
+            // #[link(wasm_import_module = "[import-payload]test:test/stream-source")]
+            // extern "C" {
+            //   #[link_name = "[stream-close-writable-0]create"]
+            //   fn drop(_: u32, _: u32);
+            // }
+            // unsafe { drop(writer, 0) }
+            todo!()
           }
         }
 
         fn close_readable(reader: *mut WitStream) {
           {
-            #[link(wasm_import_module = "[import-payload]test:test/stream-source")]
-            extern "C" {
-              #[link_name = "[stream-close-readable-0]create"]
-              fn drop(_: u32);
-            }
-            unsafe { drop(reader) }
+            // #[link(wasm_import_module = "[import-payload]test:test/stream-source")]
+            // extern "C" {
+            //   #[link_name = "[stream-close-readable-0]create"]
+            //   fn drop(_: u32);
+            // }
+            // unsafe { drop(reader) }
+            todo!()
           }
         }
       }
@@ -120,12 +127,12 @@ pub mod test {
           #[link(name="source")]
           extern "C" {
             #[cfg_attr(target_arch = "wasm32", link_name = "[async]create")]
-            fn testX3AtestX2Fstream_sourceX00X5BasyncX5Dcreate(_: *mut u8, _: *mut u8, ) -> i32;
+            fn testX3AtestX2Fstream_sourceX00X5BasyncX5Dcreate(_: *mut u8, _: *mut u8, ) -> *mut u8;
           }
-          let layout2 = _rt::alloc::Layout::from_size_align_unchecked(0, 1);
-          ::wit_bindgen_rt::async_support::await_result(testX3AtestX2Fstream_sourceX00X5BasyncX5Dcreate, layout2, ptr0, ptr1).await;
+          // let layout2 = _rt::alloc::Layout::from_size_align_unchecked(0, 1);
+          ::wit_bindgen_symmetric_rt::async_support::await_result(testX3AtestX2Fstream_sourceX00X5BasyncX5Dcreate, ptr0, ptr1).await;
           let l3 = *ptr1.add(0).cast::<*mut u8>();
-          let result4 = _rt::stream_and_future_support::StreamReader::from_handle(l3 as u32);
+          let result4 = _rt::stream_and_future_support::StreamReader::from_handle(l3.cast());
           _rt::cabi_dealloc(ptr1, core::mem::size_of::<*const u8>(), core::mem::size_of::<*const u8>());
           result4
         }
@@ -150,9 +157,9 @@ pub mod exports {
         use super::super::super::super::_rt;
         #[doc(hidden)]
         #[allow(non_snake_case)]
-        pub unsafe fn _export_create_cabi<T: Guest>() -> *mut u8 {#[cfg(target_arch="wasm32")]
+        pub unsafe fn _export_create_cabi<T: Guest>(_args: *mut u8, _results: *mut u8) -> *mut u8 {#[cfg(target_arch="wasm32")]
         _rt::run_ctors_once();let result0 = T::create();
-        let result = ::wit_bindgen_rt::async_support::first_poll(result0, |result1| {
+        let result = ::wit_bindgen_symmetric_rt::async_support::first_poll(result0, |result1| {
           
 
           #[link(wasm_import_module = "[export]test:test/stream-test")]
@@ -163,12 +170,12 @@ pub mod exports {
           // X5BexportX5DtestX3AtestX2Fstream_testX00X5Btask_returnX5Dcreate((result1).into_handle() as i32);
         });
 
-        result
+        result.cast()
       }
       #[doc(hidden)]
       #[allow(non_snake_case)]
       pub unsafe fn __callback_create(ctx: *mut u8, event0: i32, event1: i32, event2: i32) -> i32 {
-        ::wit_bindgen_rt::async_support::callback(ctx, event0, event1, event2)
+        ::wit_bindgen_symmetric_rt::async_support::callback(ctx, event0, event1, event2)
       }
       pub trait Guest {
         fn create() -> impl ::core::future::Future<Output = _rt::stream_and_future_support::StreamReader<u32>> + 'static;
@@ -181,12 +188,12 @@ pub mod exports {
           #[cfg_attr(target_arch = "wasm32", export_name = "create")]
           #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
           unsafe extern "C" fn testX3AtestX2Fstream_testX00X5BasyncX5Dcreate(args: *mut u8, results: *mut u8) -> *mut u8 {
-            $($path_to_types)*::_export_create_cabi::<$ty>()
+            $($path_to_types)*::_export_create_cabi::<$ty>(args,results)
           }
-          #[export_name = "[callback]create"]
-          unsafe extern "C" fn _callback_create(ctx: *mut u8, event0: i32, event1: i32, event2: i32) -> i32 {
-            $($path_to_types)*::__callback_create(ctx, event0, event1, event2)
-          }
+          // #[export_name = "[callback]create"]
+          // unsafe extern "C" fn _callback_create(ctx: *mut u8, event0: i32, event1: i32, event2: i32) -> i32 {
+          //   $($path_to_types)*::__callback_create(ctx, event0, event1, event2)
+          // }
         };);
       }
       #[doc(hidden)]
@@ -276,21 +283,22 @@ mod _rt {
       }
 
       fn cancel_mut(&mut self) -> FutureWriter<T> {
-        let writer = self.writer.take().unwrap();
-        async_support::with_entry(writer.handle, |entry| match entry {
-          Entry::Vacant(_) => unreachable!(),
-          Entry::Occupied(mut entry) => match entry.get() {
-            Handle::LocalOpen
-            | Handle::LocalWaiting(_)
-            | Handle::Read
-            | Handle::LocalClosed => unreachable!(),
-            Handle::LocalReady(..) => {
-              entry.insert(Handle::LocalOpen);
-            }
-            Handle::Write => T::cancel_write(writer.handle),
-          },
-        });
-        writer
+        // let writer = self.writer.take().unwrap();
+        // async_support::with_entry(writer.handle, |entry| match entry {
+        //   Entry::Vacant(_) => unreachable!(),
+        //   Entry::Occupied(mut entry) => match entry.get() {
+        //     Handle::LocalOpen
+        //     | Handle::LocalWaiting(_)
+        //     | Handle::Read
+        //     | Handle::LocalClosed => unreachable!(),
+        //     Handle::LocalReady(..) => {
+        //       entry.insert(Handle::LocalOpen);
+        //     }
+        //     Handle::Write => T::cancel_write(writer.handle),
+        //   },
+        // });
+        // writer
+        todo!()
       }
     }
 
@@ -305,65 +313,67 @@ mod _rt {
     impl<T: FuturePayload> FutureWriter<T> {
       /// Write the specified value to this `future`.
       pub fn write(self, v: T) -> CancelableWrite<T> {
-        let handle = self.handle;
-        CancelableWrite {
-          writer: Some(self),
-          future: async_support::with_entry(handle, |entry| match entry {
-            Entry::Vacant(_) => unreachable!(),
-            Entry::Occupied(mut entry) => match entry.get() {
-              Handle::LocalOpen => {
-                let mut v = Some(v);
-                Box::pin(future::poll_fn(move |cx| {
-                  async_support::with_entry(handle, |entry| match entry {
-                    Entry::Vacant(_) => unreachable!(),
-                    Entry::Occupied(mut entry) => match entry.get() {
-                      Handle::LocalOpen => {
-                        entry.insert(Handle::LocalReady(
-                        Box::new(v.take().unwrap()),
-                        cx.waker().clone(),
-                        ));
-                        Poll::Pending
-                      }
-                      Handle::LocalReady(..) => Poll::Pending,
-                      Handle::LocalClosed => Poll::Ready(()),
-                      Handle::LocalWaiting(_) | Handle::Read | Handle::Write => {
-                        unreachable!()
-                      }
-                    },
-                  })
-                })) as Pin<Box<dyn Future<Output = _>>>
-              }
-              Handle::LocalWaiting(_) => {
-                let Handle::LocalWaiting(tx) = entry.insert(Handle::LocalClosed) else {
-                  unreachable!()
-                };
-                _ = tx.send(Box::new(v));
-                Box::pin(future::ready(()))
-              }
-              Handle::LocalClosed => Box::pin(future::ready(())),
-              Handle::Read | Handle::LocalReady(..) => unreachable!(),
-              Handle::Write => Box::pin(T::write(handle, v).map(drop)),
-            },
-          }),
-        }
+        // let handle = self.handle;
+        // CancelableWrite {
+        //   writer: Some(self),
+        //   future: async_support::with_entry(handle, |entry| match entry {
+        //     Entry::Vacant(_) => unreachable!(),
+        //     Entry::Occupied(mut entry) => match entry.get() {
+        //       Handle::LocalOpen => {
+        //         let mut v = Some(v);
+        //         Box::pin(future::poll_fn(move |cx| {
+        //           async_support::with_entry(handle, |entry| match entry {
+        //             Entry::Vacant(_) => unreachable!(),
+        //             Entry::Occupied(mut entry) => match entry.get() {
+        //               Handle::LocalOpen => {
+        //                 entry.insert(Handle::LocalReady(
+        //                 Box::new(v.take().unwrap()),
+        //                 cx.waker().clone(),
+        //                 ));
+        //                 Poll::Pending
+        //               }
+        //               Handle::LocalReady(..) => Poll::Pending,
+        //               Handle::LocalClosed => Poll::Ready(()),
+        //               Handle::LocalWaiting(_) | Handle::Read | Handle::Write => {
+        //                 unreachable!()
+        //               }
+        //             },
+        //           })
+        //         })) as Pin<Box<dyn Future<Output = _>>>
+        //       }
+        //       Handle::LocalWaiting(_) => {
+        //         let Handle::LocalWaiting(tx) = entry.insert(Handle::LocalClosed) else {
+        //           unreachable!()
+        //         };
+        //         _ = tx.send(Box::new(v));
+        //         Box::pin(future::ready(()))
+        //       }
+        //       Handle::LocalClosed => Box::pin(future::ready(())),
+        //       Handle::Read | Handle::LocalReady(..) => unreachable!(),
+        //       Handle::Write => Box::pin(T::write(handle, v).map(drop)),
+        //     },
+        //   }),
+        // }
+        todo!()
       }
     }
 
     impl<T: FuturePayload> Drop for FutureWriter<T> {
       fn drop(&mut self) {
-        async_support::with_entry(self.handle, |entry| match entry {
-          Entry::Vacant(_) => unreachable!(),
-          Entry::Occupied(mut entry) => match entry.get_mut() {
-            Handle::LocalOpen | Handle::LocalWaiting(_) | Handle::LocalReady(..) => {
-              entry.insert(Handle::LocalClosed);
-            }
-            Handle::Read => unreachable!(),
-            Handle::Write | Handle::LocalClosed => {
-              entry.remove();
-              T::close_writable(self.handle);
-            }
-          },
-        });
+        // async_support::with_entry(self.handle, |entry| match entry {
+        //   Entry::Vacant(_) => unreachable!(),
+        //   Entry::Occupied(mut entry) => match entry.get_mut() {
+        //     Handle::LocalOpen | Handle::LocalWaiting(_) | Handle::LocalReady(..) => {
+        //       entry.insert(Handle::LocalClosed);
+        //     }
+        //     Handle::Read => unreachable!(),
+        //     Handle::Write | Handle::LocalClosed => {
+        //       entry.remove();
+        //       T::close_writable(self.handle);
+        //     }
+        //   },
+        // });
+        todo!()
       }
     }
 
@@ -397,21 +407,22 @@ mod _rt {
       }
 
       fn cancel_mut(&mut self) -> FutureReader<T> {
-        let reader = self.reader.take().unwrap();
-        async_support::with_entry(reader.handle, |entry| match entry {
-          Entry::Vacant(_) => unreachable!(),
-          Entry::Occupied(mut entry) => match entry.get() {
-            Handle::LocalOpen
-            | Handle::LocalReady(..)
-            | Handle::Write
-            | Handle::LocalClosed => unreachable!(),
-            Handle::LocalWaiting(_) => {
-              entry.insert(Handle::LocalOpen);
-            }
-            Handle::Read => T::cancel_read(reader.handle),
-          },
-        });
-        reader
+        // let reader = self.reader.take().unwrap();
+        // async_support::with_entry(reader.handle, |entry| match entry {
+        //   Entry::Vacant(_) => unreachable!(),
+        //   Entry::Occupied(mut entry) => match entry.get() {
+        //     Handle::LocalOpen
+        //     | Handle::LocalReady(..)
+        //     | Handle::Write
+        //     | Handle::LocalClosed => unreachable!(),
+        //     Handle::LocalWaiting(_) => {
+        //       entry.insert(Handle::LocalOpen);
+        //     }
+        //     Handle::Read => T::cancel_read(reader.handle),
+        //   },
+        // });
+        // reader
+        todo!()
       }
     }
 
@@ -440,46 +451,48 @@ mod _rt {
     impl<T: FuturePayload> FutureReader<T> {
       #[doc(hidden)]
       pub fn from_handle(handle: u32) -> Self {
-        async_support::with_entry(handle, |entry| match entry {
-          Entry::Vacant(entry) => {
-            entry.insert(Handle::Read);
-          }
-          Entry::Occupied(mut entry) => match entry.get() {
-            Handle::Write => {
-              entry.insert(Handle::LocalOpen);
-            }
-            Handle::Read
-            | Handle::LocalOpen
-            | Handle::LocalReady(..)
-            | Handle::LocalWaiting(_)
-            | Handle::LocalClosed => {
-              unreachable!()
-            }
-          },
-        });
+        // async_support::with_entry(handle, |entry| match entry {
+        //   Entry::Vacant(entry) => {
+        //     entry.insert(Handle::Read);
+        //   }
+        //   Entry::Occupied(mut entry) => match entry.get() {
+        //     Handle::Write => {
+        //       entry.insert(Handle::LocalOpen);
+        //     }
+        //     Handle::Read
+        //     | Handle::LocalOpen
+        //     | Handle::LocalReady(..)
+        //     | Handle::LocalWaiting(_)
+        //     | Handle::LocalClosed => {
+        //       unreachable!()
+        //     }
+        //   },
+        // });
 
-        Self {
-          handle,
-          _phantom: PhantomData,
-        }
+        // Self {
+        //   handle,
+        //   _phantom: PhantomData,
+        // }
+        todo!()
       }
 
       #[doc(hidden)]
       pub fn into_handle(self) -> u32 {
-        async_support::with_entry(self.handle, |entry| match entry {
-          Entry::Vacant(_) => unreachable!(),
-          Entry::Occupied(mut entry) => match entry.get() {
-            Handle::LocalOpen => {
-              entry.insert(Handle::Write);
-            }
-            Handle::Read | Handle::LocalClosed => {
-              entry.remove();
-            }
-            Handle::LocalReady(..) | Handle::LocalWaiting(_) | Handle::Write => unreachable!(),
-          },
-        });
+        // async_support::with_entry(self.handle, |entry| match entry {
+        //   Entry::Vacant(_) => unreachable!(),
+        //   Entry::Occupied(mut entry) => match entry.get() {
+        //     Handle::LocalOpen => {
+        //       entry.insert(Handle::Write);
+        //     }
+        //     Handle::Read | Handle::LocalClosed => {
+        //       entry.remove();
+        //     }
+        //     Handle::LocalReady(..) | Handle::LocalWaiting(_) | Handle::Write => unreachable!(),
+        //   },
+        // });
 
-        ManuallyDrop::new(self).handle
+        // ManuallyDrop::new(self).handle
+        todo!()
       }
     }
 
@@ -491,55 +504,57 @@ mod _rt {
       /// written to the writable end of this `future` (yielding a `Some` result)
       /// or when the writable end is dropped (yielding a `None` result).
       fn into_future(self) -> Self::IntoFuture {
-        let handle = self.handle;
-        CancelableRead {
-          reader: Some(self),
-          future: async_support::with_entry(handle, |entry| match entry {
-            Entry::Vacant(_) => unreachable!(),
-            Entry::Occupied(mut entry) => match entry.get() {
-              Handle::Write | Handle::LocalWaiting(_) => unreachable!(),
-              Handle::Read => Box::pin(async move { T::read(handle).await })
-              as Pin<Box<dyn Future<Output = _>>>,
-              Handle::LocalOpen => {
-                let (tx, rx) = oneshot::channel();
-                entry.insert(Handle::LocalWaiting(tx));
-                Box::pin(async move { rx.await.ok().map(|v| *v.downcast().unwrap()) })
-              }
-              Handle::LocalClosed => Box::pin(future::ready(None)),
-              Handle::LocalReady(..) => {
-                let Handle::LocalReady(v, waker) = entry.insert(Handle::LocalClosed) else {
-                  unreachable!()
-                };
-                waker.wake();
-                Box::pin(future::ready(Some(*v.downcast().unwrap())))
-              }
-            },
-          }),
-        }
+        // let handle = self.handle;
+        // CancelableRead {
+        //   reader: Some(self),
+        //   future: async_support::with_entry(handle, |entry| match entry {
+        //     Entry::Vacant(_) => unreachable!(),
+        //     Entry::Occupied(mut entry) => match entry.get() {
+        //       Handle::Write | Handle::LocalWaiting(_) => unreachable!(),
+        //       Handle::Read => Box::pin(async move { T::read(handle).await })
+        //       as Pin<Box<dyn Future<Output = _>>>,
+        //       Handle::LocalOpen => {
+        //         let (tx, rx) = oneshot::channel();
+        //         entry.insert(Handle::LocalWaiting(tx));
+        //         Box::pin(async move { rx.await.ok().map(|v| *v.downcast().unwrap()) })
+        //       }
+        //       Handle::LocalClosed => Box::pin(future::ready(None)),
+        //       Handle::LocalReady(..) => {
+        //         let Handle::LocalReady(v, waker) = entry.insert(Handle::LocalClosed) else {
+        //           unreachable!()
+        //         };
+        //         waker.wake();
+        //         Box::pin(future::ready(Some(*v.downcast().unwrap())))
+        //       }
+        //     },
+        //   }),
+        // }
+        todo!()
       }
     }
 
     impl<T: FuturePayload> Drop for FutureReader<T> {
       fn drop(&mut self) {
-        async_support::with_entry(self.handle, |entry| match entry {
-          Entry::Vacant(_) => unreachable!(),
-          Entry::Occupied(mut entry) => match entry.get_mut() {
-            Handle::LocalReady(..) => {
-              let Handle::LocalReady(_, waker) = entry.insert(Handle::LocalClosed) else {
-                unreachable!()
-              };
-              waker.wake();
-            }
-            Handle::LocalOpen | Handle::LocalWaiting(_) => {
-              entry.insert(Handle::LocalClosed);
-            }
-            Handle::Read | Handle::LocalClosed => {
-              entry.remove();
-              T::close_readable(self.handle);
-            }
-            Handle::Write => unreachable!(),
-          },
-        });
+        // async_support::with_entry(self.handle, |entry| match entry {
+        //   Entry::Vacant(_) => unreachable!(),
+        //   Entry::Occupied(mut entry) => match entry.get_mut() {
+        //     Handle::LocalReady(..) => {
+        //       let Handle::LocalReady(_, waker) = entry.insert(Handle::LocalClosed) else {
+        //         unreachable!()
+        //       };
+        //       waker.wake();
+        //     }
+        //     Handle::LocalOpen | Handle::LocalWaiting(_) => {
+        //       entry.insert(Handle::LocalClosed);
+        //     }
+        //     Handle::Read | Handle::LocalClosed => {
+        //       entry.remove();
+        //       T::close_readable(self.handle);
+        //     }
+        //     Handle::Write => unreachable!(),
+        //   },
+        // });
+        todo!()
       }
     }
 
@@ -561,21 +576,22 @@ mod _rt {
 
     impl<T: StreamPayload> Drop for CancelWriteOnDrop<T> {
       fn drop(&mut self) {
-        if let Some(handle) = self.handle.take() {
-          async_support::with_entry(handle, |entry| match entry {
-            Entry::Vacant(_) => unreachable!(),
-            Entry::Occupied(mut entry) => match entry.get() {
-              Handle::LocalOpen
-              | Handle::LocalWaiting(_)
-              | Handle::Read
-              | Handle::LocalClosed => unreachable!(),
-              Handle::LocalReady(..) => {
-                entry.insert(Handle::LocalOpen);
-              }
-              Handle::Write => T::cancel_write(handle),
-            },
-          });
-        }
+        // if let Some(handle) = self.handle.take() {
+        //   async_support::with_entry(handle, |entry| match entry {
+        //     Entry::Vacant(_) => unreachable!(),
+        //     Entry::Occupied(mut entry) => match entry.get() {
+        //       Handle::LocalOpen
+        //       | Handle::LocalWaiting(_)
+        //       | Handle::Read
+        //       | Handle::LocalClosed => unreachable!(),
+        //       Handle::LocalReady(..) => {
+        //         entry.insert(Handle::LocalOpen);
+        //       }
+        //       Handle::Write => T::cancel_write(handle),
+        //     },
+        //   });
+        // }
+        todo!()
       }
     }
 
@@ -624,75 +640,76 @@ mod _rt {
       }
 
       fn start_send(self: Pin<&mut Self>, item: Vec<T>) -> Result<(), Self::Error> {
-        assert!(self.future.is_none());
-        async_support::with_entry(self.handle, |entry| match entry {
-          Entry::Vacant(_) => unreachable!(),
-          Entry::Occupied(mut entry) => match entry.get() {
-            Handle::LocalOpen => {
-              let handle = self.handle;
-              let mut item = Some(item);
-              let mut cancel_on_drop = Some(CancelWriteOnDrop::<T> {
-                handle: Some(handle),
-                _phantom: PhantomData,
-              });
-              self.get_mut().future = Some(Box::pin(future::poll_fn(move |cx| {
-                async_support::with_entry(handle, |entry| match entry {
-                  Entry::Vacant(_) => unreachable!(),
-                  Entry::Occupied(mut entry) => match entry.get() {
-                    Handle::LocalOpen => {
-                      if let Some(item) = item.take() {
-                        entry.insert(Handle::LocalReady(
-                        Box::new(item),
-                        cx.waker().clone(),
-                        ));
-                        Poll::Pending
-                      } else {
-                        cancel_on_drop.take().unwrap().handle = None;
-                        Poll::Ready(())
-                      }
-                    }
-                    Handle::LocalReady(..) => Poll::Pending,
-                    Handle::LocalClosed => {
-                      cancel_on_drop.take().unwrap().handle = None;
-                      Poll::Ready(())
-                    }
-                    Handle::LocalWaiting(_) | Handle::Read | Handle::Write => {
-                      unreachable!()
-                    }
-                  },
-                })
-              })));
-            }
-            Handle::LocalWaiting(_) => {
-              let Handle::LocalWaiting(tx) = entry.insert(Handle::LocalOpen) else {
-                unreachable!()
-              };
-              _ = tx.send(Box::new(item));
-            }
-            Handle::LocalClosed => (),
-            Handle::Read | Handle::LocalReady(..) => unreachable!(),
-            Handle::Write => {
-              let handle = self.handle;
-              let mut cancel_on_drop = CancelWriteOnDrop::<T> {
-                handle: Some(handle),
-                _phantom: PhantomData,
-              };
-              self.get_mut().future = Some(Box::pin(async move {
-                let mut offset = 0;
-                while offset < item.len() {
-                  if let Some(count) = T::write(handle, &item[offset..]).await {
-                    offset += count;
-                  } else {
-                    break;
-                  }
-                }
-                cancel_on_drop.handle = None;
-                drop(cancel_on_drop);
-              }));
-            }
-          },
-        });
-        Ok(())
+        // assert!(self.future.is_none());
+        // async_support::with_entry(self.handle, |entry| match entry {
+        //   Entry::Vacant(_) => unreachable!(),
+        //   Entry::Occupied(mut entry) => match entry.get() {
+        //     Handle::LocalOpen => {
+        //       let handle = self.handle;
+        //       let mut item = Some(item);
+        //       let mut cancel_on_drop = Some(CancelWriteOnDrop::<T> {
+        //         handle: Some(handle),
+        //         _phantom: PhantomData,
+        //       });
+        //       self.get_mut().future = Some(Box::pin(future::poll_fn(move |cx| {
+        //         async_support::with_entry(handle, |entry| match entry {
+        //           Entry::Vacant(_) => unreachable!(),
+        //           Entry::Occupied(mut entry) => match entry.get() {
+        //             Handle::LocalOpen => {
+        //               if let Some(item) = item.take() {
+        //                 entry.insert(Handle::LocalReady(
+        //                 Box::new(item),
+        //                 cx.waker().clone(),
+        //                 ));
+        //                 Poll::Pending
+        //               } else {
+        //                 cancel_on_drop.take().unwrap().handle = None;
+        //                 Poll::Ready(())
+        //               }
+        //             }
+        //             Handle::LocalReady(..) => Poll::Pending,
+        //             Handle::LocalClosed => {
+        //               cancel_on_drop.take().unwrap().handle = None;
+        //               Poll::Ready(())
+        //             }
+        //             Handle::LocalWaiting(_) | Handle::Read | Handle::Write => {
+        //               unreachable!()
+        //             }
+        //           },
+        //         })
+        //       })));
+        //     }
+        //     Handle::LocalWaiting(_) => {
+        //       let Handle::LocalWaiting(tx) = entry.insert(Handle::LocalOpen) else {
+        //         unreachable!()
+        //       };
+        //       _ = tx.send(Box::new(item));
+        //     }
+        //     Handle::LocalClosed => (),
+        //     Handle::Read | Handle::LocalReady(..) => unreachable!(),
+        //     Handle::Write => {
+        //       let handle = self.handle;
+        //       let mut cancel_on_drop = CancelWriteOnDrop::<T> {
+        //         handle: Some(handle),
+        //         _phantom: PhantomData,
+        //       };
+        //       self.get_mut().future = Some(Box::pin(async move {
+        //         let mut offset = 0;
+        //         while offset < item.len() {
+        //           if let Some(count) = T::write(handle, &item[offset..]).await {
+        //             offset += count;
+        //           } else {
+        //             break;
+        //           }
+        //         }
+        //         cancel_on_drop.handle = None;
+        //         drop(cancel_on_drop);
+        //       }));
+        //     }
+        //   },
+        // });
+        // Ok(())
+        todo!()
       }
 
       fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
@@ -706,21 +723,22 @@ mod _rt {
 
     impl<T: StreamPayload> Drop for StreamWriter<T> {
       fn drop(&mut self) {
-        self.future = None;
+        // self.future = None;
 
-        async_support::with_entry(self.handle, |entry| match entry {
-          Entry::Vacant(_) => unreachable!(),
-          Entry::Occupied(mut entry) => match entry.get_mut() {
-            Handle::LocalOpen | Handle::LocalWaiting(_) | Handle::LocalReady(..) => {
-              entry.insert(Handle::LocalClosed);
-            }
-            Handle::Read => unreachable!(),
-            Handle::Write | Handle::LocalClosed => {
-              entry.remove();
-              T::close_writable(self.handle);
-            }
-          },
-        });
+        // async_support::with_entry(self.handle, |entry| match entry {
+        //   Entry::Vacant(_) => unreachable!(),
+        //   Entry::Occupied(mut entry) => match entry.get_mut() {
+        //     Handle::LocalOpen | Handle::LocalWaiting(_) | Handle::LocalReady(..) => {
+        //       entry.insert(Handle::LocalClosed);
+        //     }
+        //     Handle::Read => unreachable!(),
+        //     Handle::Write | Handle::LocalClosed => {
+        //       entry.remove();
+        //       T::close_writable(self.handle);
+        //     }
+        //   },
+        // });
+        todo!()
       }
     }
 
@@ -731,21 +749,22 @@ mod _rt {
 
     impl<T: StreamPayload> Drop for CancelReadOnDrop<T> {
       fn drop(&mut self) {
-        if let Some(handle) = self.handle.take() {
-          async_support::with_entry(handle, |entry| match entry {
-            Entry::Vacant(_) => unreachable!(),
-            Entry::Occupied(mut entry) => match entry.get() {
-              Handle::LocalOpen
-              | Handle::LocalReady(..)
-              | Handle::Write
-              | Handle::LocalClosed => unreachable!(),
-              Handle::LocalWaiting(_) => {
-                entry.insert(Handle::LocalOpen);
-              }
-              Handle::Read => T::cancel_read(handle),
-            },
-          });
-        }
+        // if let Some(handle) = self.handle.take() {
+        //   async_support::with_entry(handle, |entry| match entry {
+        //     Entry::Vacant(_) => unreachable!(),
+        //     Entry::Occupied(mut entry) => match entry.get() {
+        //       Handle::LocalOpen
+        //       | Handle::LocalReady(..)
+        //       | Handle::Write
+        //       | Handle::LocalClosed => unreachable!(),
+        //       Handle::LocalWaiting(_) => {
+        //         entry.insert(Handle::LocalOpen);
+        //       }
+        //       Handle::Read => T::cancel_read(handle),
+        //     },
+        //   });
+        // }
+        todo!()
       }
     }
 
@@ -777,47 +796,49 @@ mod _rt {
     impl<T: StreamPayload> StreamReader<T> {
       #[doc(hidden)]
       pub fn from_handle(handle: *mut WitStream) -> Self {
-        async_support::with_entry(handle, |entry| match entry {
-          Entry::Vacant(entry) => {
-            entry.insert(Handle::Read);
-          }
-          Entry::Occupied(mut entry) => match entry.get() {
-            Handle::Write => {
-              entry.insert(Handle::LocalOpen);
-            }
-            Handle::Read
-            | Handle::LocalOpen
-            | Handle::LocalReady(..)
-            | Handle::LocalWaiting(_)
-            | Handle::LocalClosed => {
-              unreachable!()
-            }
-          },
-        });
+        // async_support::with_entry(handle, |entry| match entry {
+        //   Entry::Vacant(entry) => {
+        //     entry.insert(Handle::Read);
+        //   }
+        //   Entry::Occupied(mut entry) => match entry.get() {
+        //     Handle::Write => {
+        //       entry.insert(Handle::LocalOpen);
+        //     }
+        //     Handle::Read
+        //     | Handle::LocalOpen
+        //     | Handle::LocalReady(..)
+        //     | Handle::LocalWaiting(_)
+        //     | Handle::LocalClosed => {
+        //       unreachable!()
+        //     }
+        //   },
+        // });
 
-        Self {
-          handle,
-          future: None,
-          _phantom: PhantomData,
-        }
+        // Self {
+        //   handle,
+        //   future: None,
+        //   _phantom: PhantomData,
+        // }
+        todo!()
       }
 
       #[doc(hidden)]
       pub fn into_handle(self) -> *mut WitStream {
-        async_support::with_entry(self.handle, |entry| match entry {
-          Entry::Vacant(_) => unreachable!(),
-          Entry::Occupied(mut entry) => match entry.get() {
-            Handle::LocalOpen => {
-              entry.insert(Handle::Write);
-            }
-            Handle::Read | Handle::LocalClosed => {
-              entry.remove();
-            }
-            Handle::LocalReady(..) | Handle::LocalWaiting(_) | Handle::Write => unreachable!(),
-          },
-        });
+        // async_support::with_entry(self.handle, |entry| match entry {
+        //   Entry::Vacant(_) => unreachable!(),
+        //   Entry::Occupied(mut entry) => match entry.get() {
+        //     Handle::LocalOpen => {
+        //       entry.insert(Handle::Write);
+        //     }
+        //     Handle::Read | Handle::LocalClosed => {
+        //       entry.remove();
+        //     }
+        //     Handle::LocalReady(..) | Handle::LocalWaiting(_) | Handle::Write => unreachable!(),
+        //   },
+        // });
 
-        ManuallyDrop::new(self).handle
+        // ManuallyDrop::new(self).handle
+        todo!()
       }
     }
 
@@ -825,141 +846,145 @@ mod _rt {
       type Item = Vec<T>;
 
       fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        let me = self.get_mut();
+        // let me = self.get_mut();
 
-        if me.future.is_none() {
-          me.future = Some(async_support::with_entry(me.handle, |entry| match entry {
-            Entry::Vacant(_) => unreachable!(),
-            Entry::Occupied(mut entry) => match entry.get() {
-              Handle::Write | Handle::LocalWaiting(_) => unreachable!(),
-              Handle::Read => {
-                let handle = me.handle;
-                let mut cancel_on_drop = CancelReadOnDrop::<T> {
-                  handle: Some(handle),
-                  _phantom: PhantomData,
-                };
-                Box::pin(async move {
-                  let mut buffer = iter::repeat_with(MaybeUninit::uninit)
-                  .take(ceiling(64 * 1024, mem::size_of::<T>()))
-                  .collect::<Vec<_>>();
+        // if me.future.is_none() {
+        //   me.future = Some(async_support::with_entry(me.handle, |entry| match entry {
+        //     Entry::Vacant(_) => unreachable!(),
+        //     Entry::Occupied(mut entry) => match entry.get() {
+        //       Handle::Write | Handle::LocalWaiting(_) => unreachable!(),
+        //       Handle::Read => {
+        //         let handle = me.handle;
+        //         let mut cancel_on_drop = CancelReadOnDrop::<T> {
+        //           handle: Some(handle),
+        //           _phantom: PhantomData,
+        //         };
+        //         Box::pin(async move {
+        //           let mut buffer = iter::repeat_with(MaybeUninit::uninit)
+        //           .take(ceiling(64 * 1024, mem::size_of::<T>()))
+        //           .collect::<Vec<_>>();
 
-                  let result = if let Some(count) = T::read(handle, &mut buffer).await {
-                    buffer.truncate(count);
-                    Some(unsafe {
-                      mem::transmute::<Vec<MaybeUninit<T>>, Vec<T>>(buffer)
-                    })
-                  } else {
-                    None
-                  };
-                  cancel_on_drop.handle = None;
-                  drop(cancel_on_drop);
-                  result
-                }) as Pin<Box<dyn Future<Output = _>>>
-              }
-              Handle::LocalOpen => {
-                let (tx, rx) = oneshot::channel();
-                entry.insert(Handle::LocalWaiting(tx));
-                let mut cancel_on_drop = CancelReadOnDrop::<T> {
-                  handle: Some(me.handle),
-                  _phantom: PhantomData,
-                };
-                Box::pin(async move {
-                  let result = rx.map(|v| v.ok().map(|v| *v.downcast().unwrap())).await;
-                  cancel_on_drop.handle = None;
-                  drop(cancel_on_drop);
-                  result
-                })
-              }
-              Handle::LocalClosed => Box::pin(future::ready(None)),
-              Handle::LocalReady(..) => {
-                let Handle::LocalReady(v, waker) = entry.insert(Handle::LocalOpen) else {
-                  unreachable!()
-                };
-                waker.wake();
-                Box::pin(future::ready(Some(*v.downcast().unwrap())))
-              }
-            },
-          }));
-        }
+        //           let result = if let Some(count) = T::read(handle, &mut buffer).await {
+        //             buffer.truncate(count);
+        //             Some(unsafe {
+        //               mem::transmute::<Vec<MaybeUninit<T>>, Vec<T>>(buffer)
+        //             })
+        //           } else {
+        //             None
+        //           };
+        //           cancel_on_drop.handle = None;
+        //           drop(cancel_on_drop);
+        //           result
+        //         }) as Pin<Box<dyn Future<Output = _>>>
+        //       }
+        //       Handle::LocalOpen => {
+        //         let (tx, rx) = oneshot::channel();
+        //         entry.insert(Handle::LocalWaiting(tx));
+        //         let mut cancel_on_drop = CancelReadOnDrop::<T> {
+        //           handle: Some(me.handle),
+        //           _phantom: PhantomData,
+        //         };
+        //         Box::pin(async move {
+        //           let result = rx.map(|v| v.ok().map(|v| *v.downcast().unwrap())).await;
+        //           cancel_on_drop.handle = None;
+        //           drop(cancel_on_drop);
+        //           result
+        //         })
+        //       }
+        //       Handle::LocalClosed => Box::pin(future::ready(None)),
+        //       Handle::LocalReady(..) => {
+        //         let Handle::LocalReady(v, waker) = entry.insert(Handle::LocalOpen) else {
+        //           unreachable!()
+        //         };
+        //         waker.wake();
+        //         Box::pin(future::ready(Some(*v.downcast().unwrap())))
+        //       }
+        //     },
+        //   }));
+        // }
 
-        match me.future.as_mut().unwrap().as_mut().poll(cx) {
-          Poll::Ready(v) => {
-            me.future = None;
-            Poll::Ready(v)
-          }
-          Poll::Pending => Poll::Pending,
-        }
+        // match me.future.as_mut().unwrap().as_mut().poll(cx) {
+        //   Poll::Ready(v) => {
+        //     me.future = None;
+        //     Poll::Ready(v)
+        //   }
+        //   Poll::Pending => Poll::Pending,
+        // }
+        todo!()
       }
     }
 
     impl<T: StreamPayload> Drop for StreamReader<T> {
       fn drop(&mut self) {
-        self.future = None;
+        // self.future = None;
 
-        async_support::with_entry(self.handle, |entry| match entry {
-          Entry::Vacant(_) => unreachable!(),
-          Entry::Occupied(mut entry) => match entry.get_mut() {
-            Handle::LocalReady(..) => {
-              let Handle::LocalReady(_, waker) = entry.insert(Handle::LocalClosed) else {
-                unreachable!()
-              };
-              waker.wake();
-            }
-            Handle::LocalOpen | Handle::LocalWaiting(_) => {
-              entry.insert(Handle::LocalClosed);
-            }
-            Handle::Read | Handle::LocalClosed => {
-              entry.remove();
-              T::close_readable(self.handle);
-            }
-            Handle::Write => unreachable!(),
-          },
-        });
+        // async_support::with_entry(self.handle, |entry| match entry {
+        //   Entry::Vacant(_) => unreachable!(),
+        //   Entry::Occupied(mut entry) => match entry.get_mut() {
+        //     Handle::LocalReady(..) => {
+        //       let Handle::LocalReady(_, waker) = entry.insert(Handle::LocalClosed) else {
+        //         unreachable!()
+        //       };
+        //       waker.wake();
+        //     }
+        //     Handle::LocalOpen | Handle::LocalWaiting(_) => {
+        //       entry.insert(Handle::LocalClosed);
+        //     }
+        //     Handle::Read | Handle::LocalClosed => {
+        //       entry.remove();
+        //       T::close_readable(self.handle);
+        //     }
+        //     Handle::Write => unreachable!(),
+        //   },
+        // });
+        todo!()
       }
     }
 
     /// Creates a new Component Model `future` with the specified payload type.
     pub fn new_future<T: FuturePayload>() -> (FutureWriter<T>, FutureReader<T>) {
-      let handle = T::new();
-      async_support::with_entry(handle, |entry| match entry {
-        Entry::Vacant(entry) => {
-          entry.insert(Handle::LocalOpen);
-        }
-        Entry::Occupied(_) => unreachable!(),
-      });
-      (
-      FutureWriter {
-        handle,
-        _phantom: PhantomData,
-      },
-      FutureReader {
-        handle,
-        _phantom: PhantomData,
-      },
-      )
+      // let handle = T::new();
+      // async_support::with_entry(handle, |entry| match entry {
+      //   Entry::Vacant(entry) => {
+      //     entry.insert(Handle::LocalOpen);
+      //   }
+      //   Entry::Occupied(_) => unreachable!(),
+      // });
+      // (
+      // FutureWriter {
+      //   handle,
+      //   _phantom: PhantomData,
+      // },
+      // FutureReader {
+      //   handle,
+      //   _phantom: PhantomData,
+      // },
+      // )
+      todo!()
     }
 
     /// Creates a new Component Model `stream` with the specified payload type.
     pub fn new_stream<T: StreamPayload>() -> (StreamWriter<T>, StreamReader<T>) {
-      let handle = T::new();
-      async_support::with_entry(handle, |entry| match entry {
-        Entry::Vacant(entry) => {
-          entry.insert(Handle::LocalOpen);
-        }
-        Entry::Occupied(_) => unreachable!(),
-      });
-      (
-      StreamWriter {
-        handle,
-        future: None,
-        _phantom: PhantomData,
-      },
-      StreamReader {
-        handle,
-        future: None,
-        _phantom: PhantomData,
-      },
-      )
+      // let handle = T::new();
+      // async_support::with_entry(handle, |entry| match entry {
+      //   Entry::Vacant(entry) => {
+      //     entry.insert(Handle::LocalOpen);
+      //   }
+      //   Entry::Occupied(_) => unreachable!(),
+      // });
+      // (
+      // StreamWriter {
+      //   handle,
+      //   future: None,
+      //   _phantom: PhantomData,
+      // },
+      // StreamReader {
+      //   handle,
+      //   future: None,
+      //   _phantom: PhantomData,
+      // },
+      // )
+      todo!()
     }
 
     fn ceiling(x: usize, y: usize) -> usize {

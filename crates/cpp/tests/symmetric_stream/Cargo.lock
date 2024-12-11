@@ -227,6 +227,7 @@ name = "main"
 version = "0.1.0"
 dependencies = [
  "stream",
+ "symmetric_executor",
 ]
 
 [[package]]
@@ -384,8 +385,17 @@ dependencies = [
  "futures",
  "source",
  "wit-bindgen",
- "wit-bindgen-rt",
  "wit-bindgen-symmetric-rt",
+]
+
+[[package]]
+name = "symmetric_executor"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "libc",
+ "wit-bindgen",
+ "wit-bindgen-rt",
 ]
 
 [[package]]

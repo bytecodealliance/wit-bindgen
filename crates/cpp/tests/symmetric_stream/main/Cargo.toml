@@ -5,3 +5,4 @@ edition = "2021"
 
 [dependencies]
 stream = { version = "0.1.0", path = "../stream" }
+symmetric_executor = { version = "0.1.0", path = "../../../../symmetric_executor" }

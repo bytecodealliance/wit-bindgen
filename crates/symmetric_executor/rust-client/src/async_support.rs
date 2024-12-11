@@ -1,7 +1,7 @@
 use futures::{channel::oneshot, task::Waker, FutureExt};
 use std::{
     any::Any,
-    collections::hash_map,
+    collections::hash_map::{self, OccupiedEntry},
     future::Future,
     pin::Pin,
     task::{Context, Poll, RawWaker, RawWakerVTable},
@@ -56,10 +56,16 @@ pub struct Stream {
     read_size: usize,
 }
 
-#[doc(hidden)]
-pub fn with_entry<T>(_h: u32, _f: impl FnOnce(hash_map::Entry<'_, u32, Handle>) -> T) -> T {
-    todo!()
-}
+// pub enum Entry<'a, K, V> {
+//     Vacant(),
+//     Occupied(&'a mut Stream),
+// } 
+
+// #[doc(hidden)]
+// pub fn with_entry<T>(h: *mut (), f: impl FnOnce(Entry<'_, u32, Handle>) -> T) -> T {
+//     let entry = unsafe { &mut *(h.cast::<Stream>()) };
+//     f(hash_map::Entry::Occupied(entry))
+// }
 
 static VTABLE: RawWakerVTable = RawWakerVTable::new(
     |_| RawWaker::new(core::ptr::null(), &VTABLE),
@@ -172,4 +178,8 @@ pub async unsafe fn await_result(
 #[doc(hidden)]
 pub unsafe fn callback(_ctx: *mut u8, _event0: i32, _event1: i32, _event2: i32) -> i32 {
     todo!()
+}
+
+pub fn spawn(_future: impl Future<Output = ()> + 'static) {
+todo!()
 }

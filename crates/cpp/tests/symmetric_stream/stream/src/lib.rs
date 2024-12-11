@@ -1,5 +1,5 @@
 use stream_world::{stream_and_future_support, test::test::stream_source::create};
-use wit_bindgen_rt::async_support;
+use wit_bindgen_symmetric_rt::async_support;
 use futures::{StreamExt, SinkExt};
 
 mod stream_world;
