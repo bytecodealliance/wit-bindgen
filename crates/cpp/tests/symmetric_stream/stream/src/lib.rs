@@ -1,6 +1,6 @@
+use futures::{SinkExt, StreamExt};
 use stream_world::{stream_and_future_support, test::test::stream_source::create};
 use wit_bindgen_symmetric_rt::async_support;
-use futures::{StreamExt, SinkExt};
 
 mod stream_world;
 
@@ -16,7 +16,7 @@ impl stream_world::exports::test::test::stream_test::Guest for MyStruct {
         async_support::spawn(async move {
             while let Some(values) = input.next().await {
                 for value in values {
-                    writer.feed(vec![value, value+1]).await.unwrap();
+                    writer.feed(vec![value, value + 1]).await.unwrap();
                 }
             }
         });

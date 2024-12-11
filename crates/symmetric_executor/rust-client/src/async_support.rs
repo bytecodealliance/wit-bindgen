@@ -7,10 +7,8 @@ use std::{
     task::{Context, Poll, RawWaker, RawWakerVTable},
 };
 
-use crate::module::symmetric::runtime::{
-    symmetric_executor::{
-        self, CallbackState, EventGenerator, EventSubscription,
-    },
+use crate::module::symmetric::runtime::symmetric_executor::{
+    self, CallbackState, EventGenerator, EventSubscription,
 };
 
 type BoxFuture = Pin<Box<dyn Future<Output = ()> + 'static>>;
@@ -49,17 +47,29 @@ pub struct StreamVtable {
 
 #[repr(C)]
 pub struct Stream {
-    vtable: *const StreamVtable,
-    read_ready_event_send: *mut (),
-    write_ready_event_send: *mut (),
-    read_addr: *mut (),
-    read_size: usize,
+    pub vtable: *const StreamVtable,
+    pub read_ready_event_send: *mut (),
+    pub write_ready_event_send: *mut (),
+    pub read_addr: *mut (),
+    pub read_size: usize,
+}
+
+impl Stream {
+    pub fn new() -> Self {
+        Self {
+            vtable: todo!(),
+            read_ready_event_send: todo!(),
+            write_ready_event_send: todo!(),
+            read_addr: core::ptr::null_mut(),
+            read_size: 0,
+        }
+    }
 }
 
 // pub enum Entry<'a, K, V> {
 //     Vacant(),
 //     Occupied(&'a mut Stream),
-// } 
+// }
 
 // #[doc(hidden)]
 // pub fn with_entry<T>(h: *mut (), f: impl FnOnce(Entry<'_, u32, Handle>) -> T) -> T {
@@ -104,8 +114,9 @@ async fn wait_on(wait_for: &EventSubscription) {
             let data = cx.waker().data();
             // dangerous duplication?
             let wait_for_copy = unsafe { EventSubscription::from_handle(wait_for.handle()) };
-            let old_waiting_for = unsafe { &mut *(data.cast::<Option<EventSubscription>>().cast_mut()) }
-                .replace(wait_for_copy);
+            let old_waiting_for =
+                unsafe { &mut *(data.cast::<Option<EventSubscription>>().cast_mut()) }
+                    .replace(wait_for_copy);
             // don't free the old subscription we found
             if let Some(subscription) = old_waiting_for {
                 subscription.take_handle();
@@ -181,5 +192,5 @@ pub unsafe fn callback(_ctx: *mut u8, _event0: i32, _event1: i32, _event2: i32) 
 }
 
 pub fn spawn(_future: impl Future<Output = ()> + 'static) {
-todo!()
+    todo!()
 }
