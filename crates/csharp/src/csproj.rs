@@ -71,6 +71,8 @@ impl CSProjectLLVMBuilder {
             <ImplicitUsings>enable</ImplicitUsings>
             <Nullable>enable</Nullable>
             <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+            <!-- treat these are errors so they are caught during code generation tests -->
+            <WarningsAsErrors>CS0105</WarningsAsErrors>
         </PropertyGroup>
         
         <PropertyGroup>
@@ -182,6 +184,8 @@ impl CSProjectMonoBuilder {
             <ImplicitUsings>enable</ImplicitUsings>
             <Nullable>enable</Nullable>
             <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+            <!-- treat these are errors so they are caught during code generation tests -->
+            <WarningsAsErrors>CS0105</WarningsAsErrors>
         </PropertyGroup>
         
         <PropertyGroup>
