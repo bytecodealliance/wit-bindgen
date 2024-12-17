@@ -647,10 +647,14 @@ impl WorldGenerator for CSharp {
                     .world_fragments
                     .iter()
                     .flat_map(|f| &f.interop_usings)
+                    .into_iter()
+                    .collect::<HashSet<&String>>() // de-dup across world_fragments
+                    .iter()
                     .map(|s| "using ".to_owned() + s + ";")
                     .collect::<Vec<String>>()
                     .join("\n"),
             );
+            src.push_str("\n");
 
             src.push_str(&format!("{access} static class {name}World\n"));
             src.push_str("{");
