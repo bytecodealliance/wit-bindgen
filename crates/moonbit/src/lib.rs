@@ -815,7 +815,7 @@ impl InterfaceGenerator<'_> {
 
             format!(
                 r#"let cleanupList : Array[{ffi_qualifier}Cleanup] = []
-                   let ignoreList : Array[{ffi_qualifier}Any] = []"#
+                   let ignoreList : Array[&{ffi_qualifier}Any] = []"#
             )
         } else {
             String::new()
