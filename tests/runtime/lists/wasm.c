@@ -7,11 +7,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-uint32_t lists_allocated_bytes(void) {
+uint32_t exports_lists_allocated_bytes(void) {
   return 0;
 }
 
-void lists_test_imports() {
+void exports_lists_test_imports() {
   {
     uint8_t list[] = {};
     lists_list_u8_t a;
