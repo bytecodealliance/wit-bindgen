@@ -1,7 +1,7 @@
 #include <assert.h>
 #include <records.h>
 
-void records_test_imports() {
+void exports_records_test_imports() {
   {
     records_tuple2_u8_u16_t ret;
     test_records_test_multiple_results(&ret);

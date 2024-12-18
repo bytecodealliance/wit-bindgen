@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-void flavorful_test_imports() {
+void exports_flavorful_test_imports() {
   {
     test_flavorful_test_list_in_record1_t a;
     flavorful_string_set(&a.a, "list_in_record1");

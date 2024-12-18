@@ -12,7 +12,7 @@ struct exports_test_resource_import_and_export_test_thing_t {
 };
 
 resource_import_and_export_own_thing_t
-resource_import_and_export_toplevel_export(resource_import_and_export_own_thing_t a) {
+exports_resource_import_and_export_toplevel_export(resource_import_and_export_own_thing_t a) {
   return resource_import_and_export_toplevel_import(a);
 }
 
