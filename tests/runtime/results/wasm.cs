@@ -13,17 +13,8 @@ namespace ResultsWorld.wit.exports.test.results
         {
             try {
                 return ResultsWorld.wit.imports.test.results.TestInterop.EnumError(a);
-            } catch (WitException e) {
-                switch ((ResultsWorld.wit.imports.test.results.ITest.E) e.Value) {
-                    case ResultsWorld.wit.imports.test.results.ITest.E.A:
-                        throw new WitException(ITest.E.A, 0);
-                    case ResultsWorld.wit.imports.test.results.ITest.E.B:
-                        throw new WitException(ITest.E.B, 0);
-                    case ResultsWorld.wit.imports.test.results.ITest.E.C:
-                        throw new WitException(ITest.E.C, 0);
-                    default:
-                        throw new Exception("unreachable");
-                }
+            } catch (ResultsWorld.wit.imports.test.results.ITest.EException e) {
+                throw new WitException(e.EValue, 0);
             }
         }
 
@@ -31,9 +22,8 @@ namespace ResultsWorld.wit.exports.test.results
         {
             try {
                 return ResultsWorld.wit.imports.test.results.TestInterop.RecordError(a);
-            } catch (WitException e) {
-                var value = (ResultsWorld.wit.imports.test.results.ITest.E2) e.Value;
-                throw new WitException(new ITest.E2(value.line, value.column), 0);
+            } catch (ResultsWorld.wit.imports.test.results.ITest.E2Exception e) {
+                throw new WitException(new ITest.E2(e.E2Value.line, e.E2Value.column), 0);
             }
         }
 
@@ -41,26 +31,15 @@ namespace ResultsWorld.wit.exports.test.results
         {
             try {
                 return ResultsWorld.wit.imports.test.results.TestInterop.VariantError(a);
-            } catch (WitException e) {
-                var value = (ResultsWorld.wit.imports.test.results.ITest.E3) e.Value;
-                switch (value.Tag) {
-                    case ResultsWorld.wit.imports.test.results.ITest.E3.Tags.E1:
-                        switch (value.AsE1) {
-                            case ResultsWorld.wit.imports.test.results.ITest.E.A:
-                                throw new WitException(ITest.E3.E1(ITest.E.A), 0);
-                            case ResultsWorld.wit.imports.test.results.ITest.E.B:
-                                throw new WitException(ITest.E3.E1(ITest.E.B), 0);
-                            case ResultsWorld.wit.imports.test.results.ITest.E.C:
-                                throw new WitException(ITest.E3.E1(ITest.E.C), 0);
-                            default:
-                                throw new Exception("unreachable");
-                        }
-                    case ResultsWorld.wit.imports.test.results.ITest.E3.Tags.E2: {
-                        throw new WitException(ITest.E3.E2(new ITest.E2(value.AsE2.line, value.AsE2.column)), 0);
-                    }
-                    default:
-                        throw new Exception("unreachable");
-                }
+            } catch (ResultsWorld.wit.imports.test.results.ITest.E3Exception e) 
+                when (e.E3Value.Tag == ResultsWorld.wit.imports.test.results.ITest.E3.Tags.E1) {
+                    throw new WitException(ITest.E3.E1((ITest.E)Enum.Parse(typeof(ITest.E), e.E3Value.AsE1.ToString())), 0);
+            } catch (ResultsWorld.wit.imports.test.results.ITest.E3Exception e) 
+                when (e.E3Value.Tag == ResultsWorld.wit.imports.test.results.ITest.E3.Tags.E2) {
+                    throw new WitException(ITest.E3.E2(new ITest.E2(e.E3Value.AsE2.line, e.E3Value.AsE2.column)), 0);
+            }
+            catch {
+                throw new Exception("unreachable");
             }
         }
 
