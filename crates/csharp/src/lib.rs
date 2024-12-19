@@ -588,6 +588,14 @@ impl WorldGenerator for CSharp {
                         NestingLevel = level;
                     }}
                 }}
+
+                {access} class WitException<T>: WitException {{
+                    {access} T TypedValue {{ get {{ return (T)this.Value;}} }}
+
+                    {access} WitException(T v, uint level) : base(v!, level)
+                    {{
+                    }}
+                }}
                 "#,
             )
         }
@@ -2889,6 +2897,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                                 if !self.results.is_empty() {
                                     self.gen.gen.needs_wit_exception = true;
                                     let cases = cases.join("\n");
+                                    //  r#"}} catch (WitException<{err_ty}> e) {{
                                     uwriteln!(
                                         self.src,
                                         r#"}} catch (WitException e) {{
@@ -2952,10 +2961,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         1 => {
                             let mut payload_is_void = false;
                             let mut previous = operands[0].clone();
-                            let mut vars = Vec::with_capacity(self.results.len());
+                            let mut vars: Vec::<(String, Option<String>)> = Vec::with_capacity(self.results.len());
                             if let Direction::Import = self.gen.direction {
                                 for ty in &self.results {
-                                    vars.push(previous.clone());
                                     let tmp = self.locals.tmp("tmp");
                                     uwrite!(
                                         self.src,
@@ -2964,21 +2972,29 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                                         var {tmp} = {previous}.AsOk;
                                     "
                                     );
-                                    previous = tmp;
                                     let TypeDefKind::Result(result) = &self.gen.resolve.types[*ty].kind else {
                                         unreachable!();
                                     };
+                                    let exception_name =  result.err
+                                        .map(|ty| self.gen.type_name_with_qualifier(&ty, true));
+                                    vars.push((previous.clone(), exception_name));
                                     payload_is_void = result.ok.is_none();
+                                    previous = tmp;
                                 }
                             }
                             uwriteln!(self.src, "return {};", if payload_is_void { "" } else { &previous });
                             for (level, var) in vars.iter().enumerate().rev() {
                                 self.gen.gen.needs_wit_exception = true;
+                                let (var_name, exception_name) = var;
+                                let exception_name = match exception_name {
+                                    Some(type_name) => &format!("WitException<{}>",type_name),
+                                    None => "WitException",
+                                };
                                 uwrite!(
                                     self.src,
                                     "\
                                     }} else {{
-                                        throw new WitException({var}.AsErr!, {level});
+                                        throw new {exception_name}({var_name}.AsErr!, {level});
                                     }}
                                     "
                                 );
