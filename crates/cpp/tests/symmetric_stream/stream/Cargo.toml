@@ -1,0 +1,14 @@
+[package]
+name = "stream"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+futures = "0.3.31"
+source = { version = "0.1.0", path = "../source" }
+wit-bindgen = { version = "0.36.0", path = "../../../../guest-rust" }
+wit-bindgen-rt = { version = "0.36.0", path = "../../../../guest-rust/rt" }
+wit-bindgen-symmetric-rt = { version = "0.36.0", path = "../../../../symmetric_executor/rust-client" }
+
+[lib]
+crate-type = ["cdylib"]

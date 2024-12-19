@@ -1,0 +1,17 @@
+package my:resources;
+
+interface with-futures {
+  resource x {
+    constructor(l: future<u8>);
+    get: func() -> future<u8>;
+    set: func(l: future<u8>);
+    etc: static func(l: future<u8>) -> future<u8>;
+  }
+
+  foo: func(x: future<x>) -> future<x>;
+}
+
+world resources {
+  import with-futures;
+  export with-futures;
+}
