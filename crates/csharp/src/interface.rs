@@ -1,4 +1,5 @@
-use crate::{CSharp, FunctionBindgen, ResourceInfo, ToCSharpIdent};
+use crate::function::FunctionBindgen;
+use crate::{CSharp, ResourceInfo, ToCSharpIdent};
 use heck::{ToShoutySnakeCase, ToUpperCamelCase};
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
@@ -9,8 +10,8 @@ use wit_bindgen_core::{
 };
 use wit_parser::abi::AbiVariant;
 use wit_parser::{
-    Docs, Enum, Flags, FlagsRepr, Function, FunctionKind, Handle, InterfaceId, LiveTypes, Record,
-    Resolve, Result_, Tuple, Type, TypeDefKind, TypeId, TypeOwner, Variant, WorldKey,
+    Docs, Enum, Flags, FlagsRepr, Function, FunctionKind, Handle, Int, InterfaceId, LiveTypes,
+    Record, Resolve, Result_, Tuple, Type, TypeDefKind, TypeId, TypeOwner, Variant, WorldKey,
 };
 
 pub(crate) struct InterfaceFragment {
@@ -35,6 +36,7 @@ impl InterfaceTypeAndFragments {
     }
 }
 
+/// FunctionBindgen generates the C# code for calling functions defined in wit
 pub(crate) struct InterfaceGenerator<'a> {
     pub(crate) src: String,
     pub(crate) csharp_interop_src: String,
@@ -185,7 +187,7 @@ impl InterfaceGenerator<'_> {
 
         let access = self.csharp_gen.access_modifier();
 
-        let extra_modifiers = crate::extra_modifiers(func, &camel_name);
+        let extra_modifiers = extra_modifiers(func, &camel_name);
 
         let interop_camel_name = func.item_name().to_upper_camel_case();
 
@@ -203,7 +205,7 @@ impl InterfaceGenerator<'_> {
             match func.results.len() {
                 0 => ("void".to_string(), Vec::new()),
                 1 => {
-                    let (payload, results) = crate::payload_and_results(
+                    let (payload, results) = payload_and_results(
                         self.resolve,
                         *func.results.iter_types().next().unwrap(),
                     );
@@ -339,7 +341,7 @@ impl InterfaceGenerator<'_> {
             ),
         };
 
-        let extra_modifiers = crate::extra_modifiers(func, &camel_name);
+        let extra_modifiers = extra_modifiers(func, &camel_name);
 
         let sig = self.resolve.wasm_signature(AbiVariant::GuestExport, func);
 
@@ -349,7 +351,7 @@ impl InterfaceGenerator<'_> {
             match func.results.len() {
                 0 => ("void".to_owned(), Vec::new()),
                 1 => {
-                    let (payload, results) = crate::payload_and_results(
+                    let (payload, results) = payload_and_results(
                         self.resolve,
                         *func.results.iter_types().next().unwrap(),
                     );
@@ -833,7 +835,7 @@ impl InterfaceGenerator<'_> {
             match func.results.len() {
                 0 => "void".into(),
                 1 => {
-                    let (payload, _) = crate::payload_and_results(
+                    let (payload, _) = payload_and_results(
                         self.resolve,
                         *func.results.iter_types().next().unwrap(),
                     );
@@ -1005,7 +1007,7 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.print_docs(docs);
 
         let name = name.to_upper_camel_case();
-        let tag_type = crate::int_type(variant.tag());
+        let tag_type = int_type(variant.tag());
         let access = self.csharp_gen.access_modifier();
 
         let constructors = variant
@@ -1151,5 +1153,50 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 direction: Direction::Import,
             })
             .direction = self.direction;
+    }
+}
+
+fn payload_and_results(resolve: &Resolve, ty: Type) -> (Option<Type>, Vec<TypeId>) {
+    fn recurse(resolve: &Resolve, ty: Type, results: &mut Vec<TypeId>) -> Option<Type> {
+        if let Type::Id(id) = ty {
+            if let TypeDefKind::Result(result) = &resolve.types[id].kind {
+                results.push(id);
+                if let Some(ty) = result.ok {
+                    recurse(resolve, ty, results)
+                } else {
+                    None
+                }
+            } else {
+                Some(ty)
+            }
+        } else {
+            Some(ty)
+        }
+    }
+
+    let mut results = Vec::new();
+    let payload = recurse(resolve, ty, &mut results);
+    (payload, results)
+}
+
+fn extra_modifiers(func: &Function, name: &str) -> &'static str {
+    if let FunctionKind::Method(_) = &func.kind {
+        // Avoid warnings about name clashes.
+        //
+        // TODO: add other `object` method names here
+        if name == "GetType" {
+            return "new";
+        }
+    }
+
+    ""
+}
+
+fn int_type(int: Int) -> &'static str {
+    match int {
+        Int::U8 => "byte",
+        Int::U16 => "ushort",
+        Int::U32 => "uint",
+        Int::U64 => "ulong",
     }
 }
