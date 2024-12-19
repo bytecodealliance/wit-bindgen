@@ -1,5 +1,6 @@
+use crate::csharp_ident::ToCSharpIdent;
 use crate::interface::InterfaceGenerator;
-use crate::{CSharp, ResourceInfo, ToCSharpIdent};
+use crate::{CSharp, ResourceInfo};
 use heck::ToUpperCamelCase;
 use std::fmt::Write;
 use std::mem;

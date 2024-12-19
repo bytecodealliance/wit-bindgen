@@ -1,5 +1,6 @@
 use anyhow::Result;
-use heck::{ToLowerCamelCase, ToUpperCamelCase};
+use csharp_ident::ToCSharpIdent;
+use heck::ToUpperCamelCase;
 use indexmap::IndexMap;
 use std::{
     collections::{HashMap, HashSet},
@@ -7,10 +8,7 @@ use std::{
     iter, mem,
     ops::Deref,
 };
-use wit_bindgen_core::{
-    abi::WasmType,
-    Direction,
-};
+use wit_bindgen_core::{abi::WasmType, Direction};
 use wit_bindgen_core::{
     uwrite,
     wit_parser::{
@@ -20,6 +18,8 @@ use wit_bindgen_core::{
     Files, InterfaceGenerator as _, WorldGenerator,
 };
 use wit_component::{StringEncoding, WitPrinter};
+
+mod csharp_ident;
 mod csproj;
 mod function;
 mod interface;
@@ -1033,115 +1033,6 @@ fn is_primitive(ty: &Type) -> bool {
             | Type::F32
             | Type::F64
     )
-}
-
-trait ToCSharpIdent: ToOwned {
-    fn csharp_keywords() -> Vec<&'static str>;
-    fn to_csharp_ident(&self) -> Self::Owned;
-    fn to_csharp_ident_upper(&self) -> Self::Owned;
-}
-
-impl ToCSharpIdent for str {
-    // Source: https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/keywords/
-    fn csharp_keywords() -> Vec<&'static str> {
-        vec![
-            "abstract",
-            "as",
-            "base",
-            "bool",
-            "break",
-            "byte",
-            "case",
-            "catch",
-            "char",
-            "checked",
-            "class",
-            "const",
-            "continue",
-            "decimal",
-            "default",
-            "delegate",
-            "do",
-            "double",
-            "else",
-            "enum",
-            "event",
-            "explicit",
-            "extern",
-            "false",
-            "finally",
-            "fixed",
-            "float",
-            "for",
-            "foreach",
-            "goto",
-            "if",
-            "implicit",
-            "in",
-            "int",
-            "interface",
-            "internal",
-            "is",
-            "lock",
-            "long",
-            "namespace",
-            "new",
-            "null",
-            "object",
-            "operator",
-            "out",
-            "override",
-            "params",
-            "private",
-            "protected",
-            "public",
-            "readonly",
-            "ref",
-            "return",
-            "sbyte",
-            "sealed",
-            "short",
-            "sizeof",
-            "stackalloc",
-            "static",
-            "string",
-            "struct",
-            "switch",
-            "this",
-            "throw",
-            "true",
-            "try",
-            "typeof",
-            "uint",
-            "ulong",
-            "unchecked",
-            "unsafe",
-            "ushort",
-            "using",
-            "virtual",
-            "void",
-            "volatile",
-            "while",
-        ]
-    }
-
-    fn to_csharp_ident(&self) -> String {
-        // Escape C# keywords
-        if Self::csharp_keywords().contains(&self) {
-            format!("@{}", self)
-        } else {
-            self.to_lower_camel_case()
-        }
-    }
-
-    fn to_csharp_ident_upper(&self) -> String {
-        // Escape C# keywords
-        if Self::csharp_keywords().contains(&self) {
-            format!("@{}", self)
-        } else {
-            self.to_upper_camel_case()
-        }
-    }
 }
 
 /// Group the specified functions by resource (or `None` for freestanding functions).
