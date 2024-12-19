@@ -16,6 +16,7 @@ wit-bindgen-rust-macro = { path = "./macro", optional = true, version = "0.36.0"
 wit-bindgen-rt = { path = "./rt", version = "0.36.0", features = ["bitflags"] }
 
 [features]
-default = ["macros", "realloc"]
+default = ["macros", "realloc", "async"]
 macros = ["dep:wit-bindgen-rust-macro"]
 realloc = []
+async = ["macros", "wit-bindgen-rt/async", "wit-bindgen-rust-macro/async"]
