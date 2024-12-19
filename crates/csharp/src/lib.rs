@@ -169,7 +169,7 @@ impl CSharp {
             src: String::new(),
             csharp_interop_src: String::new(),
             stub: String::new(),
-            gen: self,
+            csharp_gen: self,
             resolve,
             name,
             direction,
@@ -226,11 +226,11 @@ impl WorldGenerator for CSharp {
         self.interface_names.insert(id, name.clone());
         let mut gen = self.interface(resolve, &name, Direction::Import);
 
-        let mut old_resources = mem::take(&mut gen.gen.all_resources);
+        let mut old_resources = mem::take(&mut gen.csharp_gen.all_resources);
         gen.types(id);
-        let new_resources = mem::take(&mut gen.gen.all_resources);
+        let new_resources = mem::take(&mut gen.csharp_gen.all_resources);
         old_resources.extend(new_resources.clone());
-        gen.gen.all_resources = old_resources;
+        gen.csharp_gen.all_resources = old_resources;
 
         for (resource, funcs) in by_resource(
             resolve.interfaces[id]
@@ -276,7 +276,7 @@ impl WorldGenerator for CSharp {
 
         for (resource, funcs) in by_resource(
             funcs.iter().copied(),
-            gen.gen.world_resources.keys().copied(),
+            gen.csharp_gen.world_resources.keys().copied(),
         ) {
             if let Some(resource) = resource {
                 gen.start_resource(resource, None);
@@ -305,11 +305,11 @@ impl WorldGenerator for CSharp {
         self.interface_names.insert(id, name.clone());
         let mut gen = self.interface(resolve, &name, Direction::Export);
 
-        let mut old_resources = mem::take(&mut gen.gen.all_resources);
+        let mut old_resources = mem::take(&mut gen.csharp_gen.all_resources);
         gen.types(id);
-        let new_resources = mem::take(&mut gen.gen.all_resources);
+        let new_resources = mem::take(&mut gen.csharp_gen.all_resources);
         old_resources.extend(new_resources.clone());
-        gen.gen.all_resources = old_resources;
+        gen.csharp_gen.all_resources = old_resources;
 
         for (resource, funcs) in by_resource(
             resolve.interfaces[id]
@@ -378,14 +378,14 @@ impl WorldGenerator for CSharp {
         let name = &format!("{name}.I{name}");
         let mut gen = self.interface(resolve, name, Direction::Import);
 
-        let mut old_resources = mem::take(&mut gen.gen.all_resources);
+        let mut old_resources = mem::take(&mut gen.csharp_gen.all_resources);
         for (ty_name, ty) in types {
             gen.define_type(ty_name, *ty);
         }
-        let new_resources = mem::take(&mut gen.gen.all_resources);
+        let new_resources = mem::take(&mut gen.csharp_gen.all_resources);
         old_resources.extend(new_resources.clone());
-        gen.gen.all_resources = old_resources;
-        gen.gen.world_resources = new_resources;
+        gen.csharp_gen.all_resources = old_resources;
+        gen.csharp_gen.world_resources = new_resources;
 
         gen.add_world_fragment();
     }
@@ -910,7 +910,7 @@ struct InterfaceGenerator<'a> {
     src: String,
     csharp_interop_src: String,
     stub: String,
-    gen: &'a mut CSharp,
+    csharp_gen: &'a mut CSharp,
     resolve: &'a Resolve,
     name: &'a str,
     direction: Direction,
@@ -950,7 +950,7 @@ impl InterfaceGenerator<'_> {
             assert!(prev.is_none());
 
             // workaround for owner not set on anonymous types, maintain or own map to the owner
-            self.gen
+            self.csharp_gen
                 .anonymous_type_owners
                 .insert(ty, TypeOwner::Interface(id));
 
@@ -992,7 +992,7 @@ impl InterfaceGenerator<'_> {
 
     fn qualifier(&self, when: bool, ty: &TypeId) -> String {
         // anonymous types dont get an owner from wit-parser, so assume they are part of an interface here.
-        let owner = if let Some(owner_type) = self.gen.anonymous_type_owners.get(ty) {
+        let owner = if let Some(owner_type) = self.csharp_gen.anonymous_type_owners.get(ty) {
             *owner_type
         } else {
             let type_def = &self.resolve.types[*ty];
@@ -1002,7 +1002,7 @@ impl InterfaceGenerator<'_> {
         let global_prefix = self.global_if_user_type(&Type::Id(*ty));
 
         if let TypeOwner::Interface(id) = owner {
-            if let Some(name) = self.gen.interface_names.get(&id) {
+            if let Some(name) = self.csharp_gen.interface_names.get(&id) {
                 if name != self.name {
                     return format!("{global_prefix}{name}.");
                 }
@@ -1018,7 +1018,7 @@ impl InterfaceGenerator<'_> {
     }
 
     fn add_interface_fragment(self, is_export: bool) {
-        self.gen
+        self.csharp_gen
             .interface_fragments
             .entry(self.name.to_string())
             .or_insert_with(|| InterfaceTypeAndFragments::new(is_export))
@@ -1033,7 +1033,7 @@ impl InterfaceGenerator<'_> {
     }
 
     fn add_world_fragment(self) {
-        self.gen.world_fragments.push(InterfaceFragment {
+        self.csharp_gen.world_fragments.push(InterfaceFragment {
             csharp_src: self.src,
             csharp_interop_src: self.csharp_interop_src,
             stub: self.stub,
@@ -1049,11 +1049,11 @@ impl InterfaceGenerator<'_> {
             }
             FunctionKind::Method(_) => (func.item_name().to_upper_camel_case(), ""),
             FunctionKind::Constructor(id) => {
-                (self.gen.all_resources[id].name.to_upper_camel_case(), "")
+                (self.csharp_gen.all_resources[id].name.to_upper_camel_case(), "")
             }
         };
 
-        let access = self.gen.access_modifier();
+        let access = self.csharp_gen.access_modifier();
 
         let extra_modifiers = extra_modifiers(func, &camel_name);
 
@@ -1079,7 +1079,7 @@ impl InterfaceGenerator<'_> {
                     );
                     (
                         if let Some(ty) = payload {
-                            self.gen.needs_result = true;
+                            self.csharp_gen.needs_result = true;
                             self.type_name_with_qualifier(&ty, true)
                         } else {
                             "void".to_string()
@@ -1129,7 +1129,7 @@ impl InterfaceGenerator<'_> {
         );
 
         abi::call(
-            bindgen.gen.resolve,
+            bindgen.interface_gen.resolve,
             AbiVariant::GuestImport,
             LiftLower::LowerArgsLiftResults,
             func,
@@ -1157,7 +1157,7 @@ impl InterfaceGenerator<'_> {
 
         let import_name = &func.name;
 
-        self.gen.require_using("System.Runtime.InteropServices");
+        self.csharp_gen.require_using("System.Runtime.InteropServices");
 
         let target = if let FunctionKind::Freestanding = &func.kind {
             self.require_interop_using("System.Runtime.InteropServices");
@@ -1203,7 +1203,7 @@ impl InterfaceGenerator<'_> {
             }
             FunctionKind::Method(_) => (func.item_name().to_upper_camel_case(), ""),
             FunctionKind::Constructor(id) => {
-                (self.gen.all_resources[id].name.to_upper_camel_case(), "")
+                (self.csharp_gen.all_resources[id].name.to_upper_camel_case(), "")
             }
         };
 
@@ -1223,7 +1223,7 @@ impl InterfaceGenerator<'_> {
                     );
                     (
                         if let Some(ty) = payload {
-                            self.gen.needs_result = true;
+                            self.csharp_gen.needs_result = true;
                             self.type_name(&ty)
                         } else {
                             "void".to_string()
@@ -1252,7 +1252,7 @@ impl InterfaceGenerator<'_> {
         );
 
         abi::call(
-            bindgen.gen.resolve,
+            bindgen.interface_gen.resolve,
             AbiVariant::GuestExport,
             LiftLower::LiftArgsLowerResults,
             func,
@@ -1306,7 +1306,7 @@ impl InterfaceGenerator<'_> {
         let interop_name = format!("wasmExport{}", func.name.to_upper_camel_case());
         let core_module_name = interface_name.map(|s| self.resolve.name_world_key(s));
         let export_name = func.legacy_core_export_name(core_module_name.as_deref());
-        let access = self.gen.access_modifier();
+        let access = self.csharp_gen.access_modifier();
 
         self.require_interop_using("System.Runtime.InteropServices");
         uwrite!(
@@ -1341,7 +1341,7 @@ impl InterfaceGenerator<'_> {
             );
         }
 
-        if self.gen.opts.generate_stub {
+        if self.csharp_gen.opts.generate_stub {
             let sig = self.sig_string(func, true);
 
             uwrite!(
@@ -1405,7 +1405,7 @@ impl InterfaceGenerator<'_> {
                     }
                     TypeDefKind::Tuple(tuple) => {
                         let count = tuple.types.len();
-                        self.gen.tuple_counts.insert(count);
+                        self.csharp_gen.tuple_counts.insert(count);
 
                         let params = match count {
                             0 => String::new(),
@@ -1425,7 +1425,7 @@ impl InterfaceGenerator<'_> {
                         params
                     }
                     TypeDefKind::Option(base_ty) => {
-                        self.gen.needs_option = true;
+                        self.csharp_gen.needs_option = true;
                         let nesting = if let Type::Id(id) = base_ty {
                             matches!(&self.resolve.types[*id].kind, TypeDefKind::Option(_))
                         } else {
@@ -1439,7 +1439,7 @@ impl InterfaceGenerator<'_> {
                         }
                     }
                     TypeDefKind::Result(result) => {
-                        self.gen.needs_result = true;
+                        self.csharp_gen.needs_result = true;
                         let mut name = |ty: &Option<Type>| {
                             ty.as_ref()
                                 .map(|ty| self.type_name_with_qualifier(ty, qualifier))
@@ -1524,9 +1524,9 @@ impl InterfaceGenerator<'_> {
     }
 
     fn start_resource(&mut self, id: TypeId, key: Option<&WorldKey>) {
-        let access = self.gen.access_modifier();
+        let access = self.csharp_gen.access_modifier();
         let qualified = self.type_name_with_qualifier(&Type::Id(id), true);
-        let info = &self.gen.all_resources[&id];
+        let info = &self.csharp_gen.all_resources[&id];
         let name = info.name.clone();
         let upper_camel = name.to_upper_camel_case();
         let docs = info.docs.clone();
@@ -1652,7 +1652,7 @@ impl InterfaceGenerator<'_> {
                     "#
                 );
 
-                if self.gen.opts.generate_stub {
+                if self.csharp_gen.opts.generate_stub {
                     let super_ = self.type_name_with_qualifier(&Type::Id(id), true);
                     let interface = {
                         let split = super_.split('.').collect::<Vec<_>>();
@@ -1677,7 +1677,7 @@ impl InterfaceGenerator<'_> {
     }
 
     fn end_resource(&mut self) {
-        if self.direction == Direction::Export && self.gen.opts.generate_stub {
+        if self.direction == Direction::Export && self.csharp_gen.opts.generate_stub {
             uwriteln!(
                 self.stub,
                 "
@@ -1706,14 +1706,14 @@ impl InterfaceGenerator<'_> {
                         *func.results.iter_types().next().unwrap(),
                     );
                     if let Some(ty) = payload {
-                        self.gen.needs_result = true;
+                        self.csharp_gen.needs_result = true;
                         self.type_name_with_qualifier(&ty, qualifier)
                     } else {
                         "void".to_string()
                     }
                 }
                 count => {
-                    self.gen.tuple_counts.insert(count);
+                    self.csharp_gen.tuple_counts.insert(count);
                     format!(
                         "({})",
                         func.results
@@ -1748,11 +1748,11 @@ impl InterfaceGenerator<'_> {
             }
             FunctionKind::Method(_) => (func.item_name().to_upper_camel_case(), ""),
             FunctionKind::Constructor(id) => {
-                (self.gen.all_resources[id].name.to_upper_camel_case(), "")
+                (self.csharp_gen.all_resources[id].name.to_upper_camel_case(), "")
             }
         };
 
-        let access = self.gen.access_modifier();
+        let access = self.csharp_gen.access_modifier();
 
         format!("{access} {modifiers} {result_type} {camel_name}({params})")
     }
@@ -1764,7 +1764,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     }
 
     fn type_record(&mut self, _id: TypeId, name: &str, record: &Record, docs: &Docs) {
-        let access = self.gen.access_modifier();
+        let access = self.csharp_gen.access_modifier();
 
         self.print_docs(docs);
 
@@ -1852,7 +1852,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             _ => "",
         };
 
-        let access = self.gen.access_modifier();
+        let access = self.csharp_gen.access_modifier();
 
         uwrite!(
             self.src,
@@ -1873,7 +1873,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
         let name = name.to_upper_camel_case();
         let tag_type = int_type(variant.tag());
-        let access = self.gen.access_modifier();
+        let access = self.csharp_gen.access_modifier();
 
         let constructors = variant
             .cases
@@ -1981,7 +1981,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .collect::<Vec<_>>()
             .join(", ");
 
-        let access = self.gen.access_modifier();
+        let access = self.csharp_gen.access_modifier();
 
         uwrite!(
             self.src,
@@ -2008,7 +2008,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     fn type_resource(&mut self, id: TypeId, name: &str, docs: &Docs) {
         // Here we just record information about the resource; we don't actually emit any code until we're ready to
         // visit any functions associated with the resource (e.g. in CSharp::import_interface, etc.).
-        self.gen
+        self.csharp_gen
             .all_resources
             .entry(id)
             .or_insert_with(|| ResourceInfo {
@@ -2045,7 +2045,7 @@ struct BlockStorage {
 }
 
 struct FunctionBindgen<'a, 'b> {
-    gen: &'b mut InterfaceGenerator<'a>,
+    interface_gen: &'b mut InterfaceGenerator<'a>,
     func_name: &'b str,
     kind: &'b FunctionKind,
     params: Box<[String]>,
@@ -2066,7 +2066,7 @@ struct FunctionBindgen<'a, 'b> {
 
 impl<'a, 'b> FunctionBindgen<'a, 'b> {
     fn new(
-        gen: &'b mut InterfaceGenerator<'a>,
+        interface_gen: &'b mut InterfaceGenerator<'a>,
         func_name: &'b str,
         kind: &'b FunctionKind,
         params: Box<[String]>,
@@ -2079,7 +2079,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         }
 
         Self {
-            gen,
+            interface_gen,
             func_name,
             kind,
             params,
@@ -2137,8 +2137,8 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             .enumerate()
             .map(
                 |(i, (((name, ty), Block { body, results, .. }), payload))| {
-                    let payload = if let Some(ty) = self.gen.non_empty_type(ty.as_ref()) {
-                        let ty = self.gen.type_name_with_qualifier(ty, true);
+                    let payload = if let Some(ty) = self.interface_gen.non_empty_type(ty.as_ref()) {
+                        let ty = self.interface_gen.type_name_with_qualifier(ty, true);
                         let name = name.to_upper_camel_case();
 
                         format!("{ty} {payload} = {op}.As{name};")
@@ -2191,7 +2191,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             .blocks
             .drain(self.blocks.len() - cases.len()..)
             .collect::<Vec<_>>();
-        let ty = self.gen.type_name_with_qualifier(ty, true);
+        let ty = self.interface_gen.type_name_with_qualifier(ty, true);
         //let ty = self.gen.type_name(ty);
         let generics_position = ty.find('<');
         let lifted = self.locals.tmp("lifted");
@@ -2201,13 +2201,13 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             .zip(blocks)
             .enumerate()
             .map(|(i, ((case_name, case_ty), Block { body, results, .. }))| {
-                let payload = if self.gen.non_empty_type(case_ty.as_ref()).is_some() {
+                let payload = if self.interface_gen.non_empty_type(case_ty.as_ref()).is_some() {
                     results.into_iter().next().unwrap()
                 } else if generics_position.is_some() {
                     if let Some(ty) = case_ty.as_ref() {
-                        format!("{}.INSTANCE", self.gen.type_name_with_qualifier(ty, true))
+                        format!("{}.INSTANCE", self.interface_gen.type_name_with_qualifier(ty, true))
                     } else {
-                        format!("new global::{}None()", self.gen.gen.qualifier())
+                        format!("new global::{}None()", self.interface_gen.csharp_gen.qualifier())
                     }
                 } else {
                     String::new()
@@ -2349,7 +2349,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::FlagsLift { flags, name, ty } => {
                 let qualified_type_name = format!(
                     "{}{}",
-                    self.gen.qualifier(true, ty),
+                    self.interface_gen.qualifier(true, ty),
                     name.to_string().to_upper_camel_case()
                 );
                 if flags.flags.len() > 32 {
@@ -2373,7 +2373,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::RecordLift { ty, name, .. } => {
                 let qualified_type_name = format!(
                     "{}{}",
-                    self.gen.qualifier(true, ty),
+                    self.interface_gen.qualifier(true, ty),
                     name.to_string().to_upper_camel_case()
                 );
                 let mut result = format!("new {} (\n", qualified_type_name);
@@ -2463,14 +2463,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let op = &operands[0];
 
                 let nesting = if let Type::Id(id) = payload {
-                    matches!(&self.gen.resolve.types[*id].kind, TypeDefKind::Option(_))
+                    matches!(&self.interface_gen.resolve.types[*id].kind, TypeDefKind::Option(_))
                 } else {
                     false
                 };
 
                 let mut block = |ty: Option<&Type>, Block { body, results, .. }, payload, nesting| {
-                    let payload = if let Some(ty) = self.gen.non_empty_type(ty) {
-                        let ty = self.gen.type_name_with_qualifier(ty, true);
+                    let payload = if let Some(ty) = self.interface_gen.non_empty_type(ty) {
+                        let ty = self.interface_gen.type_name_with_qualifier(ty, true);
                         if nesting {
                             format!("var {payload} = {op}.Value;")
                         } else {
@@ -2521,17 +2521,17 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let some = self.blocks.pop().unwrap();
                 let _none = self.blocks.pop().unwrap();
 
-                let ty = self.gen.type_name_with_qualifier(&Type::Id(*ty), true);
+                let ty = self.interface_gen.type_name_with_qualifier(&Type::Id(*ty), true);
                 let lifted = self.locals.tmp("lifted");
                 let op = &operands[0];
 
                 let nesting = if let Type::Id(id) = payload {
-                    matches!(&self.gen.resolve.types[*id].kind, TypeDefKind::Option(_))
+                    matches!(&self.interface_gen.resolve.types[*id].kind, TypeDefKind::Option(_))
                 } else {
                     false
                 };
 
-                let payload = if self.gen.non_empty_type(Some(*payload)).is_some() {
+                let payload = if self.interface_gen.non_empty_type(Some(*payload)).is_some() {
                     some.results.into_iter().next().unwrap()
                 } else {
                     "null".into()
@@ -2591,7 +2591,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::EnumLower { .. } => results.push(format!("(int){}", operands[0])),
 
             Instruction::EnumLift { ty, .. } => {
-                let t = self.gen.type_name_with_qualifier(&Type::Id(*ty), true);
+                let t = self.interface_gen.type_name_with_qualifier(&Type::Id(*ty), true);
                 let op = &operands[0];
                 results.push(format!("({}){}", t, op));
 
@@ -2607,7 +2607,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let list = &operands[0];
                 let (_size, ty) = list_element_info(element);
 
-                match self.gen.direction {
+                match self.interface_gen.direction {
                     Direction::Import => {
                         let buffer: String = self.locals.tmp("buffer");
                         uwrite!(
@@ -2624,7 +2624,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         let address = self.locals.tmp("address");
                         let buffer = self.locals.tmp("buffer");
                         let gc_handle = self.locals.tmp("gcHandle");
-                        let size = self.gen.gen.sizes.size(element).size_wasm32();
+                        let size = self.interface_gen.csharp_gen.sizes.size(element).size_wasm32();
                         uwrite!(
                             self.src,
                             "
@@ -2681,14 +2681,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
                 results.push(format!("length{result_var}"));
 
-                self.gen.gen.needs_interop_string = true;
+                self.interface_gen.csharp_gen.needs_interop_string = true;
             }
 
             Instruction::StringLift { .. } => {
-                if FunctionKind::Freestanding == *self.kind || self.gen.direction == Direction::Export {
-                    self.gen.require_interop_using("System.Text");
+                if FunctionKind::Freestanding == *self.kind || self.interface_gen.direction == Direction::Export {
+                    self.interface_gen.require_interop_using("System.Text");
                 } else {
-                    self.gen.require_using("System.Text");
+                    self.interface_gen.require_using("System.Text");
                 }
 
                 results.push(format!(
@@ -2707,14 +2707,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 assert!(block_results.is_empty());
 
                 let list = &operands[0];
-                let size = self.gen.gen.sizes.size(element).size_wasm32();
-                let ty = self.gen.type_name_with_qualifier(element, true);
+                let size = self.interface_gen.csharp_gen.sizes.size(element).size_wasm32();
+                let ty = self.interface_gen.type_name_with_qualifier(element, true);
                 let index = self.locals.tmp("index");
 
                 let address = self.locals.tmp("address");
                 let buffer_size = self.locals.tmp("bufferSize");
                 //TODO: wasm64
-                let align = self.gen.gen.sizes.align(element).align_wasm32();
+                let align = self.interface_gen.csharp_gen.sizes.align(element).align_wasm32();
                 self.needs_native_alloc_list = true;
 
                 uwrite!(
@@ -2746,8 +2746,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let address = &operands[0];
                 let length = &operands[1];
                 let array = self.locals.tmp("array");
-                let ty = self.gen.type_name_with_qualifier(element, true);
-                let size = self.gen.gen.sizes.size(element).size_wasm32();
+                let ty = self.interface_gen.type_name_with_qualifier(element, true);
+                let size = self.interface_gen.csharp_gen.sizes.size(element).size_wasm32();
                 let index = self.locals.tmp("index");
 
                 let result = match &block_results[..] {
@@ -2803,7 +2803,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::CallInterface { func } => {
-                let module = self.gen.name;
+                let module = self.interface_gen.name;
                 let func_name = self.func_name.to_upper_camel_case();
                 let interface_name = CSharp::get_class_name_from_qualified_name(module).1;
 
@@ -2829,7 +2829,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 match self.kind {
                     FunctionKind::Freestanding | FunctionKind::Static(_) | FunctionKind::Method(_) => {
                         let target = match self.kind {
-                            FunctionKind::Static(id) => self.gen.gen.all_resources[id].export_impl_name(),
+                            FunctionKind::Static(id) => self.interface_gen.csharp_gen.all_resources[id].export_impl_name(),
                             FunctionKind::Method(_) => operands[0].clone(),
                             _ => format!("{class_name_root}Impl")
                         };
@@ -2838,7 +2838,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             0 => uwriteln!(self.src, "{target}.{func_name}({oper});"),
                             1 => {
                                 let ret = self.locals.tmp("ret");
-                                let ty = self.gen.type_name_with_qualifier(
+                                let ty = self.interface_gen.type_name_with_qualifier(
                                     func.results.iter_types().next().unwrap(),
                                     true
                                 );
@@ -2847,15 +2847,15 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                                 let mut oks = Vec::with_capacity(self.results.len());
                                 let mut payload_is_void = false;
                                 for (index, ty) in self.results.iter().enumerate() {
-                                    let TypeDefKind::Result(result) = &self.gen.resolve.types[*ty].kind else {
+                                    let TypeDefKind::Result(result) = &self.interface_gen.resolve.types[*ty].kind else {
                                         unreachable!();
                                     };
                                     let err_ty = if let Some(ty) = result.err {
-                                        self.gen.type_name_with_qualifier(&ty, true)
+                                        self.interface_gen.type_name_with_qualifier(&ty, true)
                                     } else {
                                         "None".to_owned()
                                     };
-                                    let ty = self.gen.type_name_with_qualifier(&Type::Id(*ty), true);
+                                    let ty = self.interface_gen.type_name_with_qualifier(&Type::Id(*ty), true);
                                     let head = oks.concat();
                                     let tail = oks.iter().map(|_| ")").collect::<Vec<_>>().concat();
                                     cases.push(
@@ -2887,7 +2887,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                                     "{ret} = {head}{val}{tail};"
                                 );
                                 if !self.results.is_empty() {
-                                    self.gen.gen.needs_wit_exception = true;
+                                    self.interface_gen.csharp_gen.needs_wit_exception = true;
                                     let cases = cases.join("\n");
                                     uwriteln!(
                                         self.src,
@@ -2918,7 +2918,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         }
                     }
                     FunctionKind::Constructor(id) => {
-                        let target = self.gen.gen.all_resources[id].export_impl_name();
+                        let target = self.interface_gen.csharp_gen.all_resources[id].export_impl_name();
                         let ret = self.locals.tmp("ret");
                         uwriteln!(self.src, "var {ret} = new {target}({oper});");
                         results.push(ret);
@@ -2946,14 +2946,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         }}");
                 }
 
-                if !matches!((self.gen.direction, self.kind), (Direction::Import, FunctionKind::Constructor(_))) {
+                if !matches!((self.interface_gen.direction, self.kind), (Direction::Import, FunctionKind::Constructor(_))) {
                     match func.results.len() {
                         0 => (),
                         1 => {
                             let mut payload_is_void = false;
                             let mut previous = operands[0].clone();
                             let mut vars = Vec::with_capacity(self.results.len());
-                            if let Direction::Import = self.gen.direction {
+                            if let Direction::Import = self.interface_gen.direction {
                                 for ty in &self.results {
                                     vars.push(previous.clone());
                                     let tmp = self.locals.tmp("tmp");
@@ -2965,7 +2965,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                                     "
                                     );
                                     previous = tmp;
-                                    let TypeDefKind::Result(result) = &self.gen.resolve.types[*ty].kind else {
+                                    let TypeDefKind::Result(result) = &self.interface_gen.resolve.types[*ty].kind else {
                                         unreachable!();
                                     };
                                     payload_is_void = result.ok.is_none();
@@ -2973,7 +2973,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             }
                             uwriteln!(self.src, "return {};", if payload_is_void { "" } else { &previous });
                             for (level, var) in vars.iter().enumerate().rev() {
-                                self.gen.gen.needs_wit_exception = true;
+                                self.interface_gen.csharp_gen.needs_wit_exception = true;
                                 uwrite!(
                                     self.src,
                                     "\
@@ -3022,8 +3022,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let (Handle::Own(ty) | Handle::Borrow(ty)) = handle;
                 let is_own = matches!(handle, Handle::Own(_));
                 let handle = self.locals.tmp("handle");
-                let id = dealias(self.gen.resolve, *ty);
-                let ResourceInfo { direction, .. } = &self.gen.gen.all_resources[&id];
+                let id = dealias(self.interface_gen.resolve, *ty);
+                let ResourceInfo { direction, .. } = &self.interface_gen.csharp_gen.all_resources[&id];
                 let op = &operands[0];
 
                 uwriteln!(self.src, "var {handle} = {op}.Handle;");
@@ -3035,9 +3035,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         }
                     }
                     Direction::Export => {
-                        self.gen.gen.needs_rep_table = true;
+                        self.interface_gen.csharp_gen.needs_rep_table = true;
                         let local_rep = self.locals.tmp("localRep");
-                        let export_name = self.gen.gen.all_resources[&id].export_impl_name();
+                        let export_name = self.interface_gen.csharp_gen.all_resources[&id].export_impl_name();
                         if is_own {
                             // Note that we set `{op}.Handle` to zero below to ensure that application code doesn't
                             // try to use the instance while the host has ownership.  We'll set it back to non-zero
@@ -3073,13 +3073,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let (Handle::Own(ty) | Handle::Borrow(ty)) = handle;
                 let is_own = matches!(handle, Handle::Own(_));
                 let mut resource = self.locals.tmp("resource");
-                let id = dealias(self.gen.resolve, *ty);
-                let ResourceInfo { direction, .. } = &self.gen.gen.all_resources[&id];
+                let id = dealias(self.interface_gen.resolve, *ty);
+                let ResourceInfo { direction, .. } = &self.interface_gen.csharp_gen.all_resources[&id];
                 let op = &operands[0];
 
                 match direction {
                     Direction::Import => {
-			let import_name = self.gen.type_name_with_qualifier(&Type::Id(id), true);
+			let import_name = self.interface_gen.type_name_with_qualifier(&Type::Id(id), true);
 
                         if let FunctionKind::Constructor(_) = self.kind {
                             resource = "this".to_owned();
@@ -3096,9 +3096,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         }
                     }
                     Direction::Export => {
-                        self.gen.gen.needs_rep_table = true;
+                        self.interface_gen.csharp_gen.needs_rep_table = true;
 
-			let export_name = self.gen.gen.all_resources[&id].export_impl_name();
+			let export_name = self.interface_gen.csharp_gen.all_resources[&id].export_impl_name();
                         if is_own {
                             uwriteln!(
                                 self.src,
@@ -3121,7 +3121,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
         // Use a stack-based return area for imports, because exports need
         // their return area to be live until the post-return call.
-        match self.gen.direction {
+        match self.interface_gen.direction {
             Direction::Import => {
                 self.import_return_pointer_area_size =
                     self.import_return_pointer_area_size.max(size);
@@ -3151,8 +3151,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 return format!("{ptr}");
             }
             Direction::Export => {
-                self.gen.gen.return_area_size = self.gen.gen.return_area_size.max(size);
-                self.gen.gen.return_area_align = self.gen.gen.return_area_align.max(align);
+                self.interface_gen.csharp_gen.return_area_size = self.interface_gen.csharp_gen.return_area_size.max(size);
+                self.interface_gen.csharp_gen.return_area_align = self.interface_gen.csharp_gen.return_area_align.max(align);
 
                 uwrite!(
                     self.src,
@@ -3160,7 +3160,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     var {ptr} = InteropReturnArea.returnArea.AddressOfReturnArea();
                     "
                 );
-                self.gen.gen.needs_export_return_area = true;
+                self.interface_gen.csharp_gen.needs_export_return_area = true;
 
                 return format!("{ptr}");
             }
@@ -3203,7 +3203,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
     }
 
     fn sizes(&self) -> &SizeAlign {
-        &self.gen.gen.sizes
+        &self.interface_gen.csharp_gen.sizes
     }
 
     fn is_list_canonical(&self, _resolve: &Resolve, element: &Type) -> bool {
