@@ -1,5 +1,6 @@
+use crate::csharp_ident::ToCSharpIdent;
 use crate::function::FunctionBindgen;
-use crate::{CSharp, ResourceInfo, ToCSharpIdent};
+use crate::{CSharp, ResourceInfo};
 use heck::{ToShoutySnakeCase, ToUpperCamelCase};
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
