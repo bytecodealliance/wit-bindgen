@@ -1,6 +1,7 @@
 use crate::csharp_ident::ToCSharpIdent;
 use crate::function::FunctionBindgen;
-use crate::{CSharp, ResourceInfo};
+use crate::function::ResourceInfo;
+use crate::world_generator::CSharp;
 use heck::{ToShoutySnakeCase, ToUpperCamelCase};
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
@@ -196,7 +197,7 @@ impl InterfaceGenerator<'_> {
 
         let wasm_result_type = match &sig.results[..] {
             [] => "void",
-            [result] => crate::wasm_type(*result),
+            [result] => crate::world_generator::wasm_type(*result),
             _ => unreachable!(),
         };
 
@@ -237,7 +238,7 @@ impl InterfaceGenerator<'_> {
             .iter()
             .enumerate()
             .map(|(i, param)| {
-                let ty = crate::wasm_type(*param);
+                let ty = crate::world_generator::wasm_type(*param);
                 format!("{ty} p{i}")
             })
             .collect::<Vec<_>>()
@@ -407,7 +408,7 @@ impl InterfaceGenerator<'_> {
 
         let wasm_result_type = match &sig.results[..] {
             [] => "void",
-            [result] => crate::wasm_type(*result),
+            [result] => crate::world_generator::wasm_type(*result),
             _ => unreachable!(),
         };
 
@@ -416,7 +417,7 @@ impl InterfaceGenerator<'_> {
             .iter()
             .enumerate()
             .map(|(i, param)| {
-                let ty = crate::wasm_type(*param);
+                let ty = crate::world_generator::wasm_type(*param);
                 format!("{ty} p{i}")
             })
             .collect::<Vec<_>>()
@@ -532,7 +533,7 @@ impl InterfaceGenerator<'_> {
                 match &ty.kind {
                     TypeDefKind::Type(ty) => self.type_name_with_qualifier(ty, qualifier),
                     TypeDefKind::List(ty) => {
-                        if crate::is_primitive(ty) {
+                        if crate::world_generator::is_primitive(ty) {
                             format!("{}[]", self.type_name(ty))
                         } else {
                             format!("List<{}>", self.type_name_with_qualifier(ty, qualifier))

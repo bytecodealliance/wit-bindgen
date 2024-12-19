@@ -1,6 +1,6 @@
 use crate::csharp_ident::ToCSharpIdent;
 use crate::interface::InterfaceGenerator;
-use crate::{CSharp, ResourceInfo};
+use crate::world_generator::CSharp;
 use heck::ToUpperCamelCase;
 use std::fmt::Write;
 use std::mem;
@@ -8,7 +8,7 @@ use std::ops::Deref;
 use wit_bindgen_core::abi::{Bindgen, Bitcast, Instruction};
 use wit_bindgen_core::{uwrite, uwriteln, Direction, Ns};
 use wit_parser::abi::WasmType;
-use wit_parser::{FunctionKind, Handle, Resolve, SizeAlign, Type, TypeDefKind, TypeId};
+use wit_parser::{Docs, FunctionKind, Handle, Resolve, SizeAlign, Type, TypeDefKind, TypeId};
 
 /// FunctionBindgen generates the C# code for calling functions defined in wit
 pub(crate) struct FunctionBindgen<'a, 'b> {
@@ -93,7 +93,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         let declarations = lowered
             .iter()
             .zip(lowered_types)
-            .map(|(lowered, ty)| format!("{} {lowered};", crate::wasm_type(*ty)))
+            .map(|(lowered, ty)| format!("{} {lowered};", crate::world_generator::wasm_type(*ty)))
             .collect::<Vec<_>>()
             .join("\n");
 
@@ -433,7 +433,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let declarations = lowered
                     .iter()
                     .zip(lowered_types.iter())
-                    .map(|(lowered, ty)| format!("{} {lowered};", crate::wasm_type(*ty)))
+                    .map(|(lowered, ty)| format!("{} {lowered};", crate::world_generator::wasm_type(*ty)))
                     .collect::<Vec<_>>()
                     .join("\n");
 
@@ -1111,7 +1111,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.import_return_pointer_area_size.max(size);
                 self.import_return_pointer_area_align =
                     self.import_return_pointer_area_align.max(align);
-                let (array_size, element_type) = crate::dotnet_aligned_array(
+                let (array_size, element_type) = crate::world_generator::dotnet_aligned_array(
                     self.import_return_pointer_area_size,
                     self.import_return_pointer_area_align,
                 );
@@ -1193,7 +1193,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
     }
 
     fn is_list_canonical(&self, _resolve: &Resolve, element: &Type) -> bool {
-        crate::is_primitive(element)
+        crate::world_generator::is_primitive(element)
     }
 }
 
@@ -1267,4 +1267,29 @@ struct BlockStorage {
     element: String,
     base: String,
     cleanup: Vec<Cleanup>,
+}
+
+#[derive(Clone)]
+pub struct ResourceInfo {
+    pub(crate) module: String,
+    pub(crate) name: String,
+    pub(crate) docs: Docs,
+    pub(crate) direction: Direction,
+}
+
+impl ResourceInfo {
+    /// Returns the name of the exported implementation of this resource.
+    ///
+    /// The result is only valid if the resource is actually being exported by the world.
+    fn export_impl_name(&self) -> String {
+        format!(
+            "{}Impl.{}",
+            CSharp::get_class_name_from_qualified_name(&self.module)
+                .1
+                .strip_prefix("I")
+                .unwrap()
+                .to_upper_camel_case(),
+            self.name.to_upper_camel_case()
+        )
+    }
 }
