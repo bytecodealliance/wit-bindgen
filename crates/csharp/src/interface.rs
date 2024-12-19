@@ -38,7 +38,9 @@ impl InterfaceTypeAndFragments {
     }
 }
 
-/// FunctionBindgen generates the C# code for calling functions defined in wit
+/// InterfaceGenerator generates the C# code for wit interfaces.
+/// It produces types by interface in wit and then generates the interop code
+/// by calling out to FunctionGenerator
 pub(crate) struct InterfaceGenerator<'a> {
     pub(crate) src: String,
     pub(crate) csharp_interop_src: String,

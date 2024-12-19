@@ -48,10 +48,3 @@ pub enum CSharpRuntime {
     NativeAOT,
     Mono,
 }
-
-/// Indicates if we are generating for functions in an interface or free standing.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum FunctionLevel {
-    Interface,
-    FreeStanding,
-}
