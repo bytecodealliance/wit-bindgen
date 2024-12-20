@@ -32,7 +32,7 @@ pub(crate) struct InterfaceTypeAndFragments {
 impl InterfaceTypeAndFragments {
     pub(crate) fn new(is_export: bool) -> Self {
         InterfaceTypeAndFragments {
-            is_export: is_export,
+            is_export,
             interface_fragments: Vec::<InterfaceFragment>::new(),
         }
     }

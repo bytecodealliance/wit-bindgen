@@ -660,7 +660,7 @@ impl WorldGenerator for CSharp {
             //TODO: This is currently needed for mono even if it's built as a library.
             if self.opts.runtime == CSharpRuntime::Mono {
                 files.push(
-                    &format!("MonoEntrypoint.cs",),
+                    &"MonoEntrypoint.cs".to_string(),
                     indent(&format!(
                         r#"
                         {access} class MonoEntrypoint() {{
@@ -826,16 +826,16 @@ enum Stubs<'a> {
 pub fn dotnet_aligned_array(array_size: usize, required_alignment: usize) -> (usize, String) {
     match required_alignment {
         1 => {
-            return (array_size, "byte".to_owned());
+            (array_size, "byte".to_owned())
         }
         2 => {
-            return ((array_size + 1) / 2, "ushort".to_owned());
+            ((array_size + 1) / 2, "ushort".to_owned())
         }
         4 => {
-            return ((array_size + 3) / 4, "uint".to_owned());
+            ((array_size + 3) / 4, "uint".to_owned())
         }
         8 => {
-            return ((array_size + 7) / 8, "ulong".to_owned());
+            ((array_size + 7) / 8, "ulong".to_owned())
         }
         _ => todo!("unsupported return_area_align {}", required_alignment),
     }

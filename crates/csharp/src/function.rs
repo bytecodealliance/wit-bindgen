@@ -929,7 +929,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         1 => {
                             let mut payload_is_void = false;
                             let mut previous = operands[0].clone();
-                            let mut vars: Vec::<(String, Option<String>)> = Vec::with_capacity(self.results.len());
+                            let mut vars: Vec<(String, Option<String>)> = Vec::with_capacity(self.results.len());
                             if let Direction::Import = self.interface_gen.direction {
                                 for ty in &self.results {
                                     let tmp = self.locals.tmp("tmp");
@@ -1132,7 +1132,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 );
                 self.fixed = self.fixed + 1;
 
-                return format!("{ptr}");
+                format!("{ptr}")
             }
             Direction::Export => {
                 self.interface_gen.csharp_gen.return_area_size =
@@ -1148,7 +1148,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 );
                 self.interface_gen.csharp_gen.needs_export_return_area = true;
 
-                return format!("{ptr}");
+                format!("{ptr}")
             }
         }
     }
@@ -1183,8 +1183,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
         self.blocks.push(Block {
             body: mem::replace(&mut self.src, body),
             results: mem::take(operands),
-            element: element,
-            base: base,
+            element,
+            base,
         });
     }
 
