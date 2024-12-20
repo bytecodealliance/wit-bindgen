@@ -1,15 +1,15 @@
 use heck::{ToLowerCamelCase, ToUpperCamelCase};
 
 pub(crate) trait ToCSharpIdent: ToOwned {
-    fn csharp_keywords() -> Vec<&'static str>;
+    fn csharp_keywords() -> &'static [&'static str];
     fn to_csharp_ident(&self) -> Self::Owned;
     fn to_csharp_ident_upper(&self) -> Self::Owned;
 }
 
 impl ToCSharpIdent for str {
     // Source: https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/keywords/
-    fn csharp_keywords() -> Vec<&'static str> {
-        vec![
+    fn csharp_keywords() ->  &'static [&'static str] {
+        static CSHARP_KEY_WORDS: &[&str] = &[
             "abstract",
             "as",
             "base",
@@ -87,7 +87,8 @@ impl ToCSharpIdent for str {
             "void",
             "volatile",
             "while",
-        ]
+        ];
+        CSHARP_KEY_WORDS
     }
 
     fn to_csharp_ident(&self) -> String {
