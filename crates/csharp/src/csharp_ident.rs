@@ -8,7 +8,7 @@ pub(crate) trait ToCSharpIdent: ToOwned {
 
 impl ToCSharpIdent for str {
     // Source: https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/keywords/
-    fn csharp_keywords() ->  &'static [&'static str] {
+    fn csharp_keywords() -> &'static [&'static str] {
         static CSHARP_KEY_WORDS: &[&str] = &[
             "abstract",
             "as",
