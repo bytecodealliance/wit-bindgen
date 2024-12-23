@@ -95,10 +95,8 @@ pub extern "wasm" fn free(position : Int) =
   #|(func (param i32) local.get 0 i32.const 8 i32.sub call $moonbit.decref)
 
 pub fn copy(dest : Int, src : Int) -> Unit {
-  let src = src - 8
-  let dest = dest - 8
-  let src_len = load32(src + 4).land(0xFFFFFF)
-  let dest_len = load32(dest + 4).land(0xFFFFFF)
+  let src_len = (load32(src - 12) >> 2) - 4
+  let dest_len = (load32(dest - 12) >> 2) - 4
   let min = if src_len < dest_len { src_len } else { dest_len }
   copy_inline(dest, src, min)
 }
