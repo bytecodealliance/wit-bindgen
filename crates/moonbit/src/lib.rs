@@ -977,7 +977,7 @@ impl InterfaceGenerator<'_> {
             self.stub,
             r#"
             {func_sig} {{
-                abort("todo")
+                ...
             }}
             "#
         );
@@ -1263,7 +1263,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 r#"
                 /// Destructor of the resource.
                 pub fn {name}::dtor(_self : {name}) -> Unit {{
-                  abort("todo")
+                  ...
                 }}
                 "#
             );
