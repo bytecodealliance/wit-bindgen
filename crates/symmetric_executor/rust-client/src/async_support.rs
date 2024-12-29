@@ -54,12 +54,35 @@ pub struct Stream {
     pub read_size: usize,
 }
 
+fn read_impl(_stream: *mut (), _buf: *mut (), _size: usize) -> isize {
+    todo!()
+}
+
+fn write_impl(_stream: *mut (), _buf: *mut (), _size: usize) -> isize {
+    todo!()
+}
+
+fn read_close_impl(stream: *mut ()) {
+    todo!()
+}
+
+fn write_close_impl(stream: *mut ()) {
+    todo!()
+}
+
+const STREAM_VTABLE: StreamVtable = StreamVtable{
+    read: read_impl,
+    close_read: read_close_impl,
+    write: write_impl,
+    close_write: write_close_impl,
+};
+
 impl Stream {
     pub fn new() -> Self {
         Self {
-            vtable: todo!(),
-            read_ready_event_send: todo!(),
-            write_ready_event_send: todo!(),
+            vtable: &STREAM_VTABLE as *const StreamVtable,
+            read_ready_event_send: EventGenerator::new().take_handle() as *mut (),
+            write_ready_event_send: EventGenerator::new().take_handle() as *mut (),
             read_addr: core::ptr::null_mut(),
             read_size: 0,
         }
