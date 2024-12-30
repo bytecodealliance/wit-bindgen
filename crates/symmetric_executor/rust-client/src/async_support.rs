@@ -1,10 +1,6 @@
 use futures::{channel::oneshot, task::Waker, FutureExt};
 use std::{
-    any::Any,
-    collections::hash_map::{self, OccupiedEntry},
-    future::Future,
-    pin::Pin,
-    task::{Context, Poll, RawWaker, RawWakerVTable},
+    any::Any, collections::hash_map::{self, OccupiedEntry}, future::Future, pin::Pin, sync::Mutex, task::{Context, Poll, RawWaker, RawWakerVTable}
 };
 
 use crate::module::symmetric::runtime::symmetric_executor::{
@@ -70,7 +66,7 @@ fn write_close_impl(stream: *mut ()) {
     todo!()
 }
 
-const STREAM_VTABLE: StreamVtable = StreamVtable{
+const STREAM_VTABLE: StreamVtable = StreamVtable {
     read: read_impl,
     close_read: read_close_impl,
     write: write_impl,
@@ -214,6 +210,8 @@ pub unsafe fn callback(_ctx: *mut u8, _event0: i32, _event1: i32, _event2: i32) 
     todo!()
 }
 
-pub fn spawn(_future: impl Future<Output = ()> + 'static) {
-    todo!()
+static TASKS: Mutex<Vec<Box<dyn Future<Output = ()> + 'static + Send>>> = Mutex::new(Vec::new());
+
+pub fn spawn(future: impl Future<Output = ()> + 'static + Send) {
+    TASKS.lock().unwrap().push(Box::new(future));
 }

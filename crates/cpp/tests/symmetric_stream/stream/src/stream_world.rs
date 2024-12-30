@@ -630,9 +630,12 @@ mod _rt {
             }
         }
 
+        pub struct StreamHandle2(*mut WitStream);
+        unsafe impl Send for StreamHandle2 {}
+
         /// Represents the writable end of a Component Model `stream`.
         pub struct StreamWriter<T: StreamPayload> {
-            handle: *mut WitStream,
+            handle: StreamHandle2,
             future: Option<Pin<Box<dyn Future<Output = ()> + 'static>>>,
             _phantom: PhantomData<T>,
         }
@@ -650,7 +653,7 @@ mod _rt {
         impl<T: StreamPayload> fmt::Debug for StreamWriter<T> {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 f.debug_struct("StreamWriter")
-                    .field("handle", &self.handle)
+                    .field("handle", &self.handle.0)
                     .finish()
             }
         }
@@ -805,8 +808,8 @@ mod _rt {
 
         /// Represents the readable end of a Component Model `stream`.
         pub struct StreamReader<T: StreamPayload> {
-            handle: *mut WitStream,
-            future: Option<Pin<Box<dyn Future<Output = Option<Vec<T>>> + 'static>>>,
+            handle: StreamHandle2,
+            future: Option<Pin<Box<dyn Future<Output = Option<Vec<T>>> + 'static + Send>>>,
             _phantom: PhantomData<T>,
         }
 
@@ -823,7 +826,7 @@ mod _rt {
         impl<T: StreamPayload> fmt::Debug for StreamReader<T> {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 f.debug_struct("StreamReader")
-                    .field("handle", &self.handle)
+                    .field("handle", &self.handle.0)
                     .finish()
             }
         }
@@ -849,12 +852,11 @@ mod _rt {
                 //   },
                 // });
 
-                // Self {
-                //   handle,
-                //   future: None,
-                //   _phantom: PhantomData,
-                // }
-                todo!()
+                Self {
+                  handle: StreamHandle2(handle),
+                  future: None,
+                  _phantom: PhantomData,
+                }
             }
 
             #[doc(hidden)]
@@ -1003,12 +1005,12 @@ mod _rt {
             let handle = Box::into_raw(Box::new(WitStream::new()));
             (
                 StreamWriter {
-                    handle,
+                    handle: StreamHandle2(handle),
                     future: None,
                     _phantom: PhantomData,
                 },
                 StreamReader {
-                    handle,
+                    handle: StreamHandle2(handle),
                     future: None,
                     _phantom: PhantomData,
                 },
