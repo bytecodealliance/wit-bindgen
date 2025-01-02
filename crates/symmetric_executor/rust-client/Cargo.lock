@@ -367,16 +367,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "symmetric_executor"
-version = "0.1.0"
-dependencies = [
- "futures",
- "libc",
- "wit-bindgen",
- "wit-bindgen-rt",
-]
-
-[[package]]
 name = "syn"
 version = "2.0.90"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -556,7 +546,6 @@ name = "wit-bindgen-symmetric-rt"
 version = "0.36.0"
 dependencies = [
  "futures",
- "symmetric_executor",
  "wit-bindgen",
 ]
 

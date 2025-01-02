@@ -3,10 +3,7 @@ use std::{
     any::Any,
     future::Future,
     pin::Pin,
-    sync::{
-        atomic::{AtomicPtr, AtomicUsize, Ordering},
-        Mutex,
-    },
+    sync::atomic::{AtomicIsize, AtomicPtr, AtomicUsize, Ordering},
     task::{Context, Poll, RawWaker, RawWakerVTable},
 };
 
@@ -45,11 +42,11 @@ pub enum Handle {
 pub struct StreamVtable {
     // magic value for EOF(-1) and block(MIN)
     // asynchronous function, if this blocks wait for read ready event
-    pub read: fn(stream: *mut Stream, buf: *mut (), size: usize) -> isize,
-    pub close_read: fn(stream: *mut Stream),
+    pub read: extern "C" fn(stream: *mut Stream, buf: *mut (), size: usize) -> isize,
+    pub close_read: extern "C" fn(stream: *mut Stream),
 
-    pub write: fn(stream: *mut Stream, buf: *mut (), size: usize) -> isize,
-    pub close_write: fn(stream: *mut Stream),
+    pub write: extern "C" fn(stream: *mut Stream, buf: *mut (), size: usize) -> isize,
+    pub close_write: extern "C" fn(stream: *mut Stream),
     // post WASI 0.3, CPB
     // pub allocate: fn(stream: *mut ()) -> (*mut (), isize),
     // pub publish: fn(stream: *mut (), size: usize),
@@ -62,9 +59,10 @@ pub struct Stream {
     pub write_ready_event_send: *mut (),
     pub read_addr: AtomicPtr<()>,
     pub read_size: AtomicUsize,
+    pub ready_size: AtomicIsize,
 }
 
-fn read_impl(stream: *mut Stream, buf: *mut (), size: usize) -> isize {
+extern "C" fn read_impl(stream: *mut Stream, buf: *mut (), size: usize) -> isize {
     let old_size = unsafe { &mut *stream }
         .read_size
         .swap(size, Ordering::Acquire);
@@ -81,15 +79,15 @@ fn read_impl(stream: *mut Stream, buf: *mut (), size: usize) -> isize {
     isize::MIN
 }
 
-fn write_impl(_stream: *mut Stream, _buf: *mut (), _size: usize) -> isize {
+extern "C" fn write_impl(_stream: *mut Stream, _buf: *mut (), _size: usize) -> isize {
     todo!()
 }
 
-fn read_close_impl(stream: *mut Stream) {
+extern "C" fn read_close_impl(_stream: *mut Stream) {
     todo!()
 }
 
-fn write_close_impl(stream: *mut Stream) {
+extern "C" fn write_close_impl(_stream: *mut Stream) {
     todo!()
 }
 
@@ -108,6 +106,7 @@ impl Stream {
             write_ready_event_send: EventGenerator::new().take_handle() as *mut (),
             read_addr: AtomicPtr::new(core::ptr::null_mut()),
             read_size: AtomicUsize::new(0),
+            ready_size: AtomicIsize::new(0),
         }
     }
 }
@@ -237,8 +236,67 @@ pub unsafe fn callback(_ctx: *mut u8, _event0: i32, _event1: i32, _event2: i32) 
     todo!()
 }
 
-static TASKS: Mutex<Vec<Box<dyn Future<Output = ()> + 'static + Send>>> = Mutex::new(Vec::new());
+// static TASKS: Mutex<Vec<Box<dyn Future<Output = ()> + 'static + Send>>> = Mutex::new(Vec::new());
 
 pub fn spawn(future: impl Future<Output = ()> + 'static + Send) {
-    TASKS.lock().unwrap().push(Box::new(future));
+    let _ = first_poll(future, |()| ());
+    //    TASKS.lock().unwrap().push(Box::new(future));
+}
+
+mod results {
+    pub const BLOCKED: isize = -1;
+    pub const CLOSED: isize = isize::MIN;
+    pub const CANCELED: isize = 0;
+}
+
+// Stream handles are Send, so wrap them
+#[repr(transparent)]
+pub struct StreamHandle2(pub *mut Stream);
+unsafe impl Send for StreamHandle2 {}
+unsafe impl Sync for StreamHandle2 {}
+
+#[repr(transparent)]
+pub struct AddressSend(pub *mut ());
+unsafe impl Send for AddressSend {}
+// unsafe impl Sync for StreamHandle2 {}
+
+// pub enum SubscriptionType {
+//     None,
+//     Read(EventSubscription),
+//     Write(EventSubscription),
+// }
+
+pub struct StreamHandleRust {
+    pub handle: StreamHandle2,
+    pub event: EventSubscription,
+}
+
+pub async unsafe fn await_stream_result(
+    import: unsafe extern "C" fn(*mut Stream, *mut (), usize) -> isize,
+    stream: StreamHandle2,
+    address: AddressSend,
+    count: usize,
+    event: &EventSubscription,
+) -> Option<usize> {
+    let stream_copy = stream.0;
+    let result = import(stream_copy, address.0, count);
+    match result {
+        results::BLOCKED => {
+            // assert!(!CURRENT.is_null());
+            // (*CURRENT).todo += 1;
+            // let (tx, rx) = oneshot::channel();
+            // CALLS.insert(stream as _, tx);
+            wait_on(event).await;
+            let v = unsafe { &mut *stream.0 }
+                .ready_size
+                .swap(0, Ordering::SeqCst);
+            if let results::CLOSED | results::CANCELED = v {
+                None
+            } else {
+                Some(usize::try_from(v).unwrap())
+            }
+        }
+        results::CLOSED | results::CANCELED => None,
+        v => Some(usize::try_from(v).unwrap()),
+    }
 }

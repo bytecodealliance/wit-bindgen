@@ -11,6 +11,12 @@ pub mod test {
             static __FORCE_SECTION_REF: fn() =
                 super::super::super::__link_custom_section_describing_imports;
 
+            // use _rt::stream_and_future_support::StreamHandle2;
+            use wit_bindgen_symmetric_rt::{
+                async_support::{AddressSend, StreamHandle2, StreamHandleRust},
+                // subscribe_event_send_ptr,
+            };
+
             use super::super::super::_rt;
             use _rt::stream_and_future_support::WitStream;
 
@@ -27,7 +33,7 @@ pub mod test {
                     }
                 }
 
-                async fn write(stream: *mut WitStream, values: &[Self]) -> Option<usize> {
+                async fn write(_stream: &StreamHandleRust, _values: &[Self]) -> Option<usize> {
                     {
                         // let address = values.as_ptr() as _;
 
@@ -45,31 +51,51 @@ pub mod test {
                 }
 
                 async fn read(
-                    stream: *mut WitStream,
+                    stream: &StreamHandleRust,
                     values: &mut [::core::mem::MaybeUninit<Self>],
                 ) -> Option<usize> {
                     {
-                        // let address = values.as_mut_ptr() as _;
                         // #[link(wasm_import_module = "[import-payload]test:test/stream-source")]
                         // extern "C" {
                         //   #[link_name = "[async][stream-read-0]create"]
                         //   fn wit_import(_: u32, _: *mut u8, _: u32) -> u32;
                         // }
-
-                        // let count = unsafe {
-                        //   ::wit_bindgen_symmetric_rt::async_support::await_stream_result(wit_import, stream, address, u32::try_from(values.len()).unwrap()).await
-                        // };
-                        // #[allow(unused)]
-                        // if let Some(count) = count {
-                        //   let value = ();
-
+                        let poll_fn = unsafe { &*((&*(stream.handle.0)).vtable) }.read;
+                        // match &stream.event {
+                        //     SubscriptionType::None => {
+                        //         let subscr = unsafe {
+                        //             subscribe_event_send_ptr(
+                        //                 (&mut *stream.handle.0).read_ready_event_send,
+                        //             )
+                        //         };
+                        //         stream.event = SubscriptionType::Read(subscr)
+                        //     }
+                        //     SubscriptionType::Read(_event_subscription) => (),
+                        //     SubscriptionType::Write(_event_subscription) => unreachable!(),
                         // }
-                        // count
-                        todo!()
+                        // let SubscriptionType::Read(subscr) = &stream.event else {
+                        //     unreachable!()
+                        // };
+                        let address = AddressSend(values.as_mut_ptr() as _);
+                        let count = unsafe {
+                            ::wit_bindgen_symmetric_rt::async_support::await_stream_result(
+                                poll_fn,
+                                StreamHandle2(stream.handle.0),
+                                address,
+                                values.len(),
+                                &stream.event,
+                            )
+                            .await
+                        };
+                        #[allow(unused)]
+                        if let Some(count) = count {
+                            let value = ();
+                        }
+                        count
                     }
                 }
 
-                fn cancel_write(writer: *mut WitStream) {
+                fn cancel_write(_writer: *mut WitStream) {
                     {
                         // #[link(wasm_import_module = "[import-payload]test:test/stream-source")]
                         // extern "C" {
@@ -81,7 +107,7 @@ pub mod test {
                     }
                 }
 
-                fn cancel_read(reader: *mut WitStream) {
+                fn cancel_read(_reader: *mut WitStream) {
                     {
                         // #[link(wasm_import_module = "[import-payload]test:test/stream-source")]
                         // extern "C" {
@@ -93,7 +119,7 @@ pub mod test {
                     }
                 }
 
-                fn close_writable(writer: *mut WitStream) {
+                fn close_writable(_writer: *mut WitStream) {
                     {
                         // #[link(wasm_import_module = "[import-payload]test:test/stream-source")]
                         // extern "C" {
@@ -105,7 +131,7 @@ pub mod test {
                     }
                 }
 
-                fn close_readable(reader: *mut WitStream) {
+                fn close_readable(_reader: *mut WitStream) {
                     {
                         // #[link(wasm_import_module = "[import-payload]test:test/stream-source")]
                         // extern "C" {
@@ -232,15 +258,18 @@ mod _rt {
     #![allow(dead_code, clippy::all)]
     pub mod stream_and_future_support {
         pub use wit_bindgen_symmetric_rt::async_support::Stream as WitStream;
+        pub use wit_bindgen_symmetric_rt::async_support::StreamHandle2;
+        use wit_bindgen_symmetric_rt::async_support::StreamHandleRust;
+        use wit_bindgen_symmetric_rt::EventSubscription;
         use {
             futures::{
-                channel::oneshot,
-                future::{self, FutureExt},
+                // channel::oneshot,
+                future::FutureExt,
                 sink::Sink,
                 stream::Stream,
             },
             std::{
-                collections::hash_map::Entry,
+                // collections::hash_map::Entry,
                 convert::Infallible,
                 fmt,
                 future::{Future, IntoFuture},
@@ -250,7 +279,7 @@ mod _rt {
                 pin::Pin,
                 task::{Context, Poll},
             },
-            wit_bindgen_symmetric_rt::async_support::{self, Handle},
+            // wit_bindgen_symmetric_rt::async_support::{self, Handle},
         };
 
         #[doc(hidden)]
@@ -337,7 +366,7 @@ mod _rt {
 
         impl<T: FuturePayload> FutureWriter<T> {
             /// Write the specified value to this `future`.
-            pub fn write(self, v: T) -> CancelableWrite<T> {
+            pub fn write(self, _v: T) -> CancelableWrite<T> {
                 // let handle = self.handle;
                 // CancelableWrite {
                 //   writer: Some(self),
@@ -475,7 +504,7 @@ mod _rt {
 
         impl<T: FuturePayload> FutureReader<T> {
             #[doc(hidden)]
-            pub fn from_handle(handle: u32) -> Self {
+            pub fn from_handle(_handle: u32) -> Self {
                 // async_support::with_entry(handle, |entry| match entry {
                 //   Entry::Vacant(entry) => {
                 //     entry.insert(Handle::Read);
@@ -586,11 +615,14 @@ mod _rt {
         #[doc(hidden)]
         pub trait StreamPayload: Unpin + Sized + 'static {
             fn new() -> *mut WitStream;
-            async fn write(stream: *mut WitStream, values: &[Self]) -> Option<usize>;
-            async fn read(
-                stream: *mut WitStream,
+            fn write(
+                stream: &StreamHandleRust,
+                values: &[Self],
+            ) -> impl std::future::Future<Output = Option<usize>> + Send;
+            fn read(
+                stream: &StreamHandleRust,
                 values: &mut [MaybeUninit<Self>],
-            ) -> Option<usize>;
+            ) -> impl std::future::Future<Output = Option<usize>> + Send;
             fn cancel_write(stream: *mut WitStream);
             fn cancel_read(stream: *mut WitStream);
             fn close_writable(stream: *mut WitStream);
@@ -622,9 +654,6 @@ mod _rt {
                 todo!()
             }
         }
-
-        pub struct StreamHandle2(*mut WitStream);
-        unsafe impl Send for StreamHandle2 {}
 
         /// Represents the writable end of a Component Model `stream`.
         pub struct StreamWriter<T: StreamPayload> {
@@ -670,7 +699,7 @@ mod _rt {
                 }
             }
 
-            fn start_send(self: Pin<&mut Self>, item: Vec<T>) -> Result<(), Self::Error> {
+            fn start_send(self: Pin<&mut Self>, _item: Vec<T>) -> Result<(), Self::Error> {
                 // assert!(self.future.is_none());
                 // async_support::with_entry(self.handle, |entry| match entry {
                 //   Entry::Vacant(_) => unreachable!(),
@@ -803,6 +832,7 @@ mod _rt {
         pub struct StreamReader<T: StreamPayload> {
             handle: StreamHandle2,
             future: Option<Pin<Box<dyn Future<Output = Option<Vec<T>>> + 'static + Send>>>,
+            event: Option<EventSubscription>,
             _phantom: PhantomData<T>,
         }
 
@@ -848,6 +878,7 @@ mod _rt {
                 Self {
                     handle: StreamHandle2(handle),
                     future: None,
+                    event: None,
                     _phantom: PhantomData,
                 }
             }
@@ -873,13 +904,38 @@ mod _rt {
             }
         }
 
-        impl<T: StreamPayload> Stream for StreamReader<T> {
+        impl<T: StreamPayload + Send> Stream for StreamReader<T> {
             type Item = Vec<T>;
 
             fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-                // let me = self.get_mut();
+                let me = self.get_mut();
 
-                // if me.future.is_none() {
+                if me.future.is_none() {
+                    // assumption: future doesn't outlive stream
+                    let handle = StreamHandle2(me.handle.0);
+                    let event = unsafe {
+                        EventSubscription::from_handle(me.event.as_ref().map_or(0, |e| e.handle()))
+                    };
+                    me.future = Some(Box::pin(async move {
+                        let mut buffer = iter::repeat_with(MaybeUninit::uninit)
+                            .take(ceiling(4 * 1024, mem::size_of::<T>()))
+                            .collect::<Vec<_>>();
+                        let stream_handle = StreamHandleRust { handle, event };
+                        let result = if let Some(count) = T::read(&stream_handle, &mut buffer).await
+                        {
+                            buffer.truncate(count);
+                            Some(unsafe { mem::transmute::<Vec<MaybeUninit<T>>, Vec<T>>(buffer) })
+                        } else {
+                            None
+                        };
+                        let _ = stream_handle.event.take_handle();
+                        //   cancel_on_drop.handle = None;
+                        //   drop(cancel_on_drop);
+                        result
+                        // T::read(me.handle.0, &mut buffer)
+                    })
+                        as Pin<Box<dyn Future<Output = _> + Send>>);
+                }
                 //   me.future = Some(async_support::with_entry(me.handle, |entry| match entry {
                 //     Entry::Vacant(_) => unreachable!(),
                 //     Entry::Occupied(mut entry) => match entry.get() {
@@ -934,14 +990,13 @@ mod _rt {
                 //   }));
                 // }
 
-                // match me.future.as_mut().unwrap().as_mut().poll(cx) {
-                //   Poll::Ready(v) => {
-                //     me.future = None;
-                //     Poll::Ready(v)
-                //   }
-                //   Poll::Pending => Poll::Pending,
-                // }
-                todo!()
+                match me.future.as_mut().unwrap().as_mut().poll(cx) {
+                    Poll::Ready(v) => {
+                        me.future = None;
+                        Poll::Ready(v)
+                    }
+                    Poll::Pending => Poll::Pending,
+                }
             }
         }
 
@@ -1006,6 +1061,7 @@ mod _rt {
                 StreamReader {
                     handle: StreamHandle2(handle),
                     future: None,
+                    event: None,
                     _phantom: PhantomData,
                 },
             )

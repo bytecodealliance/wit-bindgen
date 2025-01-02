@@ -2,10 +2,7 @@
 
 use std::pin::pin;
 
-use wit_bindgen_symmetric_rt::{
-    async_support::{self, Stream},
-    CallbackState,
-};
+use wit_bindgen_symmetric_rt::{async_support::Stream, CallbackState};
 
 #[link(name = "stream")]
 extern "C" {
@@ -15,7 +12,7 @@ extern "C" {
     ) -> *mut ();
 }
 
-extern "C" fn ready(arg: *mut ()) -> CallbackState {
+extern "C" fn ready(_arg: *mut ()) -> CallbackState {
     todo!()
 }
 

@@ -550,26 +550,26 @@ mod _rt {
         }
     }
     pub mod stream_and_future_support {
-        use crate as wit_bindgen_symmetric_rt;
+        // use crate as wit_bindgen_symmetric_rt;
         use {
             futures::{
-                channel::oneshot,
-                future::{self, FutureExt},
+                // channel::oneshot,
+                // future::{self, FutureExt},
                 sink::Sink,
                 stream::Stream,
             },
             std::{
-                collections::hash_map::Entry,
+                // collections::hash_map::Entry,
                 convert::Infallible,
                 fmt,
-                future::{Future, IntoFuture},
-                iter,
+                future::Future,
+                // iter,
                 marker::PhantomData,
-                mem::{self, ManuallyDrop, MaybeUninit},
+                mem::MaybeUninit,
                 pin::Pin,
                 task::{Context, Poll},
             },
-            wit_bindgen_symmetric_rt::async_support::{self, Handle},
+            // wit_bindgen_symmetric_rt::async_support::{self, Handle},
         };
 
         // #[doc(hidden)]
@@ -986,7 +986,7 @@ mod _rt {
                 }
             }
 
-            fn start_send(self: Pin<&mut Self>, item: Vec<T>) -> Result<(), Self::Error> {
+            fn start_send(self: Pin<&mut Self>, _item: Vec<T>) -> Result<(), Self::Error> {
                 // assert!(self.future.is_none());
                 // async_support::with_entry(self.handle, |entry| match entry {
                 //     Entry::Vacant(_) => unreachable!(),
@@ -1143,7 +1143,7 @@ mod _rt {
 
         impl<T: StreamPayload> StreamReader<T> {
             #[doc(hidden)]
-            pub fn from_handle(handle: u32) -> Self {
+            pub fn from_handle(_handle: u32) -> Self {
                 todo!()
                 // async_support::with_entry(handle, |entry| match entry {
                 //     Entry::Vacant(entry) => {
@@ -1195,7 +1195,7 @@ mod _rt {
         impl<T: StreamPayload> Stream for StreamReader<T> {
             type Item = Vec<T>;
 
-            fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+            fn poll_next(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<Option<Self::Item>> {
                 // let me = self.get_mut();
 
                 // if me.future.is_none() {

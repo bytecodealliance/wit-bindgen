@@ -2,7 +2,6 @@ use module::symmetric::runtime::symmetric_executor::{self, CallbackData, Callbac
 pub use module::symmetric::runtime::symmetric_executor::{
     run, CallbackState, EventGenerator, EventSubscription,
 };
-use std::sync::Arc;
 
 pub mod async_support;
 mod module;
