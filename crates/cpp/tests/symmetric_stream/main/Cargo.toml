@@ -6,3 +6,4 @@ edition = "2021"
 [dependencies]
 stream = { version = "0.1.0", path = "../stream" }
 symmetric_executor = { version = "0.1.0", path = "../../../../symmetric_executor" }
+wit-bindgen-symmetric-rt = { version = "0.36.0", path = "../../../../symmetric_executor/rust-client" }

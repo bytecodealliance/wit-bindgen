@@ -1,11 +1,18 @@
 use futures::{channel::oneshot, task::Waker, FutureExt};
 use std::{
-    any::Any, collections::hash_map::{self, OccupiedEntry}, future::Future, pin::Pin, sync::Mutex, task::{Context, Poll, RawWaker, RawWakerVTable}
+    any::Any, future::Future, pin::Pin, sync::Mutex, task::{Context, Poll, RawWaker, RawWakerVTable}
 };
 
 use crate::module::symmetric::runtime::symmetric_executor::{
     self, CallbackState, EventGenerator, EventSubscription,
 };
+
+// See https://github.com/rust-lang/rust/issues/13231 for the limitation
+// / Send constraint on futures for spawn, loosen later
+// pub unsafe auto trait MaybeSend : Send {}
+// unsafe impl<T> MaybeSend for T where T: Send {}
+
+// pub trait FutureMaybeSend<T> : Future<Output = T> + MaybeSend {}
 
 type BoxFuture = Pin<Box<dyn Future<Output = ()> + 'static>>;
 
@@ -31,11 +38,11 @@ pub enum Handle {
 pub struct StreamVtable {
     // magic value for EOF(-1) and block(-MAX)
     // asynchronous function, if this blocks wait for read ready event
-    pub read: fn(stream: *mut (), buf: *mut (), size: usize) -> isize,
-    pub close_read: fn(stream: *mut ()),
+    pub read: fn(stream: *mut Stream, buf: *mut (), size: usize) -> isize,
+    pub close_read: fn(stream: *mut Stream),
 
-    pub write: fn(stream: *mut (), buf: *mut (), size: usize) -> isize,
-    pub close_write: fn(stream: *mut ()),
+    pub write: fn(stream: *mut Stream, buf: *mut (), size: usize) -> isize,
+    pub close_write: fn(stream: *mut Stream),
     // post WASI 0.3, CPB
     // pub allocate: fn(stream: *mut ()) -> (*mut (), isize),
     // pub publish: fn(stream: *mut (), size: usize),
@@ -50,19 +57,19 @@ pub struct Stream {
     pub read_size: usize,
 }
 
-fn read_impl(_stream: *mut (), _buf: *mut (), _size: usize) -> isize {
+fn read_impl(_stream: *mut Stream, _buf: *mut (), _size: usize) -> isize {
     todo!()
 }
 
-fn write_impl(_stream: *mut (), _buf: *mut (), _size: usize) -> isize {
+fn write_impl(_stream: *mut Stream, _buf: *mut (), _size: usize) -> isize {
     todo!()
 }
 
-fn read_close_impl(stream: *mut ()) {
+fn read_close_impl(stream: *mut Stream) {
     todo!()
 }
 
-fn write_close_impl(stream: *mut ()) {
+fn write_close_impl(stream: *mut Stream) {
     todo!()
 }
 

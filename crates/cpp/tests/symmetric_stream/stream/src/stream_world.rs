@@ -176,25 +176,18 @@ pub mod exports {
                 #[allow(non_snake_case)]
                 pub unsafe fn _export_create_cabi<T: Guest>(
                     _args: *mut u8,
-                    _results: *mut u8,
+                    results: *mut u8,
                 ) -> *mut u8 {
                     #[cfg(target_arch = "wasm32")]
                     _rt::run_ctors_once();
                     let result0 = T::create();
-                    let result =
-                        ::wit_bindgen_symmetric_rt::async_support::first_poll(result0, |result1| {
-                            #[link(wasm_import_module = "[export]test:test/stream-test")]
-                            extern "C" {
-                                #[cfg_attr(
-                                    target_arch = "wasm32",
-                                    link_name = "[task-return]create"
-                                )]
-                                fn X5BexportX5DtestX3AtestX2Fstream_testX00X5Btask_returnX5Dcreate(
-                                    _: i32,
-                                );
-                            }
-                            // X5BexportX5DtestX3AtestX2Fstream_testX00X5Btask_returnX5Dcreate((result1).into_handle() as i32);
-                        });
+                    let result = ::wit_bindgen_symmetric_rt::async_support::first_poll(
+                        result0,
+                        move |result1| {
+                            let outptr = results.cast::<*mut ()>();
+                            *(unsafe { &mut *outptr }) = result1.into_handle().cast();
+                        },
+                    );
 
                     result.cast()
                 }
@@ -636,7 +629,7 @@ mod _rt {
         /// Represents the writable end of a Component Model `stream`.
         pub struct StreamWriter<T: StreamPayload> {
             handle: StreamHandle2,
-            future: Option<Pin<Box<dyn Future<Output = ()> + 'static>>>,
+            future: Option<Pin<Box<dyn Future<Output = ()> + 'static + Send>>>,
             _phantom: PhantomData<T>,
         }
 
@@ -853,9 +846,9 @@ mod _rt {
                 // });
 
                 Self {
-                  handle: StreamHandle2(handle),
-                  future: None,
-                  _phantom: PhantomData,
+                    handle: StreamHandle2(handle),
+                    future: None,
+                    _phantom: PhantomData,
                 }
             }
 
@@ -875,7 +868,8 @@ mod _rt {
                 // });
 
                 // ManuallyDrop::new(self).handle
-                todo!()
+                // todo!()
+                ManuallyDrop::new(self).handle.0
             }
         }
 

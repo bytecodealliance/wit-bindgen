@@ -1,5 +1,6 @@
 use module::symmetric::runtime::symmetric_executor::{self, CallbackData, CallbackFunction};
-pub use module::symmetric::runtime::symmetric_executor::{run, CallbackState, EventSubscription};
+pub use module::symmetric::runtime::symmetric_executor::{run, CallbackState, EventSubscription, EventGenerator};
+use std::sync::Arc;
 
 pub mod async_support;
 mod module;
@@ -22,4 +23,13 @@ fn cabi_realloc_wit_bindgen_0_36_0(
     _new_len: usize,
 ) -> *mut u8 {
     todo!()
+}
+
+pub unsafe fn subscribe_event_send_ptr(event_send: *mut ()) -> EventSubscription {
+    let gen: EventGenerator = unsafe { EventGenerator::from_handle(event_send as usize) };
+    // (unsafe {Arc::from_raw(event_send.cast()) });
+    let subscription = gen.subscribe();
+    // avoid consuming the generator
+    std::mem::forget(gen);
+    subscription
 }
