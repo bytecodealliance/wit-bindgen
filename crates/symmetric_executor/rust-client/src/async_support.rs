@@ -76,7 +76,7 @@ extern "C" fn read_impl(stream: *mut Stream, buf: *mut (), size: usize) -> isize
     gen.activate();
     // don't consume
     let _ = gen.take_handle();
-    isize::MIN
+    results::BLOCKED
 }
 
 extern "C" fn write_impl(_stream: *mut Stream, _buf: *mut (), _size: usize) -> isize {
