@@ -260,6 +260,7 @@ mod _rt {
         pub use wit_bindgen_symmetric_rt::async_support::Stream as WitStream;
         pub use wit_bindgen_symmetric_rt::async_support::StreamHandle2;
         use wit_bindgen_symmetric_rt::async_support::StreamHandleRust;
+        use wit_bindgen_symmetric_rt::subscribe_event_send_ptr;
         use wit_bindgen_symmetric_rt::EventSubscription;
         use {
             futures::{
@@ -832,7 +833,7 @@ mod _rt {
         pub struct StreamReader<T: StreamPayload> {
             handle: StreamHandle2,
             future: Option<Pin<Box<dyn Future<Output = Option<Vec<T>>> + 'static + Send>>>,
-            event: Option<EventSubscription>,
+            event: EventSubscription,
             _phantom: PhantomData<T>,
         }
 
@@ -875,10 +876,12 @@ mod _rt {
                 //   },
                 // });
 
+                let subscr =
+                    unsafe { subscribe_event_send_ptr((&mut *handle).read_ready_event_send) };
                 Self {
                     handle: StreamHandle2(handle),
                     future: None,
-                    event: None,
+                    event: subscr,
                     _phantom: PhantomData,
                 }
             }
@@ -913,9 +916,8 @@ mod _rt {
                 if me.future.is_none() {
                     // assumption: future doesn't outlive stream
                     let handle = StreamHandle2(me.handle.0);
-                    let event = unsafe {
-                        EventSubscription::from_handle(me.event.as_ref().map_or(0, |e| e.handle()))
-                    };
+                    // duplicate handle (same assumption)
+                    let event = unsafe { EventSubscription::from_handle(me.event.handle()) };
                     me.future = Some(Box::pin(async move {
                         let mut buffer = iter::repeat_with(MaybeUninit::uninit)
                             .take(ceiling(4 * 1024, mem::size_of::<T>()))
@@ -1058,12 +1060,7 @@ mod _rt {
                     future: None,
                     _phantom: PhantomData,
                 },
-                StreamReader {
-                    handle: StreamHandle2(handle),
-                    future: None,
-                    event: None,
-                    _phantom: PhantomData,
-                },
+                StreamReader::from_handle(handle),
             )
         }
 
