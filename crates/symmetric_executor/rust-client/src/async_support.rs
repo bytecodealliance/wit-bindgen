@@ -1,6 +1,13 @@
 use futures::{channel::oneshot, task::Waker, FutureExt};
 use std::{
-    any::Any, future::Future, pin::Pin, sync::Mutex, task::{Context, Poll, RawWaker, RawWakerVTable}
+    any::Any,
+    future::Future,
+    pin::Pin,
+    sync::{
+        atomic::{AtomicPtr, AtomicUsize, Ordering},
+        Mutex,
+    },
+    task::{Context, Poll, RawWaker, RawWakerVTable},
 };
 
 use crate::module::symmetric::runtime::symmetric_executor::{
@@ -36,7 +43,7 @@ pub enum Handle {
 
 #[repr(C)]
 pub struct StreamVtable {
-    // magic value for EOF(-1) and block(-MAX)
+    // magic value for EOF(-1) and block(MIN)
     // asynchronous function, if this blocks wait for read ready event
     pub read: fn(stream: *mut Stream, buf: *mut (), size: usize) -> isize,
     pub close_read: fn(stream: *mut Stream),
@@ -53,12 +60,25 @@ pub struct Stream {
     pub vtable: *const StreamVtable,
     pub read_ready_event_send: *mut (),
     pub write_ready_event_send: *mut (),
-    pub read_addr: *mut (),
-    pub read_size: usize,
+    pub read_addr: AtomicPtr<()>,
+    pub read_size: AtomicUsize,
 }
 
-fn read_impl(_stream: *mut Stream, _buf: *mut (), _size: usize) -> isize {
-    todo!()
+fn read_impl(stream: *mut Stream, buf: *mut (), size: usize) -> isize {
+    let old_size = unsafe { &mut *stream }
+        .read_size
+        .swap(size, Ordering::Acquire);
+    assert_eq!(old_size, 0);
+    let old_ptr = unsafe { &mut *stream }
+        .read_addr
+        .swap(buf, Ordering::Release);
+    assert_eq!(old_ptr, std::ptr::null_mut());
+    let write_evt = unsafe { &mut *stream }.write_ready_event_send;
+    let gen: EventGenerator = unsafe { EventGenerator::from_handle(write_evt as usize) };
+    gen.activate();
+    // don't consume
+    let _ = gen.take_handle();
+    isize::MIN
 }
 
 fn write_impl(_stream: *mut Stream, _buf: *mut (), _size: usize) -> isize {
@@ -86,8 +106,8 @@ impl Stream {
             vtable: &STREAM_VTABLE as *const StreamVtable,
             read_ready_event_send: EventGenerator::new().take_handle() as *mut (),
             write_ready_event_send: EventGenerator::new().take_handle() as *mut (),
-            read_addr: core::ptr::null_mut(),
-            read_size: 0,
+            read_addr: AtomicPtr::new(core::ptr::null_mut()),
+            read_size: AtomicUsize::new(0),
         }
     }
 }
