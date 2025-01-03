@@ -60,6 +60,12 @@ impl symmetric_executor::GuestEventGenerator for EventGenerator {
 
     fn subscribe(&self) -> symmetric_executor::EventSubscription {
         let event_fd = unsafe { libc::eventfd(0, libc::EFD_NONBLOCK) };
+        if DEBUGGING {
+            println!(
+                "subscribe({:x}) fd={event_fd}",
+                Arc::as_ptr(&self.0) as usize
+            );
+        }
         self.0.lock().unwrap().waiting.push(event_fd);
         symmetric_executor::EventSubscription::new(EventSubscription {
             inner: EventType::Triggered {
@@ -72,6 +78,9 @@ impl symmetric_executor::GuestEventGenerator for EventGenerator {
     }
 
     fn activate(&self) {
+        if DEBUGGING {
+            println!("activate({:x})", Arc::as_ptr(&self.0) as usize);
+        }
         if let Ok(mut event) = self.0.lock() {
             event.counter += 1;
             let file_signal: u64 = 1;
@@ -125,7 +134,11 @@ impl symmetric_executor::Guest for Guest {
                 ex.active_tasks.iter_mut().for_each(|task| {
                     if task.ready() {
                         if DEBUGGING {
-                            println!("task ready {} {}", task.callback.as_ref().unwrap().0 as usize, task.callback.as_ref().unwrap().1 as usize);
+                            println!(
+                                "task ready {:x} {:x}",
+                                task.callback.as_ref().unwrap().0 as usize,
+                                task.callback.as_ref().unwrap().1 as usize
+                            );
                         }
                         task.callback.take_if(|CallbackEntry(f, data)| {
                             matches!((f)(*data), CallbackState::Ready)
@@ -172,9 +185,20 @@ impl symmetric_executor::Guest for Guest {
             // with no work left the break should have occured
             assert!(!tvptr.is_null() || maxfd > 0);
             if DEBUGGING {
-                println!("select({maxfd}, {:x}, {}.{})", unsafe {*rfd_ptr.cast::<u32>()}, wait.tv_sec, wait.tv_usec);
+                if tvptr.is_null() {
+                    println!("select({maxfd}, {:x}, null)", unsafe {
+                        *rfd_ptr.cast::<u32>()
+                    },);
+                } else {
+                    println!(
+                        "select({maxfd}, {:x}, {}.{})",
+                        unsafe { *rfd_ptr.cast::<u32>() },
+                        wait.tv_sec,
+                        wait.tv_usec
+                    );
+                }
             }
-                let selectresult = unsafe {
+            let selectresult = unsafe {
                 libc::select(
                     maxfd,
                     rfd_ptr,
@@ -214,9 +238,6 @@ impl symmetric_executor::Guest for Guest {
     ) -> () {
         // TODO: Tidy this mess up
         // Note: Trigger is consumed, callback and data are managed elsewhere
-        if DEBUGGING {
-            println!("register({:x}, {:x},{:x})", trigger.handle(), callback.handle(), data.handle());
-        }
         let mut subscr = EventSubscription {
             inner: EventType::SystemTime(std::time::UNIX_EPOCH),
             callback: None,
@@ -225,6 +246,30 @@ impl symmetric_executor::Guest for Guest {
             // TODO: This should be handle to free the resource, but it is used later?
             &mut *(trigger.take_handle() as *mut EventSubscription)
         });
+        if DEBUGGING {
+            match &subscr.inner {
+                EventType::Triggered {
+                    last_counter: _,
+                    event_fd,
+                    event,
+                } => println!(
+                    "register(Triggered {:x} fd {event_fd}, {:x},{:x})",
+                    Arc::as_ptr(event) as usize,
+                    callback.handle(),
+                    data.handle()
+                ),
+                EventType::SystemTime(system_time) => {
+                    let diff = system_time.duration_since(SystemTime::now()).unwrap();
+                    println!(
+                        "register(Time {}.{}, {:x},{:x})",
+                        diff.as_secs(),
+                        diff.subsec_nanos(),
+                        callback.handle(),
+                        data.handle()
+                    );
+                }
+            }
+        }
         let cb: fn(*mut ()) -> CallbackState = unsafe { transmute(callback.take_handle()) };
         let data = data.take_handle() as *mut ();
         subscr.callback.replace(CallbackEntry(cb, data));

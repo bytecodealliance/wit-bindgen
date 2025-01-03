@@ -185,6 +185,7 @@ mod _rt {
     }
     pub use alloc_crate::string::String;
     // pub use alloc_crate::vec::Vec;
+    #[cfg(target_arch = "never")]
     pub mod stream_and_future_support {
         use {
             futures::{
@@ -974,7 +975,7 @@ mod _rt {
     extern crate alloc as alloc_crate;
 }
 #[allow(unused_imports)]
-pub use _rt::stream_and_future_support;
+// pub use _rt::stream_and_future_support;
 
 /// Generates `#[no_mangle]` functions to export the specified type as the
 /// root implementation of all generated traits.
