@@ -9,6 +9,8 @@ use executor::exports::symmetric::runtime::symmetric_executor::{
     self, CallbackState, GuestEventSubscription,
 };
 
+const DEBUGGING: bool = true;
+
 mod executor;
 
 struct Guest;
@@ -122,6 +124,9 @@ impl symmetric_executor::Guest for Guest {
                 let mut ex = EXECUTOR.lock().unwrap();
                 ex.active_tasks.iter_mut().for_each(|task| {
                     if task.ready() {
+                        if DEBUGGING {
+                            println!("task ready {} {}", task.callback.as_ref().unwrap().0 as usize, task.callback.as_ref().unwrap().1 as usize);
+                        }
                         task.callback.take_if(|CallbackEntry(f, data)| {
                             matches!((f)(*data), CallbackState::Ready)
                         });
@@ -166,7 +171,10 @@ impl symmetric_executor::Guest for Guest {
             }
             // with no work left the break should have occured
             assert!(!tvptr.is_null() || maxfd > 0);
-            let selectresult = unsafe {
+            if DEBUGGING {
+                println!("select({maxfd}, {:x}, {}.{})", unsafe {*rfd_ptr.cast::<u32>()}, wait.tv_sec, wait.tv_usec);
+            }
+                let selectresult = unsafe {
                 libc::select(
                     maxfd,
                     rfd_ptr,
@@ -206,6 +214,9 @@ impl symmetric_executor::Guest for Guest {
     ) -> () {
         // TODO: Tidy this mess up
         // Note: Trigger is consumed, callback and data are managed elsewhere
+        if DEBUGGING {
+            println!("register({:x}, {:x},{:x})", trigger.handle(), callback.handle(), data.handle());
+        }
         let mut subscr = EventSubscription {
             inner: EventType::SystemTime(std::time::UNIX_EPOCH),
             callback: None,
