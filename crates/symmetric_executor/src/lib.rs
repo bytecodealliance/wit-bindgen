@@ -1,7 +1,10 @@
 use std::{
     ffi::c_int,
     mem::transmute,
-    sync::{atomic::AtomicU32, Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, AtomicU32},
+        Arc, Mutex,
+    },
     time::{Duration, SystemTime},
 };
 
@@ -110,6 +113,9 @@ struct Executor {
 static EXECUTOR: Mutex<Executor> = Mutex::new(Executor {
     active_tasks: Vec::new(),
 });
+// while executing tasks from the loop we can't directly queue new ones
+static EXECUTOR_BUSY: AtomicBool = AtomicBool::new(false);
+static NEW_TASKS: Mutex<Vec<EventSubscription>> = Mutex::new(Vec::new());
 
 impl symmetric_executor::Guest for Guest {
     type CallbackFunction = Ignore;
@@ -131,6 +137,8 @@ impl symmetric_executor::Guest for Guest {
             unsafe { libc::FD_ZERO(rfd_ptr) };
             {
                 let mut ex = EXECUTOR.lock().unwrap();
+                let old_busy = EXECUTOR_BUSY.swap(true, std::sync::atomic::Ordering::SeqCst);
+                assert!(!old_busy);
                 ex.active_tasks.iter_mut().for_each(|task| {
                     if task.ready() {
                         if DEBUGGING {
@@ -177,7 +185,17 @@ impl symmetric_executor::Guest for Guest {
                         }
                     }
                 });
+                let old_busy = EXECUTOR_BUSY.swap(false, std::sync::atomic::Ordering::SeqCst);
+                assert!(old_busy);
                 ex.active_tasks.retain(|task| task.callback.is_some());
+                {
+                    let mut new_tasks = NEW_TASKS.lock().unwrap();
+                    if !new_tasks.is_empty() {
+                        ex.active_tasks.append(&mut new_tasks);
+                        // collect callbacks and timeouts again
+                        continue;
+                    }
+                }
                 if ex.active_tasks.is_empty() {
                     break;
                 }
@@ -273,7 +291,17 @@ impl symmetric_executor::Guest for Guest {
         let cb: fn(*mut ()) -> CallbackState = unsafe { transmute(callback.take_handle()) };
         let data = data.take_handle() as *mut ();
         subscr.callback.replace(CallbackEntry(cb, data));
-        EXECUTOR.lock().unwrap().active_tasks.push(subscr);
+        match EXECUTOR.try_lock() {
+            Ok(mut lock) => lock.active_tasks.push(subscr),
+            Err(_err) => {
+                if EXECUTOR_BUSY.load(std::sync::atomic::Ordering::Relaxed) {
+                    NEW_TASKS.lock().unwrap().push(subscr);
+                } else {
+                    // actually this is unlikely, but give it a try
+                    EXECUTOR.lock().unwrap().active_tasks.push(subscr);
+                }
+            }
+        }
     }
 }
 

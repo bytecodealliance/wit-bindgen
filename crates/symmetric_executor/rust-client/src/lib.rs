@@ -34,3 +34,10 @@ pub unsafe fn subscribe_event_send_ptr(event_send: *mut ()) -> EventSubscription
     std::mem::forget(gen);
     subscription
 }
+
+pub unsafe fn activate_event_send_ptr(event_send: *mut ()) {
+    let gen: EventGenerator = unsafe { EventGenerator::from_handle(event_send as usize) };
+    gen.activate();
+    // avoid consuming the generator
+    std::mem::forget(gen);
+}
