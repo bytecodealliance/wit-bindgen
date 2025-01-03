@@ -147,8 +147,8 @@ pub mod test {
             #[allow(unused_unsafe, clippy::all)]
             pub async fn create() -> _rt::stream_and_future_support::StreamReader<u32> {
                 unsafe {
-                    let layout0 = _rt::alloc::Layout::from_size_align_unchecked(0, 1);
-                    let ptr0 = _rt::alloc::alloc(layout0);
+                    // let layout0 = _rt::alloc::Layout::from_size_align_unchecked(0, 1);
+                    let ptr0 = core::ptr::null_mut(); //_rt::alloc::alloc(layout0);
                     let layout1 = _rt::alloc::Layout::from_size_align_unchecked(
                         core::mem::size_of::<*const u8>(),
                         core::mem::size_of::<*const u8>(),
@@ -257,6 +257,10 @@ pub mod exports {
 mod _rt {
     #![allow(dead_code, clippy::all)]
     pub mod stream_and_future_support {
+        use std::sync::atomic::Ordering;
+
+        use wit_bindgen_symmetric_rt::activate_event_send_ptr;
+        use wit_bindgen_symmetric_rt::async_support::wait_on;
         pub use wit_bindgen_symmetric_rt::async_support::Stream as WitStream;
         pub use wit_bindgen_symmetric_rt::async_support::StreamHandle2;
         use wit_bindgen_symmetric_rt::async_support::StreamHandleRust;
@@ -660,6 +664,7 @@ mod _rt {
         pub struct StreamWriter<T: StreamPayload> {
             handle: StreamHandle2,
             future: Option<Pin<Box<dyn Future<Output = ()> + 'static + Send>>>,
+            event: EventSubscription,
             _phantom: PhantomData<T>,
         }
 
@@ -670,6 +675,23 @@ mod _rt {
             pub fn cancel(&mut self) {
                 assert!(self.future.is_some());
                 self.future = None;
+            }
+
+            #[doc(hidden)]
+            pub fn from_handle(handle: *mut WitStream) -> Self {
+                let subscr =
+                    unsafe { subscribe_event_send_ptr((&mut *handle).write_ready_event_send) };
+                let subscr_copy = unsafe { EventSubscription::from_handle(subscr.handle()) };
+                let ready = Box::pin(async move {
+                    wait_on(&subscr_copy).await;
+                    let _ = subscr_copy.take_handle();
+                });
+                Self {
+                    handle: StreamHandle2(handle),
+                    future: Some(ready),
+                    event: subscr,
+                    _phantom: PhantomData,
+                }
             }
         }
 
@@ -700,7 +722,28 @@ mod _rt {
                 }
             }
 
-            fn start_send(self: Pin<&mut Self>, _item: Vec<T>) -> Result<(), Self::Error> {
+            fn start_send(self: Pin<&mut Self>, mut item: Vec<T>) -> Result<(), Self::Error> {
+                let item_len = item.len();
+                let me = self.get_mut();
+                let stream = me.handle.0;
+                let size = unsafe { &*stream }.read_size.swap(0, Ordering::Acquire);
+                let addr = unsafe { &*stream }
+                    .read_addr
+                    .swap(core::ptr::null_mut(), Ordering::Relaxed);
+                assert!(size >= item_len);
+                // let outptr = addr.cast::<MaybeUninit<T>>();
+                let slice = unsafe {
+                    std::slice::from_raw_parts_mut(addr.cast::<MaybeUninit<T>>(), item_len)
+                };
+                for (a, b) in slice.iter_mut().zip(item.drain(..)) {
+                    a.write(b);
+                }
+                let old_ready = unsafe { &*stream }
+                    .ready_size
+                    .swap(item_len as isize, Ordering::Release);
+                assert_eq!(old_ready, 0);
+                let read_ready_evt = unsafe { &*stream }.read_ready_event_send;
+                unsafe { activate_event_send_ptr(read_ready_evt) };
                 // assert!(self.future.is_none());
                 // async_support::with_entry(self.handle, |entry| match entry {
                 //   Entry::Vacant(_) => unreachable!(),
@@ -770,7 +813,14 @@ mod _rt {
                 //   },
                 // });
                 // Ok(())
-                todo!()
+
+                // wait before next element is written
+                let subscr_copy = unsafe { EventSubscription::from_handle(me.event.handle()) };
+                me.future.replace(Box::pin(async move {
+                    wait_on(&subscr_copy).await;
+                    let _ = subscr_copy.take_handle();
+                }));
+                Ok(())
             }
 
             fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
@@ -799,7 +849,10 @@ mod _rt {
                 //     }
                 //   },
                 // });
-                todo!()
+                let stream = self.handle.0;
+                let read_ready_evt = unsafe { &*stream }.read_ready_event_send;
+                unsafe { activate_event_send_ptr(read_ready_evt) };
+//                todo!()
             }
         }
 
@@ -1025,7 +1078,10 @@ mod _rt {
                 //     Handle::Write => unreachable!(),
                 //   },
                 // });
-                todo!()
+                //todo!()
+                let stream = self.handle.0;
+                let write_ready_evt = unsafe { &*stream }.write_ready_event_send;
+                unsafe { activate_event_send_ptr(write_ready_evt) };
             }
         }
 
@@ -1055,11 +1111,7 @@ mod _rt {
         pub fn new_stream<T: StreamPayload>() -> (StreamWriter<T>, StreamReader<T>) {
             let handle = Box::into_raw(Box::new(WitStream::new()));
             (
-                StreamWriter {
-                    handle: StreamHandle2(handle),
-                    future: None,
-                    _phantom: PhantomData,
-                },
+                StreamWriter::from_handle(handle),
                 StreamReader::from_handle(handle),
             )
         }

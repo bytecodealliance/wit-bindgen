@@ -26,16 +26,13 @@ fn main() {
     };
     assert!(handle.is_null());
     let handle = result_stream.cast::<Stream>();
-    let mut target = pin!(0_u32);
+    let mut target = Box::pin([0_u32, 0]);
     unsafe {
-        ((&*(&*handle).vtable).read)(
-            handle,
-            ((&mut *target) as *mut u32).cast(),
-            size_of::<u32>(),
-        );
+        ((&*(&*handle).vtable).read)(handle, target.as_mut_ptr().cast(), 2);
     };
     let read_ready = unsafe { (&*handle).read_ready_event_send };
     let subscription = unsafe { wit_bindgen_symmetric_rt::subscribe_event_send_ptr(read_ready) };
+    println!("Register read in main");
     wit_bindgen_symmetric_rt::register(subscription, ready, ((&mut *target) as *mut u32).cast());
     wit_bindgen_symmetric_rt::run();
 }

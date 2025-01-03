@@ -22,11 +22,9 @@ extern "C" fn timer_call(data: *mut ()) -> CallbackState {
         let addr = unsafe { &*stream }
             .read_addr
             .swap(core::ptr::null_mut(), Ordering::Relaxed);
-        assert!(size >= size_of::<u32>());
+        assert!(size >= 1);
         *unsafe { &mut *addr.cast::<u32>() } = count;
-        let old_ready = unsafe { &*stream }
-            .ready_size
-            .swap(size_of::<u32>() as isize, Ordering::Release);
+        let old_ready = unsafe { &*stream }.ready_size.swap(1, Ordering::Release);
         assert_eq!(old_ready, 0);
         let read_ready_evt = unsafe { &*stream }.read_ready_event_send;
         unsafe { activate_event_send_ptr(read_ready_evt) };

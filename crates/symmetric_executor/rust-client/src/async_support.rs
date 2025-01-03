@@ -151,7 +151,7 @@ unsafe fn poll(state: *mut FutureState) -> Poll<()> {
         })
 }
 
-async fn wait_on(wait_for: &EventSubscription) {
+pub async fn wait_on(wait_for: &EventSubscription) {
     std::future::poll_fn(move |cx| {
         if wait_for.ready() {
             Poll::Ready(())
