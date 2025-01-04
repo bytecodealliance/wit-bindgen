@@ -316,6 +316,26 @@ pub mod symmetric {
                     }
                 }
             }
+            impl EventSubscription {
+                #[allow(unused_unsafe, clippy::all)]
+                /// Duplicate the subscription (e.g. for repeated callback registering)
+                pub fn dup(&self) -> EventSubscription {
+                    unsafe {
+                        #[link(wasm_import_module = "symmetric:runtime/symmetric-executor@0.1.0")]
+                        extern "C" {
+                            #[cfg_attr(
+                                target_arch = "wasm32",
+                                link_name = "[method]event-subscription.dup"
+                            )]
+                            fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5BmethodX5Devent_subscriptionX2Edup(
+                                _: *mut u8,
+                            ) -> *mut u8;
+                        }
+                        let ret = symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5BmethodX5Devent_subscriptionX2Edup((self).handle() as *mut u8);
+                        EventSubscription::from_handle(ret as usize)
+                    }
+                }
+            }
             impl EventGenerator {
                 #[allow(unused_unsafe, clippy::all)]
                 pub fn new() -> Self {
@@ -1354,22 +1374,22 @@ pub use _rt::stream_and_future_support;
 #[link_section = "component-type:wit-bindgen:0.36.0:symmetric:runtime@0.1.0:module:encoded world"]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 695] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xba\x04\x01A\x02\x01\
-A\x02\x01B\x1c\x04\0\x11callback-function\x03\x01\x04\0\x0dcallback-data\x03\x01\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 741] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xe8\x04\x01A\x02\x01\
+A\x02\x01B\x1e\x04\0\x11callback-function\x03\x01\x04\0\x0dcallback-data\x03\x01\
 \x04\0\x12event-subscription\x03\x01\x04\0\x0fevent-generator\x03\x01\x01m\x02\x07\
 started\x0bnot-started\x04\0\x0bcall-status\x03\0\x04\x01m\x02\x07pending\x05rea\
 dy\x04\0\x0ecallback-state\x03\0\x06\x01h\x02\x01@\x01\x04self\x08\0\x7f\x04\0\x20\
 [method]event-subscription.ready\x01\x09\x01i\x02\x01@\x01\x0bnanosecondsw\0\x0a\
-\x04\0'[static]event-subscription.from-timeout\x01\x0b\x01i\x03\x01@\0\0\x0c\x04\
-\0\x1c[constructor]event-generator\x01\x0d\x01h\x03\x01@\x01\x04self\x0e\0\x0a\x04\
-\0![method]event-generator.subscribe\x01\x0f\x01@\x01\x04self\x0e\x01\0\x04\0\x20\
-[method]event-generator.activate\x01\x10\x01@\0\x01\0\x04\0\x03run\x01\x11\x01i\0\
-\x01i\x01\x01@\x03\x07trigger\x0a\x08callback\x12\x04data\x13\x01\0\x04\0\x08reg\
-ister\x01\x14\x03\0*symmetric:runtime/symmetric-executor@0.1.0\x05\0\x04\0\x1esy\
-mmetric:runtime/module@0.1.0\x04\0\x0b\x0c\x01\0\x06module\x03\0\0\0G\x09produce\
-rs\x01\x0cprocessed-by\x02\x0dwit-component\x070.221.2\x10wit-bindgen-rust\x060.\
-36.0";
+\x04\0'[static]event-subscription.from-timeout\x01\x0b\x01@\x01\x04self\x08\0\x0a\
+\x04\0\x1e[method]event-subscription.dup\x01\x0c\x01i\x03\x01@\0\0\x0d\x04\0\x1c\
+[constructor]event-generator\x01\x0e\x01h\x03\x01@\x01\x04self\x0f\0\x0a\x04\0![\
+method]event-generator.subscribe\x01\x10\x01@\x01\x04self\x0f\x01\0\x04\0\x20[me\
+thod]event-generator.activate\x01\x11\x01@\0\x01\0\x04\0\x03run\x01\x12\x01i\0\x01\
+i\x01\x01@\x03\x07trigger\x0a\x08callback\x13\x04data\x14\x01\0\x04\0\x08registe\
+r\x01\x15\x03\0*symmetric:runtime/symmetric-executor@0.1.0\x05\0\x04\0\x1esymmet\
+ric:runtime/module@0.1.0\x04\0\x0b\x0c\x01\0\x06module\x03\0\0\0G\x09producers\x01\
+\x0cprocessed-by\x02\x0dwit-component\x070.221.2\x10wit-bindgen-rust\x060.36.0";
 
 #[inline(never)]
 #[doc(hidden)]

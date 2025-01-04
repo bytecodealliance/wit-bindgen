@@ -157,11 +157,15 @@ pub async fn wait_on(wait_for: EventSubscription) {
             Poll::Ready(())
         } else {
             let data = cx.waker().data();
+            let mut copy = Some(wait_for.dup());
             // dangerous duplication?
             // let wait_for_copy = unsafe { EventSubscription::from_handle(wait_for.handle()) };
             //let _old_waiting_for =
-            unsafe { &mut *(data.cast::<Option<EventSubscription>>().cast_mut()) }
-                .replace(wait_for);
+            std::mem::swap(
+                unsafe { &mut *(data.cast::<Option<EventSubscription>>().cast_mut()) },
+                &mut copy,
+            );
+            // .replace(wait_for);
             // ~~don't free the old subscription we found~~
             // if let Some(subscription) = old_waiting_for {
             //     subscription.take_handle();
@@ -285,7 +289,7 @@ pub async unsafe fn await_stream_result(
             // (*CURRENT).todo += 1;
             // let (tx, rx) = oneshot::channel();
             // CALLS.insert(stream as _, tx);
-            wait_on(event).await;
+            wait_on(event.dup()).await;
             let v = unsafe { &mut *stream.0 }
                 .ready_size
                 .swap(0, Ordering::SeqCst);

@@ -9,10 +9,13 @@ use std::{
 };
 
 use executor::exports::symmetric::runtime::symmetric_executor::{
-    self, CallbackState, GuestEventSubscription,
+    self,
+    CallbackState,
+    // GuestEventSubscription,
 };
 
 const DEBUGGING: bool = true;
+const INVALID_FD: EventFd = -1;
 
 mod executor;
 
@@ -26,29 +29,19 @@ impl symmetric_executor::GuestCallbackData for Ignore {}
 
 impl symmetric_executor::GuestEventSubscription for EventSubscription {
     fn ready(&self) -> bool {
-        match &self.inner {
-            EventType::Triggered {
-                last_counter,
-                event_fd: _,
-                event,
-            } => {
-                let current_counter = event.lock().unwrap().counter;
-                let active = current_counter != last_counter.load(Ordering::Acquire);
-                if active {
-                    last_counter.store(current_counter, Ordering::Release);
-                }
-                active
-            }
-            EventType::SystemTime(system_time) => *system_time <= SystemTime::now(),
-        }
+        self.inner.ready()
     }
 
     fn from_timeout(nanoseconds: u64) -> symmetric_executor::EventSubscription {
         let when = SystemTime::now() + Duration::from_nanos(nanoseconds);
         symmetric_executor::EventSubscription::new(EventSubscription {
             inner: EventType::SystemTime(when),
-            callback: None,
+            // callback: None,
         })
+    }
+
+    fn dup(&self) -> symmetric_executor::EventSubscription {
+        symmetric_executor::EventSubscription::new(self.dup())
     }
 }
 
@@ -61,21 +54,18 @@ impl symmetric_executor::GuestEventGenerator for EventGenerator {
     }
 
     fn subscribe(&self) -> symmetric_executor::EventSubscription {
-        let event_fd = unsafe { libc::eventfd(0, libc::EFD_NONBLOCK) };
+        // let event_fd = unsafe { libc::eventfd(0, libc::EFD_NONBLOCK) };
         if DEBUGGING {
-            println!(
-                "subscribe({:x}) fd={event_fd}",
-                Arc::as_ptr(&self.0) as usize
-            );
+            println!("subscribe({:x})", Arc::as_ptr(&self.0) as usize);
         }
-        self.0.lock().unwrap().waiting.push(event_fd);
+        // self.0.lock().unwrap().waiting.push(event_fd);
         symmetric_executor::EventSubscription::new(EventSubscription {
             inner: EventType::Triggered {
                 last_counter: AtomicU32::new(0),
-                event_fd,
+                // event_fd,
                 event: Arc::clone(&self.0),
             },
-            callback: None,
+            // callback: None,
         })
     }
 
@@ -106,7 +96,7 @@ impl symmetric_executor::GuestEventGenerator for EventGenerator {
 }
 
 struct Executor {
-    active_tasks: Vec<EventSubscription>,
+    active_tasks: Vec<QueuedEvent>,
 }
 
 static EXECUTOR: Mutex<Executor> = Mutex::new(Executor {
@@ -114,7 +104,7 @@ static EXECUTOR: Mutex<Executor> = Mutex::new(Executor {
 });
 // while executing tasks from the loop we can't directly queue new ones
 static EXECUTOR_BUSY: AtomicBool = AtomicBool::new(false);
-static NEW_TASKS: Mutex<Vec<EventSubscription>> = Mutex::new(Vec::new());
+static NEW_TASKS: Mutex<Vec<QueuedEvent>> = Mutex::new(Vec::new());
 
 impl symmetric_executor::Guest for Guest {
     type CallbackFunction = Ignore;
@@ -139,7 +129,7 @@ impl symmetric_executor::Guest for Guest {
                 let old_busy = EXECUTOR_BUSY.swap(true, Ordering::SeqCst);
                 assert!(!old_busy);
                 ex.active_tasks.iter_mut().for_each(|task| {
-                    if task.ready() {
+                    if task.inner.ready() {
                         if DEBUGGING {
                             println!(
                                 "task ready {:x} {:x}",
@@ -154,12 +144,12 @@ impl symmetric_executor::Guest for Guest {
                         match &task.inner {
                             EventType::Triggered {
                                 last_counter: _,
-                                event_fd,
+                                // event_fd,
                                 event: _,
                             } => {
-                                unsafe { libc::FD_SET(*event_fd, rfd_ptr) };
-                                if *event_fd > maxfd {
-                                    maxfd = *event_fd + 1;
+                                unsafe { libc::FD_SET(task.event_fd, rfd_ptr) };
+                                if task.event_fd > maxfd {
+                                    maxfd = task.event_fd + 1;
                                 }
                             }
                             EventType::SystemTime(system_time) => {
@@ -253,27 +243,31 @@ impl symmetric_executor::Guest for Guest {
         callback: symmetric_executor::CallbackFunction,
         data: symmetric_executor::CallbackData,
     ) -> () {
-        // TODO: Tidy this mess up
-        // Note: Trigger is consumed, callback and data are managed elsewhere
-        let mut subscr = EventSubscription {
-            inner: EventType::SystemTime(std::time::UNIX_EPOCH),
-            callback: None,
+        let trigger: EventSubscription = trigger.into_inner();
+        let cb: fn(*mut ()) -> CallbackState = unsafe { transmute(callback.take_handle()) };
+        let data = data.take_handle() as *mut ();
+        let event_fd = match &trigger.inner {
+            EventType::Triggered {
+                last_counter: _,
+                event: _,
+            } => unsafe { libc::eventfd(0, libc::EFD_NONBLOCK) },
+            EventType::SystemTime(_system_time) => INVALID_FD,
         };
-        std::mem::swap(&mut subscr, unsafe {
-            // TODO: This should be handle to free the resource, but it is used later?
-            &mut *(trigger.take_handle() as *mut EventSubscription)
-        });
+        let subscr = QueuedEvent {
+            inner: trigger.inner,
+            callback: Some(CallbackEntry(cb, data)),
+            event_fd,
+        };
         if DEBUGGING {
             match &subscr.inner {
                 EventType::Triggered {
                     last_counter: _,
-                    event_fd,
                     event,
                 } => println!(
-                    "register(Triggered {:x} fd {event_fd}, {:x},{:x})",
+                    "register(Trigger {:x} fd {event_fd}, {:x},{:x})",
                     Arc::as_ptr(event) as usize,
-                    callback.handle(),
-                    data.handle()
+                    cb as usize,
+                    data as usize
                 ),
                 EventType::SystemTime(system_time) => {
                     let diff = system_time.duration_since(SystemTime::now()).unwrap();
@@ -281,15 +275,13 @@ impl symmetric_executor::Guest for Guest {
                         "register(Time {}.{}, {:x},{:x})",
                         diff.as_secs(),
                         diff.subsec_nanos(),
-                        callback.handle(),
-                        data.handle()
+                        cb as usize,
+                        data as usize
                     );
                 }
             }
         }
-        let cb: fn(*mut ()) -> CallbackState = unsafe { transmute(callback.take_handle()) };
-        let data = data.take_handle() as *mut ();
-        subscr.callback.replace(CallbackEntry(cb, data));
+        // subscr.callback.replace(CallbackEntry(cb, data));
         match EXECUTOR.try_lock() {
             Ok(mut lock) => lock.active_tasks.push(subscr),
             Err(_err) => {
@@ -320,6 +312,11 @@ unsafe impl Send for CallbackEntry {}
 
 struct EventSubscription {
     inner: EventType,
+}
+
+struct QueuedEvent {
+    inner: EventType,
+    event_fd: EventFd,
     callback: Option<CallbackEntry>,
 }
 
@@ -328,22 +325,22 @@ impl EventSubscription {
         let inner = match &self.inner {
             EventType::Triggered {
                 last_counter: last_counter_old,
-                event_fd,
+                // event_fd,
                 event,
             } => {
-                let new_event_fd = unsafe { libc::eventfd(0, libc::EFD_NONBLOCK) };
+                // let new_event_fd = unsafe { libc::eventfd(0, libc::EFD_NONBLOCK) };
                 let new_event = Arc::clone(event);
                 let last_counter = last_counter_old.load(Ordering::Relaxed);
                 if DEBUGGING {
                     println!(
-                        "dup(subscr {last_counter} {event_fd} {:x}) fd={new_event_fd}",
+                        "dup(subscr {last_counter} {:x})",
                         Arc::as_ptr(&event) as usize
                     );
                 }
-                new_event.lock().unwrap().waiting.push(new_event_fd);
+                // new_event.lock().unwrap().waiting.push(new_event_fd);
                 EventType::Triggered {
                     last_counter: AtomicU32::new(last_counter),
-                    event_fd: new_event_fd,
+                    // event_fd: new_event_fd,
                     event: new_event,
                 }
             }
@@ -351,12 +348,12 @@ impl EventSubscription {
         };
         EventSubscription {
             inner,
-            callback: None,
+            // callback: None,
         }
     }
 }
 
-impl Drop for EventSubscription {
+impl Drop for QueuedEvent {
     fn drop(&mut self) {
         if let Some(cb) = &self.callback {
             if DEBUGGING {
@@ -369,14 +366,18 @@ impl Drop for EventSubscription {
         match &self.inner {
             EventType::Triggered {
                 last_counter: _,
-                event_fd,
+                // event_fd,
                 event,
             } => {
                 if DEBUGGING {
-                    println!("drop(subscription fd {event_fd}");
+                    println!("drop(queued fd {}", self.event_fd);
                 }
-                event.lock().unwrap().waiting.retain(|e| e != event_fd);
-                unsafe { libc::close(*event_fd) };
+                event
+                    .lock()
+                    .unwrap()
+                    .waiting
+                    .retain(|&e| e != self.event_fd);
+                unsafe { libc::close(self.event_fd) };
             }
             EventType::SystemTime(_system_time) => (),
         }
@@ -386,8 +387,28 @@ impl Drop for EventSubscription {
 enum EventType {
     Triggered {
         last_counter: AtomicU32,
-        event_fd: EventFd,
+        //        event_fd: EventFd,
         event: Arc<Mutex<EventInner>>,
     },
     SystemTime(SystemTime),
+}
+
+impl EventType {
+    pub fn ready(&self) -> bool {
+        match self {
+            EventType::Triggered {
+                last_counter,
+                // event_fd: _,
+                event,
+            } => {
+                let current_counter = event.lock().unwrap().counter;
+                let active = current_counter != last_counter.load(Ordering::Acquire);
+                if active {
+                    last_counter.store(current_counter, Ordering::Release);
+                }
+                active
+            }
+            EventType::SystemTime(system_time) => *system_time <= SystemTime::now(),
+        }
+    }
 }
