@@ -14,7 +14,7 @@ use executor::exports::symmetric::runtime::symmetric_executor::{
     // GuestEventSubscription,
 };
 
-const DEBUGGING: bool = true;
+const DEBUGGING: bool = cfg!(feature = "trace");
 const INVALID_FD: EventFd = -1;
 
 mod executor;
@@ -42,6 +42,15 @@ impl symmetric_executor::GuestEventSubscription for EventSubscription {
 
     fn dup(&self) -> symmetric_executor::EventSubscription {
         symmetric_executor::EventSubscription::new(self.dup())
+    }
+    
+    fn reset(&self) {
+        match &self.inner {
+            EventType::Triggered { last_counter, event } => {
+                last_counter.store(event.lock().unwrap().counter, Ordering::Relaxed);
+            }
+            EventType::SystemTime(_system_time) => (),
+        }
     }
 }
 

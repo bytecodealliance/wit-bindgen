@@ -15,3 +15,9 @@ wit-bindgen-rt = { version = "0.36.0", path = "../guest-rust/rt" }
 
 [lib]
 crate-type = ["cdylib"]
+
+[features]
+# always off feature
+never = []
+# output debugging information
+trace = []

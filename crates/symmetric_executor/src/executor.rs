@@ -717,6 +717,17 @@ pub mod exports {
                 }
                 #[doc(hidden)]
                 #[allow(non_snake_case)]
+                pub unsafe fn _export_method_event_subscription_reset_cabi<
+                    T: GuestEventSubscription,
+                >(
+                    arg0: *mut u8,
+                ) {
+                    #[cfg(target_arch = "wasm32")]
+                    _rt::run_ctors_once();
+                    T::reset(EventSubscriptionBorrow::lift(arg0 as usize).get());
+                }
+                #[doc(hidden)]
+                #[allow(non_snake_case)]
                 pub unsafe fn _export_constructor_event_generator_cabi<T: GuestEventGenerator>(
                 ) -> *mut u8 {
                     #[cfg(target_arch = "wasm32")]
@@ -863,8 +874,10 @@ pub mod exports {
                     fn ready(&self) -> bool;
                     /// Create a timeout event
                     fn from_timeout(nanoseconds: u64) -> EventSubscription;
-                    /// Duplicate the subscription (e.g. for repeated callback registering)
+                    /// Duplicate the subscription (e.g. for repeated callback registering, same cost as subscribe)
                     fn dup(&self) -> EventSubscription;
+                    /// Reset subscription to be inactive, only next trigger will ready it
+                    fn reset(&self) -> ();
                 }
                 #[doc(hidden)]
                 #[allow(non_snake_case)]
@@ -917,6 +930,11 @@ pub mod exports {
     #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
     unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5BmethodX5Devent_subscriptionX2Edup(arg0: *mut u8,) -> *mut u8 {
       $($path_to_types)*::_export_method_event_subscription_dup_cabi::<<$ty as $($path_to_types)*::Guest>::EventSubscription>(arg0)
+    }
+    #[cfg_attr(target_arch = "wasm32", export_name = "[method]event-subscription.reset")]
+    #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
+    unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5BmethodX5Devent_subscriptionX2Ereset(arg0: *mut u8,) {
+      $($path_to_types)*::_export_method_event_subscription_reset_cabi::<<$ty as $($path_to_types)*::Guest>::EventSubscription>(arg0)
     }
     #[cfg_attr(target_arch = "wasm32", export_name = "[constructor]event-generator")]
     #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
@@ -1074,7 +1092,7 @@ mod _rt {
     pub fn run_ctors_once() {
         wit_bindgen::rt::run_ctors_once();
     }
-    #[cfg(never)]
+    #[cfg(feature = "never")]
     pub mod stream_and_future_support {
         use {
             futures::{
@@ -1898,23 +1916,23 @@ pub(crate) use __export_executor_impl as export;
 #[link_section = "component-type:wit-bindgen:0.36.0:symmetric:runtime@0.1.0:executor:encoded world"]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 745] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xea\x04\x01A\x02\x01\
-A\x02\x01B\x1e\x04\0\x11callback-function\x03\x01\x04\0\x0dcallback-data\x03\x01\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 793] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\x9a\x05\x01A\x02\x01\
+A\x02\x01B\x20\x04\0\x11callback-function\x03\x01\x04\0\x0dcallback-data\x03\x01\
 \x04\0\x12event-subscription\x03\x01\x04\0\x0fevent-generator\x03\x01\x01m\x02\x07\
 started\x0bnot-started\x04\0\x0bcall-status\x03\0\x04\x01m\x02\x07pending\x05rea\
 dy\x04\0\x0ecallback-state\x03\0\x06\x01h\x02\x01@\x01\x04self\x08\0\x7f\x04\0\x20\
 [method]event-subscription.ready\x01\x09\x01i\x02\x01@\x01\x0bnanosecondsw\0\x0a\
 \x04\0'[static]event-subscription.from-timeout\x01\x0b\x01@\x01\x04self\x08\0\x0a\
-\x04\0\x1e[method]event-subscription.dup\x01\x0c\x01i\x03\x01@\0\0\x0d\x04\0\x1c\
-[constructor]event-generator\x01\x0e\x01h\x03\x01@\x01\x04self\x0f\0\x0a\x04\0![\
-method]event-generator.subscribe\x01\x10\x01@\x01\x04self\x0f\x01\0\x04\0\x20[me\
-thod]event-generator.activate\x01\x11\x01@\0\x01\0\x04\0\x03run\x01\x12\x01i\0\x01\
-i\x01\x01@\x03\x07trigger\x0a\x08callback\x13\x04data\x14\x01\0\x04\0\x08registe\
-r\x01\x15\x04\0*symmetric:runtime/symmetric-executor@0.1.0\x05\0\x04\0\x20symmet\
-ric:runtime/executor@0.1.0\x04\0\x0b\x0e\x01\0\x08executor\x03\0\0\0G\x09produce\
-rs\x01\x0cprocessed-by\x02\x0dwit-component\x070.221.2\x10wit-bindgen-rust\x060.\
-36.0";
+\x04\0\x1e[method]event-subscription.dup\x01\x0c\x01@\x01\x04self\x08\x01\0\x04\0\
+\x20[method]event-subscription.reset\x01\x0d\x01i\x03\x01@\0\0\x0e\x04\0\x1c[con\
+structor]event-generator\x01\x0f\x01h\x03\x01@\x01\x04self\x10\0\x0a\x04\0![meth\
+od]event-generator.subscribe\x01\x11\x01@\x01\x04self\x10\x01\0\x04\0\x20[method\
+]event-generator.activate\x01\x12\x01@\0\x01\0\x04\0\x03run\x01\x13\x01i\0\x01i\x01\
+\x01@\x03\x07trigger\x0a\x08callback\x14\x04data\x15\x01\0\x04\0\x08register\x01\
+\x16\x04\0*symmetric:runtime/symmetric-executor@0.1.0\x05\0\x04\0\x20symmetric:r\
+untime/executor@0.1.0\x04\0\x0b\x0e\x01\0\x08executor\x03\0\0\0G\x09producers\x01\
+\x0cprocessed-by\x02\x0dwit-component\x070.221.2\x10wit-bindgen-rust\x060.36.0";
 
 #[inline(never)]
 #[doc(hidden)]

@@ -7,9 +7,12 @@ use std::{
     task::{Context, Poll, RawWaker, RawWakerVTable},
 };
 
-use crate::{activate_event_send_ptr, module::symmetric::runtime::symmetric_executor::{
-    self, CallbackState, EventGenerator, EventSubscription,
-}};
+use crate::{
+    activate_event_send_ptr,
+    module::symmetric::runtime::symmetric_executor::{
+        self, CallbackState, EventGenerator, EventSubscription,
+    },
+};
 
 // See https://github.com/rust-lang/rust/issues/13231 for the limitation
 // / Send constraint on futures for spawn, loosen later
