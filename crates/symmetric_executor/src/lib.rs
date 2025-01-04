@@ -2,7 +2,7 @@ use std::{
     ffi::c_int,
     mem::transmute,
     sync::{
-        atomic::{AtomicBool, AtomicU32},
+        atomic::{AtomicBool, AtomicU32, Ordering},
         Arc, Mutex,
     },
     time::{Duration, SystemTime},
@@ -34,9 +34,9 @@ impl symmetric_executor::GuestEventSubscription for EventSubscription {
             } => {
                 let current_counter = event.lock().unwrap().counter;
                 let active =
-                    current_counter != last_counter.load(std::sync::atomic::Ordering::Acquire);
+                    current_counter != last_counter.load(Ordering::Acquire);
                 if active {
-                    last_counter.store(current_counter, std::sync::atomic::Ordering::Release);
+                    last_counter.store(current_counter, Ordering::Release);
                 }
                 active
             }
@@ -137,7 +137,7 @@ impl symmetric_executor::Guest for Guest {
             unsafe { libc::FD_ZERO(rfd_ptr) };
             {
                 let mut ex = EXECUTOR.lock().unwrap();
-                let old_busy = EXECUTOR_BUSY.swap(true, std::sync::atomic::Ordering::SeqCst);
+                let old_busy = EXECUTOR_BUSY.swap(true, Ordering::SeqCst);
                 assert!(!old_busy);
                 ex.active_tasks.iter_mut().for_each(|task| {
                     if task.ready() {
@@ -185,7 +185,7 @@ impl symmetric_executor::Guest for Guest {
                         }
                     }
                 });
-                let old_busy = EXECUTOR_BUSY.swap(false, std::sync::atomic::Ordering::SeqCst);
+                let old_busy = EXECUTOR_BUSY.swap(false, Ordering::SeqCst);
                 assert!(old_busy);
                 ex.active_tasks.retain(|task| task.callback.is_some());
                 {
@@ -294,7 +294,7 @@ impl symmetric_executor::Guest for Guest {
         match EXECUTOR.try_lock() {
             Ok(mut lock) => lock.active_tasks.push(subscr),
             Err(_err) => {
-                if EXECUTOR_BUSY.load(std::sync::atomic::Ordering::Relaxed) {
+                if EXECUTOR_BUSY.load(Ordering::Relaxed) {
                     NEW_TASKS.lock().unwrap().push(subscr);
                 } else {
                     // actually this is unlikely, but give it a try
@@ -322,6 +322,52 @@ unsafe impl Send for CallbackEntry {}
 struct EventSubscription {
     inner: EventType,
     callback: Option<CallbackEntry>,
+}
+
+impl EventSubscription {
+    fn dup(&self) -> Self {
+        let inner = match &self.inner {
+            EventType::Triggered { last_counter: last_counter_old, event_fd, event } => {
+                let new_event_fd = unsafe { libc::eventfd(0, libc::EFD_NONBLOCK) };
+                let new_event = Arc::clone(event);
+                let last_counter = last_counter_old.load(Ordering::Relaxed);
+                if DEBUGGING {
+                    println!(
+                        "dup(subscr {last_counter} {event_fd} {:x}) fd={new_event_fd}",
+                        Arc::as_ptr(&event) as usize
+                    );
+                }
+                new_event.lock().unwrap().waiting.push(new_event_fd);
+                EventType::Triggered {
+                    last_counter: AtomicU32::new(last_counter),
+                    event_fd: new_event_fd,
+                    event: new_event,
+                }
+            }
+            EventType::SystemTime(system_time) => EventType::SystemTime(*system_time),
+        };
+        EventSubscription {
+            inner,
+            callback: None,
+        }
+    }
+}
+
+impl Drop for EventSubscription {
+    fn drop(&mut self) {
+        if let Some(cb) = &self.callback {
+            if DEBUGGING {
+                println!("drop() with active callback {:x},{:x}", cb.0 as usize, cb.1 as usize);
+            }
+        }
+        match &self.inner {
+            EventType::Triggered { last_counter:_, event_fd, event } => { 
+                if DEBUGGING { println!("drop(subscription fd {event_fd}"); }
+                event.lock().unwrap().waiting.retain(|e| e != event_fd);
+                unsafe {libc::close(*event_fd)}; }
+            EventType::SystemTime(_system_time) => (),
+        }
+    }
 }
 
 enum EventType {
