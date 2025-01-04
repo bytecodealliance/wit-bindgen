@@ -33,8 +33,7 @@ impl symmetric_executor::GuestEventSubscription for EventSubscription {
                 event,
             } => {
                 let current_counter = event.lock().unwrap().counter;
-                let active =
-                    current_counter != last_counter.load(Ordering::Acquire);
+                let active = current_counter != last_counter.load(Ordering::Acquire);
                 if active {
                     last_counter.store(current_counter, Ordering::Release);
                 }
@@ -327,7 +326,11 @@ struct EventSubscription {
 impl EventSubscription {
     fn dup(&self) -> Self {
         let inner = match &self.inner {
-            EventType::Triggered { last_counter: last_counter_old, event_fd, event } => {
+            EventType::Triggered {
+                last_counter: last_counter_old,
+                event_fd,
+                event,
+            } => {
                 let new_event_fd = unsafe { libc::eventfd(0, libc::EFD_NONBLOCK) };
                 let new_event = Arc::clone(event);
                 let last_counter = last_counter_old.load(Ordering::Relaxed);
@@ -357,14 +360,24 @@ impl Drop for EventSubscription {
     fn drop(&mut self) {
         if let Some(cb) = &self.callback {
             if DEBUGGING {
-                println!("drop() with active callback {:x},{:x}", cb.0 as usize, cb.1 as usize);
+                println!(
+                    "drop() with active callback {:x},{:x}",
+                    cb.0 as usize, cb.1 as usize
+                );
             }
         }
         match &self.inner {
-            EventType::Triggered { last_counter:_, event_fd, event } => { 
-                if DEBUGGING { println!("drop(subscription fd {event_fd}"); }
+            EventType::Triggered {
+                last_counter: _,
+                event_fd,
+                event,
+            } => {
+                if DEBUGGING {
+                    println!("drop(subscription fd {event_fd}");
+                }
                 event.lock().unwrap().waiting.retain(|e| e != event_fd);
-                unsafe {libc::close(*event_fd)}; }
+                unsafe { libc::close(*event_fd) };
+            }
             EventType::SystemTime(_system_time) => (),
         }
     }

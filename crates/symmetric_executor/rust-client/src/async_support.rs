@@ -151,21 +151,21 @@ unsafe fn poll(state: *mut FutureState) -> Poll<()> {
         })
 }
 
-pub async fn wait_on(wait_for: &EventSubscription) {
+pub async fn wait_on(wait_for: EventSubscription) {
     std::future::poll_fn(move |cx| {
         if wait_for.ready() {
             Poll::Ready(())
         } else {
             let data = cx.waker().data();
             // dangerous duplication?
-            let wait_for_copy = unsafe { EventSubscription::from_handle(wait_for.handle()) };
-            let old_waiting_for =
-                unsafe { &mut *(data.cast::<Option<EventSubscription>>().cast_mut()) }
-                    .replace(wait_for_copy);
-            // don't free the old subscription we found
-            if let Some(subscription) = old_waiting_for {
-                subscription.take_handle();
-            }
+            // let wait_for_copy = unsafe { EventSubscription::from_handle(wait_for.handle()) };
+            //let _old_waiting_for =
+            unsafe { &mut *(data.cast::<Option<EventSubscription>>().cast_mut()) }
+                .replace(wait_for);
+            // ~~don't free the old subscription we found~~
+            // if let Some(subscription) = old_waiting_for {
+            //     subscription.take_handle();
+            // }
             Poll::Pending
         }
     })
@@ -226,8 +226,7 @@ pub async unsafe fn await_result(
     let wait_for = function(params, results);
     if !wait_for.is_null() {
         let wait_for = unsafe { EventSubscription::from_handle(wait_for as usize) };
-        wait_on(&wait_for).await;
-        let _ = wait_for.take_handle();
+        wait_on(wait_for).await;
     }
 }
 
