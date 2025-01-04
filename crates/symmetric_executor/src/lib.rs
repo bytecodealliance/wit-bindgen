@@ -82,13 +82,20 @@ impl symmetric_executor::GuestEventGenerator for EventGenerator {
     }
 
     fn activate(&self) {
-        if DEBUGGING {
-            println!("activate({:x})", Arc::as_ptr(&self.0) as usize);
-        }
         if let Ok(mut event) = self.0.lock() {
             event.counter += 1;
+            if DEBUGGING {
+                println!(
+                    "activate({:x}) counter={}",
+                    Arc::as_ptr(&self.0) as usize,
+                    event.counter
+                );
+            }
             let file_signal: u64 = 1;
             event.waiting.iter().for_each(|fd| {
+                if DEBUGGING {
+                    println!("activate(fd {fd})");
+                }
                 let result = unsafe {
                     libc::write(
                         *fd,
@@ -103,6 +110,8 @@ impl symmetric_executor::GuestEventGenerator for EventGenerator {
                     );
                 }
             });
+        } else if DEBUGGING {
+            println!("activate failure");
         }
     }
 }
@@ -261,8 +270,12 @@ impl symmetric_executor::Guest for Guest {
         let event_fd = match &trigger.inner {
             EventType::Triggered {
                 last_counter: _,
-                event: _,
-            } => unsafe { libc::eventfd(0, libc::EFD_NONBLOCK) },
+                event,
+            } => {
+                let fd = unsafe { libc::eventfd(0, libc::EFD_NONBLOCK) };
+                event.lock().unwrap().waiting.push(fd);
+                fd
+            }
             EventType::SystemTime(_system_time) => INVALID_FD,
         };
         let subscr = QueuedEvent {

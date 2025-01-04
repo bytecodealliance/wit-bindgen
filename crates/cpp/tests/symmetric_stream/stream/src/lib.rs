@@ -15,6 +15,7 @@ impl stream_world::exports::test::test::stream_test::Guest for MyStruct {
 
         async_support::spawn(async move {
             while let Some(values) = input.next().await {
+                println!("received {} values", values.len());
                 for value in values {
                     writer.feed(vec![value, value + 1]).await.unwrap();
                 }

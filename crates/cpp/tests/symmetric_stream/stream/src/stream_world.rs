@@ -260,6 +260,7 @@ mod _rt {
         use std::sync::atomic::Ordering;
 
         use wit_bindgen_symmetric_rt::activate_event_send_ptr;
+        use wit_bindgen_symmetric_rt::async_support::results;
         use wit_bindgen_symmetric_rt::async_support::wait_on;
         pub use wit_bindgen_symmetric_rt::async_support::Stream as WitStream;
         pub use wit_bindgen_symmetric_rt::async_support::StreamHandle2;
@@ -708,8 +709,11 @@ mod _rt {
             fn poll_ready(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
                 let me = self.get_mut();
 
+                let ready =
+                    unsafe { &*me.handle.0 }.ready_size.load(Ordering::SeqCst) != results::BLOCKED;
+
                 // see also StreamReader::poll_next
-                if me.future.is_none() {
+                if !ready && me.future.is_none() {
                     let handle = StreamHandle2(me.handle.0);
                     me.future = Some(Box::pin(async move {
                         let handle_local = handle;
