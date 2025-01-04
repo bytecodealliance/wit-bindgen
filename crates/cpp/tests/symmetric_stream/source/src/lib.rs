@@ -1,8 +1,9 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use wit_bindgen_symmetric_rt::{
-    activate_event_send_ptr, async_support::Stream, register, subscribe_event_send_ptr,
-    CallbackState, EventSubscription,
+    activate_event_send_ptr,
+    async_support::{results, Stream},
+    register, subscribe_event_send_ptr, CallbackState, EventSubscription,
 };
 
 #[link(name = "symmetric_executor")]
@@ -25,16 +26,23 @@ extern "C" fn timer_call(data: *mut ()) -> CallbackState {
         assert!(size >= 1);
         *unsafe { &mut *addr.cast::<u32>() } = count;
         let old_ready = unsafe { &*stream }.ready_size.swap(1, Ordering::Release);
-        assert_eq!(old_ready, 0);
+        assert_eq!(old_ready, results::BLOCKED);
         let read_ready_evt = unsafe { &*stream }.read_ready_event_send;
         unsafe { activate_event_send_ptr(read_ready_evt) };
-        let ms_30 = unsafe {
-            symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5BstaticX5Devent_subscriptionX2Efrom_timeout(30*1_000_000)
-        } as usize;
-        assert_ne!(ms_30, 0);
-        let event = unsafe { EventSubscription::from_handle(ms_30) };
-        register(event, timer_call, data);
-    } else {
+        // let ms_30 = unsafe {
+        //     symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5BstaticX5Devent_subscriptionX2Efrom_timeout(30*1_000_000)
+        // } as usize;
+        // assert_ne!(ms_30, 0);
+        // let event = unsafe { EventSubscription::from_handle(ms_30) };
+        // register(event, timer_call, data);
+    }
+    CallbackState::Ready
+}
+
+extern "C" fn write_ready(data: *mut ()) -> CallbackState {
+    let count = COUNT.load(Ordering::SeqCst);
+    if count > 5 {
+        let stream: *const Stream = data.cast();
         // EOF
         let old_ready = unsafe { &*stream }
             .ready_size
@@ -42,20 +50,20 @@ extern "C" fn timer_call(data: *mut ()) -> CallbackState {
         assert_eq!(old_ready, 0);
         let read_ready_evt = unsafe { &*stream }.read_ready_event_send;
         unsafe { activate_event_send_ptr(read_ready_evt) };
+        CallbackState::Ready
+    } else {
+        if count == 1 {
+            println!("we can write now, starting timer");
+        }
+        let ms_30 = unsafe {
+            symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5BstaticX5Devent_subscriptionX2Efrom_timeout(30*1_000_000)
+        } as usize;
+        assert_ne!(ms_30, 0);
+        let event = unsafe { EventSubscription::from_handle(ms_30) };
+        register(event, timer_call, data);
+        // this callback is done
+        CallbackState::Pending
     }
-    CallbackState::Ready
-}
-
-extern "C" fn write_ready(data: *mut ()) -> CallbackState {
-    println!("we can write now, starting timer");
-    let ms_30 = unsafe {
-        symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5BstaticX5Devent_subscriptionX2Efrom_timeout(30*1_000_000)
-    } as usize;
-    assert_ne!(ms_30, 0);
-    let event = unsafe { EventSubscription::from_handle(ms_30) };
-    register(event, timer_call, data);
-    // this callback is done
-    CallbackState::Ready
 }
 
 #[allow(non_snake_case)]

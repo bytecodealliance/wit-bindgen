@@ -12,6 +12,7 @@ use crate::{
     module::symmetric::runtime::symmetric_executor::{
         self, CallbackState, EventGenerator, EventSubscription,
     },
+    subscribe_event_send_ptr,
 };
 
 // See https://github.com/rust-lang/rust/issues/13231 for the limitation
@@ -66,6 +67,11 @@ pub struct Stream {
 }
 
 extern "C" fn read_impl(stream: *mut Stream, buf: *mut (), size: usize) -> isize {
+    let old_ready = unsafe { &*stream }.ready_size.load(Ordering::SeqCst);
+    if old_ready == results::CLOSED {
+        return old_ready;
+    }
+    assert!(old_ready == results::BLOCKED);
     let old_size = unsafe { &mut *stream }
         .read_size
         .swap(size, Ordering::Acquire);
@@ -87,8 +93,9 @@ extern "C" fn write_impl(_stream: *mut Stream, _buf: *mut (), _size: usize) -> i
     todo!()
 }
 
-extern "C" fn read_close_impl(_stream: *mut Stream) {
-    todo!()
+extern "C" fn read_close_impl(stream: *mut Stream) {
+    read_impl(stream, core::ptr::null_mut(), 0);
+    // deallocate?
 }
 
 extern "C" fn write_close_impl(_stream: *mut Stream) {
@@ -110,7 +117,7 @@ impl Stream {
             write_ready_event_send: EventGenerator::new().take_handle() as *mut (),
             read_addr: AtomicPtr::new(core::ptr::null_mut()),
             read_size: AtomicUsize::new(0),
-            ready_size: AtomicIsize::new(0),
+            ready_size: AtomicIsize::new(results::BLOCKED),
         }
     }
 }
@@ -250,7 +257,7 @@ pub fn spawn(future: impl Future<Output = ()> + 'static + Send) {
     //    TASKS.lock().unwrap().push(Box::new(future));
 }
 
-mod results {
+pub mod results {
     pub const BLOCKED: isize = -1;
     pub const CLOSED: isize = isize::MIN;
     pub const CANCELED: isize = 0;
@@ -275,15 +282,16 @@ unsafe impl Send for AddressSend {}
 
 pub struct StreamHandleRust {
     pub handle: StreamHandle2,
-    pub event: EventSubscription,
+    // pub event: EventSubscription,
 }
 
+// this is used for reading?
 pub async unsafe fn await_stream_result(
     import: unsafe extern "C" fn(*mut Stream, *mut (), usize) -> isize,
     stream: StreamHandle2,
     address: AddressSend,
     count: usize,
-    event: &EventSubscription,
+    //    event: &EventSubscription,
 ) -> Option<usize> {
     let stream_copy = stream.0;
     let result = import(stream_copy, address.0, count);
@@ -293,10 +301,12 @@ pub async unsafe fn await_stream_result(
             // (*CURRENT).todo += 1;
             // let (tx, rx) = oneshot::channel();
             // CALLS.insert(stream as _, tx);
-            wait_on(event.dup()).await;
+            let event = unsafe { subscribe_event_send_ptr((&*stream.0).read_ready_event_send) };
+            event.reset();
+            wait_on(event).await;
             let v = unsafe { &mut *stream.0 }
                 .ready_size
-                .swap(0, Ordering::SeqCst);
+                .swap(results::BLOCKED, Ordering::SeqCst);
             if let results::CLOSED | results::CANCELED = v {
                 None
             } else {

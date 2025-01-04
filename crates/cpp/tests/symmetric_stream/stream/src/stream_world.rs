@@ -83,7 +83,7 @@ pub mod test {
                                 StreamHandle2(stream.handle.0),
                                 address,
                                 values.len(),
-                                &stream.event,
+                                // &stream.event,
                             )
                             .await
                         };
@@ -664,7 +664,7 @@ mod _rt {
         pub struct StreamWriter<T: StreamPayload> {
             handle: StreamHandle2,
             future: Option<Pin<Box<dyn Future<Output = ()> + 'static + Send>>>,
-            event: EventSubscription,
+            // event: EventSubscription,
             _phantom: PhantomData<T>,
         }
 
@@ -679,16 +679,16 @@ mod _rt {
 
             #[doc(hidden)]
             pub fn from_handle(handle: *mut WitStream) -> Self {
-                let subscr =
-                    unsafe { subscribe_event_send_ptr((&mut *handle).write_ready_event_send) };
-                let subscr_copy = subscr.dup();
-                let ready = Box::pin(async move {
-                    wait_on(subscr_copy).await;
-                });
+                // let subscr =
+                //     unsafe { subscribe_event_send_ptr((&mut *handle).write_ready_event_send) };
+                // let subscr_copy = subscr.dup();
+                // let ready = Box::pin(async move {
+                //     wait_on(subscr).await;
+                // });
                 Self {
                     handle: StreamHandle2(handle),
-                    future: Some(ready),
-                    event: subscr,
+                    future: None, //Some(ready),
+                    // event: subscr,
                     _phantom: PhantomData,
                 }
             }
@@ -707,6 +707,20 @@ mod _rt {
 
             fn poll_ready(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
                 let me = self.get_mut();
+
+                // see also StreamReader::poll_next
+                if me.future.is_none() {
+                    let handle = StreamHandle2(me.handle.0);
+                    me.future = Some(Box::pin(async move {
+                        let handle_local = handle;
+                        let subscr = unsafe {
+                            subscribe_event_send_ptr((&*(handle_local.0)).write_ready_event_send)
+                        };
+                        subscr.reset();
+                        wait_on(subscr).await;
+                    })
+                        as Pin<Box<dyn Future<Output = _> + Send>>);
+                }
 
                 if let Some(future) = &mut me.future {
                     match future.as_mut().poll(cx) {
@@ -814,10 +828,7 @@ mod _rt {
                 // Ok(())
 
                 // wait before next element is written
-                let subscr_copy = me.event.dup();
-                me.future.replace(Box::pin(async move {
-                    wait_on(subscr_copy).await;
-                }));
+                // let subscr_copy = me.event.dup();
                 Ok(())
             }
 
@@ -884,7 +895,7 @@ mod _rt {
         pub struct StreamReader<T: StreamPayload> {
             handle: StreamHandle2,
             future: Option<Pin<Box<dyn Future<Output = Option<Vec<T>>> + 'static + Send>>>,
-            event: EventSubscription,
+            // event: EventSubscription,
             _phantom: PhantomData<T>,
         }
 
@@ -927,12 +938,12 @@ mod _rt {
                 //   },
                 // });
 
-                let subscr =
-                    unsafe { subscribe_event_send_ptr((&mut *handle).read_ready_event_send) };
+                // let subscr =
+                //     unsafe { subscribe_event_send_ptr((&mut *handle).read_ready_event_send) };
                 Self {
                     handle: StreamHandle2(handle),
                     future: None,
-                    event: subscr,
+                    // event: subscr,
                     _phantom: PhantomData,
                 }
             }
@@ -968,14 +979,14 @@ mod _rt {
                     // assumption: future doesn't outlive stream
                     let handle = StreamHandle2(me.handle.0);
                     // duplicate handle (same assumption)
-                    let event = me.event.dup();
+                    // let event = me.event.dup();
                     //                    unsafe { EventSubscription::from_handle(me.event.handle()) };
                     me.future = Some(Box::pin(async move {
                         let mut buffer = iter::repeat_with(MaybeUninit::uninit)
                             .take(ceiling(4 * 1024, mem::size_of::<T>()))
                             .collect::<Vec<_>>();
-                        assert!(!event.ready());
-                        let stream_handle = StreamHandleRust { handle, event };
+                        // assert!(!event.ready());
+                        let stream_handle = StreamHandleRust { handle };
                         let result = if let Some(count) = T::read(&stream_handle, &mut buffer).await
                         {
                             buffer.truncate(count);
@@ -983,7 +994,7 @@ mod _rt {
                         } else {
                             None
                         };
-                        let _ = stream_handle.event.take_handle();
+                        // let _ = stream_handle.event.take_handle();
                         //   cancel_on_drop.handle = None;
                         //   drop(cancel_on_drop);
                         result

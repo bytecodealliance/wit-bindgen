@@ -43,10 +43,13 @@ impl symmetric_executor::GuestEventSubscription for EventSubscription {
     fn dup(&self) -> symmetric_executor::EventSubscription {
         symmetric_executor::EventSubscription::new(self.dup())
     }
-    
+
     fn reset(&self) {
         match &self.inner {
-            EventType::Triggered { last_counter, event } => {
+            EventType::Triggered {
+                last_counter,
+                event,
+            } => {
                 last_counter.store(event.lock().unwrap().counter, Ordering::Relaxed);
             }
             EventType::SystemTime(_system_time) => (),

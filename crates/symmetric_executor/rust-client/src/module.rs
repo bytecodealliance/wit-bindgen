@@ -1378,7 +1378,6 @@ mod _rt {
 }
 #[allow(unused_imports)]
 //pub use _rt::stream_and_future_support;
-
 #[cfg(target_arch = "wasm32")]
 #[link_section = "component-type:wit-bindgen:0.36.0:symmetric:runtime@0.1.0:module:encoded world"]
 #[doc(hidden)]
