@@ -4,7 +4,10 @@
 
 use std::sync::atomic::Ordering;
 
-use wit_bindgen_symmetric_rt::{async_support::Stream, CallbackState};
+use wit_bindgen_symmetric_rt::{
+    async_support::{results, Stream},
+    CallbackState,
+};
 
 #[link(name = "stream")]
 extern "C" {
@@ -25,7 +28,7 @@ extern "C" fn ready(arg: *mut ()) -> CallbackState {
     let info = unsafe { &*arg.cast::<CallbackInfo>() };
     let len = unsafe { &*info.stream }
         .ready_size
-        .swap(0, Ordering::Acquire);
+        .swap(results::BLOCKED, Ordering::Acquire);
     if len > 0 {
         for i in 0..len as usize {
             println!("data {}", info.data[i]);

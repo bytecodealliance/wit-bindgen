@@ -709,8 +709,13 @@ mod _rt {
             fn poll_ready(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
                 let me = self.get_mut();
 
-                let ready =
-                    unsafe { &*me.handle.0 }.ready_size.load(Ordering::SeqCst) != results::BLOCKED;
+                // This is for reading
+                // let ready =
+                //     unsafe { &*me.handle.0 }.ready_size.load(Ordering::SeqCst) != results::BLOCKED;
+                let ready = !unsafe { &*me.handle.0 }
+                    .read_addr
+                    .load(Ordering::SeqCst)
+                    .is_null();
 
                 // see also StreamReader::poll_next
                 if !ready && me.future.is_none() {
@@ -758,7 +763,7 @@ mod _rt {
                 let old_ready = unsafe { &*stream }
                     .ready_size
                     .swap(item_len as isize, Ordering::Release);
-                assert_eq!(old_ready, 0);
+                assert_eq!(old_ready, results::BLOCKED);
                 let read_ready_evt = unsafe { &*stream }.read_ready_event_send;
                 unsafe { activate_event_send_ptr(read_ready_evt) };
                 // assert!(self.future.is_none());

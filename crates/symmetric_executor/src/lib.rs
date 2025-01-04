@@ -169,7 +169,7 @@ impl symmetric_executor::Guest for Guest {
                                 event: _,
                             } => {
                                 unsafe { libc::FD_SET(task.event_fd, rfd_ptr) };
-                                if task.event_fd > maxfd {
+                                if task.event_fd >= maxfd {
                                     maxfd = task.event_fd + 1;
                                 }
                             }
