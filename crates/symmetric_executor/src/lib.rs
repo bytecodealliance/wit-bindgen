@@ -370,7 +370,7 @@ impl Drop for QueuedEvent {
                 event,
             } => {
                 if DEBUGGING {
-                    println!("drop(queued fd {}", self.event_fd);
+                    println!("drop(queued fd {})", self.event_fd);
                 }
                 event
                     .lock()

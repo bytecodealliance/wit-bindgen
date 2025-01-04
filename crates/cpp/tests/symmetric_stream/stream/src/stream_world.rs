@@ -681,10 +681,9 @@ mod _rt {
             pub fn from_handle(handle: *mut WitStream) -> Self {
                 let subscr =
                     unsafe { subscribe_event_send_ptr((&mut *handle).write_ready_event_send) };
-                let subscr_copy = unsafe { EventSubscription::from_handle(subscr.handle()) };
+                let subscr_copy = subscr.dup();
                 let ready = Box::pin(async move {
-                    wait_on(&subscr_copy).await;
-                    let _ = subscr_copy.take_handle();
+                    wait_on(subscr_copy).await;
                 });
                 Self {
                     handle: StreamHandle2(handle),
@@ -815,10 +814,9 @@ mod _rt {
                 // Ok(())
 
                 // wait before next element is written
-                let subscr_copy = unsafe { EventSubscription::from_handle(me.event.handle()) };
+                let subscr_copy = me.event.dup();
                 me.future.replace(Box::pin(async move {
-                    wait_on(&subscr_copy).await;
-                    let _ = subscr_copy.take_handle();
+                    wait_on(subscr_copy).await;
                 }));
                 Ok(())
             }
