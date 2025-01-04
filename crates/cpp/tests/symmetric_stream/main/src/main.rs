@@ -1,6 +1,6 @@
 // use wit_bindgen_symmetric_rt::{CallbackState, EventSubscription};
 
-use std::pin::pin;
+// use std::pin::pin;
 
 use wit_bindgen_symmetric_rt::{async_support::Stream, CallbackState};
 
