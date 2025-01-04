@@ -7,9 +7,9 @@ use std::{
     task::{Context, Poll, RawWaker, RawWakerVTable},
 };
 
-use crate::module::symmetric::runtime::symmetric_executor::{
+use crate::{activate_event_send_ptr, module::symmetric::runtime::symmetric_executor::{
     self, CallbackState, EventGenerator, EventSubscription,
-};
+}};
 
 // See https://github.com/rust-lang/rust/issues/13231 for the limitation
 // / Send constraint on futures for spawn, loosen later
@@ -72,10 +72,11 @@ extern "C" fn read_impl(stream: *mut Stream, buf: *mut (), size: usize) -> isize
         .swap(buf, Ordering::Release);
     assert_eq!(old_ptr, std::ptr::null_mut());
     let write_evt = unsafe { &mut *stream }.write_ready_event_send;
-    let gen: EventGenerator = unsafe { EventGenerator::from_handle(write_evt as usize) };
-    gen.activate();
-    // don't consume
-    let _ = gen.take_handle();
+    unsafe { activate_event_send_ptr(write_evt) };
+    // let gen: EventGenerator = unsafe { EventGenerator::from_handle(write_evt as usize) };
+    // gen.activate();
+    // // don't consume
+    // let _ = gen.take_handle();
     results::BLOCKED
 }
 

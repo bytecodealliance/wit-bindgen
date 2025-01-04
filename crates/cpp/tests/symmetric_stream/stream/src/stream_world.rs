@@ -968,11 +968,13 @@ mod _rt {
                     // assumption: future doesn't outlive stream
                     let handle = StreamHandle2(me.handle.0);
                     // duplicate handle (same assumption)
-                    let event = unsafe { EventSubscription::from_handle(me.event.handle()) };
+                    let event = me.event.dup();
+                    //                    unsafe { EventSubscription::from_handle(me.event.handle()) };
                     me.future = Some(Box::pin(async move {
                         let mut buffer = iter::repeat_with(MaybeUninit::uninit)
                             .take(ceiling(4 * 1024, mem::size_of::<T>()))
                             .collect::<Vec<_>>();
+                        assert!(!event.ready());
                         let stream_handle = StreamHandleRust { handle, event };
                         let result = if let Some(count) = T::read(&stream_handle, &mut buffer).await
                         {

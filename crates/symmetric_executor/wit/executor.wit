@@ -19,8 +19,10 @@ interface symmetric-executor {
         ready: func() -> bool;
         /// Create a timeout event
         from-timeout: static func(nanoseconds: u64) -> event-subscription;
-        /// Duplicate the subscription (e.g. for repeated callback registering)
+        /// Duplicate the subscription (e.g. for repeated callback registering, same cost as subscribe)
         dup: func() -> event-subscription;
+        /// Reset subscription to be inactive, only next trigger will ready it
+        reset: func();
     }
     /// A user controlled event
     resource event-generator {
