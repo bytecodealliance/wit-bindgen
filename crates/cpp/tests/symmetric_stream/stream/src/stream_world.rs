@@ -260,7 +260,7 @@ mod _rt {
         use wit_bindgen_symmetric_rt::{
             activate_event_send_ptr,
             async_support::{
-                self, results,
+                results,
                 stream::{self, Slice},
                 wait_on,
             },
