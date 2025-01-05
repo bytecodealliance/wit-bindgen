@@ -260,13 +260,14 @@ mod _rt {
         use std::sync::atomic::Ordering;
 
         use wit_bindgen_symmetric_rt::activate_event_send_ptr;
+        use wit_bindgen_symmetric_rt::async_support;
         use wit_bindgen_symmetric_rt::async_support::results;
         use wit_bindgen_symmetric_rt::async_support::wait_on;
         pub use wit_bindgen_symmetric_rt::async_support::Stream as WitStream;
         pub use wit_bindgen_symmetric_rt::async_support::StreamHandle2;
         use wit_bindgen_symmetric_rt::async_support::StreamHandleRust;
         use wit_bindgen_symmetric_rt::subscribe_event_send_ptr;
-        use wit_bindgen_symmetric_rt::EventSubscription;
+        // use wit_bindgen_symmetric_rt::EventSubscription;
         use {
             futures::{
                 // channel::oneshot,
@@ -723,7 +724,9 @@ mod _rt {
                     me.future = Some(Box::pin(async move {
                         let handle_local = handle;
                         let subscr = unsafe {
-                            subscribe_event_send_ptr((&*(handle_local.0)).write_ready_event_send)
+                            subscribe_event_send_ptr(async_support::stream::write_ready_event(
+                                handle_local.0,
+                            ))
                         };
                         subscr.reset();
                         wait_on(subscr).await;
@@ -764,8 +767,7 @@ mod _rt {
                     .ready_size
                     .swap(item_len as isize, Ordering::Release);
                 assert_eq!(old_ready, results::BLOCKED);
-                let read_ready_evt = unsafe { &*stream }.read_ready_event_send;
-                unsafe { activate_event_send_ptr(read_ready_evt) };
+                unsafe { activate_event_send_ptr(async_support::stream::read_ready_event(stream)) };
                 // assert!(self.future.is_none());
                 // async_support::with_entry(self.handle, |entry| match entry {
                 //   Entry::Vacant(_) => unreachable!(),
@@ -868,9 +870,7 @@ mod _rt {
                 //   },
                 // });
                 let stream = self.handle.0;
-                let read_ready_evt = unsafe { &*stream }.read_ready_event_send;
-                unsafe { activate_event_send_ptr(read_ready_evt) };
-                //                todo!()
+                unsafe { activate_event_send_ptr(async_support::stream::read_ready_event(stream)) };
             }
         }
 
@@ -1099,9 +1099,11 @@ mod _rt {
                 //   },
                 // });
                 //todo!()
-                let stream = self.handle.0;
-                let write_ready_evt = unsafe { &*stream }.write_ready_event_send;
-                unsafe { activate_event_send_ptr(write_ready_evt) };
+                // let stream = self.handle.0;
+                // let write_ready_evt = unsafe { &*stream }.write_ready_event_send;
+                unsafe {
+                    activate_event_send_ptr(async_support::stream::write_ready_event(self.handle.0))
+                };
             }
         }
 

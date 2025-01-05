@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use wit_bindgen_symmetric_rt::{
     activate_event_send_ptr,
-    async_support::{results, Stream},
+    async_support::{self, results, Stream},
     register, subscribe_event_send_ptr, CallbackState, EventSubscription,
 };
 
@@ -27,8 +27,7 @@ extern "C" fn timer_call(data: *mut ()) -> CallbackState {
         *unsafe { &mut *addr.cast::<u32>() } = count;
         let old_ready = unsafe { &*stream }.ready_size.swap(1, Ordering::Release);
         assert_eq!(old_ready, results::BLOCKED);
-        let read_ready_evt = unsafe { &*stream }.read_ready_event_send;
-        unsafe { activate_event_send_ptr(read_ready_evt) };
+        unsafe { activate_event_send_ptr(async_support::stream::read_ready_event(stream)) };
         // let ms_30 = unsafe {
         //     symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5BstaticX5Devent_subscriptionX2Efrom_timeout(30*1_000_000)
         // } as usize;
@@ -48,8 +47,7 @@ extern "C" fn write_ready(data: *mut ()) -> CallbackState {
             .ready_size
             .swap(isize::MIN, Ordering::Release);
         assert_eq!(old_ready, results::BLOCKED);
-        let read_ready_evt = unsafe { &*stream }.read_ready_event_send;
-        unsafe { activate_event_send_ptr(read_ready_evt) };
+        unsafe { activate_event_send_ptr(async_support::stream::read_ready_event(stream)) };
         CallbackState::Ready
     } else {
         if count == 1 {
@@ -73,8 +71,8 @@ pub fn testX3AtestX2Fstream_sourceX00X5BasyncX5Dcreate(
     results: *mut u8,
 ) -> *mut u8 {
     let obj = Box::new(Stream::new());
-    let event = unsafe { subscribe_event_send_ptr(obj.write_ready_event_send) };
     let addr = Box::into_raw(obj);
+    let event = unsafe { subscribe_event_send_ptr(async_support::stream::write_ready_event(addr)) };
     register(event, write_ready, addr.cast());
     *unsafe { &mut *results.cast::<*mut Stream>() } = addr;
     std::ptr::null_mut()

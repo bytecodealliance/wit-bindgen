@@ -40,25 +40,24 @@ pub enum Handle {
     Write,
 }
 
-#[repr(C)]
-pub struct StreamVtable {
-    // magic value for EOF(-1) and block(MIN)
-    // asynchronous function, if this blocks wait for read ready event
-    pub read: extern "C" fn(stream: *mut Stream, buf: *mut (), size: usize) -> isize,
-    pub close_read: extern "C" fn(stream: *mut Stream),
+// #[repr(C)]
+// pub struct StreamVtable {
+//     // magic value for EOF(-1) and block(MIN)
+//     // asynchronous function, if this blocks wait for read ready event
+//     pub read: extern "C" fn(stream: *mut Stream, buf: *mut (), size: usize) -> isize,
+//     pub close_read: extern "C" fn(stream: *mut Stream),
 
-    pub write: extern "C" fn(stream: *mut Stream, buf: *mut (), size: usize) -> isize,
-    pub close_write: extern "C" fn(stream: *mut Stream),
-    // post WASI 0.3, CPB
-    // pub allocate: fn(stream: *mut ()) -> (*mut (), isize),
-    // pub publish: fn(stream: *mut (), size: usize),
-}
+//     pub write: extern "C" fn(stream: *mut Stream, buf: *mut (), size: usize) -> isize,
+//     pub close_write: extern "C" fn(stream: *mut Stream),
+//     // post WASI 0.3, CPB
+//     // pub allocate: fn(stream: *mut ()) -> (*mut (), isize),
+//     // pub publish: fn(stream: *mut (), size: usize),
+// }
 
 #[repr(C)]
 pub struct Stream {
-    // pub vtable: *const StreamVtable,
-    pub read_ready_event_send: *mut (),
-    pub write_ready_event_send: *mut (),
+    read_ready_event_send: *mut (),
+    write_ready_event_send: *mut (),
     pub read_addr: AtomicPtr<()>,
     pub read_size: AtomicUsize,
     pub ready_size: AtomicIsize,
@@ -87,6 +86,14 @@ pub mod stream {
         let write_evt = unsafe { &mut *stream }.write_ready_event_send;
         unsafe { activate_event_send_ptr(write_evt) };
         results::BLOCKED
+    }
+
+    pub unsafe extern "C" fn read_ready_event(stream: *const Stream) -> *mut () {
+        unsafe { (&*stream).read_ready_event_send }
+    }
+
+    pub unsafe extern "C" fn write_ready_event(stream: *const Stream) -> *mut () {
+        unsafe { (&*stream).write_ready_event_send }
     }
 }
 

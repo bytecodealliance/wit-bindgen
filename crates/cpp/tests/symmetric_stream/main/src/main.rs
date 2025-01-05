@@ -62,8 +62,11 @@ fn main() {
     unsafe {
         async_support::stream::read(handle, info.data.as_mut_ptr().cast(), DATALEN);
     };
-    let read_ready = unsafe { (&*handle).read_ready_event_send };
-    let subscription = unsafe { wit_bindgen_symmetric_rt::subscribe_event_send_ptr(read_ready) };
+    let subscription = unsafe {
+        wit_bindgen_symmetric_rt::subscribe_event_send_ptr(async_support::stream::read_ready_event(
+            handle,
+        ))
+    };
     println!("Register read in main");
     wit_bindgen_symmetric_rt::register(
         subscription,
