@@ -210,8 +210,18 @@ impl symmetric_executor::Guest for Guest {
                     break;
                 }
             }
+            if tvptr.is_null() && maxfd == 0 {
+                // probably only active tasks, all returned pending, try again
+                if DEBUGGING {
+                    println!(
+                        "Relooping with {} tasks",
+                        EXECUTOR.lock().unwrap().active_tasks.len()
+                    );
+                }
+                continue;
+            }
             // with no work left the break should have occured
-            assert!(!tvptr.is_null() || maxfd > 0);
+            // assert!(!tvptr.is_null() || maxfd > 0);
             if DEBUGGING {
                 if tvptr.is_null() {
                     println!("select({maxfd}, {:x}, null)", unsafe {
