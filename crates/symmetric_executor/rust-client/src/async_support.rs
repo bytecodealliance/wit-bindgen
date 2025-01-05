@@ -167,20 +167,13 @@ pub async fn wait_on(wait_for: EventSubscription) {
         if wait_for.ready() {
             Poll::Ready(())
         } else {
+            // remember this eventsubscription in the context
             let data = cx.waker().data();
             let mut copy = Some(wait_for.dup());
-            // dangerous duplication?
-            // let wait_for_copy = unsafe { EventSubscription::from_handle(wait_for.handle()) };
-            //let _old_waiting_for =
             std::mem::swap(
                 unsafe { &mut *(data.cast::<Option<EventSubscription>>().cast_mut()) },
                 &mut copy,
             );
-            // .replace(wait_for);
-            // ~~don't free the old subscription we found~~
-            // if let Some(subscription) = old_waiting_for {
-            //     subscription.take_handle();
-            // }
             Poll::Pending
         }
     })
@@ -194,7 +187,9 @@ extern "C" fn symmetric_callback(obj: *mut ()) -> symmetric_executor::CallbackSt
             let state = obj.cast::<FutureState>();
             let waiting_for = unsafe { &mut *state }.waiting_for.take();
             super::register(waiting_for.unwrap(), symmetric_callback, obj);
-            CallbackState::Pending
+            // as we registered this callback on a new event stop calling
+            // from the old event
+            CallbackState::Ready
         }
     }
 }

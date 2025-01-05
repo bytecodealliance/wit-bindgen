@@ -47,7 +47,7 @@ extern "C" fn write_ready(data: *mut ()) -> CallbackState {
         let old_ready = unsafe { &*stream }
             .ready_size
             .swap(isize::MIN, Ordering::Release);
-        assert_eq!(old_ready, 0);
+        assert_eq!(old_ready, results::BLOCKED);
         let read_ready_evt = unsafe { &*stream }.read_ready_event_send;
         unsafe { activate_event_send_ptr(read_ready_evt) };
         CallbackState::Ready
