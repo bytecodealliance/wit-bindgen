@@ -215,16 +215,17 @@ pub mod exports {
 
                     result.cast()
                 }
-                #[doc(hidden)]
-                #[allow(non_snake_case)]
-                pub unsafe fn __callback_create(
-                    ctx: *mut u8,
-                    event0: i32,
-                    event1: i32,
-                    event2: i32,
-                ) -> i32 {
-                    ::wit_bindgen_symmetric_rt::async_support::callback(ctx, event0, event1, event2)
-                }
+                // #[doc(hidden)]
+                // #[allow(non_snake_case)]
+                // pub unsafe fn __callback_create(
+                //     ctx: *mut u8,
+                //     event0: i32,
+                //     event1: i32,
+                //     event2: i32,
+                // ) -> i32 {
+                //     todo!()
+                //     // ::wit_bindgen_symmetric_rt::async_support::callback(ctx, event0, event1, event2)
+                // }
                 pub trait Guest {
                     fn create() -> impl ::core::future::Future<
                         Output = _rt::stream_and_future_support::StreamReader<u32>,
@@ -258,7 +259,11 @@ mod _rt {
         pub use wit_bindgen_symmetric_rt::async_support::{Stream as WitStream, StreamHandle2};
         use wit_bindgen_symmetric_rt::{
             activate_event_send_ptr,
-            async_support::{self, stream::Slice, wait_on},
+            async_support::{
+                self, results,
+                stream::{self, Slice},
+                wait_on,
+            },
             subscribe_event_send_ptr,
         };
         use {
@@ -845,8 +850,12 @@ mod _rt {
                 //     }
                 //   },
                 // });
-                let stream = self.handle.0;
-                unsafe { activate_event_send_ptr(async_support::stream::read_ready_event(stream)) };
+                if !unsafe { stream::is_write_closed(self.handle.0) } {
+                    unsafe {
+                        stream::finish_writing(self.handle.0, results::CLOSED);
+                    }
+                }
+                unsafe { stream::close_write(self.handle.0) };
             }
         }
 
@@ -1080,6 +1089,7 @@ mod _rt {
                 unsafe {
                     activate_event_send_ptr(async_support::stream::write_ready_event(self.handle.0))
                 };
+                unsafe { stream::close_read(self.handle.0) };
             }
         }
 

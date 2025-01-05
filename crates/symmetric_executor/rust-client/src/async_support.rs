@@ -27,20 +27,6 @@ struct FutureState {
     waiting_for: Option<EventSubscription>,
 }
 
-// #[repr(C)]
-// pub struct StreamVtable {
-//     // magic value for EOF(-1) and block(MIN)
-//     // asynchronous function, if this blocks wait for read ready event
-//     pub read: extern "C" fn(stream: *mut Stream, buf: *mut (), size: usize) -> isize,
-//     pub close_read: extern "C" fn(stream: *mut Stream),
-
-//     pub write: extern "C" fn(stream: *mut Stream, buf: *mut (), size: usize) -> isize,
-//     pub close_write: extern "C" fn(stream: *mut Stream),
-//     // post WASI 0.3, CPB
-//     // pub allocate: fn(stream: *mut ()) -> (*mut (), isize),
-//     // pub publish: fn(stream: *mut (), size: usize),
-// }
-
 pub use stream::{results, Stream};
 
 pub mod stream {
@@ -97,8 +83,12 @@ pub mod stream {
     pub unsafe extern "C" fn is_ready_to_write(stream: *const Stream) -> bool {
         !unsafe { &*stream }
             .read_addr
-            .load(Ordering::SeqCst)
+            .load(Ordering::Acquire)
             .is_null()
+    }
+
+    pub unsafe extern "C" fn is_write_closed(stream: *const Stream) -> bool {
+        unsafe { &*stream }.ready_size.load(Ordering::Acquire) == results::CLOSED
     }
 
     #[repr(C)]
@@ -134,7 +124,14 @@ pub mod stream {
             .active_instances
             .fetch_sub(1, Ordering::AcqRel);
         if refs == 1 {
-            drop(Box::from_raw(stream));
+            let obj = Box::from_raw(stream);
+            drop(EventGenerator::from_handle(
+                obj.read_ready_event_send as usize,
+            ));
+            drop(EventGenerator::from_handle(
+                obj.write_ready_event_send as usize,
+            ));
+            drop(obj);
         }
     }
 
@@ -268,10 +265,10 @@ pub async unsafe fn await_result(
     }
 }
 
-#[doc(hidden)]
-pub unsafe fn callback(_ctx: *mut u8, _event0: i32, _event1: i32, _event2: i32) -> i32 {
-    todo!()
-}
+// #[doc(hidden)]
+// pub unsafe fn callback(_ctx: *mut u8, _event0: i32, _event1: i32, _event2: i32) -> i32 {
+//     todo!()
+// }
 
 pub fn spawn(future: impl Future<Output = ()> + 'static + Send) {
     let wait_for = first_poll(future, |()| ());
@@ -290,10 +287,6 @@ pub struct AddressSend(pub *mut ());
 unsafe impl Send for AddressSend {}
 // unsafe impl Sync for StreamHandle2 {}
 
-// pub struct StreamHandleRust {
-//     pub handle: StreamHandle2,
-// }
-
 // this is used for reading?
 pub async unsafe fn await_stream_result(
     import: unsafe extern "C" fn(*mut Stream, *mut (), usize) -> isize,
@@ -306,13 +299,9 @@ pub async unsafe fn await_stream_result(
     match result {
         results::BLOCKED => {
             let event = unsafe { subscribe_event_send_ptr(stream::read_ready_event(stream.0)) };
-            // (&*stream.0).read_ready_event_send) };
             event.reset();
             wait_on(event).await;
             let v = stream::read_amount(stream.0);
-            // unsafe { &mut *stream.0 }
-            //     .ready_size
-            //     .swap(results::BLOCKED, Ordering::SeqCst);
             if let results::CLOSED | results::CANCELED = v {
                 None
             } else {
