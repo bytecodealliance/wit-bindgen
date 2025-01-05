@@ -12,9 +12,8 @@ pub mod test {
                 super::super::super::__link_custom_section_describing_imports;
 
             // use _rt::stream_and_future_support::StreamHandle2;
-            use wit_bindgen_symmetric_rt::{
-                async_support::{AddressSend, StreamHandle2, StreamHandleRust},
-                // subscribe_event_send_ptr,
+            use wit_bindgen_symmetric_rt::async_support::{
+                self, AddressSend, StreamHandle2, StreamHandleRust,
             };
 
             use super::super::super::_rt;
@@ -60,7 +59,8 @@ pub mod test {
                         //   #[link_name = "[async][stream-read-0]create"]
                         //   fn wit_import(_: u32, _: *mut u8, _: u32) -> u32;
                         // }
-                        let poll_fn = unsafe { &*((&*(stream.handle.0)).vtable) }.read;
+                        let poll_fn = async_support::stream::read;
+                        // &*((&*(stream.handle.0)).vtable) }.read;
                         // match &stream.event {
                         //     SubscriptionType::None => {
                         //         let subscr = unsafe {

@@ -56,7 +56,7 @@ pub struct StreamVtable {
 
 #[repr(C)]
 pub struct Stream {
-    pub vtable: *const StreamVtable,
+    // pub vtable: *const StreamVtable,
     pub read_ready_event_send: *mut (),
     pub write_ready_event_send: *mut (),
     pub read_addr: AtomicPtr<()>,
@@ -64,49 +64,56 @@ pub struct Stream {
     pub ready_size: AtomicIsize,
 }
 
-extern "C" fn read_impl(stream: *mut Stream, buf: *mut (), size: usize) -> isize {
-    let old_ready = unsafe { &*stream }.ready_size.load(Ordering::SeqCst);
-    if old_ready == results::CLOSED {
-        return old_ready;
+pub mod stream {
+    use std::sync::atomic::Ordering;
+
+    use super::{results, Stream};
+    use crate::activate_event_send_ptr;
+
+    pub unsafe extern "C" fn read(stream: *mut Stream, buf: *mut (), size: usize) -> isize {
+        let old_ready = unsafe { &*stream }.ready_size.load(Ordering::SeqCst);
+        if old_ready == results::CLOSED {
+            return old_ready;
+        }
+        assert!(old_ready == results::BLOCKED);
+        let old_size = unsafe { &mut *stream }
+            .read_size
+            .swap(size, Ordering::Acquire);
+        assert_eq!(old_size, 0);
+        let old_ptr = unsafe { &mut *stream }
+            .read_addr
+            .swap(buf, Ordering::Release);
+        assert_eq!(old_ptr, std::ptr::null_mut());
+        let write_evt = unsafe { &mut *stream }.write_ready_event_send;
+        unsafe { activate_event_send_ptr(write_evt) };
+        results::BLOCKED
     }
-    assert!(old_ready == results::BLOCKED);
-    let old_size = unsafe { &mut *stream }
-        .read_size
-        .swap(size, Ordering::Acquire);
-    assert_eq!(old_size, 0);
-    let old_ptr = unsafe { &mut *stream }
-        .read_addr
-        .swap(buf, Ordering::Release);
-    assert_eq!(old_ptr, std::ptr::null_mut());
-    let write_evt = unsafe { &mut *stream }.write_ready_event_send;
-    unsafe { activate_event_send_ptr(write_evt) };
-    results::BLOCKED
 }
 
-extern "C" fn write_impl(_stream: *mut Stream, _buf: *mut (), _size: usize) -> isize {
-    todo!()
-}
+// extern "C" fn write_impl(_stream: *mut Stream, _buf: *mut (), _size: usize) -> isize {
+//     todo!()
+// }
 
-extern "C" fn read_close_impl(stream: *mut Stream) {
-    read_impl(stream, core::ptr::null_mut(), 0);
-    // deallocate?
-}
+// extern "C" fn read_close_impl(stream: *mut Stream) {
+//     read_impl(stream, core::ptr::null_mut(), 0);
+//     // deallocate?
+// }
 
-extern "C" fn write_close_impl(_stream: *mut Stream) {
-    todo!()
-}
+// extern "C" fn write_close_impl(_stream: *mut Stream) {
+//     todo!()
+// }
 
-const STREAM_VTABLE: StreamVtable = StreamVtable {
-    read: read_impl,
-    close_read: read_close_impl,
-    write: write_impl,
-    close_write: write_close_impl,
-};
+// const STREAM_VTABLE: StreamVtable = StreamVtable {
+//     read: read_impl,
+//     close_read: read_close_impl,
+//     write: write_impl,
+//     close_write: write_close_impl,
+// };
 
 impl Stream {
     pub fn new() -> Self {
         Self {
-            vtable: &STREAM_VTABLE as *const StreamVtable,
+            // vtable: &STREAM_VTABLE as *const StreamVtable,
             read_ready_event_send: EventGenerator::new().take_handle() as *mut (),
             write_ready_event_send: EventGenerator::new().take_handle() as *mut (),
             read_addr: AtomicPtr::new(core::ptr::null_mut()),

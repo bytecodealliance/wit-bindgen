@@ -5,7 +5,7 @@
 use std::sync::atomic::Ordering;
 
 use wit_bindgen_symmetric_rt::{
-    async_support::{results, Stream},
+    async_support::{self, results, Stream},
     CallbackState,
 };
 
@@ -34,11 +34,7 @@ extern "C" fn ready(arg: *mut ()) -> CallbackState {
             println!("data {}", info.data[i]);
         }
         unsafe {
-            ((&*(&*info.stream).vtable).read)(
-                info.stream,
-                info.data.as_ptr().cast_mut().cast(),
-                DATALEN,
-            );
+            async_support::stream::read(info.stream, info.data.as_ptr().cast_mut().cast(), DATALEN);
         };
         // call again
         CallbackState::Pending
@@ -64,7 +60,7 @@ fn main() {
         data: [0, 0],
     });
     unsafe {
-        ((&*(&*handle).vtable).read)(handle, info.data.as_mut_ptr().cast(), DATALEN);
+        async_support::stream::read(handle, info.data.as_mut_ptr().cast(), DATALEN);
     };
     let read_ready = unsafe { (&*handle).read_ready_event_send };
     let subscription = unsafe { wit_bindgen_symmetric_rt::subscribe_event_send_ptr(read_ready) };
