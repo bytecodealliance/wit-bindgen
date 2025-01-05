@@ -54,7 +54,7 @@ pub mod stream {
         buf: *mut (),
         size: usize,
     ) -> isize {
-        let old_ready = unsafe { &*stream }.ready_size.load(Ordering::SeqCst);
+        let old_ready = unsafe { &*stream }.ready_size.load(Ordering::Acquire);
         if old_ready == results::CLOSED {
             return old_ready;
         }

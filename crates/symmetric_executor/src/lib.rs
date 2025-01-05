@@ -8,11 +8,7 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use executor::exports::symmetric::runtime::symmetric_executor::{
-    self,
-    CallbackState,
-    // GuestEventSubscription,
-};
+use executor::exports::symmetric::runtime::symmetric_executor::{self, CallbackState};
 
 const DEBUGGING: bool = cfg!(feature = "trace");
 const INVALID_FD: EventFd = -1;
@@ -36,7 +32,6 @@ impl symmetric_executor::GuestEventSubscription for EventSubscription {
         let when = SystemTime::now() + Duration::from_nanos(nanoseconds);
         symmetric_executor::EventSubscription::new(EventSubscription {
             inner: EventType::SystemTime(when),
-            // callback: None,
         })
     }
 
@@ -66,18 +61,14 @@ impl symmetric_executor::GuestEventGenerator for EventGenerator {
     }
 
     fn subscribe(&self) -> symmetric_executor::EventSubscription {
-        // let event_fd = unsafe { libc::eventfd(0, libc::EFD_NONBLOCK) };
         if DEBUGGING {
             println!("subscribe({:x})", Arc::as_ptr(&self.0) as usize);
         }
-        // self.0.lock().unwrap().waiting.push(event_fd);
         symmetric_executor::EventSubscription::new(EventSubscription {
             inner: EventType::Triggered {
                 last_counter: AtomicU32::new(0),
-                // event_fd,
                 event: Arc::clone(&self.0),
             },
-            // callback: None,
         })
     }
 
@@ -147,7 +138,7 @@ impl symmetric_executor::Guest for Guest {
             unsafe { libc::FD_ZERO(rfd_ptr) };
             {
                 let mut ex = EXECUTOR.lock().unwrap();
-                let old_busy = EXECUTOR_BUSY.swap(true, Ordering::SeqCst);
+                let old_busy = EXECUTOR_BUSY.swap(true, Ordering::Acquire);
                 assert!(!old_busy);
                 ex.active_tasks.iter_mut().for_each(|task| {
                     if task.inner.ready() {
@@ -165,7 +156,6 @@ impl symmetric_executor::Guest for Guest {
                         match &task.inner {
                             EventType::Triggered {
                                 last_counter: _,
-                                // event_fd,
                                 event: _,
                             } => {
                                 unsafe { libc::FD_SET(task.event_fd, rfd_ptr) };
@@ -175,7 +165,7 @@ impl symmetric_executor::Guest for Guest {
                             }
                             EventType::SystemTime(system_time) => {
                                 if *system_time > now {
-                                    let diff = system_time.duration_since(now).unwrap_or_default(); //.as_micros();
+                                    let diff = system_time.duration_since(now).unwrap_or_default();
                                     let secs = diff.as_secs() as i64;
                                     let usecs = diff.subsec_micros() as i64;
                                     if secs < wait.tv_sec
@@ -183,7 +173,6 @@ impl symmetric_executor::Guest for Guest {
                                     {
                                         wait.tv_sec = secs;
                                         wait.tv_usec = usecs;
-                                        // timeoutindex = n;
                                     }
                                     tvptr = core::ptr::from_mut(&mut wait);
                                 } else {
@@ -195,7 +184,7 @@ impl symmetric_executor::Guest for Guest {
                         }
                     }
                 });
-                let old_busy = EXECUTOR_BUSY.swap(false, Ordering::SeqCst);
+                let old_busy = EXECUTOR_BUSY.swap(false, Ordering::Release);
                 assert!(old_busy);
                 ex.active_tasks.retain(|task| task.callback.is_some());
                 {
@@ -316,11 +305,10 @@ impl symmetric_executor::Guest for Guest {
                 }
             }
         }
-        // subscr.callback.replace(CallbackEntry(cb, data));
         match EXECUTOR.try_lock() {
             Ok(mut lock) => lock.active_tasks.push(subscr),
             Err(_err) => {
-                if EXECUTOR_BUSY.load(Ordering::Relaxed) {
+                if EXECUTOR_BUSY.load(Ordering::Acquire) {
                     NEW_TASKS.lock().unwrap().push(subscr);
                 } else {
                     // actually this is unlikely, but give it a try
@@ -363,7 +351,6 @@ impl EventSubscription {
                 // event_fd,
                 event,
             } => {
-                // let new_event_fd = unsafe { libc::eventfd(0, libc::EFD_NONBLOCK) };
                 let new_event = Arc::clone(event);
                 let last_counter = last_counter_old.load(Ordering::Relaxed);
                 if DEBUGGING {
@@ -372,19 +359,14 @@ impl EventSubscription {
                         Arc::as_ptr(&event) as usize
                     );
                 }
-                // new_event.lock().unwrap().waiting.push(new_event_fd);
                 EventType::Triggered {
                     last_counter: AtomicU32::new(last_counter),
-                    // event_fd: new_event_fd,
                     event: new_event,
                 }
             }
             EventType::SystemTime(system_time) => EventType::SystemTime(*system_time),
         };
-        EventSubscription {
-            inner,
-            // callback: None,
-        }
+        EventSubscription { inner }
     }
 }
 
@@ -401,7 +383,6 @@ impl Drop for QueuedEvent {
         match &self.inner {
             EventType::Triggered {
                 last_counter: _,
-                // event_fd,
                 event,
             } => {
                 if DEBUGGING {
@@ -422,7 +403,6 @@ impl Drop for QueuedEvent {
 enum EventType {
     Triggered {
         last_counter: AtomicU32,
-        //        event_fd: EventFd,
         event: Arc<Mutex<EventInner>>,
     },
     SystemTime(SystemTime),
@@ -433,7 +413,6 @@ impl EventType {
         match self {
             EventType::Triggered {
                 last_counter,
-                // event_fd: _,
                 event,
             } => {
                 let current_counter = event.lock().unwrap().counter;

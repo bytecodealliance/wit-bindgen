@@ -701,10 +701,7 @@ mod _rt {
             fn poll_ready(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
                 let me = self.get_mut();
 
-                // This is for reading
-                // let ready =
-                //     unsafe { &*me.handle.0 }.ready_size.load(Ordering::SeqCst) != results::BLOCKED;
-                let ready = unsafe { async_support::stream::is_ready_to_write(me.handle.0) };
+                let ready = unsafe { stream::is_ready_to_write(me.handle.0) };
 
                 // see also StreamReader::poll_next
                 if !ready && me.future.is_none() {
@@ -712,9 +709,7 @@ mod _rt {
                     me.future = Some(Box::pin(async move {
                         let handle_local = handle;
                         let subscr = unsafe {
-                            subscribe_event_send_ptr(async_support::stream::write_ready_event(
-                                handle_local.0,
-                            ))
+                            subscribe_event_send_ptr(stream::write_ready_event(handle_local.0))
                         };
                         subscr.reset();
                         wait_on(subscr).await;
@@ -739,16 +734,15 @@ mod _rt {
                 let item_len = item.len();
                 let me = self.get_mut();
                 let stream = me.handle.0;
-                let Slice { addr, size } = unsafe { async_support::stream::start_writing(stream) };
+                let Slice { addr, size } = unsafe { stream::start_writing(stream) };
                 assert!(size >= item_len);
-                // let outptr = addr.cast::<MaybeUninit<T>>();
                 let slice = unsafe {
                     std::slice::from_raw_parts_mut(addr.cast::<MaybeUninit<T>>(), item_len)
                 };
                 for (a, b) in slice.iter_mut().zip(item.drain(..)) {
                     a.write(b);
                 }
-                unsafe { async_support::stream::finish_writing(stream, item_len as isize) };
+                unsafe { stream::finish_writing(stream, item_len as isize) };
                 // assert!(self.future.is_none());
                 // async_support::with_entry(self.handle, |entry| match entry {
                 //   Entry::Vacant(_) => unreachable!(),
@@ -932,12 +926,9 @@ mod _rt {
                 //   },
                 // });
 
-                // let subscr =
-                //     unsafe { subscribe_event_send_ptr((&mut *handle).read_ready_event_send) };
                 Self {
                     handle: StreamHandle2(handle),
                     future: None,
-                    // event: subscr,
                     _phantom: PhantomData,
                 }
             }
@@ -958,7 +949,6 @@ mod _rt {
                 // });
 
                 // ManuallyDrop::new(self).handle
-                // todo!()
                 ManuallyDrop::new(self).handle.0
             }
         }
@@ -970,16 +960,11 @@ mod _rt {
                 let me = self.get_mut();
 
                 if me.future.is_none() {
-                    // assumption: future doesn't outlive stream
                     let handle = StreamHandle2(me.handle.0);
-                    // duplicate handle (same assumption)
-                    // let event = me.event.dup();
-                    //                    unsafe { EventSubscription::from_handle(me.event.handle()) };
                     me.future = Some(Box::pin(async move {
                         let mut buffer = iter::repeat_with(MaybeUninit::uninit)
                             .take(ceiling(4 * 1024, mem::size_of::<T>()))
                             .collect::<Vec<_>>();
-                        // assert!(!event.ready());
                         let stream_handle = handle;
                         let result = if let Some(count) = T::read(&stream_handle, &mut buffer).await
                         {
@@ -1086,9 +1071,7 @@ mod _rt {
                 //todo!()
                 // let stream = self.handle.0;
                 // let write_ready_evt = unsafe { &*stream }.write_ready_event_send;
-                unsafe {
-                    activate_event_send_ptr(async_support::stream::write_ready_event(self.handle.0))
-                };
+                unsafe { activate_event_send_ptr(stream::write_ready_event(self.handle.0)) };
                 unsafe { stream::close_read(self.handle.0) };
             }
         }
@@ -1117,7 +1100,7 @@ mod _rt {
 
         /// Creates a new Component Model `stream` with the specified payload type.
         pub fn new_stream<T: StreamPayload>() -> (StreamWriter<T>, StreamReader<T>) {
-            let handle = async_support::stream::create_stream();
+            let handle = stream::create_stream();
             (
                 StreamWriter::from_handle(handle),
                 StreamReader::from_handle(handle),
