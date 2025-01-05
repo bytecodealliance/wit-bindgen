@@ -2,7 +2,6 @@ use futures::{task::Waker, FutureExt};
 use std::{
     future::Future,
     pin::Pin,
-    sync::atomic::{AtomicIsize, AtomicPtr, AtomicUsize, Ordering},
     task::{Context, Poll, RawWaker, RawWakerVTable},
 };
 
@@ -28,16 +27,6 @@ struct FutureState {
     waiting_for: Option<EventSubscription>,
 }
 
-// #[doc(hidden)]
-// pub enum Handle {
-//     LocalOpen,
-//     LocalReady(Box<dyn Any>, Waker),
-//     LocalWaiting(oneshot::Sender<Box<dyn Any>>),
-//     LocalClosed,
-//     Read,
-//     Write,
-// }
-
 // #[repr(C)]
 // pub struct StreamVtable {
 //     // magic value for EOF(-1) and block(MIN)
@@ -52,22 +41,32 @@ struct FutureState {
 //     // pub publish: fn(stream: *mut (), size: usize),
 // }
 
-// #[repr(C)]
-pub struct Stream {
-    read_ready_event_send: *mut (),
-    write_ready_event_send: *mut (),
-    read_addr: AtomicPtr<()>,
-    read_size: AtomicUsize,
-    ready_size: AtomicIsize,
-}
+pub use stream::{results, Stream};
 
 pub mod stream {
-    use std::sync::atomic::Ordering;
+    use std::sync::atomic::{AtomicIsize, AtomicPtr, AtomicUsize, Ordering};
 
-    use super::{results, Stream};
-    use crate::activate_event_send_ptr;
+    use crate::{activate_event_send_ptr, EventGenerator};
 
-    pub unsafe extern "C" fn read(stream: *mut Stream, buf: *mut (), size: usize) -> isize {
+    pub mod results {
+        pub const BLOCKED: isize = -1;
+        pub const CLOSED: isize = isize::MIN;
+        pub const CANCELED: isize = 0;
+    }
+
+    pub struct Stream {
+        read_ready_event_send: *mut (),
+        write_ready_event_send: *mut (),
+        read_addr: AtomicPtr<()>,
+        read_size: AtomicUsize,
+        ready_size: AtomicIsize,
+    }
+
+    pub unsafe extern "C" fn start_reading(
+        stream: *mut Stream,
+        buf: *mut (),
+        size: usize,
+    ) -> isize {
         let old_ready = unsafe { &*stream }.ready_size.load(Ordering::SeqCst);
         if old_ready == results::CLOSED {
             return old_ready;
@@ -128,6 +127,19 @@ pub mod stream {
         assert_eq!(old_ready, results::BLOCKED);
         unsafe { activate_event_send_ptr(read_ready_event(stream)) };
     }
+
+    impl Stream {
+        pub fn new() -> Self {
+            Self {
+                // vtable: &STREAM_VTABLE as *const StreamVtable,
+                read_ready_event_send: EventGenerator::new().take_handle() as *mut (),
+                write_ready_event_send: EventGenerator::new().take_handle() as *mut (),
+                read_addr: AtomicPtr::new(core::ptr::null_mut()),
+                read_size: AtomicUsize::new(0),
+                ready_size: AtomicIsize::new(results::BLOCKED),
+            }
+        }
+    }
 }
 
 // extern "C" fn write_impl(_stream: *mut Stream, _buf: *mut (), _size: usize) -> isize {
@@ -149,19 +161,6 @@ pub mod stream {
 //     write: write_impl,
 //     close_write: write_close_impl,
 // };
-
-impl Stream {
-    pub fn new() -> Self {
-        Self {
-            // vtable: &STREAM_VTABLE as *const StreamVtable,
-            read_ready_event_send: EventGenerator::new().take_handle() as *mut (),
-            write_ready_event_send: EventGenerator::new().take_handle() as *mut (),
-            read_addr: AtomicPtr::new(core::ptr::null_mut()),
-            read_size: AtomicUsize::new(0),
-            ready_size: AtomicIsize::new(results::BLOCKED),
-        }
-    }
-}
 
 static VTABLE: RawWakerVTable = RawWakerVTable::new(
     |_| RawWaker::new(core::ptr::null(), &VTABLE),
@@ -280,12 +279,6 @@ pub fn spawn(future: impl Future<Output = ()> + 'static + Send) {
     drop(wait_for);
 }
 
-pub mod results {
-    pub const BLOCKED: isize = -1;
-    pub const CLOSED: isize = isize::MIN;
-    pub const CANCELED: isize = 0;
-}
-
 // Stream handles are Send, so wrap them
 #[repr(transparent)]
 pub struct StreamHandle2(pub *mut Stream);
@@ -312,12 +305,14 @@ pub async unsafe fn await_stream_result(
     let result = import(stream_copy, address.0, count);
     match result {
         results::BLOCKED => {
-            let event = unsafe { subscribe_event_send_ptr((&*stream.0).read_ready_event_send) };
+            let event = unsafe { subscribe_event_send_ptr(stream::read_ready_event(stream.0)) };
+            // (&*stream.0).read_ready_event_send) };
             event.reset();
             wait_on(event).await;
-            let v = unsafe { &mut *stream.0 }
-                .ready_size
-                .swap(results::BLOCKED, Ordering::SeqCst);
+            let v = stream::read_amount(stream.0);
+            // unsafe { &mut *stream.0 }
+            //     .ready_size
+            //     .swap(results::BLOCKED, Ordering::SeqCst);
             if let results::CLOSED | results::CANCELED = v {
                 None
             } else {

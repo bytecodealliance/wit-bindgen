@@ -1,9 +1,3 @@
-// use wit_bindgen_symmetric_rt::{CallbackState, EventSubscription};
-
-// use std::pin::pin;
-
-// use std::sync::atomic::Ordering;
-
 use wit_bindgen_symmetric_rt::{
     async_support::{self, Stream},
     CallbackState,
@@ -32,7 +26,11 @@ extern "C" fn ready(arg: *mut ()) -> CallbackState {
             println!("data {}", info.data[i]);
         }
         unsafe {
-            async_support::stream::read(info.stream, info.data.as_ptr().cast_mut().cast(), DATALEN);
+            async_support::stream::start_reading(
+                info.stream,
+                info.data.as_ptr().cast_mut().cast(),
+                DATALEN,
+            );
         };
         // call again
         CallbackState::Pending
@@ -58,7 +56,7 @@ fn main() {
         data: [0, 0],
     });
     unsafe {
-        async_support::stream::read(handle, info.data.as_mut_ptr().cast(), DATALEN);
+        async_support::stream::start_reading(handle, info.data.as_mut_ptr().cast(), DATALEN);
     };
     let subscription = unsafe {
         wit_bindgen_symmetric_rt::subscribe_event_send_ptr(async_support::stream::read_ready_event(

@@ -59,7 +59,7 @@ pub mod test {
                         //   #[link_name = "[async][stream-read-0]create"]
                         //   fn wit_import(_: u32, _: *mut u8, _: u32) -> u32;
                         // }
-                        let poll_fn = async_support::stream::read;
+                        let poll_fn = async_support::stream::start_reading;
                         // &*((&*(stream.handle.0)).vtable) }.read;
                         // match &stream.event {
                         //     SubscriptionType::None => {
