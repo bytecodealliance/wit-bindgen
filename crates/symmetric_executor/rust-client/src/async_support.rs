@@ -162,26 +162,6 @@ pub mod stream {
     }
 }
 
-// extern "C" fn write_impl(_stream: *mut Stream, _buf: *mut (), _size: usize) -> isize {
-//     todo!()
-// }
-
-// extern "C" fn read_close_impl(stream: *mut Stream) {
-//     read_impl(stream, core::ptr::null_mut(), 0);
-//     // deallocate?
-// }
-
-// extern "C" fn write_close_impl(_stream: *mut Stream) {
-//     todo!()
-// }
-
-// const STREAM_VTABLE: StreamVtable = StreamVtable {
-//     read: read_impl,
-//     close_read: read_close_impl,
-//     write: write_impl,
-//     close_write: write_close_impl,
-// };
-
 static VTABLE: RawWakerVTable = RawWakerVTable::new(
     |_| RawWaker::new(core::ptr::null(), &VTABLE),
     // `wake` does nothing
@@ -310,9 +290,9 @@ pub struct AddressSend(pub *mut ());
 unsafe impl Send for AddressSend {}
 // unsafe impl Sync for StreamHandle2 {}
 
-pub struct StreamHandleRust {
-    pub handle: StreamHandle2,
-}
+// pub struct StreamHandleRust {
+//     pub handle: StreamHandle2,
+// }
 
 // this is used for reading?
 pub async unsafe fn await_stream_result(

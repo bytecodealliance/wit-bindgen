@@ -12,9 +12,7 @@ pub mod test {
                 super::super::super::__link_custom_section_describing_imports;
 
             // use _rt::stream_and_future_support::StreamHandle2;
-            use wit_bindgen_symmetric_rt::async_support::{
-                self, AddressSend, StreamHandle2, StreamHandleRust,
-            };
+            use wit_bindgen_symmetric_rt::async_support::{self, AddressSend, StreamHandle2};
 
             use super::super::super::_rt;
             use _rt::stream_and_future_support::WitStream;
@@ -32,7 +30,7 @@ pub mod test {
                     }
                 }
 
-                async fn write(_stream: &StreamHandleRust, _values: &[Self]) -> Option<usize> {
+                async fn write(_stream: &StreamHandle2, _values: &[Self]) -> Option<usize> {
                     {
                         // let address = values.as_ptr() as _;
 
@@ -50,7 +48,7 @@ pub mod test {
                 }
 
                 async fn read(
-                    stream: &StreamHandleRust,
+                    stream: &StreamHandle2,
                     values: &mut [::core::mem::MaybeUninit<Self>],
                 ) -> Option<usize> {
                     {
@@ -80,7 +78,7 @@ pub mod test {
                         let count = unsafe {
                             ::wit_bindgen_symmetric_rt::async_support::await_stream_result(
                                 poll_fn,
-                                StreamHandle2(stream.handle.0),
+                                StreamHandle2(stream.0),
                                 address,
                                 values.len(),
                                 // &stream.event,
@@ -257,27 +255,15 @@ pub mod exports {
 mod _rt {
     #![allow(dead_code, clippy::all)]
     pub mod stream_and_future_support {
-        // use std::sync::atomic::Ordering;
-
-        use wit_bindgen_symmetric_rt::activate_event_send_ptr;
-        use wit_bindgen_symmetric_rt::async_support;
-        // use wit_bindgen_symmetric_rt::async_support::results;
-        use wit_bindgen_symmetric_rt::async_support::stream::Slice;
-        use wit_bindgen_symmetric_rt::async_support::wait_on;
-        pub use wit_bindgen_symmetric_rt::async_support::Stream as WitStream;
-        pub use wit_bindgen_symmetric_rt::async_support::StreamHandle2;
-        use wit_bindgen_symmetric_rt::async_support::StreamHandleRust;
-        use wit_bindgen_symmetric_rt::subscribe_event_send_ptr;
-        // use wit_bindgen_symmetric_rt::EventSubscription;
+        pub use wit_bindgen_symmetric_rt::async_support::{Stream as WitStream, StreamHandle2};
+        use wit_bindgen_symmetric_rt::{
+            activate_event_send_ptr,
+            async_support::{self, stream::Slice, wait_on},
+            subscribe_event_send_ptr,
+        };
         use {
-            futures::{
-                // channel::oneshot,
-                future::FutureExt,
-                sink::Sink,
-                stream::Stream,
-            },
+            futures::{future::FutureExt, sink::Sink, stream::Stream},
             std::{
-                // collections::hash_map::Entry,
                 convert::Infallible,
                 fmt,
                 future::{Future, IntoFuture},
@@ -287,7 +273,6 @@ mod _rt {
                 pin::Pin,
                 task::{Context, Poll},
             },
-            // wit_bindgen_symmetric_rt::async_support::{self, Handle},
         };
 
         #[doc(hidden)]
@@ -624,11 +609,11 @@ mod _rt {
         pub trait StreamPayload: Unpin + Sized + 'static {
             fn new() -> *mut WitStream;
             fn write(
-                stream: &StreamHandleRust,
+                stream: &StreamHandle2,
                 values: &[Self],
             ) -> impl std::future::Future<Output = Option<usize>> + Send;
             fn read(
-                stream: &StreamHandleRust,
+                stream: &StreamHandle2,
                 values: &mut [MaybeUninit<Self>],
             ) -> impl std::future::Future<Output = Option<usize>> + Send;
             fn cancel_write(stream: *mut WitStream);
@@ -986,7 +971,7 @@ mod _rt {
                             .take(ceiling(4 * 1024, mem::size_of::<T>()))
                             .collect::<Vec<_>>();
                         // assert!(!event.ready());
-                        let stream_handle = StreamHandleRust { handle };
+                        let stream_handle = handle;
                         let result = if let Some(count) = T::read(&stream_handle, &mut buffer).await
                         {
                             buffer.truncate(count);
