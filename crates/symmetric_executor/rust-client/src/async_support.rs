@@ -1,6 +1,5 @@
-use futures::{channel::oneshot, task::Waker, FutureExt};
+use futures::{task::Waker, FutureExt};
 use std::{
-    any::Any,
     future::Future,
     pin::Pin,
     sync::atomic::{AtomicIsize, AtomicPtr, AtomicUsize, Ordering},
@@ -8,7 +7,6 @@ use std::{
 };
 
 use crate::{
-    activate_event_send_ptr,
     module::symmetric::runtime::symmetric_executor::{
         self, CallbackState, EventGenerator, EventSubscription,
     },
@@ -30,15 +28,15 @@ struct FutureState {
     waiting_for: Option<EventSubscription>,
 }
 
-#[doc(hidden)]
-pub enum Handle {
-    LocalOpen,
-    LocalReady(Box<dyn Any>, Waker),
-    LocalWaiting(oneshot::Sender<Box<dyn Any>>),
-    LocalClosed,
-    Read,
-    Write,
-}
+// #[doc(hidden)]
+// pub enum Handle {
+//     LocalOpen,
+//     LocalReady(Box<dyn Any>, Waker),
+//     LocalWaiting(oneshot::Sender<Box<dyn Any>>),
+//     LocalClosed,
+//     Read,
+//     Write,
+// }
 
 // #[repr(C)]
 // pub struct StreamVtable {
@@ -54,13 +52,13 @@ pub enum Handle {
 //     // pub publish: fn(stream: *mut (), size: usize),
 // }
 
-#[repr(C)]
+// #[repr(C)]
 pub struct Stream {
     read_ready_event_send: *mut (),
     write_ready_event_send: *mut (),
-    pub read_addr: AtomicPtr<()>,
-    pub read_size: AtomicUsize,
-    pub ready_size: AtomicIsize,
+    read_addr: AtomicPtr<()>,
+    read_size: AtomicUsize,
+    ready_size: AtomicIsize,
 }
 
 pub mod stream {
@@ -94,6 +92,41 @@ pub mod stream {
 
     pub unsafe extern "C" fn write_ready_event(stream: *const Stream) -> *mut () {
         unsafe { (&*stream).write_ready_event_send }
+    }
+
+    pub unsafe extern "C" fn is_ready_to_write(stream: *const Stream) -> bool {
+        !unsafe { &*stream }
+            .read_addr
+            .load(Ordering::SeqCst)
+            .is_null()
+    }
+
+    #[repr(C)]
+    pub struct Slice {
+        pub addr: *mut (),
+        pub size: usize,
+    }
+
+    pub unsafe extern "C" fn start_writing(stream: *mut Stream) -> Slice {
+        let size = unsafe { &*stream }.read_size.swap(0, Ordering::Acquire);
+        let addr = unsafe { &*stream }
+            .read_addr
+            .swap(core::ptr::null_mut(), Ordering::Release);
+        Slice { addr, size }
+    }
+
+    pub unsafe extern "C" fn read_amount(stream: *const Stream) -> isize {
+        unsafe { &*stream }
+            .ready_size
+            .swap(results::BLOCKED, Ordering::Acquire)
+    }
+
+    pub unsafe extern "C" fn finish_writing(stream: *mut Stream, elements: isize) {
+        let old_ready = unsafe { &*stream }
+            .ready_size
+            .swap(elements as isize, Ordering::Release);
+        assert_eq!(old_ready, results::BLOCKED);
+        unsafe { activate_event_send_ptr(read_ready_event(stream)) };
     }
 }
 

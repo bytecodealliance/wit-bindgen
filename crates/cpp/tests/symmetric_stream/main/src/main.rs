@@ -2,10 +2,10 @@
 
 // use std::pin::pin;
 
-use std::sync::atomic::Ordering;
+// use std::sync::atomic::Ordering;
 
 use wit_bindgen_symmetric_rt::{
-    async_support::{self, results, Stream},
+    async_support::{self, Stream},
     CallbackState,
 };
 
@@ -26,9 +26,7 @@ struct CallbackInfo {
 
 extern "C" fn ready(arg: *mut ()) -> CallbackState {
     let info = unsafe { &*arg.cast::<CallbackInfo>() };
-    let len = unsafe { &*info.stream }
-        .ready_size
-        .swap(results::BLOCKED, Ordering::Acquire);
+    let len = unsafe { async_support::stream::read_amount(info.stream) };
     if len > 0 {
         for i in 0..len as usize {
             println!("data {}", info.data[i]);

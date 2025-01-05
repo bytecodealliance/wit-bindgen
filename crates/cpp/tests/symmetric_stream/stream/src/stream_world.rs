@@ -257,11 +257,12 @@ pub mod exports {
 mod _rt {
     #![allow(dead_code, clippy::all)]
     pub mod stream_and_future_support {
-        use std::sync::atomic::Ordering;
+        // use std::sync::atomic::Ordering;
 
         use wit_bindgen_symmetric_rt::activate_event_send_ptr;
         use wit_bindgen_symmetric_rt::async_support;
-        use wit_bindgen_symmetric_rt::async_support::results;
+        // use wit_bindgen_symmetric_rt::async_support::results;
+        use wit_bindgen_symmetric_rt::async_support::stream::Slice;
         use wit_bindgen_symmetric_rt::async_support::wait_on;
         pub use wit_bindgen_symmetric_rt::async_support::Stream as WitStream;
         pub use wit_bindgen_symmetric_rt::async_support::StreamHandle2;
@@ -713,10 +714,7 @@ mod _rt {
                 // This is for reading
                 // let ready =
                 //     unsafe { &*me.handle.0 }.ready_size.load(Ordering::SeqCst) != results::BLOCKED;
-                let ready = !unsafe { &*me.handle.0 }
-                    .read_addr
-                    .load(Ordering::SeqCst)
-                    .is_null();
+                let ready = unsafe { async_support::stream::is_ready_to_write(me.handle.0) };
 
                 // see also StreamReader::poll_next
                 if !ready && me.future.is_none() {
@@ -751,10 +749,7 @@ mod _rt {
                 let item_len = item.len();
                 let me = self.get_mut();
                 let stream = me.handle.0;
-                let size = unsafe { &*stream }.read_size.swap(0, Ordering::Acquire);
-                let addr = unsafe { &*stream }
-                    .read_addr
-                    .swap(core::ptr::null_mut(), Ordering::Relaxed);
+                let Slice { addr, size } = unsafe { async_support::stream::start_writing(stream) };
                 assert!(size >= item_len);
                 // let outptr = addr.cast::<MaybeUninit<T>>();
                 let slice = unsafe {
@@ -763,11 +758,7 @@ mod _rt {
                 for (a, b) in slice.iter_mut().zip(item.drain(..)) {
                     a.write(b);
                 }
-                let old_ready = unsafe { &*stream }
-                    .ready_size
-                    .swap(item_len as isize, Ordering::Release);
-                assert_eq!(old_ready, results::BLOCKED);
-                unsafe { activate_event_send_ptr(async_support::stream::read_ready_event(stream)) };
+                unsafe { async_support::stream::finish_writing(stream, item_len as isize) };
                 // assert!(self.future.is_none());
                 // async_support::with_entry(self.handle, |entry| match entry {
                 //   Entry::Vacant(_) => unreachable!(),
