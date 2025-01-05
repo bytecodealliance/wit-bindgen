@@ -60,6 +60,7 @@ pub mod stream {
         read_addr: AtomicPtr<()>,
         read_size: AtomicUsize,
         ready_size: AtomicIsize,
+        active_instances: AtomicUsize,
     }
 
     pub unsafe extern "C" fn start_reading(
@@ -128,8 +129,26 @@ pub mod stream {
         unsafe { activate_event_send_ptr(read_ready_event(stream)) };
     }
 
+    pub unsafe extern "C" fn close_read(stream: *mut Stream) {
+        let refs = unsafe { &mut *stream }
+            .active_instances
+            .fetch_sub(1, Ordering::AcqRel);
+        if refs == 1 {
+            drop(Box::from_raw(stream));
+        }
+    }
+
+    pub unsafe extern "C" fn close_write(stream: *mut Stream) {
+        // same for write (for now)
+        close_read(stream);
+    }
+
+    pub extern "C" fn create_stream() -> *mut Stream {
+        Box::into_raw(Box::new(Stream::new()))
+    }
+
     impl Stream {
-        pub fn new() -> Self {
+        fn new() -> Self {
             Self {
                 // vtable: &STREAM_VTABLE as *const StreamVtable,
                 read_ready_event_send: EventGenerator::new().take_handle() as *mut (),
@@ -137,6 +156,7 @@ pub mod stream {
                 read_addr: AtomicPtr::new(core::ptr::null_mut()),
                 read_size: AtomicUsize::new(0),
                 ready_size: AtomicIsize::new(results::BLOCKED),
+                active_instances: AtomicUsize::new(2),
             }
         }
     }

@@ -1122,7 +1122,7 @@ mod _rt {
 
         /// Creates a new Component Model `stream` with the specified payload type.
         pub fn new_stream<T: StreamPayload>() -> (StreamWriter<T>, StreamReader<T>) {
-            let handle = Box::into_raw(Box::new(WitStream::new()));
+            let handle = async_support::stream::create_stream();
             (
                 StreamWriter::from_handle(handle),
                 StreamReader::from_handle(handle),
