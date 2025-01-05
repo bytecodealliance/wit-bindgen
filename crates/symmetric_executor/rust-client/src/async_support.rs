@@ -20,8 +20,6 @@ use crate::{
 // pub unsafe auto trait MaybeSend : Send {}
 // unsafe impl<T> MaybeSend for T where T: Send {}
 
-// pub trait FutureMaybeSend<T> : Future<Output = T> + MaybeSend {}
-
 type BoxFuture = Pin<Box<dyn Future<Output = ()> + 'static>>;
 
 struct FutureState {
@@ -82,10 +80,6 @@ extern "C" fn read_impl(stream: *mut Stream, buf: *mut (), size: usize) -> isize
     assert_eq!(old_ptr, std::ptr::null_mut());
     let write_evt = unsafe { &mut *stream }.write_ready_event_send;
     unsafe { activate_event_send_ptr(write_evt) };
-    // let gen: EventGenerator = unsafe { EventGenerator::from_handle(write_evt as usize) };
-    // gen.activate();
-    // // don't consume
-    // let _ = gen.take_handle();
     results::BLOCKED
 }
 
@@ -121,17 +115,6 @@ impl Stream {
         }
     }
 }
-
-// pub enum Entry<'a, K, V> {
-//     Vacant(),
-//     Occupied(&'a mut Stream),
-// }
-
-// #[doc(hidden)]
-// pub fn with_entry<T>(h: *mut (), f: impl FnOnce(Entry<'_, u32, Handle>) -> T) -> T {
-//     let entry = unsafe { &mut *(h.cast::<Stream>()) };
-//     f(hash_map::Entry::Occupied(entry))
-// }
 
 static VTABLE: RawWakerVTable = RawWakerVTable::new(
     |_| RawWaker::new(core::ptr::null(), &VTABLE),
@@ -229,7 +212,6 @@ pub fn first_poll<T: 'static>(
 #[doc(hidden)]
 pub async unsafe fn await_result(
     function: unsafe extern "C" fn(*mut u8, *mut u8) -> *mut u8,
-    //    _params_layout: Layout,
     params: *mut u8,
     results: *mut u8,
 ) {
@@ -245,11 +227,10 @@ pub unsafe fn callback(_ctx: *mut u8, _event0: i32, _event1: i32, _event2: i32) 
     todo!()
 }
 
-// static TASKS: Mutex<Vec<Box<dyn Future<Output = ()> + 'static + Send>>> = Mutex::new(Vec::new());
-
 pub fn spawn(future: impl Future<Output = ()> + 'static + Send) {
-    let _ = first_poll(future, |()| ());
-    //    TASKS.lock().unwrap().push(Box::new(future));
+    let wait_for = first_poll(future, |()| ());
+    let wait_for = unsafe { EventSubscription::from_handle(wait_for as usize) };
+    drop(wait_for);
 }
 
 pub mod results {
@@ -269,15 +250,8 @@ pub struct AddressSend(pub *mut ());
 unsafe impl Send for AddressSend {}
 // unsafe impl Sync for StreamHandle2 {}
 
-// pub enum SubscriptionType {
-//     None,
-//     Read(EventSubscription),
-//     Write(EventSubscription),
-// }
-
 pub struct StreamHandleRust {
     pub handle: StreamHandle2,
-    // pub event: EventSubscription,
 }
 
 // this is used for reading?
@@ -286,16 +260,11 @@ pub async unsafe fn await_stream_result(
     stream: StreamHandle2,
     address: AddressSend,
     count: usize,
-    //    event: &EventSubscription,
 ) -> Option<usize> {
     let stream_copy = stream.0;
     let result = import(stream_copy, address.0, count);
     match result {
         results::BLOCKED => {
-            // assert!(!CURRENT.is_null());
-            // (*CURRENT).todo += 1;
-            // let (tx, rx) = oneshot::channel();
-            // CALLS.insert(stream as _, tx);
             let event = unsafe { subscribe_event_send_ptr((&*stream.0).read_ready_event_send) };
             event.reset();
             wait_on(event).await;
