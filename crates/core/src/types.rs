@@ -30,6 +30,9 @@ pub struct TypeInfo {
     /// Whether this type (transitively) has a list (or string).
     pub has_list: bool,
 
+    /// Whether this type (transitively) has a tuple.
+    pub has_tuple: bool,
+
     /// Whether this type (transitively) has a resource (or handle).
     pub has_resource: bool,
 
@@ -46,6 +49,7 @@ impl std::ops::BitOrAssign for TypeInfo {
         self.owned |= rhs.owned;
         self.error |= rhs.error;
         self.has_list |= rhs.has_list;
+        self.has_tuple |= rhs.has_tuple;
         self.has_resource |= rhs.has_resource;
         self.has_borrow_handle |= rhs.has_borrow_handle;
         self.has_own_handle |= rhs.has_own_handle;
@@ -171,6 +175,7 @@ impl Types {
                 for ty in t.types.iter() {
                     info |= self.type_info(resolve, ty);
                 }
+                info.has_tuple = true;
             }
             TypeDefKind::Flags(_) => {}
             TypeDefKind::Enum(_) => {}
