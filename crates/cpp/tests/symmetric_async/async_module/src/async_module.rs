@@ -11,34 +11,21 @@ pub mod test {
             static __FORCE_SECTION_REF: fn() =
                 super::super::super::__link_custom_section_describing_imports;
 
-            // use super::super::super::_rt;
             #[allow(unused_unsafe, clippy::all)]
             pub async fn sleep(nanoseconds: u64) -> () {
                 unsafe {
-                    //let layout0 = _rt::alloc::Layout::from_size_align_unchecked(8, 8);
-                    let ptr0 = (&nanoseconds) as *const u64;
-                    //_rt::alloc::alloc(layout0);
-                    // *ptr0.add(0).cast::<i64>() = _rt::as_i64(&nanoseconds);
-                    // let layout1 = _rt::alloc::Layout::from_size_align_unchecked(0, 1);
-                    let ptr1 = core::ptr::null_mut();
-                    // _rt::alloc::alloc(layout1);
-
                     #[link(wasm_import_module = "test:test/wait")]
                     #[link(name = "sleep")]
                     extern "C" {
                         #[cfg_attr(target_arch = "wasm32", link_name = "[async]sleep")]
-                        fn testX3AtestX2FwaitX00X5BasyncX5Dsleep(_: *mut u8, _: *mut u8)
-                            -> *mut u8;
+                        fn testX3AtestX2FwaitX00X5BasyncX5Dsleep(_: u64) -> *mut u8;
                     }
-                    // let layout2 = _rt::alloc::Layout::from_size_align_unchecked(8, 8);
                     ::wit_bindgen_symmetric_rt::async_support::await_result(
-                        testX3AtestX2FwaitX00X5BasyncX5Dsleep,
-                        // layout2,
-                        ptr0.cast_mut().cast(),
-                        ptr1,
+                        move || unsafe { testX3AtestX2FwaitX00X5BasyncX5Dsleep(nanoseconds) }, // layout2,
+                                                                                               // ptr0.cast_mut().cast(),
+                                                                                               // ptr1,
                     )
                     .await;
-                    // _rt::cabi_dealloc(ptr1, 0, 1);
                 }
             }
         }
@@ -61,13 +48,13 @@ pub mod exports {
                 #[allow(non_snake_case)]
                 pub unsafe fn _export_forward_cabi<T: Guest>(
                     arg0: *mut u8,
+                    arg1: usize,
                     arg2: *mut u8,
                 ) -> *mut u8 {
                     #[cfg(target_arch = "wasm32")]
                     _rt::run_ctors_once();
-                    let arguments = arg0.cast_const().cast::<usize>();
-                    let len0 = unsafe { *(arguments.add(1)) };
-                    let addr0 = unsafe { *arguments } as *mut u8;
+                    let len0 = arg1;
+                    let addr0 = arg0;
                     let string0 = String::from(
                         std::str::from_utf8(std::slice::from_raw_parts(addr0, len0)).unwrap(),
                     );
@@ -82,36 +69,10 @@ pub mod exports {
                             let output = arg2.cast::<usize>();
                             *unsafe { &mut *output } = ptr3 as usize;
                             *unsafe { &mut *output.add(1) } = len3;
-
-                            // #[link(wasm_import_module = "[export]test:test/string-delay")]
-                            // extern "C" {
-                            //     #[cfg_attr(
-                            //         target_arch = "wasm32",
-                            //         link_name = "[task-return]forward"
-                            //     )]
-                            //     fn X5BexportX5DtestX3AtestX2Fstring_delayX00X5Btask_returnX5Dforward(
-                            //         _: *mut u8,
-                            //         _: usize,
-                            //     );
-                            // }
-                            // X5BexportX5DtestX3AtestX2Fstring_delayX00X5Btask_returnX5Dforward(
-                            //     ptr3.cast_mut(),
-                            //     len3,
-                            // );
                         },
                     );
 
                     result.cast()
-                }
-                #[doc(hidden)]
-                #[allow(non_snake_case)]
-                pub unsafe fn __callback_forward(
-                    ctx: *mut u8,
-                    event0: i32,
-                    event1: i32,
-                    event2: i32,
-                ) -> i32 {
-                    ::wit_bindgen_symmetric_rt::async_support::callback(ctx, event0, event1, event2)
                 }
                 pub trait Guest {
                     fn forward(
@@ -125,13 +86,9 @@ pub mod exports {
 
           #[cfg_attr(target_arch = "wasm32", export_name = "forward")]
           #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
-          unsafe extern "C" fn X5BasyncX5DtestX3AtestX2Fstring_delayX00forward(arg0: *mut u8,arg1: *mut u8,) -> *mut u8 {
-            $($path_to_types)*::_export_forward_cabi::<$ty>(arg0, arg1,)
+          unsafe extern "C" fn X5BasyncX5DtestX3AtestX2Fstring_delayX00forward(arg0: *mut u8,arg1:usize,arg2: *mut u8,) -> *mut u8 {
+            $($path_to_types)*::_export_forward_cabi::<$ty>(arg0, arg1,arg2)
           }
-        //   #[export_name = "[callback]forward"]
-        //   unsafe extern "C" fn _callback_forward(ctx: *mut u8, event0: i32, event1: i32, event2: i32) -> i32 {
-        //     $($path_to_types)*::__callback_forward(ctx, event0, event1, event2)
-        //   }
         };);
       }
                 #[doc(hidden)]

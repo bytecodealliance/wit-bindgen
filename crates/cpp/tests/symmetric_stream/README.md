@@ -7,6 +7,7 @@ A stream has the following members:
  - read_addr: the address of the registered buffer (valid on write_ready)
  - read_size: maximum number of elements in the buffer (valid on write_ready)
  - ready_size: valid number of elements in the buffer (valid on read_ready)
+ - active_instances: Number of references to the stream object, decreased by 
 
 ## Special values of ready
 
@@ -14,7 +15,7 @@ A stream has the following members:
  - BLOCKED: -1 (normal)
  - CANCELLED: 0 (TBD)
 
-## Seqence
+## Sequence
 
 "take" means swap with idle value (read_addr=0, read_size=0, ready=-1)
 
@@ -42,15 +43,16 @@ A stream has the following members:
 
 A vtable is no longer necessary, but some functions enable shared implementations (perhaps interface by WIT?)
 
- - create stream
- - read (waits)
- - start_write (wait and returns buffer)
- - finish (can also set eof independently of start_write)
-
-Perhaps:
-
- - close_read (read with NULL?)
- - close_write (=finish(EOF)?)
+ - create_stream: Create a new stream object
+ - start_reading: Register buffer and send event
+ - start_writing: Take and return the buffer
+ - finish_writing: (can also set eof independently of start_write) set available
+   amount and trigger event
+ - read_amount: Take and return the number of valid elements
+ - read/write_ready_event: Sending side of the event
+ - is_ready_to_write: Whether a write needs to wait for write_ready
+ - is_write_closed: Whether the write side closed
+ - close_read/write: Close one side of the stream
 
 ### Open questions
 
@@ -64,3 +66,5 @@ Perhaps:
  - how to cancel a write?
    - simply flag EOF and activate read_ready
  - Is a future the same data structure?
+   - read_size would always be one, ready_size up to one, 
+     finish_writing and read_amount could directly close the side

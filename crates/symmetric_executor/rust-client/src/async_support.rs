@@ -254,11 +254,12 @@ pub fn first_poll<T: 'static>(
 /// Await the completion of a call to an async-lowered import.
 #[doc(hidden)]
 pub async unsafe fn await_result(
-    function: unsafe extern "C" fn(*mut u8, *mut u8) -> *mut u8,
-    params: *mut u8,
-    results: *mut u8,
+    function: impl Fn() -> *mut u8,
+    // unsafe extern "C" fn(*mut u8, *mut u8) -> *mut u8,
+    // params: *mut u8,
+    // results: *mut u8,
 ) {
-    let wait_for = function(params, results);
+    let wait_for = function();
     if !wait_for.is_null() {
         let wait_for = unsafe { EventSubscription::from_handle(wait_for as usize) };
         wait_on(wait_for).await;

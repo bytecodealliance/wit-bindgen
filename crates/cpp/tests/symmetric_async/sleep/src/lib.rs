@@ -7,9 +7,10 @@ extern "C" {
 
 #[no_mangle]
 unsafe extern "C" fn testX3AtestX2FwaitX00X5BasyncX5Dsleep(
-    args: *const (),
-    _results: *mut (),
+    nanoseconds: u64,
+    // args: *const (),
+    // _results: *mut (),
 ) -> *mut () {
-    let nanoseconds = *args.cast::<u64>();
+    // let nanoseconds = *args.cast::<u64>();
     symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5BstaticX5Devent_subscriptionX2Efrom_timeout(nanoseconds)
 }

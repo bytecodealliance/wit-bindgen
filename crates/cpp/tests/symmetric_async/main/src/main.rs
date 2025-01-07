@@ -3,7 +3,8 @@ use wit_bindgen_symmetric_rt::{CallbackState, EventSubscription};
 #[link(name = "async_module")]
 extern "C" {
     pub fn X5BasyncX5DtestX3AtestX2Fstring_delayX00forward(
-        args: *const (),
+        addr: *const u8,
+        len: usize,
         results: *mut (),
     ) -> *mut ();
 }
@@ -19,11 +20,11 @@ extern "C" fn print_result(obj: *mut ()) -> CallbackState {
 }
 
 fn main() {
-    let argument1: [usize; 2] = ["A".as_ptr() as usize, 1];
     let mut result1: [usize; 2] = [0, 0];
     let handle1 = unsafe {
         X5BasyncX5DtestX3AtestX2Fstring_delayX00forward(
-            (&argument1 as *const usize).cast(),
+            "A".as_ptr(),
+            1,
             result1.as_mut_ptr().cast(),
         )
     };
@@ -32,11 +33,11 @@ fn main() {
     let string = std::str::from_utf8(&vec).unwrap();
     println!("Result {string}");
 
-    let argument2: [usize; 2] = ["B".as_ptr() as usize, 1];
     let mut result2: [usize; 2] = [0, 0];
     let handle2 = unsafe {
         X5BasyncX5DtestX3AtestX2Fstring_delayX00forward(
-            (&argument2 as *const usize).cast(),
+            "B".as_ptr(),
+            1,
             result2.as_mut_ptr().cast(),
         )
     };
@@ -47,11 +48,11 @@ fn main() {
         result2.as_mut_ptr().cast(),
     );
 
-    let argument3: [usize; 2] = ["C".as_ptr() as usize, 1];
     let mut result3: [usize; 2] = [0, 0];
     let handle3 = unsafe {
         X5BasyncX5DtestX3AtestX2Fstring_delayX00forward(
-            (&argument3 as *const usize).cast(),
+            "C".as_ptr(),
+            1,
             result3.as_mut_ptr().cast(),
         )
     };
