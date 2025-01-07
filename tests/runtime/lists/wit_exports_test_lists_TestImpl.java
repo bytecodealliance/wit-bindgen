@@ -52,6 +52,16 @@ public class TestImpl {
         expect(a.get(1).get(0).equals("baz"));
     }
 
+    public static void listParam5(ArrayList<Tuple3<byte, int, byte>> a) {
+        expect(a.size() == 2);
+        expect(a.get(0).f0 == 1);
+        expect(a.get(0).f1 == 2);
+        expect(a.get(0).f2 == 3);
+        expect(a.get(1).f0 == 4);
+        expect(a.get(1).f1 == 5);
+        expect(a.get(1).f2 == 6);
+    }
+
     public static byte[] listResult() {
         return new byte[] { (byte) 1, (byte) 2, (byte) 3, (byte) 4, (byte) 5 };
     }
