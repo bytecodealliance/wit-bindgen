@@ -200,6 +200,18 @@ func (i ListImpl) ListParam4(a [][]string) {
 	}
 }
 
+func (i ListImpl) ListParam5(a []ExportsTestListsTestTuple3U8U32U8T) {
+	if len(a) != 2 {
+		panic("ListParam5")
+	}
+	if a[0].F0 != 1 || a[0].F1 != 2 || a[0].F2 != 3 {
+		panic("ListParam5")
+	}
+	if a[1].F0 != 4 || a[1].F1 != 5 || a[1].F2 != 6 {
+		panic("ListParam5")
+	}
+}
+
 func (i ListImpl) ListResult() []uint8 {
 	return []uint8{1, 2, 3, 4, 5}
 }
