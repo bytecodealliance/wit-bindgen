@@ -18,7 +18,7 @@ namespace ListsWorld {
 
             TestInterop.EmptyListParam(new byte[0]);
             TestInterop.EmptyStringParam("");
-            
+
             {
                 byte[] result = TestInterop.EmptyListResult();
                 Debug.Assert(result.Length == 0);
@@ -62,7 +62,7 @@ namespace ListsWorld {
                Console.WriteLine(result);
                Debug.Assert(result == "hello!");
             }
-            
+
             {
                List<String> result = TestInterop.ListResult3();
                Debug.Assert(result.Count() == 2);
@@ -103,7 +103,7 @@ namespace ListsWorld {
                 Debug.Assert(u.Length == 2, $"u.Length {u.Length}");
                 Debug.Assert(u[0] == ushort.MinValue, $"u[0] == {u[0]}");
                 Debug.Assert(u[1] == ushort.MaxValue, $"u[1] == {u[1]}");
-               
+
                 Debug.Assert(s.Length == 2);
                 Console.WriteLine(s[0]);
                 Console.WriteLine(s[1]);
@@ -112,7 +112,7 @@ namespace ListsWorld {
 
             {
                 var (u, s) = TestInterop.ListMinmax32(
-                    new uint[] { uint.MinValue, uint.MaxValue }, 
+                    new uint[] { uint.MinValue, uint.MaxValue },
                     new int[] { int.MinValue, int.MaxValue }
                 );
 
@@ -130,7 +130,7 @@ namespace ListsWorld {
 
                 Debug.Assert(s.Length == 2 && s[0] == long.MinValue && s[1] == long.MaxValue);
             }
-            
+
             {
                 var (u, s) = TestInterop.ListMinmaxFloat(
                     new float[] {
@@ -218,6 +218,17 @@ namespace ListsWorld.wit.exports.test.lists
             Debug.Assert(a[0][0].Equals("foo"));
             Debug.Assert(a[0][1].Equals("bar"));
             Debug.Assert(a[1][0].Equals("baz"));
+        }
+
+        public static void ListParam5(List<(byte, uint, byte)> a)
+        {
+            Debug.Assert(a.Count() == 2);
+            Debug.Assert(a[0].Item1 == 1);
+            Debug.Assert(a[0].Item2 == 2);
+            Debug.Assert(a[0].Item3 == 3);
+            Debug.Assert(a[1].Item1 == 4);
+            Debug.Assert(a[1].Item2 == 5);
+            Debug.Assert(a[1].Item3 == 6);
         }
 
         public static byte[] ListResult()
