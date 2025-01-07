@@ -146,7 +146,7 @@ pub mod test {
             pub async fn create() -> _rt::stream_and_future_support::StreamReader<u32> {
                 unsafe {
                     // let layout0 = _rt::alloc::Layout::from_size_align_unchecked(0, 1);
-                    let ptr0 = core::ptr::null_mut(); //_rt::alloc::alloc(layout0);
+                    // let ptr0 = core::ptr::null_mut(); //_rt::alloc::alloc(layout0);
                     let layout1 = _rt::alloc::Layout::from_size_align_unchecked(
                         core::mem::size_of::<*const u8>(),
                         core::mem::size_of::<*const u8>(),
@@ -158,15 +158,15 @@ pub mod test {
                     extern "C" {
                         #[cfg_attr(target_arch = "wasm32", link_name = "[async]create")]
                         fn testX3AtestX2Fstream_sourceX00X5BasyncX5Dcreate(
-                            _: *mut u8,
+                            // _: *mut u8,
                             _: *mut u8,
                         ) -> *mut u8;
                     }
                     // let layout2 = _rt::alloc::Layout::from_size_align_unchecked(0, 1);
                     ::wit_bindgen_symmetric_rt::async_support::await_result(
-                        testX3AtestX2Fstream_sourceX00X5BasyncX5Dcreate,
-                        ptr0,
-                        ptr1,
+                        move || unsafe {testX3AtestX2Fstream_sourceX00X5BasyncX5Dcreate(ptr1)},
+                        // ptr0,
+                        // ptr1,
                     )
                     .await;
                     let l3 = *ptr1.add(0).cast::<*mut u8>();
@@ -199,7 +199,7 @@ pub mod exports {
                 #[doc(hidden)]
                 #[allow(non_snake_case)]
                 pub unsafe fn _export_create_cabi<T: Guest>(
-                    _args: *mut u8,
+                    // _args: *mut u8,
                     results: *mut u8,
                 ) -> *mut u8 {
                     #[cfg(target_arch = "wasm32")]
@@ -238,8 +238,8 @@ pub mod exports {
 
           #[cfg_attr(target_arch = "wasm32", export_name = "create")]
           #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
-          unsafe extern "C" fn testX3AtestX2Fstream_testX00X5BasyncX5Dcreate(args: *mut u8, results: *mut u8) -> *mut u8 {
-            $($path_to_types)*::_export_create_cabi::<$ty>(args,results)
+          unsafe extern "C" fn testX3AtestX2Fstream_testX00X5BasyncX5Dcreate(results: *mut u8) -> *mut u8 {
+            $($path_to_types)*::_export_create_cabi::<$ty>(results)
           }
           // #[export_name = "[callback]create"]
           // unsafe extern "C" fn _callback_create(ctx: *mut u8, event0: i32, event1: i32, event2: i32) -> i32 {

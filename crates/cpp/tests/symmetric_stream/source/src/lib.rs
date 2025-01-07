@@ -44,7 +44,7 @@ extern "C" fn write_ready(data: *mut ()) -> CallbackState {
 #[allow(non_snake_case)]
 #[no_mangle]
 pub fn testX3AtestX2Fstream_sourceX00X5BasyncX5Dcreate(
-    _args: *mut u8,
+    // _args: *mut u8,
     results: *mut u8,
 ) -> *mut u8 {
     let stream = stream::create_stream();
