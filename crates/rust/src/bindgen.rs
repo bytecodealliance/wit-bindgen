@@ -292,7 +292,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             return false;
         }
         match ty {
-            Type::Id(id) => !self.gen.gen.types.get(*id).has_resource,
+            // Note that tuples in Rust are not ABI-compatible with component
+            // model tuples, so those are exempted here from canonical lists.
+            Type::Id(id) => {
+                let info = self.gen.gen.types.get(*id);
+                !info.has_resource && !info.has_tuple
+            }
             _ => true,
         }
     }

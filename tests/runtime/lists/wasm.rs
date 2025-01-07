@@ -28,6 +28,7 @@ impl Guest for Component {
             vec!["foo".to_owned(), "bar".to_owned()],
             vec!["baz".to_owned()],
         ]);
+        list_param5(&[(1, 2, 3), (4, 5, 6)]);
         assert_eq!(list_result(), [1, 2, 3, 4, 5]);
         assert_eq!(list_result2(), "hello!");
         assert_eq!(list_result3(), ["hello,", "world!"]);
@@ -107,6 +108,10 @@ impl exports::test::lists::test::Guest for Component {
         assert_eq!(ptr[0][0], "foo");
         assert_eq!(ptr[0][1], "bar");
         assert_eq!(ptr[1][0], "baz");
+    }
+
+    fn list_param5(ptr: Vec<(u8, u32, u8)>) {
+        assert_eq!(ptr, [(1, 2, 3), (4, 5, 6)]);
     }
 
     fn list_result() -> Vec<u8> {
