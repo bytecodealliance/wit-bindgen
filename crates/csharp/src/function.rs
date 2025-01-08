@@ -779,7 +779,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 );
             }
 
-            Instruction::CallInterface { func } => {
+            Instruction::CallInterface { func, .. } => {
                 let module = self.interface_gen.name;
                 let func_name = self.func_name.to_upper_camel_case();
                 let interface_name = CSharp::get_class_name_from_qualified_name(module).1;
@@ -1097,6 +1097,21 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
                 results.push(resource);
             }
+
+            Instruction::Flush { amt } => {
+                results.extend(operands.iter().take(*amt).map(|v| v.clone()));
+            }
+
+            Instruction::AsyncMalloc { .. }
+            | Instruction::AsyncPostCallInterface { .. }
+            | Instruction::AsyncCallReturn { .. }
+            | Instruction::FutureLower { .. }
+            | Instruction::FutureLift { .. }
+            | Instruction::StreamLower { .. }
+            | Instruction::StreamLift { .. }
+            | Instruction::ErrorContextLower { .. }
+            | Instruction::ErrorContextLift { .. }
+            | Instruction::AsyncCallWasm { .. } => todo!(),
         }
     }
 

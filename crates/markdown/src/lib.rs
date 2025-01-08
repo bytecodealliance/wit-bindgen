@@ -235,7 +235,7 @@ impl WorldGenerator for Markdown {
 }
 
 impl Markdown {
-    fn interface<'a>(&'a mut self, resolve: &'a Resolve) -> InterfaceGenerator<'_> {
+    fn interface<'a>(&'a mut self, resolve: &'a Resolve) -> InterfaceGenerator<'a> {
         InterfaceGenerator {
             gen: self,
             resolve,
@@ -413,28 +413,14 @@ impl InterfaceGenerator<'_> {
                             self.push_str("future");
                         }
                     },
-                    TypeDefKind::Stream(s) => match (s.element, s.end) {
-                        (Some(element), Some(end)) => {
-                            self.push_str("stream<");
-                            self.print_ty(&element);
-                            self.push_str(", ");
-                            self.print_ty(&end);
-                            self.push_str(">");
-                        }
-                        (None, Some(end)) => {
-                            self.push_str("stream<_, ");
-                            self.print_ty(&end);
-                            self.push_str(">");
-                        }
-                        (Some(element), None) => {
-                            self.push_str("stream<");
-                            self.print_ty(&element);
-                            self.push_str(">");
-                        }
-                        (None, None) => {
-                            self.push_str("stream");
-                        }
-                    },
+                    TypeDefKind::Stream(t) => {
+                        self.push_str("stream<");
+                        self.print_ty(t);
+                        self.push_str(">");
+                    }
+                    TypeDefKind::ErrorContext => {
+                        self.push_str("error-context");
+                    }
                     TypeDefKind::Handle(Handle::Own(ty)) => {
                         self.push_str("own<");
                         self.print_ty(&Type::Id(*ty));
@@ -668,6 +654,21 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
     fn type_list(&mut self, id: TypeId, name: &str, _ty: &Type, docs: &Docs) {
         self.type_alias(id, name, &Type::Id(id), docs);
+    }
+
+    fn type_future(&mut self, id: TypeId, name: &str, ty: &Option<Type>, docs: &Docs) {
+        _ = (id, name, ty, docs);
+        todo!()
+    }
+
+    fn type_stream(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
+        _ = (id, name, ty, docs);
+        todo!()
+    }
+
+    fn type_error_context(&mut self, id: TypeId, name: &str, docs: &Docs) {
+        _ = (id, name, docs);
+        todo!()
     }
 
     fn type_builtin(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs) {

@@ -8,6 +8,14 @@ use std::{
 use wit_component::StringEncoding;
 
 macro_rules! codegen_test {
+    // TODO: implement support for stream, future, and error-context, and then
+    // remove these lines:
+    (streams $name:tt $test:tt) => {};
+    (futures $name:tt $test:tt) => {};
+    (resources_with_streams $name:tt $test:tt) => {};
+    (resources_with_futures $name:tt $test:tt) => {};
+    (error_context $name:tt $test:tt) => {};
+
     ($id:ident $name:tt $test:tt) => {
         #[test]
         fn $id() {

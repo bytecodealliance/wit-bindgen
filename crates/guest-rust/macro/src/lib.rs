@@ -8,7 +8,7 @@ use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::{braced, token, LitStr, Token};
 use wit_bindgen_core::wit_parser::{PackageId, Resolve, UnresolvedPackageGroup, WorldId};
-use wit_bindgen_rust::{Opts, Ownership, WithOption};
+use wit_bindgen_rust::{AsyncConfig, Opts, Ownership, WithOption};
 
 #[proc_macro]
 pub fn generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
@@ -46,6 +46,7 @@ struct Config {
     resolve: Resolve,
     world: WorldId,
     files: Vec<PathBuf>,
+    debug: bool,
 }
 
 /// The source of the wit package definition
@@ -63,6 +64,8 @@ impl Parse for Config {
         let mut world = None;
         let mut source = None;
         let mut features = Vec::new();
+        let mut async_configured = false;
+        let mut debug = false;
 
         if input.peek(token::Brace) {
             let content;
@@ -140,6 +143,22 @@ impl Parse for Config {
                     Opt::DisableCustomSectionLinkHelpers(disable) => {
                         opts.disable_custom_section_link_helpers = disable.value();
                     }
+                    Opt::Debug(enable) => {
+                        debug = enable.value();
+                    }
+                    Opt::Async(val, span) => {
+                        if async_configured {
+                            return Err(Error::new(span, "cannot specify second async config"));
+                        }
+                        async_configured = true;
+                        if !matches!(val, AsyncConfig::None) && !cfg!(feature = "async") {
+                            return Err(Error::new(
+                                span,
+                                "must enable `async` feature to enable async imports and/or exports",
+                            ));
+                        }
+                        opts.async_ = val;
+                    }
                 }
             }
         } else {
@@ -159,6 +178,7 @@ impl Parse for Config {
             resolve,
             world,
             files,
+            debug,
         })
     }
 }
@@ -254,7 +274,7 @@ impl Config {
         // place a formatted version of the expanded code into a file. This file
         // will then show up in rustc error messages for any codegen issues and can
         // be inspected manually.
-        if std::env::var("WIT_BINDGEN_DEBUG").is_ok() {
+        if std::env::var("WIT_BINDGEN_DEBUG").is_ok() || self.debug {
             static INVOCATION: AtomicUsize = AtomicUsize::new(0);
             let root = Path::new(env!("DEBUG_OUTPUT_DIR"));
             let world_name = &self.resolve.worlds[self.world].name;
@@ -313,6 +333,8 @@ mod kw {
     syn::custom_keyword!(generate_unused_types);
     syn::custom_keyword!(features);
     syn::custom_keyword!(disable_custom_section_link_helpers);
+    syn::custom_keyword!(imports);
+    syn::custom_keyword!(debug);
 }
 
 #[derive(Clone)]
@@ -342,6 +364,11 @@ impl From<ExportKey> for wit_bindgen_rust::ExportKey {
     }
 }
 
+enum AsyncConfigSomeKind {
+    Imports,
+    Exports,
+}
+
 enum Opt {
     World(syn::LitStr),
     Path(Span, Vec<syn::LitStr>),
@@ -366,6 +393,8 @@ enum Opt {
     GenerateUnusedTypes(syn::LitBool),
     Features(Vec<syn::LitStr>),
     DisableCustomSectionLinkHelpers(syn::LitBool),
+    Async(AsyncConfig, Span),
+    Debug(syn::LitBool),
 }
 
 impl Parse for Opt {
@@ -513,6 +542,34 @@ impl Parse for Opt {
             input.parse::<kw::disable_custom_section_link_helpers>()?;
             input.parse::<Token![:]>()?;
             Ok(Opt::DisableCustomSectionLinkHelpers(input.parse()?))
+        } else if l.peek(kw::debug) {
+            input.parse::<kw::debug>()?;
+            input.parse::<Token![:]>()?;
+            Ok(Opt::Debug(input.parse()?))
+        } else if l.peek(Token![async]) {
+            let span = input.parse::<Token![async]>()?.span;
+            input.parse::<Token![:]>()?;
+            if input.peek(syn::LitBool) {
+                if input.parse::<syn::LitBool>()?.value {
+                    Ok(Opt::Async(AsyncConfig::All, span))
+                } else {
+                    Ok(Opt::Async(AsyncConfig::None, span))
+                }
+            } else {
+                let mut imports = Vec::new();
+                let mut exports = Vec::new();
+                let contents;
+                syn::braced!(contents in input);
+                for (kind, values) in
+                    contents.parse_terminated(parse_async_some_field, Token![,])?
+                {
+                    match kind {
+                        AsyncConfigSomeKind::Imports => imports = values,
+                        AsyncConfigSomeKind::Exports => exports = values,
+                    }
+                }
+                Ok(Opt::Async(AsyncConfig::Some { imports, exports }, span))
+            }
         } else {
             Err(l.error())
         }
@@ -570,4 +627,28 @@ fn with_field_parse(input: ParseStream<'_>) -> Result<(String, WithOption)> {
 fn fmt(input: &str) -> Result<String> {
     let syntax_tree = syn::parse_file(&input)?;
     Ok(prettyplease::unparse(&syntax_tree))
+}
+
+fn parse_async_some_field(input: ParseStream<'_>) -> Result<(AsyncConfigSomeKind, Vec<String>)> {
+    let lookahead = input.lookahead1();
+    let kind = if lookahead.peek(kw::imports) {
+        input.parse::<kw::imports>()?;
+        input.parse::<Token![:]>()?;
+        AsyncConfigSomeKind::Imports
+    } else if lookahead.peek(kw::exports) {
+        input.parse::<kw::exports>()?;
+        input.parse::<Token![:]>()?;
+        AsyncConfigSomeKind::Exports
+    } else {
+        return Err(lookahead.error());
+    };
+
+    let list;
+    syn::bracketed!(list in input);
+    let fields = list.parse_terminated(Parse::parse, Token![,])?;
+
+    Ok((
+        kind,
+        fields.iter().map(|s: &syn::LitStr| s.value()).collect(),
+    ))
 }

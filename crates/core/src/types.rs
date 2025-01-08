@@ -198,12 +198,10 @@ impl Types {
                 info = self.optional_type_info(resolve, r.ok.as_ref());
                 info |= self.optional_type_info(resolve, r.err.as_ref());
             }
-            TypeDefKind::Future(ty) => {
-                info = self.optional_type_info(resolve, ty.as_ref());
-            }
-            TypeDefKind::Stream(stream) => {
-                info = self.optional_type_info(resolve, stream.element.as_ref());
-                info |= self.optional_type_info(resolve, stream.end.as_ref());
+            TypeDefKind::Future(_) | TypeDefKind::Stream(_) | TypeDefKind::ErrorContext => {
+                // These are all u32 handles regardless of payload type, so no
+                // need to recurse.
+                info.has_resource = true;
             }
             TypeDefKind::Unknown => unreachable!(),
         }

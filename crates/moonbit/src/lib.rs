@@ -779,6 +779,7 @@ impl InterfaceGenerator<'_> {
             LiftLower::LowerArgsLiftResults,
             func,
             &mut bindgen,
+            false,
         );
 
         let src = bindgen.src;
@@ -868,6 +869,7 @@ impl InterfaceGenerator<'_> {
             LiftLower::LiftArgsLowerResults,
             func,
             &mut bindgen,
+            false,
         );
 
         assert!(!bindgen.needs_cleanup_list);
@@ -927,7 +929,7 @@ impl InterfaceGenerator<'_> {
                 (0..sig.results.len()).map(|i| format!("p{i}")).collect(),
             );
 
-            abi::post_return(bindgen.gen.resolve, func, &mut bindgen);
+            abi::post_return(bindgen.gen.resolve, func, &mut bindgen, false);
 
             let src = bindgen.src;
 
@@ -1495,6 +1497,21 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
     fn type_list(&mut self, _id: TypeId, _name: &str, _ty: &Type, _docs: &Docs) {
         // Not needed
+    }
+
+    fn type_future(&mut self, id: TypeId, name: &str, ty: &Option<Type>, docs: &Docs) {
+        _ = (id, name, ty, docs);
+        todo!()
+    }
+
+    fn type_stream(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
+        _ = (id, name, ty, docs);
+        todo!()
+    }
+
+    fn type_error_context(&mut self, id: TypeId, name: &str, docs: &Docs) {
+        _ = (id, name, docs);
+        todo!()
     }
 
     fn type_builtin(&mut self, _id: TypeId, _name: &str, _ty: &Type, _docs: &Docs) {
@@ -2579,6 +2596,21 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 uwriteln!(self.src, "{ffi_qualifier}free({address})");
             }
+
+            Instruction::Flush { amt } => {
+                results.extend(operands.iter().take(*amt).map(|v| v.clone()));
+            }
+
+            Instruction::AsyncMalloc { .. }
+            | Instruction::AsyncPostCallInterface { .. }
+            | Instruction::AsyncCallReturn { .. }
+            | Instruction::FutureLower { .. }
+            | Instruction::FutureLift { .. }
+            | Instruction::StreamLower { .. }
+            | Instruction::StreamLift { .. }
+            | Instruction::ErrorContextLower { .. }
+            | Instruction::ErrorContextLift { .. }
+            | Instruction::AsyncCallWasm { .. } => todo!(),
         }
     }
 

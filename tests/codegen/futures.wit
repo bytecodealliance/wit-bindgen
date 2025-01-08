@@ -1,0 +1,87 @@
+package foo:foo;
+
+interface futures {
+  future-param: func(x: future);
+  future-u8-param: func(x: future<u8>);
+  future-u16-param: func(x: future<u16>);
+  future-u32-param: func(x: future<u32>);
+  future-u64-param: func(x: future<u64>);
+  future-s8-param: func(x: future<s8>);
+  future-s16-param: func(x: future<s16>);
+  future-s32-param: func(x: future<s32>);
+  future-s64-param: func(x: future<s64>);
+  future-f32-param: func(x: future<f32>);
+  future-f64-param: func(x: future<f64>);
+
+  future-ret: func(x: future);
+  future-u8-ret: func() -> future<u8>;
+  future-u16-ret: func() -> future<u16>;
+  future-u32-ret: func() -> future<u32>;
+  future-u64-ret: func() -> future<u64>;
+  future-s8-ret: func() -> future<s8>;
+  future-s16-ret: func() -> future<s16>;
+  future-s32-ret: func() -> future<s32>;
+  future-s64-ret: func() -> future<s64>;
+  future-f32-ret: func() -> future<f32>;
+  future-f64-ret: func() -> future<f64>;
+
+  tuple-future: func(x: future<tuple<u8, s8>>) -> future<tuple<s64, u32>>;
+  string-future-arg: func(a: future<string>);
+  string-future-ret: func() -> future<string>;
+  tuple-string-future: func(x: future<tuple<u8, string>>) -> future<tuple<string, u8>>;
+  string-future: func(x: future<string>) -> future<string>;
+
+  record some-record {
+    x: string,
+    y: other-record,
+    z: future<other-record>,
+    c1: u32,
+    c2: u64,
+    c3: s32,
+    c4: s64,
+  }
+  record other-record {
+    a1: u32,
+    a2: u64,
+    a3: s32,
+    a4: s64,
+    b: string,
+    c: future<u8>,
+  }
+  record-future: func(x: future<some-record>) -> future<other-record>;
+  record-future-reverse: func(x: future<other-record>) -> future<some-record>;
+
+  variant some-variant {
+    a(string),
+    b,
+    c(u32),
+    d(future<other-variant>),
+  }
+  variant other-variant {
+    a,
+    b(u32),
+    c(string),
+  }
+  variant-future: func(x: future<some-variant>) -> future<other-variant>;
+
+  type load-store-all-sizes = future<tuple<
+    string,
+    u8,
+    s8,
+    u16,
+    s16,
+    u32,
+    s32,
+    u64,
+    s64,
+    f32,
+    f64,
+    char,
+  >>;
+  load-store-everything: func(a: load-store-all-sizes) -> load-store-all-sizes;
+}
+
+world the-futures {
+  import futures;
+  export futures;
+}
