@@ -26,6 +26,12 @@ use {
     },
 };
 
+mod streams_and_futures;
+
+pub use streams_and_futures::{
+    FutureReader, FutureVtable, FutureWriter, StreamReader, StreamVtable, StreamWriter,
+};
+
 pub use futures;
 
 type BoxFuture = Pin<Box<dyn Future<Output = ()> + 'static>>;

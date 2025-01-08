@@ -1,4 +1,4 @@
-use crate::{int_repr, to_rust_ident, wasm_type, InterfaceGenerator, RustFlagsRepr};
+use crate::{int_repr, to_rust_ident, wasm_type, Identifier, InterfaceGenerator, RustFlagsRepr};
 use heck::*;
 use std::fmt::Write as _;
 use std::mem;
@@ -463,11 +463,21 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.push(format!("({op}).into_handle() as i32"))
             }
 
-            Instruction::FutureLift { .. } => {
-                let stream_and_future_support = self.gen.path_to_stream_and_future_support();
+            Instruction::FutureLift { payload, .. } => {
+                let async_support = self.gen.path_to_async_support();
                 let op = &operands[0];
+                let name = payload
+                    .as_ref()
+                    .map(|ty| {
+                        self.gen
+                            .full_type_name_owned(ty, Identifier::StreamOrFuturePayload)
+                    })
+                    .unwrap_or_else(|| "()".into());
+                let ordinal = self.gen.gen.future_payloads.get_index_of(&name).unwrap();
+                let path = self.gen.path_to_root();
                 results.push(format!(
-                    "{stream_and_future_support}::FutureReader::from_handle({op} as u32)"
+                    "{async_support}::FutureReader::from_handle_and_vtable\
+                     ({op} as u32, &{path}wit_future::vtable{ordinal}::VTABLE)"
                 ))
             }
 
@@ -476,11 +486,17 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.push(format!("({op}).into_handle() as i32"))
             }
 
-            Instruction::StreamLift { .. } => {
-                let stream_and_future_support = self.gen.path_to_stream_and_future_support();
+            Instruction::StreamLift { payload, .. } => {
+                let async_support = self.gen.path_to_async_support();
                 let op = &operands[0];
+                let name = self
+                    .gen
+                    .full_type_name_owned(payload, Identifier::StreamOrFuturePayload);
+                let ordinal = self.gen.gen.stream_payloads.get_index_of(&name).unwrap();
+                let path = self.gen.path_to_root();
                 results.push(format!(
-                    "{stream_and_future_support}::StreamReader::from_handle({op} as u32)"
+                    "{async_support}::StreamReader::from_handle_and_vtable\
+                     ({op} as u32, &{path}wit_stream::vtable{ordinal}::VTABLE)"
                 ))
             }
 

@@ -1,4 +1,7 @@
+extern crate std;
+
 use {
+    super::Handle,
     futures::{
         channel::oneshot,
         future::{self, FutureExt},
@@ -6,37 +9,40 @@ use {
         stream::Stream,
     },
     std::{
+        boxed::Box,
         collections::hash_map::Entry,
         convert::Infallible,
         fmt,
         future::{Future, IntoFuture},
         iter,
-        marker::PhantomData,
         mem::{self, ManuallyDrop, MaybeUninit},
         pin::Pin,
         task::{Context, Poll},
+        vec::Vec,
     },
-    wit_bindgen_rt::async_support::{self, Handle},
 };
 
+fn ceiling(x: usize, y: usize) -> usize {
+    (x / y) + if x % y == 0 { 0 } else { 1 }
+}
+
 #[doc(hidden)]
-pub trait FuturePayload: Unpin + Sized + 'static {
-    fn new() -> u32;
-    async fn write(future: u32, value: Self) -> bool;
-    async fn read(future: u32) -> Option<Self>;
-    fn cancel_write(future: u32);
-    fn cancel_read(future: u32);
-    fn close_writable(future: u32);
-    fn close_readable(future: u32);
+pub struct FutureVtable<T> {
+    pub write: fn(future: u32, value: T) -> Pin<Box<dyn Future<Output = bool>>>,
+    pub read: fn(future: u32) -> Pin<Box<dyn Future<Output = Option<T>>>>,
+    pub cancel_write: fn(future: u32),
+    pub cancel_read: fn(future: u32),
+    pub close_writable: fn(future: u32),
+    pub close_readable: fn(future: u32),
 }
 
 /// Represents the writable end of a Component Model `future`.
-pub struct FutureWriter<T: FuturePayload> {
+pub struct FutureWriter<T: 'static> {
     handle: u32,
-    _phantom: PhantomData<T>,
+    vtable: &'static FutureVtable<T>,
 }
 
-impl<T: FuturePayload> fmt::Debug for FutureWriter<T> {
+impl<T> fmt::Debug for FutureWriter<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("FutureWriter")
             .field("handle", &self.handle)
@@ -45,12 +51,12 @@ impl<T: FuturePayload> fmt::Debug for FutureWriter<T> {
 }
 
 /// Represents a write operation which may be canceled prior to completion.
-pub struct CancelableWrite<T: FuturePayload> {
+pub struct CancelableWrite<T: 'static> {
     writer: Option<FutureWriter<T>>,
     future: Pin<Box<dyn Future<Output = ()>>>,
 }
 
-impl<T: FuturePayload> Future for CancelableWrite<T> {
+impl<T> Future for CancelableWrite<T> {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<()> {
@@ -65,7 +71,7 @@ impl<T: FuturePayload> Future for CancelableWrite<T> {
     }
 }
 
-impl<T: FuturePayload> CancelableWrite<T> {
+impl<T> CancelableWrite<T> {
     /// Cancel this write if it hasn't already completed, returning the original `FutureWriter`.
     ///
     /// This method will panic if the write has already completed.
@@ -75,7 +81,7 @@ impl<T: FuturePayload> CancelableWrite<T> {
 
     fn cancel_mut(&mut self) -> FutureWriter<T> {
         let writer = self.writer.take().unwrap();
-        async_support::with_entry(writer.handle, |entry| match entry {
+        super::with_entry(writer.handle, |entry| match entry {
             Entry::Vacant(_) => unreachable!(),
             Entry::Occupied(mut entry) => match entry.get() {
                 Handle::LocalOpen
@@ -85,14 +91,14 @@ impl<T: FuturePayload> CancelableWrite<T> {
                 Handle::LocalReady(..) => {
                     entry.insert(Handle::LocalOpen);
                 }
-                Handle::Write => T::cancel_write(writer.handle),
+                Handle::Write => (writer.vtable.cancel_write)(writer.handle),
             },
         });
         writer
     }
 }
 
-impl<T: FuturePayload> Drop for CancelableWrite<T> {
+impl<T> Drop for CancelableWrite<T> {
     fn drop(&mut self) {
         if self.writer.is_some() {
             self.cancel_mut();
@@ -100,19 +106,25 @@ impl<T: FuturePayload> Drop for CancelableWrite<T> {
     }
 }
 
-impl<T: FuturePayload> FutureWriter<T> {
+impl<T> FutureWriter<T> {
+    #[doc(hidden)]
+    pub fn new(handle: u32, vtable: &'static FutureVtable<T>) -> Self {
+        Self { handle, vtable }
+    }
+
     /// Write the specified value to this `future`.
     pub fn write(self, v: T) -> CancelableWrite<T> {
         let handle = self.handle;
+        let vtable = self.vtable;
         CancelableWrite {
             writer: Some(self),
-            future: async_support::with_entry(handle, |entry| match entry {
+            future: super::with_entry(handle, |entry| match entry {
                 Entry::Vacant(_) => unreachable!(),
                 Entry::Occupied(mut entry) => match entry.get() {
                     Handle::LocalOpen => {
                         let mut v = Some(v);
                         Box::pin(future::poll_fn(move |cx| {
-                            async_support::with_entry(handle, |entry| match entry {
+                            super::with_entry(handle, |entry| match entry {
                                 Entry::Vacant(_) => unreachable!(),
                                 Entry::Occupied(mut entry) => match entry.get() {
                                     Handle::LocalOpen => {
@@ -140,16 +152,16 @@ impl<T: FuturePayload> FutureWriter<T> {
                     }
                     Handle::LocalClosed => Box::pin(future::ready(())),
                     Handle::Read | Handle::LocalReady(..) => unreachable!(),
-                    Handle::Write => Box::pin(T::write(handle, v).map(drop)),
+                    Handle::Write => Box::pin((vtable.write)(handle, v).map(drop)),
                 },
             }),
         }
     }
 }
 
-impl<T: FuturePayload> Drop for FutureWriter<T> {
+impl<T> Drop for FutureWriter<T> {
     fn drop(&mut self) {
-        async_support::with_entry(self.handle, |entry| match entry {
+        super::with_entry(self.handle, |entry| match entry {
             Entry::Vacant(_) => unreachable!(),
             Entry::Occupied(mut entry) => match entry.get_mut() {
                 Handle::LocalOpen | Handle::LocalWaiting(_) | Handle::LocalReady(..) => {
@@ -158,7 +170,7 @@ impl<T: FuturePayload> Drop for FutureWriter<T> {
                 Handle::Read => unreachable!(),
                 Handle::Write | Handle::LocalClosed => {
                     entry.remove();
-                    T::close_writable(self.handle);
+                    (self.vtable.close_writable)(self.handle);
                 }
             },
         });
@@ -166,12 +178,12 @@ impl<T: FuturePayload> Drop for FutureWriter<T> {
 }
 
 /// Represents a read operation which may be canceled prior to completion.
-pub struct CancelableRead<T: FuturePayload> {
+pub struct CancelableRead<T: 'static> {
     reader: Option<FutureReader<T>>,
     future: Pin<Box<dyn Future<Output = Option<T>>>>,
 }
 
-impl<T: FuturePayload> Future for CancelableRead<T> {
+impl<T> Future for CancelableRead<T> {
     type Output = Option<T>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<T>> {
@@ -186,7 +198,7 @@ impl<T: FuturePayload> Future for CancelableRead<T> {
     }
 }
 
-impl<T: FuturePayload> CancelableRead<T> {
+impl<T> CancelableRead<T> {
     /// Cancel this read if it hasn't already completed, returning the original `FutureReader`.
     ///
     /// This method will panic if the read has already completed.
@@ -196,7 +208,7 @@ impl<T: FuturePayload> CancelableRead<T> {
 
     fn cancel_mut(&mut self) -> FutureReader<T> {
         let reader = self.reader.take().unwrap();
-        async_support::with_entry(reader.handle, |entry| match entry {
+        super::with_entry(reader.handle, |entry| match entry {
             Entry::Vacant(_) => unreachable!(),
             Entry::Occupied(mut entry) => match entry.get() {
                 Handle::LocalOpen
@@ -206,14 +218,14 @@ impl<T: FuturePayload> CancelableRead<T> {
                 Handle::LocalWaiting(_) => {
                     entry.insert(Handle::LocalOpen);
                 }
-                Handle::Read => T::cancel_read(reader.handle),
+                Handle::Read => (reader.vtable.cancel_read)(reader.handle),
             },
         });
         reader
     }
 }
 
-impl<T: FuturePayload> Drop for CancelableRead<T> {
+impl<T> Drop for CancelableRead<T> {
     fn drop(&mut self) {
         if self.reader.is_some() {
             self.cancel_mut();
@@ -222,12 +234,12 @@ impl<T: FuturePayload> Drop for CancelableRead<T> {
 }
 
 /// Represents the readable end of a Component Model `future`.
-pub struct FutureReader<T: FuturePayload> {
+pub struct FutureReader<T: 'static> {
     handle: u32,
-    _phantom: PhantomData<T>,
+    vtable: &'static FutureVtable<T>,
 }
 
-impl<T: FuturePayload> fmt::Debug for FutureReader<T> {
+impl<T> fmt::Debug for FutureReader<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("FutureReader")
             .field("handle", &self.handle)
@@ -235,10 +247,15 @@ impl<T: FuturePayload> fmt::Debug for FutureReader<T> {
     }
 }
 
-impl<T: FuturePayload> FutureReader<T> {
+impl<T> FutureReader<T> {
     #[doc(hidden)]
-    pub fn from_handle(handle: u32) -> Self {
-        async_support::with_entry(handle, |entry| match entry {
+    pub fn new(handle: u32, vtable: &'static FutureVtable<T>) -> Self {
+        Self { handle, vtable }
+    }
+
+    #[doc(hidden)]
+    pub fn from_handle_and_vtable(handle: u32, vtable: &'static FutureVtable<T>) -> Self {
+        super::with_entry(handle, |entry| match entry {
             Entry::Vacant(entry) => {
                 entry.insert(Handle::Read);
             }
@@ -256,15 +273,12 @@ impl<T: FuturePayload> FutureReader<T> {
             },
         });
 
-        Self {
-            handle,
-            _phantom: PhantomData,
-        }
+        Self { handle, vtable }
     }
 
     #[doc(hidden)]
     pub fn into_handle(self) -> u32 {
-        async_support::with_entry(self.handle, |entry| match entry {
+        super::with_entry(self.handle, |entry| match entry {
             Entry::Vacant(_) => unreachable!(),
             Entry::Occupied(mut entry) => match entry.get() {
                 Handle::LocalOpen => {
@@ -281,7 +295,7 @@ impl<T: FuturePayload> FutureReader<T> {
     }
 }
 
-impl<T: FuturePayload> IntoFuture for FutureReader<T> {
+impl<T> IntoFuture for FutureReader<T> {
     type Output = Option<T>;
     type IntoFuture = CancelableRead<T>;
 
@@ -290,13 +304,14 @@ impl<T: FuturePayload> IntoFuture for FutureReader<T> {
     /// or when the writable end is dropped (yielding a `None` result).
     fn into_future(self) -> Self::IntoFuture {
         let handle = self.handle;
+        let vtable = self.vtable;
         CancelableRead {
             reader: Some(self),
-            future: async_support::with_entry(handle, |entry| match entry {
+            future: super::with_entry(handle, |entry| match entry {
                 Entry::Vacant(_) => unreachable!(),
                 Entry::Occupied(mut entry) => match entry.get() {
                     Handle::Write | Handle::LocalWaiting(_) => unreachable!(),
-                    Handle::Read => Box::pin(async move { T::read(handle).await })
+                    Handle::Read => Box::pin(async move { (vtable.read)(handle).await })
                         as Pin<Box<dyn Future<Output = _>>>,
                     Handle::LocalOpen => {
                         let (tx, rx) = oneshot::channel();
@@ -317,9 +332,9 @@ impl<T: FuturePayload> IntoFuture for FutureReader<T> {
     }
 }
 
-impl<T: FuturePayload> Drop for FutureReader<T> {
+impl<T> Drop for FutureReader<T> {
     fn drop(&mut self) {
-        async_support::with_entry(self.handle, |entry| match entry {
+        super::with_entry(self.handle, |entry| match entry {
             Entry::Vacant(_) => unreachable!(),
             Entry::Occupied(mut entry) => match entry.get_mut() {
                 Handle::LocalReady(..) => {
@@ -333,7 +348,7 @@ impl<T: FuturePayload> Drop for FutureReader<T> {
                 }
                 Handle::Read | Handle::LocalClosed => {
                     entry.remove();
-                    T::close_readable(self.handle);
+                    (self.vtable.close_readable)(self.handle);
                 }
                 Handle::Write => unreachable!(),
             },
@@ -342,25 +357,27 @@ impl<T: FuturePayload> Drop for FutureReader<T> {
 }
 
 #[doc(hidden)]
-pub trait StreamPayload: Unpin + Sized + 'static {
-    fn new() -> u32;
-    async fn write(stream: u32, values: &[Self]) -> Option<usize>;
-    async fn read(stream: u32, values: &mut [MaybeUninit<Self>]) -> Option<usize>;
-    fn cancel_write(stream: u32);
-    fn cancel_read(stream: u32);
-    fn close_writable(stream: u32);
-    fn close_readable(stream: u32);
+pub struct StreamVtable<T> {
+    pub write: fn(future: u32, values: &[T]) -> Pin<Box<dyn Future<Output = Option<usize>>>>,
+    pub read: fn(
+        future: u32,
+        values: &mut [MaybeUninit<T>],
+    ) -> Pin<Box<dyn Future<Output = Option<usize>>>>,
+    pub cancel_write: fn(future: u32),
+    pub cancel_read: fn(future: u32),
+    pub close_writable: fn(future: u32),
+    pub close_readable: fn(future: u32),
 }
 
-struct CancelWriteOnDrop<T: StreamPayload> {
+struct CancelWriteOnDrop<T: 'static> {
     handle: Option<u32>,
-    _phantom: PhantomData<T>,
+    vtable: &'static StreamVtable<T>,
 }
 
-impl<T: StreamPayload> Drop for CancelWriteOnDrop<T> {
+impl<T> Drop for CancelWriteOnDrop<T> {
     fn drop(&mut self) {
         if let Some(handle) = self.handle.take() {
-            async_support::with_entry(handle, |entry| match entry {
+            super::with_entry(handle, |entry| match entry {
                 Entry::Vacant(_) => unreachable!(),
                 Entry::Occupied(mut entry) => match entry.get() {
                     Handle::LocalOpen
@@ -370,7 +387,7 @@ impl<T: StreamPayload> Drop for CancelWriteOnDrop<T> {
                     Handle::LocalReady(..) => {
                         entry.insert(Handle::LocalOpen);
                     }
-                    Handle::Write => T::cancel_write(handle),
+                    Handle::Write => (self.vtable.cancel_write)(handle),
                 },
             });
         }
@@ -378,13 +395,22 @@ impl<T: StreamPayload> Drop for CancelWriteOnDrop<T> {
 }
 
 /// Represents the writable end of a Component Model `stream`.
-pub struct StreamWriter<T: StreamPayload> {
+pub struct StreamWriter<T: 'static> {
     handle: u32,
     future: Option<Pin<Box<dyn Future<Output = ()> + 'static>>>,
-    _phantom: PhantomData<T>,
+    vtable: &'static StreamVtable<T>,
 }
 
-impl<T: StreamPayload> StreamWriter<T> {
+impl<T> StreamWriter<T> {
+    #[doc(hidden)]
+    pub fn new(handle: u32, vtable: &'static StreamVtable<T>) -> Self {
+        Self {
+            handle,
+            future: None,
+            vtable,
+        }
+    }
+
     /// Cancel the current pending write operation.
     ///
     /// This will panic if no such operation is pending.
@@ -394,7 +420,7 @@ impl<T: StreamPayload> StreamWriter<T> {
     }
 }
 
-impl<T: StreamPayload> fmt::Debug for StreamWriter<T> {
+impl<T> fmt::Debug for StreamWriter<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("StreamWriter")
             .field("handle", &self.handle)
@@ -402,7 +428,7 @@ impl<T: StreamPayload> fmt::Debug for StreamWriter<T> {
     }
 }
 
-impl<T: StreamPayload> Sink<Vec<T>> for StreamWriter<T> {
+impl<T> Sink<Vec<T>> for StreamWriter<T> {
     type Error = Infallible;
 
     fn poll_ready(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
@@ -423,7 +449,7 @@ impl<T: StreamPayload> Sink<Vec<T>> for StreamWriter<T> {
 
     fn start_send(self: Pin<&mut Self>, item: Vec<T>) -> Result<(), Self::Error> {
         assert!(self.future.is_none());
-        async_support::with_entry(self.handle, |entry| match entry {
+        super::with_entry(self.handle, |entry| match entry {
             Entry::Vacant(_) => unreachable!(),
             Entry::Occupied(mut entry) => match entry.get() {
                 Handle::LocalOpen => {
@@ -431,10 +457,10 @@ impl<T: StreamPayload> Sink<Vec<T>> for StreamWriter<T> {
                     let mut item = Some(item);
                     let mut cancel_on_drop = Some(CancelWriteOnDrop::<T> {
                         handle: Some(handle),
-                        _phantom: PhantomData,
+                        vtable: self.vtable,
                     });
                     self.get_mut().future = Some(Box::pin(future::poll_fn(move |cx| {
-                        async_support::with_entry(handle, |entry| match entry {
+                        super::with_entry(handle, |entry| match entry {
                             Entry::Vacant(_) => unreachable!(),
                             Entry::Occupied(mut entry) => match entry.get() {
                                 Handle::LocalOpen => {
@@ -471,14 +497,15 @@ impl<T: StreamPayload> Sink<Vec<T>> for StreamWriter<T> {
                 Handle::Read | Handle::LocalReady(..) => unreachable!(),
                 Handle::Write => {
                     let handle = self.handle;
+                    let vtable = self.vtable;
                     let mut cancel_on_drop = CancelWriteOnDrop::<T> {
                         handle: Some(handle),
-                        _phantom: PhantomData,
+                        vtable,
                     };
                     self.get_mut().future = Some(Box::pin(async move {
                         let mut offset = 0;
                         while offset < item.len() {
-                            if let Some(count) = T::write(handle, &item[offset..]).await {
+                            if let Some(count) = (vtable.write)(handle, &item[offset..]).await {
                                 offset += count;
                             } else {
                                 break;
@@ -502,11 +529,11 @@ impl<T: StreamPayload> Sink<Vec<T>> for StreamWriter<T> {
     }
 }
 
-impl<T: StreamPayload> Drop for StreamWriter<T> {
+impl<T> Drop for StreamWriter<T> {
     fn drop(&mut self) {
         self.future = None;
 
-        async_support::with_entry(self.handle, |entry| match entry {
+        super::with_entry(self.handle, |entry| match entry {
             Entry::Vacant(_) => unreachable!(),
             Entry::Occupied(mut entry) => match entry.get_mut() {
                 Handle::LocalOpen | Handle::LocalWaiting(_) | Handle::LocalReady(..) => {
@@ -515,22 +542,22 @@ impl<T: StreamPayload> Drop for StreamWriter<T> {
                 Handle::Read => unreachable!(),
                 Handle::Write | Handle::LocalClosed => {
                     entry.remove();
-                    T::close_writable(self.handle);
+                    (self.vtable.close_writable)(self.handle);
                 }
             },
         });
     }
 }
 
-struct CancelReadOnDrop<T: StreamPayload> {
+struct CancelReadOnDrop<T: 'static> {
     handle: Option<u32>,
-    _phantom: PhantomData<T>,
+    vtable: &'static StreamVtable<T>,
 }
 
-impl<T: StreamPayload> Drop for CancelReadOnDrop<T> {
+impl<T> Drop for CancelReadOnDrop<T> {
     fn drop(&mut self) {
         if let Some(handle) = self.handle.take() {
-            async_support::with_entry(handle, |entry| match entry {
+            super::with_entry(handle, |entry| match entry {
                 Entry::Vacant(_) => unreachable!(),
                 Entry::Occupied(mut entry) => match entry.get() {
                     Handle::LocalOpen
@@ -540,7 +567,7 @@ impl<T: StreamPayload> Drop for CancelReadOnDrop<T> {
                     Handle::LocalWaiting(_) => {
                         entry.insert(Handle::LocalOpen);
                     }
-                    Handle::Read => T::cancel_read(handle),
+                    Handle::Read => (self.vtable.cancel_read)(handle),
                 },
             });
         }
@@ -548,13 +575,13 @@ impl<T: StreamPayload> Drop for CancelReadOnDrop<T> {
 }
 
 /// Represents the readable end of a Component Model `stream`.
-pub struct StreamReader<T: StreamPayload> {
+pub struct StreamReader<T: 'static> {
     handle: u32,
     future: Option<Pin<Box<dyn Future<Output = Option<Vec<T>>> + 'static>>>,
-    _phantom: PhantomData<T>,
+    vtable: &'static StreamVtable<T>,
 }
 
-impl<T: StreamPayload> StreamReader<T> {
+impl<T> StreamReader<T> {
     /// Cancel the current pending read operation.
     ///
     /// This will panic if no such operation is pending.
@@ -564,7 +591,7 @@ impl<T: StreamPayload> StreamReader<T> {
     }
 }
 
-impl<T: StreamPayload> fmt::Debug for StreamReader<T> {
+impl<T> fmt::Debug for StreamReader<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("StreamReader")
             .field("handle", &self.handle)
@@ -572,10 +599,19 @@ impl<T: StreamPayload> fmt::Debug for StreamReader<T> {
     }
 }
 
-impl<T: StreamPayload> StreamReader<T> {
+impl<T> StreamReader<T> {
     #[doc(hidden)]
-    pub fn from_handle(handle: u32) -> Self {
-        async_support::with_entry(handle, |entry| match entry {
+    pub fn new(handle: u32, vtable: &'static StreamVtable<T>) -> Self {
+        Self {
+            handle,
+            future: None,
+            vtable,
+        }
+    }
+
+    #[doc(hidden)]
+    pub fn from_handle_and_vtable(handle: u32, vtable: &'static StreamVtable<T>) -> Self {
+        super::with_entry(handle, |entry| match entry {
             Entry::Vacant(entry) => {
                 entry.insert(Handle::Read);
             }
@@ -596,13 +632,13 @@ impl<T: StreamPayload> StreamReader<T> {
         Self {
             handle,
             future: None,
-            _phantom: PhantomData,
+            vtable,
         }
     }
 
     #[doc(hidden)]
     pub fn into_handle(self) -> u32 {
-        async_support::with_entry(self.handle, |entry| match entry {
+        super::with_entry(self.handle, |entry| match entry {
             Entry::Vacant(_) => unreachable!(),
             Entry::Occupied(mut entry) => match entry.get() {
                 Handle::LocalOpen => {
@@ -619,36 +655,38 @@ impl<T: StreamPayload> StreamReader<T> {
     }
 }
 
-impl<T: StreamPayload> Stream for StreamReader<T> {
+impl<T> Stream for StreamReader<T> {
     type Item = Vec<T>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         let me = self.get_mut();
 
         if me.future.is_none() {
-            me.future = Some(async_support::with_entry(me.handle, |entry| match entry {
+            me.future = Some(super::with_entry(me.handle, |entry| match entry {
                 Entry::Vacant(_) => unreachable!(),
                 Entry::Occupied(mut entry) => match entry.get() {
                     Handle::Write | Handle::LocalWaiting(_) => unreachable!(),
                     Handle::Read => {
                         let handle = me.handle;
+                        let vtable = me.vtable;
                         let mut cancel_on_drop = CancelReadOnDrop::<T> {
                             handle: Some(handle),
-                            _phantom: PhantomData,
+                            vtable,
                         };
                         Box::pin(async move {
                             let mut buffer = iter::repeat_with(MaybeUninit::uninit)
                                 .take(ceiling(64 * 1024, mem::size_of::<T>()))
                                 .collect::<Vec<_>>();
 
-                            let result = if let Some(count) = T::read(handle, &mut buffer).await {
-                                buffer.truncate(count);
-                                Some(unsafe {
-                                    mem::transmute::<Vec<MaybeUninit<T>>, Vec<T>>(buffer)
-                                })
-                            } else {
-                                None
-                            };
+                            let result =
+                                if let Some(count) = (vtable.read)(handle, &mut buffer).await {
+                                    buffer.truncate(count);
+                                    Some(unsafe {
+                                        mem::transmute::<Vec<MaybeUninit<T>>, Vec<T>>(buffer)
+                                    })
+                                } else {
+                                    None
+                                };
                             cancel_on_drop.handle = None;
                             drop(cancel_on_drop);
                             result
@@ -659,7 +697,7 @@ impl<T: StreamPayload> Stream for StreamReader<T> {
                         entry.insert(Handle::LocalWaiting(tx));
                         let mut cancel_on_drop = CancelReadOnDrop::<T> {
                             handle: Some(me.handle),
-                            _phantom: PhantomData,
+                            vtable: me.vtable,
                         };
                         Box::pin(async move {
                             let result = rx.map(|v| v.ok().map(|v| *v.downcast().unwrap())).await;
@@ -690,11 +728,11 @@ impl<T: StreamPayload> Stream for StreamReader<T> {
     }
 }
 
-impl<T: StreamPayload> Drop for StreamReader<T> {
+impl<T> Drop for StreamReader<T> {
     fn drop(&mut self) {
         self.future = None;
 
-        async_support::with_entry(self.handle, |entry| match entry {
+        super::with_entry(self.handle, |entry| match entry {
             Entry::Vacant(_) => unreachable!(),
             Entry::Occupied(mut entry) => match entry.get_mut() {
                 Handle::LocalReady(..) => {
@@ -708,58 +746,10 @@ impl<T: StreamPayload> Drop for StreamReader<T> {
                 }
                 Handle::Read | Handle::LocalClosed => {
                     entry.remove();
-                    T::close_readable(self.handle);
+                    (self.vtable.close_readable)(self.handle);
                 }
                 Handle::Write => unreachable!(),
             },
         });
     }
-}
-
-/// Creates a new Component Model `future` with the specified payload type.
-pub fn new_future<T: FuturePayload>() -> (FutureWriter<T>, FutureReader<T>) {
-    let handle = T::new();
-    async_support::with_entry(handle, |entry| match entry {
-        Entry::Vacant(entry) => {
-            entry.insert(Handle::LocalOpen);
-        }
-        Entry::Occupied(_) => unreachable!(),
-    });
-    (
-        FutureWriter {
-            handle,
-            _phantom: PhantomData,
-        },
-        FutureReader {
-            handle,
-            _phantom: PhantomData,
-        },
-    )
-}
-
-/// Creates a new Component Model `stream` with the specified payload type.
-pub fn new_stream<T: StreamPayload>() -> (StreamWriter<T>, StreamReader<T>) {
-    let handle = T::new();
-    async_support::with_entry(handle, |entry| match entry {
-        Entry::Vacant(entry) => {
-            entry.insert(Handle::LocalOpen);
-        }
-        Entry::Occupied(_) => unreachable!(),
-    });
-    (
-        StreamWriter {
-            handle,
-            future: None,
-            _phantom: PhantomData,
-        },
-        StreamReader {
-            handle,
-            future: None,
-            _phantom: PhantomData,
-        },
-    )
-}
-
-fn ceiling(x: usize, y: usize) -> usize {
-    (x / y) + if x % y == 0 { 0 } else { 1 }
 }

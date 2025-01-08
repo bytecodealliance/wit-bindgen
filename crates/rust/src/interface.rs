@@ -127,7 +127,7 @@ impl TypeOwnershipStyle {
     }
 }
 
-impl InterfaceGenerator<'_> {
+impl<'i> InterfaceGenerator<'i> {
     pub(super) fn generate_exports<'a>(
         &mut self,
         interface: Option<(InterfaceId, &WorldKey)>,
@@ -271,7 +271,7 @@ fn _resource_rep(handle: u32) -> *mut u8
             None => {
                 let world = match self.identifier {
                     Identifier::World(w) => w,
-                    Identifier::None | Identifier::Interface(..) => unreachable!(),
+                    Identifier::Interface(..) | Identifier::StreamOrFuturePayload => unreachable!(),
                 };
                 let world = self.resolve.worlds[world].name.to_snake_case();
                 format!("__export_world_{world}_cabi")
@@ -322,7 +322,9 @@ macro_rules! {macro_name} {{
         for name in resources_to_drop {
             let module = match self.identifier {
                 Identifier::Interface(_, key) => self.resolve.name_world_key(key),
-                Identifier::None | Identifier::World(_) => unreachable!(),
+                Identifier::World(_) | Identifier::StreamOrFuturePayload => {
+                    unreachable!()
+                }
             };
             let camel = name.to_upper_camel_case();
             uwriteln!(
@@ -404,25 +406,29 @@ macro_rules! {macro_name} {{
         src
     }
 
-    fn path_to_root(&self) -> String {
+    pub(crate) fn path_to_root(&self) -> String {
         let mut path_to_root = String::new();
 
-        if let Identifier::Interface(_, key) = self.identifier {
-            // Escape the submodule for this interface
-            path_to_root.push_str("super::");
-
-            // Escape the `exports` top-level submodule
-            if !self.in_import {
+        match self.identifier {
+            Identifier::Interface(_, key) => {
+                // Escape the submodule for this interface
                 path_to_root.push_str("super::");
-            }
 
-            // Escape the namespace/package submodules for interface-based ids
-            match key {
-                WorldKey::Name(_) => {}
-                WorldKey::Interface(_) => {
-                    path_to_root.push_str("super::super::");
+                // Escape the `exports` top-level submodule
+                if !self.in_import {
+                    path_to_root.push_str("super::");
+                }
+
+                // Escape the namespace/package submodules for interface-based ids
+                match key {
+                    WorldKey::Name(_) => {}
+                    WorldKey::Interface(_) => {
+                        path_to_root.push_str("super::super::");
+                    }
                 }
             }
+            Identifier::StreamOrFuturePayload => path_to_root.push_str("super::super::"),
+            _ => {}
         }
         path_to_root
     }
@@ -461,7 +467,7 @@ macro_rules! {macro_name} {{
         let module = format!(
             "\
                 {docs}
-                #[allow(dead_code, clippy::all)]
+                #[allow(dead_code, unused_imports, clippy::all)]
                 pub mod {snake} {{
                     {used_static}
                     {module}
@@ -489,37 +495,18 @@ macro_rules! {macro_name} {{
                     .unwrap_or_else(|| "$root".into())
             );
             let func_name = &func.name;
-            let type_mode = TypeMode {
-                lifetime: None,
-                lists_borrowed: false,
-                style: TypeOwnershipStyle::Owned,
-            };
-            let stream_and_future_support = self.path_to_stream_and_future_support();
             let async_support = self.path_to_async_support();
 
             match &self.resolve.types[ty].kind {
                 TypeDefKind::Future(payload_type) => {
-                    let (name, full_name) = if let Some(payload_type) = payload_type {
-                        (
-                            {
-                                let old = mem::take(&mut self.src);
-                                self.print_ty(&payload_type, type_mode);
-                                String::from(mem::replace(&mut self.src, old))
-                            },
-                            {
-                                let old = mem::take(&mut self.src);
-                                let old_identifier =
-                                    mem::replace(&mut self.identifier, Identifier::None);
-                                self.print_ty(&payload_type, type_mode);
-                                self.identifier = old_identifier;
-                                String::from(mem::replace(&mut self.src, old))
-                            },
-                        )
+                    let name = if let Some(payload_type) = payload_type {
+                        self.full_type_name_owned(payload_type, Identifier::StreamOrFuturePayload)
                     } else {
-                        ("()".into(), "()".into())
+                        "()".into()
                     };
 
-                    if self.gen.future_payloads_emitted.insert(full_name) {
+                    if !self.gen.future_payloads.contains_key(&name) {
+                        let ordinal = self.gen.future_payloads.len();
                         let (size, align) = if let Some(payload_type) = payload_type {
                             (
                                 self.sizes.size(payload_type),
@@ -546,28 +533,12 @@ macro_rules! {macro_name} {{
                             (String::new(), "let value = ();\n".into())
                         };
 
-                        uwriteln!(
-                            self.src,
+                        let box_ = format!("super::super::{}", self.path_to_box());
+                        let code = format!(
                             r#"
-impl {stream_and_future_support}::FuturePayload for {name} {{
-    fn new() -> u32 {{
-        #[cfg(not(target_arch = "wasm32"))]
-        {{
-            unreachable!();
-        }}
-
-        #[cfg(target_arch = "wasm32")]
-        {{
-            #[link(wasm_import_module = "{module}")]
-            extern "C" {{
-                #[link_name = "[future-new-{index}]{func_name}"]
-                fn new() -> u32;
-            }}
-            unsafe {{ new() }}
-        }}
-    }}
-
-    async fn write(future: u32, value: Self) -> bool {{
+#[doc(hidden)]
+pub mod vtable{ordinal} {{
+    fn write(future: u32, value: {name}) -> ::core::pin::Pin<{box_}<dyn ::core::future::Future<Output = bool>>> {{
         #[cfg(not(target_arch = "wasm32"))]
         {{
             unreachable!();
@@ -587,11 +558,13 @@ impl {stream_and_future_support}::FuturePayload for {name} {{
                 fn wit_import(_: u32, _: *mut u8) -> u32;
             }}
 
-            unsafe {{ {async_support}::await_future_result(wit_import, future, address).await }}
+            {box_}::pin(async move {{
+                unsafe {{ {async_support}::await_future_result(wit_import, future, address).await }}
+            }})
         }}
     }}
 
-    async fn read(future: u32) -> Option<Self> {{
+    fn read(future: u32) -> ::core::pin::Pin<{box_}<dyn ::core::future::Future<Output = Option<{name}>>>> {{
         #[cfg(not(target_arch = "wasm32"))]
         {{
             unreachable!();
@@ -609,12 +582,14 @@ impl {stream_and_future_support}::FuturePayload for {name} {{
                 fn wit_import(_: u32, _: *mut u8) -> u32;
             }}
 
-            if unsafe {{ {async_support}::await_future_result(wit_import, future, address).await }} {{
-                {lift}
-                Some(value)
-            }} else {{
-               None
-            }}
+            {box_}::pin(async move {{
+                if unsafe {{ {async_support}::await_future_result(wit_import, future, address).await }} {{
+                    {lift}
+                    Some(value)
+                }} else {{
+                   None
+                }}
+            }})
         }}
     }}
 
@@ -685,27 +660,42 @@ impl {stream_and_future_support}::FuturePayload for {name} {{
             unsafe {{ drop(reader) }}
         }}
     }}
+
+    pub static VTABLE: {async_support}::FutureVtable<{name}> = {async_support}::FutureVtable::<{name}> {{
+        write, read, cancel_write, cancel_read, close_writable, close_readable
+    }};
+
+    impl super::FuturePayload for {name} {{
+        fn new() -> (u32, &'static {async_support}::FutureVtable<Self>) {{
+            #[cfg(not(target_arch = "wasm32"))]
+            {{
+                unreachable!();
+            }}
+
+            #[cfg(target_arch = "wasm32")]
+            {{
+                #[link(wasm_import_module = "{module}")]
+                extern "C" {{
+                    #[link_name = "[future-new-{index}]{func_name}"]
+                    fn new() -> u32;
+                }}
+                (unsafe {{ new() }}, &VTABLE)
+            }}
+        }}
+    }}
 }}
                         "#,
                         );
+
+                        self.gen.future_payloads.insert(name, code);
                     }
                 }
                 TypeDefKind::Stream(payload_type) => {
-                    let name = {
-                        let old = mem::take(&mut self.src);
-                        self.print_ty(&payload_type, type_mode);
-                        String::from(mem::replace(&mut self.src, old))
-                    };
+                    let name =
+                        self.full_type_name_owned(payload_type, Identifier::StreamOrFuturePayload);
 
-                    let full_name = {
-                        let old = mem::take(&mut self.src);
-                        let old_identifier = mem::replace(&mut self.identifier, Identifier::None);
-                        self.print_ty(&payload_type, type_mode);
-                        self.identifier = old_identifier;
-                        String::from(mem::replace(&mut self.src, old))
-                    };
-
-                    if self.gen.stream_payloads_emitted.insert(full_name) {
+                    if !self.gen.stream_payloads.contains_key(&name) {
+                        let ordinal = self.gen.stream_payloads.len();
                         let size = self.sizes.size(payload_type).size_wasm32();
                         let align = self.sizes.align(payload_type).align_wasm32();
                         let alloc = self.path_to_std_alloc_module();
@@ -757,28 +747,12 @@ for (index, dst) in values.iter_mut().take(count).enumerate() {{
                                 (address.clone(), lower, address, lift)
                             };
 
-                        uwriteln!(
-                            self.src,
+                        let box_ = format!("super::super::{}", self.path_to_box());
+                        let code = format!(
                             r#"
-impl {stream_and_future_support}::StreamPayload for {name} {{
-    fn new() -> u32 {{
-        #[cfg(not(target_arch = "wasm32"))]
-        {{
-            unreachable!();
-        }}
-
-        #[cfg(target_arch = "wasm32")]
-        {{
-            #[link(wasm_import_module = "{module}")]
-            extern "C" {{
-                #[link_name = "[stream-new-{index}]{func_name}"]
-                fn new() -> u32;
-            }}
-            unsafe {{ new() }}
-        }}
-    }}
-
-    async fn write(stream: u32, values: &[Self]) -> Option<usize> {{
+#[doc(hidden)]
+pub mod vtable{ordinal} {{
+    fn write(stream: u32, values: &[{name}]) -> ::core::pin::Pin<{box_}<dyn ::core::future::Future<Output = Option<usize>>>> {{
         #[cfg(not(target_arch = "wasm32"))]
         {{
             unreachable!();
@@ -795,13 +769,20 @@ impl {stream_and_future_support}::StreamPayload for {name} {{
                 fn wit_import(_: u32, _: *mut u8, _: u32) -> u32;
             }}
 
-            unsafe {{
-                {async_support}::await_stream_result(wit_import, stream, address, u32::try_from(values.len()).unwrap()).await
-            }}
+            {box_}::pin(async move {{
+                unsafe {{
+                    {async_support}::await_stream_result(
+                        wit_import,
+                        stream,
+                        address,
+                        u32::try_from(values.len()).unwrap()
+                    ).await
+                }}
+            }})
         }}
     }}
 
-    async fn read(stream: u32, values: &mut [::core::mem::MaybeUninit::<Self>]) -> Option<usize> {{
+    fn read(stream: u32, values: &mut [::core::mem::MaybeUninit::<{name}>]) -> ::core::pin::Pin<{box_}<dyn ::core::future::Future<Output = Option<usize>>>> {{
         #[cfg(not(target_arch = "wasm32"))]
         {{
             unreachable!();
@@ -817,14 +798,21 @@ impl {stream_and_future_support}::StreamPayload for {name} {{
                 fn wit_import(_: u32, _: *mut u8, _: u32) -> u32;
             }}
 
-            let count = unsafe {{
-                {async_support}::await_stream_result(wit_import, stream, address, u32::try_from(values.len()).unwrap()).await
-            }};
-            #[allow(unused)]
-            if let Some(count) = count {{
-                {lift}
-            }}
-            count
+            {box_}::pin(async move {{
+                let count = unsafe {{
+                    {async_support}::await_stream_result(
+                        wit_import,
+                        stream,
+                        address,
+                        u32::try_from(values.len()).unwrap()
+                    ).await
+                }};
+                #[allow(unused)]
+                if let Some(count) = count {{
+                    {lift}
+                }}
+                count
+            }})
         }}
     }}
 
@@ -895,9 +883,34 @@ impl {stream_and_future_support}::StreamPayload for {name} {{
             unsafe {{ drop(reader) }}
         }}
     }}
+
+    pub static VTABLE: {async_support}::StreamVtable<{name}> = {async_support}::StreamVtable::<{name}> {{
+        write, read, cancel_write, cancel_read, close_writable, close_readable
+    }};
+
+    impl super::StreamPayload for {name} {{
+        fn new() -> (u32, &'static {async_support}::StreamVtable<Self>) {{
+            #[cfg(not(target_arch = "wasm32"))]
+            {{
+                unreachable!();
+            }}
+
+            #[cfg(target_arch = "wasm32")]
+            {{
+                #[link(wasm_import_module = "{module}")]
+                extern "C" {{
+                    #[link_name = "[stream-new-{index}]{func_name}"]
+                    fn new() -> u32;
+                }}
+                (unsafe {{ new() }}, &VTABLE)
+            }}
+        }}
+    }}
 }}
-                        "#
+                        "#,
                         );
+
+                        self.gen.stream_payloads.insert(name, code);
                     }
                 }
                 _ => unreachable!(),
@@ -1125,7 +1138,7 @@ impl {stream_and_future_support}::StreamPayload for {name} {{
         let wasm_module_export_name = match self.identifier {
             Identifier::Interface(_, key) => Some(self.resolve.name_world_key(key)),
             Identifier::World(_) => None,
-            Identifier::None => unreachable!(),
+            Identifier::StreamOrFuturePayload => unreachable!(),
         };
         let export_prefix = self.gen.opts.export_prefix.as_deref().unwrap_or("");
         let export_name = func.legacy_core_export_name(wasm_module_export_name.as_deref());
@@ -1684,6 +1697,31 @@ impl {stream_and_future_support}::StreamPayload for {name} {{
         } else {
             self.filter_mode(ty, mode)
         }
+    }
+
+    pub(crate) fn full_type_name_owned(&mut self, ty: &Type, id: Identifier<'i>) -> String {
+        self.full_type_name(
+            ty,
+            TypeMode {
+                lifetime: None,
+                lists_borrowed: false,
+                style: TypeOwnershipStyle::Owned,
+            },
+            id,
+        )
+    }
+
+    fn full_type_name(&mut self, ty: &Type, mode: TypeMode, id: Identifier<'i>) -> String {
+        let old_identifier = mem::replace(&mut self.identifier, id);
+        let name = self.type_name(ty, mode);
+        self.identifier = old_identifier;
+        name
+    }
+
+    fn type_name(&mut self, ty: &Type, mode: TypeMode) -> String {
+        let old = mem::take(&mut self.src);
+        self.print_ty(ty, mode);
+        String::from(mem::replace(&mut self.src, old))
     }
 
     fn print_ty(&mut self, ty: &Type, mode: TypeMode) {
@@ -2327,21 +2365,27 @@ impl {stream_and_future_support}::StreamPayload for {name} {{
             return Some(path_to_root);
         } else {
             let mut full_path = String::new();
-            if let Identifier::Interface(cur, name) = self.identifier {
-                if cur == interface {
-                    return None;
-                }
-                if !self.in_import {
-                    full_path.push_str("super::");
-                }
-                match name {
-                    WorldKey::Name(_) => {
+            match self.identifier {
+                Identifier::Interface(cur, name) => {
+                    if cur == interface {
+                        return None;
+                    }
+                    if !self.in_import {
                         full_path.push_str("super::");
                     }
-                    WorldKey::Interface(_) => {
-                        full_path.push_str("super::super::super::");
+                    match name {
+                        WorldKey::Name(_) => {
+                            full_path.push_str("super::");
+                        }
+                        WorldKey::Interface(_) => {
+                            full_path.push_str("super::super::super::");
+                        }
                     }
                 }
+                Identifier::StreamOrFuturePayload => {
+                    full_path.push_str("super::super::");
+                }
+                _ => {}
             }
             full_path.push_str(&path);
             Some(full_path)
@@ -2467,13 +2511,6 @@ impl {stream_and_future_support}::StreamPayload for {name} {{
         self.path_from_runtime_module(RuntimeItem::StdAllocModule, "alloc")
     }
 
-    pub fn path_to_stream_and_future_support(&mut self) -> String {
-        self.path_from_runtime_module(
-            RuntimeItem::StreamAndFutureSupport,
-            "stream_and_future_support",
-        )
-    }
-
     pub fn path_to_async_support(&mut self) -> String {
         "::wit_bindgen_rt::async_support".into()
     }
@@ -2485,7 +2522,12 @@ impl {stream_and_future_support}::StreamPayload for {name} {{
     ) -> String {
         self.needs_runtime_module = true;
         self.gen.rt_module.insert(item);
-        format!("_rt::{name_in_runtime_module}")
+        let prefix = if let Identifier::StreamOrFuturePayload = &self.identifier {
+            "super::super::"
+        } else {
+            ""
+        };
+        format!("{prefix}_rt::{name_in_runtime_module}")
     }
 }
 
@@ -2540,7 +2582,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             let module = match self.identifier {
                 Identifier::Interface(_, key) => self.resolve.name_world_key(key),
                 Identifier::World(_) => unimplemented!("resource exports from worlds"),
-                Identifier::None => unreachable!(),
+                Identifier::StreamOrFuturePayload => unreachable!(),
             };
             let box_path = self.path_to_box();
             uwriteln!(
@@ -2793,7 +2835,7 @@ impl<'a> {camel}Borrow<'a>{{
     }
 
     fn type_future(&mut self, _id: TypeId, name: &str, ty: &Option<Type>, docs: &Docs) {
-        let stream_and_future_support = self.path_to_stream_and_future_support();
+        let async_support = self.path_to_async_support();
         let mode = TypeMode {
             style: TypeOwnershipStyle::Owned,
             lists_borrowed: false,
@@ -2803,14 +2845,14 @@ impl<'a> {camel}Borrow<'a>{{
         self.push_str(&format!("pub type {}", name.to_upper_camel_case()));
         self.print_generics(mode.lifetime);
         self.push_str(" = ");
-        self.push_str(&format!("{stream_and_future_support}::FutureReader<"));
+        self.push_str(&format!("{async_support}::FutureReader<"));
         self.print_optional_ty(ty.as_ref(), mode);
         self.push_str(">");
         self.push_str(";\n");
     }
 
     fn type_stream(&mut self, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
-        let stream_and_future_support = self.path_to_stream_and_future_support();
+        let async_support = self.path_to_async_support();
         let mode = TypeMode {
             style: TypeOwnershipStyle::Owned,
             lists_borrowed: false,
@@ -2820,7 +2862,7 @@ impl<'a> {camel}Borrow<'a>{{
         self.push_str(&format!("pub type {}", name.to_upper_camel_case()));
         self.print_generics(mode.lifetime);
         self.push_str(" = ");
-        self.push_str(&format!("{stream_and_future_support}::StreamReader<"));
+        self.push_str(&format!("{async_support}::StreamReader<"));
         self.print_ty(ty, mode);
         self.push_str(">");
         self.push_str(";\n");
@@ -2923,27 +2965,27 @@ impl<'a, 'b> wit_bindgen_core::AnonymousTypeGenerator<'a> for AnonTypeGenerator<
     }
 
     fn anonymous_type_future(&mut self, _id: TypeId, ty: &Option<Type>, _docs: &Docs) {
-        let stream_and_future_support = self.interface.path_to_stream_and_future_support();
+        let async_support = self.interface.path_to_async_support();
         let mode = TypeMode {
             style: TypeOwnershipStyle::Owned,
             lists_borrowed: false,
             lifetime: None,
         };
         self.interface
-            .push_str(&format!("{stream_and_future_support}::FutureReader<"));
+            .push_str(&format!("{async_support}::FutureReader<"));
         self.interface.print_optional_ty(ty.as_ref(), mode);
         self.interface.push_str(">");
     }
 
     fn anonymous_type_stream(&mut self, _id: TypeId, ty: &Type, _docs: &Docs) {
-        let stream_and_future_support = self.interface.path_to_stream_and_future_support();
+        let async_support = self.interface.path_to_async_support();
         let mode = TypeMode {
             style: TypeOwnershipStyle::Owned,
             lists_borrowed: false,
             lifetime: None,
         };
         self.interface
-            .push_str(&format!("{stream_and_future_support}::StreamReader<"));
+            .push_str(&format!("{async_support}::StreamReader<"));
         self.interface.print_ty(ty, mode);
         self.interface.push_str(">");
     }
