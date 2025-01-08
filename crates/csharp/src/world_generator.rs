@@ -702,20 +702,20 @@ impl WorldGenerator for CSharp {
                     )?)?;
                 let pkg = resolve.worlds[world].package.unwrap();
 
+                let mut printer = WitPrinter::default();
+                printer.emit_docs(false);
+                printer.print(
+                    &resolve,
+                    pkg,
+                    &resolve
+                        .packages
+                        .iter()
+                        .filter_map(|(id, _)| if id == pkg { None } else { Some(id) })
+                        .collect::<Vec<_>>(),
+                )?;
                 files.push(
                     &format!("{world_namespace}_component_type.wit"),
-                    WitPrinter::default()
-                        .emit_docs(false)
-                        .print(
-                            &resolve,
-                            pkg,
-                            &resolve
-                                .packages
-                                .iter()
-                                .filter_map(|(id, _)| if id == pkg { None } else { Some(id) })
-                                .collect::<Vec<_>>(),
-                        )?
-                        .as_bytes(),
+                    String::from(printer.output).as_bytes(),
                 );
             }
 
