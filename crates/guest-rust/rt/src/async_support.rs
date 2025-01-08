@@ -26,10 +26,12 @@ use {
     },
 };
 
-mod streams_and_futures;
+mod future_support;
+mod stream_support;
 
-pub use streams_and_futures::{
-    FutureReader, FutureVtable, FutureWriter, StreamReader, StreamVtable, StreamWriter,
+pub use {
+    future_support::{FutureReader, FutureVtable, FutureWriter},
+    stream_support::{StreamReader, StreamVtable, StreamWriter},
 };
 
 pub use futures;
