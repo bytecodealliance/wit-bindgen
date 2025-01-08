@@ -28,7 +28,7 @@ prettyplease = { workspace = true }
 
 [dev-dependencies]
 futures = { workspace = true }
-wit-bindgen = { path = '../guest-rust' }
+wit-bindgen = { path = '../guest-rust', features = ['async'] }
 wit-bindgen-rt = { path = '../guest-rust/rt' }
 test-helpers = { path = '../test-helpers' }
 # For use with the custom attributes test
