@@ -47,6 +47,10 @@ impl test::lists::test::Host for MyImports {
         assert_eq!(ptr[1][0], "baz");
     }
 
+    fn list_param5(&mut self, ptr: Vec<(u8, u32, u8)>) {
+        assert_eq!(ptr, [(1, 2, 3), (4, 5, 6)]);
+    }
+
     fn list_result(&mut self) -> Vec<u8> {
         vec![1, 2, 3, 4, 5]
     }

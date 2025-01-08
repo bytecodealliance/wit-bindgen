@@ -25,5 +25,4 @@ syn = { workspace = true }
 prettyplease = { workspace = true }
 
 [features]
-default = ["async"]
-async = ["wit-bindgen-rust/async"]
+async = []

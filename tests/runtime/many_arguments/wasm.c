@@ -3,7 +3,7 @@
 #include <limits.h>
 #include <math.h>
 
-void many_arguments_many_arguments(
+void exports_many_arguments_many_arguments(
     uint64_t a1,
     uint64_t a2,
     uint64_t a3,

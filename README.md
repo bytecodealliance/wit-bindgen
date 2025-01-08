@@ -309,6 +309,56 @@ Like with Rust, you can then inspect the output binary:
 wasm-tools component wit ./my-component.wasm
 ```
 
+### Guest C#
+
+To generate the bindings:
+
+```
+wit-bindgen c-sharp -w command -r native-aot --generate-stub wit/
+```
+
+Now you create a c# project file:
+
+```
+dotnet new console -o MyApp
+cd MyApp
+dotnet new nugetconfig
+```
+
+In the `nuget.config` after `<clear />`make sure you have: 
+
+```
+<add key="dotnet-experimental" value="https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json" />
+<add key="nuget" value="https://api.nuget.org/v3/index.json" />
+```
+
+In the MyApp.csproj add the following to the property group:
+
+```
+<RuntimeIdentifier>wasi-wasm</RuntimeIdentifier>
+<UseAppHost>false</UseAppHost>
+<PublishTrimmed>true</PublishTrimmed>
+<InvariantGlobalization>true</InvariantGlobalization>
+<SelfContained>true</SelfContained>
+<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+<WASI_SDK_PATH>path/to/wasi-sdk</WASI_SDK_PATH>
+```
+
+Add the native-aot compiler (substitute `win-x64` for `linux-x64` on Linux):
+
+```
+dotnet add package Microsoft.DotNet.ILCompiler.LLVM --prerelease 
+dotnet add package runtime.win-x64.Microsoft.DotNet.ILCompiler.LLVM --prerelease
+```
+
+Now you can build with:
+
+```
+dotnet publish
+```
+
+Checkout out [componentize-dotnet](https://github.com/bytecodealliance/componentize-dotnet) for a simplified experience.
+
 ### Guest: Java
 
 Java bytecode can be compiled to WebAssembly using

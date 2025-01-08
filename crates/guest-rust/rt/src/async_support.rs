@@ -1,6 +1,8 @@
 #![deny(missing_docs)]
 #![allow(static_mut_refs)]
 
+extern crate std;
+
 use {
     futures::{
         channel::oneshot,
@@ -11,6 +13,7 @@ use {
     std::{
         alloc::{self, Layout},
         any::Any,
+        boxed::Box,
         collections::hash_map,
         collections::HashMap,
         fmt::{self, Debug, Display},
@@ -19,7 +22,16 @@ use {
         ptr,
         sync::Arc,
         task::{Context, Poll, Wake, Waker},
+        vec::Vec,
     },
+};
+
+mod future_support;
+mod stream_support;
+
+pub use {
+    future_support::{FutureReader, FutureVtable, FutureWriter},
+    stream_support::{StreamReader, StreamVtable, StreamWriter},
 };
 
 pub use futures;

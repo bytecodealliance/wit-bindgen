@@ -1,4 +1,4 @@
-use crate::{int_repr, to_rust_ident, wasm_type, InterfaceGenerator, RustFlagsRepr};
+use crate::{int_repr, to_rust_ident, wasm_type, Identifier, InterfaceGenerator, RustFlagsRepr};
 use heck::*;
 use std::fmt::Write as _;
 use std::mem;
@@ -301,7 +301,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             return false;
         }
         match ty {
-            Type::Id(id) => !self.gen.gen.types.get(*id).has_resource,
+            // Note that tuples in Rust are not ABI-compatible with component
+            // model tuples, so those are exempted here from canonical lists.
+            Type::Id(id) => {
+                let info = self.gen.gen.types.get(*id);
+                !info.has_resource && !info.has_tuple
+            }
             _ => true,
         }
     }
@@ -497,11 +502,21 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.push(format!("({op}).into_handle() as i32"))
             }
 
-            Instruction::FutureLift { .. } => {
-                let stream_and_future_support = self.gen.path_to_stream_and_future_support();
+            Instruction::FutureLift { payload, .. } => {
+                let async_support = self.gen.path_to_async_support();
                 let op = &operands[0];
+                let name = payload
+                    .as_ref()
+                    .map(|ty| {
+                        self.gen
+                            .full_type_name_owned(ty, Identifier::StreamOrFuturePayload)
+                    })
+                    .unwrap_or_else(|| "()".into());
+                let ordinal = self.gen.gen.future_payloads.get_index_of(&name).unwrap();
+                let path = self.gen.path_to_root();
                 results.push(format!(
-                    "{stream_and_future_support}::FutureReader::from_handle({op} as u32)"
+                    "{async_support}::FutureReader::from_handle_and_vtable\
+                     ({op} as u32, &{path}wit_future::vtable{ordinal}::VTABLE)"
                 ))
             }
 
@@ -510,11 +525,17 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.push(format!("({op}).into_handle() as i32"))
             }
 
-            Instruction::StreamLift { .. } => {
-                let stream_and_future_support = self.gen.path_to_stream_and_future_support();
+            Instruction::StreamLift { payload, .. } => {
+                let async_support = self.gen.path_to_async_support();
                 let op = &operands[0];
+                let name = self
+                    .gen
+                    .full_type_name_owned(payload, Identifier::StreamOrFuturePayload);
+                let ordinal = self.gen.gen.stream_payloads.get_index_of(&name).unwrap();
+                let path = self.gen.path_to_root();
                 results.push(format!(
-                    "{stream_and_future_support}::StreamReader::from_handle({op} as u32)"
+                    "{async_support}::StreamReader::from_handle_and_vtable\
+                     ({op} as u32, &{path}wit_stream::vtable{ordinal}::VTABLE)"
                 ))
             }
 
@@ -945,6 +966,23 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     "let {layout} = {alloc}::Layout::from_size_align_unchecked({size}, {align});\n",
                     size = size.format(POINTER_SIZE_EXPRESSION),
                     align = align.format(POINTER_SIZE_EXPRESSION)
+                ));
+                let operands = operands.join(", ");
+                uwriteln!(
+                    self.src,
+                    "{async_support}::await_result({func}, {layout}, {operands}).await;"
+                );
+            }
+
+            Instruction::AsyncCallWasm { name, size, align } => {
+                let func = self.declare_import(name, &[WasmType::Pointer; 2], &[WasmType::I32]);
+
+                let async_support = self.gen.path_to_async_support();
+                let tmp = self.tmp();
+                let layout = format!("layout{tmp}");
+                let alloc = self.gen.path_to_std_alloc_module();
+                self.push_str(&format!(
+                    "let {layout} = {alloc}::Layout::from_size_align_unchecked({size}, {align});\n",
                 ));
                 let operands = operands.join(", ");
                 uwriteln!(

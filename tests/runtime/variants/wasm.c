@@ -2,7 +2,7 @@
 #include <variants.h>
 #include <stddef.h>
 
-void variants_test_imports() {
+void exports_variants_test_imports() {
   {
     float a = 1;
     uint8_t r;

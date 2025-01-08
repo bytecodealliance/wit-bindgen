@@ -7,11 +7,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-uint32_t lists_allocated_bytes(void) {
+uint32_t exports_lists_allocated_bytes(void) {
   return 0;
 }
 
-void lists_test_imports() {
+void exports_lists_test_imports() {
   {
     uint8_t list[] = {};
     lists_list_u8_t a;
@@ -76,6 +76,20 @@ void lists_test_imports() {
     a.ptr[1].ptr = list2;
     a.len = 2;
     test_lists_test_list_param4(&a);
+  }
+
+  {
+    lists_tuple3_u8_u32_u8_t data[2];
+    data[0].f0 = 1;
+    data[0].f1 = 2;
+    data[0].f2 = 3;
+    data[1].f0 = 4;
+    data[1].f1 = 5;
+    data[1].f2 = 6;
+    lists_list_tuple3_u8_u32_u8_t a;
+    a.len = 2;
+    a.ptr = data;
+    test_lists_test_list_param5(&a);
   }
 
   {
@@ -299,6 +313,17 @@ void exports_test_lists_test_list_param4(lists_list_list_string_t *a) {
   assert(a->ptr[1].ptr[0].ptr[2] == 'z');
 
   lists_list_list_string_free(a);
+}
+
+void exports_test_lists_test_list_param5(lists_list_tuple3_u8_u32_u8_t *a) {
+  assert(a->len == 2);
+  assert(a->ptr[0].f0 == 1);
+  assert(a->ptr[0].f1 == 2);
+  assert(a->ptr[0].f2 == 3);
+  assert(a->ptr[1].f0 == 4);
+  assert(a->ptr[1].f1 == 5);
+  assert(a->ptr[1].f2 == 6);
+  lists_list_tuple3_u8_u32_u8_free(a);
 }
 
 void exports_test_lists_test_list_result(lists_list_u8_t *ret0) {

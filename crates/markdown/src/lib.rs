@@ -235,7 +235,7 @@ impl WorldGenerator for Markdown {
 }
 
 impl Markdown {
-    fn interface<'a>(&'a mut self, resolve: &'a Resolve) -> InterfaceGenerator<'_> {
+    fn interface<'a>(&'a mut self, resolve: &'a Resolve) -> InterfaceGenerator<'a> {
         InterfaceGenerator {
             gen: self,
             resolve,

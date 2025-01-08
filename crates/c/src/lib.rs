@@ -897,7 +897,12 @@ pub fn c_func_name(
             !in_import,
             renamed_interfaces,
         )),
-        None => name.push_str(&world.to_snake_case()),
+        None => {
+            if !in_import {
+                name.push_str("exports_");
+            }
+            name.push_str(&world.to_snake_case());
+        }
     }
     name.push_str("_");
     name.push_str(&func.name.to_snake_case().replace('.', "_"));

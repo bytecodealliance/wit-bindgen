@@ -757,9 +757,6 @@ pub fn call(
     bindgen: &mut impl Bindgen,
     async_: bool,
 ) {
-    if async_ && !cfg!(feature = "async") {
-        panic!("must enable `async` feature to lift or lower using the async ABI");
-    }
     if matches!(lift_lower, LiftLower::Symmetric) {
         let sig = wasm_signature_symmetric(resolve, variant, func, true);
         Generator::new(resolve, variant, lift_lower, bindgen, async_)
@@ -907,6 +904,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
     }
 
     fn call(&mut self, func: &Function) {
+        const MAX_FLAT_PARAMS: usize = 16;
+
         let sig = self.resolve.wasm_signature(self.variant, func);
         self.call_with_signature(func, sig);
     }
@@ -1057,7 +1056,9 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         // the result is stored
                         AbiVariant::GuestExport => self.stack.pop().unwrap(),
 
-                        AbiVariant::GuestImportAsync | AbiVariant::GuestExportAsync => {
+                        AbiVariant::GuestImportAsync
+                        | AbiVariant::GuestExportAsync
+                        | AbiVariant::GuestExportAsyncStackful => {
                             unreachable!()
                         }
                     };
@@ -1215,6 +1216,12 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                             if !matches!(self.lift_lower, LiftLower::Symmetric) {
                                 self.stack.push(ptr);
                             }
+                        }
+
+                        AbiVariant::GuestImportAsync
+                        | AbiVariant::GuestExportAsync
+                        | AbiVariant::GuestExportAsyncStackful => {
+                            unreachable!()
                         }
                     }
 

@@ -1,0 +1,6 @@
+package green:blue;
+
+world my-world {
+  import purple: func();
+  export purple: func();
+}

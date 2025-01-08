@@ -23,14 +23,14 @@ license = "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT"
 repository = "https://github.com/bytecodealliance/wasi-rs"
 
 [workspace.dependencies]
-anyhow = "1.0.75"
-bitflags = "2.4.1"
+anyhow = "1.0.72"
+bitflags = "2.3.3"
 heck =  { version = "0.5" }
 pulldown-cmark = { version = "0.9", default-features = false }
 clap = { version = "4.3.19", features = ["derive"] }
 indexmap = "2.0.0"
 prettyplease = "0.2.20"
-syn = { version = "2.0", features = ["printing"] }
+syn = { version = "2.0.89", features = ["printing"] }
 futures = "0.3.31"
 
 wasmparser = { git = "https://github.com/cpetig/wasm-tools", branch = "symmetric" }
@@ -94,7 +94,7 @@ go = ['dep:wit-bindgen-go']
 csharp = ['dep:wit-bindgen-csharp']
 csharp-mono = ['csharp']
 moonbit = ['dep:wit-bindgen-moonbit']
-async = ["wit-bindgen-rust/async"]
+async = []
 
 [dev-dependencies]
 heck = { workspace = true }

@@ -44,6 +44,7 @@ impl Guest for Component {
 
         assert!(errno_result().is_err());
         MyErrno::A.to_string();
+        _ = format!("{:?}", MyErrno::A);
         fn assert_error<T: std::error::Error>() {}
         assert_error::<MyErrno>();
 
@@ -106,6 +107,7 @@ impl exports::test::flavorful::test::Guest for Component {
 
     fn errno_result() -> Result<(), MyErrno> {
         MyErrno::A.to_string();
+        _ = format!("{:?}", MyErrno::A);
         fn assert_error<T: std::error::Error>() {}
         assert_error::<MyErrno>();
         Err(MyErrno::B)

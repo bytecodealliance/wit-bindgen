@@ -1,7 +1,7 @@
 use crate::interface::InterfaceGenerator;
 use anyhow::{bail, Result};
 use heck::*;
-use indexmap::IndexSet;
+use indexmap::{IndexMap, IndexSet};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::{self, Write as _};
 use std::mem;
@@ -55,12 +55,12 @@ struct RustWasm {
     /// Interface names to how they should be generated
     with: GenerationConfiguration,
 
-    future_payloads_emitted: HashSet<String>,
-    stream_payloads_emitted: HashSet<String>,
-
     // needed for symmetric disambiguation
     interface_prefixes: HashMap<(Direction, WorldKey), String>,
     import_prefix: Option<String>,
+
+    future_payloads: IndexMap<String, String>,
+    stream_payloads: IndexMap<String, String>,
 }
 
 #[derive(Default)]
@@ -112,7 +112,6 @@ enum RuntimeItem {
     AsF64,
     ResourceType,
     BoxType,
-    StreamAndFutureSupport,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -318,8 +317,7 @@ pub struct Opts {
     ///     - some=<value>[,<value>...], where each <value> is of the form:
     ///         - import:<name> or
     ///         - export:<name>
-    #[cfg_attr(all(feature = "clap", feature = "async"), arg(long = "async", value_parser = parse_async))]
-    #[cfg_attr(all(feature = "clap", not(feature = "async")), skip)]
+    #[cfg_attr(feature = "clap", arg(long = "async", value_parser = parse_async))]
     pub async_: AsyncConfig,
 }
 
@@ -464,11 +462,6 @@ impl RustWasm {
     }
 
     fn finish_runtime_module(&mut self) {
-        // TODO: This is a hack because there are currently functions and types in the `async_support` module that
-        // are useful to applications even if the generated bindings don't use it.  We should probably move those
-        // items to a library which the application can add as a dependency.
-        self.rt_module.insert(RuntimeItem::StreamAndFutureSupport);
-
         if self.rt_module.is_empty() {
             return;
         }
@@ -489,9 +482,74 @@ impl RustWasm {
             }
         }
         self.src.push_str("}\n");
-        if emitted.contains(&RuntimeItem::StreamAndFutureSupport) {
-            self.src
-                .push_str("#[allow(unused_imports)]\npub use _rt::stream_and_future_support;\n");
+
+        if !self.future_payloads.is_empty() {
+            self.src.push_str(
+                "\
+pub mod wit_future {
+    #![allow(dead_code, unused_variables, clippy::all)]
+
+    #[doc(hidden)]
+    pub trait FuturePayload: Unpin + Sized + 'static {
+       fn new() -> (u32, &'static ::wit_bindgen_rt::async_support::FutureVtable<Self>);
+    }",
+            );
+            for code in self.future_payloads.values() {
+                self.src.push_str(code);
+            }
+            self.src.push_str(
+                "\
+    /// Creates a new Component Model `future` with the specified payload type.
+    pub fn new<T: FuturePayload>() -> (::wit_bindgen_rt::async_support::FutureWriter<T>, ::wit_bindgen_rt::async_support::FutureReader<T>) {
+        let (handle, vtable) = T::new();
+        ::wit_bindgen_rt::async_support::with_entry(handle, |entry| match entry {
+            ::std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(::wit_bindgen_rt::async_support::Handle::LocalOpen);
+            }
+            ::std::collections::hash_map::Entry::Occupied(_) => unreachable!(),
+        });
+        (
+            ::wit_bindgen_rt::async_support::FutureWriter::new(handle, vtable),
+            ::wit_bindgen_rt::async_support::FutureReader::new(handle, vtable),
+        )
+    }
+}
+                ",
+            );
+        }
+
+        if !self.stream_payloads.is_empty() {
+            self.src.push_str(
+                "\
+pub mod wit_stream {
+    #![allow(dead_code, unused_variables, clippy::all)]
+
+    pub trait StreamPayload: Unpin + Sized + 'static {
+       fn new() -> (u32, &'static ::wit_bindgen_rt::async_support::StreamVtable<Self>);
+    }",
+            );
+            for code in self.stream_payloads.values() {
+                self.src.push_str(code);
+            }
+            self.src.push_str(
+                "\
+    /// Creates a new Component Model `stream` with the specified payload type.
+    pub fn new<T: StreamPayload>() -> (::wit_bindgen_rt::async_support::StreamWriter<T>, ::wit_bindgen_rt::async_support::StreamReader<T>) {
+        let (handle, vtable) = T::new();
+        ::wit_bindgen_rt::async_support::with_entry(handle, |entry| match entry {
+            ::std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(::wit_bindgen_rt::async_support::Handle::LocalOpen);
+            }
+            ::std::collections::hash_map::Entry::Occupied(_) => unreachable!(),
+        });
+        (
+            ::wit_bindgen_rt::async_support::StreamWriter::new(handle, vtable),
+            ::wit_bindgen_rt::async_support::StreamReader::new(handle, vtable),
+        )
+    }
+}
+                ",
+            );
         }
     }
 
@@ -516,7 +574,6 @@ impl RustWasm {
                 self.rt_module.insert(RuntimeItem::AllocCrate);
                 uwriteln!(self.src, "pub use alloc_crate::vec::Vec;");
             }
-
             RuntimeItem::CabiDealloc => {
                 self.rt_module.insert(RuntimeItem::StdAllocModule);
                 self.src.push_str(
@@ -731,13 +788,6 @@ impl<T: WasmResource> Drop for Resource<T> {{
                     invalid_value = if self.opts.symmetric { "0" } else { "u32::MAX" },
                     handle_type = if self.opts.symmetric { "usize" } else { "u32" }
                 ));
-            }
-
-            RuntimeItem::StreamAndFutureSupport => {
-                self.src.push_str("pub mod stream_and_future_support {");
-                self.src
-                    .push_str(include_str!("stream_and_future_support.rs"));
-                self.src.push_str("}");
             }
         }
     }
@@ -1403,9 +1453,9 @@ fn compute_module_path(name: &WorldKey, resolve: &Resolve, is_export: bool) -> V
 }
 
 enum Identifier<'a> {
-    None,
     World(WorldId),
     Interface(InterfaceId, &'a WorldKey),
+    StreamOrFuturePayload,
 }
 
 fn group_by_resource<'a>(

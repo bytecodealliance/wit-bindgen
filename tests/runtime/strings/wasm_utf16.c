@@ -14,7 +14,7 @@ void assert_str(strings_string_t* str, const char16_t* expected) {
   assert(memcmp(str->ptr, expected, expected_len * 2) == 0);
 }
 
-void strings_test_imports() {
+void exports_strings_test_imports() {
   strings_string_t str1;
   strings_string_set(&str1, u"latin utf16");
   test_strings_imports_take_basic(&str1);
@@ -25,11 +25,11 @@ void strings_test_imports() {
   strings_string_free(&str2);
 }
 
-void strings_return_empty(strings_string_t *ret) {
+void exports_strings_return_empty(strings_string_t *ret) {
   strings_string_dup(ret, u""); // Exercise cabi_realloc new_size = 0
 }
 
-void strings_roundtrip(strings_string_t *str, strings_string_t *ret) {
+void exports_strings_roundtrip(strings_string_t *str, strings_string_t *ret) {
   assert(str->len > 0);
   ret->len = str->len;
   ret->ptr = (uint16_t *) malloc(ret->len * 2);

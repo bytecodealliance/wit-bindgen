@@ -5,6 +5,7 @@ import static wit.worlds.ListsImpl.expect;
 import java.util.ArrayList;
 
 import wit.worlds.Lists.Tuple2;
+import wit.worlds.Lists.Tuple3;
 
 public class TestImpl {
     public static void emptyListParam(byte[] a) {
@@ -50,6 +51,16 @@ public class TestImpl {
         expect(a.get(0).get(0).equals("foo"));
         expect(a.get(0).get(1).equals("bar"));
         expect(a.get(1).get(0).equals("baz"));
+    }
+
+    public static void listParam5(ArrayList<Tuple3<Byte, Integer, Byte>> a) {
+        expect(a.size() == 2);
+        expect(a.get(0).f0 == 1);
+        expect(a.get(0).f1 == 2);
+        expect(a.get(0).f2 == 3);
+        expect(a.get(1).f0 == 4);
+        expect(a.get(1).f1 == 5);
+        expect(a.get(1).f2 == 6);
     }
 
     public static byte[] listResult() {
