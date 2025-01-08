@@ -1511,6 +1511,7 @@ impl CppInterfaceGenerator<'_> {
             AbiVariant::GuestExport => !self.gen.opts.host_side(),
             AbiVariant::GuestImportAsync => todo!(),
             AbiVariant::GuestExportAsync => todo!(),
+            AbiVariant::GuestExportAsyncStackful => todo!(),
         };
         let params = self.print_signature(func, variant, !export);
         let special = is_special_method(func);
@@ -2220,6 +2221,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                     AbiVariant::GuestExport => "[dtor]",
                     AbiVariant::GuestImportAsync => todo!(),
                     AbiVariant::GuestExportAsync => todo!(),
+                    AbiVariant::GuestExportAsyncStackful => todo!(),
                 }
                 // let name = match (variant, self.gen.opts.host_side()) {
                 //     (AbiVariant::GuestImport, false) | (AbiVariant::GuestExport, true) => {
@@ -2512,15 +2514,15 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
     ) {
         todo!()
     }
-    
+
     fn type_future(&mut self, _id: TypeId, _name: &str, _ty: &Option<Type>, _docs: &Docs) {
         todo!()
     }
-    
+
     fn type_stream(&mut self, _id: TypeId, _name: &str, _ty: &Type, _docs: &Docs) {
         todo!()
     }
-    
+
     fn type_error_context(&mut self, _id: TypeId, _name: &str, _docs: &Docs) {
         todo!()
     }
@@ -3125,6 +3127,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                         }
                         AbiVariant::GuestImportAsync => todo!(),
                         AbiVariant::GuestExportAsync => todo!(),
+                        AbiVariant::GuestExportAsyncStackful => todo!(),
                     },
                     (Handle::Own(ty), false) => match self.variant {
                         AbiVariant::GuestImport => {
@@ -3149,6 +3152,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                         }
                         AbiVariant::GuestImportAsync => todo!(),
                         AbiVariant::GuestExportAsync => todo!(),
+                        AbiVariant::GuestExportAsyncStackful => todo!(),
                     },
                     (Handle::Borrow(ty), true) => {
                         let tname = self.gen.type_name(
@@ -3170,6 +3174,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                         }
                         AbiVariant::GuestImportAsync => todo!(),
                         AbiVariant::GuestExportAsync => todo!(),
+                        AbiVariant::GuestExportAsyncStackful => todo!(),
                     },
                 }
             }

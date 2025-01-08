@@ -975,7 +975,9 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                                 });
                                 self.stack.pop().unwrap()
                             }
-                            AbiVariant::GuestImportAsync | AbiVariant::GuestExportAsync => {
+                            AbiVariant::GuestImportAsync
+                            | AbiVariant::GuestExportAsync
+                            | AbiVariant::GuestExportAsyncStackful => {
                                 unreachable!()
                             }
                         };
@@ -1216,13 +1218,11 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                             if !matches!(self.lift_lower, LiftLower::Symmetric) {
                                 self.stack.push(ptr);
                             }
-                        }
-
-                        AbiVariant::GuestImportAsync
-                        | AbiVariant::GuestExportAsync
-                        | AbiVariant::GuestExportAsyncStackful => {
-                            unreachable!()
-                        }
+                        } // AbiVariant::GuestImportAsync
+                          // | AbiVariant::GuestExportAsync
+                          // | AbiVariant::GuestExportAsyncStackful => {
+                          //     unreachable!()
+                          // }
                     }
 
                     if matches!(

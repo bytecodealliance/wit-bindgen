@@ -217,6 +217,7 @@ impl<'a> BridgeInterfaceGenerator<'a> {
             AbiVariant::GuestExport => TypeVariant::Native,
             AbiVariant::GuestImportAsync => todo!(),
             AbiVariant::GuestExportAsync => todo!(),
+            AbiVariant::GuestExportAsyncStackful => todo!(),
         };
         let signature = self.resolve.wasm_signature(variant, func);
         let return_via_pointer = signature.retptr;

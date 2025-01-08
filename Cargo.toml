@@ -78,7 +78,7 @@ default = [
   'markdown',
   'teavm-java',
   'go',
-  'csharp',
+  # 'csharp',
   'cpp',
   'bridge',
   'moonbit',
