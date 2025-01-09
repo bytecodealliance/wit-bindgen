@@ -332,7 +332,7 @@ macro_rules! {macro_name} {{
                 r#"
                 const _: () = {{
                     #[doc(hidden)]
-                    #[export_name = "{export_prefix}{module}#[dtor]{name}"]
+                    #[unsafe(export_name = "{export_prefix}{module}#[dtor]{name}")]
                     #[allow(non_snake_case)]
                     unsafe extern "C" fn dtor(rep: *mut u8) {{
                         $($path_to_types)*::{camel}::dtor::<
@@ -575,7 +575,7 @@ pub mod vtable{ordinal} {{
             struct Buffer([::core::mem::MaybeUninit::<u8>; {size}]);
             let mut buffer = Buffer([::core::mem::MaybeUninit::uninit(); {size}]);
             let address = buffer.0.as_mut_ptr() as *mut u8;
-        
+
             #[link(wasm_import_module = "{module}")]
             extern "C" {{
                 #[link_name = "[async][future-read-{index}]{func_name}"]
@@ -1150,7 +1150,7 @@ pub mod vtable{ordinal} {{
         uwrite!(
             self.src,
             "\
-                #[export_name = \"{export_prefix}{export_name}\"]
+                #[unsafe(export_name = \"{export_prefix}{export_name}\")]
                 unsafe extern \"C\" fn export_{name_snake}\
 ",
         );
@@ -1169,7 +1169,7 @@ pub mod vtable{ordinal} {{
             uwrite!(
                 self.src,
                 "\
-                    #[export_name = \"{export_prefix}[callback]{export_name}\"]
+                    #[unsafe(export_name = \"{export_prefix}[callback]{export_name}\")]
                     unsafe extern \"C\" fn _callback_{name_snake}(ctx: *mut u8, event0: i32, event1: i32, event2: i32) -> i32 {{
                         {path_to_self}::__callback_{name_snake}(ctx, event0, event1, event2)
                     }}
@@ -1179,7 +1179,7 @@ pub mod vtable{ordinal} {{
             uwrite!(
                 self.src,
                 "\
-                    #[export_name = \"{export_prefix}cabi_post_{export_name}\"]
+                    #[unsafe(export_name = \"{export_prefix}cabi_post_{export_name}\")]
                     unsafe extern \"C\" fn _post_return_{name_snake}\
 "
             );
