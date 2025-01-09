@@ -241,7 +241,8 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                 uwrite!(
                     self.src,
                     "\
-                                        if ({previous}.IsOk) {{
+                                        if ({previous}.IsOk) 
+                                        {{
                                         var {tmp} = {previous}.AsOk;
                                     "
                 );
@@ -272,7 +273,9 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             uwrite!(
                 self.src,
                 "\
-                                    }} else {{
+                                    }} 
+                                    else 
+                                    {{
                                         throw new {exception_name}({var_name}.AsErr!, {level});
                                     }}
                                     "
@@ -317,7 +320,8 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             let tail = oks.iter().map(|_| ")").collect::<Vec<_>>().concat();
             cases.push(format!(
                 "\
-                                            case {index}: {{
+                                            case {index}: 
+                                            {{
                                                 ret = {head}{ty}.Err(({err_ty}) e.Value){tail};
                                                 break;
                                             }}
@@ -327,7 +331,9 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             payload_is_void = result.ok.is_none();
         }
         if !self.results.is_empty() {
-            self.src.push_str("try {\n");
+            self.src.push_str(\"
+                               try 
+                               {\n");
         }
         let head = oks.concat();
         let tail = oks.iter().map(|_| ")").collect::<Vec<_>>().concat();
@@ -343,8 +349,11 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             let cases = cases.join("\n");
             uwriteln!(
                 self.src,
-                r#"}} catch (WitException e) {{
-                                            switch (e.NestingLevel) {{
+                r#"}} 
+                   catch (WitException e) 
+                   {{
+                                            switch (e.NestingLevel) 
+                                            {{
                                                 {cases}
 
                                                 default: throw new ArgumentException($"invalid nesting level: {{e.NestingLevel}}");

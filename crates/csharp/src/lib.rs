@@ -31,7 +31,7 @@ pub struct Opts {
     #[cfg_attr(feature = "clap", arg(long))]
     pub skip_support_files: bool,
 
-    /// Generates code for wit Result types instead of exceptions
+    /// Generate code for WIT `Result` types instead of exceptions
     #[cfg_attr(feature = "clap", arg(long))]
     pub with_wit_results: bool,
 }

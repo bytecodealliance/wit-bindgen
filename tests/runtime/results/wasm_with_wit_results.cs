@@ -12,7 +12,7 @@ namespace ResultsWorld.wit.exports.test.results
             var result = imports.test.results.TestInterop.EnumError(a);
             if (result.IsOk) {
                 return Result<float, ITest.E>.Ok(result.AsOk);
-            }else{
+            } else {
                 switch (result.AsErr){
                     case imports.test.results.ITest.E.A:
                         return Result<float, ITest.E>.Err(ITest.E.A);
