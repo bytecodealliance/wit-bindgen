@@ -1,5 +1,5 @@
 use wit_bindgen_symmetric_rt::{
-    async_support::{stream, Stream},
+    async_support::{stream_support, Stream},
     CallbackState,
 };
 
@@ -20,13 +20,17 @@ struct CallbackInfo {
 
 extern "C" fn ready(arg: *mut ()) -> CallbackState {
     let info = unsafe { &*arg.cast::<CallbackInfo>() };
-    let len = unsafe { stream::read_amount(info.stream) };
+    let len = unsafe { stream_support::read_amount(info.stream) };
     if len > 0 {
         for i in 0..len as usize {
             println!("data {}", info.data[i]);
         }
         unsafe {
-            stream::start_reading(info.stream, info.data.as_ptr().cast_mut().cast(), DATALEN);
+            stream_support::start_reading(
+                info.stream,
+                info.data.as_ptr().cast_mut().cast(),
+                DATALEN,
+            );
         };
         // call again
         CallbackState::Pending
@@ -52,10 +56,10 @@ fn main() {
         data: [0, 0],
     });
     unsafe {
-        stream::start_reading(stream, info.data.as_mut_ptr().cast(), DATALEN);
+        stream_support::start_reading(stream, info.data.as_mut_ptr().cast(), DATALEN);
     };
     let subscription = unsafe {
-        wit_bindgen_symmetric_rt::subscribe_event_send_ptr(stream::read_ready_event(stream))
+        wit_bindgen_symmetric_rt::subscribe_event_send_ptr(stream_support::read_ready_event(stream))
     };
     println!("Register read in main");
     wit_bindgen_symmetric_rt::register(
@@ -64,5 +68,5 @@ fn main() {
         (&*info as *const CallbackInfo).cast_mut().cast(),
     );
     wit_bindgen_symmetric_rt::run();
-    unsafe { stream::close_read(stream) };
+    unsafe { stream_support::close_read(stream) };
 }

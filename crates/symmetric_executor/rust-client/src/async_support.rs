@@ -12,6 +12,17 @@ use crate::{
     subscribe_event_send_ptr,
 };
 
+mod future_support;
+// later make it non-pub
+pub mod stream_support;
+
+pub use {
+    // future_support::{FutureReader, FutureVtable, FutureWriter},
+    stream_support::{results, Stream, StreamHandle2, StreamReader, StreamWriter},
+};
+
+pub use futures;
+
 // See https://github.com/rust-lang/rust/issues/13231 for the limitation
 // / Send constraint on futures for spawn, loosen later
 // pub unsafe auto trait MaybeSend : Send {}
@@ -27,137 +38,10 @@ struct FutureState {
     waiting_for: Option<EventSubscription>,
 }
 
-pub use stream::{results, Stream};
+// pub use stream::{results, Stream};
 
-pub mod stream {
-    use std::sync::atomic::{AtomicIsize, AtomicPtr, AtomicUsize, Ordering};
-
-    use crate::{activate_event_send_ptr, EventGenerator};
-
-    pub mod results {
-        pub const BLOCKED: isize = -1;
-        pub const CLOSED: isize = isize::MIN;
-        pub const CANCELED: isize = 0;
-    }
-
-    pub struct Stream {
-        read_ready_event_send: *mut (),
-        write_ready_event_send: *mut (),
-        read_addr: AtomicPtr<()>,
-        read_size: AtomicUsize,
-        ready_size: AtomicIsize,
-        active_instances: AtomicUsize,
-    }
-
-    pub unsafe extern "C" fn start_reading(
-        stream: *mut Stream,
-        buf: *mut (),
-        size: usize,
-    ) -> isize {
-        let old_ready = unsafe { &*stream }.ready_size.load(Ordering::Acquire);
-        if old_ready == results::CLOSED {
-            return old_ready;
-        }
-        assert!(old_ready == results::BLOCKED);
-        let old_size = unsafe { &mut *stream }
-            .read_size
-            .swap(size, Ordering::Acquire);
-        assert_eq!(old_size, 0);
-        let old_ptr = unsafe { &mut *stream }
-            .read_addr
-            .swap(buf, Ordering::Release);
-        assert_eq!(old_ptr, std::ptr::null_mut());
-        let write_evt = unsafe { &mut *stream }.write_ready_event_send;
-        unsafe { activate_event_send_ptr(write_evt) };
-        results::BLOCKED
-    }
-
-    pub unsafe extern "C" fn read_ready_event(stream: *const Stream) -> *mut () {
-        unsafe { (&*stream).read_ready_event_send }
-    }
-
-    pub unsafe extern "C" fn write_ready_event(stream: *const Stream) -> *mut () {
-        unsafe { (&*stream).write_ready_event_send }
-    }
-
-    pub unsafe extern "C" fn is_ready_to_write(stream: *const Stream) -> bool {
-        !unsafe { &*stream }
-            .read_addr
-            .load(Ordering::Acquire)
-            .is_null()
-    }
-
-    pub unsafe extern "C" fn is_write_closed(stream: *const Stream) -> bool {
-        unsafe { &*stream }.ready_size.load(Ordering::Acquire) == results::CLOSED
-    }
-
-    #[repr(C)]
-    pub struct Slice {
-        pub addr: *mut (),
-        pub size: usize,
-    }
-
-    pub unsafe extern "C" fn start_writing(stream: *mut Stream) -> Slice {
-        let size = unsafe { &*stream }.read_size.swap(0, Ordering::Acquire);
-        let addr = unsafe { &*stream }
-            .read_addr
-            .swap(core::ptr::null_mut(), Ordering::Release);
-        Slice { addr, size }
-    }
-
-    pub unsafe extern "C" fn read_amount(stream: *const Stream) -> isize {
-        unsafe { &*stream }
-            .ready_size
-            .swap(results::BLOCKED, Ordering::Acquire)
-    }
-
-    pub unsafe extern "C" fn finish_writing(stream: *mut Stream, elements: isize) {
-        let old_ready = unsafe { &*stream }
-            .ready_size
-            .swap(elements as isize, Ordering::Release);
-        assert_eq!(old_ready, results::BLOCKED);
-        unsafe { activate_event_send_ptr(read_ready_event(stream)) };
-    }
-
-    pub unsafe extern "C" fn close_read(stream: *mut Stream) {
-        let refs = unsafe { &mut *stream }
-            .active_instances
-            .fetch_sub(1, Ordering::AcqRel);
-        if refs == 1 {
-            let obj = Box::from_raw(stream);
-            drop(EventGenerator::from_handle(
-                obj.read_ready_event_send as usize,
-            ));
-            drop(EventGenerator::from_handle(
-                obj.write_ready_event_send as usize,
-            ));
-            drop(obj);
-        }
-    }
-
-    pub unsafe extern "C" fn close_write(stream: *mut Stream) {
-        // same for write (for now)
-        close_read(stream);
-    }
-
-    pub extern "C" fn create_stream() -> *mut Stream {
-        Box::into_raw(Box::new(Stream::new()))
-    }
-
-    impl Stream {
-        fn new() -> Self {
-            Self {
-                // vtable: &STREAM_VTABLE as *const StreamVtable,
-                read_ready_event_send: EventGenerator::new().take_handle() as *mut (),
-                write_ready_event_send: EventGenerator::new().take_handle() as *mut (),
-                read_addr: AtomicPtr::new(core::ptr::null_mut()),
-                read_size: AtomicUsize::new(0),
-                ready_size: AtomicIsize::new(results::BLOCKED),
-                active_instances: AtomicUsize::new(2),
-            }
-        }
-    }
-}
+// pub mod stream {
+// }
 
 static VTABLE: RawWakerVTable = RawWakerVTable::new(
     |_| RawWaker::new(core::ptr::null(), &VTABLE),
@@ -277,12 +161,6 @@ pub fn spawn(future: impl Future<Output = ()> + 'static + Send) {
     drop(wait_for);
 }
 
-// Stream handles are Send, so wrap them
-#[repr(transparent)]
-pub struct StreamHandle2(pub *mut Stream);
-unsafe impl Send for StreamHandle2 {}
-unsafe impl Sync for StreamHandle2 {}
-
 #[repr(transparent)]
 pub struct AddressSend(pub *mut ());
 unsafe impl Send for AddressSend {}
@@ -299,10 +177,11 @@ pub async unsafe fn await_stream_result(
     let result = import(stream_copy, address.0, count);
     match result {
         results::BLOCKED => {
-            let event = unsafe { subscribe_event_send_ptr(stream::read_ready_event(stream.0)) };
+            let event =
+                unsafe { subscribe_event_send_ptr(stream_support::read_ready_event(stream.0)) };
             event.reset();
             wait_on(event).await;
-            let v = stream::read_amount(stream.0);
+            let v = stream_support::read_amount(stream.0);
             if let results::CLOSED | results::CANCELED = v {
                 None
             } else {
