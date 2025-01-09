@@ -483,6 +483,8 @@ macro_rules! {macro_name} {{
     }
 
     fn generate_payloads(&mut self, prefix: &str, func: &Function, interface: Option<&WorldKey>) {
+        let old_identifier = mem::replace(&mut self.identifier, Identifier::StreamOrFuturePayload);
+
         for (index, ty) in func
             .find_futures_and_streams(self.resolve)
             .into_iter()
@@ -500,7 +502,7 @@ macro_rules! {macro_name} {{
             match &self.resolve.types[ty].kind {
                 TypeDefKind::Future(payload_type) => {
                     let name = if let Some(payload_type) = payload_type {
-                        self.full_type_name_owned(payload_type, Identifier::StreamOrFuturePayload)
+                        self.type_name_owned(payload_type)
                     } else {
                         "()".into()
                     };
@@ -533,7 +535,7 @@ macro_rules! {macro_name} {{
                             (String::new(), "let value = ();\n".into())
                         };
 
-                        let box_ = format!("super::super::{}", self.path_to_box());
+                        let box_ = self.path_to_box();
                         let code = format!(
                             r#"
 #[doc(hidden)]
@@ -545,7 +547,7 @@ pub mod vtable{ordinal} {{
         }}
 
         #[cfg(target_arch = "wasm32")]
-        {{
+        {box_}::pin(async move {{
             #[repr(align({align}))]
             struct Buffer([::core::mem::MaybeUninit::<u8>; {size}]);
             let mut buffer = Buffer([::core::mem::MaybeUninit::uninit(); {size}]);
@@ -558,10 +560,8 @@ pub mod vtable{ordinal} {{
                 fn wit_import(_: u32, _: *mut u8) -> u32;
             }}
 
-            {box_}::pin(async move {{
-                unsafe {{ {async_support}::await_future_result(wit_import, future, address).await }}
-            }})
-        }}
+            unsafe {{ {async_support}::await_future_result(wit_import, future, address).await }}
+        }})
     }}
 
     fn read(future: u32) -> ::core::pin::Pin<{box_}<dyn ::core::future::Future<Output = Option<{name}>>>> {{
@@ -571,7 +571,7 @@ pub mod vtable{ordinal} {{
         }}
 
         #[cfg(target_arch = "wasm32")]
-        {{
+        {box_}::pin(async move {{
             struct Buffer([::core::mem::MaybeUninit::<u8>; {size}]);
             let mut buffer = Buffer([::core::mem::MaybeUninit::uninit(); {size}]);
             let address = buffer.0.as_mut_ptr() as *mut u8;
@@ -582,15 +582,13 @@ pub mod vtable{ordinal} {{
                 fn wit_import(_: u32, _: *mut u8) -> u32;
             }}
 
-            {box_}::pin(async move {{
-                if unsafe {{ {async_support}::await_future_result(wit_import, future, address).await }} {{
-                    {lift}
-                    Some(value)
-                }} else {{
-                   None
-                }}
-            }})
-        }}
+            if unsafe {{ {async_support}::await_future_result(wit_import, future, address).await }} {{
+                {lift}
+                Some(value)
+            }} else {{
+               None
+            }}
+        }})
     }}
 
     fn cancel_write(writer: u32) {{
@@ -691,8 +689,7 @@ pub mod vtable{ordinal} {{
                     }
                 }
                 TypeDefKind::Stream(payload_type) => {
-                    let name =
-                        self.full_type_name_owned(payload_type, Identifier::StreamOrFuturePayload);
+                    let name = self.type_name_owned(payload_type);
 
                     if !self.gen.stream_payloads.contains_key(&name) {
                         let ordinal = self.gen.stream_payloads.len();
@@ -747,19 +744,19 @@ for (index, dst) in values.iter_mut().take(count).enumerate() {{
                                 (address.clone(), lower, address, lift)
                             };
 
-                        let box_ = format!("super::super::{}", self.path_to_box());
+                        let box_ = self.path_to_box();
                         let code = format!(
                             r#"
 #[doc(hidden)]
 pub mod vtable{ordinal} {{
-    fn write(stream: u32, values: &[{name}]) -> ::core::pin::Pin<{box_}<dyn ::core::future::Future<Output = Option<usize>>>> {{
+    fn write(stream: u32, values: &[{name}]) -> ::core::pin::Pin<{box_}<dyn ::core::future::Future<Output = Option<usize>> + '_>> {{
         #[cfg(not(target_arch = "wasm32"))]
         {{
             unreachable!();
         }}
 
         #[cfg(target_arch = "wasm32")]
-        {{
+        {box_}::pin(async move {{
             {lower_address}
             {lower}
 
@@ -769,27 +766,25 @@ pub mod vtable{ordinal} {{
                 fn wit_import(_: u32, _: *mut u8, _: u32) -> u32;
             }}
 
-            {box_}::pin(async move {{
-                unsafe {{
-                    {async_support}::await_stream_result(
-                        wit_import,
-                        stream,
-                        address,
-                        u32::try_from(values.len()).unwrap()
-                    ).await
-                }}
-            }})
-        }}
+            unsafe {{
+                {async_support}::await_stream_result(
+                    wit_import,
+                    stream,
+                    address,
+                    u32::try_from(values.len()).unwrap()
+                ).await
+            }}
+        }})
     }}
 
-    fn read(stream: u32, values: &mut [::core::mem::MaybeUninit::<{name}>]) -> ::core::pin::Pin<{box_}<dyn ::core::future::Future<Output = Option<usize>>>> {{
+    fn read(stream: u32, values: &mut [::core::mem::MaybeUninit::<{name}>]) -> ::core::pin::Pin<{box_}<dyn ::core::future::Future<Output = Option<usize>> + '_>> {{
         #[cfg(not(target_arch = "wasm32"))]
         {{
             unreachable!();
         }}
 
         #[cfg(target_arch = "wasm32")]
-        {{
+        {box_}::pin(async move {{
             {lift_address}
 
             #[link(wasm_import_module = "{module}")]
@@ -798,22 +793,20 @@ pub mod vtable{ordinal} {{
                 fn wit_import(_: u32, _: *mut u8, _: u32) -> u32;
             }}
 
-            {box_}::pin(async move {{
-                let count = unsafe {{
-                    {async_support}::await_stream_result(
-                        wit_import,
-                        stream,
-                        address,
-                        u32::try_from(values.len()).unwrap()
-                    ).await
-                }};
-                #[allow(unused)]
-                if let Some(count) = count {{
-                    {lift}
-                }}
-                count
-            }})
-        }}
+            let count = unsafe {{
+                {async_support}::await_stream_result(
+                    wit_import,
+                    stream,
+                    address,
+                    u32::try_from(values.len()).unwrap()
+                ).await
+            }};
+            #[allow(unused)]
+            if let Some(count) = count {{
+                {lift}
+            }}
+            count
+        }})
     }}
 
     fn cancel_write(writer: u32) {{
@@ -916,6 +909,8 @@ pub mod vtable{ordinal} {{
                 _ => unreachable!(),
             }
         }
+
+        self.identifier = old_identifier;
     }
 
     fn generate_guest_import(&mut self, func: &Function, interface: Option<&WorldKey>) {
@@ -1699,23 +1694,22 @@ pub mod vtable{ordinal} {{
         }
     }
 
-    pub(crate) fn full_type_name_owned(&mut self, ty: &Type, id: Identifier<'i>) -> String {
-        self.full_type_name(
+    pub(crate) fn type_name_owned_with_id(&mut self, ty: &Type, id: Identifier<'i>) -> String {
+        let old_identifier = mem::replace(&mut self.identifier, id);
+        let name = self.type_name_owned(ty);
+        self.identifier = old_identifier;
+        name
+    }
+
+    fn type_name_owned(&mut self, ty: &Type) -> String {
+        self.type_name(
             ty,
             TypeMode {
                 lifetime: None,
                 lists_borrowed: false,
                 style: TypeOwnershipStyle::Owned,
             },
-            id,
         )
-    }
-
-    fn full_type_name(&mut self, ty: &Type, mode: TypeMode, id: Identifier<'i>) -> String {
-        let old_identifier = mem::replace(&mut self.identifier, id);
-        let name = self.type_name(ty, mode);
-        self.identifier = old_identifier;
-        name
     }
 
     fn type_name(&mut self, ty: &Type, mode: TypeMode) -> String {
