@@ -11,8 +11,8 @@ use {
         collections::hash_map::Entry,
         fmt,
         future::{Future, IntoFuture},
-        mem::ManuallyDrop,
         pin::Pin,
+        sync::atomic::{AtomicU32, Ordering::Relaxed},
         task::{Context, Poll},
     },
 };
@@ -199,7 +199,8 @@ impl<T> CancelableRead<T> {
 
     fn cancel_mut(&mut self) -> FutureReader<T> {
         let reader = self.reader.take().unwrap();
-        super::with_entry(reader.handle, |entry| match entry {
+        let handle = reader.handle.load(Relaxed);
+        super::with_entry(handle, |entry| match entry {
             Entry::Vacant(_) => unreachable!(),
             Entry::Occupied(mut entry) => match entry.get() {
                 Handle::LocalOpen
@@ -209,7 +210,7 @@ impl<T> CancelableRead<T> {
                 Handle::LocalWaiting(_) => {
                     entry.insert(Handle::LocalOpen);
                 }
-                Handle::Read => (reader.vtable.cancel_read)(reader.handle),
+                Handle::Read => (reader.vtable.cancel_read)(handle),
             },
         });
         reader
@@ -226,7 +227,7 @@ impl<T> Drop for CancelableRead<T> {
 
 /// Represents the readable end of a Component Model `future`.
 pub struct FutureReader<T: 'static> {
-    handle: u32,
+    handle: AtomicU32,
     vtable: &'static FutureVtable<T>,
 }
 
@@ -241,7 +242,10 @@ impl<T> fmt::Debug for FutureReader<T> {
 impl<T> FutureReader<T> {
     #[doc(hidden)]
     pub fn new(handle: u32, vtable: &'static FutureVtable<T>) -> Self {
-        Self { handle, vtable }
+        Self {
+            handle: AtomicU32::new(handle),
+            vtable,
+        }
     }
 
     #[doc(hidden)]
@@ -264,12 +268,16 @@ impl<T> FutureReader<T> {
             },
         });
 
-        Self { handle, vtable }
+        Self {
+            handle: AtomicU32::new(handle),
+            vtable,
+        }
     }
 
     #[doc(hidden)]
-    pub fn into_handle(self) -> u32 {
-        super::with_entry(self.handle, |entry| match entry {
+    pub fn take_handle(&self) -> u32 {
+        let handle = self.handle.swap(u32::MAX, Relaxed);
+        super::with_entry(handle, |entry| match entry {
             Entry::Vacant(_) => unreachable!(),
             Entry::Occupied(mut entry) => match entry.get() {
                 Handle::LocalOpen => {
@@ -282,7 +290,7 @@ impl<T> FutureReader<T> {
             },
         });
 
-        ManuallyDrop::new(self).handle
+        handle
     }
 }
 
@@ -294,7 +302,7 @@ impl<T> IntoFuture for FutureReader<T> {
     /// written to the writable end of this `future` (yielding a `Some` result)
     /// or when the writable end is dropped (yielding a `None` result).
     fn into_future(self) -> Self::IntoFuture {
-        let handle = self.handle;
+        let handle = self.handle.load(Relaxed);
         let vtable = self.vtable;
         CancelableRead {
             reader: Some(self),
@@ -325,24 +333,30 @@ impl<T> IntoFuture for FutureReader<T> {
 
 impl<T> Drop for FutureReader<T> {
     fn drop(&mut self) {
-        super::with_entry(self.handle, |entry| match entry {
-            Entry::Vacant(_) => unreachable!(),
-            Entry::Occupied(mut entry) => match entry.get_mut() {
-                Handle::LocalReady(..) => {
-                    let Handle::LocalReady(_, waker) = entry.insert(Handle::LocalClosed) else {
-                        unreachable!()
-                    };
-                    waker.wake();
-                }
-                Handle::LocalOpen | Handle::LocalWaiting(_) => {
-                    entry.insert(Handle::LocalClosed);
-                }
-                Handle::Read | Handle::LocalClosed => {
-                    entry.remove();
-                    (self.vtable.close_readable)(self.handle);
-                }
-                Handle::Write => unreachable!(),
-            },
-        });
+        match self.handle.load(Relaxed) {
+            u32::MAX => {}
+            handle => {
+                super::with_entry(handle, |entry| match entry {
+                    Entry::Vacant(_) => unreachable!(),
+                    Entry::Occupied(mut entry) => match entry.get_mut() {
+                        Handle::LocalReady(..) => {
+                            let Handle::LocalReady(_, waker) = entry.insert(Handle::LocalClosed)
+                            else {
+                                unreachable!()
+                            };
+                            waker.wake();
+                        }
+                        Handle::LocalOpen | Handle::LocalWaiting(_) => {
+                            entry.insert(Handle::LocalClosed);
+                        }
+                        Handle::Read | Handle::LocalClosed => {
+                            entry.remove();
+                            (self.vtable.close_readable)(handle);
+                        }
+                        Handle::Write => unreachable!(),
+                    },
+                });
+            }
+        }
     }
 }

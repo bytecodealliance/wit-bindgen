@@ -19,6 +19,7 @@ pub(super) struct FunctionBindgen<'a, 'b> {
     pub import_return_pointer_area_size: usize,
     pub import_return_pointer_area_align: usize,
     pub handle_decls: Vec<String>,
+    always_owned: bool,
 }
 
 impl<'a, 'b> FunctionBindgen<'a, 'b> {
@@ -27,6 +28,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         params: Vec<String>,
         async_: bool,
         wasm_import_module: &'b str,
+        always_owned: bool,
     ) -> FunctionBindgen<'a, 'b> {
         FunctionBindgen {
             gen,
@@ -42,6 +44,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             import_return_pointer_area_size: 0,
             import_return_pointer_area_align: 0,
             handle_decls: Vec::new(),
+            always_owned,
         }
     }
 
@@ -190,10 +193,11 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
     }
 
     fn typename_lower(&self, id: TypeId) -> String {
-        let owned = match self.lift_lower() {
-            LiftLower::LowerArgsLiftResults => false,
-            LiftLower::LiftArgsLowerResults => true,
-        };
+        let owned = self.always_owned
+            || match self.lift_lower() {
+                LiftLower::LowerArgsLiftResults => false,
+                LiftLower::LiftArgsLowerResults => true,
+            };
         self.gen.type_path(id, owned)
     }
 
@@ -465,7 +469,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::FutureLower { .. } => {
                 let op = &operands[0];
-                results.push(format!("({op}).into_handle() as i32"))
+                results.push(format!("({op}).take_handle() as i32"))
             }
 
             Instruction::FutureLift { payload, .. } => {
@@ -488,7 +492,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::StreamLower { .. } => {
                 let op = &operands[0];
-                results.push(format!("({op}).into_handle() as i32"))
+                results.push(format!("({op}).take_handle() as i32"))
             }
 
             Instruction::StreamLift { payload, .. } => {
