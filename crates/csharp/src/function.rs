@@ -241,10 +241,10 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                 uwrite!(
                     self.src,
                     "\
-                                        if ({previous}.IsOk) 
-                                        {{
-                                        var {tmp} = {previous}.AsOk;
-                                    "
+                    if ({previous}.IsOk) 
+                    {{
+                        var {tmp} = {previous}.AsOk;
+                    "
                 );
                 let TypeDefKind::Result(result) = &self.interface_gen.resolve.types[*ty].kind
                 else {
@@ -273,12 +273,12 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             uwrite!(
                 self.src,
                 "\
-                                    }} 
-                                    else 
-                                    {{
-                                        throw new {exception_name}({var_name}.AsErr!, {level});
-                                    }}
-                                    "
+                }} 
+                else 
+                {{
+                    throw new {exception_name}({var_name}.AsErr!, {level});
+                }}
+                "
             );
         }
     }
@@ -320,20 +320,23 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             let tail = oks.iter().map(|_| ")").collect::<Vec<_>>().concat();
             cases.push(format!(
                 "\
-                                            case {index}: 
-                                            {{
-                                                ret = {head}{ty}.Err(({err_ty}) e.Value){tail};
-                                                break;
-                                            }}
-                                            "
+                case {index}: 
+                {{
+                    ret = {head}{ty}.Err(({err_ty}) e.Value){tail};
+                    break;
+                }}
+                "
             ));
             oks.push(format!("{ty}.Ok("));
             payload_is_void = result.ok.is_none();
         }
         if !self.results.is_empty() {
-            self.src.push_str(\"
-                               try 
-                               {\n");
+            self.src.push_str(
+                "
+                try 
+                {\n
+                ",
+            );
         }
         let head = oks.concat();
         let tail = oks.iter().map(|_| ")").collect::<Vec<_>>().concat();
@@ -350,16 +353,16 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             uwriteln!(
                 self.src,
                 r#"}} 
-                   catch (WitException e) 
-                   {{
-                                            switch (e.NestingLevel) 
-                                            {{
-                                                {cases}
+                    catch (WitException e) 
+                    {{
+                        switch (e.NestingLevel) 
+                        {{
+                            {cases}
 
-                                                default: throw new ArgumentException($"invalid nesting level: {{e.NestingLevel}}");
-                                            }}
-                                        }}
-                                        "#
+                            default: throw new ArgumentException($"invalid nesting level: {{e.NestingLevel}}");
+                        }}
+                    }}
+                "#
             );
         }
         ret
