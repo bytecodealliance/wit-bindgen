@@ -28,11 +28,11 @@ fn ceiling(x: usize, y: usize) -> usize {
 
 #[doc(hidden)]
 pub struct StreamVtable<T> {
-    pub write: fn(future: u32, values: &[T]) -> Pin<Box<dyn Future<Output = Option<usize>>>>,
+    pub write: fn(future: u32, values: &[T]) -> Pin<Box<dyn Future<Output = Option<usize>> + '_>>,
     pub read: fn(
         future: u32,
         values: &mut [MaybeUninit<T>],
-    ) -> Pin<Box<dyn Future<Output = Option<usize>>>>,
+    ) -> Pin<Box<dyn Future<Output = Option<usize>> + '_>>,
     pub cancel_write: fn(future: u32),
     pub cancel_read: fn(future: u32),
     pub close_writable: fn(future: u32),

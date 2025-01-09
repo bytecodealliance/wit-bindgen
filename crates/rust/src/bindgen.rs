@@ -509,7 +509,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     .as_ref()
                     .map(|ty| {
                         self.gen
-                            .full_type_name_owned(ty, Identifier::StreamOrFuturePayload)
+                            .type_name_owned_with_id(ty, Identifier::StreamOrFuturePayload)
                     })
                     .unwrap_or_else(|| "()".into());
                 let ordinal = self.gen.gen.future_payloads.get_index_of(&name).unwrap();
@@ -530,7 +530,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let op = &operands[0];
                 let name = self
                     .gen
-                    .full_type_name_owned(payload, Identifier::StreamOrFuturePayload);
+                    .type_name_owned_with_id(payload, Identifier::StreamOrFuturePayload);
                 let ordinal = self.gen.gen.stream_payloads.get_index_of(&name).unwrap();
                 let path = self.gen.path_to_root();
                 results.push(format!(
