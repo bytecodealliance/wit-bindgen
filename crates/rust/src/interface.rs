@@ -698,8 +698,10 @@ pub mod vtable{ordinal} {{
                         let alloc = self.path_to_std_alloc_module();
                         let (lower_address, lower, lift_address, lift) =
                             if stream_direct(payload_type) {
-                                let lower_address = "let address = values.as_ptr() as _;".into();
-                                let lift_address = "let address = values.as_mut_ptr() as _;".into();
+                                let lower_address =
+                                    "let address = values.as_ptr() as *mut u8;".into();
+                                let lift_address =
+                                    "let address = values.as_mut_ptr() as *mut u8;".into();
                                 (
                                     lower_address,
                                     String::new(),
@@ -749,7 +751,7 @@ for (index, dst) in values.iter_mut().take(count).enumerate() {{
                             r#"
 #[doc(hidden)]
 pub mod vtable{ordinal} {{
-    fn write(stream: u32, values: &[{name}]) -> ::core::pin::Pin<{box_}<dyn ::core::future::Future<Output = Option<usize>> + '_>> {{
+    fn write(stream: u32, values: &[{name}]) -> ::core::pin::Pin<{box_}<dyn ::core::future::Future<Output = usize> + '_>> {{
         {box_}::pin(async move {{
             {lower_address}
             {lower}
@@ -766,14 +768,24 @@ pub mod vtable{ordinal} {{
                 fn wit_import(_: u32, _: *mut u8, _: u32) -> u32;
             }}
 
-            unsafe {{
-                {async_support}::await_stream_result(
-                    wit_import,
-                    stream,
-                    address,
-                    u32::try_from(values.len()).unwrap()
-                ).await
+            let mut total = 0;
+            while total < values.len() {{
+                let count = unsafe {{
+                    {async_support}::await_stream_result(
+                        wit_import,
+                        stream,
+                        address.add(total * {size}),
+                        u32::try_from(values.len()).unwrap()
+                    ).await
+                }};
+
+                if let Some(count) = count {{
+                    total += count;
+                }} else {{
+                    break
+                }}
             }}
+            total
         }})
     }}
 

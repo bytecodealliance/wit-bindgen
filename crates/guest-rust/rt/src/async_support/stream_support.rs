@@ -29,7 +29,7 @@ fn ceiling(x: usize, y: usize) -> usize {
 
 #[doc(hidden)]
 pub struct StreamVtable<T> {
-    pub write: fn(future: u32, values: &[T]) -> Pin<Box<dyn Future<Output = Option<usize>> + '_>>,
+    pub write: fn(future: u32, values: &[T]) -> Pin<Box<dyn Future<Output = usize> + '_>>,
     pub read: fn(
         future: u32,
         values: &mut [MaybeUninit<T>],
@@ -174,14 +174,7 @@ impl<T> Sink<Vec<T>> for StreamWriter<T> {
                         vtable,
                     };
                     self.get_mut().future = Some(Box::pin(async move {
-                        let mut offset = 0;
-                        while offset < item.len() {
-                            if let Some(count) = (vtable.write)(handle, &item[offset..]).await {
-                                offset += count;
-                            } else {
-                                break;
-                            }
-                        }
+                        (vtable.write)(handle, &item).await;
                         cancel_on_drop.handle = None;
                         drop(cancel_on_drop);
                     }));
