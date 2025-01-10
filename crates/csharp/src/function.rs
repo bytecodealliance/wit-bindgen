@@ -581,21 +581,22 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::ListCanonLower { element, realloc } => {
-                let list = &operands[0];
+                let list: &String = &operands[0];
                 let (_size, ty) = list_element_info(element);
 
                 match self.interface_gen.direction {
                     Direction::Import => {
-                        let buffer: String = self.locals.tmp("buffer");
+                        let buffer: String = self.locals.tmp("bufferPtr");
                         uwrite!(
                             self.src,
                             "
-                            void* {buffer} = stackalloc {ty}[({list}).Length];
-                            {list}.AsSpan<{ty}>().CopyTo(new Span<{ty}>({buffer}, {list}.Length));
+                            fixed ({ty}* {buffer} = new ReadOnlyMemory<{ty}>({list}).Span)
+                            {{
                             "
                         );
-                        results.push(format!("(int){buffer}"));
+                        results.push(format!("(nint){buffer}"));
                         results.push(format!("({list}).Length"));
+                        self.fixed = self.fixed + 1;
                     }
                     Direction::Export => {
                         let address = self.locals.tmp("address");
@@ -973,11 +974,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             uwriteln!(self.src, "return ({results});")
                         }
                     }
+                }
 
-                    // Close all the fixed blocks.
-                    for _ in 0..self.fixed {
-                        uwriteln!(self.src, "}}");
-                    }
+                // Close all the fixed blocks.
+                for _ in 0..self.fixed {
+                    uwriteln!(self.src, "}}");
                 }
             }
 
@@ -1063,7 +1064,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 match direction {
                     Direction::Import => {
-			let import_name = self.interface_gen.type_name_with_qualifier(&Type::Id(id), true);
+                        let import_name = self.interface_gen.type_name_with_qualifier(&Type::Id(id), true);
 
                         if let FunctionKind::Constructor(_) = self.kind {
                             resource = "this".to_owned();
@@ -1082,13 +1083,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     Direction::Export => {
                         self.interface_gen.csharp_gen.needs_rep_table = true;
 
-			let export_name = self.interface_gen.csharp_gen.all_resources[&id].export_impl_name();
+                        let export_name = self.interface_gen.csharp_gen.all_resources[&id].export_impl_name();
                         if is_own {
                             uwriteln!(
                                 self.src,
                                 "var {resource} = ({export_name}) {export_name}.repTable.Get\
-				     ({export_name}.WasmInterop.wasmImportResourceRep({op}));
-                                 {resource}.Handle = {op};"
+                                ({export_name}.WasmInterop.wasmImportResourceRep({op}));
+                                {resource}.Handle = {op};"
                             );
                         } else {
                             uwriteln!(self.src, "var {resource} = ({export_name}) {export_name}.repTable.Get({op});");
