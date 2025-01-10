@@ -225,6 +225,148 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
 
         results.push(lifted);
     }
+
+    fn handle_result_import(&mut self, operands: &mut Vec<String>) {
+        if self.interface_gen.csharp_gen.opts.with_wit_results {
+            uwriteln!(self.src, "return {};", operands[0]);
+            return;
+        }
+
+        let mut payload_is_void = false;
+        let mut previous = operands[0].clone();
+        let mut vars: Vec<(String, Option<String>)> = Vec::with_capacity(self.results.len());
+        if let Direction::Import = self.interface_gen.direction {
+            for ty in &self.results {
+                let tmp = self.locals.tmp("tmp");
+                uwrite!(
+                    self.src,
+                    "\
+                    if ({previous}.IsOk) 
+                    {{
+                        var {tmp} = {previous}.AsOk;
+                    "
+                );
+                let TypeDefKind::Result(result) = &self.interface_gen.resolve.types[*ty].kind
+                else {
+                    unreachable!();
+                };
+                let exception_name = result
+                    .err
+                    .map(|ty| self.interface_gen.type_name_with_qualifier(&ty, true));
+                vars.push((previous.clone(), exception_name));
+                payload_is_void = result.ok.is_none();
+                previous = tmp;
+            }
+        }
+        uwriteln!(
+            self.src,
+            "return {};",
+            if payload_is_void { "" } else { &previous }
+        );
+        for (level, var) in vars.iter().enumerate().rev() {
+            self.interface_gen.csharp_gen.needs_wit_exception = true;
+            let (var_name, exception_name) = var;
+            let exception_name = match exception_name {
+                Some(type_name) => &format!("WitException<{}>", type_name),
+                None => "WitException",
+            };
+            uwrite!(
+                self.src,
+                "\
+                }} 
+                else 
+                {{
+                    throw new {exception_name}({var_name}.AsErr!, {level});
+                }}
+                "
+            );
+        }
+    }
+
+    fn handle_result_call(
+        &mut self,
+        func: &&wit_parser::Function,
+        target: String,
+        func_name: String,
+        oper: String,
+    ) -> String {
+        let ret = self.locals.tmp("ret");
+        if self.interface_gen.csharp_gen.opts.with_wit_results {
+            uwriteln!(self.src, "var {ret} = {target}.{func_name}({oper});");
+            return ret;
+        }
+
+        // otherwise generate exception code
+        let ty = self
+            .interface_gen
+            .type_name_with_qualifier(func.results.iter_types().next().unwrap(), true);
+        uwriteln!(self.src, "{ty} {ret};");
+        let mut cases = Vec::with_capacity(self.results.len());
+        let mut oks = Vec::with_capacity(self.results.len());
+        let mut payload_is_void = false;
+        for (index, ty) in self.results.iter().enumerate() {
+            let TypeDefKind::Result(result) = &self.interface_gen.resolve.types[*ty].kind else {
+                unreachable!();
+            };
+            let err_ty = if let Some(ty) = result.err {
+                self.interface_gen.type_name_with_qualifier(&ty, true)
+            } else {
+                "None".to_owned()
+            };
+            let ty = self
+                .interface_gen
+                .type_name_with_qualifier(&Type::Id(*ty), true);
+            let head = oks.concat();
+            let tail = oks.iter().map(|_| ")").collect::<Vec<_>>().concat();
+            cases.push(format!(
+                "\
+                case {index}: 
+                {{
+                    ret = {head}{ty}.Err(({err_ty}) e.Value){tail};
+                    break;
+                }}
+                "
+            ));
+            oks.push(format!("{ty}.Ok("));
+            payload_is_void = result.ok.is_none();
+        }
+        if !self.results.is_empty() {
+            self.src.push_str(
+                "
+                try 
+                {\n
+                ",
+            );
+        }
+        let head = oks.concat();
+        let tail = oks.iter().map(|_| ")").collect::<Vec<_>>().concat();
+        let val = if payload_is_void {
+            uwriteln!(self.src, "{target}.{func_name}({oper});");
+            "new None()".to_owned()
+        } else {
+            format!("{target}.{func_name}({oper})")
+        };
+        uwriteln!(self.src, "{ret} = {head}{val}{tail};");
+        if !self.results.is_empty() {
+            self.interface_gen.csharp_gen.needs_wit_exception = true;
+            let cases = cases.join("\n");
+            uwriteln!(
+                self.src,
+                r#"}} 
+                    catch (WitException e) 
+                    {{
+                        switch (e.NestingLevel) 
+                        {{
+                            {cases}
+
+                            default: throw new ArgumentException($"invalid nesting level: {{e.NestingLevel}}");
+                        }}
+                    }}
+                "#
+            );
+        }
+        ret
+    }
 }
 
 impl Bindgen for FunctionBindgen<'_, '_> {
@@ -814,70 +956,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         match func.results.len() {
                             0 => uwriteln!(self.src, "{target}.{func_name}({oper});"),
                             1 => {
-                                let ret = self.locals.tmp("ret");
-                                let ty = self.interface_gen.type_name_with_qualifier(
-                                    func.results.iter_types().next().unwrap(),
-                                    true
-                                );
-                                uwriteln!(self.src, "{ty} {ret};");
-                                let mut cases = Vec::with_capacity(self.results.len());
-                                let mut oks = Vec::with_capacity(self.results.len());
-                                let mut payload_is_void = false;
-                                for (index, ty) in self.results.iter().enumerate() {
-                                    let TypeDefKind::Result(result) = &self.interface_gen.resolve.types[*ty].kind else {
-                                        unreachable!();
-                                    };
-                                    let err_ty = if let Some(ty) = result.err {
-                                        self.interface_gen.type_name_with_qualifier(&ty, true)
-                                    } else {
-                                        "None".to_owned()
-                                    };
-                                    let ty = self.interface_gen.type_name_with_qualifier(&Type::Id(*ty), true);
-                                    let head = oks.concat();
-                                    let tail = oks.iter().map(|_| ")").collect::<Vec<_>>().concat();
-                                    cases.push(
-                                        format!(
-                                            "\
-                                            case {index}: {{
-                                                ret = {head}{ty}.Err(({err_ty}) e.Value){tail};
-                                                break;
-                                            }}
-                                            "
-                                        )
-                                    );
-                                    oks.push(format!("{ty}.Ok("));
-                                    payload_is_void = result.ok.is_none();
-                                }
-                                if !self.results.is_empty() {
-                                    self.src.push_str("try {\n");
-                                }
-                                let head = oks.concat();
-                                let tail = oks.iter().map(|_| ")").collect::<Vec<_>>().concat();
-                                let val = if payload_is_void {
-                                    uwriteln!(self.src, "{target}.{func_name}({oper});");
-                                    "new None()".to_owned()
-                                } else {
-                                    format!("{target}.{func_name}({oper})")
-                                };
-                                uwriteln!(
-                                    self.src,
-                                    "{ret} = {head}{val}{tail};"
-                                );
-                                if !self.results.is_empty() {
-                                    self.interface_gen.csharp_gen.needs_wit_exception = true;
-                                    let cases = cases.join("\n");
-                                    uwriteln!(
-                                        self.src,
-                                        r#"}} catch (WitException e) {{
-                                            switch (e.NestingLevel) {{
-                                                {cases}
-
-                                                default: throw new ArgumentException($"invalid nesting level: {{e.NestingLevel}}");
-                                            }}
-                                        }}
-                                        "#
-                                    );
-                                }
+                                let ret = self.handle_result_call(func, target, func_name, oper);
                                 results.push(ret);
                             }
                             _ => {
@@ -927,46 +1006,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     match func.results.len() {
                         0 => (),
                         1 => {
-                            let mut payload_is_void = false;
-                            let mut previous = operands[0].clone();
-                            let mut vars: Vec<(String, Option<String>)> = Vec::with_capacity(self.results.len());
-                            if let Direction::Import = self.interface_gen.direction {
-                                for ty in &self.results {
-                                    let tmp = self.locals.tmp("tmp");
-                                    uwrite!(
-                                        self.src,
-                                        "\
-                                        if ({previous}.IsOk) {{
-                                        var {tmp} = {previous}.AsOk;
-                                    "
-                                    );
-                                    let TypeDefKind::Result(result) = &self.interface_gen.resolve.types[*ty].kind else {
-                                        unreachable!();
-                                    };
-                                    let exception_name =  result.err
-                                        .map(|ty| self.interface_gen.type_name_with_qualifier(&ty, true));
-                                    vars.push((previous.clone(), exception_name));
-                                    payload_is_void = result.ok.is_none();
-                                    previous = tmp;
-                                }
-                            }
-                            uwriteln!(self.src, "return {};", if payload_is_void { "" } else { &previous });
-                            for (level, var) in vars.iter().enumerate().rev() {
-                                self.interface_gen.csharp_gen.needs_wit_exception = true;
-                                let (var_name, exception_name) = var;
-                                let exception_name = match exception_name {
-                                    Some(type_name) => &format!("WitException<{}>",type_name),
-                                    None => "WitException",
-                                };
-                                uwrite!(
-                                    self.src,
-                                    "\
-                                    }} else {{
-                                        throw new {exception_name}({var_name}.AsErr!, {level});
-                                    }}
-                                    "
-                                );
-                            }
+                            self.handle_result_import(operands);
                         }
                         _ => {
                             let results = operands.join(", ");
