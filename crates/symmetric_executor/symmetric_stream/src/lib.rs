@@ -1,4 +1,6 @@
-use stream_impl::exports::symmetric::runtime::symmetric_stream::{self, GuestAddress, GuestBuffer, GuestStreamObj};
+use std::{mem::transmute, sync::atomic::{AtomicUsize, Ordering}};
+
+use stream_impl::exports::symmetric::runtime::symmetric_stream::{self, Address, GuestAddress, GuestBuffer, GuestStreamObj};
 
 mod stream_impl;
 
@@ -12,28 +14,29 @@ impl GuestAddress for Dummy {}
 
 struct Buffer {
     addr: *mut (),
-    size: usize,
+    capacity: usize,
+    size: AtomicUsize,
 }
 
 impl GuestBuffer for Buffer {
     fn new(addr: symmetric_stream::Address,capacity: u64,) -> Self {
-        todo!()
+        Self { addr: addr.take_handle() as *mut (), size: AtomicUsize::new(0), capacity: capacity as usize}
     }
 
     fn get_address(&self,) -> symmetric_stream::Address {
-        todo!()
+        unsafe { Address::from_handle(self.addr as usize) }
     }
 
     fn get_size(&self,) -> u64 {
-        todo!()
+        self.size.load(Ordering::Relaxed) as u64
     }
 
     fn set_size(&self,size: u64,) -> () {
-        todo!()
+        self.size.store(size as usize, Ordering::Relaxed)
     }
 
     fn capacity(&self,) -> u64 {
-        todo!()
+        self.capacity as u64
     }
 }
 
@@ -87,6 +90,8 @@ impl GuestStreamObj for StreamObj {
     }
 }
 
+const EOF_MARKER: usize = 1;
+
 impl symmetric_stream::Guest for Guest {
     type Address = Dummy;
 
@@ -95,10 +100,11 @@ impl symmetric_stream::Guest for Guest {
     type StreamObj = StreamObj;
 
     fn end_of_file() -> symmetric_stream::Buffer {
-        todo!()
+        unsafe { symmetric_stream::Buffer::from_handle(EOF_MARKER) }
     }
 
     fn is_end_of_file(obj: symmetric_stream::BufferBorrow<'_>,) -> bool {
-        todo!()
+        let ptr: *mut () = unsafe { transmute(obj) };
+        ptr as usize == EOF_MARKER
     }
 }
