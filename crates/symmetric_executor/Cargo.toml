@@ -1,6 +1,7 @@
 [workspace]
 package.version = "0.1.0"
 package.edition = "2021"
+members = [ "dummy-rt","symmetric_stream"]
 
 [package]
 name = "symmetric_executor"

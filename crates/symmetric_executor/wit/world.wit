@@ -4,6 +4,11 @@ world executor {
     export symmetric-executor;
 }
 
+world stream-impl {
+    export symmetric-stream;
+}
+
 world module {
     import symmetric-executor;
+    import symmetric-stream;
 }

@@ -1,0 +1,14 @@
+[package]
+name = "symmetric_stream"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+symmetric_executor = { path = ".." }
+
+[dependencies.wit-bindgen]
+package = "dummy-rt"
+path = "../dummy-rt"
+
+[lib]
+crate-type = ["cdylib"]
