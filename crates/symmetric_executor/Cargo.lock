@@ -500,7 +500,7 @@ checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 
 [[package]]
 name = "wit-bindgen"
-version = "0.36.0"
+version = "0.37.0"
 dependencies = [
  "wit-bindgen-rt",
  "wit-bindgen-rust-macro",
@@ -508,7 +508,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-core"
-version = "0.36.0"
+version = "0.37.0"
 dependencies = [
  "anyhow",
  "heck",
@@ -517,7 +517,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-rt"
-version = "0.36.0"
+version = "0.37.0"
 dependencies = [
  "bitflags",
  "futures",
@@ -526,7 +526,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-rust"
-version = "0.36.0"
+version = "0.37.0"
 dependencies = [
  "anyhow",
  "heck",
@@ -540,7 +540,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-rust-macro"
-version = "0.36.0"
+version = "0.37.0"
 dependencies = [
  "anyhow",
  "prettyplease",

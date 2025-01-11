@@ -12,16 +12,13 @@ use crate::{
     subscribe_event_send_ptr,
 };
 
+pub use stream_support::{results, Stream, StreamHandle2, StreamReader, StreamWriter};
+
+// pub use futures;
+
 mod future_support;
 // later make it non-pub
 pub mod stream_support;
-
-pub use {
-    // future_support::{FutureReader, FutureVtable, FutureWriter},
-    stream_support::{results, Stream, StreamHandle2, StreamReader, StreamWriter},
-};
-
-pub use futures;
 
 // See https://github.com/rust-lang/rust/issues/13231 for the limitation
 // / Send constraint on futures for spawn, loosen later
@@ -37,11 +34,6 @@ struct FutureState {
     // the event this future should wake on
     waiting_for: Option<EventSubscription>,
 }
-
-// pub use stream::{results, Stream};
-
-// pub mod stream {
-// }
 
 static VTABLE: RawWakerVTable = RawWakerVTable::new(
     |_| RawWaker::new(core::ptr::null(), &VTABLE),
@@ -137,23 +129,13 @@ pub fn first_poll<T: 'static>(
 
 /// Await the completion of a call to an async-lowered import.
 #[doc(hidden)]
-pub async unsafe fn await_result(
-    function: impl Fn() -> *mut u8,
-    // unsafe extern "C" fn(*mut u8, *mut u8) -> *mut u8,
-    // params: *mut u8,
-    // results: *mut u8,
-) {
+pub async unsafe fn await_result(function: impl Fn() -> *mut u8) {
     let wait_for = function();
     if !wait_for.is_null() {
         let wait_for = unsafe { EventSubscription::from_handle(wait_for as usize) };
         wait_on(wait_for).await;
     }
 }
-
-// #[doc(hidden)]
-// pub unsafe fn callback(_ctx: *mut u8, _event0: i32, _event1: i32, _event2: i32) -> i32 {
-//     todo!()
-// }
 
 pub fn spawn(future: impl Future<Output = ()> + 'static + Send) {
     let wait_for = first_poll(future, |()| ());

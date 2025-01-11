@@ -904,8 +904,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
     }
 
     fn call(&mut self, func: &Function) {
-        const MAX_FLAT_PARAMS: usize = 16;
-
         let sig = self.resolve.wasm_signature(self.variant, func);
         self.call_with_signature(func, sig);
     }

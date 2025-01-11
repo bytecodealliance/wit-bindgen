@@ -10,8 +10,8 @@ version.workspace = true
 [dependencies]
 futures = "0.3.31"
 libc = "0.2.167"
-wit-bindgen = { version = "0.36.0", path = "../guest-rust" }
-wit-bindgen-rt = { version = "0.36.0", path = "../guest-rust/rt" }
+wit-bindgen = { path = "../guest-rust" }
+wit-bindgen-rt = { path = "../guest-rust/rt" }
 
 [lib]
 crate-type = ["cdylib"]
