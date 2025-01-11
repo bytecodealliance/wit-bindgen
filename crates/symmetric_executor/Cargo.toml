@@ -11,8 +11,12 @@ version.workspace = true
 [dependencies]
 futures = "0.3.31"
 libc = "0.2.167"
-wit-bindgen = { path = "../guest-rust" }
-wit-bindgen-rt = { path = "../guest-rust/rt" }
+#wit-bindgen = { path = "../guest-rust" }
+#wit-bindgen-rt = { path = "../guest-rust/rt" }
+
+[dependencies.wit-bindgen]
+package = "dummy-rt"
+path = "dummy-rt"
 
 [lib]
 crate-type = ["cdylib"]

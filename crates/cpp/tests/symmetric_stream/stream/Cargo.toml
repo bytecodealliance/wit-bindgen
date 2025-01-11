@@ -6,8 +6,12 @@ edition = "2021"
 [dependencies]
 futures = "0.3.31"
 source = { path = "../source" }
-wit-bindgen = { path = "../../../../guest-rust" }
+#wit-bindgen = { path = "../../../../guest-rust" }
 wit-bindgen-symmetric-rt = { path = "../../../../symmetric_executor/rust-client" }
+
+[dependencies.wit-bindgen]
+package = "dummy-rt"
+path = "../../../../symmetric_executor/dummy-rt"
 
 [lib]
 crate-type = ["cdylib"]
