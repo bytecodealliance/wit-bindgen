@@ -609,12 +609,6 @@ macro_rules! {macro_name} {{
 #[doc(hidden)]
 pub mod vtable{ordinal} {{
     fn write(future: u32, value: {name}) -> ::core::pin::Pin<{box_}<dyn ::core::future::Future<Output = bool>>> {{
-        #[cfg(not(target_arch = "wasm32"))]
-        {{
-            unreachable!();
-        }}
-
-        #[cfg(target_arch = "wasm32")]
         {box_}::pin(async move {{
             #[repr(align({align}))]
             struct Buffer([::core::mem::MaybeUninit::<u8>; {size}]);
@@ -632,17 +626,17 @@ pub mod vtable{ordinal} {{
     }}
 
     fn read(future: u32) -> ::core::pin::Pin<{box_}<dyn ::core::future::Future<Output = Option<{name}>>>> {{
-        #[cfg(not(target_arch = "wasm32"))]
-        {{
-            unreachable!();
-        }}
-
-        #[cfg(target_arch = "wasm32")]
         {box_}::pin(async move {{
             struct Buffer([::core::mem::MaybeUninit::<u8>; {size}]);
             let mut buffer = Buffer([::core::mem::MaybeUninit::uninit(); {size}]);
             let address = buffer.0.as_mut_ptr() as *mut u8;
-        
+
+            #[cfg(not(target_arch = "wasm32"))]
+            unsafe extern "C" fn wit_import(_: u32, _: *mut u8) -> u32 {{
+                unreachable!()
+            }}
+
+            #[cfg(target_arch = "wasm32")]
             #[link(wasm_import_module = "{module}")]
             extern "C" {{
                 #[link_name = "[async][future-read-{index}]{func_name}"]
@@ -765,8 +759,10 @@ pub mod vtable{ordinal} {{
                         let alloc = self.path_to_std_alloc_module();
                         let (lower_address, lower, lift_address, lift) =
                             if stream_direct(payload_type) {
-                                let lower_address = "let address = values.as_ptr() as _;".into();
-                                let lift_address = "let address = values.as_mut_ptr() as _;".into();
+                                let lower_address =
+                                    "let address = values.as_ptr() as *mut u8;".into();
+                                let lift_address =
+                                    "let address = values.as_mut_ptr() as *mut u8;".into();
                                 (
                                     lower_address,
                                     String::new(),
@@ -816,13 +812,7 @@ for (index, dst) in values.iter_mut().take(count).enumerate() {{
                             r#"
 #[doc(hidden)]
 pub mod vtable{ordinal} {{
-    fn write(stream: u32, values: &[{name}]) -> ::core::pin::Pin<{box_}<dyn ::core::future::Future<Output = Option<usize>> + '_>> {{
-        #[cfg(not(target_arch = "wasm32"))]
-        {{
-            unreachable!();
-        }}
-
-        #[cfg(target_arch = "wasm32")]
+    fn write(stream: u32, values: &[{name}]) -> ::core::pin::Pin<{box_}<dyn ::core::future::Future<Output = usize> + '_>> {{
         {box_}::pin(async move {{
             {lower_address}
             {lower}
@@ -832,24 +822,28 @@ pub mod vtable{ordinal} {{
                 fn wit_import(_: u32, _: *mut u8, _: u32) -> u32;
             }}
 
-            unsafe {{
-                {async_support}::await_stream_result(
-                    wit_import,
-                    stream,
-                    address,
-                    u32::try_from(values.len()).unwrap()
-                ).await
+            let mut total = 0;
+            while total < values.len() {{
+                let count = unsafe {{
+                    {async_support}::await_stream_result(
+                        wit_import,
+                        stream,
+                        address.add(total * {size}),
+                        u32::try_from(values.len()).unwrap()
+                    ).await
+                }};
+
+                if let Some(count) = count {{
+                    total += count;
+                }} else {{
+                    break
+                }}
             }}
+            total
         }})
     }}
 
     fn read(stream: u32, values: &mut [::core::mem::MaybeUninit::<{name}>]) -> ::core::pin::Pin<{box_}<dyn ::core::future::Future<Output = Option<usize>> + '_>> {{
-        #[cfg(not(target_arch = "wasm32"))]
-        {{
-            unreachable!();
-        }}
-
-        #[cfg(target_arch = "wasm32")]
         {box_}::pin(async move {{
             {lift_address}
             #[link(wasm_import_module = "{module}")]
@@ -1039,13 +1033,13 @@ pub mod vtable{ordinal} {{
     }
 
     fn lower_to_memory(&mut self, address: &str, value: &str, ty: &Type, module: &str) -> String {
-        let mut f = FunctionBindgen::new(self, Vec::new(), true, module);
+        let mut f = FunctionBindgen::new(self, Vec::new(), true, module, true);
         abi::lower_to_memory(f.gen.resolve, &mut f, address.into(), value.into(), ty);
         format!("unsafe {{ {} }}", String::from(f.src))
     }
 
     fn lift_from_memory(&mut self, address: &str, value: &str, ty: &Type, module: &str) -> String {
-        let mut f = FunctionBindgen::new(self, Vec::new(), true, module);
+        let mut f = FunctionBindgen::new(self, Vec::new(), true, module, true);
         let result = abi::lift_from_memory(f.gen.resolve, &mut f, address.into(), ty);
         format!(
             "let {value} = unsafe {{ {}\n{result} }};",
@@ -1060,7 +1054,7 @@ pub mod vtable{ordinal} {{
         params: Vec<String>,
         async_: bool,
     ) {
-        let mut f = FunctionBindgen::new(self, params, async_, module);
+        let mut f = FunctionBindgen::new(self, params, async_, module, false);
         abi::call(
             f.gen.resolve,
             AbiVariant::GuestImport,
@@ -1138,7 +1132,7 @@ pub mod vtable{ordinal} {{
             );
         }
 
-        let mut f = FunctionBindgen::new(self, params, async_, self.wasm_import_module);
+        let mut f = FunctionBindgen::new(self, params, async_, self.wasm_import_module, false);
         abi::call(
             f.gen.resolve,
             AbiVariant::GuestExport,
@@ -1191,7 +1185,7 @@ pub mod vtable{ordinal} {{
             let params = self.print_post_return_sig(func);
             self.src.push_str("{\n");
 
-            let mut f = FunctionBindgen::new(self, params, async_, self.wasm_import_module);
+            let mut f = FunctionBindgen::new(self, params, async_, self.wasm_import_module, false);
             abi::post_return(f.gen.resolve, func, &mut f, async_);
             let FunctionBindgen {
                 needs_cleanup_list,
@@ -1265,7 +1259,7 @@ pub mod vtable{ordinal} {{
             uwrite!(
                 self.src,
                 "\
-                    #[export_name = \"{export_prefix}[callback]{export_name}\"]
+                    #[unsafe(export_name = \"{export_prefix}[callback]{export_name}\")]
                     unsafe extern \"C\" fn _callback_{name_snake}(ctx: *mut u8, event0: i32, event1: i32, event2: i32) -> i32 {{
                         {path_to_self}::__callback_{name_snake}(ctx, event0, event1, event2)
                     }}

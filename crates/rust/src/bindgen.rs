@@ -19,6 +19,7 @@ pub(super) struct FunctionBindgen<'a, 'b> {
     pub import_return_pointer_area_size: ArchitectureSize,
     pub import_return_pointer_area_align: Alignment,
     pub handle_decls: Vec<String>,
+    always_owned: bool,
 }
 
 pub const POINTER_SIZE_EXPRESSION: &str = "core::mem::size_of::<*const u8>()";
@@ -29,6 +30,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         params: Vec<String>,
         async_: bool,
         wasm_import_module: &'b str,
+        always_owned: bool,
     ) -> FunctionBindgen<'a, 'b> {
         FunctionBindgen {
             gen,
@@ -44,6 +46,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             import_return_pointer_area_size: Default::default(),
             import_return_pointer_area_align: Default::default(),
             handle_decls: Vec::new(),
+            always_owned,
         }
     }
 
@@ -196,11 +199,12 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
     }
 
     fn typename_lower(&self, id: TypeId) -> String {
-        let owned = match self.lift_lower() {
-            LiftLower::LowerArgsLiftResults => false,
-            LiftLower::LiftArgsLowerResults => true,
-            LiftLower::Symmetric => todo!(),
-        };
+        let owned = self.always_owned
+            || match self.lift_lower() {
+                LiftLower::LowerArgsLiftResults => false,
+                LiftLower::LiftArgsLowerResults => true,
+                LiftLower::Symmetric => todo!(),
+            };
         self.gen.type_path(id, owned)
     }
 
@@ -499,7 +503,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::FutureLower { .. } => {
                 let op = &operands[0];
-                results.push(format!("({op}).into_handle() as i32"))
+                results.push(format!("({op}).take_handle() as i32"))
             }
 
             Instruction::FutureLift { payload, .. } => {
@@ -522,7 +526,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::StreamLower { .. } => {
                 let op = &operands[0];
-                results.push(format!("({op}).into_handle() as i32"))
+                results.push(format!("({op}).take_handle() as i32"))
             }
 
             Instruction::StreamLift { payload, .. } => {

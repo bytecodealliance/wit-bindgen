@@ -15,8 +15,9 @@ use {
         fmt,
         future::Future,
         iter,
-        mem::{self, ManuallyDrop, MaybeUninit},
+        mem::{self, MaybeUninit},
         pin::Pin,
+        sync::atomic::{AtomicU32, Ordering::Relaxed},
         task::{Context, Poll},
         vec::Vec,
     },
@@ -28,7 +29,7 @@ fn ceiling(x: usize, y: usize) -> usize {
 
 #[doc(hidden)]
 pub struct StreamVtable<T> {
-    pub write: fn(future: u32, values: &[T]) -> Pin<Box<dyn Future<Output = Option<usize>> + '_>>,
+    pub write: fn(future: u32, values: &[T]) -> Pin<Box<dyn Future<Output = usize> + '_>>,
     pub read: fn(
         future: u32,
         values: &mut [MaybeUninit<T>],
@@ -173,14 +174,7 @@ impl<T> Sink<Vec<T>> for StreamWriter<T> {
                         vtable,
                     };
                     self.get_mut().future = Some(Box::pin(async move {
-                        let mut offset = 0;
-                        while offset < item.len() {
-                            if let Some(count) = (vtable.write)(handle, &item[offset..]).await {
-                                offset += count;
-                            } else {
-                                break;
-                            }
-                        }
+                        (vtable.write)(handle, &item).await;
                         cancel_on_drop.handle = None;
                         drop(cancel_on_drop);
                     }));
@@ -246,7 +240,7 @@ impl<T> Drop for CancelReadOnDrop<T> {
 
 /// Represents the readable end of a Component Model `stream`.
 pub struct StreamReader<T: 'static> {
-    handle: u32,
+    handle: AtomicU32,
     future: Option<Pin<Box<dyn Future<Output = Option<Vec<T>>> + 'static>>>,
     vtable: &'static StreamVtable<T>,
 }
@@ -273,7 +267,7 @@ impl<T> StreamReader<T> {
     #[doc(hidden)]
     pub fn new(handle: u32, vtable: &'static StreamVtable<T>) -> Self {
         Self {
-            handle,
+            handle: AtomicU32::new(handle),
             future: None,
             vtable,
         }
@@ -300,15 +294,16 @@ impl<T> StreamReader<T> {
         });
 
         Self {
-            handle,
+            handle: AtomicU32::new(handle),
             future: None,
             vtable,
         }
     }
 
     #[doc(hidden)]
-    pub fn into_handle(self) -> u32 {
-        super::with_entry(self.handle, |entry| match entry {
+    pub fn take_handle(&self) -> u32 {
+        let handle = self.handle.swap(u32::MAX, Relaxed);
+        super::with_entry(handle, |entry| match entry {
             Entry::Vacant(_) => unreachable!(),
             Entry::Occupied(mut entry) => match entry.get() {
                 Handle::LocalOpen => {
@@ -321,7 +316,7 @@ impl<T> StreamReader<T> {
             },
         });
 
-        ManuallyDrop::new(self).handle
+        handle
     }
 }
 
@@ -332,60 +327,65 @@ impl<T> Stream for StreamReader<T> {
         let me = self.get_mut();
 
         if me.future.is_none() {
-            me.future = Some(super::with_entry(me.handle, |entry| match entry {
-                Entry::Vacant(_) => unreachable!(),
-                Entry::Occupied(mut entry) => match entry.get() {
-                    Handle::Write | Handle::LocalWaiting(_) => unreachable!(),
-                    Handle::Read => {
-                        let handle = me.handle;
-                        let vtable = me.vtable;
-                        let mut cancel_on_drop = CancelReadOnDrop::<T> {
-                            handle: Some(handle),
-                            vtable,
-                        };
-                        Box::pin(async move {
-                            let mut buffer = iter::repeat_with(MaybeUninit::uninit)
-                                .take(ceiling(64 * 1024, mem::size_of::<T>()))
-                                .collect::<Vec<_>>();
+            me.future = Some(super::with_entry(
+                me.handle.load(Relaxed),
+                |entry| match entry {
+                    Entry::Vacant(_) => unreachable!(),
+                    Entry::Occupied(mut entry) => match entry.get() {
+                        Handle::Write | Handle::LocalWaiting(_) => unreachable!(),
+                        Handle::Read => {
+                            let handle = me.handle.load(Relaxed);
+                            let vtable = me.vtable;
+                            let mut cancel_on_drop = CancelReadOnDrop::<T> {
+                                handle: Some(handle),
+                                vtable,
+                            };
+                            Box::pin(async move {
+                                let mut buffer = iter::repeat_with(MaybeUninit::uninit)
+                                    .take(ceiling(64 * 1024, mem::size_of::<T>()))
+                                    .collect::<Vec<_>>();
 
-                            let result =
-                                if let Some(count) = (vtable.read)(handle, &mut buffer).await {
-                                    buffer.truncate(count);
-                                    Some(unsafe {
-                                        mem::transmute::<Vec<MaybeUninit<T>>, Vec<T>>(buffer)
-                                    })
-                                } else {
-                                    None
-                                };
-                            cancel_on_drop.handle = None;
-                            drop(cancel_on_drop);
-                            result
-                        }) as Pin<Box<dyn Future<Output = _>>>
-                    }
-                    Handle::LocalOpen => {
-                        let (tx, rx) = oneshot::channel();
-                        entry.insert(Handle::LocalWaiting(tx));
-                        let mut cancel_on_drop = CancelReadOnDrop::<T> {
-                            handle: Some(me.handle),
-                            vtable: me.vtable,
-                        };
-                        Box::pin(async move {
-                            let result = rx.map(|v| v.ok().map(|v| *v.downcast().unwrap())).await;
-                            cancel_on_drop.handle = None;
-                            drop(cancel_on_drop);
-                            result
-                        })
-                    }
-                    Handle::LocalClosed => Box::pin(future::ready(None)),
-                    Handle::LocalReady(..) => {
-                        let Handle::LocalReady(v, waker) = entry.insert(Handle::LocalOpen) else {
-                            unreachable!()
-                        };
-                        waker.wake();
-                        Box::pin(future::ready(Some(*v.downcast().unwrap())))
-                    }
+                                let result =
+                                    if let Some(count) = (vtable.read)(handle, &mut buffer).await {
+                                        buffer.truncate(count);
+                                        Some(unsafe {
+                                            mem::transmute::<Vec<MaybeUninit<T>>, Vec<T>>(buffer)
+                                        })
+                                    } else {
+                                        None
+                                    };
+                                cancel_on_drop.handle = None;
+                                drop(cancel_on_drop);
+                                result
+                            }) as Pin<Box<dyn Future<Output = _>>>
+                        }
+                        Handle::LocalOpen => {
+                            let (tx, rx) = oneshot::channel();
+                            entry.insert(Handle::LocalWaiting(tx));
+                            let mut cancel_on_drop = CancelReadOnDrop::<T> {
+                                handle: Some(me.handle.load(Relaxed)),
+                                vtable: me.vtable,
+                            };
+                            Box::pin(async move {
+                                let result =
+                                    rx.map(|v| v.ok().map(|v| *v.downcast().unwrap())).await;
+                                cancel_on_drop.handle = None;
+                                drop(cancel_on_drop);
+                                result
+                            })
+                        }
+                        Handle::LocalClosed => Box::pin(future::ready(None)),
+                        Handle::LocalReady(..) => {
+                            let Handle::LocalReady(v, waker) = entry.insert(Handle::LocalOpen)
+                            else {
+                                unreachable!()
+                            };
+                            waker.wake();
+                            Box::pin(future::ready(Some(*v.downcast().unwrap())))
+                        }
+                    },
                 },
-            }));
+            ));
         }
 
         match me.future.as_mut().unwrap().as_mut().poll(cx) {
@@ -402,24 +402,30 @@ impl<T> Drop for StreamReader<T> {
     fn drop(&mut self) {
         self.future = None;
 
-        super::with_entry(self.handle, |entry| match entry {
-            Entry::Vacant(_) => unreachable!(),
-            Entry::Occupied(mut entry) => match entry.get_mut() {
-                Handle::LocalReady(..) => {
-                    let Handle::LocalReady(_, waker) = entry.insert(Handle::LocalClosed) else {
-                        unreachable!()
-                    };
-                    waker.wake();
-                }
-                Handle::LocalOpen | Handle::LocalWaiting(_) => {
-                    entry.insert(Handle::LocalClosed);
-                }
-                Handle::Read | Handle::LocalClosed => {
-                    entry.remove();
-                    (self.vtable.close_readable)(self.handle);
-                }
-                Handle::Write => unreachable!(),
-            },
-        });
+        match self.handle.load(Relaxed) {
+            u32::MAX => {}
+            handle => {
+                super::with_entry(handle, |entry| match entry {
+                    Entry::Vacant(_) => unreachable!(),
+                    Entry::Occupied(mut entry) => match entry.get_mut() {
+                        Handle::LocalReady(..) => {
+                            let Handle::LocalReady(_, waker) = entry.insert(Handle::LocalClosed)
+                            else {
+                                unreachable!()
+                            };
+                            waker.wake();
+                        }
+                        Handle::LocalOpen | Handle::LocalWaiting(_) => {
+                            entry.insert(Handle::LocalClosed);
+                        }
+                        Handle::Read | Handle::LocalClosed => {
+                            entry.remove();
+                            (self.vtable.close_readable)(handle);
+                        }
+                        Handle::Write => unreachable!(),
+                    },
+                });
+            }
+        }
     }
 }

@@ -861,8 +861,8 @@ impl As{upcase} for {to_convert} {{
         uwriteln!(
             self.src,
             r#"
-/// Generates `#[no_mangle]` functions to export the specified type as the
-/// root implementation of all generated traits.
+/// Generates `#[unsafe(no_mangle)]` functions to export the specified type as
+/// the root implementation of all generated traits.
 ///
 /// For more information see the documentation of `wit_bindgen::generate!`.
 ///
@@ -942,8 +942,8 @@ macro_rules! __export_{world_name}_impl {{
         let pkg = &resolve.packages[world.package.unwrap()].name;
         let version = env!("CARGO_PKG_VERSION");
         self.src.push_str(&format!(
-            "#[link_section = \"component-type:wit-bindgen:{version}:\
-             {pkg}:{world_name}:{section_suffix}{opts_suffix}\"]\n"
+            "#[unsafe(link_section = \"component-type:wit-bindgen:{version}:\
+             {pkg}:{world_name}:{section_suffix}{opts_suffix}\")]\n"
         ));
 
         let mut producers = wasm_metadata::Producers::empty();
