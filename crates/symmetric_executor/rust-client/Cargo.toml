@@ -1,4 +1,4 @@
-[workspace]
+#[workspace]
 
 [package]
 name = "wit-bindgen-symmetric-rt"

@@ -1,7 +1,7 @@
 [workspace]
 package.version = "0.1.0"
 package.edition = "2021"
-members = [ "dummy-rt","symmetric_stream"]
+members = [ "dummy-rt","symmetric_stream","rust-client" ]
 
 [package]
 name = "symmetric_executor"

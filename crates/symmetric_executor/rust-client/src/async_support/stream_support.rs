@@ -1,5 +1,6 @@
-use std::sync::atomic::{AtomicIsize, AtomicPtr, AtomicUsize, Ordering};
+//use std::sync::atomic::{AtomicIsize, AtomicPtr, AtomicUsize, Ordering};
 
+pub use crate::module::symmetric::runtime::symmetric_stream::StreamObj as Stream;
 use crate::{
     activate_event_send_ptr, async_support::wait_on, subscribe_event_send_ptr, EventGenerator,
 };
@@ -35,7 +36,7 @@ pub struct StreamWriter<T: 'static> {
 
 impl<T> StreamWriter<T> {
     #[doc(hidden)]
-    pub fn new(handle: *mut Stream) -> Self {
+    pub fn new(handle: Stream) -> Self {
         Self {
             handle: StreamHandle2(handle),
             future: None,
@@ -62,14 +63,14 @@ impl<T: Unpin> Sink<Vec<T>> for StreamWriter<T> {
     fn poll_ready(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
         let me = self.get_mut();
 
-        let ready = unsafe { is_ready_to_write(me.handle.0) };
+        let ready = me.handle.0.is_ready_to_write();
 
         // see also StreamReader::poll_next
         if !ready && me.future.is_none() {
             let handle = StreamHandle2(me.handle.0);
             me.future = Some(Box::pin(async move {
                 let handle_local = handle;
-                let subscr = unsafe { subscribe_event_send_ptr(write_ready_event(handle_local.0)) };
+                let subscr = handle_local.0.write_ready_event();
                 subscr.reset();
                 wait_on(subscr).await;
             }) as Pin<Box<dyn Future<Output = _> + Send>>);
@@ -92,14 +93,14 @@ impl<T: Unpin> Sink<Vec<T>> for StreamWriter<T> {
         let item_len = item.len();
         let me = self.get_mut();
         let stream = me.handle.0;
-        let Slice { addr, size } = unsafe { start_writing(stream) };
+        let Slice { addr, size } = stream.start_writing();
         assert!(size >= item_len);
         let slice =
             unsafe { std::slice::from_raw_parts_mut(addr.cast::<MaybeUninit<T>>(), item_len) };
         for (a, b) in slice.iter_mut().zip(item.drain(..)) {
             a.write(b);
         }
-        unsafe { finish_writing(stream, item_len as isize) };
+        stream.finish_writing(item_len as isize);
         Ok(())
     }
 
@@ -114,12 +115,10 @@ impl<T: Unpin> Sink<Vec<T>> for StreamWriter<T> {
 
 impl<T> Drop for StreamWriter<T> {
     fn drop(&mut self) {
-        if !unsafe { is_write_closed(self.handle.0) } {
-            unsafe {
-                finish_writing(self.handle.0, results::CLOSED);
-            }
+        if !self.handle.0.is_write_closed() {
+            self.handle.0.finish_writing(results::CLOSED);
         }
-        unsafe { close_write(self.handle.0) };
+        self.handle.0.close_write();
     }
 }
 
@@ -151,7 +150,7 @@ impl<T> fmt::Debug for StreamReader<T> {
 
 impl<T> StreamReader<T> {
     #[doc(hidden)]
-    pub fn new(handle: *mut Stream) -> Self {
+    pub fn new(handle: Stream) -> Self {
         Self {
             handle: StreamHandle2(handle),
             future: None,
@@ -159,8 +158,8 @@ impl<T> StreamReader<T> {
         }
     }
     #[doc(hidden)]
-    pub fn into_handle(self) -> *mut Stream {
-        ManuallyDrop::new(self).handle.0
+    pub fn into_handle(self) -> *mut () {
+        self.handle.0.take_handle() as *mut ()
     }
 }
 
@@ -219,132 +218,20 @@ impl<T: Unpin + Send> futures::stream::Stream for StreamReader<T> {
 
 impl<T> Drop for StreamReader<T> {
     fn drop(&mut self) {
-        unsafe { activate_event_send_ptr(write_ready_event(self.handle.0)) };
-        unsafe { close_read(self.handle.0) };
-    }
-}
-
-pub struct Stream {
-    read_ready_event_send: *mut (),
-    write_ready_event_send: *mut (),
-    read_addr: AtomicPtr<()>,
-    read_size: AtomicUsize,
-    ready_size: AtomicIsize,
-    active_instances: AtomicUsize,
-}
-
-pub unsafe extern "C" fn start_reading(stream: *mut Stream, buf: *mut (), size: usize) -> isize {
-    let old_ready = unsafe { &*stream }.ready_size.load(Ordering::Acquire);
-    if old_ready == results::CLOSED {
-        return old_ready;
-    }
-    assert!(old_ready == results::BLOCKED);
-    let old_size = unsafe { &mut *stream }
-        .read_size
-        .swap(size, Ordering::Acquire);
-    assert_eq!(old_size, 0);
-    let old_ptr = unsafe { &mut *stream }
-        .read_addr
-        .swap(buf, Ordering::Release);
-    assert_eq!(old_ptr, std::ptr::null_mut());
-    let write_evt = unsafe { &mut *stream }.write_ready_event_send;
-    unsafe { activate_event_send_ptr(write_evt) };
-    results::BLOCKED
-}
-
-pub unsafe extern "C" fn read_ready_event(stream: *const Stream) -> *mut () {
-    unsafe { (&*stream).read_ready_event_send }
-}
-
-pub unsafe extern "C" fn write_ready_event(stream: *const Stream) -> *mut () {
-    unsafe { (&*stream).write_ready_event_send }
-}
-
-pub unsafe extern "C" fn is_ready_to_write(stream: *const Stream) -> bool {
-    !unsafe { &*stream }
-        .read_addr
-        .load(Ordering::Acquire)
-        .is_null()
-}
-
-pub unsafe extern "C" fn is_write_closed(stream: *const Stream) -> bool {
-    unsafe { &*stream }.ready_size.load(Ordering::Acquire) == results::CLOSED
-}
-
-#[repr(C)]
-pub struct Slice {
-    pub addr: *mut (),
-    pub size: usize,
-}
-
-pub unsafe extern "C" fn start_writing(stream: *mut Stream) -> Slice {
-    let size = unsafe { &*stream }.read_size.swap(0, Ordering::Acquire);
-    let addr = unsafe { &*stream }
-        .read_addr
-        .swap(core::ptr::null_mut(), Ordering::Release);
-    Slice { addr, size }
-}
-
-pub unsafe extern "C" fn read_amount(stream: *const Stream) -> isize {
-    unsafe { &*stream }
-        .ready_size
-        .swap(results::BLOCKED, Ordering::Acquire)
-}
-
-pub unsafe extern "C" fn finish_writing(stream: *mut Stream, elements: isize) {
-    let old_ready = unsafe { &*stream }
-        .ready_size
-        .swap(elements as isize, Ordering::Release);
-    assert_eq!(old_ready, results::BLOCKED);
-    unsafe { activate_event_send_ptr(read_ready_event(stream)) };
-}
-
-pub unsafe extern "C" fn close_read(stream: *mut Stream) {
-    let refs = unsafe { &mut *stream }
-        .active_instances
-        .fetch_sub(1, Ordering::AcqRel);
-    if refs == 1 {
-        let obj = Box::from_raw(stream);
-        drop(EventGenerator::from_handle(
-            obj.read_ready_event_send as usize,
-        ));
-        drop(EventGenerator::from_handle(
-            obj.write_ready_event_send as usize,
-        ));
-        drop(obj);
-    }
-}
-
-pub unsafe extern "C" fn close_write(stream: *mut Stream) {
-    // same for write (for now)
-    close_read(stream);
-}
-
-pub extern "C" fn create_stream() -> *mut Stream {
-    Box::into_raw(Box::new(Stream::new()))
-}
-
-impl Stream {
-    fn new() -> Self {
-        Self {
-            // vtable: &STREAM_VTABLE as *const StreamVtable,
-            read_ready_event_send: EventGenerator::new().take_handle() as *mut (),
-            write_ready_event_send: EventGenerator::new().take_handle() as *mut (),
-            read_addr: AtomicPtr::new(core::ptr::null_mut()),
-            read_size: AtomicUsize::new(0),
-            ready_size: AtomicIsize::new(results::BLOCKED),
-            active_instances: AtomicUsize::new(2),
-        }
+        self.handle.0.write_ready_event().activate();
+        Stream::close_read(self.handle.0);
+        //        unsafe { activate_event_send_ptr(write_ready_event(self.handle.0)) };
+        // unsafe { close_read(self.handle.0) };
     }
 }
 
 // Stream handles are Send, so wrap them
 #[repr(transparent)]
-pub struct StreamHandle2(pub *mut Stream);
+pub struct StreamHandle2(Stream);
 unsafe impl Send for StreamHandle2 {}
 unsafe impl Sync for StreamHandle2 {}
 
 pub fn new_stream<T: 'static>() -> (StreamWriter<T>, StreamReader<T>) {
-    let handle = create_stream();
+    let handle = Stream::new();
     (StreamWriter::new(handle), StreamReader::new(handle))
 }

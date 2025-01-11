@@ -2,1049 +2,1192 @@
 // Options used:
 #[allow(dead_code, clippy::all)]
 pub mod symmetric {
-  pub mod runtime {
-    /// This interface will only work with symmetric ABI (shared everything),
-    /// it can't be composed with the canonical ABI
-    /// Asynchronous executor functionality for symmetric ABI
-    #[allow(dead_code, unused_imports, clippy::all)]
-    pub mod symmetric_executor {
-      #[used]
-      #[doc(hidden)]
-      static __FORCE_SECTION_REF: fn() =
-      super::super::super::__link_custom_section_describing_imports;
-      
-      use super::super::super::_rt;
-      /// These pseudo-resources are just used to
-      /// pass pointers to register
-      /// This wraps a user provided function of type
-      /// `fn (callback-data) -> callback-state`
+    pub mod runtime {
+        /// This interface will only work with symmetric ABI (shared everything),
+        /// it can't be composed with the canonical ABI
+        /// Asynchronous executor functionality for symmetric ABI
+        #[allow(dead_code, unused_imports, clippy::all)]
+        pub mod symmetric_executor {
+            #[used]
+            #[doc(hidden)]
+            static __FORCE_SECTION_REF: fn() =
+                super::super::super::__link_custom_section_describing_imports;
 
-      #[derive(Debug)]
-      #[repr(transparent)]
-      pub struct CallbackFunction{
-        handle: _rt::Resource<CallbackFunction>,
-      }
+            use super::super::super::_rt;
+            /// These pseudo-resources are just used to
+            /// pass pointers to register
+            /// This wraps a user provided function of type
+            /// `fn (callback-data) -> callback-state`
 
-      impl CallbackFunction{
-        #[doc(hidden)]
-        pub unsafe fn from_handle(handle: usize) -> Self {
-          Self {
-            handle: _rt::Resource::from_handle(handle),
-          }
-        }
-
-        #[doc(hidden)]
-        pub fn take_handle(&self) -> usize{
-          _rt::Resource::take_handle(&self.handle)
-        }
-
-        #[doc(hidden)]
-        pub fn handle(&self) -> usize{
-          _rt::Resource::handle(&self.handle)
-        }
-      }
-
-
-      unsafe impl _rt::WasmResource for CallbackFunction{
-        #[inline]
-        unsafe fn drop(_handle: usize) {
-          {
-            #[link(wasm_import_module = "symmetric:runtime/symmetric-executor@0.1.0")]
-            extern "C" {
-              #[cfg_attr(target_arch = "wasm32", link_name = "[resource-drop]callback-function")]
-              fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5Bresource_dropX5Dcallback_function(_: usize);
+            #[derive(Debug)]
+            #[repr(transparent)]
+            pub struct CallbackFunction {
+                handle: _rt::Resource<CallbackFunction>,
             }
 
-            symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5Bresource_dropX5Dcallback_function(_handle);
-          }
-        }
-      }
+            impl CallbackFunction {
+                #[doc(hidden)]
+                pub unsafe fn from_handle(handle: usize) -> Self {
+                    Self {
+                        handle: _rt::Resource::from_handle(handle),
+                    }
+                }
 
-      /// This wraps opaque user data, freed by the callback once
-      /// it returns ready
+                #[doc(hidden)]
+                pub fn take_handle(&self) -> usize {
+                    _rt::Resource::take_handle(&self.handle)
+                }
 
-      #[derive(Debug)]
-      #[repr(transparent)]
-      pub struct CallbackData{
-        handle: _rt::Resource<CallbackData>,
-      }
-
-      impl CallbackData{
-        #[doc(hidden)]
-        pub unsafe fn from_handle(handle: usize) -> Self {
-          Self {
-            handle: _rt::Resource::from_handle(handle),
-          }
-        }
-
-        #[doc(hidden)]
-        pub fn take_handle(&self) -> usize{
-          _rt::Resource::take_handle(&self.handle)
-        }
-
-        #[doc(hidden)]
-        pub fn handle(&self) -> usize{
-          _rt::Resource::handle(&self.handle)
-        }
-      }
-
-
-      unsafe impl _rt::WasmResource for CallbackData{
-        #[inline]
-        unsafe fn drop(_handle: usize) {
-          {
-            #[link(wasm_import_module = "symmetric:runtime/symmetric-executor@0.1.0")]
-            extern "C" {
-              #[cfg_attr(target_arch = "wasm32", link_name = "[resource-drop]callback-data")]
-              fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5Bresource_dropX5Dcallback_data(_: usize);
+                #[doc(hidden)]
+                pub fn handle(&self) -> usize {
+                    _rt::Resource::handle(&self.handle)
+                }
             }
 
-            symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5Bresource_dropX5Dcallback_data(_handle);
-          }
-        }
-      }
+            unsafe impl _rt::WasmResource for CallbackFunction {
+                #[inline]
+                unsafe fn drop(_handle: usize) {
+                    {
+                        #[link(wasm_import_module = "symmetric:runtime/symmetric-executor@0.1.0")]
+                        extern "C" {
+                            #[cfg_attr(
+                                target_arch = "wasm32",
+                                link_name = "[resource-drop]callback-function"
+                            )]
+                            fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5Bresource_dropX5Dcallback_function(
+                                _: usize,
+                            );
+                        }
 
-      /// The receiving side of an event
-
-      #[derive(Debug)]
-      #[repr(transparent)]
-      pub struct EventSubscription{
-        handle: _rt::Resource<EventSubscription>,
-      }
-
-      impl EventSubscription{
-        #[doc(hidden)]
-        pub unsafe fn from_handle(handle: usize) -> Self {
-          Self {
-            handle: _rt::Resource::from_handle(handle),
-          }
-        }
-
-        #[doc(hidden)]
-        pub fn take_handle(&self) -> usize{
-          _rt::Resource::take_handle(&self.handle)
-        }
-
-        #[doc(hidden)]
-        pub fn handle(&self) -> usize{
-          _rt::Resource::handle(&self.handle)
-        }
-      }
-
-
-      unsafe impl _rt::WasmResource for EventSubscription{
-        #[inline]
-        unsafe fn drop(_handle: usize) {
-          {
-            #[link(wasm_import_module = "symmetric:runtime/symmetric-executor@0.1.0")]
-            extern "C" {
-              #[cfg_attr(target_arch = "wasm32", link_name = "[resource-drop]event-subscription")]
-              fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5Bresource_dropX5Devent_subscription(_: usize);
+                        symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5Bresource_dropX5Dcallback_function(_handle);
+                    }
+                }
             }
 
-            symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5Bresource_dropX5Devent_subscription(_handle);
-          }
-        }
-      }
+            /// This wraps opaque user data, freed by the callback once
+            /// it returns ready
 
-      /// A user controlled event
-
-      #[derive(Debug)]
-      #[repr(transparent)]
-      pub struct EventGenerator{
-        handle: _rt::Resource<EventGenerator>,
-      }
-
-      impl EventGenerator{
-        #[doc(hidden)]
-        pub unsafe fn from_handle(handle: usize) -> Self {
-          Self {
-            handle: _rt::Resource::from_handle(handle),
-          }
-        }
-
-        #[doc(hidden)]
-        pub fn take_handle(&self) -> usize{
-          _rt::Resource::take_handle(&self.handle)
-        }
-
-        #[doc(hidden)]
-        pub fn handle(&self) -> usize{
-          _rt::Resource::handle(&self.handle)
-        }
-      }
-
-
-      unsafe impl _rt::WasmResource for EventGenerator{
-        #[inline]
-        unsafe fn drop(_handle: usize) {
-          {
-            #[link(wasm_import_module = "symmetric:runtime/symmetric-executor@0.1.0")]
-            extern "C" {
-              #[cfg_attr(target_arch = "wasm32", link_name = "[resource-drop]event-generator")]
-              fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5Bresource_dropX5Devent_generator(_: usize);
+            #[derive(Debug)]
+            #[repr(transparent)]
+            pub struct CallbackData {
+                handle: _rt::Resource<CallbackData>,
             }
 
-            symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5Bresource_dropX5Devent_generator(_handle);
-          }
-        }
-      }
+            impl CallbackData {
+                #[doc(hidden)]
+                pub unsafe fn from_handle(handle: usize) -> Self {
+                    Self {
+                        handle: _rt::Resource::from_handle(handle),
+                    }
+                }
 
-      /// Return value of an async call, lowest bit encoding
-      #[repr(u8)]
-      #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
-      pub enum CallStatus {
-        /// For symmetric this means that processing has started, parameters should still remain valid until null,
-        /// params-read = non-null, results-written,done = null
-        Started,
-        /// For symmetric: Retry the call (temporarily out of memory)
-        NotStarted,
-      }
-      impl ::core::fmt::Debug for CallStatus {
-        fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-          match self {
-            CallStatus::Started => {
-              f.debug_tuple("CallStatus::Started").finish()
+                #[doc(hidden)]
+                pub fn take_handle(&self) -> usize {
+                    _rt::Resource::take_handle(&self.handle)
+                }
+
+                #[doc(hidden)]
+                pub fn handle(&self) -> usize {
+                    _rt::Resource::handle(&self.handle)
+                }
             }
-            CallStatus::NotStarted => {
-              f.debug_tuple("CallStatus::NotStarted").finish()
+
+            unsafe impl _rt::WasmResource for CallbackData {
+                #[inline]
+                unsafe fn drop(_handle: usize) {
+                    {
+                        #[link(wasm_import_module = "symmetric:runtime/symmetric-executor@0.1.0")]
+                        extern "C" {
+                            #[cfg_attr(
+                                target_arch = "wasm32",
+                                link_name = "[resource-drop]callback-data"
+                            )]
+                            fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5Bresource_dropX5Dcallback_data(
+                                _: usize,
+                            );
+                        }
+
+                        symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5Bresource_dropX5Dcallback_data(_handle);
+                    }
+                }
             }
-          }
-        }
-      }
 
-      impl CallStatus{
-        #[doc(hidden)]
-        pub unsafe fn _lift(val: u8) -> CallStatus{
-          if !cfg!(debug_assertions) {
-            return ::core::mem::transmute(val);
-          }
+            /// The receiving side of an event
 
-          match val {
-            0 => CallStatus::Started,
-            1 => CallStatus::NotStarted,
-
-            _ => panic!("invalid enum discriminant"),
-          }
-        }
-      }
-
-      /// Return value of an event callback
-      #[repr(u8)]
-      #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
-      pub enum CallbackState {
-        /// Call the function again
-        Pending,
-        /// The function has completed, all results are written, data is freed,
-        /// calling the function again is not permitted as data became invalid!
-        Ready,
-      }
-      impl ::core::fmt::Debug for CallbackState {
-        fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-          match self {
-            CallbackState::Pending => {
-              f.debug_tuple("CallbackState::Pending").finish()
+            #[derive(Debug)]
+            #[repr(transparent)]
+            pub struct EventSubscription {
+                handle: _rt::Resource<EventSubscription>,
             }
-            CallbackState::Ready => {
-              f.debug_tuple("CallbackState::Ready").finish()
+
+            impl EventSubscription {
+                #[doc(hidden)]
+                pub unsafe fn from_handle(handle: usize) -> Self {
+                    Self {
+                        handle: _rt::Resource::from_handle(handle),
+                    }
+                }
+
+                #[doc(hidden)]
+                pub fn take_handle(&self) -> usize {
+                    _rt::Resource::take_handle(&self.handle)
+                }
+
+                #[doc(hidden)]
+                pub fn handle(&self) -> usize {
+                    _rt::Resource::handle(&self.handle)
+                }
             }
-          }
-        }
-      }
 
-      impl CallbackState{
-        #[doc(hidden)]
-        pub unsafe fn _lift(val: u8) -> CallbackState{
-          if !cfg!(debug_assertions) {
-            return ::core::mem::transmute(val);
-          }
+            unsafe impl _rt::WasmResource for EventSubscription {
+                #[inline]
+                unsafe fn drop(_handle: usize) {
+                    {
+                        #[link(wasm_import_module = "symmetric:runtime/symmetric-executor@0.1.0")]
+                        extern "C" {
+                            #[cfg_attr(
+                                target_arch = "wasm32",
+                                link_name = "[resource-drop]event-subscription"
+                            )]
+                            fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5Bresource_dropX5Devent_subscription(
+                                _: usize,
+                            );
+                        }
 
-          match val {
-            0 => CallbackState::Pending,
-            1 => CallbackState::Ready,
-
-            _ => panic!("invalid enum discriminant"),
-          }
-        }
-      }
-
-      impl EventSubscription {
-        #[allow(unused_unsafe, clippy::all)]
-        /// Whether the event is active (used by poll implementation)
-        pub fn ready(&self,) -> bool{
-          unsafe {
-
-            #[link(wasm_import_module = "symmetric:runtime/symmetric-executor@0.1.0")]
-            extern "C" {
-              #[cfg_attr(target_arch = "wasm32", link_name = "[method]event-subscription.ready")]
-              fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5BmethodX5Devent_subscriptionX2Eready(_: *mut u8, ) -> i32;
+                        symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5Bresource_dropX5Devent_subscription(_handle);
+                    }
+                }
             }
-            let ret = symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5BmethodX5Devent_subscriptionX2Eready((self).handle() as *mut u8);
-            _rt::bool_lift(ret as u8)
-          }
-        }
-      }
-      impl EventSubscription {
-        #[allow(unused_unsafe, clippy::all)]
-        /// Create a timeout event
-        pub fn from_timeout(nanoseconds: u64,) -> EventSubscription{
-          unsafe {
 
-            #[link(wasm_import_module = "symmetric:runtime/symmetric-executor@0.1.0")]
-            extern "C" {
-              #[cfg_attr(target_arch = "wasm32", link_name = "[static]event-subscription.from-timeout")]
-              fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5BstaticX5Devent_subscriptionX2Efrom_timeout(_: i64, ) -> *mut u8;
+            /// A user controlled event
+
+            #[derive(Debug)]
+            #[repr(transparent)]
+            pub struct EventGenerator {
+                handle: _rt::Resource<EventGenerator>,
             }
-            let ret = symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5BstaticX5Devent_subscriptionX2Efrom_timeout(_rt::as_i64(&nanoseconds));
-            EventSubscription::from_handle(ret as usize)
-          }
-        }
-      }
-      impl EventSubscription {
-        #[allow(unused_unsafe, clippy::all)]
-        /// Duplicate the subscription (e.g. for repeated callback registering, same cost as subscribe)
-        pub fn dup(&self,) -> EventSubscription{
-          unsafe {
 
-            #[link(wasm_import_module = "symmetric:runtime/symmetric-executor@0.1.0")]
-            extern "C" {
-              #[cfg_attr(target_arch = "wasm32", link_name = "[method]event-subscription.dup")]
-              fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5BmethodX5Devent_subscriptionX2Edup(_: *mut u8, ) -> *mut u8;
+            impl EventGenerator {
+                #[doc(hidden)]
+                pub unsafe fn from_handle(handle: usize) -> Self {
+                    Self {
+                        handle: _rt::Resource::from_handle(handle),
+                    }
+                }
+
+                #[doc(hidden)]
+                pub fn take_handle(&self) -> usize {
+                    _rt::Resource::take_handle(&self.handle)
+                }
+
+                #[doc(hidden)]
+                pub fn handle(&self) -> usize {
+                    _rt::Resource::handle(&self.handle)
+                }
             }
-            let ret = symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5BmethodX5Devent_subscriptionX2Edup((self).handle() as *mut u8);
-            EventSubscription::from_handle(ret as usize)
-          }
-        }
-      }
-      impl EventSubscription {
-        #[allow(unused_unsafe, clippy::all)]
-        /// Reset subscription to be inactive, only next trigger will ready it
-        pub fn reset(&self,) -> (){
-          unsafe {
 
-            #[link(wasm_import_module = "symmetric:runtime/symmetric-executor@0.1.0")]
-            extern "C" {
-              #[cfg_attr(target_arch = "wasm32", link_name = "[method]event-subscription.reset")]
-              fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5BmethodX5Devent_subscriptionX2Ereset(_: *mut u8, );
+            unsafe impl _rt::WasmResource for EventGenerator {
+                #[inline]
+                unsafe fn drop(_handle: usize) {
+                    {
+                        #[link(wasm_import_module = "symmetric:runtime/symmetric-executor@0.1.0")]
+                        extern "C" {
+                            #[cfg_attr(
+                                target_arch = "wasm32",
+                                link_name = "[resource-drop]event-generator"
+                            )]
+                            fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5Bresource_dropX5Devent_generator(
+                                _: usize,
+                            );
+                        }
+
+                        symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5Bresource_dropX5Devent_generator(_handle);
+                    }
+                }
             }
-            symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5BmethodX5Devent_subscriptionX2Ereset((self).handle() as *mut u8);
-          }
-        }
-      }
-      impl EventGenerator {
-        #[allow(unused_unsafe, clippy::all)]
-        pub fn new() -> Self{
-          unsafe {
 
-            #[link(wasm_import_module = "symmetric:runtime/symmetric-executor@0.1.0")]
-            extern "C" {
-              #[cfg_attr(target_arch = "wasm32", link_name = "[constructor]event-generator")]
-              fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5BconstructorX5Devent_generator() -> *mut u8;
+            /// Return value of an async call, lowest bit encoding
+            #[repr(u8)]
+            #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
+            pub enum CallStatus {
+                /// For symmetric this means that processing has started, parameters should still remain valid until null,
+                /// params-read = non-null, results-written,done = null
+                Started,
+                /// For symmetric: Retry the call (temporarily out of memory)
+                NotStarted,
             }
-            let ret = symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5BconstructorX5Devent_generator();
-            EventGenerator::from_handle(ret as usize)
-          }
-        }
-      }
-      impl EventGenerator {
-        #[allow(unused_unsafe, clippy::all)]
-        /// Get the receiving side (to pass to other parts of the program)
-        pub fn subscribe(&self,) -> EventSubscription{
-          unsafe {
-
-            #[link(wasm_import_module = "symmetric:runtime/symmetric-executor@0.1.0")]
-            extern "C" {
-              #[cfg_attr(target_arch = "wasm32", link_name = "[method]event-generator.subscribe")]
-              fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5BmethodX5Devent_generatorX2Esubscribe(_: *mut u8, ) -> *mut u8;
+            impl ::core::fmt::Debug for CallStatus {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    match self {
+                        CallStatus::Started => f.debug_tuple("CallStatus::Started").finish(),
+                        CallStatus::NotStarted => f.debug_tuple("CallStatus::NotStarted").finish(),
+                    }
+                }
             }
-            let ret = symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5BmethodX5Devent_generatorX2Esubscribe((self).handle() as *mut u8);
-            EventSubscription::from_handle(ret as usize)
-          }
-        }
-      }
-      impl EventGenerator {
-        #[allow(unused_unsafe, clippy::all)]
-        /// Trigger all subscribers
-        pub fn activate(&self,) -> (){
-          unsafe {
 
-            #[link(wasm_import_module = "symmetric:runtime/symmetric-executor@0.1.0")]
-            extern "C" {
-              #[cfg_attr(target_arch = "wasm32", link_name = "[method]event-generator.activate")]
-              fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5BmethodX5Devent_generatorX2Eactivate(_: *mut u8, );
+            impl CallStatus {
+                #[doc(hidden)]
+                pub unsafe fn _lift(val: u8) -> CallStatus {
+                    if !cfg!(debug_assertions) {
+                        return ::core::mem::transmute(val);
+                    }
+
+                    match val {
+                        0 => CallStatus::Started,
+                        1 => CallStatus::NotStarted,
+
+                        _ => panic!("invalid enum discriminant"),
+                    }
+                }
             }
-            symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5BmethodX5Devent_generatorX2Eactivate((self).handle() as *mut u8);
-          }
-        }
-      }
-      #[allow(unused_unsafe, clippy::all)]
-      /// Wait until all registered events have completed
-      pub fn run() -> (){
-        unsafe {
 
-          #[link(wasm_import_module = "symmetric:runtime/symmetric-executor@0.1.0")]
-          extern "C" {
-            #[cfg_attr(target_arch = "wasm32", link_name = "run")]
-            fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00run();
-          }
-          symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00run();
-        }
-      }
-      #[allow(unused_unsafe, clippy::all)]
-      /// Register a callback for an event
-      pub fn register(trigger: EventSubscription,callback: CallbackFunction,data: CallbackData,) -> (){
-        unsafe {
+            /// Return value of an event callback
+            #[repr(u8)]
+            #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
+            pub enum CallbackState {
+                /// Call the function again
+                Pending,
+                /// The function has completed, all results are written, data is freed,
+                /// calling the function again is not permitted as data became invalid!
+                Ready,
+            }
+            impl ::core::fmt::Debug for CallbackState {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    match self {
+                        CallbackState::Pending => f.debug_tuple("CallbackState::Pending").finish(),
+                        CallbackState::Ready => f.debug_tuple("CallbackState::Ready").finish(),
+                    }
+                }
+            }
 
-          #[link(wasm_import_module = "symmetric:runtime/symmetric-executor@0.1.0")]
-          extern "C" {
-            #[cfg_attr(target_arch = "wasm32", link_name = "register")]
-            fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00register(_: *mut u8, _: *mut u8, _: *mut u8, );
-          }
-          symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00register((&trigger).take_handle() as *mut u8, (&callback).take_handle() as *mut u8, (&data).take_handle() as *mut u8);
-        }
-      }
+            impl CallbackState {
+                #[doc(hidden)]
+                pub unsafe fn _lift(val: u8) -> CallbackState {
+                    if !cfg!(debug_assertions) {
+                        return ::core::mem::transmute(val);
+                    }
 
+                    match val {
+                        0 => CallbackState::Pending,
+                        1 => CallbackState::Ready,
+
+                        _ => panic!("invalid enum discriminant"),
+                    }
+                }
+            }
+
+            impl EventSubscription {
+                #[allow(unused_unsafe, clippy::all)]
+                /// Whether the event is active (used by poll implementation)
+                pub fn ready(&self) -> bool {
+                    unsafe {
+                        #[link(wasm_import_module = "symmetric:runtime/symmetric-executor@0.1.0")]
+                        extern "C" {
+                            #[cfg_attr(
+                                target_arch = "wasm32",
+                                link_name = "[method]event-subscription.ready"
+                            )]
+                            fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5BmethodX5Devent_subscriptionX2Eready(
+                                _: *mut u8,
+                            ) -> i32;
+                        }
+                        let ret = symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5BmethodX5Devent_subscriptionX2Eready((self).handle() as *mut u8);
+                        _rt::bool_lift(ret as u8)
+                    }
+                }
+            }
+            impl EventSubscription {
+                #[allow(unused_unsafe, clippy::all)]
+                /// Create a timeout event
+                pub fn from_timeout(nanoseconds: u64) -> EventSubscription {
+                    unsafe {
+                        #[link(wasm_import_module = "symmetric:runtime/symmetric-executor@0.1.0")]
+                        extern "C" {
+                            #[cfg_attr(
+                                target_arch = "wasm32",
+                                link_name = "[static]event-subscription.from-timeout"
+                            )]
+                            fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5BstaticX5Devent_subscriptionX2Efrom_timeout(
+                                _: i64,
+                            ) -> *mut u8;
+                        }
+                        let ret = symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5BstaticX5Devent_subscriptionX2Efrom_timeout(_rt::as_i64(&nanoseconds));
+                        EventSubscription::from_handle(ret as usize)
+                    }
+                }
+            }
+            impl EventSubscription {
+                #[allow(unused_unsafe, clippy::all)]
+                /// Duplicate the subscription (e.g. for repeated callback registering, same cost as subscribe)
+                pub fn dup(&self) -> EventSubscription {
+                    unsafe {
+                        #[link(wasm_import_module = "symmetric:runtime/symmetric-executor@0.1.0")]
+                        extern "C" {
+                            #[cfg_attr(
+                                target_arch = "wasm32",
+                                link_name = "[method]event-subscription.dup"
+                            )]
+                            fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5BmethodX5Devent_subscriptionX2Edup(
+                                _: *mut u8,
+                            ) -> *mut u8;
+                        }
+                        let ret = symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5BmethodX5Devent_subscriptionX2Edup((self).handle() as *mut u8);
+                        EventSubscription::from_handle(ret as usize)
+                    }
+                }
+            }
+            impl EventSubscription {
+                #[allow(unused_unsafe, clippy::all)]
+                /// Reset subscription to be inactive, only next trigger will ready it
+                pub fn reset(&self) -> () {
+                    unsafe {
+                        #[link(wasm_import_module = "symmetric:runtime/symmetric-executor@0.1.0")]
+                        extern "C" {
+                            #[cfg_attr(
+                                target_arch = "wasm32",
+                                link_name = "[method]event-subscription.reset"
+                            )]
+                            fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5BmethodX5Devent_subscriptionX2Ereset(
+                                _: *mut u8,
+                            );
+                        }
+                        symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5BmethodX5Devent_subscriptionX2Ereset((self).handle() as *mut u8);
+                    }
+                }
+            }
+            impl EventGenerator {
+                #[allow(unused_unsafe, clippy::all)]
+                pub fn new() -> Self {
+                    unsafe {
+                        #[link(wasm_import_module = "symmetric:runtime/symmetric-executor@0.1.0")]
+                        extern "C" {
+                            #[cfg_attr(
+                                target_arch = "wasm32",
+                                link_name = "[constructor]event-generator"
+                            )]
+                            fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5BconstructorX5Devent_generator(
+                            ) -> *mut u8;
+                        }
+                        let ret = symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5BconstructorX5Devent_generator();
+                        EventGenerator::from_handle(ret as usize)
+                    }
+                }
+            }
+            impl EventGenerator {
+                #[allow(unused_unsafe, clippy::all)]
+                /// Get the receiving side (to pass to other parts of the program)
+                pub fn subscribe(&self) -> EventSubscription {
+                    unsafe {
+                        #[link(wasm_import_module = "symmetric:runtime/symmetric-executor@0.1.0")]
+                        extern "C" {
+                            #[cfg_attr(
+                                target_arch = "wasm32",
+                                link_name = "[method]event-generator.subscribe"
+                            )]
+                            fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5BmethodX5Devent_generatorX2Esubscribe(
+                                _: *mut u8,
+                            ) -> *mut u8;
+                        }
+                        let ret = symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5BmethodX5Devent_generatorX2Esubscribe((self).handle() as *mut u8);
+                        EventSubscription::from_handle(ret as usize)
+                    }
+                }
+            }
+            impl EventGenerator {
+                #[allow(unused_unsafe, clippy::all)]
+                /// Trigger all subscribers
+                pub fn activate(&self) -> () {
+                    unsafe {
+                        #[link(wasm_import_module = "symmetric:runtime/symmetric-executor@0.1.0")]
+                        extern "C" {
+                            #[cfg_attr(
+                                target_arch = "wasm32",
+                                link_name = "[method]event-generator.activate"
+                            )]
+                            fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5BmethodX5Devent_generatorX2Eactivate(
+                                _: *mut u8,
+                            );
+                        }
+                        symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5BmethodX5Devent_generatorX2Eactivate((self).handle() as *mut u8);
+                    }
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Wait until all registered events have completed
+            pub fn run() -> () {
+                unsafe {
+                    #[link(wasm_import_module = "symmetric:runtime/symmetric-executor@0.1.0")]
+                    extern "C" {
+                        #[cfg_attr(target_arch = "wasm32", link_name = "run")]
+                        fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00run();
+                    }
+                    symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00run();
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Register a callback for an event
+            pub fn register(
+                trigger: EventSubscription,
+                callback: CallbackFunction,
+                data: CallbackData,
+            ) -> () {
+                unsafe {
+                    #[link(wasm_import_module = "symmetric:runtime/symmetric-executor@0.1.0")]
+                    extern "C" {
+                        #[cfg_attr(target_arch = "wasm32", link_name = "register")]
+                        fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00register(
+                            _: *mut u8,
+                            _: *mut u8,
+                            _: *mut u8,
+                        );
+                    }
+                    symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00register(
+                        (&trigger).take_handle() as *mut u8,
+                        (&callback).take_handle() as *mut u8,
+                        (&data).take_handle() as *mut u8,
+                    );
+                }
+            }
+        }
     }
-
-  }
 }
 #[allow(dead_code, clippy::all)]
 pub mod exports {
-  pub mod symmetric {
-    pub mod runtime {
-      /// language neutral stream implementation
-      #[allow(dead_code, unused_imports, clippy::all)]
-      pub mod symmetric_stream {
-        #[used]
-        #[doc(hidden)]
-        static __FORCE_SECTION_REF: fn() =
-        super::super::super::super::__link_custom_section_describing_imports;
-        
-        use super::super::super::super::_rt;
-        pub type EventGenerator = super::super::super::super::symmetric::runtime::symmetric_executor::EventGenerator;
-
-        #[derive(Debug)]
-        #[repr(transparent)]
-        pub struct Address{
-          handle: _rt::Resource<Address>,
-        }
-
-        type _AddressRep<T> = Option<T>;
-
-        impl Address{
-          /// Creates a new resource from the specified representation.
-          ///
-          /// This function will create a new resource handle by moving `val` onto
-          /// the heap and then passing that heap pointer to the component model to
-          /// create a handle. The owned handle is then returned as `Address`.
-          pub fn new<T: GuestAddress>(val: T) -> Self {
-            Self::type_guard::<T>();
-            let val: _AddressRep<T> = Some(val);
-            let ptr: *mut _AddressRep<T> =
-            _rt::Box::into_raw(_rt::Box::new(val));
-            unsafe {
-              Self::from_handle(T::_resource_new(ptr.cast()))
-            }
-          }
-
-          /// Gets access to the underlying `T` which represents this resource.
-          pub fn get<T: GuestAddress>(&self) -> &T {
-            let ptr = unsafe { &*self.as_ptr::<T>() };
-            ptr.as_ref().unwrap()
-          }
-
-          /// Gets mutable access to the underlying `T` which represents this
-          /// resource.
-          pub fn get_mut<T: GuestAddress>(&mut self) -> &mut T {
-            let ptr = unsafe { &mut *self.as_ptr::<T>() };
-            ptr.as_mut().unwrap()
-          }
-
-          /// Consumes this resource and returns the underlying `T`.
-          pub fn into_inner<T: GuestAddress>(self) -> T {
-            let ptr = unsafe { &mut *self.as_ptr::<T>() };
-            ptr.take().unwrap()
-          }
-
-          #[doc(hidden)]
-          pub unsafe fn from_handle(handle: usize) -> Self {
-            Self {
-              handle: _rt::Resource::from_handle(handle),
-            }
-          }
-
-          #[doc(hidden)]
-          pub fn take_handle(&self) -> usize{
-            _rt::Resource::take_handle(&self.handle)
-          }
-
-          #[doc(hidden)]
-          pub fn handle(&self) -> usize{
-            _rt::Resource::handle(&self.handle)
-          }
-
-          // It's theoretically possible to implement the `GuestAddress` trait twice
-          // so guard against using it with two different types here.
-          #[doc(hidden)]
-          fn type_guard<T: 'static>() {
-            use core::any::TypeId;
-            static mut LAST_TYPE: Option<TypeId> = None;
-            unsafe {
-              assert!(!cfg!(target_feature = "atomics"));
-              let id = TypeId::of::<T>();
-              match LAST_TYPE {
-                Some(ty) => assert!(ty == id, "cannot use two types with this resource type"),
-                None => LAST_TYPE = Some(id),
-              }
-            }
-          }
-
-          #[doc(hidden)]
-          pub unsafe fn dtor<T: 'static>(handle: *mut u8) {
-            Self::type_guard::<T>();
-            let _ = _rt::Box::from_raw(handle as *mut _AddressRep<T>);
-          }
-
-          fn as_ptr<T: GuestAddress>(&self) -> *mut _AddressRep<T> {
-            Address::type_guard::<T>();
-            T::_resource_rep(self.handle()).cast()
-          }
-        }
-
-        /// A borrowed version of [`Address`] which represents a borrowed value
-        /// with the lifetime `'a`.
-        #[derive(Debug)]
-        #[repr(transparent)]
-        pub struct AddressBorrow<'a> {
-          rep: *mut u8,
-          _marker: core::marker::PhantomData<&'a Address>,
-        }
-
-        impl<'a> AddressBorrow<'a>{
-          #[doc(hidden)]
-          pub unsafe fn lift(rep: usize) -> Self {
-            Self {
-              rep: rep as *mut u8,
-              _marker: core::marker::PhantomData,
-            }
-          }
-
-          /// Gets access to the underlying `T` in this resource.
-          pub fn get<T: GuestAddress>(&self) -> &T {
-            let ptr = unsafe { &mut *self.as_ptr::<T>() };
-            ptr.as_ref().unwrap()
-          }
-
-          // NB: mutable access is not allowed due to the component model allowing
-          // multiple borrows of the same resource.
-
-          fn as_ptr<T: 'static>(&self) -> *mut _AddressRep<T> {
-            Address::type_guard::<T>();
-            self.rep.cast()
-          }
-        }
-
-
-        unsafe impl _rt::WasmResource for Address{
-          #[inline]
-          unsafe fn drop(_handle: usize) {
-            {
-              #[link(wasm_import_module = "symmetric:runtime/symmetric-stream@0.1.0")]
-              extern "C" {
-                #[cfg_attr(target_arch = "wasm32", link_name = "[resource-drop]address")]
-                fn symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5Bresource_dropX5Daddress(_: usize);
-              }
-
-              symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5Bresource_dropX5Daddress(_handle);
-            }
-          }
-        }
-
-        /// special zero allocation/copy data type (caller provided buffer)
-
-        #[derive(Debug)]
-        #[repr(transparent)]
-        pub struct Buffer{
-          handle: _rt::Resource<Buffer>,
-        }
-
-        type _BufferRep<T> = Option<T>;
-
-        impl Buffer{
-          /// Creates a new resource from the specified representation.
-          ///
-          /// This function will create a new resource handle by moving `val` onto
-          /// the heap and then passing that heap pointer to the component model to
-          /// create a handle. The owned handle is then returned as `Buffer`.
-          pub fn new<T: GuestBuffer>(val: T) -> Self {
-            Self::type_guard::<T>();
-            let val: _BufferRep<T> = Some(val);
-            let ptr: *mut _BufferRep<T> =
-            _rt::Box::into_raw(_rt::Box::new(val));
-            unsafe {
-              Self::from_handle(T::_resource_new(ptr.cast()))
-            }
-          }
-
-          /// Gets access to the underlying `T` which represents this resource.
-          pub fn get<T: GuestBuffer>(&self) -> &T {
-            let ptr = unsafe { &*self.as_ptr::<T>() };
-            ptr.as_ref().unwrap()
-          }
-
-          /// Gets mutable access to the underlying `T` which represents this
-          /// resource.
-          pub fn get_mut<T: GuestBuffer>(&mut self) -> &mut T {
-            let ptr = unsafe { &mut *self.as_ptr::<T>() };
-            ptr.as_mut().unwrap()
-          }
-
-          /// Consumes this resource and returns the underlying `T`.
-          pub fn into_inner<T: GuestBuffer>(self) -> T {
-            let ptr = unsafe { &mut *self.as_ptr::<T>() };
-            ptr.take().unwrap()
-          }
-
-          #[doc(hidden)]
-          pub unsafe fn from_handle(handle: usize) -> Self {
-            Self {
-              handle: _rt::Resource::from_handle(handle),
-            }
-          }
-
-          #[doc(hidden)]
-          pub fn take_handle(&self) -> usize{
-            _rt::Resource::take_handle(&self.handle)
-          }
-
-          #[doc(hidden)]
-          pub fn handle(&self) -> usize{
-            _rt::Resource::handle(&self.handle)
-          }
-
-          // It's theoretically possible to implement the `GuestBuffer` trait twice
-          // so guard against using it with two different types here.
-          #[doc(hidden)]
-          fn type_guard<T: 'static>() {
-            use core::any::TypeId;
-            static mut LAST_TYPE: Option<TypeId> = None;
-            unsafe {
-              assert!(!cfg!(target_feature = "atomics"));
-              let id = TypeId::of::<T>();
-              match LAST_TYPE {
-                Some(ty) => assert!(ty == id, "cannot use two types with this resource type"),
-                None => LAST_TYPE = Some(id),
-              }
-            }
-          }
-
-          #[doc(hidden)]
-          pub unsafe fn dtor<T: 'static>(handle: *mut u8) {
-            Self::type_guard::<T>();
-            let _ = _rt::Box::from_raw(handle as *mut _BufferRep<T>);
-          }
-
-          fn as_ptr<T: GuestBuffer>(&self) -> *mut _BufferRep<T> {
-            Buffer::type_guard::<T>();
-            T::_resource_rep(self.handle()).cast()
-          }
-        }
-
-        /// A borrowed version of [`Buffer`] which represents a borrowed value
-        /// with the lifetime `'a`.
-        #[derive(Debug)]
-        #[repr(transparent)]
-        pub struct BufferBorrow<'a> {
-          rep: *mut u8,
-          _marker: core::marker::PhantomData<&'a Buffer>,
-        }
-
-        impl<'a> BufferBorrow<'a>{
-          #[doc(hidden)]
-          pub unsafe fn lift(rep: usize) -> Self {
-            Self {
-              rep: rep as *mut u8,
-              _marker: core::marker::PhantomData,
-            }
-          }
-
-          /// Gets access to the underlying `T` in this resource.
-          pub fn get<T: GuestBuffer>(&self) -> &T {
-            let ptr = unsafe { &mut *self.as_ptr::<T>() };
-            ptr.as_ref().unwrap()
-          }
-
-          // NB: mutable access is not allowed due to the component model allowing
-          // multiple borrows of the same resource.
-
-          fn as_ptr<T: 'static>(&self) -> *mut _BufferRep<T> {
-            Buffer::type_guard::<T>();
-            self.rep.cast()
-          }
-        }
-
-
-        unsafe impl _rt::WasmResource for Buffer{
-          #[inline]
-          unsafe fn drop(_handle: usize) {
-            {
-              #[link(wasm_import_module = "symmetric:runtime/symmetric-stream@0.1.0")]
-              extern "C" {
-                #[cfg_attr(target_arch = "wasm32", link_name = "[resource-drop]buffer")]
-                fn symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5Bresource_dropX5Dbuffer(_: usize);
-              }
-
-              symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5Bresource_dropX5Dbuffer(_handle);
-            }
-          }
-        }
-
-
-        #[derive(Debug)]
-        #[repr(transparent)]
-        pub struct StreamObj{
-          handle: _rt::Resource<StreamObj>,
-        }
-
-        type _StreamObjRep<T> = Option<T>;
-
-        impl StreamObj{
-          /// Creates a new resource from the specified representation.
-          ///
-          /// This function will create a new resource handle by moving `val` onto
-          /// the heap and then passing that heap pointer to the component model to
-          /// create a handle. The owned handle is then returned as `StreamObj`.
-          pub fn new<T: GuestStreamObj>(val: T) -> Self {
-            Self::type_guard::<T>();
-            let val: _StreamObjRep<T> = Some(val);
-            let ptr: *mut _StreamObjRep<T> =
-            _rt::Box::into_raw(_rt::Box::new(val));
-            unsafe {
-              Self::from_handle(T::_resource_new(ptr.cast()))
-            }
-          }
-
-          /// Gets access to the underlying `T` which represents this resource.
-          pub fn get<T: GuestStreamObj>(&self) -> &T {
-            let ptr = unsafe { &*self.as_ptr::<T>() };
-            ptr.as_ref().unwrap()
-          }
-
-          /// Gets mutable access to the underlying `T` which represents this
-          /// resource.
-          pub fn get_mut<T: GuestStreamObj>(&mut self) -> &mut T {
-            let ptr = unsafe { &mut *self.as_ptr::<T>() };
-            ptr.as_mut().unwrap()
-          }
-
-          /// Consumes this resource and returns the underlying `T`.
-          pub fn into_inner<T: GuestStreamObj>(self) -> T {
-            let ptr = unsafe { &mut *self.as_ptr::<T>() };
-            ptr.take().unwrap()
-          }
-
-          #[doc(hidden)]
-          pub unsafe fn from_handle(handle: usize) -> Self {
-            Self {
-              handle: _rt::Resource::from_handle(handle),
-            }
-          }
-
-          #[doc(hidden)]
-          pub fn take_handle(&self) -> usize{
-            _rt::Resource::take_handle(&self.handle)
-          }
-
-          #[doc(hidden)]
-          pub fn handle(&self) -> usize{
-            _rt::Resource::handle(&self.handle)
-          }
-
-          // It's theoretically possible to implement the `GuestStreamObj` trait twice
-          // so guard against using it with two different types here.
-          #[doc(hidden)]
-          fn type_guard<T: 'static>() {
-            use core::any::TypeId;
-            static mut LAST_TYPE: Option<TypeId> = None;
-            unsafe {
-              assert!(!cfg!(target_feature = "atomics"));
-              let id = TypeId::of::<T>();
-              match LAST_TYPE {
-                Some(ty) => assert!(ty == id, "cannot use two types with this resource type"),
-                None => LAST_TYPE = Some(id),
-              }
-            }
-          }
-
-          #[doc(hidden)]
-          pub unsafe fn dtor<T: 'static>(handle: *mut u8) {
-            Self::type_guard::<T>();
-            let _ = _rt::Box::from_raw(handle as *mut _StreamObjRep<T>);
-          }
-
-          fn as_ptr<T: GuestStreamObj>(&self) -> *mut _StreamObjRep<T> {
-            StreamObj::type_guard::<T>();
-            T::_resource_rep(self.handle()).cast()
-          }
-        }
-
-        /// A borrowed version of [`StreamObj`] which represents a borrowed value
-        /// with the lifetime `'a`.
-        #[derive(Debug)]
-        #[repr(transparent)]
-        pub struct StreamObjBorrow<'a> {
-          rep: *mut u8,
-          _marker: core::marker::PhantomData<&'a StreamObj>,
-        }
-
-        impl<'a> StreamObjBorrow<'a>{
-          #[doc(hidden)]
-          pub unsafe fn lift(rep: usize) -> Self {
-            Self {
-              rep: rep as *mut u8,
-              _marker: core::marker::PhantomData,
-            }
-          }
-
-          /// Gets access to the underlying `T` in this resource.
-          pub fn get<T: GuestStreamObj>(&self) -> &T {
-            let ptr = unsafe { &mut *self.as_ptr::<T>() };
-            ptr.as_ref().unwrap()
-          }
-
-          // NB: mutable access is not allowed due to the component model allowing
-          // multiple borrows of the same resource.
-
-          fn as_ptr<T: 'static>(&self) -> *mut _StreamObjRep<T> {
-            StreamObj::type_guard::<T>();
-            self.rep.cast()
-          }
-        }
-
-
-        unsafe impl _rt::WasmResource for StreamObj{
-          #[inline]
-          unsafe fn drop(_handle: usize) {
-            {
-              #[link(wasm_import_module = "symmetric:runtime/symmetric-stream@0.1.0")]
-              extern "C" {
-                #[cfg_attr(target_arch = "wasm32", link_name = "[resource-drop]stream-obj")]
-                fn symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5Bresource_dropX5Dstream_obj(_: usize);
-              }
-
-              symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5Bresource_dropX5Dstream_obj(_handle);
-            }
-          }
-        }
-
-        #[doc(hidden)]
-        #[allow(non_snake_case)]
-        pub unsafe fn _export_constructor_buffer_cabi<T: GuestBuffer>(arg0: *mut u8,arg1: i64,) -> *mut u8 {#[cfg(target_arch="wasm32")]
-        _rt::run_ctors_once();let result0 = Buffer::new(T::new(Address::from_handle(arg0 as usize), arg1 as u64));
-        (result0).take_handle() as *mut u8
-      }
-      #[doc(hidden)]
-      #[allow(non_snake_case)]
-      pub unsafe fn _export_method_buffer_get_address_cabi<T: GuestBuffer>(arg0: *mut u8,) -> *mut u8 {#[cfg(target_arch="wasm32")]
-      _rt::run_ctors_once();let result0 = T::get_address(BufferBorrow::lift(arg0 as usize).get());
-      (result0).take_handle() as *mut u8
-    }
-    #[doc(hidden)]
-    #[allow(non_snake_case)]
-    pub unsafe fn _export_method_buffer_get_size_cabi<T: GuestBuffer>(arg0: *mut u8,) -> i64 {#[cfg(target_arch="wasm32")]
-    _rt::run_ctors_once();let result0 = T::get_size(BufferBorrow::lift(arg0 as usize).get());
-    _rt::as_i64(result0)
-  }
-  #[doc(hidden)]
-  #[allow(non_snake_case)]
-  pub unsafe fn _export_method_buffer_set_size_cabi<T: GuestBuffer>(arg0: *mut u8,arg1: i64,) {#[cfg(target_arch="wasm32")]
-  _rt::run_ctors_once();T::set_size(BufferBorrow::lift(arg0 as usize).get(), arg1 as u64);
-}
-#[doc(hidden)]
-#[allow(non_snake_case)]
-pub unsafe fn _export_method_buffer_capacity_cabi<T: GuestBuffer>(arg0: *mut u8,) -> i64 {#[cfg(target_arch="wasm32")]
-_rt::run_ctors_once();let result0 = T::capacity(BufferBorrow::lift(arg0 as usize).get());
-_rt::as_i64(result0)
-}
-#[doc(hidden)]
-#[allow(non_snake_case)]
-pub unsafe fn _export_constructor_stream_obj_cabi<T: GuestStreamObj>() -> *mut u8 {#[cfg(target_arch="wasm32")]
-_rt::run_ctors_once();let result0 = StreamObj::new(T::new());
-(result0).take_handle() as *mut u8
-}
-#[doc(hidden)]
-#[allow(non_snake_case)]
-pub unsafe fn _export_method_stream_obj_is_write_closed_cabi<T: GuestStreamObj>(arg0: *mut u8,) -> i32 {#[cfg(target_arch="wasm32")]
-_rt::run_ctors_once();let result0 = T::is_write_closed(StreamObjBorrow::lift(arg0 as usize).get());
-match result0 { true => 1, false => 0 }
-}
-#[doc(hidden)]
-#[allow(non_snake_case)]
-pub unsafe fn _export_method_stream_obj_start_reading_cabi<T: GuestStreamObj>(arg0: *mut u8,arg1: *mut u8,) {#[cfg(target_arch="wasm32")]
-_rt::run_ctors_once();T::start_reading(StreamObjBorrow::lift(arg0 as usize).get(), Buffer::from_handle(arg1 as usize));
-}
-#[doc(hidden)]
-#[allow(non_snake_case)]
-pub unsafe fn _export_method_stream_obj_read_ready_event_cabi<T: GuestStreamObj>(arg0: *mut u8,) -> *mut u8 {#[cfg(target_arch="wasm32")]
-_rt::run_ctors_once();let result0 = T::read_ready_event(StreamObjBorrow::lift(arg0 as usize).get());
-(result0).take_handle() as *mut u8
-}
-#[doc(hidden)]
-#[allow(non_snake_case)]
-pub unsafe fn _export_method_stream_obj_read_result_cabi<T: GuestStreamObj>(arg0: *mut u8,) -> *mut u8 {#[cfg(target_arch="wasm32")]
-_rt::run_ctors_once();let result0 = T::read_result(StreamObjBorrow::lift(arg0 as usize).get());
-(result0).take_handle() as *mut u8
-}
-#[doc(hidden)]
-#[allow(non_snake_case)]
-pub unsafe fn _export_static_stream_obj_close_read_cabi<T: GuestStreamObj>(arg0: *mut u8,) {#[cfg(target_arch="wasm32")]
-_rt::run_ctors_once();T::close_read(StreamObj::from_handle(arg0 as usize));
-}
-#[doc(hidden)]
-#[allow(non_snake_case)]
-pub unsafe fn _export_method_stream_obj_is_ready_to_write_cabi<T: GuestStreamObj>(arg0: *mut u8,) -> i32 {#[cfg(target_arch="wasm32")]
-_rt::run_ctors_once();let result0 = T::is_ready_to_write(StreamObjBorrow::lift(arg0 as usize).get());
-match result0 { true => 1, false => 0 }
-}
-#[doc(hidden)]
-#[allow(non_snake_case)]
-pub unsafe fn _export_method_stream_obj_write_ready_event_cabi<T: GuestStreamObj>(arg0: *mut u8,) -> *mut u8 {#[cfg(target_arch="wasm32")]
-_rt::run_ctors_once();let result0 = T::write_ready_event(StreamObjBorrow::lift(arg0 as usize).get());
-(result0).take_handle() as *mut u8
-}
-#[doc(hidden)]
-#[allow(non_snake_case)]
-pub unsafe fn _export_method_stream_obj_start_writing_cabi<T: GuestStreamObj>(arg0: *mut u8,) -> *mut u8 {#[cfg(target_arch="wasm32")]
-_rt::run_ctors_once();let result0 = T::start_writing(StreamObjBorrow::lift(arg0 as usize).get());
-(result0).take_handle() as *mut u8
-}
-#[doc(hidden)]
-#[allow(non_snake_case)]
-pub unsafe fn _export_method_stream_obj_finish_writing_cabi<T: GuestStreamObj>(arg0: *mut u8,arg1: *mut u8,) {#[cfg(target_arch="wasm32")]
-_rt::run_ctors_once();T::finish_writing(StreamObjBorrow::lift(arg0 as usize).get(), Buffer::from_handle(arg1 as usize));
-}
-#[doc(hidden)]
-#[allow(non_snake_case)]
-pub unsafe fn _export_static_stream_obj_close_write_cabi<T: GuestStreamObj>(arg0: *mut u8,) {#[cfg(target_arch="wasm32")]
-_rt::run_ctors_once();T::close_write(StreamObj::from_handle(arg0 as usize));
-}
-#[doc(hidden)]
-#[allow(non_snake_case)]
-pub unsafe fn _export_end_of_file_cabi<T: Guest>() -> *mut u8 {#[cfg(target_arch="wasm32")]
-_rt::run_ctors_once();let result0 = T::end_of_file();
-(result0).take_handle() as *mut u8
-}
-#[doc(hidden)]
-#[allow(non_snake_case)]
-pub unsafe fn _export_is_end_of_file_cabi<T: Guest>(arg0: *mut u8,) -> i32 {#[cfg(target_arch="wasm32")]
-_rt::run_ctors_once();let result0 = T::is_end_of_file(BufferBorrow::lift(arg0 as usize));
-match result0 { true => 1, false => 0 }
-}
-pub trait Guest {
-  type Address: GuestAddress;
-  type Buffer: GuestBuffer;
-  type StreamObj: GuestStreamObj;
-  /// special EOF buffer value (should be opaque)
-  fn end_of_file() -> Buffer;
-  fn is_end_of_file(obj: BufferBorrow<'_>,) -> bool;
-}
-#[doc(hidden)]
-#[allow(non_snake_case)]
-pub unsafe fn _export_drop_address_cabi<T: GuestAddress>(arg0: usize) {
-  #[cfg(target_arch = "wasm32")]
-  _rt::run_ctors_once();
-  Address::dtor::<T>(arg0 as *mut u8);
-}
-pub trait GuestAddress: 'static {
-
-  #[doc(hidden)]
-  unsafe fn _resource_new(val: *mut u8) -> usize
-  where Self: Sized
-  {
-    val as usize
-  }
-  
-  #[doc(hidden)]
-  fn _resource_rep(handle: usize) -> *mut u8
-  where Self: Sized
-  {
-    handle as *mut u8
-  }
-  
-  
-}
-#[doc(hidden)]
-#[allow(non_snake_case)]
-pub unsafe fn _export_drop_buffer_cabi<T: GuestBuffer>(arg0: usize) {
-  #[cfg(target_arch = "wasm32")]
-  _rt::run_ctors_once();
-  Buffer::dtor::<T>(arg0 as *mut u8);
-}
-pub trait GuestBuffer: 'static {
-
-  #[doc(hidden)]
-  unsafe fn _resource_new(val: *mut u8) -> usize
-  where Self: Sized
-  {
-    val as usize
-  }
-  
-  #[doc(hidden)]
-  fn _resource_rep(handle: usize) -> *mut u8
-  where Self: Sized
-  {
-    handle as *mut u8
-  }
-  
-  
-  fn new(addr: Address,capacity: u64,) -> Self;
-  fn get_address(&self,) -> Address;
-  fn get_size(&self,) -> u64;
-  fn set_size(&self,size: u64,) -> ();
-  fn capacity(&self,) -> u64;
-}
-#[doc(hidden)]
-#[allow(non_snake_case)]
-pub unsafe fn _export_drop_streamObj_cabi<T: GuestStreamObj>(arg0: usize) {
-  #[cfg(target_arch = "wasm32")]
-  _rt::run_ctors_once();
-  StreamObj::dtor::<T>(arg0 as *mut u8);
-}
-pub trait GuestStreamObj: 'static {
-
-  #[doc(hidden)]
-  unsafe fn _resource_new(val: *mut u8) -> usize
-  where Self: Sized
-  {
-    val as usize
-  }
-  
-  #[doc(hidden)]
-  fn _resource_rep(handle: usize) -> *mut u8
-  where Self: Sized
-  {
-    handle as *mut u8
-  }
-  
-  
-  fn new() -> Self;
-  /// reading (in roughly chronological order)
-  fn is_write_closed(&self,) -> bool;
-  fn start_reading(&self,buffer: Buffer,) -> ();
-  fn read_ready_event(&self,) -> EventGenerator;
-  fn read_result(&self,) -> Buffer;
-  fn close_read(stream: StreamObj,) -> ();
-  /// writing
-  fn is_ready_to_write(&self,) -> bool;
-  fn write_ready_event(&self,) -> EventGenerator;
-  fn start_writing(&self,) -> Buffer;
-  /// how to represent EOF? Zero buffer?
-  fn finish_writing(&self,buffer: Buffer,) -> ();
-  fn close_write(stream: StreamObj,) -> ();
-}
-#[doc(hidden)]
-
-macro_rules! __export_symmetric_runtime_symmetric_stream_0_1_0_cabi{
+    pub mod symmetric {
+        pub mod runtime {
+            /// language neutral stream implementation
+            #[allow(dead_code, unused_imports, clippy::all)]
+            pub mod symmetric_stream {
+                #[used]
+                #[doc(hidden)]
+                static __FORCE_SECTION_REF: fn() =
+                    super::super::super::super::__link_custom_section_describing_imports;
+
+                use super::super::super::super::_rt;
+                pub type EventGenerator = super::super::super::super::symmetric::runtime::symmetric_executor::EventGenerator;
+
+                #[derive(Debug)]
+                #[repr(transparent)]
+                pub struct Address {
+                    handle: _rt::Resource<Address>,
+                }
+
+                type _AddressRep<T> = Option<T>;
+
+                impl Address {
+                    /// Creates a new resource from the specified representation.
+                    ///
+                    /// This function will create a new resource handle by moving `val` onto
+                    /// the heap and then passing that heap pointer to the component model to
+                    /// create a handle. The owned handle is then returned as `Address`.
+                    pub fn new<T: GuestAddress>(val: T) -> Self {
+                        Self::type_guard::<T>();
+                        let val: _AddressRep<T> = Some(val);
+                        let ptr: *mut _AddressRep<T> = _rt::Box::into_raw(_rt::Box::new(val));
+                        unsafe { Self::from_handle(T::_resource_new(ptr.cast())) }
+                    }
+
+                    /// Gets access to the underlying `T` which represents this resource.
+                    pub fn get<T: GuestAddress>(&self) -> &T {
+                        let ptr = unsafe { &*self.as_ptr::<T>() };
+                        ptr.as_ref().unwrap()
+                    }
+
+                    /// Gets mutable access to the underlying `T` which represents this
+                    /// resource.
+                    pub fn get_mut<T: GuestAddress>(&mut self) -> &mut T {
+                        let ptr = unsafe { &mut *self.as_ptr::<T>() };
+                        ptr.as_mut().unwrap()
+                    }
+
+                    /// Consumes this resource and returns the underlying `T`.
+                    pub fn into_inner<T: GuestAddress>(self) -> T {
+                        let ptr = unsafe { &mut *self.as_ptr::<T>() };
+                        ptr.take().unwrap()
+                    }
+
+                    #[doc(hidden)]
+                    pub unsafe fn from_handle(handle: usize) -> Self {
+                        Self {
+                            handle: _rt::Resource::from_handle(handle),
+                        }
+                    }
+
+                    #[doc(hidden)]
+                    pub fn take_handle(&self) -> usize {
+                        _rt::Resource::take_handle(&self.handle)
+                    }
+
+                    #[doc(hidden)]
+                    pub fn handle(&self) -> usize {
+                        _rt::Resource::handle(&self.handle)
+                    }
+
+                    // It's theoretically possible to implement the `GuestAddress` trait twice
+                    // so guard against using it with two different types here.
+                    #[doc(hidden)]
+                    fn type_guard<T: 'static>() {
+                        use core::any::TypeId;
+                        static mut LAST_TYPE: Option<TypeId> = None;
+                        unsafe {
+                            assert!(!cfg!(target_feature = "atomics"));
+                            let id = TypeId::of::<T>();
+                            match LAST_TYPE {
+                                Some(ty) => assert!(
+                                    ty == id,
+                                    "cannot use two types with this resource type"
+                                ),
+                                None => LAST_TYPE = Some(id),
+                            }
+                        }
+                    }
+
+                    #[doc(hidden)]
+                    pub unsafe fn dtor<T: 'static>(handle: *mut u8) {
+                        Self::type_guard::<T>();
+                        let _ = _rt::Box::from_raw(handle as *mut _AddressRep<T>);
+                    }
+
+                    fn as_ptr<T: GuestAddress>(&self) -> *mut _AddressRep<T> {
+                        Address::type_guard::<T>();
+                        T::_resource_rep(self.handle()).cast()
+                    }
+                }
+
+                /// A borrowed version of [`Address`] which represents a borrowed value
+                /// with the lifetime `'a`.
+                #[derive(Debug)]
+                #[repr(transparent)]
+                pub struct AddressBorrow<'a> {
+                    rep: *mut u8,
+                    _marker: core::marker::PhantomData<&'a Address>,
+                }
+
+                impl<'a> AddressBorrow<'a> {
+                    #[doc(hidden)]
+                    pub unsafe fn lift(rep: usize) -> Self {
+                        Self {
+                            rep: rep as *mut u8,
+                            _marker: core::marker::PhantomData,
+                        }
+                    }
+
+                    /// Gets access to the underlying `T` in this resource.
+                    pub fn get<T: GuestAddress>(&self) -> &T {
+                        let ptr = unsafe { &mut *self.as_ptr::<T>() };
+                        ptr.as_ref().unwrap()
+                    }
+
+                    // NB: mutable access is not allowed due to the component model allowing
+                    // multiple borrows of the same resource.
+
+                    fn as_ptr<T: 'static>(&self) -> *mut _AddressRep<T> {
+                        Address::type_guard::<T>();
+                        self.rep.cast()
+                    }
+                }
+
+                unsafe impl _rt::WasmResource for Address {
+                    #[inline]
+                    unsafe fn drop(_handle: usize) {
+                        {
+                            #[link(wasm_import_module = "symmetric:runtime/symmetric-stream@0.1.0")]
+                            extern "C" {
+                                #[cfg_attr(
+                                    target_arch = "wasm32",
+                                    link_name = "[resource-drop]address"
+                                )]
+                                fn symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5Bresource_dropX5Daddress(
+                                    _: usize,
+                                );
+                            }
+
+                            symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5Bresource_dropX5Daddress(_handle);
+                        }
+                    }
+                }
+
+                /// special zero allocation/copy data type (caller provided buffer)
+
+                #[derive(Debug)]
+                #[repr(transparent)]
+                pub struct Buffer {
+                    handle: _rt::Resource<Buffer>,
+                }
+
+                type _BufferRep<T> = Option<T>;
+
+                impl Buffer {
+                    /// Creates a new resource from the specified representation.
+                    ///
+                    /// This function will create a new resource handle by moving `val` onto
+                    /// the heap and then passing that heap pointer to the component model to
+                    /// create a handle. The owned handle is then returned as `Buffer`.
+                    pub fn new<T: GuestBuffer>(val: T) -> Self {
+                        Self::type_guard::<T>();
+                        let val: _BufferRep<T> = Some(val);
+                        let ptr: *mut _BufferRep<T> = _rt::Box::into_raw(_rt::Box::new(val));
+                        unsafe { Self::from_handle(T::_resource_new(ptr.cast())) }
+                    }
+
+                    /// Gets access to the underlying `T` which represents this resource.
+                    pub fn get<T: GuestBuffer>(&self) -> &T {
+                        let ptr = unsafe { &*self.as_ptr::<T>() };
+                        ptr.as_ref().unwrap()
+                    }
+
+                    /// Gets mutable access to the underlying `T` which represents this
+                    /// resource.
+                    pub fn get_mut<T: GuestBuffer>(&mut self) -> &mut T {
+                        let ptr = unsafe { &mut *self.as_ptr::<T>() };
+                        ptr.as_mut().unwrap()
+                    }
+
+                    /// Consumes this resource and returns the underlying `T`.
+                    pub fn into_inner<T: GuestBuffer>(self) -> T {
+                        let ptr = unsafe { &mut *self.as_ptr::<T>() };
+                        ptr.take().unwrap()
+                    }
+
+                    #[doc(hidden)]
+                    pub unsafe fn from_handle(handle: usize) -> Self {
+                        Self {
+                            handle: _rt::Resource::from_handle(handle),
+                        }
+                    }
+
+                    #[doc(hidden)]
+                    pub fn take_handle(&self) -> usize {
+                        _rt::Resource::take_handle(&self.handle)
+                    }
+
+                    #[doc(hidden)]
+                    pub fn handle(&self) -> usize {
+                        _rt::Resource::handle(&self.handle)
+                    }
+
+                    // It's theoretically possible to implement the `GuestBuffer` trait twice
+                    // so guard against using it with two different types here.
+                    #[doc(hidden)]
+                    fn type_guard<T: 'static>() {
+                        use core::any::TypeId;
+                        static mut LAST_TYPE: Option<TypeId> = None;
+                        unsafe {
+                            assert!(!cfg!(target_feature = "atomics"));
+                            let id = TypeId::of::<T>();
+                            match LAST_TYPE {
+                                Some(ty) => assert!(
+                                    ty == id,
+                                    "cannot use two types with this resource type"
+                                ),
+                                None => LAST_TYPE = Some(id),
+                            }
+                        }
+                    }
+
+                    #[doc(hidden)]
+                    pub unsafe fn dtor<T: 'static>(handle: *mut u8) {
+                        Self::type_guard::<T>();
+                        let _ = _rt::Box::from_raw(handle as *mut _BufferRep<T>);
+                    }
+
+                    fn as_ptr<T: GuestBuffer>(&self) -> *mut _BufferRep<T> {
+                        Buffer::type_guard::<T>();
+                        T::_resource_rep(self.handle()).cast()
+                    }
+                }
+
+                /// A borrowed version of [`Buffer`] which represents a borrowed value
+                /// with the lifetime `'a`.
+                #[derive(Debug)]
+                #[repr(transparent)]
+                pub struct BufferBorrow<'a> {
+                    rep: *mut u8,
+                    _marker: core::marker::PhantomData<&'a Buffer>,
+                }
+
+                impl<'a> BufferBorrow<'a> {
+                    #[doc(hidden)]
+                    pub unsafe fn lift(rep: usize) -> Self {
+                        Self {
+                            rep: rep as *mut u8,
+                            _marker: core::marker::PhantomData,
+                        }
+                    }
+
+                    /// Gets access to the underlying `T` in this resource.
+                    pub fn get<T: GuestBuffer>(&self) -> &T {
+                        let ptr = unsafe { &mut *self.as_ptr::<T>() };
+                        ptr.as_ref().unwrap()
+                    }
+
+                    // NB: mutable access is not allowed due to the component model allowing
+                    // multiple borrows of the same resource.
+
+                    fn as_ptr<T: 'static>(&self) -> *mut _BufferRep<T> {
+                        Buffer::type_guard::<T>();
+                        self.rep.cast()
+                    }
+                }
+
+                unsafe impl _rt::WasmResource for Buffer {
+                    #[inline]
+                    unsafe fn drop(_handle: usize) {
+                        {
+                            #[link(wasm_import_module = "symmetric:runtime/symmetric-stream@0.1.0")]
+                            extern "C" {
+                                #[cfg_attr(
+                                    target_arch = "wasm32",
+                                    link_name = "[resource-drop]buffer"
+                                )]
+                                fn symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5Bresource_dropX5Dbuffer(
+                                    _: usize,
+                                );
+                            }
+
+                            symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5Bresource_dropX5Dbuffer(_handle);
+                        }
+                    }
+                }
+
+                #[derive(Debug)]
+                #[repr(transparent)]
+                pub struct StreamObj {
+                    handle: _rt::Resource<StreamObj>,
+                }
+
+                type _StreamObjRep<T> = Option<T>;
+
+                impl StreamObj {
+                    /// Creates a new resource from the specified representation.
+                    ///
+                    /// This function will create a new resource handle by moving `val` onto
+                    /// the heap and then passing that heap pointer to the component model to
+                    /// create a handle. The owned handle is then returned as `StreamObj`.
+                    pub fn new<T: GuestStreamObj>(val: T) -> Self {
+                        Self::type_guard::<T>();
+                        let val: _StreamObjRep<T> = Some(val);
+                        let ptr: *mut _StreamObjRep<T> = _rt::Box::into_raw(_rt::Box::new(val));
+                        unsafe { Self::from_handle(T::_resource_new(ptr.cast())) }
+                    }
+
+                    /// Gets access to the underlying `T` which represents this resource.
+                    pub fn get<T: GuestStreamObj>(&self) -> &T {
+                        let ptr = unsafe { &*self.as_ptr::<T>() };
+                        ptr.as_ref().unwrap()
+                    }
+
+                    /// Gets mutable access to the underlying `T` which represents this
+                    /// resource.
+                    pub fn get_mut<T: GuestStreamObj>(&mut self) -> &mut T {
+                        let ptr = unsafe { &mut *self.as_ptr::<T>() };
+                        ptr.as_mut().unwrap()
+                    }
+
+                    /// Consumes this resource and returns the underlying `T`.
+                    pub fn into_inner<T: GuestStreamObj>(self) -> T {
+                        let ptr = unsafe { &mut *self.as_ptr::<T>() };
+                        ptr.take().unwrap()
+                    }
+
+                    #[doc(hidden)]
+                    pub unsafe fn from_handle(handle: usize) -> Self {
+                        Self {
+                            handle: _rt::Resource::from_handle(handle),
+                        }
+                    }
+
+                    #[doc(hidden)]
+                    pub fn take_handle(&self) -> usize {
+                        _rt::Resource::take_handle(&self.handle)
+                    }
+
+                    #[doc(hidden)]
+                    pub fn handle(&self) -> usize {
+                        _rt::Resource::handle(&self.handle)
+                    }
+
+                    // It's theoretically possible to implement the `GuestStreamObj` trait twice
+                    // so guard against using it with two different types here.
+                    #[doc(hidden)]
+                    fn type_guard<T: 'static>() {
+                        use core::any::TypeId;
+                        static mut LAST_TYPE: Option<TypeId> = None;
+                        unsafe {
+                            assert!(!cfg!(target_feature = "atomics"));
+                            let id = TypeId::of::<T>();
+                            match LAST_TYPE {
+                                Some(ty) => assert!(
+                                    ty == id,
+                                    "cannot use two types with this resource type"
+                                ),
+                                None => LAST_TYPE = Some(id),
+                            }
+                        }
+                    }
+
+                    #[doc(hidden)]
+                    pub unsafe fn dtor<T: 'static>(handle: *mut u8) {
+                        Self::type_guard::<T>();
+                        let _ = _rt::Box::from_raw(handle as *mut _StreamObjRep<T>);
+                    }
+
+                    fn as_ptr<T: GuestStreamObj>(&self) -> *mut _StreamObjRep<T> {
+                        StreamObj::type_guard::<T>();
+                        T::_resource_rep(self.handle()).cast()
+                    }
+                }
+
+                /// A borrowed version of [`StreamObj`] which represents a borrowed value
+                /// with the lifetime `'a`.
+                #[derive(Debug)]
+                #[repr(transparent)]
+                pub struct StreamObjBorrow<'a> {
+                    rep: *mut u8,
+                    _marker: core::marker::PhantomData<&'a StreamObj>,
+                }
+
+                impl<'a> StreamObjBorrow<'a> {
+                    #[doc(hidden)]
+                    pub unsafe fn lift(rep: usize) -> Self {
+                        Self {
+                            rep: rep as *mut u8,
+                            _marker: core::marker::PhantomData,
+                        }
+                    }
+
+                    /// Gets access to the underlying `T` in this resource.
+                    pub fn get<T: GuestStreamObj>(&self) -> &T {
+                        let ptr = unsafe { &mut *self.as_ptr::<T>() };
+                        ptr.as_ref().unwrap()
+                    }
+
+                    // NB: mutable access is not allowed due to the component model allowing
+                    // multiple borrows of the same resource.
+
+                    fn as_ptr<T: 'static>(&self) -> *mut _StreamObjRep<T> {
+                        StreamObj::type_guard::<T>();
+                        self.rep.cast()
+                    }
+                }
+
+                unsafe impl _rt::WasmResource for StreamObj {
+                    #[inline]
+                    unsafe fn drop(_handle: usize) {
+                        {
+                            #[link(wasm_import_module = "symmetric:runtime/symmetric-stream@0.1.0")]
+                            extern "C" {
+                                #[cfg_attr(
+                                    target_arch = "wasm32",
+                                    link_name = "[resource-drop]stream-obj"
+                                )]
+                                fn symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5Bresource_dropX5Dstream_obj(
+                                    _: usize,
+                                );
+                            }
+
+                            symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5Bresource_dropX5Dstream_obj(_handle);
+                        }
+                    }
+                }
+
+                #[doc(hidden)]
+                #[allow(non_snake_case)]
+                pub unsafe fn _export_constructor_buffer_cabi<T: GuestBuffer>(
+                    arg0: *mut u8,
+                    arg1: i64,
+                ) -> *mut u8 {
+                    #[cfg(target_arch = "wasm32")]
+                    _rt::run_ctors_once();
+                    let result0 =
+                        Buffer::new(T::new(Address::from_handle(arg0 as usize), arg1 as u64));
+                    (result0).take_handle() as *mut u8
+                }
+                #[doc(hidden)]
+                #[allow(non_snake_case)]
+                pub unsafe fn _export_method_buffer_get_address_cabi<T: GuestBuffer>(
+                    arg0: *mut u8,
+                ) -> *mut u8 {
+                    #[cfg(target_arch = "wasm32")]
+                    _rt::run_ctors_once();
+                    let result0 = T::get_address(BufferBorrow::lift(arg0 as usize).get());
+                    (result0).take_handle() as *mut u8
+                }
+                #[doc(hidden)]
+                #[allow(non_snake_case)]
+                pub unsafe fn _export_method_buffer_get_size_cabi<T: GuestBuffer>(
+                    arg0: *mut u8,
+                ) -> i64 {
+                    #[cfg(target_arch = "wasm32")]
+                    _rt::run_ctors_once();
+                    let result0 = T::get_size(BufferBorrow::lift(arg0 as usize).get());
+                    _rt::as_i64(result0)
+                }
+                #[doc(hidden)]
+                #[allow(non_snake_case)]
+                pub unsafe fn _export_method_buffer_set_size_cabi<T: GuestBuffer>(
+                    arg0: *mut u8,
+                    arg1: i64,
+                ) {
+                    #[cfg(target_arch = "wasm32")]
+                    _rt::run_ctors_once();
+                    T::set_size(BufferBorrow::lift(arg0 as usize).get(), arg1 as u64);
+                }
+                #[doc(hidden)]
+                #[allow(non_snake_case)]
+                pub unsafe fn _export_method_buffer_capacity_cabi<T: GuestBuffer>(
+                    arg0: *mut u8,
+                ) -> i64 {
+                    #[cfg(target_arch = "wasm32")]
+                    _rt::run_ctors_once();
+                    let result0 = T::capacity(BufferBorrow::lift(arg0 as usize).get());
+                    _rt::as_i64(result0)
+                }
+                #[doc(hidden)]
+                #[allow(non_snake_case)]
+                pub unsafe fn _export_constructor_stream_obj_cabi<T: GuestStreamObj>() -> *mut u8 {
+                    #[cfg(target_arch = "wasm32")]
+                    _rt::run_ctors_once();
+                    let result0 = StreamObj::new(T::new());
+                    (result0).take_handle() as *mut u8
+                }
+                #[doc(hidden)]
+                #[allow(non_snake_case)]
+                pub unsafe fn _export_method_stream_obj_is_write_closed_cabi<T: GuestStreamObj>(
+                    arg0: *mut u8,
+                ) -> i32 {
+                    #[cfg(target_arch = "wasm32")]
+                    _rt::run_ctors_once();
+                    let result0 = T::is_write_closed(StreamObjBorrow::lift(arg0 as usize).get());
+                    match result0 {
+                        true => 1,
+                        false => 0,
+                    }
+                }
+                #[doc(hidden)]
+                #[allow(non_snake_case)]
+                pub unsafe fn _export_method_stream_obj_start_reading_cabi<T: GuestStreamObj>(
+                    arg0: *mut u8,
+                    arg1: *mut u8,
+                ) {
+                    #[cfg(target_arch = "wasm32")]
+                    _rt::run_ctors_once();
+                    T::start_reading(
+                        StreamObjBorrow::lift(arg0 as usize).get(),
+                        Buffer::from_handle(arg1 as usize),
+                    );
+                }
+                #[doc(hidden)]
+                #[allow(non_snake_case)]
+                pub unsafe fn _export_method_stream_obj_read_ready_event_cabi<T: GuestStreamObj>(
+                    arg0: *mut u8,
+                ) -> *mut u8 {
+                    #[cfg(target_arch = "wasm32")]
+                    _rt::run_ctors_once();
+                    let result0 = T::read_ready_event(StreamObjBorrow::lift(arg0 as usize).get());
+                    (result0).take_handle() as *mut u8
+                }
+                #[doc(hidden)]
+                #[allow(non_snake_case)]
+                pub unsafe fn _export_method_stream_obj_read_result_cabi<T: GuestStreamObj>(
+                    arg0: *mut u8,
+                ) -> *mut u8 {
+                    #[cfg(target_arch = "wasm32")]
+                    _rt::run_ctors_once();
+                    let result0 = T::read_result(StreamObjBorrow::lift(arg0 as usize).get());
+                    (result0).take_handle() as *mut u8
+                }
+                #[doc(hidden)]
+                #[allow(non_snake_case)]
+                pub unsafe fn _export_static_stream_obj_close_read_cabi<T: GuestStreamObj>(
+                    arg0: *mut u8,
+                ) {
+                    #[cfg(target_arch = "wasm32")]
+                    _rt::run_ctors_once();
+                    T::close_read(StreamObj::from_handle(arg0 as usize));
+                }
+                #[doc(hidden)]
+                #[allow(non_snake_case)]
+                pub unsafe fn _export_method_stream_obj_is_ready_to_write_cabi<
+                    T: GuestStreamObj,
+                >(
+                    arg0: *mut u8,
+                ) -> i32 {
+                    #[cfg(target_arch = "wasm32")]
+                    _rt::run_ctors_once();
+                    let result0 = T::is_ready_to_write(StreamObjBorrow::lift(arg0 as usize).get());
+                    match result0 {
+                        true => 1,
+                        false => 0,
+                    }
+                }
+                #[doc(hidden)]
+                #[allow(non_snake_case)]
+                pub unsafe fn _export_method_stream_obj_write_ready_event_cabi<
+                    T: GuestStreamObj,
+                >(
+                    arg0: *mut u8,
+                ) -> *mut u8 {
+                    #[cfg(target_arch = "wasm32")]
+                    _rt::run_ctors_once();
+                    let result0 = T::write_ready_event(StreamObjBorrow::lift(arg0 as usize).get());
+                    (result0).take_handle() as *mut u8
+                }
+                #[doc(hidden)]
+                #[allow(non_snake_case)]
+                pub unsafe fn _export_method_stream_obj_start_writing_cabi<T: GuestStreamObj>(
+                    arg0: *mut u8,
+                ) -> *mut u8 {
+                    #[cfg(target_arch = "wasm32")]
+                    _rt::run_ctors_once();
+                    let result0 = T::start_writing(StreamObjBorrow::lift(arg0 as usize).get());
+                    (result0).take_handle() as *mut u8
+                }
+                #[doc(hidden)]
+                #[allow(non_snake_case)]
+                pub unsafe fn _export_method_stream_obj_finish_writing_cabi<T: GuestStreamObj>(
+                    arg0: *mut u8,
+                    arg1: *mut u8,
+                ) {
+                    #[cfg(target_arch = "wasm32")]
+                    _rt::run_ctors_once();
+                    T::finish_writing(
+                        StreamObjBorrow::lift(arg0 as usize).get(),
+                        Buffer::from_handle(arg1 as usize),
+                    );
+                }
+                #[doc(hidden)]
+                #[allow(non_snake_case)]
+                pub unsafe fn _export_static_stream_obj_close_write_cabi<T: GuestStreamObj>(
+                    arg0: *mut u8,
+                ) {
+                    #[cfg(target_arch = "wasm32")]
+                    _rt::run_ctors_once();
+                    T::close_write(StreamObj::from_handle(arg0 as usize));
+                }
+                #[doc(hidden)]
+                #[allow(non_snake_case)]
+                pub unsafe fn _export_end_of_file_cabi<T: Guest>() -> *mut u8 {
+                    #[cfg(target_arch = "wasm32")]
+                    _rt::run_ctors_once();
+                    let result0 = T::end_of_file();
+                    (result0).take_handle() as *mut u8
+                }
+                #[doc(hidden)]
+                #[allow(non_snake_case)]
+                pub unsafe fn _export_is_end_of_file_cabi<T: Guest>(arg0: *mut u8) -> i32 {
+                    #[cfg(target_arch = "wasm32")]
+                    _rt::run_ctors_once();
+                    let result0 = T::is_end_of_file(BufferBorrow::lift(arg0 as usize));
+                    match result0 {
+                        true => 1,
+                        false => 0,
+                    }
+                }
+                pub trait Guest {
+                    type Address: GuestAddress;
+                    type Buffer: GuestBuffer;
+                    type StreamObj: GuestStreamObj;
+                    /// special EOF buffer value (should be opaque)
+                    fn end_of_file() -> Buffer;
+                    fn is_end_of_file(obj: BufferBorrow<'_>) -> bool;
+                }
+                #[doc(hidden)]
+                #[allow(non_snake_case)]
+                pub unsafe fn _export_drop_address_cabi<T: GuestAddress>(arg0: usize) {
+                    #[cfg(target_arch = "wasm32")]
+                    _rt::run_ctors_once();
+                    Address::dtor::<T>(arg0 as *mut u8);
+                }
+                pub trait GuestAddress: 'static {
+                    #[doc(hidden)]
+                    unsafe fn _resource_new(val: *mut u8) -> usize
+                    where
+                        Self: Sized,
+                    {
+                        val as usize
+                    }
+
+                    #[doc(hidden)]
+                    fn _resource_rep(handle: usize) -> *mut u8
+                    where
+                        Self: Sized,
+                    {
+                        handle as *mut u8
+                    }
+                }
+                #[doc(hidden)]
+                #[allow(non_snake_case)]
+                pub unsafe fn _export_drop_buffer_cabi<T: GuestBuffer>(arg0: usize) {
+                    #[cfg(target_arch = "wasm32")]
+                    _rt::run_ctors_once();
+                    Buffer::dtor::<T>(arg0 as *mut u8);
+                }
+                pub trait GuestBuffer: 'static {
+                    #[doc(hidden)]
+                    unsafe fn _resource_new(val: *mut u8) -> usize
+                    where
+                        Self: Sized,
+                    {
+                        val as usize
+                    }
+
+                    #[doc(hidden)]
+                    fn _resource_rep(handle: usize) -> *mut u8
+                    where
+                        Self: Sized,
+                    {
+                        handle as *mut u8
+                    }
+
+                    fn new(addr: Address, capacity: u64) -> Self;
+                    fn get_address(&self) -> Address;
+                    fn get_size(&self) -> u64;
+                    fn set_size(&self, size: u64) -> ();
+                    fn capacity(&self) -> u64;
+                }
+                #[doc(hidden)]
+                #[allow(non_snake_case)]
+                pub unsafe fn _export_drop_streamObj_cabi<T: GuestStreamObj>(arg0: usize) {
+                    #[cfg(target_arch = "wasm32")]
+                    _rt::run_ctors_once();
+                    StreamObj::dtor::<T>(arg0 as *mut u8);
+                }
+                pub trait GuestStreamObj: 'static {
+                    #[doc(hidden)]
+                    unsafe fn _resource_new(val: *mut u8) -> usize
+                    where
+                        Self: Sized,
+                    {
+                        val as usize
+                    }
+
+                    #[doc(hidden)]
+                    fn _resource_rep(handle: usize) -> *mut u8
+                    where
+                        Self: Sized,
+                    {
+                        handle as *mut u8
+                    }
+
+                    fn new() -> Self;
+                    /// reading (in roughly chronological order)
+                    fn is_write_closed(&self) -> bool;
+                    fn start_reading(&self, buffer: Buffer) -> ();
+                    fn read_ready_event(&self) -> EventGenerator;
+                    fn read_result(&self) -> Buffer;
+                    fn close_read(stream: StreamObj) -> ();
+                    /// writing
+                    fn is_ready_to_write(&self) -> bool;
+                    fn write_ready_event(&self) -> EventGenerator;
+                    fn start_writing(&self) -> Buffer;
+                    /// how to represent EOF? Zero buffer?
+                    fn finish_writing(&self, buffer: Buffer) -> ();
+                    fn close_write(stream: StreamObj) -> ();
+                }
+                #[doc(hidden)]
+
+                macro_rules! __export_symmetric_runtime_symmetric_stream_0_1_0_cabi{
   ($ty:ident with_types_in $($path_to_types:tt)*) => (const _: () = {
 
     #[cfg_attr(target_arch = "wasm32", export_name = "[constructor]buffer")]
@@ -1154,158 +1297,155 @@ macro_rules! __export_symmetric_runtime_symmetric_stream_0_1_0_cabi{
 
   };);
 }
-#[doc(hidden)]
-pub(crate) use __export_symmetric_runtime_symmetric_stream_0_1_0_cabi;
-
-}
-
-}
-}
+                #[doc(hidden)]
+                pub(crate) use __export_symmetric_runtime_symmetric_stream_0_1_0_cabi;
+            }
+        }
+    }
 }
 mod _rt {
-  #![allow(dead_code, clippy::all)]
+    #![allow(dead_code, clippy::all)]
 
+    use core::fmt;
+    use core::marker;
+    use core::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 
-  use core::fmt;
-  use core::marker;
-  use core::sync::atomic::{AtomicUsize, Ordering::Relaxed};
-
-  /// A type which represents a component model resource, either imported or
-  /// exported into this component.
-  ///
-  /// This is a low-level wrapper which handles the lifetime of the resource
-  /// (namely this has a destructor). The `T` provided defines the component model
-  /// intrinsics that this wrapper uses.
-  ///
-  /// One of the chief purposes of this type is to provide `Deref` implementations
-  /// to access the underlying data when it is owned.
-  ///
-  /// This type is primarily used in generated code for exported and imported
-  /// resources.
-  #[repr(transparent)]
-  pub struct Resource<T: WasmResource> {
-    // NB: This would ideally be `usize` but it is not. The fact that this has
-    // interior mutability is not exposed in the API of this type except for the
-    // `take_handle` method which is supposed to in theory be private.
-    //
-    // This represents, almost all the time, a valid handle value. When it's
-    // invalid it's stored as `0`.
-    handle: AtomicUsize,
-    _marker: marker::PhantomData<T>,
-  }
-
-  /// A trait which all wasm resources implement, namely providing the ability to
-  /// drop a resource.
-  ///
-  /// This generally is implemented by generated code, not user-facing code.
-  #[allow(clippy::missing_safety_doc)]
-  pub unsafe trait WasmResource {
-    /// Invokes the `[resource-drop]...` intrinsic.
-    unsafe fn drop(handle: usize);
-  }
-
-  impl<T: WasmResource> Resource<T> {
-    #[doc(hidden)]
-    pub unsafe fn from_handle(handle: usize) -> Self {
-      debug_assert!(handle != 0);
-      Self {
-        handle: AtomicUsize::new(handle),
-        _marker: marker::PhantomData,
-      }
-    }
-
-    /// Takes ownership of the handle owned by `resource`.
+    /// A type which represents a component model resource, either imported or
+    /// exported into this component.
     ///
-    /// Note that this ideally would be `into_handle` taking `Resource<T>` by
-    /// ownership. The code generator does not enable that in all situations,
-    /// unfortunately, so this is provided instead.
+    /// This is a low-level wrapper which handles the lifetime of the resource
+    /// (namely this has a destructor). The `T` provided defines the component model
+    /// intrinsics that this wrapper uses.
     ///
-    /// Also note that `take_handle` is in theory only ever called on values
-    /// owned by a generated function. For example a generated function might
-    /// take `Resource<T>` as an argument but then call `take_handle` on a
-    /// reference to that argument. In that sense the dynamic nature of
-    /// `take_handle` should only be exposed internally to generated code, not
-    /// to user code.
-    #[doc(hidden)]
-    pub fn take_handle(resource: &Resource<T>) -> usize {
-      resource.handle.swap(0, Relaxed)
+    /// One of the chief purposes of this type is to provide `Deref` implementations
+    /// to access the underlying data when it is owned.
+    ///
+    /// This type is primarily used in generated code for exported and imported
+    /// resources.
+    #[repr(transparent)]
+    pub struct Resource<T: WasmResource> {
+        // NB: This would ideally be `usize` but it is not. The fact that this has
+        // interior mutability is not exposed in the API of this type except for the
+        // `take_handle` method which is supposed to in theory be private.
+        //
+        // This represents, almost all the time, a valid handle value. When it's
+        // invalid it's stored as `0`.
+        handle: AtomicUsize,
+        _marker: marker::PhantomData<T>,
     }
 
-    #[doc(hidden)]
-    pub fn handle(resource: &Resource<T>) -> usize {
-      resource.handle.load(Relaxed)
+    /// A trait which all wasm resources implement, namely providing the ability to
+    /// drop a resource.
+    ///
+    /// This generally is implemented by generated code, not user-facing code.
+    #[allow(clippy::missing_safety_doc)]
+    pub unsafe trait WasmResource {
+        /// Invokes the `[resource-drop]...` intrinsic.
+        unsafe fn drop(handle: usize);
     }
-  }
 
-  impl<T: WasmResource> fmt::Debug for Resource<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-      f.debug_struct("Resource")
-      .field("handle", &self.handle)
-      .finish()
-    }
-  }
-
-  impl<T: WasmResource> Drop for Resource<T> {
-    fn drop(&mut self) {
-      unsafe {
-        match self.handle.load(Relaxed) {
-          // If this handle was "taken" then don't do anything in the
-          // destructor.
-          0 => {}
-
-          // ... but otherwise do actually destroy it with the imported
-          // component model intrinsic as defined through `T`.
-          other => T::drop(other),
+    impl<T: WasmResource> Resource<T> {
+        #[doc(hidden)]
+        pub unsafe fn from_handle(handle: usize) -> Self {
+            debug_assert!(handle != 0);
+            Self {
+                handle: AtomicUsize::new(handle),
+                _marker: marker::PhantomData,
+            }
         }
-      }
-    }
-  }
-  pub unsafe fn bool_lift(val: u8) -> bool {
-    if cfg!(debug_assertions) {
-      match val {
-        0 => false,
-        1 => true,
-        _ => panic!("invalid bool discriminant"),
-      }
-    } else {
-      val != 0
-    }
-  }
-  
-  pub fn as_i64<T: AsI64>(t: T) -> i64 {
-    t.as_i64()
-  }
 
-  pub trait AsI64 {
-    fn as_i64(self) -> i64;
-  }
+        /// Takes ownership of the handle owned by `resource`.
+        ///
+        /// Note that this ideally would be `into_handle` taking `Resource<T>` by
+        /// ownership. The code generator does not enable that in all situations,
+        /// unfortunately, so this is provided instead.
+        ///
+        /// Also note that `take_handle` is in theory only ever called on values
+        /// owned by a generated function. For example a generated function might
+        /// take `Resource<T>` as an argument but then call `take_handle` on a
+        /// reference to that argument. In that sense the dynamic nature of
+        /// `take_handle` should only be exposed internally to generated code, not
+        /// to user code.
+        #[doc(hidden)]
+        pub fn take_handle(resource: &Resource<T>) -> usize {
+            resource.handle.swap(0, Relaxed)
+        }
 
-  impl<'a, T: Copy + AsI64> AsI64 for &'a T {
-    fn as_i64(self) -> i64 {
-      (*self).as_i64()
+        #[doc(hidden)]
+        pub fn handle(resource: &Resource<T>) -> usize {
+            resource.handle.load(Relaxed)
+        }
     }
-  }
-  
-  impl AsI64 for i64 {
-    #[inline]
-    fn as_i64(self) -> i64 {
-      self as i64
-    }
-  }
-  
-  impl AsI64 for u64 {
-    #[inline]
-    fn as_i64(self) -> i64 {
-      self as i64
-    }
-  }
-  pub use alloc_crate::boxed::Box;
 
-  #[cfg(target_arch = "wasm32")]
-  pub fn run_ctors_once() {
-    wit_bindgen::rt::run_ctors_once();
-  }
-  extern crate alloc as alloc_crate;
+    impl<T: WasmResource> fmt::Debug for Resource<T> {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.debug_struct("Resource")
+                .field("handle", &self.handle)
+                .finish()
+        }
+    }
+
+    impl<T: WasmResource> Drop for Resource<T> {
+        fn drop(&mut self) {
+            unsafe {
+                match self.handle.load(Relaxed) {
+                    // If this handle was "taken" then don't do anything in the
+                    // destructor.
+                    0 => {}
+
+                    // ... but otherwise do actually destroy it with the imported
+                    // component model intrinsic as defined through `T`.
+                    other => T::drop(other),
+                }
+            }
+        }
+    }
+    pub unsafe fn bool_lift(val: u8) -> bool {
+        if cfg!(debug_assertions) {
+            match val {
+                0 => false,
+                1 => true,
+                _ => panic!("invalid bool discriminant"),
+            }
+        } else {
+            val != 0
+        }
+    }
+
+    pub fn as_i64<T: AsI64>(t: T) -> i64 {
+        t.as_i64()
+    }
+
+    pub trait AsI64 {
+        fn as_i64(self) -> i64;
+    }
+
+    impl<'a, T: Copy + AsI64> AsI64 for &'a T {
+        fn as_i64(self) -> i64 {
+            (*self).as_i64()
+        }
+    }
+
+    impl AsI64 for i64 {
+        #[inline]
+        fn as_i64(self) -> i64 {
+            self as i64
+        }
+    }
+
+    impl AsI64 for u64 {
+        #[inline]
+        fn as_i64(self) -> i64 {
+            self as i64
+        }
+    }
+    pub use alloc_crate::boxed::Box;
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn run_ctors_once() {
+        wit_bindgen::rt::run_ctors_once();
+    }
+    extern crate alloc as alloc_crate;
 }
 
 /// Generates `#[unsafe(no_mangle)]` functions to export the specified type as
@@ -1379,6 +1519,5 @@ nt\x070.223.0\x10wit-bindgen-rust\x060.37.0";
 #[inline(never)]
 #[doc(hidden)]
 pub fn __link_custom_section_describing_imports() {
-  wit_bindgen::rt::maybe_link_cabi_realloc();
+    wit_bindgen::rt::maybe_link_cabi_realloc();
 }
-
