@@ -220,7 +220,9 @@ impl<T: Unpin + Send> futures::stream::Stream for StreamReader<T> {
 
 impl<T> Drop for StreamReader<T> {
     fn drop(&mut self) {
-        self.handle.write_ready_activate();
+        if self.handle.handle()!=0 {
+            self.handle.write_ready_activate();
+        }
     }
 }
 
