@@ -1986,6 +1986,7 @@ impl CppInterfaceGenerator<'_> {
                         (false, Flavor::Result(AbiVariant::GuestImport))
                         | (true, Flavor::Result(AbiVariant::GuestExport)) => (),
                         (_, Flavor::InStruct) => (),
+                        (false, Flavor::BorrowedArgument) => (),
                         (_, _) => todo!(),
                     }
                     typename
