@@ -73,18 +73,20 @@ interface symmetric-stream {
 
     resource stream-obj {
         constructor();
+        // create a new instance e.g. for reading or tasks
+        clone: func() -> stream-obj;
         // reading (in roughly chronological order)
         is-write-closed: func() -> bool;
         start-reading: func(buffer: buffer);
         read-ready-event: func() -> event-generator;
         read-result: func() -> buffer;
-        close-read: static func(%stream: stream-obj);
+        // close-read: static func(%stream: stream-obj);
         // writing
         is-ready-to-write: func() -> bool;
         write-ready-event: func() -> event-generator;
         start-writing: func() -> buffer;
         finish-writing: func(buffer: buffer);
-        close-write: static func(%stream: stream-obj);
+        // close-write: static func(%stream: stream-obj);
     }
 
     // special EOF buffer value (should be opaque)

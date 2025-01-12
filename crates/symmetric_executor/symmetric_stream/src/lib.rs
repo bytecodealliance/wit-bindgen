@@ -89,16 +89,12 @@ impl GuestStreamObj for StreamObj {
             return old_ready;
         }
         assert!(old_ready == results::BLOCKED);
-        let old_size = unsafe { &mut *stream }
-            .read_size
-            .swap(size, Ordering::Acquire);
+        let old_size = self.read_size.swap(size, Ordering::Acquire);
         assert_eq!(old_size, 0);
-        let old_ptr = unsafe { &mut *stream }
-            .read_addr
-            .swap(buf, Ordering::Release);
+        let old_ptr = self.read_addr.swap(buf, Ordering::Release);
         assert_eq!(old_ptr, std::ptr::null_mut());
-        let write_evt = unsafe { &mut *stream }.write_ready_event_send;
-        unsafe { activate_event_send_ptr(write_evt) };
+        self.write_ready_event_send.activate();
+        // unsafe { activate_event_send_ptr(write_evt) };
         results::BLOCKED
     }
 
@@ -112,21 +108,21 @@ impl GuestStreamObj for StreamObj {
         self.ready_size.swap(results::BLOCKED, Ordering::Acquire)
     }
 
-    fn close_read(stream: symmetric_stream::StreamObj) -> () {
-        let refs = unsafe { &mut *stream }
-            .active_instances
-            .fetch_sub(1, Ordering::AcqRel);
-        if refs == 1 {
-            let obj = Box::from_raw(stream);
-            drop(EventGenerator::from_handle(
-                obj.read_ready_event_send as usize,
-            ));
-            drop(EventGenerator::from_handle(
-                obj.write_ready_event_send as usize,
-            ));
-            drop(obj);
-        }
-    }
+    // fn close_read(stream: symmetric_stream::StreamObj) -> () {
+    //     let refs = unsafe { &mut *stream }
+    //         .active_instances
+    //         .fetch_sub(1, Ordering::AcqRel);
+    //     if refs == 1 {
+    //         let obj = Box::from_raw(stream);
+    //         drop(EventGenerator::from_handle(
+    //             obj.read_ready_event_send as usize,
+    //         ));
+    //         drop(EventGenerator::from_handle(
+    //             obj.write_ready_event_send as usize,
+    //         ));
+    //         drop(obj);
+    //     }
+    // }
 
     fn is_ready_to_write(&self) -> bool {
         self.read_addr.load(Ordering::Acquire).is_null()
@@ -141,7 +137,12 @@ impl GuestStreamObj for StreamObj {
         let addr = self
             .read_addr
             .swap(core::ptr::null_mut(), Ordering::Release);
-        Slice { addr, size }
+        Buffer {
+            addr,
+            capacity: 0,
+            size,
+        }
+        // Slice { addr, size }
     }
 
     fn finish_writing(&self, buffer: symmetric_stream::Buffer) -> () {
@@ -150,9 +151,9 @@ impl GuestStreamObj for StreamObj {
         unsafe { activate_event_send_ptr(read_ready_event(stream)) };
     }
 
-    fn close_write(stream: symmetric_stream::StreamObj) -> () {
-        todo!()
-    }
+    // fn close_write(stream: symmetric_stream::StreamObj) -> () {
+    //     todo!()
+    // }
 }
 
 const EOF_MARKER: usize = 1;

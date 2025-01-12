@@ -1,8 +1,8 @@
-//use std::sync::atomic::{AtomicIsize, AtomicPtr, AtomicUsize, Ordering};
-
 pub use crate::module::symmetric::runtime::symmetric_stream::StreamObj as Stream;
 use crate::{
-    activate_event_send_ptr, async_support::wait_on, subscribe_event_send_ptr, EventGenerator,
+    async_support::wait_on,
+    module::symmetric::runtime::symmetric_stream::{self, end_of_file},
+    EventGenerator,
 };
 use {
     futures::sink::Sink,
@@ -12,7 +12,7 @@ use {
         future::Future,
         iter,
         marker::PhantomData,
-        mem::{self, ManuallyDrop, MaybeUninit},
+        mem::{self, MaybeUninit},
         pin::Pin,
         task::{Context, Poll},
     },
@@ -38,7 +38,7 @@ impl<T> StreamWriter<T> {
     #[doc(hidden)]
     pub fn new(handle: Stream) -> Self {
         Self {
-            handle: StreamHandle2(handle),
+            handle,
             future: None,
             _phantom: PhantomData,
         }
@@ -52,7 +52,7 @@ impl<T> StreamWriter<T> {
 impl<T> fmt::Debug for StreamWriter<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("StreamWriter")
-            .field("handle", &self.handle.0)
+            .field("handle", &self.handle)
             .finish()
     }
 }
@@ -63,14 +63,14 @@ impl<T: Unpin> Sink<Vec<T>> for StreamWriter<T> {
     fn poll_ready(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
         let me = self.get_mut();
 
-        let ready = me.handle.0.is_ready_to_write();
+        let ready = me.handle.is_ready_to_write();
 
         // see also StreamReader::poll_next
         if !ready && me.future.is_none() {
-            let handle = StreamHandle2(me.handle.0);
+            let handle = me.handle.clone();
             me.future = Some(Box::pin(async move {
                 let handle_local = handle;
-                let subscr = handle_local.0.write_ready_event();
+                let subscr = handle_local.write_ready_event().subscribe();
                 subscr.reset();
                 wait_on(subscr).await;
             }) as Pin<Box<dyn Future<Output = _> + Send>>);
@@ -92,15 +92,18 @@ impl<T: Unpin> Sink<Vec<T>> for StreamWriter<T> {
     fn start_send(self: Pin<&mut Self>, mut item: Vec<T>) -> Result<(), Self::Error> {
         let item_len = item.len();
         let me = self.get_mut();
-        let stream = me.handle.0;
-        let Slice { addr, size } = stream.start_writing();
+        let stream = &me.handle;
+        let buffer = stream.start_writing();
+        let addr = buffer.get_address().take_handle() as *mut u8;
+        let size = buffer.capacity() as usize;
         assert!(size >= item_len);
         let slice =
             unsafe { std::slice::from_raw_parts_mut(addr.cast::<MaybeUninit<T>>(), item_len) };
         for (a, b) in slice.iter_mut().zip(item.drain(..)) {
             a.write(b);
         }
-        stream.finish_writing(item_len as isize);
+        buffer.set_size(item_len as u64);
+        stream.finish_writing(buffer);
         Ok(())
     }
 
@@ -115,10 +118,9 @@ impl<T: Unpin> Sink<Vec<T>> for StreamWriter<T> {
 
 impl<T> Drop for StreamWriter<T> {
     fn drop(&mut self) {
-        if !self.handle.0.is_write_closed() {
-            self.handle.0.finish_writing(results::CLOSED);
+        if !self.handle.is_write_closed() {
+            self.handle.finish_writing(end_of_file());
         }
-        self.handle.0.close_write();
     }
 }
 
@@ -143,7 +145,7 @@ impl<T> StreamReader<T> {
 impl<T> fmt::Debug for StreamReader<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("StreamReader")
-            .field("handle", &self.handle.0)
+            .field("handle", &self.handle)
             .finish()
     }
 }
@@ -152,14 +154,14 @@ impl<T> StreamReader<T> {
     #[doc(hidden)]
     pub fn new(handle: Stream) -> Self {
         Self {
-            handle: StreamHandle2(handle),
+            handle,
             future: None,
             _phantom: PhantomData,
         }
     }
     #[doc(hidden)]
     pub fn into_handle(self) -> *mut () {
-        self.handle.0.take_handle() as *mut ()
+        self.handle.take_handle() as *mut ()
     }
 }
 
@@ -170,39 +172,39 @@ impl<T: Unpin + Send> futures::stream::Stream for StreamReader<T> {
         let me = self.get_mut();
 
         if me.future.is_none() {
-            let handle = StreamHandle2(me.handle.0);
+            let handle = me.handle.clone();
             me.future = Some(Box::pin(async move {
-                let mut buffer = iter::repeat_with(MaybeUninit::uninit)
-                    .take(ceiling(4 * 1024, mem::size_of::<T>()))
-                    .collect::<Vec<_>>();
-                let stream_handle = handle;
-                let result = if let Some(count) = {
-                    let poll_fn = start_reading;
-                    let address = super::AddressSend(buffer.as_mut_ptr() as _);
-                    let count = unsafe {
-                        super::await_stream_result(
-                            poll_fn,
-                            stream_handle,
-                            address,
-                            buffer.len(),
-                            // &stream.event,
-                        )
-                        .await
-                    };
-                    #[allow(unused)]
-                    if let Some(count) = count {
-                        let value = ();
-                    }
-                    count
-                }
+                // let mut buffer = iter::repeat_with(MaybeUninit::uninit)
+                //     .take(ceiling(4 * 1024, mem::size_of::<T>()))
+                //     .collect::<Vec<_>>();
+                // let stream_handle = handle;
+                let subsc = handle.read_ready_event().subscribe();
+                subsc.reset();
+                wait_on(subsc).await;
+                let buffer2 = handle.read_result();
+                // let result = if let Some(count) = {
+                //     let poll_fn: unsafe fn(*mut Stream, *mut (), usize) -> isize = start_reading;
+                //     let address = super::AddressSend(buffer.as_mut_ptr() as _);
+                //     let count = unsafe {
+                //         super::await_stream_result(poll_fn, stream_handle, address, buffer.len())
+                //             .await
+                //     };
+                //     #[allow(unused)]
+                //     if let Some(count) = count {
+                //         let value = ();
+                //     }
+                //     count
+                // }
                 // T::read(&stream_handle, &mut buffer).await
-                {
-                    buffer.truncate(count);
-                    Some(unsafe { mem::transmute::<Vec<MaybeUninit<T>>, Vec<T>>(buffer) })
-                } else {
-                    None
-                };
-                result
+                // {
+                //     buffer.truncate(count);
+                //     Some(unsafe { mem::transmute::<Vec<MaybeUninit<T>>, Vec<T>>(buffer) })
+                // } else {
+                //     None
+                // };
+                todo!();
+                Some(Vec::new())
+                // result
             }) as Pin<Box<dyn Future<Output = _> + Send>>);
         }
 
@@ -218,20 +220,18 @@ impl<T: Unpin + Send> futures::stream::Stream for StreamReader<T> {
 
 impl<T> Drop for StreamReader<T> {
     fn drop(&mut self) {
-        self.handle.0.write_ready_event().activate();
-        Stream::close_read(self.handle.0);
-        //        unsafe { activate_event_send_ptr(write_ready_event(self.handle.0)) };
-        // unsafe { close_read(self.handle.0) };
+        self.handle.write_ready_event().activate();
     }
 }
 
 // Stream handles are Send, so wrap them
-#[repr(transparent)]
-pub struct StreamHandle2(Stream);
-unsafe impl Send for StreamHandle2 {}
-unsafe impl Sync for StreamHandle2 {}
+// #[repr(transparent)]
+pub type StreamHandle2 = Stream;
+// unsafe impl Send for StreamHandle2 {}
+// unsafe impl Sync for StreamHandle2 {}
 
 pub fn new_stream<T: 'static>() -> (StreamWriter<T>, StreamReader<T>) {
     let handle = Stream::new();
-    (StreamWriter::new(handle), StreamReader::new(handle))
+    let handle2 = handle.clone();
+    (StreamWriter::new(handle), StreamReader::new(handle2))
 }

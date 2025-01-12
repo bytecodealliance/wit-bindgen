@@ -111,11 +111,9 @@ pub mod wit_stream {
 
     use wit_bindgen_symmetric_rt::async_support::stream_support::new_stream;
 
-    pub trait StreamPayload: Unpin + Sized + 'static {
-    }
+    pub trait StreamPayload: Unpin + Sized + 'static {}
 
-    impl StreamPayload for u32 {
-    }
+    impl StreamPayload for u32 {}
 
     pub fn new<T: StreamPayload>() -> (
         ::wit_bindgen_symmetric_rt::async_support::StreamWriter<T>,

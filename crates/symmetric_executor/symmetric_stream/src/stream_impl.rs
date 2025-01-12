@@ -953,6 +953,16 @@ pub mod exports {
                 }
                 #[doc(hidden)]
                 #[allow(non_snake_case)]
+                pub unsafe fn _export_method_stream_obj_clone_cabi<T: GuestStreamObj>(
+                    arg0: *mut u8,
+                ) -> *mut u8 {
+                    #[cfg(target_arch = "wasm32")]
+                    _rt::run_ctors_once();
+                    let result0 = T::clone(StreamObjBorrow::lift(arg0 as usize).get());
+                    (result0).take_handle() as *mut u8
+                }
+                #[doc(hidden)]
+                #[allow(non_snake_case)]
                 pub unsafe fn _export_method_stream_obj_is_write_closed_cabi<T: GuestStreamObj>(
                     arg0: *mut u8,
                 ) -> i32 {
@@ -996,15 +1006,6 @@ pub mod exports {
                     _rt::run_ctors_once();
                     let result0 = T::read_result(StreamObjBorrow::lift(arg0 as usize).get());
                     (result0).take_handle() as *mut u8
-                }
-                #[doc(hidden)]
-                #[allow(non_snake_case)]
-                pub unsafe fn _export_static_stream_obj_close_read_cabi<T: GuestStreamObj>(
-                    arg0: *mut u8,
-                ) {
-                    #[cfg(target_arch = "wasm32")]
-                    _rt::run_ctors_once();
-                    T::close_read(StreamObj::from_handle(arg0 as usize));
                 }
                 #[doc(hidden)]
                 #[allow(non_snake_case)]
@@ -1055,15 +1056,6 @@ pub mod exports {
                         StreamObjBorrow::lift(arg0 as usize).get(),
                         Buffer::from_handle(arg1 as usize),
                     );
-                }
-                #[doc(hidden)]
-                #[allow(non_snake_case)]
-                pub unsafe fn _export_static_stream_obj_close_write_cabi<T: GuestStreamObj>(
-                    arg0: *mut u8,
-                ) {
-                    #[cfg(target_arch = "wasm32")]
-                    _rt::run_ctors_once();
-                    T::close_write(StreamObj::from_handle(arg0 as usize));
                 }
                 #[doc(hidden)]
                 #[allow(non_snake_case)]
@@ -1171,19 +1163,19 @@ pub mod exports {
                     }
 
                     fn new() -> Self;
+                    /// create a new instance e.g. for reading or tasks
+                    fn clone(&self) -> StreamObj;
                     /// reading (in roughly chronological order)
                     fn is_write_closed(&self) -> bool;
                     fn start_reading(&self, buffer: Buffer) -> ();
                     fn read_ready_event(&self) -> EventGenerator;
                     fn read_result(&self) -> Buffer;
-                    fn close_read(stream: StreamObj) -> ();
+                    /// close-read: static func(%stream: stream-obj);
                     /// writing
                     fn is_ready_to_write(&self) -> bool;
                     fn write_ready_event(&self) -> EventGenerator;
                     fn start_writing(&self) -> Buffer;
-                    /// how to represent EOF? Zero buffer?
                     fn finish_writing(&self, buffer: Buffer) -> ();
-                    fn close_write(stream: StreamObj) -> ();
                 }
                 #[doc(hidden)]
 
@@ -1220,6 +1212,11 @@ pub mod exports {
     unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5BconstructorX5Dstream_obj() -> *mut u8 {
       $($path_to_types)*::_export_constructor_stream_obj_cabi::<<$ty as $($path_to_types)*::Guest>::StreamObj>()
     }
+    #[cfg_attr(target_arch = "wasm32", export_name = "[method]stream-obj.clone")]
+    #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
+    unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5BmethodX5Dstream_objX2Eclone(arg0: *mut u8,) -> *mut u8 {
+      $($path_to_types)*::_export_method_stream_obj_clone_cabi::<<$ty as $($path_to_types)*::Guest>::StreamObj>(arg0)
+    }
     #[cfg_attr(target_arch = "wasm32", export_name = "[method]stream-obj.is-write-closed")]
     #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
     unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5BmethodX5Dstream_objX2Eis_write_closed(arg0: *mut u8,) -> i32 {
@@ -1240,11 +1237,6 @@ pub mod exports {
     unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5BmethodX5Dstream_objX2Eread_result(arg0: *mut u8,) -> *mut u8 {
       $($path_to_types)*::_export_method_stream_obj_read_result_cabi::<<$ty as $($path_to_types)*::Guest>::StreamObj>(arg0)
     }
-    #[cfg_attr(target_arch = "wasm32", export_name = "[static]stream-obj.close-read")]
-    #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
-    unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5BstaticX5Dstream_objX2Eclose_read(arg0: *mut u8,) {
-      $($path_to_types)*::_export_static_stream_obj_close_read_cabi::<<$ty as $($path_to_types)*::Guest>::StreamObj>(arg0)
-    }
     #[cfg_attr(target_arch = "wasm32", export_name = "[method]stream-obj.is-ready-to-write")]
     #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
     unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5BmethodX5Dstream_objX2Eis_ready_to_write(arg0: *mut u8,) -> i32 {
@@ -1264,11 +1256,6 @@ pub mod exports {
     #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
     unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5BmethodX5Dstream_objX2Efinish_writing(arg0: *mut u8,arg1: *mut u8,) {
       $($path_to_types)*::_export_method_stream_obj_finish_writing_cabi::<<$ty as $($path_to_types)*::Guest>::StreamObj>(arg0, arg1)
-    }
-    #[cfg_attr(target_arch = "wasm32", export_name = "[static]stream-obj.close-write")]
-    #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
-    unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5BstaticX5Dstream_objX2Eclose_write(arg0: *mut u8,) {
-      $($path_to_types)*::_export_static_stream_obj_close_write_cabi::<<$ty as $($path_to_types)*::Guest>::StreamObj>(arg0)
     }
     #[cfg_attr(target_arch = "wasm32", export_name = "end-of-file")]
     #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
@@ -1480,8 +1467,8 @@ pub(crate) use __export_stream_impl_impl as export;
 #[unsafe(link_section = "component-type:wit-bindgen:0.37.0:symmetric:runtime@0.1.0:stream-impl:encoded world")]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 1673] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\x87\x0c\x01A\x02\x01\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 1631] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xdd\x0b\x01A\x02\x01\
 A\x05\x01B\x20\x04\0\x11callback-function\x03\x01\x04\0\x0dcallback-data\x03\x01\
 \x04\0\x12event-subscription\x03\x01\x04\0\x0fevent-generator\x03\x01\x01m\x02\x07\
 started\x0bnot-started\x04\0\x0bcall-status\x03\0\x04\x01m\x02\x07pending\x05rea\
@@ -1495,26 +1482,25 @@ od]event-generator.subscribe\x01\x11\x01@\x01\x04self\x10\x01\0\x04\0\x20[method
 ]event-generator.activate\x01\x12\x01@\0\x01\0\x04\0\x03run\x01\x13\x01i\0\x01i\x01\
 \x01@\x03\x07trigger\x0a\x08callback\x14\x04data\x15\x01\0\x04\0\x08register\x01\
 \x16\x03\0*symmetric:runtime/symmetric-executor@0.1.0\x05\0\x02\x03\0\0\x0fevent\
--generator\x01B)\x02\x03\x02\x01\x01\x04\0\x0fevent-generator\x03\0\0\x04\0\x07a\
+-generator\x01B(\x02\x03\x02\x01\x01\x04\0\x0fevent-generator\x03\0\0\x04\0\x07a\
 ddress\x03\x01\x04\0\x06buffer\x03\x01\x04\0\x0astream-obj\x03\x01\x01i\x02\x01i\
 \x03\x01@\x02\x04addr\x05\x08capacityw\0\x06\x04\0\x13[constructor]buffer\x01\x07\
 \x01h\x03\x01@\x01\x04self\x08\0\x05\x04\0\x1a[method]buffer.get-address\x01\x09\
 \x01@\x01\x04self\x08\0w\x04\0\x17[method]buffer.get-size\x01\x0a\x01@\x02\x04se\
 lf\x08\x04sizew\x01\0\x04\0\x17[method]buffer.set-size\x01\x0b\x04\0\x17[method]\
 buffer.capacity\x01\x0a\x01i\x04\x01@\0\0\x0c\x04\0\x17[constructor]stream-obj\x01\
-\x0d\x01h\x04\x01@\x01\x04self\x0e\0\x7f\x04\0\"[method]stream-obj.is-write-clos\
-ed\x01\x0f\x01@\x02\x04self\x0e\x06buffer\x06\x01\0\x04\0\x20[method]stream-obj.\
-start-reading\x01\x10\x01i\x01\x01@\x01\x04self\x0e\0\x11\x04\0#[method]stream-o\
-bj.read-ready-event\x01\x12\x01@\x01\x04self\x0e\0\x06\x04\0\x1e[method]stream-o\
-bj.read-result\x01\x13\x01@\x01\x06stream\x0c\x01\0\x04\0\x1d[static]stream-obj.\
-close-read\x01\x14\x04\0$[method]stream-obj.is-ready-to-write\x01\x0f\x04\0$[met\
-hod]stream-obj.write-ready-event\x01\x12\x04\0\x20[method]stream-obj.start-writi\
-ng\x01\x13\x04\0![method]stream-obj.finish-writing\x01\x10\x04\0\x1e[static]stre\
-am-obj.close-write\x01\x14\x01@\0\0\x06\x04\0\x0bend-of-file\x01\x15\x01@\x01\x03\
-obj\x08\0\x7f\x04\0\x0eis-end-of-file\x01\x16\x04\0(symmetric:runtime/symmetric-\
-stream@0.1.0\x05\x02\x04\0#symmetric:runtime/stream-impl@0.1.0\x04\0\x0b\x11\x01\
-\0\x0bstream-impl\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwit-compone\
-nt\x070.223.0\x10wit-bindgen-rust\x060.37.0";
+\x0d\x01h\x04\x01@\x01\x04self\x0e\0\x0c\x04\0\x18[method]stream-obj.clone\x01\x0f\
+\x01@\x01\x04self\x0e\0\x7f\x04\0\"[method]stream-obj.is-write-closed\x01\x10\x01\
+@\x02\x04self\x0e\x06buffer\x06\x01\0\x04\0\x20[method]stream-obj.start-reading\x01\
+\x11\x01i\x01\x01@\x01\x04self\x0e\0\x12\x04\0#[method]stream-obj.read-ready-eve\
+nt\x01\x13\x01@\x01\x04self\x0e\0\x06\x04\0\x1e[method]stream-obj.read-result\x01\
+\x14\x04\0$[method]stream-obj.is-ready-to-write\x01\x10\x04\0$[method]stream-obj\
+.write-ready-event\x01\x13\x04\0\x20[method]stream-obj.start-writing\x01\x14\x04\
+\0![method]stream-obj.finish-writing\x01\x11\x01@\0\0\x06\x04\0\x0bend-of-file\x01\
+\x15\x01@\x01\x03obj\x08\0\x7f\x04\0\x0eis-end-of-file\x01\x16\x04\0(symmetric:r\
+untime/symmetric-stream@0.1.0\x05\x02\x04\0#symmetric:runtime/stream-impl@0.1.0\x04\
+\0\x0b\x11\x01\0\x0bstream-impl\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0d\
+wit-component\x070.223.0\x10wit-bindgen-rust\x060.37.0";
 
 #[inline(never)]
 #[doc(hidden)]

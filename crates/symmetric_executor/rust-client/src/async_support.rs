@@ -5,11 +5,8 @@ use std::{
     task::{Context, Poll, RawWaker, RawWakerVTable},
 };
 
-use crate::{
-    module::symmetric::runtime::symmetric_executor::{
-        self, CallbackState, EventGenerator, EventSubscription,
-    },
-    subscribe_event_send_ptr,
+use crate::module::symmetric::runtime::symmetric_executor::{
+    self, CallbackState, EventGenerator, EventSubscription,
 };
 
 pub use stream_support::{results, Stream, StreamHandle2, StreamReader, StreamWriter};
@@ -143,34 +140,33 @@ pub fn spawn(future: impl Future<Output = ()> + 'static + Send) {
     drop(wait_for);
 }
 
-#[repr(transparent)]
-pub struct AddressSend(pub *mut ());
-unsafe impl Send for AddressSend {}
+// #[repr(transparent)]
+// pub struct AddressSend(pub *mut ());
+// unsafe impl Send for AddressSend {}
 // unsafe impl Sync for StreamHandle2 {}
 
 // this is used for reading?
-pub async unsafe fn await_stream_result(
-    import: unsafe extern "C" fn(*mut Stream, *mut (), usize) -> isize,
-    stream: StreamHandle2,
-    address: AddressSend,
-    count: usize,
-) -> Option<usize> {
-    let stream_copy = stream.0;
-    let result = import(stream_copy, address.0, count);
-    match result {
-        results::BLOCKED => {
-            let event =
-                unsafe { subscribe_event_send_ptr(stream_support::read_ready_event(stream.0)) };
-            event.reset();
-            wait_on(event).await;
-            let v = stream_support::read_amount(stream.0);
-            if let results::CLOSED | results::CANCELED = v {
-                None
-            } else {
-                Some(usize::try_from(v).unwrap())
-            }
-        }
-        results::CLOSED | results::CANCELED => None,
-        v => Some(usize::try_from(v).unwrap()),
-    }
-}
+// pub async unsafe fn await_stream_result(
+//     import: unsafe extern "C" fn(&Stream, Buffer) -> Buffer,
+//     stream: StreamHandle2,
+//     buffer: Buffer,
+// ) -> Option<Buffer> {
+//     let stream_copy = stream.clone();
+//     let result = import(&stream, buffer);
+//     match result {
+//         results::BLOCKED => {
+//             let event =
+//                 unsafe { subscribe_event_send_ptr(stream_support::read_ready_event(stream.0)) };
+//             event.reset();
+//             wait_on(event).await;
+//             let v = stream.read_result();
+//             if let results::CLOSED | results::CANCELED = v {
+//                 None
+//             } else {
+//                 Some(usize::try_from(v).unwrap())
+//             }
+//         }
+//         results::CLOSED | results::CANCELED => None,
+//         v => Some(usize::try_from(v).unwrap()),
+//     }
+// }
