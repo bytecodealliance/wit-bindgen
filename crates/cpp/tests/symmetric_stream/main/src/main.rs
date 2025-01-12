@@ -1,5 +1,5 @@
 use wit_bindgen_symmetric_rt::{
-    async_support::{stream_support, Stream},
+    async_support::Stream,
     symmetric_stream::{Address, Buffer},
     CallbackState,
 };
@@ -19,9 +19,9 @@ struct CallbackInfo {
 extern "C" fn ready(arg: *mut ()) -> CallbackState {
     let info = unsafe { &*arg.cast::<CallbackInfo>() };
     let buffer = info.stream.read_result();
-    let len = buffer.get_size();
     // unsafe { stream_support::read_amount(info.stream) };
-    if len > 0 {
+    if let Some(buffer) = buffer {
+        let len = buffer.get_size();
         for i in 0..len as usize {
             println!("data {}", info.data[i]);
         }

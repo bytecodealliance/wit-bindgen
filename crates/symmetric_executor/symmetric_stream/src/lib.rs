@@ -13,8 +13,6 @@ use stream_impl::exports::symmetric::runtime::symmetric_stream::{
 use stream_impl::symmetric::runtime::symmetric_executor::{
     self, EventGenerator, EventSubscription,
 };
-use wit_bindgen_symmetric_rt::symmetric_stream::{end_of_file, is_end_of_file};
-//use wit_bindgen_symmetric_rt::{async_support::Stream, EventGenerator};
 
 mod stream_impl;
 
@@ -60,8 +58,8 @@ impl GuestBuffer for Buffer {
 
 mod results {
     pub const BLOCKED: isize = -1;
-    pub const CLOSED: isize = isize::MIN;
-    pub const CANCELED: isize = 0;
+    // pub const CLOSED: isize = isize::MIN;
+    // pub const CANCELED: isize = 0;
 }
 
 struct StreamInner {
@@ -71,7 +69,7 @@ struct StreamInner {
     read_size: AtomicUsize,
     ready_addr: AtomicPtr<()>,
     ready_size: AtomicIsize,
-    // active_instances: AtomicUsize,
+    ready_capacity: AtomicUsize,
 }
 
 struct StreamObj(Arc<StreamInner>);
@@ -85,20 +83,21 @@ impl GuestStreamObj for StreamObj {
             read_size: AtomicUsize::new(0),
             ready_addr: AtomicPtr::new(core::ptr::null_mut()),
             ready_size: AtomicIsize::new(results::BLOCKED),
-            // active_instances: AtomicUsize::new(1),
+            ready_capacity: AtomicUsize::new(0),
         };
         Self(Arc::new(inner))
     }
 
     fn is_write_closed(&self) -> bool {
-        self.0.ready_size.load(Ordering::Acquire) == results::CLOSED
+        self.0.ready_addr.load(Ordering::Acquire) as usize == EOF_MARKER
     }
 
     fn start_reading(&self, buffer: symmetric_stream::Buffer) {
         let buf = buffer.get::<Buffer>().get_address().take_handle() as *mut ();
         let size = buffer.get::<Buffer>().capacity();
+        let old_readya = self.0.ready_addr.load(Ordering::Acquire);
         let old_ready = self.0.ready_size.load(Ordering::Acquire);
-        if old_ready == results::CLOSED {
+        if old_readya as usize == EOF_MARKER {
             todo!();
             // return old_ready;
         }
@@ -118,17 +117,18 @@ impl GuestStreamObj for StreamObj {
     //     }
     // }
 
-    fn read_result(&self) -> symmetric_stream::Buffer {
+    fn read_result(&self) -> Option<symmetric_stream::Buffer> {
         let size = self.0.ready_size.swap(results::BLOCKED, Ordering::Acquire);
         let addr = self.0.ready_addr.swap(null_mut(), Ordering::Acquire);
-        if addr == EOF_MARKER {
-            end_of_file()
+        if addr as usize == EOF_MARKER {
+            None
         } else {
-        symmetric_stream::Buffer::new(Buffer {
-            addr,
-            capacity: size as usize,
-            size: AtomicUsize::new(size as usize),
-        }) }
+            Some(symmetric_stream::Buffer::new(Buffer {
+                addr,
+                capacity: size as usize,
+                size: AtomicUsize::new(size as usize),
+            }))
+        }
     }
 
     // fn close_read(stream: symmetric_stream::StreamObj) -> () {
@@ -171,15 +171,13 @@ impl GuestStreamObj for StreamObj {
         })
     }
 
-    fn finish_writing(&self, buffer: symmetric_stream::Buffer) -> () {
-        let (elements, addr) = if buffer.handle() == EOF_MARKER {
-            //        is_end_of_file(&buffer) {
-            let _ = buffer.take_handle();
-            (0, EOF_MARKER as usize as *mut ())
-        } else {
+    fn finish_writing(&self, buffer: Option<symmetric_stream::Buffer>) -> () {
+        let (elements, addr) = if let Some(buffer) = buffer {
             let elements = buffer.get::<Buffer>().get_size() as isize;
             let addr = buffer.get::<Buffer>().get_address().take_handle() as *mut ();
             (elements, addr)
+        } else {
+            (0, EOF_MARKER as usize as *mut ())
         };
         let old_ready = self.0.ready_size.swap(elements as isize, Ordering::Relaxed);
         let _old_readya = self.0.ready_addr.swap(addr, Ordering::Release);
@@ -222,13 +220,4 @@ impl symmetric_stream::Guest for Guest {
     type Buffer = Buffer;
 
     type StreamObj = StreamObj;
-
-    fn end_of_file() -> symmetric_stream::Buffer {
-        unsafe { symmetric_stream::Buffer::from_handle(EOF_MARKER) }
-    }
-
-    fn is_end_of_file(obj: symmetric_stream::BufferBorrow<'_>) -> bool {
-        let ptr: *mut () = unsafe { transmute(obj) };
-        ptr as usize == EOF_MARKER
-    }
 }

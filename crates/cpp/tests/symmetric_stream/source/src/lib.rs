@@ -16,7 +16,7 @@ extern "C" fn timer_call(data: *mut ()) -> CallbackState {
         assert!(size >= 1);
         *unsafe { &mut *addr } = count;
         buffer.set_size(1);
-        stream.finish_writing(buffer);
+        stream.finish_writing(Some(buffer));
     }
     let _ = stream.take_handle();
     CallbackState::Ready
@@ -27,7 +27,7 @@ extern "C" fn write_ready(data: *mut ()) -> CallbackState {
     if count > 5 {
         let stream: Stream = unsafe { Stream::from_handle(data as usize) };
         // EOF
-        stream.finish_writing(symmetric_stream::end_of_file());
+        stream.finish_writing(None);
         CallbackState::Ready
     } else {
         if count == 1 {

@@ -1,9 +1,7 @@
 pub use crate::module::symmetric::runtime::symmetric_stream::StreamObj as Stream;
 use crate::{
     async_support::wait_on,
-    module::symmetric::runtime::symmetric_stream::{self, end_of_file},
     symmetric_stream::{Address, Buffer},
-    EventGenerator,
 };
 use {
     futures::sink::Sink,
@@ -104,7 +102,7 @@ impl<T: Unpin> Sink<Vec<T>> for StreamWriter<T> {
             a.write(b);
         }
         buffer.set_size(item_len as u64);
-        stream.finish_writing(buffer);
+        stream.finish_writing(Some(buffer));
         Ok(())
     }
 
@@ -120,7 +118,7 @@ impl<T: Unpin> Sink<Vec<T>> for StreamWriter<T> {
 impl<T> Drop for StreamWriter<T> {
     fn drop(&mut self) {
         if !self.handle.is_write_closed() {
-            self.handle.finish_writing(end_of_file());
+            self.handle.finish_writing(None);
         }
     }
 }
@@ -186,9 +184,13 @@ impl<T: Unpin + Send> futures::stream::Stream for StreamReader<T> {
                 subsc.reset();
                 wait_on(subsc).await;
                 let buffer2 = handle.read_result();
-                let count = buffer2.get_size();
-                buffer0.truncate(count as usize);
-                Some(unsafe { mem::transmute::<Vec<MaybeUninit<T>>, Vec<T>>(buffer0) })
+                if let Some(buffer2) = buffer2 {
+                    let count = buffer2.get_size();
+                    buffer0.truncate(count as usize);
+                    Some(unsafe { mem::transmute::<Vec<MaybeUninit<T>>, Vec<T>>(buffer0) })
+                } else {
+                    None
+                }
                 // let result = if let Some(count) = {
                 //     let poll_fn: unsafe fn(*mut Stream, *mut (), usize) -> isize = start_reading;
                 //     let address = super::AddressSend(buffer.as_mut_ptr() as _);

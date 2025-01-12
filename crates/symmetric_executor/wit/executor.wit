@@ -80,16 +80,14 @@ interface symmetric-stream {
         start-reading: func(buffer: buffer);
         write-ready-activate: func();
         read-ready-subscribe: func() -> event-subscription;
-        read-result: func() -> buffer;
+        // none is EOF
+        read-result: func() -> option<buffer>;
         // writing
         is-ready-to-write: func() -> bool;
         write-ready-subscribe: func() -> event-subscription;
         start-writing: func() -> buffer;
-        finish-writing: func(buffer: buffer);
+        // none is EOF
+        finish-writing: func(buffer: option<buffer>);
         read-ready-activate: func();
     }
-
-    // special EOF buffer value (should be opaque)
-    end-of-file: func() -> buffer;
-    is-end-of-file: func(obj: borrow<buffer>) -> bool;
 }
