@@ -59,7 +59,7 @@ interface symmetric-executor {
 
 // language neutral stream implementation
 interface symmetric-stream {
-    use symmetric-executor.{event-generator};
+    use symmetric-executor.{event-subscription};
 
     resource address;
     // special zero allocation/copy data type (caller provided buffer)
@@ -78,15 +78,15 @@ interface symmetric-stream {
         // reading (in roughly chronological order)
         is-write-closed: func() -> bool;
         start-reading: func(buffer: buffer);
-        read-ready-event: func() -> event-generator;
+        write-ready-activate: func();
+        read-ready-subscribe: func() -> event-subscription;
         read-result: func() -> buffer;
-        // close-read: static func(%stream: stream-obj);
         // writing
         is-ready-to-write: func() -> bool;
-        write-ready-event: func() -> event-generator;
+        write-ready-subscribe: func() -> event-subscription;
         start-writing: func() -> buffer;
         finish-writing: func(buffer: buffer);
-        // close-write: static func(%stream: stream-obj);
+        read-ready-activate: func();
     }
 
     // special EOF buffer value (should be opaque)

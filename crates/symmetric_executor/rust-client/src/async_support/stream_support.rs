@@ -70,7 +70,7 @@ impl<T: Unpin> Sink<Vec<T>> for StreamWriter<T> {
             let handle = me.handle.clone();
             me.future = Some(Box::pin(async move {
                 let handle_local = handle;
-                let subscr = handle_local.write_ready_event().subscribe();
+                let subscr = handle_local.write_ready_subscribe();
                 subscr.reset();
                 wait_on(subscr).await;
             }) as Pin<Box<dyn Future<Output = _> + Send>>);
@@ -178,7 +178,7 @@ impl<T: Unpin + Send> futures::stream::Stream for StreamReader<T> {
                 //     .take(ceiling(4 * 1024, mem::size_of::<T>()))
                 //     .collect::<Vec<_>>();
                 // let stream_handle = handle;
-                let subsc = handle.read_ready_event().subscribe();
+                let subsc = handle.read_ready_subscribe();
                 subsc.reset();
                 wait_on(subsc).await;
                 let buffer2 = handle.read_result();
@@ -220,7 +220,7 @@ impl<T: Unpin + Send> futures::stream::Stream for StreamReader<T> {
 
 impl<T> Drop for StreamReader<T> {
     fn drop(&mut self) {
-        self.handle.write_ready_event().activate();
+        self.handle.write_ready_activate();
     }
 }
 

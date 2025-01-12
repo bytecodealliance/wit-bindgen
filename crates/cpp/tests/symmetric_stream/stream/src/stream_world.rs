@@ -32,8 +32,9 @@ pub mod test {
                     })
                     .await;
                     let l3 = *ptr1.add(0).cast::<*mut u8>();
-                    let result4 =
-                        wit_bindgen_symmetric_rt::async_support::StreamReader::new(Stream::from_handle(l3 as usize));
+                    let result4 = wit_bindgen_symmetric_rt::async_support::StreamReader::new(
+                        Stream::from_handle(l3 as usize),
+                    );
                     _rt::cabi_dealloc(ptr1, 4, 4);
                     result4
                 }

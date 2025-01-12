@@ -1,12 +1,18 @@
 use std::{
     mem::transmute,
-    sync::atomic::{AtomicIsize, AtomicPtr, AtomicUsize, Ordering},
+    sync::{
+        atomic::{AtomicIsize, AtomicPtr, AtomicUsize, Ordering},
+        Arc,
+    },
 };
 
 use stream_impl::exports::symmetric::runtime::symmetric_stream::{
     self, Address, GuestAddress, GuestBuffer, GuestStreamObj,
 };
-use wit_bindgen_symmetric_rt::{async_support::Stream, EventGenerator};
+use stream_impl::symmetric::runtime::symmetric_executor::{
+    self, EventGenerator, EventSubscription,
+};
+//use wit_bindgen_symmetric_rt::{async_support::Stream, EventGenerator};
 
 mod stream_impl;
 
@@ -56,58 +62,65 @@ mod results {
     pub const CANCELED: isize = 0;
 }
 
-struct StreamObj {
-    read_ready_event_send: *mut (),
-    write_ready_event_send: *mut (),
+struct StreamInner {
+    read_ready_event_send: EventGenerator,
+    write_ready_event_send: EventGenerator,
     read_addr: AtomicPtr<()>,
     read_size: AtomicUsize,
     ready_size: AtomicIsize,
     active_instances: AtomicUsize,
 }
 
+struct StreamObj(Arc<StreamInner>);
+
 impl GuestStreamObj for StreamObj {
     fn new() -> Self {
-        Self {
-            read_ready_event_send: EventGenerator::new().take_handle() as *mut (),
-            write_ready_event_send: EventGenerator::new().take_handle() as *mut (),
+        let inner = StreamInner {
+            read_ready_event_send: EventGenerator::new(),
+            write_ready_event_send: EventGenerator::new(),
             read_addr: AtomicPtr::new(core::ptr::null_mut()),
             read_size: AtomicUsize::new(0),
             ready_size: AtomicIsize::new(results::BLOCKED),
             active_instances: AtomicUsize::new(2),
-        }
+        };
+        Self(Arc::new(inner))
     }
 
     fn is_write_closed(&self) -> bool {
-        self.ready_size.load(Ordering::Acquire) == results::CLOSED
+        self.0.ready_size.load(Ordering::Acquire) == results::CLOSED
     }
 
     fn start_reading(&self, buffer: symmetric_stream::Buffer) {
         let buf = buffer.get::<Buffer>().get_address().take_handle() as *mut ();
         let size = buffer.get::<Buffer>().capacity();
-        let old_ready = self.ready_size.load(Ordering::Acquire);
+        let old_ready = self.0.ready_size.load(Ordering::Acquire);
         if old_ready == results::CLOSED {
             todo!();
             // return old_ready;
         }
         assert!(old_ready == results::BLOCKED);
-        let old_size = self.read_size.swap(size as usize, Ordering::Acquire);
+        let old_size = self.0.read_size.swap(size as usize, Ordering::Acquire);
         assert_eq!(old_size, 0);
-        let old_ptr = self.read_addr.swap(buf, Ordering::Release);
+        let old_ptr = self.0.read_addr.swap(buf, Ordering::Release);
         assert_eq!(old_ptr, std::ptr::null_mut());
-        self.write_ready_event().activate();
+        self.write_ready_activate();
         // unsafe { activate_event_send_ptr(write_evt) };
         // results::BLOCKED
     }
 
-    fn read_ready_event(&self) -> symmetric_stream::EventGenerator {
-        unsafe {
-            symmetric_stream::EventGenerator::from_handle(self.read_ready_event_send as usize)
-        }
-    }
+    // fn read_ready_event(&self) -> symmetric_stream::EventGenerator {
+    //     unsafe {
+    //         symmetric_stream::EventGenerator::from_handle(self.read_ready_event_send as usize)
+    //     }
+    // }
 
     fn read_result(&self) -> symmetric_stream::Buffer {
-        self.ready_size.swap(results::BLOCKED, Ordering::Acquire);
-        symmetric_stream::Buffer::new(Buffer{ addr: todo!(), capacity: todo!(), size: todo!() })
+        self.0.ready_size.swap(results::BLOCKED, Ordering::Acquire);
+        symmetric_stream::Buffer::new(Buffer {
+            addr: todo!(),
+            capacity: todo!(),
+            size: todo!(),
+        })
     }
 
     // fn close_read(stream: symmetric_stream::StreamObj) -> () {
@@ -127,17 +140,20 @@ impl GuestStreamObj for StreamObj {
     // }
 
     fn is_ready_to_write(&self) -> bool {
-        self.read_addr.load(Ordering::Acquire).is_null()
+        self.0.read_addr.load(Ordering::Acquire).is_null()
     }
 
-    fn write_ready_event(&self) -> symmetric_stream::EventGenerator {
-        //self.write_ready_event_send.clone()
-        unsafe { symmetric_stream::EventGenerator::from_handle(self.write_ready_event_send as usize) }
-    }
+    // fn write_ready_event(&self) -> symmetric_stream::EventGenerator {
+    //     //self.write_ready_event_send.clone()
+    //     unsafe {
+    //         symmetric_stream::EventGenerator::from_handle(self.write_ready_event_send as usize)
+    //     }
+    // }
 
     fn start_writing(&self) -> symmetric_stream::Buffer {
-        let size = self.read_size.swap(0, Ordering::Acquire);
+        let size = self.0.read_size.swap(0, Ordering::Acquire);
         let addr = self
+            .0
             .read_addr
             .swap(core::ptr::null_mut(), Ordering::Release);
         todo!()
@@ -151,21 +167,35 @@ impl GuestStreamObj for StreamObj {
 
     fn finish_writing(&self, buffer: symmetric_stream::Buffer) -> () {
         let elements = buffer.get::<Buffer>().get_size() as isize;
-        let old_ready = self.ready_size.swap(elements as isize, Ordering::Release);
+        let old_ready = self.0.ready_size.swap(elements as isize, Ordering::Release);
         assert_eq!(old_ready, results::BLOCKED);
-        self.read_ready_event().activate();
+        self.read_ready_activate();
         // unsafe { activate_event_send_ptr(self.read_ready_event) };
     }
 
     fn clone(&self) -> symmetric_stream::StreamObj {
-        todo!()
+        symmetric_stream::StreamObj::new(StreamObj(Arc::clone(&self.0)))
     }
-    
+
+    fn write_ready_activate(&self) {
+        self.0.write_ready_event_send.activate();
+    }
+
+    fn read_ready_subscribe(&self) -> symmetric_stream::EventSubscription {
+        self.0.read_ready_event_send.subscribe()
+    }
+
+    fn write_ready_subscribe(&self) -> symmetric_stream::EventSubscription {
+        self.0.write_ready_event_send.subscribe()
+    }
+
+    fn read_ready_activate(&self) {
+        self.0.read_ready_event_send.activate();
+    }
+
     // fn close_write(stream: symmetric_stream::StreamObj) -> () {
     //     todo!()
     // }
-
-    
 }
 
 const EOF_MARKER: usize = 1;

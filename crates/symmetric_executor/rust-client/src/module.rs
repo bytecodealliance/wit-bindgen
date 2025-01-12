@@ -460,8 +460,8 @@ pub mod symmetric {
                 super::super::super::__link_custom_section_describing_imports;
 
             use super::super::super::_rt;
-            pub type EventGenerator =
-                super::super::super::symmetric::runtime::symmetric_executor::EventGenerator;
+            pub type EventSubscription =
+                super::super::super::symmetric::runtime::symmetric_executor::EventSubscription;
 
             #[derive(Debug)]
             #[repr(transparent)]
@@ -770,20 +770,38 @@ pub mod symmetric {
             }
             impl StreamObj {
                 #[allow(unused_unsafe, clippy::all)]
-                pub fn read_ready_event(&self) -> EventGenerator {
+                pub fn write_ready_activate(&self) -> () {
                     unsafe {
                         #[link(wasm_import_module = "symmetric:runtime/symmetric-stream@0.1.0")]
                         extern "C" {
                             #[cfg_attr(
                                 target_arch = "wasm32",
-                                link_name = "[method]stream-obj.read-ready-event"
+                                link_name = "[method]stream-obj.write-ready-activate"
                             )]
-                            fn symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5BmethodX5Dstream_objX2Eread_ready_event(
+                            fn symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5BmethodX5Dstream_objX2Ewrite_ready_activate(
+                                _: *mut u8,
+                            );
+                        }
+                        symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5BmethodX5Dstream_objX2Ewrite_ready_activate((self).handle() as *mut u8);
+                    }
+                }
+            }
+            impl StreamObj {
+                #[allow(unused_unsafe, clippy::all)]
+                pub fn read_ready_subscribe(&self) -> EventSubscription {
+                    unsafe {
+                        #[link(wasm_import_module = "symmetric:runtime/symmetric-stream@0.1.0")]
+                        extern "C" {
+                            #[cfg_attr(
+                                target_arch = "wasm32",
+                                link_name = "[method]stream-obj.read-ready-subscribe"
+                            )]
+                            fn symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5BmethodX5Dstream_objX2Eread_ready_subscribe(
                                 _: *mut u8,
                             ) -> *mut u8;
                         }
-                        let ret = symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5BmethodX5Dstream_objX2Eread_ready_event((self).handle() as *mut u8);
-                        super::super::super::symmetric::runtime::symmetric_executor::EventGenerator::from_handle(ret as usize)
+                        let ret = symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5BmethodX5Dstream_objX2Eread_ready_subscribe((self).handle() as *mut u8);
+                        super::super::super::symmetric::runtime::symmetric_executor::EventSubscription::from_handle(ret as usize)
                     }
                 }
             }
@@ -808,7 +826,6 @@ pub mod symmetric {
             }
             impl StreamObj {
                 #[allow(unused_unsafe, clippy::all)]
-                /// close-read: static func(%stream: stream-obj);
                 /// writing
                 pub fn is_ready_to_write(&self) -> bool {
                     unsafe {
@@ -829,20 +846,20 @@ pub mod symmetric {
             }
             impl StreamObj {
                 #[allow(unused_unsafe, clippy::all)]
-                pub fn write_ready_event(&self) -> EventGenerator {
+                pub fn write_ready_subscribe(&self) -> EventSubscription {
                     unsafe {
                         #[link(wasm_import_module = "symmetric:runtime/symmetric-stream@0.1.0")]
                         extern "C" {
                             #[cfg_attr(
                                 target_arch = "wasm32",
-                                link_name = "[method]stream-obj.write-ready-event"
+                                link_name = "[method]stream-obj.write-ready-subscribe"
                             )]
-                            fn symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5BmethodX5Dstream_objX2Ewrite_ready_event(
+                            fn symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5BmethodX5Dstream_objX2Ewrite_ready_subscribe(
                                 _: *mut u8,
                             ) -> *mut u8;
                         }
-                        let ret = symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5BmethodX5Dstream_objX2Ewrite_ready_event((self).handle() as *mut u8);
-                        super::super::super::symmetric::runtime::symmetric_executor::EventGenerator::from_handle(ret as usize)
+                        let ret = symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5BmethodX5Dstream_objX2Ewrite_ready_subscribe((self).handle() as *mut u8);
+                        super::super::super::symmetric::runtime::symmetric_executor::EventSubscription::from_handle(ret as usize)
                     }
                 }
             }
@@ -881,6 +898,24 @@ pub mod symmetric {
                             );
                         }
                         symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5BmethodX5Dstream_objX2Efinish_writing((self).handle() as *mut u8, (&buffer).take_handle() as *mut u8);
+                    }
+                }
+            }
+            impl StreamObj {
+                #[allow(unused_unsafe, clippy::all)]
+                pub fn read_ready_activate(&self) -> () {
+                    unsafe {
+                        #[link(wasm_import_module = "symmetric:runtime/symmetric-stream@0.1.0")]
+                        extern "C" {
+                            #[cfg_attr(
+                                target_arch = "wasm32",
+                                link_name = "[method]stream-obj.read-ready-activate"
+                            )]
+                            fn symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5BmethodX5Dstream_objX2Eread_ready_activate(
+                                _: *mut u8,
+                            );
+                        }
+                        symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5BmethodX5Dstream_objX2Eread_ready_activate((self).handle() as *mut u8);
                     }
                 }
             }
@@ -1059,8 +1094,8 @@ mod _rt {
 #[unsafe(link_section = "component-type:wit-bindgen:0.37.0:symmetric:runtime@0.1.0:module:encoded world")]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 1621] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xd8\x0b\x01A\x02\x01\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 1733] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xc8\x0c\x01A\x02\x01\
 A\x05\x01B\x20\x04\0\x11callback-function\x03\x01\x04\0\x0dcallback-data\x03\x01\
 \x04\0\x12event-subscription\x03\x01\x04\0\x0fevent-generator\x03\x01\x01m\x02\x07\
 started\x0bnot-started\x04\0\x0bcall-status\x03\0\x04\x01m\x02\x07pending\x05rea\
@@ -1073,26 +1108,28 @@ structor]event-generator\x01\x0f\x01h\x03\x01@\x01\x04self\x10\0\x0a\x04\0![meth
 od]event-generator.subscribe\x01\x11\x01@\x01\x04self\x10\x01\0\x04\0\x20[method\
 ]event-generator.activate\x01\x12\x01@\0\x01\0\x04\0\x03run\x01\x13\x01i\0\x01i\x01\
 \x01@\x03\x07trigger\x0a\x08callback\x14\x04data\x15\x01\0\x04\0\x08register\x01\
-\x16\x03\0*symmetric:runtime/symmetric-executor@0.1.0\x05\0\x02\x03\0\0\x0fevent\
--generator\x01B(\x02\x03\x02\x01\x01\x04\0\x0fevent-generator\x03\0\0\x04\0\x07a\
-ddress\x03\x01\x04\0\x06buffer\x03\x01\x04\0\x0astream-obj\x03\x01\x01i\x02\x01i\
-\x03\x01@\x02\x04addr\x05\x08capacityw\0\x06\x04\0\x13[constructor]buffer\x01\x07\
-\x01h\x03\x01@\x01\x04self\x08\0\x05\x04\0\x1a[method]buffer.get-address\x01\x09\
-\x01@\x01\x04self\x08\0w\x04\0\x17[method]buffer.get-size\x01\x0a\x01@\x02\x04se\
-lf\x08\x04sizew\x01\0\x04\0\x17[method]buffer.set-size\x01\x0b\x04\0\x17[method]\
-buffer.capacity\x01\x0a\x01i\x04\x01@\0\0\x0c\x04\0\x17[constructor]stream-obj\x01\
-\x0d\x01h\x04\x01@\x01\x04self\x0e\0\x0c\x04\0\x18[method]stream-obj.clone\x01\x0f\
-\x01@\x01\x04self\x0e\0\x7f\x04\0\"[method]stream-obj.is-write-closed\x01\x10\x01\
-@\x02\x04self\x0e\x06buffer\x06\x01\0\x04\0\x20[method]stream-obj.start-reading\x01\
-\x11\x01i\x01\x01@\x01\x04self\x0e\0\x12\x04\0#[method]stream-obj.read-ready-eve\
-nt\x01\x13\x01@\x01\x04self\x0e\0\x06\x04\0\x1e[method]stream-obj.read-result\x01\
-\x14\x04\0$[method]stream-obj.is-ready-to-write\x01\x10\x04\0$[method]stream-obj\
-.write-ready-event\x01\x13\x04\0\x20[method]stream-obj.start-writing\x01\x14\x04\
-\0![method]stream-obj.finish-writing\x01\x11\x01@\0\0\x06\x04\0\x0bend-of-file\x01\
-\x15\x01@\x01\x03obj\x08\0\x7f\x04\0\x0eis-end-of-file\x01\x16\x03\0(symmetric:r\
-untime/symmetric-stream@0.1.0\x05\x02\x04\0\x1esymmetric:runtime/module@0.1.0\x04\
-\0\x0b\x0c\x01\0\x06module\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwi\
-t-component\x070.223.0\x10wit-bindgen-rust\x060.37.0";
+\x16\x03\0*symmetric:runtime/symmetric-executor@0.1.0\x05\0\x02\x03\0\0\x12event\
+-subscription\x01B+\x02\x03\x02\x01\x01\x04\0\x12event-subscription\x03\0\0\x04\0\
+\x07address\x03\x01\x04\0\x06buffer\x03\x01\x04\0\x0astream-obj\x03\x01\x01i\x02\
+\x01i\x03\x01@\x02\x04addr\x05\x08capacityw\0\x06\x04\0\x13[constructor]buffer\x01\
+\x07\x01h\x03\x01@\x01\x04self\x08\0\x05\x04\0\x1a[method]buffer.get-address\x01\
+\x09\x01@\x01\x04self\x08\0w\x04\0\x17[method]buffer.get-size\x01\x0a\x01@\x02\x04\
+self\x08\x04sizew\x01\0\x04\0\x17[method]buffer.set-size\x01\x0b\x04\0\x17[metho\
+d]buffer.capacity\x01\x0a\x01i\x04\x01@\0\0\x0c\x04\0\x17[constructor]stream-obj\
+\x01\x0d\x01h\x04\x01@\x01\x04self\x0e\0\x0c\x04\0\x18[method]stream-obj.clone\x01\
+\x0f\x01@\x01\x04self\x0e\0\x7f\x04\0\"[method]stream-obj.is-write-closed\x01\x10\
+\x01@\x02\x04self\x0e\x06buffer\x06\x01\0\x04\0\x20[method]stream-obj.start-read\
+ing\x01\x11\x01@\x01\x04self\x0e\x01\0\x04\0'[method]stream-obj.write-ready-acti\
+vate\x01\x12\x01i\x01\x01@\x01\x04self\x0e\0\x13\x04\0'[method]stream-obj.read-r\
+eady-subscribe\x01\x14\x01@\x01\x04self\x0e\0\x06\x04\0\x1e[method]stream-obj.re\
+ad-result\x01\x15\x04\0$[method]stream-obj.is-ready-to-write\x01\x10\x04\0([meth\
+od]stream-obj.write-ready-subscribe\x01\x14\x04\0\x20[method]stream-obj.start-wr\
+iting\x01\x15\x04\0![method]stream-obj.finish-writing\x01\x11\x04\0&[method]stre\
+am-obj.read-ready-activate\x01\x12\x01@\0\0\x06\x04\0\x0bend-of-file\x01\x16\x01\
+@\x01\x03obj\x08\0\x7f\x04\0\x0eis-end-of-file\x01\x17\x03\0(symmetric:runtime/s\
+ymmetric-stream@0.1.0\x05\x02\x04\0\x1esymmetric:runtime/module@0.1.0\x04\0\x0b\x0c\
+\x01\0\x06module\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwit-componen\
+t\x070.223.0\x10wit-bindgen-rust\x060.37.0";
 
 #[inline(never)]
 #[doc(hidden)]

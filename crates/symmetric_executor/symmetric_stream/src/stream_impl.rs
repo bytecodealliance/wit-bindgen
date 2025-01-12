@@ -464,7 +464,7 @@ pub mod exports {
                     super::super::super::super::__link_custom_section_describing_imports;
 
                 use super::super::super::super::_rt;
-                pub type EventGenerator = super::super::super::super::symmetric::runtime::symmetric_executor::EventGenerator;
+                pub type EventSubscription = super::super::super::super::symmetric::runtime::symmetric_executor::EventSubscription;
 
                 #[derive(Debug)]
                 #[repr(transparent)]
@@ -989,12 +989,26 @@ pub mod exports {
                 }
                 #[doc(hidden)]
                 #[allow(non_snake_case)]
-                pub unsafe fn _export_method_stream_obj_read_ready_event_cabi<T: GuestStreamObj>(
+                pub unsafe fn _export_method_stream_obj_write_ready_activate_cabi<
+                    T: GuestStreamObj,
+                >(
+                    arg0: *mut u8,
+                ) {
+                    #[cfg(target_arch = "wasm32")]
+                    _rt::run_ctors_once();
+                    T::write_ready_activate(StreamObjBorrow::lift(arg0 as usize).get());
+                }
+                #[doc(hidden)]
+                #[allow(non_snake_case)]
+                pub unsafe fn _export_method_stream_obj_read_ready_subscribe_cabi<
+                    T: GuestStreamObj,
+                >(
                     arg0: *mut u8,
                 ) -> *mut u8 {
                     #[cfg(target_arch = "wasm32")]
                     _rt::run_ctors_once();
-                    let result0 = T::read_ready_event(StreamObjBorrow::lift(arg0 as usize).get());
+                    let result0 =
+                        T::read_ready_subscribe(StreamObjBorrow::lift(arg0 as usize).get());
                     (result0).take_handle() as *mut u8
                 }
                 #[doc(hidden)]
@@ -1024,14 +1038,15 @@ pub mod exports {
                 }
                 #[doc(hidden)]
                 #[allow(non_snake_case)]
-                pub unsafe fn _export_method_stream_obj_write_ready_event_cabi<
+                pub unsafe fn _export_method_stream_obj_write_ready_subscribe_cabi<
                     T: GuestStreamObj,
                 >(
                     arg0: *mut u8,
                 ) -> *mut u8 {
                     #[cfg(target_arch = "wasm32")]
                     _rt::run_ctors_once();
-                    let result0 = T::write_ready_event(StreamObjBorrow::lift(arg0 as usize).get());
+                    let result0 =
+                        T::write_ready_subscribe(StreamObjBorrow::lift(arg0 as usize).get());
                     (result0).take_handle() as *mut u8
                 }
                 #[doc(hidden)]
@@ -1056,6 +1071,17 @@ pub mod exports {
                         StreamObjBorrow::lift(arg0 as usize).get(),
                         Buffer::from_handle(arg1 as usize),
                     );
+                }
+                #[doc(hidden)]
+                #[allow(non_snake_case)]
+                pub unsafe fn _export_method_stream_obj_read_ready_activate_cabi<
+                    T: GuestStreamObj,
+                >(
+                    arg0: *mut u8,
+                ) {
+                    #[cfg(target_arch = "wasm32")]
+                    _rt::run_ctors_once();
+                    T::read_ready_activate(StreamObjBorrow::lift(arg0 as usize).get());
                 }
                 #[doc(hidden)]
                 #[allow(non_snake_case)]
@@ -1168,14 +1194,15 @@ pub mod exports {
                     /// reading (in roughly chronological order)
                     fn is_write_closed(&self) -> bool;
                     fn start_reading(&self, buffer: Buffer) -> ();
-                    fn read_ready_event(&self) -> EventGenerator;
+                    fn write_ready_activate(&self) -> ();
+                    fn read_ready_subscribe(&self) -> EventSubscription;
                     fn read_result(&self) -> Buffer;
-                    /// close-read: static func(%stream: stream-obj);
                     /// writing
                     fn is_ready_to_write(&self) -> bool;
-                    fn write_ready_event(&self) -> EventGenerator;
+                    fn write_ready_subscribe(&self) -> EventSubscription;
                     fn start_writing(&self) -> Buffer;
                     fn finish_writing(&self, buffer: Buffer) -> ();
+                    fn read_ready_activate(&self) -> ();
                 }
                 #[doc(hidden)]
 
@@ -1227,10 +1254,15 @@ pub mod exports {
     unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5BmethodX5Dstream_objX2Estart_reading(arg0: *mut u8,arg1: *mut u8,) {
       $($path_to_types)*::_export_method_stream_obj_start_reading_cabi::<<$ty as $($path_to_types)*::Guest>::StreamObj>(arg0, arg1)
     }
-    #[cfg_attr(target_arch = "wasm32", export_name = "[method]stream-obj.read-ready-event")]
+    #[cfg_attr(target_arch = "wasm32", export_name = "[method]stream-obj.write-ready-activate")]
     #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
-    unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5BmethodX5Dstream_objX2Eread_ready_event(arg0: *mut u8,) -> *mut u8 {
-      $($path_to_types)*::_export_method_stream_obj_read_ready_event_cabi::<<$ty as $($path_to_types)*::Guest>::StreamObj>(arg0)
+    unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5BmethodX5Dstream_objX2Ewrite_ready_activate(arg0: *mut u8,) {
+      $($path_to_types)*::_export_method_stream_obj_write_ready_activate_cabi::<<$ty as $($path_to_types)*::Guest>::StreamObj>(arg0)
+    }
+    #[cfg_attr(target_arch = "wasm32", export_name = "[method]stream-obj.read-ready-subscribe")]
+    #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
+    unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5BmethodX5Dstream_objX2Eread_ready_subscribe(arg0: *mut u8,) -> *mut u8 {
+      $($path_to_types)*::_export_method_stream_obj_read_ready_subscribe_cabi::<<$ty as $($path_to_types)*::Guest>::StreamObj>(arg0)
     }
     #[cfg_attr(target_arch = "wasm32", export_name = "[method]stream-obj.read-result")]
     #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
@@ -1242,10 +1274,10 @@ pub mod exports {
     unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5BmethodX5Dstream_objX2Eis_ready_to_write(arg0: *mut u8,) -> i32 {
       $($path_to_types)*::_export_method_stream_obj_is_ready_to_write_cabi::<<$ty as $($path_to_types)*::Guest>::StreamObj>(arg0)
     }
-    #[cfg_attr(target_arch = "wasm32", export_name = "[method]stream-obj.write-ready-event")]
+    #[cfg_attr(target_arch = "wasm32", export_name = "[method]stream-obj.write-ready-subscribe")]
     #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
-    unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5BmethodX5Dstream_objX2Ewrite_ready_event(arg0: *mut u8,) -> *mut u8 {
-      $($path_to_types)*::_export_method_stream_obj_write_ready_event_cabi::<<$ty as $($path_to_types)*::Guest>::StreamObj>(arg0)
+    unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5BmethodX5Dstream_objX2Ewrite_ready_subscribe(arg0: *mut u8,) -> *mut u8 {
+      $($path_to_types)*::_export_method_stream_obj_write_ready_subscribe_cabi::<<$ty as $($path_to_types)*::Guest>::StreamObj>(arg0)
     }
     #[cfg_attr(target_arch = "wasm32", export_name = "[method]stream-obj.start-writing")]
     #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
@@ -1256,6 +1288,11 @@ pub mod exports {
     #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
     unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5BmethodX5Dstream_objX2Efinish_writing(arg0: *mut u8,arg1: *mut u8,) {
       $($path_to_types)*::_export_method_stream_obj_finish_writing_cabi::<<$ty as $($path_to_types)*::Guest>::StreamObj>(arg0, arg1)
+    }
+    #[cfg_attr(target_arch = "wasm32", export_name = "[method]stream-obj.read-ready-activate")]
+    #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
+    unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5BmethodX5Dstream_objX2Eread_ready_activate(arg0: *mut u8,) {
+      $($path_to_types)*::_export_method_stream_obj_read_ready_activate_cabi::<<$ty as $($path_to_types)*::Guest>::StreamObj>(arg0)
     }
     #[cfg_attr(target_arch = "wasm32", export_name = "end-of-file")]
     #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
@@ -1467,8 +1504,8 @@ pub(crate) use __export_stream_impl_impl as export;
 #[unsafe(link_section = "component-type:wit-bindgen:0.37.0:symmetric:runtime@0.1.0:stream-impl:encoded world")]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 1631] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xdd\x0b\x01A\x02\x01\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 1743] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xcd\x0c\x01A\x02\x01\
 A\x05\x01B\x20\x04\0\x11callback-function\x03\x01\x04\0\x0dcallback-data\x03\x01\
 \x04\0\x12event-subscription\x03\x01\x04\0\x0fevent-generator\x03\x01\x01m\x02\x07\
 started\x0bnot-started\x04\0\x0bcall-status\x03\0\x04\x01m\x02\x07pending\x05rea\
@@ -1481,26 +1518,28 @@ structor]event-generator\x01\x0f\x01h\x03\x01@\x01\x04self\x10\0\x0a\x04\0![meth
 od]event-generator.subscribe\x01\x11\x01@\x01\x04self\x10\x01\0\x04\0\x20[method\
 ]event-generator.activate\x01\x12\x01@\0\x01\0\x04\0\x03run\x01\x13\x01i\0\x01i\x01\
 \x01@\x03\x07trigger\x0a\x08callback\x14\x04data\x15\x01\0\x04\0\x08register\x01\
-\x16\x03\0*symmetric:runtime/symmetric-executor@0.1.0\x05\0\x02\x03\0\0\x0fevent\
--generator\x01B(\x02\x03\x02\x01\x01\x04\0\x0fevent-generator\x03\0\0\x04\0\x07a\
-ddress\x03\x01\x04\0\x06buffer\x03\x01\x04\0\x0astream-obj\x03\x01\x01i\x02\x01i\
-\x03\x01@\x02\x04addr\x05\x08capacityw\0\x06\x04\0\x13[constructor]buffer\x01\x07\
-\x01h\x03\x01@\x01\x04self\x08\0\x05\x04\0\x1a[method]buffer.get-address\x01\x09\
-\x01@\x01\x04self\x08\0w\x04\0\x17[method]buffer.get-size\x01\x0a\x01@\x02\x04se\
-lf\x08\x04sizew\x01\0\x04\0\x17[method]buffer.set-size\x01\x0b\x04\0\x17[method]\
-buffer.capacity\x01\x0a\x01i\x04\x01@\0\0\x0c\x04\0\x17[constructor]stream-obj\x01\
-\x0d\x01h\x04\x01@\x01\x04self\x0e\0\x0c\x04\0\x18[method]stream-obj.clone\x01\x0f\
-\x01@\x01\x04self\x0e\0\x7f\x04\0\"[method]stream-obj.is-write-closed\x01\x10\x01\
-@\x02\x04self\x0e\x06buffer\x06\x01\0\x04\0\x20[method]stream-obj.start-reading\x01\
-\x11\x01i\x01\x01@\x01\x04self\x0e\0\x12\x04\0#[method]stream-obj.read-ready-eve\
-nt\x01\x13\x01@\x01\x04self\x0e\0\x06\x04\0\x1e[method]stream-obj.read-result\x01\
-\x14\x04\0$[method]stream-obj.is-ready-to-write\x01\x10\x04\0$[method]stream-obj\
-.write-ready-event\x01\x13\x04\0\x20[method]stream-obj.start-writing\x01\x14\x04\
-\0![method]stream-obj.finish-writing\x01\x11\x01@\0\0\x06\x04\0\x0bend-of-file\x01\
-\x15\x01@\x01\x03obj\x08\0\x7f\x04\0\x0eis-end-of-file\x01\x16\x04\0(symmetric:r\
-untime/symmetric-stream@0.1.0\x05\x02\x04\0#symmetric:runtime/stream-impl@0.1.0\x04\
-\0\x0b\x11\x01\0\x0bstream-impl\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0d\
-wit-component\x070.223.0\x10wit-bindgen-rust\x060.37.0";
+\x16\x03\0*symmetric:runtime/symmetric-executor@0.1.0\x05\0\x02\x03\0\0\x12event\
+-subscription\x01B+\x02\x03\x02\x01\x01\x04\0\x12event-subscription\x03\0\0\x04\0\
+\x07address\x03\x01\x04\0\x06buffer\x03\x01\x04\0\x0astream-obj\x03\x01\x01i\x02\
+\x01i\x03\x01@\x02\x04addr\x05\x08capacityw\0\x06\x04\0\x13[constructor]buffer\x01\
+\x07\x01h\x03\x01@\x01\x04self\x08\0\x05\x04\0\x1a[method]buffer.get-address\x01\
+\x09\x01@\x01\x04self\x08\0w\x04\0\x17[method]buffer.get-size\x01\x0a\x01@\x02\x04\
+self\x08\x04sizew\x01\0\x04\0\x17[method]buffer.set-size\x01\x0b\x04\0\x17[metho\
+d]buffer.capacity\x01\x0a\x01i\x04\x01@\0\0\x0c\x04\0\x17[constructor]stream-obj\
+\x01\x0d\x01h\x04\x01@\x01\x04self\x0e\0\x0c\x04\0\x18[method]stream-obj.clone\x01\
+\x0f\x01@\x01\x04self\x0e\0\x7f\x04\0\"[method]stream-obj.is-write-closed\x01\x10\
+\x01@\x02\x04self\x0e\x06buffer\x06\x01\0\x04\0\x20[method]stream-obj.start-read\
+ing\x01\x11\x01@\x01\x04self\x0e\x01\0\x04\0'[method]stream-obj.write-ready-acti\
+vate\x01\x12\x01i\x01\x01@\x01\x04self\x0e\0\x13\x04\0'[method]stream-obj.read-r\
+eady-subscribe\x01\x14\x01@\x01\x04self\x0e\0\x06\x04\0\x1e[method]stream-obj.re\
+ad-result\x01\x15\x04\0$[method]stream-obj.is-ready-to-write\x01\x10\x04\0([meth\
+od]stream-obj.write-ready-subscribe\x01\x14\x04\0\x20[method]stream-obj.start-wr\
+iting\x01\x15\x04\0![method]stream-obj.finish-writing\x01\x11\x04\0&[method]stre\
+am-obj.read-ready-activate\x01\x12\x01@\0\0\x06\x04\0\x0bend-of-file\x01\x16\x01\
+@\x01\x03obj\x08\0\x7f\x04\0\x0eis-end-of-file\x01\x17\x04\0(symmetric:runtime/s\
+ymmetric-stream@0.1.0\x05\x02\x04\0#symmetric:runtime/stream-impl@0.1.0\x04\0\x0b\
+\x11\x01\0\x0bstream-impl\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwit\
+-component\x070.223.0\x10wit-bindgen-rust\x060.37.0";
 
 #[inline(never)]
 #[doc(hidden)]
