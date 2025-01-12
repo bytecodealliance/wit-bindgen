@@ -2,6 +2,7 @@ pub use crate::module::symmetric::runtime::symmetric_stream::StreamObj as Stream
 use crate::{
     async_support::wait_on,
     module::symmetric::runtime::symmetric_stream::{self, end_of_file},
+    symmetric_stream::{Address, Buffer},
     EventGenerator,
 };
 use {
@@ -174,14 +175,20 @@ impl<T: Unpin + Send> futures::stream::Stream for StreamReader<T> {
         if me.future.is_none() {
             let handle = me.handle.clone();
             me.future = Some(Box::pin(async move {
-                // let mut buffer = iter::repeat_with(MaybeUninit::uninit)
-                //     .take(ceiling(4 * 1024, mem::size_of::<T>()))
-                //     .collect::<Vec<_>>();
+                let mut buffer0 = iter::repeat_with(MaybeUninit::uninit)
+                    .take(ceiling(4 * 1024, mem::size_of::<T>()))
+                    .collect::<Vec<_>>();
                 // let stream_handle = handle;
+                let address = unsafe { Address::from_handle(buffer0.as_mut_ptr() as usize) };
+                let buffer = Buffer::new(address, buffer0.len() as u64);
+                handle.start_reading(buffer);
                 let subsc = handle.read_ready_subscribe();
                 subsc.reset();
                 wait_on(subsc).await;
                 let buffer2 = handle.read_result();
+                let count = buffer2.get_size();
+                buffer0.truncate(count as usize);
+                Some(unsafe { mem::transmute::<Vec<MaybeUninit<T>>, Vec<T>>(buffer0) })
                 // let result = if let Some(count) = {
                 //     let poll_fn: unsafe fn(*mut Stream, *mut (), usize) -> isize = start_reading;
                 //     let address = super::AddressSend(buffer.as_mut_ptr() as _);
@@ -202,8 +209,8 @@ impl<T: Unpin + Send> futures::stream::Stream for StreamReader<T> {
                 // } else {
                 //     None
                 // };
-                todo!();
-                Some(Vec::new())
+                // todo!();
+                // Some(Vec::new())
                 // result
             }) as Pin<Box<dyn Future<Output = _> + Send>>);
         }
@@ -220,7 +227,7 @@ impl<T: Unpin + Send> futures::stream::Stream for StreamReader<T> {
 
 impl<T> Drop for StreamReader<T> {
     fn drop(&mut self) {
-        if self.handle.handle()!=0 {
+        if self.handle.handle() != 0 {
             self.handle.write_ready_activate();
         }
     }
