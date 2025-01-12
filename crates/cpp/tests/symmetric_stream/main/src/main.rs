@@ -1,12 +1,10 @@
 use wit_bindgen_symmetric_rt::{
-    async_support::{stream_support, Stream},
-    CallbackState,
+    async_support::{stream_support, Stream}, symmetric_stream::{Address, Buffer}, CallbackState
 };
 
 #[link(name = "stream")]
 extern "C" {
     pub fn testX3AtestX2Fstream_testX00X5BasyncX5Dcreate(
-        // args: *const (),
         results: *mut (),
     ) -> *mut ();
 }
@@ -14,24 +12,27 @@ extern "C" {
 const DATALEN: usize = 2;
 
 struct CallbackInfo {
-    stream: *mut Stream,
+    stream: Stream,
     data: [u32; DATALEN],
 }
 
 extern "C" fn ready(arg: *mut ()) -> CallbackState {
     let info = unsafe { &*arg.cast::<CallbackInfo>() };
-    let len = unsafe { stream_support::read_amount(info.stream) };
+    let buffer = info.stream.read_result();
+    let len = buffer.get_size();
+    // unsafe { stream_support::read_amount(info.stream) };
     if len > 0 {
         for i in 0..len as usize {
             println!("data {}", info.data[i]);
         }
-        unsafe {
-            stream_support::start_reading(
-                info.stream,
-                info.data.as_ptr().cast_mut().cast(),
-                DATALEN,
-            );
-        };
+        info.stream.start_reading(buffer);
+        // unsafe {
+        //     stream_support::start_reading(
+        //         info.stream,
+        //         info.data.as_ptr().cast_mut().cast(),
+        //         DATALEN,
+        //     );
+        // };
         // call again
         CallbackState::Pending
     } else {
@@ -50,17 +51,20 @@ fn main() {
     };
     // function should have completed (not async)
     assert!(continuation.is_null());
-    let stream = result_stream.cast::<Stream>();
+    let stream = unsafe {Stream::from_handle(result_stream as usize)};
     let mut info = Box::pin(CallbackInfo {
-        stream,
+        stream: stream.clone(),
         data: [0, 0],
     });
-    unsafe {
-        stream_support::start_reading(stream, info.data.as_mut_ptr().cast(), DATALEN);
-    };
-    let subscription = unsafe {
-        wit_bindgen_symmetric_rt::subscribe_event_send_ptr(stream_support::read_ready_event(stream))
-    };
+    let buffer = Buffer::new(unsafe {Address::from_handle(info.data.as_mut_ptr() as usize)}, DATALEN as u64);
+    stream.start_reading(buffer);
+    // unsafe {
+    //     stream_support::start_reading(stream, info.data.as_mut_ptr().cast(), DATALEN);
+    // };
+    let subscription = stream.read_ready_event().subscribe();
+    // unsafe {
+    //     wit_bindgen_symmetric_rt::subscribe_event_send_ptr(stream_support::read_ready_event(stream))
+    // };
     println!("Register read in main");
     wit_bindgen_symmetric_rt::register(
         subscription,
@@ -68,5 +72,5 @@ fn main() {
         (&*info as *const CallbackInfo).cast_mut().cast(),
     );
     wit_bindgen_symmetric_rt::run();
-    unsafe { stream_support::close_read(stream) };
+    // unsafe { stream_support::close_read(stream) };
 }

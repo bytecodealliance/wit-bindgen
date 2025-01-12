@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 symmetric_executor = { path = "../../../../symmetric_executor" }
+symmetric_stream = { path = "../../../../symmetric_executor/symmetric_stream" }
 wit-bindgen-symmetric-rt = { path = "../../../../symmetric_executor/rust-client" }
 
 [lib]

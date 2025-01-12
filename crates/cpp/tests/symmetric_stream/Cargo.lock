@@ -113,6 +113,7 @@ version = "0.1.0"
 dependencies = [
  "stream",
  "symmetric_executor",
+ "symmetric_stream",
  "wit-bindgen-symmetric-rt",
 ]
 
@@ -166,6 +167,7 @@ name = "source"
 version = "0.1.0"
 dependencies = [
  "symmetric_executor",
+ "symmetric_stream",
  "wit-bindgen-symmetric-rt",
 ]
 
@@ -176,6 +178,7 @@ dependencies = [
  "dummy-rt",
  "futures",
  "source",
+ "symmetric_stream",
  "wit-bindgen-symmetric-rt",
 ]
 
@@ -186,6 +189,15 @@ dependencies = [
  "dummy-rt",
  "futures",
  "libc",
+]
+
+[[package]]
+name = "symmetric_stream"
+version = "0.1.0"
+dependencies = [
+ "dummy-rt",
+ "symmetric_executor",
+ "wit-bindgen-symmetric-rt",
 ]
 
 [[package]]

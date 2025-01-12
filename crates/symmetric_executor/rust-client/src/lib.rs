@@ -1,4 +1,5 @@
 use module::symmetric::runtime::symmetric_executor::{self, CallbackData, CallbackFunction};
+pub use module::symmetric::runtime::symmetric_stream;
 pub use module::symmetric::runtime::symmetric_executor::{
     run, CallbackState, EventGenerator, EventSubscription,
 };

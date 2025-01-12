@@ -11,6 +11,8 @@ pub mod test {
             static __FORCE_SECTION_REF: fn() =
                 super::super::super::__link_custom_section_describing_imports;
 
+            use wit_bindgen_symmetric_rt::async_support::Stream;
+
             use super::super::super::_rt;
 
             #[allow(unused_unsafe, clippy::all)]
@@ -31,7 +33,7 @@ pub mod test {
                     .await;
                     let l3 = *ptr1.add(0).cast::<*mut u8>();
                     let result4 =
-                        wit_bindgen_symmetric_rt::async_support::StreamReader::new(l3.cast());
+                        wit_bindgen_symmetric_rt::async_support::StreamReader::new(Stream::from_handle(l3 as usize));
                     _rt::cabi_dealloc(ptr1, 4, 4);
                     result4
                 }
