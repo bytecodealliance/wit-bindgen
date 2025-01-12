@@ -18,7 +18,7 @@ pub mod test {
             #[allow(unused_unsafe, clippy::all)]
             pub async fn create() -> wit_bindgen_symmetric_rt::async_support::StreamReader<u32> {
                 unsafe {
-                    let layout1 = _rt::alloc::Layout::from_size_align_unchecked(4, 4);
+                    let layout1 = _rt::alloc::Layout::from_size_align_unchecked(8, 8);
                     let ptr1 = _rt::alloc::alloc(layout1);
 
                     #[link(wasm_import_module = "test:test/stream-source")]
@@ -35,7 +35,7 @@ pub mod test {
                     let result4 = wit_bindgen_symmetric_rt::async_support::StreamReader::new(
                         Stream::from_handle(l3 as usize),
                     );
-                    _rt::cabi_dealloc(ptr1, 4, 4);
+                    _rt::cabi_dealloc(ptr1, 8, 8);
                     result4
                 }
             }

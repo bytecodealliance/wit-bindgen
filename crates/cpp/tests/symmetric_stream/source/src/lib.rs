@@ -44,7 +44,8 @@ extern "C" fn write_ready(data: *mut ()) -> CallbackState {
 pub fn testX3AtestX2Fstream_sourceX00X5BasyncX5Dcreate(results: *mut u8) -> *mut u8 {
     let stream = Stream::new();
     let event = stream.write_ready_subscribe();
-    register(event, write_ready, stream.handle() as *mut ());
+    let stream_copy = stream.clone();
+    register(event, write_ready, stream_copy.take_handle() as *mut ());
     *unsafe { &mut *results.cast::<usize>() } = stream.take_handle();
     std::ptr::null_mut()
 }

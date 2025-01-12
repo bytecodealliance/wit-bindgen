@@ -13,7 +13,7 @@ use stream_impl::exports::symmetric::runtime::symmetric_stream::{
 use stream_impl::symmetric::runtime::symmetric_executor::{
     self, EventGenerator, EventSubscription,
 };
-use wit_bindgen_symmetric_rt::symmetric_stream::is_end_of_file;
+use wit_bindgen_symmetric_rt::symmetric_stream::{end_of_file, is_end_of_file};
 //use wit_bindgen_symmetric_rt::{async_support::Stream, EventGenerator};
 
 mod stream_impl;
@@ -121,11 +121,14 @@ impl GuestStreamObj for StreamObj {
     fn read_result(&self) -> symmetric_stream::Buffer {
         let size = self.0.ready_size.swap(results::BLOCKED, Ordering::Acquire);
         let addr = self.0.ready_addr.swap(null_mut(), Ordering::Acquire);
+        if addr == EOF_MARKER {
+            end_of_file()
+        } else {
         symmetric_stream::Buffer::new(Buffer {
             addr,
             capacity: size as usize,
             size: AtomicUsize::new(size as usize),
-        })
+        }) }
     }
 
     // fn close_read(stream: symmetric_stream::StreamObj) -> () {
