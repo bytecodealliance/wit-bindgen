@@ -127,7 +127,6 @@ impl<T> Drop for StreamWriter<T> {
 pub struct StreamReader<T: 'static> {
     handle: StreamHandle2,
     future: Option<Pin<Box<dyn Future<Output = Option<Vec<T>>> + 'static + Send>>>,
-    // event: EventSubscription,
     _phantom: PhantomData<T>,
 }
 
@@ -176,7 +175,6 @@ impl<T: Unpin + Send> futures::stream::Stream for StreamReader<T> {
                 let mut buffer0 = iter::repeat_with(MaybeUninit::uninit)
                     .take(ceiling(4 * 1024, mem::size_of::<T>()))
                     .collect::<Vec<_>>();
-                // let stream_handle = handle;
                 let address = unsafe { Address::from_handle(buffer0.as_mut_ptr() as usize) };
                 let buffer = Buffer::new(address, buffer0.len() as u64);
                 handle.start_reading(buffer);
@@ -191,29 +189,6 @@ impl<T: Unpin + Send> futures::stream::Stream for StreamReader<T> {
                 } else {
                     None
                 }
-                // let result = if let Some(count) = {
-                //     let poll_fn: unsafe fn(*mut Stream, *mut (), usize) -> isize = start_reading;
-                //     let address = super::AddressSend(buffer.as_mut_ptr() as _);
-                //     let count = unsafe {
-                //         super::await_stream_result(poll_fn, stream_handle, address, buffer.len())
-                //             .await
-                //     };
-                //     #[allow(unused)]
-                //     if let Some(count) = count {
-                //         let value = ();
-                //     }
-                //     count
-                // }
-                // T::read(&stream_handle, &mut buffer).await
-                // {
-                //     buffer.truncate(count);
-                //     Some(unsafe { mem::transmute::<Vec<MaybeUninit<T>>, Vec<T>>(buffer) })
-                // } else {
-                //     None
-                // };
-                // todo!();
-                // Some(Vec::new())
-                // result
             }) as Pin<Box<dyn Future<Output = _> + Send>>);
         }
 
@@ -235,11 +210,7 @@ impl<T> Drop for StreamReader<T> {
     }
 }
 
-// Stream handles are Send, so wrap them
-// #[repr(transparent)]
 pub type StreamHandle2 = Stream;
-// unsafe impl Send for StreamHandle2 {}
-// unsafe impl Sync for StreamHandle2 {}
 
 pub fn new_stream<T: 'static>() -> (StreamWriter<T>, StreamReader<T>) {
     let handle = Stream::new();

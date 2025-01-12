@@ -1023,8 +1023,9 @@ pub mod exports {
                     match result0 {
                         Some(e) => {
                             *arg1.add(0).cast::<u8>() = (1i32) as u8;
-                            *arg1.add(core::mem::size_of::<*const u8>()).cast::<*mut u8>() =
-                                (e).take_handle() as *mut u8;
+                            *arg1
+                                .add(core::mem::size_of::<*const u8>())
+                                .cast::<*mut u8>() = (e).take_handle() as *mut u8;
                         }
                         None => {
                             *arg1.add(0).cast::<u8>() = (0i32) as u8;

@@ -11,8 +11,6 @@ use crate::module::symmetric::runtime::symmetric_executor::{
 
 pub use stream_support::{results, Stream, StreamHandle2, StreamReader, StreamWriter};
 
-// pub use futures;
-
 mod future_support;
 // later make it non-pub
 pub mod stream_support;
@@ -139,34 +137,3 @@ pub fn spawn(future: impl Future<Output = ()> + 'static + Send) {
     let wait_for = unsafe { EventSubscription::from_handle(wait_for as usize) };
     drop(wait_for);
 }
-
-// #[repr(transparent)]
-// pub struct AddressSend(pub *mut ());
-// unsafe impl Send for AddressSend {}
-// unsafe impl Sync for StreamHandle2 {}
-
-// this is used for reading?
-// pub async unsafe fn await_stream_result(
-//     import: unsafe extern "C" fn(&Stream, Buffer) -> Buffer,
-//     stream: StreamHandle2,
-//     buffer: Buffer,
-// ) -> Option<Buffer> {
-//     let stream_copy = stream.clone();
-//     let result = import(&stream, buffer);
-//     match result {
-//         results::BLOCKED => {
-//             let event =
-//                 unsafe { subscribe_event_send_ptr(stream_support::read_ready_event(stream.0)) };
-//             event.reset();
-//             wait_on(event).await;
-//             let v = stream.read_result();
-//             if let results::CLOSED | results::CANCELED = v {
-//                 None
-//             } else {
-//                 Some(usize::try_from(v).unwrap())
-//             }
-//         }
-//         results::CLOSED | results::CANCELED => None,
-//         v => Some(usize::try_from(v).unwrap()),
-//     }
-// }
