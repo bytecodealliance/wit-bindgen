@@ -53,7 +53,7 @@ extern "C" void symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5BmethodX5
 extern "C" int32_t symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5BmethodX5Dstream_objX2Eis_ready_to_write(uint8_t*);
 extern "C" uint8_t* symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5BmethodX5Dstream_objX2Ewrite_ready_subscribe(uint8_t*);
 extern "C" uint8_t* symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5BmethodX5Dstream_objX2Estart_writing(uint8_t*);
-extern "C" void symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5BmethodX5Dstream_objX2Efinish_writing(uint8_t*, int32_t, int32_t);
+extern "C" void symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5BmethodX5Dstream_objX2Efinish_writing(uint8_t*, int32_t, uint8_t*);
 extern "C" void symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5BmethodX5Dstream_objX2Eread_ready_activate(uint8_t*);
 symmetric::runtime::symmetric_executor::CallbackFunction::~CallbackFunction()
 {
@@ -223,17 +223,17 @@ symmetric::runtime::symmetric_stream::Buffer symmetric::runtime::symmetric_strea
   auto ret = symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5BmethodX5Dstream_objX2Estart_writing((*this).get_handle());
   return wit::ResourceImportBase{ret};
 }
-void symmetric::runtime::symmetric_stream::StreamObj::FinishWriting(std::optional<Buffer&&> buffer) const
+void symmetric::runtime::symmetric_stream::StreamObj::FinishWriting(std::optional<Buffer> &&buffer) const
 {
   int32_t option2;
-  int32_t option3;
+  uint8_t* option3;
   if ((buffer).has_value()) {
     Buffer payload1 = (std::move(buffer)).value();
     option2 = (int32_t(1));
     option3 = payload1.into_handle();
   } else {
     option2 = (int32_t(0));
-    option3 = int32_t(0);
+    option3 = nullptr;
   }
   symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5BmethodX5Dstream_objX2Efinish_writing((*this).get_handle(), option2, option3);
 }

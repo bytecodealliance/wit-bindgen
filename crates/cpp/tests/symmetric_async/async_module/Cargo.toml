@@ -5,10 +5,15 @@ edition = "2021"
 
 [dependencies]
 futures = "0.3.31"
-sleep = { version = "0.1.0", path = "../sleep" }
-symmetric_executor = { version = "0.1.0", path = "../../../../symmetric_executor" }
-wit-bindgen = { version = "0.36.0", path = "../../../../guest-rust" }
-wit-bindgen-symmetric-rt = { version = "0.36.0", path = "../../../../symmetric_executor/rust-client" }
+sleep = { path = "../sleep" }
+symmetric_executor = { path = "../../../../symmetric_executor" }
+symmetric_stream = { path = "../../../../symmetric_executor/symmetric_stream" }
+#wit-bindgen = { version = "0.36.0", path = "../../../../guest-rust" }
+wit-bindgen-symmetric-rt = { path = "../../../../symmetric_executor/rust-client" }
+
+[dependencies.wit-bindgen]
+package = "dummy-rt"
+path = "../../../../symmetric_executor/dummy-rt"
 
 [lib]
 crate-type = ["cdylib"]

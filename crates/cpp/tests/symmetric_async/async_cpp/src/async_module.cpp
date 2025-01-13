@@ -44,7 +44,7 @@ std::future<void> test::test::wait::Sleep(uint64_t nanoseconds)
   return result1;
 }
 extern "C" 
-void* testX3AtestX2Fstring_delayX00X5BasyncX5Dforward(uint8_t* arg0, size_t arg1, uint8_t* arg2)
+void* X5BasyncX5DtestX3AtestX2Fstring_delayX00forward(uint8_t* arg0, size_t arg1, uint8_t* arg2)
 {
   auto len0 = arg1;
 

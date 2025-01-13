@@ -116,7 +116,7 @@ class StreamObj : public wit::ResourceImportBase{
   bool IsReadyToWrite() const;
   symmetric_executor::EventSubscription WriteReadySubscribe() const;
   Buffer StartWriting() const;
-  void FinishWriting(std::optional<Buffer&&> buffer) const;
+  void FinishWriting(std::optional<Buffer> &&buffer) const;
   void ReadReadyActivate() const;
   StreamObj(wit::ResourceImportBase &&);
   StreamObj(StreamObj&&) = default;
