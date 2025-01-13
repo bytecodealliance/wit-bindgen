@@ -8,7 +8,7 @@ std::future<wit::string> exports::test::test::string_delay::Forward(std::string_
         return result.get_future();
     } else if (s[0]=='B') {
         return std::async(std::launch::async, [](){
-            auto delay = ::test::test::wait::Sleep(5*1000*1000*1000);
+            auto delay = ::test::test::wait::Sleep(5ull*1000*1000*1000);
             delay.wait();
             return wit::string::from_view("after five seconds");
         });
