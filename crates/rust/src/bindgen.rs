@@ -20,6 +20,7 @@ pub(super) struct FunctionBindgen<'a, 'b> {
     pub import_return_pointer_area_align: usize,
     pub handle_decls: Vec<String>,
     always_owned: bool,
+    pub async_result_name: Option<String>,
 }
 
 impl<'a, 'b> FunctionBindgen<'a, 'b> {
@@ -45,6 +46,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             import_return_pointer_area_align: 0,
             handle_decls: Vec::new(),
             always_owned,
+            async_result_name: None,
         }
     }
 
@@ -877,10 +879,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::CallInterface { func, .. } => {
                 if self.async_ {
-                    let tmp = self.tmp();
-                    let result = format!("result{tmp}");
-                    self.push_str(&format!("let {result} = "));
-                    results.push(result);
+                    self.push_str(&format!("let result = "));
+                    results.push("result".into());
                 } else {
                     self.let_results(func.results.len(), results);
                 };
@@ -950,6 +950,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::AsyncPostCallInterface { func } => {
                 let result = &operands[0];
+                self.async_result_name = Some(result.clone());
                 results.push("result".into());
                 let params = (0..func.results.len())
                     .map(|_| {
@@ -973,12 +974,18 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 // `abi::Generator` emit a `AsyncCallReturn` first, which would
                 // push a closure expression we can consume here).
                 //
+                // Also, see `InterfaceGenerator::generate_guest_export` for
+                // where we emit the open bracket corresponding to the `};` we
+                // emit here.
+                //
                 // The async-specific `Instruction`s will probably need to be
                 // refactored anyway once we start implementing support for
                 // other languages besides Rust.
                 uwriteln!(
                     self.src,
                     "\
+                            {result}
+                        }};
                         let result = {async_support}::first_poll({result}, |{params}| {{
                     "
                 );
