@@ -109,12 +109,12 @@ impl symmetric_executor::GuestEventGenerator for EventGenerator {
 
 struct Executor {
     active_tasks: Vec<QueuedEvent>,
-    change_event: OnceLock<EventFd>,
+    change_event: Option<EventFd>,
 }
 
 static EXECUTOR: Mutex<Executor> = Mutex::new(Executor {
     active_tasks: Vec::new(),
-    change_event: OnceLock::new(),
+    change_event: None,
 });
 // while executing tasks from the loop we can't directly queue new ones
 static EXECUTOR_BUSY: AtomicBool = AtomicBool::new(false);
@@ -131,7 +131,7 @@ impl symmetric_executor::Guest for Guest {
             .lock()
             .unwrap()
             .change_event
-            .get_or_init(|| unsafe { libc::eventfd(0, libc::EFD_NONBLOCK) });
+            .get_or_insert_with(|| unsafe { libc::eventfd(0, libc::EFD_NONBLOCK) });
         loop {
             let mut wait = libc::timeval {
                 tv_sec: i64::MAX,
@@ -321,7 +321,7 @@ impl symmetric_executor::Guest for Guest {
                 let file_signal: u64 = 1;
                 let fd = *lock
                     .change_event
-                    .get_or_init(|| unsafe { libc::eventfd(0, libc::EFD_NONBLOCK) });
+                    .get_or_insert_with(|| unsafe { libc::eventfd(0, libc::EFD_NONBLOCK) });
                 let result = unsafe {
                     libc::write(
                         fd,
