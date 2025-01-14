@@ -1085,9 +1085,22 @@ pub mod vtable{ordinal} {{
             needs_cleanup_list,
             src,
             handle_decls,
+            async_result_name,
             ..
         } = f;
         assert!(!needs_cleanup_list);
+        if let Some(name) = async_result_name {
+            // When `async_result_name` is `Some(_)`, we wrap the call and any
+            // `handle_decls` in a block scope to ensure any resource handles
+            // are dropped before we call `async_support::first_poll`, which may
+            // call `task.return` at which point any borrow handles must already
+            // have been dropped.
+            //
+            // The corresponding close bracket is emitted in the
+            // `Instruction::AsyncPostCallInterface` case inside
+            // `FunctionBindgen::emit`.
+            uwriteln!(self.src, "let {name} = {{");
+        }
         for decl in handle_decls {
             self.src.push_str(&decl);
             self.src.push_str("\n");
