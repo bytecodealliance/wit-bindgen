@@ -3,7 +3,7 @@ use std::{
     mem::transmute,
     sync::{
         atomic::{AtomicBool, AtomicU32, Ordering},
-        Arc, Mutex,
+        Arc, Mutex, OnceLock,
     },
     time::{Duration, SystemTime},
 };
@@ -109,10 +109,12 @@ impl symmetric_executor::GuestEventGenerator for EventGenerator {
 
 struct Executor {
     active_tasks: Vec<QueuedEvent>,
+    change_event: OnceLock<EventFd>,
 }
 
 static EXECUTOR: Mutex<Executor> = Mutex::new(Executor {
     active_tasks: Vec::new(),
+    change_event: OnceLock::new(),
 });
 // while executing tasks from the loop we can't directly queue new ones
 static EXECUTOR_BUSY: AtomicBool = AtomicBool::new(false);
@@ -125,17 +127,25 @@ impl symmetric_executor::Guest for Guest {
     type EventGenerator = EventGenerator;
 
     fn run() {
+        let change_event = *EXECUTOR
+            .lock()
+            .unwrap()
+            .change_event
+            .get_or_init(|| unsafe { libc::eventfd(0, libc::EFD_NONBLOCK) });
         loop {
             let mut wait = libc::timeval {
                 tv_sec: i64::MAX,
                 tv_usec: 999999,
             };
             let mut tvptr = core::ptr::null_mut();
-            let mut maxfd = 0;
+            let mut maxfd = change_event + 1;
             let now = SystemTime::now();
             let mut rfds = core::mem::MaybeUninit::<libc::fd_set>::uninit();
             let rfd_ptr = unsafe { core::ptr::from_mut(rfds.assume_init_mut()) };
             unsafe { libc::FD_ZERO(rfd_ptr) };
+            unsafe {
+                libc::FD_SET(change_event, rfd_ptr);
+            }
             {
                 let mut ex = EXECUTOR.lock().unwrap();
                 let old_busy = EXECUTOR_BUSY.swap(true, Ordering::Acquire);
@@ -306,7 +316,26 @@ impl symmetric_executor::Guest for Guest {
             }
         }
         match EXECUTOR.try_lock() {
-            Ok(mut lock) => lock.active_tasks.push(subscr),
+            Ok(mut lock) => {
+                lock.active_tasks.push(subscr);
+                let file_signal: u64 = 1;
+                let fd = *lock
+                    .change_event
+                    .get_or_init(|| unsafe { libc::eventfd(0, libc::EFD_NONBLOCK) });
+                let result = unsafe {
+                    libc::write(
+                        fd,
+                        core::ptr::from_ref(&file_signal).cast(),
+                        core::mem::size_of_val(&file_signal),
+                    )
+                };
+                if result >= 0 {
+                    assert_eq!(
+                        result,
+                        core::mem::size_of_val(&file_signal).try_into().unwrap()
+                    );
+                }
+            }
             Err(_err) => {
                 if EXECUTOR_BUSY.load(Ordering::Acquire) {
                     NEW_TASKS.lock().unwrap().push(subscr);
