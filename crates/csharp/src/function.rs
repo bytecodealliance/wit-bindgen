@@ -582,21 +582,23 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::ListCanonLower { element, realloc } => {
                 let list: &String = &operands[0];
-                let (_size, ty) = list_element_info(element);
-
                 match self.interface_gen.direction {
                     Direction::Import => {
-                        let buffer: String = self.locals.tmp("bufferPtr");
+                        let ptr: String = self.locals.tmp("listPtr");
+                        let handle: String = self.locals.tmp("gcHandle");
+                        // Dispite the name GCHandle.Alloc here this does not actually allocate memory on the heap. 
+                        // It pins the array with the garbage collector so that it can be passed to unmanaged code
+                        // It is required to free the pin after use which is done in the Cleanup section 
                         uwrite!(
                             self.src,
                             "
-                            fixed ({ty}* {buffer} = new ReadOnlyMemory<{ty}>({list}).Span)
-                            {{
+                            var {handle} = GCHandle.Alloc({list}, GCHandleType.Pinned);
+                            var {ptr} = {handle}.AddrOfPinnedObject();
                             "
                         );
-                        results.push(format!("(nint){buffer}"));
+                        results.push(format!("{ptr}")); 
                         results.push(format!("({list}).Length"));
-                        self.fixed = self.fixed + 1;
+                        self.cleanup.push(Cleanup { address: handle });
                     }
                     Direction::Export => {
                         let address = self.locals.tmp("address");
@@ -974,11 +976,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             uwriteln!(self.src, "return ({results});")
                         }
                     }
-                }
-
-                // Close all the fixed blocks.
-                for _ in 0..self.fixed {
-                    uwriteln!(self.src, "}}");
+                    // Close all the fixed blocks.
+                    for _ in 0..self.fixed {
+                        uwriteln!(self.src, "}}");
+                    }
                 }
             }
 
