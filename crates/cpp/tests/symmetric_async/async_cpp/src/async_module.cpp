@@ -23,9 +23,10 @@ void *cabi_realloc(void *ptr, size_t old_size, size_t align, size_t new_size) {
   return ret;
 }
 
-static void fulfil_promise(void* data) {
+static symmetric::runtime::symmetric_executor::CallbackState fulfil_promise(void* data) {
   std::unique_ptr<std::promise<void>> ptr((std::promise<void>*)data);
   ptr->set_value();
+  return symmetric::runtime::symmetric_executor::CallbackState::kReady;
 }
 
 extern "C" void* testX3AtestX2FwaitX00X5BasyncX5Dsleep(int64_t);
@@ -43,6 +44,13 @@ std::future<void> test::test::wait::Sleep(uint64_t nanoseconds)
   }
   return result1;
 }
+
+static symmetric::runtime::symmetric_executor::CallbackState wait_on_future(std::future<void>* fut) {
+  fut->get();
+  delete fut;
+  return symmetric::runtime::symmetric_executor::CallbackState::kReady;
+}
+
 extern "C" 
 void* X5BasyncX5DtestX3AtestX2Fstring_delayX00forward(uint8_t* arg0, size_t arg1, uint8_t* arg2)
 {
@@ -64,14 +72,15 @@ void* X5BasyncX5DtestX3AtestX2Fstring_delayX00forward(uint8_t* arg0, size_t arg1
   } else {
     symmetric::runtime::symmetric_executor::EventGenerator gen;
     auto waiting = gen.Subscribe();
-    auto keep_alive = std::make_shared<std::future<void>>(std::move(std::future<void>()));
     auto task = std::async(std::launch::async, [store](std::future<wit::string>&& result1, 
-            symmetric::runtime::symmetric_executor::EventGenerator &&gen,
-            std::shared_ptr<std::future<void>> keep_alive){
+            symmetric::runtime::symmetric_executor::EventGenerator &&gen){
       store(result1.get());
       gen.Activate();
-    }, std::move(result1), std::move(gen), keep_alive);
-    std::swap(*keep_alive, task);
+    }, std::move(result1), std::move(gen));
+    auto fut = std::make_unique<std::future<void>>(std::move(task));
+    symmetric::runtime::symmetric_executor::Register(waiting.Dup(), 
+      symmetric::runtime::symmetric_executor::CallbackFunction(wit::ResourceImportBase((uint8_t*)wait_on_future)),
+      symmetric::runtime::symmetric_executor::CallbackData(wit::ResourceImportBase((uint8_t*)fut.release())));
     return waiting.into_handle();
   }
 }
