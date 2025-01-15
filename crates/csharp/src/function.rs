@@ -586,9 +586,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     Direction::Import => {
                         let ptr: String = self.locals.tmp("listPtr");
                         let handle: String = self.locals.tmp("gcHandle");
-                        // Dispite the name GCHandle.Alloc here this does not actually allocate memory on the heap. 
-                        // It pins the array with the garbage collector so that it can be passed to unmanaged code
-                        // It is required to free the pin after use which is done in the Cleanup section 
+                        // Despite the name GCHandle.Alloc here this does not actually allocate memory on the heap. 
+                        // It pins the array with the garbage collector so that it can be passed to unmanaged code.
+                        // It is required to free the pin after use which is done in the Cleanup section.
                         uwrite!(
                             self.src,
                             "
