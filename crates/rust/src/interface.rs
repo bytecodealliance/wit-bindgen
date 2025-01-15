@@ -189,7 +189,7 @@ impl<'i> InterfaceGenerator<'i> {
                 sig.self_arg = Some("&self".into());
                 sig.self_is_first_param = true;
             }
-            self.print_signature(func, true, &sig, false);
+            self.print_signature(func, true, &sig);
             self.src.push_str(";\n");
             let trait_method = mem::replace(&mut self.src, prev);
             methods.push(trait_method);
@@ -959,7 +959,7 @@ pub mod vtable{ordinal} {{
             }
         }
         self.src.push_str("#[allow(unused_unsafe, clippy::all)]\n");
-        let params = self.print_signature(func, false, &sig, true);
+        let params = self.print_signature(func, false, &sig);
         self.src.push_str("{\n");
         self.src.push_str("unsafe {\n");
 
@@ -1099,7 +1099,7 @@ pub mod vtable{ordinal} {{
             // The corresponding close bracket is emitted in the
             // `Instruction::AsyncPostCallInterface` case inside
             // `FunctionBindgen::emit`.
-            uwriteln!(self.src, "let {name} = {{");
+            uwriteln!(self.src, "let {name} = async move {{");
         }
         for decl in handle_decls {
             self.src.push_str(&decl);
@@ -1326,14 +1326,8 @@ pub mod vtable{ordinal} {{
                 sig.self_arg = Some("&self".into());
                 sig.self_is_first_param = true;
             }
-            self.print_signature(func, true, &sig, false);
-            let call = if async_ {
-                let async_support = self.path_to_async_support();
-                format!("{{ #[allow(unreachable_code)]{async_support}::futures::future::ready(unreachable!()) }}\n")
-            } else {
-                "{ unreachable!() }\n".into()
-            };
-            self.src.push_str(&call);
+            self.print_signature(func, true, &sig);
+            self.src.push_str("{ unreachable!() }\n");
         }
 
         self.src.push_str("}\n");
@@ -1390,22 +1384,12 @@ pub mod vtable{ordinal} {{
         // }
     }
 
-    fn print_signature(
-        &mut self,
-        func: &Function,
-        params_owned: bool,
-        sig: &FnSig,
-        use_async_sugar: bool,
-    ) -> Vec<String> {
-        let params = self.print_docs_and_params(func, params_owned, sig, use_async_sugar);
+    fn print_signature(&mut self, func: &Function, params_owned: bool, sig: &FnSig) -> Vec<String> {
+        let params = self.print_docs_and_params(func, params_owned, sig);
         if let FunctionKind::Constructor(_) = &func.kind {
-            self.push_str(if sig.async_ && !use_async_sugar {
-                " -> impl ::core::future::Future<Output = Self>"
-            } else {
-                " -> Self"
-            })
+            self.push_str(" -> Self")
         } else {
-            self.print_results(&func.results, sig.async_ && !use_async_sugar);
+            self.print_results(&func.results);
         }
         params
     }
@@ -1415,7 +1399,6 @@ pub mod vtable{ordinal} {{
         func: &Function,
         params_owned: bool,
         sig: &FnSig,
-        use_async_sugar: bool,
     ) -> Vec<String> {
         self.rustdoc(&func.docs);
         self.rustdoc_params(&func.params, "Parameters");
@@ -1428,7 +1411,7 @@ pub mod vtable{ordinal} {{
         if sig.unsafe_ {
             self.push_str("unsafe ");
         }
-        if sig.async_ && use_async_sugar {
+        if sig.async_ {
             self.push_str("async ");
         }
         self.push_str("fn ");
@@ -1518,11 +1501,8 @@ pub mod vtable{ordinal} {{
         params
     }
 
-    fn print_results(&mut self, results: &Results, async_: bool) {
+    fn print_results(&mut self, results: &Results) {
         self.push_str(" -> ");
-        if async_ {
-            self.push_str("impl ::core::future::Future<Output = ");
-        }
 
         match results.len() {
             0 => {
@@ -1544,10 +1524,6 @@ pub mod vtable{ordinal} {{
                 }
                 self.push_str(")")
             }
-        }
-
-        if async_ {
-            self.push_str("> + 'static");
         }
     }
 

@@ -932,6 +932,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         ")".into()
                     });
                 }
+                if self.async_ {
+                    self.push_str(".await");
+                }
                 self.push_str(";\n");
             }
 
