@@ -99,7 +99,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             .map(
                 |(i, (((name, ty), Block { body, results, .. }), payload))| {
                     let payload = if let Some(ty) = self.interface_gen.non_empty_type(ty.as_ref()) {
-                        let ty = self.interface_gen.type_name_with_qualifier(ty, true);
+                        let ty = self.interface_gen.name_with_qualifier(ty, true, true);
                         let name = name.to_upper_camel_case();
 
                         format!("{ty} {payload} = {op}.As{name};")
@@ -729,12 +729,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         uwrite!(
                             self.src,
                             "
-                            var {handle} = GCHandle.Alloc({list}, GCHandleType.Pinned);
-                            var {ptr} = {handle}.AddrOfPinnedObject();
-                            cleanups.Add(()=> {handle}.Free());
+                            var {handle} = {list}.Pin();
+                            var {ptr} = {handle}.Pointer;
+                            cleanups.Add(()=> {handle}.Dispose());
                             "
                         );
-                        results.push(format!("{ptr}")); 
+                        results.push(format!("(nint){ptr}")); 
                         results.push(format!("({list}).Length"));
                     }
                     Direction::Export => {
@@ -845,7 +845,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 let list = &operands[0];
                 let size = self.interface_gen.csharp_gen.sizes.size(element).size_wasm32();
-                let ty = self.interface_gen.type_name_with_qualifier(element, true);
+                let ty = self.interface_gen.name_with_qualifier(element, true, true);
                 let index = self.locals.tmp("index");
 
                 let address = self.locals.tmp("address");
@@ -1009,7 +1009,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.src.insert_str(0, "var cleanups = new List<Action>();
                         ");
 
-                    uwriteln!(self.src, "\
+                    uwriteln!(self.src, "
                     foreach (var cleanup in cleanups)
                     {{
                         cleanup();

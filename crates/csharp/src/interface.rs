@@ -285,7 +285,7 @@ impl InterfaceGenerator<'_> {
                 0
             })
             .map(|param| {
-                let ty = self.type_name_with_qualifier(&param.1, true);
+                let ty = self.name_with_qualifier(&param.1, true, true);
                 let param_name = &param.0;
                 let param_name = param_name.to_csharp_ident();
                 format!("{ty} {param_name}")
@@ -518,6 +518,15 @@ impl InterfaceGenerator<'_> {
     }
 
     pub(crate) fn type_name_with_qualifier(&mut self, ty: &Type, qualifier: bool) -> String {
+        self.name_with_qualifier(ty, qualifier, false)
+    }
+
+    pub(crate) fn name_with_qualifier(
+        &mut self,
+        ty: &Type,
+        qualifier: bool,
+        is_param: bool,
+    ) -> String {
         match ty {
             Type::Bool => "bool".to_owned(),
             Type::U8 => "byte".to_owned(),
@@ -535,12 +544,20 @@ impl InterfaceGenerator<'_> {
             Type::Id(id) => {
                 let ty = &self.resolve.types[*id];
                 match &ty.kind {
-                    TypeDefKind::Type(ty) => self.type_name_with_qualifier(ty, qualifier),
+                    TypeDefKind::Type(ty) => self.name_with_qualifier(ty, qualifier, is_param),
                     TypeDefKind::List(ty) => {
-                        if crate::world_generator::is_primitive(ty) {
+                        if crate::world_generator::is_primitive(ty)
+                            && self.direction == Direction::Import
+                            && is_param
+                        {
+                            format!("ReadOnlyMemory<{}>", self.type_name(ty))
+                        } else if crate::world_generator::is_primitive(ty) {
                             format!("{}[]", self.type_name(ty))
                         } else {
-                            format!("List<{}>", self.type_name_with_qualifier(ty, qualifier))
+                            format!(
+                                "List<{}>",
+                                self.name_with_qualifier(ty, qualifier, is_param)
+                            )
                         }
                     }
                     TypeDefKind::Tuple(tuple) => {
@@ -549,14 +566,17 @@ impl InterfaceGenerator<'_> {
 
                         let params = match count {
                             0 => String::new(),
-                            1 => self
-                                .type_name_with_qualifier(tuple.types.first().unwrap(), qualifier),
+                            1 => self.name_with_qualifier(
+                                tuple.types.first().unwrap(),
+                                qualifier,
+                                is_param,
+                            ),
                             _ => format!(
                                 "({})",
                                 tuple
                                     .types
                                     .iter()
-                                    .map(|ty| self.type_name_with_qualifier(ty, qualifier))
+                                    .map(|ty| self.name_with_qualifier(ty, qualifier, is_param))
                                     .collect::<Vec<_>>()
                                     .join(", ")
                             ),
@@ -571,7 +591,7 @@ impl InterfaceGenerator<'_> {
                         } else {
                             false
                         };
-                        let base_ty = self.type_name_with_qualifier(base_ty, qualifier);
+                        let base_ty = self.name_with_qualifier(base_ty, qualifier, is_param);
                         if nesting {
                             format!("Option<{base_ty}>")
                         } else {
@@ -582,7 +602,7 @@ impl InterfaceGenerator<'_> {
                         self.csharp_gen.needs_result = true;
                         let mut name = |ty: &Option<Type>| {
                             ty.as_ref()
-                                .map(|ty| self.type_name_with_qualifier(ty, qualifier))
+                                .map(|ty| self.name_with_qualifier(ty, qualifier, is_param))
                                 .unwrap_or_else(|| "None".to_owned())
                         };
                         let ok = name(&result.ok);
@@ -592,7 +612,7 @@ impl InterfaceGenerator<'_> {
                     }
                     TypeDefKind::Handle(handle) => {
                         let (Handle::Own(id) | Handle::Borrow(id)) = handle;
-                        self.type_name_with_qualifier(&Type::Id(*id), qualifier)
+                        self.name_with_qualifier(&Type::Id(*id), qualifier, is_param)
                     }
                     _ => {
                         if let Some(name) = &ty.name {
@@ -918,7 +938,7 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .map(|field| {
                 format!(
                     "{} {}",
-                    self.type_name(&field.ty),
+                    self.name_with_qualifier(&field.ty, false, true),
                     field.name.to_csharp_ident()
                 )
             })
@@ -944,7 +964,7 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 .map(|field| {
                     format!(
                         "{access} readonly {} {};",
-                        self.type_name(&field.ty),
+                        self.name_with_qualifier(&field.ty, false, true),
                         field.name.to_csharp_ident()
                     )
                 })
