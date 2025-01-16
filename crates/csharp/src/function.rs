@@ -723,21 +723,24 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::ListCanonLower { element, realloc } => {
-                let list = &operands[0];
-                let (_size, ty) = list_element_info(element);
-
+                let list: &String = &operands[0];
                 match self.interface_gen.direction {
                     Direction::Import => {
-                        let buffer: String = self.locals.tmp("buffer");
+                        let ptr: String = self.locals.tmp("listPtr");
+                        let handle: String = self.locals.tmp("gcHandle");
+                        // Despite the name GCHandle.Alloc here this does not actually allocate memory on the heap. 
+                        // It pins the array with the garbage collector so that it can be passed to unmanaged code.
+                        // It is required to free the pin after use which is done in the Cleanup section.
                         uwrite!(
                             self.src,
                             "
-                            void* {buffer} = stackalloc {ty}[({list}).Length];
-                            {list}.AsSpan<{ty}>().CopyTo(new Span<{ty}>({buffer}, {list}.Length));
+                            var {handle} = GCHandle.Alloc({list}, GCHandleType.Pinned);
+                            var {ptr} = {handle}.AddrOfPinnedObject();
                             "
                         );
-                        results.push(format!("(int){buffer}"));
+                        results.push(format!("{ptr}")); 
                         results.push(format!("({list}).Length"));
+                        self.cleanup.push(Cleanup { address: handle });
                     }
                     Direction::Export => {
                         let address = self.locals.tmp("address");
@@ -1013,7 +1016,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             uwriteln!(self.src, "return ({results});")
                         }
                     }
-
                     // Close all the fixed blocks.
                     for _ in 0..self.fixed {
                         uwriteln!(self.src, "}}");
@@ -1103,7 +1105,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 match direction {
                     Direction::Import => {
-			let import_name = self.interface_gen.type_name_with_qualifier(&Type::Id(id), true);
+                        let import_name = self.interface_gen.type_name_with_qualifier(&Type::Id(id), true);
 
                         if let FunctionKind::Constructor(_) = self.kind {
                             resource = "this".to_owned();
@@ -1122,13 +1124,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     Direction::Export => {
                         self.interface_gen.csharp_gen.needs_rep_table = true;
 
-			let export_name = self.interface_gen.csharp_gen.all_resources[&id].export_impl_name();
+                        let export_name = self.interface_gen.csharp_gen.all_resources[&id].export_impl_name();
                         if is_own {
                             uwriteln!(
                                 self.src,
                                 "var {resource} = ({export_name}) {export_name}.repTable.Get\
-				     ({export_name}.WasmInterop.wasmImportResourceRep({op}));
-                                 {resource}.Handle = {op};"
+                                ({export_name}.WasmInterop.wasmImportResourceRep({op}));
+                                {resource}.Handle = {op};"
                             );
                         } else {
                             uwriteln!(self.src, "var {resource} = ({export_name}) {export_name}.repTable.Get({op});");
