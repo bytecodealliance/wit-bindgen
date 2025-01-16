@@ -30,6 +30,10 @@ pub struct Opts {
     /// Skip generating `cabi_realloc`, `WasmImportLinkageAttribute`, and component type files
     #[cfg_attr(feature = "clap", arg(long))]
     pub skip_support_files: bool,
+
+    /// Generate code for WIT `Result` types instead of exceptions
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub with_wit_results: bool,
 }
 
 impl Opts {
