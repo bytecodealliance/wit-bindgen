@@ -1088,7 +1088,14 @@ pub mod vtable{ordinal} {{
             async_result_name,
             ..
         } = f;
-        assert!(!needs_cleanup_list);
+        if async_ {
+            if needs_cleanup_list {
+                let vec = self.path_to_vec();
+                uwriteln!(self.src, "let mut cleanup_list = {vec}::new();");
+            }
+        } else {
+            assert!(!needs_cleanup_list);
+        }
         if let Some(name) = async_result_name {
             // When `async_result_name` is `Some(_)`, we wrap the call and any
             // `handle_decls` in a block scope to ensure any resource handles
