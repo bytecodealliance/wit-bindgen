@@ -294,7 +294,7 @@ pub struct Opts {
     ///     - some=<value>[,<value>...], where each <value> is of the form:
     ///         - import:<name> or
     ///         - export:<name>
-    #[cfg_attr(feature = "clap", arg(long = "async", value_parser = parse_async))]
+    #[cfg_attr(feature = "clap", arg(long = "async", value_parser = parse_async, default_value = "none"))]
     pub async_: AsyncConfig,
 }
 
