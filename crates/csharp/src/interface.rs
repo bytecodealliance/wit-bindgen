@@ -1169,7 +1169,7 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
         todo!()
     }
 
-    fn type_stream(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
+    fn type_stream(&mut self, id: TypeId, name: &str, ty: &Option<Type>, docs: &Docs) {
         _ = (id, name, ty, docs);
         todo!()
     }
