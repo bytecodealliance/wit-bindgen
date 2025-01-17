@@ -27,7 +27,6 @@ pub(crate) struct FunctionBindgen<'a, 'b> {
     cleanup: Vec<Cleanup>,
     import_return_pointer_area_size: usize,
     import_return_pointer_area_align: usize,
-    fixed: usize, // Number of `fixed` blocks that need to be closed.
     pub(crate) resource_drops: Vec<(String, String)>,
 }
 
@@ -61,7 +60,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             cleanup: Vec::new(),
             import_return_pointer_area_size: 0,
             import_return_pointer_area_align: 0,
-            fixed: 0,
             resource_drops: Vec::new(),
         }
     }
@@ -1016,10 +1014,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             uwriteln!(self.src, "return ({results});")
                         }
                     }
-                    // Close all the fixed blocks.
-                    for _ in 0..self.fixed {
-                        uwriteln!(self.src, "}}");
-                    }
                 }
             }
 
@@ -1160,8 +1154,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
     fn return_pointer(&mut self, size: usize, align: usize) -> String {
         let ptr = self.locals.tmp("ptr");
 
-        // Use a stack-based return area for imports, because exports need
-        // their return area to be live until the post-return call.
         match self.interface_gen.direction {
             Direction::Import => {
                 self.import_return_pointer_area_size =
@@ -1173,25 +1165,22 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.import_return_pointer_area_align,
                 );
                 let ret_area = self.locals.tmp("retArea");
-                let ret_area_byte0 = self.locals.tmp("retAreaByte0");
+                // We can use the stack here to get a return pointer when importing.
+                // We do need to do a slight over-allocation since C# doesn't provide a way
+                // to align the allocation via the stackalloc command, unlike with a fixed array where the pointer will be aligned.
+                // We get the final ptr to pass to the wasm runtime by shifting to the
+                // correctly aligned pointer (sometimes it can be already aligned).
                 uwrite!(
                     self.src,
                     "
-                    var {2} = new {0}[{1}];
-                    fixed ({0}* {3} = &{2}[0])
-                    {{
-                        var {ptr} = (nint){3};
-                    ",
-                    element_type,
-                    array_size,
-                    ret_area,
-                    ret_area_byte0
+                    var {ret_area} = stackalloc {element_type}[{array_size}+1];
+                    var {ptr} = ((int){ret_area}) + ({align} - 1) & -{align};
+                    "
                 );
-                self.fixed = self.fixed + 1;
-
                 format!("{ptr}")
             }
             Direction::Export => {
+                // exports need their return area to be live until the post-return call.
                 self.interface_gen.csharp_gen.return_area_size =
                     self.interface_gen.csharp_gen.return_area_size.max(size);
                 self.interface_gen.csharp_gen.return_area_align =
