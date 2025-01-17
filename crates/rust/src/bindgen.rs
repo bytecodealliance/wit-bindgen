@@ -21,6 +21,7 @@ pub(super) struct FunctionBindgen<'a, 'b> {
     pub handle_decls: Vec<String>,
     always_owned: bool,
     pub async_result_name: Option<String>,
+    emitted_cleanup: bool,
 }
 
 impl<'a, 'b> FunctionBindgen<'a, 'b> {
@@ -47,10 +48,15 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             handle_decls: Vec::new(),
             always_owned,
             async_result_name: None,
+            emitted_cleanup: false,
         }
     }
 
     fn emit_cleanup(&mut self) {
+        if self.emitted_cleanup {
+            return;
+        }
+        self.emitted_cleanup = true;
         for (ptr, layout) in mem::take(&mut self.cleanup) {
             let alloc = self.gen.path_to_std_alloc_module();
             self.push_str(&format!(
@@ -1001,10 +1007,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.src,
                     "\
                             {func}({});
-                        }});
                     ",
                     operands.join(", ")
                 );
+                self.emit_cleanup();
+                self.src.push_str("});\n");
             }
 
             Instruction::Flush { amt } => {

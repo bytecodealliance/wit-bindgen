@@ -122,12 +122,12 @@ unsafe fn poll(state: *mut FutureState) -> Poll<()> {
 #[doc(hidden)]
 pub fn first_poll<T: 'static>(
     future: impl Future<Output = T> + 'static,
-    fun: impl FnOnce(T) + 'static,
+    fun: impl FnOnce(&T) + 'static,
 ) -> *mut u8 {
     let state = Box::into_raw(Box::new(FutureState {
         todo: 0,
         tasks: Some(
-            [Box::pin(future.map(fun)) as BoxFuture]
+            [Box::pin(future.map(|v| fun(&v))) as BoxFuture]
                 .into_iter()
                 .collect(),
         ),
