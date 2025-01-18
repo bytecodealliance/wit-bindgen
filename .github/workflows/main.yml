@@ -75,15 +75,11 @@ jobs:
     - uses: ./.github/actions/install-wasi-sdk
       if: matrix.lang == 'c' || (matrix.lang == 'csharp' && matrix.os == 'windows-latest')
 
-    - run: |
-        curl.exe -LO https://dotnet.microsoft.com/download/dotnet/scripts/v1/dotnet-install.ps1
-        powershell -File dotnet-install.ps1 -Channel 8.0.1xx -Verbose
-        echo DOTNET_ROOT=$LOCALAPPDATA'\Microsoft\dotnet' >> $GITHUB_ENV
-        export DOTNET_ROOT=$LOCALAPPDATA\\Microsoft\\dotnet
-        echo $LOCALAPPDATA'\Microsoft\dotnet' >> $GITHUB_PATH
-        echo $LOCALAPPDATA'\Microsoft\dotnet\tools' >> $GITHUB_PATH
-        $LOCALAPPDATA/Microsoft/dotnet/dotnet --info
-      if: matrix.os == 'windows-latest' && matrix.lang == 'csharp'
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '9.x'
+      if: matrix.lang == 'csharp'
 
       # Hacky work-around for https://github.com/dotnet/runtime/issues/80619
     - run: dotnet new console -o /tmp/foo
