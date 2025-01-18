@@ -33,11 +33,17 @@ prettyplease = "0.2.20"
 syn = { version = "2.0.89", features = ["printing"] }
 futures = "0.3.31"
 
-wasmparser = "0.223.0"
-wasm-encoder = "0.223.0"
-wasm-metadata = "0.223.0"
-wit-parser = "0.223.0"
-wit-component = "0.223.0"
+# TODO: switch git dependencies to new releases
+# wasmparser = "0.224.0"
+# wasm-encoder = "0.224.0"
+# wasm-metadata = "0.224.0"
+# wit-parser = "0.224.0"
+# wit-component = "0.224.0"
+wasmparser = { git = "https://github.com/bytecodealliance/wasm-tools" }
+wasm-encoder = { git = "https://github.com/bytecodealliance/wasm-tools" }
+wasm-metadata = { git = "https://github.com/bytecodealliance/wasm-tools" }
+wit-parser = { git = "https://github.com/bytecodealliance/wasm-tools" }
+wit-component = { git = "https://github.com/bytecodealliance/wasm-tools" }
 
 wit-bindgen-core = { path = 'crates/core', version = '0.37.0' }
 wit-bindgen-c = { path = 'crates/c', version = '0.37.0' }

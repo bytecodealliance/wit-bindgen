@@ -1352,7 +1352,7 @@ void __wasm_export_{ns}_{snake}_dtor({ns}_{snake}_t* arg) {{
         todo!()
     }
 
-    fn type_stream(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
+    fn type_stream(&mut self, id: TypeId, name: &str, ty: &Option<Type>, docs: &Docs) {
         _ = (id, name, ty, docs);
         todo!()
     }
@@ -1450,7 +1450,7 @@ impl<'a> wit_bindgen_core::AnonymousTypeGenerator<'a> for InterfaceGenerator<'a>
         todo!("print_anonymous_type for future");
     }
 
-    fn anonymous_type_stream(&mut self, _id: TypeId, _ty: &Type, _docs: &Docs) {
+    fn anonymous_type_stream(&mut self, _id: TypeId, _ty: &Option<Type>, _docs: &Docs) {
         todo!("print_anonymous_type for stream");
     }
 

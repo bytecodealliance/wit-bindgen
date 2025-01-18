@@ -689,26 +689,33 @@ pub mod vtable{ordinal} {{
                     }
                 }
                 TypeDefKind::Stream(payload_type) => {
-                    let name = self.type_name_owned(payload_type);
+                    let name = if let Some(payload_type) = payload_type {
+                        self.type_name_owned(payload_type)
+                    } else {
+                        "()".into()
+                    };
 
                     if !self.gen.stream_payloads.contains_key(&name) {
                         let ordinal = self.gen.stream_payloads.len();
-                        let size = self.sizes.size(payload_type).size_wasm32();
-                        let align = self.sizes.align(payload_type).align_wasm32();
+                        let (size, align) = if let Some(payload_type) = payload_type {
+                            (
+                                self.sizes.size(payload_type),
+                                self.sizes.align(payload_type),
+                            )
+                        } else {
+                            (
+                                ArchitectureSize {
+                                    bytes: 0,
+                                    pointers: 0,
+                                },
+                                Alignment::default(),
+                            )
+                        };
+                        let size = size.size_wasm32();
+                        let align = align.align_wasm32();
                         let alloc = self.path_to_std_alloc_module();
-                        let (lower_address, lower, lift_address, lift) =
-                            if stream_direct(payload_type) {
-                                let lower_address =
-                                    "let address = values.as_ptr() as *mut u8;".into();
-                                let lift_address =
-                                    "let address = values.as_mut_ptr() as *mut u8;".into();
-                                (
-                                    lower_address,
-                                    String::new(),
-                                    lift_address,
-                                    "let value = ();\n".into(),
-                                )
-                            } else {
+                        let (lower_address, lower, lift_address, lift) = match payload_type {
+                            Some(payload_type) if !stream_direct(payload_type) => {
                                 let address = format!(
                                     "let address = unsafe {{ {alloc}::alloc\
                                      ({alloc}::Layout::from_size_align_unchecked\
@@ -744,7 +751,20 @@ for (index, dst) in values.iter_mut().take(count).enumerate() {{
                                 "#
                                 );
                                 (address.clone(), lower, address, lift)
-                            };
+                            }
+                            _ => {
+                                let lower_address =
+                                    "let address = values.as_ptr() as *mut u8;".into();
+                                let lift_address =
+                                    "let address = values.as_mut_ptr() as *mut u8;".into();
+                                (
+                                    lower_address,
+                                    String::new(),
+                                    lift_address,
+                                    "let value = ();\n".into(),
+                                )
+                            }
+                        };
 
                         let box_ = self.path_to_box();
                         let code = format!(
@@ -2853,7 +2873,7 @@ impl<'a> {camel}Borrow<'a>{{
         self.push_str(";\n");
     }
 
-    fn type_stream(&mut self, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
+    fn type_stream(&mut self, _id: TypeId, name: &str, ty: &Option<Type>, docs: &Docs) {
         let async_support = self.path_to_async_support();
         let mode = TypeMode {
             style: TypeOwnershipStyle::Owned,
@@ -2865,7 +2885,7 @@ impl<'a> {camel}Borrow<'a>{{
         self.print_generics(mode.lifetime);
         self.push_str(" = ");
         self.push_str(&format!("{async_support}::StreamReader<"));
-        self.print_ty(ty, mode);
+        self.print_optional_ty(ty.as_ref(), mode);
         self.push_str(">");
         self.push_str(";\n");
     }
@@ -2979,7 +2999,7 @@ impl<'a, 'b> wit_bindgen_core::AnonymousTypeGenerator<'a> for AnonTypeGenerator<
         self.interface.push_str(">");
     }
 
-    fn anonymous_type_stream(&mut self, _id: TypeId, ty: &Type, _docs: &Docs) {
+    fn anonymous_type_stream(&mut self, _id: TypeId, ty: &Option<Type>, _docs: &Docs) {
         let async_support = self.interface.path_to_async_support();
         let mode = TypeMode {
             style: TypeOwnershipStyle::Owned,
@@ -2988,7 +3008,7 @@ impl<'a, 'b> wit_bindgen_core::AnonymousTypeGenerator<'a> for AnonTypeGenerator<
         };
         self.interface
             .push_str(&format!("{async_support}::StreamReader<"));
-        self.interface.print_ty(ty, mode);
+        self.interface.print_optional_ty(ty.as_ref(), mode);
         self.interface.push_str(">");
     }
 

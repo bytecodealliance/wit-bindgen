@@ -155,7 +155,7 @@ pub trait InterfaceGenerator<'a> {
     fn type_list(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs);
     fn type_builtin(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs);
     fn type_future(&mut self, id: TypeId, name: &str, ty: &Option<Type>, docs: &Docs);
-    fn type_stream(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs);
+    fn type_stream(&mut self, id: TypeId, name: &str, ty: &Option<Type>, docs: &Docs);
     fn type_error_context(&mut self, id: TypeId, name: &str, docs: &Docs);
     fn types(&mut self, iface: InterfaceId) {
         let iface = &self.resolve().interfaces[iface];
@@ -195,7 +195,7 @@ pub trait AnonymousTypeGenerator<'a> {
     fn anonymous_type_result(&mut self, id: TypeId, ty: &Result_, docs: &Docs);
     fn anonymous_type_list(&mut self, id: TypeId, ty: &Type, docs: &Docs);
     fn anonymous_type_future(&mut self, id: TypeId, ty: &Option<Type>, docs: &Docs);
-    fn anonymous_type_stream(&mut self, id: TypeId, ty: &Type, docs: &Docs);
+    fn anonymous_type_stream(&mut self, id: TypeId, ty: &Option<Type>, docs: &Docs);
     fn anonymous_type_type(&mut self, id: TypeId, ty: &Type, docs: &Docs);
     fn anonymous_type_error_context(&mut self);
 

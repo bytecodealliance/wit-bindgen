@@ -364,13 +364,13 @@ def_instruction! {
 
         /// Create an `i32` from a stream.
         StreamLower {
-            payload: &'a Type,
+            payload: &'a Option<Type>,
             ty: TypeId,
         } : [1] => [1],
 
         /// Create a stream from an `i32`.
         StreamLift {
-            payload: &'a Type,
+            payload: &'a Option<Type>,
             ty: TypeId,
         } : [1] => [1],
 

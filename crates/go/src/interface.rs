@@ -322,7 +322,7 @@ impl InterfaceGenerator<'_> {
                     TypeDefKind::Stream(t) => {
                         let mut src = String::new();
                         src.push_str("Stream");
-                        src.push_str(&self.ty_name(t));
+                        src.push_str(&self.optional_ty_name(t.as_ref()));
                         src.push('T');
                         src
                     }
@@ -1271,7 +1271,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         todo!()
     }
 
-    fn type_stream(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
+    fn type_stream(&mut self, id: TypeId, name: &str, ty: &Option<Type>, docs: &Docs) {
         _ = (id, name, ty, docs);
         todo!()
     }

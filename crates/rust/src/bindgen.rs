@@ -506,9 +506,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::StreamLift { payload, .. } => {
                 let async_support = self.gen.path_to_async_support();
                 let op = &operands[0];
-                let name = self
-                    .gen
-                    .type_name_owned_with_id(payload, Identifier::StreamOrFuturePayload);
+                let name = payload
+                    .as_ref()
+                    .map(|ty| {
+                        self.gen
+                            .type_name_owned_with_id(ty, Identifier::StreamOrFuturePayload)
+                    })
+                    .unwrap_or_else(|| "()".into());
                 let ordinal = self.gen.gen.stream_payloads.get_index_of(&name).unwrap();
                 let path = self.gen.path_to_root();
                 results.push(format!(
