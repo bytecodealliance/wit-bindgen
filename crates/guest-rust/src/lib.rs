@@ -877,5 +877,8 @@ pub mod rt {
     #[cfg(all(feature = "realloc", not(target_env = "p2")))]
     pub use wit_bindgen_rt::cabi_realloc;
 
+    #[cfg(feature = "async")]
+    pub use wit_bindgen_rt::async_support;
+
     pub use crate::pre_wit_bindgen_0_20_0::*;
 }
