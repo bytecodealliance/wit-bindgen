@@ -65,7 +65,7 @@ impl CSProjectLLVMBuilder {
             "<Project Sdk=\"Microsoft.NET.Sdk\">
     
         <PropertyGroup>
-            <TargetFramework>net8.0</TargetFramework>
+            <TargetFramework>net9.0</TargetFramework>
             <LangVersion>preview</LangVersion>
             <RootNamespace>{name}</RootNamespace>
             <ImplicitUsings>enable</ImplicitUsings>
