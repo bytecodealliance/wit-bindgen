@@ -13,7 +13,7 @@ interface futures {
   future-f32-param: func(x: future<f32>);
   future-f64-param: func(x: future<f64>);
 
-  future-ret: func(x: future);
+  future-ret: func() -> future;
   future-u8-ret: func() -> future<u8>;
   future-u16-ret: func() -> future<u16>;
   future-u32-ret: func() -> future<u32>;
