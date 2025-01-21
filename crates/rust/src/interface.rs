@@ -191,7 +191,7 @@ impl<'i> InterfaceGenerator<'i> {
                 sig.self_arg = Some("&self".into());
                 sig.self_is_first_param = true;
             }
-            self.print_signature(func, true, &sig, false);
+            self.print_signature(func, true, &sig);
             self.src.push_str(";\n");
             let trait_method = mem::replace(&mut self.src, prev);
             methods.push(trait_method);
@@ -565,7 +565,7 @@ macro_rules! {macro_name} {{
                     .unwrap_or_else(|| "$root".into())
             );
             let func_name = &func.name;
-            let async_support = self.path_to_async_support();
+            let async_support = self.gen.async_support_path();
 
             match &self.resolve.types[ty].kind {
                 TypeDefKind::Future(payload_type) => {
@@ -1006,7 +1006,7 @@ pub mod vtable{ordinal} {{
             }
         }
         self.src.push_str("#[allow(unused_unsafe, clippy::all)]\n");
-        let params = self.print_signature(func, false, &sig, true);
+        let params = self.print_signature(func, false, &sig);
         self.src.push_str("{\n");
         if self.gen.opts.symmetric
             && symmetric::has_non_canonical_list_rust(self.resolve, &func.params)
@@ -1149,9 +1149,29 @@ pub mod vtable{ordinal} {{
             needs_cleanup_list,
             src,
             handle_decls,
+            async_result_name,
             ..
         } = f;
-        assert!(!needs_cleanup_list);
+        if async_ {
+            if needs_cleanup_list {
+                let vec = self.path_to_vec();
+                uwriteln!(self.src, "let mut cleanup_list = {vec}::new();");
+            }
+        } else {
+            assert!(!needs_cleanup_list);
+        }
+        if let Some(name) = async_result_name {
+            // When `async_result_name` is `Some(_)`, we wrap the call and any
+            // `handle_decls` in a block scope to ensure any resource handles
+            // are dropped before we call `async_support::first_poll`, which may
+            // call `task.return` at which point any borrow handles must already
+            // have been dropped.
+            //
+            // The corresponding close bracket is emitted in the
+            // `Instruction::AsyncPostCallInterface` case inside
+            // `FunctionBindgen::emit`.
+            uwriteln!(self.src, "let {name} = async move {{");
+        }
         for decl in handle_decls {
             self.src.push_str(&decl);
             self.src.push_str("\n");
@@ -1160,7 +1180,7 @@ pub mod vtable{ordinal} {{
         self.src.push_str("}\n");
 
         if async_ {
-            let async_support = self.path_to_async_support();
+            let async_support = self.gen.async_support_path();
             uwrite!(
                 self.src,
                 "\
@@ -1408,14 +1428,8 @@ pub mod vtable{ordinal} {{
                 sig.self_arg = Some("&self".into());
                 sig.self_is_first_param = true;
             }
-            self.print_signature(func, true, &sig, false);
-            let call = if async_ {
-                let async_support = self.path_to_async_support();
-                format!("{{ #[allow(unreachable_code)]{async_support}::futures::future::ready(unreachable!()) }}\n")
-            } else {
-                "{ unreachable!() }\n".into()
-            };
-            self.src.push_str(&call);
+            self.print_signature(func, true, &sig);
+            self.src.push_str("{ unreachable!() }\n");
         }
 
         self.src.push_str("}\n");
@@ -1472,22 +1486,12 @@ pub mod vtable{ordinal} {{
         // }
     }
 
-    fn print_signature(
-        &mut self,
-        func: &Function,
-        params_owned: bool,
-        sig: &FnSig,
-        use_async_sugar: bool,
-    ) -> Vec<String> {
-        let params = self.print_docs_and_params(func, params_owned, sig, use_async_sugar);
+    fn print_signature(&mut self, func: &Function, params_owned: bool, sig: &FnSig) -> Vec<String> {
+        let params = self.print_docs_and_params(func, params_owned, sig);
         if let FunctionKind::Constructor(_) = &func.kind {
-            self.push_str(if sig.async_ && !use_async_sugar {
-                " -> impl ::core::future::Future<Output = Self>"
-            } else {
-                " -> Self"
-            })
+            self.push_str(" -> Self")
         } else {
-            self.print_results(&func.results, sig.async_ && !use_async_sugar);
+            self.print_results(&func.results);
         }
         params
     }
@@ -1497,7 +1501,6 @@ pub mod vtable{ordinal} {{
         func: &Function,
         params_owned: bool,
         sig: &FnSig,
-        use_async_sugar: bool,
     ) -> Vec<String> {
         self.rustdoc(&func.docs);
         self.rustdoc_params(&func.params, "Parameters");
@@ -1510,7 +1513,7 @@ pub mod vtable{ordinal} {{
         if sig.unsafe_ {
             self.push_str("unsafe ");
         }
-        if sig.async_ && use_async_sugar {
+        if sig.async_ {
             self.push_str("async ");
         }
         self.push_str("fn ");
@@ -1600,11 +1603,8 @@ pub mod vtable{ordinal} {{
         params
     }
 
-    fn print_results(&mut self, results: &Results, async_: bool) {
+    fn print_results(&mut self, results: &Results) {
         self.push_str(" -> ");
-        if async_ {
-            self.push_str("impl ::core::future::Future<Output = ");
-        }
 
         match results.len() {
             0 => {
@@ -1626,10 +1626,6 @@ pub mod vtable{ordinal} {{
                 }
                 self.push_str(")")
             }
-        }
-
-        if async_ {
-            self.push_str("> + 'static");
         }
     }
 
@@ -2612,10 +2608,6 @@ pub mod vtable{ordinal} {{
         self.path_from_runtime_module(RuntimeItem::StdAllocModule, "alloc")
     }
 
-    pub fn path_to_async_support(&mut self) -> String {
-        "::wit_bindgen_rt::async_support".into()
-    }
-
     fn path_from_runtime_module(
         &mut self,
         item: RuntimeItem,
@@ -2956,7 +2948,7 @@ impl<'a> {camel}Borrow<'a>{{
     }
 
     fn type_future(&mut self, _id: TypeId, name: &str, ty: &Option<Type>, docs: &Docs) {
-        let async_support = self.path_to_async_support();
+        let async_support = self.gen.async_support_path();
         let mode = TypeMode {
             style: TypeOwnershipStyle::Owned,
             lists_borrowed: false,
@@ -2973,7 +2965,7 @@ impl<'a> {camel}Borrow<'a>{{
     }
 
     fn type_stream(&mut self, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
-        let async_support = self.path_to_async_support();
+        let async_support = self.gen.async_support_path();
         let mode = TypeMode {
             style: TypeOwnershipStyle::Owned,
             lists_borrowed: false,
@@ -2990,7 +2982,7 @@ impl<'a> {camel}Borrow<'a>{{
     }
 
     fn type_error_context(&mut self, _id: TypeId, name: &str, docs: &Docs) {
-        let async_support = self.path_to_async_support();
+        let async_support = self.gen.async_support_path();
         self.rustdoc(docs);
         self.push_str(&format!("pub type {} = ", name.to_upper_camel_case()));
         self.push_str(&format!("{async_support}::ErrorContext"));
@@ -3086,7 +3078,7 @@ impl<'a, 'b> wit_bindgen_core::AnonymousTypeGenerator<'a> for AnonTypeGenerator<
     }
 
     fn anonymous_type_future(&mut self, _id: TypeId, ty: &Option<Type>, _docs: &Docs) {
-        let async_support = self.interface.path_to_async_support();
+        let async_support = self.interface.gen.async_support_path();
         let mode = TypeMode {
             style: TypeOwnershipStyle::Owned,
             lists_borrowed: false,
@@ -3099,7 +3091,7 @@ impl<'a, 'b> wit_bindgen_core::AnonymousTypeGenerator<'a> for AnonTypeGenerator<
     }
 
     fn anonymous_type_stream(&mut self, _id: TypeId, ty: &Type, _docs: &Docs) {
-        let async_support = self.interface.path_to_async_support();
+        let async_support = self.interface.gen.async_support_path();
         let mode = TypeMode {
             style: TypeOwnershipStyle::Owned,
             lists_borrowed: false,
@@ -3112,7 +3104,7 @@ impl<'a, 'b> wit_bindgen_core::AnonymousTypeGenerator<'a> for AnonTypeGenerator<
     }
 
     fn anonymous_type_error_context(&mut self) {
-        let async_support = self.interface.path_to_async_support();
+        let async_support = self.interface.gen.async_support_path();
         self.interface
             .push_str(&format!("{async_support}::ErrorContext"));
     }

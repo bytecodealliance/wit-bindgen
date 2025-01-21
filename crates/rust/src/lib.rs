@@ -317,7 +317,7 @@ pub struct Opts {
     ///     - some=<value>[,<value>...], where each <value> is of the form:
     ///         - import:<name> or
     ///         - export:<name>
-    #[cfg_attr(feature = "clap", arg(long = "async", value_parser = parse_async))]
+    #[cfg_attr(feature = "clap", arg(long = "async", value_parser = parse_async, default_value = "none"))]
     pub async_: AsyncConfig,
 }
 
@@ -423,6 +423,10 @@ impl RustWasm {
             .unwrap_or(format!("{}::bitflags", self.runtime_path()))
     }
 
+    fn async_support_path(&self) -> String {
+        format!("{}::async_support", self.runtime_path())
+    }
+
     fn name_interface(
         &mut self,
         resolve: &Resolve,
@@ -484,71 +488,73 @@ impl RustWasm {
         self.src.push_str("}\n");
 
         if !self.future_payloads.is_empty() {
-            self.src.push_str(
+            let async_support = self.async_support_path();
+            self.src.push_str(&format!(
                 "\
-pub mod wit_future {
+pub mod wit_future {{
     #![allow(dead_code, unused_variables, clippy::all)]
 
     #[doc(hidden)]
-    pub trait FuturePayload: Unpin + Sized + 'static {
-       fn new() -> (u32, &'static ::wit_bindgen_rt::async_support::FutureVtable<Self>);
-    }",
-            );
+    pub trait FuturePayload: Unpin + Sized + 'static {{
+       fn new() -> (u32, &'static {async_support}::FutureVtable<Self>);
+    }}"
+            ));
             for code in self.future_payloads.values() {
                 self.src.push_str(code);
             }
-            self.src.push_str(
+            self.src.push_str(&format!(
                 "\
     /// Creates a new Component Model `future` with the specified payload type.
-    pub fn new<T: FuturePayload>() -> (::wit_bindgen_rt::async_support::FutureWriter<T>, ::wit_bindgen_rt::async_support::FutureReader<T>) {
+    pub fn new<T: FuturePayload>() -> ({async_support}::FutureWriter<T>, {async_support}::FutureReader<T>) {{
         let (handle, vtable) = T::new();
-        ::wit_bindgen_rt::async_support::with_entry(handle, |entry| match entry {
-            ::std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert(::wit_bindgen_rt::async_support::Handle::LocalOpen);
-            }
+        {async_support}::with_entry(handle, |entry| match entry {{
+            ::std::collections::hash_map::Entry::Vacant(entry) => {{
+                entry.insert({async_support}::Handle::LocalOpen);
+            }}
             ::std::collections::hash_map::Entry::Occupied(_) => unreachable!(),
-        });
+        }});
         (
-            ::wit_bindgen_rt::async_support::FutureWriter::new(handle, vtable),
-            ::wit_bindgen_rt::async_support::FutureReader::new(handle, vtable),
+            {async_support}::FutureWriter::new(handle, vtable),
+            {async_support}::FutureReader::new(handle, vtable),
         )
-    }
-}
+    }}
+}}
                 ",
-            );
+            ));
         }
 
         if !self.stream_payloads.is_empty() {
-            self.src.push_str(
+            let async_support = self.async_support_path();
+            self.src.push_str(&format!(
                 "\
-pub mod wit_stream {
+pub mod wit_stream {{
     #![allow(dead_code, unused_variables, clippy::all)]
 
-    pub trait StreamPayload: Unpin + Sized + 'static {
-       fn new() -> (u32, &'static ::wit_bindgen_rt::async_support::StreamVtable<Self>);
-    }",
-            );
+    pub trait StreamPayload: Unpin + Sized + 'static {{
+       fn new() -> (u32, &'static {async_support}::StreamVtable<Self>);
+    }}"
+            ));
             for code in self.stream_payloads.values() {
                 self.src.push_str(code);
             }
             self.src.push_str(
-                "\
+                &format!("\
     /// Creates a new Component Model `stream` with the specified payload type.
-    pub fn new<T: StreamPayload>() -> (::wit_bindgen_rt::async_support::StreamWriter<T>, ::wit_bindgen_rt::async_support::StreamReader<T>) {
+    pub fn new<T: StreamPayload>() -> ({async_support}::StreamWriter<T>, {async_support}::StreamReader<T>) {{
         let (handle, vtable) = T::new();
-        ::wit_bindgen_rt::async_support::with_entry(handle, |entry| match entry {
-            ::std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert(::wit_bindgen_rt::async_support::Handle::LocalOpen);
-            }
+        {async_support}::with_entry(handle, |entry| match entry {{
+            ::std::collections::hash_map::Entry::Vacant(entry) => {{
+                entry.insert({async_support}::Handle::LocalOpen);
+            }}
             ::std::collections::hash_map::Entry::Occupied(_) => unreachable!(),
-        });
+        }});
         (
-            ::wit_bindgen_rt::async_support::StreamWriter::new(handle, vtable),
-            ::wit_bindgen_rt::async_support::StreamReader::new(handle, vtable),
+            {async_support}::StreamWriter::new(handle, vtable),
+            {async_support}::StreamReader::new(handle, vtable),
         )
-    }
-}
-                ",
+    }}
+}}
+                "),
             );
         }
     }

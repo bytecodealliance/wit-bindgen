@@ -759,17 +759,26 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
         let (resolve, world) = resolve_wit_dir(&dir);
         for path in c_sharp.iter() {
             let world_name = &resolve.worlds[world].name;
-            let out_dir = out_dir.join(format!("csharp-{}", world_name));
-            drop(fs::remove_dir_all(&out_dir));
-            fs::create_dir_all(&out_dir).unwrap();
 
-            for csharp_impl in &c_sharp {
-                fs::copy(
-                    &csharp_impl,
-                    &out_dir.join(csharp_impl.file_name().unwrap()),
-                )
-                .unwrap();
-            }
+            let gen_option: &str = &path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap()
+                .split('_')
+                .skip(1)
+                .collect::<Vec<&str>>()
+                .join("-");
+
+            let test_dir = if gen_option.is_empty() {
+                out_dir.join(format!("csharp-{}", world_name))
+            } else {
+                out_dir.join(format!("csharp-{}-{}", world_name, gen_option))
+            };
+
+            drop(fs::remove_dir_all(&test_dir));
+            fs::create_dir_all(&test_dir).unwrap();
+
+            fs::copy(&path, &test_dir.join(path.file_name().unwrap())).unwrap();
 
             let snake = world_name.replace("-", "_");
             let camel = format!("{}World", snake.to_upper_camel_case());
@@ -779,10 +788,14 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
                 path.file_stem().and_then(|s| s.to_str()).unwrap()
             );
 
-            let out_wasm = out_dir.join(&assembly_name);
+            let out_wasm = test_dir.join(&assembly_name);
 
             let mut files = Default::default();
             let mut opts = wit_bindgen_csharp::Opts::default();
+            match gen_option {
+                "with-wit-results" => opts.with_wit_results = true,
+                _ => {}
+            };
             if let Some(path) = path.file_name().and_then(|s| s.to_str()) {
                 if path.contains("utf16") {
                     opts.string_encoding = wit_component::StringEncoding::UTF16;
@@ -791,17 +804,17 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
             opts.build().generate(&resolve, world, &mut files).unwrap();
 
             for (file, contents) in files.iter() {
-                let dst = out_dir.join(file);
+                let dst = test_dir.join(file);
                 fs::write(dst, contents).unwrap();
             }
 
             let mut csproj =
-                wit_bindgen_csharp::CSProject::new(out_dir.clone(), &assembly_name, world_name);
+                wit_bindgen_csharp::CSProject::new(test_dir.clone(), &assembly_name, world_name);
             csproj.aot();
 
             // Copy test file to target location to be included in compilation
             let file_name = path.file_name().unwrap();
-            fs::copy(path, out_dir.join(file_name.to_str().unwrap()))?;
+            fs::copy(path, test_dir.join(file_name.to_str().unwrap()))?;
 
             csproj.generate()?;
 
@@ -816,11 +829,11 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
             let mut wasm_filename = out_wasm.join(assembly_name);
             wasm_filename.set_extension("wasm");
 
-            cmd.current_dir(&out_dir);
+            cmd.current_dir(&test_dir);
 
             //  add .arg("/bl") to diagnose dotnet build problems
             cmd.arg("publish")
-                .arg(out_dir.join(format!("{camel}.csproj")))
+                .arg(test_dir.join(format!("{camel}.csproj")))
                 .arg("-r")
                 .arg("wasi-wasm")
                 .arg("-c")

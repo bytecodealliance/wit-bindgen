@@ -1520,11 +1520,12 @@ impl<'a, B: Bindgen> Generator<'a, B> {
     }
 
     fn list_realloc(&self) -> Option<&'static str> {
-        // Lowering parameters calling a wasm import means
-        // we don't need to pass ownership, but we pass
-        // ownership in all other cases.
-        match (self.variant, self.lift_lower) {
-            (AbiVariant::GuestImport, LiftLower::LowerArgsLiftResults) => None,
+        // Lowering parameters calling a wasm import _or_ returning a result
+        // from an async-lifted wasm export means we don't need to pass
+        // ownership, but we pass ownership in all other cases.
+        match (self.variant, self.lift_lower, self.async_) {
+            (AbiVariant::GuestImport, LiftLower::LowerArgsLiftResults, _)
+            | (AbiVariant::GuestExport, LiftLower::LiftArgsLowerResults, true) => None,
             _ => Some("cabi_realloc"),
         }
     }

@@ -20,6 +20,8 @@ pub(super) struct FunctionBindgen<'a, 'b> {
     pub import_return_pointer_area_align: Alignment,
     pub handle_decls: Vec<String>,
     always_owned: bool,
+    pub async_result_name: Option<String>,
+    emitted_cleanup: bool,
 }
 
 pub const POINTER_SIZE_EXPRESSION: &str = "core::mem::size_of::<*const u8>()";
@@ -47,10 +49,16 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             import_return_pointer_area_align: Default::default(),
             handle_decls: Vec::new(),
             always_owned,
+            async_result_name: None,
+            emitted_cleanup: false,
         }
     }
 
     fn emit_cleanup(&mut self) {
+        if self.emitted_cleanup {
+            return;
+        }
+        self.emitted_cleanup = true;
         for (ptr, layout) in mem::take(&mut self.cleanup) {
             let alloc = self.gen.path_to_std_alloc_module();
             self.push_str(&format!(
@@ -507,7 +515,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::FutureLift { payload, .. } => {
-                let async_support = self.gen.path_to_async_support();
+                let async_support = self.gen.gen.async_support_path();
                 let op = &operands[0];
                 let name = payload
                     .as_ref()
@@ -530,7 +538,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::StreamLift { payload, .. } => {
-                let async_support = self.gen.path_to_async_support();
+                let async_support = self.gen.gen.async_support_path();
                 let op = &operands[0];
                 let name = self
                     .gen
@@ -549,7 +557,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::ErrorContextLift { .. } => {
-                let async_support = self.gen.path_to_async_support();
+                let async_support = self.gen.gen.async_support_path();
                 let op = &operands[0];
                 results.push(format!(
                     "{async_support}::ErrorContext::from_handle({op} as u32)"
@@ -962,7 +970,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::AsyncCallWasm { name, size, align } => {
                 let func = self.declare_import("", name, &[WasmType::Pointer; 3], &[WasmType::I32]);
 
-                let async_support = self.gen.path_to_async_support();
+                let async_support = self.gen.gen.async_support_path();
                 let tmp = self.tmp();
                 let layout = format!("layout{tmp}");
                 let alloc = self.gen.path_to_std_alloc_module();
@@ -980,10 +988,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::CallInterface { func, .. } => {
                 if self.async_ {
-                    let tmp = self.tmp();
-                    let result = format!("result{tmp}");
-                    self.push_str(&format!("let {result} = "));
-                    results.push(result);
+                    self.push_str(&format!("let result = "));
+                    results.push("result".into());
                 } else {
                     self.let_results(func.results.len(), results);
                 };
@@ -1003,7 +1009,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             .unwrap()
                             .to_upper_camel_case();
                         let call = if self.async_ {
-                            let async_support = self.gen.path_to_async_support();
+                            let async_support = self.gen.gen.async_support_path();
                             format!("{async_support}::futures::FutureExt::map(T::new")
                         } else {
                             format!("{ty}::new(T::new",)
@@ -1035,6 +1041,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         ")".into()
                     });
                 }
+                if self.async_ {
+                    self.push_str(".await");
+                }
                 self.push_str(";\n");
             }
 
@@ -1055,6 +1064,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::AsyncPostCallInterface { func } => {
                 let result = &operands[0];
+                self.async_result_name = Some(result.clone());
                 results.push("result".into());
                 let params = (0..func.results.len())
                     .map(|_| {
@@ -1070,7 +1080,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 } else {
                     params
                 };
-                let async_support = self.gen.path_to_async_support();
+                let async_support = self.gen.gen.async_support_path();
                 // TODO: This relies on `abi::Generator` emitting
                 // `AsyncCallReturn` immediately after this instruction to
                 // complete the incomplete expression we generate here.  We
@@ -1078,12 +1088,18 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 // `abi::Generator` emit a `AsyncCallReturn` first, which would
                 // push a closure expression we can consume here).
                 //
+                // Also, see `InterfaceGenerator::generate_guest_export` for
+                // where we emit the open bracket corresponding to the `};` we
+                // emit here.
+                //
                 // The async-specific `Instruction`s will probably need to be
                 // refactored anyway once we start implementing support for
                 // other languages besides Rust.
                 uwriteln!(
                     self.src,
                     "\
+                            {result}
+                        }};
                         let result = {async_support}::first_poll({result}, |{params}| {{
                     "
                 );
@@ -1096,10 +1112,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.src,
                     "\
                             {func}({});
-                        }});
                     ",
                     operands.join(", ")
                 );
+                self.emit_cleanup();
+                self.src.push_str("});\n");
             }
 
             Instruction::Flush { amt } => {

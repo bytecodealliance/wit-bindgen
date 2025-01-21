@@ -33,6 +33,7 @@ macro_rules! codegen_test {
                         runtime: wit_bindgen_csharp::CSharpRuntime::Mono,
                         internal: false,
                         skip_support_files: false,
+                        with_wit_results: false,
                     }
                     .build()
                     .generate(resolve, world, files)

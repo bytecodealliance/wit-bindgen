@@ -2,29 +2,23 @@
 #![allow(static_mut_refs)]
 
 extern crate std;
+use std::alloc::{self, Layout};
+use std::any::Any;
+use std::boxed::Box;
+use std::collections::{hash_map, HashMap};
+use std::fmt::{self, Debug, Display};
+use std::future::Future;
+use std::pin::Pin;
+use std::ptr;
+use std::string::String;
+use std::sync::Arc;
+use std::task::{Context, Poll, Wake, Waker};
+use std::vec::Vec;
 
-use {
-    futures::{
-        channel::oneshot,
-        future::FutureExt,
-        stream::{FuturesUnordered, StreamExt},
-    },
-    once_cell::sync::Lazy,
-    std::{
-        alloc::{self, Layout},
-        any::Any,
-        boxed::Box,
-        collections::hash_map,
-        collections::HashMap,
-        fmt::{self, Debug, Display},
-        future::Future,
-        pin::Pin,
-        ptr,
-        sync::Arc,
-        task::{Context, Poll, Wake, Waker},
-        vec::Vec,
-    },
-};
+use futures::channel::oneshot;
+use futures::future::FutureExt;
+use futures::stream::{FuturesUnordered, StreamExt};
+use once_cell::sync::Lazy;
 
 mod future_support;
 mod stream_support;
@@ -128,12 +122,12 @@ unsafe fn poll(state: *mut FutureState) -> Poll<()> {
 #[doc(hidden)]
 pub fn first_poll<T: 'static>(
     future: impl Future<Output = T> + 'static,
-    fun: impl FnOnce(T) + 'static,
+    fun: impl FnOnce(&T) + 'static,
 ) -> *mut u8 {
     let state = Box::into_raw(Box::new(FutureState {
         todo: 0,
         tasks: Some(
-            [Box::pin(future.map(fun)) as BoxFuture]
+            [Box::pin(future.map(|v| fun(&v))) as BoxFuture]
                 .into_iter()
                 .collect(),
         ),
@@ -330,6 +324,31 @@ impl ErrorContext {
     pub fn handle(&self) -> u32 {
         self.handle
     }
+
+    /// Extract the debug message from a given [`ErrorContext`]
+    pub fn debug_message(&self) -> String {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            _ = self;
+            unreachable!();
+        }
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            #[link(wasm_import_module = "$root")]
+            extern "C" {
+                #[link_name = "[error-context-debug-message;encoding=utf8;realloc=cabi_realloc]"]
+                fn error_context_debug_message(_: u32, _: *mut u8);
+            }
+
+            unsafe {
+                let mut ret = [0u32; 2];
+                error_context_debug_message(self.handle, ret.as_mut_ptr() as *mut _);
+                let len = usize::try_from(ret[1]).unwrap();
+                String::from_raw_parts(usize::try_from(ret[0]).unwrap() as *mut _, len, len)
+            }
+        }
+    }
 }
 
 impl Debug for ErrorContext {
@@ -466,6 +485,31 @@ pub fn task_backpressure(enabled: bool) {
         }
         unsafe {
             backpressure(if enabled { 1 } else { 0 });
+        }
+    }
+}
+
+/// Call the `error-context.new` canonical built-in function.
+pub fn error_context_new(debug_message: &str) -> ErrorContext {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        _ = debug_message;
+        unreachable!();
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        #[link(wasm_import_module = "$root")]
+        extern "C" {
+            #[link_name = "[error-context-new;encoding=utf8]"]
+            fn context_new(_: *const u8, _: usize) -> i32;
+        }
+
+        unsafe {
+            let handle = context_new(debug_message.as_ptr(), debug_message.len());
+            // SAFETY: Handles (including error context handles are guaranteed to
+            // fit inside u32 by the Component Model ABI
+            ErrorContext::from_handle(u32::try_from(handle).unwrap())
         }
     }
 }

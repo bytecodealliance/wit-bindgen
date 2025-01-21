@@ -212,6 +212,7 @@ impl InterfaceGenerator<'_> {
                     let (payload, results) = payload_and_results(
                         self.resolve,
                         *func.results.iter_types().next().unwrap(),
+                        self.csharp_gen.opts.with_wit_results,
                     );
                     (
                         if let Some(ty) = payload {
@@ -359,6 +360,7 @@ impl InterfaceGenerator<'_> {
                     let (payload, results) = payload_and_results(
                         self.resolve,
                         *func.results.iter_types().next().unwrap(),
+                        self.csharp_gen.opts.with_wit_results,
                     );
                     (
                         if let Some(ty) = payload {
@@ -844,6 +846,7 @@ impl InterfaceGenerator<'_> {
                     let (payload, _) = payload_and_results(
                         self.resolve,
                         *func.results.iter_types().next().unwrap(),
+                        self.csharp_gen.opts.with_wit_results,
                     );
                     if let Some(ty) = payload {
                         self.csharp_gen.needs_result = true;
@@ -1177,7 +1180,15 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
     }
 }
 
-fn payload_and_results(resolve: &Resolve, ty: Type) -> (Option<Type>, Vec<TypeId>) {
+fn payload_and_results(
+    resolve: &Resolve,
+    ty: Type,
+    with_wit_results: bool,
+) -> (Option<Type>, Vec<TypeId>) {
+    if with_wit_results {
+        return (Some(ty), Vec::new());
+    }
+
     fn recurse(resolve: &Resolve, ty: Type, results: &mut Vec<TypeId>) -> Option<Type> {
         if let Type::Id(id) = ty {
             if let TypeDefKind::Result(result) = &resolve.types[id].kind {
