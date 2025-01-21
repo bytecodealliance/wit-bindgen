@@ -401,8 +401,6 @@ impl InterfaceGenerator<'_> {
             false,
         );
 
-        assert!(!bindgen.needs_cleanup_list);
-
         let src = bindgen.src;
 
         let vars = bindgen
