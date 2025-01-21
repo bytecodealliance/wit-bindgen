@@ -497,7 +497,7 @@ macro_rules! {macro_name} {{
                     .unwrap_or_else(|| "$root".into())
             );
             let func_name = &func.name;
-            let async_support = self.path_to_async_support();
+            let async_support = self.gen.async_support_path();
 
             match &self.resolve.types[ty].kind {
                 TypeDefKind::Future(payload_type) => {
@@ -1116,7 +1116,7 @@ pub mod vtable{ordinal} {{
         self.src.push_str("}\n");
 
         if async_ {
-            let async_support = self.path_to_async_support();
+            let async_support = self.gen.async_support_path();
             uwrite!(
                 self.src,
                 "\
@@ -2513,10 +2513,6 @@ pub mod vtable{ordinal} {{
         self.path_from_runtime_module(RuntimeItem::StdAllocModule, "alloc")
     }
 
-    pub fn path_to_async_support(&mut self) -> String {
-        "::wit_bindgen_rt::async_support".into()
-    }
-
     fn path_from_runtime_module(
         &mut self,
         item: RuntimeItem,
@@ -2837,7 +2833,7 @@ impl<'a> {camel}Borrow<'a>{{
     }
 
     fn type_future(&mut self, _id: TypeId, name: &str, ty: &Option<Type>, docs: &Docs) {
-        let async_support = self.path_to_async_support();
+        let async_support = self.gen.async_support_path();
         let mode = TypeMode {
             style: TypeOwnershipStyle::Owned,
             lists_borrowed: false,
@@ -2854,7 +2850,7 @@ impl<'a> {camel}Borrow<'a>{{
     }
 
     fn type_stream(&mut self, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
-        let async_support = self.path_to_async_support();
+        let async_support = self.gen.async_support_path();
         let mode = TypeMode {
             style: TypeOwnershipStyle::Owned,
             lists_borrowed: false,
@@ -2871,7 +2867,7 @@ impl<'a> {camel}Borrow<'a>{{
     }
 
     fn type_error_context(&mut self, _id: TypeId, name: &str, docs: &Docs) {
-        let async_support = self.path_to_async_support();
+        let async_support = self.gen.async_support_path();
         self.rustdoc(docs);
         self.push_str(&format!("pub type {} = ", name.to_upper_camel_case()));
         self.push_str(&format!("{async_support}::ErrorContext"));
@@ -2967,7 +2963,7 @@ impl<'a, 'b> wit_bindgen_core::AnonymousTypeGenerator<'a> for AnonTypeGenerator<
     }
 
     fn anonymous_type_future(&mut self, _id: TypeId, ty: &Option<Type>, _docs: &Docs) {
-        let async_support = self.interface.path_to_async_support();
+        let async_support = self.interface.gen.async_support_path();
         let mode = TypeMode {
             style: TypeOwnershipStyle::Owned,
             lists_borrowed: false,
@@ -2980,7 +2976,7 @@ impl<'a, 'b> wit_bindgen_core::AnonymousTypeGenerator<'a> for AnonTypeGenerator<
     }
 
     fn anonymous_type_stream(&mut self, _id: TypeId, ty: &Type, _docs: &Docs) {
-        let async_support = self.interface.path_to_async_support();
+        let async_support = self.interface.gen.async_support_path();
         let mode = TypeMode {
             style: TypeOwnershipStyle::Owned,
             lists_borrowed: false,
@@ -2993,7 +2989,7 @@ impl<'a, 'b> wit_bindgen_core::AnonymousTypeGenerator<'a> for AnonTypeGenerator<
     }
 
     fn anonymous_type_error_context(&mut self) {
-        let async_support = self.interface.path_to_async_support();
+        let async_support = self.interface.gen.async_support_path();
         self.interface
             .push_str(&format!("{async_support}::ErrorContext"));
     }

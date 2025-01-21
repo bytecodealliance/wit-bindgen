@@ -481,7 +481,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::FutureLift { payload, .. } => {
-                let async_support = self.gen.path_to_async_support();
+                let async_support = self.gen.gen.async_support_path();
                 let op = &operands[0];
                 let name = payload
                     .as_ref()
@@ -504,7 +504,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::StreamLift { payload, .. } => {
-                let async_support = self.gen.path_to_async_support();
+                let async_support = self.gen.gen.async_support_path();
                 let op = &operands[0];
                 let name = self
                     .gen
@@ -523,7 +523,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::ErrorContextLift { .. } => {
-                let async_support = self.gen.path_to_async_support();
+                let async_support = self.gen.gen.async_support_path();
                 let op = &operands[0];
                 results.push(format!(
                     "{async_support}::ErrorContext::from_handle({op} as u32)"
@@ -869,7 +869,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::AsyncCallWasm { name, size, align } => {
                 let func = self.declare_import(name, &[WasmType::Pointer; 2], &[WasmType::I32]);
 
-                let async_support = self.gen.path_to_async_support();
+                let async_support = self.gen.gen.async_support_path();
                 let tmp = self.tmp();
                 let layout = format!("layout{tmp}");
                 let alloc = self.gen.path_to_std_alloc_module();
@@ -906,7 +906,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             .unwrap()
                             .to_upper_camel_case();
                         let call = if self.async_ {
-                            let async_support = self.gen.path_to_async_support();
+                            let async_support = self.gen.gen.async_support_path();
                             format!("{async_support}::futures::FutureExt::map(T::new")
                         } else {
                             format!("{ty}::new(T::new",)
@@ -975,7 +975,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 } else {
                     params
                 };
-                let async_support = self.gen.path_to_async_support();
+                let async_support = self.gen.gen.async_support_path();
                 // TODO: This relies on `abi::Generator` emitting
                 // `AsyncCallReturn` immediately after this instruction to
                 // complete the incomplete expression we generate here.  We
