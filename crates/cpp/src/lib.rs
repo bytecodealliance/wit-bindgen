@@ -2520,7 +2520,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
         todo!()
     }
 
-    fn type_stream(&mut self, _id: TypeId, _name: &str, _ty: &Type, _docs: &Docs) {
+    fn type_stream(&mut self, _id: TypeId, _name: &str, _ty: &Option<Type>, _docs: &Docs) {
         todo!()
     }
 
