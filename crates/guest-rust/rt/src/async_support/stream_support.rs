@@ -342,7 +342,7 @@ impl<T> Stream for StreamReader<T> {
                             };
                             Box::pin(async move {
                                 let mut buffer = iter::repeat_with(MaybeUninit::uninit)
-                                    .take(ceiling(64 * 1024, mem::size_of::<T>()))
+                                    .take(ceiling(64 * 1024, mem::size_of::<T>().max(1)))
                                     .collect::<Vec<_>>();
 
                                 let result =
