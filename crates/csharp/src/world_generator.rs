@@ -33,7 +33,6 @@ pub struct CSharp {
     pub(crate) tuple_counts: HashSet<usize>,
     pub(crate) needs_result: bool,
     pub(crate) needs_option: bool,
-    pub(crate) needs_interop_string: bool,
     pub(crate) needs_export_return_area: bool,
     pub(crate) needs_rep_table: bool,
     pub(crate) needs_wit_exception: bool,
@@ -451,26 +450,6 @@ impl WorldGenerator for CSharp {
                     {access} bool HasValue {{ get; }}
 
                     {access} T? Value {{ get; }}
-                }}
-                "#,
-            )
-        }
-
-        if self.needs_interop_string {
-            self.require_using("System.Text");
-            self.require_using("System.Runtime.InteropServices");
-            uwrite!(
-                src,
-                r#"
-                {access} static class InteropString
-                {{
-                    internal static IntPtr FromString(string input, out int length)
-                    {{
-                        var utf8Bytes = Encoding.UTF8.GetBytes(input);
-                        length = utf8Bytes.Length;
-                        var gcHandle = GCHandle.Alloc(utf8Bytes, GCHandleType.Pinned);
-                        return gcHandle.AddrOfPinnedObject();
-                    }}
                 }}
                 "#,
             )
