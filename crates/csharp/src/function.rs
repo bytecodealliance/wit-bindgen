@@ -25,9 +25,7 @@ pub(crate) struct FunctionBindgen<'a, 'b> {
     block_storage: Vec<BlockStorage>,
     blocks: Vec<Block>,
     payloads: Vec<String>,
-    pub(crate) needs_cleanup_list: bool,
-    needs_native_alloc_list: bool,
-    cleanup: Vec<Cleanup>,
+    pub(crate) needs_cleanup: bool,
     import_return_pointer_area_size: usize,
     import_return_pointer_area_align: usize,
     pub(crate) resource_drops: Vec<(String, String)>,
@@ -58,9 +56,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             block_storage: Vec::new(),
             blocks: Vec::new(),
             payloads: Vec::new(),
-            needs_cleanup_list: false,
-            needs_native_alloc_list: false,
-            cleanup: Vec::new(),
+            needs_cleanup: false,
             import_return_pointer_area_size: 0,
             import_return_pointer_area_align: 0,
             resource_drops: Vec::new(),
@@ -732,16 +728,17 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         // Despite the name GCHandle.Alloc here this does not actually allocate memory on the heap. 
                         // It pins the array with the garbage collector so that it can be passed to unmanaged code.
                         // It is required to free the pin after use which is done in the Cleanup section.
+                        self.needs_cleanup = true;
                         uwrite!(
                             self.src,
                             "
                             var {handle} = GCHandle.Alloc({list}, GCHandleType.Pinned);
                             var {ptr} = {handle}.AddrOfPinnedObject();
+                            cleanups.Add(()=> {handle}.Free());
                             "
                         );
                         results.push(format!("{ptr}")); 
                         results.push(format!("({list}).Length"));
-                        self.cleanup.push(Cleanup { address: handle });
                     }
                     Direction::Export => {
                         let address = self.locals.tmp("address");
@@ -759,9 +756,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         );
 
                         if realloc.is_none() {
-                            self.cleanup.push(Cleanup {
-                                address: gc_handle.clone(),
-                            });
+                            self.needs_cleanup = true;
+                            uwrite!(
+                                self.src,
+                                "
+                                cleanups.Add(()=> {gc_handle}.Free());
+                                ");
                         }
                         results.push(format!("((IntPtr)({address})).ToInt32()"));
                         results.push(format!("{list}.Length"));
@@ -789,22 +789,39 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::StringLower { realloc } => {
                 let op = &operands[0];
                 let interop_string = self.locals.tmp("interopString");
-                let result_var = self.locals.tmp("result");
+                let utf8_bytes = self.locals.tmp("utf8Bytes");
+                let length = self.locals.tmp("length");
+                let gc_handle = self.locals.tmp("gcHandle");
                 uwriteln!(
                     self.src,
                     "
-                    var {result_var} = {op};
-                    IntPtr {interop_string} = InteropString.FromString({result_var}, out int length{result_var});"
+                    var {utf8_bytes} = Encoding.UTF8.GetBytes({op});
+                    var {length} = {utf8_bytes}.Length;
+                    var {gc_handle} = GCHandle.Alloc({utf8_bytes}, GCHandleType.Pinned);
+                    var {interop_string} = {gc_handle}.AddrOfPinnedObject();
+                    "
                 );
 
                 if realloc.is_none() {
                     results.push(format!("{interop_string}.ToInt32()"));
+                    self.needs_cleanup = true;
+                    uwrite!(
+                        self.src,
+                        "
+                        cleanups.Add(()=> {gc_handle}.Free());
+                        ");
                 } else {
                     results.push(format!("{interop_string}.ToInt32()"));
                 }
-                results.push(format!("length{result_var}"));
+                results.push(format!("{length}"));
 
-                self.interface_gen.csharp_gen.needs_interop_string = true;
+                if FunctionKind::Freestanding == *self.kind || self.interface_gen.direction == Direction::Export {
+                    self.interface_gen.require_interop_using("System.Text");
+                    self.interface_gen.require_interop_using("System.Runtime.InteropServices");
+                } else {
+                    self.interface_gen.require_using("System.Text");
+                    self.interface_gen.require_using("System.Runtime.InteropServices");
+                }
             }
 
             Instruction::StringLift { .. } => {
@@ -838,14 +855,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let buffer_size = self.locals.tmp("bufferSize");
                 //TODO: wasm64
                 let align = self.interface_gen.csharp_gen.sizes.align(element).align_wasm32();
-                self.needs_native_alloc_list = true;
 
+                self.needs_cleanup = true;
                 uwrite!(
                     self.src,
                     "
                     var {buffer_size} = {size} * (nuint){list}.Count;
                     var {address} = NativeMemory.AlignedAlloc({buffer_size}, {align});
-                    nativeAllocs.Add((IntPtr){address});
+                    cleanups.Add(()=> NativeMemory.AlignedFree({address}));
 
                     for (int {index} = 0; {index} < {list}.Count; ++{index}) {{
                         {ty} {block_element} = {list}[{index}];
@@ -991,19 +1008,15 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::Return { amt: _, func } => {
-                for Cleanup { address } in &self.cleanup {
-                    uwriteln!(self.src, "{address}.Free();");
-                }
-
-                if self.needs_native_alloc_list {
-                    self.src.insert_str(0, "var nativeAllocs = new List<IntPtr>();
+                if self.needs_cleanup {
+                    self.src.insert_str(0, "var cleanups = new List<Action>();
                         ");
 
                     uwriteln!(self.src, "\
-                        foreach (var nativeAlloc in nativeAllocs)
-                        {{
-                            NativeMemory.AlignedFree((void*)nativeAlloc);
-                        }}");
+                    foreach (var cleanup in cleanups)
+                    {{
+                        cleanup();
+                    }}");
                 }
 
                 if !matches!((self.interface_gen.direction, self.kind), (Direction::Import, FunctionKind::Constructor(_))) {
@@ -1214,7 +1227,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             body: mem::take(&mut self.src),
             element: self.locals.tmp("element"),
             base: self.locals.tmp("basePtr"),
-            cleanup: mem::take(&mut self.cleanup),
         });
     }
 
@@ -1223,18 +1235,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             body,
             element,
             base,
-            cleanup,
         } = self.block_storage.pop().unwrap();
-
-        if !self.cleanup.is_empty() {
-            //self.needs_cleanup_list = true;
-
-            for Cleanup { address } in &self.cleanup {
-                uwriteln!(self.src, "{address}.Free();");
-            }
-        }
-
-        self.cleanup = cleanup;
 
         self.blocks.push(Block {
             body: mem::replace(&mut self.src, body),
@@ -1314,15 +1315,10 @@ struct Block {
     base: String,
 }
 
-struct Cleanup {
-    address: String,
-}
-
 struct BlockStorage {
     body: String,
     element: String,
     base: String,
-    cleanup: Vec<Cleanup>,
 }
 
 #[derive(Clone)]
