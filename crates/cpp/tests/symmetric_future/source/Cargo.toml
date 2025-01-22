@@ -1,10 +1,12 @@
 [package]
-name = "main"
+name = "source"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-stream = { path = "../stream" }
-symmetric_executor = { path = "../../../../symmetric_executor", features = ["trace"]}
+symmetric_executor = { path = "../../../../symmetric_executor" }
 symmetric_stream = { path = "../../../../symmetric_executor/symmetric_stream" }
 wit-bindgen-symmetric-rt = { path = "../../../../symmetric_executor/rust-client" }
+
+[lib]
+crate-type = ["cdylib"]

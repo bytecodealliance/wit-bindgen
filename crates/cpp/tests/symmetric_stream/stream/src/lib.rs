@@ -21,6 +21,6 @@ impl stream_world::exports::test::test::stream_test::Guest for MyStruct {
                 }
             }
         });
-        return reader;
+        reader
     }
 }

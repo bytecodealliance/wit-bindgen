@@ -141,7 +141,7 @@ impl symmetric_executor::Guest for Guest {
             let mut maxfd = change_event + 1;
             let now = SystemTime::now();
             let mut rfds = core::mem::MaybeUninit::<libc::fd_set>::uninit();
-            let rfd_ptr = unsafe { core::ptr::from_mut(rfds.assume_init_mut()) };
+            let rfd_ptr = rfds.as_mut_ptr();
             unsafe { libc::FD_ZERO(rfd_ptr) };
             unsafe {
                 libc::FD_SET(change_event, rfd_ptr);
@@ -209,16 +209,16 @@ impl symmetric_executor::Guest for Guest {
                     break;
                 }
             }
-            if tvptr.is_null() && maxfd == 0 {
-                // probably only active tasks, all returned pending, try again
-                if DEBUGGING {
-                    println!(
-                        "Relooping with {} tasks",
-                        EXECUTOR.lock().unwrap().active_tasks.len()
-                    );
-                }
-                continue;
-            }
+            // if tvptr.is_null() && maxfd == 0 {
+            //     // probably only active tasks, all returned pending, try again
+            //     if DEBUGGING {
+            //         println!(
+            //             "Relooping with {} tasks",
+            //             EXECUTOR.lock().unwrap().active_tasks.len()
+            //         );
+            //     }
+            //     continue;
+            // }
             // with no work left the break should have occured
             // assert!(!tvptr.is_null() || maxfd > 0);
             if DEBUGGING {
