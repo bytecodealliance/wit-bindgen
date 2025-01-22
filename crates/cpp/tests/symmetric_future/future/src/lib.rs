@@ -10,8 +10,8 @@ impl future_world::exports::test::test::future_source::Guest for MyStruct {
     async fn create() -> async_support::FutureReader<u32> {
         let (mut write, read) = async_support::future_support::new_future();
         async_support::spawn(async move {
-            let input = create().await;
-            write.assign(input * 2);
+            let input = create().await.await;
+            write.write(input * 2);
         });
         read
     }
