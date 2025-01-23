@@ -26,6 +26,8 @@ pub(crate) struct FunctionBindgen<'a, 'b> {
     import_return_pointer_area_size: usize,
     import_return_pointer_area_align: usize,
     pub(crate) resource_drops: Vec<(String, String)>,
+    is_block: bool,
+    fixed_statments: Vec<Fixed>,
 }
 
 impl<'a, 'b> FunctionBindgen<'a, 'b> {
@@ -57,6 +59,8 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             import_return_pointer_area_size: 0,
             import_return_pointer_area_align: 0,
             resource_drops: Vec::new(),
+            is_block: false,
+            fixed_statments: Vec::new(),
         }
     }
 
@@ -99,7 +103,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             .map(
                 |(i, (((name, ty), Block { body, results, .. }), payload))| {
                     let payload = if let Some(ty) = self.interface_gen.non_empty_type(ty.as_ref()) {
-                        let ty = self.interface_gen.name_with_qualifier(ty, true, true);
+                        let ty = self.interface_gen.type_name_with_qualifier(ty, true);
                         let name = name.to_upper_camel_case();
 
                         format!("{ty} {payload} = {op}.As{name};")
@@ -497,12 +501,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.push(result);
             }
             Instruction::TupleLift { .. } => {
-                let mut result = String::from("(");
-
-                uwriteln!(result, "{}", operands.join(", "));
-
-                result.push_str(")");
-                results.push(result);
+                results.push(format!("({})", operands.join(", ")));
             }
 
             Instruction::TupleLower { tuple, ty: _ } => {
@@ -722,18 +721,32 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     Direction::Import => {
                         let ptr: String = self.locals.tmp("listPtr");
                         let handle: String = self.locals.tmp("gcHandle");
-                        // Despite the name GCHandle.Alloc here this does not actually allocate memory on the heap. 
-                        // It pins the array with the garbage collector so that it can be passed to unmanaged code.
-                        // It is required to free the pin after use which is done in the Cleanup section.
-                        self.needs_cleanup = true;
-                        uwrite!(
-                            self.src,
-                            "
-                            var {handle} = {list}.Pin();
-                            var {ptr} = {handle}.Pointer;
-                            cleanups.Add(()=> {handle}.Dispose());
-                            "
-                        );
+
+                        if self.is_block {
+                            // With variants we can't use span since the Fixed statment can't always be applied to all the variants
+                            // Despite the name GCHandle.Alloc here this does not actually allocate memory on the heap. 
+                            // It pins the array with the garbage collector so that it can be passed to unmanaged code.
+                            // It is required to free the pin after use which is done in the Cleanup section.
+                            self.needs_cleanup = true;
+                            uwrite!(
+                                self.src,
+                                "
+                                var {handle} = GCHandle.Alloc({list}, GCHandleType.Pinned);
+                                var {ptr} = {handle}.AddrOfPinnedObject();
+                                cleanups.Add(()=> {handle}.Free());
+                                "
+                            );
+                        }else {
+                            uwrite!(
+                                self.src,
+                                "
+                                "
+                            );
+                            self.fixed_statments.push(Fixed {
+                                item_to_pin: list.clone(),
+                                ptr_name: ptr.clone(),
+                            });
+                        }
                         results.push(format!("(nint){ptr}")); 
                         results.push(format!("({list}).Length"));
                     }
@@ -845,7 +858,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 let list = &operands[0];
                 let size = self.interface_gen.csharp_gen.sizes.size(element).size_wasm32();
-                let ty = self.interface_gen.name_with_qualifier(element, true, true);
+                let ty = self.interface_gen.type_name_with_qualifier(element, true);
                 let index = self.locals.tmp("index");
 
                 let address = self.locals.tmp("address");
@@ -1005,6 +1018,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::Return { amt: _, func } => {
+                if self.fixed_statments.len() > 0 {
+                    let fixed: String = self.fixed_statments.iter().map(|f| format!("{} = {}", f.ptr_name, f.item_to_pin)).collect::<Vec<_>>().join(", ");
+                    self.src.insert_str(0, &format!("fixed (void* {fixed})
+                        {{
+                        "));
+                }
+
                 if self.needs_cleanup {
                     self.src.insert_str(0, "var cleanups = new List<Action>();
                         ");
@@ -1023,10 +1043,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             self.handle_result_import(operands);
                         }
                         _ => {
-                            let results = operands.join(", ");
+                            let results: String = operands.join(", ");
                             uwriteln!(self.src, "return ({results});")
                         }
                     }
+                }
+
+                if self.fixed_statments.len() > 0 {
+                    uwriteln!(self.src, "}}");
                 }
             }
 
@@ -1218,6 +1242,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             element: self.locals.tmp("element"),
             base: self.locals.tmp("basePtr"),
         });
+
+        self.is_block = true;
     }
 
     fn finish_block(&mut self, operands: &mut Vec<String>) {
@@ -1233,6 +1259,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             element,
             base,
         });
+        self.is_block = false;
     }
 
     fn sizes(&self) -> &SizeAlign {
@@ -1303,6 +1330,11 @@ struct Block {
     results: Vec<String>,
     element: String,
     base: String,
+}
+
+struct Fixed {
+    item_to_pin: String,
+    ptr_name: String,
 }
 
 struct BlockStorage {
