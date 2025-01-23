@@ -1,5 +1,5 @@
 use crate::csharp_ident::ToCSharpIdent;
-use crate::interface::InterfaceGenerator;
+use crate::interface::{InterfaceGenerator, ParameterType};
 use crate::world_generator::CSharp;
 use heck::ToUpperCamelCase;
 use std::fmt::Write;
@@ -12,7 +12,7 @@ use wit_parser::{Docs, FunctionKind, Handle, Resolve, SizeAlign, Type, TypeDefKi
 
 /// FunctionBindgen generates the C# code for calling functions defined in wit
 pub(crate) struct FunctionBindgen<'a, 'b> {
-    pub(crate) interface_gen: &'b InterfaceGenerator<'a>,
+    pub(crate) interface_gen: &'b mut InterfaceGenerator<'a>,
     func_name: &'b str,
     kind: &'b FunctionKind,
     params: Box<[String]>,
@@ -28,6 +28,7 @@ pub(crate) struct FunctionBindgen<'a, 'b> {
     pub(crate) resource_drops: Vec<(String, String)>,
     is_block: bool,
     fixed_statments: Vec<Fixed>,
+    parameter_type: ParameterType,
 }
 
 impl<'a, 'b> FunctionBindgen<'a, 'b> {
@@ -37,6 +38,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         kind: &'b FunctionKind,
         params: Box<[String]>,
         results: Vec<TypeId>,
+        parameter_type: ParameterType,
     ) -> FunctionBindgen<'a, 'b> {
         let mut locals = Ns::default();
         // Ensure temporary variable names don't clash with parameter names:
@@ -61,6 +63,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             resource_drops: Vec::new(),
             is_block: false,
             fixed_statments: Vec::new(),
+            parameter_type: parameter_type,
         }
     }
 
@@ -722,7 +725,17 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         let ptr: String = self.locals.tmp("listPtr");
                         let handle: String = self.locals.tmp("gcHandle");
 
-                        if self.is_block {
+                        if !self.is_block && self.parameter_type == ParameterType::Span {
+                            self.fixed_statments.push(Fixed {
+                                item_to_pin: list.clone(),
+                                ptr_name: ptr.clone(),
+                            });
+                        }else if !self.is_block && self.parameter_type == ParameterType::Memory {
+                            self.fixed_statments.push(Fixed {
+                                item_to_pin: format!("{list}.Span"),
+                                ptr_name: ptr.clone(),
+                            });
+                        } else {
                             // With variants we can't use span since the Fixed statment can't always be applied to all the variants
                             // Despite the name GCHandle.Alloc here this does not actually allocate memory on the heap. 
                             // It pins the array with the garbage collector so that it can be passed to unmanaged code.
@@ -736,16 +749,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                                 cleanups.Add(()=> {handle}.Free());
                                 "
                             );
-                        }else {
-                            uwrite!(
-                                self.src,
-                                "
-                                "
-                            );
-                            self.fixed_statments.push(Fixed {
-                                item_to_pin: list.clone(),
-                                ptr_name: ptr.clone(),
-                            });
                         }
                         results.push(format!("(nint){ptr}")); 
                         results.push(format!("({list}).Length"));

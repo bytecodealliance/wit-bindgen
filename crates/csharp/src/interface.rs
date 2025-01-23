@@ -247,64 +247,10 @@ impl InterfaceGenerator<'_> {
             .collect::<Vec<_>>()
             .join(", ");
 
-        let mut bindgen = FunctionBindgen::new(
-            self,
-            &func.item_name(),
-            &func.kind,
-            func.params
-                .iter()
-                .enumerate()
-                .map(|(i, (name, _))| {
-                    if i == 0 && matches!(&func.kind, FunctionKind::Method(_)) {
-                        "this".to_owned()
-                    } else {
-                        name.to_csharp_ident()
-                    }
-                })
-                .collect(),
-            results.clone(),
-        );
+        let mut funcs: Vec<(String, String)> = Vec::new();
+        funcs.push(self.gen_import_src(func, &results, ParameterType::Primitive));
 
-        let mut bindgen2 = FunctionBindgen::new(
-            self,
-            &func.item_name(),
-            &func.kind,
-            func.params
-                .iter()
-                .enumerate()
-                .map(|(i, (name, _))| {
-                    if i == 0 && matches!(&func.kind, FunctionKind::Method(_)) {
-                        "this".to_owned()
-                    } else {
-                        name.to_csharp_ident()
-                    }
-                })
-                .collect(),
-            results.clone(),
-        );
-
-        abi::call(
-            bindgen.interface_gen.resolve,
-            AbiVariant::GuestImport,
-            LiftLower::LowerArgsLiftResults,
-            func,
-            &mut bindgen,
-            false,
-        );
-
-        abi::call(
-            bindgen2.interface_gen.resolve,
-            AbiVariant::GuestImport,
-            LiftLower::LowerArgsLiftResults,
-            func,
-            &mut bindgen2,
-            false,
-        );
-
-        let src = bindgen.src;
-        let src2 = bindgen2.src;
-
-        let params = func
+        if func
             .params
             .iter()
             .skip(if let FunctionKind::Method(_) = &func.kind {
@@ -312,14 +258,11 @@ impl InterfaceGenerator<'_> {
             } else {
                 0
             })
-            .map(|param| {
-                let ty = self.name_with_qualifier(&param.1, true, true);
-                let param_name = &param.0;
-                let param_name = param_name.to_csharp_ident();
-                format!("{ty} {param_name}")
-            })
-            .collect::<Vec<_>>()
-            .join(", ");
+            .any(|param| self.is_primative_list(&param.1))
+        {
+            funcs.push(self.gen_import_src(func, &results, ParameterType::Span));
+            funcs.push(self.gen_import_src(func, &results, ParameterType::Memory));
+        }
 
         let import_name = &func.name;
 
@@ -341,35 +284,77 @@ impl InterfaceGenerator<'_> {
             {{
                 [DllImport("{import_module_name}", EntryPoint = "{import_name}"), WasmImportLinkage]
                 internal static extern {wasm_result_type} wasmImport{interop_camel_name}({wasm_params});
-            "#
-        );
-
-        uwrite!(
-            target,
-            r#"
             }}
-            "#,
-        );
-
-        uwrite!(
-            target,
-            r#"
-                {access} {extra_modifiers} {modifiers} unsafe {result_type} {camel_name}({params})
-                {{
-                    {src}
-                }}
             "#
         );
 
-        uwrite!(
-            target,
-            r#"
-                {access} {extra_modifiers} {modifiers} unsafe {result_type} {camel_name}({params})
-                {{
-                    {src2}
-                }}
-            "#
+        for (src, params) in funcs {
+            uwrite!(
+                target,
+                r#"
+                    {access} {extra_modifiers} {modifiers} unsafe {result_type} {camel_name}({params})
+                    {{
+                        {src}
+                    }}
+                "#
+            );
+        }
+    }
+
+    fn gen_import_src(
+        &mut self,
+        func: &Function,
+        results: &Vec<TypeId>,
+        parameter_type: ParameterType,
+    ) -> (String, String) {
+        let mut bindgen = FunctionBindgen::new(
+            self,
+            &func.item_name(),
+            &func.kind,
+            func.params
+                .iter()
+                .enumerate()
+                .map(|(i, (name, _))| {
+                    if i == 0 && matches!(&func.kind, FunctionKind::Method(_)) {
+                        "this".to_owned()
+                    } else {
+                        name.to_csharp_ident()
+                    }
+                })
+                .collect(),
+            results.clone(),
+            parameter_type,
         );
+
+        abi::call(
+            bindgen.interface_gen.resolve,
+            AbiVariant::GuestImport,
+            LiftLower::LowerArgsLiftResults,
+            func,
+            &mut bindgen,
+            false,
+        );
+
+        let src = bindgen.src;
+
+        let params = func
+            .params
+            .iter()
+            .skip(if let FunctionKind::Method(_) = &func.kind {
+                1
+            } else {
+                0
+            })
+            .map(|param| {
+                let ty = self.name_with_qualifier(&param.1, true, parameter_type);
+                let param_name = &param.0;
+                let param_name = param_name.to_csharp_ident();
+                format!("{ty} {param_name}")
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        (src, params)
     }
 
     pub(crate) fn export(&mut self, func: &Function, interface_name: Option<&WorldKey>) {
@@ -427,6 +412,7 @@ impl InterfaceGenerator<'_> {
             &func.kind,
             (0..sig.params.len()).map(|i| format!("p{i}")).collect(),
             results,
+            ParameterType::Primitive,
         );
 
         abi::call(
@@ -555,14 +541,30 @@ impl InterfaceGenerator<'_> {
     }
 
     pub(crate) fn type_name_with_qualifier(&mut self, ty: &Type, qualifier: bool) -> String {
-        self.name_with_qualifier(ty, qualifier, false)
+        self.name_with_qualifier(ty, qualifier, ParameterType::Primitive)
+    }
+
+    fn is_primative_list(&mut self, ty: &Type) -> bool {
+        match ty {
+            Type::Id(id) => {
+                let ty = &self.resolve.types[*id];
+                match &ty.kind {
+                    TypeDefKind::Type(ty) => self.is_primative_list(ty),
+                    TypeDefKind::List(ty) if crate::world_generator::is_primitive(ty) => {
+                        return true
+                    }
+                    _ => false,
+                }
+            }
+            _ => false,
+        }
     }
 
     pub(crate) fn name_with_qualifier(
         &mut self,
         ty: &Type,
         qualifier: bool,
-        is_param: bool,
+        parameter_type: ParameterType,
     ) -> String {
         match ty {
             Type::Bool => "bool".to_owned(),
@@ -581,13 +583,20 @@ impl InterfaceGenerator<'_> {
             Type::Id(id) => {
                 let ty = &self.resolve.types[*id];
                 match &ty.kind {
-                    TypeDefKind::Type(ty) => self.name_with_qualifier(ty, qualifier, is_param),
+                    TypeDefKind::Type(ty) => {
+                        self.name_with_qualifier(ty, qualifier, parameter_type)
+                    }
                     TypeDefKind::List(ty) => {
                         if crate::world_generator::is_primitive(ty)
                             && self.direction == Direction::Import
-                            && is_param
+                            && parameter_type == ParameterType::Span
                         {
                             format!("Span<{}>", self.type_name(ty))
+                        } else if crate::world_generator::is_primitive(ty)
+                            && self.direction == Direction::Import
+                            && parameter_type == ParameterType::Memory
+                        {
+                            format!("Memory<{}>", self.type_name(ty))
                         } else if crate::world_generator::is_primitive(ty) {
                             format!("{}[]", self.type_name(ty))
                         } else {
@@ -1227,6 +1236,13 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
         _ = (id, name, docs);
         todo!()
     }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub(crate) enum ParameterType {
+    Primitive,
+    Span,
+    Memory,
 }
 
 fn payload_and_results(
