@@ -12,7 +12,7 @@ use wit_parser::{Docs, FunctionKind, Handle, Resolve, SizeAlign, Type, TypeDefKi
 
 /// FunctionBindgen generates the C# code for calling functions defined in wit
 pub(crate) struct FunctionBindgen<'a, 'b> {
-    pub(crate) interface_gen: &'b mut InterfaceGenerator<'a>,
+    pub(crate) interface_gen: &'b InterfaceGenerator<'a>,
     func_name: &'b str,
     kind: &'b FunctionKind,
     params: Box<[String]>,

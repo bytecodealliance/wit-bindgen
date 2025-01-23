@@ -262,7 +262,25 @@ impl InterfaceGenerator<'_> {
                     }
                 })
                 .collect(),
-            results,
+            results.clone(),
+        );
+
+        let mut bindgen2 = FunctionBindgen::new(
+            self,
+            &func.item_name(),
+            &func.kind,
+            func.params
+                .iter()
+                .enumerate()
+                .map(|(i, (name, _))| {
+                    if i == 0 && matches!(&func.kind, FunctionKind::Method(_)) {
+                        "this".to_owned()
+                    } else {
+                        name.to_csharp_ident()
+                    }
+                })
+                .collect(),
+            results.clone(),
         );
 
         abi::call(
@@ -274,7 +292,17 @@ impl InterfaceGenerator<'_> {
             false,
         );
 
+        abi::call(
+            bindgen2.interface_gen.resolve,
+            AbiVariant::GuestImport,
+            LiftLower::LowerArgsLiftResults,
+            func,
+            &mut bindgen2,
+            false,
+        );
+
         let src = bindgen.src;
+        let src2 = bindgen2.src;
 
         let params = func
             .params
@@ -329,6 +357,16 @@ impl InterfaceGenerator<'_> {
                 {access} {extra_modifiers} {modifiers} unsafe {result_type} {camel_name}({params})
                 {{
                     {src}
+                }}
+            "#
+        );
+
+        uwrite!(
+            target,
+            r#"
+                {access} {extra_modifiers} {modifiers} unsafe {result_type} {camel_name}({params})
+                {{
+                    {src2}
                 }}
             "#
         );
