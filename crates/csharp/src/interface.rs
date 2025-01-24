@@ -248,9 +248,9 @@ impl InterfaceGenerator<'_> {
             .join(", ");
 
         let mut funcs: Vec<(String, String)> = Vec::new();
-        funcs.push(self.gen_import_src(func, &results, ParameterType::Primitive));
+        funcs.push(self.gen_import_src(func, &results, ParameterType::ABI));
 
-        if func
+        let include_additional_functions = func
             .params
             .iter()
             .skip(if let FunctionKind::Method(_) = &func.kind {
@@ -258,8 +258,9 @@ impl InterfaceGenerator<'_> {
             } else {
                 0
             })
-            .any(|param| self.is_primative_list(&param.1))
-        {
+            .any(|param| self.is_primative_list(&param.1));
+
+        if include_additional_functions {
             funcs.push(self.gen_import_src(func, &results, ParameterType::Span));
             funcs.push(self.gen_import_src(func, &results, ParameterType::Memory));
         }
@@ -412,7 +413,7 @@ impl InterfaceGenerator<'_> {
             &func.kind,
             (0..sig.params.len()).map(|i| format!("p{i}")).collect(),
             results,
-            ParameterType::Primitive,
+            ParameterType::ABI,
         );
 
         abi::call(
@@ -541,7 +542,7 @@ impl InterfaceGenerator<'_> {
     }
 
     pub(crate) fn type_name_with_qualifier(&mut self, ty: &Type, qualifier: bool) -> String {
-        self.name_with_qualifier(ty, qualifier, ParameterType::Primitive)
+        self.name_with_qualifier(ty, qualifier, ParameterType::ABI)
     }
 
     fn is_primative_list(&mut self, ty: &Type) -> bool {
@@ -1240,7 +1241,7 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub(crate) enum ParameterType {
-    Primitive,
+    ABI,
     Span,
     Memory,
 }

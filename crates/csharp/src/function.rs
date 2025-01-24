@@ -737,7 +737,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             });
                         } else {
                             // With variants we can't use span since the Fixed statment can't always be applied to all the variants
-                            // Despite the name GCHandle.Alloc here this does not actually allocate memory on the heap. 
+                            // Despite the name GCHandle.Alloc here this does not re-allocate the object but it does make an
+                            // allocation for the handle in a special resource pool which can result in GC pressure.
                             // It pins the array with the garbage collector so that it can be passed to unmanaged code.
                             // It is required to free the pin after use which is done in the Cleanup section.
                             self.needs_cleanup = true;
