@@ -1055,7 +1055,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
 
                 if !matches!((self.interface_gen.direction, self.kind), (Direction::Import, FunctionKind::Constructor(_))) {
-                    match func.results.len() {
+                    match *amt {
                         0 => (),
                         1 => {
                             self.handle_result_import(operands);
