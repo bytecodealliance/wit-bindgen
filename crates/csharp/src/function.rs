@@ -1018,7 +1018,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
             }
 
-            Instruction::Return { amt: _, func } => {
+            Instruction::Return { amt, .. } => {
                 if self.needs_cleanup {
                     self.src.insert_str(0, "var cleanups = new List<Action>();
                         ");
@@ -1031,7 +1031,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
 
                 if !matches!((self.interface_gen.direction, self.kind), (Direction::Import, FunctionKind::Constructor(_))) {
-                    match func.results.len() {
+                    match *amt {
                         0 => (),
                         1 => {
                             self.handle_result_import(operands);
