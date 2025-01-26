@@ -185,6 +185,28 @@ fn set_header_ffi(offset : Int, len : Int) -> Unit {
   store32(offset, len << 8 | 241)
 }
 
+pub fn cabi_realloc(
+    src_offset : Int,
+    src_size : Int,
+    _dst_alignment : Int,
+    dst_size : Int
+) -> Int {{
+    // malloc
+    if src_offset == 0 && src_size == 0 {{
+        return malloc(dst_size)
+    }}
+    // free
+    if dst_size <= 0 {{
+        free(src_offset)
+        return 0
+    }}
+    // realloc
+    let dst = malloc(dst_size)
+    copy(dst, src_offset)
+    free(src_offset)
+    dst
+}}  
+
 pub(open) trait Any {}
 pub(all) struct Cleanup {
     address : Int
@@ -586,23 +608,10 @@ impl WorldGenerator for MoonBit {
             pub fn cabi_realloc(
                 src_offset : Int,
                 src_size : Int,
-                _dst_alignment : Int,
+                dst_alignment : Int,
                 dst_size : Int
             ) -> Int {{
-                // malloc
-                if src_offset == 0 && src_size == 0 {{
-                    return {ffi_qualifier}malloc(dst_size)
-                }}
-                // free
-                if dst_size <= 0 {{
-                    {ffi_qualifier}free(src_offset)
-                    return 0
-                }}
-                // realloc
-                let dst = {ffi_qualifier}malloc(dst_size)
-                {ffi_qualifier}copy(dst, src_offset)
-                {ffi_qualifier}free(src_offset)
-                dst
+                {ffi_qualifier}cabi_realloc(src_offset, src_size, dst_alignment, dst_size)
             }}
             "
         );
