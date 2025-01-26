@@ -1487,7 +1487,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         uwrite!(
             self.src,
             "
-            pub fn ordinal(self : {name}) -> Int {{
+            pub fn {name}::ordinal(self : {name}) -> Int {{
               match self {{
                 {cases}
               }}
