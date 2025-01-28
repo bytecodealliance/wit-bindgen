@@ -3,7 +3,6 @@ use crate::function::FunctionBindgen;
 use crate::function::ResourceInfo;
 use crate::world_generator::CSharp;
 use heck::{ToShoutySnakeCase, ToUpperCamelCase};
-use std::any::type_name;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 use std::ops::Deref;
@@ -513,7 +512,7 @@ impl InterfaceGenerator<'_> {
                 self.csharp_interop_src,
                 r#"
                 [UnmanagedCallersOnly(EntryPoint = "cabi_post_{export_name}")]
-                {access} static void cabi_post_{interop_name}({params}) {{
+                {access} static unsafe void cabi_post_{interop_name}({params}) {{
                     {src}
                 }}
                 "#
