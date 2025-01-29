@@ -1,13 +1,15 @@
 use heck::{ToLowerCamelCase, ToPascalCase, ToSnakeCase};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Write};
 use std::str::FromStr;
 use wit_bindgen_core::wit_parser::{
     Docs, Function, FunctionKind, Handle, Interface, InterfaceId, PackageName, Resolve, Results,
     Type, TypeDef, TypeDefKind, TypeId, TypeOwner, WorldId, WorldKey,
 };
-use wit_bindgen_core::{uwrite, uwriteln, Direction, Files, WorldGenerator};
 use wit_bindgen_core::Direction::{Export, Import};
+use wit_bindgen_core::{uwrite, uwriteln, Direction, Files, WorldGenerator};
+
+// TODO: need to use https://github.com/golemcloud/jco/blob/main/crates/js-component-bindgen/src/names.rs#L81 for every name, and use JSName where it differs from the scala name
 
 #[derive(Debug, Clone)]
 pub enum ScalaDialect {
@@ -49,7 +51,7 @@ pub struct Opts {
         feature = "clap",
         clap(long, help = "Base package for generated Scala.js code")
     )]
-    base_package: Option<String>,
+    pub base_package: Option<String>,
 
     #[cfg_attr(
         feature = "clap",
@@ -59,15 +61,12 @@ pub struct Opts {
             default_value = "scala2"
         )
     )]
-    scala_dialect: ScalaDialect,
+    pub scala_dialect: ScalaDialect,
 }
 
 impl Opts {
     pub fn build(&self) -> Box<dyn WorldGenerator> {
-        Box::new(ScalaJsWorld {
-            opts: self.clone(),
-            generated_files: HashMap::new(),
-        })
+        Box::new(ScalaJsWorld::new(self.clone()))
     }
 
     pub fn base_package_segments(&self) -> Vec<String> {
@@ -85,9 +84,132 @@ impl Opts {
     }
 }
 
+struct ScalaKeywords {
+    keywords: HashSet<String>,
+    base_methods: HashSet<String>,
+}
+
+impl ScalaKeywords {
+    pub fn new(dialect: &ScalaDialect) -> Self {
+        let mut keywords = HashSet::new();
+        keywords.insert("abstract".to_string());
+        keywords.insert("case".to_string());
+        keywords.insert("do".to_string());
+        keywords.insert("else".to_string());
+        keywords.insert("finally".to_string());
+        keywords.insert("for".to_string());
+        keywords.insert("import".to_string());
+        keywords.insert("lazy".to_string());
+        keywords.insert("object".to_string());
+        keywords.insert("override".to_string());
+        keywords.insert("return".to_string());
+        keywords.insert("sealed".to_string());
+        keywords.insert("trait".to_string());
+        keywords.insert("try".to_string());
+        keywords.insert("var".to_string());
+        keywords.insert("while".to_string());
+        keywords.insert("catch".to_string());
+        keywords.insert("class".to_string());
+        keywords.insert("extends".to_string());
+        keywords.insert("false".to_string());
+        keywords.insert("forSome".to_string());
+        keywords.insert("if".to_string());
+        keywords.insert("macro".to_string());
+        keywords.insert("match".to_string());
+        keywords.insert("new".to_string());
+        keywords.insert("package".to_string());
+        keywords.insert("private".to_string());
+        keywords.insert("super".to_string());
+        keywords.insert("this".to_string());
+        keywords.insert("true".to_string());
+        keywords.insert("type".to_string());
+        keywords.insert("with".to_string());
+        keywords.insert("yield".to_string());
+        keywords.insert("def".to_string());
+        keywords.insert("final".to_string());
+        keywords.insert("implicit".to_string());
+        keywords.insert("null".to_string());
+        keywords.insert("protected".to_string());
+        keywords.insert("throw".to_string());
+        keywords.insert("val".to_string());
+        keywords.insert("_".to_string());
+        keywords.insert(":".to_string());
+        keywords.insert("=".to_string());
+        keywords.insert("=>".to_string());
+        keywords.insert("<-".to_string());
+        keywords.insert("<:".to_string());
+        keywords.insert("<%".to_string());
+        keywords.insert("=>>".to_string());
+        keywords.insert(">:".to_string());
+        keywords.insert("#".to_string());
+        keywords.insert("@".to_string());
+        keywords.insert("\u{21D2}".to_string());
+        keywords.insert("\u{2190}".to_string());
+
+        let mut base_methods = HashSet::new();
+        base_methods.insert("equals".to_string());
+        base_methods.insert("hashCode".to_string());
+        base_methods.insert("toString".to_string());
+        base_methods.insert("clone".to_string());
+        base_methods.insert("finalize".to_string());
+        base_methods.insert("getClass".to_string());
+        base_methods.insert("notify".to_string());
+        base_methods.insert("notifyAll".to_string());
+        base_methods.insert("wait".to_string());
+        base_methods.insert("isInstanceOf".to_string());
+        base_methods.insert("asInstanceOf".to_string());
+        base_methods.insert("synchronized".to_string());
+        base_methods.insert("ne".to_string());
+        base_methods.insert("eq".to_string());
+        base_methods.insert("hasOwnProperty".to_string());
+        base_methods.insert("isPrototypeOf".to_string());
+        base_methods.insert("propertyIsEnumerable".to_string());
+        base_methods.insert("toLocaleString".to_string());
+        base_methods.insert("valueOf".to_string());
+
+        match dialect {
+            ScalaDialect::Scala2 => {}
+            ScalaDialect::Scala3 => {
+                keywords.insert("enum".to_string());
+                keywords.insert("export".to_string());
+                keywords.insert("given".to_string());
+                keywords.insert("?=>".to_string());
+                keywords.insert("then".to_string());
+            }
+        }
+
+        Self {
+            keywords,
+            base_methods
+        }
+    }
+
+    fn escape(&self, ident: impl AsRef<str>) -> String {
+        if self.keywords.contains(ident.as_ref()) {
+            format!("`{}`", ident.as_ref())
+        } else {
+            ident.as_ref().to_string()
+        }
+    }
+}
+
 struct ScalaJsWorld {
     opts: Opts,
     generated_files: HashMap<String, ScalaJsFile>,
+    keywords: ScalaKeywords,
+    overrides: HashMap<TypeId, String>
+}
+
+impl ScalaJsWorld {
+    fn new(opts: Opts) -> Self {
+        let keywords = ScalaKeywords::new(&opts.scala_dialect);
+        Self {
+            opts,
+            generated_files: HashMap::new(),
+            keywords,
+            overrides: HashMap::new()
+        }
+    }
 }
 
 impl WorldGenerator for ScalaJsWorld {
@@ -103,7 +225,15 @@ impl WorldGenerator for ScalaJsWorld {
 
         println!("import_interface: {wit_name}");
 
-        let mut scalajs_iface = ScalaJsInterface::new(wit_name.clone(), resolve, iface, &self.opts, Import);
+        let mut scalajs_iface = ScalaJsInterface::new(
+            wit_name.clone(),
+            resolve,
+            iface,
+            &self.opts,
+            Import,
+            &self.keywords,
+            &mut self.overrides,
+        );
         scalajs_iface.generate();
         self.generated_files
             .insert(wit_name, scalajs_iface.finalize());
@@ -123,7 +253,15 @@ impl WorldGenerator for ScalaJsWorld {
 
         println!("export_interface: {:?}", name);
 
-        let mut scalajs_iface = ScalaJsInterface::new(wit_name.clone(), resolve, iface, &self.opts, Export);
+        let mut scalajs_iface = ScalaJsInterface::new(
+            wit_name.clone(),
+            resolve,
+            iface,
+            &self.opts,
+            Export,
+            &self.keywords,
+            &mut self.overrides,
+        );
         scalajs_iface.generate();
         self.generated_files
             .insert(wit_name, scalajs_iface.finalize());
@@ -206,7 +344,9 @@ struct ScalaJsInterface<'a> {
     resolve: &'a Resolve,
     interface: &'a Interface,
     interface_id: InterfaceId,
-    direction: Direction
+    direction: Direction,
+    scala_keywords: &'a ScalaKeywords,
+    overrides: &'a mut HashMap<TypeId, String>
 }
 
 impl<'a> ScalaJsInterface<'a> {
@@ -215,13 +355,15 @@ impl<'a> ScalaJsInterface<'a> {
         resolve: &'a Resolve,
         interface_id: InterfaceId,
         opts: &'a Opts,
-        direction: Direction
+        direction: Direction,
+        scala_keywords: &'a ScalaKeywords,
+        overrides: &'a mut HashMap<TypeId, String>
     ) -> Self {
         let interface = &resolve.interfaces[interface_id];
         let name = interface
             .name
             .clone()
-            .expect("Anonymous interfaces not supported yet")
+            .unwrap_or(wit_name.clone())
             .to_pascal_case();
 
         let package_name = resolve.packages
@@ -229,7 +371,7 @@ impl<'a> ScalaJsInterface<'a> {
         .name
         .clone();
 
-        let mut package = package_name_to_segments(&opts, &package_name);
+        let package = package_name_to_segments(&opts, &package_name);
 
         Self {
             wit_name,
@@ -240,7 +382,9 @@ impl<'a> ScalaJsInterface<'a> {
             resolve,
             interface,
             interface_id,
-            direction
+            direction,
+            scala_keywords,
+            overrides
         }
     }
 
@@ -253,7 +397,11 @@ impl<'a> ScalaJsInterface<'a> {
         uwriteln!(source, "import {}wit._", self.opts.base_package_prefix());
         uwriteln!(source, "");
 
-        uwriteln!(source, "package object {} {{", self.name.to_snake_case());
+        uwriteln!(
+            source,
+            "package object {} {{",
+            self.scala_keywords.escape(self.name.to_snake_case())
+        );
 
         let mut types = Vec::new();
         let mut functions = Vec::new();
@@ -261,13 +409,32 @@ impl<'a> ScalaJsInterface<'a> {
 
         for (type_name, type_id) in &self.interface.types {
             let type_def = &self.resolve.types[*type_id];
-            if let Some(typ) = self.render_typedef(type_name, type_def) {
+
+            let type_name = self.overrides.get(type_id).unwrap_or(type_name);
+            let type_name = if type_name.eq_ignore_ascii_case(&self.name) {
+                let overridden_type_name = format!("{}Type", type_name);
+                self.overrides.insert(*type_id, overridden_type_name.clone());
+                overridden_type_name
+            } else {
+                type_name.clone()
+            };
+
+            if let Some(typ) = self.render_typedef(&type_name, type_def) {
                 types.push(typ);
             }
         }
 
+        for (_, type_id) in &self.interface.types {
+            let type_def = &self.resolve.types[*type_id];
+            if let TypeDefKind::Resource = &type_def.kind {
+                resources
+                    .entry(*type_id)
+                    .or_insert_with(|| ScalaJsResource::new(self, *type_id));
+            }
+        }
+
         for (func_name, func) in &self.interface.functions {
-            let scala_func_name = func_name.to_lower_camel_case();
+            let scala_func_name = self.scala_keywords.escape(func_name.to_lower_camel_case());
 
             match func.kind {
                 FunctionKind::Freestanding => {
@@ -287,7 +454,10 @@ impl<'a> ScalaJsInterface<'a> {
                         Export => "",
                     };
 
-                    uwriteln!(function, "    def {scala_func_name}({args}): {ret}{postfix}");
+                    uwriteln!(
+                        function,
+                        "    def {scala_func_name}({args}): {ret}{postfix}"
+                    );
                     functions.push(function);
                 }
                 FunctionKind::Method(resource_type)
@@ -347,12 +517,11 @@ impl<'a> ScalaJsInterface<'a> {
         }
     }
 
-
     fn render_args<'b>(&self, params: impl Iterator<Item = &'b (String, Type)>) -> String {
         let mut args = Vec::new();
         for (param_name, param_typ) in params {
             let param_typ = self.render_type_reference(param_typ);
-            let param_name = param_name.to_lower_camel_case();
+            let param_name = self.scala_keywords.escape(param_name.to_lower_camel_case());
             args.push(format!("{param_name}: {param_typ}"));
         }
         args.join(", ")
@@ -396,17 +565,19 @@ impl<'a> ScalaJsInterface<'a> {
             | TypeDefKind::Enum(_)
             | TypeDefKind::Type(_)
             | TypeDefKind::Variant(_) => {
-                let prefix = match self.render_owner(&typ.owner) {
+                let prefix = match self.render_owner(&typ.owner, &typ.kind == &TypeDefKind::Resource) {
                     Some(owner) => format!("{owner}."),
                     None => "".to_string(),
                 };
                 format!(
                     "{}{}",
                     prefix,
-                    typ.name
-                        .clone()
-                        .expect("Anonymous types are not supported")
-                        .to_pascal_case()
+                    self.scala_keywords.escape(
+                        typ.name
+                            .clone()
+                            .expect("Anonymous types are not supported")
+                            .to_pascal_case()
+                    )
                 )
             }
             TypeDefKind::Handle(handle) => {
@@ -418,11 +589,13 @@ impl<'a> ScalaJsInterface<'a> {
                 self.render_typedef_reference(typ)
             }
             TypeDefKind::Tuple(tuple) => {
+                let arity = tuple.types.len();
+
                 let mut parts = Vec::new();
                 for part in &tuple.types {
                     parts.push(self.render_type_reference(part));
                 }
-                format!("({})", parts.join(", "))
+                format!("WitTuple{arity}[{}]", parts.join(", "))
             }
             TypeDefKind::Option(option) => {
                 if !maybe_null(&self.resolve, option) {
@@ -452,14 +625,23 @@ impl<'a> ScalaJsInterface<'a> {
         }
     }
 
-    fn render_owner(&self, owner: &TypeOwner) -> Option<String> {
+    fn render_owner(&self, owner: &TypeOwner, is_resource: bool) -> Option<String> {
         match owner {
             TypeOwner::World(id) => {
                 let world = &self.resolve.worlds[*id];
                 // TODO: assuming an object or trait is also generated per world?
-                Some(world.name.clone().to_pascal_case())
+                Some(
+                    self.scala_keywords
+                        .escape(world.name.clone().to_pascal_case()),
+                )
             }
-            TypeOwner::Interface(id) if id == &self.interface_id => None,
+            TypeOwner::Interface(id) if id == &self.interface_id => {
+                if is_resource {
+                    Some(self.name.clone())
+                } else {
+                    None
+                }
+            },
             TypeOwner::Interface(id) => {
                 let iface = &self.resolve.interfaces[*id];
                 let name = iface.name.clone().expect("Interface must have a name");
@@ -467,7 +649,12 @@ impl<'a> ScalaJsInterface<'a> {
 
                 let package = &self.resolve.packages[package_id];
                 let mut segments = package_name_to_segments(&self.opts, &package.name);
-                segments.push(name.to_snake_case());
+                segments.push(self.scala_keywords.escape(name.to_snake_case()));
+
+                if is_resource {
+                    segments.push(self.scala_keywords.escape(name.to_pascal_case()));
+                }
+
                 Some(segments.join("."))
             }
             TypeOwner::None => None,
@@ -475,7 +662,7 @@ impl<'a> ScalaJsInterface<'a> {
     }
 
     fn render_typedef(&self, name: &str, typ: &TypeDef) -> Option<String> {
-        let scala_name = name.to_pascal_case();
+        let scala_name = self.scala_keywords.escape(name.to_pascal_case());
 
         let mut source = String::new();
         match &typ.kind {
@@ -483,13 +670,14 @@ impl<'a> ScalaJsInterface<'a> {
                 let mut fields = Vec::new();
                 for field in &record.fields {
                     let typ = self.render_type_reference(&field.ty);
-                    let field_name = field.name.to_lower_camel_case();
-                    fields.push((field_name, typ, &field.docs));
+                    let field_name = self.scala_keywords.escape(field.name.to_lower_camel_case());
+                    let field_name0 = self.scala_keywords.escape(format!("{}0", field.name.to_lower_camel_case()));
+                    fields.push((field_name, field_name0, typ, &field.docs));
                 }
 
                 write_doc_comment(&mut source, "  ", &typ.docs);
                 uwriteln!(source, "  sealed trait {scala_name} extends js.Object {{");
-                for (field_name, typ, docs) in &fields {
+                for (field_name, _, typ, docs) in &fields {
                     write_doc_comment(&mut source, "    ", &docs);
                     uwriteln!(source, "    val {field_name}: {typ}");
                 }
@@ -497,13 +685,13 @@ impl<'a> ScalaJsInterface<'a> {
                 uwriteln!(source, "");
                 uwriteln!(source, "  case object {scala_name} {{");
                 uwriteln!(source, "    def apply(");
-                for (field_name, typ, _) in &fields {
-                    uwriteln!(source, "      {field_name}0: {typ},");
+                for (_, field_name0, typ, _) in &fields {
+                    uwriteln!(source, "      {field_name0}: {typ},");
                 }
                 uwriteln!(source, "    ): {scala_name} = {{");
                 uwriteln!(source, "      new {scala_name} {{");
-                for (field_name, typ, _) in &fields {
-                    uwriteln!(source, "        val {field_name}: {typ} = {field_name}0");
+                for (field_name, field_name0, typ, _) in &fields {
+                    uwriteln!(source, "        val {field_name}: {typ} = {field_name0}");
                 }
                 uwriteln!(source, "      }}");
                 uwriteln!(source, "    }}");
@@ -519,27 +707,28 @@ impl<'a> ScalaJsInterface<'a> {
                 let mut fields = Vec::new();
                 for flag in &flags.flags {
                     let typ = "Boolean".to_string();
-                    let field_name = flag.name.to_lower_camel_case();
-                    fields.push((field_name, typ, &flag.docs));
+                    let field_name = self.scala_keywords.escape(flag.name.to_lower_camel_case());
+                    let field_name0 = self.scala_keywords.escape(format!("{}0", flag.name.to_lower_camel_case()));
+                    fields.push((field_name, field_name0, typ, &flag.docs));
                 }
 
                 write_doc_comment(&mut source, "  ", &typ.docs);
                 uwriteln!(source, "  sealed trait {scala_name} extends js.Object {{");
-                for (field_name, typ, docs) in &fields {
+                for (field_name, _, typ, docs) in &fields {
                     write_doc_comment(&mut source, "    ", docs);
-                    uwriteln!(source, "    val {field_name}: {typ},");
+                    uwriteln!(source, "    val {field_name}: {typ}");
                 }
                 uwriteln!(source, "  }}");
                 uwriteln!(source, "");
                 uwriteln!(source, "  case object {scala_name} {{");
                 uwriteln!(source, "    def apply(");
-                for (field_name, typ, _) in &fields {
-                    uwriteln!(source, "      {field_name}0: {typ},");
+                for (_, field_name0, typ, _) in &fields {
+                    uwriteln!(source, "      {field_name0}: {typ},");
                 }
                 uwriteln!(source, "    ): {scala_name} = {{");
                 uwriteln!(source, "      new {scala_name} {{");
-                for (field_name, typ, _) in &fields {
-                    uwriteln!(source, "        val {field_name}: {typ} = {field_name}0");
+                for (field_name, field_name0, typ, _) in &fields {
+                    uwriteln!(source, "        val {field_name}: {typ} = {field_name0}");
                 }
                 uwriteln!(source, "      }}");
                 uwriteln!(source, "    }}");
@@ -548,7 +737,7 @@ impl<'a> ScalaJsInterface<'a> {
             TypeDefKind::Tuple(tuple) => {
                 let arity = tuple.types.len();
                 write_doc_comment(&mut source, "  ", &typ.docs);
-                uwrite!(source, "  type {scala_name} = js.Tuple{arity}[");
+                uwrite!(source, "  type {scala_name} = WitTuple{arity}[");
                 for (idx, part) in tuple.types.iter().enumerate() {
                     let part = self.render_type_reference(part);
                     uwrite!(source, "{part}");
@@ -569,11 +758,13 @@ impl<'a> ScalaJsInterface<'a> {
                 uwriteln!(source, "  object {scala_name} {{");
                 for case in &variant.cases {
                     let case_name = &case.name;
+                    let scala_case_name =
+                        self.scala_keywords.escape(case_name.to_lower_camel_case());
                     match &case.ty {
                         Some(ty) => {
                             let typ = self.render_type_reference(ty);
                             write_doc_comment(&mut source, "    ", &case.docs);
-                            uwriteln!(source, "    def {case_name}(value: {typ}): {scala_name} = new {scala_name} {{");
+                            uwriteln!(source, "    def {scala_case_name}(value: {typ}): {scala_name} = new {scala_name} {{");
                             uwriteln!(source, "      type Type = {typ}");
                             uwriteln!(source, "      val tag: String = \"{case_name}\"");
                             uwriteln!(source, "      val `val`: js.UndefOr[Type] = value");
@@ -583,9 +774,9 @@ impl<'a> ScalaJsInterface<'a> {
                             write_doc_comment(&mut source, "    ", &case.docs);
                             uwriteln!(
                                 source,
-                                "    def {case_name}(): {scala_name} = new {scala_name} {{"
+                                "    def {scala_case_name}(): {scala_name} = new {scala_name} {{"
                             );
-                            uwriteln!(source, "      type Type = ()");
+                            uwriteln!(source, "      type Type = Unit");
                             uwriteln!(source, "      val tag: String = \"{case_name}\"");
                             uwriteln!(source, "      val `val`: js.UndefOr[Type] = ()");
                             uwriteln!(source, "    }}");
@@ -601,10 +792,12 @@ impl<'a> ScalaJsInterface<'a> {
                 uwriteln!(source, "  object {scala_name} {{");
                 for case in &enm.cases {
                     let case_name = &case.name;
+                    let scala_case_name =
+                        self.scala_keywords.escape(case_name.to_lower_camel_case());
                     write_doc_comment(&mut source, "    ", &case.docs);
                     uwriteln!(
                         source,
-                        "    def {case_name}: {scala_name} = \"{case_name}\".asInstanceOf[{scala_name}]",
+                        "    def {scala_case_name}: {scala_name} = \"{case_name}\".asInstanceOf[{scala_name}]",
                     );
                 }
                 uwriteln!(source, "  }}");
@@ -664,10 +857,12 @@ impl<'a> ScalaJsInterface<'a> {
 
 struct ScalaJsResource<'a> {
     owner: &'a ScalaJsInterface<'a>,
-    resource_id: TypeId,
+    _resource_id: TypeId,
     resource_name: String,
+    class_header: String,
     class_source: String,
     object_source: String,
+    constructor_args: String
 }
 
 impl<'a> ScalaJsResource<'a> {
@@ -677,16 +872,19 @@ impl<'a> ScalaJsResource<'a> {
             .name
             .clone()
             .expect("Anonymous resources not supported");
-        let scala_resource_name = resource_name.to_pascal_case();
+        let scala_resource_name = owner.scala_keywords.escape(resource_name.to_pascal_case());
 
-        let mut class_source = String::new();
-        write_doc_comment(&mut class_source, "    ", &resource.docs);
-        uwriteln!(class_source, "    @js.native");
-        uwriteln!(
-            class_source,
-            "    class {} extends js.Object {{",
+        let mut class_header = String::new();
+        write_doc_comment(&mut class_header, "    ", &resource.docs);
+        uwriteln!(class_header, "    @js.native");
+        uwrite!(
+            class_header,
+            "    class {}(",
             scala_resource_name
         );
+
+        let mut class_source = String::new();
+        uwriteln!(class_source, ") extends js.Object {{");
 
         let mut object_source = String::new();
         uwriteln!(object_source, "    @js.native");
@@ -698,10 +896,12 @@ impl<'a> ScalaJsResource<'a> {
 
         Self {
             owner,
-            resource_id,
+            _resource_id: resource_id,
             resource_name,
+            class_header,
             class_source,
             object_source,
+            constructor_args: String::new()
         }
     }
 
@@ -711,12 +911,18 @@ impl<'a> ScalaJsResource<'a> {
             FunctionKind::Method(_) => {
                 let args = self.owner.render_args(func.params.iter().skip(1));
                 let ret = self.owner.render_return_type(&func.results);
-
                 let scala_func_name = self.get_func_name("[method]", func_name);
+
+                let overrd = if self.owner.scala_keywords.base_methods.contains(&scala_func_name) {
+                    "override "
+                } else {
+                    ""
+                };
+
                 write_doc_comment(&mut self.class_source, "      ", &func.docs);
                 uwriteln!(
                     self.class_source,
-                    "      def {scala_func_name}({args}): {ret} = js.native"
+                    "      {overrd}def {scala_func_name}({args}): {ret} = js.native"
                 );
             }
             FunctionKind::Static(_) => {
@@ -732,19 +938,15 @@ impl<'a> ScalaJsResource<'a> {
             }
             FunctionKind::Constructor(_) => {
                 let args = self.owner.render_args(func.params.iter());
-                let ret = self.owner.render_return_type(&func.results);
-
-                write_doc_comment(&mut self.class_source, "      ", &func.docs);
-                uwriteln!(
-                    self.class_source,
-                    "      def this({args}): {ret} = js.native"
-                );
+                self.constructor_args = args;
             }
         }
     }
 
     pub fn finalize(self) -> String {
-        let mut class_source = self.class_source;
+        let mut class_source = self.class_header;
+        uwrite!(class_source, "{}", self.constructor_args);
+        uwriteln!(class_source, "{}", self.class_source);
         uwriteln!(class_source, "    }}");
         let mut object_source = self.object_source;
         uwriteln!(object_source, "    }}");
@@ -752,12 +954,14 @@ impl<'a> ScalaJsResource<'a> {
     }
 
     fn get_func_name(&self, prefix: &str, func_name: &str) -> String {
-        func_name
-            .strip_prefix(prefix)
-            .unwrap()
-            .strip_prefix(&self.resource_name)
-            .unwrap()
-            .to_lower_camel_case()
+        self.owner.scala_keywords.escape(
+            func_name
+                .strip_prefix(prefix)
+                .unwrap()
+                .strip_prefix(&self.resource_name)
+                .unwrap()
+                .to_lower_camel_case(),
+        )
     }
 }
 
@@ -775,7 +979,7 @@ fn render_runtime_module(opts: &Opts) -> ScalaJsFile {
     ScalaJsFile {
         package,
         name: "package".to_string(),
-        source
+        source,
     }
 }
 

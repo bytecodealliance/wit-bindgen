@@ -9,7 +9,6 @@ homepage = 'https://github.com/bytecodealliance/wit-bindgen'
 description = """
 CLI tool to generate bindings for WIT documents and the component model.
 """
-
 [workspace]
 members = [
   "crates/test-rust-wasm",
@@ -51,7 +50,8 @@ wit-bindgen-scalajs = { path = 'crates/scalajs', version = '0.37.0' }
 wit-bindgen = { path = 'crates/guest-rust', version = '0.37.0', default-features = false }
 
 [[bin]]
-name = "wit-bindgen"
+name = "wit-bindgen-scalajs"
+path = "src/bin/wit-bindgen.rs"
 
 [dependencies]
 anyhow = { workspace = true }
@@ -70,13 +70,13 @@ wasm-encoder = { workspace = true }
 
 [features]
 default = [
-  'c',
-  'rust',
-  'markdown',
-  'teavm-java',
-  'go',
-  'csharp',
-  'moonbit',
+#  'c',
+#  'rust',
+#  'markdown',
+#  'teavm-java',
+#  'go',
+#  'csharp',
+#  'moonbit',
   'scalajs',
   'async',
 ]
