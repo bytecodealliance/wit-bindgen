@@ -20,7 +20,7 @@ resolver = "2"
 edition = "2021"
 version = "0.38.0"
 license = "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT"
-repository = "https://github.com/bytecodealliance/wasi-rs"
+repository = "https://github.com/bytecodealliance/wit-bindgen"
 
 [workspace.dependencies]
 anyhow = "1.0.72"
