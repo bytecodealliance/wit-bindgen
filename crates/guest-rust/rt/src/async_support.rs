@@ -191,6 +191,7 @@ mod results {
 }
 
 /// Result of awaiting a asynchronous read or write
+#[doc(hidden)]
 pub enum AsyncWaitResult {
     /// Used when a value was successfully sent or received
     Values(usize),
