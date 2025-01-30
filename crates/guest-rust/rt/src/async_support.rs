@@ -207,8 +207,8 @@ impl AsyncWaitResult {
         match v {
             results::CLOSED | results::CANCELED => Self::End,
             v => {
-                if v & (1 << 31) != 0 {
-                    Self::Error(v ^ results::CLOSED)
+                if v & results::CLOSED != 0 {
+                    Self::Error(v & !results::CLOSED)
                 } else {
                     Self::Values(v as usize)
                 }
