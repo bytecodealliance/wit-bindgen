@@ -180,7 +180,7 @@ impl ScalaKeywords {
 
         Self {
             keywords,
-            base_methods
+            base_methods,
         }
     }
 
@@ -195,9 +195,9 @@ impl ScalaKeywords {
 
 struct ScalaJsWorld {
     opts: Opts,
-    generated_files: HashMap<String, ScalaJsFile>,
+    generated_files: Vec<ScalaJsFile>,
     keywords: ScalaKeywords,
-    overrides: HashMap<TypeId, String>
+    overrides: HashMap<TypeId, String>,
 }
 
 impl ScalaJsWorld {
@@ -205,9 +205,9 @@ impl ScalaJsWorld {
         let keywords = ScalaKeywords::new(&opts.scala_dialect);
         Self {
             opts,
-            generated_files: HashMap::new(),
+            generated_files: Vec::new(),
             keywords,
-            overrides: HashMap::new()
+            overrides: HashMap::new(),
         }
     }
 }
@@ -235,8 +235,7 @@ impl WorldGenerator for ScalaJsWorld {
             &mut self.overrides,
         );
         scalajs_iface.generate();
-        self.generated_files
-            .insert(wit_name, scalajs_iface.finalize());
+        self.generated_files.push(scalajs_iface.finalize());
 
         Ok(())
     }
@@ -263,8 +262,7 @@ impl WorldGenerator for ScalaJsWorld {
             &mut self.overrides,
         );
         scalajs_iface.generate();
-        self.generated_files
-            .insert(wit_name, scalajs_iface.finalize());
+        self.generated_files.push(scalajs_iface.finalize());
 
         Ok(())
     }
@@ -309,11 +307,8 @@ impl WorldGenerator for ScalaJsWorld {
         _world: WorldId,
         files: &mut Files,
     ) -> anyhow::Result<()> {
-        for (name, iface) in &self.generated_files {
-            println!("--- interface: {:?}", name);
-            println!("{}", iface.source);
-
-            files.push(&iface.path(), iface.source.as_bytes());
+        for file in &self.generated_files {
+            files.push(&file.path(), file.source.as_bytes());
         }
 
         let rt = render_runtime_module(&self.opts);
@@ -346,7 +341,7 @@ struct ScalaJsInterface<'a> {
     interface_id: InterfaceId,
     direction: Direction,
     scala_keywords: &'a ScalaKeywords,
-    overrides: &'a mut HashMap<TypeId, String>
+    overrides: &'a mut HashMap<TypeId, String>,
 }
 
 impl<'a> ScalaJsInterface<'a> {
@@ -357,7 +352,7 @@ impl<'a> ScalaJsInterface<'a> {
         opts: &'a Opts,
         direction: Direction,
         scala_keywords: &'a ScalaKeywords,
-        overrides: &'a mut HashMap<TypeId, String>
+        overrides: &'a mut HashMap<TypeId, String>,
     ) -> Self {
         let interface = &resolve.interfaces[interface_id];
         let name = interface
@@ -371,7 +366,7 @@ impl<'a> ScalaJsInterface<'a> {
         .name
         .clone();
 
-        let package = package_name_to_segments(&opts, &package_name);
+        let package = package_name_to_segments(&opts, &package_name, &direction, &scala_keywords);
 
         Self {
             wit_name,
@@ -384,7 +379,7 @@ impl<'a> ScalaJsInterface<'a> {
             interface_id,
             direction,
             scala_keywords,
-            overrides
+            overrides,
         }
     }
 
@@ -405,7 +400,8 @@ impl<'a> ScalaJsInterface<'a> {
 
         let mut types = Vec::new();
         let mut functions = Vec::new();
-        let mut resources = HashMap::new();
+        let mut imported_resources = HashMap::new();
+        let mut exported_resources = HashMap::new();
 
         for (type_name, type_id) in &self.interface.types {
             let type_def = &self.resolve.types[*type_id];
@@ -413,7 +409,8 @@ impl<'a> ScalaJsInterface<'a> {
             let type_name = self.overrides.get(type_id).unwrap_or(type_name);
             let type_name = if type_name.eq_ignore_ascii_case(&self.name) {
                 let overridden_type_name = format!("{}Type", type_name);
-                self.overrides.insert(*type_id, overridden_type_name.clone());
+                self.overrides
+                    .insert(*type_id, overridden_type_name.clone());
                 overridden_type_name
             } else {
                 type_name.clone()
@@ -427,9 +424,18 @@ impl<'a> ScalaJsInterface<'a> {
         for (_, type_id) in &self.interface.types {
             let type_def = &self.resolve.types[*type_id];
             if let TypeDefKind::Resource = &type_def.kind {
-                resources
-                    .entry(*type_id)
-                    .or_insert_with(|| ScalaJsResource::new(self, *type_id));
+                match &self.direction {
+                    Import => {
+                        imported_resources
+                            .entry(*type_id)
+                            .or_insert_with(|| ScalaJsImportedResource::new(self, *type_id));
+                    }
+                    Export => {
+                        exported_resources
+                            .entry(*type_id)
+                            .or_insert_with(|| ScalaJsExportedResource::new(self, *type_id));
+                    }
+                }
             }
         }
 
@@ -463,10 +469,20 @@ impl<'a> ScalaJsInterface<'a> {
                 FunctionKind::Method(resource_type)
                 | FunctionKind::Static(resource_type)
                 | FunctionKind::Constructor(resource_type) => {
-                    let resource = resources
-                        .entry(resource_type)
-                        .or_insert_with(|| ScalaJsResource::new(self, resource_type));
-                    resource.add_function(func_name, func);
+                    match &self.direction {
+                        Import => {
+                            let resource = imported_resources
+                                .entry(resource_type)
+                                .or_insert_with(|| ScalaJsImportedResource::new(self, resource_type));
+                            resource.add_function(func_name, func);
+                        }
+                        Export => {
+                            let resource = exported_resources
+                                .entry(resource_type)
+                                .or_insert_with(|| ScalaJsExportedResource::new(self, resource_type));
+                            resource.add_function(func_name, func);
+                        }
+                    }
                 }
             }
         }
@@ -483,7 +499,11 @@ impl<'a> ScalaJsInterface<'a> {
         } else {
             uwriteln!(source, "  trait {} {{", self.name);
         }
-        for (_, resource) in resources {
+        for (_, resource) in imported_resources {
+            uwriteln!(source, "{}", resource.finalize());
+            uwriteln!(source, "");
+        }
+        for (_, resource) in exported_resources {
             uwriteln!(source, "{}", resource.finalize());
             uwriteln!(source, "");
         }
@@ -565,10 +585,11 @@ impl<'a> ScalaJsInterface<'a> {
             | TypeDefKind::Enum(_)
             | TypeDefKind::Type(_)
             | TypeDefKind::Variant(_) => {
-                let prefix = match self.render_owner(&typ.owner, &typ.kind == &TypeDefKind::Resource) {
-                    Some(owner) => format!("{owner}."),
-                    None => "".to_string(),
-                };
+                let prefix =
+                    match self.render_owner(&typ.owner, &typ.kind == &TypeDefKind::Resource) {
+                        Some(owner) => format!("{owner}."),
+                        None => "".to_string(),
+                    };
                 format!(
                     "{}{}",
                     prefix,
@@ -641,14 +662,14 @@ impl<'a> ScalaJsInterface<'a> {
                 } else {
                     None
                 }
-            },
+            }
             TypeOwner::Interface(id) => {
                 let iface = &self.resolve.interfaces[*id];
                 let name = iface.name.clone().expect("Interface must have a name");
                 let package_id = iface.package.expect("Interface must have a package");
 
                 let package = &self.resolve.packages[package_id];
-                let mut segments = package_name_to_segments(&self.opts, &package.name);
+                let mut segments = package_name_to_segments(&self.opts, &package.name, &Import, self.scala_keywords);
                 segments.push(self.scala_keywords.escape(name.to_snake_case()));
 
                 if is_resource {
@@ -671,7 +692,9 @@ impl<'a> ScalaJsInterface<'a> {
                 for field in &record.fields {
                     let typ = self.render_type_reference(&field.ty);
                     let field_name = self.scala_keywords.escape(field.name.to_lower_camel_case());
-                    let field_name0 = self.scala_keywords.escape(format!("{}0", field.name.to_lower_camel_case()));
+                    let field_name0 = self
+                        .scala_keywords
+                        .escape(format!("{}0", field.name.to_lower_camel_case()));
                     fields.push((field_name, field_name0, typ, &field.docs));
                 }
 
@@ -708,7 +731,9 @@ impl<'a> ScalaJsInterface<'a> {
                 for flag in &flags.flags {
                     let typ = "Boolean".to_string();
                     let field_name = self.scala_keywords.escape(flag.name.to_lower_camel_case());
-                    let field_name0 = self.scala_keywords.escape(format!("{}0", flag.name.to_lower_camel_case()));
+                    let field_name0 = self
+                        .scala_keywords
+                        .escape(format!("{}0", flag.name.to_lower_camel_case()));
                     fields.push((field_name, field_name0, typ, &flag.docs));
                 }
 
@@ -855,17 +880,17 @@ impl<'a> ScalaJsInterface<'a> {
     }
 }
 
-struct ScalaJsResource<'a> {
+struct ScalaJsImportedResource<'a> {
     owner: &'a ScalaJsInterface<'a>,
     _resource_id: TypeId,
     resource_name: String,
     class_header: String,
     class_source: String,
     object_source: String,
-    constructor_args: String
+    constructor_args: String,
 }
 
-impl<'a> ScalaJsResource<'a> {
+impl<'a> ScalaJsImportedResource<'a> {
     pub fn new(owner: &'a ScalaJsInterface<'a>, resource_id: TypeId) -> Self {
         let resource = &owner.resolve.types[resource_id];
         let resource_name = resource
@@ -876,12 +901,9 @@ impl<'a> ScalaJsResource<'a> {
 
         let mut class_header = String::new();
         write_doc_comment(&mut class_header, "    ", &resource.docs);
+
         uwriteln!(class_header, "    @js.native");
-        uwrite!(
-            class_header,
-            "    class {}(",
-            scala_resource_name
-        );
+        uwrite!(class_header, "    class {}(", scala_resource_name);
 
         let mut class_source = String::new();
         uwriteln!(class_source, ") extends js.Object {{");
@@ -901,7 +923,7 @@ impl<'a> ScalaJsResource<'a> {
             class_header,
             class_source,
             object_source,
-            constructor_args: String::new()
+            constructor_args: String::new(),
         }
     }
 
@@ -913,7 +935,12 @@ impl<'a> ScalaJsResource<'a> {
                 let ret = self.owner.render_return_type(&func.results);
                 let scala_func_name = self.get_func_name("[method]", func_name);
 
-                let overrd = if self.owner.scala_keywords.base_methods.contains(&scala_func_name) {
+                let overrd = if self
+                    .owner
+                    .scala_keywords
+                    .base_methods
+                    .contains(&scala_func_name)
+                {
                     "override "
                 } else {
                     ""
@@ -965,6 +992,107 @@ impl<'a> ScalaJsResource<'a> {
     }
 }
 
+struct ScalaJsExportedResource<'a> {
+    owner: &'a ScalaJsInterface<'a>,
+    _resource_id: TypeId,
+    resource_name: String,
+    class_header: String,
+    class_source: String,
+    static_methods: String,
+    constructor_args: String,
+}
+
+impl<'a> ScalaJsExportedResource<'a> {
+    pub fn new(owner: &'a ScalaJsInterface<'a>, resource_id: TypeId) -> Self {
+        let resource = &owner.resolve.types[resource_id];
+        let resource_name = resource
+            .name
+            .clone()
+            .expect("Anonymous resources not supported");
+        let scala_resource_name = owner.scala_keywords.escape(resource_name.to_pascal_case());
+
+        let mut class_header = String::new();
+        write_doc_comment(&mut class_header, "    ", &resource.docs);
+
+        uwrite!(class_header, "    abstract class {}(", scala_resource_name);
+
+        let mut class_source = String::new();
+        uwriteln!(class_source, ") extends js.Object {{");
+
+        Self {
+            owner,
+            _resource_id: resource_id,
+            resource_name,
+            class_header,
+            class_source,
+            static_methods: String::new(),
+            constructor_args: String::new(),
+        }
+    }
+
+    pub fn add_function(&mut self, func_name: &str, func: &Function) {
+        match &func.kind {
+            FunctionKind::Freestanding => unreachable!(),
+            FunctionKind::Method(_) => {
+                let args = self.owner.render_args(func.params.iter().skip(1));
+                let ret = self.owner.render_return_type(&func.results);
+                let scala_func_name = self.get_func_name("[method]", func_name);
+
+                let overrd = if self
+                    .owner
+                    .scala_keywords
+                    .base_methods
+                    .contains(&scala_func_name)
+                {
+                    "override "
+                } else {
+                    ""
+                };
+
+                write_doc_comment(&mut self.class_source, "      ", &func.docs);
+                uwriteln!(
+                    self.class_source,
+                    "      {overrd}def {scala_func_name}({args}): {ret}"
+                );
+            }
+            FunctionKind::Static(_) => {
+                let args = self.owner.render_args(func.params.iter());
+                let ret = self.owner.render_return_type(&func.results);
+
+                let scala_func_name = self.get_func_name("[static]", func_name);
+                write_doc_comment(&mut self.class_source, "      ", &func.docs);
+                uwriteln!(
+                    self.static_methods,
+                    "    def {scala_func_name}({args}): {ret}"
+                );
+            }
+            FunctionKind::Constructor(_) => {
+                let args = self.owner.render_args(func.params.iter());
+                self.constructor_args = args;
+            }
+        }
+    }
+
+    pub fn finalize(self) -> String {
+        let mut class_source = self.class_header;
+        uwrite!(class_source, "{}", self.constructor_args);
+        uwriteln!(class_source, "{}", self.class_source);
+        uwriteln!(class_source, "    }}");
+        format!("{}\n{}\n", class_source, self.static_methods)
+    }
+
+    fn get_func_name(&self, prefix: &str, func_name: &str) -> String {
+        self.owner.scala_keywords.escape(
+            func_name
+                .strip_prefix(prefix)
+                .unwrap()
+                .strip_prefix(&self.resource_name)
+                .unwrap()
+                .to_lower_camel_case(),
+        )
+    }
+}
+
 fn render_runtime_module(opts: &Opts) -> ScalaJsFile {
     let wit_scala = include_str!("../scala/wit.scala");
 
@@ -983,14 +1111,24 @@ fn render_runtime_module(opts: &Opts) -> ScalaJsFile {
     }
 }
 
-fn package_name_to_segments(opts: &Opts, package_name: &PackageName) -> Vec<String> {
+fn package_name_to_segments(
+    opts: &Opts,
+    package_name: &PackageName,
+    direction: &Direction,
+    keywords: &ScalaKeywords,
+) -> Vec<String> {
     let mut segments = opts.base_package_segments();
+
+    if direction == &Export {
+        segments.push("export".to_string());
+    }
+
     segments.push(package_name.namespace.to_snake_case());
     segments.push(package_name.name.to_snake_case());
     if let Some(version) = &package_name.version {
         segments.push(format!("v{}", version.to_string().to_snake_case()));
     }
-    segments
+    segments.into_iter().map(|s| keywords.escape(s)).collect()
 }
 
 fn write_doc_comment(source: &mut impl Write, indent: &str, docs: &Docs) {
