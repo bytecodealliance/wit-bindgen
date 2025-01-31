@@ -72,7 +72,6 @@ pub struct StreamWriter<T: 'static> {
     handle: u32,
     future: Option<Pin<Box<dyn Future<Output = ()> + 'static>>>,
     vtable: &'static StreamVtable<T>,
-    error: Option<ErrorContext>,
 }
 
 impl<T> StreamWriter<T> {
@@ -82,7 +81,6 @@ impl<T> StreamWriter<T> {
             handle,
             future: None,
             vtable,
-            error: None,
         }
     }
 
@@ -102,8 +100,8 @@ impl<T> StreamWriter<T> {
         super::with_entry(self.handle, move |entry| match entry {
             Entry::Vacant(_) => unreachable!(),
             Entry::Occupied(mut entry) => match entry.get_mut() {
-                // Regardless of current state, put the writer into a closed with error state
                 _ => {
+                    // Note: the impending drop after this function runs should trigger
                     entry.insert(Handle::WriteClosedErr(err.handle()));
                 }
             },
