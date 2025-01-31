@@ -94,19 +94,17 @@ impl<T> StreamWriter<T> {
         self.future = None;
     }
 
-    /// Set an error that should be returned when the writer closes
+    /// Close the writer with an error that will be returned as the last value
     ///
     /// Note that this error is not sent immediately, but only when the
     /// writer closes, which is normally a result of a `drop()`
-    pub fn set_error_on_close(&mut self, err: ErrorContext) {
-        let err_ctx = err.handle();
-        self.error = Some(err);
+    pub fn close_with_error(self, err: ErrorContext) {
         super::with_entry(self.handle, move |entry| match entry {
             Entry::Vacant(_) => unreachable!(),
             Entry::Occupied(mut entry) => match entry.get_mut() {
                 // Regardless of current state, put the writer into a closed with error state
                 _ => {
-                    entry.insert(Handle::WriteClosedErr(err_ctx));
+                    entry.insert(Handle::WriteClosedErr(err.handle()));
                 }
             },
         });
@@ -368,7 +366,7 @@ impl<T> Stream for StreamReader<T> {
                 |entry| match entry {
                     Entry::Vacant(_) => unreachable!(),
                     Entry::Occupied(mut entry) => match entry.get() {
-                        Handle::Write | Handle::WriteClosedErr(_) | Handle::LocalWaiting(_) => {
+                        Handle::Write | Handle::LocalWaiting(_) => {
                             unreachable!()
                         }
                         Handle::Read => {
@@ -414,6 +412,9 @@ impl<T> Stream for StreamReader<T> {
                             })
                         }
                         Handle::LocalClosed => Box::pin(future::ready(None)),
+                        Handle::WriteClosedErr(err_ctx) => Box::pin(future::ready(Some(Err(
+                            ErrorContext::from_handle(*err_ctx),
+                        )))),
                         Handle::LocalReady(..) => {
                             let Handle::LocalReady(v, waker) = entry.insert(Handle::LocalOpen)
                             else {
