@@ -226,11 +226,7 @@ impl<T> Drop for StreamWriter<T> {
                 Handle::Read => unreachable!(),
                 Handle::Write | Handle::LocalClosed => {
                     entry.remove();
-                    (self.vtable.close_writable)(
-                        self.handle,
-                        self.error.as_ref().map(|v| v.handle()).unwrap_or_default(),
-                    );
-                    // (self.vtable.close_writable)(self.handle, 0);
+                    (self.vtable.close_writable)(self.handle, 0);
                 }
                 Handle::WriteClosedErr(err) => {
                     let err = *err;
