@@ -72,6 +72,7 @@ pub struct StreamWriter<T: 'static> {
     handle: u32,
     future: Option<Pin<Box<dyn Future<Output = ()> + 'static>>>,
     vtable: &'static StreamVtable<T>,
+    error: Option<ErrorContext>,
 }
 
 impl<T> StreamWriter<T> {
@@ -81,6 +82,7 @@ impl<T> StreamWriter<T> {
             handle,
             future: None,
             vtable,
+            error: None,
         }
     }
 
@@ -90,6 +92,24 @@ impl<T> StreamWriter<T> {
     pub fn cancel(&mut self) {
         assert!(self.future.is_some());
         self.future = None;
+    }
+
+    /// Set an error that should be returned when the writer closes
+    ///
+    /// Note that this error is not sent immediately, but only when the
+    /// writer closes, which is normally a result of a `drop()`
+    pub fn set_error_on_close(&mut self, err: ErrorContext) {
+        let err_ctx = err.handle();
+        self.error = Some(err);
+        super::with_entry(self.handle, move |entry| match entry {
+            Entry::Vacant(_) => unreachable!(),
+            Entry::Occupied(mut entry) => match entry.get_mut() {
+                // Regardless of current state, put the writer into a closed with error state
+                _ => {
+                    entry.insert(Handle::WriteClosedErr(err_ctx));
+                }
+            },
+        });
     }
 }
 
@@ -208,7 +228,11 @@ impl<T> Drop for StreamWriter<T> {
                 Handle::Read => unreachable!(),
                 Handle::Write | Handle::LocalClosed => {
                     entry.remove();
-                    (self.vtable.close_writable)(self.handle, 0);
+                    (self.vtable.close_writable)(
+                        self.handle,
+                        self.error.as_ref().map(|v| v.handle()).unwrap_or_default(),
+                    );
+                    // (self.vtable.close_writable)(self.handle, 0);
                 }
                 Handle::WriteClosedErr(err) => {
                     let err = *err;

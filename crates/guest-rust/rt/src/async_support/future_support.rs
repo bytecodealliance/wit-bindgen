@@ -32,6 +32,7 @@ pub struct FutureVtable<T> {
 pub struct FutureWriter<T: 'static> {
     handle: u32,
     vtable: &'static FutureVtable<T>,
+    error: Option<ErrorContext>,
 }
 
 impl<T> fmt::Debug for FutureWriter<T> {
@@ -102,7 +103,11 @@ impl<T> Drop for CancelableWrite<T> {
 impl<T> FutureWriter<T> {
     #[doc(hidden)]
     pub fn new(handle: u32, vtable: &'static FutureVtable<T>) -> Self {
-        Self { handle, vtable }
+        Self {
+            handle,
+            vtable,
+            error: None,
+        }
     }
 
     /// Write the specified value to this `future`.
@@ -151,6 +156,24 @@ impl<T> FutureWriter<T> {
                 },
             }),
         }
+    }
+
+    /// Set an error that should be returned when the writer closes
+    ///
+    /// Note that this error is not sent immediately, but only when the
+    /// writer closes, which is normally a result of a `drop()`
+    pub fn set_error_on_close(&mut self, err: ErrorContext) {
+        let err_ctx = err.handle();
+        self.error = Some(err);
+        super::with_entry(self.handle, move |entry| match entry {
+            Entry::Vacant(_) => unreachable!(),
+            Entry::Occupied(mut entry) => match entry.get_mut() {
+                // Regardless of current state, put the writer into a closed with error state
+                _ => {
+                    entry.insert(Handle::WriteClosedErr(err_ctx));
+                }
+            },
+        });
     }
 }
 
