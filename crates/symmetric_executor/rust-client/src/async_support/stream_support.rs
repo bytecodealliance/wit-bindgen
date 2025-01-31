@@ -28,7 +28,7 @@ pub mod results {
 }
 
 pub struct StreamWriter<T: 'static> {
-    handle: StreamHandle2,
+    handle: Stream,
     future: Option<Pin<Box<dyn Future<Output = ()> + 'static + Send>>>,
     _phantom: PhantomData<T>,
 }
@@ -125,7 +125,7 @@ impl<T> Drop for StreamWriter<T> {
 
 /// Represents the readable end of a Component Model `stream`.
 pub struct StreamReader<T: 'static> {
-    handle: StreamHandle2,
+    handle: Stream,
     future: Option<Pin<Box<dyn Future<Output = Option<Vec<T>>> + 'static + Send>>>,
     _phantom: PhantomData<T>,
 }
@@ -210,7 +210,7 @@ impl<T> Drop for StreamReader<T> {
     }
 }
 
-pub type StreamHandle2 = Stream;
+// pub type StreamHandle2 = Stream;
 
 pub fn new_stream<T: 'static>() -> (StreamWriter<T>, StreamReader<T>) {
     let handle = Stream::new();

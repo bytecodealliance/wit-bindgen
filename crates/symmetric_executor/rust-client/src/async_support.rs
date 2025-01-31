@@ -9,9 +9,10 @@ use crate::module::symmetric::runtime::symmetric_executor::{
     self, CallbackState, EventGenerator, EventSubscription,
 };
 
-pub use stream_support::{results, Stream, StreamHandle2, StreamReader, StreamWriter};
+pub use future_support::{FutureReader, FutureWriter};
+pub use stream_support::{results, Stream, StreamReader, StreamWriter};
 
-mod future_support;
+pub mod future_support;
 // later make it non-pub
 pub mod stream_support;
 

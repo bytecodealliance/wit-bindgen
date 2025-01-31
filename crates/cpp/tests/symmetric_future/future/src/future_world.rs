@@ -11,7 +11,9 @@ pub mod test {
       static __FORCE_SECTION_REF: fn() =
       super::super::super::__link_custom_section_describing_imports;
       
-      use super::super::super::_rt;
+      use wit_bindgen_symmetric_rt::async_support::Stream;
+
+    use super::super::super::_rt;
       #[allow(unused_unsafe, clippy::all)]
       pub async fn create() -> wit_bindgen_symmetric_rt::async_support::FutureReader<u32>{
         unsafe {
@@ -29,7 +31,7 @@ pub mod test {
           // let layout2 = _rt::alloc::Layout::from_size_align_unchecked(0, 1);
           wit_bindgen_symmetric_rt::async_support::await_result(move || unsafe { testX3AtestX2Ffuture_sourceX00X5BasyncX5Dcreate(ptr1)}).await;
           let l3 = *ptr1.add(0).cast::<*mut u8>();
-          let result4 = wit_bindgen_symmetric_rt::async_support::FutureReader::new(l3 as usize);
+          let result4 = wit_bindgen_symmetric_rt::async_support::FutureReader::new(Stream::from_handle(l3 as usize));
           _rt::cabi_dealloc(ptr1, core::mem::size_of::<*const u8>(), core::mem::size_of::<*const u8>());
           result4
         }
@@ -313,7 +315,7 @@ pub mod wit_future {
   //   write, read, cancel_write, cancel_read, close_writable, close_readable
   // };
 
-  impl super::FuturePayload for u32 {
+  impl FuturePayload for u32 {
     // fn new() -> (u32, &'static wit_bindgen_symmetric_rt::async_support::FutureVtable<Self>) {
     //   #[cfg(not(target_arch = "wasm32"))]
     //   {
@@ -333,7 +335,7 @@ pub mod wit_future {
   }
 }
 /// Creates a new Component Model `future` with the specified payload type.
-pub fn new<T: FuturePayload>() -> (wit_bindgen_symmetric_rt::async_support::FutureWriter<T>, wit_bindgen_symmetric_rt::async_support::FutureReader<T>) {
+pub fn new<T: wit_future::FuturePayload>() -> (wit_bindgen_symmetric_rt::async_support::FutureWriter<T>, wit_bindgen_symmetric_rt::async_support::FutureReader<T>) {
   new_future()
   // let (handle, vtable) = T::new();
   // wit_bindgen_symmetric_rt::async_support::with_entry(handle, |entry| match entry {
@@ -376,6 +378,7 @@ macro_rules! __export_future_world_impl {
 }
 #[doc(inline)]
 pub(crate) use __export_future_world_impl as export;
+use wit_bindgen_symmetric_rt::async_support::future_support::new_future;
 
 #[cfg(target_arch = "wasm32")]
 #[unsafe(link_section = "component-type:wit-bindgen:0.38.0:test:test:future-world:encoded world")]
