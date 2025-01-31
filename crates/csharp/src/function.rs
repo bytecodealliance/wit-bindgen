@@ -1,5 +1,5 @@
 use crate::csharp_ident::ToCSharpIdent;
-use crate::interface::InterfaceGenerator;
+use crate::interface::{InterfaceGenerator, ParameterType};
 use crate::world_generator::CSharp;
 use heck::ToUpperCamelCase;
 use std::fmt::Write;
@@ -29,6 +29,9 @@ pub(crate) struct FunctionBindgen<'a, 'b> {
     import_return_pointer_area_size: usize,
     import_return_pointer_area_align: usize,
     pub(crate) resource_drops: Vec<(String, String)>,
+    is_block: bool,
+    fixed_statments: Vec<Fixed>,
+    parameter_type: ParameterType,
 }
 
 impl<'a, 'b> FunctionBindgen<'a, 'b> {
@@ -38,6 +41,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         kind: &'b FunctionKind,
         params: Box<[String]>,
         results: Vec<TypeId>,
+        parameter_type: ParameterType,
     ) -> FunctionBindgen<'a, 'b> {
         let mut locals = Ns::default();
         // Ensure temporary variable names don't clash with parameter names:
@@ -60,6 +64,9 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             import_return_pointer_area_size: 0,
             import_return_pointer_area_align: 0,
             resource_drops: Vec::new(),
+            is_block: false,
+            fixed_statments: Vec::new(),
+            parameter_type: parameter_type,
         }
     }
 
@@ -500,12 +507,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.push(result);
             }
             Instruction::TupleLift { .. } => {
-                let mut result = String::from("(");
-
-                uwriteln!(result, "{}", operands.join(", "));
-
-                result.push_str(")");
-                results.push(result);
+                results.push(format!("({})", operands.join(", ")));
             }
 
             Instruction::TupleLower { tuple, ty: _ } => {
@@ -725,19 +727,34 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     Direction::Import => {
                         let ptr: String = self.locals.tmp("listPtr");
                         let handle: String = self.locals.tmp("gcHandle");
-                        // Despite the name GCHandle.Alloc here this does not actually allocate memory on the heap. 
-                        // It pins the array with the garbage collector so that it can be passed to unmanaged code.
-                        // It is required to free the pin after use which is done in the Cleanup section.
-                        self.needs_cleanup = true;
-                        uwrite!(
-                            self.src,
-                            "
-                            var {handle} = GCHandle.Alloc({list}, GCHandleType.Pinned);
-                            var {ptr} = {handle}.AddrOfPinnedObject();
-                            cleanups.Add(()=> {handle}.Free());
-                            "
-                        );
-                        results.push(format!("{ptr}")); 
+
+                        if !self.is_block && self.parameter_type == ParameterType::Span {
+                            self.fixed_statments.push(Fixed {
+                                item_to_pin: list.clone(),
+                                ptr_name: ptr.clone(),
+                            });
+                        }else if !self.is_block && self.parameter_type == ParameterType::Memory {
+                            self.fixed_statments.push(Fixed {
+                                item_to_pin: format!("{list}.Span"),
+                                ptr_name: ptr.clone(),
+                            });
+                        } else {
+                            // With variants we can't use span since the Fixed statment can't always be applied to all the variants
+                            // Despite the name GCHandle.Alloc here this does not re-allocate the object but it does make an
+                            // allocation for the handle in a special resource pool which can result in GC pressure.
+                            // It pins the array with the garbage collector so that it can be passed to unmanaged code.
+                            // It is required to free the pin after use which is done in the Cleanup section.
+                            self.needs_cleanup = true;
+                            uwrite!(
+                                self.src,
+                                "
+                                var {handle} = GCHandle.Alloc({list}, GCHandleType.Pinned);
+                                var {ptr} = {handle}.AddrOfPinnedObject();
+                                cleanups.Add(()=> {handle}.Free());
+                                "
+                            );
+                        }
+                        results.push(format!("(nint){ptr}")); 
                         results.push(format!("({list}).Length"));
                     }
                     Direction::Export => {
@@ -856,13 +873,27 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 //TODO: wasm64
                 let align = self.interface_gen.csharp_gen.sizes.align(element).align_wasm32();
 
+                let (array_size, element_type) = crate::world_generator::dotnet_aligned_array(
+                    size,
+                    align,
+                );
+                let ret_area = self.locals.tmp("retArea");
+
                 self.needs_cleanup = true;
                 uwrite!(
                     self.src,
                     "
-                    var {buffer_size} = {size} * (nuint){list}.Count;
-                    var {address} = NativeMemory.AlignedAlloc({buffer_size}, {align});
-                    cleanups.Add(()=> NativeMemory.AlignedFree({address}));
+                    void* {address};
+                    if (({size} * {list}.Count) < 1024) {{
+                        var {ret_area} = stackalloc {element_type}[({array_size}*{list}.Count)+1];
+                        {address} = (void*)(((int){ret_area}) + ({align} - 1) & -{align});
+                    }} 
+                    else
+                    {{
+                        var {buffer_size} = {size} * (nuint){list}.Count;
+                        {address} = NativeMemory.AlignedAlloc({buffer_size}, {align});
+                        cleanups.Add(()=> NativeMemory.AlignedFree({address}));
+                    }}
 
                     for (int {index} = 0; {index} < {list}.Count; ++{index}) {{
                         {ty} {block_element} = {list}[{index}];
@@ -1008,11 +1039,18 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::Return { amt: _, func } => {
+                if self.fixed_statments.len() > 0 {
+                    let fixed: String = self.fixed_statments.iter().map(|f| format!("{} = {}", f.ptr_name, f.item_to_pin)).collect::<Vec<_>>().join(", ");
+                    self.src.insert_str(0, &format!("fixed (void* {fixed})
+                        {{
+                        "));
+                }
+
                 if self.needs_cleanup {
                     self.src.insert_str(0, "var cleanups = new List<Action>();
                         ");
 
-                    uwriteln!(self.src, "\
+                    uwriteln!(self.src, "
                     foreach (var cleanup in cleanups)
                     {{
                         cleanup();
@@ -1026,10 +1064,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             self.handle_result_import(operands);
                         }
                         _ => {
-                            let results = operands.join(", ");
+                            let results: String = operands.join(", ");
                             uwriteln!(self.src, "return ({results});")
                         }
                     }
+                }
+
+                if self.fixed_statments.len() > 0 {
+                    uwriteln!(self.src, "}}");
                 }
             }
 
@@ -1228,6 +1270,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             element: self.locals.tmp("element"),
             base: self.locals.tmp("basePtr"),
         });
+
+        self.is_block = true;
     }
 
     fn finish_block(&mut self, operands: &mut Vec<String>) {
@@ -1243,6 +1287,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             element,
             base,
         });
+        self.is_block = false;
     }
 
     fn sizes(&self) -> &SizeAlign {
@@ -1313,6 +1358,11 @@ struct Block {
     results: Vec<String>,
     element: String,
     base: String,
+}
+
+struct Fixed {
+    item_to_pin: String,
+    ptr_name: String,
 }
 
 struct BlockStorage {
