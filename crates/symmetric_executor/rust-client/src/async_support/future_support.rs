@@ -30,7 +30,11 @@ impl<T> FutureWriter<T> {
     }
 
     pub fn write(self, data: T) -> CancelableWrite<T> {
-        CancelableWrite{ writer: self, future: None, data: Some(data) }
+        CancelableWrite {
+            writer: self,
+            future: None,
+            data: Some(data),
+        }
     }
 }
 
@@ -41,7 +45,7 @@ pub struct CancelableWrite<T: 'static> {
     data: Option<T>,
 }
 
-impl<T: Unpin+Send> Future for CancelableWrite<T> {
+impl<T: Unpin + Send> Future for CancelableWrite<T> {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<()> {
@@ -60,7 +64,8 @@ impl<T: Unpin+Send> Future for CancelableWrite<T> {
                 let buffer = handle.start_writing();
                 let addr = buffer.get_address().take_handle() as *mut MaybeUninit<T>;
                 unsafe { (*addr).write(data) };
-                    //let size = buffer.capacity() as usize;
+                buffer.set_size(1);
+                handle.finish_writing(Some(buffer));
             }) as Pin<Box<dyn Future<Output = _> + Send>>);
         }
         match me.future.as_mut().unwrap().poll_unpin(cx) {
