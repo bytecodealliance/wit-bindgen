@@ -4,7 +4,7 @@ use std::fmt::{Display, Write};
 use std::str::FromStr;
 use wit_bindgen_core::wit_parser::{
     Docs, Function, FunctionKind, Handle, Interface, InterfaceId, PackageName, Resolve, Results,
-    Type, TypeDef, TypeDefKind, TypeId, TypeOwner, WorldId, WorldKey,
+    Tuple, Type, TypeDef, TypeDefKind, TypeId, TypeOwner, WorldId, WorldKey,
 };
 use wit_bindgen_core::Direction::{Export, Import};
 use wit_bindgen_core::{uwrite, uwriteln, Direction, Files, WorldGenerator};
@@ -579,11 +579,7 @@ impl<'a> ScalaJsInterface<'a> {
                 FunctionKind::Freestanding => {
                     let args = self.render_args(func.params.iter());
 
-                    let ret = match &func.results {
-                        Results::Named(params) if params.len() == 0 => "Unit".to_string(),
-                        Results::Named(_) => panic!("Named results not supported yet"), // TODO
-                        Results::Anon(typ) => self.render_type_reference(typ),
-                    };
+                    let ret = self.render_return_type(&func.results);
 
                     let mut function = String::new();
                     write_doc_comment(&mut function, "    ", &func.docs);
@@ -628,8 +624,13 @@ impl<'a> ScalaJsInterface<'a> {
 
     fn render_return_type(&self, results: &Results) -> String {
         match results {
-            Results::Named(params) if params.len() == 0 => "Unit".to_string(),
-            Results::Named(_) => panic!("Named results not supported yet"), // TODO
+            Results::Named(results) if results.len() == 0 => "Unit".to_string(),
+            Results::Named(results) if results.len() == 1 => {
+                self.render_type_reference(&results.iter().next().unwrap().1)
+            }
+            Results::Named(results) => self.render_tuple(&Tuple {
+                types: results.iter().map(|(_, typ)| typ.clone()).collect(),
+            }),
             Results::Anon(typ) => self.render_type_reference(typ),
         }
     }
@@ -688,15 +689,7 @@ impl<'a> ScalaJsInterface<'a> {
                 let typ = &self.resolve.types[*id];
                 self.render_typedef_reference(typ)
             }
-            TypeDefKind::Tuple(tuple) => {
-                let arity = tuple.types.len();
-
-                let mut parts = Vec::new();
-                for part in &tuple.types {
-                    parts.push(self.render_type_reference(part));
-                }
-                format!("WitTuple{arity}[{}]", parts.join(", "))
-            }
+            TypeDefKind::Tuple(tuple) => self.render_tuple(tuple),
             TypeDefKind::Option(option) => {
                 if !maybe_null(&self.resolve, option) {
                     format!("Nullable[{}]", self.render_type_reference(option))
@@ -723,6 +716,16 @@ impl<'a> ScalaJsInterface<'a> {
             TypeDefKind::ErrorContext => panic!("ErrorContext not supported yet"),
             TypeDefKind::Unknown => panic!("Unknown type"),
         }
+    }
+
+    fn render_tuple(&self, tuple: &Tuple) -> String {
+        let arity = tuple.types.len();
+
+        let mut parts = Vec::new();
+        for part in &tuple.types {
+            parts.push(self.render_type_reference(part));
+        }
+        format!("WitTuple{arity}[{}]", parts.join(", "))
     }
 
     fn render_owner(&self, owner: &TypeOwner, is_resource: bool) -> Option<String> {
@@ -1158,9 +1161,10 @@ impl<'a> ScalaJsExportedResource<'a> {
 
                 let scala_func_name = self.get_func_name("[static]", func_name);
                 write_doc_comment(&mut self.class_source, "      ", &func.docs);
+                uwriteln!(self.static_methods, "    // @JSExportStatic");
                 uwriteln!(
                     self.static_methods,
-                    "  def {scala_func_name}({args}): {ret}"
+                    "    def {scala_func_name}({args}): {ret}"
                 );
             }
             FunctionKind::Constructor(_) => {
@@ -1175,7 +1179,16 @@ impl<'a> ScalaJsExportedResource<'a> {
         uwrite!(class_source, "{}", self.constructor_args);
         uwriteln!(class_source, "{}", self.class_source);
         uwriteln!(class_source, "  }}");
-        format!("{}\n{}\n", class_source, self.static_methods)
+        uwriteln!(class_source, "");
+
+        let scala_resource_name = self
+            .owner
+            .scala_keywords
+            .escape(self.resource_name.to_pascal_case());
+        uwriteln!(class_source, "  trait {}Static {{", scala_resource_name);
+        uwriteln!(class_source, "{}", self.static_methods);
+        uwriteln!(class_source, "  }}");
+        class_source
     }
 
     fn get_func_name(&self, prefix: &str, func_name: &str) -> String {
