@@ -1,3 +1,6 @@
+mod jco;
+
+use crate::jco::{maybe_null, to_js_identifier};
 use heck::{ToLowerCamelCase, ToPascalCase, ToSnakeCase};
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Write};
@@ -8,8 +11,6 @@ use wit_bindgen_core::wit_parser::{
 };
 use wit_bindgen_core::Direction::{Export, Import};
 use wit_bindgen_core::{uwrite, uwriteln, Direction, Files, WorldGenerator};
-
-// TODO: need to use https://github.com/golemcloud/jco/blob/main/crates/js-component-bindgen/src/names.rs#L81 for every name, and use JSName where it differs from the scala name
 
 #[derive(Debug, Clone)]
 pub enum ScalaDialect {
@@ -463,7 +464,7 @@ impl<'a> ScalaJsInterface<'a> {
         }
 
         write_doc_comment(&mut source, "  ", &self.interface.docs);
-        uwriteln!(source, "  trait {} {{", self.name);
+        uwriteln!(source, "  trait {} extends js.Object {{", self.name);
         for function in functions {
             uwriteln!(source, "{function}");
         }
@@ -573,7 +574,8 @@ impl<'a> ScalaJsInterface<'a> {
         let mut functions = Vec::new();
 
         for (func_name, func) in &self.interface.functions {
-            let scala_func_name = self.scala_keywords.escape(func_name.to_lower_camel_case());
+            let func_name =
+                self.encode_name(func_name.to_lower_camel_case());
 
             match func.kind {
                 FunctionKind::Freestanding => {
@@ -589,9 +591,11 @@ impl<'a> ScalaJsInterface<'a> {
                         Export => "",
                     };
 
+                    func_name.write_rename_attribute(&mut function, "    ");
                     uwriteln!(
                         function,
-                        "    def {scala_func_name}({args}): {ret}{postfix}"
+                        "    def {}({args}): {ret}{postfix}",
+                        func_name.scala
                     );
                     functions.push(function);
                 }
@@ -616,8 +620,9 @@ impl<'a> ScalaJsInterface<'a> {
         let mut args = Vec::new();
         for (param_name, param_typ) in params {
             let param_typ = self.render_type_reference(param_typ);
-            let param_name = self.scala_keywords.escape(param_name.to_lower_camel_case());
-            args.push(format!("{param_name}: {param_typ}"));
+            let param_name =
+                self.encode_name(param_name.to_lower_camel_case());
+            args.push(format!("{}: {param_typ}", param_name.scala));
         }
         args.join(", ")
     }
@@ -783,7 +788,8 @@ impl<'a> ScalaJsInterface<'a> {
     }
 
     fn render_typedef(&self, name: &str, typ: &TypeDef) -> Option<String> {
-        let scala_name = self.scala_keywords.escape(name.to_pascal_case());
+        let encoded_name = self.encode_name(name.to_pascal_case());
+        let scala_name = encoded_name.scala;
 
         let mut source = String::new();
         match &typ.kind {
@@ -791,7 +797,8 @@ impl<'a> ScalaJsInterface<'a> {
                 let mut fields = Vec::new();
                 for field in &record.fields {
                     let typ = self.render_type_reference(&field.ty);
-                    let field_name = self.scala_keywords.escape(field.name.to_lower_camel_case());
+                    let field_name =
+                        self.encode_name(field.name.to_lower_camel_case());
                     let field_name0 = self
                         .scala_keywords
                         .escape(format!("{}0", field.name.to_lower_camel_case()));
@@ -802,7 +809,8 @@ impl<'a> ScalaJsInterface<'a> {
                 uwriteln!(source, "  sealed trait {scala_name} extends js.Object {{");
                 for (field_name, _, typ, docs) in &fields {
                     write_doc_comment(&mut source, "    ", &docs);
-                    uwriteln!(source, "    val {field_name}: {typ}");
+                    field_name.write_rename_attribute(&mut source, "    ");
+                    uwriteln!(source, "    val {}: {typ}", field_name.scala);
                 }
                 uwriteln!(source, "  }}");
                 uwriteln!(source, "");
@@ -814,7 +822,8 @@ impl<'a> ScalaJsInterface<'a> {
                 uwriteln!(source, "    ): {scala_name} = {{");
                 uwriteln!(source, "      new {scala_name} {{");
                 for (field_name, field_name0, typ, _) in &fields {
-                    uwriteln!(source, "        val {field_name}: {typ} = {field_name0}");
+                    field_name.write_rename_attribute(&mut source, "        ");
+                    uwriteln!(source, "        val {}: {typ} = {field_name0}", field_name.scala);
                 }
                 uwriteln!(source, "      }}");
                 uwriteln!(source, "    }}");
@@ -830,7 +839,7 @@ impl<'a> ScalaJsInterface<'a> {
                 let mut fields = Vec::new();
                 for flag in &flags.flags {
                     let typ = "Boolean".to_string();
-                    let field_name = self.scala_keywords.escape(flag.name.to_lower_camel_case());
+                    let field_name = self.encode_name(flag.name.to_lower_camel_case());
                     let field_name0 = self
                         .scala_keywords
                         .escape(format!("{}0", flag.name.to_lower_camel_case()));
@@ -841,7 +850,8 @@ impl<'a> ScalaJsInterface<'a> {
                 uwriteln!(source, "  sealed trait {scala_name} extends js.Object {{");
                 for (field_name, _, typ, docs) in &fields {
                     write_doc_comment(&mut source, "    ", docs);
-                    uwriteln!(source, "    val {field_name}: {typ}");
+                    field_name.write_rename_attribute(&mut source, "    ");
+                    uwriteln!(source, "    val {}: {typ}", field_name.scala);
                 }
                 uwriteln!(source, "  }}");
                 uwriteln!(source, "");
@@ -853,7 +863,8 @@ impl<'a> ScalaJsInterface<'a> {
                 uwriteln!(source, "    ): {scala_name} = {{");
                 uwriteln!(source, "      new {scala_name} {{");
                 for (field_name, field_name0, typ, _) in &fields {
-                    uwriteln!(source, "        val {field_name}: {typ} = {field_name0}");
+                    field_name.write_rename_attribute(&mut source, "        ");
+                    uwriteln!(source, "        val {}: {typ} = {field_name0}", field_name.scala);
                 }
                 uwriteln!(source, "      }}");
                 uwriteln!(source, "    }}");
@@ -978,6 +989,23 @@ impl<'a> ScalaJsInterface<'a> {
             None
         }
     }
+
+    fn encode_name(&self, name: impl AsRef<str>) -> EncodedName {
+        let name = name.as_ref();
+        let scala_name = self.scala_keywords.escape(name);
+        let js_name = to_js_identifier(name);
+
+        let rename_attribute = if scala_name != js_name && scala_name != format!("`{js_name}`") {
+            format!("@JSName(\"{js_name}\")")
+        } else {
+            "".to_string()
+        };
+        EncodedName {
+            scala: scala_name,
+            js: js_name,
+            rename_attribute,
+        }
+    }
 }
 
 struct ScalaJsImportedResource<'a> {
@@ -997,13 +1025,15 @@ impl<'a> ScalaJsImportedResource<'a> {
             .name
             .clone()
             .expect("Anonymous resources not supported");
-        let scala_resource_name = owner.scala_keywords.escape(resource_name.to_pascal_case());
+        let encoded_resource_name =
+            owner.encode_name(resource_name.to_pascal_case());
 
         let mut class_header = String::new();
         write_doc_comment(&mut class_header, "    ", &resource.docs);
 
         uwriteln!(class_header, "    @js.native");
-        uwrite!(class_header, "    class {}(", scala_resource_name);
+        encoded_resource_name.write_rename_attribute(&mut class_header, "    ");
+        uwrite!(class_header, "    class {}(", encoded_resource_name.scala);
 
         let mut class_source = String::new();
         uwriteln!(class_source, ") extends js.Object {{");
@@ -1013,7 +1043,7 @@ impl<'a> ScalaJsImportedResource<'a> {
         uwriteln!(
             object_source,
             "    object {} extends js.Object {{",
-            scala_resource_name
+            encoded_resource_name.scala
         );
 
         Self {
@@ -1033,13 +1063,14 @@ impl<'a> ScalaJsImportedResource<'a> {
             FunctionKind::Method(_) => {
                 let args = self.owner.render_args(func.params.iter().skip(1));
                 let ret = self.owner.render_return_type(&func.results);
-                let scala_func_name = self.get_func_name("[method]", func_name);
+                let encoded_func_name =
+                    self.get_func_name("[method]", func_name);
 
                 let overrd = if self
                     .owner
                     .scala_keywords
                     .base_methods
-                    .contains(&scala_func_name)
+                    .contains(&encoded_func_name.scala)
                 {
                     "override "
                 } else {
@@ -1047,20 +1078,24 @@ impl<'a> ScalaJsImportedResource<'a> {
                 };
 
                 write_doc_comment(&mut self.class_source, "      ", &func.docs);
+                encoded_func_name.write_rename_attribute(&mut self.class_source, "      ");
                 uwriteln!(
                     self.class_source,
-                    "      {overrd}def {scala_func_name}({args}): {ret} = js.native"
+                    "      {overrd}def {}({args}): {ret} = js.native",
+                    encoded_func_name.scala
                 );
             }
             FunctionKind::Static(_) => {
                 let args = self.owner.render_args(func.params.iter());
                 let ret = self.owner.render_return_type(&func.results);
 
-                let scala_func_name = self.get_func_name("[static]", func_name);
-                write_doc_comment(&mut self.class_source, "      ", &func.docs);
+                let encoded_func_name = self.get_func_name("[static]", func_name);
+                write_doc_comment(&mut self.object_source, "      ", &func.docs);
+                encoded_func_name.write_rename_attribute(&mut self.object_source, "      ");
                 uwriteln!(
                     self.object_source,
-                    "      def {scala_func_name}({args}): {ret} = js.native"
+                    "      def {}({args}): {ret} = js.native",
+                    encoded_func_name.scala
                 );
             }
             FunctionKind::Constructor(_) => {
@@ -1080,15 +1115,14 @@ impl<'a> ScalaJsImportedResource<'a> {
         format!("{}\n{}\n", class_source, object_source)
     }
 
-    fn get_func_name(&self, prefix: &str, func_name: &str) -> String {
-        self.owner.scala_keywords.escape(
-            func_name
-                .strip_prefix(prefix)
-                .unwrap()
-                .strip_prefix(&self.resource_name)
-                .unwrap()
-                .to_lower_camel_case(),
-        )
+    fn get_func_name(&self, prefix: &str, func_name: &str) -> EncodedName {
+        let name = func_name
+            .strip_prefix(prefix)
+            .unwrap()
+            .strip_prefix(&self.resource_name)
+            .unwrap()
+            .to_lower_camel_case();
+        self.owner.encode_name(name)
     }
 }
 
@@ -1109,12 +1143,14 @@ impl<'a> ScalaJsExportedResource<'a> {
             .name
             .clone()
             .expect("Anonymous resources not supported");
-        let scala_resource_name = owner.scala_keywords.escape(resource_name.to_pascal_case());
+        let encoded_resource_name =
+            owner.encode_name(resource_name.to_pascal_case());
 
         let mut class_header = String::new();
         write_doc_comment(&mut class_header, "    ", &resource.docs);
 
-        uwrite!(class_header, "  abstract class {}(", scala_resource_name);
+        encoded_resource_name.write_rename_attribute(&mut class_header, "    // ");
+        uwrite!(class_header, "  abstract class {}(", encoded_resource_name.scala);
 
         let mut class_source = String::new();
         uwriteln!(class_source, ") extends js.Object {{");
@@ -1136,13 +1172,14 @@ impl<'a> ScalaJsExportedResource<'a> {
             FunctionKind::Method(_) => {
                 let args = self.owner.render_args(func.params.iter().skip(1));
                 let ret = self.owner.render_return_type(&func.results);
-                let scala_func_name = self.get_func_name("[method]", func_name);
+                let encoded_func_name =
+                    self.get_func_name("[method]", func_name);
 
                 let overrd = if self
                     .owner
                     .scala_keywords
                     .base_methods
-                    .contains(&scala_func_name)
+                    .contains(&encoded_func_name.scala)
                 {
                     "override "
                 } else {
@@ -1150,21 +1187,26 @@ impl<'a> ScalaJsExportedResource<'a> {
                 };
 
                 write_doc_comment(&mut self.class_source, "      ", &func.docs);
+                encoded_func_name.write_rename_attribute(&mut self.class_source, "      ");
                 uwriteln!(
                     self.class_source,
-                    "    {overrd}def {scala_func_name}({args}): {ret}"
+                    "    {overrd}def {}({args}): {ret}",
+                    encoded_func_name.scala
                 );
             }
             FunctionKind::Static(_) => {
                 let args = self.owner.render_args(func.params.iter());
                 let ret = self.owner.render_return_type(&func.results);
 
-                let scala_func_name = self.get_func_name("[static]", func_name);
-                write_doc_comment(&mut self.class_source, "      ", &func.docs);
+                let encoded_func_name =
+                    self.get_func_name("[static]", func_name);
+                write_doc_comment(&mut self.static_methods, "      ", &func.docs);
                 uwriteln!(self.static_methods, "    // @JSExportStatic");
+                encoded_func_name.write_rename_attribute(&mut self.static_methods, "    ");
                 uwriteln!(
                     self.static_methods,
-                    "    def {scala_func_name}({args}): {ret}"
+                    "    def {}({args}): {ret}",
+                    encoded_func_name.scala
                 );
             }
             FunctionKind::Constructor(_) => {
@@ -1191,15 +1233,14 @@ impl<'a> ScalaJsExportedResource<'a> {
         class_source
     }
 
-    fn get_func_name(&self, prefix: &str, func_name: &str) -> String {
-        self.owner.scala_keywords.escape(
-            func_name
-                .strip_prefix(prefix)
-                .unwrap()
-                .strip_prefix(&self.resource_name)
-                .unwrap()
-                .to_lower_camel_case(),
-        )
+    fn get_func_name(&self, prefix: &str, func_name: &str) -> EncodedName {
+        let name = func_name
+            .strip_prefix(prefix)
+            .unwrap()
+            .strip_prefix(&self.resource_name)
+            .unwrap()
+            .to_lower_camel_case();
+        self.owner.encode_name(name)
     }
 }
 
@@ -1252,43 +1293,17 @@ fn write_doc_comment(source: &mut impl Write, indent: &str, docs: &Docs) {
     }
 }
 
-/// Tests whether `ty` can be represented with `null`, and if it can then
-/// the "other type" is returned. If `Some` is returned that means that `ty`
-/// is `null | <return>`. If `None` is returned that means that `null` can't
-/// be used to represent `ty`.
-pub fn as_nullable<'a>(resolve: &'a Resolve, ty: &'a Type) -> Option<&'a Type> {
-    let id = match ty {
-        Type::Id(id) => *id,
-        _ => return None,
-    };
-    match &resolve.types[id].kind {
-        // If `ty` points to an `option<T>`, then `ty` can be represented
-        // with `null` if `t` itself can't be represented with null. For
-        // example `option<option<u32>>` can't be represented with `null`
-        // since that's ambiguous if it's `none` or `some(none)`.
-        //
-        // Note, oddly enough, that `option<option<option<u32>>>` can be
-        // represented as `null` since:
-        //
-        // * `null` => `none`
-        // * `{ tag: "none" }` => `some(none)`
-        // * `{ tag: "some", val: null }` => `some(some(none))`
-        // * `{ tag: "some", val: 1 }` => `some(some(some(1)))`
-        //
-        // It's doubtful anyone would actually rely on that though due to
-        // how confusing it is.
-        TypeDefKind::Option(t) => {
-            if !maybe_null(resolve, t) {
-                Some(t)
-            } else {
-                None
-            }
-        }
-        TypeDefKind::Type(t) => as_nullable(resolve, t),
-        _ => None,
-    }
+#[allow(dead_code)]
+struct EncodedName {
+    pub scala: String,
+    pub js: String,
+    pub rename_attribute: String,
 }
 
-pub fn maybe_null(resolve: &Resolve, ty: &Type) -> bool {
-    as_nullable(resolve, ty).is_some()
+impl EncodedName {
+    pub fn write_rename_attribute(&self, target: &mut impl Write, ident: &str) {
+        if self.rename_attribute.len() > 0 {
+            uwriteln!(target, "{}{}", ident, self.rename_attribute);
+        }
+    }
 }
