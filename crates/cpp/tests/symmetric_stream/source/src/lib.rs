@@ -1,8 +1,6 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use wit_bindgen_symmetric_rt::{
-    async_support::Stream, register, CallbackState, EventSubscription,
-};
+use wit_bindgen_symmetric_rt::{async_support::Stream, register, CallbackState, EventSubscription};
 
 static COUNT: AtomicU32 = AtomicU32::new(1);
 

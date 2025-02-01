@@ -2,87 +2,102 @@
 // Options used:
 #[allow(dead_code, clippy::all)]
 pub mod test {
-  pub mod test {
+    pub mod test {
 
-    #[allow(dead_code, unused_imports, clippy::all)]
-    pub mod future_source {
-      #[used]
-      #[doc(hidden)]
-      static __FORCE_SECTION_REF: fn() =
-      super::super::super::__link_custom_section_describing_imports;
-      
-      use wit_bindgen_symmetric_rt::async_support::Stream;
+        #[allow(dead_code, unused_imports, clippy::all)]
+        pub mod future_source {
+            #[used]
+            #[doc(hidden)]
+            static __FORCE_SECTION_REF: fn() =
+                super::super::super::__link_custom_section_describing_imports;
 
-    use super::super::super::_rt;
-      #[allow(unused_unsafe, clippy::all)]
-      pub async fn create() -> wit_bindgen_symmetric_rt::async_support::FutureReader<u32>{
-        unsafe {
-          // let layout0 = _rt::alloc::Layout::from_size_align_unchecked(0, 1);
-          // let ptr0 = _rt::alloc::alloc(layout0);
-          let layout1 = _rt::alloc::Layout::from_size_align_unchecked(core::mem::size_of::<*const u8>(), core::mem::size_of::<*const u8>());
-          let ptr1 = _rt::alloc::alloc(layout1);
+            use wit_bindgen_symmetric_rt::async_support::Stream;
 
-          #[link(wasm_import_module = "test:test/future-source")]
-          #[link(name = "source")]
-          extern "C" {
-            #[cfg_attr(target_arch = "wasm32", link_name = "[async]create")]
-            fn testX3AtestX2Ffuture_sourceX00X5BasyncX5Dcreate(_: *mut u8) -> *mut u8;
-          }
-          // let layout2 = _rt::alloc::Layout::from_size_align_unchecked(0, 1);
-          wit_bindgen_symmetric_rt::async_support::await_result(move || unsafe { testX3AtestX2Ffuture_sourceX00X5BasyncX5Dcreate(ptr1)}).await;
-          let l3 = *ptr1.add(0).cast::<*mut u8>();
-          let result4 = wit_bindgen_symmetric_rt::async_support::FutureReader::new(Stream::from_handle(l3 as usize));
-          _rt::cabi_dealloc(ptr1, core::mem::size_of::<*const u8>(), core::mem::size_of::<*const u8>());
-          result4
+            use super::super::super::_rt;
+            #[allow(unused_unsafe, clippy::all)]
+            pub async fn create() -> wit_bindgen_symmetric_rt::async_support::FutureReader<u32> {
+                unsafe {
+                    // let layout0 = _rt::alloc::Layout::from_size_align_unchecked(0, 1);
+                    // let ptr0 = _rt::alloc::alloc(layout0);
+                    let layout1 = _rt::alloc::Layout::from_size_align_unchecked(
+                        core::mem::size_of::<*const u8>(),
+                        core::mem::size_of::<*const u8>(),
+                    );
+                    let ptr1 = _rt::alloc::alloc(layout1);
+
+                    #[link(wasm_import_module = "test:test/future-source")]
+                    #[link(name = "source")]
+                    extern "C" {
+                        #[cfg_attr(target_arch = "wasm32", link_name = "[async]create")]
+                        fn testX3AtestX2Ffuture_sourceX00X5BasyncX5Dcreate(_: *mut u8) -> *mut u8;
+                    }
+                    // let layout2 = _rt::alloc::Layout::from_size_align_unchecked(0, 1);
+                    wit_bindgen_symmetric_rt::async_support::await_result(move || unsafe {
+                        testX3AtestX2Ffuture_sourceX00X5BasyncX5Dcreate(ptr1)
+                    })
+                    .await;
+                    let l3 = *ptr1.add(0).cast::<*mut u8>();
+                    let result4 = wit_bindgen_symmetric_rt::async_support::FutureReader::new(
+                        Stream::from_handle(l3 as usize),
+                    );
+                    _rt::cabi_dealloc(
+                        ptr1,
+                        core::mem::size_of::<*const u8>(),
+                        core::mem::size_of::<*const u8>(),
+                    );
+                    result4
+                }
+            }
         }
-      }
-
     }
-
-  }
 }
 #[allow(dead_code, clippy::all)]
 pub mod exports {
-  pub mod test {
     pub mod test {
+        pub mod test {
 
-      #[allow(dead_code, unused_imports, clippy::all)]
-      pub mod future_test {
-        #[used]
-        #[doc(hidden)]
-        static __FORCE_SECTION_REF: fn() =
-        super::super::super::super::__link_custom_section_describing_imports;
-        
-        use super::super::super::super::_rt;
-        #[doc(hidden)]
-        #[allow(non_snake_case)]
-        pub unsafe fn _export_create_cabi<T: Guest>(results: *mut u8) -> *mut u8 {#[cfg(target_arch="wasm32")]
-        _rt::run_ctors_once();let result = async move {
-          let result = T::create().await;
-          result
-        };
-        let result = wit_bindgen_symmetric_rt::async_support::first_poll(result, move |result0| {
-          let outptr = results.cast::<*mut ()>();
+            #[allow(dead_code, unused_imports, clippy::all)]
+            pub mod future_test {
+                #[used]
+                #[doc(hidden)]
+                static __FORCE_SECTION_REF: fn() =
+                    super::super::super::super::__link_custom_section_describing_imports;
+
+                use super::super::super::super::_rt;
+                #[doc(hidden)]
+                #[allow(non_snake_case)]
+                pub unsafe fn _export_create_cabi<T: Guest>(results: *mut u8) -> *mut u8 {
+                    #[cfg(target_arch = "wasm32")]
+                    _rt::run_ctors_once();
+                    let result = async move {
+                        let result = T::create().await;
+                        result
+                    };
+                    let result = wit_bindgen_symmetric_rt::async_support::first_poll(
+                        result,
+                        move |result0| {
+                            let outptr = results.cast::<*mut ()>();
                             *(unsafe { &mut *outptr }) = result0.take_handle().cast();
-        });
-        result.cast()
-      }
-      // #[doc(hidden)]
-      // #[allow(non_snake_case)]
-      // pub unsafe fn __callback_create(ctx: *mut u8, event0: i32, event1: i32, event2: i32) -> i32 {
-      //   wit_bindgen_symmetric_rt::async_support::callback(ctx, event0, event1, event2)
-      // }
-      pub trait Guest {
-        async fn create() -> wit_bindgen_symmetric_rt::async_support::FutureReader<u32>;
-      }
-      #[doc(hidden)]
+                        },
+                    );
+                    result.cast()
+                }
+                // #[doc(hidden)]
+                // #[allow(non_snake_case)]
+                // pub unsafe fn __callback_create(ctx: *mut u8, event0: i32, event1: i32, event2: i32) -> i32 {
+                //   wit_bindgen_symmetric_rt::async_support::callback(ctx, event0, event1, event2)
+                // }
+                pub trait Guest {
+                    async fn create() -> wit_bindgen_symmetric_rt::async_support::FutureReader<u32>;
+                }
+                #[doc(hidden)]
 
-      macro_rules! __export_test_test_future_test_cabi{
+                macro_rules! __export_test_test_future_test_cabi{
         ($ty:ident with_types_in $($path_to_types:tt)*) => (const _: () = {
 
           #[cfg_attr(target_arch = "wasm32", export_name = "create")]
           #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
-          unsafe extern "C" fn testX3AtestX2Ffuture_testX00create(results: *mut u8) -> *mut u8 {
+          unsafe extern "C" fn testX3AtestX2Ffuture_testX00X5BasyncX5Dcreate(results: *mut u8) -> *mut u8 {
             $($path_to_types)*::_export_create_cabi::<$ty>(results)
           }
           // #[unsafe(export_name = "[callback]create")]
@@ -91,232 +106,157 @@ pub mod exports {
           // }
         };);
       }
-      #[doc(hidden)]
-      pub(crate) use __export_test_test_future_test_cabi;
-
+                #[doc(hidden)]
+                pub(crate) use __export_test_test_future_test_cabi;
+            }
+        }
     }
-
-  }
-}
 }
 mod _rt {
-  #![allow(dead_code, clippy::all)]
+    #![allow(dead_code, clippy::all)]
 
-  pub fn as_i32<T: AsI32>(t: T) -> i32 {
-    t.as_i32()
-  }
+    pub fn as_i32<T: AsI32>(t: T) -> i32 {
+        t.as_i32()
+    }
 
-  pub trait AsI32 {
-    fn as_i32(self) -> i32;
-  }
+    pub trait AsI32 {
+        fn as_i32(self) -> i32;
+    }
 
-  impl<'a, T: Copy + AsI32> AsI32 for &'a T {
-    fn as_i32(self) -> i32 {
-      (*self).as_i32()
+    impl<'a, T: Copy + AsI32> AsI32 for &'a T {
+        fn as_i32(self) -> i32 {
+            (*self).as_i32()
+        }
     }
-  }
-  
-  impl AsI32 for i32 {
-    #[inline]
-    fn as_i32(self) -> i32 {
-      self as i32
+
+    impl AsI32 for i32 {
+        #[inline]
+        fn as_i32(self) -> i32 {
+            self as i32
+        }
     }
-  }
-  
-  impl AsI32 for u32 {
-    #[inline]
-    fn as_i32(self) -> i32 {
-      self as i32
+
+    impl AsI32 for u32 {
+        #[inline]
+        fn as_i32(self) -> i32 {
+            self as i32
+        }
     }
-  }
-  
-  impl AsI32 for i16 {
-    #[inline]
-    fn as_i32(self) -> i32 {
-      self as i32
+
+    impl AsI32 for i16 {
+        #[inline]
+        fn as_i32(self) -> i32 {
+            self as i32
+        }
     }
-  }
-  
-  impl AsI32 for u16 {
-    #[inline]
-    fn as_i32(self) -> i32 {
-      self as i32
+
+    impl AsI32 for u16 {
+        #[inline]
+        fn as_i32(self) -> i32 {
+            self as i32
+        }
     }
-  }
-  
-  impl AsI32 for i8 {
-    #[inline]
-    fn as_i32(self) -> i32 {
-      self as i32
+
+    impl AsI32 for i8 {
+        #[inline]
+        fn as_i32(self) -> i32 {
+            self as i32
+        }
     }
-  }
-  
-  impl AsI32 for u8 {
-    #[inline]
-    fn as_i32(self) -> i32 {
-      self as i32
+
+    impl AsI32 for u8 {
+        #[inline]
+        fn as_i32(self) -> i32 {
+            self as i32
+        }
     }
-  }
-  
-  impl AsI32 for char {
-    #[inline]
-    fn as_i32(self) -> i32 {
-      self as i32
+
+    impl AsI32 for char {
+        #[inline]
+        fn as_i32(self) -> i32 {
+            self as i32
+        }
     }
-  }
-  
-  impl AsI32 for usize {
-    #[inline]
-    fn as_i32(self) -> i32 {
-      self as i32
+
+    impl AsI32 for usize {
+        #[inline]
+        fn as_i32(self) -> i32 {
+            self as i32
+        }
     }
-  }
-  pub use alloc_crate::boxed::Box;
-  pub use alloc_crate::alloc;
-  pub unsafe fn cabi_dealloc(ptr: *mut u8, size: usize, align: usize) {
-    if size == 0 {
-      return;
+    pub use alloc_crate::alloc;
+    pub use alloc_crate::boxed::Box;
+    pub unsafe fn cabi_dealloc(ptr: *mut u8, size: usize, align: usize) {
+        if size == 0 {
+            return;
+        }
+        let layout = alloc::Layout::from_size_align_unchecked(size, align);
+        alloc::dealloc(ptr, layout);
     }
-    let layout = alloc::Layout::from_size_align_unchecked(size, align);
-    alloc::dealloc(ptr, layout);
-  }
-  
-  #[cfg(target_arch = "wasm32")]
-  pub fn run_ctors_once() {
-    wit_bindgen_symmetric_rt::run_ctors_once();
-  }
-  extern crate alloc as alloc_crate;
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn run_ctors_once() {
+        wit_bindgen_symmetric_rt::run_ctors_once();
+    }
+    extern crate alloc as alloc_crate;
 }
 pub mod wit_future {
-  #![allow(dead_code, unused_variables, clippy::all)]
+    #![allow(dead_code, unused_variables, clippy::all)]
 
-  #[doc(hidden)]
-  pub trait FuturePayload: Unpin + Sized + 'static {
-    // fn new() -> u32;
-  }
-  // #[doc(hidden)]
-  // pub mod vtable0 {
-  //   fn write(future: u32, value: u32) -> ::core::pin::Pin<super::super::_rt::Box<dyn ::core::future::Future<Output = bool>>> {
-  //     super::super::_rt::Box::pin(async move {
-  //       #[repr(align(4))]
-  //       struct Buffer([::core::mem::MaybeUninit::<u8>; 4]);
-  //       let mut buffer = Buffer([::core::mem::MaybeUninit::uninit(); 4]);
-  //       let address = buffer.0.as_mut_ptr() as *mut u8;
-  //       unsafe { *address.add(0).cast::<i32>() = super::super::_rt::as_i32(&value);
-  //     }
-  //     #[link(wasm_import_module = "[import-payload]test:test/future-source")]
-  //     extern "C" {
-  //       #[link_name = "[async][future-write-0]create"]
-  //       fn wit_import(_: u32, _: *mut u8) -> u32;
-  //     }
+    #[doc(hidden)]
+    pub trait FuturePayload: Unpin + Sized + 'static {
+        // fn new() -> u32;
+    }
+    // #[doc(hidden)]
+    // pub mod vtable0 {
+    //   fn write(future: u32, value: u32) -> ::core::pin::Pin<super::super::_rt::Box<dyn ::core::future::Future<Output = bool>>> {
+    //     super::super::_rt::Box::pin(async move {
+    //       #[repr(align(4))]
+    //       struct Buffer([::core::mem::MaybeUninit::<u8>; 4]);
+    //       let mut buffer = Buffer([::core::mem::MaybeUninit::uninit(); 4]);
+    //       let address = buffer.0.as_mut_ptr() as *mut u8;
+    //       unsafe { *address.add(0).cast::<i32>() = super::super::_rt::as_i32(&value);
+    //     }
+    //     #[link(wasm_import_module = "[import-payload]test:test/future-source")]
+    //     extern "C" {
+    //       #[link_name = "[async][future-write-0]create"]
+    //       fn wit_import(_: u32, _: *mut u8) -> u32;
+    //     }
 
-  //     unsafe { wit_bindgen_symmetric_rt::async_support::await_future_result(wit_import, future, address).await }
-  //   })
-  // }
+    //     unsafe { wit_bindgen_symmetric_rt::async_support::await_future_result(wit_import, future, address).await }
+    //   })
+    // }
 
-  // fn read(future: u32) -> ::core::pin::Pin<super::super::_rt::Box<dyn ::core::future::Future<Output = Option<u32>>>> {
-  //   super::super::_rt::Box::pin(async move {
-  //     struct Buffer([::core::mem::MaybeUninit::<u8>; 4]);
-  //     let mut buffer = Buffer([::core::mem::MaybeUninit::uninit(); 4]);
-  //     let address = buffer.0.as_mut_ptr() as *mut u8;
+    // fn read(future: u32) -> ::core::pin::Pin<super::super::_rt::Box<dyn ::core::future::Future<Output = Option<u32>>>> {
+    //   super::super::_rt::Box::pin(async move {
+    //     struct Buffer([::core::mem::MaybeUninit::<u8>; 4]);
+    //     let mut buffer = Buffer([::core::mem::MaybeUninit::uninit(); 4]);
+    //     let address = buffer.0.as_mut_ptr() as *mut u8;
 
-  //     #[cfg(not(target_arch = "wasm32"))]
-  //     unsafe extern "C" fn wit_import(_: u32, _: *mut u8) -> u32 {
-  //       unreachable!()
-  //     }
+    //     #[cfg(not(target_arch = "wasm32"))]
+    //     unsafe extern "C" fn wit_import(_: u32, _: *mut u8) -> u32 {
+    //       unreachable!()
+    //     }
 
-  //     #[cfg(target_arch = "wasm32")]
-  //     #[link(wasm_import_module = "[import-payload]test:test/future-source")]
-  //     extern "C" {
-  //       #[link_name = "[async][future-read-0]create"]
-  //       fn wit_import(_: u32, _: *mut u8) -> u32;
-  //     }
+    //     #[cfg(target_arch = "wasm32")]
+    //     #[link(wasm_import_module = "[import-payload]test:test/future-source")]
+    //     extern "C" {
+    //       #[link_name = "[async][future-read-0]create"]
+    //       fn wit_import(_: u32, _: *mut u8) -> u32;
+    //     }
 
-  //     if unsafe { wit_bindgen_symmetric_rt::async_support::await_future_result(wit_import, future, address).await } {
-  //       let value = unsafe { let l0 = *address.add(0).cast::<i32>();
+    //     if unsafe { wit_bindgen_symmetric_rt::async_support::await_future_result(wit_import, future, address).await } {
+    //       let value = unsafe { let l0 = *address.add(0).cast::<i32>();
 
-  //       l0 as u32 };
-  //       Some(value)
-  //     } else {
-  //       None
-  //     }
-  //   })
-  // }
+    //       l0 as u32 };
+    //       Some(value)
+    //     } else {
+    //       None
+    //     }
+    //   })
+    // }
 
-  // fn cancel_write(writer: u32) {
-  //   #[cfg(not(target_arch = "wasm32"))]
-  //   {
-  //     unreachable!();
-  //   }
-
-  //   #[cfg(target_arch = "wasm32")]
-  //   {
-  //     #[link(wasm_import_module = "[import-payload]test:test/future-source")]
-  //     extern "C" {
-  //       #[link_name = "[future-cancel-write-0]create"]
-  //       fn cancel(_: u32) -> u32;
-  //     }
-  //     unsafe { cancel(writer) };
-  //   }
-  // }
-
-  // fn cancel_read(reader: u32) {
-  //   #[cfg(not(target_arch = "wasm32"))]
-  //   {
-  //     unreachable!();
-  //   }
-
-  //   #[cfg(target_arch = "wasm32")]
-  //   {
-  //     #[link(wasm_import_module = "[import-payload]test:test/future-source")]
-  //     extern "C" {
-  //       #[link_name = "[future-cancel-read-0]create"]
-  //       fn cancel(_: u32) -> u32;
-  //     }
-  //     unsafe { cancel(reader) };
-  //   }
-  // }
-
-  // fn close_writable(writer: u32) {
-  //   #[cfg(not(target_arch = "wasm32"))]
-  //   {
-  //     unreachable!();
-  //   }
-
-  //   #[cfg(target_arch = "wasm32")]
-  //   {
-  //     #[link(wasm_import_module = "[import-payload]test:test/future-source")]
-  //     extern "C" {
-  //       #[link_name = "[future-close-writable-0]create"]
-  //       fn drop(_: u32, _: u32);
-  //     }
-  //     unsafe { drop(writer, 0) }
-  //   }
-  // }
-
-  // fn close_readable(reader: u32) {
-  //   #[cfg(not(target_arch = "wasm32"))]
-  //   {
-  //     unreachable!();
-  //   }
-
-  //   #[cfg(target_arch = "wasm32")]
-  //   {
-  //     #[link(wasm_import_module = "[import-payload]test:test/future-source")]
-  //     extern "C" {
-  //       #[link_name = "[future-close-readable-0]create"]
-  //       fn drop(_: u32);
-  //     }
-  //     unsafe { drop(reader) }
-  //   }
-  // }
-
-  // pub static VTABLE: wit_bindgen_symmetric_rt::async_support::FutureVtable<u32> = wit_bindgen_symmetric_rt::async_support::FutureVtable::<u32> {
-  //   write, read, cancel_write, cancel_read, close_writable, close_readable
-  // };
-
-  impl FuturePayload for u32 {
-    // fn new() -> (u32, &'static wit_bindgen_symmetric_rt::async_support::FutureVtable<Self>) {
+    // fn cancel_write(writer: u32) {
     //   #[cfg(not(target_arch = "wasm32"))]
     //   {
     //     unreachable!();
@@ -326,28 +266,104 @@ pub mod wit_future {
     //   {
     //     #[link(wasm_import_module = "[import-payload]test:test/future-source")]
     //     extern "C" {
-    //       #[link_name = "[future-new-0]create"]
-    //       fn new() -> u32;
+    //       #[link_name = "[future-cancel-write-0]create"]
+    //       fn cancel(_: u32) -> u32;
     //     }
-    //     (unsafe { new() }, &VTABLE)
+    //     unsafe { cancel(writer) };
     //   }
     // }
-  }
+
+    // fn cancel_read(reader: u32) {
+    //   #[cfg(not(target_arch = "wasm32"))]
+    //   {
+    //     unreachable!();
+    //   }
+
+    //   #[cfg(target_arch = "wasm32")]
+    //   {
+    //     #[link(wasm_import_module = "[import-payload]test:test/future-source")]
+    //     extern "C" {
+    //       #[link_name = "[future-cancel-read-0]create"]
+    //       fn cancel(_: u32) -> u32;
+    //     }
+    //     unsafe { cancel(reader) };
+    //   }
+    // }
+
+    // fn close_writable(writer: u32) {
+    //   #[cfg(not(target_arch = "wasm32"))]
+    //   {
+    //     unreachable!();
+    //   }
+
+    //   #[cfg(target_arch = "wasm32")]
+    //   {
+    //     #[link(wasm_import_module = "[import-payload]test:test/future-source")]
+    //     extern "C" {
+    //       #[link_name = "[future-close-writable-0]create"]
+    //       fn drop(_: u32, _: u32);
+    //     }
+    //     unsafe { drop(writer, 0) }
+    //   }
+    // }
+
+    // fn close_readable(reader: u32) {
+    //   #[cfg(not(target_arch = "wasm32"))]
+    //   {
+    //     unreachable!();
+    //   }
+
+    //   #[cfg(target_arch = "wasm32")]
+    //   {
+    //     #[link(wasm_import_module = "[import-payload]test:test/future-source")]
+    //     extern "C" {
+    //       #[link_name = "[future-close-readable-0]create"]
+    //       fn drop(_: u32);
+    //     }
+    //     unsafe { drop(reader) }
+    //   }
+    // }
+
+    // pub static VTABLE: wit_bindgen_symmetric_rt::async_support::FutureVtable<u32> = wit_bindgen_symmetric_rt::async_support::FutureVtable::<u32> {
+    //   write, read, cancel_write, cancel_read, close_writable, close_readable
+    // };
+
+    impl FuturePayload for u32 {
+        // fn new() -> (u32, &'static wit_bindgen_symmetric_rt::async_support::FutureVtable<Self>) {
+        //   #[cfg(not(target_arch = "wasm32"))]
+        //   {
+        //     unreachable!();
+        //   }
+
+        //   #[cfg(target_arch = "wasm32")]
+        //   {
+        //     #[link(wasm_import_module = "[import-payload]test:test/future-source")]
+        //     extern "C" {
+        //       #[link_name = "[future-new-0]create"]
+        //       fn new() -> u32;
+        //     }
+        //     (unsafe { new() }, &VTABLE)
+        //   }
+        // }
+    }
 }
 /// Creates a new Component Model `future` with the specified payload type.
-pub fn new<T: wit_future::FuturePayload>() -> (wit_bindgen_symmetric_rt::async_support::FutureWriter<T>, wit_bindgen_symmetric_rt::async_support::FutureReader<T>) {
-  new_future()
-  // let (handle, vtable) = T::new();
-  // wit_bindgen_symmetric_rt::async_support::with_entry(handle, |entry| match entry {
-  //   ::std::collections::hash_map::Entry::Vacant(entry) => {
-  //     entry.insert(wit_bindgen_symmetric_rt::async_support::Handle::LocalOpen);
-  //   }
-  //   ::std::collections::hash_map::Entry::Occupied(_) => unreachable!(),
-  // });
-  // (
-  // wit_bindgen_symmetric_rt::async_support::FutureWriter::new(handle, vtable),
-  // wit_bindgen_symmetric_rt::async_support::FutureReader::new(handle, vtable),
-  // )
+pub fn new<T: wit_future::FuturePayload>() -> (
+    wit_bindgen_symmetric_rt::async_support::FutureWriter<T>,
+    wit_bindgen_symmetric_rt::async_support::FutureReader<T>,
+) {
+    new_future()
+    // let (handle, vtable) = T::new();
+    // wit_bindgen_symmetric_rt::async_support::with_entry(handle, |entry| match entry {
+    //   ::std::collections::hash_map::Entry::Vacant(entry) => {
+    //     entry.insert(wit_bindgen_symmetric_rt::async_support::Handle::LocalOpen);
+    //   }
+    //   ::std::collections::hash_map::Entry::Occupied(_) => unreachable!(),
+    // });
+    // (
+    // wit_bindgen_symmetric_rt::async_support::FutureWriter::new(handle, vtable),
+    // wit_bindgen_symmetric_rt::async_support::FutureReader::new(handle, vtable),
+    // )
 }
 // }
 
@@ -395,6 +411,5 @@ t\x070.223.0\x10wit-bindgen-rust\x060.38.0";
 #[inline(never)]
 #[doc(hidden)]
 pub fn __link_custom_section_describing_imports() {
-  wit_bindgen::rt::maybe_link_cabi_realloc();
+    wit_bindgen::rt::maybe_link_cabi_realloc();
 }
-
