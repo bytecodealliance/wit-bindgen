@@ -9,9 +9,10 @@ struct MyStruct;
 
 impl future_world::exports::test::test::future_test::Guest for MyStruct {
     async fn create() -> async_support::FutureReader<u32> {
-        let (mut write, read) = async_support::future_support::new_future();
+        let (write, read) = async_support::future_support::new_future();
+        let input = create().await;
         async_support::spawn(async move {
-            let input = create().await.await.unwrap();
+            let input = input.await.unwrap();
             write.write(input * 2);
         });
         read
