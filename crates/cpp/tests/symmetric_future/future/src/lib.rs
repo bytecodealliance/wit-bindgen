@@ -13,7 +13,7 @@ impl future_world::exports::test::test::future_test::Guest for MyStruct {
         let input = create().await;
         async_support::spawn(async move {
             let input = input.await.unwrap();
-            write.write(input * 2);
+            write.write(input * 2).await;
         });
         read
     }
