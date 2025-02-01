@@ -51,11 +51,11 @@ impl<T> FutureReader<T> {
     }
 
     pub fn read(self) -> CancelableRead<T> {
-        todo!()
+        CancelableRead{ reader: Some(self), future: todo!() }
     }
 
     pub fn take_handle(&self) -> *mut () {
-        todo!()
+        self.handle.take_handle() as *mut ()
     }
 }
 
@@ -75,7 +75,7 @@ impl<T> IntoFuture for FutureReader<T> {
     /// written to the writable end of this `future` (yielding a `Some` result)
     /// or when the writable end is dropped (yielding a `None` result).
     fn into_future(self) -> Self::IntoFuture {
-        todo!()
+        self.read()
     }
 }
 
