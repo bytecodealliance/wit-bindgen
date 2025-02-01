@@ -199,7 +199,7 @@ struct ScalaJsWorld {
     keywords: ScalaKeywords,
     overrides: HashMap<TypeId, String>,
     imports: HashSet<InterfaceId>,
-    exports: HashSet<InterfaceId>
+    exports: HashSet<InterfaceId>,
 }
 
 impl ScalaJsWorld {
@@ -211,7 +211,7 @@ impl ScalaJsWorld {
             keywords,
             overrides: HashMap::new(),
             imports: HashSet::new(),
-            exports: HashSet::new()
+            exports: HashSet::new(),
         }
     }
 }
@@ -237,7 +237,7 @@ impl WorldGenerator for ScalaJsWorld {
             &self.keywords,
             &mut self.overrides,
             &self.imports,
-            &self.exports
+            &self.exports,
         );
         scalajs_iface.generate();
         self.generated_files.push(scalajs_iface.finalize());
@@ -265,7 +265,7 @@ impl WorldGenerator for ScalaJsWorld {
             &self.keywords,
             &mut self.overrides,
             &self.imports,
-            &self.exports
+            &self.exports,
         );
         scalajs_iface.generate();
         self.generated_files.push(scalajs_iface.finalize());
@@ -392,12 +392,88 @@ impl<'a> ScalaJsInterface<'a> {
             scala_keywords,
             overrides,
             imports,
-            exports
+            exports,
         }
     }
 
     pub fn generate(&mut self) {
+        match self.direction {
+            Import => self.generate_import(),
+            Export => self.generate_export(),
+        }
+    }
+
+    pub fn generate_import(&mut self) {
         let mut source = String::new();
+        self.generate_package_header(&mut source);
+
+        let types = self.collect_type_definition_snippets();
+        let imported_resources = self.collect_imported_resources();
+        let functions = self.collect_function_snippets();
+
+        for typ in types {
+            uwriteln!(source, "{}", typ);
+            uwriteln!(source, "");
+        }
+
+        write_doc_comment(&mut source, "  ", &self.interface.docs);
+        uwriteln!(source, "  @js.native");
+        uwriteln!(source, "  trait {} extends js.Object {{", self.name);
+
+        for (_, resource) in imported_resources {
+            uwriteln!(source, "{}", resource.finalize());
+            uwriteln!(source, "");
+        }
+
+        for function in functions {
+            uwriteln!(source, "{function}");
+        }
+
+        uwriteln!(source, "  }}");
+
+        uwriteln!(source, "");
+        uwriteln!(source, "  @js.native");
+        uwriteln!(
+            source,
+            "  @JSImport(\"{}\", JSImport.Namespace)",
+            self.wit_name
+        );
+        uwriteln!(source, "  object {} extends {}", self.name, self.name);
+
+        uwriteln!(source, "}}");
+        self.source = source;
+    }
+
+    pub fn generate_export(&mut self) {
+        let mut source = String::new();
+        self.generate_package_header(&mut source);
+
+        let types = self.collect_type_definition_snippets();
+        let exported_resources = self.collect_exported_resources();
+        let functions = self.collect_function_snippets();
+
+        for typ in types {
+            uwriteln!(source, "{}", typ);
+            uwriteln!(source, "");
+        }
+
+        for (_, resource) in exported_resources {
+            uwriteln!(source, "{}", resource.finalize());
+            uwriteln!(source, "");
+        }
+
+        write_doc_comment(&mut source, "  ", &self.interface.docs);
+        uwriteln!(source, "  trait {} {{", self.name);
+        for function in functions {
+            uwriteln!(source, "{function}");
+        }
+        uwriteln!(source, "  }}");
+
+        uwriteln!(source, "}}");
+        self.source = source;
+    }
+
+    fn generate_package_header(&mut self, source: &mut String) {
         uwriteln!(source, "package {}", self.package.join("."));
         uwriteln!(source, "");
         uwriteln!(source, "import scala.scalajs.js");
@@ -410,11 +486,10 @@ impl<'a> ScalaJsInterface<'a> {
             "package object {} {{",
             self.scala_keywords.escape(self.name.to_snake_case())
         );
+    }
 
+    fn collect_type_definition_snippets(&mut self) -> Vec<String> {
         let mut types = Vec::new();
-        let mut functions = Vec::new();
-        let mut imported_resources = HashMap::new();
-        let mut exported_resources = HashMap::new();
 
         for (type_name, type_id) in &self.interface.types {
             let type_def = &self.resolve.types[*type_id];
@@ -434,23 +509,68 @@ impl<'a> ScalaJsInterface<'a> {
             }
         }
 
+        types
+    }
+
+    fn collect_imported_resources(&self) -> HashMap<TypeId, ScalaJsImportedResource> {
+        let mut imported_resources = HashMap::new();
         for (_, type_id) in &self.interface.types {
             let type_def = &self.resolve.types[*type_id];
             if let TypeDefKind::Resource = &type_def.kind {
-                match &self.direction {
-                    Import => {
-                        imported_resources
-                            .entry(*type_id)
-                            .or_insert_with(|| ScalaJsImportedResource::new(self, *type_id));
-                    }
-                    Export => {
-                        exported_resources
-                            .entry(*type_id)
-                            .or_insert_with(|| ScalaJsExportedResource::new(self, *type_id));
-                    }
-                }
+                imported_resources
+                    .entry(*type_id)
+                    .or_insert_with(|| ScalaJsImportedResource::new(self, *type_id));
             }
         }
+
+        for (func_name, func) in &self.interface.functions {
+            match func.kind {
+                FunctionKind::Method(resource_type)
+                | FunctionKind::Static(resource_type)
+                | FunctionKind::Constructor(resource_type) => {
+                    let resource = imported_resources
+                        .entry(resource_type)
+                        .or_insert_with(|| ScalaJsImportedResource::new(self, resource_type));
+                    resource.add_function(func_name, func);
+                }
+                FunctionKind::Freestanding => {}
+            }
+        }
+
+        imported_resources
+    }
+
+    fn collect_exported_resources(&self) -> HashMap<TypeId, ScalaJsExportedResource> {
+        let mut exported_resources = HashMap::new();
+
+        for (_, type_id) in &self.interface.types {
+            let type_def = &self.resolve.types[*type_id];
+            if let TypeDefKind::Resource = &type_def.kind {
+                exported_resources
+                    .entry(*type_id)
+                    .or_insert_with(|| ScalaJsExportedResource::new(self, *type_id));
+            }
+        }
+
+        for (func_name, func) in &self.interface.functions {
+            match func.kind {
+                FunctionKind::Method(resource_type)
+                | FunctionKind::Static(resource_type)
+                | FunctionKind::Constructor(resource_type) => {
+                    let resource = exported_resources
+                        .entry(resource_type)
+                        .or_insert_with(|| ScalaJsExportedResource::new(self, resource_type));
+                    resource.add_function(func_name, func);
+                }
+                FunctionKind::Freestanding => {}
+            }
+        }
+
+        exported_resources
+    }
+
+    fn collect_function_snippets(&self) -> Vec<String> {
+        let mut functions = Vec::new();
 
         for (func_name, func) in &self.interface.functions {
             let scala_func_name = self.scala_keywords.escape(func_name.to_lower_camel_case());
@@ -479,67 +599,13 @@ impl<'a> ScalaJsInterface<'a> {
                     );
                     functions.push(function);
                 }
-                FunctionKind::Method(resource_type)
-                | FunctionKind::Static(resource_type)
-                | FunctionKind::Constructor(resource_type) => {
-                    match &self.direction {
-                        Import => {
-                            let resource = imported_resources
-                                .entry(resource_type)
-                                .or_insert_with(|| ScalaJsImportedResource::new(self, resource_type));
-                            resource.add_function(func_name, func);
-                        }
-                        Export => {
-                            let resource = exported_resources
-                                .entry(resource_type)
-                                .or_insert_with(|| ScalaJsExportedResource::new(self, resource_type));
-                            resource.add_function(func_name, func);
-                        }
-                    }
-                }
+                FunctionKind::Method(_)
+                | FunctionKind::Static(_)
+                | FunctionKind::Constructor(_) => {}
             }
         }
 
-        for typ in types {
-            uwriteln!(source, "{}", typ);
-            uwriteln!(source, "");
-        }
-
-        write_doc_comment(&mut source, "  ", &self.interface.docs);
-        if self.direction == Import {
-            uwriteln!(source, "  @js.native");
-            uwriteln!(source, "  trait {} extends js.Object {{", self.name);
-        } else {
-            uwriteln!(source, "  trait {} {{", self.name);
-        }
-        for (_, resource) in imported_resources {
-            uwriteln!(source, "{}", resource.finalize());
-            uwriteln!(source, "");
-        }
-        for (_, resource) in exported_resources {
-            uwriteln!(source, "{}", resource.finalize());
-            uwriteln!(source, "");
-        }
-
-        for function in functions {
-            uwriteln!(source, "{function}");
-        }
-
-        uwriteln!(source, "  }}");
-
-        if self.direction == Import {
-            uwriteln!(source, "");
-            uwriteln!(source, "  @js.native");
-            uwriteln!(
-                source,
-                "  @JSImport(\"{}\", JSImport.Namespace)",
-                self.wit_name
-            );
-            uwriteln!(source, "  object {} extends {}", self.name, self.name);
-        }
-        uwriteln!(source, "}}");
-
-        self.source = source;
+        functions
     }
 
     pub fn finalize(self) -> ScalaJsFile {
@@ -670,7 +736,7 @@ impl<'a> ScalaJsInterface<'a> {
                 )
             }
             TypeOwner::Interface(id) if id == &self.interface_id => {
-                if is_resource {
+                if is_resource && self.direction == Import {
                     Some(self.name.clone())
                 } else {
                     None
@@ -682,26 +748,34 @@ impl<'a> ScalaJsInterface<'a> {
                 let package_id = iface.package.expect("Interface must have a package");
 
                 let package = &self.resolve.packages[package_id];
+                let direction = self.interface_direction(id);
 
-                let direction = if self.imports.contains(id) {
-                    Import
-                } else if self.exports.contains(id) {
-                    Export
-                } else {
-                    // Have not seen it yet, so it must be also an export
-                    Export
-                };
-
-                let mut segments = package_name_to_segments(&self.opts, &package.name, &direction, self.scala_keywords);
+                let mut segments = package_name_to_segments(
+                    &self.opts,
+                    &package.name,
+                    &direction,
+                    self.scala_keywords,
+                );
                 segments.push(self.scala_keywords.escape(name.to_snake_case()));
 
-                if is_resource {
+                if is_resource && direction == Import {
                     segments.push(self.scala_keywords.escape(name.to_pascal_case()));
                 }
 
                 Some(segments.join("."))
             }
             TypeOwner::None => None,
+        }
+    }
+
+    fn interface_direction(&self, id: &InterfaceId) -> Direction {
+        if self.imports.contains(id) {
+            Import
+        } else if self.exports.contains(id) {
+            Export
+        } else {
+            // Have not seen it yet, so it must be also an export
+            Export
         }
     }
 
@@ -1037,7 +1111,7 @@ impl<'a> ScalaJsExportedResource<'a> {
         let mut class_header = String::new();
         write_doc_comment(&mut class_header, "    ", &resource.docs);
 
-        uwrite!(class_header, "    abstract class {}(", scala_resource_name);
+        uwrite!(class_header, "  abstract class {}(", scala_resource_name);
 
         let mut class_source = String::new();
         uwriteln!(class_source, ") extends js.Object {{");
@@ -1075,7 +1149,7 @@ impl<'a> ScalaJsExportedResource<'a> {
                 write_doc_comment(&mut self.class_source, "      ", &func.docs);
                 uwriteln!(
                     self.class_source,
-                    "      {overrd}def {scala_func_name}({args}): {ret}"
+                    "    {overrd}def {scala_func_name}({args}): {ret}"
                 );
             }
             FunctionKind::Static(_) => {
@@ -1086,7 +1160,7 @@ impl<'a> ScalaJsExportedResource<'a> {
                 write_doc_comment(&mut self.class_source, "      ", &func.docs);
                 uwriteln!(
                     self.static_methods,
-                    "    def {scala_func_name}({args}): {ret}"
+                    "  def {scala_func_name}({args}): {ret}"
                 );
             }
             FunctionKind::Constructor(_) => {
@@ -1100,7 +1174,7 @@ impl<'a> ScalaJsExportedResource<'a> {
         let mut class_source = self.class_header;
         uwrite!(class_source, "{}", self.constructor_args);
         uwriteln!(class_source, "{}", self.class_source);
-        uwriteln!(class_source, "    }}");
+        uwriteln!(class_source, "  }}");
         format!("{}\n{}\n", class_source, self.static_methods)
     }
 
