@@ -198,6 +198,8 @@ struct ScalaJsWorld {
     generated_files: Vec<ScalaJsFile>,
     keywords: ScalaKeywords,
     overrides: HashMap<TypeId, String>,
+    imports: HashSet<InterfaceId>,
+    exports: HashSet<InterfaceId>
 }
 
 impl ScalaJsWorld {
@@ -208,6 +210,8 @@ impl ScalaJsWorld {
             generated_files: Vec::new(),
             keywords,
             overrides: HashMap::new(),
+            imports: HashSet::new(),
+            exports: HashSet::new()
         }
     }
 }
@@ -223,8 +227,7 @@ impl WorldGenerator for ScalaJsWorld {
         let key = name;
         let wit_name = resolve.name_world_key(key);
 
-        println!("import_interface: {wit_name}");
-
+        self.imports.insert(iface);
         let mut scalajs_iface = ScalaJsInterface::new(
             wit_name.clone(),
             resolve,
@@ -233,6 +236,8 @@ impl WorldGenerator for ScalaJsWorld {
             Import,
             &self.keywords,
             &mut self.overrides,
+            &self.imports,
+            &self.exports
         );
         scalajs_iface.generate();
         self.generated_files.push(scalajs_iface.finalize());
@@ -250,8 +255,7 @@ impl WorldGenerator for ScalaJsWorld {
         let key = name;
         let wit_name = resolve.name_world_key(key);
 
-        println!("export_interface: {:?}", name);
-
+        self.exports.insert(iface);
         let mut scalajs_iface = ScalaJsInterface::new(
             wit_name.clone(),
             resolve,
@@ -260,6 +264,8 @@ impl WorldGenerator for ScalaJsWorld {
             Export,
             &self.keywords,
             &mut self.overrides,
+            &self.imports,
+            &self.exports
         );
         scalajs_iface.generate();
         self.generated_files.push(scalajs_iface.finalize());
@@ -342,9 +348,12 @@ struct ScalaJsInterface<'a> {
     direction: Direction,
     scala_keywords: &'a ScalaKeywords,
     overrides: &'a mut HashMap<TypeId, String>,
+    imports: &'a HashSet<InterfaceId>,
+    exports: &'a HashSet<InterfaceId>,
 }
 
 impl<'a> ScalaJsInterface<'a> {
+    // TODO: should just get a reference to ScalaJsWorld
     pub fn new(
         wit_name: String,
         resolve: &'a Resolve,
@@ -353,6 +362,8 @@ impl<'a> ScalaJsInterface<'a> {
         direction: Direction,
         scala_keywords: &'a ScalaKeywords,
         overrides: &'a mut HashMap<TypeId, String>,
+        imports: &'a HashSet<InterfaceId>,
+        exports: &'a HashSet<InterfaceId>,
     ) -> Self {
         let interface = &resolve.interfaces[interface_id];
         let name = interface
@@ -380,6 +391,8 @@ impl<'a> ScalaJsInterface<'a> {
             direction,
             scala_keywords,
             overrides,
+            imports,
+            exports
         }
     }
 
@@ -669,7 +682,17 @@ impl<'a> ScalaJsInterface<'a> {
                 let package_id = iface.package.expect("Interface must have a package");
 
                 let package = &self.resolve.packages[package_id];
-                let mut segments = package_name_to_segments(&self.opts, &package.name, &Import, self.scala_keywords);
+
+                let direction = if self.imports.contains(id) {
+                    Import
+                } else if self.exports.contains(id) {
+                    Export
+                } else {
+                    // Have not seen it yet, so it must be also an export
+                    Export
+                };
+
+                let mut segments = package_name_to_segments(&self.opts, &package.name, &direction, self.scala_keywords);
                 segments.push(self.scala_keywords.escape(name.to_snake_case()));
 
                 if is_resource {
