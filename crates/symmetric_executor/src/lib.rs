@@ -209,16 +209,19 @@ impl symmetric_executor::Guest for Guest {
                     break;
                 }
             }
-            // if tvptr.is_null() && maxfd == 0 {
-            //     // probably only active tasks, all returned pending, try again
-            //     if DEBUGGING {
-            //         println!(
-            //             "Relooping with {} tasks",
-            //             EXECUTOR.lock().unwrap().active_tasks.len()
-            //         );
-            //     }
-            //     continue;
-            // }
+            if tvptr.is_null()
+                && maxfd == change_event + 1
+                && !(0..change_event).any(|f| unsafe { libc::FD_ISSET(f, rfd_ptr) })
+            {
+                // probably only active tasks, all returned pending, try again
+                if DEBUGGING {
+                    println!(
+                        "Relooping with {} tasks",
+                        EXECUTOR.lock().unwrap().active_tasks.len()
+                    );
+                }
+                continue;
+            }
             // with no work left the break should have occured
             // assert!(!tvptr.is_null() || maxfd > 0);
             if DEBUGGING {
