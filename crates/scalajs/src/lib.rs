@@ -5,10 +5,7 @@ use heck::{ToLowerCamelCase, ToPascalCase, ToSnakeCase};
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Write};
 use std::str::FromStr;
-use wit_bindgen_core::wit_parser::{
-    Docs, Function, FunctionKind, Handle, Interface, InterfaceId, PackageName, Resolve, Results,
-    Tuple, Type, TypeDef, TypeDefKind, TypeId, TypeOwner, WorldId, WorldKey,
-};
+use wit_bindgen_core::wit_parser::{Docs, Function, FunctionKind, Handle, Interface, InterfaceId, PackageName, Resolve, Results, Tuple, Type, TypeDef, TypeDefKind, TypeId, TypeOwner, World, WorldId, WorldKey};
 use wit_bindgen_core::Direction::{Export, Import};
 use wit_bindgen_core::{uwrite, uwriteln, Direction, Files, WorldGenerator};
 
@@ -382,10 +379,27 @@ impl ScalaJsWorld {
         match owner {
             TypeOwner::World(id) => {
                 let world = &resolve.worlds[*id];
-                // TODO: assuming an object or trait is also generated per world?
-                Some(
-                    self.keywords.escape(world.name.clone().to_pascal_case()),
-                )
+
+                let name = world
+                    .name
+                    .clone()
+                    .to_snake_case();
+
+                let package_name = resolve.packages
+                    [world.package.expect("missing package for world")]
+                    .name
+                    .clone();
+
+                let mut package = package_name_to_segments(
+                    &self.opts,
+                    &package_name,
+                    &Import,
+                    &self.keywords,
+                );
+
+                package.push(self.keywords.escape(name));
+
+                Some(package.join("."), )
             }
             TypeOwner::Interface(id) => {
                 match owner_context.is_local_import(id, is_resource) {
@@ -421,6 +435,218 @@ impl ScalaJsWorld {
         }
     }
 
+    fn render_typedef(&self, owner_context: &impl OwnerContext, resolve: &Resolve, name: &str, typ: &TypeDef) -> Option<String> {
+        let encoded_name = self.encode_name(name.to_pascal_case());
+        let scala_name = encoded_name.scala;
+
+        let mut source = String::new();
+        match &typ.kind {
+            TypeDefKind::Record(record) => {
+                let mut fields = Vec::new();
+                for field in &record.fields {
+                    let typ = self.render_type_reference(owner_context, resolve, &field.ty);
+                    let field_name = self.encode_name(field.name.to_lower_camel_case());
+                    let field_name0 = self
+                        .keywords
+                        .escape(format!("{}0", field.name.to_lower_camel_case()));
+                    fields.push((field_name, field_name0, typ, &field.docs));
+                }
+
+                write_doc_comment(&mut source, "  ", &typ.docs);
+                uwriteln!(source, "  sealed trait {scala_name} extends js.Object {{");
+                for (field_name, _, typ, docs) in &fields {
+                    write_doc_comment(&mut source, "    ", &docs);
+                    field_name.write_rename_attribute(&mut source, "    ");
+                    uwriteln!(source, "    val {}: {typ}", field_name.scala);
+                }
+                uwriteln!(source, "  }}");
+                uwriteln!(source, "");
+                uwriteln!(source, "  case object {scala_name} {{");
+                uwriteln!(source, "    def apply(");
+                for (_, field_name0, typ, _) in &fields {
+                    uwriteln!(source, "      {field_name0}: {typ},");
+                }
+                uwriteln!(source, "    ): {scala_name} = {{");
+                uwriteln!(source, "      new {scala_name} {{");
+                for (field_name, field_name0, typ, _) in &fields {
+                    field_name.write_rename_attribute(&mut source, "        ");
+                    uwriteln!(
+                        source,
+                        "        val {}: {typ} = {field_name0}",
+                        field_name.scala
+                    );
+                }
+                uwriteln!(source, "      }}");
+                uwriteln!(source, "    }}");
+                uwriteln!(source, "  }}");
+            }
+            TypeDefKind::Resource => {
+                // resource wrappers are generated separately
+            }
+            TypeDefKind::Handle(_) => {
+                panic!("Unexpected top-level handle type");
+            }
+            TypeDefKind::Flags(flags) => {
+                let mut fields = Vec::new();
+                for flag in &flags.flags {
+                    let typ = "Boolean".to_string();
+                    let field_name = self.encode_name(flag.name.to_lower_camel_case());
+                    let field_name0 = self
+                        .keywords
+                        .escape(format!("{}0", flag.name.to_lower_camel_case()));
+                    fields.push((field_name, field_name0, typ, &flag.docs));
+                }
+
+                write_doc_comment(&mut source, "  ", &typ.docs);
+                uwriteln!(source, "  sealed trait {scala_name} extends js.Object {{");
+                for (field_name, _, typ, docs) in &fields {
+                    write_doc_comment(&mut source, "    ", docs);
+                    field_name.write_rename_attribute(&mut source, "    ");
+                    uwriteln!(source, "    val {}: {typ}", field_name.scala);
+                }
+                uwriteln!(source, "  }}");
+                uwriteln!(source, "");
+                uwriteln!(source, "  case object {scala_name} {{");
+                uwriteln!(source, "    def apply(");
+                for (_, field_name0, typ, _) in &fields {
+                    uwriteln!(source, "      {field_name0}: {typ},");
+                }
+                uwriteln!(source, "    ): {scala_name} = {{");
+                uwriteln!(source, "      new {scala_name} {{");
+                for (field_name, field_name0, typ, _) in &fields {
+                    field_name.write_rename_attribute(&mut source, "        ");
+                    uwriteln!(
+                        source,
+                        "        val {}: {typ} = {field_name0}",
+                        field_name.scala
+                    );
+                }
+                uwriteln!(source, "      }}");
+                uwriteln!(source, "    }}");
+                uwriteln!(source, "  }}");
+            }
+            TypeDefKind::Tuple(tuple) => {
+                let arity = tuple.types.len();
+                write_doc_comment(&mut source, "  ", &typ.docs);
+                uwrite!(source, "  type {scala_name} = WitTuple{arity}[");
+                for (idx, part) in tuple.types.iter().enumerate() {
+                    let part = self.render_type_reference(owner_context, resolve, part);
+                    uwrite!(source, "{part}");
+                    if idx < tuple.types.len() - 1 {
+                        uwrite!(source, ", ");
+                    }
+                }
+                uwriteln!(source, "]");
+            }
+            TypeDefKind::Variant(variant) => {
+                write_doc_comment(&mut source, "  ", &typ.docs);
+                uwriteln!(source, "  sealed trait {scala_name} extends js.Object {{");
+                uwriteln!(source, "    type Type");
+                uwriteln!(source, "    val tag: String");
+                uwriteln!(source, "    val `val`: js.UndefOr[Type]");
+                uwriteln!(source, "  }}");
+                uwriteln!(source, "");
+                uwriteln!(source, "  object {scala_name} {{");
+                for case in &variant.cases {
+                    let case_name = &case.name;
+                    let scala_case_name = self
+                        .keywords
+                        .escape(case_name.to_lower_camel_case());
+                    match &case.ty {
+                        Some(ty) => {
+                            let typ = self.render_type_reference(owner_context, resolve, ty);
+                            write_doc_comment(&mut source, "    ", &case.docs);
+                            uwriteln!(source, "    def {scala_case_name}(value: {typ}): {scala_name} = new {scala_name} {{");
+                            uwriteln!(source, "      type Type = {typ}");
+                            uwriteln!(source, "      val tag: String = \"{case_name}\"");
+                            uwriteln!(source, "      val `val`: js.UndefOr[Type] = value");
+                            uwriteln!(source, "    }}");
+                        }
+                        None => {
+                            write_doc_comment(&mut source, "    ", &case.docs);
+                            uwriteln!(
+                                source,
+                                "    def {scala_case_name}(): {scala_name} = new {scala_name} {{"
+                            );
+                            uwriteln!(source, "      type Type = Unit");
+                            uwriteln!(source, "      val tag: String = \"{case_name}\"");
+                            uwriteln!(source, "      val `val`: js.UndefOr[Type] = ()");
+                            uwriteln!(source, "    }}");
+                        }
+                    }
+                }
+                uwriteln!(source, "  }}");
+            }
+            TypeDefKind::Enum(enm) => {
+                write_doc_comment(&mut source, "  ", &typ.docs);
+                uwriteln!(source, "  sealed trait {scala_name} extends js.Object");
+                uwriteln!(source, "");
+                uwriteln!(source, "  object {scala_name} {{");
+                for case in &enm.cases {
+                    let case_name = &case.name;
+                    let scala_case_name = self
+                        .keywords
+                        .escape(case_name.to_lower_camel_case());
+                    write_doc_comment(&mut source, "    ", &case.docs);
+                    uwriteln!(
+                        source,
+                        "    def {scala_case_name}: {scala_name} = \"{case_name}\".asInstanceOf[{scala_name}]",
+                    );
+                }
+                uwriteln!(source, "  }}");
+            }
+            TypeDefKind::Option(option) => {
+                write_doc_comment(&mut source, "  ", &typ.docs);
+                let typ = self.render_type_reference(owner_context, resolve, option);
+                if !maybe_null(resolve, option) {
+                    uwriteln!(source, "  type {scala_name} = Nullable[{typ}]");
+                } else {
+                    uwriteln!(source, "  type {scala_name} = WitOption[{typ}]");
+                }
+            }
+            TypeDefKind::Result(result) => {
+                write_doc_comment(&mut source, "  ", &typ.docs);
+                let ok = result
+                    .ok
+                    .map(|ok| self.render_type_reference(owner_context, resolve, &ok))
+                    .unwrap_or("Unit".to_string());
+                let err = result
+                    .err
+                    .map(|err| self.render_type_reference(owner_context, resolve, &err))
+                    .unwrap_or("Unit".to_string());
+                uwriteln!(source, "  type {scala_name} = WitResult[{ok}, {err}]");
+            }
+            TypeDefKind::List(list) => {
+                write_doc_comment(&mut source, "  ", &typ.docs);
+                let typ = self.render_type_reference(owner_context, resolve, list);
+                uwriteln!(source, "  type {scala_name} = WitList[{typ}]");
+            }
+            TypeDefKind::Future(_) => {
+                panic!("Futures are not supported yet");
+            }
+            TypeDefKind::Stream(_) => {
+                panic!("Streams are not supported yet");
+            }
+            TypeDefKind::ErrorContext => {
+                panic!("ErrorContext is not supported yet");
+            }
+            TypeDefKind::Type(reftyp) => {
+                write_doc_comment(&mut source, "  ", &typ.docs);
+                let typ = self.render_type_reference(owner_context, resolve, reftyp);
+                uwriteln!(source, "  type {scala_name} = {typ}");
+            }
+            TypeDefKind::Unknown => {
+                panic!("Unknown type");
+            }
+        }
+
+        if source.len() > 0 {
+            Some(source)
+        } else {
+            None
+        }
+    }
+
     fn interface_direction(&self, id: &InterfaceId) -> Direction {
         if self.imports.contains(id) {
             Import
@@ -430,6 +656,36 @@ impl ScalaJsWorld {
             // Have not seen it yet, so it must be also an export
             Export
         }
+    }
+
+    fn generate_world_package_header(&self, resolve: &Resolve, world: &World) -> String {
+        let name = world
+            .name
+            .clone()
+            .to_snake_case();
+
+        let package_name = resolve.packages
+            [world.package.expect("missing package for world")]
+            .name
+            .clone();
+
+        let package = package_name_to_segments(
+            &self.opts,
+            &package_name,
+            &Import,
+            &self.keywords,
+        );
+
+        let mut source = String::new();
+        uwriteln!(source, "package {}",  package.join("."));
+
+        uwriteln!(source, "");
+        uwriteln!(source, "import scala.scalajs.js");
+        uwriteln!(source, "import scala.scalajs.js.annotation._");
+        uwriteln!(source, "import {}wit._", self.opts.base_package_prefix());
+        uwriteln!(source, "");
+        uwriteln!(source, "package object {} {{", name);
+        source
     }
 }
 
@@ -486,34 +742,7 @@ impl WorldGenerator for ScalaJsWorld {
         let world = &resolve.worlds[world_id];
 
         if !self.world_defs.contains_key(&world_id) {
-            // TODO: Extract constructor
-
-            let name = world
-                .name
-                .clone()
-                .to_snake_case();
-
-            let package_name = resolve.packages
-                [world.package.expect("missing package for world")]
-                .name
-                .clone();
-
-            let package = package_name_to_segments(
-                &self.opts,
-                &package_name,
-                &Import,
-                &self.keywords,
-            );
-
-            let mut source = String::new();
-            uwriteln!(source, "package {}",  package.join("."));
-
-            uwriteln!(source, "");
-            uwriteln!(source, "import scala.scalajs.js");
-            uwriteln!(source, "import scala.scalajs.js.annotation._");
-            uwriteln!(source, "import {}wit._", self.opts.base_package_prefix());
-            uwriteln!(source, "");
-            uwriteln!(source, "package object {} {{", name);
+            let source = self.generate_world_package_header(resolve, world);
             self.world_defs.insert(world_id, source);
         }
 
@@ -547,13 +776,28 @@ impl WorldGenerator for ScalaJsWorld {
 
     fn import_types(
         &mut self,
-        _resolve: &Resolve,
-        _world: WorldId,
+        resolve: &Resolve,
+        world_id: WorldId,
         types: &[(&str, TypeId)],
         _files: &mut Files,
     ) {
-        // TODO
-        println!("import_types: {:?}", types);
+        let world = &resolve.worlds[world_id];
+
+        if !self.world_defs.contains_key(&world_id) {
+            let source = self.generate_world_package_header(resolve, world);
+            self.world_defs.insert(world_id, source);
+        }
+
+        let mut type_snippets = String::new();
+        for (type_name, type_id) in types {
+            if let Some(type_snippet) = self.render_typedef(self, resolve, type_name, &resolve.types[*type_id]) {
+                uwriteln!(type_snippets, "{}", type_snippet);
+                uwriteln!(type_snippets, "");
+            }
+        }
+
+        let world_source = self.world_defs.get_mut(&world_id).unwrap();
+        uwriteln!(world_source, "{}", type_snippets);
     }
 
     fn finish(
@@ -771,7 +1015,7 @@ impl<'a> ScalaJsInterface<'a> {
                 type_name.clone()
             };
 
-            if let Some(typ) = self.render_typedef(&type_name, type_def) {
+            if let Some(typ) = self.generator.render_typedef(self, &self.resolve, &type_name, type_def) {
                 types.push(typ);
             }
         }
@@ -877,222 +1121,6 @@ impl<'a> ScalaJsInterface<'a> {
             package: self.package,
             name: self.name,
             source: self.source,
-        }
-    }
-
-    fn render_typedef(&self, name: &str, typ: &TypeDef) -> Option<String> {
-        let encoded_name = self.generator.encode_name(name.to_pascal_case());
-        let scala_name = encoded_name.scala;
-
-        let mut source = String::new();
-        match &typ.kind {
-            TypeDefKind::Record(record) => {
-                let mut fields = Vec::new();
-                for field in &record.fields {
-                    let typ = self.generator.render_type_reference(self, self.resolve, &field.ty);
-                    let field_name = self.generator.encode_name(field.name.to_lower_camel_case());
-                    let field_name0 = self
-                        .generator
-                        .keywords
-                        .escape(format!("{}0", field.name.to_lower_camel_case()));
-                    fields.push((field_name, field_name0, typ, &field.docs));
-                }
-
-                write_doc_comment(&mut source, "  ", &typ.docs);
-                uwriteln!(source, "  sealed trait {scala_name} extends js.Object {{");
-                for (field_name, _, typ, docs) in &fields {
-                    write_doc_comment(&mut source, "    ", &docs);
-                    field_name.write_rename_attribute(&mut source, "    ");
-                    uwriteln!(source, "    val {}: {typ}", field_name.scala);
-                }
-                uwriteln!(source, "  }}");
-                uwriteln!(source, "");
-                uwriteln!(source, "  case object {scala_name} {{");
-                uwriteln!(source, "    def apply(");
-                for (_, field_name0, typ, _) in &fields {
-                    uwriteln!(source, "      {field_name0}: {typ},");
-                }
-                uwriteln!(source, "    ): {scala_name} = {{");
-                uwriteln!(source, "      new {scala_name} {{");
-                for (field_name, field_name0, typ, _) in &fields {
-                    field_name.write_rename_attribute(&mut source, "        ");
-                    uwriteln!(
-                        source,
-                        "        val {}: {typ} = {field_name0}",
-                        field_name.scala
-                    );
-                }
-                uwriteln!(source, "      }}");
-                uwriteln!(source, "    }}");
-                uwriteln!(source, "  }}");
-            }
-            TypeDefKind::Resource => {
-                // resource wrappers are generated separately
-            }
-            TypeDefKind::Handle(_) => {
-                panic!("Unexpected top-level handle type");
-            }
-            TypeDefKind::Flags(flags) => {
-                let mut fields = Vec::new();
-                for flag in &flags.flags {
-                    let typ = "Boolean".to_string();
-                    let field_name = self.generator.encode_name(flag.name.to_lower_camel_case());
-                    let field_name0 = self
-                        .generator
-                        .keywords
-                        .escape(format!("{}0", flag.name.to_lower_camel_case()));
-                    fields.push((field_name, field_name0, typ, &flag.docs));
-                }
-
-                write_doc_comment(&mut source, "  ", &typ.docs);
-                uwriteln!(source, "  sealed trait {scala_name} extends js.Object {{");
-                for (field_name, _, typ, docs) in &fields {
-                    write_doc_comment(&mut source, "    ", docs);
-                    field_name.write_rename_attribute(&mut source, "    ");
-                    uwriteln!(source, "    val {}: {typ}", field_name.scala);
-                }
-                uwriteln!(source, "  }}");
-                uwriteln!(source, "");
-                uwriteln!(source, "  case object {scala_name} {{");
-                uwriteln!(source, "    def apply(");
-                for (_, field_name0, typ, _) in &fields {
-                    uwriteln!(source, "      {field_name0}: {typ},");
-                }
-                uwriteln!(source, "    ): {scala_name} = {{");
-                uwriteln!(source, "      new {scala_name} {{");
-                for (field_name, field_name0, typ, _) in &fields {
-                    field_name.write_rename_attribute(&mut source, "        ");
-                    uwriteln!(
-                        source,
-                        "        val {}: {typ} = {field_name0}",
-                        field_name.scala
-                    );
-                }
-                uwriteln!(source, "      }}");
-                uwriteln!(source, "    }}");
-                uwriteln!(source, "  }}");
-            }
-            TypeDefKind::Tuple(tuple) => {
-                let arity = tuple.types.len();
-                write_doc_comment(&mut source, "  ", &typ.docs);
-                uwrite!(source, "  type {scala_name} = WitTuple{arity}[");
-                for (idx, part) in tuple.types.iter().enumerate() {
-                    let part = self.generator.render_type_reference(self, self.resolve, part);
-                    uwrite!(source, "{part}");
-                    if idx < tuple.types.len() - 1 {
-                        uwrite!(source, ", ");
-                    }
-                }
-                uwriteln!(source, "]");
-            }
-            TypeDefKind::Variant(variant) => {
-                write_doc_comment(&mut source, "  ", &typ.docs);
-                uwriteln!(source, "  sealed trait {scala_name} extends js.Object {{");
-                uwriteln!(source, "    type Type");
-                uwriteln!(source, "    val tag: String");
-                uwriteln!(source, "    val `val`: js.UndefOr[Type]");
-                uwriteln!(source, "  }}");
-                uwriteln!(source, "");
-                uwriteln!(source, "  object {scala_name} {{");
-                for case in &variant.cases {
-                    let case_name = &case.name;
-                    let scala_case_name = self
-                        .generator
-                        .keywords
-                        .escape(case_name.to_lower_camel_case());
-                    match &case.ty {
-                        Some(ty) => {
-                            let typ = self.generator.render_type_reference(self, self.resolve, ty);
-                            write_doc_comment(&mut source, "    ", &case.docs);
-                            uwriteln!(source, "    def {scala_case_name}(value: {typ}): {scala_name} = new {scala_name} {{");
-                            uwriteln!(source, "      type Type = {typ}");
-                            uwriteln!(source, "      val tag: String = \"{case_name}\"");
-                            uwriteln!(source, "      val `val`: js.UndefOr[Type] = value");
-                            uwriteln!(source, "    }}");
-                        }
-                        None => {
-                            write_doc_comment(&mut source, "    ", &case.docs);
-                            uwriteln!(
-                                source,
-                                "    def {scala_case_name}(): {scala_name} = new {scala_name} {{"
-                            );
-                            uwriteln!(source, "      type Type = Unit");
-                            uwriteln!(source, "      val tag: String = \"{case_name}\"");
-                            uwriteln!(source, "      val `val`: js.UndefOr[Type] = ()");
-                            uwriteln!(source, "    }}");
-                        }
-                    }
-                }
-                uwriteln!(source, "  }}");
-            }
-            TypeDefKind::Enum(enm) => {
-                write_doc_comment(&mut source, "  ", &typ.docs);
-                uwriteln!(source, "  sealed trait {scala_name} extends js.Object");
-                uwriteln!(source, "");
-                uwriteln!(source, "  object {scala_name} {{");
-                for case in &enm.cases {
-                    let case_name = &case.name;
-                    let scala_case_name = self
-                        .generator
-                        .keywords
-                        .escape(case_name.to_lower_camel_case());
-                    write_doc_comment(&mut source, "    ", &case.docs);
-                    uwriteln!(
-                        source,
-                        "    def {scala_case_name}: {scala_name} = \"{case_name}\".asInstanceOf[{scala_name}]",
-                    );
-                }
-                uwriteln!(source, "  }}");
-            }
-            TypeDefKind::Option(option) => {
-                write_doc_comment(&mut source, "  ", &typ.docs);
-                let typ = self.generator.render_type_reference(self, self.resolve, option);
-                if !maybe_null(&self.resolve, option) {
-                    uwriteln!(source, "  type {scala_name} = Nullable[{typ}]");
-                } else {
-                    uwriteln!(source, "  type {scala_name} = WitOption[{typ}]");
-                }
-            }
-            TypeDefKind::Result(result) => {
-                write_doc_comment(&mut source, "  ", &typ.docs);
-                let ok = result
-                    .ok
-                    .map(|ok| self.generator.render_type_reference(self, self.resolve, &ok))
-                    .unwrap_or("Unit".to_string());
-                let err = result
-                    .err
-                    .map(|err| self.generator.render_type_reference(self, self.resolve, &err))
-                    .unwrap_or("Unit".to_string());
-                uwriteln!(source, "  type {scala_name} = WitResult[{ok}, {err}]");
-            }
-            TypeDefKind::List(list) => {
-                write_doc_comment(&mut source, "  ", &typ.docs);
-                let typ = self.generator.render_type_reference(self, self.resolve, list);
-                uwriteln!(source, "  type {scala_name} = WitList[{typ}]");
-            }
-            TypeDefKind::Future(_) => {
-                panic!("Futures are not supported yet");
-            }
-            TypeDefKind::Stream(_) => {
-                panic!("Streams are not supported yet");
-            }
-            TypeDefKind::ErrorContext => {
-                panic!("ErrorContext is not supported yet");
-            }
-            TypeDefKind::Type(reftyp) => {
-                write_doc_comment(&mut source, "  ", &typ.docs);
-                let typ = self.generator.render_type_reference(self, self.resolve, reftyp);
-                uwriteln!(source, "  type {scala_name} = {typ}");
-            }
-            TypeDefKind::Unknown => {
-                panic!("Unknown type");
-            }
-        }
-
-        if source.len() > 0 {
-            Some(source)
-        } else {
-            None
         }
     }
 }
