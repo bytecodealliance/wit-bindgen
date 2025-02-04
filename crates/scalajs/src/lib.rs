@@ -5,7 +5,10 @@ use heck::{ToLowerCamelCase, ToPascalCase, ToSnakeCase};
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Write};
 use std::str::FromStr;
-use wit_bindgen_core::wit_parser::{Docs, Function, FunctionKind, Handle, Interface, InterfaceId, PackageName, Resolve, Results, Tuple, Type, TypeDef, TypeDefKind, TypeId, TypeOwner, World, WorldId, WorldKey};
+use wit_bindgen_core::wit_parser::{
+    Docs, Function, FunctionKind, Handle, Interface, InterfaceId, PackageName, Resolve, Results,
+    Tuple, Type, TypeDef, TypeDefKind, TypeId, TypeOwner, World, WorldId, WorldKey,
+};
 use wit_bindgen_core::Direction::{Export, Import};
 use wit_bindgen_core::{uwrite, uwriteln, Direction, Files, WorldGenerator};
 
@@ -60,13 +63,12 @@ pub struct Opts {
         )
     )]
     pub scala_dialect: ScalaDialect,
-
     // TODO: generate skeleton mode - single file with the exported things to be implemented - destructive, will be wired to an explicit sbt command
 }
 
 impl Opts {
     pub fn build(&self) -> Box<dyn WorldGenerator> {
-        Box::new(ScalaJsWorld::new(self.clone()))
+        Box::new(ScalaJs::new(self.clone()))
     }
 
     pub fn base_package_segments(&self) -> Vec<String> {
@@ -198,7 +200,13 @@ trait OwnerContext {
     fn is_local_import(&self, id: &InterfaceId, is_resource: bool) -> Option<Option<String>>;
 }
 
-impl OwnerContext for ScalaJsWorld {
+impl OwnerContext for ScalaJs {
+    fn is_local_import(&self, _id: &InterfaceId, _is_resource: bool) -> Option<Option<String>> {
+        None
+    }
+}
+
+impl OwnerContext for ScalaJsContext {
     fn is_local_import(&self, _id: &InterfaceId, _is_resource: bool) -> Option<Option<String>> {
         None
     }
@@ -218,30 +226,15 @@ impl<'a> OwnerContext for ScalaJsInterface<'a> {
     }
 }
 
-struct ScalaJsWorld {
+struct ScalaJsContext {
     opts: Opts,
-    generated_files: Vec<ScalaJsFile>,
     keywords: ScalaKeywords,
     overrides: HashMap<TypeId, String>,
     imports: HashSet<InterfaceId>,
     exports: HashSet<InterfaceId>,
-    world_defs: HashMap<WorldId, String>,
 }
 
-impl ScalaJsWorld {
-    fn new(opts: Opts) -> Self {
-        let keywords = ScalaKeywords::new(&opts.scala_dialect);
-        Self {
-            opts,
-            generated_files: Vec::new(),
-            keywords,
-            overrides: HashMap::new(),
-            imports: HashSet::new(),
-            exports: HashSet::new(),
-            world_defs: HashMap::new(),
-        }
-    }
-
+impl ScalaJsContext {
     pub fn encode_name(&self, name: impl AsRef<str>) -> EncodedName {
         let name = name.as_ref();
         let scala_name = self.keywords.escape(name);
@@ -259,7 +252,12 @@ impl ScalaJsWorld {
         }
     }
 
-    fn render_args<'b>(&self, owner_context: &impl OwnerContext,  resolve: &Resolve, params: impl Iterator<Item = &'b (String, Type)>) -> String {
+    fn render_args<'b>(
+        &self,
+        owner_context: &impl OwnerContext,
+        resolve: &Resolve,
+        params: impl Iterator<Item = &'b (String, Type)>,
+    ) -> String {
         let mut args = Vec::new();
         for (param_name, param_typ) in params {
             let param_typ = self.render_type_reference(owner_context, resolve, param_typ);
@@ -269,20 +267,36 @@ impl ScalaJsWorld {
         args.join(", ")
     }
 
-    fn render_return_type(&self, owner_context: &impl OwnerContext, resolve: &Resolve, results: &Results) -> String {
+    fn render_return_type(
+        &self,
+        owner_context: &impl OwnerContext,
+        resolve: &Resolve,
+        results: &Results,
+    ) -> String {
         match results {
             Results::Named(results) if results.len() == 0 => "Unit".to_string(),
-            Results::Named(results) if results.len() == 1 => {
-                self.render_type_reference(owner_context, resolve, &results.iter().next().unwrap().1)
-            }
-            Results::Named(results) => self.render_tuple(owner_context, resolve, &Tuple {
-                types: results.iter().map(|(_, typ)| typ.clone()).collect(),
-            }),
+            Results::Named(results) if results.len() == 1 => self.render_type_reference(
+                owner_context,
+                resolve,
+                &results.iter().next().unwrap().1,
+            ),
+            Results::Named(results) => self.render_tuple(
+                owner_context,
+                resolve,
+                &Tuple {
+                    types: results.iter().map(|(_, typ)| typ.clone()).collect(),
+                },
+            ),
             Results::Anon(typ) => self.render_type_reference(owner_context, resolve, typ),
         }
     }
 
-    fn render_type_reference(&self, owner_context: &impl OwnerContext, resolve: &Resolve, typ: &Type) -> String {
+    fn render_type_reference(
+        &self,
+        owner_context: &impl OwnerContext,
+        resolve: &Resolve,
+        typ: &Type,
+    ) -> String {
         match typ {
             Type::Bool => "Boolean".to_string(),
             Type::U8 => "Byte".to_string(),
@@ -304,7 +318,12 @@ impl ScalaJsWorld {
         }
     }
 
-    fn render_typedef_reference(&self, owner_context: &impl OwnerContext, resolve: &Resolve, typ: &TypeDef) -> String {
+    fn render_typedef_reference(
+        &self,
+        owner_context: &impl OwnerContext,
+        resolve: &Resolve,
+        typ: &TypeDef,
+    ) -> String {
         match &typ.kind {
             TypeDefKind::Record(_)
             | TypeDefKind::Resource
@@ -312,11 +331,15 @@ impl ScalaJsWorld {
             | TypeDefKind::Enum(_)
             | TypeDefKind::Type(_)
             | TypeDefKind::Variant(_) => {
-                let prefix =
-                    match self.render_owner(owner_context, resolve, &typ.owner, &typ.kind == &TypeDefKind::Resource) {
-                        Some(owner) => format!("{owner}."),
-                        None => "".to_string(),
-                    };
+                let prefix = match self.render_owner(
+                    owner_context,
+                    resolve,
+                    &typ.owner,
+                    &typ.kind == &TypeDefKind::Resource,
+                ) {
+                    Some(owner) => format!("{owner}."),
+                    None => "".to_string(),
+                };
                 format!(
                     "{}{}",
                     prefix,
@@ -339,9 +362,15 @@ impl ScalaJsWorld {
             TypeDefKind::Tuple(tuple) => self.render_tuple(owner_context, resolve, tuple),
             TypeDefKind::Option(option) => {
                 if !maybe_null(resolve, option) {
-                    format!("Nullable[{}]", self.render_type_reference(owner_context, resolve, option))
+                    format!(
+                        "Nullable[{}]",
+                        self.render_type_reference(owner_context, resolve, option)
+                    )
                 } else {
-                    format!("WitOption[{}]", self.render_type_reference(owner_context, resolve, option))
+                    format!(
+                        "WitOption[{}]",
+                        self.render_type_reference(owner_context, resolve, option)
+                    )
                 }
             }
             TypeDefKind::Result(result) => {
@@ -356,7 +385,10 @@ impl ScalaJsWorld {
                 format!("WitResult[{ok}, {err}]")
             }
             TypeDefKind::List(list) => {
-                format!("WitList[{}]", self.render_type_reference(owner_context, resolve, list))
+                format!(
+                    "WitList[{}]",
+                    self.render_type_reference(owner_context, resolve, list)
+                )
             }
             TypeDefKind::Future(_) => panic!("Futures not supported yet"),
             TypeDefKind::Stream(_) => panic!("Streams not supported yet"),
@@ -365,7 +397,12 @@ impl ScalaJsWorld {
         }
     }
 
-    fn render_tuple(&self, owner_context: &impl OwnerContext, resolve: &Resolve, tuple: &Tuple) -> String {
+    fn render_tuple(
+        &self,
+        owner_context: &impl OwnerContext,
+        resolve: &Resolve,
+        tuple: &Tuple,
+    ) -> String {
         let arity = tuple.types.len();
 
         let mut parts = Vec::new();
@@ -375,67 +412,68 @@ impl ScalaJsWorld {
         format!("WitTuple{arity}[{}]", parts.join(", "))
     }
 
-    fn render_owner(&self, owner_context: &impl OwnerContext, resolve: &Resolve, owner: &TypeOwner, is_resource: bool) -> Option<String> {
+    fn render_owner(
+        &self,
+        owner_context: &impl OwnerContext,
+        resolve: &Resolve,
+        owner: &TypeOwner,
+        is_resource: bool,
+    ) -> Option<String> {
         match owner {
             TypeOwner::World(id) => {
                 let world = &resolve.worlds[*id];
 
-                let name = world
-                    .name
-                    .clone()
-                    .to_snake_case();
+                let name = world.name.clone().to_snake_case();
 
                 let package_name = resolve.packages
                     [world.package.expect("missing package for world")]
-                    .name
-                    .clone();
+                .name
+                .clone();
 
-                let mut package = package_name_to_segments(
-                    &self.opts,
-                    &package_name,
-                    &Import,
-                    &self.keywords,
-                );
+                let mut package =
+                    package_name_to_segments(&self.opts, &package_name, &Import, &self.keywords);
 
                 package.push(self.keywords.escape(name));
 
-                Some(package.join("."), )
+                Some(package.join("."))
             }
-            TypeOwner::Interface(id) => {
-                match owner_context.is_local_import(id, is_resource) {
-                    Some(Some(name)) => {
-                        Some(name)
+            TypeOwner::Interface(id) => match owner_context.is_local_import(id, is_resource) {
+                Some(Some(name)) => Some(name),
+                Some(None) => None,
+                None => {
+                    let iface = &resolve.interfaces[*id];
+                    let name = iface.name.clone().expect("Interface must have a name");
+                    let package_id = iface.package.expect("Interface must have a package");
+
+                    let package = &resolve.packages[package_id];
+                    let direction = self.interface_direction(id);
+
+                    let mut segments = package_name_to_segments(
+                        &self.opts,
+                        &package.name,
+                        &direction,
+                        &self.keywords,
+                    );
+                    segments.push(self.keywords.escape(name.to_snake_case()));
+
+                    if is_resource && direction == Import {
+                        segments.push(self.keywords.escape(name.to_pascal_case()));
                     }
-                    Some(None) => None,
-                    None => {
-                        let iface = &resolve.interfaces[*id];
-                        let name = iface.name.clone().expect("Interface must have a name");
-                        let package_id = iface.package.expect("Interface must have a package");
 
-                        let package = &resolve.packages[package_id];
-                        let direction = self.interface_direction(id);
-
-                        let mut segments = package_name_to_segments(
-                            &self.opts,
-                            &package.name,
-                            &direction,
-                            &self.keywords,
-                        );
-                        segments.push(self.keywords.escape(name.to_snake_case()));
-
-                        if is_resource && direction == Import {
-                            segments.push(self.keywords.escape(name.to_pascal_case()));
-                        }
-
-                        Some(segments.join("."))
-                    }
+                    Some(segments.join("."))
                 }
-            }
+            },
             TypeOwner::None => None,
         }
     }
 
-    fn render_typedef(&self, owner_context: &impl OwnerContext, resolve: &Resolve, name: &str, typ: &TypeDef) -> Option<String> {
+    fn render_typedef(
+        &self,
+        owner_context: &impl OwnerContext,
+        resolve: &Resolve,
+        name: &str,
+        typ: &TypeDef,
+    ) -> Option<String> {
         let encoded_name = self.encode_name(name.to_pascal_case());
         let scala_name = encoded_name.scala;
 
@@ -549,9 +587,7 @@ impl ScalaJsWorld {
                 uwriteln!(source, "  object {scala_name} {{");
                 for case in &variant.cases {
                     let case_name = &case.name;
-                    let scala_case_name = self
-                        .keywords
-                        .escape(case_name.to_lower_camel_case());
+                    let scala_case_name = self.keywords.escape(case_name.to_lower_camel_case());
                     match &case.ty {
                         Some(ty) => {
                             let typ = self.render_type_reference(owner_context, resolve, ty);
@@ -584,9 +620,7 @@ impl ScalaJsWorld {
                 uwriteln!(source, "  object {scala_name} {{");
                 for case in &enm.cases {
                     let case_name = &case.name;
-                    let scala_case_name = self
-                        .keywords
-                        .escape(case_name.to_lower_camel_case());
+                    let scala_case_name = self.keywords.escape(case_name.to_lower_camel_case());
                     write_doc_comment(&mut source, "    ", &case.docs);
                     uwriteln!(
                         source,
@@ -657,39 +691,15 @@ impl ScalaJsWorld {
             Export
         }
     }
-
-    fn generate_world_package_header(&self, resolve: &Resolve, world: &World) -> String {
-        let name = world
-            .name
-            .clone()
-            .to_snake_case();
-
-        let package_name = resolve.packages
-            [world.package.expect("missing package for world")]
-            .name
-            .clone();
-
-        let package = package_name_to_segments(
-            &self.opts,
-            &package_name,
-            &Import,
-            &self.keywords,
-        );
-
-        let mut source = String::new();
-        uwriteln!(source, "package {}",  package.join("."));
-
-        uwriteln!(source, "");
-        uwriteln!(source, "import scala.scalajs.js");
-        uwriteln!(source, "import scala.scalajs.js.annotation._");
-        uwriteln!(source, "import {}wit._", self.opts.base_package_prefix());
-        uwriteln!(source, "");
-        uwriteln!(source, "package object {} {{", name);
-        source
-    }
 }
 
-impl WorldGenerator for ScalaJsWorld {
+struct ScalaJs {
+    context: ScalaJsContext,
+    generated_files: Vec<ScalaJsFile>,
+    world_defs: HashMap<WorldId, ScalaJsWorld>,
+}
+
+impl WorldGenerator for ScalaJs {
     fn import_interface(
         &mut self,
         resolve: &Resolve,
@@ -700,7 +710,7 @@ impl WorldGenerator for ScalaJsWorld {
         let key = name;
         let wit_name = resolve.name_world_key(key);
 
-        self.imports.insert(iface);
+        self.context.imports.insert(iface);
         let mut scalajs_iface =
             ScalaJsInterface::new(wit_name.clone(), resolve, iface, Import, self);
         scalajs_iface.generate();
@@ -721,7 +731,7 @@ impl WorldGenerator for ScalaJsWorld {
         let key = name;
         let wit_name = resolve.name_world_key(key);
 
-        self.exports.insert(iface);
+        self.context.exports.insert(iface);
         let mut scalajs_iface =
             ScalaJsInterface::new(wit_name.clone(), resolve, iface, Export, self);
         scalajs_iface.generate();
@@ -742,24 +752,16 @@ impl WorldGenerator for ScalaJsWorld {
         let world = &resolve.worlds[world_id];
 
         if !self.world_defs.contains_key(&world_id) {
-            let source = self.generate_world_package_header(resolve, world);
-            self.world_defs.insert(world_id, source);
+            let world_def = ScalaJsWorld::new(&self.context, resolve, world_id, world);
+            self.world_defs.insert(world_id, world_def);
         }
 
-        let mut func_imports = String::new();
         for (func_name, func) in funcs {
-            uwriteln!(func_imports, "  @js.native");
-            uwriteln!(func_imports, "  @JSImport(\"{}\", JSImport.Default)", func_name);
-            let encoded_name = self.encode_name(func_name.to_lower_camel_case());
-            let args = self.render_args(self, resolve, func.params.iter());
-            let ret = self.render_return_type(self, resolve, &func.results);
-
-            write_doc_comment(&mut func_imports, "  ", &func.docs);
-            uwriteln!(func_imports, "  def {}({args}): {ret} = js.native", encoded_name.scala);
+            self.world_defs
+                .get_mut(&world_id)
+                .unwrap()
+                .add_imported_function(&self.context, resolve, func_name, func);
         }
-
-        let world_source = self.world_defs.get_mut(&world_id).unwrap();
-        uwriteln!(world_source, "{}", func_imports);
     }
 
     fn export_funcs(
@@ -784,20 +786,18 @@ impl WorldGenerator for ScalaJsWorld {
         let world = &resolve.worlds[world_id];
 
         if !self.world_defs.contains_key(&world_id) {
-            let source = self.generate_world_package_header(resolve, world);
-            self.world_defs.insert(world_id, source);
+            let world_def = ScalaJsWorld::new(&self.context, resolve, world_id, world);
+            self.world_defs.insert(world_id, world_def);
         }
 
-        let mut type_snippets = String::new();
         for (type_name, type_id) in types {
-            if let Some(type_snippet) = self.render_typedef(self, resolve, type_name, &resolve.types[*type_id]) {
-                uwriteln!(type_snippets, "{}", type_snippet);
-                uwriteln!(type_snippets, "");
-            }
+            self.world_defs.get_mut(&world_id).unwrap().add_type(
+                &self.context,
+                resolve,
+                type_name,
+                type_id,
+            );
         }
-
-        let world_source = self.world_defs.get_mut(&world_id).unwrap();
-        uwriteln!(world_source, "{}", type_snippets);
     }
 
     fn finish(
@@ -810,30 +810,32 @@ impl WorldGenerator for ScalaJsWorld {
             files.push(&file.path(), file.source.as_bytes());
         }
 
-        for (world_id, source) in &mut self.world_defs {
-            uwriteln!(source, "}}");
-
-            let world = &resolve.worlds[*world_id];
-            let package_name = resolve.packages
-                [world.package.expect("missing package for world")]
-                .name
-                .clone();
-
-            let package = package_name_to_segments(
-                &self.opts,
-                &package_name,
-                &Import,
-                &self.keywords,
-            );
-
-            let path = format!("{}/{}.scala", package.join("/"), world.name.to_snake_case());
-            files.push(&path, source.as_bytes());
+        for (_, world_def) in self.world_defs.drain() {
+            let world_file = world_def.finalize(&self.context, resolve);
+            files.push(&world_file.path(), world_file.source.as_bytes());
         }
 
-        let rt = render_runtime_module(&self.opts);
+        let rt = render_runtime_module(&self.context.opts);
         files.push(&rt.path(), rt.source.as_bytes());
 
         Ok(())
+    }
+}
+
+impl ScalaJs {
+    fn new(opts: Opts) -> Self {
+        let keywords = ScalaKeywords::new(&opts.scala_dialect);
+        Self {
+            context: ScalaJsContext {
+                opts,
+                keywords,
+                overrides: HashMap::new(),
+                imports: HashSet::new(),
+                exports: HashSet::new(),
+            },
+            generated_files: Vec::new(),
+            world_defs: HashMap::new(),
+        }
     }
 }
 
@@ -849,6 +851,130 @@ impl ScalaJsFile {
     }
 }
 
+struct ScalaJsWorld {
+    world_id: WorldId,
+    header: String,
+    types: String,
+    global_imports: String,
+    imported_resources: HashMap<TypeId, ScalaJsImportedResource>,
+}
+
+impl ScalaJsWorld {
+    fn new(context: &ScalaJsContext, resolve: &Resolve, world_id: WorldId, world: &World) -> Self {
+        let name = world.name.clone().to_snake_case();
+
+        let package_name = resolve.packages[world.package.expect("missing package for world")]
+            .name
+            .clone();
+
+        let package =
+            package_name_to_segments(&context.opts, &package_name, &Import, &context.keywords);
+
+        let mut header = String::new();
+        uwriteln!(header, "package {}", package.join("."));
+
+        uwriteln!(header, "");
+        uwriteln!(header, "import scala.scalajs.js");
+        uwriteln!(header, "import scala.scalajs.js.annotation._");
+        uwriteln!(header, "import {}wit._", context.opts.base_package_prefix());
+        uwriteln!(header, "");
+        uwriteln!(header, "package object {} {{", name);
+
+        Self {
+            world_id,
+            header,
+            types: String::new(),
+            global_imports: String::new(),
+            imported_resources: HashMap::new(),
+        }
+    }
+
+    fn add_imported_function(
+        &mut self,
+        context: &ScalaJsContext,
+        resolve: &Resolve,
+        func_name: &str,
+        func: &Function,
+    ) {
+        match func.kind {
+            FunctionKind::Freestanding => {
+                uwriteln!(self.global_imports, "  @js.native");
+                uwriteln!(
+                    self.global_imports,
+                    "  @JSImport(\"{}\", JSImport.Default)",
+                    func_name
+                );
+                let encoded_name = context.encode_name(func_name.to_lower_camel_case());
+                let args = context.render_args(context, resolve, func.params.iter());
+                let ret = context.render_return_type(context, resolve, &func.results);
+
+                write_doc_comment(&mut self.global_imports, "  ", &func.docs);
+                uwriteln!(
+                    self.global_imports,
+                    "  def {}({args}): {ret} = js.native",
+                    encoded_name.scala
+                );
+            }
+            FunctionKind::Method(resource_type)
+            | FunctionKind::Static(resource_type)
+            | FunctionKind::Constructor(resource_type) => {
+                let resource = self
+                    .imported_resources
+                    .entry(resource_type)
+                    .or_insert_with(|| {
+                        ScalaJsImportedResource::new(context, resolve, resource_type, "  ")
+                    });
+                resource.add_function(context, resolve, context, func_name, func);
+            }
+        }
+    }
+
+    fn add_type(&mut self, context: &ScalaJsContext, resolve: &Resolve, name: &str, id: &TypeId) {
+        let typ = &resolve.types[*id];
+        if let Some(typ) = context.render_typedef(context, resolve, name, typ) {
+            uwriteln!(self.types, "{}", typ);
+            uwriteln!(self.types, "");
+        }
+
+        if let TypeDefKind::Resource = &typ.kind {
+            self.imported_resources
+                .entry(*id)
+                .or_insert_with(|| ScalaJsImportedResource::new(context, resolve, *id, "  "));
+        }
+    }
+
+    fn finalize(mut self, context: &ScalaJsContext, resolve: &Resolve) -> ScalaJsFile {
+        let mut source = String::new();
+        uwriteln!(source, "{}", self.header);
+        uwriteln!(source, "{}", self.types);
+        uwriteln!(source, "{}", self.global_imports);
+
+        for (_, mut imported_resource) in self.imported_resources.drain() {
+            imported_resource.annotate(&format!(
+                "@JSImport(\"{}\", JSImport.Default)",
+                imported_resource.name.js
+            ));
+            uwriteln!(source, "{}", imported_resource.finalize());
+        }
+
+        uwriteln!(source, "}}");
+
+        let world = &resolve.worlds[self.world_id];
+        let package_name = resolve.packages[world.package.expect("missing package for world")]
+            .name
+            .clone();
+
+        let package =
+            package_name_to_segments(&context.opts, &package_name, &Import, &context.keywords);
+
+        ScalaJsFile {
+            package,
+            name: world.name.to_snake_case(),
+            source,
+        }
+    }
+}
+
 struct ScalaJsInterface<'a> {
     wit_name: String,
     name: String,
@@ -858,7 +984,7 @@ struct ScalaJsInterface<'a> {
     interface: &'a Interface,
     interface_id: InterfaceId,
     direction: Direction,
-    generator: &'a mut ScalaJsWorld,
+    generator: &'a mut ScalaJs,
 }
 
 impl<'a> ScalaJsInterface<'a> {
@@ -868,7 +994,7 @@ impl<'a> ScalaJsInterface<'a> {
         resolve: &'a Resolve,
         interface_id: InterfaceId,
         direction: Direction,
-        generator: &'a mut ScalaJsWorld,
+        generator: &'a mut ScalaJs,
     ) -> Self {
         let interface = &resolve.interfaces[interface_id];
         let name = interface
@@ -883,10 +1009,10 @@ impl<'a> ScalaJsInterface<'a> {
         .clone();
 
         let package = package_name_to_segments(
-            &generator.opts,
+            &generator.context.opts,
             &package_name,
             &direction,
-            &generator.keywords,
+            &generator.context.keywords,
         );
 
         Self {
@@ -987,14 +1113,17 @@ impl<'a> ScalaJsInterface<'a> {
         uwriteln!(
             source,
             "import {}wit._",
-            self.generator.opts.base_package_prefix()
+            self.generator.context.opts.base_package_prefix()
         );
         uwriteln!(source, "");
 
         uwriteln!(
             source,
             "package object {} {{",
-            self.generator.keywords.escape(self.name.to_snake_case())
+            self.generator
+                .context
+                .keywords
+                .escape(self.name.to_snake_case())
         );
     }
 
@@ -1004,10 +1133,16 @@ impl<'a> ScalaJsInterface<'a> {
         for (type_name, type_id) in &self.interface.types {
             let type_def = &self.resolve.types[*type_id];
 
-            let type_name = self.generator.overrides.get(type_id).unwrap_or(type_name);
+            let type_name = self
+                .generator
+                .context
+                .overrides
+                .get(type_id)
+                .unwrap_or(type_name);
             let type_name = if type_name.eq_ignore_ascii_case(&self.name) {
                 let overridden_type_name = format!("{}Type", type_name);
                 self.generator
+                    .context
                     .overrides
                     .insert(*type_id, overridden_type_name.clone());
                 overridden_type_name
@@ -1015,7 +1150,11 @@ impl<'a> ScalaJsInterface<'a> {
                 type_name.clone()
             };
 
-            if let Some(typ) = self.generator.render_typedef(self, &self.resolve, &type_name, type_def) {
+            if let Some(typ) =
+                self.generator
+                    .context
+                    .render_typedef(self, &self.resolve, &type_name, type_def)
+            {
                 types.push(typ);
             }
         }
@@ -1028,9 +1167,14 @@ impl<'a> ScalaJsInterface<'a> {
         for (_, type_id) in &self.interface.types {
             let type_def = &self.resolve.types[*type_id];
             if let TypeDefKind::Resource = &type_def.kind {
-                imported_resources
-                    .entry(*type_id)
-                    .or_insert_with(|| ScalaJsImportedResource::new(self, *type_id));
+                imported_resources.entry(*type_id).or_insert_with(|| {
+                    ScalaJsImportedResource::new(
+                        &self.generator.context,
+                        self.resolve,
+                        *type_id,
+                        "    ",
+                    )
+                });
             }
         }
 
@@ -1039,10 +1183,21 @@ impl<'a> ScalaJsInterface<'a> {
                 FunctionKind::Method(resource_type)
                 | FunctionKind::Static(resource_type)
                 | FunctionKind::Constructor(resource_type) => {
-                    let resource = imported_resources
-                        .entry(resource_type)
-                        .or_insert_with(|| ScalaJsImportedResource::new(self, resource_type));
-                    resource.add_function(func_name, func);
+                    let resource = imported_resources.entry(resource_type).or_insert_with(|| {
+                        ScalaJsImportedResource::new(
+                            &self.generator.context,
+                            self.resolve,
+                            resource_type,
+                            "    ",
+                        )
+                    });
+                    resource.add_function(
+                        &self.generator.context,
+                        self.resolve,
+                        self,
+                        func_name,
+                        func,
+                    );
                 }
                 FunctionKind::Freestanding => {}
             }
@@ -1084,12 +1239,22 @@ impl<'a> ScalaJsInterface<'a> {
         let mut functions = Vec::new();
 
         for (func_name, func) in &self.interface.functions {
-            let func_name = self.generator.encode_name(func_name.to_lower_camel_case());
+            let func_name = self
+                .generator
+                .context
+                .encode_name(func_name.to_lower_camel_case());
 
             match func.kind {
                 FunctionKind::Freestanding => {
-                    let args = self.generator.render_args(self, self.resolve, func.params.iter());
-                    let ret = self.generator.render_return_type(self, self.resolve, &func.results);
+                    let args =
+                        self.generator
+                            .context
+                            .render_args(self, self.resolve, func.params.iter());
+                    let ret = self.generator.context.render_return_type(
+                        self,
+                        self.resolve,
+                        &func.results,
+                    );
 
                     let mut function = String::new();
                     write_doc_comment(&mut function, "    ", &func.docs);
@@ -1125,65 +1290,87 @@ impl<'a> ScalaJsInterface<'a> {
     }
 }
 
-struct ScalaJsImportedResource<'a> {
-    owner: &'a ScalaJsInterface<'a>,
+struct ScalaJsImportedResource {
     _resource_id: TypeId,
     resource_name: String,
     class_header: String,
     class_source: String,
     object_source: String,
     constructor_args: String,
+    name: EncodedName,
+    indent: String,
+    annotations: Vec<String>,
 }
 
-impl<'a> ScalaJsImportedResource<'a> {
-    pub fn new(owner: &'a ScalaJsInterface<'a>, resource_id: TypeId) -> Self {
-        let resource = &owner.resolve.types[resource_id];
+impl ScalaJsImportedResource {
+    pub fn new(
+        context: &ScalaJsContext,
+        resolve: &Resolve,
+        resource_id: TypeId,
+        indent: &str,
+    ) -> Self {
+        let resource = &resolve.types[resource_id];
         let resource_name = resource
             .name
             .clone()
             .expect("Anonymous resources not supported");
-        let encoded_resource_name = owner.generator.encode_name(resource_name.to_pascal_case());
+        let encoded_resource_name = context.encode_name(resource_name.to_pascal_case());
 
         let mut class_header = String::new();
         write_doc_comment(&mut class_header, "    ", &resource.docs);
 
-        uwriteln!(class_header, "    @js.native");
+        uwriteln!(class_header, "{indent}@js.native");
         encoded_resource_name.write_rename_attribute(&mut class_header, "    ");
-        uwrite!(class_header, "    class {}(", encoded_resource_name.scala);
+        uwrite!(
+            class_header,
+            "{indent}class {}(",
+            encoded_resource_name.scala
+        );
 
         let mut class_source = String::new();
         uwriteln!(class_source, ") extends js.Object {{");
 
         let mut object_source = String::new();
-        uwriteln!(object_source, "    @js.native");
+        uwriteln!(object_source, "{indent}@js.native");
         uwriteln!(
             object_source,
-            "    object {} extends js.Object {{",
+            "{indent}object {} extends js.Object {{",
             encoded_resource_name.scala
         );
 
         Self {
-            owner,
             _resource_id: resource_id,
             resource_name,
             class_header,
             class_source,
             object_source,
             constructor_args: String::new(),
+            name: encoded_resource_name,
+            indent: indent.to_string(),
+            annotations: Vec::new(),
         }
     }
 
-    pub fn add_function(&mut self, func_name: &str, func: &Function) {
+    pub fn annotate(&mut self, annotation: &str) {
+        self.annotations.push(annotation.to_string());
+    }
+
+    pub fn add_function(
+        &mut self,
+        context: &ScalaJsContext,
+        resolve: &Resolve,
+        owner_context: &impl OwnerContext,
+        func_name: &str,
+        func: &Function,
+    ) {
         match &func.kind {
             FunctionKind::Freestanding => unreachable!(),
             FunctionKind::Method(_) => {
-                let args = self.owner.generator.render_args(self.owner, self.owner.resolve, func.params.iter().skip(1));
-                let ret = self.owner.generator.render_return_type(self.owner, self.owner.resolve, &func.results);
-                let encoded_func_name = self.get_func_name("[method]", func_name);
+                let args = context.render_args(owner_context, resolve, func.params.iter().skip(1));
+                let ret = context.render_return_type(owner_context, resolve, &func.results);
+                let encoded_func_name = self.get_func_name(context, "[method]", func_name);
 
-                let overrd = if self
-                    .owner
-                    .generator
+                let overrd = if context
                     .keywords
                     .base_methods
                     .contains(&encoded_func_name.scala)
@@ -1193,52 +1380,72 @@ impl<'a> ScalaJsImportedResource<'a> {
                     ""
                 };
 
-                write_doc_comment(&mut self.class_source, "      ", &func.docs);
+                write_doc_comment(
+                    &mut self.class_source,
+                    &format!("{}  ", self.indent),
+                    &func.docs,
+                );
                 encoded_func_name.write_rename_attribute(&mut self.class_source, "      ");
                 uwriteln!(
                     self.class_source,
-                    "      {overrd}def {}({args}): {ret} = js.native",
+                    "{}  {overrd}def {}({args}): {ret} = js.native",
+                    self.indent,
                     encoded_func_name.scala
                 );
             }
             FunctionKind::Static(_) => {
-                let args = self.owner.generator.render_args(self.owner, self.owner.resolve, func.params.iter());
-                let ret = self.owner.generator.render_return_type(self.owner, self.owner.resolve, &func.results);
+                let args = context.render_args(owner_context, resolve, func.params.iter());
+                let ret = context.render_return_type(owner_context, resolve, &func.results);
 
-                let encoded_func_name = self.get_func_name("[static]", func_name);
+                let encoded_func_name = self.get_func_name(context, "[static]", func_name);
                 write_doc_comment(&mut self.object_source, "      ", &func.docs);
-                encoded_func_name.write_rename_attribute(&mut self.object_source, "      ");
+                encoded_func_name
+                    .write_rename_attribute(&mut self.object_source, &format!("{}  ", self.indent));
                 uwriteln!(
                     self.object_source,
-                    "      def {}({args}): {ret} = js.native",
+                    "{}  def {}({args}): {ret} = js.native",
+                    self.indent,
                     encoded_func_name.scala
                 );
             }
             FunctionKind::Constructor(_) => {
-                let args = self.owner.generator.render_args(self.owner, self.owner.resolve, func.params.iter());
+                let args = context.render_args(owner_context, resolve, func.params.iter());
                 self.constructor_args = args;
             }
         }
     }
 
     pub fn finalize(self) -> String {
-        let mut class_source = self.class_header;
+        let mut class_source = String::new();
+        for annotation in &self.annotations {
+            uwriteln!(class_source, "{}{}", self.indent, annotation);
+        }
+        uwriteln!(class_source, "{}", self.class_header);
         uwrite!(class_source, "{}", self.constructor_args);
         uwriteln!(class_source, "{}", self.class_source);
-        uwriteln!(class_source, "    }}");
-        let mut object_source = self.object_source;
-        uwriteln!(object_source, "    }}");
+        uwriteln!(class_source, "{}}}", self.indent);
+        let mut object_source = String::new();
+        for annotation in self.annotations {
+            uwriteln!(object_source, "{}{}", self.indent, annotation);
+        }
+        uwriteln!(object_source, "{}", self.object_source);
+        uwriteln!(object_source, "{}}}", self.indent);
         format!("{}\n{}\n", class_source, object_source)
     }
 
-    fn get_func_name(&self, prefix: &str, func_name: &str) -> EncodedName {
+    fn get_func_name(
+        &self,
+        context: &ScalaJsContext,
+        prefix: &str,
+        func_name: &str,
+    ) -> EncodedName {
         let name = func_name
             .strip_prefix(prefix)
             .unwrap()
             .strip_prefix(&self.resource_name)
             .unwrap()
             .to_lower_camel_case();
-        self.owner.generator.encode_name(name)
+        context.encode_name(name)
     }
 }
 
@@ -1259,7 +1466,10 @@ impl<'a> ScalaJsExportedResource<'a> {
             .name
             .clone()
             .expect("Anonymous resources not supported");
-        let encoded_resource_name = owner.generator.encode_name(resource_name.to_pascal_case());
+        let encoded_resource_name = owner
+            .generator
+            .context
+            .encode_name(resource_name.to_pascal_case());
 
         let mut class_header = String::new();
         write_doc_comment(&mut class_header, "    ", &resource.docs);
@@ -1289,13 +1499,22 @@ impl<'a> ScalaJsExportedResource<'a> {
         match &func.kind {
             FunctionKind::Freestanding => unreachable!(),
             FunctionKind::Method(_) => {
-                let args = self.owner.generator.render_args(self.owner, self.owner.resolve, func.params.iter().skip(1));
-                let ret = self.owner.generator.render_return_type(self.owner, self.owner.resolve, &func.results);
+                let args = self.owner.generator.context.render_args(
+                    self.owner,
+                    self.owner.resolve,
+                    func.params.iter().skip(1),
+                );
+                let ret = self.owner.generator.context.render_return_type(
+                    self.owner,
+                    self.owner.resolve,
+                    &func.results,
+                );
                 let encoded_func_name = self.get_func_name("[method]", func_name);
 
                 let overrd = if self
                     .owner
                     .generator
+                    .context
                     .keywords
                     .base_methods
                     .contains(&encoded_func_name.scala)
@@ -1314,8 +1533,16 @@ impl<'a> ScalaJsExportedResource<'a> {
                 );
             }
             FunctionKind::Static(_) => {
-                let args = self.owner.generator.render_args(self.owner, self.owner.resolve, func.params.iter());
-                let ret = self.owner.generator.render_return_type(self.owner, self.owner.resolve, &func.results);
+                let args = self.owner.generator.context.render_args(
+                    self.owner,
+                    self.owner.resolve,
+                    func.params.iter(),
+                );
+                let ret = self.owner.generator.context.render_return_type(
+                    self.owner,
+                    self.owner.resolve,
+                    &func.results,
+                );
 
                 let encoded_func_name = self.get_func_name("[static]", func_name);
                 write_doc_comment(&mut self.static_methods, "      ", &func.docs);
@@ -1328,7 +1555,11 @@ impl<'a> ScalaJsExportedResource<'a> {
                 );
             }
             FunctionKind::Constructor(_) => {
-                let args = self.owner.generator.render_args(self.owner, self.owner.resolve, func.params.iter());
+                let args = self.owner.generator.context.render_args(
+                    self.owner,
+                    self.owner.resolve,
+                    func.params.iter(),
+                );
                 self.constructor_args = args;
             }
         }
@@ -1344,6 +1575,7 @@ impl<'a> ScalaJsExportedResource<'a> {
         let scala_resource_name = self
             .owner
             .generator
+            .context
             .keywords
             .escape(self.resource_name.to_pascal_case());
         uwriteln!(class_source, "  trait {}Static {{", scala_resource_name);
@@ -1359,7 +1591,7 @@ impl<'a> ScalaJsExportedResource<'a> {
             .strip_prefix(&self.resource_name)
             .unwrap()
             .to_lower_camel_case();
-        self.owner.generator.encode_name(name)
+        self.owner.generator.context.encode_name(name)
     }
 }
 
