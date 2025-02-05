@@ -893,12 +893,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             {{
                                 var {buffer_size} = {size} * (nuint){list}.Count;
                                 {address} = NativeMemory.AlignedAlloc({buffer_size}, {align});
+                                cleanups.Add(() => NativeMemory.AlignedFree({address}));
                             }}
-                            cleanups.Add(()=> NativeMemory.AlignedFree({address}));
                             "
                         );
                     }
                     Some(_) => {
+                        //cabi_realloc_post_return will be called to clean up this allocation
                         uwrite!(self.src,
                             "
                             var {buffer_size} = {size} * (nuint){list}.Count;
@@ -1053,7 +1054,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
             }
 
-            Instruction::Return { amt: _, func } => {
+            Instruction::Return { amt, .. } => {
                 if self.fixed_statments.len() > 0 {
                     let fixed: String = self.fixed_statments.iter().map(|f| format!("{} = {}", f.ptr_name, f.item_to_pin)).collect::<Vec<_>>().join(", ");
                     self.src.insert_str(0, &format!("fixed (void* {fixed})

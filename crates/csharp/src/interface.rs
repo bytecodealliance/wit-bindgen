@@ -502,6 +502,7 @@ impl InterfaceGenerator<'_> {
                 &func.kind,
                 (0..sig.results.len()).map(|i| format!("p{i}")).collect(),
                 Vec::new(),
+                ParameterType::ABI,
             );
 
             abi::post_return(bindgen.interface_gen.resolve, func, &mut bindgen, false);
