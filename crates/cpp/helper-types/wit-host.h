@@ -159,7 +159,7 @@ public:
         exec_env(b.exec_env)
 #endif
   {
-    b.data_ = nullptr;
+    b.data_ = INVALID_GUEST_ADDRESS;
   }
   guest_owned(T &&t, guest_address a,
 #ifdef WIT_HOST_WAMR
