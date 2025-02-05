@@ -220,7 +220,7 @@ func (i ListImpl) ListParam5(a []ExportsTestListsTestTuple3U8U32U8T) {
 	}
 }
 
-fun (i ListImpl) ListParamLarge(a []string) {
+func (i ListImpl) ListParamLarge(a []string) {
 	if len(a) != 1000 {
 		panic("ListParamLarge")
 	}

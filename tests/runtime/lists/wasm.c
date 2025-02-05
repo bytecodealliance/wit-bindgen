@@ -315,7 +315,7 @@ void exports_test_lists_test_list_param4(lists_list_list_string_t *a) {
   lists_list_list_string_free(a);
 }
 
-void exports_test_lists_test_list_param_large(lists_list_list_string_t *a) {
+void exports_test_lists_test_list_param_large(lists_list_string_t *a) {
   assert(a->len == 1000);
   lists_list_string_free(a);
 }
