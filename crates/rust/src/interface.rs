@@ -795,7 +795,7 @@ pub mod vtable{ordinal} {{
                         wit_import,
                         stream,
                         address.add(total * {size}),
-                        u32::try_from(values.len()).unwrap()
+                        u32::try_from(values.len() - (total * {size})).unwrap()
                     ).await
                 }};
 
