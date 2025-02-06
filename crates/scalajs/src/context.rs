@@ -1,12 +1,13 @@
 use crate::interface::ScalaJsInterface;
 use crate::jco::{maybe_null, to_js_identifier};
+use crate::skeleton::ScalaJsInterfaceSkeleton;
 use crate::{Opts, ScalaDialect, ScalaJs};
 use heck::{ToLowerCamelCase, ToPascalCase, ToSnakeCase};
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 use wit_bindgen_core::wit_parser::{
     Docs, Handle, InterfaceId, PackageName, Resolve, Results, Tuple, Type, TypeDef, TypeDefKind,
-    TypeId, TypeOwner,
+    TypeId, TypeOwner, WorldItem,
 };
 use wit_bindgen_core::Direction::{Export, Import};
 use wit_bindgen_core::{uwrite, uwriteln, Direction};
@@ -120,30 +121,107 @@ impl ScalaKeywords {
     }
 }
 
-// TODO: refactor to context, include resolve
 pub trait OwnerContext {
-    fn is_local_import(&self, id: &InterfaceId, is_resource: bool) -> Option<Option<String>>;
+    fn is_local_import(
+        &self,
+        id: &InterfaceId,
+        is_resource: bool,
+        direction: Direction,
+    ) -> Option<Option<String>>;
 }
 
 impl OwnerContext for ScalaJs {
-    fn is_local_import(&self, _id: &InterfaceId, _is_resource: bool) -> Option<Option<String>> {
+    fn is_local_import(
+        &self,
+        _id: &InterfaceId,
+        _is_resource: bool,
+        _direction: Direction,
+    ) -> Option<Option<String>> {
         None
     }
 }
 
 impl OwnerContext for ScalaJsContext {
-    fn is_local_import(&self, _id: &InterfaceId, _is_resource: bool) -> Option<Option<String>> {
+    fn is_local_import(
+        &self,
+        _id: &InterfaceId,
+        _is_resource: bool,
+        _direction: Direction,
+    ) -> Option<Option<String>> {
         None
     }
 }
 
 impl<'a> OwnerContext for ScalaJsInterface<'a> {
-    fn is_local_import(&self, id: &InterfaceId, is_resource: bool) -> Option<Option<String>> {
+    fn is_local_import(
+        &self,
+        id: &InterfaceId,
+        is_resource: bool,
+        direction: Direction,
+    ) -> Option<Option<String>> {
         if id == &self.interface_id {
             if is_resource && self.direction == Import {
-                Some(Some(self.name.clone()))
+                Some(Some(self.name.clone())) // Using a local type within 'name'
             } else {
-                Some(None)
+                if self.direction == Export && direction == Import {
+                    None // Using the fully qualified import package
+                } else {
+                    Some(None) // Using the current export package
+                }
+            }
+        } else {
+            None // Using the fully qualified package
+        }
+    }
+}
+
+impl<'a> OwnerContext for ScalaJsInterfaceSkeleton<'a> {
+    fn is_local_import(
+        &self,
+        id: &InterfaceId,
+        is_resource: bool,
+        direction: Direction,
+    ) -> Option<Option<String>> {
+        if is_resource && &self.interface_id == id {
+            let iface = &self.resolve.interfaces[*id];
+            if iface.name.is_some() {
+                None // use the fully qualified name of the interface
+            } else {
+                // Otherwise we must refer to the supertype directly from the world export here
+                for (_world_id, world) in self.resolve.worlds.iter() {
+                    let world_name =
+                        world
+                            .exports
+                            .iter()
+                            .find_map(|(world_key, item)| match item {
+                                WorldItem::Interface { id: iface_id, .. } if iface_id == id => {
+                                    Some(self.resolve.name_world_key(world_key))
+                                }
+                                _ => None,
+                            });
+
+                    if let Some(world_name) = world_name {
+                        let package_id = iface.package.expect("Interface must have a package");
+                        let package = &self.resolve.packages[package_id];
+
+                        let mut segments = package_name_to_segments(
+                            &self.generator.context.opts,
+                            &package.name,
+                            &direction,
+                            &self.generator.context.keywords,
+                            false,
+                        );
+                        segments.push(
+                            self.generator
+                                .context
+                                .keywords
+                                .escape(world_name.to_snake_case()),
+                        );
+                        return Some(Some(segments.join(".")));
+                    }
+                }
+
+                panic!("Anonymous interface was not found in any worlds");
             }
         } else {
             None
@@ -355,39 +433,48 @@ impl ScalaJsContext {
                 .name
                 .clone();
 
-                let mut package =
-                    package_name_to_segments(&self.opts, &package_name, &Import, &self.keywords);
+                let mut package = package_name_to_segments(
+                    &self.opts,
+                    &package_name,
+                    &Import,
+                    &self.keywords,
+                    false,
+                );
 
                 package.push(self.keywords.escape(name));
 
                 Some(package.join("."))
             }
-            TypeOwner::Interface(id) => match owner_context.is_local_import(id, is_resource) {
-                Some(Some(name)) => Some(name),
-                Some(None) => None,
-                None => {
-                    let iface = &resolve.interfaces[*id];
-                    let name = iface.name.clone().expect("Interface must have a name");
-                    let package_id = iface.package.expect("Interface must have a package");
+            TypeOwner::Interface(id) => {
+                let direction = self.interface_direction(id);
 
-                    let package = &resolve.packages[package_id];
-                    let direction = self.interface_direction(id);
+                match owner_context.is_local_import(id, is_resource, direction) {
+                    Some(Some(name)) => Some(name),
+                    Some(None) => None,
+                    None => {
+                        let iface = &resolve.interfaces[*id];
+                        let name = iface.name.clone().expect("Interface must have a name");
+                        let package_id = iface.package.expect("Interface must have a package");
 
-                    let mut segments = package_name_to_segments(
-                        &self.opts,
-                        &package.name,
-                        &direction,
-                        &self.keywords,
-                    );
-                    segments.push(self.keywords.escape(name.to_snake_case()));
+                        let package = &resolve.packages[package_id];
 
-                    if is_resource && direction == Import {
-                        segments.push(self.keywords.escape(name.to_pascal_case()));
+                        let mut segments = package_name_to_segments(
+                            &self.opts,
+                            &package.name,
+                            &direction,
+                            &self.keywords,
+                            false,
+                        );
+                        segments.push(self.keywords.escape(name.to_snake_case()));
+
+                        if is_resource && direction == Import {
+                            segments.push(self.keywords.escape(name.to_pascal_case()));
+                        }
+
+                        Some(segments.join("."))
                     }
-
-                    Some(segments.join("."))
                 }
-            },
+            }
             TypeOwner::None => None,
         }
     }
@@ -606,7 +693,7 @@ impl ScalaJsContext {
         }
     }
 
-    fn interface_direction(&self, id: &InterfaceId) -> Direction {
+    pub fn interface_direction(&self, id: &InterfaceId) -> Direction {
         if self.imports.contains(id) {
             Import
         } else if self.exports.contains(id) {
@@ -639,8 +726,13 @@ pub fn package_name_to_segments(
     package_name: &PackageName,
     direction: &Direction,
     keywords: &ScalaKeywords,
+    is_skeleton: bool,
 ) -> Vec<String> {
-    let mut segments = opts.base_package_segments();
+    let mut segments = if is_skeleton {
+        opts.base_skeleton_package_segments()
+    } else {
+        opts.base_package_segments()
+    };
 
     if direction == &Export {
         segments.push("export".to_string());
@@ -677,5 +769,13 @@ impl EncodedName {
         if self.rename_attribute.len() > 0 {
             uwriteln!(target, "{}{}", ident, self.rename_attribute);
         }
+    }
+
+    pub fn write_export_attribute(&self, target: &mut impl Write, ident: &str) {
+        uwriteln!(target, "{}@JSExport(\"{}\")", ident, self.js);
+    }
+
+    pub fn write_static_export_attribute(&self, target: &mut impl Write, ident: &str) {
+        uwriteln!(target, "{}@JSExportStatic(\"{}\")", ident, self.js);
     }
 }

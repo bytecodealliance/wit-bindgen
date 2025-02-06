@@ -168,6 +168,7 @@ pub struct ScalaJsExportedResource<'a> {
     owner: &'a ScalaJsInterface<'a>,
     _resource_id: TypeId,
     resource_name: String,
+    encoded_resource_name: EncodedName,
     class_header: String,
     class_source: String,
     static_methods: String,
@@ -203,6 +204,7 @@ impl<'a> ScalaJsExportedResource<'a> {
             owner,
             _resource_id: resource_id,
             resource_name,
+            encoded_resource_name,
             class_header,
             class_source,
             static_methods: String::new(),
@@ -287,13 +289,7 @@ impl<'a> ScalaJsExportedResource<'a> {
         uwriteln!(class_source, "  }}");
         uwriteln!(class_source, "");
 
-        let scala_resource_name = self
-            .owner
-            .generator
-            .context
-            .keywords
-            .escape(self.resource_name.to_pascal_case());
-        uwriteln!(class_source, "  trait {}Static {{", scala_resource_name);
+        uwriteln!(class_source, "  trait {}Static {{", self.encoded_resource_name.scala);
         uwriteln!(class_source, "{}", self.static_methods);
         uwriteln!(class_source, "  }}");
         class_source

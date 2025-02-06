@@ -3,11 +3,13 @@ pub mod interface;
 pub mod jco;
 pub mod resource;
 pub mod rt;
+mod skeleton;
 pub mod world;
 
 use crate::context::{ScalaJsContext, ScalaJsFile, ScalaKeywords};
 use crate::interface::ScalaJsInterface;
 use crate::rt::render_runtime_module;
+use crate::skeleton::{ScalaJsInterfaceSkeleton, ScalaJsWorldSkeleton};
 use crate::world::ScalaJsWorld;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
@@ -114,6 +116,14 @@ impl Opts {
             .unwrap_or_default()
     }
 
+    pub fn base_skeleton_package_segments(&self) -> Vec<String> {
+        self.skeleton_base_package
+            .clone()
+            .or(self.base_package.clone())
+            .map(|pkg| pkg.split('.').map(|s| s.to_string()).collect::<Vec<_>>())
+            .unwrap_or_default()
+    }
+
     pub fn base_package_prefix(&self) -> String {
         match &self.base_package {
             Some(pkg) => format!("{pkg}."),
@@ -125,7 +135,9 @@ impl Opts {
 pub struct ScalaJs {
     context: ScalaJsContext,
     generated_files: Vec<ScalaJsFile>,
+    generated_skeleton_files: Vec<ScalaJsFile>,
     world_defs: HashMap<WorldId, ScalaJsWorld>,
+    world_skeletons: HashMap<WorldId, ScalaJsWorldSkeleton>,
 }
 
 impl WorldGenerator for ScalaJs {
@@ -164,9 +176,16 @@ impl WorldGenerator for ScalaJs {
         let mut scalajs_iface =
             ScalaJsInterface::new(wit_name.clone(), resolve, iface, Export, self);
         scalajs_iface.generate();
+        let binding_file = scalajs_iface.finalize();
+        self.generated_files.push(binding_file);
 
-        let file = scalajs_iface.finalize();
-        self.generated_files.push(file);
+        if self.context.opts.generate_skeleton {
+            let mut interface_skeleton =
+                ScalaJsInterfaceSkeleton::new(wit_name.clone(), resolve, iface, self);
+            interface_skeleton.generate();
+            let skeleton_file = interface_skeleton.finalize();
+            self.generated_skeleton_files.push(skeleton_file);
+        }
 
         Ok(())
     }
@@ -214,6 +233,21 @@ impl WorldGenerator for ScalaJs {
                 .add_exported_function(&self.context, resolve, func_name, func);
         }
 
+        if self.context.opts.generate_skeleton {
+            if !self.world_skeletons.contains_key(&world_id) {
+                let world_skeleton =
+                    ScalaJsWorldSkeleton::new(&self.context, resolve, world_id, world);
+                self.world_skeletons.insert(world_id, world_skeleton);
+            }
+
+            for (func_name, func) in funcs {
+                self.world_skeletons
+                    .get_mut(&world_id)
+                    .unwrap()
+                    .add_exported_function(&self.context, resolve, func_name, func);
+            }
+        }
+
         Ok(())
     }
 
@@ -247,11 +281,21 @@ impl WorldGenerator for ScalaJs {
         _world: WorldId,
         files: &mut Files,
     ) -> anyhow::Result<()> {
+        let skeleton_root = &self.context.opts.skeleton_root.clone().or(self
+            .context
+            .opts
+            .binding_root
+            .clone());
+
         for file in &self.generated_files {
             files.push(
                 &file.path(&self.context.opts.binding_root),
                 file.source.as_bytes(),
             );
+        }
+
+        for file in &self.generated_skeleton_files {
+            files.push(&file.path(&skeleton_root), file.source.as_bytes());
         }
 
         for (_, world_def) in self.world_defs.drain() {
@@ -262,6 +306,14 @@ impl WorldGenerator for ScalaJs {
                     world_file.source.as_bytes(),
                 );
             }
+        }
+
+        for (_, world_skeleton) in self.world_skeletons.drain() {
+            let world_file = world_skeleton.finalize(resolve);
+            files.push(
+                &world_file.path(&skeleton_root),
+                world_file.source.as_bytes(),
+            );
         }
 
         let rt = render_runtime_module(&self.context.opts);
@@ -286,7 +338,9 @@ impl ScalaJs {
                 exports: HashSet::new(),
             },
             generated_files: Vec::new(),
+            generated_skeleton_files: Vec::new(),
             world_defs: HashMap::new(),
+            world_skeletons: HashMap::new(),
         }
     }
 }

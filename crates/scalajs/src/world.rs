@@ -33,8 +33,13 @@ impl ScalaJsWorld {
             .name
             .clone();
 
-        let package =
-            package_name_to_segments(&context.opts, &package_name, &Import, &context.keywords);
+        let package = package_name_to_segments(
+            &context.opts,
+            &package_name,
+            &Import,
+            &context.keywords,
+            false,
+        );
 
         let mut header = String::new();
         uwriteln!(header, "package {}", package.join("."));
@@ -46,8 +51,15 @@ impl ScalaJsWorld {
         uwriteln!(header, "");
         uwriteln!(header, "package object {} {{", name);
 
-        let export_package =
-            package_name_to_segments(&context.opts, &package_name, &Export, &context.keywords);
+        let export_package = package_name_to_segments(
+            &context.opts,
+            &package_name,
+            &Export,
+            &context.keywords,
+            false,
+        );
+
+        let encoded_world_name = context.encode_name(world.name.clone().to_pascal_case());
 
         let mut export_header = String::new();
         uwriteln!(export_header, "package {}", export_package.join("."));
@@ -61,11 +73,7 @@ impl ScalaJsWorld {
         );
         uwriteln!(export_header, "");
         uwriteln!(export_header, "package object {} {{", name);
-        uwriteln!(
-            export_header,
-            "  trait {} extends js.Object {{",
-            world.name.clone().to_pascal_case()
-        );
+        uwriteln!(export_header, "  trait {} {{", encoded_world_name.scala);
 
         Self {
             world_id,
@@ -98,6 +106,7 @@ impl ScalaJsWorld {
                 let ret = context.render_return_type(context, resolve, &func.results);
 
                 write_doc_comment(&mut self.global_imports, "  ", &func.docs);
+                encoded_name.write_rename_attribute(&mut self.global_imports, "  ");
                 uwriteln!(
                     self.global_imports,
                     "  def {}({args}): {ret} = js.native",
@@ -193,10 +202,20 @@ impl ScalaJsWorld {
             .name
             .clone();
 
-        let package =
-            package_name_to_segments(&context.opts, &package_name, &Import, &context.keywords);
-        let export_package =
-            package_name_to_segments(&context.opts, &package_name, &Export, &context.keywords);
+        let package = package_name_to_segments(
+            &context.opts,
+            &package_name,
+            &Import,
+            &context.keywords,
+            false,
+        );
+        let export_package = package_name_to_segments(
+            &context.opts,
+            &package_name,
+            &Export,
+            &context.keywords,
+            false,
+        );
 
         vec![
             ScalaJsFile {

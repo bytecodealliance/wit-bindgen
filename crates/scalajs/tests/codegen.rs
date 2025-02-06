@@ -21,7 +21,11 @@ macro_rules! codegen_test {
                 |resolve, world, files| {
                     wit_bindgen_scalajs::Opts {
                         base_package: Some("test".to_string()),
-                        scala_dialect: Scala2
+                        skeleton_base_package: Some("skeleton".to_string()),
+                        scala_dialect: Scala2,
+                        generate_skeleton: true,
+                        skeleton_root: None,
+                        binding_root: None,
                     }
                     .build()
                     .generate(resolve, world, files)

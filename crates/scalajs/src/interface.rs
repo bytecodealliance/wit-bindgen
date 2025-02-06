@@ -12,14 +12,15 @@ use wit_bindgen_core::{uwriteln, Direction};
 
 pub struct ScalaJsInterface<'a> {
     wit_name: String,
-    pub(crate) name: String,
+    pub name: String,
+    package_object_name: String,
     source: String,
     package: Vec<String>,
     pub resolve: &'a Resolve,
     interface: &'a Interface,
-    pub(crate) interface_id: InterfaceId,
-    pub(crate) direction: Direction,
-    pub(crate) generator: &'a mut ScalaJs,
+    pub interface_id: InterfaceId,
+    pub direction: Direction,
+    pub generator: &'a mut ScalaJs,
 }
 
 impl<'a> ScalaJsInterface<'a> {
@@ -48,11 +49,15 @@ impl<'a> ScalaJsInterface<'a> {
             &package_name,
             &direction,
             &generator.context.keywords,
+            false,
         );
+
+        let package_object_name = generator.context.keywords.escape(name.to_snake_case());
 
         Self {
             wit_name,
             name,
+            package_object_name,
             source: "".to_string(),
             package,
             resolve,
@@ -115,7 +120,9 @@ impl<'a> ScalaJsInterface<'a> {
         let mut source = String::new();
         self.generate_package_header(&mut source);
 
-        let types = self.collect_type_definition_snippets();
+        let also_imported = self.generator.context.interface_direction(&self.interface_id) == Import;
+
+        let types = if also_imported { Vec::new() } else { self.collect_type_definition_snippets() };
         let exported_resources = self.collect_exported_resources();
         let functions = self.collect_function_snippets();
 
@@ -130,7 +137,7 @@ impl<'a> ScalaJsInterface<'a> {
         }
 
         write_doc_comment(&mut source, "  ", &self.interface.docs);
-        uwriteln!(source, "  trait {} extends js.Object {{", self.name);
+        uwriteln!(source, "  trait {} extends {{", self.name);
         for function in functions {
             uwriteln!(source, "{function}");
         }
@@ -152,14 +159,7 @@ impl<'a> ScalaJsInterface<'a> {
         );
         uwriteln!(source, "");
 
-        uwriteln!(
-            source,
-            "package object {} {{",
-            self.generator
-                .context
-                .keywords
-                .escape(self.name.to_snake_case())
-        );
+        uwriteln!(source, "package object {} {{", self.package_object_name);
     }
 
     fn collect_type_definition_snippets(&mut self) -> Vec<String> {
@@ -299,7 +299,9 @@ impl<'a> ScalaJsInterface<'a> {
                         Export => "",
                     };
 
-                    func_name.write_rename_attribute(&mut function, "    ");
+                    if self.direction == Import {
+                        func_name.write_rename_attribute(&mut function, "    ");
+                    }
                     uwriteln!(
                         function,
                         "    def {}({args}): {ret}{postfix}",
@@ -319,7 +321,7 @@ impl<'a> ScalaJsInterface<'a> {
     pub fn finalize(self) -> ScalaJsFile {
         ScalaJsFile {
             package: self.package,
-            name: self.name,
+            name: self.package_object_name,
             source: self.source,
         }
     }
