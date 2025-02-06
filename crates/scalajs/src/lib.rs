@@ -766,13 +766,25 @@ impl WorldGenerator for ScalaJs {
 
     fn export_funcs(
         &mut self,
-        _resolve: &Resolve,
-        _world: WorldId,
+        resolve: &Resolve,
+        world_id: WorldId,
         funcs: &[(&str, &Function)],
         _files: &mut Files,
     ) -> anyhow::Result<()> {
-        // TODO
-        println!("export_funcs: {:?}", funcs);
+        let world = &resolve.worlds[world_id];
+
+        if !self.world_defs.contains_key(&world_id) {
+            let world_def = ScalaJsWorld::new(&self.context, resolve, world_id, world);
+            self.world_defs.insert(world_id, world_def);
+        }
+
+        for (func_name, func) in funcs {
+            self.world_defs
+                .get_mut(&world_id)
+                .unwrap()
+                .add_exported_function(&self.context, resolve, func_name, func);
+        }
+
         Ok(())
     }
 
@@ -811,8 +823,10 @@ impl WorldGenerator for ScalaJs {
         }
 
         for (_, world_def) in self.world_defs.drain() {
-            let world_file = world_def.finalize(&self.context, resolve);
-            files.push(&world_file.path(), world_file.source.as_bytes());
+            let world_files = world_def.finalize(&self.context, resolve);
+            for world_file in world_files {
+                files.push(&world_file.path(), world_file.source.as_bytes());
+            }
         }
 
         let rt = render_runtime_module(&self.context.opts);
@@ -857,6 +871,8 @@ struct ScalaJsWorld {
     types: String,
     global_imports: String,
     imported_resources: HashMap<TypeId, ScalaJsImportedResource>,
+    export_header: String,
+    global_exports: String
 }
 
 impl ScalaJsWorld {
@@ -880,12 +896,27 @@ impl ScalaJsWorld {
         uwriteln!(header, "");
         uwriteln!(header, "package object {} {{", name);
 
+        let export_package =
+            package_name_to_segments(&context.opts, &package_name, &Export, &context.keywords);
+
+        let mut export_header = String::new();
+        uwriteln!(export_header, "package {}", export_package.join("."));
+        uwriteln!(export_header, "");
+        uwriteln!(export_header, "import scala.scalajs.js");
+        uwriteln!(export_header, "import scala.scalajs.js.annotation._");
+        uwriteln!(export_header, "import {}wit._", context.opts.base_package_prefix());
+        uwriteln!(export_header, "");
+        uwriteln!(export_header, "package object {} {{", name);
+        uwriteln!(export_header, "  trait {} extends js.Object {{", world.name.clone().to_pascal_case());
+
         Self {
             world_id,
             header,
             types: String::new(),
             global_imports: String::new(),
             imported_resources: HashMap::new(),
+            export_header,
+            global_exports: String::new()
         }
     }
 
@@ -943,7 +974,35 @@ impl ScalaJsWorld {
         }
     }
 
-    fn finalize(mut self, context: &ScalaJsContext, resolve: &Resolve) -> ScalaJsFile {
+    fn add_exported_function(
+        &mut self,
+        context: &ScalaJsContext,
+        resolve: &Resolve,
+        func_name: &str,
+        func: &Function,
+    ) {
+        match func.kind {
+            FunctionKind::Freestanding => {
+                let encoded_name = context.encode_name(func_name.to_lower_camel_case());
+                let args = context.render_args(context, resolve, func.params.iter());
+                let ret = context.render_return_type(context, resolve, &func.results);
+
+                write_doc_comment(&mut self.global_exports, "  ", &func.docs);
+                uwriteln!(
+                    self.global_exports,
+                    "    def {}({args}): {ret}",
+                    encoded_name.scala
+                );
+            }
+            FunctionKind::Method(resource_type)
+            | FunctionKind::Static(resource_type)
+            | FunctionKind::Constructor(resource_type) => {
+                panic!("Exported inline resource functions are not supported")
+            }
+        }
+    }
+
+    fn finalize(mut self, context: &ScalaJsContext, resolve: &Resolve) -> Vec<ScalaJsFile> {
         let mut source = String::new();
         uwriteln!(source, "{}", self.header);
         uwriteln!(source, "{}", self.types);
@@ -959,6 +1018,12 @@ impl ScalaJsWorld {
 
         uwriteln!(source, "}}");
 
+        let mut export_source = String::new();
+        uwriteln!(export_source, "{}", self.export_header);
+        uwriteln!(export_source, "{}", self.global_exports);
+        uwriteln!(export_source, "  }}");
+        uwriteln!(export_source, "}}");
+
         let world = &resolve.worlds[self.world_id];
         let package_name = resolve.packages[world.package.expect("missing package for world")]
             .name
@@ -966,12 +1031,21 @@ impl ScalaJsWorld {
 
         let package =
             package_name_to_segments(&context.opts, &package_name, &Import, &context.keywords);
+        let export_package =
+            package_name_to_segments(&context.opts, &package_name, &Export, &context.keywords);
 
-        ScalaJsFile {
-            package,
-            name: world.name.to_snake_case(),
-            source,
-        }
+        vec![
+            ScalaJsFile {
+                package,
+                name: world.name.to_snake_case(),
+                source,
+            },
+            ScalaJsFile {
+                package: export_package,
+                name: world.name.to_snake_case(),
+                source: export_source
+            }
+        ]
     }
 }
 
