@@ -77,11 +77,7 @@ pub struct Opts {
     pub scala_dialect: ScalaDialect,
     #[cfg_attr(
         feature = "clap",
-        clap(
-            long,
-            help = "Generate a skeleton for implementing all the exports",
-            default_value = "scala2"
-        )
+        clap(long, help = "Generate a skeleton for implementing all the exports",)
     )]
     pub generate_skeleton: bool,
     #[cfg_attr(
@@ -89,17 +85,12 @@ pub struct Opts {
         clap(
             long,
             help = "Relative root directory for placing the skeleton sources",
-            default_value = "scala2"
         )
     )]
     pub skeleton_root: Option<String>,
     #[cfg_attr(
         feature = "clap",
-        clap(
-            long,
-            help = "Relative root directory for placing the binding sources",
-            default_value = "scala2"
-        )
+        clap(long, help = "Relative root directory for placing the binding sources",)
     )]
     pub binding_root: Option<String>,
 }
