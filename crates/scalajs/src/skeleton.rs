@@ -2,7 +2,7 @@ use crate::context::{
     package_name_to_segments, write_doc_comment, EncodedName, ScalaJsContext, ScalaJsFile,
 };
 use crate::ScalaJs;
-use heck::{ToLowerCamelCase, ToPascalCase, ToSnakeCase};
+use heck::{ToKebabCase, ToLowerCamelCase, ToPascalCase, ToSnakeCase};
 use std::collections::HashMap;
 use std::fmt::Write;
 use wit_bindgen_core::wit_parser::{
@@ -94,9 +94,9 @@ impl<'a> ScalaJsInterfaceSkeleton<'a> {
             self.name
         );
 
-        let encoded_wit_name = self.generator.context.encode_name(&self.wit_name);
+        let encoded_name = self.generator.context.encode_name(&self.name.to_kebab_case());
 
-        uwriteln!(source, "@JSExportTopLevel(\"{}\")", encoded_wit_name.js);
+        uwriteln!(source, "@JSExportTopLevel(\"{}\")", encoded_name.js);
         uwriteln!(
             source,
             "object {} extends {} {{",
