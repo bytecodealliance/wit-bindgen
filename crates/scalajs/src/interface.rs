@@ -131,16 +131,23 @@ impl<'a> ScalaJsInterface<'a> {
             uwriteln!(source, "");
         }
 
+        let mut constructors = Vec::new();
         for (_, resource) in exported_resources {
+            constructors.push(resource.constructor_function());
             uwriteln!(source, "{}", resource.finalize());
             uwriteln!(source, "");
         }
 
         write_doc_comment(&mut source, "  ", &self.interface.docs);
-        uwriteln!(source, "  trait {} extends {{", self.name);
+        uwriteln!(source, "  trait {} {{", self.name);
         for function in functions {
             uwriteln!(source, "{function}");
         }
+
+        for constructor in constructors {
+            uwriteln!(source, "{constructor}");
+        }
+
         uwriteln!(source, "  }}");
 
         uwriteln!(source, "}}");

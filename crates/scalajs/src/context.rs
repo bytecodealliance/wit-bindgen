@@ -735,7 +735,7 @@ pub fn package_name_to_segments(
     };
 
     if direction == &Export {
-        segments.push("export".to_string());
+        segments.push("exports".to_string());
     }
 
     segments.push(package_name.namespace.to_snake_case());

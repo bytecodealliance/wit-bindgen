@@ -12,7 +12,6 @@ use wit_bindgen_core::Direction::Export;
 use wit_bindgen_core::{uwrite, uwriteln};
 
 pub struct ScalaJsInterfaceSkeleton<'a> {
-    wit_name: String,
     name: String,
     source: String,
     package: Vec<String>,
@@ -59,7 +58,6 @@ impl<'a> ScalaJsInterfaceSkeleton<'a> {
         );
 
         Self {
-            wit_name,
             name,
             source: "".to_string(),
             package,
@@ -94,8 +92,19 @@ impl<'a> ScalaJsInterfaceSkeleton<'a> {
             self.name
         );
 
-        let encoded_name = self.generator.context.encode_name(&self.name.to_kebab_case());
+        let encoded_name = self
+            .generator
+            .context
+            .encode_name(&self.name.to_kebab_case());
 
+        let exported_resources = self.collect_exported_resources();
+        let mut constructors = Vec::new();
+        uwriteln!(source, "");
+        for (_, resource) in exported_resources {
+            constructors.push(resource.constructor_function());
+            uwriteln!(source, "{}", resource.finalize());
+            uwriteln!(source, "");
+        }
         uwriteln!(source, "@JSExportTopLevel(\"{}\")", encoded_name.js);
         uwriteln!(
             source,
@@ -108,15 +117,13 @@ impl<'a> ScalaJsInterfaceSkeleton<'a> {
             uwriteln!(source, "{}", function);
         }
 
+        for constructor in constructors {
+            uwriteln!(source, "{}", constructor);
+        }
+
         uwriteln!(source, "}}");
 
-        let exported_resources = self.collect_exported_resources();
 
-        uwriteln!(source, "");
-        for (_, resource) in exported_resources {
-            uwriteln!(source, "{}", resource.finalize());
-            uwriteln!(source, "");
-        }
 
         self.source = source;
     }
@@ -152,14 +159,14 @@ impl<'a> ScalaJsInterfaceSkeleton<'a> {
 
                     let mut function = String::new();
 
-                    func_name.write_export_attribute(&mut function, "    ");
+                    func_name.write_export_attribute(&mut function, "  ");
                     uwriteln!(
                         function,
-                        "    override def {}({args}): {ret} = {{",
+                        "  override def {}({args}): {ret} = {{",
                         func_name.scala
                     );
-                    uwriteln!(function, "        ???");
-                    uwriteln!(function, "    }}");
+                    uwriteln!(function, "    ???");
+                    uwriteln!(function, "  }}");
                     functions.push(function);
                 }
                 FunctionKind::Method(_)
@@ -326,6 +333,7 @@ pub struct ScalaJsExportedResourceSkeleton<'a> {
     constructor_args: String,
     base_constructor_args: String,
     base_static_trait_name: String,
+    base_class_name: String,
 }
 
 impl<'a> ScalaJsExportedResourceSkeleton<'a> {
@@ -365,11 +373,6 @@ impl<'a> ScalaJsExportedResourceSkeleton<'a> {
         let mut class_header = String::new();
         write_doc_comment(&mut class_header, "    ", &resource.docs);
 
-        uwriteln!(
-            class_header,
-            "@JSExportTopLevel(\"{}\")",
-            encoded_resource_name.js
-        );
         uwrite!(class_header, "class {}(", encoded_resource_name.scala);
 
         let mut base_class_header = String::new();
@@ -390,6 +393,7 @@ impl<'a> ScalaJsExportedResourceSkeleton<'a> {
             constructor_args: String::new(),
             base_constructor_args: String::new(),
             base_static_trait_name,
+            base_class_name,
         }
     }
 
@@ -441,15 +445,21 @@ impl<'a> ScalaJsExportedResourceSkeleton<'a> {
                 uwriteln!(self.static_methods, "  }}");
             }
             FunctionKind::Constructor(_) => {
+                // Renaming constructor parameters because they can collide with the method names
+                let renamed_func_params: Vec<_> = func
+                    .params
+                    .iter()
+                    .map(|(name, typ)| (format!("{name}0"), typ.clone()))
+                    .collect();
                 let args = self.owner.generator.context.render_args(
                     self.owner,
                     self.owner.resolve,
-                    func.params.iter(),
+                    renamed_func_params.iter(),
                 );
                 self.constructor_args = args;
 
                 let mut param_names = Vec::new();
-                for (param_name, _) in func.params.iter() {
+                for (param_name, _) in renamed_func_params.iter() {
                     let param_name = self
                         .owner
                         .generator
@@ -460,6 +470,34 @@ impl<'a> ScalaJsExportedResourceSkeleton<'a> {
                 self.base_constructor_args = param_names.join(", ");
             }
         }
+    }
+
+    pub fn constructor_function(&self) -> String {
+        let mut constructor = String::new();
+        uwriteln!(
+            constructor,
+            "  @JSExport(\"{}\")",
+            self.encoded_resource_name.js
+        );
+        let encoded_name = self
+            .owner
+            .generator
+            .context
+            .encode_name(self.resource_name.to_lower_camel_case());
+        uwriteln!(
+            constructor,
+            "  def {}({}): {} = ",
+            encoded_name.scala,
+            self.constructor_args,
+            self.base_class_name
+        );
+        uwriteln!(
+            constructor,
+            "    new {}({})",
+            self.encoded_resource_name.scala,
+            self.base_constructor_args
+        );
+        constructor
     }
 
     pub fn finalize(self) -> String {

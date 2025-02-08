@@ -124,7 +124,13 @@ impl ScalaJsImportedResource {
                 );
             }
             FunctionKind::Constructor(_) => {
-                let args = context.render_args(owner_context, resolve, func.params.iter());
+                // Renaming constructor parameters because they can collide with the method names
+                let renamed_func_params: Vec<_> = func
+                    .params
+                    .iter()
+                    .map(|(name, typ)| (format!("{name}0"), typ.clone()))
+                    .collect();
+                let args = context.render_args(owner_context, resolve, renamed_func_params.iter());
                 self.constructor_args = args;
             }
         }
@@ -272,14 +278,43 @@ impl<'a> ScalaJsExportedResource<'a> {
                 );
             }
             FunctionKind::Constructor(_) => {
+                // Renaming constructor parameters because they can collide with the method names
+                let renamed_func_params: Vec<_> = func
+                    .params
+                    .iter()
+                    .map(|(name, typ)| (format!("{name}0"), typ.clone()))
+                    .collect();
+
                 let args = self.owner.generator.context.render_args(
                     self.owner,
                     self.owner.resolve,
-                    func.params.iter(),
+                    renamed_func_params.iter(),
                 );
                 self.constructor_args = args;
             }
         }
+    }
+
+    pub fn constructor_function(&self) -> String {
+        let mut constructor = String::new();
+        uwriteln!(
+            constructor,
+            "    // @JSExport(\"{}\")",
+            self.encoded_resource_name.js
+        );
+        let encoded_name = self
+            .owner
+            .generator
+            .context
+            .encode_name(self.resource_name.to_lower_camel_case());
+        uwriteln!(
+            constructor,
+            "    def {}({}): {}",
+            encoded_name.scala,
+            self.constructor_args,
+            self.encoded_resource_name.scala
+        );
+        constructor
     }
 
     pub fn finalize(self) -> String {
@@ -289,7 +324,11 @@ impl<'a> ScalaJsExportedResource<'a> {
         uwriteln!(class_source, "  }}");
         uwriteln!(class_source, "");
 
-        uwriteln!(class_source, "  trait {}Static {{", self.encoded_resource_name.scala);
+        uwriteln!(
+            class_source,
+            "  trait {}Static {{",
+            self.encoded_resource_name.scala
+        );
         uwriteln!(class_source, "{}", self.static_methods);
         uwriteln!(class_source, "  }}");
         class_source

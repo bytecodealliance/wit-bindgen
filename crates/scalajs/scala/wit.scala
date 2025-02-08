@@ -111,8 +111,6 @@ package object wit {
 
     def unapply[T1](tuple: WitTuple1[T1]): Some[(T1)] = Some(tuple)
 
-    implicit def fromScalaTuple1[T1](tuple: (T1)): WitTuple1[T1] = WitTuple1(tuple._1)
-
     implicit def toScalaTuple1[T1](tuple: WitTuple1[T1]): (T1) = (tuple._1)
   }
 
