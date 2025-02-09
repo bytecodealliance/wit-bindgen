@@ -388,10 +388,14 @@ impl ScalaJsContext {
                 format!("WitResult[{ok}, {err}]")
             }
             TypeDefKind::List(list) => {
-                format!(
-                    "WitList[{}]",
-                    self.render_type_reference(owner_context, resolve, list)
-                )
+                if matches!(list, Type::U8) {
+                    "js.typedarray.Uint8Array".to_string()
+                } else {
+                    format!(
+                        "WitList[{}]",
+                        self.render_type_reference(owner_context, resolve, list)
+                    )
+                }
             }
             TypeDefKind::Future(_) => panic!("Futures not supported yet"),
             TypeDefKind::Stream(_) => panic!("Streams not supported yet"),
@@ -664,8 +668,12 @@ impl ScalaJsContext {
             }
             TypeDefKind::List(list) => {
                 write_doc_comment(&mut source, "  ", &typ.docs);
-                let typ = self.render_type_reference(owner_context, resolve, list);
-                uwriteln!(source, "  type {scala_name} = WitList[{typ}]");
+                if matches!(list, Type::U8) {
+                    uwriteln!(source, "  type {scala_name} = js.typedarray.Uint8Array")
+                } else {
+                    let typ = self.render_type_reference(owner_context, resolve, list);
+                    uwriteln!(source, "  type {scala_name} = WitList[{typ}]");
+                }
             }
             TypeDefKind::Future(_) => {
                 panic!("Futures are not supported yet");
