@@ -1512,7 +1512,7 @@ name = "test-helpers"
 version = "0.0.0"
 dependencies = [
  "codegen-macro",
- "wasm-encoder 0.224.0 (git+https://github.com/cpetig/wasm-tools?branch=symmetric)",
+ "wasm-encoder 0.224.0",
  "wit-bindgen-core",
  "wit-component",
  "wit-parser 0.224.0",
@@ -1794,26 +1794,26 @@ dependencies = [
 [[package]]
 name = "wasm-encoder"
 version = "0.224.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b7249cf8cb0c6b9cb42bce90c0a5feb276fbf963fa385ff3d818ab3d90818ed6"
+source = "git+https://github.com/cpetig/wasm-tools?branch=symmetric#abc667c32d0ff491c7f3b50342d26aa81f105977"
 dependencies = [
- "leb128",
- "wasmparser 0.224.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "leb128fmt",
+ "wasmparser 0.224.0",
 ]
 
 [[package]]
 name = "wasm-encoder"
-version = "0.224.0"
-source = "git+https://github.com/cpetig/wasm-tools?branch=symmetric#945be3cd638c2f90fee715dd69a7c802f1b65fbc"
+version = "0.225.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6f7eac0445cac73bcf09e6a97f83248d64356dccf9f2b100199769b6b42464e5"
 dependencies = [
  "leb128fmt",
- "wasmparser 0.224.0 (git+https://github.com/cpetig/wasm-tools?branch=symmetric)",
+ "wasmparser 0.225.0",
 ]
 
 [[package]]
 name = "wasm-metadata"
 version = "0.224.0"
-source = "git+https://github.com/cpetig/wasm-tools?branch=symmetric#945be3cd638c2f90fee715dd69a7c802f1b65fbc"
+source = "git+https://github.com/cpetig/wasm-tools?branch=symmetric#abc667c32d0ff491c7f3b50342d26aa81f105977"
 dependencies = [
  "anyhow",
  "indexmap",
@@ -1822,8 +1822,8 @@ dependencies = [
  "serde_json",
  "spdx",
  "url",
- "wasm-encoder 0.224.0 (git+https://github.com/cpetig/wasm-tools?branch=symmetric)",
- "wasmparser 0.224.0 (git+https://github.com/cpetig/wasm-tools?branch=symmetric)",
+ "wasm-encoder 0.224.0",
+ "wasmparser 0.224.0",
 ]
 
 [[package]]
@@ -1843,17 +1843,6 @@ dependencies = [
 [[package]]
 name = "wasmparser"
 version = "0.224.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "65881a664fdd43646b647bb27bf186ab09c05bf56779d40aed4c6dce47d423f5"
-dependencies = [
- "bitflags",
- "indexmap",
- "semver",
-]
-
-[[package]]
-name = "wasmparser"
-version = "0.224.0"
 source = "git+https://github.com/cpetig/wasm-tools?branch=symmetric#945be3cd638c2f90fee715dd69a7c802f1b65fbc"
 dependencies = [
  "bitflags",
@@ -1861,6 +1850,17 @@ dependencies = [
  "indexmap",
  "semver",
  "serde",
+]
+
+[[package]]
+name = "wasmparser"
+version = "0.225.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "36e5456165f81e64cb9908a0fe9b9d852c2c74582aa3fe2be3c2da57f937d3ae"
+dependencies = [
+ "bitflags",
+ "indexmap",
+ "semver",
 ]
 
 [[package]]
@@ -1926,7 +1926,7 @@ dependencies = [
  "wasmtime-slab",
  "wasmtime-versioned-export-macros",
  "wasmtime-winch",
- "wat 1.224.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "wat 1.225.0",
  "windows-sys 0.52.0",
 ]
 
@@ -2174,43 +2174,43 @@ dependencies = [
 [[package]]
 name = "wast"
 version = "224.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d722a51e62b669d17e5a9f6bc8ec210178b37d869114355aa46989686c5c6391"
-dependencies = [
- "bumpalo",
- "leb128",
- "memchr",
- "unicode-width",
- "wasm-encoder 0.224.0 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "wast"
-version = "224.0.0"
-source = "git+https://github.com/cpetig/wasm-tools?branch=symmetric#945be3cd638c2f90fee715dd69a7c802f1b65fbc"
+source = "git+https://github.com/cpetig/wasm-tools?branch=symmetric#abc667c32d0ff491c7f3b50342d26aa81f105977"
 dependencies = [
  "bumpalo",
  "leb128fmt",
  "memchr",
  "unicode-width",
- "wasm-encoder 0.224.0 (git+https://github.com/cpetig/wasm-tools?branch=symmetric)",
+ "wasm-encoder 0.224.0",
 ]
 
 [[package]]
-name = "wat"
-version = "1.224.0"
+name = "wast"
+version = "225.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71dece6a7dd5bcbcf8d256606c7fb3faa36286d46bf3f98185407719a5ceede2"
+checksum = "c61496027ff707f9fa9e0b22c34ec163eb7adb1070df565e32a9180a76e4300b"
 dependencies = [
- "wast 224.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bumpalo",
+ "leb128fmt",
+ "memchr",
+ "unicode-width",
+ "wasm-encoder 0.225.0",
 ]
 
 [[package]]
 name = "wat"
 version = "1.224.0"
-source = "git+https://github.com/cpetig/wasm-tools?branch=symmetric#945be3cd638c2f90fee715dd69a7c802f1b65fbc"
+source = "git+https://github.com/cpetig/wasm-tools?branch=symmetric#abc667c32d0ff491c7f3b50342d26aa81f105977"
 dependencies = [
- "wast 224.0.0 (git+https://github.com/cpetig/wasm-tools?branch=symmetric)",
+ "wast 224.0.0",
+]
+
+[[package]]
+name = "wat"
+version = "1.225.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "89e72a33942234fd0794bcdac30e43b448de3187512414267678e511c6755f11"
+dependencies = [
+ "wast 225.0.0",
 ]
 
 [[package]]
@@ -2415,7 +2415,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "wit-bindgen-rt",
  "wit-bindgen-rust-macro",
@@ -2434,13 +2434,13 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-c"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "anyhow",
  "clap",
  "heck 0.5.0",
  "test-helpers",
- "wasm-encoder 0.224.0 (git+https://github.com/cpetig/wasm-tools?branch=symmetric)",
+ "wasm-encoder 0.224.0",
  "wasm-metadata",
  "wit-bindgen-core",
  "wit-component",
@@ -2449,14 +2449,14 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-cli"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "anyhow",
  "clap",
  "heck 0.5.0",
  "test-artifacts",
- "wasm-encoder 0.224.0 (git+https://github.com/cpetig/wasm-tools?branch=symmetric)",
- "wasmparser 0.224.0 (git+https://github.com/cpetig/wasm-tools?branch=symmetric)",
+ "wasm-encoder 0.224.0",
+ "wasmparser 0.224.0",
  "wasmtime",
  "wasmtime-wasi",
  "wit-bindgen-bridge",
@@ -2475,7 +2475,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-core"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "anyhow",
  "heck 0.5.0",
@@ -2490,7 +2490,7 @@ dependencies = [
  "clap",
  "heck 0.5.0",
  "test-helpers",
- "wasm-encoder 0.224.0 (git+https://github.com/cpetig/wasm-tools?branch=symmetric)",
+ "wasm-encoder 0.224.0",
  "wasm-metadata",
  "wit-bindgen-c",
  "wit-bindgen-core",
@@ -2499,16 +2499,16 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-csharp"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "anyhow",
  "clap",
  "heck 0.5.0",
  "indexmap",
  "test-helpers",
- "wasm-encoder 0.224.0 (git+https://github.com/cpetig/wasm-tools?branch=symmetric)",
+ "wasm-encoder 0.224.0",
  "wasm-metadata",
- "wasmparser 0.224.0 (git+https://github.com/cpetig/wasm-tools?branch=symmetric)",
+ "wasmparser 0.224.0",
  "wit-bindgen-core",
  "wit-component",
  "wit-parser 0.224.0",
@@ -2516,7 +2516,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-go"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2528,7 +2528,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-markdown"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2539,7 +2539,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-moonbit"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2550,7 +2550,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-rt"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "bitflags",
  "futures",
@@ -2559,7 +2559,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-rust"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2580,7 +2580,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-rust-macro"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "anyhow",
  "prettyplease",
@@ -2593,7 +2593,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-teavm-java"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2607,7 +2607,7 @@ dependencies = [
 [[package]]
 name = "wit-component"
 version = "0.224.0"
-source = "git+https://github.com/cpetig/wasm-tools?branch=symmetric#945be3cd638c2f90fee715dd69a7c802f1b65fbc"
+source = "git+https://github.com/cpetig/wasm-tools?branch=symmetric#abc667c32d0ff491c7f3b50342d26aa81f105977"
 dependencies = [
  "anyhow",
  "bitflags",
@@ -2616,10 +2616,10 @@ dependencies = [
  "serde",
  "serde_derive",
  "serde_json",
- "wasm-encoder 0.224.0 (git+https://github.com/cpetig/wasm-tools?branch=symmetric)",
+ "wasm-encoder 0.224.0",
  "wasm-metadata",
- "wasmparser 0.224.0 (git+https://github.com/cpetig/wasm-tools?branch=symmetric)",
- "wat 1.224.0 (git+https://github.com/cpetig/wasm-tools?branch=symmetric)",
+ "wasmparser 0.224.0",
+ "wat 1.224.0",
  "wit-parser 0.224.0",
 ]
 
@@ -2644,7 +2644,7 @@ dependencies = [
 [[package]]
 name = "wit-parser"
 version = "0.224.0"
-source = "git+https://github.com/cpetig/wasm-tools?branch=symmetric#945be3cd638c2f90fee715dd69a7c802f1b65fbc"
+source = "git+https://github.com/cpetig/wasm-tools?branch=symmetric#abc667c32d0ff491c7f3b50342d26aa81f105977"
 dependencies = [
  "anyhow",
  "id-arena",
@@ -2655,7 +2655,7 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "unicode-xid",
- "wasmparser 0.224.0 (git+https://github.com/cpetig/wasm-tools?branch=symmetric)",
+ "wasmparser 0.224.0",
 ]
 
 [[package]]
