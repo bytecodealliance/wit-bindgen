@@ -183,17 +183,15 @@ impl<T> Drop for FutureWriter<T> {
                     entry.remove();
                     (self.vtable.close_writable)(self.handle, 0);
                 }
-                Handle::WriteClosedErr(_) => {
-                    match entry.remove() {
-                        Handle::WriteClosedErr(None) => {
-                            (self.vtable.close_writable)(self.handle, 0);
-                        }
-                        Handle::WriteClosedErr(Some(err_ctx)) => {
-                            (self.vtable.close_writable)(self.handle, err_ctx.handle());
-                        }
-                        _ => unreachable!(),
+                Handle::WriteClosedErr(_) => match entry.remove() {
+                    Handle::WriteClosedErr(None) => {
+                        (self.vtable.close_writable)(self.handle, 0);
                     }
-                }
+                    Handle::WriteClosedErr(Some(err_ctx)) => {
+                        (self.vtable.close_writable)(self.handle, err_ctx.handle());
+                    }
+                    _ => unreachable!(),
+                },
             },
         });
     }

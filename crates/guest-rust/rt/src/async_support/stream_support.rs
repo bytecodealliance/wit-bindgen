@@ -214,7 +214,6 @@ impl<T> Sink<Vec<T>> for StreamWriter<T> {
 impl<T> Drop for StreamWriter<T> {
     fn drop(&mut self) {
         self.future = None;
-
         super::with_entry(self.handle, |entry| match entry {
             Entry::Vacant(_) => unreachable!(),
             Entry::Occupied(mut entry) => match entry.get_mut() {
@@ -226,11 +225,16 @@ impl<T> Drop for StreamWriter<T> {
                     entry.remove();
                     (self.vtable.close_writable)(self.handle, 0);
                 }
-                Handle::WriteClosedErr(err) => {
-                    let err_ctx = err.take().as_ref().map(ErrorContext::handle).unwrap_or(0);
-                    entry.remove();
-                    (self.vtable.close_writable)(self.handle, err_ctx);
-                }
+                Handle::WriteClosedErr(_) => match entry.remove() {
+                    // Care is taken  to avoid dropping the ErrorContext before close_writable is called.
+                    // If the error context is dropped prematurely, the component may garbage collect
+                    // the error context before it can be used/referenced by close_writable().
+                    Handle::WriteClosedErr(Some(e)) => {
+                        (self.vtable.close_writable)(self.handle, e.handle)
+                    }
+                    Handle::WriteClosedErr(None) => (self.vtable.close_writable)(self.handle, 0),
+                    _ => unreachable!(),
+                },
             },
         });
     }
