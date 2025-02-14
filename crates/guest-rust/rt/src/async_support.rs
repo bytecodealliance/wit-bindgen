@@ -94,9 +94,10 @@ fn dummy_waker() -> Waker {
 unsafe fn poll(state: *mut FutureState) -> Poll<()> {
     loop {
         if let Some(futures) = (*state).tasks.as_mut() {
+            let old = CURRENT;
             CURRENT = state;
             let poll = futures.poll_next_unpin(&mut Context::from_waker(&dummy_waker()));
-            CURRENT = ptr::null_mut();
+            CURRENT = old;
 
             if SPAWNED.is_empty() {
                 match poll {
