@@ -33,11 +33,11 @@ prettyplease = "0.2.20"
 syn = { version = "2.0.89", features = ["printing"] }
 futures = "0.3.31"
 
-wasmparser = "0.225.0"
-wasm-encoder = "0.225.0"
-wasm-metadata = "0.225.0"
-wit-parser = "0.225.0"
-wit-component = "0.225.0"
+wasmparser = "0.226.0"
+wasm-encoder = "0.226.0"
+wasm-metadata = "0.226.0"
+wit-parser = "0.226.0"
+wit-component = "0.226.0"
 
 wit-bindgen-core = { path = 'crates/core', version = '0.39.0' }
 wit-bindgen-c = { path = 'crates/c', version = '0.39.0' }
@@ -48,6 +48,13 @@ wit-bindgen-csharp = { path = 'crates/csharp', version = '0.39.0' }
 wit-bindgen-markdown = { path = 'crates/markdown', version = '0.39.0' }
 wit-bindgen-moonbit = { path = 'crates/moonbit', version = '0.39.0' }
 wit-bindgen = { path = 'crates/guest-rust', version = '0.39.0', default-features = false }
+
+[patch.crates-io]
+wasmparser = { git = 'https://github.com/bytecodealliance/wasm-tools', branch = 'ci/release-1.226.0' }
+wasm-encoder = { git = 'https://github.com/bytecodealliance/wasm-tools', branch = 'ci/release-1.226.0' }
+wasm-metadata = { git = 'https://github.com/bytecodealliance/wasm-tools', branch = 'ci/release-1.226.0' }
+wit-parser = { git = 'https://github.com/bytecodealliance/wasm-tools', branch = 'ci/release-1.226.0' }
+wit-component = { git = 'https://github.com/bytecodealliance/wasm-tools', branch = 'ci/release-1.226.0' }
 
 [[bin]]
 name = "wit-bindgen"

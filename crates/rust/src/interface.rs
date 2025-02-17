@@ -1428,7 +1428,7 @@ pub mod vtable{ordinal} {{
         if let FunctionKind::Constructor(_) = &func.kind {
             self.push_str(" -> Self")
         } else {
-            self.print_results(&func.results);
+            self.print_results(&func.result);
         }
         params
     }
@@ -1540,28 +1540,17 @@ pub mod vtable{ordinal} {{
         params
     }
 
-    fn print_results(&mut self, results: &Results) {
+    fn print_results(&mut self, result: &Option<Type>) {
         self.push_str(" -> ");
 
-        match results.len() {
-            0 => {
+        match result {
+            None => {
                 self.push_str("()");
             }
-            1 => {
-                let ty = results.iter_types().next().unwrap();
+            Some(ty) => {
                 let mode = self.type_mode_for(ty, TypeOwnershipStyle::Owned, "'INVALID");
                 assert!(mode.lifetime.is_none());
                 self.print_ty(ty, mode);
-            }
-            _ => {
-                self.push_str("(");
-                for ty in results.iter_types() {
-                    let mode = self.type_mode_for(ty, TypeOwnershipStyle::Owned, "'INVALID");
-                    assert!(mode.lifetime.is_none());
-                    self.print_ty(ty, mode);
-                    self.push_str(", ")
-                }
-                self.push_str(")")
             }
         }
     }

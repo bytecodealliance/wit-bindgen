@@ -291,30 +291,14 @@ impl InterfaceGenerator<'_> {
             }
         }
 
-        if func.results.len() > 0 {
+        if let Some(ty) = &func.result {
             self.push_str("\n##### Return values\n\n");
-            match &func.results {
-                Results::Named(params) => {
-                    for (name, ty) in params.iter() {
-                        self.push_str(&format!(
-                            "- <a id=\"{f}.{p}\"></a>`{}`: ",
-                            name,
-                            f = func.name.to_snake_case(),
-                            p = name,
-                        ));
-                        self.print_ty(ty);
-                        self.push_str("\n");
-                    }
-                }
-                Results::Anon(ty) => {
-                    self.push_str(&format!(
-                        "- <a id=\"{f}.0\"></a> ",
-                        f = func.name.to_snake_case(),
-                    ));
-                    self.print_ty(ty);
-                    self.push_str("\n");
-                }
-            }
+            self.push_str(&format!(
+                "- <a id=\"{f}.0\"></a> ",
+                f = func.name.to_snake_case(),
+            ));
+            self.print_ty(ty);
+            self.push_str("\n");
         }
 
         self.push_str("\n");

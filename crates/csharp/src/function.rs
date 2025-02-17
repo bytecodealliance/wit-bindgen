@@ -242,7 +242,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                 uwrite!(
                     self.src,
                     "\
-                    if ({previous}.IsOk) 
+                    if ({previous}.IsOk)
                     {{
                         var {tmp} = {previous}.AsOk;
                     "
@@ -274,8 +274,8 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             uwrite!(
                 self.src,
                 "\
-                }} 
-                else 
+                }}
+                else
                 {{
                     throw new {exception_name}({var_name}.AsErr!, {level});
                 }}
@@ -300,7 +300,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         // otherwise generate exception code
         let ty = self
             .interface_gen
-            .type_name_with_qualifier(func.results.iter_types().next().unwrap(), true);
+            .type_name_with_qualifier(&func.result.unwrap(), true);
         uwriteln!(self.src, "{ty} {ret};");
         let mut cases = Vec::with_capacity(self.results.len());
         let mut oks = Vec::with_capacity(self.results.len());
@@ -321,7 +321,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             let tail = oks.iter().map(|_| ")").collect::<Vec<_>>().concat();
             cases.push(format!(
                 "\
-                case {index}: 
+                case {index}:
                 {{
                     ret = {head}{ty}.Err(({err_ty}) e.Value){tail};
                     break;
@@ -334,7 +334,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         if !self.results.is_empty() {
             self.src.push_str(
                 "
-                try 
+                try
                 {\n
                 ",
             );
@@ -353,10 +353,10 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             let cases = cases.join("\n");
             uwriteln!(
                 self.src,
-                r#"}} 
-                    catch (WitException e) 
+                r#"}}
+                    catch (WitException e)
                     {{
-                        switch (e.NestingLevel) 
+                        switch (e.NestingLevel)
                         {{
                             {cases}
 
@@ -751,7 +751,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                                 "
                             );
                         }
-                        results.push(format!("(nint){ptr}")); 
+                        results.push(format!("(nint){ptr}"));
                         results.push(format!("({list}).Length"));
                     }
                     Direction::Export => {
@@ -888,7 +888,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             if (({size} * {list}.Count) < 1024) {{
                                 var {ret_area} = stackalloc {element_type}[({array_size}*{list}.Count)+1];
                                 {address} = (void*)(((int){ret_area}) + ({align} - 1) & -{align});
-                            }} 
+                            }}
                             else
                             {{
                                 var {buffer_size} = {size} * (nuint){list}.Count;
@@ -1021,23 +1021,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             _ => format!("{class_name_root}Impl")
                         };
 
-                        match func.results.len() {
-                            0 => uwriteln!(self.src, "{target}.{func_name}({oper});"),
-                            1 => {
+                        match func.result {
+                            None => uwriteln!(self.src, "{target}.{func_name}({oper});"),
+                            Some(_ty) => {
                                 let ret = self.handle_result_call(func, target, func_name, oper);
                                 results.push(ret);
-                            }
-                            _ => {
-                                let ret = self.locals.tmp("ret");
-                                uwriteln!(
-                                    self.src,
-                                    "var {ret} = {target}.{func_name}({oper});"
-                                );
-                                let mut i = 1;
-                                for _ in func.results.iter_types() {
-                                    results.push(format!("{ret}.Item{i}"));
-                                    i += 1;
-                                }
                             }
                         }
                     }
