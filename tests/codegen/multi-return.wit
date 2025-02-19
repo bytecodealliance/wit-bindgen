@@ -2,7 +2,6 @@ package foo:foo;
 
 interface multi-return {
   mra: func();
-  mrb: func() -> ();
   mrc: func() -> u32;
 }
 

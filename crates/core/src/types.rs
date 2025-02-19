@@ -109,7 +109,7 @@ impl Types {
             }
         }
         let mut live = LiveTypes::default();
-        for ty in func.results.iter_types() {
+        if let Some(ty) = &func.result {
             self.type_info(resolve, ty);
             live.add_type(resolve, ty);
         }
@@ -119,14 +119,10 @@ impl Types {
             }
         }
 
-        for ty in func.results.iter_types() {
-            let id = match ty {
-                Type::Id(id) => *id,
-                _ => continue,
-            };
+        if let Some(Type::Id(id)) = func.result {
             let err = match &resolve.types[id].kind {
                 TypeDefKind::Result(Result_ { err, .. }) => err,
-                _ => continue,
+                _ => return,
             };
             if let Some(Type::Id(id)) = err {
                 // When an interface `use`s a type from another interface, it creates a new typeid

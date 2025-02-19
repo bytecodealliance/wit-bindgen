@@ -11,7 +11,7 @@ world issue {
         field: tuple<u8>,
     }
 
-    import func-using-list-u8-in-args: func(body: list<u8>) -> ();
+    import func-using-list-u8-in-args: func(body: list<u8>);
     export func-using-list-tuple-bool-in-return: func() -> list<tuple<bool>>;
     export func-using-tuple-u8-in-return: func() -> tuple<u8>;
 }

@@ -205,7 +205,7 @@ pub fn cabi_realloc(
     copy(dst, src_offset)
     free(src_offset)
     dst
-}}  
+}}
 
 pub(open) trait Any {}
 pub(all) struct Cleanup {
@@ -1121,19 +1121,9 @@ impl InterfaceGenerator<'_> {
             }
         };
 
-        let result_type = match func.results.len() {
-            0 => "Unit".into(),
-            1 => self.type_name(func.results.iter_types().next().unwrap(), true),
-            _ => {
-                format!(
-                    "({})",
-                    func.results
-                        .iter_types()
-                        .map(|ty| self.type_name(ty, true))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )
-            }
+        let result_type = match &func.result {
+            None => "Unit".into(),
+            Some(ty) => self.type_name(ty, true),
         };
 
         let params = func
@@ -2390,31 +2380,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::CallInterface { func, .. } => {
-                let assignment = match func.results.len() {
-                    0 => "let _ = ".into(),
-                    _ => {
-                        let ty = format!(
-                            "({})",
-                            func.results
-                                .iter_types()
-                                .map(|ty| self.gen.type_name(ty, true))
-                                .collect::<Vec<_>>()
-                                .join(", ")
-                        );
-
-                        let result = func
-                            .results
-                            .iter_types()
-                            .map(|_ty| {
-                                let result = self.locals.tmp("result");
-                                results.push(result.clone());
-                                result
-                            })
-                            .collect::<Vec<_>>()
-                            .join(", ");
-
+                let assignment = match func.result {
+                    None => "let _ = ".into(),
+                    Some(ty) => {
+                        let ty = format!("({})", self.gen.type_name(&ty, true));
+                        let result = self.locals.tmp("result");
+                        results.push(result.clone());
                         let assignment = format!("let ({result}) : {ty} = ");
-
                         assignment
                     }
                 };
