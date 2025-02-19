@@ -120,9 +120,17 @@ impl<'a> ScalaJsInterface<'a> {
         let mut source = String::new();
         self.generate_package_header(&mut source);
 
-        let also_imported = self.generator.context.interface_direction(&self.interface_id) == Import;
+        let also_imported = self
+            .generator
+            .context
+            .interface_direction(&self.interface_id)
+            == Import;
 
-        let types = if also_imported { Vec::new() } else { self.collect_type_definition_snippets() };
+        let types = if also_imported {
+            Vec::new()
+        } else {
+            self.collect_type_definition_snippets()
+        };
         let exported_resources = self.collect_exported_resources();
         let functions = self.collect_function_snippets();
 
@@ -292,7 +300,7 @@ impl<'a> ScalaJsInterface<'a> {
                         self.generator
                             .context
                             .render_args(self, self.resolve, func.params.iter());
-                    let ret = self.generator.context.render_return_type(
+                    let (ret, throws) = self.generator.context.render_return_type(
                         self,
                         self.resolve,
                         &func.results,
@@ -301,10 +309,14 @@ impl<'a> ScalaJsInterface<'a> {
                     let mut function = String::new();
                     write_doc_comment(&mut function, "    ", &func.docs);
 
-                    let postfix = match self.direction {
-                        Import => " = js.native",
-                        Export => "",
+                    let mut postfix = match self.direction {
+                        Import => " = js.native".to_string(),
+                        Export => "".to_string(),
                     };
+
+                    if let Some(throws) = throws {
+                        postfix.push_str(&format!(" // throws {throws}"));
+                    }
 
                     if self.direction == Import {
                         func_name.write_rename_attribute(&mut function, "    ");

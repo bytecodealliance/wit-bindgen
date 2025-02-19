@@ -123,8 +123,6 @@ impl<'a> ScalaJsInterfaceSkeleton<'a> {
 
         uwriteln!(source, "}}");
 
-
-
         self.source = source;
     }
 
@@ -151,18 +149,24 @@ impl<'a> ScalaJsInterfaceSkeleton<'a> {
                         self.generator
                             .context
                             .render_args(self, self.resolve, func.params.iter());
-                    let ret = self.generator.context.render_return_type(
+                    let (ret, throws) = self.generator.context.render_return_type(
                         self,
                         self.resolve,
                         &func.results,
                     );
+
+                    let postfix = if let Some(throws) = throws {
+                        format!(" // throws {}", throws)
+                    } else {
+                        "".to_string()
+                    };
 
                     let mut function = String::new();
 
                     func_name.write_export_attribute(&mut function, "  ");
                     uwriteln!(
                         function,
-                        "  override def {}({args}): {ret} = {{",
+                        "  override def {}({args}): {ret} = {{{postfix}",
                         func_name.scala
                     );
                     uwriteln!(function, "    ???");
@@ -287,11 +291,17 @@ impl ScalaJsWorldSkeleton {
             FunctionKind::Freestanding => {
                 let encoded_name = context.encode_name(func_name.to_lower_camel_case());
                 let args = context.render_args(context, resolve, func.params.iter());
-                let ret = context.render_return_type(context, resolve, &func.results);
+                let (ret, throws) = context.render_return_type(context, resolve, &func.results);
+
+                let postfix = if let Some(throws) = throws {
+                    format!(" // throws {}", throws)
+                } else {
+                    "".to_string()
+                };
 
                 uwriteln!(
                     self.global_exports,
-                    "  def {}({args}): {ret} = {{",
+                    "  def {}({args}): {ret} = {{{postfix}",
                     encoded_name.scala
                 );
                 uwriteln!(self.global_exports, "      ???");
@@ -406,17 +416,23 @@ impl<'a> ScalaJsExportedResourceSkeleton<'a> {
                     self.owner.resolve,
                     func.params.iter().skip(1),
                 );
-                let ret = self.owner.generator.context.render_return_type(
+                let (ret, throws) = self.owner.generator.context.render_return_type(
                     self.owner,
                     self.owner.resolve,
                     &func.results,
                 );
                 let encoded_func_name = self.get_func_name("[method]", func_name);
 
+                let postfix = if let Some(throws) = throws {
+                    format!(" // throws {}", throws)
+                } else {
+                    "".to_string()
+                };
+
                 encoded_func_name.write_rename_attribute(&mut self.class_source, "  ");
                 uwriteln!(
                     self.class_source,
-                    "  override def {}({args}): {ret} = {{",
+                    "  override def {}({args}): {ret} = {{{postfix}",
                     encoded_func_name.scala
                 );
                 uwriteln!(self.class_source, "    ???");
@@ -428,17 +444,23 @@ impl<'a> ScalaJsExportedResourceSkeleton<'a> {
                     self.owner.resolve,
                     func.params.iter(),
                 );
-                let ret = self.owner.generator.context.render_return_type(
+                let (ret, throws) = self.owner.generator.context.render_return_type(
                     self.owner,
                     self.owner.resolve,
                     &func.results,
                 );
 
+                let postfix = if let Some(throws) = throws {
+                    format!(" // throws {}", throws)
+                } else {
+                    "".to_string()
+                };
+
                 let encoded_func_name = self.get_func_name("[static]", func_name);
                 encoded_func_name.write_static_export_attribute(&mut self.static_methods, "  ");
                 uwriteln!(
                     self.static_methods,
-                    "  override def {}({args}): {ret} = {{",
+                    "  override def {}({args}): {ret} = {{{postfix}",
                     encoded_func_name.scala
                 );
                 uwriteln!(self.static_methods, "    ???");

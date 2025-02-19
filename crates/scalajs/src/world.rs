@@ -103,13 +103,19 @@ impl ScalaJsWorld {
                 );
                 let encoded_name = context.encode_name(func_name.to_lower_camel_case());
                 let args = context.render_args(context, resolve, func.params.iter());
-                let ret = context.render_return_type(context, resolve, &func.results);
+                let (ret, throws) = context.render_return_type(context, resolve, &func.results);
+
+                let postfix = if let Some(throws) = throws {
+                    format!(" // throws {}", throws)
+                } else {
+                    "".to_string()
+                };
 
                 write_doc_comment(&mut self.global_imports, "  ", &func.docs);
                 encoded_name.write_rename_attribute(&mut self.global_imports, "  ");
                 uwriteln!(
                     self.global_imports,
-                    "  def {}({args}): {ret} = js.native",
+                    "  def {}({args}): {ret} = js.native{postfix}",
                     encoded_name.scala
                 );
             }
@@ -158,12 +164,18 @@ impl ScalaJsWorld {
             FunctionKind::Freestanding => {
                 let encoded_name = context.encode_name(func_name.to_lower_camel_case());
                 let args = context.render_args(context, resolve, func.params.iter());
-                let ret = context.render_return_type(context, resolve, &func.results);
+                let (ret, throws) = context.render_return_type(context, resolve, &func.results);
+
+                let postfix = if let Some(throws) = throws {
+                    format!(" // throws {}", throws)
+                } else {
+                    "".to_string()
+                };
 
                 write_doc_comment(&mut self.global_exports, "  ", &func.docs);
                 uwriteln!(
                     self.global_exports,
-                    "    def {}({args}): {ret}",
+                    "    def {}({args}): {ret}{postfix}",
                     encoded_name.scala
                 );
             }

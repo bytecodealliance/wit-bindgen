@@ -275,22 +275,67 @@ impl ScalaJsContext {
         owner_context: &impl OwnerContext,
         resolve: &Resolve,
         results: &Results,
-    ) -> String {
+    ) -> (String, Option<String>) {
         match results {
-            Results::Named(results) if results.len() == 0 => "Unit".to_string(),
-            Results::Named(results) if results.len() == 1 => self.render_type_reference(
-                owner_context,
-                resolve,
-                &results.iter().next().unwrap().1,
+            Results::Named(results) if results.len() == 0 => ("Unit".to_string(), None),
+            Results::Named(pairs) if pairs.len() == 1 => {
+                if let Some((ok, err)) = results.throws(resolve) {
+                    let throws = if let Some(err) = err {
+                        Some(self.render_type_reference(owner_context, resolve, err))
+                    } else {
+                        Some("Unit".to_string())
+                    };
+                    if let Some(ok) = ok {
+                        (
+                            self.render_type_reference(owner_context, resolve, ok),
+                            throws,
+                        )
+                    } else {
+                        ("Unit".to_string(), throws)
+                    }
+                } else {
+                    (
+                        self.render_type_reference(
+                            owner_context,
+                            resolve,
+                            &pairs.iter().next().unwrap().1,
+                        ),
+                        None,
+                    )
+                }
+            }
+            Results::Named(results) => (
+                self.render_tuple(
+                    owner_context,
+                    resolve,
+                    &Tuple {
+                        types: results.iter().map(|(_, typ)| typ.clone()).collect(),
+                    },
+                ),
+                None,
             ),
-            Results::Named(results) => self.render_tuple(
-                owner_context,
-                resolve,
-                &Tuple {
-                    types: results.iter().map(|(_, typ)| typ.clone()).collect(),
-                },
-            ),
-            Results::Anon(typ) => self.render_type_reference(owner_context, resolve, typ),
+            Results::Anon(typ) => {
+                if let Some((ok, err)) = results.throws(resolve) {
+                    let throws = if let Some(err) = err {
+                        Some(self.render_type_reference(owner_context, resolve, err))
+                    } else {
+                        Some("Unit".to_string())
+                    };
+                    if let Some(ok) = ok {
+                        (
+                            self.render_type_reference(owner_context, resolve, ok),
+                            throws,
+                        )
+                    } else {
+                        ("Unit".to_string(), throws)
+                    }
+                } else {
+                    (
+                        self.render_type_reference(owner_context, resolve, typ),
+                        None,
+                    )
+                }
+            }
         }
     }
 

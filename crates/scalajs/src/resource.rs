@@ -82,7 +82,8 @@ impl ScalaJsImportedResource {
             FunctionKind::Freestanding => unreachable!(),
             FunctionKind::Method(_) => {
                 let args = context.render_args(owner_context, resolve, func.params.iter().skip(1));
-                let ret = context.render_return_type(owner_context, resolve, &func.results);
+                let (ret, throws) =
+                    context.render_return_type(owner_context, resolve, &func.results);
                 let encoded_func_name = self.get_func_name(context, "[method]", func_name);
 
                 let overrd = if context
@@ -95,6 +96,12 @@ impl ScalaJsImportedResource {
                     ""
                 };
 
+                let postfix = if let Some(throws) = throws {
+                    format!(" // throws {}", throws)
+                } else {
+                    "".to_string()
+                };
+
                 write_doc_comment(
                     &mut self.class_source,
                     &format!("{}  ", self.indent),
@@ -103,14 +110,21 @@ impl ScalaJsImportedResource {
                 encoded_func_name.write_rename_attribute(&mut self.class_source, "      ");
                 uwriteln!(
                     self.class_source,
-                    "{}  {overrd}def {}({args}): {ret} = js.native",
+                    "{}  {overrd}def {}({args}): {ret} = js.native{postfix}",
                     self.indent,
                     encoded_func_name.scala
                 );
             }
             FunctionKind::Static(_) => {
                 let args = context.render_args(owner_context, resolve, func.params.iter());
-                let ret = context.render_return_type(owner_context, resolve, &func.results);
+                let (ret, throws) =
+                    context.render_return_type(owner_context, resolve, &func.results);
+
+                let postfix = if let Some(throws) = throws {
+                    format!(" // throws {}", throws)
+                } else {
+                    "".to_string()
+                };
 
                 let encoded_func_name = self.get_func_name(context, "[static]", func_name);
                 write_doc_comment(&mut self.object_source, "      ", &func.docs);
@@ -118,7 +132,7 @@ impl ScalaJsImportedResource {
                     .write_rename_attribute(&mut self.object_source, &format!("{}  ", self.indent));
                 uwriteln!(
                     self.object_source,
-                    "{}  def {}({args}): {ret} = js.native",
+                    "{}  def {}({args}): {ret} = js.native{postfix}",
                     self.indent,
                     encoded_func_name.scala
                 );
@@ -227,7 +241,7 @@ impl<'a> ScalaJsExportedResource<'a> {
                     self.owner.resolve,
                     func.params.iter().skip(1),
                 );
-                let ret = self.owner.generator.context.render_return_type(
+                let (ret, throws) = self.owner.generator.context.render_return_type(
                     self.owner,
                     self.owner.resolve,
                     &func.results,
@@ -247,11 +261,17 @@ impl<'a> ScalaJsExportedResource<'a> {
                     ""
                 };
 
+                let postfix = if let Some(throws) = throws {
+                    format!(" // throws {}", throws)
+                } else {
+                    "".to_string()
+                };
+
                 write_doc_comment(&mut self.class_source, "      ", &func.docs);
                 encoded_func_name.write_rename_attribute(&mut self.class_source, "      ");
                 uwriteln!(
                     self.class_source,
-                    "    {overrd}def {}({args}): {ret}",
+                    "    {overrd}def {}({args}): {ret}{postfix}",
                     encoded_func_name.scala
                 );
             }
@@ -261,11 +281,17 @@ impl<'a> ScalaJsExportedResource<'a> {
                     self.owner.resolve,
                     func.params.iter(),
                 );
-                let ret = self.owner.generator.context.render_return_type(
+                let (ret, throws) = self.owner.generator.context.render_return_type(
                     self.owner,
                     self.owner.resolve,
                     &func.results,
                 );
+
+                let postfix = if let Some(throws) = throws {
+                    format!(" // throws {}", throws)
+                } else {
+                    "".to_string()
+                };
 
                 let encoded_func_name = self.get_func_name("[static]", func_name);
                 write_doc_comment(&mut self.static_methods, "      ", &func.docs);
@@ -273,7 +299,7 @@ impl<'a> ScalaJsExportedResource<'a> {
                 encoded_func_name.write_rename_attribute(&mut self.static_methods, "    ");
                 uwriteln!(
                     self.static_methods,
-                    "    def {}({args}): {ret}",
+                    "    def {}({args}): {ret}{postfix}",
                     encoded_func_name.scala
                 );
             }
