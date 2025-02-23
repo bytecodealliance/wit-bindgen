@@ -1,7 +1,7 @@
-use wit_bindgen_core::uwriteln;
 use crate::context::ScalaJsFile;
 use crate::Opts;
 use std::fmt::Write;
+use wit_bindgen_core::uwriteln;
 
 pub fn render_runtime_module(opts: &Opts) -> ScalaJsFile {
     let wit_scala = include_str!("../scala/wit.scala");
