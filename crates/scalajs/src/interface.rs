@@ -24,7 +24,6 @@ pub struct ScalaJsInterface<'a> {
 }
 
 impl<'a> ScalaJsInterface<'a> {
-    // TODO: should just get a reference to ScalaJsWorld
     pub fn new(
         wit_name: String,
         resolve: &'a Resolve,
