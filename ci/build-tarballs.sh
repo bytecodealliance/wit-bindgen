@@ -22,7 +22,7 @@ if [ "$platform" = "x86_64-windows" ]; then
 elif [ "$target" = "" ]; then
   cp target/release/wit-bindgen-scalajs tmp/$bin_pkgname
 else
-  cp target/$target/release/wit-bindgen-sclajs tmp/$bin_pkgname
+  cp target/$target/release/wit-bindgen-scalajs tmp/$bin_pkgname
 fi
 
 
