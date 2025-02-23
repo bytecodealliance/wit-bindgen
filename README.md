@@ -210,7 +210,7 @@ WIT files are currently added to a `wit/` folder adjacent to your `Cargo.toml`
 file. Example code using this then looks like:
 
 ```rust
-// src/lib.rs
+// src/lib.rs.rs
 
 // Use a procedural macro to generate bindings for the world we specified in
 // `host.wit`
