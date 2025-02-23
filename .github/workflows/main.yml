@@ -116,9 +116,6 @@ jobs:
       with:
         tinygo-version: 0.31.0
 
-    - uses: olafurpg/setup-scala@v11
-      if: matrix.lang == 'scalajs'
-
     - run: |
         cargo test \
           -p wit-bindgen-cli \
