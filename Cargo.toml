@@ -51,7 +51,6 @@ wit-bindgen = { path = 'crates/guest-rust', version = '0.37.0', default-features
 
 [[bin]]
 name = "wit-bindgen"
-path = "src/bin/wit-bindgen.rs"
 
 [dependencies]
 anyhow = { workspace = true }
