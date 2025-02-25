@@ -6,8 +6,8 @@ use heck::{ToLowerCamelCase, ToPascalCase, ToSnakeCase};
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 use wit_bindgen_core::wit_parser::{
-    Docs, Handle, InterfaceId, PackageName, Resolve, Results, Tuple, Type, TypeDef, TypeDefKind,
-    TypeId, TypeOwner, WorldItem,
+    Docs, Handle, InterfaceId, PackageName, Resolve, Tuple, Type, TypeDef, TypeDefKind, TypeId,
+    TypeOwner, WorldItem,
 };
 use wit_bindgen_core::Direction::{Export, Import};
 use wit_bindgen_core::{uwrite, uwriteln, Direction};
@@ -274,12 +274,12 @@ impl ScalaJsContext {
         &self,
         owner_context: &impl OwnerContext,
         resolve: &Resolve,
-        results: &Results,
+        results: &Option<Type>,
     ) -> (String, Option<String>) {
         match results {
-            Results::Named(results) if results.len() == 0 => ("Unit".to_string(), None),
-            Results::Named(pairs) if pairs.len() == 1 => {
-                if let Some((ok, err)) = results.throws(resolve) {
+            None => ("Unit".to_string(), None),
+            Some(result) => {
+                if let Some((ok, err)) = throws(result, resolve) {
                     let throws = if let Some(err) = err {
                         Some(self.render_type_reference(owner_context, resolve, err))
                     } else {
@@ -295,43 +295,7 @@ impl ScalaJsContext {
                     }
                 } else {
                     (
-                        self.render_type_reference(
-                            owner_context,
-                            resolve,
-                            &pairs.iter().next().unwrap().1,
-                        ),
-                        None,
-                    )
-                }
-            }
-            Results::Named(results) => (
-                self.render_tuple(
-                    owner_context,
-                    resolve,
-                    &Tuple {
-                        types: results.iter().map(|(_, typ)| typ.clone()).collect(),
-                    },
-                ),
-                None,
-            ),
-            Results::Anon(typ) => {
-                if let Some((ok, err)) = results.throws(resolve) {
-                    let throws = if let Some(err) = err {
-                        Some(self.render_type_reference(owner_context, resolve, err))
-                    } else {
-                        Some("Unit".to_string())
-                    };
-                    if let Some(ok) = ok {
-                        (
-                            self.render_type_reference(owner_context, resolve, ok),
-                            throws,
-                        )
-                    } else {
-                        ("Unit".to_string(), throws)
-                    }
-                } else {
-                    (
-                        self.render_type_reference(owner_context, resolve, typ),
+                        self.render_type_reference(owner_context, resolve, result),
                         None,
                     )
                 }
@@ -807,6 +771,19 @@ pub fn write_doc_comment(source: &mut impl Write, indent: &str, docs: &Docs) {
             uwriteln!(source, "{} * {}", indent, line);
         }
         uwriteln!(source, "{} */", indent);
+    }
+}
+
+pub fn throws<'a>(
+    typ: &Type,
+    resolve: &'a Resolve,
+) -> Option<(Option<&'a Type>, Option<&'a Type>)> {
+    match typ {
+        Type::Id(id) => match &resolve.types[*id].kind {
+            TypeDefKind::Result(r) => Some((r.ok.as_ref(), r.err.as_ref())),
+            _ => None,
+        },
+        _ => None,
     }
 }
 

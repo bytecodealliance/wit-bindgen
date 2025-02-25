@@ -103,7 +103,7 @@ impl ScalaJsWorld {
                 );
                 let encoded_name = context.encode_name(func_name.to_lower_camel_case());
                 let args = context.render_args(context, resolve, func.params.iter());
-                let (ret, throws) = context.render_return_type(context, resolve, &func.results);
+                let (ret, throws) = context.render_return_type(context, resolve, &func.result);
 
                 let postfix = if let Some(throws) = throws {
                     format!(" // throws {}", throws)
@@ -164,7 +164,7 @@ impl ScalaJsWorld {
             FunctionKind::Freestanding => {
                 let encoded_name = context.encode_name(func_name.to_lower_camel_case());
                 let args = context.render_args(context, resolve, func.params.iter());
-                let (ret, throws) = context.render_return_type(context, resolve, &func.results);
+                let (ret, throws) = context.render_return_type(context, resolve, &func.result);
 
                 let postfix = if let Some(throws) = throws {
                     format!(" // throws {}", throws)

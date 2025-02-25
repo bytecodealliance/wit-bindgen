@@ -83,7 +83,7 @@ impl ScalaJsImportedResource {
             FunctionKind::Method(_) => {
                 let args = context.render_args(owner_context, resolve, func.params.iter().skip(1));
                 let (ret, throws) =
-                    context.render_return_type(owner_context, resolve, &func.results);
+                    context.render_return_type(owner_context, resolve, &func.result);
                 let encoded_func_name = self.get_func_name(context, "[method]", func_name);
 
                 let overrd = if context
@@ -118,7 +118,7 @@ impl ScalaJsImportedResource {
             FunctionKind::Static(_) => {
                 let args = context.render_args(owner_context, resolve, func.params.iter());
                 let (ret, throws) =
-                    context.render_return_type(owner_context, resolve, &func.results);
+                    context.render_return_type(owner_context, resolve, &func.result);
 
                 let postfix = if let Some(throws) = throws {
                     format!(" // throws {}", throws)
@@ -244,7 +244,7 @@ impl<'a> ScalaJsExportedResource<'a> {
                 let (ret, throws) = self.owner.generator.context.render_return_type(
                     self.owner,
                     self.owner.resolve,
-                    &func.results,
+                    &func.result,
                 );
                 let encoded_func_name = self.get_func_name("[method]", func_name);
 
@@ -284,7 +284,7 @@ impl<'a> ScalaJsExportedResource<'a> {
                 let (ret, throws) = self.owner.generator.context.render_return_type(
                     self.owner,
                     self.owner.resolve,
-                    &func.results,
+                    &func.result,
                 );
 
                 let postfix = if let Some(throws) = throws {

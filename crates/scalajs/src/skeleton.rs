@@ -144,11 +144,10 @@ impl<'a> ScalaJsInterfaceSkeleton<'a> {
                         self.generator
                             .context
                             .render_args(self, self.resolve, func.params.iter());
-                    let (ret, throws) = self.generator.context.render_return_type(
-                        self,
-                        self.resolve,
-                        &func.results,
-                    );
+                    let (ret, throws) =
+                        self.generator
+                            .context
+                            .render_return_type(self, self.resolve, &func.result);
 
                     let postfix = if let Some(throws) = throws {
                         format!(" // throws {}", throws)
@@ -286,7 +285,7 @@ impl ScalaJsWorldSkeleton {
             FunctionKind::Freestanding => {
                 let encoded_name = context.encode_name(func_name.to_lower_camel_case());
                 let args = context.render_args(context, resolve, func.params.iter());
-                let (ret, throws) = context.render_return_type(context, resolve, &func.results);
+                let (ret, throws) = context.render_return_type(context, resolve, &func.result);
 
                 let postfix = if let Some(throws) = throws {
                     format!(" // throws {}", throws)
@@ -420,7 +419,7 @@ impl<'a> ScalaJsExportedResourceSkeleton<'a> {
                 let (ret, throws) = self.owner.generator.context.render_return_type(
                     self.owner,
                     self.owner.resolve,
-                    &func.results,
+                    &func.result,
                 );
                 let encoded_func_name = self.get_func_name("[method]", func_name);
 
@@ -448,7 +447,7 @@ impl<'a> ScalaJsExportedResourceSkeleton<'a> {
                 let (ret, throws) = self.owner.generator.context.render_return_type(
                     self.owner,
                     self.owner.resolve,
-                    &func.results,
+                    &func.result,
                 );
 
                 let postfix = if let Some(throws) = throws {

@@ -293,11 +293,10 @@ impl<'a> ScalaJsInterface<'a> {
                         self.generator
                             .context
                             .render_args(self, self.resolve, func.params.iter());
-                    let (ret, throws) = self.generator.context.render_return_type(
-                        self,
-                        self.resolve,
-                        &func.results,
-                    );
+                    let (ret, throws) =
+                        self.generator
+                            .context
+                            .render_return_type(self, self.resolve, &func.result);
 
                     let mut function = String::new();
                     write_doc_comment(&mut function, "    ", &func.docs);
