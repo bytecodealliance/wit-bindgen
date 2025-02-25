@@ -44,24 +44,12 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
     }
 
     pub(crate) fn process_returns(&mut self) {
-        match self.func.results.len() {
-            0 => {}
-            1 => {
-                let ty = self.func.results.iter_types().next().unwrap();
-                match self.interface.direction {
-                    Direction::Import => self.lift("ret", ty),
-                    Direction::Export => self.lower("result", ty),
-                }
+        if let Some(ty) = &self.func.result {
+            match self.interface.direction {
+                Direction::Import => self.lift("ret", ty),
+                Direction::Export => self.lower("result", ty),
             }
-            _ => {
-                for (i, ty) in self.func.results.iter_types().enumerate() {
-                    match self.interface.direction {
-                        Direction::Import => self.lift(&format!("ret{i}"), ty),
-                        Direction::Export => self.lower(&format!("result{i}"), ty),
-                    }
-                }
-            }
-        };
+        }
     }
 
     pub(crate) fn lower(&mut self, name: &str, ty: &Type) {

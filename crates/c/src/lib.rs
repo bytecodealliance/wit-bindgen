@@ -1352,7 +1352,7 @@ void __wasm_export_{ns}_{snake}_dtor({ns}_{snake}_t* arg) {{
         todo!()
     }
 
-    fn type_stream(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
+    fn type_stream(&mut self, id: TypeId, name: &str, ty: &Option<Type>, docs: &Docs) {
         _ = (id, name, ty, docs);
         todo!()
     }
@@ -1450,7 +1450,7 @@ impl<'a> wit_bindgen_core::AnonymousTypeGenerator<'a> for InterfaceGenerator<'a>
         todo!("print_anonymous_type for future");
     }
 
-    fn anonymous_type_stream(&mut self, _id: TypeId, _ty: &Type, _docs: &Docs) {
+    fn anonymous_type_stream(&mut self, _id: TypeId, _ty: &Option<Type>, _docs: &Docs) {
         todo!("print_anonymous_type for stream");
     }
 
@@ -1995,14 +1995,10 @@ impl InterfaceGenerator<'_> {
 
     fn classify_ret(&mut self, func: &Function, sig_flattening: bool) -> Return {
         let mut ret = Return::default();
-        match func.results.len() {
-            0 => ret.scalar = Some(Scalar::Void),
-            1 => {
-                let ty = func.results.iter_types().next().unwrap();
+        match &func.result {
+            None => ret.scalar = Some(Scalar::Void),
+            Some(ty) => {
                 ret.return_single(self.resolve, ty, ty, sig_flattening);
-            }
-            _ => {
-                ret.retptrs.extend(func.results.iter_types().cloned());
             }
         }
         return ret;
@@ -2821,8 +2817,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     }
                     Some(Scalar::Type(_)) => {
                         let ret = self.locals.tmp("ret");
-                        let ty = func.results.iter_types().next().unwrap();
-                        let ty = self.gen.gen.type_name(ty);
+                        let ty = func.result.unwrap();
+                        let ty = self.gen.gen.type_name(&ty);
                         uwriteln!(self.src, "{} {} = {}({});", ty, ret, self.sig.name, args);
                         results.push(ret);
                     }
@@ -2837,8 +2833,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         let payload_ty = self.gen.gen.type_name(ty);
                         uwriteln!(self.src, "{} {};", payload_ty, val);
                         uwriteln!(self.src, "bool {} = {}({});", ret, self.sig.name, args);
-                        let ty = func.results.iter_types().next().unwrap();
-                        let option_ty = self.gen.gen.type_name(ty);
+                        let ty = func.result.unwrap();
+                        let option_ty = self.gen.gen.type_name(&ty);
                         let option_ret = self.locals.tmp("ret");
                         uwrite!(
                             self.src,
@@ -2851,7 +2847,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         results.push(option_ret);
                     }
                     Some(Scalar::ResultBool(ok, err)) => {
-                        let ty = func.results.iter_types().next().unwrap();
+                        let ty = &func.result.unwrap();
                         let result_ty = self.gen.gen.type_name(ty);
                         let ret = self.locals.tmp("ret");
                         let mut ret_iter = self.sig.ret.retptrs.iter();

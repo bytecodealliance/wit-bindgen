@@ -15,6 +15,7 @@ interface transmit {
 }
 
 interface streams {
+  stream-param: func(x: stream);
   stream-u8-param: func(x: stream<u8>);
   stream-u16-param: func(x: stream<u16>);
   stream-u32-param: func(x: stream<u32>);
@@ -26,6 +27,7 @@ interface streams {
   stream-f32-param: func(x: stream<f32>);
   stream-f64-param: func(x: stream<f64>);
 
+  stream-ret: func() -> stream;
   stream-u8-ret: func() -> stream<u8>;
   stream-u16-ret: func() -> stream<u16>;
   stream-u32-ret: func() -> stream<u32>;

@@ -30,6 +30,8 @@ namespace ListsWorld {
             }
 
             TestInterop.ListParam(new byte[] { (byte)1, (byte)2, (byte)3, (byte)4 });
+            TestInterop.ListParam((new byte[] { (byte)1, (byte)2, (byte)3, (byte)4 }).AsSpan());
+            TestInterop.ListParam((new byte[] { (byte)1, (byte)2, (byte)3, (byte)4 }).AsMemory());
             TestInterop.ListParam2("foo");
             TestInterop.ListParam3(new List<String>() {
                 "foo",
@@ -46,6 +48,13 @@ namespace ListsWorld {
                     "baz"
                 }
             });
+
+            List<string> randomStrings = new List<string>();
+            for (int i = 0; i < 1000; i++)
+            {
+                randomStrings.Add(Guid.NewGuid().ToString());
+            }
+            TestInterop.ListParamLarge(randomStrings);
 
             {
                byte[] result = TestInterop.ListResult();
@@ -229,6 +238,11 @@ namespace ListsWorld.wit.exports.test.lists
             Debug.Assert(a[1].Item1 == 4);
             Debug.Assert(a[1].Item2 == 5);
             Debug.Assert(a[1].Item3 == 6);
+        }
+
+        public static void ListParamLarge(List<String> a)
+        {
+            Debug.Assert(a.Count() == 1000);
         }
 
         public static byte[] ListResult()

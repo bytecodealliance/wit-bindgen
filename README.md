@@ -476,6 +476,10 @@ components:
   generate Python source code to interact with the component using an embedding
   of Wasmtime for its core WebAssembly support.
 
+- Ruby: the [`wasmtime-rb`](https://github.com/bytecodealliance/wasmtime-rb)
+  project has initial support for components since
+  [v27](https://github.com/bytecodealliance/wasmtime-rb/releases/tag/v27.0.0).
+
 - Tooling: the [`wasm-tools`] project can be used to inspect and modify
   low-level details of components. For example as previously mentioned you can
   inspect the WIT-based interface of a component with `wasm-tools component

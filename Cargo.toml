@@ -9,6 +9,7 @@ homepage = 'https://github.com/bytecodealliance/wit-bindgen'
 description = """
 CLI tool to generate bindings for WIT documents and the component model.
 """
+
 [workspace]
 members = [
   "crates/test-rust-wasm",
@@ -17,9 +18,9 @@ resolver = "2"
 
 [workspace.package]
 edition = "2021"
-version = "0.37.0"
+version = "0.39.0"
 license = "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT"
-repository = "https://github.com/bytecodealliance/wasi-rs"
+repository = "https://github.com/bytecodealliance/wit-bindgen"
 
 [workspace.dependencies]
 anyhow = "1.0.72"
@@ -32,22 +33,22 @@ prettyplease = "0.2.20"
 syn = { version = "2.0.89", features = ["printing"] }
 futures = "0.3.31"
 
-wasmparser = "0.223.0"
-wasm-encoder = "0.223.0"
-wasm-metadata = "0.223.0"
-wit-parser = "0.223.0"
-wit-component = "0.223.0"
+wasmparser = "0.226.0"
+wasm-encoder = "0.226.0"
+wasm-metadata = "0.226.0"
+wit-parser = "0.226.0"
+wit-component = "0.226.0"
 
-wit-bindgen-core = { path = 'crates/core', version = '0.37.0' }
-wit-bindgen-c = { path = 'crates/c', version = '0.37.0' }
-wit-bindgen-rust = { path = "crates/rust", version = "0.37.0" }
-wit-bindgen-teavm-java = { path = 'crates/teavm-java', version = '0.37.0' }
-wit-bindgen-go = { path = 'crates/go', version = '0.37.0' }
-wit-bindgen-csharp = { path = 'crates/csharp', version = '0.37.0' }
-wit-bindgen-markdown = { path = 'crates/markdown', version = '0.37.0' }
-wit-bindgen-moonbit = { path = 'crates/moonbit', version = '0.37.0' }
-wit-bindgen-scalajs = { path = 'crates/scalajs', version = '0.37.0' }
-wit-bindgen = { path = 'crates/guest-rust', version = '0.37.0', default-features = false }
+wit-bindgen-core = { path = 'crates/core', version = '0.39.0' }
+wit-bindgen-c = { path = 'crates/c', version = '0.39.0' }
+wit-bindgen-rust = { path = "crates/rust", version = "0.39.0" }
+wit-bindgen-teavm-java = { path = 'crates/teavm-java', version = '0.39.0' }
+wit-bindgen-go = { path = 'crates/go', version = '0.39.0' }
+wit-bindgen-csharp = { path = 'crates/csharp', version = '0.39.0' }
+wit-bindgen-markdown = { path = 'crates/markdown', version = '0.39.0' }
+wit-bindgen-moonbit = { path = 'crates/moonbit', version = '0.39.0' }
+wit-bindgen-scalajs = { path = 'crates/scalajs', version = '0.39.0' }
+wit-bindgen = { path = 'crates/guest-rust', version = '0.39.0', default-features = false }
 
 [[bin]]
 name = "wit-bindgen"
