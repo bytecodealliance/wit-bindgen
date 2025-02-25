@@ -125,7 +125,7 @@ jobs:
           -p wit-bindgen-${{ matrix.lang }} \
           --no-default-features \
           --features ${{ matrix.lang }}
-      if: ${{ ! (matrix.os == 'windows-latest' && matrix.lang == 'scalajs') }} # setup-scala does not make sbt available on Windows?
+      if: ${{ (! (matrix.os == 'windows-latest' && matrix.lang == 'scalajs')) && (! (matrix.os == 'macos-latest' && matrix.lang == 'scalajs')) }} # setup-scala does not make sbt available on Windows, and the scalajs tests are very slow on macos
 
   test_unit:
     name: Crate Unit Tests
