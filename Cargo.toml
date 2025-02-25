@@ -50,7 +50,7 @@ wit-bindgen-scalajs = { path = 'crates/scalajs', version = '0.37.0' }
 wit-bindgen = { path = 'crates/guest-rust', version = '0.37.0', default-features = false }
 
 [[bin]]
-name = "wit-bindgen-scalajs"
+name = "wit-bindgen"
 path = "src/bin/wit-bindgen.rs"
 
 [dependencies]

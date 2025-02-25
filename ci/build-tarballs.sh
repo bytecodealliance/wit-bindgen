@@ -10,19 +10,19 @@ mkdir tmp
 mkdir -p dist
 
 tag=$(./ci/print-current-version.sh)
-bin_pkgname=wit-bindgen-scalajs-$tag-$platform
+bin_pkgname=wit-bindgen-$tag-$platform
 
 mkdir tmp/$bin_pkgname
 cp LICENSE-* README.md tmp/$bin_pkgname
 
 fmt=tar
 if [ "$platform" = "x86_64-windows" ]; then
-  cp target/release/wit-bindgen-scalajs.exe tmp/$bin_pkgname
+  cp target/release/wit-bindgen.exe tmp/$bin_pkgname
   fmt=zip
 elif [ "$target" = "" ]; then
-  cp target/release/wit-bindgen-scalajs tmp/$bin_pkgname
+  cp target/release/wit-bindgen tmp/$bin_pkgname
 else
-  cp target/$target/release/wit-bindgen-scalajs tmp/$bin_pkgname
+  cp target/$target/release/wit-bindgen tmp/$bin_pkgname
 fi
 
 
