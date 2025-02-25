@@ -70,13 +70,13 @@ wasm-encoder = { workspace = true }
 
 [features]
 default = [
-#  'c',
-#  'rust',
-#  'markdown',
-#  'teavm-java',
-#  'go',
-#  'csharp',
-#  'moonbit',
+  'c',
+  'rust',
+  'markdown',
+  'teavm-java',
+  'go',
+  'csharp',
+  'moonbit',
   'scalajs',
   'async',
 ]
