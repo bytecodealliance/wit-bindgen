@@ -1,7 +1,8 @@
 use crate::bindgen::FunctionBindgen;
 use crate::{
-    int_repr, to_rust_ident, to_upper_camel_case, wasm_type, AsyncConfig, FnSig, Identifier,
-    InterfaceName, Ownership, RuntimeItem, RustFlagsRepr, RustWasm,
+    full_wit_type_name, int_repr, to_rust_ident, to_upper_camel_case, wasm_type, AsyncConfig,
+    FnSig, Identifier, InterfaceName, Ownership, RuntimeItem, RustFlagsRepr, RustWasm,
+    TypeGeneration,
 };
 use anyhow::Result;
 use heck::*;
@@ -1813,14 +1814,19 @@ pub mod vtable{ordinal} {{
     }
 
     pub fn type_path(&self, id: TypeId, owned: bool) -> String {
-        self.type_path_with_name(
-            id,
-            if owned {
-                self.result_name(id)
-            } else {
-                self.param_name(id)
-            },
-        )
+        let full_wit_type_name = full_wit_type_name(self.resolve, id);
+        if let Some(TypeGeneration::Remap(remapped_path)) = self.gen.with.get(&full_wit_type_name) {
+            remapped_path.clone()
+        } else {
+            self.type_path_with_name(
+                id,
+                if owned {
+                    self.result_name(id)
+                } else {
+                    self.param_name(id)
+                },
+            )
+        }
     }
 
     fn type_path_with_name(&self, id: TypeId, name: String) -> String {
