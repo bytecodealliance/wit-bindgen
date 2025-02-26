@@ -7,7 +7,7 @@ repository = { workspace = true }
 license = { workspace = true }
 homepage = 'https://github.com/bytecodealliance/wit-bindgen'
 description = """
-Scala.JS bindings generator for WIT and the component model, typically used
+Scala.js bindings generator for WIT and the component model, typically used
 through the `wit-bindgen-cli` crate.
 """
 
