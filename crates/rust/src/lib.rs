@@ -47,7 +47,7 @@ struct RustWasm {
     rt_module: IndexSet<RuntimeItem>,
     export_macros: Vec<(String, String)>,
 
-    /// Interface/type names to how they should be generated
+    /// Maps wit interface and type names to their Rust identifiers
     with: GenerationConfiguration,
 
     future_payloads: IndexMap<String, String>,
