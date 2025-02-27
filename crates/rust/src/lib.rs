@@ -39,7 +39,7 @@ struct RustWasm {
     interface_last_seen_as_import: HashMap<InterfaceId, bool>,
     import_funcs_called: bool,
     with_name_counter: usize,
-    // Track which interfaces/types were generated. Remapped interfaces/types provided via `with`
+    // Track which interfaces and types are generated. Remapped interfaces and types provided via `with`
     // are required to be used.
     generated_types: HashSet<String>,
     world: Option<WorldId>,
