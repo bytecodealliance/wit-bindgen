@@ -238,7 +238,7 @@ pub struct Opts {
     #[cfg_attr(feature = "clap", arg(long = "additional_derive_attribute", short = 'd', default_values_t = Vec::<String>::new()))]
     pub additional_derive_attributes: Vec<String>,
 
-    /// Remapping of interface names to rust module names and/or types to Rust types.
+    /// Remapping of wit interface and type names to Rust module names and types.
     ///
     /// Argument must be of the form `k=v` and this option can be passed
     /// multiple times or one option can be comma separated, for example
