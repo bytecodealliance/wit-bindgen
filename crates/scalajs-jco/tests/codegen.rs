@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use wit_bindgen_scalajs::ScalaDialect::Scala2;
+use wit_bindgen_scalajs_jco::ScalaDialect::Scala2;
 
 macro_rules! codegen_test {
     // TODO: implement support for stream, future, and error-context, and then
@@ -19,7 +19,7 @@ macro_rules! codegen_test {
                 "guest-scalajs",
                 $test.as_ref(),
                 |resolve, world, files| {
-                    wit_bindgen_scalajs::Opts {
+                    wit_bindgen_scalajs_jco::Opts {
                         base_package: Some("test".to_string()),
                         skeleton_base_package: Some("skeleton".to_string()),
                         scala_dialect: Scala2,

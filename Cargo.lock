@@ -2561,7 +2561,7 @@ dependencies = [
  "wit-bindgen-markdown",
  "wit-bindgen-moonbit",
  "wit-bindgen-rust",
- "wit-bindgen-scalajs",
+ "wit-bindgen-scalajs-jco",
  "wit-bindgen-teavm-java",
  "wit-component",
  "wit-parser 0.226.0",
@@ -2671,7 +2671,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "wit-bindgen-scalajs"
+name = "wit-bindgen-scalajs-jco"
 version = "0.39.0"
 dependencies = [
  "anyhow",

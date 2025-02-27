@@ -1,5 +1,5 @@
 [package]
-name = "wit-bindgen-scalajs"
+name = "wit-bindgen-scalajs-jco"
 authors = ["Daniel Vigovszky <me@vigoo.dev>"]
 version = { workspace = true }
 edition = { workspace = true }

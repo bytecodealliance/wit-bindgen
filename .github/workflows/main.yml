@@ -59,7 +59,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         # moonbit removed from language matrix for now - causing CI failures
-        lang: [c, rust, teavm-java, go, csharp, scalajs]
+        lang: [c, rust, teavm-java, go, csharp, scalajs-jco]
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
@@ -113,13 +113,13 @@ jobs:
         tinygo-version: 0.31.0
 
     - uses: actions/setup-java@v4
-      if: matrix.lang == 'scalajs'
+      if: matrix.lang == 'scalajs-jco'
       with:
         distribution: 'temurin'
         java-version: 17
         cache: 'sbt'
     - uses: sbt/setup-sbt@v1
-      if: matrix.lang == 'scalajs'
+      if: matrix.lang == 'scalajs-jco'
 
     - run: |
         cargo test \
@@ -127,7 +127,7 @@ jobs:
           -p wit-bindgen-${{ matrix.lang }} \
           --no-default-features \
           --features ${{ matrix.lang }}
-      if: ${{ (! (matrix.os == 'windows-latest' && matrix.lang == 'scalajs')) && (! (matrix.os == 'macos-latest' && matrix.lang == 'scalajs')) }} # setup-scala does not make sbt available on Windows, and the scalajs tests are very slow on macos
+      if: ${{ (! (matrix.os == 'windows-latest' && matrix.lang == 'scalajs-jco')) && (! (matrix.os == 'macos-latest' && matrix.lang == 'scalajs-jco')) }} # setup-scala does not make sbt available on Windows, and the scalajs tests are very slow on macos
 
   test_unit:
     name: Crate Unit Tests
@@ -171,7 +171,7 @@ jobs:
     - run: cargo build --no-default-features --features csharp
     - run: cargo build --no-default-features --features markdown
     - run: cargo build --no-default-features --features moonbit
-    - run: cargo build --no-default-features --features scalajs
+    - run: cargo build --no-default-features --features scalajs-jco
 
     # Feature combos of the `wit-bindgen` crate
     - run: cargo build --target wasm32-wasip1 -p wit-bindgen --no-default-features
