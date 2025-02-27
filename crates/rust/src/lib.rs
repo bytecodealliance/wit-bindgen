@@ -85,6 +85,16 @@ enum TypeGeneration {
     Generate,
 }
 
+impl TypeGeneration {
+    /// Returns true if the interface or type should be defined with this bindgen invocation
+    fn generated(&self) -> bool {
+        match self {
+            TypeGeneration::Generate => true,
+            TypeGeneration::Remap(_) => false,
+        }
+    }
+}
+
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
 enum RuntimeItem {
     AllocCrate,
@@ -1109,10 +1119,13 @@ impl WorldGenerator for RustWasm {
         let mut to_define = Vec::new();
         for (name, ty_id) in resolve.interfaces[id].types.iter() {
             let full_name = full_wit_type_name(resolve, *ty_id);
-            if let Some(TypeGeneration::Remap(_)) = self.with.get(&full_name) {
+            if let Some(type_gen) = self.with.get(&full_name) {
                 // skip type definition generation for remapped types
+                if type_gen.generated() {
+                    to_define.push((name, ty_id));
+                }
             } else {
-                to_define.push((name, ty_id))
+                to_define.push((name, ty_id));
             }
             self.generated_types.insert(full_name);
         }
@@ -1170,10 +1183,13 @@ impl WorldGenerator for RustWasm {
         let mut to_define = Vec::new();
         for (name, ty_id) in resolve.interfaces[id].types.iter() {
             let full_name = full_wit_type_name(resolve, *ty_id);
-            if let Some(TypeGeneration::Remap(_)) = self.with.get(&full_name) {
+            if let Some(type_gen) = self.with.get(&full_name) {
                 // skip type definition generation for remapped types
+                if type_gen.generated() {
+                    to_define.push((name, ty_id));
+                }
             } else {
-                to_define.push((name, ty_id))
+                to_define.push((name, ty_id));
             }
             self.generated_types.insert(full_name);
         }
@@ -1251,10 +1267,13 @@ impl WorldGenerator for RustWasm {
         let mut to_define = Vec::new();
         for (name, ty_id) in types {
             let full_name = full_wit_type_name(resolve, *ty_id);
-            if let Some(TypeGeneration::Remap(_)) = self.with.get(&full_name) {
+            if let Some(type_gen) = self.with.get(&full_name) {
                 // skip type definition generation for remapped types
+                if type_gen.generated() {
+                    to_define.push((name, ty_id));
+                }
             } else {
-                to_define.push((name, ty_id))
+                to_define.push((name, ty_id));
             }
             self.generated_types.insert(full_name);
         }
