@@ -79,7 +79,7 @@ impl GenerationConfiguration {
 
 /// How a wit interface or type should be rendered in Rust
 enum TypeGeneration {
-    /// Remapped to some other type
+    /// Uses a Rust identifier defined elsewhere
     Remap(String),
     /// Generate the interface/type
     Generate,
