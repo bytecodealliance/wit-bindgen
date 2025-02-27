@@ -77,7 +77,7 @@ impl GenerationConfiguration {
     }
 }
 
-/// How an interface/type should be generated.
+/// How a wit interface or type should be rendered in Rust
 enum TypeGeneration {
     /// Remapped to some other type
     Remap(String),
