@@ -81,7 +81,7 @@ impl GenerationConfiguration {
 enum TypeGeneration {
     /// Uses a Rust identifier defined elsewhere
     Remap(String),
-    /// Generate the interface/type
+    /// Define the interface or type with this bindgen invocation
     Generate,
 }
 
