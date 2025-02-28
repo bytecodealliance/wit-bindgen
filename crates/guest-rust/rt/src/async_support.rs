@@ -8,6 +8,7 @@ use std::boxed::Box;
 use std::collections::{hash_map, HashMap};
 use std::fmt::{self, Debug, Display};
 use std::future::Future;
+use std::mem;
 use std::pin::Pin;
 use std::ptr;
 use std::string::String;
@@ -164,6 +165,8 @@ pub async unsafe fn await_result(
         (*CURRENT).todo += 1;
     }
 
+    let trap_on_drop = TrapOnDrop;
+
     match status {
         STATUS_STARTING => {
             let (tx, rx) = oneshot::channel();
@@ -182,6 +185,26 @@ pub async unsafe fn await_result(
         }
         _ => unreachable!("unrecognized async call status"),
     }
+
+    mem::forget(trap_on_drop);
+
+    struct TrapOnDrop;
+
+    impl Drop for TrapOnDrop {
+        fn drop(&mut self) {
+            trap_because_of_future_drop();
+        }
+    }
+}
+
+#[cold]
+fn trap_because_of_future_drop() {
+    panic!(
+        "an imported function is being dropped/cancelled before being fully \
+         awaited, but that is not sound at this time so the program is going \
+         to be aborted; for more information see \
+         https://github.com/bytecodealliance/wit-bindgen/issues/1175"
+    );
 }
 
 /// stream/future read/write results defined by the Component Model ABI.
