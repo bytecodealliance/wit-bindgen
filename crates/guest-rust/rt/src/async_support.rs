@@ -3,7 +3,6 @@
 
 extern crate std;
 use core::sync::atomic::{AtomicBool, Ordering};
-use std::alloc::{self, Layout};
 use std::any::Any;
 use std::boxed::Box;
 use std::collections::{hash_map, HashMap};
@@ -157,7 +156,6 @@ pub fn first_poll<T: 'static>(
 #[doc(hidden)]
 pub async unsafe fn await_result(
     import: unsafe extern "C" fn(*mut u8, *mut u8) -> i32,
-    params_layout: Layout,
     params: *mut u8,
     results: *mut u8,
 ) {
@@ -182,17 +180,13 @@ pub async unsafe fn await_result(
             let (tx, rx) = oneshot::channel();
             CALLS.insert(call, tx);
             rx.await.unwrap();
-            alloc::dealloc(params, params_layout);
         }
         STATUS_STARTED => {
-            alloc::dealloc(params, params_layout);
             let (tx, rx) = oneshot::channel();
             CALLS.insert(call, tx);
             rx.await.unwrap();
         }
-        STATUS_RETURNED | STATUS_DONE => {
-            alloc::dealloc(params, params_layout);
-        }
+        STATUS_RETURNED | STATUS_DONE => {}
         _ => unreachable!("unrecognized async call status"),
     }
 
