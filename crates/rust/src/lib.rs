@@ -1249,7 +1249,8 @@ impl WorldGenerator for RustWasm {
         self.export_macros.push((macro_name, String::new()));
 
         if self.opts.stubs {
-            let mut r#gen = self.interface(Identifier::World(world), "[export]$root", resolve, false);
+            let mut r#gen =
+                self.interface(Identifier::World(world), "[export]$root", resolve, false);
             r#gen.generate_stub(None, funcs.iter().map(|f| f.1));
             let stub = r#gen.finish();
             self.src.push_str(&stub);

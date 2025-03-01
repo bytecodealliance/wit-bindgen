@@ -1,7 +1,8 @@
 use crate::bindgen::FunctionBindgen;
 use crate::{
-    AsyncConfig, FnSig, Identifier, InterfaceName, Ownership, RuntimeItem, RustFlagsRepr, RustWasm,
-    TypeGeneration, full_wit_type_name, int_repr, to_rust_ident, to_upper_camel_case, wasm_type,
+    full_wit_type_name, int_repr, to_rust_ident, to_upper_camel_case, wasm_type, AsyncConfig,
+    FnSig, Identifier, InterfaceName, Ownership, RuntimeItem, RustFlagsRepr, RustWasm,
+    TypeGeneration,
 };
 use anyhow::Result;
 use heck::*;
@@ -10,7 +11,7 @@ use std::fmt::Write as _;
 use std::mem;
 use wit_bindgen_core::abi::{self, AbiVariant, LiftLower};
 use wit_bindgen_core::{
-    AnonymousTypeGenerator, Source, TypeInfo, dealias, uwrite, uwriteln, wit_parser::*,
+    dealias, uwrite, uwriteln, wit_parser::*, AnonymousTypeGenerator, Source, TypeInfo,
 };
 
 pub struct InterfaceGenerator<'a> {

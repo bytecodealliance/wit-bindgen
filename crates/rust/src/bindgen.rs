@@ -490,7 +490,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             .type_name_owned_with_id(ty, Identifier::StreamOrFuturePayload)
                     })
                     .unwrap_or_else(|| "()".into());
-                let ordinal = self.r#gen.r#gen.future_payloads.get_index_of(&name).unwrap();
+                let ordinal = self
+                    .r#gen
+                    .r#gen
+                    .future_payloads
+                    .get_index_of(&name)
+                    .unwrap();
                 let path = self.r#gen.path_to_root();
                 results.push(format!(
                     "{async_support}::FutureReader::from_handle_and_vtable\
@@ -513,7 +518,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             .type_name_owned_with_id(ty, Identifier::StreamOrFuturePayload)
                     })
                     .unwrap_or_else(|| "()".into());
-                let ordinal = self.r#gen.r#gen.stream_payloads.get_index_of(&name).unwrap();
+                let ordinal = self
+                    .r#gen
+                    .r#gen
+                    .stream_payloads
+                    .get_index_of(&name)
+                    .unwrap();
                 let path = self.r#gen.path_to_root();
                 results.push(format!(
                     "{async_support}::StreamReader::from_handle_and_vtable\
