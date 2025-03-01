@@ -1,8 +1,7 @@
 use crate::bindgen::FunctionBindgen;
 use crate::{
-    full_wit_type_name, int_repr, to_rust_ident, to_upper_camel_case, wasm_type, AsyncConfig,
-    FnSig, Identifier, InterfaceName, Ownership, RuntimeItem, RustFlagsRepr, RustWasm,
-    TypeGeneration,
+    AsyncConfig, FnSig, Identifier, InterfaceName, Ownership, RuntimeItem, RustFlagsRepr, RustWasm,
+    TypeGeneration, full_wit_type_name, int_repr, to_rust_ident, to_upper_camel_case, wasm_type,
 };
 use anyhow::Result;
 use heck::*;
@@ -11,7 +10,7 @@ use std::fmt::Write as _;
 use std::mem;
 use wit_bindgen_core::abi::{self, AbiVariant, LiftLower};
 use wit_bindgen_core::{
-    dealias, uwrite, uwriteln, wit_parser::*, AnonymousTypeGenerator, Source, TypeInfo,
+    AnonymousTypeGenerator, Source, TypeInfo, dealias, uwrite, uwriteln, wit_parser::*,
 };
 
 pub struct InterfaceGenerator<'a> {
@@ -336,9 +335,11 @@ macro_rules! {macro_name} {{
                     #[unsafe(export_name = "{export_prefix}{module}#[dtor]{name}")]
                     #[allow(non_snake_case)]
                     unsafe extern "C" fn dtor(rep: *mut u8) {{
-                        $($path_to_types)*::{camel}::dtor::<
-                            <$ty as $($path_to_types)*::Guest>::{camel}
-                        >(rep)
+                        unsafe {{
+                            $($path_to_types)*::{camel}::dtor::<
+                                <$ty as $($path_to_types)*::Guest>::{camel}
+                            >(rep)
+                        }}
                     }}
                 }};
                 "#
@@ -1156,7 +1157,9 @@ pub mod vtable{ordinal} {{
                     #[doc(hidden)]
                     #[allow(non_snake_case)]
                     pub unsafe fn __callback_{name_snake}(ctx: *mut u8, event0: i32, event1: i32, event2: i32) -> i32 {{
-                        {async_support}::callback(ctx, event0, event1, event2)
+                        unsafe {{
+                            {async_support}::callback(ctx, event0, event1, event2)
+                        }}
                     }}
                 "
             );
@@ -1219,7 +1222,7 @@ pub mod vtable{ordinal} {{
         self.push_str(" {\n");
         uwriteln!(
             self.src,
-            "{path_to_self}::_export_{name_snake}_cabi::<{ty}>({})",
+            "unsafe {{ {path_to_self}::_export_{name_snake}_cabi::<{ty}>({}) }}",
             params.join(", ")
         );
         self.push_str("}\n");
@@ -1231,7 +1234,9 @@ pub mod vtable{ordinal} {{
                 "\
                     #[unsafe(export_name = \"{export_prefix}[callback]{export_name}\")]
                     unsafe extern \"C\" fn _callback_{name_snake}(ctx: *mut u8, event0: i32, event1: i32, event2: i32) -> i32 {{
-                        {path_to_self}::__callback_{name_snake}(ctx, event0, event1, event2)
+                        unsafe {{
+                            {path_to_self}::__callback_{name_snake}(ctx, event0, event1, event2)
+                        }}
                     }}
                 "
             );
@@ -1247,7 +1252,7 @@ pub mod vtable{ordinal} {{
             self.src.push_str("{\n");
             uwriteln!(
                 self.src,
-                "{path_to_self}::__post_return_{name_snake}::<{ty}>({})",
+                "unsafe {{ {path_to_self}::__post_return_{name_snake}::<{ty}>({}) }}",
                 params.join(", ")
             );
             self.src.push_str("}\n");
@@ -1816,7 +1821,8 @@ pub mod vtable{ordinal} {{
 
     pub fn type_path(&self, id: TypeId, owned: bool) -> String {
         let full_wit_type_name = full_wit_type_name(self.resolve, id);
-        if let Some(TypeGeneration::Remap(remapped_path)) = self.r#gen.with.get(&full_wit_type_name) {
+        if let Some(TypeGeneration::Remap(remapped_path)) = self.r#gen.with.get(&full_wit_type_name)
+        {
             remapped_path.clone()
         } else {
             self.type_path_with_name(
