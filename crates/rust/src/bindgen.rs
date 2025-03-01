@@ -6,7 +6,7 @@ use wit_bindgen_core::abi::{Bindgen, Instruction, LiftLower, WasmType};
 use wit_bindgen_core::{dealias, uwrite, uwriteln, wit_parser::*, Source};
 
 pub(super) struct FunctionBindgen<'a, 'b> {
-    pub gen: &'b mut InterfaceGenerator<'a>,
+    pub r#gen: &'b mut InterfaceGenerator<'a>,
     params: Vec<String>,
     async_: bool,
     wasm_import_module: &'b str,
@@ -26,14 +26,14 @@ pub(super) struct FunctionBindgen<'a, 'b> {
 
 impl<'a, 'b> FunctionBindgen<'a, 'b> {
     pub(super) fn new(
-        gen: &'b mut InterfaceGenerator<'a>,
+        r#gen: &'b mut InterfaceGenerator<'a>,
         params: Vec<String>,
         async_: bool,
         wasm_import_module: &'b str,
         always_owned: bool,
     ) -> FunctionBindgen<'a, 'b> {
         FunctionBindgen {
-            gen,
+            r#gen,
             params,
             async_,
             wasm_import_module,
@@ -58,13 +58,13 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         }
         self.emitted_cleanup = true;
         for (ptr, layout) in mem::take(&mut self.cleanup) {
-            let alloc = self.gen.path_to_std_alloc_module();
+            let alloc = self.r#gen.path_to_std_alloc_module();
             self.push_str(&format!(
                 "if {layout}.size() != 0 {{\n{alloc}::dealloc({ptr}.cast(), {layout});\n}}\n"
             ));
         }
         if self.needs_cleanup_list {
-            let alloc = self.gen.path_to_std_alloc_module();
+            let alloc = self.r#gen.path_to_std_alloc_module();
             self.push_str(&format!(
                 "for (ptr, layout) in cleanup_list {{\n
                     if layout.size() != 0 {{\n
@@ -206,11 +206,11 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                 LiftLower::LowerArgsLiftResults => false,
                 LiftLower::LiftArgsLowerResults => true,
             };
-        self.gen.type_path(id, owned)
+        self.r#gen.type_path(id, owned)
     }
 
     fn typename_lift(&self, id: TypeId) -> String {
-        self.gen.type_path(id, true)
+        self.r#gen.type_path(id, true)
     }
 
     fn push_str(&mut self, s: &str) {
@@ -224,7 +224,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
     }
 
     fn lift_lower(&self) -> LiftLower {
-        if self.gen.in_import {
+        if self.r#gen.in_import {
             LiftLower::LowerArgsLiftResults
         } else {
             LiftLower::LiftArgsLowerResults
@@ -278,7 +278,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
         // stack whereas exports use a per-module return area to cut down on
         // stack usage. Note that for imports this also facilitates "adapter
         // modules" for components to not have data segments.
-        if self.gen.in_import {
+        if self.r#gen.in_import {
             self.import_return_pointer_area_size = self.import_return_pointer_area_size.max(size);
             self.import_return_pointer_area_align =
                 self.import_return_pointer_area_align.max(align);
@@ -287,8 +287,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 "let ptr{tmp} = ret_area.0.as_mut_ptr().cast::<u8>();"
             );
         } else {
-            self.gen.return_pointer_area_size = self.gen.return_pointer_area_size.max(size);
-            self.gen.return_pointer_area_align = self.gen.return_pointer_area_align.max(align);
+            self.r#gen.return_pointer_area_size = self.r#gen.return_pointer_area_size.max(size);
+            self.r#gen.return_pointer_area_align = self.r#gen.return_pointer_area_align.max(align);
             uwriteln!(
                 self.src,
                 "let ptr{tmp} = _RET_AREA.0.as_mut_ptr().cast::<u8>();"
@@ -298,7 +298,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
     }
 
     fn sizes(&self) -> &SizeAlign {
-        &self.gen.sizes
+        &self.r#gen.sizes
     }
 
     fn is_list_canonical(&self, resolve: &Resolve, ty: &Type) -> bool {
@@ -309,7 +309,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             // Note that tuples in Rust are not ABI-compatible with component
             // model tuples, so those are exempted here from canonical lists.
             Type::Id(id) => {
-                let info = self.gen.gen.types.get(*id);
+                let info = self.r#gen.r#gen.types.get(*id);
                 !info.has_resource && !info.has_tuple
             }
             _ => true,
@@ -351,7 +351,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::I64FromU64 | Instruction::I64FromS64 => {
                 let s = operands.pop().unwrap();
-                results.push(format!("{}({s})", self.gen.path_to_as_i64()));
+                results.push(format!("{}({s})", self.r#gen.path_to_as_i64()));
             }
             Instruction::I32FromChar
             | Instruction::I32FromU8
@@ -361,16 +361,16 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             | Instruction::I32FromU32
             | Instruction::I32FromS32 => {
                 let s = operands.pop().unwrap();
-                results.push(format!("{}({s})", self.gen.path_to_as_i32()));
+                results.push(format!("{}({s})", self.r#gen.path_to_as_i32()));
             }
 
             Instruction::CoreF32FromF32 => {
                 let s = operands.pop().unwrap();
-                results.push(format!("{}({s})", self.gen.path_to_as_f32()));
+                results.push(format!("{}({s})", self.r#gen.path_to_as_f32()));
             }
             Instruction::CoreF64FromF64 => {
                 let s = operands.pop().unwrap();
-                results.push(format!("{}({s})", self.gen.path_to_as_f64()));
+                results.push(format!("{}({s})", self.r#gen.path_to_as_f64()));
             }
             Instruction::F32FromCoreF32
             | Instruction::F64FromCoreF64
@@ -387,7 +387,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::CharFromI32 => {
                 results.push(format!(
                     "{}({} as u32)",
-                    self.gen.path_to_char_lift(),
+                    self.r#gen.path_to_char_lift(),
                     operands[0]
                 ));
             }
@@ -400,7 +400,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::BoolFromI32 => {
                 results.push(format!(
                     "{}({} as u8)",
-                    self.gen.path_to_bool_lift(),
+                    self.r#gen.path_to_bool_lift(),
                     operands[0]
                 ));
             }
@@ -414,7 +414,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
             Instruction::FlagsLift { flags, ty, .. } => {
                 let repr = RustFlagsRepr::new(flags);
-                let name = self.gen.type_path(*ty, true);
+                let name = self.r#gen.type_path(*ty, true);
                 let mut result = format!("{name}::empty()");
                 for (i, op) in operands.iter().enumerate() {
                     result.push_str(&format!(
@@ -452,9 +452,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let dealiased_resource = dealias(resolve, *resource);
 
                 let result = if is_own {
-                    let name = self.gen.type_path(dealiased_resource, true);
+                    let name = self.r#gen.type_path(dealiased_resource, true);
                     format!("{name}::from_handle({op} as u32)")
-                } else if self.gen.is_exported_resource(*resource) {
+                } else if self.r#gen.is_exported_resource(*resource) {
                     let name = resolve.types[*resource]
                         .name
                         .as_deref()
@@ -464,7 +464,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 } else {
                     let tmp = format!("handle{}", self.tmp());
                     self.handle_decls.push(format!("let {tmp};"));
-                    let name = self.gen.type_path(dealiased_resource, true);
+                    let name = self.r#gen.type_path(dealiased_resource, true);
                     format!(
                         "{{\n
                             {tmp} = {name}::from_handle({op} as u32);
@@ -481,17 +481,17 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::FutureLift { payload, .. } => {
-                let async_support = self.gen.gen.async_support_path();
+                let async_support = self.r#gen.r#gen.async_support_path();
                 let op = &operands[0];
                 let name = payload
                     .as_ref()
                     .map(|ty| {
-                        self.gen
+                        self.r#gen
                             .type_name_owned_with_id(ty, Identifier::StreamOrFuturePayload)
                     })
                     .unwrap_or_else(|| "()".into());
-                let ordinal = self.gen.gen.future_payloads.get_index_of(&name).unwrap();
-                let path = self.gen.path_to_root();
+                let ordinal = self.r#gen.r#gen.future_payloads.get_index_of(&name).unwrap();
+                let path = self.r#gen.path_to_root();
                 results.push(format!(
                     "{async_support}::FutureReader::from_handle_and_vtable\
                      ({op} as u32, &{path}wit_future::vtable{ordinal}::VTABLE)"
@@ -504,17 +504,17 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::StreamLift { payload, .. } => {
-                let async_support = self.gen.gen.async_support_path();
+                let async_support = self.r#gen.r#gen.async_support_path();
                 let op = &operands[0];
                 let name = payload
                     .as_ref()
                     .map(|ty| {
-                        self.gen
+                        self.r#gen
                             .type_name_owned_with_id(ty, Identifier::StreamOrFuturePayload)
                     })
                     .unwrap_or_else(|| "()".into());
-                let ordinal = self.gen.gen.stream_payloads.get_index_of(&name).unwrap();
-                let path = self.gen.path_to_root();
+                let ordinal = self.r#gen.r#gen.stream_payloads.get_index_of(&name).unwrap();
+                let path = self.r#gen.path_to_root();
                 results.push(format!(
                     "{async_support}::StreamReader::from_handle_and_vtable\
                      ({op} as u32, &{path}wit_stream::vtable{ordinal}::VTABLE)"
@@ -527,7 +527,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::ErrorContextLift { .. } => {
-                let async_support = self.gen.gen.async_support_path();
+                let async_support = self.r#gen.r#gen.async_support_path();
                 let op = &operands[0];
                 results.push(format!(
                     "{async_support}::ErrorContext::from_handle({op} as u32)"
@@ -656,7 +656,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         }}
                         _ => {invalid}(),
                     }}",
-                    invalid = self.gen.path_to_invalid_enum_discriminant(),
+                    invalid = self.r#gen.path_to_invalid_enum_discriminant(),
                 ));
             }
 
@@ -695,7 +695,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         }}
                         _ => {invalid}(),
                     }}",
-                    invalid = self.gen.path_to_invalid_enum_discriminant(),
+                    invalid = self.r#gen.path_to_invalid_enum_discriminant(),
                 ));
             }
 
@@ -704,7 +704,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::EnumLift { enum_, ty, .. } => {
-                let name = self.gen.type_path(*ty, true);
+                let name = self.r#gen.type_path(*ty, true);
                 let repr = int_repr(enum_.tag());
                 let op = &operands[0];
                 let result = format!("{name}::_lift({op} as {repr})");
@@ -735,7 +735,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let tmp = self.tmp();
                 let len = format!("len{}", tmp);
                 self.push_str(&format!("let {} = {};\n", len, operands[1]));
-                let vec = self.gen.path_to_vec();
+                let vec = self.r#gen.path_to_vec();
                 let result = format!(
                     "{vec}::from_raw_parts({}.cast(), {1}, {1})",
                     operands[0], len
@@ -764,7 +764,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::StringLift => {
-                let vec = self.gen.path_to_vec();
+                let vec = self.r#gen.path_to_vec();
                 let tmp = self.tmp();
                 let len = format!("len{}", tmp);
                 uwriteln!(self.src, "let {len} = {};", operands[1]);
@@ -773,15 +773,15 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     "let bytes{tmp} = {vec}::from_raw_parts({}.cast(), {len}, {len});",
                     operands[0],
                 );
-                if self.gen.gen.opts.raw_strings {
+                if self.r#gen.r#gen.opts.raw_strings {
                     results.push(format!("bytes{tmp}"));
                 } else {
-                    results.push(format!("{}(bytes{tmp})", self.gen.path_to_string_lift()));
+                    results.push(format!("{}(bytes{tmp})", self.r#gen.path_to_string_lift()));
                 }
             }
 
             Instruction::ListLower { element, realloc } => {
-                let alloc = self.gen.path_to_std_alloc_module();
+                let alloc = self.r#gen.path_to_std_alloc_module();
                 let body = self.blocks.pop().unwrap();
                 let tmp = self.tmp();
                 let vec = format!("vec{tmp}");
@@ -793,8 +793,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     operand0 = operands[0]
                 ));
                 self.push_str(&format!("let {len} = {vec}.len();\n"));
-                let size = self.gen.sizes.size(element).size_wasm32();
-                let align = self.gen.sizes.align(element).align_wasm32();
+                let size = self.r#gen.sizes.size(element).size_wasm32();
+                let align = self.r#gen.sizes.align(element).align_wasm32();
                 self.push_str(&format!(
                     "let {layout} = {alloc}::Layout::from_size_align_unchecked({vec}.len() * {size}, {align});\n",
                 ));
@@ -824,8 +824,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::ListLift { element, .. } => {
                 let body = self.blocks.pop().unwrap();
                 let tmp = self.tmp();
-                let size = self.gen.sizes.size(element).size_wasm32();
-                let align = self.gen.sizes.align(element).align_wasm32();
+                let size = self.r#gen.sizes.size(element).size_wasm32();
+                let align = self.r#gen.sizes.align(element).align_wasm32();
                 let len = format!("len{tmp}");
                 let base = format!("base{tmp}");
                 let result = format!("result{tmp}");
@@ -837,7 +837,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     "let {len} = {operand1};\n",
                     operand1 = operands[1]
                 ));
-                let vec = self.gen.path_to_vec();
+                let vec = self.r#gen.path_to_vec();
                 self.push_str(&format!(
                     "let mut {result} = {vec}::with_capacity({len});\n",
                 ));
@@ -848,7 +848,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwriteln!(self.src, "{result}.push(e{tmp});");
                 uwriteln!(self.src, "}}");
                 results.push(result);
-                let dealloc = self.gen.path_to_cabi_dealloc();
+                let dealloc = self.r#gen.path_to_cabi_dealloc();
                 self.push_str(&format!("{dealloc}({base}, {len} * {size}, {align});\n",));
             }
 
@@ -873,10 +873,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::AsyncCallWasm { name, size, align } => {
                 let func = self.declare_import(name, &[WasmType::Pointer; 2], &[WasmType::I32]);
 
-                let async_support = self.gen.gen.async_support_path();
+                let async_support = self.r#gen.r#gen.async_support_path();
                 let tmp = self.tmp();
                 let layout = format!("layout{tmp}");
-                let alloc = self.gen.path_to_std_alloc_module();
+                let alloc = self.r#gen.path_to_std_alloc_module();
                 self.push_str(&format!(
                     "let {layout} = {alloc}::Layout::from_size_align_unchecked({size}, {align});\n",
                 ));
@@ -910,7 +910,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             .unwrap()
                             .to_upper_camel_case();
                         let call = if self.async_ {
-                            let async_support = self.gen.gen.async_support_path();
+                            let async_support = self.r#gen.r#gen.async_support_path();
                             format!("{async_support}::futures::FutureExt::map(T::new")
                         } else {
                             format!("{ty}::new(T::new",)
@@ -949,7 +949,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::AsyncMalloc { size, align } => {
-                let alloc = self.gen.path_to_std_alloc_module();
+                let alloc = self.r#gen.path_to_std_alloc_module();
                 let tmp = self.tmp();
                 let ptr = format!("ptr{tmp}");
                 let layout = format!("layout{tmp}");
@@ -979,7 +979,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 } else {
                     params
                 };
-                let async_support = self.gen.gen.async_support_path();
+                let async_support = self.r#gen.r#gen.async_support_path();
                 // TODO: This relies on `abi::Generator` emitting
                 // `AsyncCallReturn` immediately after this instruction to
                 // complete the incomplete expression we generate here.  We
@@ -1188,7 +1188,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::Malloc { .. } => unimplemented!(),
 
             Instruction::GuestDeallocate { size, align } => {
-                let dealloc = self.gen.path_to_cabi_dealloc();
+                let dealloc = self.r#gen.path_to_cabi_dealloc();
                 self.push_str(&format!(
                     "{dealloc}({op}, {size}, {align});\n",
                     op = operands[0]
@@ -1196,7 +1196,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::GuestDeallocateString => {
-                let dealloc = self.gen.path_to_cabi_dealloc();
+                let dealloc = self.r#gen.path_to_cabi_dealloc();
                 self.push_str(&format!(
                     "{dealloc}({op0}, {op1}, 1);\n",
                     op0 = operands[0],
@@ -1226,8 +1226,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::GuestDeallocateList { element } => {
                 let body = self.blocks.pop().unwrap();
                 let tmp = self.tmp();
-                let size = self.gen.sizes.size(element).size_wasm32();
-                let align = self.gen.sizes.align(element).align_wasm32();
+                let size = self.r#gen.sizes.size(element).size_wasm32();
+                let align = self.r#gen.sizes.align(element).align_wasm32();
                 let len = format!("len{tmp}");
                 let base = format!("base{tmp}");
                 self.push_str(&format!(
@@ -1251,7 +1251,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.push_str(&body);
                     self.push_str("\n}\n");
                 }
-                let dealloc = self.gen.path_to_cabi_dealloc();
+                let dealloc = self.r#gen.path_to_cabi_dealloc();
                 self.push_str(&format!("{dealloc}({base}, {len} * {size}, {align});\n",));
             }
         }
