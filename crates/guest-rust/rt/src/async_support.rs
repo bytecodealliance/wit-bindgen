@@ -25,8 +25,8 @@ mod future_support;
 mod stream_support;
 
 pub use {
-    future_support::{FutureReader, FutureVtable, FutureWriter},
-    stream_support::{StreamReader, StreamVtable, StreamWriter},
+    future_support::{future_new, FutureReader, FutureVtable, FutureWriter},
+    stream_support::{stream_new, StreamReader, StreamVtable, StreamWriter},
 };
 
 pub use futures;

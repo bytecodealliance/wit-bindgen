@@ -549,19 +549,7 @@ pub mod vtable{ordinal} {{
             let address = buffer.0.as_mut_ptr() as *mut u8;
             {lower}
 
-            #[cfg(not(target_arch = "wasm32"))]
-            unsafe extern "C" fn wit_import(_: u32, _: *mut u8) -> u32 {{
-                unreachable!()
-            }}
-
-            #[cfg(target_arch = "wasm32")]
-            #[link(wasm_import_module = "{module}")]
-            extern "C" {{
-                #[link_name = "[async][future-write-{index}]{func_name}"]
-                fn wit_import(_: u32, _: *mut u8) -> u32;
-            }}
-
-            match unsafe {{ {async_support}::await_future_result(wit_import, future, address).await }} {{
+            match unsafe {{ {async_support}::await_future_result(start_write, future, address).await }} {{
                 {async_support}::AsyncWaitResult::Values(_) => true,
                 {async_support}::AsyncWaitResult::End => false,
                 {async_support}::AsyncWaitResult::Error(_) => unreachable!("received error while performing write"),
@@ -575,19 +563,7 @@ pub mod vtable{ordinal} {{
             let mut buffer = Buffer([::core::mem::MaybeUninit::uninit(); {size}]);
             let address = buffer.0.as_mut_ptr() as *mut u8;
 
-            #[cfg(not(target_arch = "wasm32"))]
-            unsafe extern "C" fn wit_import(_: u32, _: *mut u8) -> u32 {{
-                unreachable!()
-            }}
-
-            #[cfg(target_arch = "wasm32")]
-            #[link(wasm_import_module = "{module}")]
-            extern "C" {{
-                #[link_name = "[async][future-read-{index}]{func_name}"]
-                fn wit_import(_: u32, _: *mut u8) -> u32;
-            }}
-
-            match unsafe {{ {async_support}::await_future_result(wit_import, future, address).await }} {{
+            match unsafe {{ {async_support}::await_future_result(start_read, future, address).await }} {{
                     {async_support}::AsyncWaitResult::Values(v) => {{
                         {lift}
                         Some(Ok(value))
@@ -600,95 +576,49 @@ pub mod vtable{ordinal} {{
         }})
     }}
 
-    fn cancel_write(writer: u32) {{
-        #[cfg(not(target_arch = "wasm32"))]
-        {{
-            unreachable!();
-        }}
+    #[cfg(not(target_arch = "wasm32"))]
+    unsafe extern "C" fn cancel_write(_: u32) -> u32 {{ unreachable!() }}
+    #[cfg(not(target_arch = "wasm32"))]
+    unsafe extern "C" fn cancel_read(_: u32) -> u32 {{ unreachable!() }}
+    #[cfg(not(target_arch = "wasm32"))]
+    unsafe extern "C" fn close_writable(_: u32, _: u32) {{ unreachable!() }}
+    #[cfg(not(target_arch = "wasm32"))]
+    unsafe extern "C" fn close_readable(_: u32) {{ unreachable!() }}
+    #[cfg(not(target_arch = "wasm32"))]
+    unsafe extern "C" fn new() -> u32 {{ unreachable!() }}
+    #[cfg(not(target_arch = "wasm32"))]
+    unsafe extern "C" fn start_read(_: u32, _: *mut u8) -> u32 {{ unreachable!() }}
+    #[cfg(not(target_arch = "wasm32"))]
+    unsafe extern "C" fn start_write(_: u32, _: *mut u8) -> u32 {{ unreachable!() }}
 
-        #[cfg(target_arch = "wasm32")]
-        {{
-            #[link(wasm_import_module = "{module}")]
-            extern "C" {{
-                #[link_name = "[future-cancel-write-{index}]{func_name}"]
-                fn cancel(_: u32) -> u32;
-            }}
-            unsafe {{ cancel(writer) }};
-        }}
+    #[cfg(target_arch = "wasm32")]
+    #[link(wasm_import_module = "{module}")]
+    extern "C" {{
+        #[link_name = "[future-new-{index}]{func_name}"]
+        fn new() -> u32;
+        #[link_name = "[future-cancel-write-{index}]{func_name}"]
+        fn cancel_write(_: u32) -> u32;
+        #[link_name = "[future-cancel-read-{index}]{func_name}"]
+        fn cancel_read(_: u32) -> u32;
+        #[link_name = "[future-close-writable-{index}]{func_name}"]
+        fn close_writable(_: u32, _: u32);
+        #[link_name = "[future-close-readable-{index}]{func_name}"]
+        fn close_readable(_: u32);
+        #[link_name = "[future-new-{index}]{func_name}"]
+        fn new() -> u32;
+        #[link_name = "[async][future-read-{index}]{func_name}"]
+        fn start_read(_: u32, _: *mut u8) -> u32;
+        #[link_name = "[async][future-write-{index}]{func_name}"]
+        fn start_write(_: u32, _: *mut u8) -> u32;
     }}
 
-    fn cancel_read(reader: u32) {{
-        #[cfg(not(target_arch = "wasm32"))]
-        {{
-            unreachable!();
-        }}
-
-        #[cfg(target_arch = "wasm32")]
-        {{
-            #[link(wasm_import_module = "{module}")]
-            extern "C" {{
-                #[link_name = "[future-cancel-read-{index}]{func_name}"]
-                fn cancel(_: u32) -> u32;
-            }}
-            unsafe {{ cancel(reader) }};
-        }}
-    }}
-
-    fn close_writable(writer: u32, err_ctx: u32) {{
-        #[cfg(not(target_arch = "wasm32"))]
-        {{
-            unreachable!();
-        }}
-
-        #[cfg(target_arch = "wasm32")]
-        {{
-            #[link(wasm_import_module = "{module}")]
-            extern "C" {{
-                #[link_name = "[future-close-writable-{index}]{func_name}"]
-                fn drop(_: u32, _: u32);
-            }}
-            unsafe {{ drop(writer, err_ctx) }}
-        }}
-    }}
-
-    fn close_readable(reader: u32) {{
-        #[cfg(not(target_arch = "wasm32"))]
-        {{
-            unreachable!();
-        }}
-
-        #[cfg(target_arch = "wasm32")]
-        {{
-            #[link(wasm_import_module = "{module}")]
-            extern "C" {{
-                #[link_name = "[future-close-readable-{index}]{func_name}"]
-                fn drop(_: u32);
-            }}
-            unsafe {{ drop(reader) }}
-        }}
-    }}
 
     pub static VTABLE: {async_support}::FutureVtable<{name}> = {async_support}::FutureVtable::<{name}> {{
-        write, read, cancel_write, cancel_read, close_writable, close_readable
+        write, read, cancel_write, cancel_read, close_writable, close_readable, new
     }};
 
     impl super::FuturePayload for {name} {{
-        fn new() -> (u32, &'static {async_support}::FutureVtable<Self>) {{
-            #[cfg(not(target_arch = "wasm32"))]
-            {{
-                unreachable!();
-            }}
-
-            #[cfg(target_arch = "wasm32")]
-            {{
-                #[link(wasm_import_module = "{module}")]
-                extern "C" {{
-                    #[link_name = "[future-new-{index}]{func_name}"]
-                    fn new() -> u32;
-                }}
-                (unsafe {{ new() }}, &VTABLE)
-            }}
-        }}
+        const VTABLE: &'static {async_support}::FutureVtable<Self> = &VTABLE;
     }}
 }}
                         "#,
@@ -785,24 +715,12 @@ pub mod vtable{ordinal} {{
             {lower_address}
             {lower}
 
-            #[cfg(not(target_arch = "wasm32"))]
-            unsafe extern "C" fn wit_import(_: u32, _: *mut u8, _: u32) -> u32 {{
-                unreachable!()
-            }}
-
-            #[cfg(target_arch = "wasm32")]
-            #[link(wasm_import_module = "{module}")]
-            extern "C" {{
-                #[link_name = "[async][stream-write-{index}]{func_name}"]
-                fn wit_import(_: u32, _: *mut u8, _: u32) -> u32;
-            }}
-
             let mut total = 0;
             while total < values.len() {{
 
                 match unsafe {{
                     {async_support}::await_stream_result(
-                        wit_import,
+                        start_write,
                         stream,
                         address.add(total * {size}),
                         u32::try_from(values.len() - (total * {size})).unwrap()
@@ -824,21 +742,9 @@ pub mod vtable{ordinal} {{
         {box_}::pin(async move {{
             {lift_address}
 
-            #[cfg(not(target_arch = "wasm32"))]
-            unsafe extern "C" fn wit_import(_: u32, _: *mut u8, _: u32) -> u32 {{
-                unreachable!()
-            }}
-
-            #[cfg(target_arch = "wasm32")]
-            #[link(wasm_import_module = "{module}")]
-            extern "C" {{
-                #[link_name = "[async][stream-read-{index}]{func_name}"]
-                fn wit_import(_: u32, _: *mut u8, _: u32) -> u32;
-            }}
-
             match unsafe {{
                 {async_support}::await_stream_result(
-                    wit_import,
+                    start_read,
                     stream,
                     address,
                     u32::try_from(values.len()).unwrap()
@@ -854,95 +760,48 @@ pub mod vtable{ordinal} {{
         }})
     }}
 
-    fn cancel_write(writer: u32) {{
-        #[cfg(not(target_arch = "wasm32"))]
-        {{
-            unreachable!();
-        }}
+    #[cfg(not(target_arch = "wasm32"))]
+    unsafe extern "C" fn cancel_write(_: u32) -> u32 {{ unreachable!() }}
+    #[cfg(not(target_arch = "wasm32"))]
+    unsafe extern "C" fn cancel_read(_: u32) -> u32 {{ unreachable!() }}
+    #[cfg(not(target_arch = "wasm32"))]
+    unsafe extern "C" fn close_writable(_: u32, _: u32) {{ unreachable!() }}
+    #[cfg(not(target_arch = "wasm32"))]
+    unsafe extern "C" fn close_readable(_: u32) {{ unreachable!() }}
+    #[cfg(not(target_arch = "wasm32"))]
+    unsafe extern "C" fn new() -> u32 {{ unreachable!() }}
+    #[cfg(not(target_arch = "wasm32"))]
+    unsafe extern "C" fn start_read(_: u32, _: *mut u8, _: u32) -> u32 {{ unreachable!() }}
+    #[cfg(not(target_arch = "wasm32"))]
+    unsafe extern "C" fn start_write(_: u32, _: *mut u8, _: u32) -> u32 {{ unreachable!() }}
 
-        #[cfg(target_arch = "wasm32")]
-        {{
-            #[link(wasm_import_module = "{module}")]
-            extern "C" {{
-                #[link_name = "[stream-cancel-write-{index}]{func_name}"]
-                fn cancel(_: u32) -> u32;
-            }}
-            unsafe {{ cancel(writer) }};
-        }}
-    }}
-
-    fn cancel_read(reader: u32) {{
-        #[cfg(not(target_arch = "wasm32"))]
-        {{
-            unreachable!();
-        }}
-
-        #[cfg(target_arch = "wasm32")]
-        {{
-            #[link(wasm_import_module = "{module}")]
-            extern "C" {{
-                #[link_name = "[stream-cancel-read-{index}]{func_name}"]
-                fn cancel(_: u32) -> u32;
-            }}
-            unsafe {{ cancel(reader) }};
-        }}
-    }}
-
-    fn close_writable(writer: u32, err_ctx: u32) {{
-        #[cfg(not(target_arch = "wasm32"))]
-        {{
-            unreachable!();
-        }}
-
-        #[cfg(target_arch = "wasm32")]
-        {{
-            #[link(wasm_import_module = "{module}")]
-            extern "C" {{
-                #[link_name = "[stream-close-writable-{index}]{func_name}"]
-                fn drop(_: u32, _: u32);
-            }}
-            unsafe {{ drop(writer, err_ctx) }}
-        }}
-    }}
-
-    fn close_readable(reader: u32) {{
-        #[cfg(not(target_arch = "wasm32"))]
-        {{
-            unreachable!();
-        }}
-
-        #[cfg(target_arch = "wasm32")]
-        {{
-            #[link(wasm_import_module = "{module}")]
-            extern "C" {{
-                #[link_name = "[stream-close-readable-{index}]{func_name}"]
-                fn drop(_: u32);
-            }}
-            unsafe {{ drop(reader) }}
-        }}
+    #[cfg(target_arch = "wasm32")]
+    #[link(wasm_import_module = "{module}")]
+    extern "C" {{
+        #[link_name = "[stream-new-{index}]{func_name}"]
+        fn new() -> u32;
+        #[link_name = "[stream-cancel-write-{index}]{func_name}"]
+        fn cancel_write(_: u32) -> u32;
+        #[link_name = "[stream-cancel-read-{index}]{func_name}"]
+        fn cancel_read(_: u32) -> u32;
+        #[link_name = "[stream-close-writable-{index}]{func_name}"]
+        fn close_writable(_: u32, _: u32);
+        #[link_name = "[stream-close-readable-{index}]{func_name}"]
+        fn close_readable(_: u32);
+        #[link_name = "[stream-new-{index}]{func_name}"]
+        fn new() -> u32;
+        #[link_name = "[async][stream-read-{index}]{func_name}"]
+        fn start_read(_: u32, _: *mut u8, _: u32) -> u32;
+        #[link_name = "[async][stream-write-{index}]{func_name}"]
+        fn start_write(_: u32, _: *mut u8, _: u32) -> u32;
     }}
 
     pub static VTABLE: {async_support}::StreamVtable<{name}> = {async_support}::StreamVtable::<{name}> {{
-        write, read, cancel_write, cancel_read, close_writable, close_readable
+        write, read, cancel_write, cancel_read, close_writable, close_readable, new
     }};
 
     impl super::StreamPayload for {name} {{
-        fn new() -> (u32, &'static {async_support}::StreamVtable<Self>) {{
-            #[cfg(not(target_arch = "wasm32"))]
-            {{
-                unreachable!();
-            }}
-
-            #[cfg(target_arch = "wasm32")]
-            {{
-                #[link(wasm_import_module = "{module}")]
-                extern "C" {{
-                    #[link_name = "[stream-new-{index}]{func_name}"]
-                    fn new() -> u32;
-                }}
-                (unsafe {{ new() }}, &VTABLE)
-            }}
-        }}
+        const VTABLE: &'static {async_support}::StreamVtable<Self> = &VTABLE;
     }}
 }}
                         "#,
