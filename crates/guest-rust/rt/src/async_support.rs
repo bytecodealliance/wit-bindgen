@@ -366,6 +366,31 @@ pub struct ErrorContext {
 }
 
 impl ErrorContext {
+    /// Call the `error-context.new` canonical built-in function.
+    pub fn new(debug_message: &str) -> ErrorContext {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            _ = debug_message;
+            unreachable!();
+        }
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            #[link(wasm_import_module = "$root")]
+            extern "C" {
+                #[link_name = "[error-context-new;encoding=utf8]"]
+                fn context_new(_: *const u8, _: usize) -> i32;
+            }
+
+            unsafe {
+                let handle = context_new(debug_message.as_ptr(), debug_message.len());
+                // SAFETY: Handles (including error context handles are guaranteed to
+                // fit inside u32 by the Component Model ABI
+                ErrorContext::from_handle(u32::try_from(handle).unwrap())
+            }
+        }
+    }
+
     #[doc(hidden)]
     pub fn from_handle(handle: u32) -> Self {
         Self { handle }
@@ -380,23 +405,29 @@ impl ErrorContext {
     pub fn debug_message(&self) -> String {
         #[cfg(not(target_arch = "wasm32"))]
         {
-            _ = self;
-            unreachable!();
+            String::from("<no debug message on native hosts>")
         }
 
         #[cfg(target_arch = "wasm32")]
         {
+            #[repr(C)]
+            struct RetPtr {
+                ptr: *mut u8,
+                len: usize,
+            }
             #[link(wasm_import_module = "$root")]
             extern "C" {
                 #[link_name = "[error-context-debug-message;encoding=utf8;realloc=cabi_realloc]"]
-                fn error_context_debug_message(_: u32, _: *mut u8);
+                fn error_context_debug_message(_: u32, _: &mut RetPtr);
             }
 
             unsafe {
-                let mut ret = [0u32; 2];
-                error_context_debug_message(self.handle, ret.as_mut_ptr() as *mut _);
-                let len = usize::try_from(ret[1]).unwrap();
-                String::from_raw_parts(usize::try_from(ret[0]).unwrap() as *mut _, len, len)
+                let mut ret = RetPtr {
+                    ptr: ptr::null_mut(),
+                    len: 0,
+                };
+                error_context_debug_message(self.handle, &mut ret);
+                String::from_raw_parts(ret.ptr, ret.len, ret.len)
             }
         }
     }
@@ -404,13 +435,15 @@ impl ErrorContext {
 
 impl Debug for ErrorContext {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ErrorContext").finish()
+        f.debug_struct("ErrorContext")
+            .field("debug_message", &self.debug_message())
+            .finish()
     }
 }
 
 impl Display for ErrorContext {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Error")
+        Display::fmt(&self.debug_message(), f)
     }
 }
 
@@ -418,11 +451,6 @@ impl std::error::Error for ErrorContext {}
 
 impl Drop for ErrorContext {
     fn drop(&mut self) {
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            unreachable!();
-        }
-
         #[cfg(target_arch = "wasm32")]
         {
             #[link(wasm_import_module = "$root")]
@@ -536,31 +564,6 @@ pub fn task_backpressure(enabled: bool) {
         }
         unsafe {
             backpressure(if enabled { 1 } else { 0 });
-        }
-    }
-}
-
-/// Call the `error-context.new` canonical built-in function.
-pub fn error_context_new(debug_message: &str) -> ErrorContext {
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        _ = debug_message;
-        unreachable!();
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    {
-        #[link(wasm_import_module = "$root")]
-        extern "C" {
-            #[link_name = "[error-context-new;encoding=utf8]"]
-            fn context_new(_: *const u8, _: usize) -> i32;
-        }
-
-        unsafe {
-            let handle = context_new(debug_message.as_ptr(), debug_message.len());
-            // SAFETY: Handles (including error context handles are guaranteed to
-            // fit inside u32 by the Component Model ABI
-            ErrorContext::from_handle(u32::try_from(handle).unwrap())
         }
     }
 }
