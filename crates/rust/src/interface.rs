@@ -19,7 +19,7 @@ pub struct InterfaceGenerator<'a> {
     pub(super) identifier: Identifier<'a>,
     pub in_import: bool,
     pub sizes: SizeAlign,
-    pub(super) gen: &'a mut RustWasm,
+    pub(super) r#gen: &'a mut RustWasm,
     pub wasm_import_module: &'a str,
     pub resolve: &'a Resolve,
     pub return_pointer_area_size: usize,
@@ -153,11 +153,11 @@ impl<'i> InterfaceGenerator<'i> {
         }
 
         for func in funcs {
-            if self.gen.skip.contains(&func.name) {
+            if self.r#gen.skip.contains(&func.name) {
                 continue;
             }
 
-            let async_ = match &self.gen.opts.async_ {
+            let async_ = match &self.r#gen.opts.async_ {
                 AsyncConfig::None => false,
                 AsyncConfig::All => true,
                 AsyncConfig::Some { exports, .. } => {
@@ -289,7 +289,7 @@ fn _resource_rep(handle: u32) -> *mut u8
                 )
             }
         };
-        let (macro_export, use_vis) = if self.gen.opts.pub_export_macro {
+        let (macro_export, use_vis) = if self.r#gen.opts.pub_export_macro {
             ("#[macro_export]", "pub")
         } else {
             ("", "pub(crate)")
@@ -319,7 +319,7 @@ macro_rules! {macro_name} {{
             };
             self.generate_raw_cabi_export(func, &ty, "$($path_to_types)*", async_);
         }
-        let export_prefix = self.gen.opts.export_prefix.as_deref().unwrap_or("");
+        let export_prefix = self.r#gen.opts.export_prefix.as_deref().unwrap_or("");
         for name in resources_to_drop {
             let module = match self.identifier {
                 Identifier::Interface(_, key) => self.resolve.name_world_key(key),
@@ -336,9 +336,11 @@ macro_rules! {macro_name} {{
                     #[unsafe(export_name = "{export_prefix}{module}#[dtor]{name}")]
                     #[allow(non_snake_case)]
                     unsafe extern "C" fn dtor(rep: *mut u8) {{
-                        $($path_to_types)*::{camel}::dtor::<
-                            <$ty as $($path_to_types)*::Guest>::{camel}
-                        >(rep)
+                        unsafe {{
+                            $($path_to_types)*::{camel}::dtor::<
+                                <$ty as $($path_to_types)*::Guest>::{camel}
+                            >(rep)
+                        }}
                     }}
                 }};
                 "#
@@ -453,7 +455,7 @@ macro_rules! {macro_name} {{
         let docs = docs.trim_end();
 
         let path_to_root = self.path_to_root();
-        let used_static = if self.gen.opts.disable_custom_section_link_helpers {
+        let used_static = if self.r#gen.opts.disable_custom_section_link_helpers {
             String::new()
         } else {
             format!(
@@ -476,9 +478,9 @@ macro_rules! {macro_name} {{
 ",
         );
         let map = if self.in_import {
-            &mut self.gen.import_modules
+            &mut self.r#gen.import_modules
         } else {
-            &mut self.gen.export_modules
+            &mut self.r#gen.export_modules
         };
         map.push((module, module_path))
     }
@@ -498,7 +500,7 @@ macro_rules! {macro_name} {{
                     .unwrap_or_else(|| "$root".into())
             );
             let func_name = &func.name;
-            let async_support = self.gen.async_support_path();
+            let async_support = self.r#gen.async_support_path();
 
             match &self.resolve.types[ty].kind {
                 TypeDefKind::Future(payload_type) => {
@@ -508,8 +510,8 @@ macro_rules! {macro_name} {{
                         "()".into()
                     };
 
-                    if !self.gen.future_payloads.contains_key(&name) {
-                        let ordinal = self.gen.future_payloads.len();
+                    if !self.r#gen.future_payloads.contains_key(&name) {
+                        let ordinal = self.r#gen.future_payloads.len();
                         let (size, align) = if let Some(payload_type) = payload_type {
                             (
                                 self.sizes.size(payload_type),
@@ -624,7 +626,7 @@ pub mod vtable{ordinal} {{
                         "#,
                         );
 
-                        self.gen.future_payloads.insert(name, code);
+                        self.r#gen.future_payloads.insert(name, code);
                     }
                 }
                 TypeDefKind::Stream(payload_type) => {
@@ -634,8 +636,8 @@ pub mod vtable{ordinal} {{
                         "()".into()
                     };
 
-                    if !self.gen.stream_payloads.contains_key(&name) {
-                        let ordinal = self.gen.stream_payloads.len();
+                    if !self.r#gen.stream_payloads.contains_key(&name) {
+                        let ordinal = self.r#gen.stream_payloads.len();
                         let (size, align) = if let Some(payload_type) = payload_type {
                             (
                                 self.sizes.size(payload_type),
@@ -807,7 +809,7 @@ pub mod vtable{ordinal} {{
                         "#,
                         );
 
-                        self.gen.stream_payloads.insert(name, code);
+                        self.r#gen.stream_payloads.insert(name, code);
                     }
                 }
                 _ => unreachable!(),
@@ -818,13 +820,13 @@ pub mod vtable{ordinal} {{
     }
 
     fn generate_guest_import(&mut self, func: &Function, interface: Option<&WorldKey>) {
-        if self.gen.skip.contains(&func.name) {
+        if self.r#gen.skip.contains(&func.name) {
             return;
         }
 
         self.generate_payloads("[import-payload]", func, interface);
 
-        let async_ = match &self.gen.opts.async_ {
+        let async_ = match &self.r#gen.opts.async_ {
             AsyncConfig::None => false,
             AsyncConfig::All => true,
             AsyncConfig::Some { imports, .. } => imports.contains(&if let Some(key) = interface {
@@ -870,13 +872,13 @@ pub mod vtable{ordinal} {{
 
     fn lower_to_memory(&mut self, address: &str, value: &str, ty: &Type, module: &str) -> String {
         let mut f = FunctionBindgen::new(self, Vec::new(), true, module, true);
-        abi::lower_to_memory(f.gen.resolve, &mut f, address.into(), value.into(), ty);
+        abi::lower_to_memory(f.r#gen.resolve, &mut f, address.into(), value.into(), ty);
         format!("unsafe {{ {} }}", String::from(f.src))
     }
 
     fn lift_from_memory(&mut self, address: &str, value: &str, ty: &Type, module: &str) -> String {
         let mut f = FunctionBindgen::new(self, Vec::new(), true, module, true);
-        let result = abi::lift_from_memory(f.gen.resolve, &mut f, address.into(), ty);
+        let result = abi::lift_from_memory(f.r#gen.resolve, &mut f, address.into(), ty);
         format!(
             "let {value} = unsafe {{ {}\n{result} }};",
             String::from(f.src)
@@ -892,7 +894,7 @@ pub mod vtable{ordinal} {{
     ) {
         let mut f = FunctionBindgen::new(self, params, async_, module, false);
         abi::call(
-            f.gen.resolve,
+            f.r#gen.resolve,
             AbiVariant::GuestImport,
             LiftLower::LowerArgsLiftResults,
             func,
@@ -948,7 +950,7 @@ pub mod vtable{ordinal} {{
         let params = self.print_export_sig(func, async_);
         self.push_str(" {");
 
-        if !self.gen.opts.disable_run_ctors_once_workaround {
+        if !self.r#gen.opts.disable_run_ctors_once_workaround {
             let run_ctors_once = self.path_to_run_ctors_once();
             // Before executing any other code, use this function to run all
             // static constructors, if they have not yet been run. This is a
@@ -966,7 +968,7 @@ pub mod vtable{ordinal} {{
 
         let mut f = FunctionBindgen::new(self, params, async_, self.wasm_import_module, false);
         abi::call(
-            f.gen.resolve,
+            f.r#gen.resolve,
             AbiVariant::GuestExport,
             LiftLower::LiftArgsLowerResults,
             func,
@@ -1008,14 +1010,16 @@ pub mod vtable{ordinal} {{
         self.src.push_str("}\n");
 
         if async_ {
-            let async_support = self.gen.async_support_path();
+            let async_support = self.r#gen.async_support_path();
             uwrite!(
                 self.src,
                 "\
                     #[doc(hidden)]
                     #[allow(non_snake_case)]
                     pub unsafe fn __callback_{name_snake}(ctx: *mut u8, event0: i32, event1: i32, event2: i32) -> i32 {{
-                        {async_support}::callback(ctx, event0, event1, event2)
+                        unsafe {{
+                            {async_support}::callback(ctx, event0, event1, event2)
+                        }}
                     }}
                 "
             );
@@ -1032,7 +1036,7 @@ pub mod vtable{ordinal} {{
             self.src.push_str("{\n");
 
             let mut f = FunctionBindgen::new(self, params, async_, self.wasm_import_module, false);
-            abi::post_return(f.gen.resolve, func, &mut f, async_);
+            abi::post_return(f.r#gen.resolve, func, &mut f, async_);
             let FunctionBindgen {
                 needs_cleanup_list,
                 src,
@@ -1059,7 +1063,7 @@ pub mod vtable{ordinal} {{
             Identifier::World(_) => None,
             Identifier::StreamOrFuturePayload => unreachable!(),
         };
-        let export_prefix = self.gen.opts.export_prefix.as_deref().unwrap_or("");
+        let export_prefix = self.r#gen.opts.export_prefix.as_deref().unwrap_or("");
         let export_name = func.legacy_core_export_name(wasm_module_export_name.as_deref());
         let export_name = if async_ {
             format!("[async]{export_name}")
@@ -1078,19 +1082,21 @@ pub mod vtable{ordinal} {{
         self.push_str(" {\n");
         uwriteln!(
             self.src,
-            "{path_to_self}::_export_{name_snake}_cabi::<{ty}>({})",
+            "unsafe {{ {path_to_self}::_export_{name_snake}_cabi::<{ty}>({}) }}",
             params.join(", ")
         );
         self.push_str("}\n");
 
-        let export_prefix = self.gen.opts.export_prefix.as_deref().unwrap_or("");
+        let export_prefix = self.r#gen.opts.export_prefix.as_deref().unwrap_or("");
         if async_ {
             uwrite!(
                 self.src,
                 "\
                     #[unsafe(export_name = \"{export_prefix}[callback]{export_name}\")]
                     unsafe extern \"C\" fn _callback_{name_snake}(ctx: *mut u8, event0: i32, event1: i32, event2: i32) -> i32 {{
-                        {path_to_self}::__callback_{name_snake}(ctx, event0, event1, event2)
+                        unsafe {{
+                            {path_to_self}::__callback_{name_snake}(ctx, event0, event1, event2)
+                        }}
                     }}
                 "
             );
@@ -1106,7 +1112,7 @@ pub mod vtable{ordinal} {{
             self.src.push_str("{\n");
             uwriteln!(
                 self.src,
-                "{path_to_self}::__post_return_{name_snake}::<{ty}>({})",
+                "unsafe {{ {path_to_self}::__post_return_{name_snake}::<{ty}>({}) }}",
                 params.join(", ")
             );
             self.src.push_str("}\n");
@@ -1201,10 +1207,10 @@ pub mod vtable{ordinal} {{
         self.src.push_str(extra_trait_items);
 
         for func in funcs {
-            if self.gen.skip.contains(&func.name) {
+            if self.r#gen.skip.contains(&func.name) {
                 continue;
             }
-            let async_ = match &self.gen.opts.async_ {
+            let async_ = match &self.r#gen.opts.async_ {
                 AsyncConfig::None => false,
                 AsyncConfig::All => true,
                 AsyncConfig::Some { exports, .. } => {
@@ -1359,7 +1365,7 @@ pub mod vtable{ordinal} {{
             let style = if params_owned {
                 TypeOwnershipStyle::Owned
             } else {
-                match self.gen.opts.ownership {
+                match self.r#gen.opts.ownership {
                     Ownership::Owning => TypeOwnershipStyle::OnlyTopBorrowed,
                     Ownership::Borrowing { .. } => TypeOwnershipStyle::Borrowed,
                 }
@@ -1527,7 +1533,7 @@ pub mod vtable{ordinal} {{
             // The only possibility at that point is to borrow it at the root
             // but everything else internally is required to be owned from then
             // on.
-            match self.gen.opts.ownership {
+            match self.r#gen.opts.ownership {
                 Ownership::Owning => Some(lt),
                 Ownership::Borrowing { .. } => {
                     return TypeMode {
@@ -1651,7 +1657,7 @@ pub mod vtable{ordinal} {{
                 match mode.lifetime {
                     Some(lt) => self.print_borrowed_str(lt),
                     None => {
-                        if self.gen.opts.raw_strings {
+                        if self.r#gen.opts.raw_strings {
                             self.push_vec_name();
                             self.push_str("::<u8>");
                         } else {
@@ -1675,7 +1681,8 @@ pub mod vtable{ordinal} {{
 
     pub fn type_path(&self, id: TypeId, owned: bool) -> String {
         let full_wit_type_name = full_wit_type_name(self.resolve, id);
-        if let Some(TypeGeneration::Remap(remapped_path)) = self.gen.with.get(&full_wit_type_name) {
+        if let Some(TypeGeneration::Remap(remapped_path)) = self.r#gen.with.get(&full_wit_type_name)
+        {
             remapped_path.clone()
         } else {
             self.type_path_with_name(
@@ -1786,7 +1793,7 @@ pub mod vtable{ordinal} {{
     fn modes_of(&self, ty: TypeId) -> Vec<(String, TypeMode)> {
         let info = self.info(ty);
         let mut result = Vec::new();
-        if !self.gen.opts.generate_unused_types {
+        if !self.r#gen.opts.generate_unused_types {
             // If this type isn't actually used, no need to generate it.
             if !info.owned && !info.borrowed {
                 return result;
@@ -1806,7 +1813,7 @@ pub mod vtable{ordinal} {{
         } else if a == b {
             // If the modes are the same then there's only one result.
             result.push((self.result_name(ty), a));
-        } else if info.owned || matches!(self.gen.opts.ownership, Ownership::Owning) {
+        } else if info.owned || matches!(self.r#gen.opts.ownership, Ownership::Owning) {
             // If this type is owned or if ownership is preferred then the owned
             // variant is used as a priority. This is where the generator's
             // configuration comes into play.
@@ -1823,7 +1830,7 @@ pub mod vtable{ordinal} {{
         let info = self.info(id);
         // We use a BTree set to make sure we don't have any duplicates and we have a stable order
         let additional_derives: BTreeSet<String> = self
-            .gen
+            .r#gen
             .opts
             .additional_derive_attributes
             .iter()
@@ -1891,7 +1898,7 @@ pub mod vtable{ordinal} {{
                 self.push_str("write!(f, \"{:?}\", self)\n");
                 self.push_str("}\n");
                 self.push_str("}\n");
-                if self.gen.opts.std_feature {
+                if self.r#gen.opts.std_feature {
                     self.push_str("#[cfg(feature = \"std\")]\n");
                 }
                 self.push_str("impl std::error::Error for ");
@@ -1926,7 +1933,7 @@ pub mod vtable{ordinal} {{
         let info = self.info(id);
         // We use a BTree set to make sure we don't have any duplicates and have a stable order
         let additional_derives: BTreeSet<String> = self
-            .gen
+            .r#gen
             .opts
             .additional_derive_attributes
             .iter()
@@ -1985,7 +1992,7 @@ pub mod vtable{ordinal} {{
                 self.push_str("}\n");
                 self.push_str("\n");
 
-                if self.gen.opts.std_feature {
+                if self.r#gen.opts.std_feature {
                     self.push_str("#[cfg(feature = \"std\")]\n");
                 }
                 self.push_str("impl");
@@ -2083,7 +2090,7 @@ pub mod vtable{ordinal} {{
         self.push_str(")]\n");
         // We use a BTree set to make sure we don't have any duplicates and a stable order
         let mut derives: BTreeSet<String> = self
-            .gen
+            .r#gen
             .opts
             .additional_derive_attributes
             .iter()
@@ -2167,7 +2174,7 @@ pub mod vtable{ordinal} {{
             self.push_str("}\n");
             self.push_str("}\n");
             self.push_str("\n");
-            if self.gen.opts.std_feature {
+            if self.r#gen.opts.std_feature {
                 self.push_str("#[cfg(feature = \"std\")]\n");
             }
             self.push_str("impl std::error::Error for ");
@@ -2230,7 +2237,7 @@ pub mod vtable{ordinal} {{
     fn uses_two_names(&self, info: &TypeInfo) -> bool {
         // Types are only duplicated if explicitly requested ...
         matches!(
-            self.gen.opts.ownership,
+            self.r#gen.opts.ownership,
             Ownership::Borrowing {
                 duplicate_if_necessary: true
             }
@@ -2246,7 +2253,7 @@ pub mod vtable{ordinal} {{
     }
 
     fn path_to_interface(&self, interface: InterfaceId) -> Option<String> {
-        let InterfaceName { path, remapped } = &self.gen.interface_names[&interface];
+        let InterfaceName { path, remapped } = &self.r#gen.interface_names[&interface];
         if *remapped {
             let mut path_to_root = self.path_to_root();
             path_to_root.push_str(path);
@@ -2299,7 +2306,7 @@ pub mod vtable{ordinal} {{
 
             // Interfaces are "stateful" currently where whatever we last saw
             // them as dictates whether it's exported or not.
-            TypeOwner::Interface(i) => !self.gen.interface_last_seen_as_import[&i],
+            TypeOwner::Interface(i) => !self.r#gen.interface_last_seen_as_import[&i],
 
             // Shouldn't be the case for resources
             TypeOwner::None => unreachable!(),
@@ -2316,7 +2323,7 @@ pub mod vtable{ordinal} {{
     }
 
     fn info(&self, ty: TypeId) -> TypeInfo {
-        self.gen.types.get(ty)
+        self.r#gen.types.get(ty)
     }
 
     fn print_borrowed_str(&mut self, lifetime: &'static str) {
@@ -2325,7 +2332,7 @@ pub mod vtable{ordinal} {{
             self.push_str(lifetime);
             self.push_str(" ");
         }
-        if self.gen.opts.raw_strings {
+        if self.r#gen.opts.raw_strings {
             self.push_str("[u8]");
         } else {
             self.push_str("str");
@@ -2405,7 +2412,7 @@ pub mod vtable{ordinal} {{
         name_in_runtime_module: &str,
     ) -> String {
         self.needs_runtime_module = true;
-        self.gen.rt_module.insert(item);
+        self.r#gen.rt_module.insert(item);
         let prefix = if let Identifier::StreamOrFuturePayload = &self.identifier {
             "super::super::"
         } else {
@@ -2641,7 +2648,7 @@ impl<'a> {camel}Borrow<'a>{{
     fn type_flags(&mut self, _id: TypeId, name: &str, flags: &Flags, docs: &Docs) {
         self.src.push_str(&format!(
             "{bitflags}::bitflags! {{\n",
-            bitflags = self.gen.bitflags_path()
+            bitflags = self.r#gen.bitflags_path()
         ));
         self.rustdoc(docs);
         let repr = RustFlagsRepr::new(flags);
@@ -2719,7 +2726,7 @@ impl<'a> {camel}Borrow<'a>{{
     }
 
     fn type_future(&mut self, _id: TypeId, name: &str, ty: &Option<Type>, docs: &Docs) {
-        let async_support = self.gen.async_support_path();
+        let async_support = self.r#gen.async_support_path();
         let mode = TypeMode {
             style: TypeOwnershipStyle::Owned,
             lists_borrowed: false,
@@ -2736,7 +2743,7 @@ impl<'a> {camel}Borrow<'a>{{
     }
 
     fn type_stream(&mut self, _id: TypeId, name: &str, ty: &Option<Type>, docs: &Docs) {
-        let async_support = self.gen.async_support_path();
+        let async_support = self.r#gen.async_support_path();
         let mode = TypeMode {
             style: TypeOwnershipStyle::Owned,
             lists_borrowed: false,
@@ -2753,7 +2760,7 @@ impl<'a> {camel}Borrow<'a>{{
     }
 
     fn type_error_context(&mut self, _id: TypeId, name: &str, docs: &Docs) {
-        let async_support = self.gen.async_support_path();
+        let async_support = self.r#gen.async_support_path();
         self.rustdoc(docs);
         self.push_str(&format!("pub type {} = ", name.to_upper_camel_case()));
         self.push_str(&format!("{async_support}::ErrorContext"));
@@ -2849,7 +2856,7 @@ impl<'a, 'b> wit_bindgen_core::AnonymousTypeGenerator<'a> for AnonTypeGenerator<
     }
 
     fn anonymous_type_future(&mut self, _id: TypeId, ty: &Option<Type>, _docs: &Docs) {
-        let async_support = self.interface.gen.async_support_path();
+        let async_support = self.interface.r#gen.async_support_path();
         let mode = TypeMode {
             style: TypeOwnershipStyle::Owned,
             lists_borrowed: false,
@@ -2862,7 +2869,7 @@ impl<'a, 'b> wit_bindgen_core::AnonymousTypeGenerator<'a> for AnonTypeGenerator<
     }
 
     fn anonymous_type_stream(&mut self, _id: TypeId, ty: &Option<Type>, _docs: &Docs) {
-        let async_support = self.interface.gen.async_support_path();
+        let async_support = self.interface.r#gen.async_support_path();
         let mode = TypeMode {
             style: TypeOwnershipStyle::Owned,
             lists_borrowed: false,
@@ -2875,7 +2882,7 @@ impl<'a, 'b> wit_bindgen_core::AnonymousTypeGenerator<'a> for AnonTypeGenerator<
     }
 
     fn anonymous_type_error_context(&mut self) {
-        let async_support = self.interface.gen.async_support_path();
+        let async_support = self.interface.r#gen.async_support_path();
         self.interface
             .push_str(&format!("{async_support}::ErrorContext"));
     }
