@@ -22,10 +22,29 @@ use {
 pub struct FutureVtable<T> {
     pub write: fn(future: u32, value: T) -> Pin<Box<dyn Future<Output = bool>>>,
     pub read: fn(future: u32) -> Pin<Box<dyn Future<Output = Option<Result<T, ErrorContext>>>>>,
-    pub cancel_write: fn(future: u32),
-    pub cancel_read: fn(future: u32),
-    pub close_writable: fn(future: u32, err_ctx: u32),
-    pub close_readable: fn(future: u32),
+    pub cancel_write: unsafe extern "C" fn(future: u32) -> u32,
+    pub cancel_read: unsafe extern "C" fn(future: u32) -> u32,
+    pub close_writable: unsafe extern "C" fn(future: u32, err_ctx: u32),
+    pub close_readable: unsafe extern "C" fn(future: u32),
+    pub new: unsafe extern "C" fn() -> u32,
+}
+
+/// Helper function to create a new read/write pair for a component model
+/// future.
+pub unsafe fn future_new<T>(
+    vtable: &'static FutureVtable<T>,
+) -> (FutureWriter<T>, FutureReader<T>) {
+    let handle = unsafe { (vtable.new)() };
+    super::with_entry(handle, |entry| match entry {
+        Entry::Vacant(entry) => {
+            entry.insert(Handle::LocalOpen);
+        }
+        Entry::Occupied(_) => unreachable!(),
+    });
+    (
+        FutureWriter::new(handle, vtable),
+        FutureReader::new(handle, vtable),
+    )
 }
 
 /// Represents the writable end of a Component Model `future`.
@@ -84,7 +103,11 @@ impl<T> CancelableWrite<T> {
                 Handle::LocalReady(..) => {
                     entry.insert(Handle::LocalOpen);
                 }
-                Handle::Write => (writer.vtable.cancel_write)(writer.handle),
+                Handle::Write => unsafe {
+                    // TODO: spec-wise this can return `BLOCKED` which seems
+                    // bad?
+                    (writer.vtable.cancel_write)(writer.handle);
+                },
             },
         });
         writer
@@ -179,17 +202,17 @@ impl<T> Drop for FutureWriter<T> {
                     entry.insert(Handle::LocalClosed);
                 }
                 Handle::Read => unreachable!(),
-                Handle::Write | Handle::LocalClosed => {
+                Handle::Write | Handle::LocalClosed => unsafe {
                     entry.remove();
                     (self.vtable.close_writable)(self.handle, 0);
-                }
+                },
                 Handle::WriteClosedErr(_) => match entry.remove() {
-                    Handle::WriteClosedErr(None) => {
+                    Handle::WriteClosedErr(None) => unsafe {
                         (self.vtable.close_writable)(self.handle, 0);
-                    }
-                    Handle::WriteClosedErr(Some(err_ctx)) => {
+                    },
+                    Handle::WriteClosedErr(Some(err_ctx)) => unsafe {
                         (self.vtable.close_writable)(self.handle, err_ctx.handle());
-                    }
+                    },
                     _ => unreachable!(),
                 },
             },
@@ -240,7 +263,11 @@ impl<T> CancelableRead<T> {
                 Handle::LocalWaiting(_) => {
                     entry.insert(Handle::LocalOpen);
                 }
-                Handle::Read => (reader.vtable.cancel_read)(handle),
+                Handle::Read => unsafe {
+                    // TODO: spec-wise this can return `BLOCKED` which seems
+                    // bad?
+                    (reader.vtable.cancel_read)(handle);
+                },
             },
         });
         reader
@@ -389,10 +416,10 @@ impl<T> Drop for FutureReader<T> {
                         Handle::LocalOpen | Handle::LocalWaiting(_) => {
                             entry.insert(Handle::LocalClosed);
                         }
-                        Handle::Read | Handle::LocalClosed => {
+                        Handle::Read | Handle::LocalClosed => unsafe {
                             entry.remove();
                             (self.vtable.close_readable)(handle);
-                        }
+                        },
                         Handle::Write | Handle::WriteClosedErr(_) => unreachable!(),
                     },
                 });

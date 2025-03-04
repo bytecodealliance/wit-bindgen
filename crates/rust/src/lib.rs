@@ -479,7 +479,7 @@ pub mod wit_future {{
 
     #[doc(hidden)]
     pub trait FuturePayload: Unpin + Sized + 'static {{
-       fn new() -> (u32, &'static {async_support}::FutureVtable<Self>);
+        const VTABLE: &'static {async_support}::FutureVtable<Self>;
     }}"
             ));
             for code in self.future_payloads.values() {
@@ -489,17 +489,7 @@ pub mod wit_future {{
                 "\
     /// Creates a new Component Model `future` with the specified payload type.
     pub fn new<T: FuturePayload>() -> ({async_support}::FutureWriter<T>, {async_support}::FutureReader<T>) {{
-        let (handle, vtable) = T::new();
-        {async_support}::with_entry(handle, |entry| match entry {{
-            ::std::collections::hash_map::Entry::Vacant(entry) => {{
-                entry.insert({async_support}::Handle::LocalOpen);
-            }}
-            ::std::collections::hash_map::Entry::Occupied(_) => unreachable!(),
-        }});
-        (
-            {async_support}::FutureWriter::new(handle, vtable),
-            {async_support}::FutureReader::new(handle, vtable),
-        )
+        unsafe {{ {async_support}::future_new::<T>(T::VTABLE) }}
     }}
 }}
                 ",
@@ -514,7 +504,7 @@ pub mod wit_stream {{
     #![allow(dead_code, unused_variables, clippy::all)]
 
     pub trait StreamPayload: Unpin + Sized + 'static {{
-       fn new() -> (u32, &'static {async_support}::StreamVtable<Self>);
+        const VTABLE: &'static {async_support}::StreamVtable<Self>;
     }}"
             ));
             for code in self.stream_payloads.values() {
@@ -524,17 +514,7 @@ pub mod wit_stream {{
                 &format!("\
     /// Creates a new Component Model `stream` with the specified payload type.
     pub fn new<T: StreamPayload>() -> ({async_support}::StreamWriter<T>, {async_support}::StreamReader<T>) {{
-        let (handle, vtable) = T::new();
-        {async_support}::with_entry(handle, |entry| match entry {{
-            ::std::collections::hash_map::Entry::Vacant(entry) => {{
-                entry.insert({async_support}::Handle::LocalOpen);
-            }}
-            ::std::collections::hash_map::Entry::Occupied(_) => unreachable!(),
-        }});
-        (
-            {async_support}::StreamWriter::new(handle, vtable),
-            {async_support}::StreamReader::new(handle, vtable),
-        )
+        unsafe {{ {async_support}::stream_new::<T>(T::VTABLE) }}
     }}
 }}
                 "),
