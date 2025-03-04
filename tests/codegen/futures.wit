@@ -1,3 +1,5 @@
+//@ async = true
+
 package foo:foo;
 
 interface futures {

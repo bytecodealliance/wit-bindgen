@@ -1,3 +1,5 @@
+//@ async = true
+
 package my:resources;
 
 interface with-futures {

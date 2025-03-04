@@ -1,0 +1,15 @@
+package my:test;
+
+world runner {
+  import exports: interface {
+    foo: func();
+    bar: func();
+  }
+}
+
+world test {
+  export exports: interface {
+    foo: func();
+    bar: func();
+  }
+}
