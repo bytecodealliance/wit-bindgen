@@ -72,6 +72,14 @@ enum Opt {
         #[clap(flatten)]
         args: Common,
     },
+    /// Generates bindings for Scala.JS guest modules.
+    #[cfg(feature = "scalajs")]
+    ScalaJS {
+        #[clap(flatten)]
+        opts: wit_bindgen_scalajs::Opts,
+        #[clap(flatten)]
+        args: Common,
+    },
 }
 
 #[derive(Debug, Parser)]
@@ -137,6 +145,8 @@ fn main() -> Result<()> {
         Opt::TinyGo { opts, args } => (opts.build(), args),
         #[cfg(feature = "csharp")]
         Opt::CSharp { opts, args } => (opts.build(), args),
+        #[cfg(feature = "scalajs")]
+        Opt::ScalaJS { opts, args } => (opts.build(), args),
     };
 
     gen_world(generator, &opt, &mut files).map_err(attach_with_context)?;

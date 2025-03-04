@@ -123,6 +123,7 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
     let mut java = Vec::new();
     let mut go = Vec::new();
     let mut c_sharp: Vec<PathBuf> = Vec::new();
+    let mut scalajs = Vec::new();
     for file in dir.read_dir()? {
         let path = file?.path();
         match path.extension().and_then(|s| s.to_str()) {
@@ -131,6 +132,7 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
             Some("rs") => rust.push(path),
             Some("go") => go.push(path),
             Some("cs") => c_sharp.push(path),
+            Some("scala") => scalajs.push(path),
             _ => {}
         }
     }
