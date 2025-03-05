@@ -1014,10 +1014,16 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
 
                 match self.kind {
-                    FunctionKind::Freestanding | FunctionKind::Static(_) | FunctionKind::Method(_) => {
+                    FunctionKind::Constructor(id) => {
+                        let target = self.interface_gen.csharp_gen.all_resources[id].export_impl_name();
+                        let ret = self.locals.tmp("ret");
+                        uwriteln!(self.src, "var {ret} = new {target}({oper});");
+                        results.push(ret);
+                    }
+                    _ => {
                         let target = match self.kind {
-                            FunctionKind::Static(id) => self.interface_gen.csharp_gen.all_resources[id].export_impl_name(),
-                            FunctionKind::Method(_) => operands[0].clone(),
+                            FunctionKind::Static(id) |FunctionKind::AsyncStatic(id)=> self.interface_gen.csharp_gen.all_resources[id].export_impl_name(),
+                            FunctionKind::Method(_) |FunctionKind::AsyncMethod(_)=> operands[0].clone(),
                             _ => format!("{class_name_root}Impl")
                         };
 
@@ -1028,12 +1034,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                                 results.push(ret);
                             }
                         }
-                    }
-                    FunctionKind::Constructor(id) => {
-                        let target = self.interface_gen.csharp_gen.all_resources[id].export_impl_name();
-                        let ret = self.locals.tmp("ret");
-                        uwriteln!(self.src, "var {ret} = new {target}({oper});");
-                        results.push(ret);
                     }
                 }
 

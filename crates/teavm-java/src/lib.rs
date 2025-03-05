@@ -668,6 +668,7 @@ impl InterfaceGenerator<'_> {
             Type::F32 => "float".into(),
             Type::F64 => "double".into(),
             Type::String => "String".into(),
+            Type::ErrorContext => todo!("error context type name"),
             Type::Id(id) => {
                 let ty = &self.resolve.types[*id];
                 match &ty.kind {
@@ -1063,11 +1064,6 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
     fn type_stream(&mut self, id: TypeId, name: &str, ty: &Option<Type>, docs: &Docs) {
         _ = (id, name, ty, docs);
-        todo!()
-    }
-
-    fn type_error_context(&mut self, id: TypeId, name: &str, docs: &Docs) {
-        _ = (id, name, docs);
         todo!()
     }
 

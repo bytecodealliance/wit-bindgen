@@ -375,14 +375,10 @@ def_instruction! {
         } : [1] => [1],
 
         /// Create an `i32` from an error-context.
-        ErrorContextLower {
-            ty: TypeId,
-        } : [1] => [1],
+        ErrorContextLower : [1] => [1],
 
         /// Create a error-context from an `i32`.
-        ErrorContextLift {
-            ty: TypeId,
-        } : [1] => [1],
+        ErrorContextLift : [1] => [1],
 
         /// Pops a tuple value off the stack, decomposes the tuple to all of
         /// its fields, and then pushes the fields onto the stack.
@@ -823,6 +819,7 @@ pub fn guest_export_needs_post_return(resolve: &Resolve, func: &Function) -> boo
 fn needs_post_return(resolve: &Resolve, ty: &Type) -> bool {
     match ty {
         Type::String => true,
+        Type::ErrorContext => true,
         Type::Id(id) => match &resolve.types[*id].kind {
             TypeDefKind::List(_) => true,
             TypeDefKind::Type(t) => needs_post_return(resolve, t),
@@ -841,7 +838,7 @@ fn needs_post_return(resolve: &Resolve, ty: &Type) -> bool {
                 .filter_map(|t| t.as_ref())
                 .any(|t| needs_post_return(resolve, t)),
             TypeDefKind::Flags(_) | TypeDefKind::Enum(_) => false,
-            TypeDefKind::Future(_) | TypeDefKind::Stream(_) | TypeDefKind::ErrorContext => false,
+            TypeDefKind::Future(_) | TypeDefKind::Stream(_) => false,
             TypeDefKind::Unknown => unreachable!(),
         },
 
@@ -1294,6 +1291,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 let realloc = self.list_realloc();
                 self.emit(&StringLower { realloc });
             }
+            Type::ErrorContext => self.emit(&ErrorContextLower),
             Type::Id(id) => match &self.resolve.types[id].kind {
                 TypeDefKind::Type(t) => self.lower(t),
                 TypeDefKind::List(element) => {
@@ -1401,9 +1399,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         ty: id,
                     });
                 }
-                TypeDefKind::ErrorContext => {
-                    self.emit(&ErrorContextLower { ty: id });
-                }
                 TypeDefKind::Unknown => unreachable!(),
             },
         }
@@ -1494,6 +1489,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             Type::F32 => self.emit(&F32FromCoreF32),
             Type::F64 => self.emit(&F64FromCoreF64),
             Type::String => self.emit(&StringLift),
+            Type::ErrorContext => self.emit(&ErrorContextLift),
             Type::Id(id) => match &self.resolve.types[id].kind {
                 TypeDefKind::Type(t) => self.lift(t),
                 TypeDefKind::List(element) => {
@@ -1600,9 +1596,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         ty: id,
                     });
                 }
-                TypeDefKind::ErrorContext => {
-                    self.emit(&ErrorContextLift { ty: id });
-                }
                 TypeDefKind::Unknown => unreachable!(),
             },
         }
@@ -1665,15 +1658,15 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             Type::F32 => self.lower_and_emit(ty, addr, &F32Store { offset }),
             Type::F64 => self.lower_and_emit(ty, addr, &F64Store { offset }),
             Type::String => self.write_list_to_memory(ty, addr, offset),
+            Type::ErrorContext => self.lower_and_emit(ty, addr, &I32Store { offset }),
 
             Type::Id(id) => match &self.resolve.types[id].kind {
                 TypeDefKind::Type(t) => self.write_to_memory(t, addr, offset),
                 TypeDefKind::List(_) => self.write_list_to_memory(ty, addr, offset),
 
-                TypeDefKind::Future(_)
-                | TypeDefKind::Stream(_)
-                | TypeDefKind::ErrorContext
-                | TypeDefKind::Handle(_) => self.lower_and_emit(ty, addr, &I32Store { offset }),
+                TypeDefKind::Future(_) | TypeDefKind::Stream(_) | TypeDefKind::Handle(_) => {
+                    self.lower_and_emit(ty, addr, &I32Store { offset })
+                }
 
                 // Decompose the record into its components and then write all
                 // the components into memory one-by-one.
@@ -1860,16 +1853,16 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             Type::F32 => self.emit_and_lift(ty, addr, &F32Load { offset }),
             Type::F64 => self.emit_and_lift(ty, addr, &F64Load { offset }),
             Type::String => self.read_list_from_memory(ty, addr, offset),
+            Type::ErrorContext => self.emit_and_lift(ty, addr, &I32Load { offset }),
 
             Type::Id(id) => match &self.resolve.types[id].kind {
                 TypeDefKind::Type(t) => self.read_from_memory(t, addr, offset),
 
                 TypeDefKind::List(_) => self.read_list_from_memory(ty, addr, offset),
 
-                TypeDefKind::Future(_)
-                | TypeDefKind::Stream(_)
-                | TypeDefKind::ErrorContext
-                | TypeDefKind::Handle(_) => self.emit_and_lift(ty, addr, &I32Load { offset }),
+                TypeDefKind::Future(_) | TypeDefKind::Stream(_) | TypeDefKind::Handle(_) => {
+                    self.emit_and_lift(ty, addr, &I32Load { offset })
+                }
 
                 TypeDefKind::Resource => {
                     todo!();
@@ -2061,7 +2054,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             | Type::U64
             | Type::S64
             | Type::F32
-            | Type::F64 => {}
+            | Type::F64
+            | Type::ErrorContext => {}
 
             Type::Id(id) => match &self.resolve.types[id].kind {
                 TypeDefKind::Type(t) => self.deallocate(t, addr, offset),
@@ -2129,7 +2123,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
 
                 TypeDefKind::Future(_) => todo!("read future from memory"),
                 TypeDefKind::Stream(_) => todo!("read stream from memory"),
-                TypeDefKind::ErrorContext => todo!("read error-context from memory"),
                 TypeDefKind::Unknown => unreachable!(),
             },
         }

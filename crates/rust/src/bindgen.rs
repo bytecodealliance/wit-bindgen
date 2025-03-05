@@ -895,11 +895,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.let_results(usize::from(func.result.is_some()), results);
                 };
                 let constructor_type = match &func.kind {
-                    FunctionKind::Freestanding => {
+                    FunctionKind::Freestanding | FunctionKind::AsyncFreestanding => {
                         self.push_str(&format!("T::{}", to_rust_ident(&func.name)));
                         None
                     }
-                    FunctionKind::Method(_) | FunctionKind::Static(_) => {
+                    FunctionKind::Method(_)
+                    | FunctionKind::Static(_)
+                    | FunctionKind::AsyncMethod(_)
+                    | FunctionKind::AsyncStatic(_) => {
                         self.push_str(&format!("T::{}", to_rust_ident(func.item_name())));
                         None
                     }
