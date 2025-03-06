@@ -2,6 +2,7 @@
 #![allow(static_mut_refs)]
 
 extern crate std;
+use core::sync::atomic::{AtomicBool, Ordering};
 use std::alloc::{self, Layout};
 use std::any::Any;
 use std::boxed::Box;
@@ -78,26 +79,29 @@ pub fn with_entry<T>(handle: u32, fun: impl FnOnce(hash_map::Entry<'_, u32, Hand
     fun(unsafe { HANDLES.entry(handle) })
 }
 
-fn dummy_waker() -> Waker {
-    struct DummyWaker;
-
-    impl Wake for DummyWaker {
-        fn wake(self: Arc<Self>) {}
-    }
-
-    static WAKER: Lazy<Arc<DummyWaker>> = Lazy::new(|| Arc::new(DummyWaker));
-
-    WAKER.clone().into()
-}
-
 /// Poll the specified task until it either completes or can't make immediate
 /// progress.
 unsafe fn poll(state: *mut FutureState) -> Poll<()> {
+    #[derive(Default)]
+    struct FutureWaker(AtomicBool);
+
+    impl Wake for FutureWaker {
+        fn wake(self: Arc<Self>) {
+            Self::wake_by_ref(&self)
+        }
+
+        fn wake_by_ref(self: &Arc<Self>) {
+            self.0.store(true, Ordering::Relaxed)
+        }
+    }
+
     loop {
         if let Some(futures) = (*state).tasks.as_mut() {
             let old = CURRENT;
             CURRENT = state;
-            let poll = futures.poll_next_unpin(&mut Context::from_waker(&dummy_waker()));
+            let waker: Arc<FutureWaker> = Arc::default();
+            let poll =
+                futures.poll_next_unpin(&mut Context::from_waker(&Arc::clone(&waker).into()));
             CURRENT = old;
 
             if SPAWNED.is_empty() {
@@ -107,7 +111,11 @@ unsafe fn poll(state: *mut FutureState) -> Poll<()> {
                         (*state).tasks = None;
                         break Poll::Ready(());
                     }
-                    Poll::Pending => break Poll::Pending,
+                    Poll::Pending => {
+                        if !waker.0.load(Ordering::Relaxed) {
+                            break Poll::Pending;
+                        }
+                    }
                 }
             } else {
                 futures.extend(SPAWNED.drain(..));
