@@ -386,7 +386,7 @@ impl Runner<'_> {
 
         let mut prepared = HashSet::new();
         let mut prepare = |lang: &Language| -> Result<()> {
-            if !prepared.insert(lang.clone()) {
+            if !self.include_language(lang) || !prepared.insert(lang.clone()) {
                 return Ok(());
             }
             lang.obj()
