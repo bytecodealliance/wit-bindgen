@@ -156,7 +156,6 @@ pub trait InterfaceGenerator<'a> {
     fn type_builtin(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs);
     fn type_future(&mut self, id: TypeId, name: &str, ty: &Option<Type>, docs: &Docs);
     fn type_stream(&mut self, id: TypeId, name: &str, ty: &Option<Type>, docs: &Docs);
-    fn type_error_context(&mut self, id: TypeId, name: &str, docs: &Docs);
     fn types(&mut self, iface: InterfaceId) {
         let iface = &self.resolve().interfaces[iface];
         for (name, id) in iface.types.iter() {
@@ -180,7 +179,6 @@ pub trait InterfaceGenerator<'a> {
             TypeDefKind::Future(t) => self.type_future(id, name, t, &ty.docs),
             TypeDefKind::Stream(t) => self.type_stream(id, name, t, &ty.docs),
             TypeDefKind::Handle(_) => panic!("handle types do not require definition"),
-            TypeDefKind::ErrorContext => self.type_error_context(id, name, &ty.docs),
             TypeDefKind::Unknown => unreachable!(),
         }
     }
@@ -197,7 +195,6 @@ pub trait AnonymousTypeGenerator<'a> {
     fn anonymous_type_future(&mut self, id: TypeId, ty: &Option<Type>, docs: &Docs);
     fn anonymous_type_stream(&mut self, id: TypeId, ty: &Option<Type>, docs: &Docs);
     fn anonymous_type_type(&mut self, id: TypeId, ty: &Type, docs: &Docs);
-    fn anonymous_type_error_context(&mut self);
 
     fn define_anonymous_type(&mut self, id: TypeId) {
         let ty = &self.resolve().types[id];
@@ -216,7 +213,6 @@ pub trait AnonymousTypeGenerator<'a> {
             TypeDefKind::List(t) => self.anonymous_type_list(id, t, &ty.docs),
             TypeDefKind::Future(f) => self.anonymous_type_future(id, f, &ty.docs),
             TypeDefKind::Stream(s) => self.anonymous_type_stream(id, s, &ty.docs),
-            TypeDefKind::ErrorContext => self.anonymous_type_error_context(),
             TypeDefKind::Handle(handle) => self.anonymous_type_handle(id, handle, &ty.docs),
             TypeDefKind::Unknown => unreachable!(),
         }

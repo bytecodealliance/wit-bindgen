@@ -168,12 +168,7 @@ impl<'i> InterfaceGenerator<'i> {
                     })
                 }
             };
-            let resource = match func.kind {
-                FunctionKind::Freestanding => None,
-                FunctionKind::Method(id)
-                | FunctionKind::Constructor(id)
-                | FunctionKind::Static(id) => Some(id),
-            };
+            let resource = func.kind.resource();
 
             funcs_to_export.push((func, resource, async_));
             let (trait_name, methods) = traits.get_mut(&resource).unwrap();
@@ -837,17 +832,14 @@ pub mod vtable{ordinal} {{
             async_,
             ..Default::default()
         };
-        match func.kind {
-            FunctionKind::Freestanding => {}
-            FunctionKind::Method(id) | FunctionKind::Static(id) | FunctionKind::Constructor(id) => {
-                let name = self.resolve.types[id].name.as_ref().unwrap();
-                let name = to_upper_camel_case(name);
-                uwriteln!(self.src, "impl {name} {{");
-                sig.use_item_name = true;
-                if let FunctionKind::Method(_) = &func.kind {
-                    sig.self_arg = Some("&self".into());
-                    sig.self_is_first_param = true;
-                }
+        if let Some(id) = func.kind.resource() {
+            let name = self.resolve.types[id].name.as_ref().unwrap();
+            let name = to_upper_camel_case(name);
+            uwriteln!(self.src, "impl {name} {{");
+            sig.use_item_name = true;
+            if let FunctionKind::Method(_) = &func.kind {
+                sig.self_arg = Some("&self".into());
+                sig.self_is_first_param = true;
             }
         }
         self.src.push_str("#[allow(unused_unsafe, clippy::all)]\n");
@@ -860,11 +852,8 @@ pub mod vtable{ordinal} {{
         self.src.push_str("}\n");
         self.src.push_str("}\n");
 
-        match func.kind {
-            FunctionKind::Freestanding => {}
-            FunctionKind::Method(_) | FunctionKind::Static(_) | FunctionKind::Constructor(_) => {
-                self.src.push_str("}\n");
-            }
+        if func.kind.resource().is_some() {
+            self.src.push_str("}\n");
         }
     }
 
@@ -1659,6 +1648,11 @@ pub mod vtable{ordinal} {{
                         }
                     }
                 }
+            }
+
+            Type::ErrorContext => {
+                let async_support = self.gen.async_support_path();
+                self.push_str(&format!("{async_support}::ErrorContext"));
             }
         }
     }
@@ -2752,14 +2746,6 @@ impl<'a> {camel}Borrow<'a>{{
         self.push_str(";\n");
     }
 
-    fn type_error_context(&mut self, _id: TypeId, name: &str, docs: &Docs) {
-        let async_support = self.gen.async_support_path();
-        self.rustdoc(docs);
-        self.push_str(&format!("pub type {} = ", name.to_upper_camel_case()));
-        self.push_str(&format!("{async_support}::ErrorContext"));
-        self.push_str(";\n");
-    }
-
     fn type_builtin(&mut self, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
         self.rustdoc(docs);
         self.src
@@ -2872,12 +2858,6 @@ impl<'a, 'b> wit_bindgen_core::AnonymousTypeGenerator<'a> for AnonTypeGenerator<
             .push_str(&format!("{async_support}::StreamReader<"));
         self.interface.print_optional_ty(ty.as_ref(), mode);
         self.interface.push_str(">");
-    }
-
-    fn anonymous_type_error_context(&mut self) {
-        let async_support = self.interface.gen.async_support_path();
-        self.interface
-            .push_str(&format!("{async_support}::ErrorContext"));
     }
 }
 

@@ -157,9 +157,13 @@ impl InterfaceGenerator<'_> {
     /// Returns the function name of the given function.
     pub(crate) fn func_name(&self, func: &Function) -> String {
         match func.kind {
-            FunctionKind::Freestanding => func.name.to_upper_camel_case(),
-            FunctionKind::Static(_) => func.name.replace('.', " ").to_upper_camel_case(),
-            FunctionKind::Method(_) => match self.direction {
+            FunctionKind::Freestanding | FunctionKind::AsyncFreestanding => {
+                func.name.to_upper_camel_case()
+            }
+            FunctionKind::Static(_) | FunctionKind::AsyncStatic(_) => {
+                func.name.replace('.', " ").to_upper_camel_case()
+            }
+            FunctionKind::Method(_) | FunctionKind::AsyncMethod(_) => match self.direction {
                 Direction::Import => func.name.split('.').last().unwrap().to_upper_camel_case(),
                 Direction::Export => func.name.replace('.', " ").to_upper_camel_case(),
             },
@@ -221,6 +225,7 @@ impl InterfaceGenerator<'_> {
             Type::F64 => "float64".into(),
             Type::Char => "rune".into(),
             Type::String => "string".into(),
+            Type::ErrorContext => todo!(),
             Type::Id(id) => {
                 let ty = &self.resolve().types[*id];
                 match &ty.kind {
@@ -263,6 +268,7 @@ impl InterfaceGenerator<'_> {
             Type::F64 => "F64".into(),
             Type::Char => "Byte".into(),
             Type::String => "String".into(),
+            Type::ErrorContext => todo!(),
             Type::Id(id) => {
                 let ty = &self.resolve.types[*id];
                 // if a type has name, return the name
@@ -326,7 +332,6 @@ impl InterfaceGenerator<'_> {
                         src.push('T');
                         src
                     }
-                    TypeDefKind::ErrorContext => "ErrorContext".to_owned(),
                     TypeDefKind::Handle(Handle::Own(ty)) => {
                         // Currently there is no different between Own and Borrow
                         // in the Go code. They are just represented as
@@ -649,7 +654,6 @@ impl InterfaceGenerator<'_> {
             }
             TypeDefKind::Future(_) => todo!("anonymous_type for future"),
             TypeDefKind::Stream(_) => todo!("anonymous_type for stream"),
-            TypeDefKind::ErrorContext => todo!("anonymous_type for error-context"),
             TypeDefKind::Unknown => unreachable!(),
         }
     }
@@ -1211,11 +1215,6 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
     fn type_stream(&mut self, id: TypeId, name: &str, ty: &Option<Type>, docs: &Docs) {
         _ = (id, name, ty, docs);
-        todo!()
-    }
-
-    fn type_error_context(&mut self, id: TypeId, name: &str, docs: &Docs) {
-        _ = (id, name, docs);
         todo!()
     }
 

@@ -1417,12 +1417,10 @@ fn group_by_resource<'a>(
 ) -> BTreeMap<Option<TypeId>, Vec<&'a Function>> {
     let mut by_resource = BTreeMap::<_, Vec<_>>::new();
     for func in funcs {
-        match &func.kind {
-            FunctionKind::Freestanding => by_resource.entry(None).or_default().push(func),
-            FunctionKind::Method(ty) | FunctionKind::Static(ty) | FunctionKind::Constructor(ty) => {
-                by_resource.entry(Some(*ty)).or_default().push(func);
-            }
-        }
+        by_resource
+            .entry(func.kind.resource())
+            .or_default()
+            .push(func);
     }
     by_resource
 }
