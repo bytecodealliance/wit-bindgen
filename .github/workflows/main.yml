@@ -115,6 +115,7 @@ jobs:
     - run: |
         cargo test \
           -p wit-bindgen-cli \
+          -p wit-bindgen-${{ matrix.lang }} \
           --no-default-features \
           --features ${{ matrix.lang }}
     - run: |
