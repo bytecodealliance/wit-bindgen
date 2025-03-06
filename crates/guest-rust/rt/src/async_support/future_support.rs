@@ -25,7 +25,7 @@ pub struct FutureVtable<T> {
     pub cancel_write: unsafe extern "C" fn(future: u32) -> u32,
     pub cancel_read: unsafe extern "C" fn(future: u32) -> u32,
     pub close_writable: unsafe extern "C" fn(future: u32, err_ctx: u32),
-    pub close_readable: unsafe extern "C" fn(future: u32),
+    pub close_readable: unsafe extern "C" fn(future: u32, err_ctx: u32),
     pub new: unsafe extern "C" fn() -> u32,
 }
 
@@ -418,7 +418,9 @@ impl<T> Drop for FutureReader<T> {
                         }
                         Handle::Read | Handle::LocalClosed => unsafe {
                             entry.remove();
-                            (self.vtable.close_readable)(handle);
+                            // TODO: expose `0` here as an error context in the
+                            // API (or auto-fill-in? unsure).
+                            (self.vtable.close_readable)(handle, 0);
                         },
                         Handle::Write | Handle::WriteClosedErr(_) => unreachable!(),
                     },

@@ -378,7 +378,7 @@ impl ErrorContext {
         {
             #[link(wasm_import_module = "$root")]
             extern "C" {
-                #[link_name = "[error-context-new;encoding=utf8]"]
+                #[link_name = "[error-context-new-utf8]"]
                 fn context_new(_: *const u8, _: usize) -> i32;
             }
 
@@ -417,7 +417,7 @@ impl ErrorContext {
             }
             #[link(wasm_import_module = "$root")]
             extern "C" {
-                #[link_name = "[error-context-debug-message;encoding=utf8;realloc=cabi_realloc]"]
+                #[link_name = "[error-context-debug-message-utf8]"]
                 fn error_context_debug_message(_: u32, _: &mut RetPtr);
             }
 
@@ -543,12 +543,12 @@ pub fn task_yield() {
     }
 }
 
-/// Call the `task.backpressure` canonical built-in function.
+/// Call the `backpressure.set` canonical built-in function.
 ///
 /// When `enabled` is `true`, this tells the host to defer any new calls to this
-/// component instance until further notice (i.e. until `task.backpressure` is
+/// component instance until further notice (i.e. until `backpressure.set` is
 /// called again with `enabled` set to `false`).
-pub fn task_backpressure(enabled: bool) {
+pub fn backpressure_set(enabled: bool) {
     #[cfg(not(target_arch = "wasm32"))]
     {
         _ = enabled;
@@ -559,11 +559,11 @@ pub fn task_backpressure(enabled: bool) {
     {
         #[link(wasm_import_module = "$root")]
         extern "C" {
-            #[link_name = "[task-backpressure]"]
-            fn backpressure(_: i32);
+            #[link_name = "[backpressure-set]"]
+            fn backpressure_set(_: i32);
         }
         unsafe {
-            backpressure(if enabled { 1 } else { 0 });
+            backpressure_set(if enabled { 1 } else { 0 });
         }
     }
 }
