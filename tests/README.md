@@ -7,7 +7,6 @@ There are a few pre-requisites to testing the project. You only need the languag
   - `curl -LO https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-22/wasi-sdk-22.0-linux.tar.gz`
   - Create an environment variable called `WASI_SDK_PATH`` giving the path where you extracted the WASI SDK download, i.e., the directory containing `bin`/`lib`/`share`` folders.
 - Compilers for the target language:
-  - Go + TinyGo - https://tinygo.org/ (v0.27.0+)
   - Rust - wasi target: `rustup target add wasm32-wasip1`
   - Java - TeaVM-WASI `ci/download-teamvm.sh`
   - C - [Clang](https://clang.llvm.org/)
@@ -19,19 +18,19 @@ There are two suites of tests: [codegen](#testing-wit-bindgen---codegen) and [ru
 cargo test --workspace
 ```
 
-To run just `codegen` tests for a single language (replace rust with language of choice: `go`, `c`, `csharp`, etc.):
+To run just `codegen` tests for a single language (replace rust with language of choice: `c`, `csharp`, etc.):
 
 ```
 cargo test -p wit-bindgen-rust
 ```
 
-To run just `codegen` tests for a single language (replace rust with language of choice: `go`, `c`, `csharp`, etc.) and a single wit file (replace `flags` with whatever wit file should be tested):
+To run just `codegen` tests for a single language (replace rust with language of choice: `c`, `csharp`, etc.) and a single wit file (replace `flags` with whatever wit file should be tested):
 
 ```
 cargo test -p wit-bindgen-rust -- flags
 ```
 
-To run just `runtime` tests for a single language (replace rust with language of choice: `go`, `c`, `csharp`, etc.):
+To run just `runtime` tests for a single language (replace rust with language of choice: `c`, `csharp`, etc.):
 
 ```bash
 cargo test -p wit-bindgen-cli --no-default-features -F rust
