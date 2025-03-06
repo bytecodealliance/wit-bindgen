@@ -228,6 +228,8 @@ impl Runner<'_> {
         self.run_codegen_tests(&tests)?;
         self.run_runtime_tests(&tests)?;
 
+        println!("PASSED");
+
         Ok(())
     }
 
@@ -642,12 +644,12 @@ impl Runner<'_> {
         println!("");
 
         // Print information to debug failures, if any.
-        let mut any_failed = false;
+        let mut failures = 0;
         for (result, case_name, runner, runner_path, test, test_path) in results {
             let Err(err) = result else {
                 continue;
             };
-            any_failed = true;
+            failures += 1;
 
             println!("------ Failure: {case_name} --------");
             println!("  runner: {}", runner.path.display());
@@ -657,8 +659,9 @@ impl Runner<'_> {
             println!("  error: {}", format!("{err:?}").replace("\n", "\n  "));
         }
 
-        if !any_failed {
-            println!("PASSED");
+        if failures > 0 {
+            println!("{failures} tests FAILED");
+            std::process::exit(1);
         }
         Ok(())
     }
