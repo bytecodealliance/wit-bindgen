@@ -67,7 +67,7 @@ jobs:
         submodules: true
     - name: Install Rust
       run: rustup update stable --no-self-update && rustup default stable
-    - run: rustup target add wasm32-wasip1
+    - run: rustup target add wasm32-wasip1 wasm32-wasip2
 
     - run: rustup target add wasm32-unknown-unknown
       if: matrix.lang == 'rust'
