@@ -112,6 +112,8 @@ unsafe fn poll(state: *mut FutureState) -> Poll<()> {
                         break Poll::Ready(());
                     }
                     Poll::Pending => {
+                        // TODO: Return `CallbackCode.YIELD` (see https://github.com/WebAssembly/component-model/blob/main/design/mvp/CanonicalABI.md#canon-lift)
+                        // to the host before polling again once a host implementation exists to support it.
                         if !waker.0.load(Ordering::Relaxed) {
                             break Poll::Pending;
                         }
