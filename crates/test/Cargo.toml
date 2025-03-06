@@ -6,8 +6,9 @@ repository = { workspace = true }
 license = { workspace = true }
 homepage = 'https://github.com/bytecodealliance/wit-bindgen'
 description = """
-Helpers for testing wit-bindgen.
+Backend of the `wit-bindgne test` subcommand
 """
+readme = "README.md"
 
 [lib]
 test = false
