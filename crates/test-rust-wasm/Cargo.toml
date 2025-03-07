@@ -25,10 +25,6 @@ name = "variants"
 test = false
 
 [[bin]]
-name = "lists"
-test = false
-
-[[bin]]
 name = "flavorful"
 test = false
 
