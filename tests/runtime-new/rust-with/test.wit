@@ -1,0 +1,21 @@
+package my:inline;
+
+interface foo {
+  record msg {
+    field: string,
+  }
+}
+
+interface bar {
+  use foo.{msg};
+
+  bar: func(m: msg);
+}
+
+world test {
+  export bar;
+}
+
+world runner {
+  import bar;
+}

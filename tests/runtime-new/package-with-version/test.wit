@@ -1,0 +1,14 @@
+package my:inline@0.0.0;
+
+interface foo {
+    resource bar {
+        constructor();
+    }
+}
+
+world test {
+    export foo;
+}
+world runner {
+    import foo;
+}

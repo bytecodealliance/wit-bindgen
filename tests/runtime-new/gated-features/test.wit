@@ -1,0 +1,17 @@
+package foo:bar@1.2.3;
+
+interface bindings {
+    @unstable(feature = x)
+    x: func();
+    @unstable(feature = y)
+    y: func();
+    @since(version = 1.2.3)
+    z: func();
+}
+
+world test {
+  export bindings;
+}
+world runner {
+  import bindings;
+}
