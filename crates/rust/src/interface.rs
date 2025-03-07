@@ -578,7 +578,7 @@ pub mod vtable{ordinal} {{
     #[cfg(not(target_arch = "wasm32"))]
     unsafe extern "C" fn close_writable(_: u32, _: u32) {{ unreachable!() }}
     #[cfg(not(target_arch = "wasm32"))]
-    unsafe extern "C" fn close_readable(_: u32) {{ unreachable!() }}
+    unsafe extern "C" fn close_readable(_: u32, _: u32) {{ unreachable!() }}
     #[cfg(not(target_arch = "wasm32"))]
     unsafe extern "C" fn new() -> u32 {{ unreachable!() }}
     #[cfg(not(target_arch = "wasm32"))]
@@ -598,12 +598,10 @@ pub mod vtable{ordinal} {{
         #[link_name = "[future-close-writable-{index}]{func_name}"]
         fn close_writable(_: u32, _: u32);
         #[link_name = "[future-close-readable-{index}]{func_name}"]
-        fn close_readable(_: u32);
-        #[link_name = "[future-new-{index}]{func_name}"]
-        fn new() -> u32;
-        #[link_name = "[async][future-read-{index}]{func_name}"]
+        fn close_readable(_: u32, _: u32);
+        #[link_name = "[async-lower][future-read-{index}]{func_name}"]
         fn start_read(_: u32, _: *mut u8) -> u32;
-        #[link_name = "[async][future-write-{index}]{func_name}"]
+        #[link_name = "[async-lower][future-write-{index}]{func_name}"]
         fn start_write(_: u32, _: *mut u8) -> u32;
     }}
 
@@ -762,7 +760,7 @@ pub mod vtable{ordinal} {{
     #[cfg(not(target_arch = "wasm32"))]
     unsafe extern "C" fn close_writable(_: u32, _: u32) {{ unreachable!() }}
     #[cfg(not(target_arch = "wasm32"))]
-    unsafe extern "C" fn close_readable(_: u32) {{ unreachable!() }}
+    unsafe extern "C" fn close_readable(_: u32, _: u32) {{ unreachable!() }}
     #[cfg(not(target_arch = "wasm32"))]
     unsafe extern "C" fn new() -> u32 {{ unreachable!() }}
     #[cfg(not(target_arch = "wasm32"))]
@@ -782,12 +780,10 @@ pub mod vtable{ordinal} {{
         #[link_name = "[stream-close-writable-{index}]{func_name}"]
         fn close_writable(_: u32, _: u32);
         #[link_name = "[stream-close-readable-{index}]{func_name}"]
-        fn close_readable(_: u32);
-        #[link_name = "[stream-new-{index}]{func_name}"]
-        fn new() -> u32;
-        #[link_name = "[async][stream-read-{index}]{func_name}"]
+        fn close_readable(_: u32, _: u32);
+        #[link_name = "[async-lower][stream-read-{index}]{func_name}"]
         fn start_read(_: u32, _: *mut u8, _: u32) -> u32;
-        #[link_name = "[async][stream-write-{index}]{func_name}"]
+        #[link_name = "[async-lower][stream-write-{index}]{func_name}"]
         fn start_write(_: u32, _: *mut u8, _: u32) -> u32;
     }}
 
@@ -817,7 +813,7 @@ pub mod vtable{ordinal} {{
             return;
         }
 
-        self.generate_payloads("[import-payload]", func, interface);
+        self.generate_payloads("", func, interface);
 
         let async_ = match &self.gen.opts.async_ {
             AsyncConfig::None => false,
@@ -924,7 +920,7 @@ pub mod vtable{ordinal} {{
     ) {
         let name_snake = func.name.to_snake_case().replace('.', "_");
 
-        self.generate_payloads("[export-payload]", func, interface);
+        self.generate_payloads("[export]", func, interface);
 
         uwrite!(
             self.src,
@@ -1051,7 +1047,7 @@ pub mod vtable{ordinal} {{
         let export_prefix = self.gen.opts.export_prefix.as_deref().unwrap_or("");
         let export_name = func.legacy_core_export_name(wasm_module_export_name.as_deref());
         let export_name = if async_ {
-            format!("[async]{export_name}")
+            format!("[async-lift]{export_name}")
         } else {
             export_name.to_string()
         };

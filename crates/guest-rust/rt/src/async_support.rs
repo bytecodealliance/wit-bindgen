@@ -388,7 +388,7 @@ impl ErrorContext {
         {
             #[link(wasm_import_module = "$root")]
             extern "C" {
-                #[link_name = "[error-context-new;encoding=utf8]"]
+                #[link_name = "[error-context-new-utf8]"]
                 fn context_new(_: *const u8, _: usize) -> i32;
             }
 
@@ -427,7 +427,7 @@ impl ErrorContext {
             }
             #[link(wasm_import_module = "$root")]
             extern "C" {
-                #[link_name = "[error-context-debug-message;encoding=utf8;realloc=cabi_realloc]"]
+                #[link_name = "[error-context-debug-message-utf8]"]
                 fn error_context_debug_message(_: u32, _: &mut RetPtr);
             }
 
@@ -484,7 +484,7 @@ pub fn spawn(future: impl Future<Output = ()> + 'static) {
     unsafe { SPAWNED.push(Box::pin(future)) }
 }
 
-fn task_wait(state: &mut FutureState) {
+fn waitable_set_wait(state: &mut FutureState) {
     #[cfg(not(target_arch = "wasm32"))]
     {
         _ = state;
@@ -495,12 +495,13 @@ fn task_wait(state: &mut FutureState) {
     {
         #[link(wasm_import_module = "$root")]
         extern "C" {
-            #[link_name = "[task-wait]"]
-            fn wait(_: *mut i32) -> i32;
+            #[link_name = "[waitable-set-wait]"]
+            fn wait(_: u32, _: *mut i32) -> i32;
         }
         let mut payload = [0i32; 2];
         unsafe {
-            let event0 = wait(payload.as_mut_ptr());
+            // TODO: provide a real waitable-set here:
+            let event0 = wait(0, payload.as_mut_ptr());
             callback(state as *mut _ as _, event0, payload[0], payload[1]);
         }
     }
@@ -508,8 +509,8 @@ fn task_wait(state: &mut FutureState) {
 
 /// Run the specified future to completion, returning the result.
 ///
-/// This uses `task.wait` to poll for progress on any in-progress calls to
-/// async-lowered imports as necessary.
+/// This uses `waitable-set.wait` to poll for progress on any in-progress calls
+/// to async-lowered imports as necessary.
 // TODO: refactor so `'static` bounds aren't necessary
 pub fn block_on<T: 'static>(future: impl Future<Output = T> + 'static) -> T {
     let (tx, mut rx) = oneshot::channel();
@@ -524,12 +525,12 @@ pub fn block_on<T: 'static>(future: impl Future<Output = T> + 'static) -> T {
     loop {
         match unsafe { poll(state) } {
             Poll::Ready(()) => break rx.try_recv().unwrap().unwrap(),
-            Poll::Pending => task_wait(state),
+            Poll::Pending => waitable_set_wait(state),
         }
     }
 }
 
-/// Call the `task.yield` canonical built-in function.
+/// Call the `yield` canonical built-in function.
 ///
 /// This yields control to the host temporarily, allowing other tasks to make
 /// progress.  It's a good idea to call this inside a busy loop which does not
@@ -544,7 +545,7 @@ pub fn task_yield() {
     {
         #[link(wasm_import_module = "$root")]
         extern "C" {
-            #[link_name = "[task-yield]"]
+            #[link_name = "[yield]"]
             fn yield_();
         }
         unsafe {
@@ -553,12 +554,12 @@ pub fn task_yield() {
     }
 }
 
-/// Call the `task.backpressure` canonical built-in function.
+/// Call the `backpressure.set` canonical built-in function.
 ///
 /// When `enabled` is `true`, this tells the host to defer any new calls to this
-/// component instance until further notice (i.e. until `task.backpressure` is
+/// component instance until further notice (i.e. until `backpressure.set` is
 /// called again with `enabled` set to `false`).
-pub fn task_backpressure(enabled: bool) {
+pub fn backpressure_set(enabled: bool) {
     #[cfg(not(target_arch = "wasm32"))]
     {
         _ = enabled;
@@ -569,11 +570,11 @@ pub fn task_backpressure(enabled: bool) {
     {
         #[link(wasm_import_module = "$root")]
         extern "C" {
-            #[link_name = "[task-backpressure]"]
-            fn backpressure(_: i32);
+            #[link_name = "[backpressure-set]"]
+            fn backpressure_set(_: i32);
         }
         unsafe {
-            backpressure(if enabled { 1 } else { 0 });
+            backpressure_set(if enabled { 1 } else { 0 });
         }
     }
 }

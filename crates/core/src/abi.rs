@@ -985,7 +985,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
 
                         assert_eq!(self.stack.len(), 2);
                         self.emit(&Instruction::AsyncCallWasm {
-                            name: &format!("[async]{}", func.name),
+                            name: &format!("[async-lower]{}", func.name),
                             size: params_size.size_wasm32(),
                             align: params_align.align_wasm32(),
                         });
