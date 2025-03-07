@@ -145,6 +145,7 @@ path = 'lib.rs'
                     .join(format!("{}.rs", compile.component.kind)),
             )
             .arg(compile.component.path.file_name().unwrap())
+            .arg("-Dwarnings")
             .arg("-o")
             .arg(&compile.output);
         match compile.component.kind {
