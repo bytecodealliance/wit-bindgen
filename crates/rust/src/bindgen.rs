@@ -278,7 +278,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
         // stack whereas exports use a per-module return area to cut down on
         // stack usage. Note that for imports this also facilitates "adapter
         // modules" for components to not have data segments.
-        if self.gen.in_import {
+        if size == 0 {
+            // If the size requested is 0 then we know it won't be written to so
+            // hand out a null pointer. This can happen with async for example
+            // when the params or results are zero-sized.
+            uwrite!(self.src, "let ptr{tmp} = core::ptr::null_mut::<u8>();");
+        } else if self.gen.in_import {
+            // Import return areas are stored on the stack since this stack
+            // frame will be around for the entire function call.
             self.import_return_pointer_area_size = self.import_return_pointer_area_size.max(size);
             self.import_return_pointer_area_align =
                 self.import_return_pointer_area_align.max(align);
@@ -287,6 +294,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 "let ptr{tmp} = ret_area.0.as_mut_ptr().cast::<u8>();"
             );
         } else {
+            // Export return areas are stored in `static` memory as they need to
+            // persist beyond the function call itself (and are cleaned-up in
+            // `post-return`).
             self.gen.return_pointer_area_size = self.gen.return_pointer_area_size.max(size);
             self.gen.return_pointer_area_align = self.gen.return_pointer_area_align.max(align);
             uwriteln!(
@@ -870,20 +880,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.push_str(");\n");
             }
 
-            Instruction::AsyncCallWasm { name, size, align } => {
+            Instruction::AsyncCallWasm { name, .. } => {
                 let func = self.declare_import(name, &[WasmType::Pointer; 2], &[WasmType::I32]);
 
                 let async_support = self.gen.gen.async_support_path();
-                let tmp = self.tmp();
-                let layout = format!("layout{tmp}");
-                let alloc = self.gen.path_to_std_alloc_module();
-                self.push_str(&format!(
-                    "let {layout} = {alloc}::Layout::from_size_align_unchecked({size}, {align});\n",
-                ));
                 let operands = operands.join(", ");
                 uwriteln!(
                     self.src,
-                    "{async_support}::await_result({func}, {layout}, {operands}).await;"
+                    "{async_support}::await_result({func}, {operands}).await;"
                 );
             }
 
@@ -949,19 +953,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.push_str(".await");
                 }
                 self.push_str(";\n");
-            }
-
-            Instruction::AsyncMalloc { size, align } => {
-                let alloc = self.gen.path_to_std_alloc_module();
-                let tmp = self.tmp();
-                let ptr = format!("ptr{tmp}");
-                let layout = format!("layout{tmp}");
-                uwriteln!(
-                    self.src,
-                    "let {layout} = {alloc}::Layout::from_size_align_unchecked({size}, {align});
-                     let {ptr} = {alloc}::alloc({layout});"
-                );
-                results.push(ptr);
             }
 
             Instruction::AsyncPostCallInterface { func } => {

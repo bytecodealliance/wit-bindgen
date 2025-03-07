@@ -2665,8 +2665,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.extend(operands.iter().take(*amt).map(|v| v.clone()));
             }
 
-            Instruction::AsyncMalloc { .. }
-            | Instruction::AsyncPostCallInterface { .. }
+            Instruction::AsyncPostCallInterface { .. }
             | Instruction::AsyncCallReturn { .. }
             | Instruction::FutureLower { .. }
             | Instruction::FutureLift { .. }

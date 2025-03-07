@@ -551,19 +551,8 @@ def_instruction! {
             blocks: usize,
         } : [1] => [0],
 
-        /// Allocate the parameter and/or return areas to use for an
-        /// async-lowered import call.
-        ///
-        /// This cannot be allocated on the (shadow-)stack since it needs to
-        /// remain valid until the callee has finished using the buffers, which
-        /// may be after we pop the current stack frame.
-        AsyncMalloc { size: usize, align: usize } : [0] => [1],
-
         /// Call an async-lowered import.
-        ///
-        /// `size` and `align` are used to deallocate the parameter area
-        /// allocated using `AsyncMalloc` after the callee task returns a value.
-        AsyncCallWasm { name: &'a str, size: usize, align: usize } : [2] => [0],
+        AsyncCallWasm { name: &'a str } : [2] => [0],
 
         /// Generate code to run after `CallInterface` for an async-lifted export.
         ///
@@ -913,18 +902,15 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     self_.stack.push(ptr);
                 };
 
-                let params_size_align = if self.async_ {
+                if self.async_ {
                     let ElementInfo { size, align } = self
                         .bindgen
                         .sizes()
                         .record(func.params.iter().map(|(_, ty)| ty));
-                    self.emit(&Instruction::AsyncMalloc {
-                        size: size.size_wasm32(),
-                        align: align.align_wasm32(),
-                    });
-                    let ptr = self.stack.pop().unwrap();
+                    let ptr = self
+                        .bindgen
+                        .return_pointer(size.size_wasm32(), align.align_wasm32());
                     lower_to_memory(self, ptr);
-                    Some((size, align))
                 } else {
                     if !sig.indirect_params {
                         // If the parameters for this function aren't indirect
@@ -966,47 +952,39 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         };
                         lower_to_memory(self, ptr);
                     }
-                    None
-                };
+                }
 
-                // If necessary we may need to prepare a return pointer for
-                // this ABI.
-                let dealloc_size_align =
-                    if let Some((params_size, params_align)) = params_size_align {
-                        let ElementInfo { size, align } =
-                            self.bindgen.sizes().record(func.result.iter());
-                        self.emit(&Instruction::AsyncMalloc {
-                            size: size.size_wasm32(),
-                            align: align.align_wasm32(),
-                        });
-                        let ptr = self.stack.pop().unwrap();
+                if self.async_ {
+                    let ElementInfo { size, align } =
+                        self.bindgen.sizes().record(func.result.iter());
+                    let ptr = self
+                        .bindgen
+                        .return_pointer(size.size_wasm32(), align.align_wasm32());
+                    self.return_pointer = Some(ptr.clone());
+                    self.stack.push(ptr);
+
+                    assert_eq!(self.stack.len(), 2);
+                    self.emit(&Instruction::AsyncCallWasm {
+                        name: &format!("[async-lower]{}", func.name),
+                    });
+                } else {
+                    // If necessary we may need to prepare a return pointer for
+                    // this ABI.
+                    if self.variant == AbiVariant::GuestImport && sig.retptr {
+                        let info = self.bindgen.sizes().params(&func.result);
+                        let ptr = self
+                            .bindgen
+                            .return_pointer(info.size.size_wasm32(), info.align.align_wasm32());
                         self.return_pointer = Some(ptr.clone());
                         self.stack.push(ptr);
+                    }
 
-                        assert_eq!(self.stack.len(), 2);
-                        self.emit(&Instruction::AsyncCallWasm {
-                            name: &format!("[async-lower]{}", func.name),
-                            size: params_size.size_wasm32(),
-                            align: params_align.align_wasm32(),
-                        });
-                        Some((size, align))
-                    } else {
-                        if self.variant == AbiVariant::GuestImport && sig.retptr {
-                            let info = self.bindgen.sizes().params(&func.result);
-                            let ptr = self
-                                .bindgen
-                                .return_pointer(info.size.size_wasm32(), info.align.align_wasm32());
-                            self.return_pointer = Some(ptr.clone());
-                            self.stack.push(ptr);
-                        }
-
-                        assert_eq!(self.stack.len(), sig.params.len());
-                        self.emit(&Instruction::CallWasm {
-                            name: &func.name,
-                            sig: &sig,
-                        });
-                        None
-                    };
+                    assert_eq!(self.stack.len(), sig.params.len());
+                    self.emit(&Instruction::CallWasm {
+                        name: &func.name,
+                        sig: &sig,
+                    });
+                }
 
                 if !(sig.retptr || self.async_) {
                     // With no return pointer in use we can simply lift the
@@ -1043,14 +1021,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     self.emit(&Instruction::Flush {
                         amt: usize::from(func.result.is_some()),
                     });
-
-                    if let Some((size, align)) = dealloc_size_align {
-                        self.stack.push(ptr);
-                        self.emit(&Instruction::GuestDeallocate {
-                            size: size.size_wasm32(),
-                            align: align.align_wasm32(),
-                        });
-                    }
                 }
 
                 self.emit(&Instruction::Return {
