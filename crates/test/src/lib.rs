@@ -876,13 +876,9 @@ status: {}",
 
             println!("------ Failure: {} --------", result.name);
             for (k, v) in result.metadata {
-                println!("  {k:>10}: {v}");
+                println!("  {k}: {v}");
             }
-            println!(
-                "  {:>10}: {}",
-                "error",
-                format!("{err:?}").replace("\n", "\n  ")
-            );
+            println!("  error: {}", format!("{err:?}").replace("\n", "\n  "));
         }
 
         if failures > 0 {
