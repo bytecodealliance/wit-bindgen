@@ -26,6 +26,7 @@ pub struct Rust;
 #[derive(Default)]
 pub struct State {
     wit_bindgen_rlib: PathBuf,
+    futures_rlib: PathBuf,
     wit_bindgen_deps: Vec<PathBuf>,
 }
 
@@ -102,6 +103,7 @@ name = "tmp"
 
 [dependencies]
 wit-bindgen = {{ {wit_bindgen_dep} }}
+futures = "0.3.31"
 
 [lib]
 path = 'lib.rs'
@@ -115,19 +117,25 @@ path = 'lib.rs'
             Command::new("cargo")
                 .current_dir(&wit_bindgen)
                 .arg("build")
-                .arg("-p")
-                .arg("wit-bindgen")
+                .arg("-pwit-bindgen")
+                .arg("-pfutures")
                 .arg("--target")
                 .arg(&opts.rust_target),
         )?;
 
-        let target_out_dir = wit_bindgen.join("target/wasm32-wasip2/debug");
+        let target_out_dir = wit_bindgen
+            .join("target")
+            .join(&opts.rust_target)
+            .join("debug");
         let host_out_dir = wit_bindgen.join("target/debug");
-        let rlib = target_out_dir.join("libwit_bindgen.rlib");
-        assert!(rlib.exists());
+        let wit_bindgen_rlib = target_out_dir.join("libwit_bindgen.rlib");
+        let futures_rlib = target_out_dir.join("libfutures.rlib");
+        assert!(wit_bindgen_rlib.exists());
+        assert!(futures_rlib.exists());
 
         runner.rust_state = Some(State {
-            wit_bindgen_rlib: rlib,
+            wit_bindgen_rlib,
+            futures_rlib,
             wit_bindgen_deps: vec![target_out_dir.join("deps"), host_out_dir.join("deps")],
         });
         Ok(())
@@ -135,6 +143,15 @@ path = 'lib.rs'
 
     fn compile(&self, runner: &Runner<'_>, compile: &Compile) -> Result<()> {
         let mut cmd = runner.rustc();
+
+        // If this rust target doesn't natively produce a component then place
+        // the compiler output in a temporary location which is componentized
+        // later on.
+        let output = if runner.produces_component() {
+            compile.output.to_path_buf()
+        } else {
+            compile.output.with_extension("core.wasm")
+        };
 
         cmd.current_dir(compile.component.path.parent().unwrap())
             .env("CARGO_MANIFEST_DIR", ".")
@@ -147,7 +164,7 @@ path = 'lib.rs'
             .arg(compile.component.path.file_name().unwrap())
             .arg("-Dwarnings")
             .arg("-o")
-            .arg(&compile.output);
+            .arg(&output);
         match compile.component.kind {
             Kind::Runner => {}
             Kind::Test => {
@@ -155,6 +172,11 @@ path = 'lib.rs'
             }
         }
         runner.run_command(&mut cmd)?;
+
+        if !runner.produces_component() {
+            runner.convert_p1_to_component(&output, compile)?;
+        }
+
         Ok(())
     }
 
@@ -208,11 +230,22 @@ impl Runner<'_> {
                 "--extern=wit_bindgen={}",
                 state.wit_bindgen_rlib.display()
             ))
+            .arg(&format!(
+                "--extern=futures={}",
+                state.futures_rlib.display()
+            ))
             .arg("--target")
             .arg(&opts.rust_target);
         for dep in state.wit_bindgen_deps.iter() {
             cmd.arg(&format!("-Ldependency={}", dep.display()));
         }
         cmd
+    }
+
+    fn produces_component(&self) -> bool {
+        match self.opts.rust.rust_target.as_str() {
+            "wasm32-unknown-unknown" | "wasm32-wasi" | "wasm32-wasip1" => false,
+            _ => true,
+        }
     }
 }

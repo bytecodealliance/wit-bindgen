@@ -16,6 +16,7 @@ mod c;
 mod config;
 mod custom;
 mod go;
+mod runner;
 mod rust;
 mod wat;
 
@@ -77,7 +78,7 @@ pub struct Opts {
 
     /// The executable or script used to execute a fully composed test case.
     #[clap(long, default_value = "wasmtime")]
-    runner: PathBuf,
+    runner: std::ffi::OsString,
 
     #[clap(flatten)]
     rust: rust::RustOpts,
@@ -113,6 +114,7 @@ impl Opts {
             opts: self,
             rust_state: None,
             wit_bindgen,
+            test_runner: runner::TestRunner::new(&self.runner)?,
         }
         .run()
     }
@@ -209,6 +211,7 @@ struct Runner<'a> {
     opts: &'a Opts,
     rust_state: Option<rust::State>,
     wit_bindgen: &'a Path,
+    test_runner: runner::TestRunner,
 }
 
 impl Runner<'_> {
@@ -733,7 +736,7 @@ impl Runner<'_> {
         ));
         write_if_different(&composed_wasm, &composed)?;
 
-        self.run_command(Command::new(&self.opts.runner).arg(&composed_wasm))?;
+        self.run_command(self.test_runner.command().arg(&composed_wasm))?;
         Ok(())
     }
 
