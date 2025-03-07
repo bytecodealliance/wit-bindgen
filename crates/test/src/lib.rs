@@ -492,25 +492,14 @@ impl Runner<'_> {
 
         println!("");
 
-        let mut failures = 0;
-        for (result, should_fail, language, test, args_kind) in results {
-            let err = match (result, should_fail) {
-                (Ok(()), false) | (Err(_), true) => continue,
-                (Err(e), false) => e,
-                (Ok(()), true) => anyhow!("test should have failed, but passed"),
-            };
-            failures += 1;
-
-            println!("------ Failure: {} --------", test.display());
-            println!("  language: {language}");
-            println!("  variant: {args_kind}");
-            println!("  error: {}", format!("{err:?}").replace("\n", "\n  "));
-        }
-
-        if failures > 0 {
-            println!("{failures} tests FAILED");
-            std::process::exit(1);
-        }
+        self.render_errors(results.into_iter().map(
+            |(result, should_fail, language, test, args_kind)| {
+                StepResult::new(test.to_str().unwrap(), result)
+                    .should_fail(should_fail)
+                    .metadata("language", language)
+                    .metadata("variant", args_kind)
+            },
+        ));
 
         Ok(())
     }
@@ -590,18 +579,32 @@ impl Runner<'_> {
 
         // In parallel compile all sources to their binary component
         // form.
-        let compilations = components
+        let compile_results = components
             .par_iter()
             .map(|(test, component)| {
                 let path = self
                     .compile_component(test, component)
                     .with_context(|| format!("failed to compile component {:?}", component.path));
                 self.update_status(&path, false);
-                Ok((test, component, path?))
+                (test, component, path)
             })
-            .collect::<Result<Vec<_>>>();
+            .collect::<Vec<_>>();
         println!("");
-        let compilations = compilations?;
+
+        let mut compilations = Vec::new();
+        self.render_errors(
+            compile_results
+                .into_iter()
+                .map(|(test, component, result)| match result {
+                    Ok(path) => {
+                        compilations.push((test, component, path));
+                        StepResult::new("", Ok(()))
+                    }
+                    Err(e) => StepResult::new(&test.name, Err(e))
+                        .metadata("component", &component.name)
+                        .metadata("path", component.path.display()),
+                }),
+        );
 
         // Next, massage the data a bit. Create a map of all tests to where
         // their components are located. Then perform a product of runners/tests
@@ -643,26 +646,16 @@ impl Runner<'_> {
 
         println!("");
 
-        // Print information to debug failures, if any.
-        let mut failures = 0;
-        for (result, case_name, runner, runner_path, test, test_path) in results {
-            let Err(err) = result else {
-                continue;
-            };
-            failures += 1;
+        self.render_errors(results.into_iter().map(
+            |(result, case_name, runner, runner_path, test, test_path)| {
+                StepResult::new(case_name, result)
+                    .metadata("runner", runner.path.display())
+                    .metadata("test", test.path.display())
+                    .metadata("compiled runner", runner_path.display())
+                    .metadata("compiled test", test_path.display())
+            },
+        ));
 
-            println!("------ Failure: {case_name} --------");
-            println!("  runner: {}", runner.path.display());
-            println!("  test: {}", test.path.display());
-            println!("  compiled runner: {}", runner_path.display());
-            println!("  compiled test: {}", test_path.display());
-            println!("  error: {}", format!("{err:?}").replace("\n", "\n  "));
-        }
-
-        if failures > 0 {
-            println!("{failures} tests FAILED");
-            std::process::exit(1);
-        }
         Ok(())
     }
 
@@ -855,6 +848,61 @@ status: {}",
         // everything else is allowed.
         assert!(any_negative);
         true
+    }
+
+    fn render_errors<'a>(&self, results: impl Iterator<Item = StepResult<'a>>) {
+        let mut failures = 0;
+        for result in results {
+            let err = match (result.result, result.should_fail) {
+                (Ok(()), false) | (Err(_), true) => continue,
+                (Err(e), false) => e,
+                (Ok(()), true) => anyhow!("test should have failed, but passed"),
+            };
+            failures += 1;
+
+            println!("------ Failure: {} --------", result.name);
+            for (k, v) in result.metadata {
+                println!("  {k:>10}: {v}");
+            }
+            println!(
+                "  {:>10}: {}",
+                "error",
+                format!("{err:?}").replace("\n", "\n  ")
+            );
+        }
+
+        if failures > 0 {
+            println!("{failures} tests FAILED");
+            std::process::exit(1);
+        }
+    }
+}
+
+struct StepResult<'a> {
+    result: Result<()>,
+    should_fail: bool,
+    name: &'a str,
+    metadata: Vec<(&'a str, String)>,
+}
+
+impl<'a> StepResult<'a> {
+    fn new(name: &'a str, result: Result<()>) -> StepResult<'a> {
+        StepResult {
+            name,
+            result,
+            should_fail: false,
+            metadata: Vec::new(),
+        }
+    }
+
+    fn should_fail(mut self, fail: bool) -> Self {
+        self.should_fail = fail;
+        self
+    }
+
+    fn metadata(mut self, name: &'a str, value: impl fmt::Display) -> Self {
+        self.metadata.push((name, value.to_string()));
+        self
     }
 }
 
