@@ -1821,7 +1821,15 @@ pub mod vtable{ordinal} {{
             .collect();
         for (name, mode) in self.modes_of(id) {
             self.rustdoc(docs);
-            let mut derives = additional_derives.clone();
+            let mut derives = BTreeSet::new();
+            if !self
+                .gen
+                .opts
+                .additional_derive_ignore
+                .contains(&name.to_kebab_case())
+            {
+                derives.extend(additional_derives.clone());
+            }
             if info.is_copy() {
                 self.push_str("#[repr(C)]\n");
                 derives.extend(["Copy", "Clone"].into_iter().map(|s| s.to_string()));
@@ -1924,7 +1932,15 @@ pub mod vtable{ordinal} {{
             .collect();
         for (name, mode) in self.modes_of(id) {
             self.rustdoc(docs);
-            let mut derives = additional_derives.clone();
+            let mut derives = BTreeSet::new();
+            if !self
+                .gen
+                .opts
+                .additional_derive_ignore
+                .contains(&name.to_kebab_case())
+            {
+                derives.extend(additional_derives.clone());
+            }
             if info.is_copy() {
                 derives.extend(["Copy", "Clone"].into_iter().map(|s| s.to_string()));
             } else if info.is_clone() {
@@ -2072,13 +2088,15 @@ pub mod vtable{ordinal} {{
         self.int_repr(enum_.tag());
         self.push_str(")]\n");
         // We use a BTree set to make sure we don't have any duplicates and a stable order
-        let mut derives: BTreeSet<String> = self
+        let mut derives: BTreeSet<String> = BTreeSet::new();
+        if !self
             .gen
             .opts
-            .additional_derive_attributes
-            .iter()
-            .cloned()
-            .collect();
+            .additional_derive_ignore
+            .contains(&name.to_kebab_case())
+        {
+            derives.extend(self.gen.opts.additional_derive_attributes.to_vec());
+        }
         derives.extend(
             ["Clone", "Copy", "PartialEq", "Eq", "PartialOrd", "Ord"]
                 .into_iter()
