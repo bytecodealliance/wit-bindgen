@@ -43,7 +43,7 @@ impl LanguageMethods for C {
     fn should_fail_verify(
         &self,
         _name: &str,
-        config: &crate::config::CodegenTestConfig,
+        config: &crate::config::WitConfig,
         _args: &[String],
     ) -> bool {
         config.async_
@@ -85,7 +85,7 @@ impl LanguageMethods for Cpp {
     fn should_fail_verify(
         &self,
         name: &str,
-        config: &crate::config::CodegenTestConfig,
+        config: &crate::config::WitConfig,
         args: &[String],
     ) -> bool {
         C.should_fail_verify(name, config, args)

@@ -2,49 +2,6 @@
 #![allow(dead_code, unused_variables)]
 
 #[allow(unused)]
-mod simple_with_option {
-    mod a {
-        wit_bindgen::generate!({
-            inline: r#"
-                package foo:bar;
-
-                interface a {
-                    x: func();
-                }
-
-                package foo:baz {
-                    world w {
-                        import foo:bar/a;
-                    }
-                }
-            "#,
-            world: "foo:baz/w",
-            generate_all,
-        });
-    }
-
-    mod b {
-        wit_bindgen::generate!({
-            inline: r#"
-                package foo:bar;
-
-                interface a {
-                    x: func();
-                }
-
-                package foo:baz {
-                    world w {
-                        import foo:bar/a;
-                    }
-                }
-            "#,
-            world: "foo:baz/w",
-            with: { "foo:bar/a": generate },
-        });
-    }
-}
-
-#[allow(unused)]
 mod multiple_paths {
     wit_bindgen::generate!({
         inline: r#"
@@ -57,22 +14,6 @@ mod multiple_paths {
         "#,
         path: ["tests/wit/path1", "tests/wit/path2"],
         generate_all,
-    });
-}
-
-#[allow(unused)]
-mod generate_custom_section_link_helpers {
-    wit_bindgen::generate!({
-        inline: r#"
-            package a:b;
-
-            world test {
-                import a: interface {
-                    x: func();
-                }
-            }
-        "#,
-        disable_custom_section_link_helpers: true,
     });
 }
 

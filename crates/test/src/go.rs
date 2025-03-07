@@ -25,7 +25,7 @@ impl LanguageMethods for Go {
     fn should_fail_verify(
         &self,
         _name: &str,
-        config: &crate::config::CodegenTestConfig,
+        config: &crate::config::WitConfig,
         _args: &[String],
     ) -> bool {
         config.async_

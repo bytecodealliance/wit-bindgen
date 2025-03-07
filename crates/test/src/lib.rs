@@ -154,6 +154,7 @@ struct Component {
     bindgen: Bindgen,
 }
 
+#[derive(Clone)]
 struct Bindgen {
     /// The arguments to the bindings generator that this component will be
     /// using.
@@ -164,6 +165,8 @@ struct Bindgen {
     /// The name of the world within `wit_path` that's having bindings generated
     /// for it.
     world: String,
+    /// Configuration found in `wit_path`
+    wit_config: config::WitConfig,
 }
 
 #[derive(PartialEq)]
@@ -305,6 +308,10 @@ impl Runner<'_> {
             .select_world(pkg, Some("test"))
             .context("failed to find expected `test` world to generate bindings")?;
 
+        let wit_contents = std::fs::read_to_string(wit)?;
+        let wit_config: config::WitConfig = config::parse_test_config(&wit_contents, "//@")
+            .context("failed to parse WIT test config")?;
+
         let mut components = Vec::new();
         let mut any_runner = false;
         let mut any_test = false;
@@ -327,8 +334,15 @@ impl Runner<'_> {
                 continue;
             };
 
+            let bindgen = Bindgen {
+                args: Vec::new(),
+                wit_config: wit_config.clone(),
+                world: kind.to_string(),
+                wit_path: wit.to_path_buf(),
+            };
+
             let component = self
-                .parse_component(&path, kind, wit)
+                .parse_component(&path, kind, bindgen)
                 .with_context(|| format!("failed to parse component source file {path:?}"))?;
             components.push(component);
         }
@@ -345,7 +359,7 @@ impl Runner<'_> {
 
     /// Parsers the component located at `path` and creates all information
     /// necessary for a `Component` return value.
-    fn parse_component(&self, path: &Path, kind: Kind, wit_path: &Path) -> Result<Component> {
+    fn parse_component(&self, path: &Path, kind: Kind, mut bindgen: Bindgen) -> Result<Component> {
         let extension = path
             .extension()
             .and_then(|s| s.to_str())
@@ -367,16 +381,14 @@ impl Runner<'_> {
             }
             None => Default::default(),
         };
+        assert!(bindgen.args.is_empty());
+        bindgen.args = config.args.into();
 
         Ok(Component {
             name: path.file_stem().unwrap().to_str().unwrap().to_string(),
             path: path.to_path_buf(),
             language,
-            bindgen: Bindgen {
-                wit_path: wit_path.to_path_buf(),
-                args: config.args.into(),
-                world: kind.to_string(),
-            },
+            bindgen,
             kind,
         })
     }
@@ -433,7 +445,7 @@ impl Runner<'_> {
             TestKind::Codegen(p) => Some((name, p)),
         }) {
             let config = match fs::read_to_string(test) {
-                Ok(wit) => config::parse_test_config::<config::CodegenTestConfig>(&wit, "//@")
+                Ok(wit) => config::parse_test_config::<config::WitConfig>(&wit, "//@")
                     .with_context(|| format!("failed to parse test config from {test:?}"))?,
                 Err(_) => Default::default(),
             };
@@ -481,7 +493,7 @@ impl Runner<'_> {
             .map(|(language, test, args_kind, args, config)| {
                 let should_fail = language.obj().should_fail_verify(args_kind, config, args);
                 let result = self
-                    .codegen_test(language, test, &args_kind, args)
+                    .codegen_test(language, test, &args_kind, args, config)
                     .with_context(|| {
                         format!("failed to codegen test for `{language}` over {test:?}")
                     });
@@ -515,6 +527,7 @@ impl Runner<'_> {
         test: &Path,
         args_kind: &str,
         args: &[String],
+        config: &config::WitConfig,
     ) -> Result<()> {
         let mut resolve = wit_parser::Resolve::default();
         let (pkg, _) = resolve.push_path(test).context("failed to load WIT")?;
@@ -534,6 +547,7 @@ impl Runner<'_> {
             args: args.to_vec(),
             wit_path: test.to_path_buf(),
             world: world.clone(),
+            wit_config: config.clone(),
         };
         language
             .obj()
@@ -951,8 +965,13 @@ trait LanguageMethods {
             .arg("--out-dir")
             .arg(dir);
 
-        for arg in self.default_bindgen_args() {
-            cmd.arg(arg);
+        match bindgen.wit_config.default_bindgen_args {
+            Some(true) | None => {
+                for arg in self.default_bindgen_args() {
+                    cmd.arg(arg);
+                }
+            }
+            Some(false) => {}
         }
 
         for arg in bindgen.args.iter() {
@@ -985,12 +1004,7 @@ trait LanguageMethods {
 
     /// Returns whether this language is supposed to fail this codegen tests
     /// given the `config` and `args` for the test.
-    fn should_fail_verify(
-        &self,
-        name: &str,
-        config: &config::CodegenTestConfig,
-        args: &[String],
-    ) -> bool;
+    fn should_fail_verify(&self, name: &str, config: &config::WitConfig, args: &[String]) -> bool;
 
     /// Performs a "check" or a verify that the generated bindings described by
     /// `Verify` are indeed valid.

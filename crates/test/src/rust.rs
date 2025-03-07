@@ -41,7 +41,7 @@ impl LanguageMethods for Rust {
     fn should_fail_verify(
         &self,
         name: &str,
-        config: &crate::config::CodegenTestConfig,
+        config: &crate::config::WitConfig,
         args: &[String],
     ) -> bool {
         // no_std doesn't currently work with async

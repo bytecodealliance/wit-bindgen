@@ -38,10 +38,11 @@ impl Default for StringList {
 }
 
 #[derive(Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct CodegenTestConfig {
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+pub struct WitConfig {
     #[serde(default, rename = "async")]
     pub async_: bool,
+    pub default_bindgen_args: Option<bool>,
 }
 
 /// Parses the configuration `T` from `contents` in comments at the start of the

@@ -102,7 +102,7 @@ impl LanguageMethods for Language {
     fn should_fail_verify(
         &self,
         _name: &str,
-        _config: &crate::config::CodegenTestConfig,
+        _config: &crate::config::WitConfig,
         _args: &[String],
     ) -> bool {
         false
