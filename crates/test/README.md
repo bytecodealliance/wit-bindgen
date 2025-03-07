@@ -113,12 +113,12 @@ effectively testing codegen tests in more than one configuration.
 Ignoring classes of tests can be done in the CLI tool by updating a few
 locations:
 
-* Update `CodegenTestConfig` to contain a field for this class of test
+* Update `WitConfig` to contain a field for this class of test
   that needs to be ignored (if it's not already present).
 * Tag tests as belonging to this class of tests by adding a comment at the top
   such as `//@ async = true` which would indicate that this uses async features.
 * Update `LanguageMethods::should_fail_verify` for your language to ignore this
-  class of tests by checking the `CodegenTestConfig` config option and returning
+  class of tests by checking the `WitConfig` config option and returning
   `true` for "should fail"
 
 This will still run the test but an error will be expected. If an error is
