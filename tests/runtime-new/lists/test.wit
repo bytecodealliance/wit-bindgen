@@ -1,0 +1,39 @@
+package test:lists;
+
+interface to-test {
+  empty-list-param: func(a: list<u8>);
+  empty-string-param: func(a: string);
+  empty-list-result: func() -> list<u8>;
+  empty-string-result: func() -> string;
+
+  list-param: func(a: list<u8>);
+  list-param2: func(a: string);
+  list-param3: func(a: list<string>);
+  list-param4: func(a: list<list<string>>);
+  list-param5: func(a: list<tuple<u8, u32, u8>>);
+  list-param-large: func(a: list<string>);
+  list-result: func() -> list<u8>;
+  list-result2: func() -> string;
+  list-result3: func() -> list<string>;
+
+  list-minmax8: func(a: list<u8>, b: list<s8>) -> tuple<list<u8>, list<s8>>;
+  list-minmax16: func(a: list<u16>, b: list<s16>) -> tuple<list<u16>, list<s16>>;
+  list-minmax32: func(a: list<u32>, b: list<s32>) -> tuple<list<u32>, list<s32>>;
+  list-minmax64: func(a: list<u64>, b: list<s64>) -> tuple<list<u64>, list<s64>>;
+  list-minmax-float: func(a: list<f32>, b: list<f64>)
+    -> tuple<list<f32>, list<f64>>;
+
+  list-roundtrip: func(a: list<u8>) -> list<u8>;
+
+  string-roundtrip: func(a: string) -> string;
+
+  allocated-bytes: func() -> u32;
+}
+
+world test {
+  export to-test;
+}
+
+world runner {
+  import to-test;
+}

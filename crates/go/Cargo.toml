@@ -21,6 +21,3 @@ anyhow = { workspace = true }
 heck = { workspace = true }
 clap = { workspace = true, optional = true }
 wit-bindgen-c = { workspace = true }
-
-[dev-dependencies]
-test-helpers = { path = '../test-helpers' }

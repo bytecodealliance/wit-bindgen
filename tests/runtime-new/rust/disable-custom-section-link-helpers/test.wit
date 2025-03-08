@@ -1,0 +1,12 @@
+package a:b;
+
+world runner {
+    import a: interface {
+        x: func();
+    }
+}
+world test {
+    export a: interface {
+        x: func();
+    }
+}

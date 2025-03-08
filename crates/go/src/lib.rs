@@ -16,7 +16,7 @@ mod imports;
 mod interface;
 
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "clap", derive(clap::Args))]
+#[cfg_attr(feature = "clap", derive(clap::Parser))]
 pub struct Opts {
     /// Whether or not `gofmt` is executed to format generated code.
     #[cfg_attr(feature = "clap", arg(long))]

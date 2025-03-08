@@ -23,4 +23,7 @@ runs:
       uses: bytecodealliance/actions/wasm-tools/setup@v1
       with:
         version: "1.215.0"
-        github_token: ${{ github.token }}
+    - name: Setup `wasmtime`
+      uses: bytecodealliance/actions/wasmtime/setup@v1
+      with:
+        version: "30.0.1"

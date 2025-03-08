@@ -1,0 +1,16 @@
+package my:inline;
+
+interface foo {
+    resource bar {
+        constructor(data: u32);
+        get-data: func() -> u32;
+        consume: static func(%self: bar) -> u32;
+    }
+}
+
+world test {
+    export foo;
+}
+world runner {
+    import foo;
+}

@@ -1,0 +1,31 @@
+package my:inline;
+
+interface foo1 {
+  foo: func();
+}
+
+interface foo2 {
+  foo: func();
+}
+
+interface bar1 {
+  bar: func() -> string;
+}
+
+interface bar2 {
+  bar: func() -> string;
+}
+
+world test {
+  export foo1;
+  export foo2;
+  export bar1;
+  export bar2;
+}
+
+world runner {
+  import foo1;
+  import foo2;
+  import bar1;
+  import bar2;
+}

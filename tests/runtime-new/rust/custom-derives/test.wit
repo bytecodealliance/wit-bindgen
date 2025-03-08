@@ -1,0 +1,17 @@
+package my:inline;
+
+interface blah {
+    record foo {
+        field1: string,
+        field2: list<u32>
+    }
+
+    bar: func(cool: foo);
+}
+
+world test {
+    export blah;
+}
+world runner {
+    import blah;
+}

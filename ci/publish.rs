@@ -28,6 +28,7 @@ const CRATES_TO_PUBLISH: &[&str] = &[
     "wit-bindgen-rust-macro",
     "wit-bindgen-rt",
     "wit-bindgen",
+    "wit-bindgen-test",
     "wit-bindgen-cli",
 ];
 

@@ -1,0 +1,22 @@
+package my:inline;
+
+interface foo {
+    resource a;
+
+    bar: func() -> a;
+}
+
+interface bar {
+    use foo.{a};
+
+    bar: func(m: a) -> list<a>;
+}
+
+world test {
+    export foo;
+    export bar;
+}
+
+world runner {
+    import bar;
+}

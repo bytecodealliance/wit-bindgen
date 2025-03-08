@@ -1,0 +1,19 @@
+package foo:bar;
+
+interface b {
+  f: func();
+}
+
+world runner {
+  import a: interface {
+    f: func();
+  }
+  import b;
+}
+
+world test {
+  export a: interface {
+    f: func();
+  }
+  export b;
+}
