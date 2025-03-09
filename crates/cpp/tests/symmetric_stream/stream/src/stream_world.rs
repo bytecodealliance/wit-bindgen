@@ -47,7 +47,7 @@ pub mod exports {
                     #[cfg(target_arch = "wasm32")]
                     _rt::run_ctors_once();
                     let result0 = T::create();
-                    (result0).take_handle()
+                    (result0).take_handle() as *mut u8
                 }
                 pub trait Guest {
                     fn create() -> wit_bindgen_symmetric_rt::async_support::StreamReader<u32>;
