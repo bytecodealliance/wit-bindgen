@@ -13,17 +13,17 @@ pub mod test {
 
             use super::super::super::_rt;
             #[allow(unused_unsafe, clippy::all)]
-            pub async fn sleep(nanoseconds: u64) -> () {
+            pub async fn async_sleep(nanoseconds: u64) -> () {
                 unsafe {
                     #[link(wasm_import_module = "test:test/wait")]
                     #[link(name = "sleep")]
                     extern "C" {
-                        #[cfg_attr(target_arch = "wasm32", link_name = "[async-lower]sleep")]
-                        fn testX3AtestX2FwaitX00X5Basync_lowerX5Dsleep(_: u64) -> *mut u8;
+                        #[cfg_attr(target_arch = "wasm32", link_name = "[async]sleep")]
+                        fn testX3AtestX2FwaitX00X5BasyncX5Dsleep(_: u64) -> *mut u8;
                     }
-                    ::wit_bindgen_symmetric_rt::async_support::await_result(
-                        move || unsafe { testX3AtestX2FwaitX00X5Basync_lowerX5Dsleep(nanoseconds) },
-                    )
+                    ::wit_bindgen_symmetric_rt::async_support::await_result(move || unsafe {
+                        testX3AtestX2FwaitX00X5BasyncX5Dsleep(nanoseconds)
+                    })
                     .await;
                 }
             }
@@ -45,7 +45,7 @@ pub mod exports {
                 use super::super::super::super::_rt;
                 #[doc(hidden)]
                 #[allow(non_snake_case)]
-                pub unsafe fn _export_forward_cabi<T: Guest>(
+                pub unsafe fn _export_async_forward_cabi<T: Guest>(
                     arg0: *mut u8,
                     arg1: usize,
                     arg2: *mut u8,
@@ -57,7 +57,7 @@ pub mod exports {
                         let string0 = String::from(
                             std::str::from_utf8(std::slice::from_raw_parts(arg0, len0)).unwrap(),
                         );
-                        let result = T::forward(string0).await;
+                        let result = T::async_forward(string0).await;
                         result
                     };
                     let result = wit_bindgen_symmetric_rt::async_support::first_poll(result, move |result1| {
@@ -72,17 +72,17 @@ pub mod exports {
                     result.cast()
                 }
                 pub trait Guest {
-                    async fn forward(s: _rt::String) -> _rt::String;
+                    async fn async_forward(s: _rt::String) -> _rt::String;
                 }
                 #[doc(hidden)]
 
                 macro_rules! __export_test_test_string_delay_cabi{
         ($ty:ident with_types_in $($path_to_types:tt)*) => (const _: () = {
 
-          #[cfg_attr(target_arch = "wasm32", export_name = "forward")]
+          #[cfg_attr(target_arch = "wasm32", export_name = "[async]forward")]
           #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
-          unsafe extern "C" fn testX3AtestX2Fstring_delayX00forward(arg0: *mut u8,arg1: usize,arg2: *mut u8,) -> *mut u8 {
-            $($path_to_types)*::_export_forward_cabi::<$ty>(arg0, arg1, arg2)
+          unsafe extern "C" fn testX3AtestX2Fstring_delayX00X5BasyncX5Dforward(arg0: *mut u8,arg1: usize,arg2: *mut u8,) -> *mut u8 {
+            $($path_to_types)*::_export_async_forward_cabi::<$ty>(arg0, arg1, arg2)
           }
         };);
       }
@@ -164,13 +164,13 @@ pub(crate) use __export_async_module_impl as export;
 #[unsafe(link_section = "component-type:wit-bindgen:0.40.0:test:test:async-module:encoded world")]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 264] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\x85\x01\x01A\x02\x01\
-A\x04\x01B\x02\x01@\x01\x0bnanosecondsw\x01\0\x04\0\x05sleep\x01\0\x03\0\x0etest\
-:test/wait\x05\0\x01B\x02\x01@\x01\x01ss\0s\x04\0\x07forward\x01\0\x04\0\x16test\
-:test/string-delay\x05\x01\x04\0\x16test:test/async-module\x04\0\x0b\x12\x01\0\x0c\
-async-module\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwit-component\x07\
-0.227.1\x10wit-bindgen-rust\x060.40.0";
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 278] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\x93\x01\x01A\x02\x01\
+A\x04\x01B\x02\x01@\x01\x0bnanosecondsw\x01\0\x04\0\x0c[async]sleep\x01\0\x03\0\x0e\
+test:test/wait\x05\0\x01B\x02\x01@\x01\x01ss\0s\x04\0\x0e[async]forward\x01\0\x04\
+\0\x16test:test/string-delay\x05\x01\x04\0\x16test:test/async-module\x04\0\x0b\x12\
+\x01\0\x0casync-module\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwit-co\
+mponent\x070.227.1\x10wit-bindgen-rust\x060.40.0";
 
 #[inline(never)]
 #[doc(hidden)]
