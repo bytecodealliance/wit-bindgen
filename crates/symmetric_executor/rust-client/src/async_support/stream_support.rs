@@ -138,6 +138,10 @@ impl<T> StreamReader<T> {
         assert!(self.future.is_some());
         self.future = None;
     }
+
+    pub fn take_handle(&self) -> usize {
+        self.handle.take_handle()
+    }
 }
 
 impl<T> fmt::Debug for StreamReader<T> {

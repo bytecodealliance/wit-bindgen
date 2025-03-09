@@ -6,7 +6,7 @@ use wit_bindgen_symmetric_rt::{
 
 #[link(name = "stream")]
 extern "C" {
-    pub fn testX3AtestX2Fstream_testX00X5BasyncX5Dcreate(results: *mut ()) -> *mut ();
+    pub fn testX3AtestX2Fstream_testX00create() -> usize;
 }
 
 const DATALEN: usize = 2;
@@ -34,13 +34,13 @@ extern "C" fn ready(arg: *mut ()) -> CallbackState {
 }
 
 fn main() {
-    let mut result_stream: *mut () = core::ptr::null_mut();
-    let continuation = unsafe {
-        testX3AtestX2Fstream_testX00X5BasyncX5Dcreate((&mut result_stream as *mut *mut ()).cast())
+    // let mut result_stream: *mut () = core::ptr::null_mut();
+    let result_stream = unsafe {
+        testX3AtestX2Fstream_testX00create()
     };
     // function should have completed (not async)
-    assert!(continuation.is_null());
-    let stream = unsafe { Stream::from_handle(result_stream as usize) };
+    // assert!(continuation.is_null());
+    let stream = unsafe { Stream::from_handle(result_stream) };
     let mut info = Box::pin(CallbackInfo {
         stream: stream.clone(),
         data: [0, 0],

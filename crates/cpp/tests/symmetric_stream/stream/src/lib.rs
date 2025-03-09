@@ -9,9 +9,9 @@ stream_world::export!(MyStruct with_types_in stream_world);
 struct MyStruct;
 
 impl stream_world::exports::test::test::stream_test::Guest for MyStruct {
-    async fn create() -> async_support::StreamReader<u32> {
+    fn create() -> async_support::StreamReader<u32> {
         let (mut writer, reader) = async_support::stream_support::new_stream();
-        let mut input = create().await;
+        let mut input = create();
 
         async_support::spawn(async move {
             while let Some(values) = input.next().await {
