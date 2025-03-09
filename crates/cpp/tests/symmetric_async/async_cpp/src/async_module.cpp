@@ -52,7 +52,7 @@ static symmetric::runtime::symmetric_executor::CallbackState wait_on_future(std:
 }
 
 extern "C" 
-void* X5BasyncX5DtestX3AtestX2Fstring_delayX00forward(uint8_t* arg0, size_t arg1, uint8_t* arg2)
+void* testX3AtestX2Fstring_delayX00X5BasyncX5Dforward(uint8_t* arg0, size_t arg1, uint8_t* arg2)
 {
   auto len0 = arg1;
 
