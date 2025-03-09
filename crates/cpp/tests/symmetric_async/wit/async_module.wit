@@ -1,11 +1,11 @@
 package test:test;
 
 interface string-delay {
-    forward: func(s: string) -> string;
+    forward: async func(s: string) -> string;
 }
 
 interface wait {
-    sleep: func(nanoseconds: u64);
+    sleep: async func(nanoseconds: u64);
 }
 
 world async-module {
