@@ -1,4 +1,4 @@
-use crate::bindgen::FunctionBindgen;
+use crate::bindgen::{FunctionBindgen, POINTER_SIZE_EXPRESSION};
 use crate::{
     full_wit_type_name, int_repr, to_rust_ident, to_upper_camel_case, wasm_type, AsyncConfig,
     FnSig, Identifier, InterfaceName, Ownership, RuntimeItem, RustFlagsRepr, RustWasm,
@@ -11,7 +11,8 @@ use std::fmt::Write as _;
 use std::mem;
 use wit_bindgen_core::abi::{self, AbiVariant, LiftLower};
 use wit_bindgen_core::{
-    dealias, uwrite, uwriteln, wit_parser::*, AnonymousTypeGenerator, Source, TypeInfo,
+    dealias, make_external_component, make_external_symbol, symmetric, uwrite, uwriteln,
+    wit_parser::*, AnonymousTypeGenerator, Source, TypeInfo,
 };
 
 pub struct InterfaceGenerator<'a> {
@@ -22,9 +23,10 @@ pub struct InterfaceGenerator<'a> {
     pub(super) gen: &'a mut RustWasm,
     pub wasm_import_module: &'a str,
     pub resolve: &'a Resolve,
-    pub return_pointer_area_size: usize,
-    pub return_pointer_area_align: usize,
+    pub return_pointer_area_size: ArchitectureSize,
+    pub return_pointer_area_align: Alignment,
     pub(super) needs_runtime_module: bool,
+    pub(super) needs_deallocate: bool,
 }
 
 /// A description of the "mode" in which a type is printed.
@@ -203,63 +205,95 @@ impl<'i> InterfaceGenerator<'i> {
         }
 
         for (resource, (trait_name, methods)) in traits.iter() {
-            uwriteln!(self.src, "pub trait {trait_name}: 'static {{");
             let resource = resource.unwrap();
             let resource_name = self.resolve.types[resource].name.as_ref().unwrap();
+            if self.gen.opts.symmetric {
+                let resource_type = resource_name.to_pascal_case();
+                let resource_lowercase = resource_name.to_lower_camel_case();
+                uwriteln!(
+                    self.src,
+                    r#"#[doc(hidden)]
+            #[allow(non_snake_case)]
+            pub unsafe fn _export_drop_{resource_lowercase}_cabi<T: {trait_name}>(arg0: usize) {{
+                #[cfg(target_arch = "wasm32")]
+                _rt::run_ctors_once();
+                {resource_type}::dtor::<T>(arg0 as *mut u8);
+            }}"#
+                );
+            }
+
+            uwriteln!(self.src, "pub trait {trait_name}: 'static {{");
             let (_, interface_name) = interface.unwrap();
             let module = self.resolve.name_world_key(interface_name);
-            uwriteln!(
-                self.src,
-                r#"
-#[doc(hidden)]
-unsafe fn _resource_new(val: *mut u8) -> u32
-    where Self: Sized
-{{
-    #[cfg(not(target_arch = "wasm32"))]
-    {{
-        let _ = val;
-        unreachable!();
-    }}
-
-    #[cfg(target_arch = "wasm32")]
-    {{
-        #[link(wasm_import_module = "[export]{module}")]
-        extern "C" {{
-            #[link_name = "[resource-new]{resource_name}"]
-            fn new(_: *mut u8) -> u32;
-        }}
-        new(val)
-    }}
-}}
-
-#[doc(hidden)]
-fn _resource_rep(handle: u32) -> *mut u8
-    where Self: Sized
-{{
-    #[cfg(not(target_arch = "wasm32"))]
-    {{
-        let _ = handle;
-        unreachable!();
-    }}
-
-    #[cfg(target_arch = "wasm32")]
-    {{
-        #[link(wasm_import_module = "[export]{module}")]
-        extern "C" {{
-            #[link_name = "[resource-rep]{resource_name}"]
-            fn rep(_: u32) -> *mut u8;
-        }}
-        unsafe {{
-            rep(handle)
-        }}
-    }}
-}}
-
-                    "#
+            let external_new = make_external_symbol(
+                &(String::from("[export]") + &module),
+                &(String::from("[resource-new]") + &resource_name),
+                AbiVariant::GuestImport,
             );
+            let external_rep = make_external_symbol(
+                &(String::from("[export]") + &module),
+                &(String::from("[resource-rep]") + &resource_name),
+                AbiVariant::GuestImport,
+            );
+            if self.gen.opts.symmetric {
+                uwriteln!(
+                    self.src,
+                    r#"
+    #[doc(hidden)]
+    unsafe fn _resource_new(val: *mut u8) -> {handle_type}
+        where Self: Sized
+    {{
+        val as {handle_type}
+    }}
+    
+    #[doc(hidden)]
+    fn _resource_rep(handle: {handle_type}) -> *mut u8
+        where Self: Sized
+    {{
+        handle as *mut u8
+    }}
+    
+                        "#,
+                    handle_type = "usize"
+                );
+            } else {
+                uwriteln!(
+                    self.src,
+                    r#"
+#[doc(hidden)]
+unsafe fn _resource_new(val: *mut u8) -> {handle_type}
+    where Self: Sized
+{{
+    #[link(wasm_import_module = "[export]{module}")]
+    extern "C" {{
+        #[cfg_attr(target_arch = "wasm32", link_name = "[resource-new]{resource_name}")]
+        fn {external_new}(_: *mut u8) -> {handle_type};
+    }}
+    {external_new}(val)
+}}
+
+#[doc(hidden)]
+fn _resource_rep(handle: {handle_type}) -> *mut u8
+    where Self: Sized
+{{
+    #[link(wasm_import_module = "[export]{module}")]
+    extern "C" {{
+        #[cfg_attr(target_arch = "wasm32", link_name = "[resource-rep]{resource_name}")]
+        fn {external_rep}(_: {handle_type}) -> *mut u8;
+    }}
+    unsafe {{
+        {external_rep}(handle)
+    }}
+}}
+
+                    "#,
+                    handle_type = "u32"
+                );
+            }
             for method in methods {
                 self.src.push_str(method);
             }
+
             uwriteln!(self.src, "}}");
         }
 
@@ -323,21 +357,43 @@ macro_rules! {macro_name} {{
                 }
             };
             let camel = name.to_upper_camel_case();
-            uwriteln!(
-                self.src,
-                r#"
+            if self.gen.opts.symmetric {
+                let dtor_symbol = make_external_symbol(
+                    &module,
+                    &(String::from("[resource-drop]") + &name),
+                    AbiVariant::GuestImport,
+                );
+                uwriteln!(
+                    self.src,
+                    r#"    #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
+    unsafe extern "C" fn {dtor_symbol}(arg0: usize) {{
+      $($path_to_types)*::_export_drop_{name}_cabi::<<$ty as $($path_to_types)*::Guest>::{camel}>(arg0)
+    }}
+"#
+                );
+            } else {
+                let dtor_symbol = make_external_symbol(
+                    &module,
+                    &(String::from("[dtor]") + &name),
+                    AbiVariant::GuestExport,
+                );
+                uwriteln!(
+                    self.src,
+                    r#"
                 const _: () = {{
                     #[doc(hidden)]
-                    #[unsafe(export_name = "{export_prefix}{module}#[dtor]{name}")]
+                    #[cfg_attr(target_arch = "wasm32", export_name = "{export_prefix}{module}#[dtor]{name}")]
+                    #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
                     #[allow(non_snake_case)]
-                    unsafe extern "C" fn dtor(rep: *mut u8) {{
+                    unsafe extern "C" fn {dtor_symbol}(rep: *mut u8) {{
                         $($path_to_types)*::{camel}::dtor::<
                             <$ty as $($path_to_types)*::Guest>::{camel}
                         >(rep)
                     }}
                 }};
                 "#
-            );
+                );
+            }
         }
         uwriteln!(self.src, "}};);");
         uwriteln!(self.src, "}}");
@@ -377,17 +433,29 @@ macro_rules! {macro_name} {{
         }
     }
 
+    pub fn align_area(&mut self, alignment: Alignment) {
+        match alignment {
+            Alignment::Pointer => uwriteln!(
+                self.src,
+                "#[cfg_attr(target_pointer_width=\"64\", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width=\"32\", repr(align(4)))]"
+            ),
+            Alignment::Bytes(bytes) => {
+                uwriteln!(self.src, "#[repr(align({align}))]", align = bytes.get())
+            }
+        }
+    }
+
     pub fn finish(&mut self) -> String {
-        if self.return_pointer_area_align > 0 {
+        if !self.return_pointer_area_size.is_empty() {
+            uwriteln!(self.src,);
+            self.align_area(self.return_pointer_area_align);
             uwrite!(
                 self.src,
-                "\
-                    #[repr(align({align}))]
-                    struct _RetArea([::core::mem::MaybeUninit::<u8>; {size}]);
+                    "struct _RetArea([::core::mem::MaybeUninit::<u8>; {size}]);
                     static mut _RET_AREA: _RetArea = _RetArea([::core::mem::MaybeUninit::uninit(); {size}]);
 ",
-                align = self.return_pointer_area_align,
-                size = self.return_pointer_area_size,
+                size = self.return_pointer_area_size.format_term(POINTER_SIZE_EXPRESSION, true),
             );
         }
 
@@ -543,8 +611,13 @@ pub mod vtable{ordinal} {{
             let mut buffer = Buffer([::core::mem::MaybeUninit::uninit(); {size}]);
             let address = buffer.0.as_mut_ptr() as *mut u8;
             {lower}
+            #[link(wasm_import_module = "{module}")]
+            extern "C" {{
+                #[link_name = "[async][future-write-{index}]{func_name}"]
+                fn wit_import(_: u32, _: *mut u8) -> u32;
+            }}
 
-            match unsafe {{ {async_support}::await_future_result(start_write, future, address).await }} {{
+            match unsafe {{ {async_support}::await_future_result(wit_import, future, address).await }} {{
                 {async_support}::AsyncWaitResult::Values(_) => true,
                 {async_support}::AsyncWaitResult::End => false,
                 {async_support}::AsyncWaitResult::Error(_) => unreachable!("received error while performing write"),
@@ -707,6 +780,11 @@ pub mod vtable{ordinal} {{
         {box_}::pin(async move {{
             {lower_address}
             {lower}
+            #[link(wasm_import_module = "{module}")]
+            extern "C" {{
+                #[link_name = "[async][stream-write-{index}]{func_name}"]
+                fn wit_import(_: u32, _: *mut u8, _: u32) -> u32;
+            }}
 
             let mut total = 0;
             while total < values.len() {{
@@ -734,6 +812,11 @@ pub mod vtable{ordinal} {{
     ) -> ::core::pin::Pin<{box_}<dyn ::core::future::Future<Output = ::std::option::Option<::std::result::Result<usize, {async_support}::ErrorContext>>> + '_>> {{
         {box_}::pin(async move {{
             {lift_address}
+            #[link(wasm_import_module = "{module}")]
+            extern "C" {{
+                #[link_name = "[async][stream-read-{index}]{func_name}"]
+                fn wit_import(_: u32, _: *mut u8, _: u32) -> u32;
+            }}
 
             match unsafe {{
                 {async_support}::await_stream_result(
@@ -841,6 +924,15 @@ pub mod vtable{ordinal} {{
         self.src.push_str("#[allow(unused_unsafe, clippy::all)]\n");
         let params = self.print_signature(func, false, &sig);
         self.src.push_str("{\n");
+        if self.gen.opts.symmetric
+            && symmetric::has_non_canonical_list_rust(self.resolve, &func.params)
+        {
+            self.needs_deallocate = true;
+            uwriteln!(
+                self.src,
+                "let mut _deallocate: Vec<(*mut u8, _rt::alloc::Layout)> = Vec::new();"
+            );
+        }
         self.src.push_str("unsafe {\n");
 
         self.generate_guest_import_body(&self.wasm_import_module, func, params, async_);
@@ -879,7 +971,11 @@ pub mod vtable{ordinal} {{
         abi::call(
             f.gen.resolve,
             AbiVariant::GuestImport,
-            LiftLower::LowerArgsLiftResults,
+            if f.gen.gen.opts.symmetric {
+                LiftLower::Symmetric
+            } else {
+                LiftLower::LowerArgsLiftResults
+            },
             func,
             &mut f,
             async_,
@@ -898,14 +994,14 @@ pub mod vtable{ordinal} {{
             uwriteln!(self.src, "let mut cleanup_list = {vec}::new();");
         }
         assert!(handle_decls.is_empty());
-        if import_return_pointer_area_size > 0 {
+        if !import_return_pointer_area_size.is_empty() {
+            uwriteln!(self.src,);
+            self.align_area(import_return_pointer_area_align);
             uwrite!(
                 self.src,
-                "\
-                    #[repr(align({import_return_pointer_area_align}))]
-                    struct RetArea([::core::mem::MaybeUninit::<u8>; {import_return_pointer_area_size}]);
+                "struct RetArea([::core::mem::MaybeUninit::<u8>; {import_return_pointer_area_size}]);
                     let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); {import_return_pointer_area_size}]);
-",
+", import_return_pointer_area_size = import_return_pointer_area_size.format_term(POINTER_SIZE_EXPRESSION, true)
             );
         }
         self.src.push_str(&String::from(src));
@@ -953,7 +1049,11 @@ pub mod vtable{ordinal} {{
         abi::call(
             f.gen.resolve,
             AbiVariant::GuestExport,
-            LiftLower::LiftArgsLowerResults,
+            if f.gen.gen.opts.symmetric {
+                LiftLower::Symmetric
+            } else {
+                LiftLower::LiftArgsLowerResults
+            },
             func,
             &mut f,
             async_,
@@ -1004,7 +1104,9 @@ pub mod vtable{ordinal} {{
                     }}
                 "
             );
-        } else if abi::guest_export_needs_post_return(self.resolve, func) {
+        } else if abi::guest_export_needs_post_return(self.resolve, func)
+            && !self.gen.opts.symmetric
+        {
             uwrite!(
                 self.src,
                 "\
@@ -1045,18 +1147,35 @@ pub mod vtable{ordinal} {{
             Identifier::StreamOrFuturePayload => unreachable!(),
         };
         let export_prefix = self.gen.opts.export_prefix.as_deref().unwrap_or("");
-        let export_name = func.legacy_core_export_name(wasm_module_export_name.as_deref());
-        let export_name = if async_ {
-            format!("[async-lift]{export_name}")
+        let (export_name, external_name) = if self.gen.opts.symmetric {
+            let export_name = func.name.clone(); // item_name().to_owned();
+            let mut external_name = make_external_symbol(
+                &wasm_module_export_name.unwrap_or_default(),
+                &func.name,
+                AbiVariant::GuestImport,
+            );
+            if let Some(export_prefix) = self.gen.opts.export_prefix.as_ref() {
+                external_name.insert_str(0, export_prefix);
+            }
+            (export_name, external_name)
         } else {
-            export_name.to_string()
+            let export_name = func.legacy_core_export_name(wasm_module_export_name.as_deref());
+            let export_name = if async_ {
+                format!("[async]{export_name}")
+            } else {
+                export_name.to_string()
+            };
+            let external_name =
+                make_external_component(&(String::from(export_prefix) + &export_name));
+            (export_name, external_name)
         };
         uwrite!(
             self.src,
             "\
-                #[unsafe(export_name = \"{export_prefix}{export_name}\")]
-                unsafe extern \"C\" fn export_{name_snake}\
-",
+                #[cfg_attr(target_arch = \"wasm32\", export_name = \"{export_prefix}{export_name}\")]
+                #[cfg_attr(not(target_arch = \"wasm32\"), no_mangle)]
+                unsafe extern \"C\" fn {external_name}\
+        ",
         );
 
         let params = self.print_export_sig(func, async_);
@@ -1079,13 +1198,20 @@ pub mod vtable{ordinal} {{
                     }}
                 "
             );
-        } else if abi::guest_export_needs_post_return(self.resolve, func) {
+        } else if abi::guest_export_needs_post_return(self.resolve, func)
+            && !self.gen.opts.symmetric
+        {
+            let export_prefix = self.gen.opts.export_prefix.as_deref().unwrap_or("");
+            let external_name = make_external_component(export_prefix)
+                + "cabi_post_"
+                + &make_external_component(&export_name);
             uwrite!(
                 self.src,
                 "\
-                    #[unsafe(export_name = \"{export_prefix}cabi_post_{export_name}\")]
-                    unsafe extern \"C\" fn _post_return_{name_snake}\
-"
+                    #[cfg_attr(target_arch = \"wasm32\", export_name = \"{export_prefix}cabi_post_{export_name}\")]
+                    #[cfg_attr(not(target_arch = \"wasm32\"), no_mangle)]
+                    unsafe extern \"C\" fn {external_name}\
+            "
             );
             let params = self.print_post_return_sig(func);
             self.src.push_str("{\n");
@@ -1100,7 +1226,12 @@ pub mod vtable{ordinal} {{
 
     fn print_export_sig(&mut self, func: &Function, async_: bool) -> Vec<String> {
         self.src.push_str("(");
-        let sig = self.resolve.wasm_signature(AbiVariant::GuestExport, func);
+        let sig = abi::wasm_signature_symmetric(
+            self.resolve,
+            AbiVariant::GuestExport,
+            func,
+            self.gen.opts.symmetric,
+        );
         let mut params = Vec::new();
         for (i, param) in sig.params.iter().enumerate() {
             let name = format!("arg{}", i);
@@ -2433,23 +2564,28 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
                     impl {camel} {{
                         #[doc(hidden)]
-                        pub unsafe fn from_handle(handle: u32) -> Self {{
+                        pub unsafe fn from_handle(handle: {handle_type}) -> Self {{
                             Self {{
                                 handle: {resource}::from_handle(handle),
                             }}
                         }}
 
                         #[doc(hidden)]
-                        pub fn take_handle(&self) -> u32 {{
+                        pub fn take_handle(&self) -> {handle_type} {{
                             {resource}::take_handle(&self.handle)
                         }}
 
                         #[doc(hidden)]
-                        pub fn handle(&self) -> u32 {{
+                        pub fn handle(&self) -> {handle_type} {{
                             {resource}::handle(&self.handle)
                         }}
                     }}
-                "#
+                "#,
+                handle_type = if self.gen.opts.symmetric {
+                    "usize"
+                } else {
+                    "u32"
+                }
             );
             self.wasm_import_module.to_string()
         } else {
@@ -2506,19 +2642,19 @@ impl {camel} {{
     }}
 
     #[doc(hidden)]
-    pub unsafe fn from_handle(handle: u32) -> Self {{
+    pub unsafe fn from_handle(handle: {handle_type}) -> Self {{
         Self {{
             handle: {resource}::from_handle(handle),
         }}
     }}
 
     #[doc(hidden)]
-    pub fn take_handle(&self) -> u32 {{
+    pub fn take_handle(&self) -> {handle_type} {{
         {resource}::take_handle(&self.handle)
     }}
 
     #[doc(hidden)]
-    pub fn handle(&self) -> u32 {{
+    pub fn handle(&self) -> {handle_type} {{
         {resource}::handle(&self.handle)
     }}
 
@@ -2582,34 +2718,49 @@ impl<'a> {camel}Borrow<'a>{{
        self.rep.cast()
     }}
 }}
-                "#
+                "#,
+                handle_type = if self.gen.opts.symmetric {
+                    "usize"
+                } else {
+                    "u32"
+                }
             );
-            format!("[export]{module}")
+            if self.gen.opts.symmetric {
+                module.clone()
+            } else {
+                format!("[export]{module}")
+            }
         };
 
         let wasm_resource = self.path_to_wasm_resource();
+        let export_name = make_external_symbol(
+            &wasm_import_module,
+            &format!("[resource-drop]{name}"),
+            AbiVariant::GuestImport,
+        );
         uwriteln!(
             self.src,
             r#"
                 unsafe impl {wasm_resource} for {camel} {{
                      #[inline]
-                     unsafe fn drop(_handle: u32) {{
-                         #[cfg(not(target_arch = "wasm32"))]
-                         unreachable!();
-
-                         #[cfg(target_arch = "wasm32")]
+                     unsafe fn drop(_handle: {handle_type}) {{
                          {{
                              #[link(wasm_import_module = "{wasm_import_module}")]
                              extern "C" {{
-                                 #[link_name = "[resource-drop]{name}"]
-                                 fn drop(_: u32);
+                                 #[cfg_attr(target_arch = "wasm32", link_name = "[resource-drop]{name}")]
+                                 fn {export_name}(_: {handle_type});
                              }}
 
-                             drop(_handle);
+                             {export_name}(_handle);
                          }}
                      }}
                 }}
-            "#
+            "#,
+            handle_type = if self.gen.opts.symmetric {
+                "usize"
+            } else {
+                "u32"
+            }
         );
     }
 
