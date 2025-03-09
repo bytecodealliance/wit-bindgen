@@ -522,7 +522,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::FutureLower { .. } => {
                 let op = &operands[0];
                 if self.gen.gen.opts.symmetric {
-                    results.push(format!("({op}).take_handle()"))
+                    results.push(format!("({op}).take_handle() as *mut u8"))
                 } else {
                     results.push(format!("({op}).take_handle() as i32"))
                 }
@@ -553,7 +553,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::StreamLower { .. } => {
                 let op = &operands[0];
                 if self.gen.gen.opts.symmetric {
-                    results.push(format!("({op}).take_handle()"))
+                    results.push(format!("({op}).take_handle() as *mut u8"))
                 } else {
                     results.push(format!("({op}).take_handle() as i32"))
                 }
