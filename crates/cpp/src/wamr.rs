@@ -1,4 +1,4 @@
-use wit_bindgen_core::wit_parser::{Function, Resolve, Results, Type, TypeDefKind};
+use wit_bindgen_core::wit_parser::{Function, Resolve, Type, TypeDefKind};
 
 #[derive(Debug, Default)]
 pub struct WamrSig {
@@ -61,8 +61,8 @@ fn push_wamr(ty: &Type, resolve: &Resolve, params_str: &mut String) {
             TypeDefKind::Handle(_h) => {
                 params_str.push('i');
             }
-            TypeDefKind::ErrorContext => todo!(),
         },
+        Type::ErrorContext => todo!(),
     }
 }
 
@@ -124,8 +124,8 @@ fn wamr_add_result(sig: &mut WamrSig, resolve: &Resolve, ty: &Type) {
             TypeDefKind::Handle(_h) => {
                 sig.wamr_result = "i".into();
             }
-            TypeDefKind::ErrorContext => todo!(),
         },
+        Type::ErrorContext => todo!(),
     }
 }
 
@@ -134,14 +134,9 @@ pub fn wamr_signature(resolve: &Resolve, func: &Function) -> WamrSig {
     for (_name, param) in func.params.iter() {
         push_wamr(param, resolve, &mut result.wamr_types);
     }
-    match &func.results {
-        Results::Named(p) => {
-            if !p.is_empty() {
-                // assume a pointer
-                result.wamr_types.push('*');
-            }
-        }
-        Results::Anon(e) => wamr_add_result(&mut result, resolve, e),
+    match &func.result {
+        Some(ty) => wamr_add_result(&mut result, resolve, ty),
+        None => {}
     }
     result
 }

@@ -2468,49 +2468,57 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::I32Load { offset }
             | Instruction::PointerLoad { offset }
             | Instruction::LengthLoad { offset } => results.push(format!(
-                "{ffi_qualifier}load32(({}) + {offset})",
+                "{}load32(({}) + {offset})",
+                self.gen.qualify_package(FFI_DIR),
                 operands[0],
                 offset = offset.size_wasm32()
             )),
 
             Instruction::I32Load8U { offset } => results.push(format!(
-                "{ffi_qualifier}load8_u(({}) + {offset})",
+                "{}load8_u(({}) + {offset})",
+                self.gen.qualify_package(FFI_DIR),
                 operands[0],
                 offset = offset.size_wasm32()
             )),
 
             Instruction::I32Load8S { offset } => results.push(format!(
-                "{ffi_qualifier}load8(({}) + {offset})",
+                "{}load8(({}) + {offset})",
+                self.gen.qualify_package(FFI_DIR),
                 operands[0],
                 offset = offset.size_wasm32()
             )),
 
             Instruction::I32Load16U { offset } => results.push(format!(
-                "{ffi_qualifier}load16_u(({}) + {offset})",
+                "{}load16_u(({}) + {offset})",
+                self.gen.qualify_package(FFI_DIR),
                 operands[0],
                 offset = offset.size_wasm32()
             )),
 
             Instruction::I32Load16S { offset } => results.push(format!(
-                "{ffi_qualifier}load16(({}) + {offset})",
+                "{}load16(({}) + {offset})",
+                self.gen.qualify_package(FFI_DIR),
                 operands[0],
                 offset = offset.size_wasm32()
             )),
 
             Instruction::I64Load { offset } => results.push(format!(
-                "{ffi_qualifier}load64(({}) + {offset})",
+                "{}load64(({}) + {offset})",
+                self.gen.qualify_package(FFI_DIR),
                 operands[0],
                 offset = offset.size_wasm32()
             )),
 
             Instruction::F32Load { offset } => results.push(format!(
-                "{ffi_qualifier}loadf32(({}) + {offset})",
+                "{}loadf32(({}) + {offset})",
+                self.gen.qualify_package(FFI_DIR),
                 operands[0],
                 offset = offset.size_wasm32()
             )),
 
             Instruction::F64Load { offset } => results.push(format!(
-                "{ffi_qualifier}loadf64(({}) + {offset})",
+                "{}loadf64(({}) + {offset})",
+                self.gen.qualify_package(FFI_DIR),
                 operands[0],
                 offset = offset.size_wasm32()
             )),

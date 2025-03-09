@@ -1,8 +1,7 @@
 pub use wit_parser::abi::{AbiVariant, WasmSignature, WasmType};
 use wit_parser::{
     align_to_arch, Alignment, ArchitectureSize, ElementInfo, Enum, Flags, FlagsRepr, Function,
-    Handle, Int, Record, Resolve, Result_, Results, SizeAlign, Tuple, Type, TypeDefKind, TypeId,
-    Variant,
+    Handle, Int, Record, Resolve, Result_, SizeAlign, Tuple, Type, TypeDefKind, TypeId, Variant,
 };
 
 // Helper macro for defining instructions without having to have tons of
@@ -840,7 +839,6 @@ fn needs_post_return(resolve: &Resolve, ty: &Type) -> bool {
             TypeDefKind::Future(_) | TypeDefKind::Stream(_) => false,
             TypeDefKind::Unknown => unreachable!(),
         },
-
         Type::Bool
         | Type::U8
         | Type::S8
@@ -924,9 +922,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         .bindgen
                         .sizes()
                         .record(func.params.iter().map(|(_, ty)| ty));
-                    let ptr = self
-                        .bindgen
-                        .return_pointer(size, align);
+                    let ptr = self.bindgen.return_pointer(size, align);
                     lower_to_memory(self, ptr);
                 } else {
                     if !sig.indirect_params {
@@ -972,9 +968,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 if self.async_ {
                     let ElementInfo { size, align } =
                         self.bindgen.sizes().record(func.result.iter());
-                    let ptr = self
-                        .bindgen
-                        .return_pointer(size, align);
+                    let ptr = self.bindgen.return_pointer(size, align);
                     self.return_pointer = Some(ptr.clone());
                     self.stack.push(ptr);
 
@@ -987,9 +981,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     // this ABI.
                     if self.variant == AbiVariant::GuestImport && sig.retptr {
                         let info = self.bindgen.sizes().params(&func.result);
-                        let ptr = self
-                            .bindgen
-                            .return_pointer(info.size, info.align);
+                        let ptr = self.bindgen.return_pointer(info.size, info.align);
                         self.return_pointer = Some(ptr.clone());
                         self.stack.push(ptr);
                     }
@@ -1005,11 +997,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 if matches!(self.lift_lower, LiftLower::Symmetric) && sig.retptr {
                     // probably wrong?
                     let ptr = self.stack.pop().unwrap();
-                    self.read_results_from_memory(
-                        &func.result,
-                        ptr.clone(),
-                        Default::default(),
-                    );
+                    self.read_results_from_memory(&func.result, ptr.clone(), Default::default());
                 } else if !(sig.retptr || self.async_) {
                     // With no return pointer in use we can simply lift the
                     // result(s) of the function from the result of the core
@@ -1663,8 +1651,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         use Instruction::*;
 
         match *ty {
-            // Builtin types need different flavors of storage instructions
-            // depending on the size of the value written.
             Type::Bool | Type::U8 | Type::S8 => {
                 self.lower_and_emit(ty, addr, &I32Store8 { offset })
             }
@@ -1874,9 +1860,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
 
                 TypeDefKind::List(_) => self.read_list_from_memory(ty, addr, offset),
 
-                TypeDefKind::Future(_)
-                | TypeDefKind::Stream(_)
-                | TypeDefKind::Handle(_) => {
+                TypeDefKind::Future(_) | TypeDefKind::Stream(_) | TypeDefKind::Handle(_) => {
                     if matches!(self.lift_lower, LiftLower::Symmetric) {
                         self.emit_and_lift(ty, addr, &PointerLoad { offset })
                     } else {
@@ -2065,7 +2049,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 });
                 self.emit(&Instruction::GuestDeallocateString);
             }
-
             Type::Bool
             | Type::U8
             | Type::S8
@@ -2077,9 +2060,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             | Type::U64
             | Type::S64
             | Type::F32
-            | Type::F64
-            | Type::ErrorContext => {}
-
+            | Type::F64 => {}
             Type::Id(id) => match &self.resolve.types[id].kind {
                 TypeDefKind::Type(t) => self.deallocate(t, addr, offset),
 
@@ -2150,6 +2131,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 TypeDefKind::Stream(_) => todo!("read stream from memory"),
                 TypeDefKind::Unknown => unreachable!(),
             },
+            Type::ErrorContext => todo!(),
         }
     }
 
@@ -2277,7 +2259,7 @@ pub fn wasm_signature_symmetric(
     }
 
     let mut results = Vec::new();
-    for ty in func.results.iter_types() {
+    for ty in func.result.iter() {
         push_flat_symmetric(resolve, ty, &mut results)
     }
 

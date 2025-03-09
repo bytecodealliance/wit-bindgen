@@ -243,12 +243,10 @@ pub trait WorldGenerator {
         // TODO: Should we refine this test to inspect only types reachable from
         // the specified world?
         if !cfg!(feature = "async")
-            && resolve.types.iter().any(|(_, ty)| {
-                matches!(
-                    ty.kind,
-                    TypeDefKind::Future(_) | TypeDefKind::Stream(_) | TypeDefKind::ErrorContext
-                )
-            })
+            && resolve
+                .types
+                .iter()
+                .any(|(_, ty)| matches!(ty.kind, TypeDefKind::Future(_) | TypeDefKind::Stream(_)))
         {
             anyhow::bail!(
                 "must enable `async` feature when using WIT files \

@@ -1293,7 +1293,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     "
                     var {ret_area} = stackalloc {element_type}[{array_size}+1];
                     var {ptr} = ((int){ret_area}) + ({align} - 1) & -{align};
-                    "
+                    ",
+                    align = align.align_wasm32()
                 );
                 format!("{ptr}")
             }

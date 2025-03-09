@@ -285,7 +285,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
         // stack whereas exports use a per-module return area to cut down on
         // stack usage. Note that for imports this also facilitates "adapter
         // modules" for components to not have data segments.
-        if size == 0 {
+        if size.is_empty() {
             // If the size requested is 0 then we know it won't be written to so
             // hand out a null pointer. This can happen with async for example
             // when the params or results are zero-sized.
@@ -985,14 +985,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let func = self.declare_import("", name, &[WasmType::Pointer; 3], &[WasmType::I32]);
 
                 let async_support = self.gen.gen.async_support_path();
-                let tmp = self.tmp();
-                let layout = format!("layout{tmp}");
-                let alloc = self.gen.path_to_std_alloc_module();
-                self.push_str(&format!(
-                    "let {layout} = {alloc}::Layout::from_size_align_unchecked({size}, {align});\n",
-                    size = size.format(POINTER_SIZE_EXPRESSION),
-                    align = align.format(POINTER_SIZE_EXPRESSION)
-                ));
                 let operands = operands.join(", ");
                 uwriteln!(
                     self.src,
