@@ -179,10 +179,13 @@ impl InterfaceGenerator<'_> {
 
     pub(crate) fn import(&mut self, import_module_name: &str, func: &Function) {
         let (camel_name, modifiers) = match &func.kind {
-            FunctionKind::Freestanding | FunctionKind::Static(_) => {
-                (func.item_name().to_upper_camel_case(), "static")
+            FunctionKind::Freestanding
+            | FunctionKind::Static(_)
+            | FunctionKind::AsyncFreestanding
+            | FunctionKind::AsyncStatic(_) => (func.item_name().to_upper_camel_case(), "static"),
+            FunctionKind::Method(_) | FunctionKind::AsyncMethod(_) => {
+                (func.item_name().to_upper_camel_case(), "")
             }
-            FunctionKind::Method(_) => (func.item_name().to_upper_camel_case(), ""),
             FunctionKind::Constructor(id) => (
                 self.csharp_gen.all_resources[id].name.to_upper_camel_case(),
                 "",
@@ -351,10 +354,15 @@ impl InterfaceGenerator<'_> {
 
     pub(crate) fn export(&mut self, func: &Function, interface_name: Option<&WorldKey>) {
         let (camel_name, modifiers) = match &func.kind {
-            FunctionKind::Freestanding | FunctionKind::Static(_) => {
+            FunctionKind::Freestanding
+            | FunctionKind::Static(_)
+            | FunctionKind::AsyncFreestanding
+            | FunctionKind::AsyncStatic(_) => {
                 (func.item_name().to_upper_camel_case(), "static abstract")
             }
-            FunctionKind::Method(_) => (func.item_name().to_upper_camel_case(), ""),
+            FunctionKind::Method(_) | FunctionKind::AsyncMethod(_) => {
+                (func.item_name().to_upper_camel_case(), "")
+            }
             FunctionKind::Constructor(id) => (
                 self.csharp_gen.all_resources[id].name.to_upper_camel_case(),
                 "",
@@ -587,6 +595,7 @@ impl InterfaceGenerator<'_> {
             Type::F64 => "double".to_owned(),
             Type::Char => "uint".to_owned(),
             Type::String => "string".to_owned(),
+            Type::ErrorContext => todo!("error context name with qualifier"),
             Type::Id(id) => {
                 let ty = &self.resolve.types[*id];
                 match &ty.kind {
@@ -940,10 +949,13 @@ impl InterfaceGenerator<'_> {
             .join(", ");
 
         let (camel_name, modifiers) = match &func.kind {
-            FunctionKind::Freestanding | FunctionKind::Static(_) => {
-                (func.item_name().to_upper_camel_case(), "static")
+            FunctionKind::Freestanding
+            | FunctionKind::AsyncFreestanding
+            | FunctionKind::Static(_)
+            | FunctionKind::AsyncStatic(_) => (func.item_name().to_upper_camel_case(), "static"),
+            FunctionKind::Method(_) | FunctionKind::AsyncMethod(_) => {
+                (func.item_name().to_upper_camel_case(), "")
             }
-            FunctionKind::Method(_) => (func.item_name().to_upper_camel_case(), ""),
             FunctionKind::Constructor(id) => (
                 self.csharp_gen.all_resources[id].name.to_upper_camel_case(),
                 "",
@@ -1225,11 +1237,6 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
     fn type_stream(&mut self, id: TypeId, name: &str, ty: &Option<Type>, docs: &Docs) {
         _ = (id, name, ty, docs);
-        todo!()
-    }
-
-    fn type_error_context(&mut self, id: TypeId, name: &str, docs: &Docs) {
-        _ = (id, name, docs);
         todo!()
     }
 }

@@ -12,8 +12,7 @@ use wit_bindgen_core::{uwrite, Direction, Files, InterfaceGenerator as _, WorldG
 use wit_component::WitPrinter;
 use wit_parser::abi::WasmType;
 use wit_parser::{
-    Function, FunctionKind, InterfaceId, Resolve, SizeAlign, Type, TypeId, TypeOwner, WorldId,
-    WorldKey,
+    Function, InterfaceId, Resolve, SizeAlign, Type, TypeId, TypeOwner, WorldId, WorldKey,
 };
 
 /// CSharp is the world generator for wit files. It coordinates all the generated code.
@@ -938,12 +937,7 @@ fn by_resource<'a>(
     let mut by_resource = IndexMap::<_, Vec<_>>::new();
     for (_, func) in funcs {
         by_resource
-            .entry(match &func.kind {
-                FunctionKind::Freestanding => None,
-                FunctionKind::Method(resource)
-                | FunctionKind::Static(resource)
-                | FunctionKind::Constructor(resource) => Some(*resource),
-            })
+            .entry(func.kind.resource())
             .or_default()
             .push(func);
     }

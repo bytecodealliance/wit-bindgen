@@ -1006,6 +1006,7 @@ impl InterfaceGenerator<'_> {
             Type::F32 => "Float".into(),
             Type::F64 => "Double".into(),
             Type::String => "String".into(),
+            Type::ErrorContext => todo!("moonbit error context type name"),
             Type::Id(id) => {
                 let ty = &self.resolve.types[dealias(self.resolve, *id)];
                 match &ty.kind {
@@ -1114,11 +1115,11 @@ impl InterfaceGenerator<'_> {
             }
             _ => func.name.split(".").last().unwrap().to_moonbit_ident(),
         };
-        let type_name = match func.kind {
-            FunctionKind::Freestanding => "".into(),
-            FunctionKind::Method(ty) | FunctionKind::Constructor(ty) | FunctionKind::Static(ty) => {
+        let type_name = match func.kind.resource() {
+            Some(ty) => {
                 format!("{}::", self.type_name(&Type::Id(ty), true))
             }
+            None => "".into(),
         };
 
         let result_type = match &func.result {
@@ -1534,11 +1535,6 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
     fn type_stream(&mut self, id: TypeId, name: &str, ty: &Option<Type>, docs: &Docs) {
         _ = (id, name, ty, docs);
-        todo!()
-    }
-
-    fn type_error_context(&mut self, id: TypeId, name: &str, docs: &Docs) {
-        _ = (id, name, docs);
         todo!()
     }
 
@@ -2392,7 +2388,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 };
 
                 let name = match func.kind {
-                    FunctionKind::Freestanding => {
+                    FunctionKind::Freestanding | FunctionKind::AsyncFreestanding => {
                         format!(
                             "{}{}",
                             self.r#gen.qualify_package(&self.func_interface.to_string()),
@@ -2407,7 +2403,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             func.name.replace("[constructor]", "").to_moonbit_ident()
                         )
                     }
-                    FunctionKind::Method(ty) | FunctionKind::Static(ty) => {
+                    FunctionKind::Method(ty)
+                    | FunctionKind::Static(ty)
+                    | FunctionKind::AsyncMethod(ty)
+                    | FunctionKind::AsyncStatic(ty) => {
                         let name = self.gen.type_name(&Type::Id(ty), false);
                         format!(
                             "{}::{}",
@@ -2672,8 +2671,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.extend(operands.iter().take(*amt).map(|v| v.clone()));
             }
 
-            Instruction::AsyncMalloc { .. }
-            | Instruction::AsyncPostCallInterface { .. }
+            Instruction::AsyncPostCallInterface { .. }
             | Instruction::AsyncCallReturn { .. }
             | Instruction::FutureLower { .. }
             | Instruction::FutureLift { .. }

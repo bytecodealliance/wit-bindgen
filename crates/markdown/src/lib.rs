@@ -323,6 +323,7 @@ impl InterfaceGenerator<'_> {
             Type::F64 => self.push_str("`f64`"),
             Type::Char => self.push_str("`char`"),
             Type::String => self.push_str("`string`"),
+            Type::ErrorContext => self.push_str("`error-context`"),
             Type::Id(id) => {
                 let ty = &self.resolve.types[*id];
                 if let Some(name) = &ty.name {
@@ -407,9 +408,6 @@ impl InterfaceGenerator<'_> {
                             self.push_str("stream");
                         }
                     },
-                    TypeDefKind::ErrorContext => {
-                        self.push_str("error-context");
-                    }
                     TypeDefKind::Handle(Handle::Own(ty)) => {
                         self.push_str("own<");
                         self.print_ty(&Type::Id(*ty));
@@ -652,11 +650,6 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
     fn type_stream(&mut self, id: TypeId, name: &str, ty: &Option<Type>, docs: &Docs) {
         _ = (id, name, ty, docs);
-        todo!()
-    }
-
-    fn type_error_context(&mut self, id: TypeId, name: &str, docs: &Docs) {
-        _ = (id, name, docs);
         todo!()
     }
 
