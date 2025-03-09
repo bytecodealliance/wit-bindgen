@@ -2223,7 +2223,10 @@ fn cast(from: WasmType, to: WasmType) -> Bitcast {
 
 fn push_flat_symmetric(resolve: &Resolve, ty: &Type, vec: &mut Vec<WasmType>) {
     if let Type::Id(id) = ty {
-        if matches!(&resolve.types[*id].kind, TypeDefKind::Handle(_)) {
+        if matches!(
+            &resolve.types[*id].kind,
+            TypeDefKind::Handle(_) | TypeDefKind::Stream(_) | TypeDefKind::Future(_)
+        ) {
             vec.push(WasmType::Pointer);
         } else {
             resolve.push_flat(ty, vec);

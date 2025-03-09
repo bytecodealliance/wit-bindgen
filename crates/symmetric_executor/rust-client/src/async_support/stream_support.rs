@@ -148,8 +148,8 @@ impl<T> StreamReader<T> {
         }
     }
 
-    pub unsafe fn from_handle(handle: usize) -> Self {
-        Self::new(unsafe { Stream::from_handle(handle) })
+    pub unsafe fn from_handle(handle: *mut u8) -> Self {
+        Self::new(unsafe { Stream::from_handle(handle as usize) })
     }
 
     /// Cancel the current pending read operation.

@@ -600,8 +600,11 @@ macro_rules! {macro_name} {{
                         };
 
                         let box_ = self.path_to_box();
-                        let code = format!(
-                            r#"
+                        let code = if self.gen.opts.symmetric {
+                            format!("\nimpl FuturePayload for {name} {{}}\n")
+                        } else {
+                            format!(
+                                r#"
 #[doc(hidden)]
 pub mod vtable{ordinal} {{
     fn write(future: u32, value: {name}) -> ::core::pin::Pin<{box_}<dyn ::core::future::Future<Output = bool>>> {{
@@ -688,7 +691,8 @@ pub mod vtable{ordinal} {{
     }}
 }}
                         "#,
-                        );
+                            )
+                        };
 
                         self.gen.future_payloads.insert(name, code);
                     }
@@ -772,8 +776,11 @@ for (index, dst) in values.iter_mut().take(count).enumerate() {{
                         };
 
                         let box_ = self.path_to_box();
-                        let code = format!(
-                            r#"
+                        let code = if self.gen.opts.symmetric {
+                            format!("\nimpl StreamPayload for {name} {{}}\n")
+                        } else {
+                            format!(
+                                r#"
 #[doc(hidden)]
 pub mod vtable{ordinal} {{
     fn write(stream: u32, values: &[{name}]) -> ::core::pin::Pin<{box_}<dyn ::core::future::Future<Output = usize> + '_>> {{
@@ -879,7 +886,8 @@ pub mod vtable{ordinal} {{
     }}
 }}
                         "#,
-                        );
+                            )
+                        };
 
                         self.gen.stream_payloads.insert(name, code);
                     }

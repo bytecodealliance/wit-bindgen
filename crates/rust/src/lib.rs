@@ -435,7 +435,11 @@ impl RustWasm {
     }
 
     fn async_support_path(&self) -> String {
-        format!("{}::async_support", self.runtime_path())
+        if self.opts.symmetric {
+            "wit_bindgen_symmetric_rt::async_support".into()
+        } else {
+            format!("{}::async_support", self.runtime_path())
+        }
     }
 
     fn name_interface(
@@ -500,15 +504,27 @@ impl RustWasm {
 
         if !self.future_payloads.is_empty() {
             let async_support = self.async_support_path();
+            let vtable_def = if self.opts.symmetric {
+                "".into()
+            } else {
+                format!(
+                    "
+        const VTABLE: &'static {async_support}::FutureVtable<Self>;
+    "
+                )
+            };
+            let construct = if self.opts.symmetric {
+                format!("{async_support}::future_support::new_future()")
+            } else {
+                format!("unsafe {{ {async_support}::future_new::<T>(T::VTABLE) }}")
+            };
             self.src.push_str(&format!(
                 "\
 pub mod wit_future {{
     #![allow(dead_code, unused_variables, clippy::all)]
 
     #[doc(hidden)]
-    pub trait FuturePayload: Unpin + Sized + 'static {{
-        const VTABLE: &'static {async_support}::FutureVtable<Self>;
-    }}"
+    pub trait FuturePayload: Unpin + Sized + 'static {{{vtable_def}}}"
             ));
             for code in self.future_payloads.values() {
                 self.src.push_str(code);
@@ -517,7 +533,7 @@ pub mod wit_future {{
                 "\
     /// Creates a new Component Model `future` with the specified payload type.
     pub fn new<T: FuturePayload>() -> ({async_support}::FutureWriter<T>, {async_support}::FutureReader<T>) {{
-        unsafe {{ {async_support}::future_new::<T>(T::VTABLE) }}
+        {construct}
     }}
 }}
                 ",
@@ -526,14 +542,26 @@ pub mod wit_future {{
 
         if !self.stream_payloads.is_empty() {
             let async_support = self.async_support_path();
+            let vtable_def = if self.opts.symmetric {
+                "".into()
+            } else {
+                format!(
+                    "
+        const VTABLE: &'static {async_support}::StreamVtable<Self>;
+    "
+                )
+            };
+            let construct = if self.opts.symmetric {
+                format!("{async_support}::stream_support::new_stream()")
+            } else {
+                format!("unsafe {{ {async_support}::stream_new::<T>(T::VTABLE) }}")
+            };
             self.src.push_str(&format!(
                 "\
 pub mod wit_stream {{
     #![allow(dead_code, unused_variables, clippy::all)]
 
-    pub trait StreamPayload: Unpin + Sized + 'static {{
-        const VTABLE: &'static {async_support}::StreamVtable<Self>;
-    }}"
+    pub trait StreamPayload: Unpin + Sized + 'static {{{vtable_def}}}"
             ));
             for code in self.stream_payloads.values() {
                 self.src.push_str(code);
@@ -542,7 +570,7 @@ pub mod wit_stream {{
                 &format!("\
     /// Creates a new Component Model `stream` with the specified payload type.
     pub fn new<T: StreamPayload>() -> ({async_support}::StreamWriter<T>, {async_support}::StreamReader<T>) {{
-        unsafe {{ {async_support}::stream_new::<T>(T::VTABLE) }}
+        {construct}
     }}
 }}
                 "),

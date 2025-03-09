@@ -521,7 +521,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::FutureLower { .. } => {
                 let op = &operands[0];
-                results.push(format!("({op}).take_handle() as i32"))
+                if self.gen.gen.opts.symmetric {
+                    results.push(format!("({op}).take_handle()"))
+                } else {
+                    results.push(format!("({op}).take_handle() as i32"))
+                }
             }
 
             Instruction::FutureLift { payload, .. } => {
@@ -535,16 +539,24 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     })
                     .unwrap_or_else(|| "()".into());
                 let ordinal = self.gen.gen.future_payloads.get_index_of(&name).unwrap();
-                let path = self.gen.path_to_root();
-                results.push(format!(
-                    "{async_support}::FutureReader::from_handle_and_vtable\
-                     ({op} as u32, &{path}wit_future::vtable{ordinal}::VTABLE)"
-                ))
+                if self.gen.gen.opts.symmetric {
+                    results.push(format!("{async_support}::FutureReader::from_handle({op})"))
+                } else {
+                    let path = self.gen.path_to_root();
+                    results.push(format!(
+                        "{async_support}::FutureReader::from_handle_and_vtable\
+                        ({op} as u32, &{path}wit_future::vtable{ordinal}::VTABLE)"
+                    ))
+                }
             }
 
             Instruction::StreamLower { .. } => {
                 let op = &operands[0];
-                results.push(format!("({op}).take_handle() as i32"))
+                if self.gen.gen.opts.symmetric {
+                    results.push(format!("({op}).take_handle()"))
+                } else {
+                    results.push(format!("({op}).take_handle() as i32"))
+                }
             }
 
             Instruction::StreamLift { payload, .. } => {
@@ -558,11 +570,15 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     })
                     .unwrap_or_else(|| "()".into());
                 let ordinal = self.gen.gen.stream_payloads.get_index_of(&name).unwrap();
-                let path = self.gen.path_to_root();
-                results.push(format!(
-                    "{async_support}::StreamReader::from_handle_and_vtable\
+                if self.gen.gen.opts.symmetric {
+                    results.push(format!("{async_support}::StreamReader::from_handle({op})"))
+                } else {
+                    let path = self.gen.path_to_root();
+                    results.push(format!(
+                        "{async_support}::StreamReader::from_handle_and_vtable\
                      ({op} as u32, &{path}wit_stream::vtable{ordinal}::VTABLE)"
-                ))
+                    ))
+                }
             }
 
             Instruction::ErrorContextLower { .. } => {

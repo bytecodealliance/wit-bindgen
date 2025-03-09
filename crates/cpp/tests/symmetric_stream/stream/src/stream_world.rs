@@ -19,7 +19,7 @@ pub mod test {
                     #[link(name = "source")]
                     extern "C" {
                         #[cfg_attr(target_arch = "wasm32", link_name = "create")]
-                        fn testX3AtestX2Fstream_sourceX00create() -> usize;
+                        fn testX3AtestX2Fstream_sourceX00create() -> *mut u8;
                     }
                     let ret = testX3AtestX2Fstream_sourceX00create();
                     wit_bindgen_symmetric_rt::async_support::StreamReader::from_handle(ret)
@@ -43,7 +43,7 @@ pub mod exports {
                 use super::super::super::super::_rt;
                 #[doc(hidden)]
                 #[allow(non_snake_case)]
-                pub unsafe fn _export_create_cabi<T: Guest>() -> usize {
+                pub unsafe fn _export_create_cabi<T: Guest>() -> *mut u8 {
                     #[cfg(target_arch = "wasm32")]
                     _rt::run_ctors_once();
                     let result0 = T::create();
@@ -59,7 +59,7 @@ pub mod exports {
 
           #[cfg_attr(target_arch = "wasm32", export_name = "create")]
           #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
-          unsafe extern "C" fn testX3AtestX2Fstream_testX00create() -> usize {
+          unsafe extern "C" fn testX3AtestX2Fstream_testX00create() -> *mut u8 {
             $($path_to_types)*::_export_create_cabi::<$ty>()
           }
         };);
@@ -77,7 +77,7 @@ mod _rt {
 
     #[cfg(target_arch = "wasm32")]
     pub fn run_ctors_once() {
-        wit_bindgen_symmetric_rt::run_ctors_once();
+        wit_bindgen::rt::run_ctors_once();
     }
     extern crate alloc as alloc_crate;
 }
