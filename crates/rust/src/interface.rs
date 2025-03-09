@@ -1,7 +1,8 @@
 use crate::bindgen::{FunctionBindgen, POINTER_SIZE_EXPRESSION};
 use crate::{
-    int_repr, to_rust_ident, to_upper_camel_case, wasm_type, AsyncConfig, FnSig, Identifier,
-    InterfaceName, Ownership, RuntimeItem, RustFlagsRepr, RustWasm,
+    full_wit_type_name, int_repr, to_rust_ident, to_upper_camel_case, wasm_type, AsyncConfig,
+    FnSig, Identifier, InterfaceName, Ownership, RuntimeItem, RustFlagsRepr, RustWasm,
+    TypeGeneration,
 };
 use anyhow::Result;
 use heck::*;
@@ -621,11 +622,15 @@ pub mod vtable{ordinal} {{
                 fn wit_import(_: u32, _: *mut u8) -> u32;
             }}
 
-            unsafe {{ {async_support}::await_future_result(wit_import, future, address).await }}
+            match unsafe {{ {async_support}::await_future_result(wit_import, future, address).await }} {{
+                {async_support}::AsyncWaitResult::Values(_) => true,
+                {async_support}::AsyncWaitResult::End => false,
+                {async_support}::AsyncWaitResult::Error(_) => unreachable!("received error while performing write"),
+            }}
         }})
     }}
 
-    fn read(future: u32) -> ::core::pin::Pin<{box_}<dyn ::core::future::Future<Output = Option<{name}>>>> {{
+    fn read(future: u32) -> ::core::pin::Pin<{box_}<dyn ::core::future::Future<Output = ::std::option::Option<::std::result::Result<{name}, {async_support}::ErrorContext>>>>> {{
         {box_}::pin(async move {{
             struct Buffer([::core::mem::MaybeUninit::<u8>; {size}]);
             let mut buffer = Buffer([::core::mem::MaybeUninit::uninit(); {size}]);
@@ -643,11 +648,15 @@ pub mod vtable{ordinal} {{
                 fn wit_import(_: u32, _: *mut u8) -> u32;
             }}
 
-            if unsafe {{ {async_support}::await_future_result(wit_import, future, address).await }} {{
-                {lift}
-                Some(value)
-            }} else {{
-               None
+            match unsafe {{ {async_support}::await_future_result(wit_import, future, address).await }} {{
+                    {async_support}::AsyncWaitResult::Values(v) => {{
+                        {lift}
+                        Some(Ok(value))
+                    }},
+                    {async_support}::AsyncWaitResult::Error(e) => {{
+                        Some(Err({async_support}::ErrorContext::from_handle(e)))
+                    }},
+                    {async_support}::AsyncWaitResult::End => None,
             }}
         }})
     }}
@@ -686,7 +695,7 @@ pub mod vtable{ordinal} {{
         }}
     }}
 
-    fn close_writable(writer: u32) {{
+    fn close_writable(writer: u32, err_ctx: u32) {{
         #[cfg(not(target_arch = "wasm32"))]
         {{
             unreachable!();
@@ -699,7 +708,7 @@ pub mod vtable{ordinal} {{
                 #[link_name = "[future-close-writable-{index}]{func_name}"]
                 fn drop(_: u32, _: u32);
             }}
-            unsafe {{ drop(writer, 0) }}
+            unsafe {{ drop(writer, err_ctx) }}
         }}
     }}
 
@@ -844,26 +853,28 @@ pub mod vtable{ordinal} {{
 
             let mut total = 0;
             while total < values.len() {{
-                let count = unsafe {{
+
+                match unsafe {{
                     {async_support}::await_stream_result(
                         wit_import,
                         stream,
                         address.add(total * {size}),
                         u32::try_from(values.len() - (total * {size})).unwrap()
                     ).await
-                }};
-
-                if let Some(count) = count {{
-                    total += count;
-                }} else {{
-                    break
+                }} {{
+                    {async_support}::AsyncWaitResult::Values(count) => total += count,
+                    {async_support}::AsyncWaitResult::Error(_) => unreachable!("encountered error during write"),
+                    {async_support}::AsyncWaitResult::End => break,
                 }}
             }}
             total
         }})
     }}
 
-    fn read(stream: u32, values: &mut [::core::mem::MaybeUninit::<{name}>]) -> ::core::pin::Pin<{box_}<dyn ::core::future::Future<Output = Option<usize>> + '_>> {{
+    fn read(
+        stream: u32,
+        values: &mut [::core::mem::MaybeUninit::<{name}>]
+    ) -> ::core::pin::Pin<{box_}<dyn ::core::future::Future<Output = ::std::option::Option<::std::result::Result<usize, {async_support}::ErrorContext>>> + '_>> {{
         {box_}::pin(async move {{
             {lift_address}
             #[link(wasm_import_module = "{module}")]
@@ -872,19 +883,21 @@ pub mod vtable{ordinal} {{
                 fn wit_import(_: u32, _: *mut u8, _: u32) -> u32;
             }}
 
-            let count = unsafe {{
+            match unsafe {{
                 {async_support}::await_stream_result(
                     wit_import,
                     stream,
                     address,
                     u32::try_from(values.len()).unwrap()
                 ).await
-            }};
-            #[allow(unused)]
-            if let Some(count) = count {{
-                {lift}
+            }} {{
+                {async_support}::AsyncWaitResult::Values(count) => {{
+                    {lift}
+                    Some(Ok(count))
+                }},
+                {async_support}::AsyncWaitResult::Error(e) => Some(Err({async_support}::ErrorContext::from_handle(e))),
+                {async_support}::AsyncWaitResult::End => None,
             }}
-            count
         }})
     }}
 
@@ -922,7 +935,7 @@ pub mod vtable{ordinal} {{
         }}
     }}
 
-    fn close_writable(writer: u32) {{
+    fn close_writable(writer: u32, err_ctx: u32) {{
         #[cfg(not(target_arch = "wasm32"))]
         {{
             unreachable!();
@@ -935,7 +948,7 @@ pub mod vtable{ordinal} {{
                 #[link_name = "[stream-close-writable-{index}]{func_name}"]
                 fn drop(_: u32, _: u32);
             }}
-            unsafe {{ drop(writer, 0) }}
+            unsafe {{ drop(writer, err_ctx) }}
         }}
     }}
 
@@ -1511,7 +1524,7 @@ pub mod vtable{ordinal} {{
         if let FunctionKind::Constructor(_) = &func.kind {
             self.push_str(" -> Self")
         } else {
-            self.print_results(&func.results);
+            self.print_results(&func.result);
         }
         params
     }
@@ -1623,28 +1636,17 @@ pub mod vtable{ordinal} {{
         params
     }
 
-    fn print_results(&mut self, results: &Results) {
+    fn print_results(&mut self, result: &Option<Type>) {
         self.push_str(" -> ");
 
-        match results.len() {
-            0 => {
+        match result {
+            None => {
                 self.push_str("()");
             }
-            1 => {
-                let ty = results.iter_types().next().unwrap();
+            Some(ty) => {
                 let mode = self.type_mode_for(ty, TypeOwnershipStyle::Owned, "'INVALID");
                 assert!(mode.lifetime.is_none());
                 self.print_ty(ty, mode);
-            }
-            _ => {
-                self.push_str("(");
-                for ty in results.iter_types() {
-                    let mode = self.type_mode_for(ty, TypeOwnershipStyle::Owned, "'INVALID");
-                    assert!(mode.lifetime.is_none());
-                    self.print_ty(ty, mode);
-                    self.push_str(", ")
-                }
-                self.push_str(")")
             }
         }
     }
@@ -1908,14 +1910,19 @@ pub mod vtable{ordinal} {{
     }
 
     pub fn type_path(&self, id: TypeId, owned: bool) -> String {
-        self.type_path_with_name(
-            id,
-            if owned {
-                self.result_name(id)
-            } else {
-                self.param_name(id)
-            },
-        )
+        let full_wit_type_name = full_wit_type_name(self.resolve, id);
+        if let Some(TypeGeneration::Remap(remapped_path)) = self.gen.with.get(&full_wit_type_name) {
+            remapped_path.clone()
+        } else {
+            self.type_path_with_name(
+                id,
+                if owned {
+                    self.result_name(id)
+                } else {
+                    self.param_name(id)
+                },
+            )
+        }
     }
 
     fn type_path_with_name(&self, id: TypeId, name: String) -> String {

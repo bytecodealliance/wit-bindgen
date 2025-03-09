@@ -206,12 +206,12 @@ impl InterfaceGenerator<'_> {
         let (result_type, results) = if let FunctionKind::Constructor(_) = &func.kind {
             (String::new(), Vec::new())
         } else {
-            match func.results.len() {
-                0 => ("void".to_string(), Vec::new()),
-                1 => {
+            match func.result {
+                None => ("void".to_string(), Vec::new()),
+                Some(ty) => {
                     let (payload, results) = payload_and_results(
                         self.resolve,
-                        *func.results.iter_types().next().unwrap(),
+                        ty,
                         self.csharp_gen.opts.with_wit_results,
                     );
                     (
@@ -223,15 +223,6 @@ impl InterfaceGenerator<'_> {
                         },
                         results,
                     )
-                }
-                _ => {
-                    let types = func
-                        .results
-                        .iter_types()
-                        .map(|ty| self.type_name_with_qualifier(ty, true))
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    (format!("({})", types), Vec::new())
                 }
             }
         };
@@ -377,12 +368,12 @@ impl InterfaceGenerator<'_> {
         let (result_type, results) = if let FunctionKind::Constructor(_) = &func.kind {
             (String::new(), Vec::new())
         } else {
-            match func.results.len() {
-                0 => ("void".to_owned(), Vec::new()),
-                1 => {
+            match func.result {
+                None => ("void".to_owned(), Vec::new()),
+                Some(ty) => {
                     let (payload, results) = payload_and_results(
                         self.resolve,
-                        *func.results.iter_types().next().unwrap(),
+                        ty,
                         self.csharp_gen.opts.with_wit_results,
                     );
                     (
@@ -394,15 +385,6 @@ impl InterfaceGenerator<'_> {
                         },
                         results,
                     )
-                }
-                _ => {
-                    let types = func
-                        .results
-                        .iter_types()
-                        .map(|ty| self.type_name(ty))
-                        .collect::<Vec<String>>()
-                        .join(", ");
-                    (format!("({}) ", types), Vec::new())
                 }
             }
         };
@@ -484,13 +466,37 @@ impl InterfaceGenerator<'_> {
             "#
         );
 
-        if !sig.results.is_empty() {
+        if abi::guest_export_needs_post_return(self.resolve, func) {
+            let params = sig
+                .results
+                .iter()
+                .enumerate()
+                .map(|(i, param)| {
+                    let ty = crate::world_generator::wasm_type(*param);
+                    format!("{ty} p{i}")
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+
+            let mut bindgen = FunctionBindgen::new(
+                self,
+                "INVALID",
+                &func.kind,
+                (0..sig.results.len()).map(|i| format!("p{i}")).collect(),
+                Vec::new(),
+                ParameterType::ABI,
+            );
+
+            abi::post_return(bindgen.interface_gen.resolve, func, &mut bindgen, false);
+
+            let src = bindgen.src;
+
             uwrite!(
                 self.csharp_interop_src,
                 r#"
                 [UnmanagedCallersOnly(EntryPoint = "cabi_post_{export_name}")]
-                {access} static void cabi_post_{interop_name}({wasm_result_type} returnValue) {{
-                    Console.WriteLine("TODO: cabi_post_{export_name}");
+                {access} static unsafe void cabi_post_{interop_name}({params}) {{
+                    {src}
                 }}
                 "#
             );
@@ -899,12 +905,12 @@ impl InterfaceGenerator<'_> {
         let result_type = if let FunctionKind::Constructor(_) = &func.kind {
             String::new()
         } else {
-            match func.results.len() {
-                0 => "void".into(),
-                1 => {
+            match func.result {
+                None => "void".into(),
+                Some(ty) => {
                     let (payload, _) = payload_and_results(
                         self.resolve,
-                        *func.results.iter_types().next().unwrap(),
+                        ty,
                         self.csharp_gen.opts.with_wit_results,
                     );
                     if let Some(ty) = payload {
@@ -913,17 +919,6 @@ impl InterfaceGenerator<'_> {
                     } else {
                         "void".to_string()
                     }
-                }
-                count => {
-                    self.csharp_gen.tuple_counts.insert(count);
-                    format!(
-                        "({})",
-                        func.results
-                            .iter_types()
-                            .map(|ty| self.type_name_with_qualifier(ty, qualifier))
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    )
                 }
             }
         };

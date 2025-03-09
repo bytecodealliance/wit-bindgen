@@ -6,7 +6,7 @@ repository = { workspace = true }
 license = { workspace = true }
 homepage = 'https://github.com/bytecodealliance/wit-bindgen'
 description = """
-Runtime support for the `wit-bindgen` crate
+Internal runtime support for the `wit-bindgen` crate.
 """
 
 [dependencies]

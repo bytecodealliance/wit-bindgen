@@ -507,7 +507,7 @@ def_instruction! {
         CallInterface {
             func: &'a Function,
             async_: bool,
-        } : [func.params.len()] => [if *async_ { 1 } else { func.results.len() }],
+        } : [func.params.len()] => [if *async_ { 1 } else { usize::from(func.result.is_some()) }],
 
         /// Returns `amt` values on the stack. This is always the last
         /// instruction.
@@ -575,7 +575,7 @@ def_instruction! {
         ///
         /// For example, this might include task management for the
         /// future/promise/task returned by the call made for `CallInterface`.
-        AsyncPostCallInterface { func: &'a Function } : [1] => [func.results.len() + 1],
+        AsyncPostCallInterface { func: &'a Function } : [1] => [usize::from(func.result.is_some()) + 1],
 
         /// Call `task.return` for an async-lifted export once the task returned
         /// by `CallInterface` and managed by `AsyncPostCallInterface`
@@ -825,9 +825,9 @@ pub fn post_return(resolve: &Resolve, func: &Function, bindgen: &mut impl Bindge
 /// This is used when the return value contains a memory allocation such as
 /// a list or a string primarily.
 pub fn guest_export_needs_post_return(resolve: &Resolve, func: &Function) -> bool {
-    func.results
-        .iter_types()
-        .any(|t| needs_post_return(resolve, t))
+    func.result
+        .map(|t| needs_post_return(resolve, &t))
+        .unwrap_or(false)
 }
 
 fn needs_post_return(resolve: &Resolve, ty: &Type) -> bool {
@@ -987,43 +987,43 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 let mut retptr = None;
                 // If necessary we may need to prepare a return pointer for
                 // this ABI.
-                let dealloc_size_align =
-                    if let Some((params_size, params_align)) = params_size_align {
-                        let ElementInfo { size, align } =
-                            self.bindgen.sizes().record(func.results.iter_types());
-                        self.emit(&Instruction::AsyncMalloc { size, align });
-                        let ptr = self.stack.pop().unwrap();
+                let dealloc_size_align = if let Some((params_size, params_align)) =
+                    params_size_align
+                {
+                    let ElementInfo { size, align } =
+                        self.bindgen.sizes().record(func.result.iter());
+                    self.emit(&Instruction::AsyncMalloc { size, align });
+                    let ptr = self.stack.pop().unwrap();
+                    self.return_pointer = Some(ptr.clone());
+                    self.stack.push(ptr);
+
+                    assert_eq!(self.stack.len(), 2);
+                    self.emit(&Instruction::AsyncCallWasm {
+                        name: &format!("[async]{}", func.name),
+                        size: params_size,
+                        align: params_align,
+                    });
+                    Some((size, align))
+                } else {
+                    if (self.variant == AbiVariant::GuestImport
+                        || matches!(self.lift_lower, LiftLower::Symmetric))
+                        && sig.retptr
+                    {
+                        let ElementInfo { size, align } = self.bindgen.sizes().params(&func.result);
+                        let ptr = self.bindgen.return_pointer(size, align);
                         self.return_pointer = Some(ptr.clone());
-                        self.stack.push(ptr);
+                        self.stack.push(ptr.clone());
+                        retptr = Some(ptr);
+                    }
 
-                        assert_eq!(self.stack.len(), 2);
-                        self.emit(&Instruction::AsyncCallWasm {
-                            name: &format!("[async]{}", func.name),
-                            size: params_size,
-                            align: params_align,
-                        });
-                        Some((size, align))
-                    } else {
-                        if (self.variant == AbiVariant::GuestImport
-                            || matches!(self.lift_lower, LiftLower::Symmetric))
-                            && sig.retptr
-                        {
-                            let ElementInfo { size, align } =
-                                self.bindgen.sizes().params(func.results.iter_types());
-                            let ptr = self.bindgen.return_pointer(size, align);
-                            self.return_pointer = Some(ptr.clone());
-                            self.stack.push(ptr.clone());
-                            retptr = Some(ptr);
-                        }
-
-                        assert_eq!(self.stack.len(), sig.params.len());
-                        self.emit(&Instruction::CallWasm {
-                            name: &func.name,
-                            sig: &sig,
-                            module_prefix: Default::default(),
-                        });
-                        None
-                    };
+                    assert_eq!(self.stack.len(), sig.params.len());
+                    self.emit(&Instruction::CallWasm {
+                        name: &func.name,
+                        sig: &sig,
+                        module_prefix: Default::default(),
+                    });
+                    None
+                };
 
                 if matches!(self.lift_lower, LiftLower::Symmetric) && sig.retptr {
                     //let ptr = self.stack.pop().unwrap();
@@ -1036,7 +1036,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     // With no return pointer in use we can simply lift the
                     // result(s) of the function from the result of the core
                     // wasm function.
-                    for ty in func.results.iter_types() {
+                    if let Some(ty) = &func.result {
                         self.lift(ty)
                     }
                 } else {
@@ -1064,12 +1064,12 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     };
 
                     self.read_results_from_memory(
-                        &func.results,
+                        &func.result,
                         ptr.clone(),
                         ArchitectureSize::default(),
                     );
                     self.emit(&Instruction::Flush {
-                        amt: func.results.len(),
+                        amt: usize::from(func.result.is_some()),
                     });
 
                     if let Some((size, align)) = dealloc_size_align {
@@ -1093,7 +1093,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 // } else {
                 self.emit(&Instruction::Return {
                     func,
-                    amt: func.results.len(),
+                    amt: usize::from(func.result.is_some()),
                 });
                 // }
             }
@@ -1144,7 +1144,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     self.emit(&Instruction::AsyncPostCallInterface { func });
 
                     let mut results = Vec::new();
-                    for ty in func.results.iter_types() {
+                    if let Some(ty) = &func.result {
                         self.resolve.push_flat(ty, &mut results);
                     }
                     (results.len() > MAX_FLAT_PARAMS, Some(results))
@@ -1169,12 +1169,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 if !lower_to_memory {
                     // With no return pointer in use we simply lower the
                     // result(s) and return that directly from the function.
-                    let results = self
-                        .stack
-                        .drain(self.stack.len() - func.results.len()..)
-                        .collect::<Vec<_>>();
-                    for (ty, result) in func.results.iter_types().zip(results) {
-                        self.stack.push(result);
+                    if let Some(ty) = &func.result {
                         self.lower(ty);
                     }
                 } else {
@@ -1192,11 +1187,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                                 nth: sig.params.len() - 1,
                             });
                             let ptr = self.stack.pop().unwrap();
-                            self.write_params_to_memory(
-                                func.results.iter_types(),
-                                ptr,
-                                Default::default(),
-                            );
+                            self.write_params_to_memory(&func.result, ptr, Default::default());
                         }
 
                         // For a guest import this is a function defined in
@@ -1206,10 +1197,10 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         // memory, returning the pointer at the end.
                         false => {
                             let ElementInfo { size, align } =
-                                self.bindgen.sizes().params(func.results.iter_types());
+                                self.bindgen.sizes().params(&func.result);
                             let ptr = self.bindgen.return_pointer(size, align);
                             self.write_params_to_memory(
-                                func.results.iter_types(),
+                                &func.result,
                                 ptr.clone(),
                                 Default::default(),
                             );
@@ -1270,11 +1261,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
 
         self.emit(&Instruction::GetArg { nth: 0 });
         let addr = self.stack.pop().unwrap();
-        for (offset, ty) in self
-            .bindgen
-            .sizes()
-            .field_offsets(func.results.iter_types())
-        {
+        for (offset, ty) in self.bindgen.sizes().field_offsets(&func.result) {
             self.deallocate(ty, addr.clone(), offset);
         }
         self.emit(&Instruction::Return { func, amt: 0 });
@@ -1825,7 +1812,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
 
     fn write_params_to_memory<'b>(
         &mut self,
-        params: impl IntoIterator<Item = &'b Type> + ExactSizeIterator,
+        params: impl IntoIterator<Item = &'b Type, IntoIter: ExactSizeIterator>,
         addr: B::Operand,
         offset: ArchitectureSize,
     ) {
@@ -1870,10 +1857,11 @@ impl<'a, B: Bindgen> Generator<'a, B> {
 
     fn write_fields_to_memory<'b>(
         &mut self,
-        tys: impl IntoIterator<Item = &'b Type> + ExactSizeIterator,
+        tys: impl IntoIterator<Item = &'b Type, IntoIter: ExactSizeIterator>,
         addr: B::Operand,
         offset: ArchitectureSize,
     ) {
+        let tys = tys.into_iter();
         let fields = self
             .stack
             .drain(self.stack.len() - tys.len()..)
@@ -2016,11 +2004,11 @@ impl<'a, B: Bindgen> Generator<'a, B> {
 
     fn read_results_from_memory(
         &mut self,
-        results: &Results,
+        result: &Option<Type>,
         addr: B::Operand,
         offset: ArchitectureSize,
     ) {
-        self.read_fields_from_memory(results.iter_types(), addr, offset)
+        self.read_fields_from_memory(result, addr, offset)
     }
 
     fn read_variant_arms_from_memory<'b>(

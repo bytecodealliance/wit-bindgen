@@ -995,7 +995,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.push_str(&format!("let result = "));
                     results.push("result".into());
                 } else {
-                    self.let_results(func.results.len(), results);
+                    self.let_results(usize::from(func.result.is_some()), results);
                 };
                 let constructor_type = match &func.kind {
                     FunctionKind::Freestanding => {
@@ -1070,7 +1070,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let result = &operands[0];
                 self.async_result_name = Some(result.clone());
                 results.push("result".into());
-                let params = (0..func.results.len())
+                let params = (0..usize::from(func.result.is_some()))
                     .map(|_| {
                         let tmp = self.tmp();
                         let param = format!("result{}", tmp);
@@ -1079,7 +1079,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     })
                     .collect::<Vec<_>>()
                     .join(", ");
-                let params = if func.results.len() != 1 {
+                let params = if func.result.is_none() {
                     format!("({params})")
                 } else {
                     params
