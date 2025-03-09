@@ -130,20 +130,6 @@ pub struct StreamReader<T: 'static> {
     _phantom: PhantomData<T>,
 }
 
-impl<T> StreamReader<T> {
-    /// Cancel the current pending read operation.
-    ///
-    /// This will panic if no such operation is pending.
-    pub fn cancel(&mut self) {
-        assert!(self.future.is_some());
-        self.future = None;
-    }
-
-    pub fn take_handle(&self) -> usize {
-        self.handle.take_handle()
-    }
-}
-
 impl<T> fmt::Debug for StreamReader<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("StreamReader")
@@ -161,7 +147,26 @@ impl<T> StreamReader<T> {
             _phantom: PhantomData,
         }
     }
+
+    pub unsafe fn from_handle(handle: usize) -> Self {
+        Self::new(unsafe { Stream::from_handle(handle) })
+    }
+
+    /// Cancel the current pending read operation.
+    ///
+    /// This will panic if no such operation is pending.
+    pub fn cancel(&mut self) {
+        assert!(self.future.is_some());
+        self.future = None;
+    }
+
     #[doc(hidden)]
+    pub fn take_handle(&self) -> usize {
+        self.handle.take_handle()
+    }
+
+    #[doc(hidden)]
+    // remove this as it is weirder than take_handle
     pub fn into_handle(self) -> *mut () {
         self.handle.take_handle() as *mut ()
     }

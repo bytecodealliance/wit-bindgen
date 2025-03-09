@@ -35,9 +35,7 @@ extern "C" fn ready(arg: *mut ()) -> CallbackState {
 
 fn main() {
     // let mut result_stream: *mut () = core::ptr::null_mut();
-    let result_stream = unsafe {
-        testX3AtestX2Fstream_testX00create()
-    };
+    let result_stream = unsafe { testX3AtestX2Fstream_testX00create() };
     // function should have completed (not async)
     // assert!(continuation.is_null());
     let stream = unsafe { Stream::from_handle(result_stream) };

@@ -19,12 +19,10 @@ pub mod test {
                     #[link(name = "source")]
                     extern "C" {
                         #[cfg_attr(target_arch = "wasm32", link_name = "create")]
-                        fn testX3AtestX2Fstream_sourceX00create() -> *mut u8;
+                        fn testX3AtestX2Fstream_sourceX00create() -> usize;
                     }
                     let ret = testX3AtestX2Fstream_sourceX00create();
-                    wit_bindgen_symmetric_rt::async_support::StreamReader::new(
-                        wit_bindgen_symmetric_rt::async_support::stream_support::Stream::from_handle(ret as usize),
-                    )
+                    wit_bindgen_symmetric_rt::async_support::StreamReader::from_handle(ret)
                 }
             }
         }
@@ -86,10 +84,8 @@ mod _rt {
 pub mod wit_stream {
     #![allow(dead_code, unused_variables, clippy::all)]
 
-    pub trait StreamPayload: Unpin + Sized + 'static {
-    }
-    impl StreamPayload for u32 {
-    }
+    pub trait StreamPayload: Unpin + Sized + 'static {}
+    impl StreamPayload for u32 {}
     /// Creates a new Component Model `stream` with the specified payload type.
     pub fn new<T: StreamPayload>() -> (
         wit_bindgen_symmetric_rt::async_support::StreamWriter<T>,
