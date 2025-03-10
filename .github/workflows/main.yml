@@ -73,7 +73,7 @@ jobs:
       if: matrix.lang == 'rust'
 
     - uses: ./.github/actions/install-wasi-sdk
-      if: matrix.lang == 'c' || (matrix.lang == 'csharp' && matrix.os == 'windows-latest')
+      if: matrix.lang == 'c' || (matrix.lang == 'csharp' && matrix.os != 'macos-latest')
 
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
