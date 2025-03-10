@@ -248,6 +248,15 @@ pub struct Opts {
     #[cfg_attr(feature = "clap", arg(long = "additional_derive_attribute", short = 'd', default_values_t = Vec::<String>::new()))]
     pub additional_derive_attributes: Vec<String>,
 
+    /// Variants and records to ignore when applying additional derive attributes.
+    ///
+    /// These names are specified as they are listed in the wit file, i.e. in kebab case.
+    /// This feature allows some variants and records to use types for which adding traits will cause
+    /// compilation to fail, such as serde::Deserialize on wasi:io/streams.
+    ///
+    #[cfg_attr(feature = "clap", arg(long = "additional_derive_ignore", default_values_t = Vec::<String>::new()))]
+    pub additional_derive_ignore: Vec<String>,
+
     /// Remapping of wit interface and type names to Rust module names and types.
     ///
     /// Argument must be of the form `k=v` and this option can be passed
@@ -1028,6 +1037,13 @@ impl WorldGenerator for RustWasm {
                 self.src_preamble,
                 "//   * additional derives {:?}",
                 self.opts.additional_derive_attributes
+            );
+        }
+        if !self.opts.additional_derive_ignore.is_empty() {
+            uwriteln!(
+                self.src_preamble,
+                "//   * additional derives ignored {:?}",
+                self.opts.additional_derive_ignore
             );
         }
         for (k, v) in self.opts.with.iter() {
