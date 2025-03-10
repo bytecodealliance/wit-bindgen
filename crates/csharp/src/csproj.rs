@@ -90,13 +90,13 @@ impl CSProjectLLVMBuilder {
         "
         );
 
-        let os = match std::env::consts::OS {
-            "windows" => "win",
-            "linux" => std::env::consts::OS,
-            other => todo!("OS {} not supported", other),
-        };
-
         if self.aot {
+            let os = match std::env::consts::OS {
+                "windows" => "win",
+                "linux" => std::env::consts::OS,
+                other => todo!("OS {} not supported", other),
+            };
+
             csproj.push_str(
                 &format!(
                     r#"
