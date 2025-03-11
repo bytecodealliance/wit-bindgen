@@ -47,14 +47,6 @@ enum Opt {
         args: Common,
     },
 
-    /// Generates bindings for TeaVM-based Java guest modules.
-    #[cfg(feature = "teavm-java")]
-    TeavmJava {
-        #[clap(flatten)]
-        opts: wit_bindgen_teavm_java::Opts,
-        #[clap(flatten)]
-        args: Common,
-    },
     /// Generates bindings for TinyGo-based Go guest modules.
     #[cfg(feature = "go")]
     TinyGo {
@@ -137,8 +129,6 @@ fn main() -> Result<()> {
         Opt::C { opts, args } => (opts.build(), args),
         #[cfg(feature = "rust")]
         Opt::Rust { opts, args } => (opts.build(), args),
-        #[cfg(feature = "teavm-java")]
-        Opt::TeavmJava { opts, args } => (opts.build(), args),
         #[cfg(feature = "go")]
         Opt::TinyGo { opts, args } => (opts.build(), args),
         #[cfg(feature = "csharp")]

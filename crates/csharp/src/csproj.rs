@@ -91,13 +91,20 @@ impl CSProjectLLVMBuilder {
         );
 
         if self.aot {
+            let os = match std::env::consts::OS {
+                "windows" => "win",
+                "linux" => std::env::consts::OS,
+                other => todo!("OS {} not supported", other),
+            };
+
             csproj.push_str(
-                r#"
+                &format!(
+                    r#"
                 <ItemGroup>
                     <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-*" />
-                    <PackageReference Include="runtime.win-x64.Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-*" />
+                    <PackageReference Include="runtime.{os}-x64.Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-*" />
                 </ItemGroup>
-                "#,
+                "#),
             );
 
             fs::write(
