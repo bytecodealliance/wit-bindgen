@@ -235,7 +235,8 @@ impl Runner<'_> {
                 state.futures_rlib.display()
             ))
             .arg("--target")
-            .arg(&opts.rust_target);
+            .arg(&opts.rust_target)
+            .arg("-Cdebuginfo=1");
         for dep in state.wit_bindgen_deps.iter() {
             cmd.arg(&format!("-Ldependency={}", dep.display()));
         }
