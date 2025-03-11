@@ -42,7 +42,6 @@ wit-component = "0.227.0"
 wit-bindgen-core = { path = 'crates/core', version = '0.40.0' }
 wit-bindgen-c = { path = 'crates/c', version = '0.40.0' }
 wit-bindgen-rust = { path = "crates/rust", version = "0.40.0" }
-wit-bindgen-teavm-java = { path = 'crates/teavm-java', version = '0.40.0' }
 wit-bindgen-go = { path = 'crates/go', version = '0.40.0' }
 wit-bindgen-csharp = { path = 'crates/csharp', version = '0.40.0' }
 wit-bindgen-markdown = { path = 'crates/markdown', version = '0.40.0' }
@@ -60,7 +59,6 @@ wit-bindgen-rust = { workspace = true, features = ['clap'], optional = true }
 wit-bindgen-c = { workspace = true, features = ['clap'], optional = true }
 wit-bindgen-markdown = { workspace = true, features = ['clap'], optional = true }
 wit-bindgen-moonbit = { workspace = true, features = ['clap'], optional = true }
-wit-bindgen-teavm-java = { workspace = true, features = ['clap'], optional = true }
 wit-bindgen-go = { workspace = true, features = ['clap'], optional = true }
 wit-bindgen-csharp = { workspace = true, features = ['clap'], optional = true }
 wit-component = { workspace = true }
@@ -71,7 +69,6 @@ default = [
   'c',
   'rust',
   'markdown',
-  'teavm-java',
   'go',
   'csharp',
   'moonbit',
@@ -80,7 +77,6 @@ default = [
 c = ['dep:wit-bindgen-c']
 rust = ['dep:wit-bindgen-rust']
 markdown = ['dep:wit-bindgen-markdown']
-teavm-java = ['dep:wit-bindgen-teavm-java']
 go = ['dep:wit-bindgen-go']
 csharp = ['dep:wit-bindgen-csharp']
 csharp-mono = ['csharp']
