@@ -59,7 +59,15 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         # moonbit removed from language matrix for now - causing CI failures
-        lang: [c, rust, teavm-java, go, csharp]
+        lang: [c, rust, teavm-java, go]
+        include:
+          # For now csharp doesn't work on macos, so only test ubuntu/linux.
+          # Note that if macos is added here then it should be added to `lang`
+          # above to get auto-matrix-ified by github actions
+          - os: ubuntu-latest
+            lang: csharp
+          - os: windows-latest
+            lang: csharp
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
@@ -73,7 +81,7 @@ jobs:
       if: matrix.lang == 'rust'
 
     - uses: ./.github/actions/install-wasi-sdk
-      if: matrix.lang == 'c' || (matrix.lang == 'csharp' && matrix.os != 'macos-latest')
+      if: matrix.lang == 'c' || matrix.lang == 'csharp'
 
     - name: Setup .NET
       uses: actions/setup-dotnet@v4

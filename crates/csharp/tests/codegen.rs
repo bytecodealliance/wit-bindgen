@@ -47,7 +47,7 @@ macro_rules! codegen_test {
 test_helpers::codegen_tests!();
 
 fn verify(dir: &Path, name: &str) {
-    #[cfg(all(feature = "aot", not(target_os = "macos")))]
+    #[cfg(feature = "aot")]
     aot_verify(dir, name);
 
     #[cfg(feature = "mono")]

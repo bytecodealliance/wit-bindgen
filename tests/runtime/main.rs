@@ -659,7 +659,7 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
     }
 
     #[cfg(feature = "csharp")]
-    if !cfg!(target_os = "macos") && !c_sharp.is_empty() {
+    if !c_sharp.is_empty() {
         let (resolve, world) = resolve_wit_dir(&dir);
         for path in c_sharp.iter() {
             let world_name = &resolve.worlds[world].name;
