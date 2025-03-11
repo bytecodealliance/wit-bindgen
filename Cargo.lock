@@ -2742,7 +2742,6 @@ dependencies = [
  "wit-bindgen-markdown",
  "wit-bindgen-moonbit",
  "wit-bindgen-rust",
- "wit-bindgen-teavm-java",
  "wit-bindgen-test",
  "wit-component",
  "wit-parser 0.227.1",
@@ -2848,19 +2847,6 @@ dependencies = [
  "syn",
  "wit-bindgen-core",
  "wit-bindgen-rust",
-]
-
-[[package]]
-name = "wit-bindgen-teavm-java"
-version = "0.40.0"
-dependencies = [
- "anyhow",
- "clap",
- "heck 0.5.0",
- "test-helpers",
- "wasm-metadata",
- "wit-bindgen-core",
- "wit-component",
 ]
 
 [[package]]
