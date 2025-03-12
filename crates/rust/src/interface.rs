@@ -224,11 +224,11 @@ unsafe fn _resource_new(val: *mut u8) -> u32
     #[cfg(target_arch = "wasm32")]
     {{
         #[link(wasm_import_module = "[export]{module}")]
-        extern "C" {{
+        unsafe extern "C" {{
             #[link_name = "[resource-new]{resource_name}"]
             fn new(_: *mut u8) -> u32;
         }}
-        new(val)
+        unsafe {{ new(val) }}
     }}
 }}
 
@@ -245,7 +245,7 @@ fn _resource_rep(handle: u32) -> *mut u8
     #[cfg(target_arch = "wasm32")]
     {{
         #[link(wasm_import_module = "[export]{module}")]
-        extern "C" {{
+        unsafe extern "C" {{
             #[link_name = "[resource-rep]{resource_name}"]
             fn rep(_: u32) -> *mut u8;
         }}
@@ -602,7 +602,7 @@ pub mod vtable{ordinal} {{
 
     #[cfg(target_arch = "wasm32")]
     #[link(wasm_import_module = "{module}")]
-    extern "C" {{
+    unsafe extern "C" {{
         #[link_name = "[future-new-{index}]{func_name}"]
         fn new() -> u32;
         #[link_name = "[future-cancel-write-{index}]{func_name}"]
@@ -784,7 +784,7 @@ pub mod vtable{ordinal} {{
 
     #[cfg(target_arch = "wasm32")]
     #[link(wasm_import_module = "{module}")]
-    extern "C" {{
+    unsafe extern "C" {{
         #[link_name = "[stream-new-{index}]{func_name}"]
         fn new() -> u32;
         #[link_name = "[stream-cancel-write-{index}]{func_name}"]
@@ -2472,7 +2472,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                         #[doc(hidden)]
                         pub unsafe fn from_handle(handle: u32) -> Self {{
                             Self {{
-                                handle: {resource}::from_handle(handle),
+                                handle: unsafe {{ {resource}::from_handle(handle) }},
                             }}
                         }}
 
@@ -2545,7 +2545,7 @@ impl {camel} {{
     #[doc(hidden)]
     pub unsafe fn from_handle(handle: u32) -> Self {{
         Self {{
-            handle: {resource}::from_handle(handle),
+            handle: unsafe {{ {resource}::from_handle(handle) }},
         }}
     }}
 
@@ -2578,7 +2578,7 @@ impl {camel} {{
     #[doc(hidden)]
     pub unsafe fn dtor<T: 'static>(handle: *mut u8) {{
         Self::type_guard::<T>();
-        let _ = {box_path}::from_raw(handle as *mut _{camel}Rep<T>);
+        let _ = unsafe {{ {box_path}::from_raw(handle as *mut _{camel}Rep<T>) }};
     }}
 
     fn as_ptr<T: Guest{camel}>(&self) -> *mut _{camel}Rep<T> {{
@@ -2637,12 +2637,12 @@ impl<'a> {camel}Borrow<'a>{{
                          #[cfg(target_arch = "wasm32")]
                          {{
                              #[link(wasm_import_module = "{wasm_import_module}")]
-                             extern "C" {{
+                             unsafe extern "C" {{
                                  #[link_name = "[resource-drop]{name}"]
                                  fn drop(_: u32);
                              }}
 
-                             drop(_handle);
+                             unsafe {{ drop(_handle) }};
                          }}
                      }}
                 }}

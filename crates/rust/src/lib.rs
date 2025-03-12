@@ -589,7 +589,7 @@ pub unsafe fn invalid_enum_discriminant<T>() -> T {
     if cfg!(debug_assertions) {
         panic!(\"invalid enum discriminant\")
     } else {
-        core::hint::unreachable_unchecked()
+        unsafe { core::hint::unreachable_unchecked() }
     }
 }
                     ",
