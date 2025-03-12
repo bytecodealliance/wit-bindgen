@@ -95,8 +95,8 @@ pub extern "wasm" fn free(position : Int) =
   #|(func (param i32) local.get 0 i32.const 8 i32.sub call $moonbit.decref)
 
 pub fn copy(dest : Int, src : Int) -> Unit {
-  let src_len = (load32(src - 12) >> 2) - 4
-  let dest_len = (load32(dest - 12) >> 2) - 4
+  let src_len = (load32(src - 12) & 0xFFFFFFFC) - 8
+  let dest_len = (load32(dest - 12) & 0xFFFFFFFC) - 8
   let min = if src_len < dest_len { src_len } else { dest_len }
   copy_inline(dest, src, min)
 }
@@ -107,8 +107,16 @@ extern "wasm" fn copy_inline(dest : Int, src : Int, len : Int) =
 pub extern "wasm" fn str2ptr(str : String) -> Int =
   #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.add)
 
-pub extern "wasm" fn ptr2str(ptr : Int) -> String =
-  #|(func (param i32) (result i32) local.get 0 i32.const 4 i32.sub i32.const 243 i32.store8 local.get 0 i32.const 8 i32.sub)
+extern "wasm" fn ptr2str_ffi(ptr : Int) -> String =
+  #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.sub)
+
+pub fn ptr2str(ptr : Int, len : Int) -> String {
+  let words = load32(ptr - 4) >> 8
+  let address = ptr - 8
+  store32(address + 4, (words << 8) | 243)
+  store8(address + words * 4 + 7, 3 - len * 2 % 4)
+  ptr2str_ffi(ptr)
+}
 
 pub extern "wasm" fn bytes2ptr(bytes : FixedArray[Byte]) -> Int =
   #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.add)
@@ -2258,8 +2266,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwrite!(
                     self.src,
                     "
-                    ignore({length})
-                    let {result} = {}ptr2str({address})
+                    let {result} = {}ptr2str({address}, {length})
                     ",
                     self.gen.qualify_package(FFI_DIR)
                 );
