@@ -2738,7 +2738,6 @@ dependencies = [
  "wit-bindgen-c",
  "wit-bindgen-core",
  "wit-bindgen-csharp",
- "wit-bindgen-go",
  "wit-bindgen-markdown",
  "wit-bindgen-moonbit",
  "wit-bindgen-rust",
@@ -2771,17 +2770,6 @@ dependencies = [
  "wit-bindgen-core",
  "wit-component",
  "wit-parser 0.227.1",
-]
-
-[[package]]
-name = "wit-bindgen-go"
-version = "0.40.0"
-dependencies = [
- "anyhow",
- "clap",
- "heck 0.5.0",
- "wit-bindgen-c",
- "wit-bindgen-core",
 ]
 
 [[package]]

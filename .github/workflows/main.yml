@@ -59,7 +59,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         # moonbit removed from language matrix for now - causing CI failures
-        lang: [c, rust, go, csharp]
+        lang: [c, rust, csharp]
         exclude:
           # For now csharp doesn't work on macos, so exclude it from testing.
           - os: macos-latest
@@ -97,15 +97,6 @@ jobs:
         "C:\Users\runneradmin\.moon\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
       shell: powershell
       if: matrix.os == 'windows-latest' && matrix.lang == 'moonbit'
-
-    - uses: actions/setup-go@v4
-      if: matrix.lang == 'go'
-      with:
-        go-version: '1.20'
-    - uses: acifani/setup-tinygo@v2
-      if: matrix.lang == 'go'
-      with:
-        tinygo-version: 0.31.0
 
     - run: |
         cargo test \

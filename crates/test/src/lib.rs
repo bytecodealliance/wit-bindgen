@@ -15,7 +15,6 @@ use wit_component::{ComponentEncoder, StringEncoding};
 mod c;
 mod config;
 mod custom;
-mod go;
 mod runner;
 mod rust;
 mod wat;
@@ -85,9 +84,6 @@ pub struct Opts {
 
     #[clap(flatten)]
     c: c::COpts,
-
-    #[clap(flatten)]
-    go: go::GoOpts,
 
     #[clap(flatten)]
     custom: custom::CustomOpts,
@@ -182,7 +178,6 @@ enum Language {
     Rust,
     C,
     Cpp,
-    Go,
     Wat,
     Custom(custom::Language),
 }
@@ -372,7 +367,6 @@ impl Runner<'_> {
             "rs" => Language::Rust,
             "c" => Language::C,
             "cpp" => Language::Cpp,
-            "go" => Language::Go,
             "wat" => Language::Wat,
             other => Language::Custom(custom::Language::lookup(self, other)?),
         };
@@ -1011,20 +1005,13 @@ trait LanguageMethods {
 }
 
 impl Language {
-    const ALL: &[Language] = &[
-        Language::Rust,
-        Language::C,
-        Language::Cpp,
-        Language::Go,
-        Language::Wat,
-    ];
+    const ALL: &[Language] = &[Language::Rust, Language::C, Language::Cpp, Language::Wat];
 
     fn obj(&self) -> &dyn LanguageMethods {
         match self {
             Language::Rust => &rust::Rust,
             Language::C => &c::C,
             Language::Cpp => &c::Cpp,
-            Language::Go => &go::Go,
             Language::Wat => &wat::Wat,
             Language::Custom(custom) => custom,
         }

@@ -47,11 +47,9 @@ enum Opt {
         args: Common,
     },
 
-    /// Generates bindings for TinyGo-based Go guest modules.
+    /// Generates bindings for TinyGo-based Go guest modules (Deprecated)
     #[cfg(feature = "go")]
     TinyGo {
-        #[clap(flatten)]
-        opts: wit_bindgen_go::Opts,
         #[clap(flatten)]
         args: Common,
     },
@@ -130,7 +128,9 @@ fn main() -> Result<()> {
         #[cfg(feature = "rust")]
         Opt::Rust { opts, args } => (opts.build(), args),
         #[cfg(feature = "go")]
-        Opt::TinyGo { opts, args } => (opts.build(), args),
+        Opt::TinyGo { args: _ } => {
+            bail!("Go bindgen has been moved to a separate repository. Please visit https://github.com/bytecodealliance/go-modules for the new Go bindings generator `wit-bindgen-go`.")
+        }
         #[cfg(feature = "csharp")]
         Opt::CSharp { opts, args } => (opts.build(), args),
         Opt::Test { opts } => return opts.run(std::env::args_os().nth(0).unwrap().as_ref()),
