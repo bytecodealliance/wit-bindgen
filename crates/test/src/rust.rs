@@ -142,7 +142,7 @@ path = 'lib.rs'
     }
 
     fn compile(&self, runner: &Runner<'_>, compile: &Compile) -> Result<()> {
-        let mut cmd = runner.rustc();
+        let mut cmd = runner.rustc(Edition::E2021);
 
         // If this rust target doesn't natively produce a component then place
         // the compiler output in a temporary location which is componentized
@@ -181,15 +181,21 @@ path = 'lib.rs'
     }
 
     fn verify(&self, runner: &Runner<'_>, verify: &Verify<'_>) -> Result<()> {
-        let mut cmd = runner.rustc();
         let bindings = verify
             .bindings_dir
             .join(format!("{}.rs", verify.world.to_snake_case()));
-        cmd.arg(&bindings)
-            .arg("--crate-type=rlib")
-            .arg("-o")
-            .arg(verify.artifacts_dir.join("tmp"));
-        runner.run_command(&mut cmd)?;
+        let test_edition = |edition: Edition| -> Result<()> {
+            let mut cmd = runner.rustc(edition);
+            cmd.arg(&bindings)
+                .arg("--crate-type=rlib")
+                .arg("-o")
+                .arg(verify.artifacts_dir.join("tmp"));
+            runner.run_command(&mut cmd)?;
+            Ok(())
+        };
+
+        test_edition(Edition::E2021)?;
+        test_edition(Edition::E2024)?;
 
         // If bindings are generated in `#![no_std]` mode then verify that it
         // compiles as such.
@@ -208,7 +214,7 @@ include!(env!("BINDINGS"));
 mod core {}
                 "#,
             )?;
-            let mut cmd = runner.rustc();
+            let mut cmd = runner.rustc(Edition::E2021);
             cmd.arg(&no_std_root)
                 .env("BINDINGS", &bindings)
                 .arg("--crate-type=rlib")
@@ -220,23 +226,31 @@ mod core {}
     }
 }
 
+enum Edition {
+    E2021,
+    E2024,
+}
+
 impl Runner<'_> {
-    fn rustc(&self) -> Command {
+    fn rustc(&self, edition: Edition) -> Command {
         let state = self.rust_state.as_ref().unwrap();
         let opts = &self.opts.rust;
         let mut cmd = Command::new("rustc");
-        cmd.arg("--edition=2021")
-            .arg(&format!(
-                "--extern=wit_bindgen={}",
-                state.wit_bindgen_rlib.display()
-            ))
-            .arg(&format!(
-                "--extern=futures={}",
-                state.futures_rlib.display()
-            ))
-            .arg("--target")
-            .arg(&opts.rust_target)
-            .arg("-Cdebuginfo=1");
+        cmd.arg(match edition {
+            Edition::E2021 => "--edition=2021",
+            Edition::E2024 => "--edition=2024",
+        })
+        .arg(&format!(
+            "--extern=wit_bindgen={}",
+            state.wit_bindgen_rlib.display()
+        ))
+        .arg(&format!(
+            "--extern=futures={}",
+            state.futures_rlib.display()
+        ))
+        .arg("--target")
+        .arg(&opts.rust_target)
+        .arg("-Cdebuginfo=1");
         for dep in state.wit_bindgen_deps.iter() {
             cmd.arg(&format!("-Ldependency={}", dep.display()));
         }

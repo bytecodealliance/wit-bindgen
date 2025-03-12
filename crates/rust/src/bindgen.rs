@@ -98,13 +98,13 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             "
                 #[cfg(target_arch = \"wasm32\")]
                 #[link(wasm_import_module = \"{module_name}\")]
-                extern \"C\" {{
+                unsafe extern \"C\" {{
                     #[link_name = \"{name}\"]
                     fn wit_import{tmp}{sig};
                 }}
 
                 #[cfg(not(target_arch = \"wasm32\"))]
-                extern \"C\" fn wit_import{tmp}{sig} {{ unreachable!() }}
+                unsafe extern \"C\" fn wit_import{tmp}{sig} {{ unreachable!() }}
             "
         );
         format!("wit_import{tmp}")
@@ -464,21 +464,21 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 let result = if is_own {
                     let name = self.r#gen.type_path(dealiased_resource, true);
-                    format!("{name}::from_handle({op} as u32)")
+                    format!("unsafe {{ {name}::from_handle({op} as u32) }}")
                 } else if self.r#gen.is_exported_resource(*resource) {
                     let name = resolve.types[*resource]
                         .name
                         .as_deref()
                         .unwrap()
                         .to_upper_camel_case();
-                    format!("{name}Borrow::lift({op} as u32 as usize)")
+                    format!("unsafe {{ {name}Borrow::lift({op} as u32 as usize) }}")
                 } else {
                     let tmp = format!("handle{}", self.tmp());
                     self.handle_decls.push(format!("let {tmp};"));
                     let name = self.r#gen.type_path(dealiased_resource, true);
                     format!(
                         "{{\n
-                            {tmp} = {name}::from_handle({op} as u32);
+                            {tmp} = unsafe {{ {name}::from_handle({op} as u32) }};
                             &{tmp}
                         }}"
                     )
@@ -509,8 +509,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     .unwrap();
                 let path = self.r#gen.path_to_root();
                 results.push(format!(
-                    "{async_support}::FutureReader::from_handle_and_vtable\
-                     ({op} as u32, &{path}wit_future::vtable{ordinal}::VTABLE)"
+                    "unsafe {{ {async_support}::FutureReader::from_handle_and_vtable\
+                     ({op} as u32, &{path}wit_future::vtable{ordinal}::VTABLE) }}"
                 ))
             }
 
@@ -897,10 +897,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.push_str("let ret = ");
                     results.push("ret".to_string());
                 }
+                self.push_str("unsafe { ");
                 self.push_str(&func);
                 self.push_str("(");
                 self.push_str(&operands.join(", "));
-                self.push_str(");\n");
+                self.push_str(") };\n");
             }
 
             Instruction::AsyncCallWasm { name, .. } => {
@@ -1027,7 +1028,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwriteln!(
                     self.src,
                     "\
-                            {func}({});
+                            unsafe {{ {func}({}) }};
                     ",
                     operands.join(", ")
                 );
