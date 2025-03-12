@@ -6,9 +6,9 @@ use wit_bindgen_core::{
     abi::{self, AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType},
     dealias, uwrite, uwriteln,
     wit_parser::{
-        Docs, Enum, Flags, FlagsRepr, Function, FunctionKind, Handle, Int, InterfaceId, Record,
-        Resolve, Result_, SizeAlign, Tuple, Type, TypeDef, TypeDefKind, TypeId, TypeOwner, Variant,
-        WorldId, WorldKey,
+        Alignment, ArchitectureSize, Docs, Enum, Flags, FlagsRepr, Function, FunctionKind, Handle,
+        Int, InterfaceId, Record, Resolve, Result_, SizeAlign, Tuple, Type, TypeDef, TypeDefKind,
+        TypeId, TypeOwner, Variant, WorldId, WorldKey,
     },
     Direction, Files, InterfaceGenerator as _, Ns, Source, WorldGenerator,
 };
@@ -280,8 +280,8 @@ pub struct MoonBit {
     export: HashMap<String, String>,
     export_ns: Ns,
     // return area allocation
-    return_area_size: usize,
-    return_area_align: usize,
+    return_area_size: ArchitectureSize,
+    return_area_align: Alignment,
 }
 
 impl MoonBit {
@@ -615,13 +615,13 @@ impl WorldGenerator for MoonBit {
             }}
             "
         );
-        if self.return_area_size != 0 {
+        if !self.return_area_size.is_empty() {
             uwriteln!(
                 &mut body,
                 "
                 let return_area : Int = {ffi_qualifier}malloc({})
                 ",
-                self.return_area_size,
+                self.return_area_size.size_wasm32(),
             );
         }
         files.push(
@@ -1006,6 +1006,7 @@ impl InterfaceGenerator<'_> {
             Type::F32 => "Float".into(),
             Type::F64 => "Double".into(),
             Type::String => "String".into(),
+            Type::ErrorContext => todo!("moonbit error context type name"),
             Type::Id(id) => {
                 let ty = &self.resolve.types[dealias(self.resolve, *id)];
                 match &ty.kind {
@@ -1114,11 +1115,11 @@ impl InterfaceGenerator<'_> {
             }
             _ => func.name.split(".").last().unwrap().to_moonbit_ident(),
         };
-        let type_name = match func.kind {
-            FunctionKind::Freestanding => "".into(),
-            FunctionKind::Method(ty) | FunctionKind::Constructor(ty) | FunctionKind::Static(ty) => {
+        let type_name = match func.kind.resource() {
+            Some(ty) => {
                 format!("{}::", self.type_name(&Type::Id(ty), true))
             }
+            None => "".into(),
         };
 
         let result_type = match &func.result {
@@ -1534,11 +1535,6 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
     fn type_stream(&mut self, id: TypeId, name: &str, ty: &Option<Type>, docs: &Docs) {
         _ = (id, name, ty, docs);
-        todo!()
-    }
-
-    fn type_error_context(&mut self, id: TypeId, name: &str, docs: &Docs) {
-        _ = (id, name, docs);
         todo!()
     }
 
@@ -2392,7 +2388,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 };
 
                 let name = match func.kind {
-                    FunctionKind::Freestanding => {
+                    FunctionKind::Freestanding | FunctionKind::AsyncFreestanding => {
                         format!(
                             "{}{}",
                             self.r#gen.qualify_package(&self.func_interface.to_string()),
@@ -2407,7 +2403,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             func.name.replace("[constructor]", "").to_moonbit_ident()
                         )
                     }
-                    FunctionKind::Method(ty) | FunctionKind::Static(ty) => {
+                    FunctionKind::Method(ty)
+                    | FunctionKind::Static(ty)
+                    | FunctionKind::AsyncMethod(ty)
+                    | FunctionKind::AsyncStatic(ty) => {
                         let name = self.gen.type_name(&Type::Id(ty), false);
                         format!(
                             "{}::{}",
@@ -2471,49 +2470,57 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             | Instruction::LengthLoad { offset } => results.push(format!(
                 "{}load32(({}) + {offset})",
                 self.gen.qualify_package(FFI_DIR),
-                operands[0]
+                operands[0],
+                offset = offset.size_wasm32()
             )),
 
             Instruction::I32Load8U { offset } => results.push(format!(
                 "{}load8_u(({}) + {offset})",
                 self.gen.qualify_package(FFI_DIR),
-                operands[0]
+                operands[0],
+                offset = offset.size_wasm32()
             )),
 
             Instruction::I32Load8S { offset } => results.push(format!(
                 "{}load8(({}) + {offset})",
                 self.gen.qualify_package(FFI_DIR),
-                operands[0]
+                operands[0],
+                offset = offset.size_wasm32()
             )),
 
             Instruction::I32Load16U { offset } => results.push(format!(
                 "{}load16_u(({}) + {offset})",
                 self.gen.qualify_package(FFI_DIR),
-                operands[0]
+                operands[0],
+                offset = offset.size_wasm32()
             )),
 
             Instruction::I32Load16S { offset } => results.push(format!(
                 "{}load16(({}) + {offset})",
                 self.gen.qualify_package(FFI_DIR),
-                operands[0]
+                operands[0],
+                offset = offset.size_wasm32()
             )),
 
             Instruction::I64Load { offset } => results.push(format!(
                 "{}load64(({}) + {offset})",
                 self.gen.qualify_package(FFI_DIR),
-                operands[0]
+                operands[0],
+                offset = offset.size_wasm32()
             )),
 
             Instruction::F32Load { offset } => results.push(format!(
                 "{}loadf32(({}) + {offset})",
                 self.gen.qualify_package(FFI_DIR),
-                operands[0]
+                operands[0],
+                offset = offset.size_wasm32()
             )),
 
             Instruction::F64Load { offset } => results.push(format!(
                 "{}loadf64(({}) + {offset})",
                 self.gen.qualify_package(FFI_DIR),
-                operands[0]
+                operands[0],
+                offset = offset.size_wasm32()
             )),
 
             Instruction::I32Store { offset }
@@ -2523,7 +2530,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 "{}store32(({}) + {offset}, {})",
                 self.gen.qualify_package(FFI_DIR),
                 operands[1],
-                operands[0]
+                operands[0],
+                offset = offset.size_wasm32()
             ),
 
             Instruction::I32Store8 { offset } => uwriteln!(
@@ -2531,7 +2539,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 "{}store8(({}) + {offset}, {})",
                 self.gen.qualify_package(FFI_DIR),
                 operands[1],
-                operands[0]
+                operands[0],
+                offset = offset.size_wasm32()
             ),
 
             Instruction::I32Store16 { offset } => uwriteln!(
@@ -2539,7 +2548,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 "{}store16(({}) + {offset}, {})",
                 self.gen.qualify_package(FFI_DIR),
                 operands[1],
-                operands[0]
+                operands[0],
+                offset = offset.size_wasm32()
             ),
 
             Instruction::I64Store { offset } => uwriteln!(
@@ -2547,7 +2557,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 "{}store64(({}) + {offset}, {})",
                 self.gen.qualify_package(FFI_DIR),
                 operands[1],
-                operands[0]
+                operands[0],
+                offset = offset.size_wasm32()
             ),
 
             Instruction::F32Store { offset } => uwriteln!(
@@ -2555,7 +2566,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 "{}storef32(({}) + {offset}, {})",
                 self.gen.qualify_package(FFI_DIR),
                 operands[1],
-                operands[0]
+                operands[0],
+                offset = offset.size_wasm32()
             ),
 
             Instruction::F64Store { offset } => uwriteln!(
@@ -2563,7 +2575,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 "{}storef64(({}) + {offset}, {})",
                 self.gen.qualify_package(FFI_DIR),
                 operands[1],
-                operands[0]
+                operands[0],
+                offset = offset.size_wasm32()
             ),
             // TODO: see what we can do with align
             Instruction::Malloc { size, .. } => {
@@ -2571,7 +2584,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.src,
                     "{}malloc({})",
                     self.gen.qualify_package(FFI_DIR),
-                    size
+                    size.size_wasm32()
                 )
             }
 
@@ -2666,8 +2679,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.extend(operands.iter().take(*amt).map(|v| v.clone()));
             }
 
-            Instruction::AsyncMalloc { .. }
-            | Instruction::AsyncPostCallInterface { .. }
+            Instruction::AsyncPostCallInterface { .. }
             | Instruction::AsyncCallReturn { .. }
             | Instruction::FutureLower { .. }
             | Instruction::FutureLift { .. }
@@ -2679,15 +2691,19 @@ impl Bindgen for FunctionBindgen<'_, '_> {
         }
     }
 
-    fn return_pointer(&mut self, size: usize, align: usize) -> String {
+    fn return_pointer(&mut self, size: ArchitectureSize, align: Alignment) -> String {
         if self.gen.direction == Direction::Import {
             let ffi_qualifier = self.gen.qualify_package(FFI_DIR);
             let address = self.locals.tmp("return_area");
-            uwriteln!(self.src, "let {address} = {ffi_qualifier}malloc({})", size,);
+            uwriteln!(
+                self.src,
+                "let {address} = {ffi_qualifier}malloc({})",
+                size.size_wasm32(),
+            );
             self.cleanup.push(Cleanup::Memory {
                 address: address.clone(),
-                size: size.to_string(),
-                align,
+                size: size.size_wasm32().to_string(),
+                align: align.align_wasm32(),
             });
             address
         } else {

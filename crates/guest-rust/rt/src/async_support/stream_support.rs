@@ -35,12 +35,30 @@ pub struct StreamVtable<T> {
         future: u32,
         values: &mut [MaybeUninit<T>],
     ) -> Pin<Box<dyn Future<Output = Option<Result<usize, ErrorContext>>> + '_>>,
-    pub cancel_write: fn(future: u32),
-    pub cancel_read: fn(future: u32),
-    pub close_writable: fn(future: u32, err_ctx: u32),
-    pub close_readable: fn(future: u32),
+    pub cancel_write: unsafe extern "C" fn(future: u32) -> u32,
+    pub cancel_read: unsafe extern "C" fn(future: u32) -> u32,
+    pub close_writable: unsafe extern "C" fn(future: u32, err_ctx: u32),
+    pub close_readable: unsafe extern "C" fn(future: u32, err_ctx: u32),
+    pub new: unsafe extern "C" fn() -> u32,
 }
 
+/// Helper function to create a new read/write pair for a component model
+/// stream.
+pub unsafe fn stream_new<T>(
+    vtable: &'static StreamVtable<T>,
+) -> (StreamWriter<T>, StreamReader<T>) {
+    let handle = unsafe { (vtable.new)() };
+    super::with_entry(handle, |entry| match entry {
+        Entry::Vacant(entry) => {
+            entry.insert(Handle::LocalOpen);
+        }
+        Entry::Occupied(_) => unreachable!(),
+    });
+    (
+        StreamWriter::new(handle, vtable),
+        StreamReader::new(handle, vtable),
+    )
+}
 struct CancelWriteOnDrop<T: 'static> {
     handle: Option<u32>,
     vtable: &'static StreamVtable<T>,
@@ -60,7 +78,11 @@ impl<T> Drop for CancelWriteOnDrop<T> {
                     Handle::LocalReady(..) => {
                         entry.insert(Handle::LocalOpen);
                     }
-                    Handle::Write => (self.vtable.cancel_write)(handle),
+                    Handle::Write => unsafe {
+                        // TODO: spec-wise this can return `BLOCKED` which seems
+                        // bad?
+                        (self.vtable.cancel_write)(handle);
+                    },
                 },
             });
         }
@@ -221,18 +243,20 @@ impl<T> Drop for StreamWriter<T> {
                     entry.insert(Handle::LocalClosed);
                 }
                 Handle::Read => unreachable!(),
-                Handle::Write | Handle::LocalClosed => {
+                Handle::Write | Handle::LocalClosed => unsafe {
                     entry.remove();
                     (self.vtable.close_writable)(self.handle, 0);
-                }
+                },
                 Handle::WriteClosedErr(_) => match entry.remove() {
                     // Care is taken  to avoid dropping the ErrorContext before close_writable is called.
                     // If the error context is dropped prematurely, the component may garbage collect
                     // the error context before it can be used/referenced by close_writable().
-                    Handle::WriteClosedErr(Some(e)) => {
+                    Handle::WriteClosedErr(Some(e)) => unsafe {
                         (self.vtable.close_writable)(self.handle, e.handle)
-                    }
-                    Handle::WriteClosedErr(None) => (self.vtable.close_writable)(self.handle, 0),
+                    },
+                    Handle::WriteClosedErr(None) => unsafe {
+                        (self.vtable.close_writable)(self.handle, 0)
+                    },
                     _ => unreachable!(),
                 },
             },
@@ -259,7 +283,11 @@ impl<T> Drop for CancelReadOnDrop<T> {
                     Handle::LocalWaiting(_) => {
                         entry.insert(Handle::LocalOpen);
                     }
-                    Handle::Read => (self.vtable.cancel_read)(handle),
+                    Handle::Read => unsafe {
+                        // TODO: spec-wise this can return `BLOCKED` which seems
+                        // bad?
+                        (self.vtable.cancel_read)(handle);
+                    },
                 },
             });
         }
@@ -457,10 +485,12 @@ impl<T> Drop for StreamReader<T> {
                         Handle::LocalOpen | Handle::LocalWaiting(_) => {
                             entry.insert(Handle::LocalClosed);
                         }
-                        Handle::Read | Handle::LocalClosed => {
+                        Handle::Read | Handle::LocalClosed => unsafe {
                             entry.remove();
-                            (self.vtable.close_readable)(handle);
-                        }
+                            // TODO: expose `0` here as an error context in the
+                            // API (or auto-fill-in? unsure).
+                            (self.vtable.close_readable)(handle, 0);
+                        },
                         Handle::Write | Handle::WriteClosedErr(_) => unreachable!(),
                     },
                 });

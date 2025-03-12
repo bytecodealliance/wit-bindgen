@@ -194,7 +194,7 @@ impl Types {
                 info = self.optional_type_info(resolve, r.ok.as_ref());
                 info |= self.optional_type_info(resolve, r.err.as_ref());
             }
-            TypeDefKind::Future(_) | TypeDefKind::Stream(_) | TypeDefKind::ErrorContext => {
+            TypeDefKind::Future(_) | TypeDefKind::Stream(_) => {
                 // These are all u32 handles regardless of payload type, so no
                 // need to recurse.
                 info.has_resource = true;
@@ -210,6 +210,7 @@ impl Types {
         let mut info = TypeInfo::default();
         match ty {
             Type::String => info.has_list = true,
+            Type::ErrorContext => info.has_resource = true,
             Type::Id(id) => return self.type_id_info(resolve, *id),
             _ => {}
         }

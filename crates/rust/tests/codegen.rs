@@ -388,13 +388,26 @@ mod custom_derives {
         inline: "
             package my:inline;
 
+            interface blag {
+                resource input-stream {
+                    read: func(len: u64) -> list<u8>;
+                }
+            }
+
             interface blah {
+                use blag.{input-stream};
                 record foo {
                     field1: string,
                     field2: list<u32>
                 }
 
                 bar: func(cool: foo);
+
+                variant ignoreme {
+                    stream-type(input-stream),
+                }
+
+                barry: func(warm: ignoreme);
             }
 
             world baz {
@@ -405,9 +418,10 @@ mod custom_derives {
         // Clone is included by default almost everywhere, so include it here to make sure it
         // doesn't conflict
         additional_derives: [serde::Serialize, serde::Deserialize, Hash, Clone, PartialEq, Eq],
+        additional_derives_ignore: ["ignoreme"],
     });
 
-    use exports::my::inline::blah::Foo;
+    use exports::my::inline::blah::{Foo, Ignoreme};
 
     struct Component;
 
@@ -422,6 +436,11 @@ mod custom_derives {
             // Check that the attributes from an external crate actually work. If they don't work,
             // compilation will fail here
             let _ = serde_json::to_string(&cool);
+        }
+
+        fn barry(warm: Ignoreme) {
+            // Compilation would fail if serde::Deserialize was applied to Ignoreme
+            let _ = warm;
         }
     }
 

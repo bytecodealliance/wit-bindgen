@@ -115,6 +115,7 @@ impl TinyGo {
             Type::F32 => "float".into(),
             Type::F64 => "double".into(),
             Type::Char => "uint32_t".into(),
+            Type::ErrorContext => todo!(),
             Type::String => {
                 format!(
                     "{namespace}_string_t",

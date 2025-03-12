@@ -248,6 +248,15 @@ pub struct Opts {
     #[cfg_attr(feature = "clap", arg(long = "additional_derive_attribute", short = 'd', default_values_t = Vec::<String>::new()))]
     pub additional_derive_attributes: Vec<String>,
 
+    /// Variants and records to ignore when applying additional derive attributes.
+    ///
+    /// These names are specified as they are listed in the wit file, i.e. in kebab case.
+    /// This feature allows some variants and records to use types for which adding traits will cause
+    /// compilation to fail, such as serde::Deserialize on wasi:io/streams.
+    ///
+    #[cfg_attr(feature = "clap", arg(long = "additional_derive_ignore", default_values_t = Vec::<String>::new()))]
+    pub additional_derive_ignore: Vec<String>,
+
     /// Remapping of wit interface and type names to Rust module names and types.
     ///
     /// Argument must be of the form `k=v` and this option can be passed
@@ -341,8 +350,8 @@ impl RustWasm {
             r#gen: self,
             sizes,
             resolve,
-            return_pointer_area_size: 0,
-            return_pointer_area_align: 0,
+            return_pointer_area_size: Default::default(),
+            return_pointer_area_align: Default::default(),
             needs_runtime_module: false,
         }
     }
@@ -479,7 +488,7 @@ pub mod wit_future {{
 
     #[doc(hidden)]
     pub trait FuturePayload: Unpin + Sized + 'static {{
-       fn new() -> (u32, &'static {async_support}::FutureVtable<Self>);
+        const VTABLE: &'static {async_support}::FutureVtable<Self>;
     }}"
             ));
             for code in self.future_payloads.values() {
@@ -489,17 +498,7 @@ pub mod wit_future {{
                 "\
     /// Creates a new Component Model `future` with the specified payload type.
     pub fn new<T: FuturePayload>() -> ({async_support}::FutureWriter<T>, {async_support}::FutureReader<T>) {{
-        let (handle, vtable) = T::new();
-        {async_support}::with_entry(handle, |entry| match entry {{
-            ::std::collections::hash_map::Entry::Vacant(entry) => {{
-                entry.insert({async_support}::Handle::LocalOpen);
-            }}
-            ::std::collections::hash_map::Entry::Occupied(_) => unreachable!(),
-        }});
-        (
-            {async_support}::FutureWriter::new(handle, vtable),
-            {async_support}::FutureReader::new(handle, vtable),
-        )
+        unsafe {{ {async_support}::future_new::<T>(T::VTABLE) }}
     }}
 }}
                 ",
@@ -514,7 +513,7 @@ pub mod wit_stream {{
     #![allow(dead_code, unused_variables, clippy::all)]
 
     pub trait StreamPayload: Unpin + Sized + 'static {{
-       fn new() -> (u32, &'static {async_support}::StreamVtable<Self>);
+        const VTABLE: &'static {async_support}::StreamVtable<Self>;
     }}"
             ));
             for code in self.stream_payloads.values() {
@@ -524,17 +523,7 @@ pub mod wit_stream {{
                 &format!("\
     /// Creates a new Component Model `stream` with the specified payload type.
     pub fn new<T: StreamPayload>() -> ({async_support}::StreamWriter<T>, {async_support}::StreamReader<T>) {{
-        let (handle, vtable) = T::new();
-        {async_support}::with_entry(handle, |entry| match entry {{
-            ::std::collections::hash_map::Entry::Vacant(entry) => {{
-                entry.insert({async_support}::Handle::LocalOpen);
-            }}
-            ::std::collections::hash_map::Entry::Occupied(_) => unreachable!(),
-        }});
-        (
-            {async_support}::StreamWriter::new(handle, vtable),
-            {async_support}::StreamReader::new(handle, vtable),
-        )
+        unsafe {{ {async_support}::stream_new::<T>(T::VTABLE) }}
     }}
 }}
                 "),
@@ -1050,6 +1039,13 @@ impl WorldGenerator for RustWasm {
                 self.opts.additional_derive_attributes
             );
         }
+        if !self.opts.additional_derive_ignore.is_empty() {
+            uwriteln!(
+                self.src_preamble,
+                "//   * additional derives ignored {:?}",
+                self.opts.additional_derive_ignore
+            );
+        }
         for (k, v) in self.opts.with.iter() {
             uwriteln!(self.src_preamble, "//   * with {k:?} = {v}");
         }
@@ -1438,12 +1434,10 @@ fn group_by_resource<'a>(
 ) -> BTreeMap<Option<TypeId>, Vec<&'a Function>> {
     let mut by_resource = BTreeMap::<_, Vec<_>>::new();
     for func in funcs {
-        match &func.kind {
-            FunctionKind::Freestanding => by_resource.entry(None).or_default().push(func),
-            FunctionKind::Method(ty) | FunctionKind::Static(ty) | FunctionKind::Constructor(ty) => {
-                by_resource.entry(Some(*ty)).or_default().push(func);
-            }
-        }
+        by_resource
+            .entry(func.kind.resource())
+            .or_default()
+            .push(func);
     }
     by_resource
 }

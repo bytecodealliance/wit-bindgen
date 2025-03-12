@@ -177,6 +177,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                     {lower_name}.len = C.size_t(len({param}))"
                 );
             }
+            Type::ErrorContext => todo!("impl error-context"),
             Type::Id(id) => {
                 let ty = &self.interface.resolve.types[*id]; // receive type
 
@@ -307,7 +308,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                     }
                     TypeDefKind::Future(_) => todo!("impl future"),
                     TypeDefKind::Stream(_) => todo!("impl stream"),
-                    TypeDefKind::ErrorContext => todo!("impl error-context"),
                     TypeDefKind::Resource => todo!("impl resource"),
                     TypeDefKind::Handle(h) => {
                         match self.interface.direction {
@@ -417,6 +417,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                         value = self.interface.get_ty(ty),
                     );
             }
+            Type::ErrorContext => todo!("impl error-context"),
             Type::Id(id) => {
                 let ty = &self.interface.resolve.types[*id]; // receive type
                 match &ty.kind {
@@ -598,7 +599,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                     }
                     TypeDefKind::Future(_) => todo!("impl future"),
                     TypeDefKind::Stream(_) => todo!("impl stream"),
-                    TypeDefKind::ErrorContext => todo!("impl error-context"),
                     TypeDefKind::Resource => todo!("impl resource"),
                     TypeDefKind::Handle(h) => {
                         match self.interface.direction {
