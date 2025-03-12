@@ -1,0 +1,19 @@
+//@ default-bindgen-args = false
+
+// Note that default bindgen args, where Rust uses `--generate-all`, is
+// specifically disabled for this test as that's what's being tested here.
+
+package foo:bar;
+
+world test {
+    export foo:baz/a;
+}
+world runner {
+    import foo:baz/a;
+}
+
+package foo:baz {
+  interface a {
+      x: func();
+  }
+}

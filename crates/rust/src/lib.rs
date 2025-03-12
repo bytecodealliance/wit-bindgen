@@ -180,7 +180,7 @@ fn parse_async(s: &str) -> Result<AsyncConfig, String> {
 }
 
 #[derive(Default, Debug, Clone)]
-#[cfg_attr(feature = "clap", derive(clap::Args))]
+#[cfg_attr(feature = "clap", derive(clap::Parser))]
 pub struct Opts {
     /// Whether or not a formatter is executed to format generated code.
     #[cfg_attr(feature = "clap", arg(long))]
@@ -245,7 +245,7 @@ pub struct Opts {
     /// specified multiple times to add multiple attributes.
     ///
     /// These derive attributes will be added to any generated structs or enums
-    #[cfg_attr(feature = "clap", arg(long = "additional_derive_attribute", short = 'd', default_values_t = Vec::<String>::new()))]
+    #[cfg_attr(feature = "clap", arg(long, short = 'd'))]
     pub additional_derive_attributes: Vec<String>,
 
     /// Variants and records to ignore when applying additional derive attributes.
@@ -254,7 +254,7 @@ pub struct Opts {
     /// This feature allows some variants and records to use types for which adding traits will cause
     /// compilation to fail, such as serde::Deserialize on wasi:io/streams.
     ///
-    #[cfg_attr(feature = "clap", arg(long = "additional_derive_ignore", default_values_t = Vec::<String>::new()))]
+    #[cfg_attr(feature = "clap", arg(long))]
     pub additional_derive_ignore: Vec<String>,
 
     /// Remapping of wit interface and type names to Rust module names and types.

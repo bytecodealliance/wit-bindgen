@@ -1,0 +1,31 @@
+package my:inline;
+
+interface blag {
+  resource input-stream {
+    read: func(len: u64) -> list<u8>;
+  }
+}
+
+interface blah {
+    use blag.{input-stream};
+    record foo {
+        field1: string,
+        field2: list<u32>
+    }
+
+    bar: func(cool: foo);
+
+    variant ignoreme {
+        stream-type(input-stream),
+    }
+
+    barry: func(warm: ignoreme);
+}
+
+world test {
+    export blag;
+    export blah;
+}
+world runner {
+    import blah;
+}

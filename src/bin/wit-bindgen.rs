@@ -62,6 +62,12 @@ enum Opt {
         #[clap(flatten)]
         args: Common,
     },
+
+    // doc-comments are present on `wit_bindgen_test::Opts` for clap to use.
+    Test {
+        #[clap(flatten)]
+        opts: wit_bindgen_test::Opts,
+    },
 }
 
 #[derive(Debug, Parser)]
@@ -127,6 +133,7 @@ fn main() -> Result<()> {
         }
         #[cfg(feature = "csharp")]
         Opt::CSharp { opts, args } => (opts.build(), args),
+        Opt::Test { opts } => return opts.run(std::env::args_os().nth(0).unwrap().as_ref()),
     };
 
     gen_world(generator, &opt, &mut files).map_err(attach_with_context)?;

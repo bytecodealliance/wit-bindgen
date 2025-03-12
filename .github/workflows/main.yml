@@ -71,13 +71,12 @@ jobs:
         submodules: true
     - name: Install Rust
       run: rustup update stable --no-self-update && rustup default stable
-    - run: rustup target add wasm32-wasip1
+    - run: rustup target add wasm32-wasip1 wasm32-wasip2
 
     - run: rustup target add wasm32-unknown-unknown
       if: matrix.lang == 'rust'
 
     - uses: ./.github/actions/install-wasi-sdk
-      if: matrix.lang == 'c' || matrix.lang == 'csharp'
 
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
@@ -106,6 +105,14 @@ jobs:
           --no-default-features \
           --features ${{ matrix.lang }} \
           --release
+    - run: |
+        cargo run test --languages rust,${{ matrix.lang }} tests/codegen \
+          --artifacts target/artifacts \
+          --rust-wit-bindgen-path ./crates/guest-rust
+    - run: |
+        cargo run test --languages rust,${{ matrix.lang }} tests/runtime-new \
+          --artifacts target/artifacts \
+          --rust-wit-bindgen-path ./crates/guest-rust
 
   test_unit:
     name: Crate Unit Tests

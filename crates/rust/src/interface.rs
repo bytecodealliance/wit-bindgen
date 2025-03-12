@@ -477,7 +477,7 @@ macro_rules! {macro_name} {{
         let module = format!(
             "\
                 {docs}
-                #[allow(dead_code, unused_imports, clippy::all)]
+                #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
                 pub mod {snake} {{
                     {used_static}
                     {module}

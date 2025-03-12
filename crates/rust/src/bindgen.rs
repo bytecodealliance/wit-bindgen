@@ -302,7 +302,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             self.r#gen.return_pointer_area_align = self.r#gen.return_pointer_area_align.max(align);
             uwriteln!(
                 self.src,
-                "let ptr{tmp} = _RET_AREA.0.as_mut_ptr().cast::<u8>();"
+                "let ptr{tmp} = (&raw mut _RET_AREA.0).cast::<u8>();"
             );
         }
         format!("ptr{}", tmp)
