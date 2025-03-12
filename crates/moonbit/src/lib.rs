@@ -86,8 +86,6 @@ pub fn malloc(size : Int) -> Int {
   let words = size / 4 + 1
   let address = malloc_inline(8 + words * 4)
   store32(address, 1)
-  store32(address + 4, (words << 8) | 246)
-  store8(address + words * 4 + 7, 3 - size % 4)
   address + 8
 }
 
@@ -111,7 +109,7 @@ extern "wasm" fn ptr2str_ffi(ptr : Int) -> String =
   #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.sub)
 
 pub fn ptr2str(ptr : Int, len : Int) -> String {
-  let words = load32(ptr - 4) >> 8
+  let words = len * 2 / 4 + 1
   let address = ptr - 8
   store32(address + 4, (words << 8) | 243)
   store8(address + words * 4 + 7, 3 - len * 2 % 4)
@@ -121,8 +119,16 @@ pub fn ptr2str(ptr : Int, len : Int) -> String {
 pub extern "wasm" fn bytes2ptr(bytes : FixedArray[Byte]) -> Int =
   #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.add)
 
-pub extern "wasm" fn ptr2bytes(ptr : Int, _len : Int) -> FixedArray[Byte] =
+extern "wasm" fn ptr2bytes_ffi(ptr : Int) -> FixedArray[Byte] =
   #|(func (param i32) (param i32) (result i32) local.get 0 i32.const 8 i32.sub)
+
+pub fn ptr2bytes(ptr : Int, len : Int) -> FixedArray[Byte] {
+  let words = len / 4 + 1
+  let address = ptr - 8
+  store32(address + 4, (words << 8) | 246)
+  store8(address + words * 4 + 7, 3 - len % 4)
+  ptr2bytes_ffi(ptr)
+}
 
 pub extern "wasm" fn uint_array2ptr(array : FixedArray[UInt]) -> Int =
   #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.add)
