@@ -121,7 +121,6 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
     let mut rust = Vec::new();
     let mut c = Vec::new();
     let mut java = Vec::new();
-    let mut go = Vec::new();
     let mut c_sharp: Vec<PathBuf> = Vec::new();
     for file in dir.read_dir()? {
         let path = file?.path();
@@ -129,7 +128,12 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
             Some("c") => c.push(path),
             Some("java") => java.push(path),
             Some("rs") => rust.push(path),
-            Some("go") => go.push(path),
+            Some("go") => {
+                // Go implementation has been moved to a separate repository
+                println!(
+                    "Skipping Go test as Go implementation has been moved to a separate repository"
+                );
+            }
             Some("cs") => c_sharp.push(path),
             _ => {}
         }
@@ -263,87 +267,6 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
                 result.push(component_path);
             }
         }
-    }
-
-    // FIXME: need to fix flaky Go test
-    #[cfg(feature = "go")]
-    if !go.is_empty() && name != "flavorful" {
-        let (resolve, world) = resolve_wit_dir(&dir);
-        let world_name = &resolve.worlds[world].name;
-        let out_dir = out_dir.join(format!("go-{}", world_name));
-        let snake = world_name.replace("-", "_");
-        drop(fs::remove_dir_all(&out_dir));
-
-        let mut files = Default::default();
-        wit_bindgen_go::Opts::default()
-            .build()
-            .generate(&resolve, world, &mut files)
-            .unwrap();
-        let gen_dir = out_dir.join("gen");
-        fs::create_dir_all(&gen_dir).unwrap();
-        for (file, contents) in files.iter() {
-            let dst = gen_dir.join(file);
-            fs::write(dst, contents).unwrap();
-        }
-        for go_impl in &go {
-            fs::copy(&go_impl, out_dir.join(format!("{snake}.go"))).unwrap();
-        }
-
-        let go_mod = format!("module wit_{snake}_go\n\ngo 1.20");
-        fs::write(out_dir.join("go.mod"), go_mod).unwrap();
-
-        let out_wasm = out_dir.join("go.wasm");
-
-        let mut cmd = Command::new("tinygo");
-        cmd.arg("build");
-        cmd.arg("-target=wasi");
-        cmd.arg("-o");
-        cmd.arg(&out_wasm);
-        cmd.arg(format!("{snake}.go"));
-        cmd.current_dir(&out_dir);
-        let command = format!("{cmd:?}");
-        let output = match cmd.output() {
-            Ok(output) => output,
-            Err(e) => panic!("failed to spawn compiler: {e}; command was `{command}`"),
-        };
-
-        if !output.status.success() {
-            println!("dir: {}", out_dir.display());
-            println!("status: {}", output.status);
-            println!("stdout: ------------------------------------------");
-            println!("{}", String::from_utf8_lossy(&output.stdout));
-            println!("stderr: ------------------------------------------");
-            println!("{}", String::from_utf8_lossy(&output.stderr));
-            panic!("failed to compile");
-        }
-
-        // Translate the canonical ABI module into a component.
-
-        let mut module = fs::read(&out_wasm).expect("failed to read wasm file");
-        let encoded = wit_component::metadata::encode(&resolve, world, StringEncoding::UTF8, None)?;
-
-        let section = wasm_encoder::CustomSection {
-            name: Cow::Borrowed("component-type"),
-            data: Cow::Borrowed(&encoded),
-        };
-        module.push(section.id());
-        section.encode(&mut module);
-
-        let component = ComponentEncoder::default()
-            .module(module.as_slice())
-            .expect("pull custom sections from module")
-            .validate(true)
-            .adapter("wasi_snapshot_preview1", &wasi_adapter)
-            .expect("adapter failed to get loaded")
-            .encode()
-            .expect(&format!(
-                "module {:?} can't be translated to a component",
-                out_wasm
-            ));
-        let component_path = out_wasm.with_extension("component.wasm");
-        fs::write(&component_path, component).expect("write component to disk");
-
-        result.push(component_path);
     }
 
     #[cfg(feature = "csharp-mono")]
