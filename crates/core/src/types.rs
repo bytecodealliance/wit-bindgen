@@ -198,6 +198,10 @@ impl Types {
                 // These are all u32 handles regardless of payload type, so no
                 // need to recurse.
                 info.has_resource = true;
+
+                // Flag these as being onwed handles as lowering these values
+                // should use the same ownership semantics as `own<T>`
+                info.has_own_handle = true;
             }
             TypeDefKind::Unknown => unreachable!(),
         }
