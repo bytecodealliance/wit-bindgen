@@ -86,20 +86,14 @@ pub fn malloc(size : Int) -> Int {
   let words = size / 4 + 1
   let address = malloc_inline(8 + words * 4)
   store32(address, 1)
+  store32(address + 4, (words << 8) | 246)
   address + 8
 }
 
 pub extern "wasm" fn free(position : Int) =
   #|(func (param i32) local.get 0 i32.const 8 i32.sub call $moonbit.decref)
 
-pub fn copy(dest : Int, src : Int) -> Unit {
-  let src_len = (load32(src - 12) & 0xFFFFFFFC) - 8
-  let dest_len = (load32(dest - 12) & 0xFFFFFFFC) - 8
-  let min = if src_len < dest_len { src_len } else { dest_len }
-  copy_inline(dest, src, min)
-}
-
-extern "wasm" fn copy_inline(dest : Int, src : Int, len : Int) =
+extern "wasm" fn copy(dest : Int, src : Int, len : Int) =
   #|(func (param i32) (param i32) (param i32) local.get 0 local.get 1 local.get 2 memory.copy)
 
 pub extern "wasm" fn str2ptr(str : String) -> Int =
@@ -210,13 +204,13 @@ pub fn cabi_realloc(
         return malloc(dst_size)
     }}
     // free
-    if dst_size <= 0 {{
+    if dst_size == 0 {{
         free(src_offset)
         return 0
     }}
     // realloc
     let dst = malloc(dst_size)
-    copy(dst, src_offset)
+    copy(dst, src_offset, if src_size < dst_size { src_size } else { dst_size })
     free(src_offset)
     dst
 }}
