@@ -330,7 +330,7 @@ impl<T> StreamReader<T> {
     }
 
     #[doc(hidden)]
-    pub fn from_handle_and_vtable(handle: u32, vtable: &'static StreamVtable<T>) -> Self {
+    pub unsafe fn from_handle_and_vtable(handle: u32, vtable: &'static StreamVtable<T>) -> Self {
         super::with_entry(handle, |entry| match entry {
             Entry::Vacant(entry) => {
                 entry.insert(Handle::Read);

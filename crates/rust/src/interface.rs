@@ -940,12 +940,12 @@ pub mod vtable{ordinal} {{
             self.src,
             "\
                 #[doc(hidden)]
-                #[allow(non_snake_case)]
+                #[allow(non_snake_case, unused_unsafe)]
                 pub unsafe fn _export_{name_snake}_cabi<T: {trait_name}>\
             ",
         );
         let params = self.print_export_sig(func, async_);
-        self.push_str(" {");
+        self.push_str(" { unsafe {");
 
         if !self.r#gen.opts.disable_run_ctors_once_workaround {
             let run_ctors_once = self.path_to_run_ctors_once();
@@ -1004,7 +1004,7 @@ pub mod vtable{ordinal} {{
             self.src.push_str("\n");
         }
         self.src.push_str(&String::from(src));
-        self.src.push_str("}\n");
+        self.src.push_str("} }\n");
 
         if async_ {
             let async_support = self.r#gen.async_support_path();
@@ -1030,7 +1030,7 @@ pub mod vtable{ordinal} {{
                 "
             );
             let params = self.print_post_return_sig(func);
-            self.src.push_str("{\n");
+            self.src.push_str("{ unsafe {\n");
 
             let mut f = FunctionBindgen::new(self, params, async_, self.wasm_import_module, false);
             abi::post_return(f.r#gen.resolve, func, &mut f, async_);
@@ -1043,7 +1043,7 @@ pub mod vtable{ordinal} {{
             assert!(!needs_cleanup_list);
             assert!(handle_decls.is_empty());
             self.src.push_str(&String::from(src));
-            self.src.push_str("}\n");
+            self.src.push_str("} }\n");
         }
     }
 
@@ -1228,6 +1228,7 @@ pub mod vtable{ordinal} {{
                 sig.self_arg = Some("&self".into());
                 sig.self_is_first_param = true;
             }
+            self.src.push_str("#[allow(unused_variables)]\n");
             self.print_signature(func, true, &sig);
             self.src.push_str("{ unreachable!() }\n");
         }
@@ -1306,6 +1307,10 @@ pub mod vtable{ordinal} {{
         self.rustdoc_params(&func.params, "Parameters");
         // TODO: re-add this when docs are back
         // self.rustdoc_params(&func.results, "Return");
+
+        // TODO: should probably return `impl Future` in traits instead of
+        // having an `async fn` but that'll require more plumbing here.
+        self.push_str("#[allow(async_fn_in_trait)]\n");
 
         if !sig.private {
             self.push_str("pub ");
@@ -2717,7 +2722,7 @@ impl<'a> {camel}Borrow<'a>{{
                     #[doc(hidden)]
                     pub unsafe fn _lift(val: {repr}) -> {name} {{
                         if !cfg!(debug_assertions) {{
-                            return ::core::mem::transmute(val);
+                            return unsafe {{ ::core::mem::transmute(val) }};
                         }}
 
                         match val {{
