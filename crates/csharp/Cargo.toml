@@ -25,11 +25,6 @@ clap = { workspace = true, optional = true }
 anyhow = { workspace = true }
 indexmap = { workspace = true }
 
-[dev-dependencies]
-test-helpers = { path = '../test-helpers' }
-wasm-encoder = { workspace = true }
-wasmparser = { workspace = true }
-
 [features]
 default = ["aot"]
 aot = []

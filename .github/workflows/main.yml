@@ -98,6 +98,7 @@ jobs:
       shell: powershell
       if: matrix.os == 'windows-latest' && matrix.lang == 'moonbit'
 
+    # Run (now legacy) crate tests. This'll eventually go away
     - run: |
         cargo test \
           -p wit-bindgen-cli \
@@ -105,10 +106,15 @@ jobs:
           --no-default-features \
           --features ${{ matrix.lang }} \
           --release
+
+    # Run all codegen tests for this language
     - run: |
-        cargo run test --languages rust,${{ matrix.lang }} tests/codegen \
+        cargo run test --languages ${{ matrix.lang }} tests/codegen \
           --artifacts target/artifacts \
           --rust-wit-bindgen-path ./crates/guest-rust
+
+    # Run all runtime tests for this language, and also enable Rust in case this
+    # language only implements either the runner or test component
     - run: |
         cargo run test --languages rust,${{ matrix.lang }} tests/runtime-new \
           --artifacts target/artifacts \

@@ -30,3 +30,4 @@ wasmparser = { workspace = true, features = ["features"] }
 wat = { workspace = true }
 wit-component = { workspace = true }
 wit-parser = { workspace = true }
+wit-bindgen-csharp = { workspace = true }
