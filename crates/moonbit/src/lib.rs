@@ -114,7 +114,7 @@ pub extern "wasm" fn bytes2ptr(bytes : FixedArray[Byte]) -> Int =
   #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.add)
 
 extern "wasm" fn ptr2bytes_ffi(ptr : Int) -> FixedArray[Byte] =
-  #|(func (param i32) (param i32) (result i32) local.get 0 i32.const 8 i32.sub)
+  #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.sub)
 
 pub fn ptr2bytes(ptr : Int, len : Int) -> FixedArray[Byte] {
   let words = len / 4 + 1
