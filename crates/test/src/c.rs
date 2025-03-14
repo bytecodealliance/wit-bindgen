@@ -111,7 +111,14 @@ fn prepare(runner: &mut Runner<'_>, compiler: PathBuf) -> Result<()> {
     super::write_if_different(&dir.join("test.c"), "int main() { return 0; }")?;
 
     println!("Testing if `{}` works...", compiler.display());
-    runner.run_command(Command::new(compiler).current_dir(&dir).arg("test.c"))?;
+    runner
+        .run_command(Command::new(&compiler).current_dir(&dir).arg("test.c"))
+        .inspect_err(|_| {
+            eprintln!(
+                "Error: failed to find `{}`. Hint: pass `--wasi-sdk-path` or set `WASI_SDK_PATH`",
+                compiler.display()
+            );
+        })?;
 
     Ok(())
 }
