@@ -441,6 +441,11 @@ impl Runner<'_> {
             TestKind::Runtime(_) => None,
             TestKind::Codegen(p) => Some((name, p)),
         }) {
+            if let Some(filter) = &self.opts.filter {
+                if !filter.is_match(name) {
+                    continue;
+                }
+            }
             let config = match fs::read_to_string(test) {
                 Ok(wit) => config::parse_test_config::<config::WitConfig>(&wit, "//@")
                     .with_context(|| format!("failed to parse test config from {test:?}"))?,
@@ -459,20 +464,29 @@ impl Runner<'_> {
                     continue;
                 }
 
+                let mut args = Vec::new();
+                for arg in language.obj().default_bindgen_args_for_codegen() {
+                    args.push(arg.to_string());
+                }
+
                 codegen_tests.push((
                     language.clone(),
                     test,
                     name.to_string(),
-                    Vec::new(),
+                    args.clone(),
                     config.clone(),
                 ));
 
-                for (args_kind, args) in language.obj().codegen_test_variants() {
+                for (args_kind, new_args) in language.obj().codegen_test_variants() {
+                    let mut args = args.clone();
+                    for arg in new_args.iter() {
+                        args.push(arg.to_string());
+                    }
                     codegen_tests.push((
                         language.clone(),
                         test,
                         format!("{name}-{args_kind}"),
-                        args.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
+                        args,
                         config.clone(),
                     ));
                 }
@@ -979,6 +993,12 @@ trait LanguageMethods {
     ///
     /// Defaults to empty, but each language can override it.
     fn default_bindgen_args(&self) -> &[&str] {
+        &[]
+    }
+
+    /// Same as `default_bindgen_args` but specifically applied during codegen
+    /// tests, such as generating stub impls by default.
+    fn default_bindgen_args_for_codegen(&self) -> &[&str] {
         &[]
     }
 

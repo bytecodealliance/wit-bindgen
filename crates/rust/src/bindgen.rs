@@ -464,21 +464,21 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 let result = if is_own {
                     let name = self.r#gen.type_path(dealiased_resource, true);
-                    format!("unsafe {{ {name}::from_handle({op} as u32) }}")
+                    format!("{name}::from_handle({op} as u32)")
                 } else if self.r#gen.is_exported_resource(*resource) {
                     let name = resolve.types[*resource]
                         .name
                         .as_deref()
                         .unwrap()
                         .to_upper_camel_case();
-                    format!("unsafe {{ {name}Borrow::lift({op} as u32 as usize) }}")
+                    format!("{name}Borrow::lift({op} as u32 as usize)")
                 } else {
                     let tmp = format!("handle{}", self.tmp());
                     self.handle_decls.push(format!("let {tmp};"));
                     let name = self.r#gen.type_path(dealiased_resource, true);
                     format!(
                         "{{\n
-                            {tmp} = unsafe {{ {name}::from_handle({op} as u32) }};
+                            {tmp} = {name}::from_handle({op} as u32);
                             &{tmp}
                         }}"
                     )
@@ -509,8 +509,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     .unwrap();
                 let path = self.r#gen.path_to_root();
                 results.push(format!(
-                    "unsafe {{ {async_support}::FutureReader::from_handle_and_vtable\
-                     ({op} as u32, &{path}wit_future::vtable{ordinal}::VTABLE) }}"
+                    "{async_support}::FutureReader::from_handle_and_vtable\
+                     ({op} as u32, &{path}wit_future::vtable{ordinal}::VTABLE)"
                 ))
             }
 
@@ -897,11 +897,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.push_str("let ret = ");
                     results.push("ret".to_string());
                 }
-                self.push_str("unsafe { ");
                 self.push_str(&func);
                 self.push_str("(");
                 self.push_str(&operands.join(", "));
-                self.push_str(") };\n");
+                self.push_str(");\n");
             }
 
             Instruction::AsyncCallWasm { name, .. } => {
@@ -1025,13 +1024,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::AsyncCallReturn { name, params } => {
                 let func = self.declare_import(name, params, &[]);
 
-                uwriteln!(
-                    self.src,
-                    "\
-                            unsafe {{ {func}({}) }};
-                    ",
-                    operands.join(", ")
-                );
+                uwriteln!(self.src, "{func}({});", operands.join(", "));
                 self.emit_cleanup();
                 self.src.push_str("});\n");
             }

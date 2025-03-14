@@ -72,7 +72,11 @@ impl LanguageMethods for Rust {
     }
 
     fn default_bindgen_args(&self) -> &[&str] {
-        &["--generate-all"]
+        &["--generate-all", "--format"]
+    }
+
+    fn default_bindgen_args_for_codegen(&self) -> &[&str] {
+        &["--stubs"]
     }
 
     fn prepare(&self, runner: &mut Runner<'_>) -> Result<()> {
@@ -162,7 +166,6 @@ path = 'lib.rs'
                     .join(format!("{}.rs", compile.component.kind)),
             )
             .arg(compile.component.path.file_name().unwrap())
-            .arg("-Dwarnings")
             .arg("-o")
             .arg(&output);
         match compile.component.kind {
@@ -250,6 +253,7 @@ impl Runner<'_> {
         ))
         .arg("--target")
         .arg(&opts.rust_target)
+        .arg("-Dwarnings")
         .arg("-Cdebuginfo=1");
         for dep in state.wit_bindgen_deps.iter() {
             cmd.arg(&format!("-Ldependency={}", dep.display()));

@@ -560,8 +560,10 @@ pub unsafe fn cabi_dealloc(ptr: *mut u8, size: usize, align: usize) {
     if size == 0 {
         return;
     }
-    let layout = alloc::Layout::from_size_align_unchecked(size, align);
-    alloc::dealloc(ptr, layout);
+    unsafe {
+        let layout = alloc::Layout::from_size_align_unchecked(size, align);
+        alloc::dealloc(ptr, layout);
+    }
 }
                     ",
                 );
@@ -575,7 +577,7 @@ pub unsafe fn string_lift(bytes: Vec<u8>) -> String {
     if cfg!(debug_assertions) {
         String::from_utf8(bytes).unwrap()
     } else {
-        String::from_utf8_unchecked(bytes)
+        unsafe { String::from_utf8_unchecked(bytes) }
     }
 }
                     ",
@@ -603,7 +605,7 @@ pub unsafe fn char_lift(val: u32) -> char {
     if cfg!(debug_assertions) {
         core::char::from_u32(val).unwrap()
     } else {
-        core::char::from_u32_unchecked(val)
+        unsafe { core::char::from_u32_unchecked(val) }
     }
 }
                     ",
