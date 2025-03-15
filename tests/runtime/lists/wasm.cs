@@ -4,7 +4,8 @@ using System.Diagnostics;
 using ListsWorld.wit.imports.test.lists;
 using System.Text;
 
-namespace ListsWorld {
+namespace ListsWorld
+{
 
     public class ListsWorldImpl : IListsWorld
     {
@@ -57,28 +58,25 @@ namespace ListsWorld {
             TestInterop.ListParamLarge(randomStrings);
 
             {
-               byte[] result = TestInterop.ListResult();
-               Debug.Assert(result.Length == 5);
-               Debug.Assert(result[0] == (byte)1);
-               Debug.Assert(result[1] == (byte)2);
-               Debug.Assert(result[2] == (byte)3);
-               Debug.Assert(result[3] == (byte)4);
-               Debug.Assert(result[4] == (byte)5);
+                byte[] result = TestInterop.ListResult();
+                Debug.Assert(result.Length == 5);
+                Debug.Assert(result[0] == (byte)1);
+                Debug.Assert(result[1] == (byte)2);
+                Debug.Assert(result[2] == (byte)3);
+                Debug.Assert(result[3] == (byte)4);
+                Debug.Assert(result[4] == (byte)5);
             }
 
             {
-               string result = TestInterop.ListResult2();
-               Console.WriteLine(result);
-               Debug.Assert(result == "hello!");
+                string result = TestInterop.ListResult2();
+                Debug.Assert(result == "hello!");
             }
 
             {
-               List<String> result = TestInterop.ListResult3();
-               Debug.Assert(result.Count() == 2);
-               Console.WriteLine(result[0]);
-               Console.WriteLine(result[1]);
-               Debug.Assert(result[0] == "hello,");
-               Debug.Assert(result[1] == "world!");
+                List<String> result = TestInterop.ListResult3();
+                Debug.Assert(result.Count() == 2);
+                Debug.Assert(result[0] == "hello,");
+                Debug.Assert(result[1] == "world!");
             }
 
             string[] strings = { "x", "", "hello", "hello ⚑ world" };
@@ -92,8 +90,18 @@ namespace ListsWorld {
             }
 
             {
+                var headers = new List<(string, byte[])>() { ("Content-Type", Encoding.UTF8.GetBytes("text/plain")), ("Content-Length", Encoding.UTF8.GetBytes("Not found".Count().ToString())) };
+                var result = TestInterop.WasiHttpHeadersRoundtrip(headers);
+                for (var i = 0; i < result.Count(); i++)
+                {
+                    Debug.Assert(result[i].Item1 == headers[i].Item1);
+                    Debug.Assert(headers[i].Item2.SequenceEqual(result[i].Item2));
+                }
+            }
+
+            {
                 var (u, s) = TestInterop.ListMinmax8(
-                    new byte[] { byte.MinValue,byte.MaxValue },
+                    new byte[] { byte.MinValue, byte.MaxValue },
                     new sbyte[] { sbyte.MinValue, sbyte.MaxValue }
                 );
 
@@ -107,15 +115,11 @@ namespace ListsWorld {
                     new short[] { short.MinValue, short.MaxValue }
                 );
 
-                Console.WriteLine(u[0]);
-                Console.WriteLine(u[1]);
                 Debug.Assert(u.Length == 2, $"u.Length {u.Length}");
                 Debug.Assert(u[0] == ushort.MinValue, $"u[0] == {u[0]}");
                 Debug.Assert(u[1] == ushort.MaxValue, $"u[1] == {u[1]}");
 
                 Debug.Assert(s.Length == 2);
-                Console.WriteLine(s[0]);
-                Console.WriteLine(s[1]);
                 Debug.Assert(s.Length == 2 && s[0] == short.MinValue && s[1] == short.MaxValue);
             }
 
@@ -318,6 +322,11 @@ namespace ListsWorld.wit.exports.test.lists
         }
 
         public static string StringRoundtrip(string a)
+        {
+            return a;
+        }
+
+        public static List<(string, byte[])> WasiHttpHeadersRoundtrip(List<(string, byte[])> a)
         {
             return a;
         }

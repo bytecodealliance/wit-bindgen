@@ -66,7 +66,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             resource_drops: Vec::new(),
             is_block: false,
             fixed_statments: Vec::new(),
-            parameter_type: parameter_type,
+            parameter_type,
         }
     }
 
@@ -458,14 +458,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 if flags.flags.len() > 32 {
                     results.push(format!(
                         "unchecked((int)(((long){}) & uint.MaxValue))",
-                        operands[0].to_string()
+                        operands[0]
                     ));
                     results.push(format!(
                         "unchecked(((int)((long){} >> 32)))",
-                        operands[0].to_string()
+                        operands[0]
                     ));
                 } else {
-                    results.push(format!("(int){}", operands[0].to_string()));
+                    results.push(format!("(int){}", operands[0]));
                 }
             }
 
@@ -479,8 +479,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     results.push(format!(
                         "({})(unchecked((uint)({})) | (ulong)(unchecked((uint)({}))) << 32)",
                         qualified_type_name,
-                        operands[0].to_string(),
-                        operands[1].to_string()
+                        operands[0],
+                        operands[1]
                     ));
                 } else {
                     results.push(format!("({})({})", qualified_type_name, operands[0]))
@@ -502,7 +502,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let mut result = format!("new {} (\n", qualified_type_name);
 
                 result.push_str(&operands.join(", "));
-                result.push_str(")");
+                result.push(')');
 
                 results.push(result);
             }
@@ -754,7 +754,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                                 "
                             );
                         }
-                        results.push(format!("(nint){ptr}"));
+                        results.push(format!("(int){ptr}"));
                         results.push(format!("({list}).Length"));
                     }
                     Direction::Export => {
@@ -834,7 +834,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     results.push(format!("(int){str_ptr}"));
                 }
 
-                results.push(format!("{length}"));
+                results.push(length);
                 if FunctionKind::Freestanding == *self.kind || self.interface_gen.direction == Direction::Export {
                     self.interface_gen.require_interop_using("System.Text");
                     self.interface_gen.require_interop_using("System.Runtime.InteropServices");
@@ -889,13 +889,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             "
                             void* {address};
                             if (({size} * {list}.Count) < 1024) {{
-                                var {ret_area} = stackalloc {element_type}[({array_size}*{list}.Count)+1];
-                                {address} = (void*)(((int){ret_area}) + ({align} - 1) & -{align});
+                                var {ret_area} = stackalloc {element_type}[{array_size}*{list}.Count];
+                                {address} = (void*)((int){ret_area});
                             }}
                             else
                             {{
-                                var {buffer_size} = {size} * (nuint){list}.Count;
-                                {address} = NativeMemory.AlignedAlloc({buffer_size}, {align});
+                                var {buffer_size} = {size} * {list}.Count;
+                                {address} = NativeMemory.AlignedAlloc((nuint){buffer_size}, {align});
                                 cleanups.Add(() => NativeMemory.AlignedFree({address}));
                             }}
                             "
@@ -905,8 +905,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         //cabi_realloc_post_return will be called to clean up this allocation
                         uwrite!(self.src,
                             "
-                            var {buffer_size} = {size} * (nuint){list}.Count;
-                            void* {address} = NativeMemory.AlignedAlloc({buffer_size}, {align});
+                            var {buffer_size} = {size} * {list}.Count;
+                            void* {address} = NativeMemory.AlignedAlloc((nuint){buffer_size}, {align});
                             "
                         );
                     }
@@ -1046,7 +1046,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::Return { amt, .. } => {
-                if self.fixed_statments.len() > 0 {
+                if !self.fixed_statments.is_empty() {
                     let fixed: String = self.fixed_statments.iter().map(|f| format!("{} = {}", f.ptr_name, f.item_to_pin)).collect::<Vec<_>>().join(", ");
                     self.src.insert_str(0, &format!("fixed (void* {fixed})
                         {{
@@ -1077,7 +1077,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     }
                 }
 
-                if self.fixed_statments.len() > 0 {
+                if !self.fixed_statments.is_empty() {
                     uwriteln!(self.src, "}}");
                 }
             }
@@ -1201,7 +1201,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         }
                     }
                 }
-                results.push(format!("{handle}"));
+                results.push(handle);
             }
 
             Instruction::HandleLift {
@@ -1253,7 +1253,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::Flush { amt } => {
-                results.extend(operands.iter().take(*amt).map(|v| v.clone()));
+                results.extend(operands.iter().take(*amt).cloned());
             }
 
             Instruction::AsyncPostCallInterface { .. }
@@ -1296,7 +1296,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     ",
                     align = align.align_wasm32()
                 );
-                format!("{ptr}")
+                ptr
             }
             Direction::Export => {
                 // exports need their return area to be live until the post-return call.
@@ -1319,7 +1319,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 );
                 self.interface_gen.csharp_gen.needs_export_return_area = true;
 
-                format!("{ptr}")
+                ptr
             }
         }
     }
@@ -1395,8 +1395,8 @@ fn perform_cast(op: &String, cast: &Bitcast) -> String {
         Bitcast::F64ToI64 => format!("BitConverter.DoubleToInt64Bits({op})"),
         Bitcast::I32ToI64 => format!("(long) ({op})"),
         Bitcast::I64ToI32 => format!("(int) ({op})"),
-        Bitcast::I64ToP64 => format!("{op}"),
-        Bitcast::P64ToI64 => format!("{op}"),
+        Bitcast::I64ToP64 => op.to_string(),
+        Bitcast::P64ToI64 => op.to_string(),
         Bitcast::LToI64 | Bitcast::PToP64 => format!("(long) ({op})"),
         Bitcast::I64ToL | Bitcast::P64ToP => format!("(int) ({op})"),
         Bitcast::I32ToP

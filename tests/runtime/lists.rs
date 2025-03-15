@@ -75,6 +75,13 @@ impl test::lists::test::Host for MyImports {
         s.to_string()
     }
 
+    fn wasi_http_headers_roundtrip(
+        &mut self,
+        headers: Vec<(String, Vec<u8>)>,
+    ) -> Vec<(String, Vec<u8>)> {
+        headers.to_vec()
+    }
+
     fn list_minmax8(&mut self, u: Vec<u8>, s: Vec<i8>) -> (Vec<u8>, Vec<i8>) {
         assert_eq!(u, [u8::MIN, u8::MAX]);
         assert_eq!(s, [i8::MIN, i8::MAX]);
@@ -150,6 +157,27 @@ fn run_test(lists: Lists, store: &mut Store<crate::Wasi<MyImports>>) -> Result<(
     assert_eq!(
         exports.call_string_roundtrip(&mut *store, "hello ⚑ world")?,
         "hello ⚑ world"
+    );
+
+    let result = exports.call_wasi_http_headers_roundtrip(
+        &mut *store,
+        &vec![
+            ("Content-Type".to_owned(), "text/plain".as_bytes().to_vec()),
+            (
+                "Content-Length".to_owned(),
+                "Not found".len().to_string().as_bytes().to_vec(),
+            ),
+        ],
+    )?;
+    let (key, value) = result.get(0).unwrap();
+    assert_eq!(key.as_str(), "Content-Type");
+    assert_eq!(std::str::from_utf8(value).unwrap(), "text/plain");
+
+    let (key, value) = result.get(1).unwrap();
+    assert_eq!(key.as_str(), "Content-Length");
+    assert_eq!(
+        std::str::from_utf8(value).unwrap(),
+        "Not found".len().to_string().as_str()
     );
     // Ensure that we properly called `free` everywhere in all the glue that we
     // needed to.
