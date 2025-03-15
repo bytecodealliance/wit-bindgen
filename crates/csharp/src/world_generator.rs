@@ -299,7 +299,7 @@ impl WorldGenerator for CSharp {
         let world = &resolve.worlds[id];
         let world_namespace = self.qualifier();
         let world_namespace = world_namespace.strip_suffix(".").unwrap();
-        let namespace = format!("{world_namespace}");
+        let namespace = world_namespace;
         let name = world.name.to_upper_camel_case();
 
         let version = env!("CARGO_PKG_VERSION");
@@ -521,12 +521,12 @@ impl WorldGenerator for CSharp {
         }
 
         if self.needs_rep_table {
-            src.push_str("\n");
+            src.push('\n');
             src.push_str(include_str!("RepTable.cs"));
         }
 
         if !&self.world_fragments.is_empty() {
-            src.push_str("\n");
+            src.push('\n');
 
             src.push_str("namespace exports {\n");
 
@@ -535,20 +535,19 @@ impl WorldGenerator for CSharp {
                     .world_fragments
                     .iter()
                     .flat_map(|f| &f.interop_usings)
-                    .into_iter()
                     .collect::<HashSet<&String>>() // de-dup across world_fragments
                     .iter()
                     .map(|s| "using ".to_owned() + s + ";")
                     .collect::<Vec<String>>()
                     .join("\n"),
             );
-            src.push_str("\n");
+            src.push('\n');
 
             src.push_str(&format!("{access} static class {name}World\n"));
-            src.push_str("{");
+            src.push('{');
 
             for fragment in &self.world_fragments {
-                src.push_str("\n");
+                src.push('\n');
 
                 src.push_str(&fragment.csharp_interop_src);
             }
@@ -556,7 +555,7 @@ impl WorldGenerator for CSharp {
             src.push_str("}\n");
         }
 
-        src.push_str("\n");
+        src.push('\n');
 
         src.push_str("}\n");
 
@@ -594,11 +593,11 @@ impl WorldGenerator for CSharp {
 
             let (fragments, fully_qualified_namespace) = match stubs {
                 Stubs::World(fragments) => {
-                    let fully_qualified_namespace = format!("{namespace}");
+                    let fully_qualified_namespace = namespace.to_string();
                     (fragments, fully_qualified_namespace)
                 }
                 Stubs::Interface(fragments) => {
-                    let fully_qualified_namespace = format!("{stub_namespace}");
+                    let fully_qualified_namespace = stub_namespace.clone();
                     (fragments, fully_qualified_namespace)
                 }
             };
@@ -638,7 +637,7 @@ impl WorldGenerator for CSharp {
             //TODO: This is currently needed for mono even if it's built as a library.
             if self.opts.runtime == CSharpRuntime::Mono {
                 files.push(
-                    &"MonoEntrypoint.cs".to_string(),
+                    "MonoEntrypoint.cs",
                     indent(&format!(
                         r#"
                         {access} class MonoEntrypoint() {{
@@ -671,13 +670,9 @@ impl WorldGenerator for CSharp {
                 // intended to be used non-interactively at link time, the
                 // linker will have no additional information to resolve such
                 // ambiguity.
-                let (resolve, world) =
-                    wit_parser::decoding::decode_world(&wit_component::metadata::encode(
-                        &resolve,
-                        id,
-                        self.opts.string_encoding,
-                        None,
-                    )?)?;
+                let (resolve, world) = wit_parser::decoding::decode_world(
+                    &wit_component::metadata::encode(resolve, id, self.opts.string_encoding, None)?,
+                )?;
                 let pkg = resolve.worlds[world].package.unwrap();
 
                 let mut printer = WitPrinter::default();
@@ -731,7 +726,7 @@ impl WorldGenerator for CSharp {
                 .collect::<Vec<_>>()
                 .join("\n");
 
-            if body.len() > 0 {
+            if !body.is_empty() {
                 let body = format!(
                     "{header}
                     {0}
@@ -802,11 +797,16 @@ enum Stubs<'a> {
 // We cant use "StructLayout.Pack" as dotnet will use the minimum of the type and the "Pack" field,
 // so for byte it would always use 1 regardless of the "Pack".
 pub fn dotnet_aligned_array(array_size: usize, required_alignment: usize) -> (usize, String) {
+    let num_elements = if array_size % required_alignment > 0 {
+        array_size / required_alignment + 1
+    } else {
+        array_size / required_alignment
+    };
     match required_alignment {
-        1 => (array_size, "byte".to_owned()),
-        2 => ((array_size + 1) / 2, "ushort".to_owned()),
-        4 => ((array_size + 3) / 4, "uint".to_owned()),
-        8 => ((array_size + 7) / 8, "ulong".to_owned()),
+        1 => (num_elements, "byte".to_owned()),
+        2 => (num_elements, "ushort".to_owned()),
+        4 => (num_elements, "uint".to_owned()),
+        8 => (num_elements, "ulong".to_owned()),
         _ => todo!("unsupported return_area_align {}", required_alignment),
     }
 }
@@ -885,11 +885,7 @@ fn interface_name(
             );
 
             if let Some(version) = &name.version {
-                let v = version
-                    .to_string()
-                    .replace('.', "_")
-                    .replace('-', "_")
-                    .replace('+', "_");
+                let v = version.to_string().replace(['.', '-', '+'], "_");
                 ns = format!("{}v{}.", ns, &v);
             }
             ns
