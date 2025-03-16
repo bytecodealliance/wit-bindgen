@@ -556,7 +556,7 @@ impl C {
     fn push_type_name(&mut self, ty: &Type, dst: &mut String) {
         match ty {
             Type::Bool => dst.push_str("bool"),
-            Type::Char => dst.push_str("uint32_t"),
+            Type::Char => dst.push_str("uint32_t"), // TODO: better type?
             Type::U8 => dst.push_str("uint8_t"),
             Type::S8 => dst.push_str("int8_t"),
             Type::U16 => dst.push_str("uint16_t"),

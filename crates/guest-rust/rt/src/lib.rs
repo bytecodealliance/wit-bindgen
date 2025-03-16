@@ -1,4 +1,4 @@
-#![cfg_attr(not(feature = "async"), no_std)]
+#![no_std]
 
 extern crate alloc;
 

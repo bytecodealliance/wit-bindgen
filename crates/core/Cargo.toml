@@ -18,7 +18,3 @@ doctest = false
 wit-parser = { workspace = true }
 anyhow = { workspace = true }
 heck = { workspace = true }
-
-[features]
-default = ["async"]
-async = []

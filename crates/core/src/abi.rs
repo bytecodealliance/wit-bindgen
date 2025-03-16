@@ -839,6 +839,7 @@ fn needs_post_return(resolve: &Resolve, ty: &Type) -> bool {
             TypeDefKind::Future(_) | TypeDefKind::Stream(_) => false,
             TypeDefKind::Unknown => unreachable!(),
         },
+
         Type::Bool
         | Type::U8
         | Type::S8
@@ -894,7 +895,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
 
     fn call_with_signature(&mut self, func: &Function, sig: WasmSignature) {
         const MAX_FLAT_PARAMS: usize = 16;
-        // const MAX_FLAT_RESULTS: usize = 1;
 
         let language_to_abi = matches!(self.lift_lower, LiftLower::LowerArgsLiftResults)
             || (matches!(self.lift_lower, LiftLower::Symmetric)
@@ -994,11 +994,15 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         sig: &sig,
                         module_prefix: Default::default(),
                     });
-                };
+                }
 
                 if matches!(self.lift_lower, LiftLower::Symmetric) && sig.retptr {
                     if let Some(ptr) = retptr_oprnd {
-                        self.read_results_from_memory(&func.result, ptr.clone(), Default::default());
+                        self.read_results_from_memory(
+                            &func.result,
+                            ptr.clone(),
+                            Default::default(),
+                        );
                     }
                 } else if !(sig.retptr || self.async_) {
                     // With no return pointer in use we can simply lift the
@@ -1041,24 +1045,10 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     });
                 }
 
-                // if let Some(results) = async_results {
-                //     let name = &format!("[task-return]{}", func.name);
-
-                //     self.emit(&Instruction::AsyncCallReturn {
-                //         name,
-                //         params: &if results.len() > MAX_FLAT_PARAMS {
-                //             vec![WasmType::Pointer]
-                //         } else {
-                //             results
-                //         },
-                //     });
-                //     self.emit(&Instruction::Return { func, amt: 1 });
-                // } else {
                 self.emit(&Instruction::Return {
                     func,
                     amt: usize::from(func.result.is_some()),
                 });
-                // }
             }
             false => {
                 if let (AbiVariant::GuestImport, true) = (self.variant, self.async_) {
@@ -1074,6 +1064,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         offset += self_.bindgen.sizes().size(ty);
                     }
                 };
+
                 if !sig.indirect_params {
                     // If parameters are not passed indirectly then we lift each
                     // argument in succession from the component wasm types that
@@ -1484,6 +1475,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         use Instruction::*;
 
         match *ty {
+            // Builtin types need different flavors of storage instructions
+            // depending on the size of the value written.
             Type::Bool => self.emit(&BoolFromI32),
             Type::S8 => self.emit(&S8FromI32),
             Type::U8 => self.emit(&U8FromI32),
@@ -2062,7 +2055,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             | Type::U64
             | Type::S64
             | Type::F32
-            | Type::F64 => {}
+            | Type::F64
+            | Type::ErrorContext => {}
             Type::Id(id) => match &self.resolve.types[id].kind {
                 TypeDefKind::Type(t) => self.deallocate(t, addr, offset),
 
@@ -2133,7 +2127,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 TypeDefKind::Stream(_) => todo!("read stream from memory"),
                 TypeDefKind::Unknown => unreachable!(),
             },
-            Type::ErrorContext => todo!(),
         }
     }
 
