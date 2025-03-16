@@ -63,7 +63,7 @@ impl std::fmt::Display for Enabled {
 }
 
 #[derive(Default, Debug, Clone)]
-#[cfg_attr(feature = "clap", derive(clap::Args))]
+#[cfg_attr(feature = "clap", derive(clap::Parser))]
 pub struct Opts {
     /// Skip emitting component allocation helper functions
     #[cfg_attr(feature = "clap", arg(long))]

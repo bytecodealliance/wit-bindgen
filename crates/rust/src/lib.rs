@@ -190,7 +190,7 @@ fn parse_async(s: &str) -> Result<AsyncConfig, String> {
 }
 
 #[derive(Default, Debug, Clone)]
-#[cfg_attr(feature = "clap", derive(clap::Args))]
+#[cfg_attr(feature = "clap", derive(clap::Parser))]
 pub struct Opts {
     /// Whether or not a formatter is executed to format generated code.
     #[cfg_attr(feature = "clap", arg(long))]
@@ -255,8 +255,17 @@ pub struct Opts {
     /// specified multiple times to add multiple attributes.
     ///
     /// These derive attributes will be added to any generated structs or enums
-    #[cfg_attr(feature = "clap", arg(long = "additional_derive_attribute", short = 'd', default_values_t = Vec::<String>::new()))]
+    #[cfg_attr(feature = "clap", arg(long, short = 'd'))]
     pub additional_derive_attributes: Vec<String>,
+
+    /// Variants and records to ignore when applying additional derive attributes.
+    ///
+    /// These names are specified as they are listed in the wit file, i.e. in kebab case.
+    /// This feature allows some variants and records to use types for which adding traits will cause
+    /// compilation to fail, such as serde::Deserialize on wasi:io/streams.
+    ///
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub additional_derive_ignore: Vec<String>,
 
     /// Remapping of wit interface and type names to Rust module names and types.
     ///
@@ -365,7 +374,7 @@ impl RustWasm {
             wasm_import_module,
             src: Source::default(),
             in_import,
-            gen: self,
+            r#gen: self,
             sizes,
             resolve,
             return_pointer_area_size: Default::default(),
@@ -607,8 +616,10 @@ pub unsafe fn cabi_dealloc(ptr: *mut u8, size: usize, align: usize) {
     if size == 0 {
         return;
     }
-    let layout = alloc::Layout::from_size_align_unchecked(size, align);
-    alloc::dealloc(ptr, layout);
+    unsafe {
+        let layout = alloc::Layout::from_size_align_unchecked(size, align);
+        alloc::dealloc(ptr, layout);
+    }
 }
                     ",
                 );
@@ -622,7 +633,7 @@ pub unsafe fn string_lift(bytes: Vec<u8>) -> String {
     if cfg!(debug_assertions) {
         String::from_utf8(bytes).unwrap()
     } else {
-        String::from_utf8_unchecked(bytes)
+        unsafe { String::from_utf8_unchecked(bytes) }
     }
 }
                     ",
@@ -636,7 +647,7 @@ pub unsafe fn invalid_enum_discriminant<T>() -> T {
     if cfg!(debug_assertions) {
         panic!(\"invalid enum discriminant\")
     } else {
-        core::hint::unreachable_unchecked()
+        unsafe { core::hint::unreachable_unchecked() }
     }
 }
                     ",
@@ -650,7 +661,7 @@ pub unsafe fn char_lift(val: u32) -> char {
     if cfg!(debug_assertions) {
         core::char::from_u32(val).unwrap()
     } else {
-        core::char::from_u32_unchecked(val)
+        unsafe { core::char::from_u32_unchecked(val) }
     }
 }
                     ",
@@ -1093,6 +1104,13 @@ impl WorldGenerator for RustWasm {
                 self.opts.additional_derive_attributes
             );
         }
+        if !self.opts.additional_derive_ignore.is_empty() {
+            uwriteln!(
+                self.src_preamble,
+                "//   * additional derives ignored {:?}",
+                self.opts.additional_derive_ignore
+            );
+        }
         for (k, v) in self.opts.with.iter() {
             uwriteln!(self.src_preamble, "//   * with {k:?} = {v}");
         }
@@ -1181,26 +1199,26 @@ impl WorldGenerator for RustWasm {
 
         self.interface_last_seen_as_import.insert(id, true);
         let wasm_import_module = resolve.name_world_key(name);
-        let mut gen = self.interface(
+        let mut r#gen = self.interface(
             Identifier::Interface(id, name),
             &wasm_import_module,
             resolve,
             true,
         );
-        let (snake, module_path) = gen.start_append_submodule(name);
-        if gen.gen.name_interface(resolve, id, name, false)? {
+        let (snake, module_path) = r#gen.start_append_submodule(name);
+        if r#gen.r#gen.name_interface(resolve, id, name, false)? {
             return Ok(());
         }
 
         for (name, ty_id) in to_define {
-            gen.define_type(&name, *ty_id);
+            r#gen.define_type(&name, *ty_id);
         }
 
-        gen.generate_imports(resolve.interfaces[id].functions.values(), Some(name));
+        r#gen.generate_imports(resolve.interfaces[id].functions.values(), Some(name));
 
         let docs = &resolve.interfaces[id].docs;
 
-        gen.finish_append_submodule(&snake, module_path, docs);
+        r#gen.finish_append_submodule(&snake, module_path, docs);
 
         let _ = self.import_prefix.take();
         Ok(())
@@ -1215,11 +1233,11 @@ impl WorldGenerator for RustWasm {
     ) {
         self.import_funcs_called = true;
 
-        let mut gen = self.interface(Identifier::World(world), "$root", resolve, true);
+        let mut r#gen = self.interface(Identifier::World(world), "$root", resolve, true);
 
-        gen.generate_imports(funcs.iter().map(|(_, func)| *func), None);
+        r#gen.generate_imports(funcs.iter().map(|(_, func)| *func), None);
 
-        let src = gen.finish();
+        let src = r#gen.finish();
         self.src.push_str(&src);
     }
 
@@ -1254,40 +1272,40 @@ impl WorldGenerator for RustWasm {
 
         self.interface_last_seen_as_import.insert(id, false);
         let wasm_import_module = format!("[export]{}", resolve.name_world_key(name));
-        let mut gen = self.interface(
+        let mut r#gen = self.interface(
             Identifier::Interface(id, name),
             &wasm_import_module,
             resolve,
             false,
         );
-        let (snake, module_path) = gen.start_append_submodule(name);
-        if gen.gen.name_interface(resolve, id, name, true)? {
+        let (snake, module_path) = r#gen.start_append_submodule(name);
+        if r#gen.r#gen.name_interface(resolve, id, name, true)? {
             return Ok(());
         }
 
         for (name, ty_id) in to_define {
-            gen.define_type(&name, *ty_id);
+            r#gen.define_type(&name, *ty_id);
         }
 
         let macro_name =
-            gen.generate_exports(Some((id, name)), resolve.interfaces[id].functions.values())?;
+            r#gen.generate_exports(Some((id, name)), resolve.interfaces[id].functions.values())?;
 
         let docs = &resolve.interfaces[id].docs;
 
-        gen.finish_append_submodule(&snake, module_path, docs);
+        r#gen.finish_append_submodule(&snake, module_path, docs);
         self.export_macros
             .push((macro_name, self.interface_names[&id].path.clone()));
 
         if self.opts.stubs {
             let world_id = self.world.unwrap();
-            let mut gen = self.interface(
+            let mut r#gen = self.interface(
                 Identifier::World(world_id),
                 &wasm_import_module,
                 resolve,
                 false,
             );
-            gen.generate_stub(Some((id, name)), resolve.interfaces[id].functions.values());
-            let stub = gen.finish();
+            r#gen.generate_stub(Some((id, name)), resolve.interfaces[id].functions.values());
+            let stub = r#gen.finish();
             self.src.push_str(&stub);
         }
         self.opts.export_prefix = old_prefix;
@@ -1301,16 +1319,17 @@ impl WorldGenerator for RustWasm {
         funcs: &[(&str, &Function)],
         _files: &mut Files,
     ) -> Result<()> {
-        let mut gen = self.interface(Identifier::World(world), "[export]$root", resolve, false);
-        let macro_name = gen.generate_exports(None, funcs.iter().map(|f| f.1))?;
-        let src = gen.finish();
+        let mut r#gen = self.interface(Identifier::World(world), "[export]$root", resolve, false);
+        let macro_name = r#gen.generate_exports(None, funcs.iter().map(|f| f.1))?;
+        let src = r#gen.finish();
         self.src.push_str(&src);
         self.export_macros.push((macro_name, String::new()));
 
         if self.opts.stubs {
-            let mut gen = self.interface(Identifier::World(world), "[export]$root", resolve, false);
-            gen.generate_stub(None, funcs.iter().map(|f| f.1));
-            let stub = gen.finish();
+            let mut r#gen =
+                self.interface(Identifier::World(world), "[export]$root", resolve, false);
+            r#gen.generate_stub(None, funcs.iter().map(|f| f.1));
+            let stub = r#gen.finish();
             self.src.push_str(&stub);
         }
         Ok(())
@@ -1336,11 +1355,11 @@ impl WorldGenerator for RustWasm {
             }
             self.generated_types.insert(full_name);
         }
-        let mut gen = self.interface(Identifier::World(world), "$root", resolve, true);
+        let mut r#gen = self.interface(Identifier::World(world), "$root", resolve, true);
         for (name, ty) in to_define {
-            gen.define_type(name, *ty);
+            r#gen.define_type(name, *ty);
         }
-        let src = gen.finish();
+        let src = r#gen.finish();
         self.src.push_str(&src);
     }
 

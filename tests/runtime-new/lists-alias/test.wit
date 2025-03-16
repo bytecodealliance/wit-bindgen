@@ -1,0 +1,17 @@
+package my:lists;
+
+world runner {
+  import cat: interface {
+    type my-list = list<u8>;
+    foo: func(x: my-list);
+    bar: func() -> my-list;
+  }
+}
+
+world test {
+  export cat: interface {
+    type my-list = list<u8>;
+    foo: func(x: my-list);
+    bar: func() -> my-list;
+  }
+}

@@ -325,7 +325,7 @@ cd MyApp
 dotnet new nugetconfig
 ```
 
-In the `nuget.config` after `<clear />`make sure you have: 
+In the `nuget.config` after `<clear />`make sure you have:
 
 ```
 <add key="dotnet-experimental" value="https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json" />
@@ -347,7 +347,7 @@ In the MyApp.csproj add the following to the property group:
 Add the native-aot compiler (substitute `win-x64` for `linux-x64` on Linux):
 
 ```
-dotnet add package Microsoft.DotNet.ILCompiler.LLVM --prerelease 
+dotnet add package Microsoft.DotNet.ILCompiler.LLVM --prerelease
 dotnet add package runtime.win-x64.Microsoft.DotNet.ILCompiler.LLVM --prerelease
 ```
 
@@ -361,10 +361,11 @@ Checkout out [componentize-dotnet](https://github.com/bytecodealliance/component
 
 ### Guest: Java
 
-Java bytecode can be compiled to WebAssembly using
-[TeaVM-WASI](https://github.com/fermyon/teavm-wasi). With this generator,
-`wit-bindgen` will emit `*.java` files which may be used with any JVM language,
-e.g. Java, Kotlin, Clojure, Scala, etc.
+This project historically had some support for
+[TeaVM-WASI](https://github.com/fermyon/teavm-wasi), but it was unmaintained for
+a long time and never was at feature parity with other generators, so it was
+removed. The last commit with support for TeaVM-WASI was
+https://github.com/bytecodealliance/wit-bindgen/commit/86e8ae2b8b97f11b73b273345b0e00340f017270.
 
 ### Guest: TinyGo
 

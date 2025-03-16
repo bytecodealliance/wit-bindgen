@@ -2217,10 +2217,6 @@ fn cast(from: WasmType, to: WasmType) -> Bitcast {
     }
 }
 
-// fn align_to(val: usize, align: usize) -> usize {
-//     (val + align - 1) & !(align - 1)
-// }
-
 fn push_flat_symmetric(resolve: &Resolve, ty: &Type, vec: &mut Vec<WasmType>) {
     if let Type::Id(id) = ty {
         if matches!(

@@ -87,34 +87,42 @@ pub fn malloc(size : Int) -> Int {
   let address = malloc_inline(8 + words * 4)
   store32(address, 1)
   store32(address + 4, (words << 8) | 246)
-  store8(address + words * 4 + 7, 3 - size % 4)
   address + 8
 }
 
 pub extern "wasm" fn free(position : Int) =
   #|(func (param i32) local.get 0 i32.const 8 i32.sub call $moonbit.decref)
 
-pub fn copy(dest : Int, src : Int) -> Unit {
-  let src_len = (load32(src - 12) >> 2) - 4
-  let dest_len = (load32(dest - 12) >> 2) - 4
-  let min = if src_len < dest_len { src_len } else { dest_len }
-  copy_inline(dest, src, min)
-}
-
-extern "wasm" fn copy_inline(dest : Int, src : Int, len : Int) =
+extern "wasm" fn copy(dest : Int, src : Int, len : Int) =
   #|(func (param i32) (param i32) (param i32) local.get 0 local.get 1 local.get 2 memory.copy)
 
 pub extern "wasm" fn str2ptr(str : String) -> Int =
   #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.add)
 
-pub extern "wasm" fn ptr2str(ptr : Int) -> String =
-  #|(func (param i32) (result i32) local.get 0 i32.const 4 i32.sub i32.const 243 i32.store8 local.get 0 i32.const 8 i32.sub)
+extern "wasm" fn ptr2str_ffi(ptr : Int) -> String =
+  #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.sub)
+
+pub fn ptr2str(ptr : Int, len : Int) -> String {
+  let words = len * 2 / 4 + 1
+  let address = ptr - 8
+  store32(address + 4, (words << 8) | 243)
+  store8(address + words * 4 + 7, 3 - len * 2 % 4)
+  ptr2str_ffi(ptr)
+}
 
 pub extern "wasm" fn bytes2ptr(bytes : FixedArray[Byte]) -> Int =
   #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.add)
 
-pub extern "wasm" fn ptr2bytes(ptr : Int, _len : Int) -> FixedArray[Byte] =
-  #|(func (param i32) (param i32) (result i32) local.get 0 i32.const 8 i32.sub)
+extern "wasm" fn ptr2bytes_ffi(ptr : Int) -> FixedArray[Byte] =
+  #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.sub)
+
+pub fn ptr2bytes(ptr : Int, len : Int) -> FixedArray[Byte] {
+  let words = len / 4 + 1
+  let address = ptr - 8
+  store32(address + 4, (words << 8) | 246)
+  store8(address + words * 4 + 7, 3 - len % 4)
+  ptr2bytes_ffi(ptr)
+}
 
 pub extern "wasm" fn uint_array2ptr(array : FixedArray[UInt]) -> Int =
   #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.add)
@@ -196,13 +204,13 @@ pub fn cabi_realloc(
         return malloc(dst_size)
     }}
     // free
-    if dst_size <= 0 {{
+    if dst_size == 0 {{
         free(src_offset)
         return 0
     }}
     // realloc
     let dst = malloc(dst_size)
-    copy(dst, src_offset)
+    copy(dst, src_offset, if src_size < dst_size { src_size } else { dst_size })
     free(src_offset)
     dst
 }}
@@ -2244,7 +2252,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     "{}str2ptr({op})",
                     self.gen.qualify_package(FFI_DIR)
                 ));
-                results.push(format!("{op}.iter().count()"));
+                results.push(format!("{op}.charcode_length()"));
                 if realloc.is_none() {
                     self.cleanup.push(Cleanup::Object(op.clone()));
                 }
@@ -2258,8 +2266,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwrite!(
                     self.src,
                     "
-                    ignore({length})
-                    let {result} = {}ptr2str({address})
+                    let {result} = {}ptr2str({address}, {length})
                     ",
                     self.gen.qualify_package(FFI_DIR)
                 );

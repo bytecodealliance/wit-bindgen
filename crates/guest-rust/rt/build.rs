@@ -26,6 +26,6 @@ fn main() {
 
     std::fs::copy(&src, &dst).unwrap();
 
-    println!("cargo:rustc-link-lib={dst_name}");
+    println!("cargo:rustc-link-lib=static={dst_name}");
     println!("cargo:rustc-link-search=native={}", out_dir.display());
 }

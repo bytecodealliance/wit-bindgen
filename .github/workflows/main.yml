@@ -59,7 +59,11 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         # moonbit removed from language matrix for now - causing CI failures
-        lang: [c, rust, teavm-java, go, csharp]
+        lang: [c, rust, csharp]
+        exclude:
+          # For now csharp doesn't work on macos, so exclude it from testing.
+          - os: macos-latest
+            lang: csharp
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
@@ -67,13 +71,12 @@ jobs:
         submodules: true
     - name: Install Rust
       run: rustup update stable --no-self-update && rustup default stable
-    - run: rustup target add wasm32-wasip1
+    - run: rustup target add wasm32-wasip1 wasm32-wasip2
 
     - run: rustup target add wasm32-unknown-unknown
       if: matrix.lang == 'rust'
 
     - uses: ./.github/actions/install-wasi-sdk
-      if: matrix.lang == 'c' || (matrix.lang == 'csharp' && matrix.os == 'windows-latest')
 
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
@@ -95,29 +98,21 @@ jobs:
       shell: powershell
       if: matrix.os == 'windows-latest' && matrix.lang == 'moonbit'
 
-    - run: ci/download-teavm.sh
-      if: matrix.lang == 'teavm-java'
-    - uses: actions/setup-java@v4
-      if: matrix.lang == 'teavm-java'
-      with:
-        java-version: '18'
-        distribution: 'adopt'
-
-    - uses: actions/setup-go@v4
-      if: matrix.lang == 'go'
-      with:
-        go-version: '1.20'
-    - uses: acifani/setup-tinygo@v2
-      if: matrix.lang == 'go'
-      with:
-        tinygo-version: 0.31.0
-
     - run: |
         cargo test \
           -p wit-bindgen-cli \
           -p wit-bindgen-${{ matrix.lang }} \
           --no-default-features \
-          --features ${{ matrix.lang }}
+          --features ${{ matrix.lang }} \
+          --release
+    - run: |
+        cargo run test --languages rust,${{ matrix.lang }} tests/codegen \
+          --artifacts target/artifacts \
+          --rust-wit-bindgen-path ./crates/guest-rust
+    - run: |
+        cargo run test --languages rust,${{ matrix.lang }} tests/runtime-new \
+          --artifacts target/artifacts \
+          --rust-wit-bindgen-path ./crates/guest-rust
 
   test_unit:
     name: Crate Unit Tests
@@ -156,7 +151,6 @@ jobs:
     - run: cargo build --no-default-features
     - run: cargo build --no-default-features --features rust
     - run: cargo build --no-default-features --features c
-    - run: cargo build --no-default-features --features teavm-java
     - run: cargo build --no-default-features --features go
     - run: cargo build --no-default-features --features csharp
     - run: cargo build --no-default-features --features markdown

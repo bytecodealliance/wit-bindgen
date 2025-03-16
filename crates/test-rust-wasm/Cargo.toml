@@ -20,19 +20,11 @@ name = "smoke"
 test = false
 
 [[bin]]
-name = "numbers"
-test = false
-
-[[bin]]
 name = "records"
 test = false
 
 [[bin]]
 name = "variants"
-test = false
-
-[[bin]]
-name = "lists"
 test = false
 
 [[bin]]
