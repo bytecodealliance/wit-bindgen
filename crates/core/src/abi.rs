@@ -965,10 +965,12 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     }
                 }
 
+                let mut retptr_oprnd = None;
                 if self.async_ {
                     let ElementInfo { size, align } =
                         self.bindgen.sizes().record(func.result.iter());
                     let ptr = self.bindgen.return_pointer(size, align);
+                    retptr_oprnd = Some(ptr.clone());
                     self.return_pointer = Some(ptr.clone());
                     self.stack.push(ptr);
 
@@ -995,9 +997,9 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 };
 
                 if matches!(self.lift_lower, LiftLower::Symmetric) && sig.retptr {
-                    // probably wrong?
-                    let ptr = self.stack.pop().unwrap();
-                    self.read_results_from_memory(&func.result, ptr.clone(), Default::default());
+                    if let Some(ptr) = retptr_oprnd {
+                        self.read_results_from_memory(&func.result, ptr.clone(), Default::default());
+                    }
                 } else if !(sig.retptr || self.async_) {
                     // With no return pointer in use we can simply lift the
                     // result(s) of the function from the result of the core
