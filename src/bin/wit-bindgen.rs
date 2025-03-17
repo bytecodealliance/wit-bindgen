@@ -55,7 +55,7 @@ enum Opt {
     },
 
     /// Generates bindings for C# guest modules.
-    #[cfg(feature = "csharp")]
+    #[cfg(feature = "c-sharp")]
     CSharp {
         #[clap(flatten)]
         opts: wit_bindgen_csharp::Opts,
@@ -131,7 +131,7 @@ fn main() -> Result<()> {
         Opt::TinyGo { args: _ } => {
             bail!("Go bindgen has been moved to a separate repository. Please visit https://github.com/bytecodealliance/go-modules for the new Go bindings generator `wit-bindgen-go`.")
         }
-        #[cfg(feature = "csharp")]
+        #[cfg(feature = "c-sharp")]
         Opt::CSharp { opts, args } => (opts.build(), args),
         Opt::Test { opts } => return opts.run(std::env::args_os().nth(0).unwrap().as_ref()),
     };
