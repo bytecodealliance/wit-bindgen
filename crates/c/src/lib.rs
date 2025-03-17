@@ -1,4 +1,4 @@
-mod component_type_object;
+pub mod component_type_object;
 
 use anyhow::Result;
 use heck::*;
@@ -3136,7 +3136,7 @@ impl Source {
     }
 }
 
-fn wasm_type(ty: WasmType) -> &'static str {
+pub fn wasm_type(ty: WasmType) -> &'static str {
     match ty {
         WasmType::I32 => "int32_t",
         WasmType::I64 => "int64_t",
@@ -3298,4 +3298,4 @@ pub fn to_c_ident(name: &str) -> String {
     }
 }
 
-const POINTER_SIZE_EXPRESSION: &str = "sizeof(void*)";
+pub const POINTER_SIZE_EXPRESSION: &str = "sizeof(void*)";
