@@ -168,7 +168,7 @@ struct Bindgen {
     wit_config: config::WitConfig,
 }
 
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 enum Kind {
     Runner,
     Test,
