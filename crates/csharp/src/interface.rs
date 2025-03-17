@@ -299,12 +299,12 @@ impl InterfaceGenerator<'_> {
     fn gen_import_src(
         &mut self,
         func: &Function,
-        results: &Vec<TypeId>,
+        results: &[TypeId],
         parameter_type: ParameterType,
     ) -> (String, String) {
         let mut bindgen = FunctionBindgen::new(
             self,
-            &func.item_name(),
+            func.item_name(),
             &func.kind,
             func.params
                 .iter()
@@ -317,7 +317,7 @@ impl InterfaceGenerator<'_> {
                     }
                 })
                 .collect(),
-            results.clone(),
+            results.to_vec(),
             parameter_type,
         );
 
@@ -399,7 +399,7 @@ impl InterfaceGenerator<'_> {
 
         let mut bindgen = FunctionBindgen::new(
             self,
-            &func.item_name(),
+            func.item_name(),
             &func.kind,
             (0..sig.params.len()).map(|i| format!("p{i}")).collect(),
             results,
@@ -565,9 +565,7 @@ impl InterfaceGenerator<'_> {
                 let ty = &self.resolve.types[*id];
                 match &ty.kind {
                     TypeDefKind::Type(ty) => self.is_primative_list(ty),
-                    TypeDefKind::List(ty) if crate::world_generator::is_primitive(ty) => {
-                        return true
-                    }
+                    TypeDefKind::List(ty) if crate::world_generator::is_primitive(ty) => true,
                     _ => false,
                 }
             }
@@ -791,7 +789,7 @@ impl InterfaceGenerator<'_> {
             Direction::Export => {
                 let prefix = key
                     .map(|s| format!("{}#", self.resolve.name_world_key(s)))
-                    .unwrap_or_else(String::new);
+                    .unwrap_or_default();
 
                 self.require_interop_using("System.Runtime.InteropServices");
                 uwrite!(
