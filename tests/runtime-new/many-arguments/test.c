@@ -1,9 +1,8 @@
 #include <assert.h>
-#include <many_arguments.h>
-#include <limits.h>
-#include <math.h>
 
-void exports_many_arguments_many_arguments(
+#include "test.h"
+
+void exports_test_many_arguments_to_test_many_arguments(
     uint64_t a1,
     uint64_t a2,
     uint64_t a3,
@@ -37,23 +36,4 @@ void exports_many_arguments_many_arguments(
   assert(a14 == 14);
   assert(a15 == 15);
   assert(a16 == 16);
-
-  imports_many_arguments(
-      a1,
-      a2,
-      a3,
-      a4,
-      a5,
-      a6,
-      a7,
-      a8,
-      a9,
-      a10,
-      a11,
-      a12,
-      a13,
-      a14,
-      a15,
-      a16
-  );
 }
