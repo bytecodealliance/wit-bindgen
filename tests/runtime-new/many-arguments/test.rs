@@ -1,10 +1,10 @@
-wit_bindgen::generate!({
-    path: "../../tests/runtime/many_arguments",
-});
+include!(env!("BINDINGS"));
 
 struct Component;
 
 export!(Component);
+
+use crate::exports::test::many_arguments::to_test::Guest;
 
 impl Guest for Component {
     fn many_arguments(
@@ -41,8 +41,5 @@ impl Guest for Component {
         assert_eq!(a14, 14);
         assert_eq!(a15, 15);
         assert_eq!(a16, 16);
-        imports::many_arguments(
-            a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16,
-        );
     }
 }
