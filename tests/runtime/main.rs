@@ -35,7 +35,6 @@ mod resources;
 mod results;
 mod rust_xcrate;
 mod smoke;
-mod strings;
 mod type_section_suffix;
 mod variants;
 mod versions;
@@ -192,7 +191,7 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
             let snake = world_name.replace("-", "_");
             let mut files = Default::default();
             let mut opts = wit_bindgen_c::Opts::default();
-            if let Some(path) = path.file_name().and_then(|s| s.to_str()) {
+            if let Some(path) = path.file_name().and_then(|s| s.to      _str()) {
                 if path.contains("utf16") {
                     opts.string_encoding = wit_component::StringEncoding::UTF16;
                 }
