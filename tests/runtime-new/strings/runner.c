@@ -1,3 +1,5 @@
+//@ args = '--string-encoding utf16'
+
 #include <assert.h>
 #include <stdlib.h>
 #include <string.h>
@@ -19,7 +21,6 @@ int main() {
     runner_string_t str1;
     runner_string_set(&str1, u"latin utf16");
     test_strings_to_test_take_basic(&str1);
-    runner_string_free(&str1);
 
     runner_string_t str2;
     test_strings_to_test_return_unicode(&str2);
@@ -36,6 +37,5 @@ int main() {
     runner_string_set(&str4, u"🚀🚀🚀 𠈄𓀀");
     test_strings_to_test_roundtrip(&str4, &str5);
     assert_str(&str5, u"🚀🚀🚀 𠈄𓀀");
-    runner_string_free(&str4);
     runner_string_free(&str5);
 }

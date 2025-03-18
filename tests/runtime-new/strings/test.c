@@ -1,3 +1,5 @@
+//@ args = '--string-encoding utf16'
+
 #include <assert.h>
 #include <stdlib.h>
 #include <string.h>
@@ -15,11 +17,12 @@ void assert_str(test_string_t* str, const char16_t* expected) {
 }
 
 void exports_test_strings_to_test_take_basic(test_string_t *str1) {
-    assert_str(&str1, u"latin utf16");
+  assert_str(str1, u"latin utf16");
+  test_string_free(str1);
 }
 
 void exports_test_strings_to_test_return_unicode(test_string_t *ret) {
-  test_string_set(&ret, u"🚀🚀🚀 𠈄𓀀");
+  test_string_dup(ret, u"🚀🚀🚀 𠈄𓀀");
 }
 
 void exports_test_strings_to_test_return_empty(test_string_t *ret) {
