@@ -157,15 +157,14 @@ path = 'lib.rs'
             compile.output.with_extension("core.wasm")
         };
 
-        cmd.current_dir(compile.component.path.parent().unwrap())
-            .env("CARGO_MANIFEST_DIR", ".")
+        cmd.env("CARGO_MANIFEST_DIR", ".")
             .env(
                 "BINDINGS",
                 compile
                     .bindings_dir
                     .join(format!("{}.rs", compile.component.kind)),
             )
-            .arg(compile.component.path.file_name().unwrap())
+            .arg(&compile.component.path)
             .arg("-o")
             .arg(&output);
         match compile.component.kind {
