@@ -19,7 +19,7 @@ fn dotnet() -> Command {
 
 impl LanguageMethods for Csharp {
     fn display(&self) -> &str {
-        "c-sharp"
+        "csharp"
     }
 
     fn comment_prefix_for_test_config(&self) -> Option<&str> {
