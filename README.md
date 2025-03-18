@@ -314,7 +314,7 @@ wasm-tools component wit ./my-component.wasm
 To generate the bindings:
 
 ```
-wit-bindgen c-sharp -w command -r native-aot --generate-stub wit/
+wit-bindgen csharp -w command -r native-aot --generate-stub wit/
 ```
 
 Now you create a c# project file:

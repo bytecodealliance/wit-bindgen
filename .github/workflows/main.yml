@@ -59,11 +59,11 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         # moonbit removed from language matrix for now - causing CI failures
-        lang: [c, rust, c-sharp]
+        lang: [c, rust, csharp]
         exclude:
-          # For now c-sharp doesn't work on macos, so exclude it from testing.
+          # For now csharp doesn't work on macos, so exclude it from testing.
           - os: macos-latest
-            lang: c-sharp
+            lang: csharp
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
@@ -82,11 +82,11 @@ jobs:
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: '9.x'
-      if: matrix.lang == 'c-sharp'
+      if: matrix.lang == 'csharp'
 
       # Hacky work-around for https://github.com/dotnet/runtime/issues/80619
     - run: dotnet new console -o /tmp/foo
-      if: matrix.os != 'windows-latest' && matrix.lang == 'c-sharp'
+      if: matrix.os != 'windows-latest' && matrix.lang == 'csharp'
 
     - run: |
         curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
@@ -158,7 +158,7 @@ jobs:
     - run: cargo build --no-default-features --features rust
     - run: cargo build --no-default-features --features c
     - run: cargo build --no-default-features --features go
-    - run: cargo build --no-default-features --features c-sharp
+    - run: cargo build --no-default-features --features csharp
     - run: cargo build --no-default-features --features markdown
     - run: cargo build --no-default-features --features moonbit
 

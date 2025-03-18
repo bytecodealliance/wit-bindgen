@@ -3,7 +3,7 @@
 The following will generate the c# code given a wit file:
 
 ```bash
-cargo run c-sharp --string-encoding utf8 --out-dir testing-csharp tests/codegen/floats.wit
+cargo run csharp --string-encoding utf8 --out-dir testing-csharp tests/codegen/floats.wit
 ```
 
 ## Setup

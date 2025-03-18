@@ -72,7 +72,7 @@ default = [
   'rust',
   'markdown',
   'go',
-  'c-sharp',
+  'csharp',
   'moonbit',
   'async',
 ]
@@ -80,8 +80,8 @@ c = ['dep:wit-bindgen-c']
 rust = ['dep:wit-bindgen-rust']
 markdown = ['dep:wit-bindgen-markdown']
 go = []
-c-sharp = ['dep:wit-bindgen-csharp']
-c-sharp-mono = ['c-sharp']
+csharp = ['dep:wit-bindgen-csharp']
+csharp-mono = ['csharp']
 moonbit = ['dep:wit-bindgen-moonbit']
 async = []
 
