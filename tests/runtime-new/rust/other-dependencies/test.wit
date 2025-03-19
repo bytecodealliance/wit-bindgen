@@ -1,0 +1,8 @@
+// note that this isn't actually used since the auto-generated bindings are
+// ignored and the `generate!` macro is customized for this test as it's
+// specifically testing behavior of the `generate!` macro.
+
+package a:b;
+
+world test {}
+world runner {}

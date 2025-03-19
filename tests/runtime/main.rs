@@ -15,7 +15,6 @@ use wit_parser::{Resolve, WorldId, WorldItem};
 
 mod flavorful;
 mod options;
-mod other_dependencies;
 mod ownership;
 mod records;
 mod resource_alias;

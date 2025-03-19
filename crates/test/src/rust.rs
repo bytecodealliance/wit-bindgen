@@ -157,7 +157,8 @@ path = 'lib.rs'
             compile.output.with_extension("core.wasm")
         };
 
-        cmd.env("CARGO_MANIFEST_DIR", ".")
+        let manifest_dir = compile.component.path.parent().unwrap();
+        cmd.env("CARGO_MANIFEST_DIR", manifest_dir)
             .env(
                 "BINDINGS",
                 compile
