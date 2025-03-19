@@ -1,0 +1,16 @@
+package test:strings;
+
+interface to-test {
+  take-basic: func(s: string);
+  return-unicode: func() -> string;
+  return-empty: func() -> string;
+  roundtrip: func(s: string) -> string;
+}
+
+world test {
+  export to-test;
+}
+
+world runner {
+  import to-test;
+}

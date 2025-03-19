@@ -33,7 +33,6 @@ mod resources;
 mod results;
 mod rust_xcrate;
 mod smoke;
-mod strings;
 mod type_section_suffix;
 mod variants;
 mod versions;
