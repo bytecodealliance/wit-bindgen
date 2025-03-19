@@ -1,7 +1,9 @@
+use crate::config::StringList;
 use crate::{Compile, Kind, LanguageMethods, Runner, Verify};
 use anyhow::Result;
 use clap::Parser;
 use heck::ToSnakeCase;
+use serde::Deserialize;
 use std::env;
 use std::path::PathBuf;
 use std::process::Command;
@@ -16,6 +18,15 @@ pub struct COpts {
 pub struct C;
 
 pub struct Cpp;
+
+/// C/C++-specific configuration of component files
+#[derive(Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LangConfig {
+    /// Space-separated list or array of compiler flags to pass.
+    #[serde(default)]
+    cflags: StringList,
+}
 
 fn clang(runner: &Runner<'_>) -> PathBuf {
     match &runner.opts.c.wasi_sdk_path {
@@ -124,6 +135,8 @@ fn prepare(runner: &mut Runner<'_>, compiler: PathBuf) -> Result<()> {
 }
 
 fn compile(runner: &Runner<'_>, compile: &Compile<'_>, compiler: PathBuf) -> Result<()> {
+    let config = compile.component.deserialize_lang_config::<LangConfig>()?;
+
     // Compile the C-based bindings to an object file.
     let bindings_object = compile.output.with_extension("bindings.o");
     let mut cmd = Command::new(clang(runner));
@@ -163,6 +176,9 @@ fn compile(runner: &Runner<'_>, compile: &Compile<'_>, compiler: PathBuf) -> Res
         .arg("-g")
         .arg("-o")
         .arg(&compile.output);
+    for flag in Vec::from(config.cflags) {
+        cmd.arg(flag);
+    }
     match compile.component.kind {
         Kind::Runner => {}
         Kind::Test => {
