@@ -81,9 +81,5 @@ name = "resource_borrow_simple"
 test = false
 
 [[bin]]
-name = "type_section_suffix"
-test = false
-
-[[bin]]
 name = "rust_xcrate"
 test = false

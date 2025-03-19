@@ -1,0 +1,37 @@
+package test:suffix;
+
+interface imports {
+  foo: func();
+}
+
+world available-imports {
+  import imports;
+  include test:a/imports;
+  include test:b/imports;
+}
+
+world runner {
+  include available-imports;
+}
+
+world test {
+  export imports;
+  export foo: interface { f: func(); }
+  export bar: interface { f: func(); }
+}
+
+package test:a {
+  world imports {
+    import foo: interface {
+      f: func();
+    }
+  }
+}
+
+package test:b {
+  world imports {
+    import bar: interface {
+      f: func();
+    }
+  }
+}
