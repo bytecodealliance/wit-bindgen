@@ -30,12 +30,32 @@ use anyhow::Context;
 use anyhow::Result;
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
+use std::collections::HashMap;
 
 /// Configuration that can be placed at the top of runtime tests in source
-/// language files. This is currently language-agnostic.
+/// language files.
+///
+/// This is a union of language-agnostic and language-specific configuration.
+/// Language-agnostic configuration can be bindings generator arguments:
+///
+/// ```toml
+/// args = '--foo --bar'
+/// #  or ...
+/// args = ['--foo', '--bar']
+/// ```
+///
+/// but languages may each have their own configuration:
+///
+/// ```toml
+/// [lang]
+/// rustflags = '-O'
+/// ```
+///
+/// The `Component::deserialize_lang_config` helper is used to deserialize the
+/// `lang` field here.
 #[derive(Default, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
-pub struct RuntimeTestConfig {
+pub struct RuntimeTestConfig<T = HashMap<String, toml::Value>> {
     /// Extra command line arguments to pass to the language-specific bindings
     /// generator.
     ///
@@ -43,20 +63,16 @@ pub struct RuntimeTestConfig {
     /// of strings. By default no extra arguments are passed.
     #[serde(default)]
     pub args: StringList,
-    //
-    // Maybe add something like this eventually if necessary? For example plumb
-    // arbitrary configuration from tests to the "compile" backend. This would
-    // then thread through as `Compile` and could be used to pass compiler flags
-    // for example.
-    //
-    // lang: HashMap<String, String>,
 
-    // ...
+    /// Language-specific configuration
     //
-    // or alternatively could also have something dedicated like:
-    // compile_flags: StringList,
-    //
-    // unclear! This should be expanded on over time as necessary.
+    // Note that this is an `Option<T>` where `T` defaults to a catch-all hash
+    // map with a bunch of toml values in it. The idea here is that tests are
+    // first parsed with the `HashMap` configuration. If that's not present
+    // then the language uses its default configuration but if it is present
+    // then the fields are re-parsed where `T` is specific-per-language. The
+    // `Component::deserialize_lang_config` helper is intended for this.
+    pub lang: Option<T>,
 }
 
 #[derive(Deserialize)]
