@@ -17,7 +17,6 @@ mod flavorful;
 mod options;
 mod other_dependencies;
 mod ownership;
-mod records;
 mod resource_alias;
 mod resource_alias_redux;
 mod resource_borrow_export;
