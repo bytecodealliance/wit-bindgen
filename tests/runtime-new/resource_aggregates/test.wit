@@ -1,6 +1,6 @@
 package test:resource-aggregates;
 
-interface test {
+interface to-test {
   resource thing {
     constructor(v: u32);
   }
@@ -51,7 +51,10 @@ interface test {
   ) -> u32;
 }
 
-world resource-aggregates {
-  import test;
-  export test;
+world test {
+  export to-test;
+}
+
+world runner {
+  import to-test;
 }

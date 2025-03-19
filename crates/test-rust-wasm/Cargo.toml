@@ -85,10 +85,6 @@ name = "resource_alias"
 test = false
 
 [[bin]]
-name = "resource_aggregates"
-test = false
-
-[[bin]]
 name = "resource_borrow_simple"
 test = false
 
