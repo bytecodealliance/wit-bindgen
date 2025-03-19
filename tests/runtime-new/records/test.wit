@@ -1,6 +1,6 @@
 package test:records;
 
-interface test {
+interface to-test {
   multiple-results: func() -> tuple<u8, u16>;
 
   swap-tuple: func(a: tuple<u8, u32>) -> tuple<u32, u8>;
@@ -37,9 +37,10 @@ interface test {
   tuple1: func(a: tuple<u8>) -> tuple<u8>;
 }
 
-world records {
-  import test;
-  export test;
+world test {
+  export to-test;
+}
 
-  export test-imports: func();
+world runner {
+  import to-test;
 }
