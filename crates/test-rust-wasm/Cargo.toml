@@ -6,7 +6,6 @@ publish = false
 
 [dependencies]
 wit-bindgen = { path = "../guest-rust" }
-rust-xcrate-test = { path = './rust-xcrate-test' }
 
 [lib]
 test = false
@@ -70,8 +69,4 @@ test = false
 
 [[bin]]
 name = "resource_borrow_simple"
-test = false
-
-[[bin]]
-name = "rust_xcrate"
 test = false
