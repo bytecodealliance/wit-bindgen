@@ -797,13 +797,10 @@ enum Stubs<'a> {
 // We cant use "StructLayout.Pack" as dotnet will use the minimum of the type and the "Pack" field,
 // so for byte it would always use 1 regardless of the "Pack".
 pub fn dotnet_aligned_array(array_size: usize, required_alignment: usize) -> (usize, String) {
-    let num_elements = if array_size % required_alignment > 0 {
-        array_size / required_alignment + 1
-    } else {
-        array_size / required_alignment
-    };
+    let num_elements = array_size.div_ceil(required_alignment);
     match required_alignment {
         1 => (num_elements, "byte".to_owned()),
+        // Add one additional element in case the starting address is not aligned
         2 => (num_elements, "ushort".to_owned()),
         4 => (num_elements, "uint".to_owned()),
         8 => (num_elements, "ulong".to_owned()),

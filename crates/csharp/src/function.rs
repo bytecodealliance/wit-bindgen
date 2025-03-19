@@ -882,6 +882,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 );
                 let ret_area = self.locals.tmp("retArea");
 
+                let array_size = if align > 1 { 
+                    // Add one additional element in case the starting address is not aligned
+                    format!("{array_size} * {list}.Count + 1")
+                } else {
+                    format!("{array_size} * {list}.Count")
+                };
+
                 match realloc {
                     None => {
                         self.needs_cleanup = true;
@@ -889,8 +896,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             "
                             void* {address};
                             if (({size} * {list}.Count) < 1024) {{
-                                var {ret_area} = stackalloc {element_type}[{array_size}*{list}.Count];
-                                {address} = (void*)((int){ret_area});
+                                var {ret_area} = stackalloc {element_type}[{array_size}];
+                                {address} = (void*)(((int){ret_area}) + ({align} - 1) & -{align});
                             }}
                             else
                             {{
@@ -1288,10 +1295,17 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 // to align the allocation via the stackalloc command, unlike with a fixed array where the pointer will be aligned.
                 // We get the final ptr to pass to the wasm runtime by shifting to the
                 // correctly aligned pointer (sometimes it can be already aligned).
+                let array_size = if self.import_return_pointer_area_align > 1 {
+                    // Add one additional element in case the starting address is not aligned
+                    array_size + 1
+                } else {
+                    array_size
+                };
+
                 uwrite!(
                     self.src,
                     "
-                    var {ret_area} = stackalloc {element_type}[{array_size}+1];
+                    var {ret_area} = stackalloc {element_type}[{array_size}];
                     var {ptr} = ((int){ret_area}) + ({align} - 1) & -{align};
                     ",
                     align = align.align_wasm32()
