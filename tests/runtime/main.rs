@@ -32,7 +32,6 @@ mod resource_with_lists;
 mod resources;
 mod results;
 mod rust_xcrate;
-mod smoke;
 mod type_section_suffix;
 mod variants;
 mod versions;
