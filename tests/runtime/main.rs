@@ -14,14 +14,8 @@ use wit_component::{ComponentEncoder, StringEncoding};
 use wit_parser::{Resolve, WorldId, WorldItem};
 
 mod flavorful;
-mod lists;
-mod many_arguments;
-mod numbers;
 mod options;
-mod other_dependencies;
 mod ownership;
-mod records;
-mod resource_aggregates;
 mod resource_alias;
 mod resource_alias_redux;
 mod resource_borrow_export;
@@ -35,9 +29,6 @@ mod resource_with_lists;
 mod resources;
 mod results;
 mod rust_xcrate;
-mod smoke;
-mod strings;
-mod type_section_suffix;
 mod variants;
 mod versions;
 

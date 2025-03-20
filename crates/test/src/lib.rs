@@ -14,6 +14,7 @@ use wit_component::{ComponentEncoder, StringEncoding};
 
 mod c;
 mod config;
+mod csharp;
 mod custom;
 mod runner;
 mod rust;
@@ -150,6 +151,12 @@ struct Component {
     /// The WIT world that's being used with this component, loaded from
     /// `test.wit`.
     bindgen: Bindgen,
+
+    /// The contents of the test file itself.
+    contents: String,
+
+    /// The contents of the test file itself.
+    lang_config: Option<HashMap<String, toml::Value>>,
 }
 
 #[derive(Clone)]
@@ -167,7 +174,7 @@ struct Bindgen {
     wit_config: config::WitConfig,
 }
 
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 enum Kind {
     Runner,
     Test,
@@ -179,6 +186,7 @@ enum Language {
     C,
     Cpp,
     Wat,
+    Csharp,
     Custom(custom::Language),
 }
 
@@ -368,6 +376,7 @@ impl Runner<'_> {
             "c" => Language::C,
             "cpp" => Language::Cpp,
             "wat" => Language::Wat,
+            "cs" => Language::Csharp,
             other => Language::Custom(custom::Language::lookup(self, other)?),
         };
 
@@ -387,6 +396,8 @@ impl Runner<'_> {
             language,
             bindgen,
             kind,
+            contents,
+            lang_config: config.lang,
         })
     }
 
@@ -553,6 +564,7 @@ impl Runner<'_> {
             .join("codegen")
             .join(language.to_string())
             .join(args_kind);
+        let _ = fs::remove_dir_all(&artifacts_dir);
         let bindings_dir = artifacts_dir.join("bindings");
         let bindgen = Bindgen {
             args: args.to_vec(),
@@ -693,6 +705,7 @@ impl Runner<'_> {
             .join(&self.opts.artifacts)
             .join(&test.name);
         let artifacts_dir = root_dir.join(format!("{}-{}", component.name, component.language));
+        let _ = fs::remove_dir_all(&artifacts_dir);
         let bindings_dir = artifacts_dir.join("bindings");
         let output = root_dir.join(format!("{}-{}.wasm", component.name, component.language));
         component
@@ -791,7 +804,9 @@ status: {}",
     /// Stores the output at `compile.output`.
     fn convert_p1_to_component(&self, p1: &Path, compile: &Compile<'_>) -> Result<()> {
         let mut resolve = wit_parser::Resolve::default();
-        let (pkg, _) = resolve.push_path(&compile.component.bindgen.wit_path)?;
+        let (pkg, _) = resolve
+            .push_path(&compile.component.bindgen.wit_path)
+            .context("failed to load WIT")?;
         let world = resolve.select_world(pkg, Some(&compile.component.kind.to_string()))?;
         let mut module = fs::read(&p1).context("failed to read wasm file")?;
         let encoded = wit_component::metadata::encode(&resolve, world, StringEncoding::UTF8, None)?;
@@ -1025,7 +1040,13 @@ trait LanguageMethods {
 }
 
 impl Language {
-    const ALL: &[Language] = &[Language::Rust, Language::C, Language::Cpp, Language::Wat];
+    const ALL: &[Language] = &[
+        Language::Rust,
+        Language::C,
+        Language::Cpp,
+        Language::Wat,
+        Language::Csharp,
+    ];
 
     fn obj(&self) -> &dyn LanguageMethods {
         match self {
@@ -1033,6 +1054,7 @@ impl Language {
             Language::C => &c::C,
             Language::Cpp => &c::Cpp,
             Language::Wat => &wat::Wat,
+            Language::Csharp => &csharp::Csharp,
             Language::Custom(custom) => custom,
         }
     }
@@ -1069,4 +1091,35 @@ fn write_if_different(path: &Path, contents: impl AsRef<[u8]>) -> Result<bool> {
     }
     fs::write(path, contents).with_context(|| format!("failed to write {path:?}"))?;
     Ok(true)
+}
+
+impl Component {
+    /// Helper to convert `RuntimeTestConfig` to a `RuntimeTestConfig<T>` and
+    /// then extract the `T`.
+    ///
+    /// This is called from within each language's implementation with a
+    /// specific `T` necessary for that language.
+    fn deserialize_lang_config<T>(&self) -> Result<T>
+    where
+        T: Default + serde::de::DeserializeOwned,
+    {
+        // If this test has no language-specific configuration then return this
+        // language's default configuration.
+        if self.lang_config.is_none() {
+            return Ok(T::default());
+        }
+
+        // Otherwise re-parse the TOML at the top of the file but this time
+        // with the specific `T` that we're interested in. This is expected
+        // to then produce a value in the `lang` field since
+        // `self.lang_config.is_some()` is true.
+        let config = config::parse_test_config::<config::RuntimeTestConfig<T>>(
+            &self.contents,
+            self.language
+                .obj()
+                .comment_prefix_for_test_config()
+                .unwrap(),
+        )?;
+        Ok(config.lang.unwrap())
+    }
 }

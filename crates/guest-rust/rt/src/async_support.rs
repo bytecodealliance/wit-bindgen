@@ -1,4 +1,7 @@
 #![deny(missing_docs)]
+// TODO: Switch to interior mutability (e.g. use Mutexes or thread-local
+// RefCells) and remove this, since even in single-threaded mode `static mut`
+// references can be a hazard due to recursive access.
 #![allow(static_mut_refs)]
 
 extern crate std;
@@ -43,6 +46,30 @@ struct FutureState {
     /// Note that we won't tell the host the task is done until this is drained
     /// and `todo` is zero.
     tasks: Option<FuturesUnordered<BoxFuture>>,
+    /// The waitable set containing waitables created by this task, if any.
+    waitable_set: Option<u32>,
+}
+
+impl FutureState {
+    fn get_or_create_waitable_set(&mut self) -> u32 {
+        *self.waitable_set.get_or_insert_with(waitable_set_new)
+    }
+
+    fn add_waitable(&mut self, waitable: u32) {
+        unsafe { waitable_join(waitable, self.get_or_create_waitable_set()) }
+    }
+
+    fn remove_waitable(&mut self, waitable: u32) {
+        unsafe { waitable_join(waitable, 0) }
+    }
+}
+
+impl Drop for FutureState {
+    fn drop(&mut self) {
+        if let Some(set) = self.waitable_set.take() {
+            waitable_set_drop(set);
+        }
+    }
 }
 
 /// Represents the state of a stream or future.
@@ -72,6 +99,24 @@ static mut SPAWNED: Vec<BoxFuture> = Vec::new();
 
 /// The states of all currently-open streams and futures.
 static mut HANDLES: Lazy<HashMap<u32, Handle>> = Lazy::new(HashMap::new);
+
+const EVENT_NONE: i32 = 0;
+const _EVENT_CALL_STARTING: i32 = 1;
+const EVENT_CALL_STARTED: i32 = 2;
+const EVENT_CALL_RETURNED: i32 = 3;
+const EVENT_STREAM_READ: i32 = 5;
+const EVENT_STREAM_WRITE: i32 = 6;
+const EVENT_FUTURE_READ: i32 = 7;
+const EVENT_FUTURE_WRITE: i32 = 8;
+
+const CALLBACK_CODE_EXIT: i32 = 0;
+const _CALLBACK_CODE_YIELD: i32 = 1;
+const CALLBACK_CODE_WAIT: i32 = 2;
+const _CALLBACK_CODE_POLL: i32 = 3;
+
+const STATUS_STARTING: u32 = 1;
+const STATUS_STARTED: u32 = 2;
+const STATUS_RETURNED: u32 = 3;
 
 #[doc(hidden)]
 pub fn with_entry<T>(handle: u32, fun: impl FnOnce(hash_map::Entry<'_, u32, Handle>) -> T) -> T {
@@ -111,8 +156,10 @@ unsafe fn poll(state: *mut FutureState) -> Poll<()> {
                         break Poll::Ready(());
                     }
                     Poll::Pending => {
-                        // TODO: Return `CallbackCode.YIELD` (see https://github.com/WebAssembly/component-model/blob/main/design/mvp/CanonicalABI.md#canon-lift)
-                        // to the host before polling again once a host implementation exists to support it.
+                        // TODO: Return `CallbackCode.YIELD` (see
+                        // https://github.com/WebAssembly/component-model/blob/main/design/mvp/CanonicalABI.md#canon-lift)
+                        // to the host before polling again once a host
+                        // implementation exists to support it.
                         if !waker.0.load(Ordering::Relaxed) {
                             break Poll::Pending;
                         }
@@ -137,7 +184,7 @@ unsafe fn poll(state: *mut FutureState) -> Poll<()> {
 pub fn first_poll<T: 'static>(
     future: impl Future<Output = T> + 'static,
     fun: impl FnOnce(&T) + 'static,
-) -> *mut u8 {
+) -> i32 {
     let state = Box::into_raw(Box::new(FutureState {
         todo: 0,
         tasks: Some(
@@ -145,11 +192,10 @@ pub fn first_poll<T: 'static>(
                 .into_iter()
                 .collect(),
         ),
+        waitable_set: None,
     }));
-    match unsafe { poll(state) } {
-        Poll::Ready(()) => ptr::null_mut(),
-        Poll::Pending => state as _,
-    }
+    let done = unsafe { poll(state).is_ready() };
+    unsafe { callback_code(state, done) }
 }
 
 /// Await the completion of a call to an async-lowered import.
@@ -159,16 +205,11 @@ pub async unsafe fn await_result(
     params: *mut u8,
     results: *mut u8,
 ) {
-    const STATUS_STARTING: u32 = 0;
-    const STATUS_STARTED: u32 = 1;
-    const STATUS_RETURNED: u32 = 2;
-    const STATUS_DONE: u32 = 3;
-
     let result = import(params, results) as u32;
     let status = result >> 30;
     let call = (result & !(0b11 << 30)) as i32;
 
-    if status != STATUS_DONE {
+    if status != STATUS_RETURNED {
         assert!(!CURRENT.is_null());
         (*CURRENT).todo += 1;
     }
@@ -176,17 +217,13 @@ pub async unsafe fn await_result(
     let trap_on_drop = TrapOnDrop;
 
     match status {
-        STATUS_STARTING => {
+        STATUS_STARTING | STATUS_STARTED => {
+            (*CURRENT).add_waitable(call as u32);
             let (tx, rx) = oneshot::channel();
             CALLS.insert(call, tx);
             rx.await.unwrap();
         }
-        STATUS_STARTED => {
-            let (tx, rx) = oneshot::channel();
-            CALLS.insert(call, tx);
-            rx.await.unwrap();
-        }
-        STATUS_RETURNED | STATUS_DONE => {}
+        STATUS_RETURNED => {}
         _ => unreachable!("unrecognized async call status"),
     }
 
@@ -257,6 +294,9 @@ pub async unsafe fn await_future_result(
         results::BLOCKED => {
             assert!(!CURRENT.is_null());
             (*CURRENT).todo += 1;
+
+            (*CURRENT).add_waitable(future);
+
             let (tx, rx) = oneshot::channel();
             CALLS.insert(future as _, tx);
             AsyncWaitResult::from_nonblocked_async_result(rx.await.unwrap())
@@ -278,6 +318,9 @@ pub async unsafe fn await_stream_result(
         results::BLOCKED => {
             assert!(!CURRENT.is_null());
             (*CURRENT).todo += 1;
+
+            (*CURRENT).add_waitable(stream);
+
             let (tx, rx) = oneshot::channel();
             CALLS.insert(stream as _, tx);
             let v = rx.await.unwrap();
@@ -294,56 +337,69 @@ pub async unsafe fn await_stream_result(
 /// Call the `subtask.drop` canonical built-in function.
 fn subtask_drop(subtask: u32) {
     #[cfg(not(target_arch = "wasm32"))]
-    {
-        _ = subtask;
-        unreachable!();
+    unsafe fn subtask_drop(_: u32) {
+        unreachable!()
     }
 
     #[cfg(target_arch = "wasm32")]
-    {
-        #[link(wasm_import_module = "$root")]
-        extern "C" {
-            #[link_name = "[subtask-drop]"]
-            fn subtask_drop(_: u32);
-        }
-        unsafe {
-            subtask_drop(subtask);
-        }
+    #[link(wasm_import_module = "$root")]
+    extern "C" {
+        #[link_name = "[subtask-drop]"]
+        fn subtask_drop(_: u32);
+    }
+    unsafe { subtask_drop(subtask) }
+}
+
+unsafe fn callback_code(state: *mut FutureState, done: bool) -> i32 {
+    if done && (*state).todo == 0 {
+        context_set(0);
+        drop(Box::from_raw(state));
+        CALLBACK_CODE_EXIT
+    } else {
+        context_set(i32::try_from(state as isize).unwrap() as u32);
+        CALLBACK_CODE_WAIT | (((*state).waitable_set.unwrap() as i32) << 4)
     }
 }
 
 /// Handle a progress notification from the host regarding either a call to an
 /// async-lowered import or a stream/future read/write operation.
 #[doc(hidden)]
-pub unsafe fn callback(ctx: *mut u8, event0: i32, event1: i32, event2: i32) -> i32 {
-    const _EVENT_CALL_STARTING: i32 = 0;
-    const EVENT_CALL_STARTED: i32 = 1;
-    const EVENT_CALL_RETURNED: i32 = 2;
-    const EVENT_CALL_DONE: i32 = 3;
-    const _EVENT_YIELDED: i32 = 4;
-    const EVENT_STREAM_READ: i32 = 5;
-    const EVENT_STREAM_WRITE: i32 = 6;
-    const EVENT_FUTURE_READ: i32 = 7;
-    const EVENT_FUTURE_WRITE: i32 = 8;
+pub unsafe fn callback(event0: i32, event1: i32, event2: i32) -> i32 {
+    let state = isize::try_from(context_get()).unwrap() as *mut FutureState;
+    assert!(!state.is_null());
 
+    callback_with_state(state, event0, event1, event2)
+}
+
+unsafe fn callback_with_state(
+    state: *mut FutureState,
+    event0: i32,
+    event1: i32,
+    event2: i32,
+) -> i32 {
     match event0 {
-        EVENT_CALL_STARTED => 0,
-        EVENT_CALL_RETURNED | EVENT_CALL_DONE | EVENT_STREAM_READ | EVENT_STREAM_WRITE
-        | EVENT_FUTURE_READ | EVENT_FUTURE_WRITE => {
+        EVENT_NONE => {
+            let done = poll(state).is_ready();
+            callback_code(state, done)
+        }
+        EVENT_CALL_STARTED => callback_code(state, false),
+        EVENT_CALL_RETURNED | EVENT_STREAM_READ | EVENT_STREAM_WRITE | EVENT_FUTURE_READ
+        | EVENT_FUTURE_WRITE => {
+            (*state).remove_waitable(event1 as _);
+
             if let Some(call) = CALLS.remove(&event1) {
                 _ = call.send(event2 as _);
             }
 
-            let state = ctx as *mut FutureState;
             let done = poll(state).is_ready();
 
-            if event0 == EVENT_CALL_DONE {
+            if event0 == EVENT_CALL_RETURNED {
                 subtask_drop(event1 as u32);
             }
 
             if matches!(
                 event0,
-                EVENT_CALL_DONE
+                EVENT_CALL_RETURNED
                     | EVENT_STREAM_READ
                     | EVENT_STREAM_WRITE
                     | EVENT_FUTURE_READ
@@ -352,12 +408,7 @@ pub unsafe fn callback(ctx: *mut u8, event0: i32, event1: i32, event2: i32) -> i
                 (*state).todo -= 1;
             }
 
-            if done && (*state).todo == 0 {
-                drop(Box::from_raw(state));
-                1
-            } else {
-                0
-            }
+            callback_code(state, done)
         }
         _ => unreachable!(),
     }
@@ -373,25 +424,22 @@ impl ErrorContext {
     /// Call the `error-context.new` canonical built-in function.
     pub fn new(debug_message: &str) -> ErrorContext {
         #[cfg(not(target_arch = "wasm32"))]
-        {
-            _ = debug_message;
-            unreachable!();
+        unsafe fn context_new(_: *const u8, _: usize) -> i32 {
+            unreachable!()
         }
 
         #[cfg(target_arch = "wasm32")]
-        {
-            #[link(wasm_import_module = "$root")]
-            extern "C" {
-                #[link_name = "[error-context-new-utf8]"]
-                fn context_new(_: *const u8, _: usize) -> i32;
-            }
+        #[link(wasm_import_module = "$root")]
+        extern "C" {
+            #[link_name = "[error-context-new-utf8]"]
+            fn context_new(_: *const u8, _: usize) -> i32;
+        }
 
-            unsafe {
-                let handle = context_new(debug_message.as_ptr(), debug_message.len());
-                // SAFETY: Handles (including error context handles are guaranteed to
-                // fit inside u32 by the Component Model ABI
-                ErrorContext::from_handle(u32::try_from(handle).unwrap())
-            }
+        unsafe {
+            let handle = context_new(debug_message.as_ptr(), debug_message.len());
+            // SAFETY: Handles (including error context handles are guaranteed to
+            // fit inside u32 by the Component Model ABI
+            ErrorContext::from_handle(u32::try_from(handle).unwrap())
         }
     }
 
@@ -407,32 +455,31 @@ impl ErrorContext {
 
     /// Extract the debug message from a given [`ErrorContext`]
     pub fn debug_message(&self) -> String {
+        #[repr(C)]
+        struct RetPtr {
+            ptr: *mut u8,
+            len: usize,
+        }
+
         #[cfg(not(target_arch = "wasm32"))]
-        {
-            String::from("<no debug message on native hosts>")
+        fn error_context_debug_message(_: u32, _: &mut RetPtr) {
+            unreachable!()
         }
 
         #[cfg(target_arch = "wasm32")]
-        {
-            #[repr(C)]
-            struct RetPtr {
-                ptr: *mut u8,
-                len: usize,
-            }
-            #[link(wasm_import_module = "$root")]
-            extern "C" {
-                #[link_name = "[error-context-debug-message-utf8]"]
-                fn error_context_debug_message(_: u32, _: &mut RetPtr);
-            }
+        #[link(wasm_import_module = "$root")]
+        extern "C" {
+            #[link_name = "[error-context-debug-message-utf8]"]
+            fn error_context_debug_message(_: u32, _: &mut RetPtr);
+        }
 
-            unsafe {
-                let mut ret = RetPtr {
-                    ptr: ptr::null_mut(),
-                    len: 0,
-                };
-                error_context_debug_message(self.handle, &mut ret);
-                String::from_raw_parts(ret.ptr, ret.len, ret.len)
-            }
+        unsafe {
+            let mut ret = RetPtr {
+                ptr: ptr::null_mut(),
+                len: 0,
+            };
+            error_context_debug_message(self.handle, &mut ret);
+            String::from_raw_parts(ret.ptr, ret.len, ret.len)
         }
     }
 }
@@ -478,29 +525,6 @@ pub fn spawn(future: impl Future<Output = ()> + 'static) {
     unsafe { SPAWNED.push(Box::pin(future)) }
 }
 
-fn waitable_set_wait(state: &mut FutureState) {
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        _ = state;
-        unreachable!();
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    {
-        #[link(wasm_import_module = "$root")]
-        extern "C" {
-            #[link_name = "[waitable-set-wait]"]
-            fn wait(_: u32, _: *mut i32) -> i32;
-        }
-        let mut payload = [0i32; 2];
-        unsafe {
-            // TODO: provide a real waitable-set here:
-            let event0 = wait(0, payload.as_mut_ptr());
-            callback(state as *mut _ as _, event0, payload[0], payload[1]);
-        }
-    }
-}
-
 /// Run the specified future to completion, returning the result.
 ///
 /// This uses `waitable-set.wait` to poll for progress on any in-progress calls
@@ -515,6 +539,7 @@ pub fn block_on<T: 'static>(future: impl Future<Output = T> + 'static) -> T {
                 .into_iter()
                 .collect(),
         ),
+        waitable_set: None,
     };
     loop {
         match unsafe { poll(state) } {
@@ -531,21 +556,17 @@ pub fn block_on<T: 'static>(future: impl Future<Output = T> + 'static) -> T {
 /// otherwise ever yield control the the host.
 pub fn task_yield() {
     #[cfg(not(target_arch = "wasm32"))]
-    {
+    unsafe fn yield_() {
         unreachable!();
     }
 
     #[cfg(target_arch = "wasm32")]
-    {
-        #[link(wasm_import_module = "$root")]
-        extern "C" {
-            #[link_name = "[yield]"]
-            fn yield_();
-        }
-        unsafe {
-            yield_();
-        }
+    #[link(wasm_import_module = "$root")]
+    extern "C" {
+        #[link_name = "[yield]"]
+        fn yield_();
     }
+    unsafe { yield_() }
 }
 
 /// Call the `backpressure.set` canonical built-in function.
@@ -555,20 +576,111 @@ pub fn task_yield() {
 /// called again with `enabled` set to `false`).
 pub fn backpressure_set(enabled: bool) {
     #[cfg(not(target_arch = "wasm32"))]
-    {
-        _ = enabled;
+    unsafe fn backpressure_set(_: i32) {
         unreachable!();
     }
 
     #[cfg(target_arch = "wasm32")]
-    {
-        #[link(wasm_import_module = "$root")]
-        extern "C" {
-            #[link_name = "[backpressure-set]"]
-            fn backpressure_set(_: i32);
-        }
-        unsafe {
-            backpressure_set(if enabled { 1 } else { 0 });
-        }
+    #[link(wasm_import_module = "$root")]
+    extern "C" {
+        #[link_name = "[backpressure-set]"]
+        fn backpressure_set(_: i32);
+    }
+
+    unsafe { backpressure_set(if enabled { 1 } else { 0 }) }
+}
+
+fn context_get() -> u32 {
+    #[cfg(not(target_arch = "wasm32"))]
+    unsafe fn get() -> u32 {
+        unreachable!()
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    #[link(wasm_import_module = "$root")]
+    extern "C" {
+        #[link_name = "[context-get-1]"]
+        fn get() -> u32;
+    }
+
+    unsafe { get() }
+}
+
+fn context_set(value: u32) {
+    #[cfg(not(target_arch = "wasm32"))]
+    unsafe fn set(_: u32) {
+        unreachable!()
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    #[link(wasm_import_module = "$root")]
+    extern "C" {
+        #[link_name = "[context-set-1]"]
+        fn set(value: u32);
+    }
+
+    unsafe { set(value) }
+}
+
+fn waitable_set_new() -> u32 {
+    #[cfg(not(target_arch = "wasm32"))]
+    unsafe fn new() -> u32 {
+        unreachable!()
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    #[link(wasm_import_module = "$root")]
+    extern "C" {
+        #[link_name = "[waitable-set-new]"]
+        fn new() -> u32;
+    }
+
+    unsafe { new() }
+}
+
+fn waitable_set_drop(set: u32) {
+    #[cfg(not(target_arch = "wasm32"))]
+    unsafe fn drop(_: u32) {
+        unreachable!()
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    #[link(wasm_import_module = "$root")]
+    extern "C" {
+        #[link_name = "[waitable-set-drop]"]
+        fn drop(set: u32);
+    }
+
+    unsafe { drop(set) }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+unsafe fn waitable_join(_: u32, _: u32) {
+    unreachable!()
+}
+#[cfg(target_arch = "wasm32")]
+#[link(wasm_import_module = "$root")]
+extern "C" {
+    #[link_name = "[waitable-join]"]
+    fn waitable_join(waitable: u32, set: u32);
+}
+
+fn waitable_set_wait(state: &mut FutureState) {
+    #[cfg(not(target_arch = "wasm32"))]
+    unsafe fn wait(_: u32, _: *mut i32) -> i32 {
+        unreachable!();
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    #[link(wasm_import_module = "$root")]
+    extern "C" {
+        #[link_name = "[waitable-set-wait]"]
+        fn wait(_: u32, _: *mut i32) -> i32;
+    }
+
+    unsafe {
+        let mut payload = [0i32; 2];
+        let event0 = wait(state.get_or_create_waitable_set(), payload.as_mut_ptr());
+        callback_with_state(state as *mut _, event0, payload[0], payload[1]);
     }
 }

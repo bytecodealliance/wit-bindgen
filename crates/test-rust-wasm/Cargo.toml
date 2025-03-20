@@ -16,23 +16,11 @@ test = false
 doctest = false
 
 [[bin]]
-name = "smoke"
-test = false
-
-[[bin]]
-name = "records"
-test = false
-
-[[bin]]
 name = "variants"
 test = false
 
 [[bin]]
 name = "flavorful"
-test = false
-
-[[bin]]
-name = "many_arguments"
 test = false
 
 [[bin]]
@@ -92,15 +80,7 @@ name = "resource_alias"
 test = false
 
 [[bin]]
-name = "resource_aggregates"
-test = false
-
-[[bin]]
 name = "resource_borrow_simple"
-test = false
-
-[[bin]]
-name = "type_section_suffix"
 test = false
 
 [[bin]]

@@ -1109,9 +1109,9 @@ pub mod vtable{ordinal} {{
                 "\
                     #[doc(hidden)]
                     #[allow(non_snake_case)]
-                    pub unsafe fn __callback_{name_snake}(ctx: *mut u8, event0: i32, event1: i32, event2: i32) -> i32 {{
+                    pub unsafe fn __callback_{name_snake}(event0: i32, event1: i32, event2: i32) -> i32 {{
                         unsafe {{
-                            {async_support}::callback(ctx, event0, event1, event2)
+                            {async_support}::callback(event0, event1, event2)
                         }}
                     }}
                 "
@@ -1205,9 +1205,9 @@ pub mod vtable{ordinal} {{
                 self.src,
                 "\
                     #[unsafe(export_name = \"{export_prefix}[callback]{export_name}\")]
-                    unsafe extern \"C\" fn _callback_{name_snake}(ctx: *mut u8, event0: i32, event1: i32, event2: i32) -> i32 {{
+                    unsafe extern \"C\" fn _callback_{name_snake}(event0: i32, event1: i32, event2: i32) -> i32 {{
                         unsafe {{
-                            {path_to_self}::__callback_{name_snake}(ctx, event0, event1, event2)
+                            {path_to_self}::__callback_{name_snake}(event0, event1, event2)
                         }}
                     }}
                 "
@@ -1255,7 +1255,7 @@ pub mod vtable{ordinal} {{
         self.src.push_str(")");
 
         if async_ {
-            self.push_str(" -> *mut u8");
+            self.push_str(" -> i32");
         } else {
             match sig.results.len() {
                 0 => {}

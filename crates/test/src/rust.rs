@@ -1,7 +1,9 @@
+use crate::config::StringList;
 use crate::{Compile, Kind, LanguageMethods, Runner, Verify};
 use anyhow::Result;
 use clap::Parser;
 use heck::ToSnakeCase;
+use serde::Deserialize;
 use std::env;
 use std::path::PathBuf;
 use std::process::Command;
@@ -28,6 +30,17 @@ pub struct State {
     wit_bindgen_rlib: PathBuf,
     futures_rlib: PathBuf,
     wit_bindgen_deps: Vec<PathBuf>,
+}
+
+/// Rust-specific configuration of component files
+#[derive(Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RustConfig {
+    /// Space-separated list or array of compiler flags to pass.
+    #[serde(default)]
+    rustflags: StringList,
+    // TODO: something about auxiliary builds of crates to test cross-crate
+    // behavior.
 }
 
 impl LanguageMethods for Rust {
@@ -148,6 +161,8 @@ path = 'lib.rs'
     fn compile(&self, runner: &Runner<'_>, compile: &Compile) -> Result<()> {
         let mut cmd = runner.rustc(Edition::E2021);
 
+        let config = compile.component.deserialize_lang_config::<RustConfig>()?;
+
         // If this rust target doesn't natively produce a component then place
         // the compiler output in a temporary location which is componentized
         // later on.
@@ -157,17 +172,21 @@ path = 'lib.rs'
             compile.output.with_extension("core.wasm")
         };
 
-        cmd.current_dir(compile.component.path.parent().unwrap())
-            .env("CARGO_MANIFEST_DIR", ".")
+        let manifest_dir = compile.component.path.parent().unwrap();
+        cmd.env("CARGO_MANIFEST_DIR", manifest_dir)
             .env(
                 "BINDINGS",
                 compile
                     .bindings_dir
                     .join(format!("{}.rs", compile.component.kind)),
             )
-            .arg(compile.component.path.file_name().unwrap())
+            .arg(&compile.component.path)
             .arg("-o")
             .arg(&output);
+        for flag in Vec::from(config.rustflags) {
+            cmd.arg(flag);
+        }
+
         match compile.component.kind {
             Kind::Runner => {}
             Kind::Test => {

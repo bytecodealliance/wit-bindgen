@@ -314,7 +314,7 @@ wasm-tools component wit ./my-component.wasm
 To generate the bindings:
 
 ```
-wit-bindgen c-sharp -w command -r native-aot --generate-stub wit/
+wit-bindgen csharp -w command -r native-aot --generate-stub wit/
 ```
 
 Now you create a c# project file:
@@ -370,12 +370,12 @@ https://github.com/bytecodealliance/wit-bindgen/commit/86e8ae2b8b97f11b73b273345
 ### Guest: TinyGo
 
 The **new** TinyGo WIT bindings generator is currently in development at the
-[wasm-tools-go](https://github.com/bytecodealliance/wasm-tools-go) repository.
+[go.bytecodealliance.org](https://github.com/bytecodealliance/go-modules) repository.
 
 To install the `wit-bindgen-go` CLI, run:
 
 ```sh
-go install github.com/bytecodealliance/wasm-tools-go/cmd/wit-bindgen-go
+go install go.bytecodealliance.org/cmd/wit-bindgen-go@latest
 ```
 > Note: it requires `wasm-tools` to be installed.
 
