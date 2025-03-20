@@ -8,7 +8,7 @@ futures = "0.3.31"
 source = { path = "../source" }
 #wit-bindgen = { path = "../../../../guest-rust" }
 wit-bindgen-symmetric-rt = { path = "../../../../symmetric_executor/rust-client" }
-symmetric_stream = { path = "../../../../symmetric_executor/symmetric_stream" }
+symmetric_stream = { path = "../../../../symmetric_executor/symmetric_stream", features=["trace"] }
 
 [dependencies.wit-bindgen]
 package = "dummy-rt"

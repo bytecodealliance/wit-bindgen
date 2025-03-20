@@ -80,6 +80,8 @@ impl GuestStreamObj for StreamObj {
             ready_size: AtomicIsize::new(results::BLOCKED),
             ready_capacity: AtomicUsize::new(0),
         };
+        #[cfg(feature = "trace")]
+        println!("Stream::new {}", inner.read_ready_event_send.handle());
         Self(Arc::new(inner))
     }
 
@@ -90,6 +92,8 @@ impl GuestStreamObj for StreamObj {
     fn start_reading(&self, buffer: symmetric_stream::Buffer) {
         let buf = buffer.get::<Buffer>().get_address().take_handle() as *mut ();
         let size = buffer.get::<Buffer>().capacity();
+        #[cfg(feature = "trace")]
+        println!("Stream::start_read {} {buf} {size}", self.read_ready_event_send.handle());
         let old_readya = self.0.ready_addr.load(Ordering::Acquire);
         let old_ready = self.0.ready_size.load(Ordering::Acquire);
         if old_readya as usize == EOF_MARKER {
@@ -107,6 +111,8 @@ impl GuestStreamObj for StreamObj {
         let size = self.0.ready_size.swap(results::BLOCKED, Ordering::Acquire);
         let addr = self.0.ready_addr.swap(null_mut(), Ordering::Relaxed);
         let capacity = self.0.ready_capacity.swap(0, Ordering::Relaxed);
+        #[cfg(feature = "trace")]
+        println!("Stream::read_result {} {addr} {size}", self.read_ready_event_send.handle());
         if addr as usize == EOF_MARKER {
             None
         } else {
@@ -128,6 +134,8 @@ impl GuestStreamObj for StreamObj {
             .0
             .read_addr
             .swap(core::ptr::null_mut(), Ordering::Relaxed);
+        #[cfg(feature = "trace")]
+        println!("Stream::start_write {} {addr} {size}", self.read_ready_event_send.handle());
         self.0.ready_capacity.store(size, Ordering::Release);
         symmetric_stream::Buffer::new(Buffer {
             addr,
@@ -144,6 +152,8 @@ impl GuestStreamObj for StreamObj {
         } else {
             (0, EOF_MARKER as usize as *mut ())
         };
+        #[cfg(feature = "trace")]
+        println!("Stream::finish_write {} {addr} {elements}", self.read_ready_event_send.handle());
         let old_ready = self.0.ready_size.swap(elements as isize, Ordering::Relaxed);
         let _old_readya = self.0.ready_addr.swap(addr, Ordering::Release);
         assert_eq!(old_ready, results::BLOCKED);

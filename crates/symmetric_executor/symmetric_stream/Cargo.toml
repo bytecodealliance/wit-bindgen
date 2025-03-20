@@ -13,3 +13,6 @@ path = "../dummy-rt"
 
 [lib]
 crate-type = ["cdylib"]
+
+[features]
+trace = []
