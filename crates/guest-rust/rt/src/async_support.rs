@@ -100,7 +100,7 @@ static mut SPAWNED: Vec<BoxFuture> = Vec::new();
 /// The states of all currently-open streams and futures.
 static mut HANDLES: Lazy<HashMap<u32, Handle>> = Lazy::new(HashMap::new);
 
-const EVENT_CALL_NONE: i32 = 0;
+const EVENT_NONE: i32 = 0;
 const _EVENT_CALL_STARTING: i32 = 1;
 const EVENT_CALL_STARTED: i32 = 2;
 const EVENT_CALL_RETURNED: i32 = 3;
@@ -378,7 +378,7 @@ unsafe fn callback_with_state(
     event2: i32,
 ) -> i32 {
     match event0 {
-        EVENT_CALL_NONE => {
+        EVENT_NONE => {
             let done = poll(state).is_ready();
             callback_code(state, done)
         }
