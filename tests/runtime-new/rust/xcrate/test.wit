@@ -1,4 +1,4 @@
-//@ tests = ['intermediate', 'leaf']
+//@ dependencies = ['intermediate', 'leaf']
 //@ wac = 'compose.wac'
 
 // This is a test where the cross-crate-behavior of the `generate!` macro is

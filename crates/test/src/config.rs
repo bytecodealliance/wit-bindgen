@@ -121,7 +121,7 @@ pub struct WitConfig {
 
     /// List of worlds for "test" components. This affects filenames and these
     /// are all available to import to the "runner".
-    pub tests: Option<StringList>,
+    pub dependencies: Option<StringList>,
 
     /// Path to a `*.wac` file to specify how composition is done.
     pub wac: Option<String>,
@@ -133,9 +133,9 @@ impl WitConfig {
         self.runner.as_deref().unwrap_or("runner")
     }
 
-    /// Returns the list of test worlds that this configuration uses.
-    pub fn test_worlds(&self) -> Vec<String> {
-        match self.tests.clone() {
+    /// Returns the list of dependency worlds that this configuration uses.
+    pub fn dependency_worlds(&self) -> Vec<String> {
+        match self.dependencies.clone() {
             Some(list) => list.into(),
             None => vec!["test".to_string()],
         }
