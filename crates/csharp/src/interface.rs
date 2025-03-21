@@ -744,7 +744,7 @@ impl InterfaceGenerator<'_> {
         let qualified = self.type_name_with_qualifier(&Type::Id(id), true);
         let info = &self.csharp_gen.all_resources[&id];
         let name = info.name.clone();
-        let upper_camel = name.to_upper_camel_case();
+        let upper_camel = format!("{}Resource", name.to_upper_camel_case());
         let docs = info.docs.clone();
         self.print_docs(&docs);
 
