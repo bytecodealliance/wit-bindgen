@@ -215,7 +215,7 @@ with:
 
 ```wit
 //@ runner = "other-runner"
-//@ tests = ["other-test"]
+//@ dependencies = ["other-test"]
 
 package foo:bar;
 
@@ -234,10 +234,10 @@ files are still named after their worlds.
 #### Test Configuration: Fancy Compositions
 
 The `wac` tooling is available for composing components together. This can be
-configured with `tests` and `wac` keys:
+configured with `dependencies` and `wac` keys:
 
 ```wit
-//@ tests = ["intermediate", "leaf"]
+//@ dependencies = ["intermediate", "leaf"]
 //@ wac = "./compose.wac"
 
 package foo:bar;

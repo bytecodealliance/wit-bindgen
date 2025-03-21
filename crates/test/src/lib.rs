@@ -344,7 +344,7 @@ impl Runner<'_> {
             Ok(())
         };
         push_world(Kind::Runner, wit_config.runner_world())?;
-        for world in wit_config.test_worlds() {
+        for world in wit_config.dependency_worlds() {
             push_world(Kind::Test, &world)?;
         }
 
@@ -770,7 +770,7 @@ impl Runner<'_> {
         }
 
         push(
-            &test.config.test_worlds(),
+            &test.config.dependency_worlds(),
             components,
             &mut Vec::new(),
             &mut |test_components| {
@@ -833,16 +833,26 @@ impl Runner<'_> {
                 fs::read_to_string(&wac_config)
                     .with_context(|| format!("failed to read {wac_config:?}"))?
             }
-            // Default wac script is to just make the `test:test` component
-            // available to the `runner`.
-            None => "
-                package example:composition;
+            // Default wac script is to just make `test_components` available
+            // to the `runner`.
+            None => {
+                let mut script = String::from("package example:composition;\n");
+                let mut args = Vec::new();
+                for (component, _path) in test_components {
+                    let world = &component.bindgen.world;
+                    args.push(format!("...{world}"));
+                    script.push_str(&format!("let {world} = new test:{world} {{ ... }};\n"));
+                }
+                args.push("...".to_string());
+                let runner = &runner.bindgen.world;
+                script.push_str(&format!(
+                    "let runner = new test:{runner} {{ {} }};\n\
+                     export runner...;",
+                    args.join(", ")
+                ));
 
-                let test = new test:test { ... };
-                let runner = new test:runner { ...test, ... };
-                export runner...;
-                "
-            .to_string(),
+                script
+            }
         };
 
         // Get allocations for `test:{world}` rooted on the stack as
@@ -854,10 +864,11 @@ impl Runner<'_> {
             })
             .collect::<Result<Vec<_>>>()?;
 
+        let runner_name = format!("test:{}", runner.bindgen.world);
         let mut packages = indexmap::IndexMap::new();
         packages.insert(
             wac_types::BorrowedPackageKey {
-                name: "test:runner",
+                name: &runner_name,
                 version: None,
             },
             fs::read(runner_wasm)?,

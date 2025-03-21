@@ -39,7 +39,8 @@ struct RustConfig {
     /// Space-separated list or array of compiler flags to pass.
     #[serde(default)]
     rustflags: StringList,
-    /// TODO
+    /// List of path to rust files to build as external crates and link to the
+    /// main crate.
     #[serde(default)]
     externs: Vec<String>,
 }
