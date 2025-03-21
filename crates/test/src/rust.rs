@@ -1,11 +1,11 @@
 use crate::config::StringList;
 use crate::{Compile, Kind, LanguageMethods, Runner, Verify};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::Parser;
 use heck::ToSnakeCase;
 use serde::Deserialize;
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 #[derive(Default, Debug, Clone, Parser)]
@@ -39,8 +39,10 @@ struct RustConfig {
     /// Space-separated list or array of compiler flags to pass.
     #[serde(default)]
     rustflags: StringList,
-    // TODO: something about auxiliary builds of crates to test cross-crate
-    // behavior.
+    /// List of path to rust files to build as external crates and link to the
+    /// main crate.
+    #[serde(default)]
+    externs: Vec<String>,
 }
 
 impl LanguageMethods for Rust {
@@ -159,8 +161,6 @@ path = 'lib.rs'
     }
 
     fn compile(&self, runner: &Runner<'_>, compile: &Compile) -> Result<()> {
-        let mut cmd = runner.rustc(Edition::E2021);
-
         let config = compile.component.deserialize_lang_config::<RustConfig>()?;
 
         // If this rust target doesn't natively produce a component then place
@@ -172,21 +172,43 @@ path = 'lib.rs'
             compile.output.with_extension("core.wasm")
         };
 
+        // Compile all extern crates, if any
+        let mut externs = Vec::new();
         let manifest_dir = compile.component.path.parent().unwrap();
-        cmd.env("CARGO_MANIFEST_DIR", manifest_dir)
-            .env(
-                "BINDINGS",
-                compile
-                    .bindings_dir
-                    .join(format!("{}.rs", compile.component.kind)),
-            )
-            .arg(&compile.component.path)
-            .arg("-o")
-            .arg(&output);
-        for flag in Vec::from(config.rustflags) {
-            cmd.arg(flag);
+
+        let rustc = |path: &Path, output: &Path| {
+            // Compile the main crate, passing `--extern` for all upstream crates.
+            let mut cmd = runner.rustc(Edition::E2021);
+            cmd.env("CARGO_MANIFEST_DIR", manifest_dir)
+                .arg(path)
+                .arg("-o")
+                .arg(&output);
+            for flag in Vec::from(config.rustflags.clone()) {
+                cmd.arg(flag);
+            }
+            cmd
+        };
+
+        for file in config.externs.iter() {
+            let file = manifest_dir.join(file);
+            let stem = file.file_stem().unwrap().to_str().unwrap();
+            let output = compile.artifacts_dir.join(format!("lib{stem}.rlib"));
+            runner.run_command(rustc(&file, &output).arg("--crate-type=rlib"))?;
+            externs.push((stem.to_string(), output));
         }
 
+        // Compile the main crate, passing `--extern` for all upstream crates.
+        let mut cmd = rustc(&compile.component.path, &output);
+        cmd.env(
+            "BINDINGS",
+            compile
+                .bindings_dir
+                .join(format!("{}.rs", compile.component.bindgen.world)),
+        );
+        for (name, path) in externs {
+            let arg = format!("--extern={name}={}", path.display());
+            cmd.arg(arg);
+        }
         match compile.component.kind {
             Kind::Runner => {}
             Kind::Test => {
@@ -196,7 +218,9 @@ path = 'lib.rs'
         runner.run_command(&mut cmd)?;
 
         if !runner.produces_component() {
-            runner.convert_p1_to_component(&output, compile)?;
+            runner
+                .convert_p1_to_component(&output, compile)
+                .with_context(|| format!("failed to convert {output:?}"))?;
         }
 
         Ok(())
