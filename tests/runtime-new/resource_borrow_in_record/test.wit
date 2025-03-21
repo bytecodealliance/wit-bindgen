@@ -1,6 +1,6 @@
 package test:resource-borrow-in-record;
 
-interface test {
+interface to-test {
   resource thing {
     constructor(s: string);
     get: func() -> string;
@@ -13,7 +13,10 @@ interface test {
   test: func(a: list<foo>) -> list<thing>;
 }
 
-world resource-borrow-in-record {
-  import test;
-  export test;
+world test {
+  export to-test;
+}
+
+world runner {
+  import to-test;
 }
