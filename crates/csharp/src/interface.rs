@@ -671,11 +671,17 @@ impl InterfaceGenerator<'_> {
                         self.type_name_with_qualifier(&Type::Id(*id), qualifier)
                     }
                     _ => {
+                        let r = if let TypeDefKind::Resource = &ty.kind {
+                            "Resource"
+                        } else {
+                            ""
+                        };
+
                         if let Some(name) = &ty.name {
                             format!(
                                 "{}{}",
                                 self.qualifier(qualifier, id),
-                                name.to_upper_camel_case()
+                                format!("{}{}", name.to_upper_camel_case(), r)
                             )
                         } else {
                             unreachable!("todo: {ty:?}")
@@ -744,7 +750,7 @@ impl InterfaceGenerator<'_> {
         let qualified = self.type_name_with_qualifier(&Type::Id(id), true);
         let info = &self.csharp_gen.all_resources[&id];
         let name = info.name.clone();
-        let upper_camel = format!("{}Resource", name.to_upper_camel_case());
+        let upper_camel = format!("{}", name.to_upper_camel_case());
         let docs = info.docs.clone();
         self.print_docs(&docs);
 
@@ -1222,8 +1228,8 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .all_resources
             .entry(id)
             .or_insert_with(|| ResourceInfo {
-                module: self.name.to_owned(),
-                name: name.to_owned(),
+                module: format!("{}", self.name.to_owned()),
+                name: format!("{}Resource", name.to_owned()),
                 docs: docs.clone(),
                 direction: Direction::Import,
             })
