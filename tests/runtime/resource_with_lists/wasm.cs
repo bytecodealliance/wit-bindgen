@@ -5,15 +5,15 @@ using Host = ResourceWithListsWorld.wit.imports.test.resourceWithLists.TestInter
 namespace ResourceWithListsWorld.wit.exports.test.resourceWithLists
 {
     public class TestImpl : ITest {
-	public class Thing : ITest.Thing, ITest.IThing {
-	    public Import.Thing val;
+	public class ThingResource : ITest.ThingResource, ITest.IThingResource {
+	    public Import.ThingResource val;
 
-	    public Thing(byte[] v) {
+	    public ThingResource(byte[] v) {
 		var bytes = Encoding.ASCII.GetBytes(" Thing");
 		var result = new byte[v.Count() + bytes.Count()];
 		Array.Copy(v, result, v.Count());
 		Array.Copy(bytes, 0, result, v.Count(), bytes.Count());
-		this.val = new Import.Thing(result);
+		this.val = new Import.ThingResource(result);
 	    }
 
 	    public byte[] Foo() {
@@ -39,7 +39,7 @@ namespace ResourceWithListsWorld.wit.exports.test.resourceWithLists
 		Array.Copy(v, result, v.Count());
 		Array.Copy(bytes, 0, result, v.Count(), bytes.Count());
 
-		var v2 = Import.Thing.Baz(result);
+		var v2 = Import.ThingResource.Baz(result);
 		var bytes2 = Encoding.ASCII.GetBytes(" Thing.baz again");
 		var result2 = new byte[v2.Count() + bytes2.Count()];
 		Array.Copy(v2, result2, v2.Count());

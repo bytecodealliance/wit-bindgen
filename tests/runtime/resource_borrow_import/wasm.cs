@@ -5,7 +5,7 @@ namespace ResourceBorrowImportWorld
 {
     public class ResourceBorrowImportWorldImpl : IResourceBorrowImportWorld {
 	public static uint Test(uint v) {
-	    return Host.Foo(new Import.Thing(v + 1)) + 4;
+	    return Host.Foo(new Import.ThingResource(v + 1)) + 4;
 	}
     }
 }
