@@ -187,7 +187,9 @@ impl InterfaceGenerator<'_> {
                 (func.item_name().to_upper_camel_case(), "")
             }
             FunctionKind::Constructor(id) => (
-                self.csharp_gen.all_resources[id].name.to_upper_camel_case(),
+                self.csharp_gen.all_resources[id]
+                    .name()
+                    .to_upper_camel_case(),
                 "",
             ),
         };
@@ -364,7 +366,9 @@ impl InterfaceGenerator<'_> {
                 (func.item_name().to_upper_camel_case(), "")
             }
             FunctionKind::Constructor(id) => (
-                self.csharp_gen.all_resources[id].name.to_upper_camel_case(),
+                self.csharp_gen.all_resources[id]
+                    .name()
+                    .to_upper_camel_case(),
                 "",
             ),
         };
@@ -671,20 +675,17 @@ impl InterfaceGenerator<'_> {
                         self.type_name_with_qualifier(&Type::Id(*id), qualifier)
                     }
                     _ => {
-                        let r = if let TypeDefKind::Resource = &ty.kind {
-                            "Resource"
-                        } else {
-                            ""
+                        let resource_suffix = match &ty.kind {
+                            TypeDefKind::Resource => "Resource",
+                            _ => "",
                         };
 
                         if let Some(name) = &ty.name {
-                            format!(
-                                "{}{}",
-                                self.qualifier(qualifier, id),
-                                format!("{}{}", name.to_upper_camel_case(), r)
-                            )
+                            let qualified_name = self.qualifier(qualifier, id);
+                            let name = name.to_upper_camel_case();
+                            format!("{qualified_name}{name}{resource_suffix}")
                         } else {
-                            unreachable!("todo: {ty:?}")
+                            unreachable!("Unexpected type: {ty:?}")
                         }
                     }
                 }
@@ -749,7 +750,8 @@ impl InterfaceGenerator<'_> {
         let access = self.csharp_gen.access_modifier();
         let qualified = self.type_name_with_qualifier(&Type::Id(id), true);
         let info = &self.csharp_gen.all_resources[&id];
-        let name = info.name.clone();
+        let name = info.name().clone();
+        let wit_name = info.wit_name.to_owned();
         let upper_camel = format!("{}", name.to_upper_camel_case());
         let docs = info.docs.clone();
         self.print_docs(&docs);
@@ -782,7 +784,7 @@ impl InterfaceGenerator<'_> {
                             Dispose(true);
                         }}
 
-                        [DllImport("{module_name}", EntryPoint = "[resource-drop]{name}"), WasmImportLinkage]
+                        [DllImport("{module_name}", EntryPoint = "[resource-drop]{wit_name}"), WasmImportLinkage]
                         private static extern void wasmImportResourceDrop(int p0);
 
                         protected virtual void Dispose(bool disposing) {{
@@ -803,7 +805,7 @@ impl InterfaceGenerator<'_> {
                 uwrite!(
                     self.csharp_interop_src,
                     r#"
-                    [UnmanagedCallersOnly(EntryPoint = "{prefix}[dtor]{name}")]
+                    [UnmanagedCallersOnly(EntryPoint = "{prefix}[dtor]{wit_name}")]
                     {access} static unsafe void wasmExportResourceDtor{upper_camel}(int rep) {{
                         var val = ({qualified}) {qualified}.repTable.Remove(rep);
                         val.Handle = 0;
@@ -847,13 +849,13 @@ impl InterfaceGenerator<'_> {
                         }}
 
                         internal static class WasmInterop {{
-                            [DllImport("{module_name}", EntryPoint = "[resource-drop]{name}"), WasmImportLinkage]
+                            [DllImport("{module_name}", EntryPoint = "[resource-drop]{wit_name}"), WasmImportLinkage]
                             internal static extern void wasmImportResourceDrop(int p0);
 
-                            [DllImport("{module_name}", EntryPoint = "[resource-new]{name}"), WasmImportLinkage]
+                            [DllImport("{module_name}", EntryPoint = "[resource-new]{wit_name}"), WasmImportLinkage]
                             internal static extern int wasmImportResourceNew(int p0);
 
-                            [DllImport("{module_name}", EntryPoint = "[resource-rep]{name}"), WasmImportLinkage]
+                            [DllImport("{module_name}", EntryPoint = "[resource-rep]{wit_name}"), WasmImportLinkage]
                             internal static extern int wasmImportResourceRep(int p0);
                         }}
 
@@ -963,7 +965,9 @@ impl InterfaceGenerator<'_> {
                 (func.item_name().to_upper_camel_case(), "")
             }
             FunctionKind::Constructor(id) => (
-                self.csharp_gen.all_resources[id].name.to_upper_camel_case(),
+                self.csharp_gen.all_resources[id]
+                    .name()
+                    .to_upper_camel_case(),
                 "",
             ),
         };
@@ -1229,7 +1233,7 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .entry(id)
             .or_insert_with(|| ResourceInfo {
                 module: format!("{}", self.name.to_owned()),
-                name: format!("{}Resource", name.to_owned()),
+                wit_name: name.to_owned(),
                 docs: docs.clone(),
                 direction: Direction::Import,
             })

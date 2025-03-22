@@ -1434,9 +1434,9 @@ struct BlockStorage {
 #[derive(Clone)]
 pub struct ResourceInfo {
     pub(crate) module: String,
-    pub(crate) name: String,
     pub(crate) docs: Docs,
     pub(crate) direction: Direction,
+    pub(crate) wit_name: String,
 }
 
 impl ResourceInfo {
@@ -1451,7 +1451,11 @@ impl ResourceInfo {
                 .strip_prefix("I")
                 .unwrap()
                 .to_upper_camel_case(),
-            self.name.to_upper_camel_case()
+            self.name().to_upper_camel_case()
         )
+    }
+
+    pub(crate) fn name(&self) -> String {
+        format!("{}Resource", self.wit_name)
     }
 }

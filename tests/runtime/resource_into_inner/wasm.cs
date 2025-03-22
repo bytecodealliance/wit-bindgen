@@ -3,10 +3,10 @@ using System.Diagnostics;
 namespace ResourceIntoInnerWorld.wit.exports.test.resourceIntoInner
 {
     public class TestImpl : ITest {
-	public class Thing : ITest.Thing, ITest.IThing {
+	public class ThingResource : ITest.ThingResource, ITest.IThingResource {
 	    public string val;
 
-	    public Thing(string v) {
+	    public ThingResource(string v) {
 		this.val = v;
 	    }
 	}
@@ -18,7 +18,7 @@ namespace ResourceIntoInnerWorld.wit.exports.test.resourceIntoInner
 	    // `[resource-new]thing` only as needed), but we go
 	    // through the motions here anyway:
 	    var text = "Jabberwocky";
-	    Debug.Assert(new Thing(text).val == text);
+	    Debug.Assert(new ThingResource(text).val == text);
 	}
     }
 }

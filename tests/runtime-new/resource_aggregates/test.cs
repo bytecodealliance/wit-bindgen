@@ -1,10 +1,10 @@
 namespace TestWorld.wit.exports.test.resourceAggregates
 {
     public class ToTestImpl : IToTest {
-	public class Thing : IToTest.Thing, IToTest.IThing {
+	public class ThingResource : IToTest.ThingResource, IToTest.IThingResource {
 	    public uint val;
 
-	    public Thing(uint v) {
+	    public ThingResource(uint v) {
 		this.val = v + 1;
 	    }
 	}
@@ -13,43 +13,43 @@ namespace TestWorld.wit.exports.test.resourceAggregates
 	    IToTest.R1 r1,
 	    IToTest.R2 r2,
 	    IToTest.R3 r3,
-	    (IToTest.Thing, IToTest.R1) t1,
-	    IToTest.Thing t2,
+	    (IToTest.ThingResource, IToTest.R1) t1,
+	    IToTest.ThingResource t2,
 	    IToTest.V1 v1,
 	    IToTest.V2 v2,
-	    List<IToTest.Thing> l1,
-	    List<IToTest.Thing> l2,
-	    IToTest.Thing? o1,
-	    IToTest.Thing? o2,
-	    Result<IToTest.Thing, None> result1,
-	    Result<IToTest.Thing, None> result2
+	    List<IToTest.ThingResource> l1,
+	    List<IToTest.ThingResource> l2,
+	    IToTest.ThingResource? o1,
+	    IToTest.ThingResource? o2,
+	    Result<IToTest.ThingResource, None> result1,
+	    Result<IToTest.ThingResource, None> result2
 	)
 	{
             uint sumIl1 = 0;
             uint sumIl2 = 0;
 	    foreach (var thing in l1)
 	    {
-		sumIl1 += ((Thing) thing).val;
+		sumIl1 += ((ThingResource) thing).val;
 	    }
 	    foreach (var thing in l2)
 	    {
-		sumIl2 += ((Thing) thing).val;
+		sumIl2 += ((ThingResource) thing).val;
 	    }
-            return ((Thing) r1.thing).val +
-                   ((Thing) r2.thing).val +
-                   ((Thing) r3.thing1).val +
-                   ((Thing) r3.thing2).val +
-                   ((Thing) t1.Item1).val +
-                   ((Thing) t1.Item2.thing).val +
-                   ((Thing) t2).val +
-                   ((Thing) v1.AsThing).val +
-                   ((Thing) v2.AsThing).val +
+            return ((ThingResource) r1.thing).val +
+                   ((ThingResource) r2.thing).val +
+                   ((ThingResource) r3.thing1).val +
+                   ((ThingResource) r3.thing2).val +
+                   ((ThingResource) t1.Item1).val +
+                   ((ThingResource) t1.Item2.thing).val +
+                   ((ThingResource) t2).val +
+                   ((ThingResource) v1.AsThing).val +
+                   ((ThingResource) v2.AsThing).val +
                    sumIl1 +
                    sumIl2 +
-                   ((Thing) o1).val +
-                   ((Thing) o2).val +
-		   ((Thing) result1.AsOk).val +
-		   ((Thing) result2.AsOk).val +
+                   ((ThingResource) o1).val +
+                   ((ThingResource) o2).val +
+		   ((ThingResource) result1.AsOk).val +
+		   ((ThingResource) result2.AsOk).val +
                    3;
 	}
     }

@@ -4,11 +4,11 @@ using Host = ResourceImportAndExportWorld.wit.imports.test.resourceImportAndExpo
 namespace ResourceImportAndExportWorld.wit.exports.test.resourceImportAndExport
 {
     public class TestImpl : ITest {
-	public class Thing : ITest.Thing, ITest.IThing {
-	    public Import.Thing val;
+	public class ThingResource : ITest.ThingResource, ITest.IThingResource {
+	    public Import.ThingResource val;
 
-	    public Thing(uint v) {
-		this.val = new Import.Thing(v + 1);
+	    public ThingResource(uint v) {
+		this.val = new Import.ThingResource(v + 1);
 	    }
 
 	    public uint Foo() {
@@ -19,8 +19,8 @@ namespace ResourceImportAndExportWorld.wit.exports.test.resourceImportAndExport
 		this.val.Bar(v + 3);
 	    }
 
-	    public static ITest.Thing Baz(ITest.Thing a, ITest.Thing b) {
-		return new Thing(Import.Thing.Baz(((Thing) a).val, ((Thing) b).val).Foo() + 4);
+	    public static ITest.ThingResource Baz(ITest.ThingResource a, ITest.ThingResource b) {
+		return new ThingResource(Import.ThingResource.Baz(((ThingResource) a).val, ((ThingResource) b).val).Foo() + 4);
 	    }
 	}
     }
@@ -28,7 +28,7 @@ namespace ResourceImportAndExportWorld.wit.exports.test.resourceImportAndExport
 
 namespace ResourceImportAndExportWorld {
     public class ResourceImportAndExportWorldImpl : IResourceImportAndExportWorld {
-	public static Import.Thing ToplevelExport(Import.Thing things) {
+	public static Import.ThingResource ToplevelExport(Import.ThingResource things) {
 	    return exports.ResourceImportAndExportWorld.ToplevelImport(things);
 	}
     }

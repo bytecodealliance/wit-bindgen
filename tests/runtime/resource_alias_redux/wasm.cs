@@ -6,14 +6,14 @@ using Host2 = ResourceAliasReduxWorld.wit.imports.test.resourceAliasRedux.Resour
 namespace ResourceAliasReduxWorld.wit.exports.test.resourceAliasRedux
 {
     public class ResourceAlias1Impl : IResourceAlias1 {
-	public class Thing : IResourceAlias1.Thing, IResourceAlias1.IThing {
-	    public Import1.Thing val;
+	public class ThingResource : IResourceAlias1.ThingResource, IResourceAlias1.IThingResource {
+	    public Import1.ThingResource val;
 
-	    public Thing(string v) {
-		this.val = new Import1.Thing(v + " Thing");
+	    public ThingResource(string v) {
+		this.val = new Import1.ThingResource(v + " Thing");
 	    }
 
-	    public Thing(Import1.Thing v) {
+	    public ThingResource(Import1.ThingResource v) {
 		this.val = v;
 	    }
 
@@ -22,27 +22,27 @@ namespace ResourceAliasReduxWorld.wit.exports.test.resourceAliasRedux
 	    }
 	}
 
-	public static List<IResourceAlias1.Thing> A(IResourceAlias1.Foo f) {
-	    var oldList = Host1.A(new Import1.Foo(((Thing) f.thing).val));
-	    var newList = new List<IResourceAlias1.Thing>();
+	public static List<IResourceAlias1.ThingResource> A(IResourceAlias1.Foo f) {
+	    var oldList = Host1.A(new Import1.Foo(((ThingResource) f.thing).val));
+	    var newList = new List<IResourceAlias1.ThingResource>();
 	    foreach (var thing in oldList)
 	    {
-		newList.Add(new Thing(thing));
+		newList.Add(new ThingResource(thing));
 	    }
 	    return newList;
 	}
     }
     
     public class ResourceAlias2Impl : IResourceAlias2 {
-	public static List<IResourceAlias1.Thing> B(IResourceAlias2.Foo f, IResourceAlias1.Foo g) {
+	public static List<IResourceAlias1.ThingResource> B(IResourceAlias2.Foo f, IResourceAlias1.Foo g) {
 	    var oldList = Host2.B(
-		new Import2.Foo(((ResourceAlias1Impl.Thing) f.thing).val),
-		new Import1.Foo(((ResourceAlias1Impl.Thing) g.thing).val)
+		new Import2.Foo(((ResourceAlias1Impl.ThingResource) f.thing).val),
+		new Import1.Foo(((ResourceAlias1Impl.ThingResource) g.thing).val)
 	    );
-	    var newList = new List<IResourceAlias1.Thing>();
+	    var newList = new List<IResourceAlias1.ThingResource>();
 	    foreach (var thing in oldList)
 	    {
-		newList.Add(new ResourceAlias1Impl.Thing(thing));
+		newList.Add(new ResourceAlias1Impl.ThingResource(thing));
 	    }
 	    return newList;
 	}
@@ -51,7 +51,7 @@ namespace ResourceAliasReduxWorld.wit.exports.test.resourceAliasRedux
 
 namespace ResourceAliasReduxWorld {
     public class ResourceAliasReduxWorldImpl : IResourceAliasReduxWorld {
-	public static List<Import1.Thing> Test(List<Import1.Thing> things) {
+	public static List<Import1.ThingResource> Test(List<Import1.ThingResource> things) {
 	    return things;
 	}
     }
