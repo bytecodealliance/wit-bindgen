@@ -13,10 +13,6 @@ test = false
 doctest = false
 
 [[bin]]
-name = "variants"
-test = false
-
-[[bin]]
 name = "flavorful"
 test = false
 
