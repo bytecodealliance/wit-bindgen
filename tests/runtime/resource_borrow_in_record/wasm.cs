@@ -4,14 +4,14 @@ using Host = ResourceBorrowInRecordWorld.wit.imports.test.resourceBorrowInRecord
 namespace ResourceBorrowInRecordWorld.wit.exports.test.resourceBorrowInRecord
 {
     public class TestImpl : ITest {
-	public class Thing : ITest.Thing, ITest.IThing {
-	    public Import.Thing val;
+	public class ThingResource : ITest.ThingResource, ITest.IThingResource {
+	    public Import.ThingResource val;
 
-	    public Thing(string v) {
-		this.val = new Import.Thing(v + " Thing");
+	    public ThingResource(string v) {
+		this.val = new Import.ThingResource(v + " Thing");
 	    }
 
-	    public Thing(Import.Thing thing) {
+	    public ThingResource(Import.ThingResource thing) {
 		this.val = thing;
 	    }
 
@@ -20,17 +20,17 @@ namespace ResourceBorrowInRecordWorld.wit.exports.test.resourceBorrowInRecord
 	    }
 	}
 
-	public static List<ITest.Thing> Test(List<ITest.Foo> v) {
+	public static List<ITest.ThingResource> Test(List<ITest.Foo> v) {
 	    var list = new List<Import.Foo>();
 	    foreach (var foo in v)
 	    {
-		list.Add(new Import.Foo(((Thing) foo.thing).val));
+		list.Add(new Import.Foo(((ThingResource) foo.thing).val));
 	    }
 	    var result = Host.Test(list);
-	    var myResult = new List<ITest.Thing>();
+	    var myResult = new List<ITest.ThingResource>();
 	    foreach (var thing in result)
 	    {
-		myResult.Add(new Thing(thing));
+		myResult.Add(new ThingResource(thing));
 	    }
 	    return myResult;
 	}
