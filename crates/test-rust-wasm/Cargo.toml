@@ -41,10 +41,6 @@ name = "resources"
 test = false
 
 [[bin]]
-name = "resource_borrow_in_record"
-test = false
-
-[[bin]]
 name = "resource_floats"
 test = false
 
