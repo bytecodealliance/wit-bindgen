@@ -1877,7 +1877,7 @@ impl InterfaceGenerator<'_> {
 
             let mut f = FunctionBindgen::new(self, c_sig, &import_name);
             f.params = params;
-            abi::post_return(f.gen.resolve, func, &mut f, false);
+            abi::post_return(f.gen.resolve, func, &mut f);
             let FunctionBindgen { src, .. } = f;
             self.src.c_fns(&src);
             self.src.c_fns("}\n");

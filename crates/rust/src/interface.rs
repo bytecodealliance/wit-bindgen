@@ -1065,7 +1065,7 @@ pub mod vtable{ordinal} {{
             self.src.push_str("{ unsafe {\n");
 
             let mut f = FunctionBindgen::new(self, params, async_, self.wasm_import_module, false);
-            abi::post_return(f.r#gen.resolve, func, &mut f, async_);
+            abi::post_return(f.r#gen.resolve, func, &mut f);
             let FunctionBindgen {
                 needs_cleanup_list,
                 src,

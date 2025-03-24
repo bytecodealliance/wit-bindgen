@@ -495,7 +495,7 @@ impl InterfaceGenerator<'_> {
                 ParameterType::ABI,
             );
 
-            abi::post_return(bindgen.interface_gen.resolve, func, &mut bindgen, false);
+            abi::post_return(bindgen.interface_gen.resolve, func, &mut bindgen);
 
             let src = bindgen.src;
 

@@ -969,7 +969,7 @@ impl InterfaceGenerator<'_> {
                 (0..sig.results.len()).map(|i| format!("p{i}")).collect(),
             );
 
-            abi::post_return(bindgen.gen.resolve, func, &mut bindgen, false);
+            abi::post_return(bindgen.gen.resolve, func, &mut bindgen);
 
             let src = bindgen.src;
 
