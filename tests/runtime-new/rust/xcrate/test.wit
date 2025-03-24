@@ -1,0 +1,75 @@
+//@ dependencies = ['intermediate', 'leaf']
+//@ wac = 'compose.wac'
+
+// This is a test where the cross-crate-behavior of the `generate!` macro is
+// tested.
+//
+// Specifically `./rust_xcrate_test.rs` is a dependency of `./intermediate.rs`.
+// The `rust_xcrate_test` has bindings for worlds `b` and `a`. The
+// `intermediate` test generates bindings for `b` but uses imports from `a`,
+// meaning the effective world should be `intermediate`.
+
+package test:xcrate;
+
+interface a-imports {
+  f: func();
+
+  resource x {
+    constructor();
+    foo: func();
+  }
+}
+
+world a {
+  import a-imports;
+
+  export a-unused: func();
+
+  export an-unused-interface: interface {
+    f: func();
+
+    resource x {
+      constructor();
+      foo: func();
+    }
+  }
+}
+
+interface b-imports {
+  b: func();
+
+  resource x {
+    constructor();
+    foo: func();
+  }
+}
+
+interface b-exports {
+  b: func();
+
+  resource x {
+    constructor();
+    foo: func();
+  }
+}
+
+world b {
+  import b-imports;
+  export b-exports;
+}
+
+world runner {
+  import b-exports;
+  import a-imports;
+  import b-imports;
+}
+
+world intermediate {
+  import a-imports;
+  include b;
+}
+
+world leaf {
+  export a-imports;
+  export b-imports;
+}

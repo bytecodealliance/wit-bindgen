@@ -24,7 +24,10 @@ regex = "1.11.1"
 serde = { version = "1.0.218", features = ["derive"] }
 toml = "0.8.20"
 wasi-preview1-component-adapter-provider = "30.0.2"
-wasm-compose = { workspace = true }
+wac-parser = "0.6.1"
+wac-types = "0.6.1"
+wac-graph = "0.6.1"
+indexmap = { workspace = true }
 wasm-encoder = { workspace = true }
 wasmparser = { workspace = true, features = ["features"] }
 wat = { workspace = true }
