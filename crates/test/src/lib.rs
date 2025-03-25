@@ -325,9 +325,12 @@ impl Runner<'_> {
         dir: &Path,
     ) -> Result<(config::WitConfig, Vec<Component>)> {
         let mut resolve = wit_parser::Resolve::default();
-        let pkg = resolve
-            .push_file(&wit)
-            .context("failed to load `test.wit` in test directory")?;
+
+        let wit_path = if dir.join("deps").exists() { dir } else { wit };
+        let (pkg, _files) = resolve.push_path(wit_path).context(format!(
+            "failed to load `test.wit` in test directory: {:?}",
+            &wit
+        ))?;
         let resolve = Arc::new(resolve);
 
         let wit_contents = std::fs::read_to_string(wit)?;
@@ -378,7 +381,7 @@ impl Runner<'_> {
                 args: Vec::new(),
                 wit_config: wit_config.clone(),
                 world: resolve.worlds[*world].name.clone(),
-                wit_path: wit.to_path_buf(),
+                wit_path: wit_path.to_path_buf(),
             };
             let component = self
                 .parse_component(&path, *kind, bindgen)
