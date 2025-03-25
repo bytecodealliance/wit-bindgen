@@ -2252,7 +2252,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     "{}str2ptr({op})",
                     self.gen.qualify_package(FFI_DIR)
                 ));
-                results.push(format!("{op}.charcode_length()"));
+                results.push(format!("{op}.length()"));
                 if realloc.is_none() {
                     self.cleanup.push(Cleanup::Object(op.clone()));
                 }
