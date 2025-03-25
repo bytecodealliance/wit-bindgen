@@ -2754,18 +2754,18 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 fn perform_cast(op: &str, cast: &Bitcast) -> String {
     match cast {
         Bitcast::I32ToF32 => {
-            format!("({op}).to_float()")
+            format!("({op}).reinterpret_as_float()")
         }
-        Bitcast::I64ToF32 => format!("Int64::to_int({op}).to_float()"),
+        Bitcast::I64ToF32 => format!("({op}).to_int().reinterpret_as_float()"),
         Bitcast::F32ToI32 => {
-            format!("@ffi.f32_to_i32({op})")
+            format!("({op}).reinterpret_as_int()")
         }
-        Bitcast::F32ToI64 => format!("@ffi.f32_to_i64({op})"),
+        Bitcast::F32ToI64 => format!("({op}).reinterpret_as_int().to_int64()"),
         Bitcast::I64ToF64 => {
-            format!("Int64::to_double({op})")
+            format!("({op}).reinterpret_as_double()")
         }
         Bitcast::F64ToI64 => {
-            format!("Double::to_int64({op})")
+            format!("({op}).reinterpret_as_int64()")
         }
         Bitcast::LToI64 | Bitcast::PToP64 | Bitcast::I32ToI64 => format!("Int::to_int64({op})"),
         Bitcast::I64ToL | Bitcast::P64ToP | Bitcast::I64ToI32 => format!("Int64::to_int({op})"),
