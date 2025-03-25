@@ -16,6 +16,7 @@ mod c;
 mod config;
 mod csharp;
 mod custom;
+mod moonbit;
 mod runner;
 mod rust;
 mod wat;
@@ -193,6 +194,7 @@ enum Language {
     Cpp,
     Wat,
     Csharp,
+    MoonBit,
     Custom(custom::Language),
 }
 
@@ -410,6 +412,7 @@ impl Runner<'_> {
             "cpp" => Language::Cpp,
             "wat" => Language::Wat,
             "cs" => Language::Csharp,
+            "mbt" => Language::MoonBit,
             other => Language::Custom(custom::Language::lookup(self, other)?),
         };
 
@@ -1198,6 +1201,7 @@ impl Language {
         Language::Cpp,
         Language::Wat,
         Language::Csharp,
+        Language::MoonBit,
     ];
 
     fn obj(&self) -> &dyn LanguageMethods {
@@ -1207,6 +1211,7 @@ impl Language {
             Language::Cpp => &c::Cpp,
             Language::Wat => &wat::Wat,
             Language::Csharp => &csharp::Csharp,
+            Language::MoonBit => &moonbit::MoonBit,
             Language::Custom(custom) => custom,
         }
     }
