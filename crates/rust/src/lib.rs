@@ -116,7 +116,11 @@ enum RuntimeItem {
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize), serde(rename_all = "kebab-case"))]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Deserialize),
+    serde(rename_all = "kebab-case")
+)]
 pub enum ExportKey {
     World,
     Name(String),
@@ -135,7 +139,11 @@ fn parse_with(s: &str) -> Result<(String, WithOption), String> {
 }
 
 #[derive(Default, Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize), serde(rename_all = "kebab-case"))]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Deserialize),
+    serde(rename_all = "kebab-case")
+)]
 pub enum AsyncConfig {
     #[default]
     None,
@@ -183,7 +191,11 @@ fn parse_async(s: &str) -> Result<AsyncConfig, String> {
 
 #[derive(Default, Debug, Clone)]
 #[cfg_attr(feature = "clap", derive(clap::Parser))]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize), serde(rename_all = "kebab-case"))]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Deserialize),
+    serde(rename_all = "kebab-case")
+)]
 pub struct Opts {
     /// Whether or not a formatter is executed to format generated code.
     #[cfg_attr(feature = "clap", arg(long))]
@@ -1449,7 +1461,11 @@ fn group_by_resource<'a>(
 }
 
 #[derive(Default, Debug, Clone, Copy)]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize), serde(rename_all = "kebab-case"))]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Deserialize),
+    serde(rename_all = "kebab-case")
+)]
 pub enum Ownership {
     /// Generated types will be composed entirely of owning fields, regardless
     /// of whether they are used as parameters to imports or not.
@@ -1504,7 +1520,11 @@ impl fmt::Display for Ownership {
 
 /// Options for with "with" remappings.
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize), serde(rename_all = "kebab-case"))]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Deserialize),
+    serde(rename_all = "kebab-case")
+)]
 pub enum WithOption {
     Path(String),
     Generate,
