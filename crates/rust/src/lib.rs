@@ -3,7 +3,6 @@ use anyhow::{bail, Result};
 use core::panic;
 use heck::*;
 use indexmap::{IndexMap, IndexSet};
-use serde::Deserialize;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::{self, Write as _};
 use std::mem;
@@ -117,6 +116,8 @@ enum RuntimeItem {
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "kebab-case"))]
 pub enum ExportKey {
     World,
     Name(String),
@@ -134,8 +135,9 @@ fn parse_with(s: &str) -> Result<(String, WithOption), String> {
     Ok((k.to_string(), v))
 }
 
-#[derive(Default, Debug, Clone, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[derive(Default, Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "kebab-case"))]
 pub enum AsyncConfig {
     #[default]
     None,
@@ -181,9 +183,10 @@ fn parse_async(s: &str) -> Result<AsyncConfig, String> {
     })
 }
 
-#[derive(Default, Debug, Clone, Deserialize)]
+#[derive(Default, Debug, Clone)]
 #[cfg_attr(feature = "clap", derive(clap::Parser))]
-#[serde(rename_all = "kebab-case")]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "kebab-case"))]
 pub struct Opts {
     /// Whether or not a formatter is executed to format generated code.
     #[cfg_attr(feature = "clap", arg(long))]
@@ -318,7 +321,7 @@ pub struct Opts {
     ///         - import:<name> or
     ///         - export:<name>
     #[cfg_attr(feature = "clap", arg(long = "async", value_parser = parse_async, default_value = "none"))]
-    #[serde(rename = "async")]
+    #[cfg_attr(feature = "serde", serde(rename = "async"))]
     pub async_: AsyncConfig,
 }
 
@@ -1448,8 +1451,9 @@ fn group_by_resource<'a>(
     by_resource
 }
 
-#[derive(Default, Debug, Clone, Copy, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[derive(Default, Debug, Clone, Copy)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "kebab-case"))]
 pub enum Ownership {
     /// Generated types will be composed entirely of owning fields, regardless
     /// of whether they are used as parameters to imports or not.
@@ -1503,8 +1507,9 @@ impl fmt::Display for Ownership {
 }
 
 /// Options for with "with" remappings.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "kebab-case"))]
 pub enum WithOption {
     Path(String),
     Generate,
