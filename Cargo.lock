@@ -2931,7 +2931,6 @@ dependencies = [
  "anyhow",
  "clap",
  "heck 0.5.0",
- "test-helpers",
  "wit-bindgen-core",
 ]
 
