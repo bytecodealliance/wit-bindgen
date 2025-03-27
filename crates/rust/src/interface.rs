@@ -574,6 +574,7 @@ pub mod vtable{ordinal} {{
 
     fn read(future: u32) -> ::core::pin::Pin<{box_}<dyn ::core::future::Future<Output = ::std::option::Option<::std::result::Result<{name}, {async_support}::ErrorContext>>>>> {{
         {box_}::pin(async move {{
+            #[repr(align({align}))]
             struct Buffer([::core::mem::MaybeUninit::<u8>; {size}]);
             let mut buffer = Buffer([::core::mem::MaybeUninit::uninit(); {size}]);
             let address = buffer.0.as_mut_ptr() as *mut u8;
