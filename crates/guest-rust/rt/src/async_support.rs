@@ -89,20 +89,6 @@ impl Drop for FutureState {
     }
 }
 
-/// Represents the state of a stream or future.
-#[doc(hidden)]
-pub enum Handle {
-    LocalOpen,
-    LocalReady(Box<dyn Any>, Waker),
-    LocalWaiting(oneshot::Sender<Box<dyn Any>>),
-    LocalClosed,
-    Read,
-    Write,
-    // Local end is closed with an error
-    // NOTE: this is only valid for write ends
-    WriteClosedErr(Option<ErrorContext>),
-}
-
 /// The current task being polled (or null if none).
 static mut CURRENT: *mut FutureState = ptr::null_mut();
 
@@ -263,17 +249,6 @@ mod results {
     pub const BLOCKED: u32 = 0xffff_ffff;
     pub const CLOSED: u32 = 0x8000_0000;
     pub const CANCELED: u32 = 0;
-}
-
-/// Result of awaiting a asynchronous read or write
-#[doc(hidden)]
-pub enum AsyncWaitResult {
-    /// Used when a value was successfully sent or received
-    Values(usize),
-    /// Represents a successful but error-indicating read
-    Error(u32),
-    /// Represents a failed read (closed, canceled, etc)
-    End,
 }
 
 /// Call the `subtask.drop` canonical built-in function.
