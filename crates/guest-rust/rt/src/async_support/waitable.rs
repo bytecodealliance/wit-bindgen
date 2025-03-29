@@ -7,6 +7,12 @@ use std::mem;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+/// Generic future-based operation on any "waitable" in the component model.
+///
+/// This is used right now to power futures and streams for both read/write
+/// halves. This structure is driven by `S`, an implementation of
+/// [`WaitableOp`], which codifies the various state transitions and what to do
+/// on each state transition.
 pub struct WaitableOperation<S: WaitableOp> {
     state: WaitableOperationState<S>,
     completion_status: CompletionStatus,
@@ -19,6 +25,14 @@ struct CompletionStatus {
 
 /// Helper trait to be used with `WaitableOperation` to assist with machinery
 /// necessary to track in-flight reads/writes on futures.
+///
+/// # Unsafety
+///
+/// This trait is `unsafe` as it has various guarantees that must be upheld by
+/// implementors such as:
+///
+/// * `S::in_progress_waitable` must always return the same value for the state
+///   given.
 pub unsafe trait WaitableOp {
     /// Initial state of this operation, used to kick off the actual component
     /// model operation and transition to `InProgress`.
@@ -132,8 +146,15 @@ where
     pub fn unregister_waker(self: Pin<&mut Self>, waitable: u32) {
         unsafe {
             (*super::CURRENT).remove_waitable(waitable);
-            let prev = (*super::CURRENT).wakers.remove(&waitable);
-            assert!(prev.is_some());
+            let _prev = (*super::CURRENT).wakers.remove(&waitable);
+            // Note that `_prev` here is not guaranteed to be either `Some` or
+            // `None`. A racy completion notification may have come in and
+            // removed our waitable from the map even though we're in the
+            // `InProgress` state, meaning it may not be present.
+            //
+            // The main thing is that after this method is called the
+            // internal `completion_status` is guaranteed to no longer be in
+            // `FuturesState`.
         }
     }
 

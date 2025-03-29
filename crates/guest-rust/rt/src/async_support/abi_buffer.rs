@@ -13,6 +13,9 @@ use std::vec::Vec;
 /// additionally tracks any partial writes. Writes can then be resumed with
 /// this buffer again or the partial write can be converted back to `Vec<T>` to
 /// get access to the remaining values.
+///
+/// This value is created through the [`StreamWrite`](super::StreamWrite)
+/// future's return value.
 pub struct AbiBuffer<T: 'static> {
     rust_storage: Vec<MaybeUninit<T>>,
     vtable: &'static StreamVtable<T>,

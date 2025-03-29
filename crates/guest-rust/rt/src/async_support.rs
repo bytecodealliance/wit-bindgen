@@ -49,7 +49,17 @@ struct FutureState {
     tasks: Option<FuturesUnordered<BoxFuture>>,
     /// The waitable set containing waitables created by this task, if any.
     waitable_set: Option<u32>,
-    /// TODO
+    /// A map of waitables to the corresponding waker and completion code.
+    ///
+    /// This is primarily filled in and managed by `WaitableOperation<S>`. The
+    /// waker here comes straight from `std::task::Context` and the pointer is
+    /// otherwise stored within the `WaitableOperation<S>` The raw pointer here
+    /// has a disconnected lifetime with each future but the management of the
+    /// internal states with respect to drop should always ensure that this is
+    /// only ever pointing to active waitable operations.
+    ///
+    /// When a waitable notification is received the corresponding entry in this
+    /// map is removed, the status code is filled in, and the waker is notified.
     wakers: HashMap<u32, (Waker, *mut Option<u32>)>,
 }
 
@@ -264,22 +274,6 @@ pub enum AsyncWaitResult {
     Error(u32),
     /// Represents a failed read (closed, canceled, etc)
     End,
-}
-
-impl AsyncWaitResult {
-    /// Interpret the results from an async operation that is known to *not* be blocked
-    fn from_nonblocked_async_result(v: u32) -> Self {
-        match v {
-            results::CLOSED | results::CANCELED => Self::End,
-            v => {
-                if v & results::CLOSED != 0 {
-                    Self::Error(v & !results::CLOSED)
-                } else {
-                    Self::Values(v as usize)
-                }
-            }
-        }
-    }
 }
 
 /// Call the `subtask.drop` canonical built-in function.

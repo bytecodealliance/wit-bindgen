@@ -1,10 +1,91 @@
 //! Runtime support for `future<T>` in the component model.
 //!
-//! TODO:
+//! There are a number of tricky concerns to all balance when implementing
+//! bindings to `future<T>`, specifically with how it interacts with Rust. This
+//! will attempt to go over some of the high-level details of the implementation
+//! here.
 //!
-//! * leaking requires owned values
-//! * owned values means we can't return back sent items
-//! * intimately used in implementation details.
+//! ## Leak safety
+//!
+//! It's safe to leak any value at any time currently in Rust. In other words
+//! Rust doesn't have linear types (yet). Typically this isn't really a problem
+//! but the component model intrinsics we're working with here operate by being
+//! given a pointer and then at some point in the future the pointer may be
+//! read. This means that it's our responsibility to keep this pointer alive and
+//! valid for the entire duration of an asynchronous operation.
+//!
+//! Chiefly this means that borrowed values are a no-no in this module. For
+//! example if you were to send a `&[u8]` as an implementation of
+//! `future<list<u8>>` that would not be sound. For example:
+//!
+//! * The future send operation is started, recording an address of `&[u8]`.
+//! * The future is then leaked.
+//! * According to rustc, later in code the original `&[u8]` is then no longer
+//!   borrowed.
+//! * The original source of `&[u8]` could then be deallocated.
+//! * Then the component model actually reads the pointer that it was given.
+//!
+//! This constraint effectively means that all types flowing in-and-out of
+//! futures, streams, and async APIs are all "owned values", notably no
+//! lifetimes. This requires, for example, that `future<list<u8>>` operates on
+//! `Vec<u8>`.
+//!
+//! This is in stark contrast to bindings generated for `list<u8>` otherwise,
+//! however, where for example a synchronous import with a `list<u8>` argument
+//! would be bound with a `&[u8]` argument. Until Rust has some form of linear
+//! types, however, it's not possible to loosen this restriction soundly because
+//! it's generally not safe to leak an active I/O operation. This restriction is
+//! similar to why it's so difficult to bind `io_uring` in safe Rust, which
+//! operates similarly to the component model where pointers are submitted and
+//! read in the future after the original call for submission returns.
+//!
+//! ## Lowering Owned Values
+//!
+//! According to the above everything with futures/streams operates on owned
+//! values already, but this also affects precisely how lifting and lowering is
+//! performed. In general any active asynchronous operation could be cancelled
+//! at any time, meaning we have to deal with situations such as:
+//!
+//! * A `write` hasn't even started yet.
+//! * A `write` was started and then cancelled.
+//! * A `write` was started and then the other end closed the channel.
+//! * A `write` was started and then the other end received the value.
+//!
+//! In all of these situations regardless of the structure of `T` we can't leak
+//! memory. The `future.write` intrinsic, however, takes no ownership of the
+//! memory involved which means that we're still responsible for cleaning up
+//! lists. It does take ownership, however, of `own<T>` handles and other
+//! resources.
+//!
+//! The way that this is solved for futures/streams is to lean further into
+//! processing owned values. Namely lowering a `T` takes `T`-by-value, not `&T`.
+//! This means that lowering operates similarly to return values of exported
+//! functions, not parameters to imported functions. By lowering an owned value
+//! of `T` this preserves a nice property where the lowered value has exclusive
+//! ownership of all of its pointers/resources/etc. Lowering `&T` may require a
+//! "cleanup list" for example which we avoid here entirely.
+//!
+//! This then makes the second and third cases above, getting a value back after
+//! lowering, much easier. Namely re-acquisition of a value is simple `lift`
+//! operation as if we received a value on the channel.
+//!
+//! ## Inefficiencies
+//!
+//! The above requirements generally mean that this is not a hyper-efficient
+//! implementation. All writes and reads, for example, start out with allocation
+//! memory on the heap to be owned by the asynchronous operation. Writing a
+//! `list<u8>` to a future passes ownership of `Vec<u8>` but in theory doesn't
+//! not actually require relinquishing ownership of the vector. Furthermore
+//! there's no way to re-acquire a `T` after it has been sent, but all of `T` is
+//! still valid except for `own<U>` resources.
+//!
+//! That's all to say that this implementation can probably still be improved
+//! upon, but doing so is thought to be pretty nontrivial at this time. It
+//! should be noted though that there are other high-level inefficiencies with
+//! WIT unrelated to this module. For example `list<T>` is not always
+//! represented the same in Rust as it is in the canonical ABI. That means that
+//! sending `list<T>` into a future might require copying the entire list and
+//! changing its layout. Currently this is par-for-the-course with bindings.
 
 use {
     super::waitable::{WaitableOp, WaitableOperation},
@@ -21,23 +102,64 @@ use {
     },
 };
 
+/// Function table used for [`FutureWriter`] and [`FutureReader`]
+///
+/// Instances of this table are generated by `wit_bindgen::generate!`. This is
+/// not a trait to enable different `FutureVtable<()>` instances to exist, for
+/// example, through different calls to `wit_bindgen::generate!`.
+///
+/// It's not intended that any user implements this vtable, instead it's
+/// intended to only be auto-generated.
 #[doc(hidden)]
 pub struct FutureVtable<T> {
+    /// The Canonical ABI layout of `T` in-memory.
     pub layout: Layout,
+
+    /// A callback to consume a value of `T` and lower it to the canonical ABI
+    /// pointed to by `dst`.
+    ///
+    /// The `dst` pointer should have `self.layout`. This is used to convert
+    /// in-memory representations in Rust to their canonical representations in
+    /// the component model.
     pub lower: unsafe fn(value: T, dst: *mut u8),
+
+    /// A callback to deallocate any lists within the canonical ABI value `dst`
+    /// provided.
+    ///
+    /// This is used when a value is successfully sent to another component. In
+    /// such a situation it may be possible that the canonical lowering of `T`
+    /// has lists that are still owned by this component and must be
+    /// deallocated. This is akin to a `post-return` callback for returns of
+    /// exported functions.
     pub dealloc_lists: unsafe fn(dst: *mut u8),
+
+    /// A callback to lift a value of `T` from the canonical ABI representation
+    /// provided.
     pub lift: unsafe fn(dst: *mut u8) -> T,
+
+    /// The raw `future.write` intrinsic.
     pub start_write: unsafe extern "C" fn(future: u32, val: *const u8) -> u32,
+    /// The raw `future.read` intrinsic.
     pub start_read: unsafe extern "C" fn(future: u32, val: *mut u8) -> u32,
+    /// The raw `future.cancel-write` intrinsic.
     pub cancel_write: unsafe extern "C" fn(future: u32) -> u32,
+    /// The raw `future.cancel-read` intrinsic.
     pub cancel_read: unsafe extern "C" fn(future: u32) -> u32,
+    /// The raw `future.close-writable` intrinsic.
     pub close_writable: unsafe extern "C" fn(future: u32),
+    /// The raw `future.close-readable` intrinsic.
     pub close_readable: unsafe extern "C" fn(future: u32),
+    /// The raw `future.new` intrinsic.
     pub new: unsafe extern "C" fn() -> u64,
 }
 
 /// Helper function to create a new read/write pair for a component model
 /// future.
+///
+/// # Unsafety
+///
+/// This function is unsafe as it requires the functions within `vtable` to
+/// correctly uphold the contracts of the component model.
 pub unsafe fn future_new<T>(
     vtable: &'static FutureVtable<T>,
 ) -> (FutureWriter<T>, FutureReader<T>) {
@@ -51,18 +173,53 @@ pub unsafe fn future_new<T>(
 }
 
 /// Represents the writable end of a Component Model `future`.
+///
+/// A [`FutureWriter`] can be used to send a single value of `T` to the other
+/// end of a `future`. In a sense this is similar to a oneshot channel in Rust.
 pub struct FutureWriter<T: 'static> {
     handle: u32,
     vtable: &'static FutureVtable<T>,
 }
 
 impl<T> FutureWriter<T> {
+    /// Helper function to wrap a handle/vtable into a `FutureWriter`.
+    ///
+    /// # Unsafety
+    ///
+    /// This function is unsafe as it requires the functions within `vtable` to
+    /// correctly uphold the contracts of the component model.
     #[doc(hidden)]
     pub unsafe fn new(handle: u32, vtable: &'static FutureVtable<T>) -> Self {
         Self { handle, vtable }
     }
 
     /// Write the specified `value` to this `future`.
+    ///
+    /// This method is equivalent to an `async fn` which sends the `value` into
+    /// this future. The asynchronous operation acts as a rendezvous where the
+    /// operation does not complete until the other side has successfully
+    /// received the value.
+    ///
+    /// # Return Value
+    ///
+    /// The returned [`FutureWrite`] is a future that can be `.await`'d. The
+    /// return value of this future is:
+    ///
+    /// * `Ok(())` - the `value` was sent and received. The `self` value was
+    ///   consumed along the way and will no longer be accessible.
+    /// * `Err(FutureWriteError { value })` - an attempt was made to send
+    ///   `value` but the other half of this [`FutureWriter`] was closed before
+    ///   the value was received. This consumes `self` because the channel is
+    ///   now closed, but `value` is returned in case the caller wants to reuse
+    ///   it.
+    ///
+    /// # Cancellation
+    ///
+    /// The returned future can be cancelled normally via `drop` which means
+    /// that the `value` provided here, along with this `FutureWriter` itself,
+    /// will be lost. There is also [`FutureWrite::cancel`] which can be used to
+    /// possibly re-acquire `value` and `self` if the operation was cancelled.
+    /// In such a situation the operation can be retried at a future date.
     pub fn write(self, value: T) -> FutureWrite<T> {
         FutureWrite {
             op: WaitableOperation::new((self, value)),
@@ -87,6 +244,8 @@ impl<T> Drop for FutureWriter<T> {
 }
 
 /// Represents a write operation which may be canceled prior to completion.
+///
+/// This is returned by [`FutureWriter::write`].
 pub struct FutureWrite<T: 'static> {
     op: WaitableOperation<FutureWriteOp<T>>,
 }
@@ -377,6 +536,9 @@ impl<T> Drop for FutureReader<T> {
 }
 
 /// Represents a read operation which may be canceled prior to completion.
+///
+/// This represents a read operation on a [`FutureReader`] and is created via
+/// `IntoFuture`.
 pub struct FutureRead<T: 'static> {
     op: WaitableOperation<FutureReadOp<T>>,
 }

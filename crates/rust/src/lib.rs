@@ -324,11 +324,12 @@ pub struct Opts {
     /// Determines which functions to lift or lower `async`, if any.
     ///
     /// Accepted values are:
-    ///     - none
-    ///     - all
-    ///     - some=<value>[,<value>...], where each <value> is of the form:
-    ///         - import:<name> or
-    ///         - export:<name>
+    ///
+    /// - none
+    /// - all
+    /// - `some=<value>[,<value>...]`, where each `<value>` is of the form:
+    ///   - `import:<name>` or
+    ///   - `export:<name>`
     #[cfg_attr(feature = "clap", arg(long = "async", value_parser = parse_async, default_value = "none"))]
     #[cfg_attr(feature = "serde", serde(rename = "async"))]
     pub async_: AsyncConfig,
