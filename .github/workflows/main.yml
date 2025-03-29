@@ -135,6 +135,7 @@ jobs:
     - run: cargo test --workspace --exclude 'wit-bindgen*'
     - run: cargo test -p wit-bindgen-rt --all-features
     - run: rustup update nightly --no-self-update
+    - run: rustup component add miri --toolchain nightly
     - run: rustup component add rust-src --toolchain nightly
     - run: cargo +nightly miri test -p wit-bindgen-rt --all-features
 
