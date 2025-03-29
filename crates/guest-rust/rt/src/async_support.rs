@@ -6,7 +6,6 @@
 
 extern crate std;
 use core::sync::atomic::{AtomicBool, Ordering};
-use std::any::Any;
 use std::boxed::Box;
 use std::collections::HashMap;
 use std::fmt::{self, Debug, Display};

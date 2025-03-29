@@ -197,3 +197,221 @@ impl<T> Drop for AbiBuffer<T> {
         let _ = self.take_vec();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+    use std::vec;
+
+    extern "C" fn cancel(_: u32) -> u32 {
+        todo!()
+    }
+    extern "C" fn close(_: u32) {
+        todo!()
+    }
+    extern "C" fn new() -> u64 {
+        todo!()
+    }
+    extern "C" fn start_read(_: u32, _: *mut u8, _: usize) -> u32 {
+        todo!()
+    }
+    extern "C" fn start_write(_: u32, _: *const u8, _: usize) -> u32 {
+        todo!()
+    }
+
+    static BLANK: StreamVtable<u8> = StreamVtable {
+        cancel_read: cancel,
+        cancel_write: cancel,
+        close_readable: close,
+        close_writable: close,
+        dealloc_lists: None,
+        lift: None,
+        lower: None,
+        layout: unsafe { Layout::from_size_align_unchecked(1, 1) },
+        new,
+        start_read,
+        start_write,
+    };
+
+    #[test]
+    fn blank_advance_to_end() {
+        let mut buffer = AbiBuffer::new(vec![1, 2, 3, 4], &BLANK);
+        assert_eq!(buffer.remaining(), 4);
+        buffer.advance(1);
+        assert_eq!(buffer.remaining(), 3);
+        buffer.advance(2);
+        assert_eq!(buffer.remaining(), 1);
+        buffer.advance(1);
+        assert_eq!(buffer.remaining(), 0);
+        assert_eq!(buffer.into_vec(), []);
+    }
+
+    #[test]
+    fn blank_advance_partial() {
+        let buffer = AbiBuffer::new(vec![1, 2, 3, 4], &BLANK);
+        assert_eq!(buffer.into_vec(), [1, 2, 3, 4]);
+        let mut buffer = AbiBuffer::new(vec![1, 2, 3, 4], &BLANK);
+        buffer.advance(1);
+        assert_eq!(buffer.into_vec(), [2, 3, 4]);
+        let mut buffer = AbiBuffer::new(vec![1, 2, 3, 4], &BLANK);
+        buffer.advance(1);
+        buffer.advance(2);
+        assert_eq!(buffer.into_vec(), [4]);
+    }
+
+    #[test]
+    fn blank_ptr_eq() {
+        let mut buf = vec![1, 2, 3, 4];
+        let ptr = buf.as_mut_ptr();
+        let mut buffer = AbiBuffer::new(buf, &BLANK);
+        let (a, b) = buffer.abi_ptr_and_len();
+        assert_eq!(a, ptr);
+        assert_eq!(b, 4);
+        unsafe {
+            assert_eq!(std::slice::from_raw_parts(a, b), [1, 2, 3, 4]);
+        }
+
+        buffer.advance(1);
+        let (a, b) = buffer.abi_ptr_and_len();
+        assert_eq!(a, ptr.wrapping_add(1));
+        assert_eq!(b, 3);
+        unsafe {
+            assert_eq!(std::slice::from_raw_parts(a, b), [2, 3, 4]);
+        }
+
+        buffer.advance(2);
+        let (a, b) = buffer.abi_ptr_and_len();
+        assert_eq!(a, ptr.wrapping_add(3));
+        assert_eq!(b, 1);
+        unsafe {
+            assert_eq!(std::slice::from_raw_parts(a, b), [4]);
+        }
+
+        let ret = buffer.into_vec();
+        assert_eq!(ret, [4]);
+        assert_eq!(ret.as_ptr(), ptr);
+    }
+
+    #[derive(PartialEq, Eq, Debug)]
+    struct B(u8);
+
+    static OP: StreamVtable<B> = StreamVtable {
+        cancel_read: cancel,
+        cancel_write: cancel,
+        close_readable: close,
+        close_writable: close,
+        dealloc_lists: Some(|_ptr| {}),
+        lift: Some(|ptr| unsafe { B(*ptr - 1) }),
+        lower: Some(|b, ptr| unsafe {
+            *ptr = b.0 + 1;
+        }),
+        layout: unsafe { Layout::from_size_align_unchecked(1, 1) },
+        new,
+        start_read,
+        start_write,
+    };
+
+    #[test]
+    fn op_advance_to_end() {
+        let mut buffer = AbiBuffer::new(vec![B(1), B(2), B(3), B(4)], &OP);
+        assert_eq!(buffer.remaining(), 4);
+        buffer.advance(1);
+        assert_eq!(buffer.remaining(), 3);
+        buffer.advance(2);
+        assert_eq!(buffer.remaining(), 1);
+        buffer.advance(1);
+        assert_eq!(buffer.remaining(), 0);
+        assert_eq!(buffer.into_vec(), []);
+    }
+
+    #[test]
+    fn op_advance_partial() {
+        let buffer = AbiBuffer::new(vec![B(1), B(2), B(3), B(4)], &OP);
+        assert_eq!(buffer.into_vec(), [B(1), B(2), B(3), B(4)]);
+        let mut buffer = AbiBuffer::new(vec![B(1), B(2), B(3), B(4)], &OP);
+        buffer.advance(1);
+        assert_eq!(buffer.into_vec(), [B(2), B(3), B(4)]);
+        let mut buffer = AbiBuffer::new(vec![B(1), B(2), B(3), B(4)], &OP);
+        buffer.advance(1);
+        buffer.advance(2);
+        assert_eq!(buffer.into_vec(), [B(4)]);
+    }
+
+    #[test]
+    fn op_ptrs() {
+        let mut buf = vec![B(1), B(2), B(3), B(4)];
+        let ptr = buf.as_mut_ptr().cast::<u8>();
+        let mut buffer = AbiBuffer::new(buf, &OP);
+        let (a, b) = buffer.abi_ptr_and_len();
+        let base = a;
+        assert_ne!(a, ptr);
+        assert_eq!(b, 4);
+        unsafe {
+            assert_eq!(std::slice::from_raw_parts(a, b), [2, 3, 4, 5]);
+        }
+
+        buffer.advance(1);
+        let (a, b) = buffer.abi_ptr_and_len();
+        assert_ne!(a, ptr.wrapping_add(1));
+        assert_eq!(a, base.wrapping_add(1));
+        assert_eq!(b, 3);
+        unsafe {
+            assert_eq!(std::slice::from_raw_parts(a, b), [3, 4, 5]);
+        }
+
+        buffer.advance(2);
+        let (a, b) = buffer.abi_ptr_and_len();
+        assert_ne!(a, ptr.wrapping_add(3));
+        assert_eq!(a, base.wrapping_add(3));
+        assert_eq!(b, 1);
+        unsafe {
+            assert_eq!(std::slice::from_raw_parts(a, b), [5]);
+        }
+
+        let ret = buffer.into_vec();
+        assert_eq!(ret, [B(4)]);
+        assert_eq!(ret.as_ptr(), ptr.cast());
+    }
+
+    #[test]
+    fn dealloc_lists() {
+        static DEALLOCS: AtomicUsize = AtomicUsize::new(0);
+        static OP: StreamVtable<B> = StreamVtable {
+            cancel_read: cancel,
+            cancel_write: cancel,
+            close_readable: close,
+            close_writable: close,
+            dealloc_lists: Some(|ptr| {
+                let prev = DEALLOCS.fetch_add(1, Relaxed);
+                assert_eq!(unsafe { usize::from(*ptr) }, prev + 1);
+            }),
+            lift: Some(|ptr| unsafe { B(*ptr) }),
+            lower: Some(|b, ptr| unsafe {
+                *ptr = b.0;
+            }),
+            layout: unsafe { Layout::from_size_align_unchecked(1, 1) },
+            new,
+            start_read,
+            start_write,
+        };
+
+        assert_eq!(DEALLOCS.load(Relaxed), 0);
+        let buf = vec![B(1), B(2), B(3), B(4)];
+        let mut buffer = AbiBuffer::new(buf, &OP);
+        assert_eq!(DEALLOCS.load(Relaxed), 0);
+        buffer.abi_ptr_and_len();
+        assert_eq!(DEALLOCS.load(Relaxed), 0);
+
+        buffer.advance(1);
+        assert_eq!(DEALLOCS.load(Relaxed), 1);
+        buffer.abi_ptr_and_len();
+        assert_eq!(DEALLOCS.load(Relaxed), 1);
+        buffer.advance(2);
+        assert_eq!(DEALLOCS.load(Relaxed), 3);
+        buffer.abi_ptr_and_len();
+        assert_eq!(DEALLOCS.load(Relaxed), 3);
+        buffer.into_vec();
+        assert_eq!(DEALLOCS.load(Relaxed), 3);
+    }
+}
