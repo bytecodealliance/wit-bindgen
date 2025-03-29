@@ -888,4 +888,12 @@ pub mod rt {
     pub use wit_bindgen_rt::async_support;
 
     pub use crate::pre_wit_bindgen_0_20_0::*;
+
+    pub use wit_bindgen_rt::Cleanup;
 }
+
+#[cfg(feature = "async")]
+pub use wit_bindgen_rt::async_support::{
+    AbiBuffer, FutureRead, FutureReader, FutureWrite, FutureWriter, StreamRead, StreamReader,
+    StreamResult, StreamWrite, StreamWriter,
+};

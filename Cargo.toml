@@ -37,10 +37,9 @@ futures = "0.3.31"
 wat = "1.227.0"
 wasmparser = "0.227.0"
 wasm-encoder = "0.227.0"
-wasm-metadata = "0.227.0"
+wasm-metadata = { version = "0.227.0", default-features = false }
 wit-parser = "0.227.0"
 wit-component = "0.227.0"
-wasm-compose = "0.227.0"
 
 wit-bindgen-core = { path = 'crates/core', version = '0.41.0' }
 wit-bindgen-c = { path = 'crates/c', version = '0.41.0' }
