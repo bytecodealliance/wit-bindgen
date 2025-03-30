@@ -743,10 +743,10 @@ pub fn call(
 ) {
     if matches!(lift_lower, LiftLower::Symmetric) {
         let sig = wasm_signature_symmetric(resolve, variant, func, true);
-        Generator::new(resolve, variant, lift_lower, bindgen, async_)
-            .call_with_signature(func, sig);
+        Generator::new(resolve, bindgen)
+            .call_with_signature(func, sig, variant, lift_lower, async_);
     } else {
-        Generator::new(resolve, variant, lift_lower, bindgen, async_).call(func);
+        Generator::new(resolve, bindgen).call(func, variant, lift_lower, async_);
     }
 }
 
@@ -757,14 +757,12 @@ pub fn lower_to_memory<B: Bindgen>(
     value: B::Operand,
     ty: &Type,
 ) {
-    // TODO: refactor so we don't need to pass in a bunch of unused dummy parameters:
-    let mut generator = Generator::new(
-        resolve,
-        AbiVariant::GuestImport,
-        LiftLower::LowerArgsLiftResults,
-        bindgen,
-        true,
-    );
+    let mut generator = Generator::new(resolve, bindgen);
+    // TODO: make this configurable? Right this this function is only called for
+    // future/stream callbacks so it's appropriate to skip realloc here as it's
+    // all "lower for wasm import", but this might get reused for something else
+    // in the future.
+    generator.realloc = Some(Realloc::None);
     generator.stack.push(value);
     generator.write_to_memory(ty, address, Default::default());
 }
@@ -775,14 +773,7 @@ pub fn lift_from_memory<B: Bindgen>(
     address: B::Operand,
     ty: &Type,
 ) -> B::Operand {
-    // TODO: refactor so we don't need to pass in a bunch of unused dummy parameters:
-    let mut generator = Generator::new(
-        resolve,
-        AbiVariant::GuestImport,
-        LiftLower::LowerArgsLiftResults,
-        bindgen,
-        true,
-    );
+    let mut generator = Generator::new(resolve, bindgen);
     generator.read_from_memory(ty, address, Default::default());
     generator.stack.pop().unwrap()
 }
@@ -793,16 +784,10 @@ pub fn lift_from_memory<B: Bindgen>(
 /// This is only intended to be used in guest generators for exported
 /// functions and will primarily generate `GuestDeallocate*` instructions,
 /// plus others used as input to those instructions.
-pub fn post_return(resolve: &Resolve, func: &Function, bindgen: &mut impl Bindgen, async_: bool) {
-    Generator::new(
-        resolve,
-        AbiVariant::GuestExport,
-        LiftLower::LiftArgsLowerResults,
-        bindgen,
-        async_,
-    )
-    .post_return(func);
+pub fn post_return(resolve: &Resolve, func: &Function, bindgen: &mut impl Bindgen) {
+    Generator::new(resolve, bindgen).post_return(func);
 }
+
 /// Returns whether the `Function` specified needs a post-return function to
 /// be generated in guest code.
 ///
@@ -855,53 +840,59 @@ fn needs_post_return(resolve: &Resolve, ty: &Type) -> bool {
     }
 }
 
+#[derive(Copy, Clone)]
+pub enum Realloc {
+    None,
+    Export(&'static str),
+}
+
 struct Generator<'a, B: Bindgen> {
-    variant: AbiVariant,
-    lift_lower: LiftLower,
     bindgen: &'a mut B,
-    async_: bool,
     resolve: &'a Resolve,
     operands: Vec<B::Operand>,
     results: Vec<B::Operand>,
     stack: Vec<B::Operand>,
     return_pointer: Option<B::Operand>,
+    realloc: Option<Realloc>,
 }
 
 impl<'a, B: Bindgen> Generator<'a, B> {
-    fn new(
-        resolve: &'a Resolve,
-        variant: AbiVariant,
-        lift_lower: LiftLower,
-        bindgen: &'a mut B,
-        async_: bool,
-    ) -> Generator<'a, B> {
+    fn new(resolve: &'a Resolve, bindgen: &'a mut B) -> Generator<'a, B> {
         Generator {
             resolve,
-            variant,
-            lift_lower,
             bindgen,
-            async_,
             operands: Vec::new(),
             results: Vec::new(),
             stack: Vec::new(),
             return_pointer: None,
+            realloc: None,
         }
     }
 
-    fn call(&mut self, func: &Function) {
-        let sig = self.resolve.wasm_signature(self.variant, func);
-        self.call_with_signature(func, sig);
+    fn call(&mut self, func: &Function, variant: AbiVariant, lift_lower: LiftLower, async_: bool) {
+        let sig = self.resolve.wasm_signature(variant, func);
+        self.call_with_signature(func, sig, variant, lift_lower, async_);
     }
 
-    fn call_with_signature(&mut self, func: &Function, sig: WasmSignature) {
+    fn call_with_signature(&mut self, func: &Function, sig: WasmSignature, variant: AbiVariant, lift_lower: LiftLower, async_: bool) {
         const MAX_FLAT_PARAMS: usize = 16;
 
-        let language_to_abi = matches!(self.lift_lower, LiftLower::LowerArgsLiftResults)
-            || (matches!(self.lift_lower, LiftLower::Symmetric)
-                && matches!(self.variant, AbiVariant::GuestImport));
+        // Lowering parameters calling a wasm import _or_ returning a result
+        // from an async-lifted wasm export means we don't need to pass
+        // ownership, but we pass ownership in all other cases.
+        let realloc = match (variant, lift_lower, async_) {
+            (AbiVariant::GuestImport, LiftLower::LowerArgsLiftResults, _)
+            | (AbiVariant::GuestExport, LiftLower::LiftArgsLowerResults, true) => Realloc::None,
+            _ => Realloc::Export("cabi_realloc"),
+        };
+        assert!(self.realloc.is_none());
+
+        let language_to_abi = matches!(lift_lower, LiftLower::LowerArgsLiftResults)
+            || (matches!(lift_lower, LiftLower::Symmetric)
+                && matches!(variant, AbiVariant::GuestImport));
         match language_to_abi {
             true => {
-                if let (AbiVariant::GuestExport, true) = (self.variant, self.async_) {
+                if let (AbiVariant::GuestExport, true) = (variant, async_) {
                     unimplemented!("host-side code generation for async lift/lower not supported");
                 }
 
@@ -917,7 +908,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     self_.stack.push(ptr);
                 };
 
-                if self.async_ {
+                if async_ {
                     let ElementInfo { size, align } = self
                         .bindgen
                         .sizes()
@@ -941,7 +932,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                             .bindgen
                             .sizes()
                             .record(func.params.iter().map(|t| &t.1));
-                        let ptr = match self.variant {
+                        let ptr = match variant {
                             // When a wasm module calls an import it will provide
                             // space that isn't explicitly deallocated.
                             AbiVariant::GuestImport => self.bindgen.return_pointer(size, align),
@@ -964,9 +955,10 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         lower_to_memory(self, ptr);
                     }
                 }
+                self.realloc = None;
 
                 let mut retptr_oprnd = None;
-                if self.async_ {
+                if async_ {
                     let ElementInfo { size, align } =
                         self.bindgen.sizes().record(func.result.iter());
                     let ptr = self.bindgen.return_pointer(size, align);
@@ -981,7 +973,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 } else {
                     // If necessary we may need to prepare a return pointer for
                     // this ABI.
-                    if self.variant == AbiVariant::GuestImport && sig.retptr {
+                    if variant == AbiVariant::GuestImport && sig.retptr {
                         let info = self.bindgen.sizes().params(&func.result);
                         let ptr = self.bindgen.return_pointer(info.size, info.align);
                         self.return_pointer = Some(ptr.clone());
@@ -996,7 +988,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     });
                 }
 
-                if matches!(self.lift_lower, LiftLower::Symmetric) && sig.retptr {
+                if matches!(lift_lower, LiftLower::Symmetric) && sig.retptr {
                     if let Some(ptr) = retptr_oprnd {
                         self.read_results_from_memory(
                             &func.result,
@@ -1004,7 +996,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                             Default::default(),
                         );
                     }
-                } else if !(sig.retptr || self.async_) {
+                } else if !(sig.retptr || async_) {
                     // With no return pointer in use we can simply lift the
                     // result(s) of the function from the result of the core
                     // wasm function.
@@ -1012,14 +1004,14 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         self.lift(ty)
                     }
                 } else {
-                    let ptr = match self.variant {
+                    let ptr = match variant {
                         // imports into guests means it's a wasm module
                         // calling an imported function. We supplied the
                         // return pointer as the last argument (saved in
                         // `self.return_pointer`) so we use that to read
                         // the result of the function from memory.
                         AbiVariant::GuestImport => {
-                            assert!(sig.results.is_empty() || self.async_);
+                            assert!(sig.results.is_empty() || async_);
                             self.return_pointer.take().unwrap()
                         }
 
@@ -1051,7 +1043,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 });
             }
             false => {
-                if let (AbiVariant::GuestImport, true) = (self.variant, self.async_) {
+                if let (AbiVariant::GuestImport, true) = (variant, async_) {
                     todo!("implement host-side support for async lift/lower");
                 }
 
@@ -1091,10 +1083,10 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 // ... and that allows us to call the interface types function
                 self.emit(&Instruction::CallInterface {
                     func,
-                    async_: self.async_,
+                    async_: async_,
                 });
 
-                let (lower_to_memory, async_results) = if self.async_ {
+                let (lower_to_memory, async_results) = if async_ {
                     self.emit(&Instruction::AsyncPostCallInterface { func });
 
                     let mut results = Vec::new();
@@ -1109,8 +1101,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 // This was dynamically allocated by the caller (or async start
                 // function) so after it's been read by the guest we need to
                 // deallocate it.
-                if let AbiVariant::GuestExport = self.variant {
-                    if sig.indirect_params && !self.async_ {
+                if let AbiVariant::GuestExport = variant {
+                    if sig.indirect_params && !async_ {
                         let ElementInfo { size, align } = self
                             .bindgen
                             .sizes()
@@ -1120,6 +1112,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     }
                 }
 
+                self.realloc = Some(realloc);
+
                 if !lower_to_memory {
                     // With no return pointer in use we simply lower the
                     // result(s) and return that directly from the function.
@@ -1127,8 +1121,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         self.lower(ty);
                     }
                 } else {
-                    match self.variant == AbiVariant::GuestImport
-                        || self.lift_lower == LiftLower::Symmetric
+                    match variant == AbiVariant::GuestImport
+                        || lift_lower == LiftLower::Symmetric
                     {
                         // When a function is imported to a guest this means
                         // it's a host providing the implementation of the
@@ -1158,7 +1152,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                                 ptr.clone(),
                                 Default::default(),
                             );
-                            if !matches!(self.lift_lower, LiftLower::Symmetric) {
+                            if !matches!(lift_lower, LiftLower::Symmetric) {
                                 self.stack.push(ptr);
                             }
                         } // AbiVariant::GuestImportAsync
@@ -1169,7 +1163,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     }
 
                     if matches!(
-                        self.variant,
+                        variant,
                         AbiVariant::GuestImportAsync | AbiVariant::GuestExportAsync
                     ) {
                         unreachable!()
@@ -1194,8 +1188,11 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         amt: sig.results.len(),
                     });
                 }
+                self.realloc = None;
             }
         }
+
+        assert!(self.realloc.is_none());
 
         assert!(
             self.stack.is_empty(),
@@ -1205,7 +1202,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
     }
 
     fn post_return(&mut self, func: &Function) {
-        let sig = self.resolve.wasm_signature(self.variant, func);
+        let sig = self.resolve.wasm_signature(AbiVariant::GuestExport, func);
 
         // Currently post-return is only used for lists and lists are always
         // returned indirectly through memory due to their flat representation
@@ -1459,13 +1456,9 @@ impl<'a, B: Bindgen> Generator<'a, B> {
     }
 
     fn list_realloc(&self) -> Option<&'static str> {
-        // Lowering parameters calling a wasm import _or_ returning a result
-        // from an async-lifted wasm export means we don't need to pass
-        // ownership, but we pass ownership in all other cases.
-        match (self.variant, self.lift_lower, self.async_) {
-            (AbiVariant::GuestImport, LiftLower::LowerArgsLiftResults, _)
-            | (AbiVariant::GuestExport, LiftLower::LiftArgsLowerResults, true) => None,
-            _ => Some("cabi_realloc"),
+        match self.realloc.expect("realloc should be configured") {
+            Realloc::None => None,
+            Realloc::Export(s) => Some(s),
         }
     }
 
@@ -1856,11 +1849,11 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 TypeDefKind::List(_) => self.read_list_from_memory(ty, addr, offset),
 
                 TypeDefKind::Future(_) | TypeDefKind::Stream(_) | TypeDefKind::Handle(_) => {
-                    if matches!(self.lift_lower, LiftLower::Symmetric) {
-                        self.emit_and_lift(ty, addr, &PointerLoad { offset })
-                    } else {
+                    // if matches!(self.lift_lower, LiftLower::Symmetric) {
+                    //     self.emit_and_lift(ty, addr, &PointerLoad { offset })
+                    // } else {
                         self.emit_and_lift(ty, addr, &I32Load { offset })
-                    }
+                    // }
                 }
 
                 TypeDefKind::Resource => {

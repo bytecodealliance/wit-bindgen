@@ -6,18 +6,10 @@ publish = false
 
 [dependencies]
 wit-bindgen = { path = "../guest-rust" }
-wit-bindgen-rt = { path = '../guest-rust/rt' }
-rust-xcrate-test = { path = './rust-xcrate-test' }
-futures = "0.3"
-once_cell = "1.20"
 
 [lib]
 test = false
 doctest = false
-
-[[bin]]
-name = "variants"
-test = false
 
 [[bin]]
 name = "flavorful"
@@ -45,10 +37,6 @@ test = false
 
 [[bin]]
 name = "resources"
-test = false
-
-[[bin]]
-name = "resource_borrow_in_record"
 test = false
 
 [[bin]]
@@ -81,8 +69,4 @@ test = false
 
 [[bin]]
 name = "resource_borrow_simple"
-test = false
-
-[[bin]]
-name = "rust_xcrate"
 test = false

@@ -208,6 +208,67 @@ have `runner-std.rs` and `runner-nostd.rs` to test with and without the
 bindings generator flags it's expected that the original `runner` or `test`
 worlds are still adhered to.
 
+#### Test Configuration: World Names
+
+By default `runner` and `test` worlds are expected, but this can be configured
+with:
+
+```wit
+//@ runner = "other-runner"
+//@ dependencies = ["other-test"]
+
+package foo:bar;
+
+world other-runner {
+    // ...
+}
+
+world other-test {
+    // ...
+}
+```
+
+This will then expect `other-runner.rs` for example as a test file, so test
+files are still named after their worlds.
+
+#### Test Configuration: Fancy Compositions
+
+The `wac` tooling is available for composing components together. This can be
+configured with `dependencies` and `wac` keys:
+
+```wit
+//@ dependencies = ["intermediate", "leaf"]
+//@ wac = "./compose.wac"
+
+package foo:bar;
+
+world runner {
+    // ...
+}
+
+world intermediate {
+    // ...
+}
+
+world leaf {
+    // ...
+}
+```
+
+This would then require a `compose.wac` file in the test directory. Components
+named `test:{world}` are made available to the script to perform compositions
+with:
+
+```wac
+package example:composition;
+
+let leaf = new test:leaf { ... };
+let intermediate = new test:intermediate { ...leaf, ... };
+let runner = new test:runner { ...intermediate, ... };
+
+export runner...;
+```
+
 ## Language Support
 
 Currently the `wit-bindgen test` CLI comes with built-in language support for a
@@ -236,3 +297,26 @@ This would recognize the `rs` file extension and use the
 `./wit-bindgen-rust-runner` script or binary to execute tests. The exact
 interface to the tests is documented as part of `wit-bindgen test --help` for
 the `--custom` argument.
+
+#### Configuration: Rust
+
+Rust configuration supports a few keys at the top of files in addition to the
+default `args` option for bindings generator options
+
+```rust
+//@ [lang]
+//@ rustflags = '-O'
+//@ externs = ['./other.rs']
+```
+
+Here the crate will be compiled with `-O` and `./other.rs` will be compiled as a
+separate crate and passed as `--extern`
+
+#### Configuration: C
+
+C/C++ configuration supports configuring compilation flags at this time:
+
+```rust
+//@ [lang]
+//@ cflags = '-O'
+```

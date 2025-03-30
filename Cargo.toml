@@ -27,6 +27,7 @@ anyhow = "1.0.72"
 bitflags = "2.3.3"
 heck =  { version = "0.5" }
 pulldown-cmark = { version = "0.9", default-features = false }
+serde = { version = "1.0.218", features = ["derive"] }
 clap = { version = "4.3.19", features = ["derive"] }
 indexmap = "2.0.0"
 prettyplease = "0.2.20"
@@ -70,6 +71,7 @@ wit-component = { workspace = true }
 wasm-encoder = { workspace = true }
 wit-bindgen-cpp = { workspace = true, features = ['clap'], optional = true }
 wit-bindgen-bridge = { workspace = true, features = ['clap'], optional = true }
+env_logger = "0.11.7"
 
 [features]
 default = [

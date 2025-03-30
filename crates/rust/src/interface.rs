@@ -591,15 +591,18 @@ macro_rules! {macro_name} {{
                         };
                         let size = size.size_wasm32();
                         let align = align.align_wasm32();
-                        let (lower, lift) = if let Some(payload_type) = payload_type {
-                            let lower =
+                        let (lower, cleanup, lift) = if let Some(payload_type) = payload_type {
+                            let (lower, cleanup) =
                                 self.lower_to_memory("address", "&value", &payload_type, &module);
                             let lift =
                                 self.lift_from_memory("address", "value", &payload_type, &module);
-                            (lower, lift)
+                            (lower, cleanup, lift)
                         } else {
-                            (String::new(), "let value = ();\n".into())
+                            (String::new(), None, "let value = ();\n".into())
                         };
+
+                        let (cleanup_start, cleanup_end) =
+                            cleanup.unwrap_or_else(|| (String::new(), String::new()));
 
                         let box_ = self.path_to_box();
                         let code = if self.gen.opts.symmetric {
@@ -611,6 +614,7 @@ macro_rules! {macro_name} {{
 pub mod vtable{ordinal} {{
     fn write(future: u32, value: {name}) -> ::core::pin::Pin<{box_}<dyn ::core::future::Future<Output = bool>>> {{
         {box_}::pin(async move {{
+            {cleanup_start}
             #[repr(align({align}))]
             struct Buffer([::core::mem::MaybeUninit::<u8>; {size}]);
             let mut buffer = Buffer([::core::mem::MaybeUninit::uninit(); {size}]);
@@ -622,16 +626,19 @@ pub mod vtable{ordinal} {{
                 fn wit_import(_: u32, _: *mut u8) -> u32;
             }}
 
-            match unsafe {{ {async_support}::await_future_result(wit_import, future, address).await }} {{
+            let result = match unsafe {{ {async_support}::await_future_result(wit_import, future, address).await }} {{
                 {async_support}::AsyncWaitResult::Values(_) => true,
                 {async_support}::AsyncWaitResult::End => false,
                 {async_support}::AsyncWaitResult::Error(_) => unreachable!("received error while performing write"),
-            }}
+            }};
+            {cleanup_end}
+            result
         }})
     }}
 
     fn read(future: u32) -> ::core::pin::Pin<{box_}<dyn ::core::future::Future<Output = ::std::option::Option<::std::result::Result<{name}, {async_support}::ErrorContext>>>>> {{
         {box_}::pin(async move {{
+            #[repr(align({align}))]
             struct Buffer([::core::mem::MaybeUninit::<u8>; {size}]);
             let mut buffer = Buffer([::core::mem::MaybeUninit::uninit(); {size}]);
             let address = buffer.0.as_mut_ptr() as *mut u8;
@@ -725,14 +732,15 @@ pub mod vtable{ordinal} {{
                         let size = size.size_wasm32();
                         let align = align.align_wasm32();
                         let alloc = self.path_to_std_alloc_module();
-                        let (lower_address, lower, lift_address, lift) = match payload_type {
+                        let (lower_address, lower, cleanup, lift_address, lift) = match payload_type
+                        {
                             Some(payload_type) if !stream_direct(payload_type) => {
                                 let address = format!(
                                     "let address = unsafe {{ {alloc}::alloc\
                                      ({alloc}::Layout::from_size_align_unchecked\
                                      ({size} * values.len(), {align})) }};"
                                 );
-                                let lower = self.lower_to_memory(
+                                let (lower, cleanup) = self.lower_to_memory(
                                     "address",
                                     "value",
                                     &payload_type,
@@ -761,7 +769,7 @@ for (index, dst) in values.iter_mut().take(count).enumerate() {{
 }}
                                 "#
                                 );
-                                (address.clone(), lower, address, lift)
+                                (address.clone(), lower, cleanup, address, lift)
                             }
                             _ => {
                                 let lower_address =
@@ -771,11 +779,15 @@ for (index, dst) in values.iter_mut().take(count).enumerate() {{
                                 (
                                     lower_address,
                                     String::new(),
+                                    None,
                                     lift_address,
                                     "let value = ();\n".into(),
                                 )
                             }
                         };
+
+                        let (cleanup_start, cleanup_end) =
+                            cleanup.unwrap_or_else(|| (String::new(), String::new()));
 
                         let box_ = self.path_to_box();
                         let code = if self.gen.opts.symmetric {
@@ -787,6 +799,7 @@ for (index, dst) in values.iter_mut().take(count).enumerate() {{
 pub mod vtable{ordinal} {{
     fn write(stream: u32, values: &[{name}]) -> ::core::pin::Pin<{box_}<dyn ::core::future::Future<Output = usize> + '_>> {{
         {box_}::pin(async move {{
+            {cleanup_start}
             {lower_address}
             {lower}
             #[link(wasm_import_module = "{module}")]
@@ -797,7 +810,6 @@ pub mod vtable{ordinal} {{
 
             let mut total = 0;
             while total < values.len() {{
-
                 match unsafe {{
                     {async_support}::await_stream_result(
                         start_write,
@@ -811,6 +823,7 @@ pub mod vtable{ordinal} {{
                     {async_support}::AsyncWaitResult::End => break,
                 }}
             }}
+            {cleanup_end}
             total
         }})
     }}
@@ -955,10 +968,30 @@ pub mod vtable{ordinal} {{
         }
     }
 
-    fn lower_to_memory(&mut self, address: &str, value: &str, ty: &Type, module: &str) -> String {
+    fn lower_to_memory(
+        &mut self,
+        address: &str,
+        value: &str,
+        ty: &Type,
+        module: &str,
+    ) -> (String, Option<(String, String)>) {
         let mut f = FunctionBindgen::new(self, Vec::new(), true, module, true);
         abi::lower_to_memory(f.r#gen.resolve, &mut f, address.into(), value.into(), ty);
-        format!("unsafe {{ {} }}", String::from(f.src))
+        f.flush_cleanup();
+        let lower = format!("unsafe {{ {} }}", String::from(f.src));
+        let cleanup = if f.needs_cleanup_list {
+            f.src = Default::default();
+            f.emit_cleanup();
+            let body = String::from(f.src);
+            let vec = self.path_to_vec();
+            Some((
+                format!("let mut cleanup_list = {vec}::new();\n"),
+                format!("unsafe {{ {body} }}"),
+            ))
+        } else {
+            None
+        };
+        (lower, cleanup)
     }
 
     fn lift_from_memory(&mut self, address: &str, value: &str, ty: &Type, module: &str) -> String {
@@ -1131,7 +1164,7 @@ pub mod vtable{ordinal} {{
             self.src.push_str("{ unsafe {\n");
 
             let mut f = FunctionBindgen::new(self, params, async_, self.wasm_import_module, false);
-            abi::post_return(f.r#gen.resolve, func, &mut f, async_);
+            abi::post_return(f.r#gen.resolve, func, &mut f);
             let FunctionBindgen {
                 needs_cleanup_list,
                 src,

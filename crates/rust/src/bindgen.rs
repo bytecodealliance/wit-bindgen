@@ -54,7 +54,22 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         }
     }
 
-    fn emit_cleanup(&mut self) {
+    pub(crate) fn flush_cleanup(&mut self) {
+        if !self.cleanup.is_empty() {
+            self.needs_cleanup_list = true;
+            self.push_str("cleanup_list.extend_from_slice(&[");
+            for (ptr, layout) in mem::take(&mut self.cleanup) {
+                self.push_str("(");
+                self.push_str(&ptr);
+                self.push_str(", ");
+                self.push_str(&layout);
+                self.push_str("),");
+            }
+            self.push_str("]);\n");
+        }
+    }
+
+    pub(crate) fn emit_cleanup(&mut self) {
         if self.emitted_cleanup {
             return;
         }
@@ -249,18 +264,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
     }
 
     fn finish_block(&mut self, operands: &mut Vec<String>) {
-        if !self.cleanup.is_empty() {
-            self.needs_cleanup_list = true;
-            self.push_str("cleanup_list.extend_from_slice(&[");
-            for (ptr, layout) in mem::take(&mut self.cleanup) {
-                self.push_str("(");
-                self.push_str(&ptr);
-                self.push_str(", ");
-                self.push_str(&layout);
-                self.push_str("),");
-            }
-            self.push_str("]);\n");
-        }
+        self.flush_cleanup();
         let (prev_src, prev_cleanup) = self.block_storage.pop().unwrap();
         let src = mem::replace(&mut self.src, prev_src);
         self.cleanup = prev_cleanup;

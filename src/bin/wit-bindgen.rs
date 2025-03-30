@@ -134,6 +134,8 @@ struct Common {
 }
 
 fn main() -> Result<()> {
+    env_logger::init();
+
     let mut files = Files::default();
     let (generator, opt) = match Opt::parse() {
         #[cfg(feature = "markdown")]

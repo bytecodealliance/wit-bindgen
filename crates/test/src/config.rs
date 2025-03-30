@@ -75,7 +75,7 @@ pub struct RuntimeTestConfig<T = HashMap<String, toml::Value>> {
     pub lang: Option<T>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone, Debug)]
 #[serde(untagged)]
 pub enum StringList {
     String(String),
@@ -114,6 +114,32 @@ pub struct WitConfig {
     /// arguments. For example with Rust it avoids passing `--generate-all` by
     /// default to bindings generation.
     pub default_bindgen_args: Option<bool>,
+
+    /// Name of the world for the "runner" component, and note that this affects
+    /// filenames as well.
+    pub runner: Option<String>,
+
+    /// List of worlds for "test" components. This affects filenames and these
+    /// are all available to import to the "runner".
+    pub dependencies: Option<StringList>,
+
+    /// Path to a `*.wac` file to specify how composition is done.
+    pub wac: Option<String>,
+}
+
+impl WitConfig {
+    /// Returns the name of the "runner" world
+    pub fn runner_world(&self) -> &str {
+        self.runner.as_deref().unwrap_or("runner")
+    }
+
+    /// Returns the list of dependency worlds that this configuration uses.
+    pub fn dependency_worlds(&self) -> Vec<String> {
+        match self.dependencies.clone() {
+            Some(list) => list.into(),
+            None => vec!["test".to_string()],
+        }
+    }
 }
 
 /// Parses the configuration `T` from `contents` in comments at the start of the
