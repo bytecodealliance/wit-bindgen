@@ -1822,7 +1822,7 @@ impl CppInterfaceGenerator<'_> {
 
                 let mut f = FunctionBindgen::new(self, params.clone());
                 f.params = params;
-                abi::post_return(f.gen.resolve, func, &mut f, false);
+                abi::post_return(f.gen.resolve, func, &mut f);
                 let FunctionBindgen { src, .. } = f;
                 self.gen.c_src.src.push_str(&src);
                 self.gen.c_src.src.push_str("}\n");

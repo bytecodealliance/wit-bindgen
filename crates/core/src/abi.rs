@@ -874,7 +874,14 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         self.call_with_signature(func, sig, variant, lift_lower, async_);
     }
 
-    fn call_with_signature(&mut self, func: &Function, sig: WasmSignature, variant: AbiVariant, lift_lower: LiftLower, async_: bool) {
+    fn call_with_signature(
+        &mut self,
+        func: &Function,
+        sig: WasmSignature,
+        variant: AbiVariant,
+        lift_lower: LiftLower,
+        async_: bool,
+    ) {
         const MAX_FLAT_PARAMS: usize = 16;
 
         // Lowering parameters calling a wasm import _or_ returning a result
@@ -1121,9 +1128,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         self.lower(ty);
                     }
                 } else {
-                    match variant == AbiVariant::GuestImport
-                        || lift_lower == LiftLower::Symmetric
-                    {
+                    match variant == AbiVariant::GuestImport || lift_lower == LiftLower::Symmetric {
                         // When a function is imported to a guest this means
                         // it's a host providing the implementation of the
                         // import. The result is stored in the pointer
@@ -1852,7 +1857,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     // if matches!(self.lift_lower, LiftLower::Symmetric) {
                     //     self.emit_and_lift(ty, addr, &PointerLoad { offset })
                     // } else {
-                        self.emit_and_lift(ty, addr, &I32Load { offset })
+                    self.emit_and_lift(ty, addr, &I32Load { offset })
                     // }
                 }
 
