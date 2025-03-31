@@ -15,11 +15,36 @@ use std::task::{Context, Poll};
 /// on each state transition.
 pub struct WaitableOperation<S: WaitableOp> {
     state: WaitableOperationState<S>,
+    /// Storage for the final result of this asynchronous operation, if it's
+    /// completed asynchronously.
     completion_status: CompletionStatus,
 }
 
+/// Structure used to store the `u32` return code from the canonical ABI about
+/// an asynchronous operation.
+///
+/// When an asynchronous operation is started and it does not immediately
+/// complete then this structure is used to asynchronously fill in the return
+/// code. A `Pin<&mut CompletionStatus>` is used to register a pointer with
+/// `FutureState` to get filled in.
+///
+/// Note that this means that this type is participating in unsafe lifetime
+/// management and has properties it needs to uphold as a result. Specifically
+/// the `PhantomPinned` field here means that `Pin` actually has meaning for
+/// this structure, notably that once `Pin<&mut CompletionStatus>` is created
+/// then it's guaranteed the destructor will be run before the backing memory
+/// is deallocated. That's used in `WaitableOperation` above to share an
+/// internal pointer of this data structure with `FuturesState` safely. The
+/// destructor of `WaitableOperation` will deregister from `FutureState` meaning
+/// that if `FuturesState` has a pointer here then it should be valid .
 struct CompletionStatus {
+    /// Where the async operation's code is filled in, and `None` until that
+    /// happens.
     code: Option<u32>,
+
+    /// This is necessary to ensure that `Pin<&mut CompletionStatus>` carries
+    /// the "pin guarantee", basically to mean that it's not safe to construct
+    /// `Pin<&mut CompletionStatus>` and it must somehow require `unsafe` code.
     _pinned: marker::PhantomPinned,
 }
 
