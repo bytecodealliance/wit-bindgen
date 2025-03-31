@@ -753,7 +753,7 @@ pub fn lower_to_memory<B: Bindgen>(
     // future/stream callbacks so it's appropriate to skip realloc here as it's
     // all "lower for wasm import", but this might get reused for something else
     // in the future.
-    generator.realloc = Some(Realloc::None);
+    generator.realloc = Some(Realloc::Export("cabi_realloc"));
     generator.stack.push(value);
     generator.write_to_memory(ty, address, Default::default());
 }

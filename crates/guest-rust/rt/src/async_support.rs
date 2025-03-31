@@ -6,9 +6,8 @@
 
 extern crate std;
 use core::sync::atomic::{AtomicBool, Ordering};
-use std::any::Any;
 use std::boxed::Box;
-use std::collections::{hash_map, HashMap};
+use std::collections::HashMap;
 use std::fmt::{self, Debug, Display};
 use std::future::Future;
 use std::mem;
@@ -24,13 +23,26 @@ use futures::future::FutureExt;
 use futures::stream::{FuturesUnordered, StreamExt};
 use once_cell::sync::Lazy;
 
+macro_rules! rtdebug {
+    ($($f:tt)*) => {
+        // Change this flag to enable debugging, right now we're not using a
+        // crate like `log` or such to reduce runtime deps. Intended to be used
+        // during development for now.
+        if false {
+            std::println!($($f)*);
+        }
+    }
+
+}
+
+mod abi_buffer;
 mod future_support;
 mod stream_support;
+mod waitable;
 
-pub use {
-    future_support::{future_new, FutureReader, FutureVtable, FutureWriter},
-    stream_support::{stream_new, StreamReader, StreamVtable, StreamWriter},
-};
+pub use abi_buffer::*;
+pub use future_support::*;
+pub use stream_support::*;
 
 pub use futures;
 
@@ -48,6 +60,18 @@ struct FutureState {
     tasks: Option<FuturesUnordered<BoxFuture>>,
     /// The waitable set containing waitables created by this task, if any.
     waitable_set: Option<u32>,
+    /// A map of waitables to the corresponding waker and completion code.
+    ///
+    /// This is primarily filled in and managed by `WaitableOperation<S>`. The
+    /// waker here comes straight from `std::task::Context` and the pointer is
+    /// otherwise stored within the `WaitableOperation<S>` The raw pointer here
+    /// has a disconnected lifetime with each future but the management of the
+    /// internal states with respect to drop should always ensure that this is
+    /// only ever pointing to active waitable operations.
+    ///
+    /// When a waitable notification is received the corresponding entry in this
+    /// map is removed, the status code is filled in, and the waker is notified.
+    wakers: HashMap<u32, (Waker, *mut Option<u32>)>,
 }
 
 impl FutureState {
@@ -62,6 +86,10 @@ impl FutureState {
     fn remove_waitable(&mut self, waitable: u32) {
         unsafe { waitable_join(waitable, 0) }
     }
+
+    fn remaining_work(&self) -> bool {
+        self.todo > 0 || !self.wakers.is_empty()
+    }
 }
 
 impl Drop for FutureState {
@@ -70,20 +98,6 @@ impl Drop for FutureState {
             waitable_set_drop(set);
         }
     }
-}
-
-/// Represents the state of a stream or future.
-#[doc(hidden)]
-pub enum Handle {
-    LocalOpen,
-    LocalReady(Box<dyn Any>, Waker),
-    LocalWaiting(oneshot::Sender<Box<dyn Any>>),
-    LocalClosed,
-    Read,
-    Write,
-    // Local end is closed with an error
-    // NOTE: this is only valid for write ends
-    WriteClosedErr(Option<ErrorContext>),
 }
 
 /// The current task being polled (or null if none).
@@ -96,9 +110,6 @@ static mut CALLS: Lazy<HashMap<i32, oneshot::Sender<u32>>> = Lazy::new(HashMap::
 /// Any newly-deferred work queued by calls to the `spawn` function while
 /// polling the current task.
 static mut SPAWNED: Vec<BoxFuture> = Vec::new();
-
-/// The states of all currently-open streams and futures.
-static mut HANDLES: Lazy<HashMap<u32, Handle>> = Lazy::new(HashMap::new);
 
 const EVENT_NONE: i32 = 0;
 const _EVENT_CALL_STARTING: i32 = 1;
@@ -117,11 +128,6 @@ const _CALLBACK_CODE_POLL: i32 = 3;
 const STATUS_STARTING: u32 = 1;
 const STATUS_STARTED: u32 = 2;
 const STATUS_RETURNED: u32 = 3;
-
-#[doc(hidden)]
-pub fn with_entry<T>(handle: u32, fun: impl FnOnce(hash_map::Entry<'_, u32, Handle>) -> T) -> T {
-    fun(unsafe { HANDLES.entry(handle) })
-}
 
 /// Poll the specified task until it either completes or can't make immediate
 /// progress.
@@ -193,6 +199,7 @@ pub fn first_poll<T: 'static>(
                 .collect(),
         ),
         waitable_set: None,
+        wakers: HashMap::new(),
     }));
     let done = unsafe { poll(state).is_ready() };
     unsafe { callback_code(state, done) }
@@ -255,85 +262,6 @@ mod results {
     pub const CANCELED: u32 = 0;
 }
 
-/// Result of awaiting a asynchronous read or write
-#[doc(hidden)]
-pub enum AsyncWaitResult {
-    /// Used when a value was successfully sent or received
-    Values(usize),
-    /// Represents a successful but error-indicating read
-    Error(u32),
-    /// Represents a failed read (closed, canceled, etc)
-    End,
-}
-
-impl AsyncWaitResult {
-    /// Interpret the results from an async operation that is known to *not* be blocked
-    fn from_nonblocked_async_result(v: u32) -> Self {
-        match v {
-            results::CLOSED | results::CANCELED => Self::End,
-            v => {
-                if v & results::CLOSED != 0 {
-                    Self::Error(v & !results::CLOSED)
-                } else {
-                    Self::Values(v as usize)
-                }
-            }
-        }
-    }
-}
-
-/// Await the completion of a future read or write.
-#[doc(hidden)]
-pub async unsafe fn await_future_result(
-    import: unsafe extern "C" fn(u32, *mut u8) -> u32,
-    future: u32,
-    address: *mut u8,
-) -> AsyncWaitResult {
-    let result = import(future, address);
-    match result {
-        results::BLOCKED => {
-            assert!(!CURRENT.is_null());
-            (*CURRENT).todo += 1;
-
-            (*CURRENT).add_waitable(future);
-
-            let (tx, rx) = oneshot::channel();
-            CALLS.insert(future as _, tx);
-            AsyncWaitResult::from_nonblocked_async_result(rx.await.unwrap())
-        }
-        v => AsyncWaitResult::from_nonblocked_async_result(v),
-    }
-}
-
-/// Await the completion of a stream read or write.
-#[doc(hidden)]
-pub async unsafe fn await_stream_result(
-    import: unsafe extern "C" fn(u32, *mut u8, u32) -> u32,
-    stream: u32,
-    address: *mut u8,
-    count: u32,
-) -> AsyncWaitResult {
-    let result = import(stream, address, count);
-    match result {
-        results::BLOCKED => {
-            assert!(!CURRENT.is_null());
-            (*CURRENT).todo += 1;
-
-            (*CURRENT).add_waitable(stream);
-
-            let (tx, rx) = oneshot::channel();
-            CALLS.insert(stream as _, tx);
-            let v = rx.await.unwrap();
-            if let results::CLOSED | results::CANCELED = v {
-                AsyncWaitResult::End
-            } else {
-                AsyncWaitResult::Values(usize::try_from(v).unwrap())
-            }
-        }
-        v => AsyncWaitResult::from_nonblocked_async_result(v),
-    }
-}
-
 /// Call the `subtask.drop` canonical built-in function.
 fn subtask_drop(subtask: u32) {
     #[cfg(not(target_arch = "wasm32"))]
@@ -351,7 +279,7 @@ fn subtask_drop(subtask: u32) {
 }
 
 unsafe fn callback_code(state: *mut FutureState, done: bool) -> i32 {
-    if done && (*state).todo == 0 {
+    if done && !(*state).remaining_work() {
         context_set(0);
         drop(Box::from_raw(state));
         CALLBACK_CODE_EXIT
@@ -379,12 +307,16 @@ unsafe fn callback_with_state(
 ) -> i32 {
     match event0 {
         EVENT_NONE => {
+            rtdebug!("EVENT_NONE");
             let done = poll(state).is_ready();
             callback_code(state, done)
         }
-        EVENT_CALL_STARTED => callback_code(state, false),
-        EVENT_CALL_RETURNED | EVENT_STREAM_READ | EVENT_STREAM_WRITE | EVENT_FUTURE_READ
-        | EVENT_FUTURE_WRITE => {
+        EVENT_CALL_STARTED => {
+            rtdebug!("EVENT_CALL_STARTED");
+            callback_code(state, false)
+        }
+        EVENT_CALL_RETURNED => {
+            rtdebug!("EVENT_CALL_RETURNED({event1:#x}, {event2:#x})");
             (*state).remove_waitable(event1 as _);
 
             if let Some(call) = CALLS.remove(&event1) {
@@ -397,19 +329,24 @@ unsafe fn callback_with_state(
                 subtask_drop(event1 as u32);
             }
 
-            if matches!(
-                event0,
-                EVENT_CALL_RETURNED
-                    | EVENT_STREAM_READ
-                    | EVENT_STREAM_WRITE
-                    | EVENT_FUTURE_READ
-                    | EVENT_FUTURE_WRITE
-            ) {
-                (*state).todo -= 1;
-            }
+            (*state).todo -= 1;
 
             callback_code(state, done)
         }
+
+        EVENT_STREAM_READ | EVENT_STREAM_WRITE | EVENT_FUTURE_READ | EVENT_FUTURE_WRITE => {
+            rtdebug!(
+                "EVENT_{{STREAM,FUTURE}}_{{READ,WRITE}}({event0:#x}, {event1:#x}, {event2:#x})"
+            );
+            (*state).remove_waitable(event1 as u32);
+            let (waker, code) = (*state).wakers.remove(&(event1 as u32)).unwrap();
+            *code = Some(event2 as u32);
+            waker.wake();
+
+            let done = poll(state).is_ready();
+            callback_code(state, done)
+        }
+
         _ => unreachable!(),
     }
 }
@@ -540,6 +477,7 @@ pub fn block_on<T: 'static>(future: impl Future<Output = T> + 'static) -> T {
                 .collect(),
         ),
         waitable_set: None,
+        wakers: HashMap::new(),
     };
     loop {
         match unsafe { poll(state) } {
