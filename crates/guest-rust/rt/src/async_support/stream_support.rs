@@ -97,7 +97,7 @@ impl<T> StreamWriter<T> {
     ///
     /// This method is akin to an `async fn` except that the returned
     /// [`StreamWrite`] future can also be cancelled via [`StreamWrite::cancel`]
-    /// to re-acquire intermediate values.
+    /// to re-acquire undelivered values.
     ///
     /// This method will perform at most a single write of the `values`
     /// provided. The returned future will resolve once the write has completed.
@@ -202,7 +202,7 @@ impl<T> Drop for StreamWriter<T> {
     }
 }
 
-/// Represents a write operation which may be canceled prior to completion.
+/// Represents a write operation which may be cancelled prior to completion.
 pub struct StreamWrite<'a, T: 'static> {
     op: WaitableOperation<StreamWriteOp<'a, T>>,
 }
@@ -245,7 +245,7 @@ where
         (code, (writer, buf))
     }
 
-    fn start_cancel((_writer, buf): Self::Start) -> Self::Cancel {
+    fn start_cancelled((_writer, buf): Self::Start) -> Self::Cancel {
         (StreamResult::Cancelled, buf)
     }
 
@@ -271,7 +271,7 @@ where
         code
     }
 
-    fn in_progress_canceled((_writer, buf): Self::InProgress) -> Self::Result {
+    fn in_progress_cancelled((_writer, buf): Self::InProgress) -> Self::Result {
         (StreamResult::Cancelled, buf)
     }
 
@@ -420,7 +420,7 @@ impl<T> Drop for StreamReader<T> {
     }
 }
 
-/// Represents a read operation which may be canceled prior to completion.
+/// Represents a read operation which may be cancelled prior to completion.
 pub struct StreamRead<'a, T: 'static> {
     op: WaitableOperation<StreamReadOp<'a, T>>,
 }
@@ -465,7 +465,7 @@ where
         (code, (reader, buf, cleanup))
     }
 
-    fn start_cancel((_, buf): Self::Start) -> Self::Cancel {
+    fn start_cancelled((_, buf): Self::Start) -> Self::Cancel {
         (StreamResult::Cancelled, buf)
     }
 
@@ -505,7 +505,7 @@ where
         (StreamResult::Complete(amt), buf)
     }
 
-    /// Like `in_progress_canceled` below, discard the temporary cleanup
+    /// Like `in_progress_cancelled` below, discard the temporary cleanup
     /// allocation, if any.
     fn in_progress_closed((_reader, buf, _cleanup): Self::InProgress) -> Self::Result {
         (StreamResult::Closed, buf)
@@ -528,7 +528,7 @@ where
     ///
     /// TODO: should maybe thread this around like `AbiBuffer` to cache the
     /// read allocation?
-    fn in_progress_canceled((_reader, buf, _cleanup): Self::InProgress) -> Self::Result {
+    fn in_progress_cancelled((_reader, buf, _cleanup): Self::InProgress) -> Self::Result {
         (StreamResult::Cancelled, buf)
     }
 

@@ -75,7 +75,7 @@ impl<T: 'static> AbiBuffer<T> {
     /// Returns the canonical ABI pointer/length to pass off to a write
     /// operation.
     pub(crate) fn abi_ptr_and_len(&self) -> (*const u8, usize) {
-        // If there's no `lower` operation then it menas that `T`'s layout is
+        // If there's no `lower` operation then it means that `T`'s layout is
         // the same in the canonical ABI so it can be used as-is. In this
         // situation the list would have been un-tampered with above.
         if self.vtable.lower.is_none() {

@@ -247,7 +247,7 @@ impl<T> Drop for FutureWriter<T> {
     }
 }
 
-/// Represents a write operation which may be canceled prior to completion.
+/// Represents a write operation which may be cancelled prior to completion.
 ///
 /// This is returned by [`FutureWriter::write`].
 pub struct FutureWrite<T: 'static> {
@@ -269,7 +269,7 @@ where
     type Start = (FutureWriter<T>, T);
     type InProgress = (FutureWriter<T>, Option<Cleanup>);
     type Result = (WriteComplete<T>, FutureWriter<T>);
-    type Cancel = Result<(), FutureWriteCancel<T>>;
+    type Cancel = FutureWriteCancel<T>;
 
     fn start((writer, value): Self::Start) -> (u32, Self::InProgress) {
         // TODO: it should be safe to store the lower-destination in
@@ -293,8 +293,8 @@ where
         (code, (writer, cleanup))
     }
 
-    fn start_cancel((writer, value): Self::Start) -> Self::Cancel {
-        Err(FutureWriteCancel::Cancelled(value, writer))
+    fn start_cancelled((writer, value): Self::Start) -> Self::Cancel {
+        FutureWriteCancel::Cancelled(value, writer)
     }
 
     /// This write has completed.
@@ -349,7 +349,7 @@ where
         code
     }
 
-    fn in_progress_canceled(state: Self::InProgress) -> Self::Result {
+    fn in_progress_cancelled(state: Self::InProgress) -> Self::Result {
         match Self::in_progress_closed(state) {
             (WriteComplete::Closed(value), writer) => (WriteComplete::Cancelled(value), writer),
             _ => unreachable!(),
@@ -360,13 +360,13 @@ where
         match result {
             // The value was actually sent, meaning we can't yield back the
             // future nor the value.
-            WriteComplete::Written => Ok(()),
+            WriteComplete::Written => FutureWriteCancel::AlreadySent,
 
             // The value was not sent because the other end either hung up or we
-            // successfully canceled. In both cases return back the value here
+            // successfully cancelled. In both cases return back the value here
             // with the writer.
-            WriteComplete::Closed(val) => Err(FutureWriteCancel::Closed(val)),
-            WriteComplete::Cancelled(val) => Err(FutureWriteCancel::Cancelled(val, writer)),
+            WriteComplete::Closed(val) => FutureWriteCancel::Closed(val),
+            WriteComplete::Cancelled(val) => FutureWriteCancel::Cancelled(val, writer),
         }
     }
 }
@@ -396,28 +396,15 @@ impl<T: 'static> FutureWrite<T> {
     /// Cancel this write if it hasn't already completed.
     ///
     /// This method can be used to cancel a write-in-progress and re-acquire
-    /// the writer and the value being sent. If the write operation has already
-    /// succeeded racily then `None` is returned and the write completed.
-    ///
-    /// Possible return values are:
-    ///
-    /// * `Ok(())` - the pending write completed before cancellation went
-    ///   through meaning that the original message was actually sent.
-    /// * `Err(FutureWriteCancel::Closed(v))` - the pending write did not complete
-    ///   because the other end was closed before receiving the value. The value
-    ///   is provided back here as part of the error.
-    /// * `Err(FutureWriteCancel::Cancelled(v, writer))` - the pending write was
-    ///   cancelled. The value `v` is returned back and the `writer` is returned
-    ///   as well to resume a write in the future if desired.
-    ///
-    /// Note that if this method is called after the write was already cancelled
-    /// then `Ok(())` will be returned.
+    /// the writer and the value being sent. Note that the write operation may
+    /// succeed racily or the other end may also close racily, and these
+    /// outcomes are reflected in the returned value here.
     ///
     /// # Panics
     ///
     /// Panics if the operation has already been completed via `Future::poll`,
     /// or if this method is called twice.
-    pub fn cancel(self: Pin<&mut Self>) -> Result<(), FutureWriteCancel<T>> {
+    pub fn cancel(self: Pin<&mut Self>) -> FutureWriteCancel<T> {
         self.pin_project().cancel()
     }
 }
@@ -443,9 +430,13 @@ impl<T> fmt::Display for FutureWriteError<T> {
 
 impl<T> std::error::Error for FutureWriteError<T> {}
 
-/// Error type in the result of [`FutureWrite::cancel`], or the error type that is a
-/// result of cancelling a pending write.
+/// Result of [`FutureWrite::cancel`].
 pub enum FutureWriteCancel<T: 'static> {
+    /// The cancel request raced with the receipt of the sent value, and the
+    /// value was actually sent. Neither the value nor the writer are made
+    /// available here as both are gone.
+    AlreadySent,
+
     /// The other end was closed before cancellation happened.
     ///
     /// In this case the original value is returned back to the caller but the
@@ -457,23 +448,6 @@ pub enum FutureWriteCancel<T: 'static> {
     /// necessary.
     Cancelled(T, FutureWriter<T>),
 }
-
-impl<T> fmt::Debug for FutureWriteCancel<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("FutureWriteCancel").finish_non_exhaustive()
-    }
-}
-
-impl<T> fmt::Display for FutureWriteCancel<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            FutureWriteCancel::Closed(_) => "read end closed".fmt(f),
-            FutureWriteCancel::Cancelled(..) => "write cancelled".fmt(f),
-        }
-    }
-}
-
-impl<T> std::error::Error for FutureWriteCancel<T> {}
 
 /// Represents the readable end of a Component Model `future`.
 pub struct FutureReader<T: 'static> {
@@ -543,7 +517,7 @@ impl<T> Drop for FutureReader<T> {
     }
 }
 
-/// Represents a read operation which may be canceled prior to completion.
+/// Represents a read operation which may be cancelled prior to completion.
 ///
 /// This represents a read operation on a [`FutureReader`] and is created via
 /// `IntoFuture`.
@@ -578,7 +552,7 @@ where
         (code, (reader, cleanup))
     }
 
-    fn start_cancel(state: Self::Start) -> Self::Cancel {
+    fn start_cancelled(state: Self::Start) -> Self::Cancel {
         Err(state)
     }
 
@@ -618,7 +592,7 @@ where
 
     /// Like `in_progress_closed` the read operation has finished but without a
     /// value, so let `_cleanup` fall out of scope to clean up its allocation.
-    fn in_progress_canceled((reader, _cleanup): Self::InProgress) -> Self::Result {
+    fn in_progress_cancelled((reader, _cleanup): Self::InProgress) -> Self::Result {
         (ReadComplete::Cancelled, reader)
     }
 

@@ -82,7 +82,7 @@ pub unsafe trait WaitableOp {
 
     /// Conversion from the "start" state to the "cancel" result, needed when an
     /// operation is cancelled before it's started.
-    fn start_cancel(state: Self::Start) -> Self::Cancel;
+    fn start_cancelled(state: Self::Start) -> Self::Cancel;
 
     /// Completion callback for when an in-progress operation has completed
     /// successfully after transferring `amt` items.
@@ -101,12 +101,12 @@ pub unsafe trait WaitableOp {
     /// intrinsic.
     fn in_progress_cancel(state: &Self::InProgress) -> u32;
 
-    /// Completion callback for when an operation was canceled.
+    /// Completion callback for when an operation was cancelled.
     ///
     /// This is invoked after `in_progress_cancel` is used and the returned
     /// status code indicates that the operation was indeed cancelled and didn't
     /// racily return some other result.
-    fn in_progress_canceled(state: Self::InProgress) -> Self::Result;
+    fn in_progress_cancelled(state: Self::InProgress) -> Self::Result;
 
     /// Converts a "completion result" into a "cancel result". This is necessary
     /// when an in-progress operation is cancelled so the in-progress result is
@@ -279,7 +279,7 @@ where
             // The other end has closed or the operation was cancelled and the
             // operation did not complete. See what `S` has to say about that.
             results::CLOSED => Poll::Ready(S::in_progress_closed(in_progress)),
-            results::CANCELED => Poll::Ready(S::in_progress_canceled(in_progress)),
+            results::CANCELED => Poll::Ready(S::in_progress_cancelled(in_progress)),
 
             // This operation has completed, transferring `n` units of memory.
             //
@@ -311,7 +311,7 @@ where
                 let Start(s) = mem::replace(state, Done) else {
                     unreachable!()
                 };
-                return S::start_cancel(s);
+                return S::start_cancelled(s);
             }
 
             // This operation is actively in progress, fall through to below.
