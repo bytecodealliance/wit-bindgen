@@ -71,9 +71,12 @@ pub unsafe fn stream_new<T>(
 ) -> (StreamWriter<T>, StreamReader<T>) {
     unsafe {
         let handles = (vtable.new)();
+        let writer = handles as u32;
+        let reader = (handles >> 32) as u32;
+        rtdebug!("stream.new() = [{writer}, {reader}]");
         (
-            StreamWriter::new(handles as u32, vtable),
-            StreamReader::new((handles >> 32) as u32, vtable),
+            StreamWriter::new(writer, vtable),
+            StreamReader::new(reader, vtable),
         )
     }
 }
@@ -192,6 +195,7 @@ impl<T> fmt::Debug for StreamWriter<T> {
 
 impl<T> Drop for StreamWriter<T> {
     fn drop(&mut self) {
+        rtdebug!("stream.close-writable({})", self.handle);
         unsafe {
             (self.vtable.close_writable)(self.handle);
         }
@@ -234,6 +238,10 @@ where
         // SAFETY: sure hope this is safe, everything in this module and
         // `AbiBuffer` is trying to make this safe.
         let code = unsafe { (writer.vtable.start_write)(writer.handle, ptr, len) };
+        rtdebug!(
+            "stream.write({}, {ptr:?}, {len}) = {code:#x}",
+            writer.handle
+        );
         (code, (writer, buf))
     }
 
@@ -258,7 +266,9 @@ where
     fn in_progress_cancel((writer, _): &Self::InProgress) -> u32 {
         // SAFETY: we're managing `writer` and all the various operational bits,
         // so this relies on `WaitableOperation` being safe.
-        unsafe { (writer.vtable.cancel_write)(writer.handle) }
+        let code = unsafe { (writer.vtable.cancel_write)(writer.handle) };
+        rtdebug!("stream.cancel-write({}) = {code:#x}", writer.handle);
+        code
     }
 
     fn in_progress_canceled((_writer, buf): Self::InProgress) -> Self::Result {
@@ -404,6 +414,7 @@ impl<T> Drop for StreamReader<T> {
             return;
         };
         unsafe {
+            rtdebug!("stream.close-readable({})", handle);
             (self.vtable.close_readable)(handle);
         }
     }
@@ -446,11 +457,15 @@ where
         // SAFETY: `ptr` is either in `buf` or in `cleanup`, both of which will
         // persist with this async operation itself.
         let code = unsafe { (reader.vtable.start_read)(reader.handle(), ptr, cap.len()) };
+        rtdebug!(
+            "stream.read({}, {ptr:?}, {}) = {code:#x}",
+            reader.handle(),
+            cap.len()
+        );
         (code, (reader, buf, cleanup))
     }
 
     fn start_cancel((_, buf): Self::Start) -> Self::Cancel {
-        std::dbg!("start_cancel");
         (StreamResult::Cancelled, buf)
     }
 
@@ -503,7 +518,9 @@ where
     fn in_progress_cancel((reader, ..): &Self::InProgress) -> u32 {
         // SAFETY: we're managing `reader` and all the various operational bits,
         // so this relies on `WaitableOperation` being safe.
-        unsafe { (reader.vtable.cancel_read)(reader.handle()) }
+        let code = unsafe { (reader.vtable.cancel_read)(reader.handle()) };
+        rtdebug!("stream.cancel-read({}) = {code:#x}", reader.handle());
+        code
     }
 
     /// When an in-progress read is successfully cancel then the allocation

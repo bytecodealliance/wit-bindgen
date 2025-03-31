@@ -165,9 +165,12 @@ pub unsafe fn future_new<T>(
 ) -> (FutureWriter<T>, FutureReader<T>) {
     unsafe {
         let handles = (vtable.new)();
+        let writer = handles as u32;
+        let reader = (handles >> 32) as u32;
+        rtdebug!("future.new() = [{writer}, {reader}]");
         (
-            FutureWriter::new(handles as u32, vtable),
-            FutureReader::new((handles >> 32) as u32, vtable),
+            FutureWriter::new(writer, vtable),
+            FutureReader::new(reader, vtable),
         )
     }
 }
@@ -238,6 +241,7 @@ impl<T> fmt::Debug for FutureWriter<T> {
 impl<T> Drop for FutureWriter<T> {
     fn drop(&mut self) {
         unsafe {
+            rtdebug!("future.close-writable({})", self.handle);
             (self.vtable.close_writable)(self.handle);
         }
     }
@@ -285,6 +289,7 @@ where
             (writer.vtable.lower)(value, ptr);
             (writer.vtable.start_write)(writer.handle, ptr)
         };
+        rtdebug!("future.write({}, {ptr:?}) = {code:#x}", writer.handle);
         (code, (writer, cleanup))
     }
 
@@ -339,7 +344,9 @@ where
     fn in_progress_cancel((writer, _): &Self::InProgress) -> u32 {
         // SAFETY: we're managing `writer` and all the various operational bits,
         // so this relies on `WaitableOperation` being safe.
-        unsafe { (writer.vtable.cancel_write)(writer.handle) }
+        let code = unsafe { (writer.vtable.cancel_write)(writer.handle) };
+        rtdebug!("future.cancel-write({}) = {code:#x}", writer.handle);
+        code
     }
 
     fn in_progress_canceled(state: Self::InProgress) -> Self::Result {
@@ -530,6 +537,7 @@ impl<T> Drop for FutureReader<T> {
             return;
         };
         unsafe {
+            rtdebug!("future.close-readable({handle})");
             (self.vtable.close_readable)(handle);
         }
     }
@@ -566,6 +574,7 @@ where
         // safe to use here. Its lifetime for the async operation is hinged on
         // `WaitableOperation` being safe.
         let code = unsafe { (reader.vtable.start_read)(reader.handle(), ptr) };
+        rtdebug!("future.read({}, {ptr:?}) = {code:#x}", reader.handle());
         (code, (reader, cleanup))
     }
 
@@ -602,7 +611,9 @@ where
     fn in_progress_cancel((reader, _): &Self::InProgress) -> u32 {
         // SAFETY: we're managing `reader` and all the various operational bits,
         // so this relies on `WaitableOperation` being safe.
-        unsafe { (reader.vtable.cancel_read)(reader.handle()) }
+        let code = unsafe { (reader.vtable.cancel_read)(reader.handle()) };
+        rtdebug!("future.cancel-read({}) = {code:#x}", reader.handle());
+        code
     }
 
     /// Like `in_progress_closed` the read operation has finished but without a

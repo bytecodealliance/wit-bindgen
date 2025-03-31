@@ -23,6 +23,18 @@ use futures::future::FutureExt;
 use futures::stream::{FuturesUnordered, StreamExt};
 use once_cell::sync::Lazy;
 
+macro_rules! rtdebug {
+    ($($f:tt)*) => {
+        // Change this flag to enable debugging, right now we're not using a
+        // crate like `log` or such to reduce runtime deps. Intended to be used
+        // during development for now.
+        if false {
+            std::println!($($f)*);
+        }
+    }
+
+}
+
 mod abi_buffer;
 mod future_support;
 mod stream_support;
@@ -295,11 +307,16 @@ unsafe fn callback_with_state(
 ) -> i32 {
     match event0 {
         EVENT_NONE => {
+            rtdebug!("EVENT_NONE");
             let done = poll(state).is_ready();
             callback_code(state, done)
         }
-        EVENT_CALL_STARTED => callback_code(state, false),
+        EVENT_CALL_STARTED => {
+            rtdebug!("EVENT_CALL_STARTED");
+            callback_code(state, false)
+        }
         EVENT_CALL_RETURNED => {
+            rtdebug!("EVENT_CALL_RETURNED({event1:#x}, {event2:#x})");
             (*state).remove_waitable(event1 as _);
 
             if let Some(call) = CALLS.remove(&event1) {
@@ -318,6 +335,9 @@ unsafe fn callback_with_state(
         }
 
         EVENT_STREAM_READ | EVENT_STREAM_WRITE | EVENT_FUTURE_READ | EVENT_FUTURE_WRITE => {
+            rtdebug!(
+                "EVENT_{{STREAM,FUTURE}}_{{READ,WRITE}}({event0:#x}, {event1:#x}, {event2:#x})"
+            );
             (*state).remove_waitable(event1 as u32);
             let (waker, code) = (*state).wakers.remove(&(event1 as u32)).unwrap();
             *code = Some(event2 as u32);
