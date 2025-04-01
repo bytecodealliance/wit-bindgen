@@ -60,10 +60,6 @@ name = "resource_borrow_export"
 test = false
 
 [[bin]]
-name = "resource_alias_redux"
-test = false
-
-[[bin]]
 name = "resource_alias"
 test = false
 

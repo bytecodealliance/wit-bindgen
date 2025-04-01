@@ -17,7 +17,6 @@ mod flavorful;
 mod options;
 mod ownership;
 mod resource_alias;
-mod resource_alias_redux;
 mod resource_borrow_export;
 mod resource_borrow_import;
 mod resource_borrow_simple;
