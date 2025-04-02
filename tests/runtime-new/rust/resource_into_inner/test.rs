@@ -1,8 +1,6 @@
-wit_bindgen::generate!({
-    path: "../../tests/runtime/resource_into_inner",
-});
+include!(env!("BINDINGS"));
 
-use exports::test::resource_into_inner::test::{Guest, GuestThing, Thing};
+use exports::test::resource_into_inner::to_test::{Guest, GuestThing, Thing};
 
 pub struct Test;
 

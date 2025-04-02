@@ -1,6 +1,6 @@
 package test:resource-into-inner;
 
-interface test {
+interface to-test {
   resource thing {
     constructor(text: string);
   }
@@ -8,6 +8,10 @@ interface test {
   test: func();
 }
 
-world resource-into-inner {
-  export test;
+world test {
+  export to-test;
+}
+
+world runner {
+  import to-test;
 }
