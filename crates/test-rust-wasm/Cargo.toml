@@ -24,18 +24,6 @@ name = "options"
 test = false
 
 [[bin]]
-name = "owning"
-test = false
-
-[[bin]]
-name = "borrowing"
-test = false
-
-[[bin]]
-name = "borrowing-duplicate-if-necessary"
-test = false
-
-[[bin]]
 name = "resources"
 test = false
 
