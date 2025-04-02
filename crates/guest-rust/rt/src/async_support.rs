@@ -8,6 +8,7 @@ extern crate std;
 use core::sync::atomic::{AtomicBool, Ordering};
 use std::boxed::Box;
 use std::collections::HashMap;
+use std::ffi::c_void;
 use std::fmt::{self, Debug, Display};
 use std::future::Future;
 use std::mem;
@@ -15,7 +16,7 @@ use std::pin::Pin;
 use std::ptr;
 use std::string::String;
 use std::sync::Arc;
-use std::task::{Context, Poll, Wake, Waker};
+use std::task::{Context, Poll, Wake};
 use std::vec::Vec;
 
 use futures::channel::oneshot;
@@ -36,6 +37,7 @@ macro_rules! rtdebug {
 }
 
 mod abi_buffer;
+mod cabi;
 mod future_support;
 mod stream_support;
 mod waitable;
@@ -60,21 +62,32 @@ struct FutureState {
     tasks: Option<FuturesUnordered<BoxFuture>>,
     /// The waitable set containing waitables created by this task, if any.
     waitable_set: Option<u32>,
-    /// A map of waitables to the corresponding waker and completion code.
-    ///
-    /// This is primarily filled in and managed by `WaitableOperation<S>`. The
-    /// waker here comes straight from `std::task::Context` and the pointer is
-    /// otherwise stored within the `WaitableOperation<S>` The raw pointer here
-    /// has a disconnected lifetime with each future but the management of the
-    /// internal states with respect to drop should always ensure that this is
-    /// only ever pointing to active waitable operations.
-    ///
-    /// When a waitable notification is received the corresponding entry in this
-    /// map is removed, the status code is filled in, and the waker is notified.
-    wakers: HashMap<u32, (Waker, *mut Option<u32>)>,
+
+    /// State of all waitables in `waitable_set`, and the ptr/callback they're
+    /// associated with.
+    waitables: HashMap<u32, (*mut c_void, unsafe extern "C" fn(*mut c_void, u32))>,
+
+    /// Raw structure used to pass to `cabi::wasip3_task_set`
+    wasip3_task: cabi::wasip3_task,
 }
 
 impl FutureState {
+    fn new(future: BoxFuture) -> FutureState {
+        FutureState {
+            todo: 0,
+            tasks: Some([future].into_iter().collect()),
+            waitable_set: None,
+            waitables: HashMap::new(),
+            wasip3_task: cabi::wasip3_task {
+                // This pointer is filled in before calling `wasip3_task_set`.
+                ptr: ptr::null_mut(),
+                version: cabi::WASIP3_TASK_V1,
+                waitable_register,
+                waitable_unregister,
+            },
+        }
+    }
+
     fn get_or_create_waitable_set(&mut self) -> u32 {
         *self.waitable_set.get_or_insert_with(waitable_set_new)
     }
@@ -88,7 +101,32 @@ impl FutureState {
     }
 
     fn remaining_work(&self) -> bool {
-        self.todo > 0 || !self.wakers.is_empty()
+        self.todo > 0 || !self.waitables.is_empty()
+    }
+}
+
+unsafe extern "C" fn waitable_register(
+    ptr: *mut c_void,
+    waitable: u32,
+    callback: unsafe extern "C" fn(*mut c_void, u32),
+    callback_ptr: *mut c_void,
+) -> *mut c_void {
+    let ptr = ptr.cast::<FutureState>();
+    assert!(!ptr.is_null());
+    (*ptr).add_waitable(waitable);
+    match (*ptr).waitables.insert(waitable, (callback_ptr, callback)) {
+        Some((prev, _)) => prev,
+        None => ptr::null_mut(),
+    }
+}
+
+unsafe extern "C" fn waitable_unregister(ptr: *mut c_void, waitable: u32) -> *mut c_void {
+    let ptr = ptr.cast::<FutureState>();
+    assert!(!ptr.is_null());
+    (*ptr).remove_waitable(waitable);
+    match (*ptr).waitables.remove(&waitable) {
+        Some((prev, _)) => prev,
+        None => ptr::null_mut(),
     }
 }
 
@@ -145,6 +183,22 @@ unsafe fn poll(state: *mut FutureState) -> Poll<()> {
         }
     }
 
+    // Finish our `wasip3_task` by initializing its self-referential pointer,
+    // and then register it for the duration of this function with
+    // `wasip3_task_set`. The previous value of `wasip3_task_set` will get
+    // restored when this function returns.
+    struct ResetTask(*mut cabi::wasip3_task);
+    impl Drop for ResetTask {
+        fn drop(&mut self) {
+            unsafe {
+                cabi::wasip3_task_set(self.0);
+            }
+        }
+    }
+    (*state).wasip3_task.ptr = state.cast();
+    let prev = cabi::wasip3_task_set(&mut (*state).wasip3_task);
+    let _reset = ResetTask(prev);
+
     loop {
         if let Some(futures) = (*state).tasks.as_mut() {
             let old = CURRENT;
@@ -191,16 +245,9 @@ pub fn first_poll<T: 'static>(
     future: impl Future<Output = T> + 'static,
     fun: impl FnOnce(&T) + 'static,
 ) -> i32 {
-    let state = Box::into_raw(Box::new(FutureState {
-        todo: 0,
-        tasks: Some(
-            [Box::pin(future.map(|v| fun(&v))) as BoxFuture]
-                .into_iter()
-                .collect(),
-        ),
-        waitable_set: None,
-        wakers: HashMap::new(),
-    }));
+    let state = Box::into_raw(Box::new(FutureState::new(Box::pin(
+        future.map(|v| fun(&v)),
+    ))));
     let done = unsafe { poll(state).is_ready() };
     unsafe { callback_code(state, done) }
 }
@@ -339,9 +386,8 @@ unsafe fn callback_with_state(
                 "EVENT_{{STREAM,FUTURE}}_{{READ,WRITE}}({event0:#x}, {event1:#x}, {event2:#x})"
             );
             (*state).remove_waitable(event1 as u32);
-            let (waker, code) = (*state).wakers.remove(&(event1 as u32)).unwrap();
-            *code = Some(event2 as u32);
-            waker.wake();
+            let (ptr, callback) = (*state).waitables.remove(&(event1 as u32)).unwrap();
+            callback(ptr, event2 as u32);
 
             let done = poll(state).is_ready();
             callback_code(state, done)
@@ -469,16 +515,7 @@ pub fn spawn(future: impl Future<Output = ()> + 'static) {
 // TODO: refactor so `'static` bounds aren't necessary
 pub fn block_on<T: 'static>(future: impl Future<Output = T> + 'static) -> T {
     let (tx, mut rx) = oneshot::channel();
-    let state = &mut FutureState {
-        todo: 0,
-        tasks: Some(
-            [Box::pin(future.map(move |v| drop(tx.send(v)))) as BoxFuture]
-                .into_iter()
-                .collect(),
-        ),
-        waitable_set: None,
-        wakers: HashMap::new(),
-    };
+    let state = &mut FutureState::new(Box::pin(future.map(move |v| drop(tx.send(v)))) as BoxFuture);
     loop {
         match unsafe { poll(state) } {
             Poll::Ready(()) => break rx.try_recv().unwrap().unwrap(),
