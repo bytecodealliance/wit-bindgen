@@ -1,9 +1,9 @@
 using System.Diagnostics;
 
-namespace ResourceIntoInnerWorld.wit.exports.test.resourceIntoInner
+namespace TestWorld.wit.exports.test.resourceIntoInner
 {
-    public class TestImpl : ITest {
-	public class Thing : ITest.Thing, ITest.IThing {
+    public class ToTestImpl : IToTest {
+	public class Thing : IToTest.Thing, IToTest.IThing {
 	    public string val;
 
 	    public Thing(string v) {
