@@ -203,7 +203,7 @@ where
         // SAFETY: the contract of `wasip3_task_set` is that the returned
         // pointer is valid for the lifetime of our entire task, so it's valid
         // for this stack frame. Additionally we assert it's non-null to
-        // double-check it's initialized and additionlly check the version for
+        // double-check it's initialized and additionally check the version for
         // the fields that we access.
         //
         // Otherwise the `waitable_unregister` callback should be safe if we
