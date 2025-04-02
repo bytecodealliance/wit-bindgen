@@ -1,0 +1,17 @@
+package test:resource-borrow;
+
+interface to-test {
+  resource thing {
+    constructor(v: u32);
+  }
+
+  foo: func(v: borrow<thing>) -> u32;
+}
+
+world test {
+  export to-test;
+}
+
+world runner {
+  import to-test;
+}
