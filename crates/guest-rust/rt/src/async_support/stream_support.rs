@@ -160,6 +160,11 @@ impl<T> StreamWriter<T> {
                 break;
             }
             (status, buf) = self.write_buf(buf).await;
+
+            // FIXME(WebAssembly/component-model#490)
+            if status == StreamResult::Cancelled {
+                status = StreamResult::Complete(0);
+            }
         }
 
         // Return back any values that weren't written by shifting them to the
