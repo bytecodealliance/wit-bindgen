@@ -143,7 +143,7 @@ fn compile(runner: &Runner<'_>, compile: &Compile<'_>, compiler: PathBuf) -> Res
     cmd.arg(
         compile
             .bindings_dir
-            .join(format!("{}.c", compile.component.kind)),
+            .join(format!("{}.c", compile.component.bindgen.world)),
     )
     .arg("-I")
     .arg(&compile.bindings_dir)
@@ -161,11 +161,10 @@ fn compile(runner: &Runner<'_>, compile: &Compile<'_>, compiler: PathBuf) -> Res
     let mut cmd = Command::new(compiler);
     cmd.arg(&compile.component.path)
         .arg(&bindings_object)
-        .arg(
-            compile
-                .bindings_dir
-                .join(format!("{}_component_type.o", compile.component.kind)),
-        )
+        .arg(compile.bindings_dir.join(format!(
+            "{}_component_type.o",
+            compile.component.bindgen.world
+        )))
         .arg("-I")
         .arg(&compile.bindings_dir)
         .arg("-Wall")
