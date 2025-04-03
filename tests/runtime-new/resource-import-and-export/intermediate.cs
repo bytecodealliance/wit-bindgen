@@ -1,7 +1,7 @@
-using Import = ResourceImportAndExportWorld.wit.imports.test.resourceImportAndExport.ITest;
-using Host = ResourceImportAndExportWorld.wit.imports.test.resourceImportAndExport.TestInterop;
+using Import = IntermediateWorld.wit.imports.test.resourceImportAndExport.ITest;
+using Host = IntermediateWorld.wit.imports.test.resourceImportAndExport.TestInterop;
 
-namespace ResourceImportAndExportWorld.wit.exports.test.resourceImportAndExport
+namespace IntermediateWorld.wit.exports.test.resourceImportAndExport
 {
     public class TestImpl : ITest {
 	public class Thing : ITest.Thing, ITest.IThing {
@@ -26,10 +26,10 @@ namespace ResourceImportAndExportWorld.wit.exports.test.resourceImportAndExport
     }
 }
 
-namespace ResourceImportAndExportWorld {
-    public class ResourceImportAndExportWorldImpl : IResourceImportAndExportWorld {
+namespace IntermediateWorld {
+    public class IntermediateWorldImpl : IIntermediateWorld {
 	public static Import.Thing ToplevelExport(Import.Thing things) {
-	    return exports.ResourceImportAndExportWorld.ToplevelImport(things);
+	    return exports.IntermediateWorld.ToplevelImport(things);
 	}
     }
 }

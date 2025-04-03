@@ -1,10 +1,7 @@
-use std::cell::RefCell;
-
-wit_bindgen::generate!({
-    path: "../../tests/runtime/resource_import_and_export",
-});
+include!(env!("BINDINGS"));
 
 use exports::test::resource_import_and_export::test::{GuestThing, Thing as ExportThing};
+use std::cell::RefCell;
 
 pub struct Test {}
 
