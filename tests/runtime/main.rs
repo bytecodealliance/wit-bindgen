@@ -17,7 +17,6 @@ mod flavorful;
 mod options;
 mod resource_alias;
 mod resource_floats;
-mod resource_import_and_export;
 mod resource_with_lists;
 mod resources;
 mod results;
