@@ -13,9 +13,9 @@ use core::ptr::{self, NonNull};
 #[doc(hidden)]
 pub use bitflags;
 
-/// For more information about this see `./ci/rebuild-libcabi-realloc.sh`.
+/// For more information about this see `./ci/rebuild-libwit-bindgen-cabi.sh`.
 #[cfg(not(target_env = "p2"))]
-mod cabi_realloc;
+mod wit_bindgen_cabi;
 
 /// This function is called from generated bindings and will be deleted by
 /// the linker. The purpose of this function is to force a reference to the
@@ -23,7 +23,7 @@ mod cabi_realloc;
 /// command line. That way `wasm-ld` will pick it up, see it needs to be
 /// exported, and then export it.
 ///
-/// For more information about this see `./ci/rebuild-libcabi-realloc.sh`.
+/// For more information about this see `./ci/rebuild-libwit-bindgen-cabi.sh`.
 pub fn maybe_link_cabi_realloc() {
     #[cfg(all(target_family = "wasm", not(target_env = "p2")))]
     {
@@ -55,7 +55,7 @@ pub fn maybe_link_cabi_realloc() {
 /// NB: this function is called by a generated function in the
 /// `cabi_realloc` module above. It's otherwise never explicitly called.
 ///
-/// For more information about this see `./ci/rebuild-libcabi-realloc.sh`.
+/// For more information about this see `./ci/rebuild-libwit-bindgen-cabi.sh`.
 #[cfg(not(target_env = "p2"))]
 pub unsafe fn cabi_realloc(
     old_ptr: *mut u8,

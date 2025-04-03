@@ -1,11 +1,13 @@
 //! Generic support for "any waitable" and performing asynchronous operations on
 //! that waitable.
 
-use super::results;
+use super::{cabi, results};
+use std::ffi::c_void;
 use std::marker;
 use std::mem;
 use std::pin::Pin;
-use std::task::{Context, Poll};
+use std::ptr;
+use std::task::{Context, Poll, Waker};
 
 /// Generic future-based operation on any "waitable" in the component model.
 ///
@@ -41,6 +43,8 @@ struct CompletionStatus {
     /// Where the async operation's code is filled in, and `None` until that
     /// happens.
     code: Option<u32>,
+
+    waker: Option<Waker>,
 
     /// This is necessary to ensure that `Pin<&mut CompletionStatus>` carries
     /// the "pin guarantee", basically to mean that it's not safe to construct
@@ -130,6 +134,7 @@ where
             state: WaitableOperationState::Start(state),
             completion_status: CompletionStatus {
                 code: None,
+                waker: None,
                 _pinned: marker::PhantomPinned,
             },
         }
@@ -154,12 +159,38 @@ where
     /// * Fill in `completion_status` with the result of a completion event.
     /// * Call `cx.waker().wake()`.
     pub fn register_waker(self: Pin<&mut Self>, waitable: u32, cx: &mut Context) {
-        let (_, completion_status) = self.pin_project();
+        let (_, mut completion_status) = self.pin_project();
+        debug_assert!(completion_status.as_mut().code_mut().is_none());
+        *completion_status.as_mut().waker_mut() = Some(cx.waker().clone());
+
+        // SAFETY: There's quite a lot going on here. First is the usage of
+        // `task` below, and for that see `unregister_waker` below for why this
+        // pattern should be safe.
+        //
+        // Otherwise we're handing off a pointer to `completion_status` to the
+        // `task` itself. That should be safe as we're guaranteed, via
+        // `Pin<&mut Self>`, that before `&mut Self` is deallocated the
+        // destructor will be run which will perform de-registration via
+        // cancellation.
         unsafe {
-            (*super::CURRENT).add_waitable(waitable);
-            (*super::CURRENT)
-                .wakers
-                .insert(waitable, (cx.waker().clone(), completion_status.code_mut()));
+            let task = cabi::wasip3_task_set(ptr::null_mut());
+            assert!(!task.is_null());
+            assert!((*task).version >= cabi::WASIP3_TASK_V1);
+            let ptr: *mut CompletionStatus = completion_status.get_unchecked_mut();
+            let prev = ((*task).waitable_register)((*task).ptr, waitable, cabi_wake, ptr.cast());
+            // We might be inserting a waker for the first time or overwriting
+            // the previous waker. Only assert the expected value here if the
+            // previous value was non-null.
+            if !prev.is_null() {
+                assert_eq!(ptr, prev.cast());
+            }
+            cabi::wasip3_task_set(task);
+        }
+
+        unsafe extern "C" fn cabi_wake(ptr: *mut c_void, code: u32) {
+            let ptr: &mut CompletionStatus = &mut *ptr.cast::<CompletionStatus>();
+            ptr.code = Some(code);
+            ptr.waker.take().unwrap().wake()
         }
     }
 
@@ -169,17 +200,42 @@ where
     /// This relinquishes control of the original `completion_status` pointer
     /// passed to `register_waker` after this call has completed.
     pub fn unregister_waker(self: Pin<&mut Self>, waitable: u32) {
+        // SAFETY: the contract of `wasip3_task_set` is that the returned
+        // pointer is valid for the lifetime of our entire task, so it's valid
+        // for this stack frame. Additionally we assert it's non-null to
+        // double-check it's initialized and additionally check the version for
+        // the fields that we access.
+        //
+        // Otherwise the `waitable_unregister` callback should be safe because:
+        //
+        // * We're fulfilling the contract where the first argument must be
+        //   `(*task).ptr`
+        // * We own the `waitable` that we're passing in, so we're fulfilling
+        //   the contract that arbitrary waitables for other units of work
+        //   aren't being manipulated.
         unsafe {
-            (*super::CURRENT).remove_waitable(waitable);
-            let _prev = (*super::CURRENT).wakers.remove(&waitable);
-            // Note that `_prev` here is not guaranteed to be either `Some` or
-            // `None`. A racy completion notification may have come in and
+            let task = cabi::wasip3_task_set(ptr::null_mut());
+            assert!(!task.is_null());
+            assert!((*task).version >= cabi::WASIP3_TASK_V1);
+            let prev = ((*task).waitable_unregister)((*task).ptr, waitable);
+
+            // Note that `_prev` here is not guaranteed to be either `NULL` or
+            // not. A racy completion notification may have come in and
             // removed our waitable from the map even though we're in the
             // `InProgress` state, meaning it may not be present.
             //
             // The main thing is that after this method is called the
             // internal `completion_status` is guaranteed to no longer be in
-            // `FuturesState`.
+            // `task`.
+            //
+            // Note, though, that if present this must be our `CompletionStatus`
+            // pointer.
+            if !prev.is_null() {
+                let ptr: *mut CompletionStatus = self.pin_project().1.get_unchecked_mut();
+                assert_eq!(ptr, prev.cast());
+            }
+
+            cabi::wasip3_task_set(task);
         }
     }
 
@@ -373,5 +429,9 @@ impl<S: WaitableOp> Drop for WaitableOperation<S> {
 impl CompletionStatus {
     fn code_mut(self: Pin<&mut Self>) -> &mut Option<u32> {
         unsafe { &mut self.get_unchecked_mut().code }
+    }
+
+    fn waker_mut(self: Pin<&mut Self>) -> &mut Option<Waker> {
+        unsafe { &mut self.get_unchecked_mut().waker }
     }
 }
