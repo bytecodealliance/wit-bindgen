@@ -206,8 +206,13 @@ where
         // double-check it's initialized and additionally check the version for
         // the fields that we access.
         //
-        // Otherwise the `waitable_unregister` callback should be safe if we
-        // pass a waitable that we own and the task's own pointer.
+        // Otherwise the `waitable_unregister` callback should be safe because:
+        //
+        // * We're fulfilling the contract where the first argument must be
+        //   `(*task).ptr`
+        // * We own the `waitable` that we're passing in, so we're fulfilling
+        //   the contract that arbitrary waitables for other units of work
+        //   aren't being manipulated.
         unsafe {
             let task = cabi::wasip3_task_set(ptr::null_mut());
             assert!(!task.is_null());

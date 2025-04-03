@@ -12,12 +12,12 @@
 //!   `std::future::Future`.
 //!
 //! Without this module this situation won't work because 0.A.0 has no
-//! knowledge of 0.B.0 meaning that when 0.B.0 decides to block it won't know
-//! where to register its `waitable` within a `waitable-set`.
+//! knowledge of 0.B.0 meaning that 0.B.0 has no means of inserting a `waitable`
+//! into the `waitable-set` managed by 0.A.0's export.
 //!
 //! To solve this problem the long-term intention is that something will live
 //! in `wasi-libc` itself, but in the meantime it's living "somewhere" within
-//! `wit-bindgen 0.*.0`. Specifically all `wit-bindgen` versions will all
+//! `wit-bindgen 0.*.0`. Specifically all `wit-bindgen` versions will
 //! reference, via C linkage, a single function which is used to manipulate a
 //! single pointer in linear memory. This pointer is a `wasip3_task` structure
 //! which has all the various fields to use it.
@@ -50,7 +50,7 @@ extern "C" {
     /// Sets the global task pointer to `ptr` provided. Returns the previous
     /// value.
     ///
-    /// This function acts as both a dual getter and a setter. To get the
+    /// This function acts as a dual getter and a setter. To get the
     /// current task pointer a dummy `ptr` can be provided (e.g. NULL) and then
     /// it's passed back when you're done working with it. When setting the
     /// current task pointer it's recommended to call this and then call it
@@ -85,7 +85,7 @@ pub struct wasip3_task {
     /// well as the `callback_ptr` provided.
     ///
     /// If `waitable` was previously registered with this task then the
-    /// previuos `callback_ptr` is returned. Otherwise `NULL` is returned.
+    /// previous `callback_ptr` is returned. Otherwise `NULL` is returned.
     ///
     /// It's the caller's responsibility to ensure that `callback_ptr` is valid
     /// until `callback` is invoked, `waitable_unregister` is invoked, or
