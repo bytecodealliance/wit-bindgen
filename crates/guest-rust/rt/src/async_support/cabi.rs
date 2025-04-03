@@ -46,6 +46,7 @@
 
 use core::ffi::c_void;
 
+#[cfg(target_family = "wasm")]
 extern "C" {
     /// Sets the global task pointer to `ptr` provided. Returns the previous
     /// value.
@@ -59,6 +60,12 @@ extern "C" {
     /// For executors they need to ensure that the `ptr` passed in lives for
     /// the entire lifetime of the component model task.
     pub fn wasip3_task_set(ptr: *mut wasip3_task) -> *mut wasip3_task;
+}
+
+#[cfg(not(target_family = "wasm"))]
+pub unsafe extern "C" fn wasip3_task_set(ptr: *mut wasip3_task) -> *mut wasip3_task {
+    let _ = ptr;
+    unreachable!();
 }
 
 /// The first version of `wasip3_task` which implies the existence of the
