@@ -1,8 +1,9 @@
 //! Generic support for "any waitable" and performing asynchronous operations on
 //! that waitable.
 
-use super::{cabi, results};
+use super::cabi;
 use std::ffi::c_void;
+use std::future::Future;
 use std::marker;
 use std::mem;
 use std::pin::Pin;
@@ -84,17 +85,21 @@ pub unsafe trait WaitableOp {
     /// along with the `InProgress` state.
     fn start(state: Self::Start) -> (u32, Self::InProgress);
 
+    /// Optionally complete the async operation.
+    ///
+    /// This method will transition from the `InProgress` state, with some
+    /// status code that was received, to either a completed result or a new
+    /// `InProgress` state. This is invoked after an operation has started
+    /// whenever a new status code has been received by an async export's
+    /// `callback`, for example.
+    fn in_progress_update(
+        state: Self::InProgress,
+        code: u32,
+    ) -> Result<Self::Result, Self::InProgress>;
+
     /// Conversion from the "start" state to the "cancel" result, needed when an
     /// operation is cancelled before it's started.
     fn start_cancelled(state: Self::Start) -> Self::Cancel;
-
-    /// Completion callback for when an in-progress operation has completed
-    /// successfully after transferring `amt` items.
-    fn in_progress_complete(state: Self::InProgress, amt: u32) -> Self::Result;
-
-    /// Completion callback for when an in-progress operation has completed
-    /// without actually transferring anything because the other end has closed.
-    fn in_progress_closed(state: Self::InProgress) -> Self::Result;
 
     /// Acquires the component-model `waitable` index that the `InProgress`
     /// state is waiting on.
@@ -104,13 +109,6 @@ pub unsafe trait WaitableOp {
     /// status code returned by the `{future,stream}.cancel-{read,write}`
     /// intrinsic.
     fn in_progress_cancel(state: &Self::InProgress) -> u32;
-
-    /// Completion callback for when an operation was cancelled.
-    ///
-    /// This is invoked after `in_progress_cancel` is used and the returned
-    /// status code indicates that the operation was indeed cancelled and didn't
-    /// racily return some other result.
-    fn in_progress_cancelled(state: Self::InProgress) -> Self::Result;
 
     /// Converts a "completion result" into a "cancel result". This is necessary
     /// when an in-progress operation is cancelled so the in-progress result is
@@ -257,20 +255,7 @@ where
                 };
                 let (code, s) = S::start(s);
                 *state = InProgress(s);
-                match code {
-                    // The operation is blocked, meaning it didn't complete.
-                    //
-                    // We've already transitioned to the in-progress state so
-                    // all that's left to do is indicate that we don't have a
-                    // return code at this time.
-                    results::BLOCKED => None,
-
-                    // This operation completed immediately.
-                    //
-                    // As above we're in the in-progress state, so defer what to do
-                    // with this code to down below.
-                    other => Some(other),
-                }
+                Some(code)
             }
 
             // This operation was previously queued so we're just waiting on
@@ -302,47 +287,43 @@ where
     ) -> Poll<S::Result> {
         use WaitableOperationState::*;
 
-        let (state, _completion_status) = self.as_mut().pin_project();
+        let (state, completion_status) = self.as_mut().pin_project();
+
+        // If a status code is provided, then extract the in-progress state and
+        // see what it thinks about this code. If we're done, yay! If not then
+        // record the new in-progress state and fall through to registering a
+        // waker.
+        //
+        // If no status code is available then that means we were polled before
+        // the status came back, so just re-register the waker.
+        if let Some(code) = optional_code {
+            let InProgress(in_progress) = mem::replace(state, Done) else {
+                unreachable!()
+            };
+            match S::in_progress_update(in_progress, code) {
+                Ok(result) => return Poll::Ready(result),
+                Err(in_progress) => *state = InProgress(in_progress),
+            }
+
+            // Remove the previous completion status, if any, as we're no longer
+            // interested in it if it was present.
+            *completion_status.code_mut() = None;
+        }
+
         let in_progress = match state {
             InProgress(s) => s,
-            // programmer error if this is called in the wrong state.
             _ => unreachable!(),
         };
 
-        let code = match optional_code {
-            Some(code) => code,
-
-            // The operation is still in progress.
-            //
-            // Register the `cx.waker()` to get notified when `writer.handle`
-            // receives its completion.
-            None => {
-                if let Some(cx) = cx {
-                    let handle = S::in_progress_waitable(in_progress);
-                    self.register_waker(handle, cx);
-                }
-                return Poll::Pending;
-            }
-        };
-
-        // After this point we're guaranteed the operation has completed, so
-        // it's time to interpret the result and return.
-        let InProgress(in_progress) = mem::replace(state, Done) else {
-            unreachable!()
-        };
-
-        match code {
-            // The other end has closed or the operation was cancelled and the
-            // operation did not complete. See what `S` has to say about that.
-            results::CLOSED => Poll::Ready(S::in_progress_closed(in_progress)),
-            results::CANCELED => Poll::Ready(S::in_progress_cancelled(in_progress)),
-
-            // This operation has completed, transferring `n` units of memory.
-            //
-            // Forward this information to `S` and see what it has to say about
-            // that.
-            n => Poll::Ready(S::in_progress_complete(in_progress, n)),
+        // The operation is still in progress.
+        //
+        // Register the `cx.waker()` to get notified when `writer.handle`
+        // receives its completion.
+        if let Some(cx) = cx {
+            let handle = S::in_progress_waitable(in_progress);
+            self.register_waker(handle, cx);
         }
+        Poll::Pending
     }
 
     /// Cancels the in-flight operation, if it's still in-flight, and sees what
@@ -406,6 +387,14 @@ where
             // Should not be reachable as we always pass `Some(code)`.
             Poll::Pending => unreachable!(),
         }
+    }
+}
+
+impl<S: WaitableOp> Future for WaitableOperation<S> {
+    type Output = S::Result;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<S::Result> {
+        self.poll_complete(cx)
     }
 }
 

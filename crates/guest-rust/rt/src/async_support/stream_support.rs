@@ -2,7 +2,7 @@
 //! module documentation in `future_support.rs`.
 
 use crate::async_support::waitable::{WaitableOp, WaitableOperation};
-use crate::async_support::AbiBuffer;
+use crate::async_support::{results, AbiBuffer};
 use {
     crate::Cleanup,
     std::{
@@ -249,14 +249,20 @@ where
         (StreamResult::Cancelled, buf)
     }
 
-    fn in_progress_complete((_writer, mut buf): Self::InProgress, amt: u32) -> Self::Result {
-        let amt = amt.try_into().unwrap();
-        buf.advance(amt);
-        (StreamResult::Complete(amt), buf)
-    }
-
-    fn in_progress_closed((_writer, buf): Self::InProgress) -> Self::Result {
-        (StreamResult::Closed, buf)
+    fn in_progress_update(
+        (writer, mut buf): Self::InProgress,
+        code: u32,
+    ) -> Result<Self::Result, Self::InProgress> {
+        match code {
+            results::BLOCKED => Err((writer, buf)),
+            results::CLOSED => Ok((StreamResult::Closed, buf)),
+            results::CANCELED => Ok((StreamResult::Cancelled, buf)),
+            amt => {
+                let amt = amt.try_into().unwrap();
+                buf.advance(amt);
+                Ok((StreamResult::Complete(amt), buf))
+            }
+        }
     }
 
     fn in_progress_waitable((writer, _): &Self::InProgress) -> u32 {
@@ -269,10 +275,6 @@ where
         let code = unsafe { (writer.vtable.cancel_write)(writer.handle) };
         rtdebug!("stream.cancel-write({}) = {code:#x}", writer.handle);
         code
-    }
-
-    fn in_progress_cancelled((_writer, buf): Self::InProgress) -> Self::Result {
-        (StreamResult::Cancelled, buf)
     }
 
     fn result_into_cancel(result: Self::Result) -> Self::Cancel {
@@ -469,46 +471,56 @@ where
         (StreamResult::Cancelled, buf)
     }
 
-    fn in_progress_complete(
+    fn in_progress_update(
         (reader, mut buf, cleanup): Self::InProgress,
-        amt: u32,
-    ) -> Self::Result {
-        let amt = usize::try_from(amt).unwrap();
-        let cur_len = buf.len();
-        assert!(amt <= buf.capacity() - cur_len);
+        code: u32,
+    ) -> Result<Self::Result, Self::InProgress> {
+        match code {
+            results::BLOCKED => Err((reader, buf, cleanup)),
 
-        match reader.vtable.lift {
-            // With a `lift` operation this now requires reading `amt` items
-            // from `cleanup` and pushing them into `buf`.
-            Some(lift) => {
-                let mut ptr = cleanup
-                    .as_ref()
-                    .map(|c| c.ptr.as_ptr())
-                    .unwrap_or(ptr::null_mut());
-                for _ in 0..amt {
-                    unsafe {
-                        buf.push(lift(ptr));
-                        ptr = ptr.add(reader.vtable.layout.size());
+            // Note that the `cleanup`, if any, is discarded here.
+            results::CLOSED => Ok((StreamResult::Closed, buf)),
+
+            // When an in-progress read is successfully cancelled then the
+            // allocation that was being read into, if any, is just discarded.
+            //
+            // TODO: should maybe thread this around like `AbiBuffer` to cache
+            // the read allocation?
+            results::CANCELED => Ok((StreamResult::Cancelled, buf)),
+
+            amt => {
+                let amt = usize::try_from(amt).unwrap();
+                let cur_len = buf.len();
+                assert!(amt <= buf.capacity() - cur_len);
+
+                match reader.vtable.lift {
+                    // With a `lift` operation this now requires reading `amt` items
+                    // from `cleanup` and pushing them into `buf`.
+                    Some(lift) => {
+                        let mut ptr = cleanup
+                            .as_ref()
+                            .map(|c| c.ptr.as_ptr())
+                            .unwrap_or(ptr::null_mut());
+                        for _ in 0..amt {
+                            unsafe {
+                                buf.push(lift(ptr));
+                                ptr = ptr.add(reader.vtable.layout.size());
+                            }
+                        }
                     }
+
+                    // If no `lift` was necessary, then the results of this operation
+                    // were read directly into `buf`, so just update its length now that
+                    // values have been initialized.
+                    None => unsafe { buf.set_len(cur_len + amt) },
                 }
+
+                // Intentionally dispose of `cleanup` here as, if it was used, all
+                // allocations have been read from it and appended to `buf`.
+                drop(cleanup);
+                Ok((StreamResult::Complete(amt), buf))
             }
-
-            // If no `lift` was necessary, then the results of this operation
-            // were read directly into `buf`, so just update its length now that
-            // values have been initialized.
-            None => unsafe { buf.set_len(cur_len + amt) },
         }
-
-        // Intentionally dispose of `cleanup` here as, if it was used, all
-        // allocations have been read from it and appended to `buf`.
-        drop(cleanup);
-        (StreamResult::Complete(amt), buf)
-    }
-
-    /// Like `in_progress_cancelled` below, discard the temporary cleanup
-    /// allocation, if any.
-    fn in_progress_closed((_reader, buf, _cleanup): Self::InProgress) -> Self::Result {
-        (StreamResult::Closed, buf)
     }
 
     fn in_progress_waitable((reader, ..): &Self::InProgress) -> u32 {
@@ -521,15 +533,6 @@ where
         let code = unsafe { (reader.vtable.cancel_read)(reader.handle()) };
         rtdebug!("stream.cancel-read({}) = {code:#x}", reader.handle());
         code
-    }
-
-    /// When an in-progress read is successfully cancel then the allocation
-    /// that was being read into, if any, is just discarded.
-    ///
-    /// TODO: should maybe thread this around like `AbiBuffer` to cache the
-    /// read allocation?
-    fn in_progress_cancelled((_reader, buf, _cleanup): Self::InProgress) -> Self::Result {
-        (StreamResult::Cancelled, buf)
     }
 
     fn result_into_cancel(result: Self::Result) -> Self::Cancel {
