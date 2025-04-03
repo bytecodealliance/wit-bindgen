@@ -38,7 +38,3 @@ test = false
 [[bin]]
 name = "resource_with_lists"
 test = false
-
-[[bin]]
-name = "resource_alias"
-test = false

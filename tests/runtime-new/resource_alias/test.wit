@@ -18,7 +18,12 @@ interface e2 {
   a: func(f: foo, g: bar, h: borrow<y>) -> list<y>;
 }
 
-world resource-alias {
+world test {
   export e1;
   export e2;
+}
+
+world runner {
+  import e1;
+  import e2;
 }

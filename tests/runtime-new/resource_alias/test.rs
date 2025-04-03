@@ -1,6 +1,4 @@
-wit_bindgen::generate!({
-    path: "../../tests/runtime/resource_alias",
-});
+include!(env!("BINDINGS"));
 
 pub struct Test {}
 
