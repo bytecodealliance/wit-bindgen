@@ -1,6 +1,4 @@
-wit_bindgen::generate!({
-    path: "../../tests/runtime/resource_floats",
-});
+include!(env!("BINDINGS"));
 
 use exports::exports::{Float as FloatExport, GuestFloat};
 use imports::Float as ImportFloat1;

@@ -1,7 +1,7 @@
-using Import1 = ResourceFloatsWorld.wit.imports.IImports;
-using Import2 = ResourceFloatsWorld.wit.imports.test.resourceFloats.ITest;
+using Import1 = IntermediateWorld.wit.imports.IImports;
+using Import2 = IntermediateWorld.wit.imports.test.resourceFloats.ITest;
 
-namespace ResourceFloatsWorld.wit.exports
+namespace IntermediateWorld.wit.exports
 {
     public class ExportsImpl : IExports {
 	public class Float : IExports.Float, IExports.IFloat {
@@ -22,8 +22,8 @@ namespace ResourceFloatsWorld.wit.exports
     }
 }
 
-namespace ResourceFloatsWorld {
-    public class ResourceFloatsWorldImpl : IResourceFloatsWorld {
+namespace IntermediateWorld {
+    public class IntermediateWorldImpl : IIntermediateWorld {
 	public static Import2.Float Add(Import2.Float a, Import2.Float b) {
 	    return new Import2.Float(a.Get() + b.Get() + 5.0);
 	}

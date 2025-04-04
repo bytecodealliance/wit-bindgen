@@ -1,0 +1,18 @@
+package example:composition;
+
+let leaf = new test:leaf { ... };
+let intermediate = new test:intermediate {
+  test: leaf.test,
+  imports: leaf.imports,
+  float: leaf.test.float,
+  ...
+};
+let runner = new test:runner {
+  exports: intermediate.exports,
+  test: leaf.test,
+  float: leaf.test.float,
+  add: intermediate.add,
+  ...
+};
+
+export runner...;
