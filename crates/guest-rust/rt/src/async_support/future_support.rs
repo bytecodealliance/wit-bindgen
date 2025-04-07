@@ -88,6 +88,7 @@
 //! changing its layout. Currently this is par-for-the-course with bindings.
 
 use {
+    super::results,
     super::waitable::{WaitableOp, WaitableOperation},
     crate::Cleanup,
     std::{
@@ -297,44 +298,56 @@ where
         FutureWriteCancel::Cancelled(value, writer)
     }
 
-    /// This write has completed.
-    ///
-    /// Here we need to clean up our allocations. The `ptr` exclusively owns all
-    /// of the value being sent and we notably need to cleanup the transitive
-    /// list allocations present in this pointer. Use `dealloc_lists` for that
-    /// (effectively a post-return lookalike).
-    ///
-    /// Afterwards the `cleanup` itself is naturally dropped and cleaned up.
-    fn in_progress_complete((writer, cleanup): Self::InProgress, amt: u32) -> Self::Result {
-        assert_eq!(amt, 1);
+    fn in_progress_update(
+        (writer, cleanup): Self::InProgress,
+        code: u32,
+    ) -> Result<Self::Result, Self::InProgress> {
         let ptr = cleanup
             .as_ref()
             .map(|c| c.ptr.as_ptr())
             .unwrap_or(ptr::null_mut());
+        match code {
+            results::BLOCKED => Err((writer, cleanup)),
 
-        // SAFETY: we're the ones managing `ptr` so we know it's safe to
-        // pass here.
-        unsafe {
-            (writer.vtable.dealloc_lists)(ptr);
+            // The other end has closed its end.
+            //
+            // The value was not received by the other end so `ptr` still has
+            // all of its resources intact. Use `lift` to construct a new
+            // instance of `T` which takes ownership of pointers and resources
+            // and such. The allocation of `ptr` is then cleaned up naturally
+            // when `cleanup` goes out of scope.
+            results::CLOSED | results::CANCELED => {
+                // SAFETY: we're the ones managing `ptr` so we know it's safe to
+                // pass here.
+                let value = unsafe { (writer.vtable.lift)(ptr) };
+                let status = if code == results::CLOSED {
+                    WriteComplete::Closed(value)
+                } else {
+                    WriteComplete::Cancelled(value)
+                };
+                Ok((status, writer))
+            }
+
+            // This write has completed.
+            //
+            // Here we need to clean up our allocations. The `ptr` exclusively
+            // owns all of the value being sent and we notably need to cleanup
+            // the transitive list allocations present in this pointer. Use
+            // `dealloc_lists` for that (effectively a post-return lookalike).
+            //
+            // Afterwards the `cleanup` itself is naturally dropped and cleaned
+            // up.
+            1 => {
+                // SAFETY: we're the ones managing `ptr` so we know it's safe to
+                // pass here.
+                unsafe {
+                    (writer.vtable.dealloc_lists)(ptr);
+                }
+                Ok((WriteComplete::Written, writer))
+            }
+
+            other => unreachable!("unexpected code {other:#x}"),
         }
-        (WriteComplete::Written, writer)
-    }
-
-    /// The other end has closed its end.
-    ///
-    /// The value was not received by the other end so `ptr` still has all of
-    /// its resources intact. Use `lift` to construct a new instance of `T`
-    /// which takes ownership of pointers and resources and such. The allocation
-    /// of `ptr` is then cleaned up naturally when `cleanup` goes out of scope.
-    fn in_progress_closed((writer, cleanup): Self::InProgress) -> Self::Result {
-        let ptr = cleanup
-            .as_ref()
-            .map(|c| c.ptr.as_ptr())
-            .unwrap_or(ptr::null_mut());
-        // SAFETY: we're the ones managing `ptr` so we know it's safe to
-        // pass here.
-        let value = unsafe { (writer.vtable.lift)(ptr) };
-        (WriteComplete::Closed(value), writer)
     }
 
     fn in_progress_waitable((writer, _): &Self::InProgress) -> u32 {
@@ -347,13 +360,6 @@ where
         let code = unsafe { (writer.vtable.cancel_write)(writer.handle) };
         rtdebug!("future.cancel-write({}) = {code:#x}", writer.handle);
         code
-    }
-
-    fn in_progress_cancelled(state: Self::InProgress) -> Self::Result {
-        match Self::in_progress_closed(state) {
-            (WriteComplete::Closed(value), writer) => (WriteComplete::Cancelled(value), writer),
-            _ => unreachable!(),
-        }
     }
 
     fn result_into_cancel((result, writer): Self::Result) -> Self::Cancel {
@@ -556,26 +562,39 @@ where
         Err(state)
     }
 
-    /// The read has completed, so lift the value from the stored memory and
-    /// `cleanup` naturally falls out of scope after transferring ownership of
-    /// everything to the returned `value`.
-    fn in_progress_complete((reader, cleanup): Self::InProgress, amt: u32) -> Self::Result {
-        assert_eq!(amt, 1);
-        let ptr = cleanup
-            .as_ref()
-            .map(|c| c.ptr.as_ptr())
-            .unwrap_or(ptr::null_mut());
+    fn in_progress_update(
+        (reader, cleanup): Self::InProgress,
+        code: u32,
+    ) -> Result<Self::Result, Self::InProgress> {
+        match code {
+            results::BLOCKED => Err((reader, cleanup)),
 
-        // SAFETY: we're the ones managing `ptr` so we know it's safe to
-        // pass here.
-        let value = unsafe { (reader.vtable.lift)(ptr) };
-        (ReadComplete::Value(value), reader)
-    }
+            // The read didn't complete, so `cleanup` is still uninitialized, so
+            // let it fall out of scope.
+            results::CLOSED => Ok((ReadComplete::Closed, reader)),
 
-    /// The read didn't complete, so `_cleanup` is still uninitialized, so let
-    /// it fall out of scope.
-    fn in_progress_closed((reader, _cleanup): Self::InProgress) -> Self::Result {
-        (ReadComplete::Closed, reader)
+            // Like `in_progress_closed` the read operation has finished but
+            // without a value, so let `cleanup` fall out of scope to clean up
+            // its allocation.
+            results::CANCELED => Ok((ReadComplete::Cancelled, reader)),
+
+            // The read has completed, so lift the value from the stored memory and
+            // `cleanup` naturally falls out of scope after transferring ownership of
+            // everything to the returned `value`.
+            1 => {
+                let ptr = cleanup
+                    .as_ref()
+                    .map(|c| c.ptr.as_ptr())
+                    .unwrap_or(ptr::null_mut());
+
+                // SAFETY: we're the ones managing `ptr` so we know it's safe to
+                // pass here.
+                let value = unsafe { (reader.vtable.lift)(ptr) };
+                Ok((ReadComplete::Value(value), reader))
+            }
+
+            other => panic!("unexpected code {other:#x}"),
+        }
     }
 
     fn in_progress_waitable((reader, _): &Self::InProgress) -> u32 {
@@ -588,12 +607,6 @@ where
         let code = unsafe { (reader.vtable.cancel_read)(reader.handle()) };
         rtdebug!("future.cancel-read({}) = {code:#x}", reader.handle());
         code
-    }
-
-    /// Like `in_progress_closed` the read operation has finished but without a
-    /// value, so let `_cleanup` fall out of scope to clean up its allocation.
-    fn in_progress_cancelled((reader, _cleanup): Self::InProgress) -> Self::Result {
-        (ReadComplete::Cancelled, reader)
     }
 
     fn result_into_cancel((value, reader): Self::Result) -> Self::Cancel {
