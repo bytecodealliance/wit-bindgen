@@ -1,3 +1,6 @@
+//@ dependencies = ['resource-with-lists', 'leaf']
+//@ wac = 'compose.wac'
+
 package test:resource-with-lists;
 
 interface test {
@@ -9,7 +12,15 @@ interface test {
  }
 }
 
+world leaf {
+  export test;
+}
+
 world resource-with-lists {
   import test;
   export test;
+}
+
+world runner {
+  import test;
 }

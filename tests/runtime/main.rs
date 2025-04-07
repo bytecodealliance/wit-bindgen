@@ -15,7 +15,6 @@ use wit_parser::{Resolve, WorldId, WorldItem};
 
 mod flavorful;
 mod options;
-mod resource_with_lists;
 mod resources;
 mod results;
 
