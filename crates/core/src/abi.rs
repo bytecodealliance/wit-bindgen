@@ -914,7 +914,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     }
                 } else {
                     // ... otherwise if parameters are indirect space is
-                    // allocated from them and each argument is lowered
+                    // allocated for them and each argument is lowered
                     // individually into memory.
                     let ElementInfo { size, align } = self
                         .bindgen
