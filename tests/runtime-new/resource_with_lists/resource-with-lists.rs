@@ -1,6 +1,4 @@
-wit_bindgen::generate!({
-    path: "../../tests/runtime/resource_with_lists",
-});
+include!(env!("BINDINGS"));
 
 use exports::test::resource_with_lists::test::GuestThing;
 use test::resource_with_lists::test::Thing;
