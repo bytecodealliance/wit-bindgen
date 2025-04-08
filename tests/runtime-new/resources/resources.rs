@@ -1,10 +1,7 @@
-use std::cell::RefCell;
-
-wit_bindgen::generate!({
-    path: "../../tests/runtime/resources",
-});
+include!(env!("BINDINGS"));
 
 use exports::exports::{KebabCase, ZBorrow, X, Z};
+use std::cell::RefCell;
 
 pub struct Test {}
 
