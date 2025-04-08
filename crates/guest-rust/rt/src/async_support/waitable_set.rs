@@ -1,6 +1,5 @@
 //! Low-level FFI-like bindings around `waitable-set` in the canonical ABI.
 
-use super::EVENT_NONE;
 use std::num::NonZeroU32;
 
 pub struct WaitableSet(NonZeroU32);

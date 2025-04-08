@@ -743,6 +743,12 @@ pub mod vtable{ordinal} {{
         format!("unsafe {{ {} }}", String::from(f.src))
     }
 
+    fn deallocate_lists_and_own(&mut self, address: &str, types: &[Type], module: &str) -> String {
+        let mut f = FunctionBindgen::new(self, Vec::new(), module, true);
+        abi::deallocate_lists_and_own_in_types(f.r#gen.resolve, types, address.into(), &mut f);
+        format!("unsafe {{ {} }}", String::from(f.src))
+    }
+
     fn lift_from_memory(&mut self, address: &str, ty: &Type, module: &str) -> String {
         let mut f = FunctionBindgen::new(self, Vec::new(), module, true);
         let result = abi::lift_from_memory(f.r#gen.resolve, &mut f, address.into(), ty);
@@ -881,6 +887,15 @@ unsafe fn call_import(params: *mut u8, results: *mut u8) -> u32 {{
         uwriteln!(self.src, "{dealloc_lists}");
         uwriteln!(self.src, "}}");
 
+        // Generate `fn params_dealloc_lists_and_own`
+        let dealloc_lists_and_own = self.deallocate_lists_and_own("_ptr", &param_tys, module);
+        uwriteln!(
+            self.src,
+            "unsafe fn params_dealloc_lists_and_own(_ptr: *mut u8) {{"
+        );
+        uwriteln!(self.src, "{dealloc_lists_and_own}");
+        uwriteln!(self.src, "}}");
+
         // Generate `fn params_lower`
         let mut lowers = Vec::new();
         let offsets = self
@@ -986,6 +1001,10 @@ unsafe fn call_import(params: *mut u8, results: *mut u8) -> u32 {{
         if async_ {
             let async_support = self.r#gen.async_support_path();
             uwriteln!(self.src, "{async_support}::start_task(async move {{");
+            uwriteln!(
+                self.src,
+                "let _task_cancel = {async_support}::TaskCancelOnDrop::new();"
+            );
             if needs_cleanup_list {
                 let vec = self.path_to_vec();
                 uwriteln!(self.src, "let mut cleanup_list = {vec}::new();");
