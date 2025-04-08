@@ -89,9 +89,10 @@ pub unsafe trait WaitableOp {
     ///
     /// This method will transition from the `InProgress` state, with some
     /// status code that was received, to either a completed result or a new
-    /// `InProgress` state. This is invoked after an operation has started
-    /// whenever a new status code has been received by an async export's
-    /// `callback`, for example.
+    /// `InProgress` state. This is invoked when:
+    ///
+    /// * a new status code has been received by an async export's `callback`
+    /// * cancellation returned a code to be processed here
     fn in_progress_update(
         state: Self::InProgress,
         code: u32,
@@ -108,6 +109,12 @@ pub unsafe trait WaitableOp {
     /// Initiates a request for cancellation of this operation. Returns the
     /// status code returned by the `{future,stream}.cancel-{read,write}`
     /// intrinsic.
+    ///
+    /// Note that this must synchronously complete the operation somehow. This
+    /// cannot return a status code indicating that an operation is pending,
+    /// instead the operation must be complete with the returned code. That may
+    /// mean that this intrinsic can block while figuring things out in the
+    /// component model ABI, for example.
     fn in_progress_cancel(state: &Self::InProgress) -> u32;
 
     /// Converts a "completion result" into a "cancel result". This is necessary
@@ -265,7 +272,7 @@ where
             // Note that it's the responsibility of the completion callback at
             // the ABI level that we install to fill in this pointer, e.g. it's
             // part of the `register_waker` contract.
-            InProgress(_) => completion_status.code,
+            InProgress(_) => completion_status.code_mut().take(),
 
             // This write has already completed, it's a Rust-level API violation
             // to call this function again.
@@ -287,7 +294,7 @@ where
     ) -> Poll<S::Result> {
         use WaitableOperationState::*;
 
-        let (state, completion_status) = self.as_mut().pin_project();
+        let (state, _completion_status) = self.as_mut().pin_project();
 
         // If a status code is provided, then extract the in-progress state and
         // see what it thinks about this code. If we're done, yay! If not then
@@ -304,10 +311,6 @@ where
                 Ok(result) => return Poll::Ready(result),
                 Err(in_progress) => *state = InProgress(in_progress),
             }
-
-            // Remove the previous completion status, if any, as we're no longer
-            // interested in it if it was present.
-            *completion_status.code_mut() = None;
         }
 
         let in_progress = match state {
@@ -340,7 +343,7 @@ where
     pub fn cancel(mut self: Pin<&mut Self>) -> S::Cancel {
         use WaitableOperationState::*;
 
-        let (state, _) = self.as_mut().pin_project();
+        let (state, mut completion_status) = self.as_mut().pin_project();
         let in_progress = match state {
             // This operation was never actually started, so there's no need to
             // cancel anything, just pull out the value and return it.
@@ -361,30 +364,67 @@ where
             Done => panic!("cannot cancel operation after completing it"),
         };
 
-        // This operation is currently actively in progress after being queued
-        // up in the past. In this situation we need to call
-        // `{future,stream}.cancel-{read,write}`. First ensure that our
-        // exported task's state is no longer interested in the write handle
-        // here, so unregister that. Next if a completion hasn't already come
-        // in due to some race then perform the actual cancellation here.
-        let waitable = S::in_progress_waitable(in_progress);
-        self.as_mut().unregister_waker(waitable);
-        let (InProgress(in_progress), mut completion_status) = self.as_mut().pin_project() else {
-            unreachable!()
-        };
-        if completion_status.code.is_none() {
-            *completion_status.as_mut().code_mut() = Some(S::in_progress_cancel(in_progress));
+        // Our operation is in-progress, let's take a look at the pending
+        // completion code, if any.
+        match completion_status.as_mut().code_mut().take() {
+            // A completion code, or status update, is available. This can
+            // happen for example if an export received a status update for
+            // this operation but then during the subsequent poll we decided
+            // that the future should be dropped instead, aka a race between
+            // two events. In this situation though to fully process the
+            // cancellation we need to see what's up, so check to see if the
+            // operation is done with this code.
+            //
+            // Note that in this branch it's known that this operation's waker
+            // is not registered with the exported task because the exported
+            // task already delivered us the completion code, which
+            // automatically deregisters it at this time.
+            Some(code) => {
+                match self.as_mut().poll_complete_with_code(None, Some(code)) {
+                    // The operation completed without us needing to cancel it,
+                    // so just convert that to the `Cancel` type. In this
+                    // situation no cancellation is necessary, the async
+                    // operation is now inert, and we can immediately return.
+                    Poll::Ready(result) => return S::result_into_cancel(result),
+
+                    // The operation, despite receiving an update via a code,
+                    // has not yet completed. In this case we do indeed need to
+                    // perform cancellation, so fall through to below.
+                    Poll::Pending => {}
+                }
+            }
+
+            // A completion code is not yet available. In this situation we
+            // deregister our waker from the exported task's waitable set and
+            // callback handling since we'll be no longer waiting for events.
+            // Cancellation below happens synchronously.
+            //
+            // After we've unregistered fall through to below.
+            None => {
+                let waitable = S::in_progress_waitable(in_progress);
+                self.as_mut().unregister_waker(waitable);
+            }
         }
 
-        // Now that we're guaranteed to have a completion status, pass that
-        // through to "interpret the result".
-        let code = completion_status.code.unwrap();
+        // This operation is guaranteed actively in progress at this point.
+        // That means we really do in fact need to cancel it. Here the
+        // appropriate cancellation intrinsic for the component model is
+        // invoked which returns the final completion status for this
+        // operation.
+        //
+        // The completion code is forwarded to `poll_complete_with_code` which
+        // determines what happened as a result. Note that at this time
+        // cancellation is required to be a synchronous operation in Rust, even
+        // if it's async in the component model, since that's the only way for
+        // this to be sound. Rust doesn't currently have linear types or async
+        // destructors for example to ensure otherwise that if this were to
+        // proceed asynchronously that we could rely on it being invoked.
+        let (InProgress(in_progress), _) = self.as_mut().pin_project() else {
+            unreachable!()
+        };
+        let code = S::in_progress_cancel(in_progress);
         match self.poll_complete_with_code(None, Some(code)) {
-            // Leave it up to `S` to interpret the completion result as a
-            // cancellation result.
             Poll::Ready(result) => S::result_into_cancel(result),
-
-            // Should not be reachable as we always pass `Some(code)`.
             Poll::Pending => unreachable!(),
         }
     }

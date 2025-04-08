@@ -2667,7 +2667,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             | Instruction::StreamLower { .. }
             | Instruction::StreamLift { .. }
             | Instruction::ErrorContextLower { .. }
-            | Instruction::ErrorContextLift { .. } => todo!(),
+            | Instruction::ErrorContextLift { .. }
+            | Instruction::DropHandle { .. } => todo!(),
         }
     }
 
