@@ -12,10 +12,6 @@ test = false
 doctest = false
 
 [[bin]]
-name = "flavorful"
-test = false
-
-[[bin]]
 name = "results"
 test = false
 
