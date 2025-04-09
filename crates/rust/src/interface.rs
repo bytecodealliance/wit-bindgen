@@ -766,6 +766,12 @@ pub mod vtable{ordinal} {{
         format!("unsafe {{ {} }}", String::from(f.src))
     }
 
+    fn deallocate_lists_and_own(&mut self, address: &str, types: &[Type], module: &str) -> String {
+        let mut f = FunctionBindgen::new(self, Vec::new(), true, module, true);
+        abi::deallocate_lists_and_own_in_types(f.r#gen.resolve, types, address.into(), &mut f);
+        format!("unsafe {{ {} }}", String::from(f.src))
+    }
+
     fn lift_from_memory(&mut self, address: &str, ty: &Type, module: &str) -> String {
         let mut f = FunctionBindgen::new(self, Vec::new(), true, module, true);
         let result = abi::lift_from_memory(f.r#gen.resolve, &mut f, address.into(), ty);
@@ -902,6 +908,15 @@ unsafe fn call_import(params: *mut u8, results: *mut u8) -> u32 {{
         let dealloc_lists = self.deallocate_lists("_ptr", &param_tys, module);
         uwriteln!(self.src, "unsafe fn params_dealloc_lists(_ptr: *mut u8) {{");
         uwriteln!(self.src, "{dealloc_lists}");
+        uwriteln!(self.src, "}}");
+
+        // Generate `fn params_dealloc_lists_and_own`
+        let dealloc_lists_and_own = self.deallocate_lists_and_own("_ptr", &param_tys, module);
+        uwriteln!(
+            self.src,
+            "unsafe fn params_dealloc_lists_and_own(_ptr: *mut u8) {{"
+        );
+        uwriteln!(self.src, "{dealloc_lists_and_own}");
         uwriteln!(self.src, "}}");
 
         // Generate `fn params_lower`

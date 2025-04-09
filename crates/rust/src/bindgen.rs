@@ -1238,6 +1238,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     align = align.format(POINTER_SIZE_EXPRESSION)
                 ));
             }
+
+            Instruction::DropHandle { .. } => {
+                uwriteln!(self.src, "let _ = {};", operands[0]);
+            }
         }
     }
 }
