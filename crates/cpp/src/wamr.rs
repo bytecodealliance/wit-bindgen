@@ -112,8 +112,8 @@ fn wamr_add_result(sig: &mut WamrSig, resolve: &Resolve, ty: &Type) {
             TypeDefKind::List(_) => {
                 sig.wamr_types.push('*');
             }
-            TypeDefKind::Future(_) => todo!(),
-            TypeDefKind::Stream(_) => todo!(),
+            TypeDefKind::Future(_) => sig.wamr_types.push('*'),
+            TypeDefKind::Stream(_) => sig.wamr_types.push('*'),
             TypeDefKind::Type(ty) => wamr_add_result(sig, resolve, &ty),
             TypeDefKind::Unknown => todo!(),
             TypeDefKind::Resource => {

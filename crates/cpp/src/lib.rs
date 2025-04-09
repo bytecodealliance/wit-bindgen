@@ -2035,7 +2035,11 @@ impl CppInterfaceGenerator<'_> {
                         }
                     }
                 }
-                TypeDefKind::Future(_) => todo!(),
+                TypeDefKind::Future(ty) => {
+                    "std::future<".to_string()
+                        + &self.optional_type_name(ty.as_ref(), from_namespace, flavor)
+                        + ">"
+                }
                 TypeDefKind::Stream(_) => todo!(),
                 TypeDefKind::Type(ty) => self.type_name(ty, from_namespace, flavor),
                 TypeDefKind::Unknown => todo!(),
@@ -3846,8 +3850,14 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 self.store(ptr_type, *offset, operands)
             }
             abi::Instruction::LengthStore { offset } => self.store("size_t", *offset, operands),
-            abi::Instruction::FutureLower { .. } => todo!(),
-            abi::Instruction::FutureLift { .. } => todo!(),
+            abi::Instruction::FutureLower { .. } => {
+                self.src.push_str("future_lower()");
+                results.push(String::from("future"));
+            }
+            abi::Instruction::FutureLift { .. } => {
+                self.src.push_str("future_lift()");
+                results.push(String::from("future"));
+            }
             abi::Instruction::StreamLower { .. } => todo!(),
             abi::Instruction::StreamLift { .. } => todo!(),
             abi::Instruction::ErrorContextLower { .. } => todo!(),
