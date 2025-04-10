@@ -1039,7 +1039,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::AsyncTaskReturn { name, params } => {
-                let func = self.declare_import(name, params, &[]);
+                let func = self.declare_import("", name, params, &[]);
 
                 uwriteln!(self.src, "{func}({});", operands.join(", "));
             }

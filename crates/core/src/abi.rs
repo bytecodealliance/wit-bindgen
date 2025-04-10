@@ -967,35 +967,23 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 self.realloc = None;
 
                 let mut retptr_oprnd = None;
-                if async_ {
-                    let ElementInfo { size, align } =
-                        self.bindgen.sizes().record(func.result.iter());
-                    let ptr = self.bindgen.return_pointer(size, align);
-                    retptr_oprnd = Some(ptr.clone());
+
+                // If necessary we may need to prepare a return pointer for
+                // this ABI.
+                if variant == AbiVariant::GuestImport && sig.retptr {
+                    let info = self.bindgen.sizes().params(&func.result);
+                    let ptr = self.bindgen.return_pointer(info.size, info.align);
                     self.return_pointer = Some(ptr.clone());
+                    retptr_oprnd = Some(ptr.clone());
                     self.stack.push(ptr);
-
-                    assert_eq!(self.stack.len(), 2);
-                    self.emit(&Instruction::AsyncCallWasm {
-                        name: &format!("[async-lower]{}", func.name),
-                    });
-                } else {
-                    // If necessary we may need to prepare a return pointer for
-                    // this ABI.
-                    if variant == AbiVariant::GuestImport && sig.retptr {
-                        let info = self.bindgen.sizes().params(&func.result);
-                        let ptr = self.bindgen.return_pointer(info.size, info.align);
-                        self.return_pointer = Some(ptr.clone());
-                        self.stack.push(ptr);
-                    }
-
-                    assert_eq!(self.stack.len(), sig.params.len());
-                    self.emit(&Instruction::CallWasm {
-                        name: &func.name,
-                        sig: &sig,
-                        module_prefix: Default::default(),
-                    });
                 }
+
+                assert_eq!(self.stack.len(), sig.params.len());
+                self.emit(&Instruction::CallWasm {
+                    name: &func.name,
+                    sig: &sig,
+                    module_prefix: Default::default(),
+                });
 
                 if matches!(lift_lower, LiftLower::Symmetric) && sig.retptr {
                     if let Some(ptr) = retptr_oprnd {
