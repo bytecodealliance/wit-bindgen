@@ -13,7 +13,6 @@ use wasmtime_wasi::{WasiCtx, WasiCtxBuilder, WasiView};
 use wit_component::{ComponentEncoder, StringEncoding};
 use wit_parser::{Resolve, WorldId, WorldItem};
 
-mod options;
 mod results;
 
 struct MyCtx {}

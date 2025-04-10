@@ -14,7 +14,3 @@ doctest = false
 [[bin]]
 name = "results"
 test = false
-
-[[bin]]
-name = "options"
-test = false

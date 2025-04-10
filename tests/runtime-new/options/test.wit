@@ -1,6 +1,6 @@
 package test:options;
 
-interface test {
+interface to-test {
   option-none-param: func(a: option<string>);
   option-some-param: func(a: option<string>);
   option-none-result: func() -> option<string>;
@@ -11,9 +11,10 @@ interface test {
   double-option-roundtrip: func(a: option<option<u32>>) -> option<option<u32>>;
 }
 
-world options {
-  import test;
-  export test;
+world test {
+  export to-test;
+}
 
-  export test-imports: func();
+world runner {
+  import to-test;
 }
