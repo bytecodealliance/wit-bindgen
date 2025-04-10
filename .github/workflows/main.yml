@@ -107,7 +107,7 @@ jobs:
     # Run all runtime tests for this language, and also enable Rust in case this
     # language only implements either the runner or test component
     - run: |
-        cargo run test --languages rust,${{ matrix.lang }} tests/runtime-new \
+        cargo run test --languages rust,${{ matrix.lang }} tests/runtime \
           --artifacts target/artifacts \
           --rust-wit-bindgen-path ./crates/guest-rust
 
