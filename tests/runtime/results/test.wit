@@ -1,3 +1,6 @@
+//@ dependencies = ['intermediate', 'leaf']
+//@ wac = 'compose.wac'
+
 package test:results;
 
 interface test {
@@ -18,7 +21,15 @@ interface test {
   double-error: func(a: u32) -> result<result<_, string>, string>;
 }
 
-world results {
+world leaf {
+  export test;
+}
+
+world intermediate {
   import test;
   export test;
+}
+
+world runner {
+  import test;
 }
