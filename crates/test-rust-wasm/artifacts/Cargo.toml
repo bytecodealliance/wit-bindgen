@@ -1,4 +1,0 @@
-[package]
-name = "test-artifacts"
-edition.workspace = true
-publish = false
