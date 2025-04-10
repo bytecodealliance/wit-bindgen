@@ -14,7 +14,6 @@ use wit_component::{ComponentEncoder, StringEncoding};
 use wit_parser::{Resolve, WorldId, WorldItem};
 
 mod options;
-mod resources;
 mod results;
 
 struct MyCtx {}

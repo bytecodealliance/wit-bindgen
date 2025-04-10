@@ -1,0 +1,84 @@
+//@ dependencies = ['resources', 'leaf']
+//@ wac = 'compose.wac'
+
+package test:resources;
+
+world leaf {
+  export imports: interface {
+    resource y {
+      constructor(a: s32);
+      get-a: func() -> s32;
+      set-a: func(a: s32);
+      add: static func(y: y, a: s32) -> y;
+    }
+  }
+}
+
+world resources {
+  import imports: interface {
+    resource y {
+      constructor(a: s32);
+      get-a: func() -> s32;
+      set-a: func(a: s32);
+      add: static func(y: y, a: s32) -> y;
+    }
+  }
+
+  export exports: interface {
+    resource x {
+      constructor(a: s32);
+      get-a: func() -> s32;
+      set-a: func(a: s32);
+      add: static func(x: x, a: s32) -> x;
+    }
+
+    resource z {
+      constructor(a: s32);
+      get-a: func() -> s32;
+
+      num-dropped: static func() -> u32;
+    }
+
+    add: func(a: borrow<z>, b: borrow<z>) -> own<z>;
+
+    consume: func(x: x);
+
+    resource kebab-case {
+      constructor(a: u32);
+      get-a: func() -> u32;
+      take-owned: static func(k: own<kebab-case>) -> u32;
+    }
+
+    test-imports: func() -> result<_, string>;
+  }
+}
+
+world runner {
+  import exports: interface {
+    resource x {
+      constructor(a: s32);
+      get-a: func() -> s32;
+      set-a: func(a: s32);
+      add: static func(x: x, a: s32) -> x;
+    }
+
+    resource z {
+      constructor(a: s32);
+      get-a: func() -> s32;
+
+      num-dropped: static func() -> u32;
+    }
+
+    add: func(a: borrow<z>, b: borrow<z>) -> own<z>;
+
+    consume: func(x: x);
+
+    resource kebab-case {
+      constructor(a: u32);
+      get-a: func() -> u32;
+      take-owned: static func(k: own<kebab-case>) -> u32;
+    }
+
+    test-imports: func() -> result<_, string>;
+  }
+}

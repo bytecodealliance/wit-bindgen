@@ -18,7 +18,3 @@ test = false
 [[bin]]
 name = "options"
 test = false
-
-[[bin]]
-name = "resources"
-test = false
