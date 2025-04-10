@@ -201,9 +201,10 @@ path = 'lib.rs'
         let mut cmd = rustc(&compile.component.path, &output);
         cmd.env(
             "BINDINGS",
-            compile
-                .bindings_dir
-                .join(format!("{}.rs", compile.component.bindgen.world)),
+            compile.bindings_dir.join(format!(
+                "{}.rs",
+                compile.component.bindgen.world.replace('-', "_")
+            )),
         );
         for (name, path) in externs {
             let arg = format!("--extern={name}={}", path.display());

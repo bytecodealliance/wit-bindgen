@@ -1,15 +1,21 @@
 #![no_std]
 
+#[cfg(feature = "async")]
+extern crate std;
+
 extern crate alloc;
+
+use alloc::alloc::Layout;
+use core::ptr::{self, NonNull};
 
 // Re-export `bitflags` so that we can reference it from macros.
 #[cfg(feature = "bitflags")]
 #[doc(hidden)]
 pub use bitflags;
 
-/// For more information about this see `./ci/rebuild-libcabi-realloc.sh`.
+/// For more information about this see `./ci/rebuild-libwit-bindgen-cabi.sh`.
 #[cfg(not(target_env = "p2"))]
-mod cabi_realloc;
+mod wit_bindgen_cabi;
 
 /// This function is called from generated bindings and will be deleted by
 /// the linker. The purpose of this function is to force a reference to the
@@ -17,7 +23,7 @@ mod cabi_realloc;
 /// command line. That way `wasm-ld` will pick it up, see it needs to be
 /// exported, and then export it.
 ///
-/// For more information about this see `./ci/rebuild-libcabi-realloc.sh`.
+/// For more information about this see `./ci/rebuild-libwit-bindgen-cabi.sh`.
 pub fn maybe_link_cabi_realloc() {
     #[cfg(all(target_family = "wasm", not(target_env = "p2")))]
     {
@@ -49,7 +55,7 @@ pub fn maybe_link_cabi_realloc() {
 /// NB: this function is called by a generated function in the
 /// `cabi_realloc` module above. It's otherwise never explicitly called.
 ///
-/// For more information about this see `./ci/rebuild-libcabi-realloc.sh`.
+/// For more information about this see `./ci/rebuild-libwit-bindgen-cabi.sh`.
 #[cfg(not(target_env = "p2"))]
 pub unsafe fn cabi_realloc(
     old_ptr: *mut u8,
@@ -116,3 +122,55 @@ pub fn run_ctors_once() {
 /// Support for using the Component Model Async ABI
 #[cfg(feature = "async")]
 pub mod async_support;
+
+/// Cleanup helper used to deallocate blocks of canonical ABI data from
+/// lowerings.
+pub struct Cleanup {
+    ptr: NonNull<u8>,
+    layout: Layout,
+}
+
+// Usage of the returned pointer is always unsafe and must abide by these
+// conventions, but this structure itself has no inherent reason to not be
+// send/sync.
+unsafe impl Send for Cleanup {}
+unsafe impl Sync for Cleanup {}
+
+impl Cleanup {
+    /// Allocates a chunk of memory with `layout` and returns an object to clean
+    /// it up.
+    ///
+    /// Always returns a pointer which is null if `layout` has size zero. The
+    /// optional cleanup returned will be present if `layout` has a non-zero
+    /// size. When dropped `Cleanup` will deallocate the pointer returned.
+    pub fn new(layout: Layout) -> (*mut u8, Option<Cleanup>) {
+        use alloc::alloc;
+
+        if layout.size() == 0 {
+            return (ptr::null_mut(), None);
+        }
+        let ptr = unsafe { alloc::alloc(layout) };
+        let ptr = match NonNull::new(ptr) {
+            Some(ptr) => ptr,
+            None => alloc::handle_alloc_error(layout),
+        };
+        (ptr.as_ptr(), Some(Cleanup { ptr, layout }))
+    }
+
+    /// Discards this cleanup to leak its memory or intentionally transfer
+    /// ownership to some other location.
+    pub fn forget(self) {
+        core::mem::forget(self);
+    }
+}
+
+impl Drop for Cleanup {
+    fn drop(&mut self) {
+        unsafe {
+            for i in 0..self.layout.size() {
+                *self.ptr.add(i).as_ptr() = 0xff;
+            }
+            alloc::alloc::dealloc(self.ptr.as_ptr(), self.layout);
+        }
+    }
+}

@@ -133,6 +133,11 @@ jobs:
     - run: cargo test -p wit-bindgen-core
     - run: cargo test -p wit-bindgen
     - run: cargo test --workspace --exclude 'wit-bindgen*'
+    - run: cargo test -p wit-bindgen-rt --all-features
+    - run: rustup update nightly --no-self-update
+    - run: rustup component add miri --toolchain nightly
+    - run: rustup component add rust-src --toolchain nightly
+    - run: cargo +nightly miri test -p wit-bindgen-rt --all-features
 
   check:
     name: Check
@@ -146,10 +151,10 @@ jobs:
     - name: Install wasm32-wasip1 target
       run: rustup target add wasm32-wasip1
 
-    # Verify the output of the `./ci/rebuild-libcabi-realloc.sh` script is
+    # Verify the output of the `./ci/rebuild-libwit-bindgen-cabi.sh` script is
     # up-to-date.
     - uses: ./.github/actions/install-wasi-sdk
-    - run: ./ci/rebuild-libcabi-realloc.sh
+    - run: ./ci/rebuild-libwit-bindgen-cabi.sh
     - run: git diff --exit-code
 
     # Test various feature combinations, make sure they all build

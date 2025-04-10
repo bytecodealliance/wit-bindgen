@@ -347,11 +347,12 @@ pub struct Opts {
     /// Determines which functions to lift or lower `async`, if any.
     ///
     /// Accepted values are:
-    ///     - none
-    ///     - all
-    ///     - some=<value>[,<value>...], where each <value> is of the form:
-    ///         - import:<name> or
-    ///         - export:<name>
+    ///
+    /// - none
+    /// - all
+    /// - `some=<value>[,<value>...]`, where each `<value>` is of the form:
+    ///   - `import:<name>` or
+    ///   - `export:<name>`
     #[cfg_attr(feature = "clap", arg(long = "async", value_parser = parse_async, default_value = "none"))]
     #[cfg_attr(feature = "serde", serde(rename = "async"))]
     pub async_: AsyncConfig,
@@ -506,26 +507,24 @@ impl RustWasm {
     }
 
     fn finish_runtime_module(&mut self) {
-        if self.rt_module.is_empty() {
-            return;
-        }
+        if !self.rt_module.is_empty() {
+            // As above, disable rustfmt, as we use prettyplease.
+            if self.opts.format {
+                uwriteln!(self.src, "#[rustfmt::skip]");
+            }
 
-        // As above, disable rustfmt, as we use prettyplease.
-        if self.opts.format {
-            uwriteln!(self.src, "#[rustfmt::skip]");
-        }
-
-        self.src.push_str("mod _rt {\n");
-        self.src.push_str("#![allow(dead_code, clippy::all)]\n");
-        let mut emitted = IndexSet::new();
-        while !self.rt_module.is_empty() {
-            for item in mem::take(&mut self.rt_module) {
-                if emitted.insert(item) {
-                    self.emit_runtime_item(item);
+            self.src.push_str("mod _rt {\n");
+            self.src.push_str("#![allow(dead_code, clippy::all)]\n");
+            let mut emitted = IndexSet::new();
+            while !self.rt_module.is_empty() {
+                for item in mem::take(&mut self.rt_module) {
+                    if emitted.insert(item) {
+                        self.emit_runtime_item(item);
+                    }
                 }
             }
+            self.src.push_str("}\n");
         }
-        self.src.push_str("}\n");
 
         if !self.future_payloads.is_empty() {
             let async_support = self.async_support_path();

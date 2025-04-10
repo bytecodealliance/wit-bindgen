@@ -1,8 +1,7 @@
-use std::process::Command;
-
-use serde::Deserialize;
-
 use crate::LanguageMethods;
+use anyhow::bail;
+use serde::Deserialize;
+use std::process::Command;
 
 /// MoonBit configuration of project files
 #[derive(Default, Deserialize)]
@@ -29,13 +28,12 @@ impl LanguageMethods for MoonBit {
 
     fn prepare(&self, runner: &mut crate::Runner<'_>) -> anyhow::Result<()> {
         println!("Testing if MoonBit toolchain exists...");
-        runner
+        if runner
             .run_command(Command::new("moon").arg("version"))
-            .inspect_err(|_| {
-                eprintln!(
-                    "MoonBit toolchain not found. Check out <https://www.moonbitlang.com/download>"
-                );
-            })?;
+            .is_err()
+        {
+            bail!("MoonBit toolchain not found. Check out <https://www.moonbitlang.com/download>");
+        }
         Ok(())
     }
 

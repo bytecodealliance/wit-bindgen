@@ -12,61 +12,9 @@ test = false
 doctest = false
 
 [[bin]]
-name = "flavorful"
-test = false
-
-[[bin]]
 name = "results"
 test = false
 
 [[bin]]
 name = "options"
-test = false
-
-[[bin]]
-name = "owning"
-test = false
-
-[[bin]]
-name = "borrowing"
-test = false
-
-[[bin]]
-name = "borrowing-duplicate-if-necessary"
-test = false
-
-[[bin]]
-name = "resources"
-test = false
-
-[[bin]]
-name = "resource_floats"
-test = false
-
-[[bin]]
-name = "resource_import_and_export"
-test = false
-
-[[bin]]
-name = "resource_with_lists"
-test = false
-
-[[bin]]
-name = "resource_borrow_import"
-test = false
-
-[[bin]]
-name = "resource_borrow_export"
-test = false
-
-[[bin]]
-name = "resource_alias_redux"
-test = false
-
-[[bin]]
-name = "resource_alias"
-test = false
-
-[[bin]]
-name = "resource_borrow_simple"
 test = false

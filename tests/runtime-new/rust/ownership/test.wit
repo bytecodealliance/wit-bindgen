@@ -1,0 +1,65 @@
+package test:ownership;
+
+interface both-list-and-resource {
+    resource the-resource {
+        constructor(the-list: list<string>);
+    }
+    record thing {
+        a: list<string>,
+        b: the-resource
+    }
+
+    list-and-resource: func(a: thing);
+}
+
+world runner {
+    import lists: interface {
+        foo: func(a: list<list<string>>) -> list<list<string>>;
+    }
+
+    import thing-in: interface {
+        record thing {
+            name: string,
+            value: list<string>
+        }
+
+        bar: func(a: thing);
+    }
+
+    import thing-in-and-out: interface {
+        record thing {
+            name: string,
+            value: list<string>
+        }
+
+        baz: func(a: thing) -> thing;
+    }
+
+    import both-list-and-resource;
+}
+
+world test {
+    export lists: interface {
+        foo: func(a: list<list<string>>) -> list<list<string>>;
+    }
+
+    export thing-in: interface {
+        record thing {
+            name: string,
+            value: list<string>
+        }
+
+        bar: func(a: thing);
+    }
+
+    export thing-in-and-out: interface {
+        record thing {
+            name: string,
+            value: list<string>
+        }
+
+        baz: func(a: thing) -> thing;
+    }
+
+    export both-list-and-resource;
+}

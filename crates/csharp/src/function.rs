@@ -1256,15 +1256,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.extend(operands.iter().take(*amt).map(|v| v.clone()));
             }
 
-            Instruction::AsyncPostCallInterface { .. }
-            | Instruction::AsyncCallReturn { .. }
+            Instruction::AsyncTaskReturn { .. }
             | Instruction::FutureLower { .. }
             | Instruction::FutureLift { .. }
             | Instruction::StreamLower { .. }
             | Instruction::StreamLift { .. }
             | Instruction::ErrorContextLower { .. }
-            | Instruction::ErrorContextLift { .. }
-            | Instruction::AsyncCallWasm { .. } => todo!(),
+            | Instruction::ErrorContextLift { .. } => todo!(),
         }
     }
 

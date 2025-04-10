@@ -1,0 +1,7 @@
+package example:composition;
+
+let a = new test:leaf { ... };
+let b = new test:resource-with-lists { ...a, ... };
+let c = new test:runner { ...b, ... };
+
+export c...;

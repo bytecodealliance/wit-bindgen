@@ -37,7 +37,7 @@ futures = "0.3.31"
 wat = { git = "https://github.com/cpetig/wasm-tools", branch = "symmetric" }
 wasmparser = { git = "https://github.com/cpetig/wasm-tools", branch = "symmetric" }
 wasm-encoder = { git = "https://github.com/cpetig/wasm-tools", branch = "symmetric" }
-wasm-metadata = { git = "https://github.com/cpetig/wasm-tools", branch = "symmetric" }
+wasm-metadata = { git = "https://github.com/cpetig/wasm-tools", branch = "symmetric", default-features = false }
 wit-parser = { git = "https://github.com/cpetig/wasm-tools", branch = "symmetric" }
 wit-component = { git = "https://github.com/cpetig/wasm-tools", branch = "symmetric" }
 wasm-compose = { git = "https://github.com/cpetig/wasm-tools", branch = "symmetric" }

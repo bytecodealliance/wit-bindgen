@@ -8,13 +8,13 @@ crate is to contain "runtime" code related to the macro-expansion of the
 be removed in some situations.
 
 This crate contains a precompiled object file and archive at
-`src/cabi_realloc.o` and `src/libwit_bindgen_cabi_realloc.a`. This is compiled
-from the source `src/cabi_realloc.c` and is checked in as precompiled to avoid
-needing a C compiler at compile-time which isn't always available. This object
-file is only used on wasm targets.
+`src/wit_bindgen_cabi.o` and `src/libwit_bindgen_cabi.a`. This is compiled
+from the source `src/wit_bindgen_cabi.c` and is checked in as precompiled to
+avoid needing a C compiler at compile-time which isn't always available. This
+object file is only used on wasm targets.
 
 The object file is compiled by
-[this script]https://github.com/bytecodealliance/wit-bindgen/blob/main/ci/rebuild-libcabi-realloc.sh)
+[this script]https://github.com/bytecodealliance/wit-bindgen/blob/main/ci/rebuild-libwit-bindgen-cabi.sh)
 and is verified in repository continuous integration that the checked-in
 versions match what CI produces.
 

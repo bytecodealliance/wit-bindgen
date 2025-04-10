@@ -82,7 +82,7 @@ pub extern "wasm" fn f32_to_i64(value : Float) -> Int64 =
 // set pseudo header; allocate extra bytes for string
 pub extern "wasm" fn malloc(size : Int) -> Int =
   #|(func (param i32) (result i32) (local i32)
-  #| local.get 0 i32.const 4 i32.add call $moonbit.gc.malloc 
+  #| local.get 0 i32.const 4 i32.add call $moonbit.gc.malloc
   #| local.tee 1 i32.const 0 call $moonbit.init_array8
   #| local.get 1 i32.const 8 i32.add)
 
@@ -2660,15 +2660,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.extend(operands.iter().take(*amt).map(|v| v.clone()));
             }
 
-            Instruction::AsyncPostCallInterface { .. }
-            | Instruction::AsyncCallReturn { .. }
+            Instruction::AsyncTaskReturn { .. }
             | Instruction::FutureLower { .. }
             | Instruction::FutureLift { .. }
             | Instruction::StreamLower { .. }
             | Instruction::StreamLift { .. }
             | Instruction::ErrorContextLower { .. }
-            | Instruction::ErrorContextLift { .. }
-            | Instruction::AsyncCallWasm { .. } => todo!(),
+            | Instruction::ErrorContextLift { .. } => todo!(),
         }
     }
 
