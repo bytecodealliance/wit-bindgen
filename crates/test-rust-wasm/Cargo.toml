@@ -10,7 +10,3 @@ wit-bindgen = { path = "../guest-rust" }
 [lib]
 test = false
 doctest = false
-
-[[bin]]
-name = "results"
-test = false

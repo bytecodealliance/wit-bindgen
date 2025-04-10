@@ -1,4 +1,6 @@
-namespace ResultsWorld.wit.exports.test.results
+//@ args = '--with-wit-results'
+
+namespace IntermediateWorld.wit.exports.test.results
 {
     public class TestImpl : ITest
     {

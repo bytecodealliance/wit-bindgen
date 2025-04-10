@@ -1,0 +1,7 @@
+package example:composition;
+
+let a = new test:leaf { ... };
+let b = new test:intermediate { ...a, ... };
+let c = new test:runner { ...b, ... };
+
+export c...;
