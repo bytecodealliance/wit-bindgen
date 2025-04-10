@@ -8,7 +8,6 @@ use wit_bindgen_core::{dealias, uwrite, uwriteln, wit_parser::*, Source};
 pub(super) struct FunctionBindgen<'a, 'b> {
     pub r#gen: &'b mut InterfaceGenerator<'a>,
     params: Vec<String>,
-    async_: bool,
     wasm_import_module: &'b str,
     pub src: Source,
     blocks: Vec<String>,
@@ -19,7 +18,6 @@ pub(super) struct FunctionBindgen<'a, 'b> {
     pub import_return_pointer_area_align: Alignment,
     pub handle_decls: Vec<String>,
     always_owned: bool,
-    pub async_result_name: Option<String>,
 }
 
 pub const POINTER_SIZE_EXPRESSION: &str = "::core::mem::size_of::<*const u8>()";
@@ -28,14 +26,12 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
     pub(super) fn new(
         r#gen: &'b mut InterfaceGenerator<'a>,
         params: Vec<String>,
-        async_: bool,
         wasm_import_module: &'b str,
         always_owned: bool,
     ) -> FunctionBindgen<'a, 'b> {
         FunctionBindgen {
             r#gen,
             params,
-            async_,
             wasm_import_module,
             src: Default::default(),
             blocks: Vec::new(),
@@ -46,7 +42,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             import_return_pointer_area_align: Default::default(),
             handle_decls: Vec::new(),
             always_owned,
-            async_result_name: None,
         }
     }
 
@@ -859,13 +854,35 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.push_str(");\n");
             }
 
-            Instruction::CallInterface { func, .. } => {
-                if self.async_ {
-                    self.push_str(&format!("let result = "));
-                    results.push("result".into());
-                } else {
-                    self.let_results(usize::from(func.result.is_some()), results);
-                };
+            Instruction::CallInterface { func, async_ } => {
+                let prev_src = mem::replace(self.src.as_mut_string(), String::new());
+
+                self.let_results(usize::from(func.result.is_some()), results);
+                // If this function has a result and it's async, then after
+                // this instruction the result is going to be lowered. This
+                // lowering must happen in terms of `&T`, so force the result
+                // of this expression to have `&` in front.
+                if func.result.is_some() && *async_ {
+                    self.push_str("&");
+                }
+
+                // Force evaluation of all arguments to happen in a sub-block
+                // for this call. This is where `handle_decls` are pushed to
+                // ensure that they're scoped to just this block. Additionally
+                // this is where `prev_src` is pushed, just before the call.
+                //
+                // The purpose of this is to force `borrow<T>` arguments to get
+                // dropped before the call to `task.return` that will happen
+                // after an async call. For normal calls this happens because
+                // the result of this function is returned directly, but for
+                // async calls the return happens as part of this function as
+                // a call to `task.return` via the `AsyncTaskReturn`
+                // instruction.
+                self.push_str("{\n");
+                for decl in self.handle_decls.drain(..) {
+                    self.src.push_str(&decl);
+                }
+                self.push_str(&prev_src);
                 let constructor_type = match &func.kind {
                     FunctionKind::Freestanding | FunctionKind::AsyncFreestanding => {
                         self.push_str(&format!("T::{}", to_rust_ident(&func.name)));
@@ -884,12 +901,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             .as_deref()
                             .unwrap()
                             .to_upper_camel_case();
-                        let call = if self.async_ {
-                            let async_support = self.r#gen.r#gen.async_support_path();
-                            format!("{async_support}::futures::FutureExt::map(T::new")
-                        } else {
-                            format!("{ty}::new(T::new",)
-                        };
+                        let call = format!("{ty}::new(T::new");
                         self.push_str(&call);
                         Some(ty)
                     }
@@ -910,67 +922,19 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     }
                 }
                 self.push_str(")");
-                if let Some(ty) = constructor_type {
-                    self.push_str(&if self.async_ {
-                        format!(", {ty}::new)")
-                    } else {
-                        ")".into()
-                    });
-                }
-                if self.async_ {
+                if *async_ {
                     self.push_str(".await");
                 }
-                self.push_str(";\n");
+                if constructor_type.is_some() {
+                    self.push_str(")");
+                }
+                self.push_str("\n};\n");
             }
 
-            Instruction::AsyncPostCallInterface { func } => {
-                let result = &operands[0];
-                self.async_result_name = Some(result.clone());
-                results.push("result".into());
-                let params = (0..usize::from(func.result.is_some()))
-                    .map(|_| {
-                        let tmp = self.tmp();
-                        let param = format!("result{}", tmp);
-                        results.push(param.clone());
-                        param
-                    })
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                let params = if func.result.is_none() {
-                    format!("({params})")
-                } else {
-                    params
-                };
-                let async_support = self.r#gen.r#gen.async_support_path();
-                // TODO: This relies on `abi::Generator` emitting
-                // `AsyncCallReturn` immediately after this instruction to
-                // complete the incomplete expression we generate here.  We
-                // should refactor this so it's less fragile (e.g. have
-                // `abi::Generator` emit a `AsyncCallReturn` first, which would
-                // push a closure expression we can consume here).
-                //
-                // Also, see `InterfaceGenerator::generate_guest_export` for
-                // where we emit the open bracket corresponding to the `};` we
-                // emit here.
-                //
-                // The async-specific `Instruction`s will probably need to be
-                // refactored anyway once we start implementing support for
-                // other languages besides Rust.
-                uwriteln!(
-                    self.src,
-                    "\
-                            {result}
-                        }};
-                        let result = {async_support}::first_poll({result}, move |{params}| {{
-                    "
-                );
-            }
-
-            Instruction::AsyncCallReturn { name, params } => {
+            Instruction::AsyncTaskReturn { name, params } => {
                 let func = self.declare_import(name, params, &[]);
 
                 uwriteln!(self.src, "{func}({});", operands.join(", "));
-                self.src.push_str("});\n");
             }
 
             Instruction::Flush { amt } => {

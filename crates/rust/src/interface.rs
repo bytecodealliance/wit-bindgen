@@ -755,19 +755,19 @@ pub mod vtable{ordinal} {{
     }
 
     fn lower_to_memory(&mut self, address: &str, value: &str, ty: &Type, module: &str) -> String {
-        let mut f = FunctionBindgen::new(self, Vec::new(), true, module, true);
+        let mut f = FunctionBindgen::new(self, Vec::new(), module, true);
         abi::lower_to_memory(f.r#gen.resolve, &mut f, address.into(), value.into(), ty);
         format!("unsafe {{ {} }}", String::from(f.src))
     }
 
     fn deallocate_lists(&mut self, address: &str, types: &[Type], module: &str) -> String {
-        let mut f = FunctionBindgen::new(self, Vec::new(), true, module, true);
+        let mut f = FunctionBindgen::new(self, Vec::new(), module, true);
         abi::deallocate_lists_in_types(f.r#gen.resolve, types, address.into(), &mut f);
         format!("unsafe {{ {} }}", String::from(f.src))
     }
 
     fn lift_from_memory(&mut self, address: &str, ty: &Type, module: &str) -> String {
-        let mut f = FunctionBindgen::new(self, Vec::new(), true, module, true);
+        let mut f = FunctionBindgen::new(self, Vec::new(), module, true);
         let result = abi::lift_from_memory(f.r#gen.resolve, &mut f, address.into(), ty);
         format!("unsafe {{ {}\n{result} }}", String::from(f.src))
     }
@@ -778,7 +778,7 @@ pub mod vtable{ordinal} {{
         func: &Function,
         params: Vec<String>,
     ) {
-        let mut f = FunctionBindgen::new(self, params, false, module, false);
+        let mut f = FunctionBindgen::new(self, params, module, false);
         abi::call(
             f.r#gen.resolve,
             AbiVariant::GuestImport,
@@ -991,7 +991,7 @@ unsafe fn call_import(params: *mut u8, results: *mut u8) -> u32 {{
             );
         }
 
-        let mut f = FunctionBindgen::new(self, params, async_, self.wasm_import_module, false);
+        let mut f = FunctionBindgen::new(self, params, self.wasm_import_module, false);
         abi::call(
             f.r#gen.resolve,
             AbiVariant::GuestExport,
@@ -1004,10 +1004,11 @@ unsafe fn call_import(params: *mut u8, results: *mut u8) -> u32 {{
             needs_cleanup_list,
             src,
             handle_decls,
-            async_result_name,
             ..
         } = f;
         if async_ {
+            let async_support = self.r#gen.async_support_path();
+            uwriteln!(self.src, "{async_support}::start_task(async move {{");
             if needs_cleanup_list {
                 let vec = self.path_to_vec();
                 uwriteln!(self.src, "let mut cleanup_list = {vec}::new();");
@@ -1015,23 +1016,14 @@ unsafe fn call_import(params: *mut u8, results: *mut u8) -> u32 {{
         } else {
             assert!(!needs_cleanup_list);
         }
-        if let Some(name) = async_result_name {
-            // When `async_result_name` is `Some(_)`, we wrap the call and any
-            // `handle_decls` in a block scope to ensure any resource handles
-            // are dropped before we call `async_support::first_poll`, which may
-            // call `task.return` at which point any borrow handles must already
-            // have been dropped.
-            //
-            // The corresponding close bracket is emitted in the
-            // `Instruction::AsyncPostCallInterface` case inside
-            // `FunctionBindgen::emit`.
-            uwriteln!(self.src, "let {name} = async move {{");
-        }
         for decl in handle_decls {
             self.src.push_str(&decl);
             self.src.push_str("\n");
         }
         self.src.push_str(&String::from(src));
+        if async_ {
+            uwriteln!(self.src, "}})")
+        }
         self.src.push_str("} }\n");
 
         if async_ {
@@ -1060,7 +1052,7 @@ unsafe fn call_import(params: *mut u8, results: *mut u8) -> u32 {{
             let params = self.print_post_return_sig(func);
             self.src.push_str("{ unsafe {\n");
 
-            let mut f = FunctionBindgen::new(self, params, async_, self.wasm_import_module, false);
+            let mut f = FunctionBindgen::new(self, params, self.wasm_import_module, false);
             abi::post_return(f.r#gen.resolve, func, &mut f);
             let FunctionBindgen {
                 needs_cleanup_list,
