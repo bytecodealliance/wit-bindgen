@@ -1010,7 +1010,8 @@ unsafe fn call_import(params: *mut u8, results: *mut u8) -> u32 {{
             let async_support = self.r#gen.async_support_path();
             uwriteln!(self.src, "{async_support}::start_task(async move {{");
             if needs_cleanup_list {
-                uwriteln!(self.src, "let mut cleanup_list = Vec::new();");
+                let vec = self.path_to_vec();
+                uwriteln!(self.src, "let mut cleanup_list = {vec}::new();");
             }
         } else {
             assert!(!needs_cleanup_list);
