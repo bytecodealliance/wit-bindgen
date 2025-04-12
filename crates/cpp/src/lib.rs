@@ -2705,61 +2705,61 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
 
         match inst {
             abi::Instruction::GetArg { nth } => {
-                        if *nth == 0 && self.params[0].as_str() == "self" {
-                            if self.gen.in_guest_import ^ self.gen.gen.opts.host {
-                                results.push("(*this)".to_string());
-                            } else {
-                                results.push("(*lookup_resource(self))".to_string());
-                            }
-                        } else {
-                            results.push(self.params[*nth].clone());
-                        }
+                if *nth == 0 && self.params[0].as_str() == "self" {
+                    if self.gen.in_guest_import ^ self.gen.gen.opts.host {
+                        results.push("(*this)".to_string());
+                    } else {
+                        results.push("(*lookup_resource(self))".to_string());
                     }
+                } else {
+                    results.push(self.params[*nth].clone());
+                }
+            }
             abi::Instruction::I32Const { val } => results.push(format!("(int32_t({}))", val)),
             abi::Instruction::Bitcasts { casts } => {
-                        for (cast, op) in casts.iter().zip(operands) {
-                            // let op = op;
-                            results.push(self.gen.gen.perform_cast(op, cast));
-                        }
-                    }
+                for (cast, op) in casts.iter().zip(operands) {
+                    // let op = op;
+                    results.push(self.gen.gen.perform_cast(op, cast));
+                }
+            }
             abi::Instruction::ConstZero { tys } => {
-                        for ty in tys.iter() {
-                            match ty {
-                                WasmType::I32 => results.push("int32_t(0)".to_string()),
-                                WasmType::I64 => results.push("int64_t(0)".to_string()),
-                                WasmType::F32 => results.push("0.0f".to_string()),
-                                WasmType::F64 => results.push("0.0".to_string()),
-                                WasmType::Length => results.push("size_t(0)".to_string()),
-                                WasmType::Pointer => results.push("nullptr".to_string()),
-                                WasmType::PointerOrI64 => results.push("int64_t(0)".to_string()),
-                            }
-                        }
+                for ty in tys.iter() {
+                    match ty {
+                        WasmType::I32 => results.push("int32_t(0)".to_string()),
+                        WasmType::I64 => results.push("int64_t(0)".to_string()),
+                        WasmType::F32 => results.push("0.0f".to_string()),
+                        WasmType::F64 => results.push("0.0".to_string()),
+                        WasmType::Length => results.push("size_t(0)".to_string()),
+                        WasmType::Pointer => results.push("nullptr".to_string()),
+                        WasmType::PointerOrI64 => results.push("int64_t(0)".to_string()),
                     }
+                }
+            }
             abi::Instruction::I32Load { offset } => {
-                        let tmp = self.tmp();
-                        uwriteln!(
-                            self.src,
-                            "int32_t l{tmp} = *((int32_t const*)({} + {offset}));",
-                            operands[0],
-                            offset = offset.format(POINTER_SIZE_EXPRESSION)
-                        );
-                        results.push(format!("l{tmp}"));
-                    }
+                let tmp = self.tmp();
+                uwriteln!(
+                    self.src,
+                    "int32_t l{tmp} = *((int32_t const*)({} + {offset}));",
+                    operands[0],
+                    offset = offset.format(POINTER_SIZE_EXPRESSION)
+                );
+                results.push(format!("l{tmp}"));
+            }
             abi::Instruction::I32Load8U { offset } => {
-                        self.load_ext("uint8_t", *offset, operands, results)
-                    }
+                self.load_ext("uint8_t", *offset, operands, results)
+            }
             abi::Instruction::I32Load8S { offset } => {
-                        self.load_ext("int8_t", *offset, operands, results)
-                    }
+                self.load_ext("int8_t", *offset, operands, results)
+            }
             abi::Instruction::I32Load16U { offset } => {
-                        self.load_ext("uint16_t", *offset, operands, results)
-                    }
+                self.load_ext("uint16_t", *offset, operands, results)
+            }
             abi::Instruction::I32Load16S { offset } => {
-                        self.load_ext("int16_t", *offset, operands, results)
-                    }
+                self.load_ext("int16_t", *offset, operands, results)
+            }
             abi::Instruction::I64Load { offset } => {
-                        self.load("int64_t", *offset, operands, results)
-                    }
+                self.load("int64_t", *offset, operands, results)
+            }
             abi::Instruction::F32Load { offset } => self.load("float", *offset, operands, results),
             abi::Instruction::F64Load { offset } => self.load("double", *offset, operands, results),
             abi::Instruction::I32Store { offset } => self.store("int32_t", *offset, operands),
@@ -2769,13 +2769,13 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             abi::Instruction::F32Store { offset } => self.store("float", *offset, operands),
             abi::Instruction::F64Store { offset } => self.store("double", *offset, operands),
             abi::Instruction::I32FromChar
-                    | abi::Instruction::I32FromBool
-                    | abi::Instruction::I32FromU8
-                    | abi::Instruction::I32FromS8
-                    | abi::Instruction::I32FromU16
-                    | abi::Instruction::I32FromS16
-                    | abi::Instruction::I32FromU32
-                    | abi::Instruction::I32FromS32 => top_as("int32_t"),
+            | abi::Instruction::I32FromBool
+            | abi::Instruction::I32FromU8
+            | abi::Instruction::I32FromS8
+            | abi::Instruction::I32FromU16
+            | abi::Instruction::I32FromS16
+            | abi::Instruction::I32FromU32
+            | abi::Instruction::I32FromS32 => top_as("int32_t"),
             abi::Instruction::I64FromU64 | abi::Instruction::I64FromS64 => top_as("int64_t"),
             abi::Instruction::F32FromCoreF32 => top_as("float"),
             abi::Instruction::F64FromCoreF64 => top_as("double"),
@@ -2792,727 +2792,727 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             abi::Instruction::CoreF64FromF64 => top_as("double"),
             abi::Instruction::BoolFromI32 => top_as("bool"),
             abi::Instruction::ListCanonLower { realloc, .. } => {
-                        let tmp = self.tmp();
-                        let val = format!("vec{}", tmp);
-                        let ptr = format!("ptr{}", tmp);
-                        let len = format!("len{}", tmp);
-                        // let result = format!("result{}", tmp);
-                        self.push_str(&format!("auto const&{} = {};\n", val, operands[0]));
-                        if self.gen.gen.opts.host_side() {
-                            self.push_str(&format!("auto {} = {}.data();\n", ptr, val));
-                            self.push_str(&format!("auto {} = {}.size();\n", len, val));
-                        } else {
-                            self.push_str(&format!(
-                                "auto {} = ({})({}.data());\n",
-                                ptr,
-                                self.gen.gen.opts.ptr_type(),
-                                val
-                            ));
-                            self.push_str(&format!("auto {} = (size_t)({}.size());\n", len, val));
-                        }
-                        if realloc.is_none() {
-                            results.push(ptr);
-                        } else {
-                            if !self.gen.gen.opts.host_side()
-                                && !(self.gen.gen.opts.symmetric
-                                    && matches!(self.variant, AbiVariant::GuestImport))
-                            {
-                                uwriteln!(self.src, "{}.leak();\n", operands[0]);
-                            }
-                            results.push(ptr);
-                        }
-                        results.push(len);
+                let tmp = self.tmp();
+                let val = format!("vec{}", tmp);
+                let ptr = format!("ptr{}", tmp);
+                let len = format!("len{}", tmp);
+                // let result = format!("result{}", tmp);
+                self.push_str(&format!("auto const&{} = {};\n", val, operands[0]));
+                if self.gen.gen.opts.host_side() {
+                    self.push_str(&format!("auto {} = {}.data();\n", ptr, val));
+                    self.push_str(&format!("auto {} = {}.size();\n", len, val));
+                } else {
+                    self.push_str(&format!(
+                        "auto {} = ({})({}.data());\n",
+                        ptr,
+                        self.gen.gen.opts.ptr_type(),
+                        val
+                    ));
+                    self.push_str(&format!("auto {} = (size_t)({}.size());\n", len, val));
+                }
+                if realloc.is_none() {
+                    results.push(ptr);
+                } else {
+                    if !self.gen.gen.opts.host_side()
+                        && !(self.gen.gen.opts.symmetric
+                            && matches!(self.variant, AbiVariant::GuestImport))
+                    {
+                        uwriteln!(self.src, "{}.leak();\n", operands[0]);
                     }
+                    results.push(ptr);
+                }
+                results.push(len);
+            }
             abi::Instruction::StringLower { realloc } => {
-                        let tmp = self.tmp();
-                        let val = format!("vec{}", tmp);
-                        let ptr = format!("ptr{}", tmp);
-                        let len = format!("len{}", tmp);
-                        // let result = format!("result{}", tmp);
-                        self.push_str(&format!("auto const&{} = {};\n", val, operands[0]));
-                        if self.gen.gen.opts.host_side() {
-                            self.push_str(&format!("auto {} = {}.data();\n", ptr, val));
-                            self.push_str(&format!("auto {} = {}.size();\n", len, val));
-                        } else {
-                            self.push_str(&format!(
-                                "auto {} = ({})({}.data());\n",
-                                ptr,
-                                self.gen.gen.opts.ptr_type(),
-                                val
-                            ));
-                            self.push_str(&format!("auto {} = (size_t)({}.size());\n", len, val));
-                        }
-                        if realloc.is_none() {
-                            results.push(ptr);
-                        } else {
-                            if !self.gen.gen.opts.host_side()
-                                && !(self.gen.gen.opts.symmetric
-                                    && matches!(self.variant, AbiVariant::GuestImport))
-                            {
-                                uwriteln!(self.src, "{}.leak();\n", operands[0]);
-                            }
-                            results.push(ptr);
-                        }
-                        results.push(len);
+                let tmp = self.tmp();
+                let val = format!("vec{}", tmp);
+                let ptr = format!("ptr{}", tmp);
+                let len = format!("len{}", tmp);
+                // let result = format!("result{}", tmp);
+                self.push_str(&format!("auto const&{} = {};\n", val, operands[0]));
+                if self.gen.gen.opts.host_side() {
+                    self.push_str(&format!("auto {} = {}.data();\n", ptr, val));
+                    self.push_str(&format!("auto {} = {}.size();\n", len, val));
+                } else {
+                    self.push_str(&format!(
+                        "auto {} = ({})({}.data());\n",
+                        ptr,
+                        self.gen.gen.opts.ptr_type(),
+                        val
+                    ));
+                    self.push_str(&format!("auto {} = (size_t)({}.size());\n", len, val));
+                }
+                if realloc.is_none() {
+                    results.push(ptr);
+                } else {
+                    if !self.gen.gen.opts.host_side()
+                        && !(self.gen.gen.opts.symmetric
+                            && matches!(self.variant, AbiVariant::GuestImport))
+                    {
+                        uwriteln!(self.src, "{}.leak();\n", operands[0]);
                     }
+                    results.push(ptr);
+                }
+                results.push(len);
+            }
             abi::Instruction::ListLower {
-                        element: _,
-                        realloc,
-                    } => {
-                        let tmp = self.tmp();
-                        let val = format!("vec{}", tmp);
-                        let ptr = format!("ptr{}", tmp);
-                        let len = format!("len{}", tmp);
-                        self.push_str(&format!("auto const&{} = {};\n", val, operands[0]));
-                        if self.gen.gen.opts.host_side() {
-                            self.push_str(&format!("auto {} = {}.data();\n", ptr, val));
-                            self.push_str(&format!("auto {} = {}.size();\n", len, val));
-                        } else {
-                            self.push_str(&format!(
-                                "auto {} = ({})({}.data());\n",
-                                ptr,
-                                self.gen.gen.opts.ptr_type(),
-                                val
-                            ));
-                            self.push_str(&format!("auto {} = (size_t)({}.size());\n", len, val));
-                        }
-                        if realloc.is_none() {
-                            results.push(ptr);
-                        } else {
-                            if !self.gen.gen.opts.host_side()
-                                && !(self.gen.gen.opts.symmetric
-                                    && matches!(self.variant, AbiVariant::GuestImport))
-                            {
-                                uwriteln!(self.src, "{}.leak();\n", operands[0]);
-                            }
-                            results.push(ptr);
-                        }
-                        results.push(len);
+                element: _,
+                realloc,
+            } => {
+                let tmp = self.tmp();
+                let val = format!("vec{}", tmp);
+                let ptr = format!("ptr{}", tmp);
+                let len = format!("len{}", tmp);
+                self.push_str(&format!("auto const&{} = {};\n", val, operands[0]));
+                if self.gen.gen.opts.host_side() {
+                    self.push_str(&format!("auto {} = {}.data();\n", ptr, val));
+                    self.push_str(&format!("auto {} = {}.size();\n", len, val));
+                } else {
+                    self.push_str(&format!(
+                        "auto {} = ({})({}.data());\n",
+                        ptr,
+                        self.gen.gen.opts.ptr_type(),
+                        val
+                    ));
+                    self.push_str(&format!("auto {} = (size_t)({}.size());\n", len, val));
+                }
+                if realloc.is_none() {
+                    results.push(ptr);
+                } else {
+                    if !self.gen.gen.opts.host_side()
+                        && !(self.gen.gen.opts.symmetric
+                            && matches!(self.variant, AbiVariant::GuestImport))
+                    {
+                        uwriteln!(self.src, "{}.leak();\n", operands[0]);
                     }
+                    results.push(ptr);
+                }
+                results.push(len);
+            }
             abi::Instruction::ListCanonLift { element, .. } => {
-                        let tmp = self.tmp();
-                        let len = format!("len{}", tmp);
-                        let inner = self
-                            .gen
-                            .type_name(element, &self.namespace, Flavor::InStruct);
-                        self.push_str(&format!("auto {} = {};\n", len, operands[1]));
-                        let result = if self.gen.gen.opts.host {
-                            uwriteln!(self.src, "{inner} const* ptr{tmp} = ({inner} const*)wasm_runtime_addr_app_to_native(wasm_runtime_get_module_inst(exec_env), {});\n", operands[0]);
-                            format!("wit::span<{inner} const>(ptr{}, (size_t){len})", tmp)
-                        } else if self.gen.gen.opts.new_api
-                            && matches!(self.variant, AbiVariant::GuestExport)
-                        {
-                            if self.gen.gen.opts.symmetric {
-                                format!(
-                                    "wit::span<{inner} const>(({inner}*)({}), {len})",
-                                    operands[0]
-                                )
-                            } else {
-                                format!(
-                                    "wit::vector<{inner} const>(({inner}*)({}), {len}).get_view()",
-                                    operands[0]
-                                )
-                            }
-                        } else {
-                            format!("wit::vector<{inner}>(({inner}*)({}), {len})", operands[0])
-                        };
-                        results.push(result);
+                let tmp = self.tmp();
+                let len = format!("len{}", tmp);
+                let inner = self
+                    .gen
+                    .type_name(element, &self.namespace, Flavor::InStruct);
+                self.push_str(&format!("auto {} = {};\n", len, operands[1]));
+                let result = if self.gen.gen.opts.host {
+                    uwriteln!(self.src, "{inner} const* ptr{tmp} = ({inner} const*)wasm_runtime_addr_app_to_native(wasm_runtime_get_module_inst(exec_env), {});\n", operands[0]);
+                    format!("wit::span<{inner} const>(ptr{}, (size_t){len})", tmp)
+                } else if self.gen.gen.opts.new_api
+                    && matches!(self.variant, AbiVariant::GuestExport)
+                {
+                    if self.gen.gen.opts.symmetric {
+                        format!(
+                            "wit::span<{inner} const>(({inner}*)({}), {len})",
+                            operands[0]
+                        )
+                    } else {
+                        format!(
+                            "wit::vector<{inner} const>(({inner}*)({}), {len}).get_view()",
+                            operands[0]
+                        )
                     }
+                } else {
+                    format!("wit::vector<{inner}>(({inner}*)({}), {len})", operands[0])
+                };
+                results.push(result);
+            }
             abi::Instruction::StringLift => {
-                        let tmp = self.tmp();
-                        let len = format!("len{}", tmp);
-                        uwriteln!(self.src, "auto {} = {};\n", len, operands[1]);
-                        let result = if self.gen.gen.opts.symmetric
-                            && !self.gen.gen.opts.new_api
-                            && matches!(self.variant, AbiVariant::GuestExport)
-                        {
-                            uwriteln!(self.src, "auto string{tmp} = wit::string::from_view(std::string_view((char const *)({}), {len}));\n", operands[0]);
-                            format!("std::move(string{tmp})")
-                        } else if self.gen.gen.opts.host {
-                            uwriteln!(self.src, "char const* ptr{} = (char const*)wasm_runtime_addr_app_to_native(wasm_runtime_get_module_inst(exec_env), {});\n", tmp, operands[0]);
-                            format!("std::string_view(ptr{}, {len})", tmp)
-                        } else if self.gen.gen.opts.short_cut
-                            || (self.gen.gen.opts.new_api
-                                && matches!(self.variant, AbiVariant::GuestExport))
-                        {
-                            if self.gen.gen.opts.new_api
-                                && matches!(self.variant, AbiVariant::GuestExport)
-                                && !self.gen.gen.opts.symmetric
-                            {
-                                assert!(self.needs_dealloc);
-                                uwriteln!(
-                                    self.src,
-                                    "if ({len}>0) _deallocate.push_back({});\n",
-                                    operands[0]
-                                );
-                            }
-                            format!("std::string_view((char const*)({}), {len})", operands[0])
-                        } else {
-                            format!("wit::string((char const*)({}), {len})", operands[0])
-                        };
-                        results.push(result);
-                    }
-            abi::Instruction::ListLift { element, .. } => {
-                        let body = self.blocks.pop().unwrap();
-                        let tmp = self.tmp();
-                        let size = self.gen.sizes.size(element);
-                        let _align = self.gen.sizes.align(element);
-                        let flavor = if self.gen.gen.opts.new_api
-                            && matches!(self.variant, AbiVariant::GuestExport)
-                        {
-                            Flavor::BorrowedArgument
-                        } else {
-                            Flavor::InStruct
-                        };
-                        let vtype = self.gen.type_name(element, &self.namespace, flavor);
-                        let len = format!("len{tmp}");
-                        let base = format!("base{tmp}");
-                        let result = format!("result{tmp}");
-                        self.push_str(&format!(
-                            "auto {base} = {operand0};\n",
-                            operand0 = operands[0]
-                        ));
-                        self.push_str(&format!(
-                            "auto {len} = {operand1};\n",
-                            operand1 = operands[1]
-                        ));
-                        self.push_str(&format!(
-                            r#"auto {result} = wit::vector<{vtype}>::allocate({len});
-                    "#,
-                        ));
-                        if self.gen.gen.opts.new_api
-                            && matches!(self.variant, AbiVariant::GuestExport)
-                            && !self.gen.gen.opts.symmetric
-                        {
-                            assert!(self.needs_dealloc);
-                            self.push_str(&format!("if ({len}>0) _deallocate.push_back({base});\n"));
-                        }
-
-                        uwriteln!(self.src, "for (unsigned i=0; i<{len}; ++i) {{");
+                let tmp = self.tmp();
+                let len = format!("len{}", tmp);
+                uwriteln!(self.src, "auto {} = {};\n", len, operands[1]);
+                let result = if self.gen.gen.opts.symmetric
+                    && !self.gen.gen.opts.new_api
+                    && matches!(self.variant, AbiVariant::GuestExport)
+                {
+                    uwriteln!(self.src, "auto string{tmp} = wit::string::from_view(std::string_view((char const *)({}), {len}));\n", operands[0]);
+                    format!("std::move(string{tmp})")
+                } else if self.gen.gen.opts.host {
+                    uwriteln!(self.src, "char const* ptr{} = (char const*)wasm_runtime_addr_app_to_native(wasm_runtime_get_module_inst(exec_env), {});\n", tmp, operands[0]);
+                    format!("std::string_view(ptr{}, {len})", tmp)
+                } else if self.gen.gen.opts.short_cut
+                    || (self.gen.gen.opts.new_api
+                        && matches!(self.variant, AbiVariant::GuestExport))
+                {
+                    if self.gen.gen.opts.new_api
+                        && matches!(self.variant, AbiVariant::GuestExport)
+                        && !self.gen.gen.opts.symmetric
+                    {
+                        assert!(self.needs_dealloc);
                         uwriteln!(
                             self.src,
-                            "auto base = {base} + i * {size};",
-                            size = size.format(POINTER_SIZE_EXPRESSION)
+                            "if ({len}>0) _deallocate.push_back({});\n",
+                            operands[0]
                         );
-                        uwrite!(self.src, "{}", body.0);
-                        uwriteln!(self.src, "auto e{tmp} = {};", body.1[0]);
-                        if let Some(code) = self.leak_on_insertion.take() {
-                            assert!(self.needs_dealloc);
-                            uwriteln!(self.src, "{code}");
-                        }
-                        // inplace construct
-                        uwriteln!(self.src, "{result}.initialize(i, std::move(e{tmp}));");
-                        uwriteln!(self.src, "}}");
-                        if self.gen.gen.opts.new_api
-                            && matches!(self.variant, AbiVariant::GuestImport)
-                            && self.gen.gen.opts.symmetric
-                        {
-                            // we converted the result, free the returned vector
-                            uwriteln!(self.src, "free({base});");
-                        }
-                        if self.gen.gen.opts.new_api && matches!(self.variant, AbiVariant::GuestExport) {
-                            results.push(format!("{result}.get_const_view()"));
-                            if !self.gen.gen.opts.symmetric
-                                || (self.gen.gen.opts.new_api
-                                    && matches!(self.variant, AbiVariant::GuestExport))
-                            {
-                                self.leak_on_insertion.replace(format!(
-                                    "if ({len}>0) _deallocate.push_back((void*){result}.leak());\n"
-                                ));
-                            }
-                        } else {
-                            results.push(format!("std::move({result})"));
-                        }
                     }
+                    format!("std::string_view((char const*)({}), {len})", operands[0])
+                } else {
+                    format!("wit::string((char const*)({}), {len})", operands[0])
+                };
+                results.push(result);
+            }
+            abi::Instruction::ListLift { element, .. } => {
+                let body = self.blocks.pop().unwrap();
+                let tmp = self.tmp();
+                let size = self.gen.sizes.size(element);
+                let _align = self.gen.sizes.align(element);
+                let flavor = if self.gen.gen.opts.new_api
+                    && matches!(self.variant, AbiVariant::GuestExport)
+                {
+                    Flavor::BorrowedArgument
+                } else {
+                    Flavor::InStruct
+                };
+                let vtype = self.gen.type_name(element, &self.namespace, flavor);
+                let len = format!("len{tmp}");
+                let base = format!("base{tmp}");
+                let result = format!("result{tmp}");
+                self.push_str(&format!(
+                    "auto {base} = {operand0};\n",
+                    operand0 = operands[0]
+                ));
+                self.push_str(&format!(
+                    "auto {len} = {operand1};\n",
+                    operand1 = operands[1]
+                ));
+                self.push_str(&format!(
+                    r#"auto {result} = wit::vector<{vtype}>::allocate({len});
+                    "#,
+                ));
+                if self.gen.gen.opts.new_api
+                    && matches!(self.variant, AbiVariant::GuestExport)
+                    && !self.gen.gen.opts.symmetric
+                {
+                    assert!(self.needs_dealloc);
+                    self.push_str(&format!("if ({len}>0) _deallocate.push_back({base});\n"));
+                }
+
+                uwriteln!(self.src, "for (unsigned i=0; i<{len}; ++i) {{");
+                uwriteln!(
+                    self.src,
+                    "auto base = {base} + i * {size};",
+                    size = size.format(POINTER_SIZE_EXPRESSION)
+                );
+                uwrite!(self.src, "{}", body.0);
+                uwriteln!(self.src, "auto e{tmp} = {};", body.1[0]);
+                if let Some(code) = self.leak_on_insertion.take() {
+                    assert!(self.needs_dealloc);
+                    uwriteln!(self.src, "{code}");
+                }
+                // inplace construct
+                uwriteln!(self.src, "{result}.initialize(i, std::move(e{tmp}));");
+                uwriteln!(self.src, "}}");
+                if self.gen.gen.opts.new_api
+                    && matches!(self.variant, AbiVariant::GuestImport)
+                    && self.gen.gen.opts.symmetric
+                {
+                    // we converted the result, free the returned vector
+                    uwriteln!(self.src, "free({base});");
+                }
+                if self.gen.gen.opts.new_api && matches!(self.variant, AbiVariant::GuestExport) {
+                    results.push(format!("{result}.get_const_view()"));
+                    if !self.gen.gen.opts.symmetric
+                        || (self.gen.gen.opts.new_api
+                            && matches!(self.variant, AbiVariant::GuestExport))
+                    {
+                        self.leak_on_insertion.replace(format!(
+                            "if ({len}>0) _deallocate.push_back((void*){result}.leak());\n"
+                        ));
+                    }
+                } else {
+                    results.push(format!("std::move({result})"));
+                }
+            }
             abi::Instruction::IterElem { .. } => results.push("IterElem".to_string()),
             abi::Instruction::IterBasePointer => results.push("base".to_string()),
             abi::Instruction::RecordLower { record, .. } => {
-                        let op = &operands[0];
-                        for f in record.fields.iter() {
-                            results.push(format!("({}).{}", op, to_c_ident(&f.name)));
-                        }
-                    }
+                let op = &operands[0];
+                for f in record.fields.iter() {
+                    results.push(format!("({}).{}", op, to_c_ident(&f.name)));
+                }
+            }
             abi::Instruction::RecordLift { record, ty, .. } => {
-                        //                let t = self.gen.resolve().types[*ty];
-                        let mut result =
-                            self.gen
-                                .type_name(&Type::Id(*ty), &self.namespace, Flavor::InStruct);
-                        // self.typename_lift(*ty);
-                        result.push_str("{");
-                        for (_field, val) in record.fields.iter().zip(operands) {
-                            result.push_str("std::move(");
-                            result.push_str(&val);
-                            result.push_str("), ");
-                        }
-                        result.push_str("}");
-                        results.push(result);
-                    }
+                //                let t = self.gen.resolve().types[*ty];
+                let mut result =
+                    self.gen
+                        .type_name(&Type::Id(*ty), &self.namespace, Flavor::InStruct);
+                // self.typename_lift(*ty);
+                result.push_str("{");
+                for (_field, val) in record.fields.iter().zip(operands) {
+                    result.push_str("std::move(");
+                    result.push_str(&val);
+                    result.push_str("), ");
+                }
+                result.push_str("}");
+                results.push(result);
+            }
             abi::Instruction::HandleLower {
-                        handle: Handle::Own(_ty),
-                        ..
-                    } => {
-                        let op = &operands[0];
-                        if self.gen.gen.opts.host_side() {
-                            if matches!(self.variant, AbiVariant::GuestImport) {
-                                results.push(format!("{op}.release()->get_handle()"));
-                            } else {
-                                let tmp = self.tmp();
-                                let var = self.tempname("rep", tmp);
-                                uwriteln!(self.src, "auto {var} = {op}.take_rep();");
-                                results.push(format!("{op}.get_handle()"));
-                            }
-                        } else {
-                            if matches!(self.variant, AbiVariant::GuestImport) {
-                                results.push(format!("{op}.into_handle()"));
-                            } else {
-                                results.push(format!("{op}.release()->handle"));
-                            }
-                        }
+                handle: Handle::Own(_ty),
+                ..
+            } => {
+                let op = &operands[0];
+                if self.gen.gen.opts.host_side() {
+                    if matches!(self.variant, AbiVariant::GuestImport) {
+                        results.push(format!("{op}.release()->get_handle()"));
+                    } else {
+                        let tmp = self.tmp();
+                        let var = self.tempname("rep", tmp);
+                        uwriteln!(self.src, "auto {var} = {op}.take_rep();");
+                        results.push(format!("{op}.get_handle()"));
                     }
+                } else {
+                    if matches!(self.variant, AbiVariant::GuestImport) {
+                        results.push(format!("{op}.into_handle()"));
+                    } else {
+                        results.push(format!("{op}.release()->handle"));
+                    }
+                }
+            }
             abi::Instruction::HandleLower {
-                        handle: Handle::Borrow(_),
-                        ..
-                    } => {
-                        let op = &operands[0];
-                        if self.gen.gen.opts.host_side() {
-                            if op == "(*this)" {
-                                results.push(format!("{op}.get_rep()"));
-                            } else {
-                                results.push(format!("{op}.get().get_rep()"));
-                            }
-                        } else if op == "(*this)" {
-                            // TODO is there a better way to decide?
-                            results.push(format!("{op}.get_handle()"));
-                        } else {
-                            results.push(format!("{op}.get().get_handle()"));
-                        }
+                handle: Handle::Borrow(_),
+                ..
+            } => {
+                let op = &operands[0];
+                if self.gen.gen.opts.host_side() {
+                    if op == "(*this)" {
+                        results.push(format!("{op}.get_rep()"));
+                    } else {
+                        results.push(format!("{op}.get().get_rep()"));
                     }
+                } else if op == "(*this)" {
+                    // TODO is there a better way to decide?
+                    results.push(format!("{op}.get_handle()"));
+                } else {
+                    results.push(format!("{op}.get().get_handle()"));
+                }
+            }
             abi::Instruction::HandleLift { handle, .. } => {
-                        let op = &operands[0];
-                        match (handle, self.gen.gen.opts.host_side()) {
-                            (Handle::Own(ty), true) => match self.variant {
-                                AbiVariant::GuestExport => {
-                                    results.push(format!("wit::{RESOURCE_EXPORT_BASE_CLASS_NAME}{{{op}}}"))
-                                }
-                                AbiVariant::GuestImport => {
-                                    let tmp = self.tmp();
-                                    let var = self.tempname("obj", tmp);
-                                    let tname = self.gen.type_name(
-                                        &Type::Id(*ty),
-                                        &self.namespace,
-                                        Flavor::Argument(self.variant),
-                                    );
-                                    uwriteln!(
-                                        self.src,
-                                        "auto {var} = {tname}::remove_resource({op});
-                                assert({var}.has_value());"
-                                    );
-                                    results.push(format!("{tname}::Owned(*{var})"));
-                                }
-                                AbiVariant::GuestImportAsync => todo!(),
-                                AbiVariant::GuestExportAsync => todo!(),
-                                AbiVariant::GuestExportAsyncStackful => todo!(),
-                            },
-                            (Handle::Own(ty), false) => match self.variant {
-                                AbiVariant::GuestImport => {
-                                    results.push(format!("wit::{RESOURCE_IMPORT_BASE_CLASS_NAME}{{{op}}}"))
-                                }
-                                AbiVariant::GuestExport => {
-                                    let tmp = self.tmp();
-                                    let var = self.tempname("obj", tmp);
-                                    let tname = self.gen.type_name(
-                                        &Type::Id(*ty),
-                                        &self.namespace,
-                                        Flavor::Argument(self.variant),
-                                    );
-                                    uwriteln!(
-                                        self.src,
-                                        "auto {var} = {tname}::Owned({tname}::ResourceRep({op}));"
-                                    );
-                                    if !self.gen.gen.opts.symmetric {
-                                        uwriteln!(self.src, "{var}->into_handle();");
-                                    }
-                                    results.push(format!("std::move({var})"))
-                                }
-                                AbiVariant::GuestImportAsync => todo!(),
-                                AbiVariant::GuestExportAsync => todo!(),
-                                AbiVariant::GuestExportAsyncStackful => todo!(),
-                            },
-                            (Handle::Borrow(ty), true) => {
-                                let tname = self.gen.type_name(
-                                    &Type::Id(*ty),
-                                    &self.namespace,
-                                    Flavor::Argument(self.variant),
-                                );
-                                results.push(format!("**{tname}::lookup_resource({op})"));
-                            }
-                            (Handle::Borrow(ty), false) => match self.variant {
-                                AbiVariant::GuestImport => results.push(op.clone()),
-                                AbiVariant::GuestExport => {
-                                    let tname = self.gen.type_name(
-                                        &Type::Id(*ty),
-                                        &self.namespace,
-                                        Flavor::Argument(self.variant),
-                                    );
-                                    results.push(format!("std::ref(*({tname} *){op})"));
-                                }
-                                AbiVariant::GuestImportAsync => todo!(),
-                                AbiVariant::GuestExportAsync => todo!(),
-                                AbiVariant::GuestExportAsyncStackful => todo!(),
-                            },
+                let op = &operands[0];
+                match (handle, self.gen.gen.opts.host_side()) {
+                    (Handle::Own(ty), true) => match self.variant {
+                        AbiVariant::GuestExport => {
+                            results.push(format!("wit::{RESOURCE_EXPORT_BASE_CLASS_NAME}{{{op}}}"))
                         }
-                    }
-            abi::Instruction::TupleLower { tuple, .. } => {
-                        let op = &operands[0];
-                        for n in 0..tuple.types.len() {
-                            results.push(format!("std::get<{n}>({op})"));
-                        }
-                    }
-            abi::Instruction::TupleLift { tuple, .. } => {
-                        let name = format!("tuple{}", self.tmp());
-                        uwrite!(self.src, "auto {name} = std::tuple<");
-                        self.src.push_str(
-                            &(tuple
-                                .types
-                                .iter()
-                                .map(|t| self.gen.type_name(t, &self.namespace, Flavor::InStruct)))
-                            .collect::<Vec<_>>()
-                            .join(", "),
-                        );
-                        self.src.push_str(">(");
-                        self.src.push_str(&operands.join(", "));
-                        self.src.push_str(");\n");
-                        results.push(format!("std::move({name})"));
-                    }
-            abi::Instruction::FlagsLower { flags, ty, .. } => {
-                        match wit_bindgen_c::flags_repr(flags) {
-                            Int::U8 | Int::U16 | Int::U32 => {
-                                results.push(format!("((int32_t){})", operands.pop().unwrap()));
-                            }
-                            Int::U64 => {
-                                let name =
-                                    self.gen
-                                        .type_name(&Type::Id(*ty), &self.namespace, Flavor::InStruct);
-                                let tmp = self.tmp();
-                                let tempname = self.tempname("flags", tmp);
-                                uwriteln!(self.src, "{name} {tempname} = {};", operands[0]);
-                                results.push(format!("(int32_t)(((uint64_t){tempname}) & 0xffffffff)"));
-                                results.push(format!(
-                                    "(int32_t)((((uint64_t){tempname}) >> 32) & 0xffffffff)"
-                                ));
-                            }
-                        }
-                    }
-            abi::Instruction::FlagsLift { flags, ty, .. } => {
-                        let typename =
-                            self.gen
-                                .type_name(&Type::Id(*ty), &self.namespace, Flavor::InStruct);
-                        match wit_bindgen_c::flags_repr(flags) {
-                            Int::U8 | Int::U16 | Int::U32 => {
-                                results.push(format!("(({typename}){})", operands.pop().unwrap()));
-                            }
-                            Int::U64 => {
-                                let op0 = &operands[0];
-                                let op1 = &operands[1];
-                                results.push(format!(
-                                    "(({typename})(({op0}) | (((uint64_t)({op1})) << 32)))"
-                                ));
-                            }
-                        }
-                    }
-            abi::Instruction::VariantPayloadName => {
-                        let name = format!("payload{}", self.tmp());
-                        results.push(name.clone());
-                        self.payloads.push(name);
-                    }
-            abi::Instruction::VariantLower {
-                        variant,
-                        results: result_types,
-                        ..
-                    } => {
-                        //let name = self.gen.type_name(*ty);
-                        // let op0 = &operands[0];
-                        // self.push_str(&format!("({name}){op0}"));
-                        let blocks = self
-                            .blocks
-                            .drain(self.blocks.len() - variant.cases.len()..)
-                            .collect::<Vec<_>>();
-                        let payloads = self
-                            .payloads
-                            .drain(self.payloads.len() - variant.cases.len()..)
-                            .collect::<Vec<_>>();
-
-                        let mut variant_results = Vec::with_capacity(result_types.len());
-                        for ty in result_types.iter() {
-                            let name = format!("variant{}", self.tmp());
-                            results.push(name.clone());
-                            self.src.push_str(self.gen.gen.opts.wasm_type(*ty));
-                            self.src.push_str(" ");
-                            self.src.push_str(&name);
-                            self.src.push_str(";\n");
-                            variant_results.push(name);
-                        }
-
-                        let expr_to_match = format!("({}).tag", operands[0]);
-
-                        uwriteln!(self.src, "switch ((int32_t) {}) {{", expr_to_match);
-                        for (i, ((case, (block, block_results)), payload)) in
-                            variant.cases.iter().zip(blocks).zip(payloads).enumerate()
-                        {
-                            uwriteln!(self.src, "case {}: {{", i);
-                            if let Some(ty) = case.ty.as_ref() {
-                                let ty = self.gen.type_name(ty, &self.namespace, Flavor::InStruct);
-                                uwrite!(
-                                    self.src,
-                                    "const {} *{} = &({}).val",
-                                    ty,
-                                    payload,
-                                    operands[0],
-                                );
-                                self.src.push_str(".");
-                                self.src.push_str(&to_c_ident(&case.name));
-                                self.src.push_str(";\n");
-                            }
-                            self.src.push_str(&block);
-
-                            for (name, result) in variant_results.iter().zip(&block_results) {
-                                uwriteln!(self.src, "{} = {};", name, result);
-                            }
-                            self.src.push_str("break;\n}\n");
-                        }
-                        self.src.push_str("}\n");
-                    }
-            abi::Instruction::VariantLift { variant, ty, .. } => {
-                        let mut result = String::new();
-                        result.push_str("{");
-
-                        let named_enum = variant.cases.iter().all(|c| c.ty.is_none());
-                        // let blocks = self
-                        //     .blocks
-                        //     .drain(self.blocks.len() - variant.cases.len()..)
-                        //     .collect::<Vec<_>>();
-                        let op0 = &operands[0];
-
-                        if named_enum {
-                            // In unchecked mode when this type is a named enum then we know we
-                            // defined the type so we can transmute directly into it.
-                            // result.push_str("#[cfg(not(debug_assertions))]");
-                            // result.push_str("{");
-                            // result.push_str("::core::mem::transmute::<_, ");
-                            // result.push_str(&name.to_upper_camel_case());
-                            // result.push_str(">(");
-                            // result.push_str(op0);
-                            // result.push_str(" as ");
-                            // result.push_str(int_repr(variant.tag()));
-                            // result.push_str(")");
-                            // result.push_str("}");
-                        }
-
-                        // if named_enum {
-                        //     result.push_str("#[cfg(debug_assertions)]");
-                        // }
-                        let blocks: Vec<String> = Vec::new();
-                        result.push_str("{");
-                        result.push_str(&format!("match {op0} {{\n"));
-                        let name = self.typename_lift(*ty);
-                        for (i, (case, block)) in variant.cases.iter().zip(blocks).enumerate() {
-                            let pat = i.to_string();
-                            let block = if case.ty.is_some() {
-                                format!("({block})")
-                            } else {
-                                String::new()
-                            };
-                            let case = case.name.to_upper_camel_case();
-                            // if i == variant.cases.len() - 1 {
-                            //     result.push_str("#[cfg(debug_assertions)]");
-                            //     result.push_str(&format!("{pat} => {name}::{case}{block},\n"));
-                            //     result.push_str("#[cfg(not(debug_assertions))]");
-                            //     result.push_str(&format!("_ => {name}::{case}{block},\n"));
-                            // } else {
-                            result.push_str(&format!("{pat} => {name}::{case}{block},\n"));
-                            // }
-                        }
-                        // result.push_str("#[cfg(debug_assertions)]");
-                        // result.push_str("_ => panic!(\"invalid enum discriminant\"),\n");
-                        result.push_str("}");
-                        result.push_str("}");
-
-                        result.push_str("}");
-                        results.push(result);
-                    }
-            abi::Instruction::EnumLower { .. } => results.push(format!("int32_t({})", operands[0])),
-            abi::Instruction::EnumLift { ty, .. } => {
-                        let typename =
-                            self.gen
-                                .type_name(&Type::Id(*ty), &self.namespace, Flavor::InStruct);
-                        results.push(format!("({typename}){}", &operands[0]));
-                    }
-            abi::Instruction::OptionLower {
-                        payload,
-                        results: result_types,
-                        ..
-                    } => {
-                        let (mut some, some_results) = self.blocks.pop().unwrap();
-                        let (mut none, none_results) = self.blocks.pop().unwrap();
-                        let some_payload = self.payloads.pop().unwrap();
-                        let _none_payload = self.payloads.pop().unwrap();
-
-                        for (i, ty) in result_types.iter().enumerate() {
+                        AbiVariant::GuestImport => {
                             let tmp = self.tmp();
-                            let name = self.tempname("option", tmp);
-                            results.push(name.clone());
-                            self.src.push_str(self.gen.gen.opts.wasm_type(*ty));
-                            self.src.push_str(" ");
-                            self.src.push_str(&name);
-                            self.src.push_str(";\n");
-                            let some_result = &some_results[i];
-                            uwriteln!(some, "{name} = {some_result};");
-                            let none_result = &none_results[i];
-                            uwriteln!(none, "{name} = {none_result};");
+                            let var = self.tempname("obj", tmp);
+                            let tname = self.gen.type_name(
+                                &Type::Id(*ty),
+                                &self.namespace,
+                                Flavor::Argument(self.variant),
+                            );
+                            uwriteln!(
+                                self.src,
+                                "auto {var} = {tname}::remove_resource({op});
+                                assert({var}.has_value());"
+                            );
+                            results.push(format!("{tname}::Owned(*{var})"));
                         }
-
+                        AbiVariant::GuestImportAsync => todo!(),
+                        AbiVariant::GuestExportAsync => todo!(),
+                        AbiVariant::GuestExportAsyncStackful => todo!(),
+                    },
+                    (Handle::Own(ty), false) => match self.variant {
+                        AbiVariant::GuestImport => {
+                            results.push(format!("wit::{RESOURCE_IMPORT_BASE_CLASS_NAME}{{{op}}}"))
+                        }
+                        AbiVariant::GuestExport => {
+                            let tmp = self.tmp();
+                            let var = self.tempname("obj", tmp);
+                            let tname = self.gen.type_name(
+                                &Type::Id(*ty),
+                                &self.namespace,
+                                Flavor::Argument(self.variant),
+                            );
+                            uwriteln!(
+                                self.src,
+                                "auto {var} = {tname}::Owned({tname}::ResourceRep({op}));"
+                            );
+                            if !self.gen.gen.opts.symmetric {
+                                uwriteln!(self.src, "{var}->into_handle();");
+                            }
+                            results.push(format!("std::move({var})"))
+                        }
+                        AbiVariant::GuestImportAsync => todo!(),
+                        AbiVariant::GuestExportAsync => todo!(),
+                        AbiVariant::GuestExportAsyncStackful => todo!(),
+                    },
+                    (Handle::Borrow(ty), true) => {
+                        let tname = self.gen.type_name(
+                            &Type::Id(*ty),
+                            &self.namespace,
+                            Flavor::Argument(self.variant),
+                        );
+                        results.push(format!("**{tname}::lookup_resource({op})"));
+                    }
+                    (Handle::Borrow(ty), false) => match self.variant {
+                        AbiVariant::GuestImport => results.push(op.clone()),
+                        AbiVariant::GuestExport => {
+                            let tname = self.gen.type_name(
+                                &Type::Id(*ty),
+                                &self.namespace,
+                                Flavor::Argument(self.variant),
+                            );
+                            results.push(format!("std::ref(*({tname} *){op})"));
+                        }
+                        AbiVariant::GuestImportAsync => todo!(),
+                        AbiVariant::GuestExportAsync => todo!(),
+                        AbiVariant::GuestExportAsyncStackful => todo!(),
+                    },
+                }
+            }
+            abi::Instruction::TupleLower { tuple, .. } => {
+                let op = &operands[0];
+                for n in 0..tuple.types.len() {
+                    results.push(format!("std::get<{n}>({op})"));
+                }
+            }
+            abi::Instruction::TupleLift { tuple, .. } => {
+                let name = format!("tuple{}", self.tmp());
+                uwrite!(self.src, "auto {name} = std::tuple<");
+                self.src.push_str(
+                    &(tuple
+                        .types
+                        .iter()
+                        .map(|t| self.gen.type_name(t, &self.namespace, Flavor::InStruct)))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                );
+                self.src.push_str(">(");
+                self.src.push_str(&operands.join(", "));
+                self.src.push_str(");\n");
+                results.push(format!("std::move({name})"));
+            }
+            abi::Instruction::FlagsLower { flags, ty, .. } => {
+                match wit_bindgen_c::flags_repr(flags) {
+                    Int::U8 | Int::U16 | Int::U32 => {
+                        results.push(format!("((int32_t){})", operands.pop().unwrap()));
+                    }
+                    Int::U64 => {
+                        let name =
+                            self.gen
+                                .type_name(&Type::Id(*ty), &self.namespace, Flavor::InStruct);
+                        let tmp = self.tmp();
+                        let tempname = self.tempname("flags", tmp);
+                        uwriteln!(self.src, "{name} {tempname} = {};", operands[0]);
+                        results.push(format!("(int32_t)(((uint64_t){tempname}) & 0xffffffff)"));
+                        results.push(format!(
+                            "(int32_t)((((uint64_t){tempname}) >> 32) & 0xffffffff)"
+                        ));
+                    }
+                }
+            }
+            abi::Instruction::FlagsLift { flags, ty, .. } => {
+                let typename =
+                    self.gen
+                        .type_name(&Type::Id(*ty), &self.namespace, Flavor::InStruct);
+                match wit_bindgen_c::flags_repr(flags) {
+                    Int::U8 | Int::U16 | Int::U32 => {
+                        results.push(format!("(({typename}){})", operands.pop().unwrap()));
+                    }
+                    Int::U64 => {
                         let op0 = &operands[0];
-                        let flavor = if self.gen.gen.opts.new_api
-                            && matches!(self.variant, AbiVariant::GuestImport)
-                        {
-                            Flavor::BorrowedArgument
-                        } else {
-                            Flavor::InStruct
-                        };
-                        let ty = self.gen.type_name(payload, &self.namespace, flavor);
-                        let bind_some = format!("{ty} {some_payload} = (std::move({op0})).value();");
+                        let op1 = &operands[1];
+                        results.push(format!(
+                            "(({typename})(({op0}) | (((uint64_t)({op1})) << 32)))"
+                        ));
+                    }
+                }
+            }
+            abi::Instruction::VariantPayloadName => {
+                let name = format!("payload{}", self.tmp());
+                results.push(name.clone());
+                self.payloads.push(name);
+            }
+            abi::Instruction::VariantLower {
+                variant,
+                results: result_types,
+                ..
+            } => {
+                //let name = self.gen.type_name(*ty);
+                // let op0 = &operands[0];
+                // self.push_str(&format!("({name}){op0}"));
+                let blocks = self
+                    .blocks
+                    .drain(self.blocks.len() - variant.cases.len()..)
+                    .collect::<Vec<_>>();
+                let payloads = self
+                    .payloads
+                    .drain(self.payloads.len() - variant.cases.len()..)
+                    .collect::<Vec<_>>();
 
+                let mut variant_results = Vec::with_capacity(result_types.len());
+                for ty in result_types.iter() {
+                    let name = format!("variant{}", self.tmp());
+                    results.push(name.clone());
+                    self.src.push_str(self.gen.gen.opts.wasm_type(*ty));
+                    self.src.push_str(" ");
+                    self.src.push_str(&name);
+                    self.src.push_str(";\n");
+                    variant_results.push(name);
+                }
+
+                let expr_to_match = format!("({}).tag", operands[0]);
+
+                uwriteln!(self.src, "switch ((int32_t) {}) {{", expr_to_match);
+                for (i, ((case, (block, block_results)), payload)) in
+                    variant.cases.iter().zip(blocks).zip(payloads).enumerate()
+                {
+                    uwriteln!(self.src, "case {}: {{", i);
+                    if let Some(ty) = case.ty.as_ref() {
+                        let ty = self.gen.type_name(ty, &self.namespace, Flavor::InStruct);
                         uwrite!(
                             self.src,
-                            "\
+                            "const {} *{} = &({}).val",
+                            ty,
+                            payload,
+                            operands[0],
+                        );
+                        self.src.push_str(".");
+                        self.src.push_str(&to_c_ident(&case.name));
+                        self.src.push_str(";\n");
+                    }
+                    self.src.push_str(&block);
+
+                    for (name, result) in variant_results.iter().zip(&block_results) {
+                        uwriteln!(self.src, "{} = {};", name, result);
+                    }
+                    self.src.push_str("break;\n}\n");
+                }
+                self.src.push_str("}\n");
+            }
+            abi::Instruction::VariantLift { variant, ty, .. } => {
+                let mut result = String::new();
+                result.push_str("{");
+
+                let named_enum = variant.cases.iter().all(|c| c.ty.is_none());
+                // let blocks = self
+                //     .blocks
+                //     .drain(self.blocks.len() - variant.cases.len()..)
+                //     .collect::<Vec<_>>();
+                let op0 = &operands[0];
+
+                if named_enum {
+                    // In unchecked mode when this type is a named enum then we know we
+                    // defined the type so we can transmute directly into it.
+                    // result.push_str("#[cfg(not(debug_assertions))]");
+                    // result.push_str("{");
+                    // result.push_str("::core::mem::transmute::<_, ");
+                    // result.push_str(&name.to_upper_camel_case());
+                    // result.push_str(">(");
+                    // result.push_str(op0);
+                    // result.push_str(" as ");
+                    // result.push_str(int_repr(variant.tag()));
+                    // result.push_str(")");
+                    // result.push_str("}");
+                }
+
+                // if named_enum {
+                //     result.push_str("#[cfg(debug_assertions)]");
+                // }
+                let blocks: Vec<String> = Vec::new();
+                result.push_str("{");
+                result.push_str(&format!("match {op0} {{\n"));
+                let name = self.typename_lift(*ty);
+                for (i, (case, block)) in variant.cases.iter().zip(blocks).enumerate() {
+                    let pat = i.to_string();
+                    let block = if case.ty.is_some() {
+                        format!("({block})")
+                    } else {
+                        String::new()
+                    };
+                    let case = case.name.to_upper_camel_case();
+                    // if i == variant.cases.len() - 1 {
+                    //     result.push_str("#[cfg(debug_assertions)]");
+                    //     result.push_str(&format!("{pat} => {name}::{case}{block},\n"));
+                    //     result.push_str("#[cfg(not(debug_assertions))]");
+                    //     result.push_str(&format!("_ => {name}::{case}{block},\n"));
+                    // } else {
+                    result.push_str(&format!("{pat} => {name}::{case}{block},\n"));
+                    // }
+                }
+                // result.push_str("#[cfg(debug_assertions)]");
+                // result.push_str("_ => panic!(\"invalid enum discriminant\"),\n");
+                result.push_str("}");
+                result.push_str("}");
+
+                result.push_str("}");
+                results.push(result);
+            }
+            abi::Instruction::EnumLower { .. } => results.push(format!("int32_t({})", operands[0])),
+            abi::Instruction::EnumLift { ty, .. } => {
+                let typename =
+                    self.gen
+                        .type_name(&Type::Id(*ty), &self.namespace, Flavor::InStruct);
+                results.push(format!("({typename}){}", &operands[0]));
+            }
+            abi::Instruction::OptionLower {
+                payload,
+                results: result_types,
+                ..
+            } => {
+                let (mut some, some_results) = self.blocks.pop().unwrap();
+                let (mut none, none_results) = self.blocks.pop().unwrap();
+                let some_payload = self.payloads.pop().unwrap();
+                let _none_payload = self.payloads.pop().unwrap();
+
+                for (i, ty) in result_types.iter().enumerate() {
+                    let tmp = self.tmp();
+                    let name = self.tempname("option", tmp);
+                    results.push(name.clone());
+                    self.src.push_str(self.gen.gen.opts.wasm_type(*ty));
+                    self.src.push_str(" ");
+                    self.src.push_str(&name);
+                    self.src.push_str(";\n");
+                    let some_result = &some_results[i];
+                    uwriteln!(some, "{name} = {some_result};");
+                    let none_result = &none_results[i];
+                    uwriteln!(none, "{name} = {none_result};");
+                }
+
+                let op0 = &operands[0];
+                let flavor = if self.gen.gen.opts.new_api
+                    && matches!(self.variant, AbiVariant::GuestImport)
+                {
+                    Flavor::BorrowedArgument
+                } else {
+                    Flavor::InStruct
+                };
+                let ty = self.gen.type_name(payload, &self.namespace, flavor);
+                let bind_some = format!("{ty} {some_payload} = (std::move({op0})).value();");
+
+                uwrite!(
+                    self.src,
+                    "\
                     if (({op0}).has_value()) {{
                         {bind_some}
                         {some}}} else {{
                         {none}}}
                     "
-                        );
-                    }
+                );
+            }
             abi::Instruction::OptionLift { payload, .. } => {
-                        let (some, some_results) = self.blocks.pop().unwrap();
-                        let (_none, none_results) = self.blocks.pop().unwrap();
-                        assert!(none_results.len() == 0);
-                        assert!(some_results.len() == 1);
-                        // let some_result = &some_results[0];
-                        let flavor = if self.gen.gen.opts.new_api
-                            && matches!(self.variant, AbiVariant::GuestExport)
-                        {
-                            Flavor::BorrowedArgument
-                        } else {
-                            Flavor::InStruct
-                        };
-                        let type_name = self.gen.type_name(*payload, &self.namespace, flavor);
-                        let full_type = format!("std::optional<{type_name}>");
-                        let op0 = &operands[0];
+                let (some, some_results) = self.blocks.pop().unwrap();
+                let (_none, none_results) = self.blocks.pop().unwrap();
+                assert!(none_results.len() == 0);
+                assert!(some_results.len() == 1);
+                // let some_result = &some_results[0];
+                let flavor = if self.gen.gen.opts.new_api
+                    && matches!(self.variant, AbiVariant::GuestExport)
+                {
+                    Flavor::BorrowedArgument
+                } else {
+                    Flavor::InStruct
+                };
+                let type_name = self.gen.type_name(*payload, &self.namespace, flavor);
+                let full_type = format!("std::optional<{type_name}>");
+                let op0 = &operands[0];
 
-                        let tmp = self.tmp();
-                        let resultname = self.tempname("option", tmp);
-                        uwriteln!(
-                            self.src,
-                            "{full_type} {resultname};
+                let tmp = self.tmp();
+                let resultname = self.tempname("option", tmp);
+                uwriteln!(
+                    self.src,
+                    "{full_type} {resultname};
                     if ({op0}) {{
                         {some}
                         {resultname}.emplace({});
                     }}",
-                            some_results[0]
-                        );
-                        results.push(format!("std::move({resultname})"));
-                    }
+                    some_results[0]
+                );
+                results.push(format!("std::move({resultname})"));
+            }
             abi::Instruction::ResultLower {
-                        results: result_types,
-                        result,
-                        ..
-                    } => {
-                        let (mut err, err_results) = self.blocks.pop().unwrap();
-                        let (mut ok, ok_results) = self.blocks.pop().unwrap();
-                        let err_payload = self.payloads.pop().unwrap();
-                        let ok_payload = self.payloads.pop().unwrap();
+                results: result_types,
+                result,
+                ..
+            } => {
+                let (mut err, err_results) = self.blocks.pop().unwrap();
+                let (mut ok, ok_results) = self.blocks.pop().unwrap();
+                let err_payload = self.payloads.pop().unwrap();
+                let ok_payload = self.payloads.pop().unwrap();
 
-                        for (i, ty) in result_types.iter().enumerate() {
-                            let tmp = self.tmp();
-                            let name = self.tempname("result", tmp);
-                            results.push(name.clone());
-                            self.src.push_str(self.gen.gen.opts.wasm_type(*ty));
-                            self.src.push_str(" ");
-                            self.src.push_str(&name);
-                            self.src.push_str(";\n");
-                            let ok_result = &ok_results[i];
-                            uwriteln!(ok, "{name} = {ok_result};");
-                            let err_result = &err_results[i];
-                            uwriteln!(err, "{name} = {err_result};");
-                        }
+                for (i, ty) in result_types.iter().enumerate() {
+                    let tmp = self.tmp();
+                    let name = self.tempname("result", tmp);
+                    results.push(name.clone());
+                    self.src.push_str(self.gen.gen.opts.wasm_type(*ty));
+                    self.src.push_str(" ");
+                    self.src.push_str(&name);
+                    self.src.push_str(";\n");
+                    let ok_result = &ok_results[i];
+                    uwriteln!(ok, "{name} = {ok_result};");
+                    let err_result = &err_results[i];
+                    uwriteln!(err, "{name} = {err_result};");
+                }
 
-                        let op0 = &operands[0];
-                        let ok_ty = self.gen.optional_type_name(
-                            result.ok.as_ref(),
-                            &self.namespace,
-                            Flavor::InStruct,
-                        );
-                        let err_ty = self.gen.optional_type_name(
-                            result.err.as_ref(),
-                            &self.namespace,
-                            Flavor::InStruct,
-                        );
-                        let bind_ok = if let Some(_ok) = result.ok.as_ref() {
-                            format!("{ok_ty} {ok_payload} = std::move({op0}).value();")
-                        } else {
-                            String::new()
-                        };
-                        let bind_err = if let Some(_err) = result.err.as_ref() {
-                            format!("{err_ty} {err_payload} = std::move({op0}).error();")
-                        } else {
-                            String::new()
-                        };
+                let op0 = &operands[0];
+                let ok_ty = self.gen.optional_type_name(
+                    result.ok.as_ref(),
+                    &self.namespace,
+                    Flavor::InStruct,
+                );
+                let err_ty = self.gen.optional_type_name(
+                    result.err.as_ref(),
+                    &self.namespace,
+                    Flavor::InStruct,
+                );
+                let bind_ok = if let Some(_ok) = result.ok.as_ref() {
+                    format!("{ok_ty} {ok_payload} = std::move({op0}).value();")
+                } else {
+                    String::new()
+                };
+                let bind_err = if let Some(_err) = result.err.as_ref() {
+                    format!("{err_ty} {err_payload} = std::move({op0}).error();")
+                } else {
+                    String::new()
+                };
 
-                        uwrite!(
-                            self.src,
-                            "\
+                uwrite!(
+                    self.src,
+                    "\
                     if (({op0}).has_value()) {{
                         {bind_ok}
                         {ok}}} else {{
                         {bind_err}
                         {err}}}
                     "
-                        );
-                    }
+                );
+            }
             abi::Instruction::ResultLift { result, .. } => {
-                        let (mut err, err_results) = self.blocks.pop().unwrap();
-                        let (mut ok, ok_results) = self.blocks.pop().unwrap();
-                        let mut ok_result = String::new();
-                        let mut err_result = String::new();
-                        if result.ok.is_none() {
-                            ok.clear();
-                        } else {
-                            ok_result = format!("std::move({})", ok_results[0]);
-                        }
-                        if result.err.is_none() {
-                            err.clear();
-                        } else {
-                            err_result = format!("std::move({})", err_results[0]);
-                        }
-                        let ok_type = self.gen.optional_type_name(
-                            result.ok.as_ref(),
-                            &self.namespace,
-                            Flavor::InStruct,
-                        );
-                        let err_type = self.gen.optional_type_name(
-                            result.err.as_ref(),
-                            &self.namespace,
-                            Flavor::InStruct,
-                        );
-                        let full_type = format!("std::expected<{ok_type}, {err_type}>",);
-                        let err_type = "std::unexpected";
-                        let operand = &operands[0];
+                let (mut err, err_results) = self.blocks.pop().unwrap();
+                let (mut ok, ok_results) = self.blocks.pop().unwrap();
+                let mut ok_result = String::new();
+                let mut err_result = String::new();
+                if result.ok.is_none() {
+                    ok.clear();
+                } else {
+                    ok_result = format!("std::move({})", ok_results[0]);
+                }
+                if result.err.is_none() {
+                    err.clear();
+                } else {
+                    err_result = format!("std::move({})", err_results[0]);
+                }
+                let ok_type = self.gen.optional_type_name(
+                    result.ok.as_ref(),
+                    &self.namespace,
+                    Flavor::InStruct,
+                );
+                let err_type = self.gen.optional_type_name(
+                    result.err.as_ref(),
+                    &self.namespace,
+                    Flavor::InStruct,
+                );
+                let full_type = format!("std::expected<{ok_type}, {err_type}>",);
+                let err_type = "std::unexpected";
+                let operand = &operands[0];
 
-                        let tmp = self.tmp();
-                        let resultname = self.tempname("result", tmp);
-                        uwriteln!(
-                            self.src,
-                            "{full_type} {resultname};
+                let tmp = self.tmp();
+                let resultname = self.tempname("result", tmp);
+                uwriteln!(
+                    self.src,
+                    "{full_type} {resultname};
                     if ({operand}==0) {{
                         {ok}
                         {resultname}.emplace({ok_result});
@@ -3520,356 +3520,356 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                         {err}
                         {resultname}={err_type}{{{err_result}}};
                     }}"
-                        );
-                        results.push(resultname);
-                    }
+                );
+                results.push(resultname);
+            }
             abi::Instruction::CallWasm {
-                        name,
-                        sig,
-                        module_prefix,
-                    } => {
-                        let module_name = self
+                name,
+                sig,
+                module_prefix,
+            } => {
+                let module_name = self
+                    .gen
+                    .wasm_import_module
+                    .as_ref()
+                    .map(|e| {
+                        self.gen
                             .gen
-                            .wasm_import_module
+                            .import_prefix
                             .as_ref()
-                            .map(|e| {
-                                self.gen
-                                    .gen
-                                    .import_prefix
-                                    .as_ref()
-                                    .cloned()
-                                    .unwrap_or_default()
-                                    + *module_prefix
-                                    + e
-                            })
-                            .unwrap();
-                        if self.gen.gen.opts.host {
-                            uwriteln!(self.src, "wasm_function_inst_t wasm_func = wasm_runtime_lookup_function(wasm_runtime_get_module_inst(exec_env), \n\
+                            .cloned()
+                            .unwrap_or_default()
+                            + *module_prefix
+                            + e
+                    })
+                    .unwrap();
+                if self.gen.gen.opts.host {
+                    uwriteln!(self.src, "wasm_function_inst_t wasm_func = wasm_runtime_lookup_function(wasm_runtime_get_module_inst(exec_env), \n\
                             \"{}#{}\", \"{}\");", module_name, name, self.wamr_signature.as_ref().unwrap().to_string());
-                            if !sig.results.is_empty() {
-                                uwriteln!(
-                                    self.src,
-                                    "wasm_val_t wasm_results[{}] = {{ WASM_INIT_VAL }};",
-                                    sig.results.len()
+                    if !sig.results.is_empty() {
+                        uwriteln!(
+                            self.src,
+                            "wasm_val_t wasm_results[{}] = {{ WASM_INIT_VAL }};",
+                            sig.results.len()
+                        );
+                    } else {
+                        uwriteln!(self.src, "wasm_val_t *wasm_results = nullptr;");
+                    }
+                    if !sig.params.is_empty() {
+                        uwrite!(self.src, "wasm_val_t wasm_args[{}] = {{", sig.params.len());
+                        for (typ, value) in sig.params.iter().zip(operands.iter()) {
+                            match typ {
+                                WasmType::I32 => uwrite!(self.src, "WASM_I32_VAL({}),", value),
+                                WasmType::I64 => uwrite!(self.src, "WASM_I64_VAL({}),", value),
+                                WasmType::F32 => uwrite!(self.src, "WASM_F32_VAL({}),", value),
+                                WasmType::F64 => uwrite!(self.src, "WASM_F64_VAL({}),", value),
+                                WasmType::Length => {
+                                    if self.gen.gen.opts.wasm64 {
+                                        uwrite!(self.src, "WASM_I64_VAL({}),", value)
+                                    } else {
+                                        uwrite!(self.src, "WASM_I32_VAL((int32_t){}),", value)
+                                    }
+                                }
+                                WasmType::Pointer => {
+                                    if self.gen.gen.opts.wasm64 {
+                                        uwrite!(self.src, "WASM_I64_VAL({}),", value)
+                                    } else {
+                                        uwrite!(self.src, "WASM_I32_VAL((int32_t){}),", value)
+                                    }
+                                }
+                                WasmType::PointerOrI64 => {
+                                    uwrite!(self.src, "WASM_I64_VAL({}),", value)
+                                }
+                            }
+                        }
+                        self.src.push_str("};\n");
+                    } else {
+                        uwriteln!(self.src, "wasm_val_t *wasm_args = nullptr;");
+                    }
+                    uwriteln!(self.src, "bool wasm_ok = wasm_runtime_call_wasm_a(exec_env, wasm_func, {}, wasm_results, {}, wasm_args);", sig.results.len(), sig.params.len());
+                    uwriteln!(self.src, "assert(wasm_ok);");
+                    if sig.results.len() > 0 {
+                        let (kind, elem) = match sig.results.first() {
+                            Some(WasmType::I32) => (String::from("WASM_I32"), String::from("i32")),
+                            Some(WasmType::I64) => (String::from("WASM_I64"), String::from("i64")),
+                            Some(WasmType::F32) => (String::from("WASM_F32"), String::from("f32")),
+                            Some(WasmType::F64) => (String::from("WASM_F64"), String::from("f64")),
+                            Some(WasmType::Pointer) => {
+                                if self.gen.gen.opts.wasm64 {
+                                    (String::from("WASM_I64"), String::from("i64"))
+                                } else {
+                                    (String::from("WASM_I32"), String::from("i32"))
+                                }
+                            }
+                            Some(WasmType::Length) => {
+                                if self.gen.gen.opts.wasm64 {
+                                    (String::from("WASM_I64"), String::from("i64"))
+                                } else {
+                                    (String::from("WASM_I32"), String::from("i32"))
+                                }
+                            }
+                            Some(WasmType::PointerOrI64) => {
+                                (String::from("WASM_I64"), String::from("i64"))
+                            }
+                            None => todo!(),
+                        };
+                        uwriteln!(self.src, "assert(wasm_results[0].kind=={kind});");
+                        uwriteln!(self.src, "auto ret = wasm_results[0].of.{elem};");
+                        results.push("ret".to_string());
+                    }
+                } else {
+                    let func =
+                        self.gen
+                            .declare_import(&module_name, name, &sig.params, &sig.results);
+
+                    // ... then call the function with all our operands
+                    if sig.results.len() > 0 {
+                        self.src.push_str("auto ret = ");
+                        results.push("ret".to_string());
+                    }
+                    self.src.push_str(&func);
+                    self.src.push_str("(");
+                    self.src.push_str(&operands.join(", "));
+                    self.src.push_str(");\n");
+                }
+            }
+            abi::Instruction::CallInterface { func, .. } => {
+                // dbg!(func);
+                self.let_results(if func.result.is_some() { 1 } else { 0 }, results);
+                let (mut namespace, func_name_h) =
+                    self.gen
+                        .func_namespace_name(func, !self.gen.gen.opts.host_side(), true);
+                if matches!(func.kind, FunctionKind::Method(_)) {
+                    let this = operands.remove(0);
+                    if self.gen.gen.opts.host_side() {
+                        uwrite!(self.src, "({this}).");
+                    } else {
+                        //let objtype = namespace.join("::");
+                        uwrite!(self.src, "({this}).get().");
+                        // uwrite!(self.src, "(({objtype}*){this})->",);
+                    }
+                } else {
+                    if matches!(func.kind, FunctionKind::Constructor(_))
+                        && self.gen.gen.opts.host_side()
+                    {
+                        let _ = namespace.pop();
+                    }
+                    let mut relative = SourceWithState::default();
+                    // relative.namespace = self.namespace.clone();
+                    relative.qualify(&namespace);
+                    self.push_str(&relative.src);
+                    // self.gen.gen.c_src.qualify(&namespace);
+                }
+                self.src.push_str(&func_name_h);
+                if matches!(func.kind, FunctionKind::Constructor(_))
+                    && self.gen.gen.opts.host_side()
+                {
+                    self.push_str("::New");
+                }
+                self.push_str("(");
+                if self.gen.gen.opts.host {
+                    if !matches!(func.kind, FunctionKind::Method(_)) {
+                        self.push_str("exec_env");
+                        if !operands.is_empty() {
+                            self.push_str(", ");
+                        }
+                    }
+                }
+                self.push_str(&operands.join(", "));
+                if false
+                    && matches!(func.kind, FunctionKind::Constructor(_))
+                    && !self.gen.gen.opts.is_only_handle(self.variant)
+                {
+                    // acquire object from unique_ptr
+                    self.push_str(").release();");
+                    results[0] = format!("(*({}))", results[0]);
+                } else {
+                    self.push_str(");\n");
+                }
+                if self.needs_dealloc {
+                    uwriteln!(
+                        self.src,
+                        "for (auto i: _deallocate) {{ free(i); }}\n
+                        _deallocate.clear();"
+                    );
+                }
+            }
+            abi::Instruction::Return { amt, func } => {
+                // let guest_import = matches!(self.variant, AbiVariant::GuestImport);
+                match amt {
+                    0 => {}
+                    _ => {
+                        assert!(*amt == operands.len());
+                        match &func.kind {
+                            FunctionKind::Constructor(_)
+                                if self.gen.gen.opts.is_only_handle(self.variant) =>
+                            {
+                                // strange but works
+                                if matches!(self.variant, AbiVariant::GuestExport) {
+                                    self.src.push_str("this->index = ");
+                                } else {
+                                    self.src.push_str("this->handle = ");
+                                }
+                            }
+                            _ => self.src.push_str("return "),
+                        }
+                        if let Some(CabiPostInformation {
+                            module: _,
+                            name: _cabi_post_name,
+                            ret_type: cabi_post_type,
+                        }) = self.cabi_post.as_ref()
+                        {
+                            self.src.push_str("wit::guest_owned<");
+                            self.src.push_str(&cabi_post_type);
+                            self.src.push_str(">(");
+                        }
+                        if *amt == 1 {
+                            if operands[0].starts_with("std::move(") {
+                                // remove the std::move due to return value optimization (and complex rules about when std::move harms)
+                                self.src.push_str(&operands[0][9..]);
+                            } else {
+                                self.src.push_str(&operands[0]);
+                            }
+                        } else {
+                            todo!();
+                            // self.src.push_str("std::tuple<");
+                            // if let Results::Named(params) = &func.results {
+                            //     for (num, (_name, ty)) in params.iter().enumerate() {
+                            //         if num > 0 {
+                            //             self.src.push_str(", ");
+                            //         }
+                            //         let tname =
+                            //             self.gen.type_name(ty, &self.namespace, Flavor::InStruct);
+                            //         self.src.push_str(&tname);
+                            //     }
+                            // }
+                            // self.src.push_str(">(");
+                            // self.src.push_str(&operands.join(", "));
+                            // self.src.push_str(")");
+                        }
+                        if let Some(CabiPostInformation {
+                            module: func_module,
+                            name: func_name,
+                            ret_type: _cabi_post_type,
+                        }) = self.cabi_post.as_ref()
+                        {
+                            if self.gen.gen.opts.host {
+                                let cabi_post_name = make_external_symbol(
+                                    &func_module,
+                                    &func_name,
+                                    AbiVariant::GuestExport,
+                                );
+                                self.src.push_str(&format!(", wasm_results[0].of.i32, wasm_runtime_lookup_function(wasm_runtime_get_module_inst(exec_env), \"cabi_post_{}\", \"(i)\"), exec_env)", cabi_post_name));
+                            } else {
+                                let cabi_post_name = self.gen.declare_import(
+                                    &format!("cabi_post_{func_module}"),
+                                    func_name,
+                                    &[WasmType::Pointer],
+                                    &[],
+                                );
+                                self.src.push_str(&format!(", ret, {})", cabi_post_name));
+                            }
+                        }
+                        if matches!(func.kind, FunctionKind::Constructor(_))
+                            && self.gen.gen.opts.is_only_handle(self.variant)
+                        {
+                            // we wrapped the handle in an object, so unpack it
+                            if self.gen.gen.opts.host_side() {
+                                self.src.push_str(
+                                    ".get_handle();
+                                    this->rep = *lookup_resource(ret)",
                                 );
                             } else {
-                                uwriteln!(self.src, "wasm_val_t *wasm_results = nullptr;");
+                                self.src.push_str(".into_handle()");
                             }
-                            if !sig.params.is_empty() {
-                                uwrite!(self.src, "wasm_val_t wasm_args[{}] = {{", sig.params.len());
-                                for (typ, value) in sig.params.iter().zip(operands.iter()) {
-                                    match typ {
-                                        WasmType::I32 => uwrite!(self.src, "WASM_I32_VAL({}),", value),
-                                        WasmType::I64 => uwrite!(self.src, "WASM_I64_VAL({}),", value),
-                                        WasmType::F32 => uwrite!(self.src, "WASM_F32_VAL({}),", value),
-                                        WasmType::F64 => uwrite!(self.src, "WASM_F64_VAL({}),", value),
-                                        WasmType::Length => {
-                                            if self.gen.gen.opts.wasm64 {
-                                                uwrite!(self.src, "WASM_I64_VAL({}),", value)
-                                            } else {
-                                                uwrite!(self.src, "WASM_I32_VAL((int32_t){}),", value)
-                                            }
-                                        }
-                                        WasmType::Pointer => {
-                                            if self.gen.gen.opts.wasm64 {
-                                                uwrite!(self.src, "WASM_I64_VAL({}),", value)
-                                            } else {
-                                                uwrite!(self.src, "WASM_I32_VAL((int32_t){}),", value)
-                                            }
-                                        }
-                                        WasmType::PointerOrI64 => {
-                                            uwrite!(self.src, "WASM_I64_VAL({}),", value)
-                                        }
-                                    }
-                                }
-                                self.src.push_str("};\n");
-                            } else {
-                                uwriteln!(self.src, "wasm_val_t *wasm_args = nullptr;");
-                            }
-                            uwriteln!(self.src, "bool wasm_ok = wasm_runtime_call_wasm_a(exec_env, wasm_func, {}, wasm_results, {}, wasm_args);", sig.results.len(), sig.params.len());
-                            uwriteln!(self.src, "assert(wasm_ok);");
-                            if sig.results.len() > 0 {
-                                let (kind, elem) = match sig.results.first() {
-                                    Some(WasmType::I32) => (String::from("WASM_I32"), String::from("i32")),
-                                    Some(WasmType::I64) => (String::from("WASM_I64"), String::from("i64")),
-                                    Some(WasmType::F32) => (String::from("WASM_F32"), String::from("f32")),
-                                    Some(WasmType::F64) => (String::from("WASM_F64"), String::from("f64")),
-                                    Some(WasmType::Pointer) => {
-                                        if self.gen.gen.opts.wasm64 {
-                                            (String::from("WASM_I64"), String::from("i64"))
-                                        } else {
-                                            (String::from("WASM_I32"), String::from("i32"))
-                                        }
-                                    }
-                                    Some(WasmType::Length) => {
-                                        if self.gen.gen.opts.wasm64 {
-                                            (String::from("WASM_I64"), String::from("i64"))
-                                        } else {
-                                            (String::from("WASM_I32"), String::from("i32"))
-                                        }
-                                    }
-                                    Some(WasmType::PointerOrI64) => {
-                                        (String::from("WASM_I64"), String::from("i64"))
-                                    }
-                                    None => todo!(),
-                                };
-                                uwriteln!(self.src, "assert(wasm_results[0].kind=={kind});");
-                                uwriteln!(self.src, "auto ret = wasm_results[0].of.{elem};");
-                                results.push("ret".to_string());
-                            }
-                        } else {
-                            let func =
-                                self.gen
-                                    .declare_import(&module_name, name, &sig.params, &sig.results);
-
-                            // ... then call the function with all our operands
-                            if sig.results.len() > 0 {
-                                self.src.push_str("auto ret = ");
-                                results.push("ret".to_string());
-                            }
-                            self.src.push_str(&func);
-                            self.src.push_str("(");
-                            self.src.push_str(&operands.join(", "));
-                            self.src.push_str(");\n");
                         }
+                        self.src.push_str(";\n");
                     }
-            abi::Instruction::CallInterface { func, .. } => {
-                        // dbg!(func);
-                        self.let_results(if func.result.is_some() { 1 } else { 0 }, results);
-                        let (mut namespace, func_name_h) =
-                            self.gen
-                                .func_namespace_name(func, !self.gen.gen.opts.host_side(), true);
-                        if matches!(func.kind, FunctionKind::Method(_)) {
-                            let this = operands.remove(0);
-                            if self.gen.gen.opts.host_side() {
-                                uwrite!(self.src, "({this}).");
-                            } else {
-                                //let objtype = namespace.join("::");
-                                uwrite!(self.src, "({this}).get().");
-                                // uwrite!(self.src, "(({objtype}*){this})->",);
-                            }
-                        } else {
-                            if matches!(func.kind, FunctionKind::Constructor(_))
-                                && self.gen.gen.opts.host_side()
-                            {
-                                let _ = namespace.pop();
-                            }
-                            let mut relative = SourceWithState::default();
-                            // relative.namespace = self.namespace.clone();
-                            relative.qualify(&namespace);
-                            self.push_str(&relative.src);
-                            // self.gen.gen.c_src.qualify(&namespace);
-                        }
-                        self.src.push_str(&func_name_h);
-                        if matches!(func.kind, FunctionKind::Constructor(_))
-                            && self.gen.gen.opts.host_side()
-                        {
-                            self.push_str("::New");
-                        }
-                        self.push_str("(");
-                        if self.gen.gen.opts.host {
-                            if !matches!(func.kind, FunctionKind::Method(_)) {
-                                self.push_str("exec_env");
-                                if !operands.is_empty() {
-                                    self.push_str(", ");
-                                }
-                            }
-                        }
-                        self.push_str(&operands.join(", "));
-                        if false
-                            && matches!(func.kind, FunctionKind::Constructor(_))
-                            && !self.gen.gen.opts.is_only_handle(self.variant)
-                        {
-                            // acquire object from unique_ptr
-                            self.push_str(").release();");
-                            results[0] = format!("(*({}))", results[0]);
-                        } else {
-                            self.push_str(");\n");
-                        }
-                        if self.needs_dealloc {
-                            uwriteln!(
-                                self.src,
-                                "for (auto i: _deallocate) {{ free(i); }}\n
-                        _deallocate.clear();"
-                            );
-                        }
-                    }
-            abi::Instruction::Return { amt, func } => {
-                        // let guest_import = matches!(self.variant, AbiVariant::GuestImport);
-                        match amt {
-                            0 => {}
-                            _ => {
-                                assert!(*amt == operands.len());
-                                match &func.kind {
-                                    FunctionKind::Constructor(_)
-                                        if self.gen.gen.opts.is_only_handle(self.variant) =>
-                                    {
-                                        // strange but works
-                                        if matches!(self.variant, AbiVariant::GuestExport) {
-                                            self.src.push_str("this->index = ");
-                                        } else {
-                                            self.src.push_str("this->handle = ");
-                                        }
-                                    }
-                                    _ => self.src.push_str("return "),
-                                }
-                                if let Some(CabiPostInformation {
-                                    module: _,
-                                    name: _cabi_post_name,
-                                    ret_type: cabi_post_type,
-                                }) = self.cabi_post.as_ref()
-                                {
-                                    self.src.push_str("wit::guest_owned<");
-                                    self.src.push_str(&cabi_post_type);
-                                    self.src.push_str(">(");
-                                }
-                                if *amt == 1 {
-                                    if operands[0].starts_with("std::move(") {
-                                        // remove the std::move due to return value optimization (and complex rules about when std::move harms)
-                                        self.src.push_str(&operands[0][9..]);
-                                    } else {
-                                        self.src.push_str(&operands[0]);
-                                    }
-                                } else {
-                                    todo!();
-                                    // self.src.push_str("std::tuple<");
-                                    // if let Results::Named(params) = &func.results {
-                                    //     for (num, (_name, ty)) in params.iter().enumerate() {
-                                    //         if num > 0 {
-                                    //             self.src.push_str(", ");
-                                    //         }
-                                    //         let tname =
-                                    //             self.gen.type_name(ty, &self.namespace, Flavor::InStruct);
-                                    //         self.src.push_str(&tname);
-                                    //     }
-                                    // }
-                                    // self.src.push_str(">(");
-                                    // self.src.push_str(&operands.join(", "));
-                                    // self.src.push_str(")");
-                                }
-                                if let Some(CabiPostInformation {
-                                    module: func_module,
-                                    name: func_name,
-                                    ret_type: _cabi_post_type,
-                                }) = self.cabi_post.as_ref()
-                                {
-                                    if self.gen.gen.opts.host {
-                                        let cabi_post_name = make_external_symbol(
-                                            &func_module,
-                                            &func_name,
-                                            AbiVariant::GuestExport,
-                                        );
-                                        self.src.push_str(&format!(", wasm_results[0].of.i32, wasm_runtime_lookup_function(wasm_runtime_get_module_inst(exec_env), \"cabi_post_{}\", \"(i)\"), exec_env)", cabi_post_name));
-                                    } else {
-                                        let cabi_post_name = self.gen.declare_import(
-                                            &format!("cabi_post_{func_module}"),
-                                            func_name,
-                                            &[WasmType::Pointer],
-                                            &[],
-                                        );
-                                        self.src.push_str(&format!(", ret, {})", cabi_post_name));
-                                    }
-                                }
-                                if matches!(func.kind, FunctionKind::Constructor(_))
-                                    && self.gen.gen.opts.is_only_handle(self.variant)
-                                {
-                                    // we wrapped the handle in an object, so unpack it
-                                    if self.gen.gen.opts.host_side() {
-                                        self.src.push_str(
-                                            ".get_handle();
-                                    this->rep = *lookup_resource(ret)",
-                                        );
-                                    } else {
-                                        self.src.push_str(".into_handle()");
-                                    }
-                                }
-                                self.src.push_str(";\n");
-                            }
-                        }
-                    }
+                }
+            }
             abi::Instruction::Malloc { .. } => todo!(),
             abi::Instruction::GuestDeallocate { .. } => {
-                        uwriteln!(self.src, "free((void*) ({}));", operands[0]);
-                    }
+                uwriteln!(self.src, "free((void*) ({}));", operands[0]);
+            }
             abi::Instruction::GuestDeallocateString => {
-                        uwriteln!(self.src, "if (({}) > 0) {{", operands[1]);
-                        uwriteln!(
-                            self.src,
-                            "wit::string::drop_raw((void*) ({}));",
-                            operands[0]
-                        );
-                        uwriteln!(self.src, "}}");
-                    }
+                uwriteln!(self.src, "if (({}) > 0) {{", operands[1]);
+                uwriteln!(
+                    self.src,
+                    "wit::string::drop_raw((void*) ({}));",
+                    operands[0]
+                );
+                uwriteln!(self.src, "}}");
+            }
             abi::Instruction::GuestDeallocateList { element } => {
-                        let (body, results) = self.blocks.pop().unwrap();
-                        assert!(results.is_empty());
-                        let tmp = self.tmp();
-                        let ptr = self.tempname("ptr", tmp);
-                        let len = self.tempname("len", tmp);
-                        uwriteln!(self.src, "uint8_t* {ptr} = {};", operands[0]);
-                        uwriteln!(self.src, "size_t {len} = {};", operands[1]);
-                        let i = self.tempname("i", tmp);
-                        uwriteln!(self.src, "for (size_t {i} = 0; {i} < {len}; {i}++) {{");
-                        let size = self.gen.sizes.size(element);
-                        uwriteln!(
-                            self.src,
-                            "uint8_t* base = {ptr} + {i} * {size};",
-                            size = size.format(POINTER_SIZE_EXPRESSION)
-                        );
-                        uwriteln!(self.src, "(void) base;");
-                        uwrite!(self.src, "{body}");
-                        uwriteln!(self.src, "}}");
-                        uwriteln!(self.src, "if ({len} > 0) {{");
-                        uwriteln!(self.src, "free((void*) ({ptr}));");
-                        uwriteln!(self.src, "}}");
-                    }
+                let (body, results) = self.blocks.pop().unwrap();
+                assert!(results.is_empty());
+                let tmp = self.tmp();
+                let ptr = self.tempname("ptr", tmp);
+                let len = self.tempname("len", tmp);
+                uwriteln!(self.src, "uint8_t* {ptr} = {};", operands[0]);
+                uwriteln!(self.src, "size_t {len} = {};", operands[1]);
+                let i = self.tempname("i", tmp);
+                uwriteln!(self.src, "for (size_t {i} = 0; {i} < {len}; {i}++) {{");
+                let size = self.gen.sizes.size(element);
+                uwriteln!(
+                    self.src,
+                    "uint8_t* base = {ptr} + {i} * {size};",
+                    size = size.format(POINTER_SIZE_EXPRESSION)
+                );
+                uwriteln!(self.src, "(void) base;");
+                uwrite!(self.src, "{body}");
+                uwriteln!(self.src, "}}");
+                uwriteln!(self.src, "if ({len} > 0) {{");
+                uwriteln!(self.src, "free((void*) ({ptr}));");
+                uwriteln!(self.src, "}}");
+            }
             abi::Instruction::GuestDeallocateVariant { blocks } => {
-                        let blocks = self
-                            .blocks
-                            .drain(self.blocks.len() - blocks..)
-                            .collect::<Vec<_>>();
+                let blocks = self
+                    .blocks
+                    .drain(self.blocks.len() - blocks..)
+                    .collect::<Vec<_>>();
 
-                        uwriteln!(self.src, "switch ((int32_t) {}) {{", operands[0]);
-                        for (i, (block, results)) in blocks.into_iter().enumerate() {
-                            assert!(results.is_empty());
-                            uwriteln!(self.src, "case {}: {{", i);
-                            self.src.push_str(&block);
-                            self.src.push_str("break;\n}\n");
-                        }
-                        self.src.push_str("}\n");
-                    }
+                uwriteln!(self.src, "switch ((int32_t) {}) {{", operands[0]);
+                for (i, (block, results)) in blocks.into_iter().enumerate() {
+                    assert!(results.is_empty());
+                    uwriteln!(self.src, "case {}: {{", i);
+                    self.src.push_str(&block);
+                    self.src.push_str("break;\n}\n");
+                }
+                self.src.push_str("}\n");
+            }
             abi::Instruction::PointerLoad { offset } => {
-                        let ptr_type = self.gen.gen.opts.ptr_type();
-                        self.load(ptr_type, *offset, operands, results)
-                    }
+                let ptr_type = self.gen.gen.opts.ptr_type();
+                self.load(ptr_type, *offset, operands, results)
+            }
             abi::Instruction::LengthLoad { offset } => {
-                        self.load("size_t", *offset, operands, results)
-                    }
+                self.load("size_t", *offset, operands, results)
+            }
             abi::Instruction::PointerStore { offset } => {
-                        let ptr_type = self.gen.gen.opts.ptr_type();
-                        self.store(ptr_type, *offset, operands)
-                    }
+                let ptr_type = self.gen.gen.opts.ptr_type();
+                self.store(ptr_type, *offset, operands)
+            }
             abi::Instruction::LengthStore { offset } => self.store("size_t", *offset, operands),
             abi::Instruction::FutureLower { .. } => {
-                        self.src.push_str("future_lower()");
-                        results.push(String::from("future"));
-                    }
+                self.src.push_str("future_lower()");
+                results.push(String::from("future"));
+            }
             abi::Instruction::FutureLift { .. } => {
-                        self.src.push_str("future_lift()");
-                        results.push(String::from("future"));
-                    }
+                self.src.push_str("future_lift()");
+                results.push(String::from("future"));
+            }
             abi::Instruction::StreamLower { .. } => todo!(),
             abi::Instruction::StreamLift { .. } => todo!(),
             abi::Instruction::ErrorContextLower { .. } => todo!(),
             abi::Instruction::ErrorContextLift { .. } => todo!(),
             abi::Instruction::Flush { amt } => {
-                        for i in 0..*amt {
-                            let tmp = self.tmp();
-                            let result = format!("result{}", tmp);
-                            uwriteln!(self.src, "auto {result} = {};", operands[i]);
-                            results.push(result);
-                        }
-                    }
+                for i in 0..*amt {
+                    let tmp = self.tmp();
+                    let result = format!("result{}", tmp);
+                    uwriteln!(self.src, "auto {result} = {};", operands[i]);
+                    results.push(result);
+                }
+            }
             abi::Instruction::AsyncTaskReturn { .. } => todo!(),
         }
     }

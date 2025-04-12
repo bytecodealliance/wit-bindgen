@@ -740,10 +740,10 @@ pub fn call(
 ) {
     if matches!(lift_lower, LiftLower::Symmetric) {
         let sig = wasm_signature_symmetric(resolve, variant, func, true);
-        Generator::new(resolve, bindgen)
+        Generator::new(resolve, bindgen, true)
             .call_with_signature(func, sig, variant, lift_lower, async_);
     } else {
-        Generator::new(resolve, bindgen).call(func, variant, lift_lower, async_);
+        Generator::new(resolve, bindgen, false).call(func, variant, lift_lower, async_);
     }
 }
 
@@ -754,7 +754,7 @@ pub fn lower_to_memory<B: Bindgen>(
     value: B::Operand,
     ty: &Type,
 ) {
-    let mut generator = Generator::new(resolve, bindgen);
+    let mut generator = Generator::new(resolve, bindgen, false);
     // TODO: make this configurable? Right this this function is only called for
     // future/stream callbacks so it's appropriate to skip realloc here as it's
     // all "lower for wasm import", but this might get reused for something else
@@ -770,7 +770,7 @@ pub fn lift_from_memory<B: Bindgen>(
     address: B::Operand,
     ty: &Type,
 ) -> B::Operand {
-    let mut generator = Generator::new(resolve, bindgen);
+    let mut generator = Generator::new(resolve, bindgen, false);
     generator.read_from_memory(ty, address, Default::default());
     generator.stack.pop().unwrap()
 }
@@ -782,7 +782,7 @@ pub fn lift_from_memory<B: Bindgen>(
 /// functions and will primarily generate `GuestDeallocate*` instructions,
 /// plus others used as input to those instructions.
 pub fn post_return(resolve: &Resolve, func: &Function, bindgen: &mut impl Bindgen) {
-    Generator::new(resolve, bindgen).post_return(func);
+    Generator::new(resolve, bindgen, false).post_return(func);
 }
 
 /// Returns whether the `Function` specified needs a post-return function to
@@ -845,7 +845,7 @@ pub fn deallocate_lists_in_types<B: Bindgen>(
     ptr: B::Operand,
     bindgen: &mut B,
 ) {
-    Generator::new(resolve, bindgen).deallocate_lists_in_types(types, ptr);
+    Generator::new(resolve, bindgen, false).deallocate_lists_in_types(types, ptr);
 }
 
 #[derive(Copy, Clone)]
@@ -862,10 +862,11 @@ struct Generator<'a, B: Bindgen> {
     stack: Vec<B::Operand>,
     return_pointer: Option<B::Operand>,
     realloc: Option<Realloc>,
+    symmetric: bool,
 }
 
 impl<'a, B: Bindgen> Generator<'a, B> {
-    fn new(resolve: &'a Resolve, bindgen: &'a mut B) -> Generator<'a, B> {
+    fn new(resolve: &'a Resolve, bindgen: &'a mut B, symmetric: bool) -> Generator<'a, B> {
         Generator {
             resolve,
             bindgen,
@@ -874,6 +875,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             stack: Vec::new(),
             return_pointer: None,
             realloc: None,
+            symmetric,
         }
     }
 
@@ -1657,7 +1659,11 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 TypeDefKind::List(_) => self.write_list_to_memory(ty, addr, offset),
 
                 TypeDefKind::Future(_) | TypeDefKind::Stream(_) | TypeDefKind::Handle(_) => {
-                    self.lower_and_emit(ty, addr, &I32Store { offset })
+                    if self.symmetric {
+                        self.lower_and_emit(ty, addr, &PointerStore { offset })
+                    } else {
+                        self.lower_and_emit(ty, addr, &I32Store { offset })
+                    }
                 }
 
                 // Decompose the record into its components and then write all
@@ -1849,11 +1855,11 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 TypeDefKind::List(_) => self.read_list_from_memory(ty, addr, offset),
 
                 TypeDefKind::Future(_) | TypeDefKind::Stream(_) | TypeDefKind::Handle(_) => {
-                    // if matches!(self.lift_lower, LiftLower::Symmetric) {
-                    //     self.emit_and_lift(ty, addr, &PointerLoad { offset })
-                    // } else {
-                    self.emit_and_lift(ty, addr, &I32Load { offset })
-                    // }
+                    if self.symmetric {
+                        self.emit_and_lift(ty, addr, &PointerLoad { offset })
+                    } else {
+                        self.emit_and_lift(ty, addr, &I32Load { offset })
+                    }
                 }
 
                 TypeDefKind::Resource => {
