@@ -92,9 +92,7 @@ extern "C" fn symmetric_callback(obj: *mut ()) -> symmetric_executor::CallbackSt
     }
 }
 
-pub fn first_poll_sub(
-    future: BoxFuture,
-) -> *mut () {
+pub fn first_poll_sub(future: BoxFuture) -> *mut () {
     let state = Box::into_raw(Box::new(FutureState {
         future,
         completion_event: None,
@@ -146,7 +144,7 @@ pub fn spawn(future: impl Future<Output = ()> + 'static + Send) {
 }
 
 pub unsafe fn spawn_unchecked(future: impl Future<Output = ()>) {
-    let future1: Pin<Box<dyn Future<Output=()>>> = Box::pin(future);
+    let future1: Pin<Box<dyn Future<Output = ()>>> = Box::pin(future);
     let wait_for = first_poll_sub(unsafe { std::mem::transmute(future1) });
     let wait_for = unsafe { EventSubscription::from_handle(wait_for as usize) };
     drop(wait_for);

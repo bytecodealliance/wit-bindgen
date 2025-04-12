@@ -106,6 +106,10 @@ impl<T> FutureReader<T> {
         }
     }
 
+    pub unsafe fn from_handle(handle: *mut u8) -> Self {
+        Self::new(unsafe { Stream::from_handle(handle as usize) })
+    }
+
     pub fn take_handle(&self) -> *mut () {
         self.handle.take_handle() as *mut ()
     }
