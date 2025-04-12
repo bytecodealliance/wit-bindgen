@@ -1,4 +1,4 @@
-CXXFLAGS=-g -Isrc -fPIC
+CXXFLAGS=-g -Isrc -fPIC -I../../../../symmetric_executor/cpp-client -I../../../helper-types
 LDFLAGS=-L../../../../symmetric_executor/cpp-client \
 	-L../../../../symmetric_executor/target/debug \
 	-L../target/debug/deps
