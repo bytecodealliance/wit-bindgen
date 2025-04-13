@@ -1,4 +1,4 @@
-namespace ResultsWorld.wit.exports.test.results
+namespace IntermediateWorld.wit.exports.test.results
 {
     public class TestImpl : ITest
     {
@@ -29,10 +29,10 @@ namespace ResultsWorld.wit.exports.test.results
         {
             try {
                 return imports.test.results.TestInterop.VariantError(a);
-            } catch (WitException<imports.test.results.ITest.E3> e) 
+            } catch (WitException<imports.test.results.ITest.E3> e)
                 when (e.TypedValue.Tag == imports.test.results.ITest.E3.Tags.E1) {
                     throw new WitException(ITest.E3.E1((ITest.E)Enum.Parse(typeof(ITest.E), e.TypedValue.AsE1.ToString())), 0);
-            } catch (WitException<imports.test.results.ITest.E3> e) 
+            } catch (WitException<imports.test.results.ITest.E3> e)
                 when (e.TypedValue.Tag == imports.test.results.ITest.E3.Tags.E2) {
                     throw new WitException(ITest.E3.E2(new ITest.E2(e.TypedValue.AsE2.line, e.TypedValue.AsE2.column)), 0);
             }
@@ -49,6 +49,6 @@ namespace ResultsWorld.wit.exports.test.results
         public static void DoubleError(uint a)
         {
             imports.test.results.TestInterop.DoubleError(a);
-        }    
+        }
     }
 }

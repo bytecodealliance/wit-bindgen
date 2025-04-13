@@ -11,9 +11,6 @@ CLI tool to generate bindings for WIT documents and the component model.
 """
 
 [workspace]
-members = [
-  "crates/test-rust-wasm",
-]
 resolver = "2"
 
 [workspace.package]
@@ -95,24 +92,3 @@ csharp = ['dep:wit-bindgen-csharp']
 csharp-mono = ['csharp']
 moonbit = ['dep:wit-bindgen-moonbit']
 async = []
-
-[dev-dependencies]
-heck = { workspace = true }
-wasmtime = { version = "25.0.0", features = ['component-model'] }
-wasmtime-wasi =  { version = "25.0.0" }
-test-artifacts = { path = 'crates/test-rust-wasm/artifacts' }
-wit-parser = { workspace = true }
-wasmparser = { workspace = true }
-wasm-encoder = { workspace = true }
-
-#[patch.crates-io]
-#wit-parser = { git = "https://github.com/bytecodealliance/wasm-tools" }
-#wit-component = { git = "https://github.com/bytecodealliance/wasm-tools" }
-#wasm-encoder = { git = "https://github.com/bytecodealliance/wasm-tools" }
-#wasm-metadata = { git = "https://github.com/bytecodealliance/wasm-tools" }
-#wasmparser = { git = "https://github.com/bytecodealliance/wasm-tools" }
-#wasmprinter = { git = "https://github.com/bytecodealliance/wasm-tools" }
-
-#[patch."https://github.com/cpetig/wasm-tools"]
-#wit-parser = { path = "../wasm-tools/crates/wit-parser" }
-#wasmparser = { path = "../wasm-tools/crates/wasmparser" }

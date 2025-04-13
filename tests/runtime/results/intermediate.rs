@@ -1,6 +1,4 @@
-wit_bindgen::generate!({
-    path: "../../tests/runtime/results",
-});
+include!(env!("BINDINGS"));
 
 struct Exports;
 
