@@ -8,6 +8,7 @@ void __component_type_object_force_link_future_world_public_use_in_this_compilat
 }
 #endif
 #include "future_world_cpp.h"
+#include "async_support.h"
 #include <cstdlib> // realloc
 
 extern "C" void *cabi_realloc(void *ptr, size_t old_size, size_t align, size_t new_size);
@@ -26,13 +27,14 @@ extern "C" uint8_t* testX3AtestX2Ffuture_sourceX00create();
 std::future<uint32_t> test::test::future_source::Create()
 {
   auto ret = testX3AtestX2Ffuture_sourceX00create();
-  future_lift();return future;
+  return lift_future<uint32_t>(ret);
 }
+
 extern "C" 
 uint8_t* testX3AtestX2Ffuture_testX00create()
 {
   auto result0 = exports::test::test::future_test::Create();
-  future_lower();return future;
+  return lower_future<uint32_t>(std::move(result0));
 }
 
 // Component Adapters
