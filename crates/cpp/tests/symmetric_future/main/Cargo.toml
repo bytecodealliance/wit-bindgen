@@ -6,5 +6,5 @@ edition = "2021"
 [dependencies]
 future = { path = "../future" }
 symmetric_executor = { path = "../../../../symmetric_executor", features = ["trace"]}
-symmetric_stream = { path = "../../../../symmetric_executor/symmetric_stream" }
+symmetric_stream = { path = "../../../../symmetric_executor/symmetric_stream", features = ["trace"]}
 wit-bindgen-symmetric-rt = { path = "../../../../symmetric_executor/rust-client" }

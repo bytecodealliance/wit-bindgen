@@ -27,7 +27,11 @@ static symmetric::runtime::symmetric_executor::CallbackState wait_on_future(std:
     fut->get();
     delete fut;
     return symmetric::runtime::symmetric_executor::CallbackState::kReady;
-}  
+}
+
+// static void run_in_background() {
+
+// }
 
 template <class T>
 void* lower_async(std::future<T> &&result1, std::function<void(T&&)> &&lower_result) {
@@ -35,6 +39,7 @@ void* lower_async(std::future<T> &&result1, std::function<void(T&&)> &&lower_res
         lower_result(result1.get());
         return nullptr;
     } else {
+        // move to run_in_background
         symmetric::runtime::symmetric_executor::EventGenerator gen;
         auto waiting = gen.Subscribe();
         auto task = std::async(std::launch::async, [lower_result](std::future<wit::string>&& result1, 
@@ -81,7 +86,7 @@ std::future<T> lift_future(uint8_t* stream) {
     std::unique_ptr<fulfil_promise_data<T>> data = std::make_unique<fulfil_promise_data<T>>(fulfil_promise_data<T>{std::move(stream2), std::move(promise)});
     symmetric::runtime::symmetric_stream::Buffer buf = symmetric::runtime::symmetric_stream::Buffer(
         symmetric::runtime::symmetric_stream::Address(wit::ResourceImportBase((wit::ResourceImportBase::handle_t)&data->value.value)),
-        sizeof(T)
+        1 //sizeof(T)
     );
     data->stream.StartReading(std::move(buf));
     symmetric::runtime::symmetric_executor::Register(std::move(event),
@@ -115,12 +120,32 @@ struct write_to_future_data {
 template <class T>
 static symmetric::runtime::symmetric_executor::CallbackState write_to_future(void* data) {
     std::unique_ptr<write_to_future_data<T>> ptr((write_to_future_data<T>*)data);
-    auto result = ptr->fut.get();
-    auto buffer = ptr->wr.handle.StartWriting();
-    assert(buffer.GetSize()==sizeof(T));
-    T* dataptr = (T*)(buffer.GetAddress().into_handle());
-    new (dataptr) T(std::move(result));
-    ptr->wr.handle.FinishWriting(std::optional<symmetric::runtime::symmetric_stream::Buffer>(std::move(buffer)));
+    // is future ready?
+    if (ptr->fut.wait_for(std::chrono::seconds::zero()) == std::future_status::ready) {
+        auto buffer = ptr->wr.handle.StartWriting();
+        assert(buffer.GetSize()==1); //sizeof(T));
+        T* dataptr = (T*)(buffer.GetAddress().into_handle());
+        auto result = ptr->fut.get();
+        new (dataptr) T(std::move(result));
+        ptr->wr.handle.FinishWriting(std::optional<symmetric::runtime::symmetric_stream::Buffer>(std::move(buffer)));
+    } else {
+        // sadly there is no easier way to wait for a future in the background?
+        // move to run_in_background
+        symmetric::runtime::symmetric_executor::EventGenerator gen;
+        auto waiting = gen.Subscribe();
+        auto task = std::async(std::launch::async, [](std::unique_ptr<write_to_future_data<T>> &&ptr){
+            auto buffer = ptr->wr.handle.StartWriting();
+            // assert(buffer.GetSize()==1); //sizeof(T));
+            T* dataptr = (T*)(buffer.GetAddress().into_handle());        
+            auto result = ptr->fut.get();
+            new (dataptr) T(std::move(result));
+            ptr->wr.handle.FinishWriting(std::optional<symmetric::runtime::symmetric_stream::Buffer>(std::move(buffer)));
+        }, std::move(ptr));
+        auto fut = std::make_unique<std::future<void>>(std::move(task));
+        symmetric::runtime::symmetric_executor::Register(waiting.Dup(), 
+            symmetric::runtime::symmetric_executor::CallbackFunction(wit::ResourceImportBase((uint8_t*)wait_on_future)),
+            symmetric::runtime::symmetric_executor::CallbackData(wit::ResourceImportBase((uint8_t*)fut.release())));
+    }
     return symmetric::runtime::symmetric_executor::CallbackState::kReady;
 }
 
