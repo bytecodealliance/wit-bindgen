@@ -51,16 +51,25 @@ void* lower_async(std::future<T> &&result1, std::function<void(T&&)> &&lower_res
 }
 
 template <class T>
+union MaybeUninit {
+    T value;
+    char dummy;
+};
+template <class T>
 struct fulfil_promise_data {
     symmetric::runtime::symmetric_stream::StreamObj stream;
     std::promise<T> promise;
+    MaybeUninit<T> value;
 };
 
 template <class T>
-static symmetric::runtime::symmetric_executor::CallbackState fulfil_promise() {
-        // auto future = std::async(std::launch::async, [](std::future<T>&& fut, future_writer<T> &&wr){
-    // }, std::move(f), std::move(handles.0));
-    abort();
+static symmetric::runtime::symmetric_executor::CallbackState fulfil_promise(void* data) {
+    std::unique_ptr<fulfil_promise_data<T>> ptr((fulfil_promise_data<T>*)data);
+    auto buffer = ptr->stream.ReadResult();
+    ptr->promise.set_value(std::move(ptr->value.value));
+    // matching in place destruction
+    ptr->value.value.~T();
+    return symmetric::runtime::symmetric_executor::CallbackState::kReady;
 }
 
 template <class T>
@@ -70,6 +79,11 @@ std::future<T> lift_future(uint8_t* stream) {
     auto stream2 = symmetric::runtime::symmetric_stream::StreamObj(wit::ResourceImportBase(stream));
     auto event = stream2.ReadReadySubscribe();
     std::unique_ptr<fulfil_promise_data<T>> data = std::make_unique<fulfil_promise_data<T>>(fulfil_promise_data<T>{std::move(stream2), std::move(promise)});
+    symmetric::runtime::symmetric_stream::Buffer buf = symmetric::runtime::symmetric_stream::Buffer(
+        symmetric::runtime::symmetric_stream::Address(wit::ResourceImportBase((wit::ResourceImportBase::handle_t)&data->value.value)),
+        sizeof(T)
+    );
+    data->stream.StartReading(std::move(buf));
     symmetric::runtime::symmetric_executor::Register(std::move(event),
             symmetric::runtime::symmetric_executor::CallbackFunction(wit::ResourceImportBase((uint8_t*)&fulfil_promise<T>)),
             symmetric::runtime::symmetric_executor::CallbackData(wit::ResourceImportBase((uint8_t*)data.release())));
@@ -107,6 +121,7 @@ static symmetric::runtime::symmetric_executor::CallbackState write_to_future(voi
     T* dataptr = (T*)(buffer.GetAddress().into_handle());
     new (dataptr) T(std::move(result));
     ptr->wr.handle.FinishWriting(std::optional<symmetric::runtime::symmetric_stream::Buffer>(std::move(buffer)));
+    return symmetric::runtime::symmetric_executor::CallbackState::kReady;
 }
 
 template <class T>
