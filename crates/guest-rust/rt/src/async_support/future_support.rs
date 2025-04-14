@@ -166,8 +166,8 @@ pub unsafe fn future_new<T>(
 ) -> (FutureWriter<T>, FutureReader<T>) {
     unsafe {
         let handles = (vtable.new)();
-        let writer = handles as u32;
-        let reader = (handles >> 32) as u32;
+        let reader = handles as u32;
+        let writer = (handles >> 32) as u32;
         rtdebug!("future.new() = [{writer}, {reader}]");
         (
             FutureWriter::new(writer, vtable),
