@@ -80,6 +80,7 @@ struct Includes {
     // needs wit types
     needs_wit: bool,
     needs_memory: bool,
+    needs_future: bool,
 }
 
 #[derive(Clone)]
@@ -388,6 +389,9 @@ impl Cpp {
         if self.dependencies.needs_expected {
             self.include("<expected>");
         }
+        if self.dependencies.needs_future {
+            self.include("<future>");
+        }
         if self.dependencies.needs_optional {
             self.include("<optional>");
         }
@@ -663,6 +667,9 @@ impl WorldGenerator for Cpp {
                 struct WASMExecEnv; // WAMR execution environment\n",
                 world.name.to_shouty_snake_case(),
             );
+        }
+        if self.dependencies.needs_future {
+            uwriteln!(self.c_src_head, "#include \"async_support.h\"")
         }
         self.finish_includes();
 
@@ -1237,7 +1244,7 @@ impl CppInterfaceGenerator<'_> {
                     &res.namespace,
                     Flavor::Result(abi_variant),
                 ));
-                res.result.push('>');
+                // res.result.push('>');
             } else {
                 res.result = "void".into();
             }
@@ -2036,6 +2043,7 @@ impl CppInterfaceGenerator<'_> {
                     }
                 }
                 TypeDefKind::Future(ty) => {
+                    self.gen.dependencies.needs_future = true;
                     "std::future<".to_string()
                         + &self.optional_type_name(ty.as_ref(), from_namespace, flavor)
                         + ">"
