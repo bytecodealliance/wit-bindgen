@@ -3856,7 +3856,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             abi::Instruction::LengthStore { offset } => self.store("size_t", *offset, operands),
             abi::Instruction::FutureLower { payload, .. } => {
                 results.push(format!(
-                    "lower_future<{}>({})",
+                    "lower_future<{}>(std::move({}))",
                     self.gen.optional_type_name(
                         payload.as_ref(),
                         &self.namespace,
@@ -3878,7 +3878,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             }
             abi::Instruction::StreamLower { payload, .. } => {
                 results.push(format!(
-                    "lower_stream<{}>({})",
+                    "lower_stream<{}>(std::move({}))",
                     self.gen.optional_type_name(
                         payload.as_ref(),
                         &self.namespace,
