@@ -204,7 +204,7 @@ fn parse_async(s: &str) -> Result<AsyncConfig, String> {
 #[cfg_attr(
     feature = "serde",
     derive(serde::Deserialize),
-    serde(rename_all = "kebab-case")
+    serde(default, rename_all = "kebab-case")
 )]
 pub struct Opts {
     /// Whether or not a formatter is executed to format generated code.

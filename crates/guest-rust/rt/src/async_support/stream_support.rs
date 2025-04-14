@@ -71,8 +71,8 @@ pub unsafe fn stream_new<T>(
 ) -> (StreamWriter<T>, StreamReader<T>) {
     unsafe {
         let handles = (vtable.new)();
-        let writer = handles as u32;
-        let reader = (handles >> 32) as u32;
+        let reader = handles as u32;
+        let writer = (handles >> 32) as u32;
         rtdebug!("stream.new() = [{writer}, {reader}]");
         (
             StreamWriter::new(writer, vtable),
