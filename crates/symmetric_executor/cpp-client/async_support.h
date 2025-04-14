@@ -127,20 +127,24 @@ static symmetric::runtime::symmetric_executor::CallbackState write_to_future(voi
         T* dataptr = (T*)(buffer.GetAddress().into_handle());
         auto result = ptr->fut.get();
         new (dataptr) T(std::move(result));
+        buffer.SetSize(1);
         ptr->wr.handle.FinishWriting(std::optional<symmetric::runtime::symmetric_stream::Buffer>(std::move(buffer)));
     } else {
         // sadly there is no easier way to wait for a future in the background?
         // move to run_in_background
         symmetric::runtime::symmetric_executor::EventGenerator gen;
         auto waiting = gen.Subscribe();
-        auto task = std::async(std::launch::async, [](std::unique_ptr<write_to_future_data<T>> &&ptr){
+        auto task = std::async(std::launch::async, [](std::unique_ptr<write_to_future_data<T>> &&ptr, 
+            symmetric::runtime::symmetric_executor::EventGenerator &&gen){
             auto buffer = ptr->wr.handle.StartWriting();
             // assert(buffer.GetSize()==1); //sizeof(T));
             T* dataptr = (T*)(buffer.GetAddress().into_handle());        
             auto result = ptr->fut.get();
             new (dataptr) T(std::move(result));
+            buffer.SetSize(1);
             ptr->wr.handle.FinishWriting(std::optional<symmetric::runtime::symmetric_stream::Buffer>(std::move(buffer)));
-        }, std::move(ptr));
+            gen.Activate();
+        }, std::move(ptr), std::move(gen));
         auto fut = std::make_unique<std::future<void>>(std::move(task));
         symmetric::runtime::symmetric_executor::Register(waiting.Dup(), 
             symmetric::runtime::symmetric_executor::CallbackFunction(wit::ResourceImportBase((uint8_t*)wait_on_future)),

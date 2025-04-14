@@ -2040,7 +2040,11 @@ impl CppInterfaceGenerator<'_> {
                         + &self.optional_type_name(ty.as_ref(), from_namespace, flavor)
                         + ">"
                 }
-                TypeDefKind::Stream(_) => todo!(),
+                TypeDefKind::Stream(ty) => {
+                    "wit::stream<".to_string()
+                        + &self.optional_type_name(ty.as_ref(), from_namespace, flavor)
+                        + ">"
+                }
                 TypeDefKind::Type(ty) => self.type_name(ty, from_namespace, flavor),
                 TypeDefKind::Unknown => todo!(),
             },
@@ -3850,16 +3854,50 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 self.store(ptr_type, *offset, operands)
             }
             abi::Instruction::LengthStore { offset } => self.store("size_t", *offset, operands),
-            abi::Instruction::FutureLower { .. } => {
-                self.src.push_str("future_lower()");
-                results.push(String::from("future"));
+            abi::Instruction::FutureLower { payload, .. } => {
+                results.push(format!(
+                    "lower_future<{}>({})",
+                    self.gen.optional_type_name(
+                        payload.as_ref(),
+                        &self.namespace,
+                        Flavor::InStruct
+                    ),
+                    operands[0]
+                ));
             }
-            abi::Instruction::FutureLift { .. } => {
-                self.src.push_str("future_lift()");
-                results.push(String::from("future"));
+            abi::Instruction::FutureLift { payload, .. } => {
+                results.push(format!(
+                    "lift_future<{}>({})",
+                    self.gen.optional_type_name(
+                        payload.as_ref(),
+                        &self.namespace,
+                        Flavor::InStruct
+                    ),
+                    operands[0]
+                ));
             }
-            abi::Instruction::StreamLower { .. } => todo!(),
-            abi::Instruction::StreamLift { .. } => todo!(),
+            abi::Instruction::StreamLower { payload, .. } => {
+                results.push(format!(
+                    "lower_stream<{}>({})",
+                    self.gen.optional_type_name(
+                        payload.as_ref(),
+                        &self.namespace,
+                        Flavor::InStruct
+                    ),
+                    operands[0]
+                ));
+            }
+            abi::Instruction::StreamLift { payload, .. } => {
+                results.push(format!(
+                    "lift_stream<{}>({})",
+                    self.gen.optional_type_name(
+                        payload.as_ref(),
+                        &self.namespace,
+                        Flavor::InStruct
+                    ),
+                    operands[0]
+                ));
+            }
             abi::Instruction::ErrorContextLower { .. } => todo!(),
             abi::Instruction::ErrorContextLift { .. } => todo!(),
             abi::Instruction::Flush { amt } => {
