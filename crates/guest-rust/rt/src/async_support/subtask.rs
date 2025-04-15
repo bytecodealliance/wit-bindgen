@@ -80,12 +80,10 @@ unsafe impl<T: Subtask> WaitableOp for SubtaskOps<T> {
             let (ptr_params, cleanup) = Cleanup::new(T::ABI_LAYOUT);
             let ptr_results = ptr_params.add(T::RESULTS_OFFSET);
             T::params_lower(state.params, ptr_params);
-            let result = T::call_import(ptr_params, ptr_results);
-            // FIXME(bytecodealliance/wasip3-prototyping#99) the decoding of the
-            // result here isn't standards-compliant.
-            let code = result >> 30;
-            let subtask =
-                NonZeroU32::new((result << 2) >> 2).map(|handle| SubtaskHandle { handle });
+            let packed = T::call_import(ptr_params, ptr_results);
+            let code = packed & 0xf;
+            let subtask = NonZeroU32::new(packed >> 4).map(|handle| SubtaskHandle { handle });
+            rtdebug!("<import>({ptr_params:?}, {ptr_results:?}) = ({code:#x}, {subtask:#x?})");
 
             (
                 code,
