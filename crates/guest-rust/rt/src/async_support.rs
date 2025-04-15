@@ -287,6 +287,41 @@ const STATUS_STARTING: u32 = 1;
 const STATUS_STARTED: u32 = 2;
 const STATUS_RETURNED: u32 = 3;
 
+const BLOCKED: u32 = 0xffff_ffff;
+const COMPLETED: u32 = 0x0;
+const CLOSED: u32 = 0x1;
+const CANCELLED: u32 = 0x2;
+
+/// Return code of stream/future operations.
+#[derive(PartialEq, Debug)]
+enum ReturnCode {
+    /// The operation is blocked and has not completed.
+    Blocked,
+    /// The operation completed with the specified number of items.
+    Completed(u32),
+    /// The other end is closed, but before that the specified number of items
+    /// were transferred.
+    Closed(u32),
+    /// The operation was cancelled, but before that the specified number of
+    /// items were transferred.
+    Cancelled(u32),
+}
+
+impl ReturnCode {
+    fn decode(val: u32) -> ReturnCode {
+        if val == BLOCKED {
+            return ReturnCode::Blocked;
+        }
+        let amt = val >> 4;
+        match val & 0xf {
+            COMPLETED => ReturnCode::Completed(amt),
+            CLOSED => ReturnCode::Closed(amt),
+            CANCELLED => ReturnCode::Cancelled(amt),
+            _ => panic!("unknown return code {val:#x}"),
+        }
+    }
+}
+
 /// Starts execution of the `task` provided, an asynchronous computation.
 ///
 /// This is used for async-lifted exports at their definition site. The
@@ -311,13 +346,6 @@ pub fn start_task(task: impl Future<Output = ()> + 'static) -> u32 {
         context_set(state.cast());
         callback(EVENT_NONE, 0, 0)
     }
-}
-
-/// stream/future read/write results defined by the Component Model ABI.
-mod results {
-    pub const BLOCKED: u32 = 0xffff_ffff;
-    pub const CLOSED: u32 = 0x8000_0000;
-    pub const CANCELED: u32 = 0;
 }
 
 /// Handle a progress notification from the host regarding either a call to an

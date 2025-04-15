@@ -760,13 +760,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "test-rust-wasm"
-version = "0.0.0"
-dependencies = [
- "wit-bindgen",
-]
-
-[[package]]
 name = "thiserror"
 version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
