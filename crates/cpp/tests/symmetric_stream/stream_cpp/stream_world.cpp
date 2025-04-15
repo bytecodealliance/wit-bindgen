@@ -8,6 +8,7 @@ void __component_type_object_force_link_stream_world_public_use_in_this_compilat
 }
 #endif
 #include "stream_world_cpp.h"
+#include "async_support.h"
 #include <cstdlib> // realloc
 
 extern "C" void *cabi_realloc(void *ptr, size_t old_size, size_t align, size_t new_size);

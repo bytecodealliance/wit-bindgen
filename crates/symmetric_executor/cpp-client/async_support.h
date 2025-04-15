@@ -1,6 +1,7 @@
 
 #include <future>
 #include "module_cpp.h"
+#include "stream_support.h"
 
 static symmetric::runtime::symmetric_executor::CallbackState fulfil_promise_void(void* data) {
     std::unique_ptr<std::promise<void>> ptr((std::promise<void>*)data);
@@ -8,7 +9,7 @@ static symmetric::runtime::symmetric_executor::CallbackState fulfil_promise_void
     return symmetric::runtime::symmetric_executor::CallbackState::kReady;
 }
   
-std::future<void> lift_event(void* event) {
+static std::future<void> lift_event(void* event) {
     std::promise<void> result;
     std::future<void> result1 = result.get_future();
     if (!event) { 
@@ -95,6 +96,11 @@ std::future<T> lift_future(uint8_t* stream) {
     return result;
 }
 
+template <class T>
+wit::stream<T> lift_stream(uint8_t* stream) {
+    return wit::stream<T>{symmetric::runtime::symmetric_stream::StreamObj(wit::ResourceImportBase((wit::ResourceImportBase::handle_t)stream))};
+}
+
 template <class T> struct future_writer {
     symmetric::runtime::symmetric_stream::StreamObj handle;
 };
@@ -109,6 +115,20 @@ std::pair<future_writer<T>, future_reader<T>> create_wasi_future() {
     auto stream2 = stream.Clone();
     return std::make_pair<future_writer<T>, future_reader<T>>(
         future_writer<T>{std::move(stream)}, future_reader<T>{std::move(stream2)});
+}
+
+template <class T> struct stream_writer {
+    symmetric::runtime::symmetric_stream::StreamObj handle;
+
+    void write(T&& data);
+};
+
+template <class T>
+std::pair<stream_writer<T>, wit::stream<T>> create_wasi_stream() {
+    auto stream = symmetric::runtime::symmetric_stream::StreamObj();
+    auto stream2 = stream.Clone();
+    return std::make_pair<stream_writer<T>, wit::stream<T>>(
+        stream_writer<T>{std::move(stream)}, wit::stream<T>{std::move(stream2)});
 }
 
 template <class T>
@@ -162,4 +182,9 @@ uint8_t* lower_future(std::future<T> &&f) {
         symmetric::runtime::symmetric_executor::CallbackFunction(wit::ResourceImportBase((uint8_t*)&write_to_future<T>)),
         symmetric::runtime::symmetric_executor::CallbackData(wit::ResourceImportBase((uint8_t*)fut.release())));
     return handles.second.handle.into_handle();
+}
+
+template <class T>
+uint8_t* lower_stream(wit::stream<T> &&f) {
+    return f.handle.into_handle();
 }

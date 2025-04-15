@@ -4,6 +4,7 @@
 #define WIT_SYMMETRIC
 #include <cstdint>
 #include <utility>
+#include <stream_support.h>
 namespace test {namespace test {namespace stream_source {wit::stream<uint32_t> Create();
 // export_interface Interface(Id { idx: 1 })
 }}}
