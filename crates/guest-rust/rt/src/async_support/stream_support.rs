@@ -2,7 +2,7 @@
 //! module documentation in `future_support.rs`.
 
 use crate::async_support::waitable::{WaitableOp, WaitableOperation};
-use crate::async_support::{results, AbiBuffer};
+use crate::async_support::{AbiBuffer, ReturnCode};
 use {
     crate::Cleanup,
     std::{
@@ -258,11 +258,11 @@ where
         (writer, mut buf): Self::InProgress,
         code: u32,
     ) -> Result<Self::Result, Self::InProgress> {
-        match code {
-            results::BLOCKED => Err((writer, buf)),
-            results::CLOSED => Ok((StreamResult::Closed, buf)),
-            results::CANCELED => Ok((StreamResult::Cancelled, buf)),
-            amt => {
+        match ReturnCode::decode(code) {
+            ReturnCode::Blocked => Err((writer, buf)),
+            ReturnCode::Closed(0) => Ok((StreamResult::Closed, buf)),
+            ReturnCode::Cancelled(0) => Ok((StreamResult::Cancelled, buf)),
+            ReturnCode::Completed(amt) | ReturnCode::Closed(amt) | ReturnCode::Cancelled(amt) => {
                 let amt = amt.try_into().unwrap();
                 buf.advance(amt);
                 Ok((StreamResult::Complete(amt), buf))
@@ -480,20 +480,20 @@ where
         (reader, mut buf, cleanup): Self::InProgress,
         code: u32,
     ) -> Result<Self::Result, Self::InProgress> {
-        match code {
-            results::BLOCKED => Err((reader, buf, cleanup)),
+        match ReturnCode::decode(code) {
+            ReturnCode::Blocked => Err((reader, buf, cleanup)),
 
             // Note that the `cleanup`, if any, is discarded here.
-            results::CLOSED => Ok((StreamResult::Closed, buf)),
+            ReturnCode::Closed(0) => Ok((StreamResult::Closed, buf)),
 
             // When an in-progress read is successfully cancelled then the
             // allocation that was being read into, if any, is just discarded.
             //
             // TODO: should maybe thread this around like `AbiBuffer` to cache
             // the read allocation?
-            results::CANCELED => Ok((StreamResult::Cancelled, buf)),
+            ReturnCode::Cancelled(0) => Ok((StreamResult::Cancelled, buf)),
 
-            amt => {
+            ReturnCode::Completed(amt) | ReturnCode::Closed(amt) | ReturnCode::Cancelled(amt) => {
                 let amt = usize::try_from(amt).unwrap();
                 let cur_len = buf.len();
                 assert!(amt <= buf.capacity() - cur_len);
