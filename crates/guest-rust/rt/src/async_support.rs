@@ -117,26 +117,16 @@ impl FutureState {
 
     fn callback(&mut self, event0: u32, event1: u32, event2: u32) -> u32 {
         match event0 {
-            EVENT_NONE => {
-                rtdebug!("EVENT_NONE");
-            }
-            EVENT_CALL_STARTED => {
-                rtdebug!("EVENT_CALL_STARTED({event1:#x})");
-                self.deliver_waitable_event(event1, STATUS_STARTED)
-            }
-            EVENT_CALL_RETURNED => {
-                rtdebug!("EVENT_CALL_RETURNED({event1:#x})");
-                self.deliver_waitable_event(event1, STATUS_RETURNED)
-            }
-
-            EVENT_STREAM_READ | EVENT_STREAM_WRITE | EVENT_FUTURE_READ | EVENT_FUTURE_WRITE => {
-                rtdebug!(
-                    "EVENT_{{STREAM,FUTURE}}_{{READ,WRITE}}({event0:#x}, {event1:#x}, {event2:#x})"
-                );
-                self.deliver_waitable_event(event1, event2)
-            }
-
+            EVENT_NONE => rtdebug!("EVENT_NONE"),
+            EVENT_SUBTASK => rtdebug!("EVENT_SUBTASK({event1:#x}, {event2:#x})"),
+            EVENT_STREAM_READ => rtdebug!("EVENT_STREAM_READ({event1:#x}, {event2:#x})"),
+            EVENT_STREAM_WRITE => rtdebug!("EVENT_STREAM_WRITE({event1:#x}, {event2:#x})"),
+            EVENT_FUTURE_READ => rtdebug!("EVENT_FUTURE_READ({event1:#x}, {event2:#x})"),
+            EVENT_FUTURE_WRITE => rtdebug!("EVENT_FUTURE_WRITE({event1:#x}, {event2:#x})"),
             _ => unreachable!(),
+        }
+        if event0 != EVENT_NONE {
+            self.deliver_waitable_event(event1, event2)
         }
 
         loop {
@@ -270,22 +260,20 @@ impl Wake for FutureWaker {
 static mut SPAWNED: Vec<BoxFuture> = Vec::new();
 
 const EVENT_NONE: u32 = 0;
-const _EVENT_CALL_STARTING: u32 = 1;
-const EVENT_CALL_STARTED: u32 = 2;
-const EVENT_CALL_RETURNED: u32 = 3;
-const EVENT_STREAM_READ: u32 = 5;
-const EVENT_STREAM_WRITE: u32 = 6;
-const EVENT_FUTURE_READ: u32 = 7;
-const EVENT_FUTURE_WRITE: u32 = 8;
+const EVENT_SUBTASK: u32 = 1;
+const EVENT_STREAM_READ: u32 = 2;
+const EVENT_STREAM_WRITE: u32 = 3;
+const EVENT_FUTURE_READ: u32 = 4;
+const EVENT_FUTURE_WRITE: u32 = 5;
 
 const CALLBACK_CODE_EXIT: u32 = 0;
 const CALLBACK_CODE_YIELD: u32 = 1;
 const CALLBACK_CODE_WAIT: u32 = 2;
 const _CALLBACK_CODE_POLL: u32 = 3;
 
-const STATUS_STARTING: u32 = 1;
-const STATUS_STARTED: u32 = 2;
-const STATUS_RETURNED: u32 = 3;
+const STATUS_STARTING: u32 = 0;
+const STATUS_STARTED: u32 = 1;
+const STATUS_RETURNED: u32 = 2;
 
 const BLOCKED: u32 = 0xffff_ffff;
 const COMPLETED: u32 = 0x0;
