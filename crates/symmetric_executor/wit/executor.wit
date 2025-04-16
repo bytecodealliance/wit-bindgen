@@ -55,6 +55,8 @@ interface symmetric-executor {
     run: func();
     /// Register a callback for an event
     register: func(trigger: event-subscription, callback: callback-function, data: callback-data);
+    /// Wait until one event occured (should logically switch between fibers)
+    block-on: func(event: event-subscription);
 }
 
 // language neutral stream implementation

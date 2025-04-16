@@ -5,17 +5,23 @@
 #include <tuple>
 
 wit::stream<uint32_t> exports::test::test::stream_test::Create() {
-    stream_writer<uint32_t> wr{symmetric::runtime::symmetric_stream::StreamObj(wit::ResourceImportBase(wit::ResourceImportBase::invalid))};
-    wit::stream<uint32_t> rd{symmetric::runtime::symmetric_stream::StreamObj(wit::ResourceImportBase(wit::ResourceImportBase::invalid))};
-    std::tie(wr, rd) = create_wasi_stream<uint32_t>();
-    // std::pair<stream_writer<uint32_t>, wit::stream<uint32_t>> my_stream = create_wasi_stream<uint32_t>();
+    auto streampair = create_wasi_stream<uint32_t>();
+    stream_writer<uint32_t>* streampointer = std::make_unique<stream_writer<uint32_t>>(std::move(streampair.first)).release();
     wit::stream<uint32_t> input = ::test::test::stream_source::Create();
-    std::move(input).buffering(2).set_reader([stream = std::move(wr)](wit::span<uint32_t> data){
-        for (auto i: data) {
-            // stream.write(i);
-            // stream.write(i+1);
+    input.buffering(2);
+    std::move(input).set_reader([streampointer](wit::span<uint32_t> data){
+        if (!data.empty()) {
+            std::vector<uint32_t> feed;
+            feed.reserve(data.size()*2);
+            for (auto i: data) {
+                feed.push_back(i);
+                feed.push_back(i+1);
+            }
+            streampointer->write(std::move(feed));
+        } else {
+            // free the stream at EOF
+            std::unique_ptr<stream_writer<uint32_t>>(streampointer);
         }
     });
-    // while read, output value, value+1
-    return rd;
+    return std::move(streampair).second;
 }

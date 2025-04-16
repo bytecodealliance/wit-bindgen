@@ -35,6 +35,7 @@ extern "C" uint8_t* symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5Bme
 extern "C" void symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00X5BmethodX5Devent_generatorX2Eactivate(uint8_t*);
 extern "C" void symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00run();
 extern "C" void symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00register(uint8_t*, uint8_t*, uint8_t*);
+extern "C" void symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00block_on(uint8_t*);
 extern "C" void symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5Bresource_dropX5Daddress(uint8_t*);
 extern "C" void symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5Bresource_dropX5Dbuffer(uint8_t*);
 extern "C" uint8_t* symmetricX3AruntimeX2Fsymmetric_streamX400X2E1X2E0X00X5BconstructorX5Dbuffer(uint8_t*, int64_t);
@@ -123,6 +124,10 @@ void symmetric::runtime::symmetric_executor::Run()
 void symmetric::runtime::symmetric_executor::Register(EventSubscription&& trigger, CallbackFunction&& callback, CallbackData&& data)
 {
   symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00register(trigger.into_handle(), callback.into_handle(), data.into_handle());
+}
+void symmetric::runtime::symmetric_executor::BlockOn(EventSubscription&& event)
+{
+  symmetricX3AruntimeX2Fsymmetric_executorX400X2E1X2E0X00block_on(event.into_handle());
 }
 symmetric::runtime::symmetric_stream::Address::~Address()
 {

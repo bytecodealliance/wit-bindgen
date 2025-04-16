@@ -120,7 +120,21 @@ std::pair<future_writer<T>, future_reader<T>> create_wasi_future() {
 template <class T> struct stream_writer {
     symmetric::runtime::symmetric_stream::StreamObj handle;
 
-    void write(T&& data);
+    void write(std::vector<T>&& data) {
+        while (!data.empty()) {
+            if (!handle.IsReadyToWrite()) {
+                symmetric::runtime::symmetric_executor::BlockOn(handle.WriteReadySubscribe());
+            }
+            auto buffer = handle.StartWriting();
+            auto capacity = buffer.Capacity();
+            T* dest = (T*)buffer.GetAddress().into_handle();
+            for (uint32_t i = 0; i<capacity && i<data.size(); +i) {
+                new (dest+i) T(std::move(data[i]));
+            }
+            if (capacity>data.size()) capacity = data.size();
+            data.erase(data.begin(), data.begin() + capacity);
+        }        
+    }
 };
 
 template <class T>

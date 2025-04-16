@@ -74,6 +74,7 @@ enum class CallbackState : uint8_t {
 
 void Run();
 void Register(EventSubscription&& trigger, CallbackFunction&& callback, CallbackData&& data);
+void BlockOn(EventSubscription&& event);
 }
 namespace symmetric_stream {using EventSubscription = symmetric_executor::EventSubscription;
 class Address : public wit::ResourceImportBase{
