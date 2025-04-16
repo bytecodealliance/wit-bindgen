@@ -934,6 +934,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::AsyncTaskReturn { name, params } => {
                 let func = self.declare_import(name, params, &[]);
 
+                uwriteln!(self.src, "_task_cancel.forget();");
                 uwriteln!(self.src, "{func}({});", operands.join(", "));
             }
 
@@ -1201,6 +1202,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     size = size.format(POINTER_SIZE_EXPRESSION),
                     align = align.format(POINTER_SIZE_EXPRESSION)
                 ));
+            }
+
+            Instruction::DropHandle { .. } => {
+                uwriteln!(self.src, "let _ = {};", operands[0]);
             }
         }
     }
