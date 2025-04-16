@@ -88,8 +88,8 @@
 //! changing its layout. Currently this is par-for-the-course with bindings.
 
 use {
-    super::results,
     super::waitable::{WaitableOp, WaitableOperation},
+    super::ReturnCode,
     crate::Cleanup,
     std::{
         alloc::Layout,
@@ -306,8 +306,8 @@ where
             .as_ref()
             .map(|c| c.ptr.as_ptr())
             .unwrap_or(ptr::null_mut());
-        match code {
-            results::BLOCKED => Err((writer, cleanup)),
+        match ReturnCode::decode(code) {
+            ReturnCode::Blocked => Err((writer, cleanup)),
 
             // The other end has closed its end.
             //
@@ -316,11 +316,11 @@ where
             // instance of `T` which takes ownership of pointers and resources
             // and such. The allocation of `ptr` is then cleaned up naturally
             // when `cleanup` goes out of scope.
-            results::CLOSED | results::CANCELED => {
+            c @ ReturnCode::Closed(0) | c @ ReturnCode::Cancelled(0) => {
                 // SAFETY: we're the ones managing `ptr` so we know it's safe to
                 // pass here.
                 let value = unsafe { (writer.vtable.lift)(ptr) };
-                let status = if code == results::CLOSED {
+                let status = if c == ReturnCode::Closed(0) {
                     WriteComplete::Closed(value)
                 } else {
                     WriteComplete::Cancelled(value)
@@ -337,7 +337,7 @@ where
             //
             // Afterwards the `cleanup` itself is naturally dropped and cleaned
             // up.
-            1 => {
+            ReturnCode::Completed(1) | ReturnCode::Closed(1) | ReturnCode::Cancelled(1) => {
                 // SAFETY: we're the ones managing `ptr` so we know it's safe to
                 // pass here.
                 unsafe {
@@ -346,7 +346,7 @@ where
                 Ok((WriteComplete::Written, writer))
             }
 
-            other => unreachable!("unexpected code {other:#x}"),
+            other => unreachable!("unexpected code {other:?}"),
         }
     }
 
@@ -566,22 +566,22 @@ where
         (reader, cleanup): Self::InProgress,
         code: u32,
     ) -> Result<Self::Result, Self::InProgress> {
-        match code {
-            results::BLOCKED => Err((reader, cleanup)),
+        match ReturnCode::decode(code) {
+            ReturnCode::Blocked => Err((reader, cleanup)),
 
             // The read didn't complete, so `cleanup` is still uninitialized, so
             // let it fall out of scope.
-            results::CLOSED => Ok((ReadComplete::Closed, reader)),
+            ReturnCode::Closed(0) => Ok((ReadComplete::Closed, reader)),
 
             // Like `in_progress_closed` the read operation has finished but
             // without a value, so let `cleanup` fall out of scope to clean up
             // its allocation.
-            results::CANCELED => Ok((ReadComplete::Cancelled, reader)),
+            ReturnCode::Cancelled(0) => Ok((ReadComplete::Cancelled, reader)),
 
             // The read has completed, so lift the value from the stored memory and
             // `cleanup` naturally falls out of scope after transferring ownership of
             // everything to the returned `value`.
-            1 => {
+            ReturnCode::Completed(1) | ReturnCode::Closed(1) | ReturnCode::Cancelled(1) => {
                 let ptr = cleanup
                     .as_ref()
                     .map(|c| c.ptr.as_ptr())
@@ -593,7 +593,7 @@ where
                 Ok((ReadComplete::Value(value), reader))
             }
 
-            other => panic!("unexpected code {other:#x}"),
+            other => panic!("unexpected code {other:?}"),
         }
     }
 
