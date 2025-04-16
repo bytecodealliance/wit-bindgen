@@ -24,9 +24,6 @@ use wit_parser::{
 pub struct CSharp {
     pub(crate) opts: Opts,
     pub(crate) name: String,
-    pub(crate) usings: HashSet<String>,
-    #[allow(unused)]
-    pub(crate) interop_usings: HashSet<String>,
     pub(crate) return_area_size: usize,
     pub(crate) return_area_align: usize,
     pub(crate) tuple_counts: HashSet<usize>,
@@ -73,8 +70,6 @@ impl CSharp {
             resolve,
             name,
             direction,
-            usings: HashSet::<String>::new(),
-            interop_usings: HashSet::<String>::new(),
         }
     }
 
@@ -89,21 +84,6 @@ impl CSharp {
             (qualifier.unwrap_or("").to_string(), last_part.to_string())
         } else {
             (String::new(), String::new())
-        }
-    }
-
-    pub(crate) fn require_using(&mut self, using_ns: &str) {
-        if !self.usings.contains(using_ns) {
-            let using_ns_string = using_ns.to_string();
-            self.usings.insert(using_ns_string);
-        }
-    }
-
-    #[allow(unused)]
-    fn require_interop_using(&mut self, using_ns: &str) {
-        if !self.interop_usings.contains(using_ns) {
-            let using_ns_string = using_ns.to_string();
-            self.interop_usings.insert(using_ns_string);
         }
     }
 }
@@ -315,8 +295,6 @@ impl WorldGenerator for CSharp {
 
         let access = self.access_modifier();
 
-        let using_pos = src.len();
-
         uwrite!(
             src,
             "
@@ -335,16 +313,6 @@ impl WorldGenerator for CSharp {
                 .join("\n"),
         );
 
-        let usings: Vec<_> = self
-            .world_fragments
-            .iter()
-            .flat_map(|f| &f.usings)
-            .cloned()
-            .collect();
-        usings.iter().for_each(|u| {
-            self.require_using(u);
-        });
-
         let mut producers = wasm_metadata::Producers::empty();
         producers.add(
             "processed-by",
@@ -355,14 +323,13 @@ impl WorldGenerator for CSharp {
         src.push_str("}\n");
 
         if self.needs_result {
-            self.require_using("System.Runtime.InteropServices");
             uwrite!(
                 src,
                 r#"
 
                 {access} readonly struct None {{}}
 
-                [StructLayout(LayoutKind.Sequential)]
+                [global::System.Runtime.InteropServices.StructLayoutAttribute(global::System.Runtime.InteropServices.LayoutKind.Sequential)]
                 {access} readonly struct Result<TOk, TErr>
                 {{
                     {access} readonly byte Tag;
@@ -396,7 +363,7 @@ impl WorldGenerator for CSharp {
                                 return (TOk)value;
                             }}
 
-                            throw new ArgumentException("expected k, got " + Tag);
+                            throw new global::System.ArgumentException("expected k, got " + Tag);
                         }}
                     }}
 
@@ -409,7 +376,7 @@ impl WorldGenerator for CSharp {
                                 return (TErr)value;
                             }}
 
-                            throw new ArgumentException("expected Err, got " + Tag);
+                            throw new global::System.ArgumentException("expected Err, got " + Tag);
                         }}
                     }}
 
@@ -424,7 +391,6 @@ impl WorldGenerator for CSharp {
         }
 
         if self.needs_option {
-            self.require_using("System.Diagnostics.CodeAnalysis");
             uwrite!(
                 src,
                 r#"
@@ -445,7 +411,7 @@ impl WorldGenerator for CSharp {
 
                     {access} static Option<T> None => none;
 
-                    [MemberNotNullWhen(true, nameof(Value))]
+                    [global::System.Diagnostics.CodeAnalysis.MemberNotNullWhenAttribute(true, nameof(Value))]
                     {access} bool HasValue {{ get; }}
 
                     {access} T? Value {{ get; }}
@@ -458,7 +424,7 @@ impl WorldGenerator for CSharp {
             uwrite!(
                 src,
                 r#"
-                {access} class WitException: Exception {{
+                {access} class WitException: global::System.Exception {{
                     {access} object Value {{ get; }}
                     {access} uint NestingLevel {{ get; }}
 
@@ -489,26 +455,25 @@ impl WorldGenerator for CSharp {
             let (array_size, element_type) =
                 dotnet_aligned_array(self.return_area_size, self.return_area_align);
 
-            self.require_using("System.Runtime.CompilerServices");
             uwrite!(
                 ret_area_str,
                 "
                 {access} static class InteropReturnArea
                 {{
-                    [InlineArray({0})]
-                    [StructLayout(LayoutKind.Sequential, Pack = {1})]
+                    [global::System.Runtime.CompilerServices.InlineArrayAttribute({0})]
+                    [global::System.Runtime.InteropServices.StructLayoutAttribute(global::System.Runtime.InteropServices.LayoutKind.Sequential, Pack = {1})]
                     internal struct ReturnArea
                     {{
                         private {2} buffer;
 
                         internal unsafe nint AddressOfReturnArea()
                         {{
-                            return (nint)Unsafe.AsPointer(ref buffer);
+                            return (nint)global::System.Runtime.CompilerServices.Unsafe.AsPointer(ref buffer);
                         }}
                     }}
 
-                    [ThreadStatic]
-                    [FixedAddressValueType]
+                    [global::System.ThreadStaticAttribute]
+                    [global::System.Runtime.CompilerServices.FixedAddressValueTypeAttribute]
                     internal static ReturnArea returnArea = default;
                 }}
                 ",
@@ -530,20 +495,6 @@ impl WorldGenerator for CSharp {
 
             src.push_str("namespace exports {\n");
 
-            src.push_str(
-                &self
-                    .world_fragments
-                    .iter()
-                    .flat_map(|f| &f.interop_usings)
-                    .into_iter()
-                    .collect::<HashSet<&String>>() // de-dup across world_fragments
-                    .iter()
-                    .map(|s| "using ".to_owned() + s + ";")
-                    .collect::<Vec<String>>()
-                    .join("\n"),
-            );
-            src.push_str("\n");
-
             src.push_str(&format!("{access} static class {name}World\n"));
             src.push_str("{");
 
@@ -559,16 +510,6 @@ impl WorldGenerator for CSharp {
         src.push_str("\n");
 
         src.push_str("}\n");
-
-        src.insert_str(
-            using_pos,
-            &self
-                .usings
-                .iter()
-                .map(|s| "using ".to_owned() + s + ";")
-                .collect::<Vec<String>>()
-                .join("\n"),
-        );
 
         files.push(&format!("{name}.cs"), indent(&src).as_bytes());
 
@@ -707,7 +648,7 @@ impl WorldGenerator for CSharp {
                 // temporarily add this attribute until it is available in dotnet 9
                 namespace System.Runtime.InteropServices
                 {{
-                    internal partial class WasmImportLinkageAttribute : Attribute {{}}
+                    internal partial class WasmImportLinkageAttribute : global::System.Attribute {{}}
                 }}
                 #endif
                 "#,
@@ -734,7 +675,6 @@ impl WorldGenerator for CSharp {
             if body.len() > 0 {
                 let body = format!(
                     "{header}
-                    {0}
 
                     namespace {namespace};
 
@@ -742,12 +682,6 @@ impl WorldGenerator for CSharp {
                         {body}
                     }}
                     ",
-                    fragments
-                        .iter()
-                        .flat_map(|f| &f.usings)
-                        .map(|s| "using ".to_owned() + s + ";")
-                        .collect::<Vec<String>>()
-                        .join("\n"),
                 );
 
                 files.push(&format!("{full_name}.cs"), indent(&body).as_bytes());
@@ -763,7 +697,6 @@ impl WorldGenerator for CSharp {
             let class_name = interface_name.strip_prefix("I").unwrap();
             let body = format!(
                 "{header}
-                 {0}
 
                 namespace {namespace}
                 {{
@@ -772,12 +705,6 @@ impl WorldGenerator for CSharp {
                   }}
                 }}
                 ",
-                fragments
-                    .iter()
-                    .flat_map(|f| &f.interop_usings)
-                    .map(|s| "using ".to_owned() + s + ";\n")
-                    .collect::<Vec<String>>()
-                    .join(""),
             );
 
             files.push(
