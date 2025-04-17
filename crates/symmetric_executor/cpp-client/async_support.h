@@ -128,13 +128,27 @@ template <class T> struct stream_writer {
             auto buffer = handle.StartWriting();
             auto capacity = buffer.Capacity();
             T* dest = (T*)buffer.GetAddress().into_handle();
-            for (uint32_t i = 0; i<capacity && i<data.size(); +i) {
+            auto elements = data.size();
+            if (elements<capacity) elements=capacity;
+            for (uint32_t i = 0; i<elements; ++i) {
                 new (dest+i) T(std::move(data[i]));
             }
+            buffer.SetSize(elements);
+            handle.FinishWriting(std::optional<symmetric::runtime::symmetric_stream::Buffer>(std::move(buffer)));
+
             if (capacity>data.size()) capacity = data.size();
             data.erase(data.begin(), data.begin() + capacity);
         }        
     }
+    ~stream_writer() {
+        if (handle.get_handle()!=wit::ResourceImportBase::invalid) {
+            handle.FinishWriting(std::optional<symmetric::runtime::symmetric_stream::Buffer>());
+        }
+    }
+    stream_writer(const stream_writer&) = delete;
+    stream_writer& operator=(const stream_writer&) = delete;
+    stream_writer(stream_writer&&) = default;
+    stream_writer& operator=(stream_writer&&) = default;
 };
 
 template <class T>

@@ -44,6 +44,7 @@ namespace wit {
                 uint32_t size = buffer->GetSize();
                 if (size>0)
                     data->reader(wit::span<T>(&data->buffer[0].value, size));
+                data->handle.StartReading(std::move(*buffer));
                 return symmetric::runtime::symmetric_executor::CallbackState::kPending;
             } else {
                 data->reader(wit::span<T>(&data->buffer[0].value, 0));
