@@ -29,6 +29,7 @@ extern "C" fn ready(arg: *mut ()) -> CallbackState {
         CallbackState::Pending
     } else {
         // finished
+        println!("EOF on input");
         CallbackState::Ready
     }
 }

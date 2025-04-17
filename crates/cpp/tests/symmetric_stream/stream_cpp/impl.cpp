@@ -6,7 +6,7 @@
 
 wit::stream<uint32_t> exports::test::test::stream_test::Create() {
     auto streampair = create_wasi_stream<uint32_t>();
-    stream_writer<uint32_t>* streampointer = std::make_unique<stream_writer<uint32_t>>(std::move(streampair.first)).release();
+    stream_writer<uint32_t>* streampointer = std::make_unique<stream_writer<uint32_t>>(std::move(std::move(streampair).first)).release();
     wit::stream<uint32_t> input = ::test::test::stream_source::Create();
     input.buffering(2);
     std::move(input).set_reader([streampointer](wit::span<uint32_t> data){
@@ -20,7 +20,7 @@ wit::stream<uint32_t> exports::test::test::stream_test::Create() {
             streampointer->write(std::move(feed));
         } else {
             // free the stream at EOF
-            std::unique_ptr<stream_writer<uint32_t>>(streampointer);
+            auto release = std::unique_ptr<stream_writer<uint32_t>>(streampointer);
         }
     });
     return std::move(streampair).second;
