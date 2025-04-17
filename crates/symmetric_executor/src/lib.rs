@@ -112,6 +112,18 @@ struct Executor {
     change_event: Option<EventFd>,
 }
 
+impl Executor {
+    fn change_event(&mut self) -> EventFd {
+        *self.change_event.get_or_insert_with(|| {
+            let fd = unsafe { libc::eventfd(0, libc::EFD_NONBLOCK) };
+            if DEBUGGING {
+                println!("change event fd={}", fd);
+            }
+            fd
+        })
+    }
+}
+
 static EXECUTOR: Mutex<Executor> = Mutex::new(Executor {
     active_tasks: Vec::new(),
     change_event: None,
@@ -127,11 +139,7 @@ impl symmetric_executor::Guest for Guest {
     type EventGenerator = EventGenerator;
 
     fn run() {
-        let change_event = *EXECUTOR
-            .lock()
-            .unwrap()
-            .change_event
-            .get_or_insert_with(|| unsafe { libc::eventfd(0, libc::EFD_NONBLOCK) });
+        let change_event = EXECUTOR.lock().unwrap().change_event();
         loop {
             let mut wait = libc::timeval {
                 tv_sec: i64::MAX,
@@ -322,9 +330,7 @@ impl symmetric_executor::Guest for Guest {
             Ok(mut lock) => {
                 lock.active_tasks.push(subscr);
                 let file_signal: u64 = 1;
-                let fd = *lock
-                    .change_event
-                    .get_or_insert_with(|| unsafe { libc::eventfd(0, libc::EFD_NONBLOCK) });
+                let fd = lock.change_event();
                 let result = unsafe {
                     libc::write(
                         fd,
