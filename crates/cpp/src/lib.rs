@@ -2280,6 +2280,11 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                     self.gen.h_src.src,
                     "{pascal}& operator=({pascal}&&) = default;"
                 );
+                uwriteln!(self.gen.h_src.src, "{pascal}(const {pascal}&) = delete;");
+                uwriteln!(
+                    self.gen.h_src.src,
+                    "{pascal}& operator=(const {pascal}&) = delete;"
+                );
                 self.gen.c_src.qualify(&namespc);
                 uwriteln!(
                     self.gen.c_src.src,
