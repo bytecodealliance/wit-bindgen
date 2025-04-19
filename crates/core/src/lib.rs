@@ -218,7 +218,9 @@ pub trait AnonymousTypeGenerator<'a> {
             TypeDefKind::Future(f) => self.anonymous_type_future(id, f, &ty.docs),
             TypeDefKind::Stream(s) => self.anonymous_type_stream(id, s, &ty.docs),
             TypeDefKind::Handle(handle) => self.anonymous_type_handle(id, handle, &ty.docs),
-            TypeDefKind::FixedSizeList(t, size) => self.anonymous_type_fixed_size_list(id, t, *size, &ty.docs),
+            TypeDefKind::FixedSizeList(t, size) => {
+                self.anonymous_type_fixed_size_list(id, t, *size, &ty.docs)
+            }
             TypeDefKind::Unknown => unreachable!(),
         }
     }

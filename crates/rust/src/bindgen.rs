@@ -1207,12 +1207,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::DropHandle { .. } => {
                 uwriteln!(self.src, "let _ = {};", operands[0]);
             }
-            Instruction::FixedSizeListLift { elements: _, size, id: _ } => {
+            Instruction::FixedSizeListLift {
+                elements: _,
+                size,
+                id: _,
+            } => {
                 let tmp = self.tmp();
                 let result = format!("result{tmp}");
-                self.push_str(&format!(
-                    "let mut {result} = [",
-                ));
+                self.push_str(&format!("let mut {result} = [",));
                 for a in operands.drain(0..(*size as usize)) {
                     self.push_str(&a);
                     self.push_str(", ");
@@ -1220,7 +1222,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.push_str("];\n");
                 results.push(result);
             }
-            Instruction::FixedSizeListLower { elements: _, size, id: _ } => {
+            Instruction::FixedSizeListLower {
+                elements: _,
+                size,
+                id: _,
+            } => {
                 for i in 0..(*size as usize) {
                     results.push(format!("{}[{i}]", operands[0]));
                 }

@@ -1402,7 +1402,11 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
                 TypeDefKind::Unknown => unreachable!(),
                 TypeDefKind::FixedSizeList(ty, size) => {
-                    self.emit(&FixedSizeListLower { elements: ty, size: *size, id  });
+                    self.emit(&FixedSizeListLower {
+                        elements: ty,
+                        size: *size,
+                        id,
+                    });
                     let mut values = self
                         .stack
                         .drain(self.stack.len() - (*size as usize)..)
@@ -1611,7 +1615,11 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         self.stack.extend(args.drain(..temp.len()));
                         self.lift(ty);
                     }
-                    self.emit(&FixedSizeListLift { elements: ty, size: *size, id });
+                    self.emit(&FixedSizeListLift {
+                        elements: ty,
+                        size: *size,
+                        id,
+                    });
                 }
             },
         }
@@ -1777,7 +1785,11 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         self.write_to_memory(ty, addr.clone(), position);
                         position = position + increment;
                     }
-                    self.emit(&FixedSizeListLower { elements: ty, size: *size, id });
+                    self.emit(&FixedSizeListLower {
+                        elements: ty,
+                        size: *size,
+                        id,
+                    });
                 }
             },
         }
@@ -1972,7 +1984,11 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         self.read_from_memory(ty, addr.clone(), position);
                         position = position + increment;
                     }
-                    self.emit(&FixedSizeListLift { elements: ty, size: *size, id });
+                    self.emit(&FixedSizeListLift {
+                        elements: ty,
+                        size: *size,
+                        id,
+                    });
                 }
             },
         }
