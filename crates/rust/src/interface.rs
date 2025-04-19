@@ -3018,13 +3018,16 @@ impl<'a, 'b> wit_bindgen_core::AnonymousTypeGenerator<'a> for AnonTypeGenerator<
         self.interface.push_str(">");
     }
 
-    fn anonymous_type_fixed_size_list(
-        &mut self,
-        _id: TypeId,
-        _ty: &Type,
-        _size: u32,
-        _docs: &Docs,
-    ) {
-        todo!()
+    fn anonymous_type_fixed_size_list(&mut self, _id: TypeId, ty: &Type, size: u32, _docs: &Docs) {
+        self.interface.push_str("[");
+        self.interface.print_ty(
+            ty,
+            TypeMode {
+                lifetime: None,
+                lists_borrowed: false,
+                style: TypeOwnershipStyle::Owned,
+            },
+        );
+        self.interface.push_str(&format!(", {size}]"));
     }
 }
