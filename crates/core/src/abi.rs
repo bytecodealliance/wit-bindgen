@@ -1401,7 +1401,17 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     });
                 }
                 TypeDefKind::Unknown => unreachable!(),
-                TypeDefKind::FixedSizeList(..) => todo!(),
+                TypeDefKind::FixedSizeList(ty, size) => {
+                    self.emit(&FixedSizeListLower { elements: ty, size: *size, id  });
+                    let mut values = self
+                        .stack
+                        .drain(self.stack.len() - (*size as usize)..)
+                        .collect::<Vec<_>>();
+                    for value in values.drain(..) {
+                        self.stack.push(value);
+                        self.lower(ty);
+                    }
+                }
             },
         }
     }
@@ -1760,7 +1770,15 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
 
                 TypeDefKind::Unknown => unreachable!(),
-                TypeDefKind::FixedSizeList(..) => todo!(),
+                TypeDefKind::FixedSizeList(ty, size) => {
+                    let increment = self.bindgen.sizes().size(ty);
+                    let mut position = offset;
+                    for _ in 0..*size {
+                        self.write_to_memory(ty, addr.clone(), position);
+                        position = position + increment;
+                    }
+                    self.emit(&FixedSizeListLower { elements: ty, size: *size, id });
+                }
             },
         }
     }
@@ -1947,7 +1965,15 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
 
                 TypeDefKind::Unknown => unreachable!(),
-                TypeDefKind::FixedSizeList(..) => todo!(),
+                TypeDefKind::FixedSizeList(ty, size) => {
+                    let increment = self.bindgen.sizes().size(ty);
+                    let mut position = offset;
+                    for _ in 0..*size {
+                        self.read_from_memory(ty, addr.clone(), position);
+                        position = position + increment;
+                    }
+                    self.emit(&FixedSizeListLift { elements: ty, size: *size, id });
+                }
             },
         }
     }
@@ -2149,7 +2175,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 TypeDefKind::Future(_) => unreachable!(),
                 TypeDefKind::Stream(_) => unreachable!(),
                 TypeDefKind::Unknown => unreachable!(),
-                TypeDefKind::FixedSizeList(..) => todo!(),
+                TypeDefKind::FixedSizeList(_, _) => {}
             },
         }
     }
