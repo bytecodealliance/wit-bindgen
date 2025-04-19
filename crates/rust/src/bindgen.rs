@@ -1207,6 +1207,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::DropHandle { .. } => {
                 uwriteln!(self.src, "let _ = {};", operands[0]);
             }
+            Instruction::FixedSizeListLift { .. } => todo!(),
+            Instruction::FixedSizeListLower { .. } => todo!(),
         }
     }
 }
