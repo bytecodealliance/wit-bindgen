@@ -1447,6 +1447,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             | Instruction::DropHandle { .. }
             | Instruction::FixedSizeListLift { .. }
             | Instruction::FixedSizeListLower { .. }
+            | Instruction::FixedSizeListLowerBlock { .. }
             => {
                 dbg!(inst);
                 todo!()
