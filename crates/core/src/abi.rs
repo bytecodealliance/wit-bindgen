@@ -1794,7 +1794,11 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     self.write_to_memory(element, elem_addr, Default::default());
                     self.finish_block(0);
                     self.stack.push(addr);
-                    self.emit(&FixedSizeListLowerBlock { element, size: *size, id });
+                    self.emit(&FixedSizeListLowerBlock {
+                        element,
+                        size: *size,
+                        id,
+                    });
                 }
             },
         }

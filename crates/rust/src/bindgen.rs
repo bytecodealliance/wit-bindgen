@@ -797,7 +797,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.push(len);
             }
 
-            Instruction::FixedSizeListLowerBlock { element, size: _, id: _ } => {
+            Instruction::FixedSizeListLowerBlock {
+                element,
+                size: _,
+                id: _,
+            } => {
                 let body = self.blocks.pop().unwrap();
                 let vec = operands[0].clone();
                 let target = operands[1].clone();
