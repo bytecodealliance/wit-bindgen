@@ -789,16 +789,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 id: _,
             } => {
                 let body = self.blocks.pop().unwrap();
-                // let tmp = self.tmp();
                 let vec = operands[0].clone();
-                //format!("vec{tmp}");
-                // self.push_str(&format!(
-                //     "let {vec} = {operand0};\n",
-                //     operand0 = operands[0]
-                // ));
-                let size = self.r#gen.sizes.size(element);
                 let target = operands[1].clone();
-                // let align = self.r#gen.sizes.align(element);
+                let size = self.r#gen.sizes.size(element);
                 self.push_str(&format!("for (i, e) in {vec}.into_iter().enumerate() {{\n",));
                 self.push_str(&format!(
                     "let base = {target}.add(i * {});\n",
