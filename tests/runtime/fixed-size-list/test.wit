@@ -1,3 +1,5 @@
+// run with "--runner wasmtime -W component-model-fixed-size-list"
+
 package test:fixed-size-lists;
 
 interface to-test {
