@@ -385,6 +385,14 @@ Then, you can generate the bindings for your project:
 wit-bindgen-go generate <path-to-wit-pkg>
 ```
 
+### Guest: C++-17+
+
+The cpp crate contains code to generate C++ code which uses the std types 
+optional, string, string_view, vector, expected to represent generic
+WIT types.
+
+This relies on wasi-SDK for guest compilation.
+
 ### Guest: MoonBit
 
 MoonBit can be compiled to WebAssembly using [its toolchain](https://moonbitlang.com/download):

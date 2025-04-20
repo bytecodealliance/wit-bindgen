@@ -1222,6 +1222,7 @@ dependencies = [
  "wasm-encoder 0.230.0",
  "wit-bindgen-c",
  "wit-bindgen-core",
+ "wit-bindgen-cpp",
  "wit-bindgen-csharp",
  "wit-bindgen-markdown",
  "wit-bindgen-moonbit",
@@ -1239,6 +1240,21 @@ dependencies = [
  "heck 0.5.0",
  "serde",
  "wit-parser",
+]
+
+[[package]]
+name = "wit-bindgen-cpp"
+version = "0.41.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "heck",
+ "test-helpers",
+ "wasm-encoder 0.229.0",
+ "wasm-metadata 0.229.0",
+ "wit-bindgen-c",
+ "wit-bindgen-core",
+ "wit-component",
 ]
 
 [[package]]
