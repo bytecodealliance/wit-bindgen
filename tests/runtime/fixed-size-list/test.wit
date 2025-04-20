@@ -3,10 +3,10 @@
 package test:fixed-size-lists;
 
 interface to-test {
-  list-param: func(a: list<u32, 4>);
-  list-param2: func(a: list<list<u32, 2>, 2>);
+  // list-param: func(a: list<u32, 4>);
+  // list-param2: func(a: list<list<u32, 2>, 2>);
   // list-param3: func(a: list<s32, 20>);s
-  //list-result: func() -> list<u8, 8>;
+  list-result: func() -> list<u8, 8>;
 
   // list-minmax16: func(a: list<u16, 4>, b: list<s16, 4>) -> tuple<list<u16, 4>, list<s16, 4>>;
   // list-minmax-float: func(a: list<f32, 2>, b: list<f64, 2>)
