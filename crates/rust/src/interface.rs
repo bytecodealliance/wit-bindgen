@@ -3028,6 +3028,6 @@ impl<'a, 'b> wit_bindgen_core::AnonymousTypeGenerator<'a> for AnonTypeGenerator<
                 style: TypeOwnershipStyle::Owned,
             },
         );
-        self.interface.push_str(&format!(", {size}]"));
+        self.interface.push_str(&format!("; {size}]"));
     }
 }
