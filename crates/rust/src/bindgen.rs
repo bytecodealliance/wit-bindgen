@@ -797,6 +797,27 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.push(len);
             }
 
+            Instruction::FixedSizeListLowerBlock { element, size: _, id: _ } => {
+                let body = self.blocks.pop().unwrap();
+                // let tmp = self.tmp();
+                let vec = operands[0].clone();
+                //format!("vec{tmp}");
+                // self.push_str(&format!(
+                //     "let {vec} = {operand0};\n",
+                //     operand0 = operands[0]
+                // ));
+                let size = self.r#gen.sizes.size(element);
+                let target = operands[1].clone();
+                // let align = self.r#gen.sizes.align(element);
+                self.push_str(&format!("for (i, e) in {vec}.into_iter().enumerate() {{\n",));
+                self.push_str(&format!(
+                    "let base = {target}.add(i * {});\n",
+                    size.format(POINTER_SIZE_EXPRESSION)
+                ));
+                self.push_str(&body);
+                self.push_str("\n}\n");
+            }
+
             Instruction::ListLift { element, .. } => {
                 let body = self.blocks.pop().unwrap();
                 let tmp = self.tmp();
@@ -1208,7 +1229,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwriteln!(self.src, "let _ = {};", operands[0]);
             }
             Instruction::FixedSizeListLift {
-                elements: _,
+                element: _,
                 size,
                 id: _,
             } => {
@@ -1223,7 +1244,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.push(result);
             }
             Instruction::FixedSizeListLower {
-                elements: _,
+                element: _,
                 size,
                 id: _,
             } => {

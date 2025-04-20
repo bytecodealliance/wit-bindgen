@@ -310,17 +310,24 @@ def_instruction! {
         /// Pops all fields for a fixed list off the stack and then composes them
         /// into an array.
         FixedSizeListLift {
-            elements: &'a Type,
+            element: &'a Type,
             size: u32,
             id: TypeId,
         } : [*size as usize] => [1],
 
         /// Pops an array off the stack, decomposes the elements and then pushes them onto the stack.
         FixedSizeListLower {
-            elements: &'a Type,
+            element: &'a Type,
             size: u32,
             id: TypeId,
         } : [1] => [*size as usize],
+
+        /// Pops an array and an address off the stack, passes each element to a block
+        FixedSizeListLowerBlock {
+            element: &'a Type,
+            size: u32,
+            id: TypeId,
+        } : [2] => [0],
 
         /// Pushes an operand onto the stack representing the list item from
         /// each iteration of the list.
@@ -1403,7 +1410,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 TypeDefKind::Unknown => unreachable!(),
                 TypeDefKind::FixedSizeList(ty, size) => {
                     self.emit(&FixedSizeListLower {
-                        elements: ty,
+                        element: ty,
                         size: *size,
                         id,
                     });
@@ -1616,7 +1623,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         self.lift(ty);
                     }
                     self.emit(&FixedSizeListLift {
-                        elements: ty,
+                        element: ty,
                         size: *size,
                         id,
                     });
@@ -1778,7 +1785,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
 
                 TypeDefKind::Unknown => unreachable!(),
-                TypeDefKind::FixedSizeList(ty, size) => {
+                TypeDefKind::FixedSizeList(element, size) => {
                     // let increment = self.bindgen.sizes().size(ty);
                     // let mut position = offset;
                     //                    let resultvar = self.stack[0];
@@ -1788,11 +1795,29 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     //     self.write_to_memory(ty, addr.clone(), position);
                     //     position = position + increment;
                     // }
-                    self.emit(&FixedSizeListLower {
-                        elements: ty,
-                        size: *size,
-                        id,
-                    });
+                    // @@@@
+                    // self.emit(&FixedSizeListLower {
+                    //     elements: ty,
+                    //     size: *size,
+                    //     id,
+                    // });
+
+                    // resembles write_list_to_memory
+                    self.push_block();
+                    self.emit(&IterElem { element });
+                    self.emit(&IterBasePointer);
+                    let elem_addr = self.stack.pop().unwrap();
+                    self.write_to_memory(element, elem_addr, Default::default());
+                    self.finish_block(0);
+                    // let target = self.stack.pop().unwrap();
+                    self.stack.push(addr);
+                    self.emit(&FixedSizeListLowerBlock { element, size: *size, id });
+
+                    // for idx in 0..*size {
+                    //     //self.write_fields_to_memory(tuple.types.iter(), addr, offset);
+                    //     self.emit(&FixedSizeListLowerElement { elements: ty, idx, });
+                    //     self.write_to_memory(ty, addr.clone(), offset + (field_offset));
+                    // }
                 }
             },
         }
@@ -1988,7 +2013,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         position = position + increment;
                     }
                     self.emit(&FixedSizeListLift {
-                        elements: ty,
+                        element: ty,
                         size: *size,
                         id,
                     });

@@ -2670,6 +2670,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             | Instruction::DropHandle { .. } => todo!(),
             Instruction::FixedSizeListLift { .. } => todo!(),
             Instruction::FixedSizeListLower { .. } => todo!(),
+            Instruction::FixedSizeListLowerBlock { .. } => todo!(),
         }
     }
 
