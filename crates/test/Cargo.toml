@@ -24,9 +24,9 @@ regex = "1.11.1"
 serde = { workspace = true }
 toml = "0.8.20"
 wasi-preview1-component-adapter-provider = "30.0.2"
-wac-parser = "0.6.1"
-wac-types = "0.6.1"
-wac-graph = "0.6.1"
+wac-parser = { path = "../../../wac/crates/wac-parser" }
+wac-types = { path = "../../../wac/crates/wac-types" }
+wac-graph = { path = "../../../wac/crates/wac-graph" }
 wasm-compose = { workspace = true }
 indexmap = { workspace = true }
 wasm-encoder = { workspace = true }

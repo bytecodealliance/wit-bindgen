@@ -1214,7 +1214,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             } => {
                 let tmp = self.tmp();
                 let result = format!("result{tmp}");
-                self.push_str(&format!("let mut {result} = [",));
+                self.push_str(&format!("let {result} = [",));
                 for a in operands.drain(0..(*size as usize)) {
                     self.push_str(&a);
                     self.push_str(", ");

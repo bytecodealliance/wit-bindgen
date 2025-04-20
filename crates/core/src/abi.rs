@@ -1779,12 +1779,15 @@ impl<'a, B: Bindgen> Generator<'a, B> {
 
                 TypeDefKind::Unknown => unreachable!(),
                 TypeDefKind::FixedSizeList(ty, size) => {
-                    let increment = self.bindgen.sizes().size(ty);
-                    let mut position = offset;
-                    for _ in 0..*size {
-                        self.write_to_memory(ty, addr.clone(), position);
-                        position = position + increment;
-                    }
+                    // let increment = self.bindgen.sizes().size(ty);
+                    // let mut position = offset;
+                    //                    let resultvar = self.stack[0];
+                    // for _ in 0..*size {
+                    //     // push index
+                    //     self.stack.push("", );
+                    //     self.write_to_memory(ty, addr.clone(), position);
+                    //     position = position + increment;
+                    // }
                     self.emit(&FixedSizeListLower {
                         elements: ty,
                         size: *size,
