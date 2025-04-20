@@ -12,4 +12,19 @@ fn main() {
         let result = list_result();
         assert_eq!(result, [b'0', b'1', b'A', b'B', b'a', b'b', 128, 255]);
     }
+    {
+        let _result = list_minmax16([0, 1024, 32768, 65535], [1, 2048, -32767, -2]);
+        // assert_eq!(result, ([0, 1024, 32768, 65535], [1, 2048, -32767, -2]));
+    }
+    {
+        let _result = list_minmax_float([2.0, -42.0], [0.25, -0.125]);
+        // assert_eq!(result, ([2.0, -42.0], [0.25, -0.125]));
+    }
+    {
+        let result = list_roundtrip([b'a', b'b', b'c', b'd', 0, 1, 2, 3, b'A', b'B', b'Y', b'Z']);
+        assert_eq!(
+            result,
+            [b'a', b'b', b'c', b'd', 0, 1, 2, 3, b'A', b'B', b'Y', b'Z']
+        );
+    }
 }
