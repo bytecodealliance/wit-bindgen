@@ -3821,7 +3821,7 @@ impl Source {
     }
 }
 
-fn wasm_type(ty: WasmType) -> &'static str {
+pub fn wasm_type(ty: WasmType) -> &'static str {
     match ty {
         WasmType::I32 => "int32_t",
         WasmType::I64 => "int64_t",
