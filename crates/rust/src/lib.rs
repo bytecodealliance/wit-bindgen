@@ -52,6 +52,7 @@ struct RustWasm {
 
     future_payloads: IndexMap<String, String>,
     stream_payloads: IndexMap<String, String>,
+    used_async_options: HashSet<usize>,
 }
 
 #[derive(Default)]
@@ -138,55 +139,65 @@ fn parse_with(s: &str) -> Result<(String, WithOption), String> {
     Ok((k.to_string(), v))
 }
 
-#[derive(Default, Debug, Clone)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde::Deserialize),
-    serde(rename_all = "kebab-case")
-)]
-pub enum AsyncConfig {
-    #[default]
-    None,
-    Some {
-        imports: Vec<String>,
-        exports: Vec<String>,
-    },
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+pub struct Async {
+    pub enabled: bool,
+    pub filter: AsyncFilter,
+}
+
+impl Async {
+    pub fn parse(s: &str) -> Async {
+        let (s, enabled) = match s.strip_prefix('-') {
+            Some(s) => (s, false),
+            None => (s, true),
+        };
+        let filter = match s {
+            "all" => AsyncFilter::All,
+            other => match other.strip_prefix("import:") {
+                Some(s) => AsyncFilter::Import(s.to_string()),
+                None => match other.strip_prefix("export:") {
+                    Some(s) => AsyncFilter::Export(s.to_string()),
+                    None => AsyncFilter::Function(s.to_string()),
+                },
+            },
+        };
+        Async { enabled, filter }
+    }
+}
+
+impl fmt::Display for Async {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if !self.enabled {
+            write!(f, "-")?;
+        }
+        self.filter.fmt(f)
+    }
+}
+
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+pub enum AsyncFilter {
     All,
+    Function(String),
+    Import(String),
+    Export(String),
+}
+
+impl fmt::Display for AsyncFilter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AsyncFilter::All => write!(f, "all"),
+            AsyncFilter::Function(s) => write!(f, "{s}"),
+            AsyncFilter::Import(s) => write!(f, "import:{s}"),
+            AsyncFilter::Export(s) => write!(f, "export:{s}"),
+        }
+    }
 }
 
 #[cfg(feature = "clap")]
-fn parse_async(s: &str) -> Result<AsyncConfig, String> {
-    Ok(match s {
-        "none" => AsyncConfig::None,
-        "all" => AsyncConfig::All,
-        _ => {
-            if let Some(values) = s.strip_prefix("some=") {
-                let mut imports = Vec::new();
-                let mut exports = Vec::new();
-                for value in values.split(',') {
-                    let error = || {
-                        Err(format!(
-                            "expected string of form `import:<name>` or `export:<name>`; got `{value}`"
-                        ))
-                    };
-                    if let Some((k, v)) = value.split_once(":") {
-                        match k {
-                            "import" => imports.push(v.into()),
-                            "export" => exports.push(v.into()),
-                            _ => return error(),
-                        }
-                    } else {
-                        return error();
-                    }
-                }
-                AsyncConfig::Some { imports, exports }
-            } else {
-                return Err(format!(
-                    "expected string of form `none`, `all`, or `some=<value>[,<value>...]`; got `{s}`"
-                ));
-            }
-        }
-    })
+fn parse_async(s: &str) -> Result<Async, String> {
+    Ok(Async::parse(s))
 }
 
 #[derive(Default, Debug, Clone)]
@@ -323,16 +334,33 @@ pub struct Opts {
 
     /// Determines which functions to lift or lower `async`, if any.
     ///
-    /// Accepted values are:
+    /// This option can be passed multiple times and additionally accepts
+    /// comma-separated values for each option passed. Each individual argument
+    /// passed here can be one of:
     ///
-    /// - none
-    /// - all
-    /// - `some=<value>[,<value>...]`, where each `<value>` is of the form:
-    ///   - `import:<name>` or
-    ///   - `export:<name>`
-    #[cfg_attr(feature = "clap", arg(long = "async", value_parser = parse_async, default_value = "none"))]
+    /// - `all` - all imports and exports will be async
+    /// - `-all` - force all imports and exports to be sync
+    /// - `foo:bar/baz#method` - force this method to be async
+    /// - `import:foo:bar/baz#method` - force this method to be async, but only
+    ///   as an import
+    /// - `-export:foo:bar/baz#method` - force this export to be sync
+    ///
+    /// If a method is not listed in this option then the WIT's default bindings
+    /// mode will be used. If the WIT function is defined as `async` then async
+    /// bindings will be generated, otherwise sync bindings will be generated.
+    ///
+    /// Options are processed in the order they are passed here, so if a method
+    /// matches two directives passed the least-specific one should be last.
+    #[cfg_attr(
+        feature = "clap",
+        arg(
+            long = "async",
+            value_parser = parse_async,
+            value_delimiter =',',
+        ),
+    )]
     #[cfg_attr(feature = "serde", serde(rename = "async"))]
-    pub async_: AsyncConfig,
+    pub async_: Vec<Async>,
 }
 
 impl Opts {
@@ -1004,6 +1032,54 @@ macro_rules! __export_{world_name}_impl {{
             );
         }
     }
+
+    fn is_async(
+        &mut self,
+        resolve: &Resolve,
+        interface: Option<&WorldKey>,
+        func: &Function,
+        is_import: bool,
+    ) -> bool {
+        let name_to_test = match interface {
+            Some(key) => format!("{}#{}", resolve.name_world_key(key), func.name),
+            None => func.name.clone(),
+        };
+        for (i, opt) in self.opts.async_.iter().enumerate() {
+            let name = match &opt.filter {
+                AsyncFilter::All => {
+                    self.used_async_options.insert(i);
+                    return opt.enabled;
+                }
+                AsyncFilter::Function(s) => s,
+                AsyncFilter::Import(s) => {
+                    if !is_import {
+                        continue;
+                    }
+                    s
+                }
+                AsyncFilter::Export(s) => {
+                    if is_import {
+                        continue;
+                    }
+                    s
+                }
+            };
+            if *name == name_to_test {
+                self.used_async_options.insert(i);
+                return opt.enabled;
+            }
+        }
+
+        match &func.kind {
+            FunctionKind::Freestanding
+            | FunctionKind::Method(_)
+            | FunctionKind::Static(_)
+            | FunctionKind::Constructor(_) => false,
+            FunctionKind::AsyncFreestanding
+            | FunctionKind::AsyncMethod(_)
+            | FunctionKind::AsyncStatic(_) => true,
+        }
+    }
 }
 
 impl WorldGenerator for RustWasm {
@@ -1099,6 +1175,9 @@ impl WorldGenerator for RustWasm {
                 self.src_preamble,
                 "//   * disable_custom_section_link_helpers"
             );
+        }
+        for opt in self.opts.async_.iter() {
+            uwriteln!(self.src_preamble, "//   * async: {opt}");
         }
         self.types.analyze(resolve);
         self.world = Some(world);
@@ -1413,6 +1492,17 @@ impl WorldGenerator for RustWasm {
 
         if !unused_keys.is_empty() {
             bail!("unused remappings provided via `with`: {unused_keys:?}");
+        }
+
+        // Error about unused async configuration to help catch configuration
+        // errors.
+        for (i, opt) in self.opts.async_.iter().enumerate() {
+            if self.used_async_options.contains(&i) {
+                continue;
+            }
+            if !matches!(opt.filter, AsyncFilter::All) {
+                bail!("unused async option: {opt}");
+            }
         }
 
         Ok(())
