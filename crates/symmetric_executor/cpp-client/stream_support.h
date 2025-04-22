@@ -14,6 +14,9 @@ namespace wit {
         MaybeUninit()
             : dummy()
         { }
+        MaybeUninit(MaybeUninit const& b)
+            : dummy()
+        { }
         ~MaybeUninit()
         { }
     };
@@ -22,6 +25,10 @@ namespace wit {
         symmetric::runtime::symmetric_stream::StreamObj handle;
 
         uint32_t buffer_size = 1;
+
+        static stream<T> new_empty() {
+            return stream<T>{symmetric::runtime::symmetric_stream::StreamObj(wit::ResourceImportBase()), 1};
+        }
        
         struct background_object {
             symmetric::runtime::symmetric_stream::StreamObj handle;
@@ -65,6 +72,10 @@ namespace wit {
                 symmetric::runtime::symmetric_executor::CallbackFunction(wit::ResourceImportBase{(wit::ResourceImportBase::handle_t)&data_available}),
                 symmetric::runtime::symmetric_executor::CallbackData(wit::ResourceImportBase{(wit::ResourceImportBase::handle_t)object}));
         }
+        stream(const stream&) = delete;
+        stream(stream&&) = default;
+        stream& operator=(const stream&) = delete;
+        stream& operator=(stream&&) = default;
     }; 
 }
 
