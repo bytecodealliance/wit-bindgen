@@ -60,6 +60,14 @@ template <class T>
 union MaybeUninit {
     T value;
     char dummy;
+    MaybeUninit()
+    : dummy()
+    { }
+    ~MaybeUninit()
+    { }
+    MaybeUninit(const MaybeUninit &) = delete;
+    // assume that value isn't valid yet
+    MaybeUninit(MaybeUninit &&b) : dummy() { }
 };
 template <class T>
 struct fulfil_promise_data {
