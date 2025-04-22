@@ -1648,6 +1648,15 @@ struct FnSig {
     self_is_first_param: bool,
 }
 
+impl FnSig {
+    fn update_for_func(&mut self, func: &Function) {
+        if let FunctionKind::Method(_) | FunctionKind::AsyncMethod(_) = &func.kind {
+            self.self_arg = Some("&self".into());
+            self.self_is_first_param = true;
+        }
+    }
+}
+
 pub fn to_rust_ident(name: &str) -> String {
     match name {
         // Escape Rust keywords.

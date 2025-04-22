@@ -177,10 +177,7 @@ impl<'i> InterfaceGenerator<'i> {
                 private: true,
                 ..Default::default()
             };
-            if let FunctionKind::Method(_) = &func.kind {
-                sig.self_arg = Some("&self".into());
-                sig.self_is_first_param = true;
-            }
+            sig.update_for_func(&func);
             self.print_signature(func, true, &sig);
             self.src.push_str(";\n");
             let trait_method = mem::replace(&mut self.src, prev);
@@ -713,10 +710,7 @@ pub mod vtable{ordinal} {{
             let name = to_upper_camel_case(name);
             uwriteln!(self.src, "impl {name} {{");
             sig.use_item_name = true;
-            if let FunctionKind::Method(_) = &func.kind {
-                sig.self_arg = Some("&self".into());
-                sig.self_is_first_param = true;
-            }
+            sig.update_for_func(&func);
         }
         self.src.push_str("#[allow(unused_unsafe, clippy::all)]\n");
         let params = self.print_signature(func, async_, &sig);
@@ -1219,10 +1213,7 @@ unsafe fn call_import(params: *mut u8, results: *mut u8) -> u32 {{
                 private: true,
                 ..Default::default()
             };
-            if let FunctionKind::Method(_) = &func.kind {
-                sig.self_arg = Some("&self".into());
-                sig.self_is_first_param = true;
-            }
+            sig.update_for_func(&func);
             self.src.push_str("#[allow(unused_variables)]\n");
             self.print_signature(func, true, &sig);
             self.src.push_str("{ unreachable!() }\n");
