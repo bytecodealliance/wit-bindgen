@@ -885,7 +885,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.push_str(&prev_src);
                 let constructor_type = match &func.kind {
                     FunctionKind::Freestanding | FunctionKind::AsyncFreestanding => {
-                        self.push_str(&format!("T::{}", to_rust_ident(&func.name)));
+                        self.push_str(&format!("T::{}", to_rust_ident(func.item_name())));
                         None
                     }
                     FunctionKind::Method(_)

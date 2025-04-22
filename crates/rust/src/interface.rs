@@ -1,8 +1,7 @@
 use crate::bindgen::{FunctionBindgen, POINTER_SIZE_EXPRESSION};
 use crate::{
-    full_wit_type_name, int_repr, to_rust_ident, to_upper_camel_case, wasm_type, AsyncConfig,
-    FnSig, Identifier, InterfaceName, Ownership, RuntimeItem, RustFlagsRepr, RustWasm,
-    TypeGeneration,
+    full_wit_type_name, int_repr, to_rust_ident, to_upper_camel_case, wasm_type, FnSig, Identifier,
+    InterfaceName, Ownership, RuntimeItem, RustFlagsRepr, RustWasm, TypeGeneration,
 };
 use anyhow::Result;
 use heck::*;
@@ -162,17 +161,9 @@ impl<'i> InterfaceGenerator<'i> {
                 continue;
             }
 
-            let async_ = match &self.r#gen.opts.async_ {
-                AsyncConfig::None => false,
-                AsyncConfig::All => true,
-                AsyncConfig::Some { exports, .. } => {
-                    exports.contains(&if let Some((_, key)) = interface {
-                        format!("{}#{}", self.resolve.name_world_key(key), func.name)
-                    } else {
-                        func.name.clone()
-                    })
-                }
-            };
+            let async_ = self
+                .r#gen
+                .is_async(self.resolve, interface.map(|p| p.1), func, false);
             let resource = func.kind.resource();
 
             funcs_to_export.push((func, resource, async_));
@@ -712,15 +703,7 @@ pub mod vtable{ordinal} {{
 
         self.generate_payloads("", func, interface);
 
-        let async_ = match &self.r#gen.opts.async_ {
-            AsyncConfig::None => false,
-            AsyncConfig::All => true,
-            AsyncConfig::Some { imports, .. } => imports.contains(&if let Some(key) = interface {
-                format!("{}#{}", self.resolve.name_world_key(key), func.name)
-            } else {
-                func.name.clone()
-            }),
-        };
+        let async_ = self.r#gen.is_async(self.resolve, interface, func, true);
         let mut sig = FnSig {
             async_,
             ..Default::default()
@@ -1227,17 +1210,9 @@ unsafe fn call_import(params: *mut u8, results: *mut u8) -> u32 {{
             if self.r#gen.skip.contains(&func.name) {
                 continue;
             }
-            let async_ = match &self.r#gen.opts.async_ {
-                AsyncConfig::None => false,
-                AsyncConfig::All => true,
-                AsyncConfig::Some { exports, .. } => {
-                    exports.contains(&if let Some((_, key)) = interface {
-                        format!("{}#{}", self.resolve.name_world_key(key), func.name)
-                    } else {
-                        func.name.clone()
-                    })
-                }
-            };
+            let async_ = self
+                .r#gen
+                .is_async(self.resolve, interface.map(|p| p.1), func, false);
             let mut sig = FnSig {
                 async_,
                 use_item_name: true,
@@ -1349,7 +1324,7 @@ unsafe fn call_import(params: *mut u8, results: *mut u8) -> u32 {{
                 func.item_name()
             }
         } else {
-            &func.name
+            func.item_name()
         };
         self.push_str(&to_rust_ident(func_name));
         if let Some(generics) = &sig.generics {
