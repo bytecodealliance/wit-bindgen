@@ -1,7 +1,7 @@
 use std::{
     ptr::null_mut,
     sync::{
-        atomic::{AtomicIsize, AtomicPtr, AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicIsize, AtomicPtr, AtomicUsize, Ordering},
         Arc,
     },
 };
@@ -65,6 +65,8 @@ struct StreamInner {
     ready_addr: AtomicPtr<()>,
     ready_size: AtomicIsize,
     ready_capacity: AtomicUsize,
+    // if the writer closes before the reader has consumed the last data
+    write_closed: AtomicBool,
 }
 
 struct StreamObj(Arc<StreamInner>);
@@ -79,6 +81,7 @@ impl GuestStreamObj for StreamObj {
             ready_addr: AtomicPtr::new(core::ptr::null_mut()),
             ready_size: AtomicIsize::new(results::BLOCKED),
             ready_capacity: AtomicUsize::new(0),
+            write_closed: AtomicBool::new(false),
         };
         #[cfg(feature = "trace")]
         println!("Stream::new {:x}", inner.read_ready_event_send.handle());
@@ -87,6 +90,7 @@ impl GuestStreamObj for StreamObj {
 
     fn is_write_closed(&self) -> bool {
         self.0.ready_addr.load(Ordering::Acquire) as usize == EOF_MARKER
+            || self.0.write_closed.load(Ordering::Acquire)
     }
 
     fn start_reading(&self, buffer: symmetric_stream::Buffer) {
@@ -159,6 +163,13 @@ impl GuestStreamObj for StreamObj {
             let addr = buffer.get::<Buffer>().get_address().take_handle() as *mut ();
             (elements, addr)
         } else {
+            if self.is_write_closed() {
+                todo!("double close");
+            }
+            if !self.0.ready_addr.load(Ordering::Relaxed).is_null() {
+                self.0.write_closed.store(true, Ordering::Release);
+                return;
+            }
             (0, EOF_MARKER as usize as *mut ())
         };
         #[cfg(feature = "trace")]
