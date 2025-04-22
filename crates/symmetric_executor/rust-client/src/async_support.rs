@@ -83,8 +83,9 @@ extern "C" fn symmetric_callback(obj: *mut ()) -> symmetric_executor::CallbackSt
         Poll::Ready(_) => CallbackState::Ready,
         Poll::Pending => {
             let state = obj.cast::<FutureState>();
-            let waiting_for = unsafe { &mut *state }.waiting_for.take();
-            super::register(waiting_for.unwrap(), symmetric_callback, obj);
+            if let Some(waiting_for) = unsafe { &mut *state }.waiting_for.take() {
+                super::register(waiting_for, symmetric_callback, obj);
+            }
             // as we registered this callback on a new event stop calling
             // from the old event
             CallbackState::Ready
@@ -101,14 +102,17 @@ pub fn first_poll_sub(future: BoxFuture) -> *mut () {
     match unsafe { poll(state) } {
         Poll::Ready(()) => core::ptr::null_mut(),
         Poll::Pending => {
-            let completion_event = EventGenerator::new();
-            let wait_chain = completion_event.subscribe().take_handle() as *mut ();
-            unsafe { &mut *state }
-                .completion_event
-                .replace(completion_event);
-            let waiting_for = unsafe { &mut *state }.waiting_for.take();
-            super::register(waiting_for.unwrap(), symmetric_callback, state.cast());
-            wait_chain
+            if let Some(waiting_for) = unsafe { &mut *state }.waiting_for.take() {
+                let completion_event = EventGenerator::new();
+                let wait_chain = completion_event.subscribe().take_handle() as *mut ();
+                unsafe { &mut *state }
+                    .completion_event
+                    .replace(completion_event);
+                super::register(waiting_for, symmetric_callback, state.cast());
+                wait_chain
+            } else {
+                core::ptr::null_mut()
+            }
         }
     }
 }
@@ -146,6 +150,8 @@ pub fn spawn(future: impl Future<Output = ()> + 'static + Send) {
 pub unsafe fn spawn_unchecked(future: impl Future<Output = ()>) {
     let future1: Pin<Box<dyn Future<Output = ()>>> = Box::pin(future);
     let wait_for = first_poll_sub(unsafe { std::mem::transmute(future1) });
-    let wait_for = unsafe { EventSubscription::from_handle(wait_for as usize) };
-    drop(wait_for);
+    if !wait_for.is_null() {
+        let wait_for = unsafe { EventSubscription::from_handle(wait_for as usize) };
+        drop(wait_for);
+    }
 }
