@@ -946,6 +946,10 @@ macro_rules! __export_{world_name}_impl {{
         section_suffix: &str,
         func_name: Option<&str>,
     ) {
+        // As above, disable rustfmt, as we use prettyplease.
+        if self.opts.format {
+            uwriteln!(self.src, "#[rustfmt::skip]");
+        }
         self.src.push_str("\n#[cfg(target_arch = \"wasm32\")]\n");
 
         // The custom section name here must start with "component-type" but
