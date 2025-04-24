@@ -3,12 +3,12 @@ use std::{
     mem::transmute,
     sync::{
         atomic::{AtomicBool, AtomicU32, Ordering},
-        Arc, Mutex, OnceLock,
+        Arc, Mutex,
     },
     time::{Duration, SystemTime},
 };
 
-use executor::exports::symmetric::runtime::symmetric_executor::{self, CallbackState};
+use executor::exports::symmetric::runtime::symmetric_executor::{self, GuestCallbackRegistration};
 
 const DEBUGGING: bool = cfg!(feature = "trace");
 const INVALID_FD: EventFd = -1;
@@ -107,6 +107,12 @@ impl symmetric_executor::GuestEventGenerator for EventGenerator {
     }
 }
 
+impl GuestCallbackRegistration for Ignore {
+    fn cancel(obj: symmetric_executor::CallbackRegistration) -> symmetric_executor::CallbackData {
+        todo!()
+    }
+}
+
 struct Executor {
     active_tasks: Vec<QueuedEvent>,
     change_event: Option<EventFd>,
@@ -135,6 +141,7 @@ static NEW_TASKS: Mutex<Vec<QueuedEvent>> = Mutex::new(Vec::new());
 impl symmetric_executor::Guest for Guest {
     type CallbackFunction = Ignore;
     type CallbackData = Ignore;
+    type CallbackRegistration = Ignore;
     type EventSubscription = EventSubscription;
     type EventGenerator = EventGenerator;
 
@@ -283,9 +290,9 @@ impl symmetric_executor::Guest for Guest {
         trigger: symmetric_executor::EventSubscription,
         callback: symmetric_executor::CallbackFunction,
         data: symmetric_executor::CallbackData,
-    ) -> () {
+    ) -> symmetric_executor::CallbackRegistration {
         let trigger: EventSubscription = trigger.into_inner();
-        let cb: fn(*mut ()) -> CallbackState = unsafe { transmute(callback.take_handle()) };
+        let cb: fn(*mut (), *mut ()) -> *mut () = unsafe { transmute(callback.take_handle()) };
         let data = data.take_handle() as *mut ();
         let event_fd = match &trigger.inner {
             EventType::Triggered {

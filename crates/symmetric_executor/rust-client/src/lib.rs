@@ -1,16 +1,19 @@
 use module::symmetric::runtime::symmetric_executor::{self, CallbackData, CallbackFunction};
 pub use module::symmetric::runtime::symmetric_executor::{
-    run, CallbackState, EventGenerator, EventSubscription,
+    run, EventGenerator, EventSubscription,
 };
 pub use module::symmetric::runtime::symmetric_stream;
 
 pub mod async_support;
 mod module;
 
-pub fn register(
+pub struct EventSubscription2;
+pub struct EventGenerator2;
+
+pub fn register<T>(
     event: EventSubscription,
-    f: extern "C" fn(*mut ()) -> CallbackState,
-    data: *mut (),
+    f: extern "C" fn(*mut T, *mut EventSubscription2) -> *mut EventSubscription2,
+    data: *mut T,
 ) {
     let callback = unsafe { CallbackFunction::from_handle(f as *const () as usize) };
     let cb_data = unsafe { CallbackData::from_handle(data as usize) };
@@ -27,7 +30,7 @@ fn cabi_realloc_wit_bindgen_0_37_0(
     todo!()
 }
 
-pub unsafe fn subscribe_event_send_ptr(event_send: *mut ()) -> EventSubscription {
+pub unsafe fn subscribe_event_send_ptr(event_send: *mut EventGenerator2) -> EventSubscription {
     let gen: EventGenerator = unsafe { EventGenerator::from_handle(event_send as usize) };
     // (unsafe {Arc::from_raw(event_send.cast()) });
     let subscription = gen.subscribe();
@@ -36,7 +39,7 @@ pub unsafe fn subscribe_event_send_ptr(event_send: *mut ()) -> EventSubscription
     subscription
 }
 
-pub unsafe fn activate_event_send_ptr(event_send: *mut ()) {
+pub unsafe fn activate_event_send_ptr(event_send: *mut EventGenerator2) {
     let gen: EventGenerator = unsafe { EventGenerator::from_handle(event_send as usize) };
     gen.activate();
     // avoid consuming the generator
