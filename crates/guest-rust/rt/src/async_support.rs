@@ -444,7 +444,7 @@ fn context_get() -> *mut u8 {
     #[cfg(target_arch = "wasm32")]
     #[link(wasm_import_module = "$root")]
     extern "C" {
-        #[link_name = "[context-get-1]"]
+        #[link_name = "[context-get-0]"]
         fn get() -> *mut u8;
     }
 
@@ -460,7 +460,7 @@ unsafe fn context_set(value: *mut u8) {
     #[cfg(target_arch = "wasm32")]
     #[link(wasm_import_module = "$root")]
     extern "C" {
-        #[link_name = "[context-set-1]"]
+        #[link_name = "[context-set-0]"]
         fn set(value: *mut u8);
     }
 
