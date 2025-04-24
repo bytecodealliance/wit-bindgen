@@ -69,37 +69,35 @@ union MaybeUninit {
     // assume that value isn't valid yet
     MaybeUninit(MaybeUninit &&b) : dummy() { }
 };
-template <class T>
+template <class T, class LIFT>
 struct fulfil_promise_data {
     symmetric::runtime::symmetric_stream::StreamObj stream;
     std::promise<T> promise;
-    MaybeUninit<T> value;
+    uint8_t value[LIFT::SIZE];
 };
 
-template <class T>
+template <class T, class LIFT>
 static symmetric::runtime::symmetric_executor::CallbackState fulfil_promise(void* data) {
-    std::unique_ptr<fulfil_promise_data<T>> ptr((fulfil_promise_data<T>*)data);
+    std::unique_ptr<fulfil_promise_data<T, LIFT>> ptr((fulfil_promise_data<T, LIFT>*)data);
     auto buffer = ptr->stream.ReadResult();
-    ptr->promise.set_value(std::move(ptr->value.value));
-    // matching in place destruction
-    ptr->value.value.~T();
+    ptr->promise.set_value(LIFT::lift(ptr->value));
     return symmetric::runtime::symmetric_executor::CallbackState::kReady;
 }
 
-template <class T>
+template <class T, class LIFT>
 std::future<T> lift_future(uint8_t* stream) {
     std::promise<T> promise;
     std::future<T> result= promise.get_future();
     auto stream2 = symmetric::runtime::symmetric_stream::StreamObj(wit::ResourceImportBase(stream));
     auto event = stream2.ReadReadySubscribe();
-    std::unique_ptr<fulfil_promise_data<T>> data = std::make_unique<fulfil_promise_data<T>>(fulfil_promise_data<T>{std::move(stream2), std::move(promise)});
+    std::unique_ptr<fulfil_promise_data<T, LIFT>> data = std::make_unique<fulfil_promise_data<T, LIFT>>(fulfil_promise_data<T, LIFT>{std::move(stream2), std::move(promise)});
     symmetric::runtime::symmetric_stream::Buffer buf = symmetric::runtime::symmetric_stream::Buffer(
-        symmetric::runtime::symmetric_stream::Address(wit::ResourceImportBase((wit::ResourceImportBase::handle_t)&data->value.value)),
-        1 //sizeof(T)
+        symmetric::runtime::symmetric_stream::Address(wit::ResourceImportBase((wit::ResourceImportBase::handle_t)&data->value)),
+        1
     );
     data->stream.StartReading(std::move(buf));
     symmetric::runtime::symmetric_executor::Register(std::move(event),
-            symmetric::runtime::symmetric_executor::CallbackFunction(wit::ResourceImportBase((uint8_t*)&fulfil_promise<T>)),
+            symmetric::runtime::symmetric_executor::CallbackFunction(wit::ResourceImportBase((uint8_t*)&fulfil_promise<T, LIFT>)),
             symmetric::runtime::symmetric_executor::CallbackData(wit::ResourceImportBase((uint8_t*)data.release())));
     return result;
 }
