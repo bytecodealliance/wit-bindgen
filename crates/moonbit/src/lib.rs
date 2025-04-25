@@ -2880,7 +2880,7 @@ impl ToMoonBitIdent for str {
             | "struct" | "enum" | "trait" | "traitalias" | "derive" | "while" | "break"
             | "continue" | "import" | "return" | "throw" | "raise" | "try" | "catch" | "pub"
             | "priv" | "readonly" | "true" | "false" | "_" | "test" | "loop" | "for" | "in"
-            | "impl" | "with" | "guard" | "async" | "is" => {
+            | "impl" | "with" | "guard" | "async" | "is" | "init" | "main" => {
                 format!("{self}_")
             }
             _ => self.to_snake_case(),
