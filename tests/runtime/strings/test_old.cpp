@@ -1,3 +1,5 @@
+//@ args = '--old-api'
+
 #include <assert.h>
 #include <strings_cpp.h>
 #include <stdlib.h>
@@ -22,8 +24,7 @@ wit::string exports::strings::ReturnEmpty() {
   return wit::string((char const*)1, 0);
 }
 
-// new API: Identical for guest import and export
-wit::string exports::strings::Roundtrip(std::string_view str) {
+wit::string exports::strings::Roundtrip(wit::string &&str) {
   assert(str.size() > 0);
-  return wit::string::from_view(str);
+  return std::move(str);
 }

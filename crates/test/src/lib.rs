@@ -14,6 +14,7 @@ use wit_component::{ComponentEncoder, StringEncoding};
 
 mod c;
 mod config;
+mod cpp;
 mod csharp;
 mod custom;
 mod moonbit;
@@ -191,6 +192,7 @@ enum Language {
     Rust,
     C,
     Cpp,
+    Cpp17,
     Wat,
     Csharp,
     MoonBit,
@@ -411,7 +413,7 @@ impl Runner<'_> {
         let language = match extension {
             "rs" => Language::Rust,
             "c" => Language::C,
-            "cpp" => Language::Cpp,
+            "cpp" => Language::Cpp17,
             "wat" => Language::Wat,
             "cs" => Language::Csharp,
             "mbt" => Language::MoonBit,
@@ -1201,6 +1203,7 @@ impl Language {
         Language::Rust,
         Language::C,
         Language::Cpp,
+        Language::Cpp17,
         Language::Wat,
         Language::Csharp,
         Language::MoonBit,
@@ -1211,6 +1214,7 @@ impl Language {
             Language::Rust => &rust::Rust,
             Language::C => &c::C,
             Language::Cpp => &c::Cpp,
+            Language::Cpp17 => &cpp::Cpp17,
             Language::Wat => &wat::Wat,
             Language::Csharp => &csharp::Csharp,
             Language::MoonBit => &moonbit::MoonBit,

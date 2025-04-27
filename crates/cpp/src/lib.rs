@@ -214,8 +214,14 @@ pub struct Opts {
 
     /// Symmetric API, same API for imported and exported functions.
     /// Reduces the allocation overhead for symmetric ABI.
-    #[cfg_attr(feature = "clap", arg(long, default_value_t = bool::default()))]
+    #[cfg_attr(feature = "clap", arg(long, default_value_t = true, overrides_with = "_old_api"))]
     pub new_api: bool,
+
+    /// Asymmetric API: Imported functions borrow arguments (const&),
+    /// while exported functions received owned arguments (&&).
+    /// Reduces the allocation overhead for canonical ABI.
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub _old_api: bool,
 }
 
 impl Opts {
