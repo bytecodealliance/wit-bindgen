@@ -27,6 +27,7 @@ wasi-preview1-component-adapter-provider = "30.0.2"
 wac-parser = "0.6.1"
 wac-types = "0.6.1"
 wac-graph = "0.6.1"
+wasm-compose = { workspace = true }
 indexmap = { workspace = true }
 wasm-encoder = { workspace = true }
 wasmparser = { workspace = true, features = ["features"] }
