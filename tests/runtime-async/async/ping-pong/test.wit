@@ -1,0 +1,14 @@
+package my:test;
+
+interface i {
+  ping: async func(x: future<string>, y: string) -> future<string>;
+  pong: async func(x: future<string>) -> string;
+}
+
+world test {
+  export i;
+}
+
+world runner {
+  import i;
+}

@@ -1,0 +1,15 @@
+package my:test;
+
+interface i {
+  cancel-before-read: async func(x: future<u32>);
+  cancel-after-read: async func(x: future<u32>);
+  start-read-then-cancel: async func();
+}
+
+world test {
+  export i;
+}
+
+world runner {
+  import i;
+}

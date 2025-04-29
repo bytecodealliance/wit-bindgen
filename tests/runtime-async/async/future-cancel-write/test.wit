@@ -1,0 +1,14 @@
+package my:test;
+
+interface i {
+  take-then-close: func(x: future<string>);
+  read-and-drop: async func(x: future<string>);
+}
+
+world test {
+  export i;
+}
+
+world runner {
+  import i;
+}

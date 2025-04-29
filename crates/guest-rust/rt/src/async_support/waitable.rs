@@ -322,6 +322,15 @@ where
         if let Some(cx) = cx {
             let handle = S::in_progress_waitable(in_progress);
             self.register_waker(handle, cx);
+        } else {
+            // This should not be dynamically reachable and, if it were, it may
+            // mean that this needs to be re-thought and/or the caller should be
+            // adjusted. Conservatively panic for now to defer fleshing this out
+            // for later.
+            panic!(
+                "unexpected poll to completion in a non-future way (no context) \
+                 and this operation is still pending"
+            );
         }
         Poll::Pending
     }
