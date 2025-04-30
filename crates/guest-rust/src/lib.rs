@@ -895,7 +895,7 @@ pub mod rt {
 
 #[cfg(feature = "async")]
 pub use wit_bindgen_rt::async_support::{
-    block_on, spawn, AbiBuffer, FutureRead, FutureReader, FutureWrite, FutureWriteCancel,
-    FutureWriteError, FutureWriter, StreamRead, StreamReader, StreamResult, StreamWrite,
-    StreamWriter,
+    backpressure_set, block_on, spawn, AbiBuffer, FutureRead, FutureReader, FutureWrite,
+    FutureWriteCancel, FutureWriteError, FutureWriter, StreamRead, StreamReader, StreamResult,
+    StreamWrite, StreamWriter,
 };
