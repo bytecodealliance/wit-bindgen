@@ -86,6 +86,10 @@ unsafe fn join(_: u32, _: u32) {
 unsafe fn wait(_: u32, _: *mut [u32; 2]) -> u32 {
     unreachable!();
 }
+#[cfg(not(target_arch = "wasm32"))]
+unsafe fn poll(_: u32, _: *mut [u32; 3]) -> u32 {
+    unreachable!();
+}
 
 #[cfg(target_arch = "wasm32")]
 #[link(wasm_import_module = "$root")]
