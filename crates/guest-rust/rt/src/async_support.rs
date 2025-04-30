@@ -351,18 +351,7 @@ pub unsafe fn callback(event0: u32, event1: u32, event2: u32) -> u32 {
     // our future so deallocate it. Otherwise put our future back in
     // context-local storage and forward the code.
     unsafe {
-        let rc = match (*state).callback(event0, event1, event2) {
-            // FIXME(wasip3-prototyping#140) this seems to break tests in
-            // that repo. Handle this return code by re-running our callback
-            // until it stops yielding.
-            CALLBACK_CODE_YIELD => loop {
-                match (*state).callback(EVENT_NONE, 0, 0) {
-                    CALLBACK_CODE_YIELD => {}
-                    other => break other,
-                }
-            },
-            other => other,
-        };
+        let rc = (*state).callback(event0, event1, event2);
         if rc == CALLBACK_CODE_EXIT {
             drop(Box::from_raw(state));
         } else {
