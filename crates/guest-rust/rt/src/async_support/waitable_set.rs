@@ -38,21 +38,15 @@ impl WaitableSet {
 
     pub fn poll(&self) -> (u32, u32, u32) {
         unsafe {
-            let mut payload = [0; 3];
-            let ret = poll(self.0.get(), &mut payload);
-            // FIXME(wasip3-prototyping#139) this is the wrong ABI
-            let (ret0, ret1, ret2) = if false {
-                (ret, payload[0], payload[1])
-            } else if ret == 0 {
-                (EVENT_NONE, 0, 0)
-            } else {
-                (payload[0], payload[1], payload[2])
-            };
+            let mut payload = [0; 2];
+            let event0 = poll(self.0.get(), &mut payload);
             rtdebug!(
-                "waitable-set.poll({}) = ({ret0}, {ret1:#x}, {ret2:#x})",
+                "waitable-set.poll({}) = ({event0}, {:#x}, {:#x})",
                 self.0.get(),
+                payload[0],
+                payload[1],
             );
-            (ret0, ret1, ret2)
+            (event0, payload[0], payload[1])
         }
     }
 
@@ -103,5 +97,5 @@ extern "C" {
     #[link_name = "[waitable-set-wait]"]
     fn wait(_: u32, _: *mut [u32; 2]) -> u32;
     #[link_name = "[waitable-set-poll]"]
-    fn poll(_: u32, _: *mut [u32; 3]) -> u32;
+    fn poll(_: u32, _: *mut [u32; 2]) -> u32;
 }
