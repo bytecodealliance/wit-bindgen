@@ -149,8 +149,8 @@ unsafe impl<T: Subtask> WaitableOp for SubtaskOps<T> {
         trap_because_of_future_cancel()
     }
 
-    fn result_into_cancel(_result: Self::Result) -> Self::Cancel {
-        todo!()
+    fn result_into_cancel(result: Self::Result) -> Self::Cancel {
+        drop(result);
     }
 }
 

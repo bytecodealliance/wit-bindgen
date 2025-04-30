@@ -437,6 +437,7 @@ impl<T> fmt::Display for FutureWriteError<T> {
 impl<T> std::error::Error for FutureWriteError<T> {}
 
 /// Result of [`FutureWrite::cancel`].
+#[derive(Debug)]
 pub enum FutureWriteCancel<T: 'static> {
     /// The cancel request raced with the receipt of the sent value, and the
     /// value was actually sent. Neither the value nor the writer are made

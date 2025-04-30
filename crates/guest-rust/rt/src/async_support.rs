@@ -129,14 +129,7 @@ impl FutureState {
             self.deliver_waitable_event(event1, event2)
         }
 
-        loop {
-            match self.poll() {
-                // TODO: don't re-loop here once a host supports
-                // `CALLBACK_CODE_YIELD`.
-                CALLBACK_CODE_YIELD => {}
-                other => break other,
-            }
-        }
+        self.poll()
     }
 
     /// Deliver the `code` event to the `waitable` store within our map. This
@@ -358,12 +351,24 @@ pub unsafe fn callback(event0: u32, event1: u32, event2: u32) -> u32 {
     // our future so deallocate it. Otherwise put our future back in
     // context-local storage and forward the code.
     unsafe {
-        let rc = (*state).callback(event0, event1, event2);
+        let rc = match (*state).callback(event0, event1, event2) {
+            // FIXME(wasip3-prototyping#140) this seems to break tests in
+            // that repo. Handle this return code by re-running our callback
+            // until it stops yielding.
+            CALLBACK_CODE_YIELD => loop {
+                match (*state).callback(EVENT_NONE, 0, 0) {
+                    CALLBACK_CODE_YIELD => {}
+                    other => break other,
+                }
+            },
+            other => other,
+        };
         if rc == CALLBACK_CODE_EXIT {
             drop(Box::from_raw(state));
         } else {
             context_set(state.cast());
         }
+        rtdebug!(" => (cb) {rc:#x}");
         rc
     }
 }
@@ -389,6 +394,7 @@ pub fn block_on<T: 'static>(future: impl Future<Output = T> + 'static) -> T {
     loop {
         match state.callback(event.0, event.1, event.2) {
             CALLBACK_CODE_EXIT => break rx.try_recv().unwrap().unwrap(),
+            CALLBACK_CODE_YIELD => event = state.waitable_set.as_ref().unwrap().poll(),
             _ => event = state.waitable_set.as_ref().unwrap().wait(),
         }
     }
