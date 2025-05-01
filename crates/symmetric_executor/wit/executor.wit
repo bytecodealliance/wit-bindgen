@@ -7,11 +7,18 @@ interface symmetric-executor {
     // pass pointers to register
 
     /// This wraps a user provided function of type
-    /// `fn (callback-data, event-subscription) -> null_or<event-subscription>`
+    /// `fn (callback-data, keep-pattern) -> null-or-pattern-or-new-subscription`
     /// 
-    /// The executor passes the subscription as the second argument,
-    /// the same callback is re-registered for the returned subscription
-    /// (returning the second arguments keeps the registration active)
+    /// The executor passes a pattern representing 
+    /// the current subscription as the second argument.
+    /// 
+    /// Return value:
+    ///  - null: deregister callback, data is assumed to be freed
+    ///  - keep-pattern: re-register callback on the same event
+    ///  - event-subscription: register callback on different event
+    /// 
+    /// As the code is likely interested in the cancellation object
+    /// from a new registration, the last return value case is less preferrable.
     resource callback-function;
     /// This wraps opaque user data, freed by the callback when
     /// it returns null (ready)

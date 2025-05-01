@@ -2,7 +2,7 @@ use std::{
     ffi::c_int,
     mem::transmute,
     sync::{
-        atomic::{AtomicBool, AtomicU32, Ordering},
+        atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering},
         Arc, Mutex,
     },
     time::{Duration, SystemTime},
@@ -20,17 +20,19 @@ struct Guest;
 executor::export!(Guest with_types_in executor);
 
 struct Ignore;
+struct OpaqueData;
 impl symmetric_executor::GuestCallbackFunction for Ignore {}
-impl symmetric_executor::GuestCallbackData for Ignore {}
+impl symmetric_executor::GuestCallbackData for OpaqueData {}
+struct CallbackRegistrationInternal(usize);
 
-impl symmetric_executor::GuestEventSubscription for EventSubscription {
+impl symmetric_executor::GuestEventSubscription for EventSubscriptionInternal {
     fn ready(&self) -> bool {
         self.inner.ready()
     }
 
     fn from_timeout(nanoseconds: u64) -> symmetric_executor::EventSubscription {
         let when = SystemTime::now() + Duration::from_nanos(nanoseconds);
-        symmetric_executor::EventSubscription::new(EventSubscription {
+        symmetric_executor::EventSubscription::new(EventSubscriptionInternal {
             inner: EventType::SystemTime(when),
         })
     }
@@ -64,7 +66,7 @@ impl symmetric_executor::GuestEventGenerator for EventGenerator {
         if DEBUGGING {
             println!("subscribe({:x})", Arc::as_ptr(&self.0) as usize);
         }
-        symmetric_executor::EventSubscription::new(EventSubscription {
+        symmetric_executor::EventSubscription::new(EventSubscriptionInternal {
             inner: EventType::Triggered {
                 last_counter: AtomicU32::new(0),
                 event: Arc::clone(&self.0),
@@ -107,8 +109,8 @@ impl symmetric_executor::GuestEventGenerator for EventGenerator {
     }
 }
 
-impl GuestCallbackRegistration for Ignore {
-    fn cancel(obj: symmetric_executor::CallbackRegistration) -> symmetric_executor::CallbackData {
+impl GuestCallbackRegistration for CallbackRegistrationInternal {
+    fn cancel(_obj: symmetric_executor::CallbackRegistration) -> symmetric_executor::CallbackData {
         todo!()
     }
 }
@@ -138,11 +140,14 @@ static EXECUTOR: Mutex<Executor> = Mutex::new(Executor {
 static EXECUTOR_BUSY: AtomicBool = AtomicBool::new(false);
 static NEW_TASKS: Mutex<Vec<QueuedEvent>> = Mutex::new(Vec::new());
 
+const CURRENT_PATTERN: *const SubscriptionPattern = 1 as *const SubscriptionPattern;
+const NULL_PATTERN: *const SubscriptionPattern = core::ptr::null();
+
 impl symmetric_executor::Guest for Guest {
     type CallbackFunction = Ignore;
-    type CallbackData = Ignore;
-    type CallbackRegistration = Ignore;
-    type EventSubscription = EventSubscription;
+    type CallbackData = OpaqueData;
+    type CallbackRegistration = CallbackRegistrationInternal;
+    type EventSubscription = EventSubscriptionInternal;
     type EventGenerator = EventGenerator;
 
     fn run() {
@@ -175,7 +180,13 @@ impl symmetric_executor::Guest for Guest {
                             );
                         }
                         task.callback.take_if(|CallbackEntry(f, data)| {
-                            matches!((f)(*data), CallbackState::Ready)
+                            match (f)(*data, CURRENT_PATTERN) {
+                                NULL_PATTERN => true,
+                                CURRENT_PATTERN => false,
+                                event => {
+                                    let evt_subsrc = unsafe { symmetric_executor::EventSubscription::from_handle(event as usize) };
+                                    NEW_TASKS.lock().unwrap().push(QueuedEvent::new(evt_subsrc, CallbackEntry(*f, *data))); false }
+                            }
                         });
                     } else {
                         match &task.inner {
@@ -202,8 +213,13 @@ impl symmetric_executor::Guest for Guest {
                                     tvptr = core::ptr::from_mut(&mut wait);
                                 } else {
                                     task.callback.take_if(|CallbackEntry(f, data)| {
-                                        matches!((f)(*data), CallbackState::Ready)
-                                    });
+                                        match (f)(*data, CURRENT_PATTERN) {
+                                            NULL_PATTERN => true,
+                                            CURRENT_PATTERN => false,
+                                            event => {
+                                                let evt_subsrc = unsafe { symmetric_executor::EventSubscription::from_handle(event as usize) };
+                                                NEW_TASKS.lock().unwrap().push(QueuedEvent::new(evt_subsrc, CallbackEntry(*f, *data))); false }
+                                        }                                    });
                                 }
                             }
                         }
@@ -291,48 +307,12 @@ impl symmetric_executor::Guest for Guest {
         callback: symmetric_executor::CallbackFunction,
         data: symmetric_executor::CallbackData,
     ) -> symmetric_executor::CallbackRegistration {
-        let trigger: EventSubscription = trigger.into_inner();
-        let cb: fn(*mut (), *mut ()) -> *mut () = unsafe { transmute(callback.take_handle()) };
-        let data = data.take_handle() as *mut ();
-        let event_fd = match &trigger.inner {
-            EventType::Triggered {
-                last_counter: _,
-                event,
-            } => {
-                let fd = unsafe { libc::eventfd(0, libc::EFD_NONBLOCK) };
-                event.lock().unwrap().waiting.push(fd);
-                fd
-            }
-            EventType::SystemTime(_system_time) => INVALID_FD,
-        };
-        let subscr = QueuedEvent {
-            inner: trigger.inner,
-            callback: Some(CallbackEntry(cb, data)),
-            event_fd,
-        };
-        if DEBUGGING {
-            match &subscr.inner {
-                EventType::Triggered {
-                    last_counter: _,
-                    event,
-                } => println!(
-                    "register(Trigger {:x} fd {event_fd}, {:x},{:x})",
-                    Arc::as_ptr(event) as usize,
-                    cb as usize,
-                    data as usize
-                ),
-                EventType::SystemTime(system_time) => {
-                    let diff = system_time.duration_since(SystemTime::now()).unwrap();
-                    println!(
-                        "register(Time {}.{}, {:x},{:x})",
-                        diff.as_secs(),
-                        diff.subsec_nanos(),
-                        cb as usize,
-                        data as usize
-                    );
-                }
-            }
-        }
+        // let trigger: EventSubscriptionInternal = trigger.into_inner();
+        let cb: CallbackType = unsafe { transmute(callback.take_handle()) };
+        let data = data.take_handle() as *mut OpaqueData;
+
+        let subscr = QueuedEvent::new(trigger, CallbackEntry(cb, data));
+        let id = subscr.id;
         match EXECUTOR.try_lock() {
             Ok(mut lock) => {
                 lock.active_tasks.push(subscr);
@@ -361,6 +341,7 @@ impl symmetric_executor::Guest for Guest {
                 }
             }
         }
+        symmetric_executor::CallbackRegistration::new(CallbackRegistrationInternal(id))
     }
 }
 
@@ -374,21 +355,74 @@ struct EventInner {
 
 struct EventGenerator(Arc<Mutex<EventInner>>);
 
-struct CallbackEntry(fn(*mut ()) -> CallbackState, *mut ());
+struct SubscriptionPattern;
+type CallbackType = fn(*mut OpaqueData, *const SubscriptionPattern) -> *const SubscriptionPattern;
+struct CallbackEntry(CallbackType, *mut OpaqueData);
 
 unsafe impl Send for CallbackEntry {}
 
-struct EventSubscription {
+struct EventSubscriptionInternal {
     inner: EventType,
 }
 
 struct QueuedEvent {
+    id: usize,
     inner: EventType,
     event_fd: EventFd,
     callback: Option<CallbackEntry>,
 }
 
-impl EventSubscription {
+static ID_SOURCE: AtomicUsize = AtomicUsize::new(0);
+
+impl QueuedEvent {
+    fn new(event: symmetric_executor::EventSubscription, callback: CallbackEntry) -> Self {
+        let id = ID_SOURCE.fetch_add(1, Ordering::Relaxed);
+        let trigger: EventSubscriptionInternal = event.into_inner();
+        let inner = trigger.inner;
+        let event_fd = match &inner {
+            EventType::Triggered {
+                last_counter: _,
+                event,
+            } => {
+                let fd = unsafe { libc::eventfd(0, libc::EFD_NONBLOCK) };
+                event.lock().unwrap().waiting.push(fd);
+                fd
+            }
+            EventType::SystemTime(_system_time) => INVALID_FD,
+        };
+        if DEBUGGING {
+            match &inner {
+                EventType::Triggered {
+                    last_counter: _,
+                    event,
+                } => println!(
+                    "register(Trigger {:x} fd {event_fd}, {:x},{:x})",
+                    Arc::as_ptr(event) as usize,
+                    callback.0 as usize,
+                    callback.1 as usize
+                ),
+                EventType::SystemTime(system_time) => {
+                    let diff = system_time.duration_since(SystemTime::now()).unwrap();
+                    println!(
+                        "register(Time {}.{}, {:x},{:x})",
+                        diff.as_secs(),
+                        diff.subsec_nanos(),
+                        callback.0 as usize,
+                        callback.1 as usize
+                    );
+                }
+            }
+        }
+        QueuedEvent {
+            id,
+            inner,
+            callback: Some(callback),
+            event_fd,
+        }
+    }
+}
+
+impl EventSubscriptionInternal {
     fn dup(&self) -> Self {
         let inner = match &self.inner {
             EventType::Triggered {
@@ -411,7 +445,7 @@ impl EventSubscription {
             }
             EventType::SystemTime(system_time) => EventType::SystemTime(*system_time),
         };
-        EventSubscription { inner }
+        EventSubscriptionInternal { inner }
     }
 }
 
