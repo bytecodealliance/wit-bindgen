@@ -34,3 +34,7 @@ wit-bindgen-rt = { path = '../guest-rust/rt' }
 test-helpers = { path = '../test-helpers' }
 # For use with the custom attributes test
 serde_json = "1"
+
+[features]
+serde = ['dep:serde', 'wit-bindgen-core/serde']
+clap = ['dep:clap', 'wit-bindgen-core/clap']

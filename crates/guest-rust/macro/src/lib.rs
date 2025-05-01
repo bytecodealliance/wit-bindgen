@@ -8,7 +8,8 @@ use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::{braced, token, LitStr, Token};
 use wit_bindgen_core::wit_parser::{PackageId, Resolve, UnresolvedPackageGroup, WorldId};
-use wit_bindgen_rust::{Async, AsyncFilter, Opts, Ownership, WithOption};
+use wit_bindgen_core::AsyncFilterSet;
+use wit_bindgen_rust::{Opts, Ownership, WithOption};
 
 #[proc_macro]
 pub fn generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
@@ -155,7 +156,7 @@ impl Parse for Config {
                             return Err(Error::new(span, "cannot specify second async config"));
                         }
                         async_configured = true;
-                        if val.iter().any(|v| v.enabled) && !cfg!(feature = "async") {
+                        if val.any_enabled() && !cfg!(feature = "async") {
                             return Err(Error::new(
                                 span,
                                 "must enable `async` feature to enable async imports and/or exports",
@@ -394,7 +395,7 @@ enum Opt {
     GenerateUnusedTypes(syn::LitBool),
     Features(Vec<syn::LitStr>),
     DisableCustomSectionLinkHelpers(syn::LitBool),
-    Async(Vec<Async>, Span),
+    Async(AsyncFilterSet, Span),
     Debug(syn::LitBool),
 }
 
@@ -559,21 +560,15 @@ impl Parse for Opt {
             input.parse::<Token![:]>()?;
             if input.peek(syn::LitBool) {
                 let enabled = input.parse::<syn::LitBool>()?.value;
-                Ok(Opt::Async(
-                    vec![Async {
-                        enabled,
-                        filter: AsyncFilter::All,
-                    }],
-                    span,
-                ))
+                Ok(Opt::Async(AsyncFilterSet::all(enabled), span))
             } else {
-                let mut vals = Vec::new();
+                let mut set = AsyncFilterSet::default();
                 let contents;
                 syn::bracketed!(contents in input);
-                for val in contents.parse_terminated(parse_async, Token![,])? {
-                    vals.push(val);
+                for val in contents.parse_terminated(|p| p.parse::<syn::LitStr>(), Token![,])? {
+                    set.push(&val.value());
                 }
-                Ok(Opt::Async(vals, span))
+                Ok(Opt::Async(set, span))
             }
         } else {
             Err(l.error())
@@ -632,9 +627,4 @@ fn with_field_parse(input: ParseStream<'_>) -> Result<(String, WithOption)> {
 fn fmt(input: &str) -> Result<String> {
     let syntax_tree = syn::parse_file(&input)?;
     Ok(prettyplease::unparse(&syntax_tree))
-}
-
-fn parse_async(input: ParseStream<'_>) -> Result<Async> {
-    let value = input.parse::<syn::LitStr>()?.value();
-    Ok(Async::parse(&value))
 }
