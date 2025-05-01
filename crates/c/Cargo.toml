@@ -23,3 +23,7 @@ wasm-metadata = { workspace = true }
 anyhow = { workspace = true }
 heck = { workspace = true }
 clap = { workspace = true, optional = true }
+indexmap = { workspace = true }
+
+[features]
+clap = ['dep:clap', 'wit-bindgen-core/clap']

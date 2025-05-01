@@ -18,7 +18,7 @@ pub struct RustOpts {
     #[clap(long, conflicts_with = "rust_wit_bindgen_path", value_name = "X.Y.Z")]
     rust_wit_bindgen_version: Option<String>,
 
-    /// A custom version to use for the `wit-bindgen` dependency.
+    /// Name of the Rust target to compile for.
     #[clap(long, default_value = "wasm32-wasip2", value_name = "TARGET")]
     rust_target: String,
 }

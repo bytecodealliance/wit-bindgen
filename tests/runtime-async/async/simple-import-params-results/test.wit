@@ -1,0 +1,17 @@
+package a:b;
+
+interface i {
+  one-argument: async func(x: u32);
+  one-result: async func() -> u32;
+  one-argument-and-result: async func(x: u32) -> u32;
+  two-arguments: async func(x: u32, y: u32);
+  two-arguments-and-result: async func(x: u32, y: u32) -> u32;
+}
+
+world test {
+  export i;
+}
+
+world runner {
+  import i;
+}

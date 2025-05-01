@@ -1,0 +1,14 @@
+package my:test;
+
+interface i {
+  read-future: async func(x: future);
+  close-future: async func(x: future);
+}
+
+world test {
+  export i;
+}
+
+world runner {
+  import i;
+}

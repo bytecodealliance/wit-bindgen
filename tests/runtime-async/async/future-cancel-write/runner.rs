@@ -40,39 +40,31 @@ fn main() {
         };
 
         // cancel after we hit the intrinsic and then close the other end
-        //
-        // FIXME(wasip3-prototyping#137)
-        if false {
-            let (tx, rx) = wit_future::new::<String>();
-            let mut future = Box::pin(tx.write("hello3".into()));
-            assert!(future
-                .as_mut()
-                .poll(&mut Context::from_waker(noop_waker_ref()))
-                .is_pending());
-            drop(rx);
-            match future.as_mut().cancel() {
-                FutureWriteCancel::Closed(val) => assert_eq!(val, "hello3"),
-                other => panic!("expected closed, got: {other:?}"),
-            };
-        }
+        let (tx, rx) = wit_future::new::<String>();
+        let mut future = Box::pin(tx.write("hello3".into()));
+        assert!(future
+            .as_mut()
+            .poll(&mut Context::from_waker(noop_waker_ref()))
+            .is_pending());
+        drop(rx);
+        match future.as_mut().cancel() {
+            FutureWriteCancel::Closed(val) => assert_eq!(val, "hello3"),
+            other => panic!("expected closed, got: {other:?}"),
+        };
 
         // Start a write, wait for it to be pending, then go complete the write
         // in some async work, then cancel it and witness that it was written,
         // not cancelled.
-        //
-        // FIXME(wasip3-prototyping#138)
-        if false {
-            let (tx, rx) = wit_future::new::<String>();
-            let mut future = Box::pin(tx.write("hello3".into()));
-            assert!(future
-                .as_mut()
-                .poll(&mut Context::from_waker(noop_waker_ref()))
-                .is_pending());
-            read_and_drop(rx).await;
-            match future.as_mut().cancel() {
-                FutureWriteCancel::AlreadySent => {}
-                other => panic!("expected sent, got: {other:?}"),
-            };
-        }
+        let (tx, rx) = wit_future::new::<String>();
+        let mut future = Box::pin(tx.write("hello3".into()));
+        assert!(future
+            .as_mut()
+            .poll(&mut Context::from_waker(noop_waker_ref()))
+            .is_pending());
+        read_and_drop(rx).await;
+        match future.as_mut().cancel() {
+            FutureWriteCancel::AlreadySent => {}
+            other => panic!("expected sent, got: {other:?}"),
+        };
     });
 }

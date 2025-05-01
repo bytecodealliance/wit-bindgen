@@ -110,6 +110,10 @@ pub struct WitConfig {
     #[serde(default, rename = "async")]
     pub async_: bool,
 
+    /// Whether or not this test uses `error-context`
+    #[serde(default)]
+    pub error_context: bool,
+
     /// When set to `true` disables the passing of per-language default bindgen
     /// arguments. For example with Rust it avoids passing `--generate-all` by
     /// default to bindings generation.
