@@ -1,8 +1,7 @@
 use crate::bindgen::{FunctionBindgen, POINTER_SIZE_EXPRESSION};
 use crate::{
-    full_wit_type_name, int_repr, to_rust_ident, to_upper_camel_case, wasm_type, AsyncConfig,
-    FnSig, Identifier, InterfaceName, Ownership, RuntimeItem, RustFlagsRepr, RustWasm,
-    TypeGeneration,
+    full_wit_type_name, int_repr, to_rust_ident, to_upper_camel_case, wasm_type, FnSig, Identifier,
+    InterfaceName, Ownership, RuntimeItem, RustFlagsRepr, RustWasm, TypeGeneration,
 };
 use anyhow::Result;
 use heck::*;
@@ -164,17 +163,9 @@ impl<'i> InterfaceGenerator<'i> {
                 continue;
             }
 
-            let async_ = match &self.r#gen.opts.async_ {
-                AsyncConfig::None => false,
-                AsyncConfig::All => true,
-                AsyncConfig::Some { exports, .. } => {
-                    exports.contains(&if let Some((_, key)) = interface {
-                        format!("{}#{}", self.resolve.name_world_key(key), func.name)
-                    } else {
-                        func.name.clone()
-                    })
-                }
-            };
+            let async_ = self
+                .r#gen
+                .is_async(self.resolve, interface.map(|p| p.1), func, false);
             let resource = func.kind.resource();
 
             funcs_to_export.push((func, resource, async_));
@@ -188,10 +179,7 @@ impl<'i> InterfaceGenerator<'i> {
                 private: true,
                 ..Default::default()
             };
-            if let FunctionKind::Method(_) = &func.kind {
-                sig.self_arg = Some("&self".into());
-                sig.self_is_first_param = true;
-            }
+            sig.update_for_func(&func);
             self.print_signature(func, true, &sig);
             self.src.push_str(";\n");
             let trait_method = mem::replace(&mut self.src, prev);
@@ -768,15 +756,7 @@ pub mod vtable{ordinal} {{
 
         self.generate_payloads("", func, interface);
 
-        let async_ = match &self.r#gen.opts.async_ {
-            AsyncConfig::None => false,
-            AsyncConfig::All => true,
-            AsyncConfig::Some { imports, .. } => imports.contains(&if let Some(key) = interface {
-                format!("{}#{}", self.resolve.name_world_key(key), func.name)
-            } else {
-                func.name.clone()
-            }),
-        };
+        let async_ = self.r#gen.is_async(self.resolve, interface, func, true);
         let mut sig = FnSig {
             async_,
             ..Default::default()
@@ -786,10 +766,7 @@ pub mod vtable{ordinal} {{
             let name = to_upper_camel_case(name);
             uwriteln!(self.src, "impl {name} {{");
             sig.use_item_name = true;
-            if let FunctionKind::Method(_) = &func.kind {
-                sig.self_arg = Some("&self".into());
-                sig.self_is_first_param = true;
-            }
+            sig.update_for_func(&func);
         }
         self.src.push_str("#[allow(unused_unsafe, clippy::all)]\n");
         let params = self.print_signature(func, async_, &sig);
@@ -828,6 +805,12 @@ pub mod vtable{ordinal} {{
     fn deallocate_lists(&mut self, address: &str, types: &[Type], module: &str) -> String {
         let mut f = FunctionBindgen::new(self, Vec::new(), module, true);
         abi::deallocate_lists_in_types(f.r#gen.resolve, types, address.into(), &mut f);
+        format!("unsafe {{ {} }}", String::from(f.src))
+    }
+
+    fn deallocate_lists_and_own(&mut self, address: &str, types: &[Type], module: &str) -> String {
+        let mut f = FunctionBindgen::new(self, Vec::new(), module, true);
+        abi::deallocate_lists_and_own_in_types(f.r#gen.resolve, types, address.into(), &mut f);
         format!("unsafe {{ {} }}", String::from(f.src))
     }
 
@@ -973,6 +956,15 @@ unsafe fn call_import(params: *mut u8, results: *mut u8) -> u32 {{
         uwriteln!(self.src, "{dealloc_lists}");
         uwriteln!(self.src, "}}");
 
+        // Generate `fn params_dealloc_lists_and_own`
+        let dealloc_lists_and_own = self.deallocate_lists_and_own("_ptr", &param_tys, module);
+        uwriteln!(
+            self.src,
+            "unsafe fn params_dealloc_lists_and_own(_ptr: *mut u8) {{"
+        );
+        uwriteln!(self.src, "{dealloc_lists_and_own}");
+        uwriteln!(self.src, "}}");
+
         // Generate `fn params_lower`
         let mut lowers = Vec::new();
         let offsets = self
@@ -1082,6 +1074,10 @@ unsafe fn call_import(params: *mut u8, results: *mut u8) -> u32 {{
         if async_ {
             let async_support = self.r#gen.async_support_path();
             uwriteln!(self.src, "{async_support}::start_task(async move {{");
+            uwriteln!(
+                self.src,
+                "let _task_cancel = {async_support}::TaskCancelOnDrop::new();"
+            );
             if needs_cleanup_list {
                 let vec = self.path_to_vec();
                 uwriteln!(self.src, "let mut cleanup_list = {vec}::new();");
@@ -1331,27 +1327,16 @@ unsafe fn call_import(params: *mut u8, results: *mut u8) -> u32 {{
             if self.r#gen.skip.contains(&func.name) {
                 continue;
             }
-            let async_ = match &self.r#gen.opts.async_ {
-                AsyncConfig::None => false,
-                AsyncConfig::All => true,
-                AsyncConfig::Some { exports, .. } => {
-                    exports.contains(&if let Some((_, key)) = interface {
-                        format!("{}#{}", self.resolve.name_world_key(key), func.name)
-                    } else {
-                        func.name.clone()
-                    })
-                }
-            };
+            let async_ = self
+                .r#gen
+                .is_async(self.resolve, interface.map(|p| p.1), func, false);
             let mut sig = FnSig {
                 async_,
                 use_item_name: true,
                 private: true,
                 ..Default::default()
             };
-            if let FunctionKind::Method(_) = &func.kind {
-                sig.self_arg = Some("&self".into());
-                sig.self_is_first_param = true;
-            }
+            sig.update_for_func(&func);
             self.src.push_str("#[allow(unused_variables)]\n");
             self.print_signature(func, true, &sig);
             self.src.push_str("{ unreachable!() }\n");
@@ -1453,7 +1438,7 @@ unsafe fn call_import(params: *mut u8, results: *mut u8) -> u32 {{
                 func.item_name()
             }
         } else {
-            &func.name
+            func.item_name()
         };
         self.push_str(&to_rust_ident(func_name));
         if let Some(generics) = &sig.generics {

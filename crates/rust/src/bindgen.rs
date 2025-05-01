@@ -992,7 +992,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.push_str(&prev_src);
                 let constructor_type = match &func.kind {
                     FunctionKind::Freestanding | FunctionKind::AsyncFreestanding => {
-                        self.push_str(&format!("T::{}", to_rust_ident(&func.name)));
+                        self.push_str(&format!("T::{}", to_rust_ident(func.item_name())));
                         None
                     }
                     FunctionKind::Method(_)
@@ -1041,6 +1041,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::AsyncTaskReturn { name, params } => {
                 let func = self.declare_import("", name, params, &[]);
 
+                uwriteln!(self.src, "_task_cancel.forget();");
                 uwriteln!(self.src, "{func}({});", operands.join(", "));
             }
 
@@ -1308,6 +1309,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     size = size.format(POINTER_SIZE_EXPRESSION),
                     align = align.format(POINTER_SIZE_EXPRESSION)
                 ));
+            }
+
+            Instruction::DropHandle { .. } => {
+                uwriteln!(self.src, "let _ = {};", operands[0]);
             }
         }
     }

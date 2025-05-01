@@ -555,6 +555,10 @@ def_instruction! {
             blocks: usize,
         } : [1] => [0],
 
+        /// Deallocates the language-specific handle representation on the top
+        /// of the stack. Used for async imports.
+        DropHandle { ty: &'a Type } : [1] => [0],
+
         /// Call `task.return` for an async-lifted export.
         ///
         /// This will call core wasm import `name` which will be mapped to
@@ -792,33 +796,37 @@ pub fn post_return(resolve: &Resolve, func: &Function, bindgen: &mut impl Bindge
 /// a list or a string primarily.
 pub fn guest_export_needs_post_return(resolve: &Resolve, func: &Function) -> bool {
     func.result
-        .map(|t| needs_post_return(resolve, &t))
+        .map(|t| needs_deallocate(resolve, &t, Deallocate::Lists))
         .unwrap_or(false)
 }
 
-fn needs_post_return(resolve: &Resolve, ty: &Type) -> bool {
+fn needs_deallocate(resolve: &Resolve, ty: &Type, what: Deallocate) -> bool {
     match ty {
         Type::String => true,
         Type::ErrorContext => true,
         Type::Id(id) => match &resolve.types[*id].kind {
             TypeDefKind::List(_) => true,
-            TypeDefKind::Type(t) => needs_post_return(resolve, t),
-            TypeDefKind::Handle(_) => false,
+            TypeDefKind::Type(t) => needs_deallocate(resolve, t, what),
+            TypeDefKind::Handle(Handle::Own(_)) => what.handles(),
+            TypeDefKind::Handle(Handle::Borrow(_)) => false,
             TypeDefKind::Resource => false,
-            TypeDefKind::Record(r) => r.fields.iter().any(|f| needs_post_return(resolve, &f.ty)),
-            TypeDefKind::Tuple(t) => t.types.iter().any(|t| needs_post_return(resolve, t)),
+            TypeDefKind::Record(r) => r
+                .fields
+                .iter()
+                .any(|f| needs_deallocate(resolve, &f.ty, what)),
+            TypeDefKind::Tuple(t) => t.types.iter().any(|t| needs_deallocate(resolve, t, what)),
             TypeDefKind::Variant(t) => t
                 .cases
                 .iter()
                 .filter_map(|t| t.ty.as_ref())
-                .any(|t| needs_post_return(resolve, t)),
-            TypeDefKind::Option(t) => needs_post_return(resolve, t),
+                .any(|t| needs_deallocate(resolve, t, what)),
+            TypeDefKind::Option(t) => needs_deallocate(resolve, t, what),
             TypeDefKind::Result(t) => [&t.ok, &t.err]
                 .iter()
                 .filter_map(|t| t.as_ref())
-                .any(|t| needs_post_return(resolve, t)),
+                .any(|t| needs_deallocate(resolve, t, what)),
             TypeDefKind::Flags(_) | TypeDefKind::Enum(_) => false,
-            TypeDefKind::Future(_) | TypeDefKind::Stream(_) => false,
+            TypeDefKind::Future(_) | TypeDefKind::Stream(_) => what.handles(),
             TypeDefKind::Unknown => unreachable!(),
         },
 
@@ -845,13 +853,43 @@ pub fn deallocate_lists_in_types<B: Bindgen>(
     ptr: B::Operand,
     bindgen: &mut B,
 ) {
-    Generator::new(resolve, bindgen, false).deallocate_lists_in_types(types, ptr);
+    Generator::new(resolve, bindgen, false).deallocate_in_types(types, ptr, Deallocate::Lists);
+}
+
+/// Generate instructions in `bindgen` to deallocate all lists in `ptr` where
+/// that's a pointer to a sequence of `types` stored in linear memory.
+pub fn deallocate_lists_and_own_in_types<B: Bindgen>(
+    resolve: &Resolve,
+    types: &[Type],
+    ptr: B::Operand,
+    bindgen: &mut B,
+) {
+    Generator::new(resolve, bindgen, false).deallocate_in_types(types, ptr, Deallocate::ListsAndOwn);
 }
 
 #[derive(Copy, Clone)]
 pub enum Realloc {
     None,
     Export(&'static str),
+}
+
+/// What to deallocate in various `deallocate_*` methods.
+#[derive(Copy, Clone)]
+enum Deallocate {
+    /// Only deallocate lists.
+    Lists,
+    /// Deallocate lists and owned resources such as `own<T>` and
+    /// futures/streams.
+    ListsAndOwn,
+}
+
+impl Deallocate {
+    fn handles(&self) -> bool {
+        match self {
+            Deallocate::Lists => false,
+            Deallocate::ListsAndOwn => true,
+        }
+    }
 }
 
 struct Generator<'a, B: Bindgen> {
@@ -1209,14 +1247,14 @@ impl<'a, B: Bindgen> Generator<'a, B> {
 
         let mut types = Vec::new();
         types.extend(func.result);
-        self.deallocate_lists_in_types(&types, addr);
+        self.deallocate_in_types(&types, addr, Deallocate::Lists);
 
         self.emit(&Instruction::Return { func, amt: 0 });
     }
 
-    fn deallocate_lists_in_types(&mut self, types: &[Type], addr: B::Operand) {
+    fn deallocate_in_types(&mut self, types: &[Type], addr: B::Operand, what: Deallocate) {
         for (offset, ty) in self.bindgen.sizes().field_offsets(types) {
-            self.deallocate(ty, addr.clone(), offset);
+            self.deallocate(ty, addr.clone(), offset, what);
         }
 
         assert!(
@@ -2024,12 +2062,18 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         });
     }
 
-    fn deallocate(&mut self, ty: &Type, addr: B::Operand, offset: ArchitectureSize) {
+    fn deallocate(
+        &mut self,
+        ty: &Type,
+        addr: B::Operand,
+        offset: ArchitectureSize,
+        what: Deallocate,
+    ) {
         use Instruction::*;
 
         // No need to execute any instructions if this type itself doesn't
         // require any form of post-return.
-        if !needs_post_return(self.resolve, ty) {
+        if !needs_deallocate(self.resolve, ty, what) {
             return;
         }
 
@@ -2057,7 +2101,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             | Type::F64
             | Type::ErrorContext => {}
             Type::Id(id) => match &self.resolve.types[id].kind {
-                TypeDefKind::Type(t) => self.deallocate(t, addr, offset),
+                TypeDefKind::Type(t) => self.deallocate(t, addr, offset, what),
 
                 TypeDefKind::List(element) => {
                     self.stack.push(addr.clone());
@@ -2070,30 +2114,36 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     self.push_block();
                     self.emit(&IterBasePointer);
                     let elemaddr = self.stack.pop().unwrap();
-                    self.deallocate(element, elemaddr, Default::default());
+                    self.deallocate(element, elemaddr, Default::default(), what);
                     self.finish_block(0);
 
                     self.emit(&Instruction::GuestDeallocateList { element });
                 }
 
-                TypeDefKind::Handle(_) => {
-                    todo!()
+                TypeDefKind::Handle(Handle::Own(_))
+                | TypeDefKind::Future(_)
+                | TypeDefKind::Stream(_)
+                    if what.handles() =>
+                {
+                    self.read_from_memory(ty, addr, offset);
+                    self.emit(&DropHandle { ty });
                 }
 
-                TypeDefKind::Resource => {
-                    todo!()
-                }
+                TypeDefKind::Handle(Handle::Own(_)) => unreachable!(),
+                TypeDefKind::Handle(Handle::Borrow(_)) => unreachable!(),
+                TypeDefKind::Resource => unreachable!(),
 
                 TypeDefKind::Record(record) => {
                     self.deallocate_fields(
                         &record.fields.iter().map(|f| f.ty).collect::<Vec<_>>(),
                         addr,
                         offset,
+                        what,
                     );
                 }
 
                 TypeDefKind::Tuple(tuple) => {
-                    self.deallocate_fields(&tuple.types, addr, offset);
+                    self.deallocate_fields(&tuple.types, addr, offset, what);
                 }
 
                 TypeDefKind::Flags(_) => {}
@@ -2104,6 +2154,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         addr,
                         variant.tag(),
                         variant.cases.iter().map(|c| c.ty.as_ref()),
+                        what,
                     );
                     self.emit(&GuestDeallocateVariant {
                         blocks: variant.cases.len(),
@@ -2111,19 +2162,25 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
 
                 TypeDefKind::Option(t) => {
-                    self.deallocate_variant(offset, addr, Int::U8, [None, Some(t)]);
+                    self.deallocate_variant(offset, addr, Int::U8, [None, Some(t)], what);
                     self.emit(&GuestDeallocateVariant { blocks: 2 });
                 }
 
                 TypeDefKind::Result(e) => {
-                    self.deallocate_variant(offset, addr, Int::U8, [e.ok.as_ref(), e.err.as_ref()]);
+                    self.deallocate_variant(
+                        offset,
+                        addr,
+                        Int::U8,
+                        [e.ok.as_ref(), e.err.as_ref()],
+                        what,
+                    );
                     self.emit(&GuestDeallocateVariant { blocks: 2 });
                 }
 
                 TypeDefKind::Enum(_) => {}
 
-                TypeDefKind::Future(_) => todo!("read future from memory"),
-                TypeDefKind::Stream(_) => todo!("read stream from memory"),
+                TypeDefKind::Future(_) => unreachable!(),
+                TypeDefKind::Stream(_) => unreachable!(),
                 TypeDefKind::Unknown => unreachable!(),
             },
         }
@@ -2135,6 +2192,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         addr: B::Operand,
         tag: Int,
         cases: impl IntoIterator<Item = Option<&'b Type>> + Clone,
+        what: Deallocate,
     ) {
         self.stack.push(addr.clone());
         self.load_intrepr(offset, tag);
@@ -2142,15 +2200,21 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         for ty in cases {
             self.push_block();
             if let Some(ty) = ty {
-                self.deallocate(ty, addr.clone(), payload_offset);
+                self.deallocate(ty, addr.clone(), payload_offset, what);
             }
             self.finish_block(0);
         }
     }
 
-    fn deallocate_fields(&mut self, tys: &[Type], addr: B::Operand, offset: ArchitectureSize) {
+    fn deallocate_fields(
+        &mut self,
+        tys: &[Type],
+        addr: B::Operand,
+        offset: ArchitectureSize,
+        what: Deallocate,
+    ) {
         for (field_offset, ty) in self.bindgen.sizes().field_offsets(tys) {
-            self.deallocate(ty, addr.clone(), offset + (field_offset));
+            self.deallocate(ty, addr.clone(), offset + (field_offset), what);
         }
     }
 }

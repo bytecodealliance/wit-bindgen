@@ -832,6 +832,55 @@ impl Runner<'_> {
         runner_wasm: &Path,
         test_components: &[(&Component, &Path)],
     ) -> Result<()> {
+        // If possible use `wasm-compose` to compose the test together. This is
+        // only possible when customization isn't used though. This is also only
+        // done for async tests at this time to ensure that there's a version of
+        // composition that's done which is at the same version as wasmparser
+        // and friends.
+        let composed = if case.config.wac.is_none() && test_components.len() == 1 {
+            self.compose_wasm_with_wasm_compose(runner_wasm, test_components)?
+        } else {
+            self.compose_wasm_with_wac(case, runner, runner_wasm, test_components)?
+        };
+
+        let dst = runner_wasm.parent().unwrap();
+        let mut filename = format!(
+            "composed-{}",
+            runner.path.file_name().unwrap().to_str().unwrap(),
+        );
+        for (test, _) in test_components {
+            filename.push_str("-");
+            filename.push_str(test.path.file_name().unwrap().to_str().unwrap());
+        }
+        filename.push_str(".wasm");
+        let composed_wasm = dst.join(filename);
+        write_if_different(&composed_wasm, &composed)?;
+
+        self.run_command(self.test_runner.command().arg(&composed_wasm))?;
+        Ok(())
+    }
+
+    fn compose_wasm_with_wasm_compose(
+        &self,
+        runner_wasm: &Path,
+        test_components: &[(&Component, &Path)],
+    ) -> Result<Vec<u8>> {
+        assert!(test_components.len() == 1);
+        let test_wasm = test_components[0].1;
+        let mut config = wasm_compose::config::Config::default();
+        config.definitions = vec![test_wasm.to_path_buf()];
+        wasm_compose::composer::ComponentComposer::new(runner_wasm, &config)
+            .compose()
+            .with_context(|| format!("failed to compose {runner_wasm:?} with {test_wasm:?}"))
+    }
+
+    fn compose_wasm_with_wac(
+        &self,
+        case: &Test,
+        runner: &Component,
+        runner_wasm: &Path,
+        test_components: &[(&Component, &Path)],
+    ) -> Result<Vec<u8>> {
         let document = match &case.config.wac {
             Some(path) => {
                 let wac_config = case.path.join(path);
@@ -891,7 +940,7 @@ impl Runner<'_> {
         // TODO: should figure out how to render these errors better.
         let document =
             wac_parser::Document::parse(&document).context("failed to parse wac script")?;
-        let composed = document
+        document
             .resolve(packages)
             .context("failed to run `wac` resolve")?
             .encode(wac_graph::EncodeOptions {
@@ -899,23 +948,7 @@ impl Runner<'_> {
                 validate: false,
                 processor: None,
             })
-            .context("failed to encode `wac` result")?;
-
-        let dst = runner_wasm.parent().unwrap();
-        let mut filename = format!(
-            "composed-{}",
-            runner.path.file_name().unwrap().to_str().unwrap(),
-        );
-        for (test, _) in test_components {
-            filename.push_str("-");
-            filename.push_str(test.path.file_name().unwrap().to_str().unwrap());
-        }
-        filename.push_str(".wasm");
-        let composed_wasm = dst.join(filename);
-        write_if_different(&composed_wasm, &composed)?;
-
-        self.run_command(self.test_runner.command().arg(&composed_wasm))?;
-        Ok(())
+            .context("failed to encode `wac` result")
     }
 
     /// Helper to execute an external process and generate a helpful error

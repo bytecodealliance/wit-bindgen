@@ -111,6 +111,33 @@ jobs:
           --artifacts target/artifacts \
           --rust-wit-bindgen-path ./crates/guest-rust
 
+  # While we're working on getting wasip3-prototyping upstream in wasmtime
+  # itself run tests here in separate async job. Note that this job is NOT
+  # required for merging but it reports its status anyway to alert folks to at
+  # least the "big red X" status. The goal here is that this is known to be a
+  # bit unstable as the async foundations are shifting over time but this at
+  # least enables testing async things in this repository more easily.
+  async:
+    name: Test Async
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+    - name: Install Rust
+      run: rustup update stable --no-self-update && rustup default stable
+    - run: rustup target add wasm32-wasip1
+    - uses: ./.github/actions/install-wasi-sdk
+    - run: |
+        curl -L https://github.com/bytecodealliance/wasip3-prototyping/releases/download/dev/wasmtime-dev-x86_64-linux.tar.xz | tar xJvf -
+        echo "WASMTIME=`pwd`/wasmtime-dev-x86_64-linux/wasmtime" >> $GITHUB_ENV
+    - run: |
+        cargo run test --languages rust tests/runtime-async \
+          --artifacts target/artifacts \
+          --rust-wit-bindgen-path ./crates/guest-rust \
+          --rust-target wasm32-wasip1 \
+          --runner "$WASMTIME -W component-model-async"
+
   test_unit:
     name: Crate Unit Tests
     runs-on: ubuntu-latest

@@ -8,7 +8,10 @@
 //! safe.
 
 use crate::async_support::waitable::{WaitableOp, WaitableOperation};
-use crate::async_support::{STATUS_RETURNED, STATUS_STARTED, STATUS_STARTING};
+use crate::async_support::{
+    STATUS_RETURNED, STATUS_RETURNED_CANCELLED, STATUS_STARTED, STATUS_STARTED_CANCELLED,
+    STATUS_STARTING,
+};
 use crate::Cleanup;
 use std::alloc::Layout;
 use std::future::Future;
@@ -50,6 +53,10 @@ pub unsafe trait Subtask {
     /// `dst`.
     unsafe fn params_dealloc_lists(dst: *mut u8);
 
+    /// Bindings-generated version of deallocating not only owned lists within
+    /// `src` but also deallocating any owned resources.
+    unsafe fn params_dealloc_lists_and_own(src: *mut u8);
+
     /// Bindings-generated version of lifting the results stored at `src`.
     unsafe fn results_lift(src: *mut u8) -> Self::Results;
 
@@ -59,7 +66,15 @@ pub unsafe trait Subtask {
     where
         Self: Sized,
     {
-        WaitableOperation::<SubtaskOps<Self>>::new(Start { params })
+        async {
+            match WaitableOperation::<SubtaskOps<Self>>::new(Start { params }).await {
+                Ok(results) => results,
+                Err(_) => unreachable!(
+                    "cancellation is not exposed API-wise, \
+                    should not be possible"
+                ),
+            }
+        }
     }
 }
 
@@ -72,8 +87,8 @@ struct Start<T: Subtask> {
 unsafe impl<T: Subtask> WaitableOp for SubtaskOps<T> {
     type Start = Start<T>;
     type InProgress = InProgress<T>;
-    type Result = T::Results;
-    type Cancel = ();
+    type Result = Result<T::Results, ()>;
+    type Cancel = Result<T::Results, ()>;
 
     fn start(state: Self::Start) -> (u32, Self::InProgress) {
         unsafe {
@@ -97,7 +112,9 @@ unsafe impl<T: Subtask> WaitableOp for SubtaskOps<T> {
         }
     }
 
-    fn start_cancelled(_state: Self::Start) -> Self::Cancel {}
+    fn start_cancelled(_state: Self::Start) -> Self::Cancel {
+        Err(())
+    }
 
     fn in_progress_update(
         mut state: Self::InProgress,
@@ -130,8 +147,47 @@ unsafe impl<T: Subtask> WaitableOp for SubtaskOps<T> {
                 // Note that by dropping `state` here we'll both deallocate the
                 // params/results storage area as well as the subtask handle
                 // itself.
-                unsafe { Ok(T::results_lift(state.ptr_results())) }
+                unsafe { Ok(Ok(T::results_lift(state.ptr_results()))) }
             }
+
+            // This subtask was dropped which forced cancellation. Said
+            // cancellation stopped the subtask before it reached the "started"
+            // state, meaning that we still own all of the parameters in their
+            // lowered form.
+            //
+            // In this situation we lift the parameters, even after we
+            // previously lowered them, back into `T::Params`. That notably
+            // re-acquires ownership and is suitable for disposing of all of
+            // the parameters via normal Rust-based destructors.
+            STATUS_STARTED_CANCELLED => {
+                assert!(!state.started);
+                unsafe {
+                    T::params_dealloc_lists_and_own(state.ptr_params());
+                }
+                Ok(Err(()))
+            }
+
+            // This subtask was dropped which forced cancellation. Said
+            // cancellation stopped the subtask before it reached the "returned"
+            // state, meaning that it started, received the arguments, but then
+            // did not complete.
+            //
+            // In this situation we may have already received `STATUS_STARTED`,
+            // but we also might not have. This means we conditionally need
+            // to flag this task as started which will deallocate all lists
+            // owned by the parameters.
+            //
+            // After that though we do not have ownership of the parameters any
+            // more (e.g. own resources are all gone) so there's nothing to
+            // return. Here we yield a result and dispose of the in-progress
+            // state.
+            STATUS_RETURNED_CANCELLED => {
+                if !state.started {
+                    state.flag_started();
+                }
+                Ok(Err(()))
+            }
+
             other => panic!("unknown code {other:#x}"),
         }
     }
@@ -143,14 +199,12 @@ unsafe impl<T: Subtask> WaitableOp for SubtaskOps<T> {
         state.subtask.as_ref().unwrap().handle.get()
     }
 
-    fn in_progress_cancel(_: &Self::InProgress) -> u32 {
-        // FIXME: plan is to implement cancellation in the canonical ABI in the
-        // near future, this will get filled out soon in theory.
-        trap_because_of_future_cancel()
+    fn in_progress_cancel(state: &Self::InProgress) -> u32 {
+        unsafe { cancel(Self::in_progress_waitable(state)) }
     }
 
-    fn result_into_cancel(_result: Self::Result) -> Self::Cancel {
-        todo!()
+    fn result_into_cancel(result: Self::Result) -> Self::Cancel {
+        result
     }
 }
 
@@ -162,19 +216,7 @@ struct SubtaskHandle {
 impl Drop for SubtaskHandle {
     fn drop(&mut self) {
         unsafe {
-            subtask_drop(self.handle.get());
-        }
-
-        #[cfg(not(target_arch = "wasm32"))]
-        unsafe fn subtask_drop(_: u32) {
-            unreachable!()
-        }
-
-        #[cfg(target_arch = "wasm32")]
-        #[link(wasm_import_module = "$root")]
-        extern "C" {
-            #[link_name = "[subtask-drop]"]
-            fn subtask_drop(handle: u32);
+            drop(self.handle.get());
         }
     }
 }
@@ -213,12 +255,21 @@ impl<T: Subtask> InProgress<T> {
     }
 }
 
-#[cold]
-fn trap_because_of_future_cancel() -> ! {
-    panic!(
-        "an imported function is being dropped/cancelled before being fully \
-         awaited, but that is not sound at this time so the program is going \
-         to be aborted; for more information see \
-         https://github.com/bytecodealliance/wit-bindgen/issues/1175"
-    )
+#[cfg(not(target_arch = "wasm32"))]
+unsafe fn drop(_: u32) {
+    unreachable!()
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+unsafe fn cancel(_: u32) -> u32 {
+    unreachable!()
+}
+
+#[cfg(target_arch = "wasm32")]
+#[link(wasm_import_module = "$root")]
+extern "C" {
+    #[link_name = "[subtask-cancel]"]
+    fn cancel(handle: u32) -> u32;
+    #[link_name = "[subtask-drop]"]
+    fn drop(handle: u32);
 }

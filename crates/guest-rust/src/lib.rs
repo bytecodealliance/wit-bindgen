@@ -839,18 +839,19 @@
 ///     //
 ///     // The resulting bindings will use the component model
 ///     // [async ABI](https://github.com/WebAssembly/component-model/blob/main/design/mvp/Async.md).
-///     // This may be specified either as a boolean (e.g. `async: true`, meaning
-///     // all imports and exports should use the async ABI) or as lists of
-///     // specific imports and/or exports as shown here:
-///     async: {
-///         imports: [
-///             "wasi:http/types@0.3.0-draft#[static]body.finish",
-///             "wasi:http/handler@0.3.0-draft#handle",
-///         ],
-///         exports: [
-///             "wasi:http/handler@0.3.0-draft#handle",
-///         ]
-///     }
+///     //
+///     // If this option is not provided then the WIT's source annotation will
+///     // be used instead.
+///     async: true,    // all bindings are async
+///     async: false,   // all bindings are sync
+///     // With an array per-function configuration can be specified. A leading
+///     // '-' will disable async for that particular function.
+///     async: [
+///         "wasi:http/types@0.3.0-draft#[static]body.finish",
+///         "import:wasi:http/handler@0.3.0-draft#handle",
+///         "-export:wasi:http/handler@0.3.0-draft#handle",
+///         "all",
+///     ],
 /// });
 /// ```
 ///
@@ -894,6 +895,7 @@ pub mod rt {
 
 #[cfg(feature = "async")]
 pub use wit_bindgen_rt::async_support::{
-    AbiBuffer, FutureRead, FutureReader, FutureWrite, FutureWriter, StreamRead, StreamReader,
-    StreamResult, StreamWrite, StreamWriter,
+    backpressure_set, block_on, spawn, AbiBuffer, FutureRead, FutureReader, FutureWrite,
+    FutureWriteCancel, FutureWriteError, FutureWriter, StreamRead, StreamReader, StreamResult,
+    StreamWrite, StreamWriter,
 };

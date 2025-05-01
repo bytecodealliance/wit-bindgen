@@ -2666,7 +2666,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             | Instruction::StreamLower { .. }
             | Instruction::StreamLift { .. }
             | Instruction::ErrorContextLower { .. }
-            | Instruction::ErrorContextLift { .. } => todo!(),
+            | Instruction::ErrorContextLift { .. }
+            | Instruction::DropHandle { .. } => todo!(),
         }
     }
 
@@ -2871,13 +2872,16 @@ trait ToMoonBitIdent: ToOwned {
 
 impl ToMoonBitIdent for str {
     fn to_moonbit_ident(&self) -> String {
-        // Escape MoonBit keywords
+        // Escape MoonBit keywords and reserved keywords
         match self {
-            "continue" | "for" | "match" | "if" | "pub" | "priv" | "readonly" | "break"
-            | "raise" | "try" | "except" | "catch" | "else" | "enum" | "struct" | "type"
-            | "trait" | "return" | "let" | "mut" | "while" | "loop" | "extern" | "with"
-            | "throw" | "init" | "main" | "test" | "in" | "guard" | "typealias" | "const"
-            | "method" | "move" | "do" | "static" | "final" => {
+            "module" | "move" | "ref" | "static" | "super" | "unsafe" | "use" | "where"
+            | "await" | "dyn" | "abstract" | "do" | "final" | "macro" | "override" | "typeof"
+            | "virtual" | "yield" | "local" | "method" | "alias" | "assert" | "as" | "else"
+            | "extern" | "fn" | "if" | "let" | "const" | "match" | "mut" | "type" | "typealias"
+            | "struct" | "enum" | "trait" | "traitalias" | "derive" | "while" | "break"
+            | "continue" | "import" | "return" | "throw" | "raise" | "try" | "catch" | "pub"
+            | "priv" | "readonly" | "true" | "false" | "_" | "test" | "loop" | "for" | "in"
+            | "impl" | "with" | "guard" | "async" | "is" | "init" | "main" => {
                 format!("{self}_")
             }
             _ => self.to_snake_case(),

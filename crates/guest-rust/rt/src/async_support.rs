@@ -10,6 +10,7 @@ use std::boxed::Box;
 use std::collections::HashMap;
 use std::ffi::c_void;
 use std::future::Future;
+use std::mem;
 use std::pin::Pin;
 use std::ptr;
 use std::sync::Arc;
@@ -115,7 +116,9 @@ impl FutureState {
         !self.waitables.is_empty()
     }
 
-    fn callback(&mut self, event0: u32, event1: u32, event2: u32) -> u32 {
+    /// Handles the `event{0,1,2}` event codes and returns a corresponding
+    /// return code along with a flag whether this future is "done" or not.
+    fn callback(&mut self, event0: u32, event1: u32, event2: u32) -> (u32, bool) {
         match event0 {
             EVENT_NONE => rtdebug!("EVENT_NONE"),
             EVENT_SUBTASK => rtdebug!("EVENT_SUBTASK({event1:#x}, {event2:#x})"),
@@ -123,20 +126,22 @@ impl FutureState {
             EVENT_STREAM_WRITE => rtdebug!("EVENT_STREAM_WRITE({event1:#x}, {event2:#x})"),
             EVENT_FUTURE_READ => rtdebug!("EVENT_FUTURE_READ({event1:#x}, {event2:#x})"),
             EVENT_FUTURE_WRITE => rtdebug!("EVENT_FUTURE_WRITE({event1:#x}, {event2:#x})"),
+            EVENT_CANCEL => {
+                rtdebug!("EVENT_CANCEL");
+
+                // Cancellation is mapped to destruction in Rust, so return a
+                // code/bool indicating we're done. The caller will then
+                // appropriately deallocate this `FutureState` which will
+                // transitively run all destructors.
+                return (CALLBACK_CODE_EXIT, true);
+            }
             _ => unreachable!(),
         }
         if event0 != EVENT_NONE {
             self.deliver_waitable_event(event1, event2)
         }
 
-        loop {
-            match self.poll() {
-                // TODO: don't re-loop here once a host supports
-                // `CALLBACK_CODE_YIELD`.
-                CALLBACK_CODE_YIELD => {}
-                other => break other,
-            }
-        }
+        self.poll()
     }
 
     /// Deliver the `code` event to the `waitable` store within our map. This
@@ -152,7 +157,59 @@ impl FutureState {
 
     /// Poll this task until it either completes or can't make immediate
     /// progress.
-    fn poll(&mut self) -> u32 {
+    ///
+    /// Returns the code representing what happened along with a boolean as to
+    /// whether this execution is done.
+    fn poll(&mut self) -> (u32, bool) {
+        self.with_p3_task_set(|me| {
+            let mut context = Context::from_waker(&me.waker_clone);
+
+            loop {
+                // Reset the waker before polling to clear out any pending
+                // notification, if any.
+                me.waker.0.store(false, Ordering::Relaxed);
+
+                // Poll our future, handling `SPAWNED` around this.
+                let poll;
+                unsafe {
+                    poll = me.tasks.poll_next_unpin(&mut context);
+                    if !SPAWNED.is_empty() {
+                        me.tasks.extend(SPAWNED.drain(..));
+                    }
+                }
+
+                match poll {
+                    // A future completed, yay! Keep going to see if more have
+                    // completed.
+                    Poll::Ready(Some(())) => (),
+
+                    // The `FuturesUnordered` list is empty meaning that there's no
+                    // more work left to do, so we're done.
+                    Poll::Ready(None) => {
+                        assert!(!me.remaining_work());
+                        assert!(me.tasks.is_empty());
+                        break (CALLBACK_CODE_EXIT, true);
+                    }
+
+                    // Some future within `FuturesUnordered` is not ready yet. If
+                    // our `waker` was signaled then that means this is a yield
+                    // operation, otherwise it means we're blocking on something.
+                    Poll::Pending => {
+                        assert!(!me.tasks.is_empty());
+                        if me.waker.0.load(Ordering::Relaxed) {
+                            break (CALLBACK_CODE_YIELD, false);
+                        }
+
+                        assert!(me.remaining_work());
+                        let waitable = me.waitable_set.as_ref().unwrap().as_raw();
+                        break (CALLBACK_CODE_WAIT | (waitable << 4), false);
+                    }
+                }
+            }
+        })
+    }
+
+    fn with_p3_task_set<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
         // Finish our `wasip3_task` by initializing its self-referential pointer,
         // and then register it for the duration of this function with
         // `wasip3_task_set`. The previous value of `wasip3_task_set` will get
@@ -170,49 +227,21 @@ impl FutureState {
         let prev = unsafe { cabi::wasip3_task_set(&mut self.wasip3_task) };
         let _reset = ResetTask(prev);
 
-        let mut context = Context::from_waker(&self.waker_clone);
+        f(self)
+    }
+}
 
-        loop {
-            // Reset the waker before polling to clear out any pending
-            // notification, if any.
-            self.waker.0.store(false, Ordering::Relaxed);
-
-            // Poll our future, handling `SPAWNED` around this.
-            let poll;
-            unsafe {
-                poll = self.tasks.poll_next_unpin(&mut context);
-                if !SPAWNED.is_empty() {
-                    self.tasks.extend(SPAWNED.drain(..));
-                }
-            }
-
-            match poll {
-                // A future completed, yay! Keep going to see if more have
-                // completed.
-                Poll::Ready(Some(())) => (),
-
-                // The `FuturesUnordered` list is empty meaning that there's no
-                // more work left to do, so we're done.
-                Poll::Ready(None) => {
-                    assert!(!self.remaining_work());
-                    assert!(self.tasks.is_empty());
-                    break CALLBACK_CODE_EXIT;
-                }
-
-                // Some future within `FuturesUnordered` is not ready yet. If
-                // our `waker` was signaled then that means this is a yield
-                // operation, otherwise it means we're blocking on something.
-                Poll::Pending => {
-                    assert!(!self.tasks.is_empty());
-                    if self.waker.0.load(Ordering::Relaxed) {
-                        break CALLBACK_CODE_YIELD;
-                    }
-
-                    assert!(self.remaining_work());
-                    let waitable = self.waitable_set.as_ref().unwrap().as_raw();
-                    break CALLBACK_CODE_WAIT | (waitable << 4);
-                }
-            }
+impl Drop for FutureState {
+    fn drop(&mut self) {
+        // If this state has active tasks then they need to be dropped which may
+        // execute arbitrary code. This arbitrary code might require the p3 APIs
+        // for managing waitables, notably around removing them. In this
+        // situation we ensure that the p3 task is set while futures are being
+        // destroyed.
+        if !self.tasks.is_empty() {
+            self.with_p3_task_set(|me| {
+                me.tasks = Default::default();
+            })
         }
     }
 }
@@ -265,6 +294,7 @@ const EVENT_STREAM_READ: u32 = 2;
 const EVENT_STREAM_WRITE: u32 = 3;
 const EVENT_FUTURE_READ: u32 = 4;
 const EVENT_FUTURE_WRITE: u32 = 5;
+const EVENT_CANCEL: u32 = 6;
 
 const CALLBACK_CODE_EXIT: u32 = 0;
 const CALLBACK_CODE_YIELD: u32 = 1;
@@ -274,6 +304,8 @@ const _CALLBACK_CODE_POLL: u32 = 3;
 const STATUS_STARTING: u32 = 0;
 const STATUS_STARTED: u32 = 1;
 const STATUS_RETURNED: u32 = 2;
+const STATUS_STARTED_CANCELLED: u32 = 3;
+const STATUS_RETURNED_CANCELLED: u32 = 4;
 
 const BLOCKED: u32 = 0xffff_ffff;
 const COMPLETED: u32 = 0x0;
@@ -358,12 +390,13 @@ pub unsafe fn callback(event0: u32, event1: u32, event2: u32) -> u32 {
     // our future so deallocate it. Otherwise put our future back in
     // context-local storage and forward the code.
     unsafe {
-        let rc = (*state).callback(event0, event1, event2);
-        if rc == CALLBACK_CODE_EXIT {
+        let (rc, done) = (*state).callback(event0, event1, event2);
+        if done {
             drop(Box::from_raw(state));
         } else {
             context_set(state.cast());
         }
+        rtdebug!(" => (cb) {rc:#x}");
         rc
     }
 }
@@ -388,7 +421,8 @@ pub fn block_on<T: 'static>(future: impl Future<Output = T> + 'static) -> T {
     let mut event = (EVENT_NONE, 0, 0);
     loop {
         match state.callback(event.0, event.1, event.2) {
-            CALLBACK_CODE_EXIT => break rx.try_recv().unwrap().unwrap(),
+            (_, true) => break rx.try_recv().unwrap().unwrap(),
+            (CALLBACK_CODE_YIELD, false) => event = state.waitable_set.as_ref().unwrap().poll(),
             _ => event = state.waitable_set.as_ref().unwrap().wait(),
         }
     }
@@ -444,7 +478,7 @@ fn context_get() -> *mut u8 {
     #[cfg(target_arch = "wasm32")]
     #[link(wasm_import_module = "$root")]
     extern "C" {
-        #[link_name = "[context-get-1]"]
+        #[link_name = "[context-get-0]"]
         fn get() -> *mut u8;
     }
 
@@ -460,9 +494,44 @@ unsafe fn context_set(value: *mut u8) {
     #[cfg(target_arch = "wasm32")]
     #[link(wasm_import_module = "$root")]
     extern "C" {
-        #[link_name = "[context-set-1]"]
+        #[link_name = "[context-set-0]"]
         fn set(value: *mut u8);
     }
 
     unsafe { set(value) }
+}
+
+#[doc(hidden)]
+pub struct TaskCancelOnDrop {
+    _priv: (),
+}
+
+impl TaskCancelOnDrop {
+    #[doc(hidden)]
+    pub fn new() -> TaskCancelOnDrop {
+        TaskCancelOnDrop { _priv: () }
+    }
+
+    #[doc(hidden)]
+    pub fn forget(self) {
+        mem::forget(self);
+    }
+}
+
+impl Drop for TaskCancelOnDrop {
+    fn drop(&mut self) {
+        #[cfg(not(target_arch = "wasm32"))]
+        unsafe fn cancel() {
+            unreachable!()
+        }
+
+        #[cfg(target_arch = "wasm32")]
+        #[link(wasm_import_module = "[export]$root")]
+        extern "C" {
+            #[link_name = "[task-cancel]"]
+            fn cancel();
+        }
+
+        unsafe { cancel() }
+    }
 }

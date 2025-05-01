@@ -8,7 +8,7 @@ use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::{braced, token, LitStr, Token};
 use wit_bindgen_core::wit_parser::{PackageId, Resolve, UnresolvedPackageGroup, WorldId};
-use wit_bindgen_rust::{AsyncConfig, Opts, Ownership, WithOption};
+use wit_bindgen_rust::{Async, AsyncFilter, Opts, Ownership, WithOption};
 
 #[proc_macro]
 pub fn generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
@@ -164,7 +164,7 @@ impl Parse for Config {
                             return Err(Error::new(span, "cannot specify second async config"));
                         }
                         async_configured = true;
-                        if !matches!(val, AsyncConfig::None) && !cfg!(feature = "async") {
+                        if val.iter().any(|v| v.enabled) && !cfg!(feature = "async") {
                             return Err(Error::new(
                                 span,
                                 "must enable `async` feature to enable async imports and/or exports",
@@ -386,11 +386,6 @@ impl From<ExportKey> for wit_bindgen_rust::ExportKey {
     }
 }
 
-enum AsyncConfigSomeKind {
-    Imports,
-    Exports,
-}
-
 enum Opt {
     World(syn::LitStr),
     Path(Span, Vec<syn::LitStr>),
@@ -419,7 +414,7 @@ enum Opt {
     DisableCustomSectionLinkHelpers(syn::LitBool),
     Symmetric(syn::LitBool),
     InvertDirection(syn::LitBool),
-    Async(AsyncConfig, Span),
+    Async(Vec<Async>, Span),
     Debug(syn::LitBool),
 }
 
@@ -594,25 +589,22 @@ impl Parse for Opt {
             let span = input.parse::<Token![async]>()?.span;
             input.parse::<Token![:]>()?;
             if input.peek(syn::LitBool) {
-                if input.parse::<syn::LitBool>()?.value {
-                    Ok(Opt::Async(AsyncConfig::All, span))
-                } else {
-                    Ok(Opt::Async(AsyncConfig::None, span))
-                }
+                let enabled = input.parse::<syn::LitBool>()?.value;
+                Ok(Opt::Async(
+                    vec![Async {
+                        enabled,
+                        filter: AsyncFilter::All,
+                    }],
+                    span,
+                ))
             } else {
-                let mut imports = Vec::new();
-                let mut exports = Vec::new();
+                let mut vals = Vec::new();
                 let contents;
-                syn::braced!(contents in input);
-                for (kind, values) in
-                    contents.parse_terminated(parse_async_some_field, Token![,])?
-                {
-                    match kind {
-                        AsyncConfigSomeKind::Imports => imports = values,
-                        AsyncConfigSomeKind::Exports => exports = values,
-                    }
+                syn::bracketed!(contents in input);
+                for val in contents.parse_terminated(parse_async, Token![,])? {
+                    vals.push(val);
                 }
-                Ok(Opt::Async(AsyncConfig::Some { imports, exports }, span))
+                Ok(Opt::Async(vals, span))
             }
         } else {
             Err(l.error())
@@ -673,26 +665,7 @@ fn fmt(input: &str) -> Result<String> {
     Ok(prettyplease::unparse(&syntax_tree))
 }
 
-fn parse_async_some_field(input: ParseStream<'_>) -> Result<(AsyncConfigSomeKind, Vec<String>)> {
-    let lookahead = input.lookahead1();
-    let kind = if lookahead.peek(kw::imports) {
-        input.parse::<kw::imports>()?;
-        input.parse::<Token![:]>()?;
-        AsyncConfigSomeKind::Imports
-    } else if lookahead.peek(kw::exports) {
-        input.parse::<kw::exports>()?;
-        input.parse::<Token![:]>()?;
-        AsyncConfigSomeKind::Exports
-    } else {
-        return Err(lookahead.error());
-    };
-
-    let list;
-    syn::bracketed!(list in input);
-    let fields = list.parse_terminated(Parse::parse, Token![,])?;
-
-    Ok((
-        kind,
-        fields.iter().map(|s: &syn::LitStr| s.value()).collect(),
-    ))
+fn parse_async(input: ParseStream<'_>) -> Result<Async> {
+    let value = input.parse::<syn::LitStr>()?.value();
+    Ok(Async::parse(&value))
 }
