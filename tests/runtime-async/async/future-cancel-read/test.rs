@@ -28,16 +28,13 @@ impl crate::exports::my::test::i::Guest for Component {
     }
 
     async fn start_read_then_cancel() {
-        // FIXME(wasip3-prototyping#137)
-        if false {
-            let (tx, rx) = wit_future::new::<u32>();
-            let mut read = Box::pin(rx.into_future());
-            assert!(read
-                .as_mut()
-                .poll(&mut Context::from_waker(noop_waker_ref()))
-                .is_pending());
-            drop(tx);
-            assert!(read.as_mut().cancel().unwrap().is_none());
-        }
+        let (tx, rx) = wit_future::new::<u32>();
+        let mut read = Box::pin(rx.into_future());
+        assert!(read
+            .as_mut()
+            .poll(&mut Context::from_waker(noop_waker_ref()))
+            .is_pending());
+        drop(tx);
+        assert!(read.as_mut().cancel().unwrap().is_none());
     }
 }
