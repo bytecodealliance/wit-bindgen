@@ -8,7 +8,9 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use executor::exports::symmetric::runtime::symmetric_executor::{self, GuestCallbackRegistration};
+use executor::exports::symmetric::runtime::symmetric_executor::{
+    self, CallbackState, GuestCallbackRegistration,
+};
 
 const DEBUGGING: bool = cfg!(feature = "trace");
 const INVALID_FD: EventFd = -1;
@@ -140,9 +142,6 @@ static EXECUTOR: Mutex<Executor> = Mutex::new(Executor {
 static EXECUTOR_BUSY: AtomicBool = AtomicBool::new(false);
 static NEW_TASKS: Mutex<Vec<QueuedEvent>> = Mutex::new(Vec::new());
 
-const CURRENT_PATTERN: *const SubscriptionPattern = 1 as *const SubscriptionPattern;
-const NULL_PATTERN: *const SubscriptionPattern = core::ptr::null();
-
 impl symmetric_executor::Guest for Guest {
     type CallbackFunction = Ignore;
     type CallbackData = OpaqueData;
@@ -180,13 +179,7 @@ impl symmetric_executor::Guest for Guest {
                             );
                         }
                         task.callback.take_if(|CallbackEntry(f, data)| {
-                            match (f)(*data, CURRENT_PATTERN) {
-                                NULL_PATTERN => true,
-                                CURRENT_PATTERN => false,
-                                event => {
-                                    let evt_subsrc = unsafe { symmetric_executor::EventSubscription::from_handle(event as usize) };
-                                    NEW_TASKS.lock().unwrap().push(QueuedEvent::new(evt_subsrc, CallbackEntry(*f, *data))); false }
-                            }
+                            matches!((f)(*data), CallbackState::Ready)
                         });
                     } else {
                         match &task.inner {
@@ -213,13 +206,8 @@ impl symmetric_executor::Guest for Guest {
                                     tvptr = core::ptr::from_mut(&mut wait);
                                 } else {
                                     task.callback.take_if(|CallbackEntry(f, data)| {
-                                        match (f)(*data, CURRENT_PATTERN) {
-                                            NULL_PATTERN => true,
-                                            CURRENT_PATTERN => false,
-                                            event => {
-                                                let evt_subsrc = unsafe { symmetric_executor::EventSubscription::from_handle(event as usize) };
-                                                NEW_TASKS.lock().unwrap().push(QueuedEvent::new(evt_subsrc, CallbackEntry(*f, *data))); false }
-                                        }                                    });
+                                        matches!((f)(*data), CallbackState::Ready)
+                                    });
                                 }
                             }
                         }
@@ -355,8 +343,7 @@ struct EventInner {
 
 struct EventGenerator(Arc<Mutex<EventInner>>);
 
-struct SubscriptionPattern;
-type CallbackType = fn(*mut OpaqueData, *const SubscriptionPattern) -> *const SubscriptionPattern;
+type CallbackType = fn(*mut OpaqueData) -> CallbackState;
 struct CallbackEntry(CallbackType, *mut OpaqueData);
 
 unsafe impl Send for CallbackEntry {}
