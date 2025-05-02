@@ -23,11 +23,20 @@ void *cabi_realloc(void *ptr, size_t old_size, size_t align, size_t new_size) {
 
 
 #include "async_support.h"
+
+template <class T>
+struct IntLifting {
+  static constexpr size_t SIZE = sizeof(T);
+  static T lift(uint8_t const*ptr) {
+    return *(T const*)ptr;
+  }
+};
+
 extern "C" uint8_t* testX3AtestX2Ffuture_sourceX00create();
 std::future<uint32_t> test::test::future_source::Create()
 {
   auto ret = testX3AtestX2Ffuture_sourceX00create();
-  return lift_future<uint32_t>(ret);
+  return lift_future<uint32_t, IntLifting<uint32_t>>(ret);
 }
 extern "C" 
 uint8_t* testX3AtestX2Ffuture_testX00create()

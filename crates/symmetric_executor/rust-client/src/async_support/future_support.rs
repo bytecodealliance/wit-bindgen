@@ -12,20 +12,20 @@ use crate::symmetric_stream::{Address, Buffer};
 
 use super::{wait_on, Stream};
 
-//use super::Future;
-
 pub struct FutureWriter<T: 'static> {
     handle: Stream,
-    future: Option<Pin<Box<dyn Future<Output = ()> + 'static + Send>>>,
+    // future: Option<Pin<Box<dyn Future<Output = ()> + 'static + Send>>>,
     _phantom: PhantomData<T>,
+    lower: unsafe fn(value: T, dst: *mut u8),
 }
 
 impl<T> FutureWriter<T> {
-    pub fn new(handle: Stream) -> Self {
+    pub fn new(handle: Stream, lower: unsafe fn(value: T, dst: *mut u8)) -> Self {
         Self {
             handle,
-            future: None,
+            // future: None,
             _phantom: PhantomData,
+            lower,
         }
     }
 
@@ -56,14 +56,15 @@ impl<T: Unpin + Send> Future for CancelableWrite<T> {
         if me.future.is_none() {
             let handle = me.writer.handle.clone();
             let data = me.data.take().unwrap();
+            let lower = me.writer.lower;
             me.future = Some(Box::pin(async move {
                 if !handle.is_ready_to_write() {
                     let subsc = handle.write_ready_subscribe();
                     wait_on(subsc).await;
                 }
                 let buffer = handle.start_writing();
-                let addr = buffer.get_address().take_handle() as *mut MaybeUninit<T>;
-                unsafe { (*addr).write(data) };
+                let addr = buffer.get_address().take_handle() as *mut MaybeUninit<T> as *mut u8;
+                unsafe { (lower)(data, addr) };
                 buffer.set_size(1);
                 handle.finish_writing(Some(buffer));
             }) as Pin<Box<dyn Future<Output = _> + Send>>);

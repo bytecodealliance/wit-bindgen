@@ -24,6 +24,7 @@ pub mod test {
                     let ret = testX3AtestX2Ffuture_sourceX00create();
                     wit_bindgen_symmetric_rt::async_support::FutureReader::new(
                         wit_bindgen_symmetric_rt::async_support::Stream::from_handle(ret),
+                        <u32 as super::super::super::wit_future::FuturePayload>::lift
                     )
                 }
             }
@@ -144,7 +145,7 @@ mod _rt {
             self as i32
         }
     }
-    pub use alloc_crate::boxed::Box;
+    // pub use alloc_crate::boxed::Box;
 
     #[cfg(target_arch = "wasm32")]
     pub fn run_ctors_once() {
@@ -156,14 +157,24 @@ pub mod wit_future {
     #![allow(dead_code, unused_variables, clippy::all)]
 
     #[doc(hidden)]
-    pub trait FuturePayload: Unpin + Sized + 'static {}
-    impl FuturePayload for u32 {}
+    pub trait FuturePayload: Unpin + Sized + 'static {
+        unsafe fn lower(value: Self, dst: *mut u8) { todo!() }
+        unsafe fn lift(src: *const u8) -> Self { todo!() }
+    }
+    impl FuturePayload for u32 {
+        unsafe fn lower(value: Self, dst: *mut u8) {
+            *dst.cast() = value;
+        }
+        unsafe fn lift(src: *const u8) -> Self {
+            *src.cast()
+        }
+    }
     /// Creates a new Component Model `future` with the specified payload type.
     pub fn new<T: FuturePayload>() -> (
         wit_bindgen_symmetric_rt::async_support::FutureWriter<T>,
         wit_bindgen_symmetric_rt::async_support::FutureReader<T>,
     ) {
-        wit_bindgen_symmetric_rt::async_support::future_support::new_future()
+        wit_bindgen_symmetric_rt::async_support::future_support::new_future(T::lower, T::lift)
     }
 }
 

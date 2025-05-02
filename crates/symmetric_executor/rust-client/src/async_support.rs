@@ -5,11 +5,8 @@ use std::{
     task::{Context, Poll, RawWaker, RawWakerVTable},
 };
 
-use crate::{
-    module::symmetric::runtime::symmetric_executor::{
-        CallbackState, EventGenerator, EventSubscription,
-    },
-    EventSubscription2,
+use crate::module::symmetric::runtime::symmetric_executor::{
+    CallbackState, EventGenerator, EventSubscription,
 };
 
 pub use future_support::{FutureReader, FutureWriter};
