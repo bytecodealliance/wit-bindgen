@@ -129,7 +129,8 @@ template <class T> struct stream_writer {
     void write(std::vector<T>&& data) {
         while (!data.empty()) {
             if (!handle.IsReadyToWrite()) {
-                symmetric::runtime::symmetric_executor::BlockOn(handle.WriteReadySubscribe());
+                abort();
+                // symmetric::runtime::symmetric_executor::BlockOn(handle.WriteReadySubscribe());
             }
             auto buffer = handle.StartWriting();
             auto capacity = buffer.Capacity();

@@ -1211,7 +1211,7 @@ pub mod exports {
                 pub unsafe fn _export_method_stream_obj_finish_writing_cabi<T: GuestStreamObj>(
                     arg0: *mut u8,
                     arg1: i32,
-                    arg2: i32,
+                    arg2: *mut u8,
                 ) {
                     unsafe {
                         #[cfg(target_arch = "wasm32")]
@@ -1446,7 +1446,7 @@ pub mod exports {
     }
     #[cfg_attr(target_arch = "wasm32", export_name = "[method]stream-obj.finish-writing")]
     #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
-    unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_streamX400X2E2X2E1X00X5BmethodX5Dstream_objX2Efinish_writing(arg0: *mut u8,arg1: i32,arg2: i32,) {
+    unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_streamX400X2E2X2E1X00X5BmethodX5Dstream_objX2Efinish_writing(arg0: *mut u8,arg1: i32,arg2: *mut u8,) {
       unsafe { $($path_to_types)*::_export_method_stream_obj_finish_writing_cabi::<<$ty as $($path_to_types)*::Guest>::StreamObj>(arg0, arg1, arg2) }
     }
     #[cfg_attr(target_arch = "wasm32", export_name = "[method]stream-obj.read-ready-activate")]
