@@ -51,8 +51,6 @@ impl<T: Unpin + Send> Future for CancelableWrite<T> {
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<()> {
         let me = self.get_mut();
 
-        // let ready = me.writer.handle.is_ready_to_write();
-
         if me.future.is_none() {
             let handle = me.writer.handle.clone();
             let data = me.data.take().unwrap();
@@ -69,13 +67,7 @@ impl<T: Unpin + Send> Future for CancelableWrite<T> {
                 handle.finish_writing(Some(buffer));
             }) as Pin<Box<dyn Future<Output = _> + Send>>);
         }
-        match me.future.as_mut().unwrap().poll_unpin(cx) {
-            Poll::Ready(()) => {
-                // me.writer = None;
-                Poll::Ready(())
-            }
-            Poll::Pending => Poll::Pending,
-        }
+        me.future.as_mut().unwrap().poll_unpin(cx)
     }
 }
 
