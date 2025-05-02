@@ -997,8 +997,7 @@ checksum = "ddbd7f2a9e3635abe5d4df93b12cadc8d6818079785ee4fab3719ae3c85a064e"
 [[package]]
 name = "wasm-compose"
 version = "0.229.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "54b2e985adc26dec5d6b9d40bf95923fbabb5bc5244582430016f88a129ebf48"
+source = "git+https://github.com/cpetig/wasm-tools?branch=symmetric#d1b46998c4e6b30511b33c86f5ddb284e9b4d41d"
 dependencies = [
  "anyhow",
  "heck 0.4.1",
@@ -1199,7 +1198,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
- "heck",
+ "heck 0.5.0",
  "wit-bindgen-core",
  "wit-component",
 ]
@@ -1252,7 +1251,7 @@ version = "0.3.0"
 dependencies = [
  "anyhow",
  "clap",
- "heck",
+ "heck 0.5.0",
  "test-helpers",
  "wasm-encoder 0.229.0",
  "wasm-metadata 0.229.0",
