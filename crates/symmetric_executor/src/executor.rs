@@ -17,12 +17,45 @@ pub mod exports {
                 use super::super::super::super::_rt;
                 /// These pseudo-resources are just used to
                 /// pass pointers to register
+                /// Return value of an event callback
+                #[repr(u8)]
+                #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
+                pub enum CallbackState {
+                    /// Call the function again
+                    Pending,
+                    /// The function has completed, all results are written, data is freed,
+                    /// calling the function again is not permitted as data became invalid!
+                    Ready,
+                }
+                impl ::core::fmt::Debug for CallbackState {
+                    fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                        match self {
+                            CallbackState::Pending => {
+                                f.debug_tuple("CallbackState::Pending").finish()
+                            }
+                            CallbackState::Ready => f.debug_tuple("CallbackState::Ready").finish(),
+                        }
+                    }
+                }
+
+                impl CallbackState {
+                    #[doc(hidden)]
+                    pub unsafe fn _lift(val: u8) -> CallbackState {
+                        if !cfg!(debug_assertions) {
+                            return unsafe { ::core::mem::transmute(val) };
+                        }
+
+                        match val {
+                            0 => CallbackState::Pending,
+                            1 => CallbackState::Ready,
+
+                            _ => panic!("invalid enum discriminant"),
+                        }
+                    }
+                }
+
                 /// This wraps a user provided function of type
-                /// `fn (callback-data, event-subscription) -> null_or<event-subscription>`
-                ///
-                /// The executor passes the subscription as the second argument,
-                /// the same callback is re-registered for the returned subscription
-                /// (returning the second arguments keeps the registration active)
+                /// `fn (callback-data) -> callback-state`
 
                 #[derive(Debug)]
                 #[repr(transparent)]
@@ -152,27 +185,27 @@ pub mod exports {
                     unsafe fn drop(_handle: usize) {
                         {
                             #[link(
-                                wasm_import_module = "symmetric:runtime/symmetric-executor@0.2.0"
+                                wasm_import_module = "symmetric:runtime/symmetric-executor@0.2.1"
                             )]
                             unsafe extern "C" {
                                 #[cfg_attr(
                                     target_arch = "wasm32",
                                     link_name = "[resource-drop]callback-function"
                                 )]
-                                fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E0X00X5Bresource_dropX5Dcallback_function(
+                                fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E1X00X5Bresource_dropX5Dcallback_function(
                                     _: usize,
                                 );
                             }
 
                             unsafe {
-                                symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E0X00X5Bresource_dropX5Dcallback_function(_handle)
+                                symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E1X00X5Bresource_dropX5Dcallback_function(_handle)
                             };
                         }
                     }
                 }
 
                 /// This wraps opaque user data, freed by the callback when
-                /// it returns null (ready)
+                /// it returns ready
 
                 #[derive(Debug)]
                 #[repr(transparent)]
@@ -300,20 +333,20 @@ pub mod exports {
                     unsafe fn drop(_handle: usize) {
                         {
                             #[link(
-                                wasm_import_module = "symmetric:runtime/symmetric-executor@0.2.0"
+                                wasm_import_module = "symmetric:runtime/symmetric-executor@0.2.1"
                             )]
                             unsafe extern "C" {
                                 #[cfg_attr(
                                     target_arch = "wasm32",
                                     link_name = "[resource-drop]callback-data"
                                 )]
-                                fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E0X00X5Bresource_dropX5Dcallback_data(
+                                fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E1X00X5Bresource_dropX5Dcallback_data(
                                     _: usize,
                                 );
                             }
 
                             unsafe {
-                                symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E0X00X5Bresource_dropX5Dcallback_data(_handle)
+                                symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E1X00X5Bresource_dropX5Dcallback_data(_handle)
                             };
                         }
                     }
@@ -449,20 +482,20 @@ pub mod exports {
                     unsafe fn drop(_handle: usize) {
                         {
                             #[link(
-                                wasm_import_module = "symmetric:runtime/symmetric-executor@0.2.0"
+                                wasm_import_module = "symmetric:runtime/symmetric-executor@0.2.1"
                             )]
                             unsafe extern "C" {
                                 #[cfg_attr(
                                     target_arch = "wasm32",
                                     link_name = "[resource-drop]event-subscription"
                                 )]
-                                fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E0X00X5Bresource_dropX5Devent_subscription(
+                                fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E1X00X5Bresource_dropX5Devent_subscription(
                                     _: usize,
                                 );
                             }
 
                             unsafe {
-                                symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E0X00X5Bresource_dropX5Devent_subscription(_handle)
+                                symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E1X00X5Bresource_dropX5Devent_subscription(_handle)
                             };
                         }
                     }
@@ -597,20 +630,20 @@ pub mod exports {
                     unsafe fn drop(_handle: usize) {
                         {
                             #[link(
-                                wasm_import_module = "symmetric:runtime/symmetric-executor@0.2.0"
+                                wasm_import_module = "symmetric:runtime/symmetric-executor@0.2.1"
                             )]
                             unsafe extern "C" {
                                 #[cfg_attr(
                                     target_arch = "wasm32",
                                     link_name = "[resource-drop]event-generator"
                                 )]
-                                fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E0X00X5Bresource_dropX5Devent_generator(
+                                fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E1X00X5Bresource_dropX5Devent_generator(
                                     _: usize,
                                 );
                             }
 
                             unsafe {
-                                symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E0X00X5Bresource_dropX5Devent_generator(_handle)
+                                symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E1X00X5Bresource_dropX5Devent_generator(_handle)
                             };
                         }
                     }
@@ -749,20 +782,20 @@ pub mod exports {
                     unsafe fn drop(_handle: usize) {
                         {
                             #[link(
-                                wasm_import_module = "symmetric:runtime/symmetric-executor@0.2.0"
+                                wasm_import_module = "symmetric:runtime/symmetric-executor@0.2.1"
                             )]
                             unsafe extern "C" {
                                 #[cfg_attr(
                                     target_arch = "wasm32",
                                     link_name = "[resource-drop]callback-registration"
                                 )]
-                                fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E0X00X5Bresource_dropX5Dcallback_registration(
+                                fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E1X00X5Bresource_dropX5Dcallback_registration(
                                     _: usize,
                                 );
                             }
 
                             unsafe {
-                                symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E0X00X5Bresource_dropX5Dcallback_registration(_handle)
+                                symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E1X00X5Bresource_dropX5Dcallback_registration(_handle)
                             };
                         }
                     }
@@ -1129,88 +1162,88 @@ pub mod exports {
                 }
                 #[doc(hidden)]
 
-                macro_rules! __export_symmetric_runtime_symmetric_executor_0_2_0_cabi{
+                macro_rules! __export_symmetric_runtime_symmetric_executor_0_2_1_cabi{
   ($ty:ident with_types_in $($path_to_types:tt)*) => (const _: () = {
 
     #[cfg_attr(target_arch = "wasm32", export_name = "[method]event-subscription.ready")]
     #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
-    unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E0X00X5BmethodX5Devent_subscriptionX2Eready(arg0: *mut u8,) -> i32 {
+    unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E1X00X5BmethodX5Devent_subscriptionX2Eready(arg0: *mut u8,) -> i32 {
       unsafe { $($path_to_types)*::_export_method_event_subscription_ready_cabi::<<$ty as $($path_to_types)*::Guest>::EventSubscription>(arg0) }
     }
     #[cfg_attr(target_arch = "wasm32", export_name = "[static]event-subscription.from-timeout")]
     #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
-    unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E0X00X5BstaticX5Devent_subscriptionX2Efrom_timeout(arg0: i64,) -> *mut u8 {
+    unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E1X00X5BstaticX5Devent_subscriptionX2Efrom_timeout(arg0: i64,) -> *mut u8 {
       unsafe { $($path_to_types)*::_export_static_event_subscription_from_timeout_cabi::<<$ty as $($path_to_types)*::Guest>::EventSubscription>(arg0) }
     }
     #[cfg_attr(target_arch = "wasm32", export_name = "[method]event-subscription.dup")]
     #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
-    unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E0X00X5BmethodX5Devent_subscriptionX2Edup(arg0: *mut u8,) -> *mut u8 {
+    unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E1X00X5BmethodX5Devent_subscriptionX2Edup(arg0: *mut u8,) -> *mut u8 {
       unsafe { $($path_to_types)*::_export_method_event_subscription_dup_cabi::<<$ty as $($path_to_types)*::Guest>::EventSubscription>(arg0) }
     }
     #[cfg_attr(target_arch = "wasm32", export_name = "[method]event-subscription.reset")]
     #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
-    unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E0X00X5BmethodX5Devent_subscriptionX2Ereset(arg0: *mut u8,) {
+    unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E1X00X5BmethodX5Devent_subscriptionX2Ereset(arg0: *mut u8,) {
       unsafe { $($path_to_types)*::_export_method_event_subscription_reset_cabi::<<$ty as $($path_to_types)*::Guest>::EventSubscription>(arg0) }
     }
     #[cfg_attr(target_arch = "wasm32", export_name = "[constructor]event-generator")]
     #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
-    unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E0X00X5BconstructorX5Devent_generator() -> *mut u8 {
+    unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E1X00X5BconstructorX5Devent_generator() -> *mut u8 {
       unsafe { $($path_to_types)*::_export_constructor_event_generator_cabi::<<$ty as $($path_to_types)*::Guest>::EventGenerator>() }
     }
     #[cfg_attr(target_arch = "wasm32", export_name = "[method]event-generator.subscribe")]
     #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
-    unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E0X00X5BmethodX5Devent_generatorX2Esubscribe(arg0: *mut u8,) -> *mut u8 {
+    unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E1X00X5BmethodX5Devent_generatorX2Esubscribe(arg0: *mut u8,) -> *mut u8 {
       unsafe { $($path_to_types)*::_export_method_event_generator_subscribe_cabi::<<$ty as $($path_to_types)*::Guest>::EventGenerator>(arg0) }
     }
     #[cfg_attr(target_arch = "wasm32", export_name = "[method]event-generator.activate")]
     #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
-    unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E0X00X5BmethodX5Devent_generatorX2Eactivate(arg0: *mut u8,) {
+    unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E1X00X5BmethodX5Devent_generatorX2Eactivate(arg0: *mut u8,) {
       unsafe { $($path_to_types)*::_export_method_event_generator_activate_cabi::<<$ty as $($path_to_types)*::Guest>::EventGenerator>(arg0) }
     }
     #[cfg_attr(target_arch = "wasm32", export_name = "[static]callback-registration.cancel")]
     #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
-    unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E0X00X5BstaticX5Dcallback_registrationX2Ecancel(arg0: *mut u8,) -> *mut u8 {
+    unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E1X00X5BstaticX5Dcallback_registrationX2Ecancel(arg0: *mut u8,) -> *mut u8 {
       unsafe { $($path_to_types)*::_export_static_callback_registration_cancel_cabi::<<$ty as $($path_to_types)*::Guest>::CallbackRegistration>(arg0) }
     }
     #[cfg_attr(target_arch = "wasm32", export_name = "run")]
     #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
-    unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E0X00run() {
+    unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E1X00run() {
       unsafe { $($path_to_types)*::_export_run_cabi::<$ty>() }
     }
     #[cfg_attr(target_arch = "wasm32", export_name = "register")]
     #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
-    unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E0X00register(arg0: *mut u8,arg1: *mut u8,arg2: *mut u8,) -> *mut u8 {
+    unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E1X00register(arg0: *mut u8,arg1: *mut u8,arg2: *mut u8,) -> *mut u8 {
       unsafe { $($path_to_types)*::_export_register_cabi::<$ty>(arg0, arg1, arg2) }
     }
     #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
-    unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E0X00X5Bresource_dropX5Dcallback_function(arg0: usize) {
+    unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E1X00X5Bresource_dropX5Dcallback_function(arg0: usize) {
       $($path_to_types)*::_export_drop_callbackFunction_cabi::<<$ty as $($path_to_types)*::Guest>::CallbackFunction>(arg0)
     }
 
     #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
-    unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E0X00X5Bresource_dropX5Dcallback_data(arg0: usize) {
+    unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E1X00X5Bresource_dropX5Dcallback_data(arg0: usize) {
       $($path_to_types)*::_export_drop_callbackData_cabi::<<$ty as $($path_to_types)*::Guest>::CallbackData>(arg0)
     }
 
     #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
-    unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E0X00X5Bresource_dropX5Devent_subscription(arg0: usize) {
+    unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E1X00X5Bresource_dropX5Devent_subscription(arg0: usize) {
       $($path_to_types)*::_export_drop_eventSubscription_cabi::<<$ty as $($path_to_types)*::Guest>::EventSubscription>(arg0)
     }
 
     #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
-    unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E0X00X5Bresource_dropX5Devent_generator(arg0: usize) {
+    unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E1X00X5Bresource_dropX5Devent_generator(arg0: usize) {
       $($path_to_types)*::_export_drop_eventGenerator_cabi::<<$ty as $($path_to_types)*::Guest>::EventGenerator>(arg0)
     }
 
     #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
-    unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E0X00X5Bresource_dropX5Dcallback_registration(arg0: usize) {
+    unsafe extern "C" fn symmetricX3AruntimeX2Fsymmetric_executorX400X2E2X2E1X00X5Bresource_dropX5Dcallback_registration(arg0: usize) {
       $($path_to_types)*::_export_drop_callbackRegistration_cabi::<<$ty as $($path_to_types)*::Guest>::CallbackRegistration>(arg0)
     }
 
   };);
 }
                 #[doc(hidden)]
-                pub(crate) use __export_symmetric_runtime_symmetric_executor_0_2_0_cabi;
+                pub(crate) use __export_symmetric_runtime_symmetric_executor_0_2_1_cabi;
             }
         }
     }
@@ -1343,34 +1376,35 @@ mod _rt {
 macro_rules! __export_executor_impl {
   ($ty:ident) => (self::export!($ty with_types_in self););
   ($ty:ident with_types_in $($path_to_types_root:tt)*) => (
-  $($path_to_types_root)*::exports::symmetric::runtime::symmetric_executor::__export_symmetric_runtime_symmetric_executor_0_2_0_cabi!($ty with_types_in $($path_to_types_root)*::exports::symmetric::runtime::symmetric_executor);
+  $($path_to_types_root)*::exports::symmetric::runtime::symmetric_executor::__export_symmetric_runtime_symmetric_executor_0_2_1_cabi!($ty with_types_in $($path_to_types_root)*::exports::symmetric::runtime::symmetric_executor);
   )
 }
 #[doc(inline)]
 pub(crate) use __export_executor_impl as export;
 
 #[cfg(target_arch = "wasm32")]
-#[unsafe(link_section = "component-type:wit-bindgen:0.41.0:symmetric:runtime@0.2.0:executor:encoded world")]
+#[unsafe(link_section = "component-type:wit-bindgen:0.41.0:symmetric:runtime@0.2.1:executor:encoded world")]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 836] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xc5\x05\x01A\x02\x01\
-A\x02\x01B\"\x04\0\x11callback-function\x03\x01\x04\0\x0dcallback-data\x03\x01\x04\
-\0\x12event-subscription\x03\x01\x04\0\x0fevent-generator\x03\x01\x04\0\x15callb\
-ack-registration\x03\x01\x01m\x02\x07started\x0bnot-started\x04\0\x0bcall-status\
-\x03\0\x05\x01h\x02\x01@\x01\x04self\x07\0\x7f\x04\0\x20[method]event-subscripti\
-on.ready\x01\x08\x01i\x02\x01@\x01\x0bnanosecondsw\0\x09\x04\0'[static]event-sub\
-scription.from-timeout\x01\x0a\x01@\x01\x04self\x07\0\x09\x04\0\x1e[method]event\
--subscription.dup\x01\x0b\x01@\x01\x04self\x07\x01\0\x04\0\x20[method]event-subs\
-cription.reset\x01\x0c\x01i\x03\x01@\0\0\x0d\x04\0\x1c[constructor]event-generat\
-or\x01\x0e\x01h\x03\x01@\x01\x04self\x0f\0\x09\x04\0![method]event-generator.sub\
-scribe\x01\x10\x01@\x01\x04self\x0f\x01\0\x04\0\x20[method]event-generator.activ\
-ate\x01\x11\x01i\x04\x01i\x01\x01@\x01\x03obj\x12\0\x13\x04\0$[static]callback-r\
-egistration.cancel\x01\x14\x01@\0\x01\0\x04\0\x03run\x01\x15\x01i\0\x01@\x03\x07\
-trigger\x09\x08callback\x16\x04data\x13\0\x12\x04\0\x08register\x01\x17\x04\0*sy\
-mmetric:runtime/symmetric-executor@0.2.0\x05\0\x04\0\x20symmetric:runtime/execut\
-or@0.2.0\x04\0\x0b\x0e\x01\0\x08executor\x03\0\0\0G\x09producers\x01\x0cprocesse\
-d-by\x02\x0dwit-component\x070.228.0\x10wit-bindgen-rust\x060.41.0";
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 873] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xea\x05\x01A\x02\x01\
+A\x02\x01B$\x01m\x02\x07pending\x05ready\x04\0\x0ecallback-state\x03\0\0\x04\0\x11\
+callback-function\x03\x01\x04\0\x0dcallback-data\x03\x01\x04\0\x12event-subscrip\
+tion\x03\x01\x04\0\x0fevent-generator\x03\x01\x04\0\x15callback-registration\x03\
+\x01\x01m\x02\x07started\x0bnot-started\x04\0\x0bcall-status\x03\0\x07\x01h\x04\x01\
+@\x01\x04self\x09\0\x7f\x04\0\x20[method]event-subscription.ready\x01\x0a\x01i\x04\
+\x01@\x01\x0bnanosecondsw\0\x0b\x04\0'[static]event-subscription.from-timeout\x01\
+\x0c\x01@\x01\x04self\x09\0\x0b\x04\0\x1e[method]event-subscription.dup\x01\x0d\x01\
+@\x01\x04self\x09\x01\0\x04\0\x20[method]event-subscription.reset\x01\x0e\x01i\x05\
+\x01@\0\0\x0f\x04\0\x1c[constructor]event-generator\x01\x10\x01h\x05\x01@\x01\x04\
+self\x11\0\x0b\x04\0![method]event-generator.subscribe\x01\x12\x01@\x01\x04self\x11\
+\x01\0\x04\0\x20[method]event-generator.activate\x01\x13\x01i\x06\x01i\x03\x01@\x01\
+\x03obj\x14\0\x15\x04\0$[static]callback-registration.cancel\x01\x16\x01@\0\x01\0\
+\x04\0\x03run\x01\x17\x01i\x02\x01@\x03\x07trigger\x0b\x08callback\x18\x04data\x15\
+\0\x14\x04\0\x08register\x01\x19\x04\0*symmetric:runtime/symmetric-executor@0.2.\
+1\x05\0\x04\0\x20symmetric:runtime/executor@0.2.1\x04\0\x0b\x0e\x01\0\x08executo\
+r\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwit-component\x070.228.0\x10\
+wit-bindgen-rust\x060.41.0";
 
 #[inline(never)]
 #[doc(hidden)]

@@ -6,22 +6,20 @@ interface symmetric-executor {
     // These pseudo-resources are just used to
     // pass pointers to register
 
+    /// Return value of an event callback
+    enum callback-state {
+        /// Call the function again
+        pending,
+        /// The function has completed, all results are written, data is freed,
+        /// calling the function again is not permitted as data became invalid!
+        ready,
+    }
+
     /// This wraps a user provided function of type
-    /// `fn (callback-data, keep-pattern) -> null-or-pattern-or-new-subscription`
-    /// 
-    /// The executor passes a pattern representing 
-    /// the current subscription as the second argument.
-    /// 
-    /// Return value:
-    ///  - null: deregister callback, data is assumed to be freed
-    ///  - keep-pattern: re-register callback on the same event
-    ///  - event-subscription: register callback on different event
-    /// 
-    /// As the code is likely interested in the cancellation object
-    /// from a new registration, the last return value case is less preferrable.
+    /// `fn (callback-data) -> callback-state`
     resource callback-function;
     /// This wraps opaque user data, freed by the callback when
-    /// it returns null (ready)
+    /// it returns ready
     resource callback-data;
 
     /// The receiving side of an event

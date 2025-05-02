@@ -2,12 +2,13 @@ use futures::{task::Waker, FutureExt};
 use std::{
     future::Future,
     pin::Pin,
-    ptr::null_mut,
     task::{Context, Poll, RawWaker, RawWakerVTable},
 };
 
 use crate::{
-    module::symmetric::runtime::symmetric_executor::{self, EventGenerator, EventSubscription},
+    module::symmetric::runtime::symmetric_executor::{
+        CallbackState, EventGenerator, EventSubscription,
+    },
     EventSubscription2,
 };
 
@@ -80,26 +81,17 @@ pub async fn wait_on(wait_for: EventSubscription) {
     .await
 }
 
-extern "C" fn symmetric_callback(
-    obj: *mut (),
-    event: *mut EventSubscription2,
-) -> *mut EventSubscription2 {
-    drop(unsafe { EventSubscription::from_handle(event as usize) });
+extern "C" fn symmetric_callback(obj: *mut ()) -> CallbackState {
     match unsafe { poll(obj.cast()) } {
-        Poll::Ready(_) => null_mut(),
+        Poll::Ready(_) => CallbackState::Ready,
         Poll::Pending => {
             let state = obj.cast::<FutureState>();
-            unsafe { &mut *state }
-                .waiting_for
-                .take()
-                .map_or(null_mut(), |evt| evt.take_handle() as *mut ())
-                .cast()
-            // if let Some(waiting_for) =  {
-            //     super::register(waiting_for, symmetric_callback, obj);
-            // }
-            // // as we registered this callback on a new event stop calling
-            // // from the old event
-            // CallbackState::Ready
+            if let Some(waiting_for) = unsafe { &mut *state }.waiting_for.take() {
+                super::register(waiting_for, symmetric_callback, obj);
+            }
+            // as we registered this callback on a new event stop calling
+            // from the old event
+            CallbackState::Ready
         }
     }
 }

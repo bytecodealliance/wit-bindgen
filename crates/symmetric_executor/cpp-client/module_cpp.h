@@ -7,7 +7,18 @@
 #include <optional>
 #include <cassert>
 #include <wit-guest.h>
-namespace symmetric {namespace runtime {namespace symmetric_executor {class CallbackFunction : public wit::ResourceImportBase{
+namespace symmetric {namespace runtime {namespace symmetric_executor {/// These pseudo-resources are just used to
+/// pass pointers to register
+/// Return value of an event callback
+enum class CallbackState : uint8_t {
+  /// Call the function again
+  kPending = 0,
+  /// The function has completed, all results are written, data is freed,
+  /// calling the function again is not permitted as data became invalid!
+  kReady = 1,
+};
+
+class CallbackFunction : public wit::ResourceImportBase{
 
   public:
 
@@ -54,6 +65,17 @@ class EventGenerator : public wit::ResourceImportBase{
   EventGenerator& operator=(EventGenerator&&) = default;
 };
 
+class CallbackRegistration : public wit::ResourceImportBase{
+
+  public:
+
+  ~CallbackRegistration();
+  static CallbackData Cancel(CallbackRegistration&& obj);
+  CallbackRegistration(wit::ResourceImportBase &&);
+  CallbackRegistration(CallbackRegistration&&) = default;
+  CallbackRegistration& operator=(CallbackRegistration&&) = default;
+};
+
 /// Return value of an async call, lowest bit encoding
 enum class CallStatus : uint8_t {
   /// For symmetric this means that processing has started, parameters should still remain valid until null,
@@ -63,18 +85,8 @@ enum class CallStatus : uint8_t {
   kNotStarted = 1,
 };
 
-/// Return value of an event callback
-enum class CallbackState : uint8_t {
-  /// Call the function again
-  kPending = 0,
-  /// The function has completed, all results are written, data is freed,
-  /// calling the function again is not permitted as data became invalid!
-  kReady = 1,
-};
-
 void Run();
-void Register(EventSubscription&& trigger, CallbackFunction&& callback, CallbackData&& data);
-void BlockOn(EventSubscription&& event);
+CallbackRegistration Register(EventSubscription&& trigger, CallbackFunction&& callback, CallbackData&& data);
 }
 namespace symmetric_stream {using EventSubscription = symmetric_executor::EventSubscription;
 class Address : public wit::ResourceImportBase{
