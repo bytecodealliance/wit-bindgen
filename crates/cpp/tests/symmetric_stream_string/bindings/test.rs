@@ -81,7 +81,7 @@ pub mod wit_future {
     #[doc(hidden)]
     #[allow(unused_unsafe)]
     pub mod vtable0 {
-        unsafe fn lift(ptr: *mut u8) -> super::super::_rt::String {
+        unsafe fn lift2(ptr: *mut u8) -> super::super::_rt::String {
             unsafe {
                 let l0 = *ptr.add(0).cast::<*mut u8>();
                 let l1 = *ptr.add(::core::mem::size_of::<*const u8>()).cast::<usize>();
@@ -93,7 +93,7 @@ pub mod wit_future {
                 string2
             }
         }
-        unsafe fn lower(value: super::super::_rt::String, ptr: *mut u8) {
+        unsafe fn lower2(value: super::super::_rt::String, ptr: *mut u8) {
             unsafe {
                 let vec0 = (value.into_bytes()).into_boxed_slice();
                 let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -111,7 +111,14 @@ pub mod wit_future {
             }
         }
 
-        impl super::FuturePayload for super::super::_rt::String {}
+        impl super::FuturePayload for super::super::_rt::String {
+            unsafe fn lower(value: Self, dst: *mut u8) {
+                lower2(value, dst);
+            }
+            unsafe fn lift(src: *const u8) -> Self {
+                lift2(src.cast_mut())
+            }
+        }
     }
     /// Creates a new Component Model `future` with the specified payload type.
     pub fn new<T: FuturePayload>() -> (
