@@ -22,7 +22,7 @@ pub mod a {
                         fn aX3AbX2Fthe_testX00f() -> *mut u8;
                     }
                     let ret = aX3AbX2Fthe_testX00f();
-                    wit_bindgen_symmetric_rt::async_support::StreamReader::from_handle(ret)
+                    wit_bindgen_symmetric_rt::async_support::StreamReader::from_handle(ret, <_rt::String as super::super::super::wit_stream::StreamPayload>::VTABLE)
                 }
             }
         }
@@ -54,58 +54,12 @@ mod _rt {
 pub mod wit_stream {
     #![allow(dead_code, unused_variables, clippy::all)]
 
-    pub trait StreamPayload: Unpin + Sized + 'static {}
+    pub trait StreamPayload: Unpin + Sized + 'static {
+        const VTABLE: &'static wit_bindgen::rt::async_support::StreamVtable<Self>;
+    }
     #[doc(hidden)]
     #[allow(unused_unsafe)]
     pub mod vtable0 {
-
-        #[cfg(not(target_arch = "wasm32"))]
-        unsafe extern "C" fn cancel_write(_: u32) -> u32 {
-            unreachable!()
-        }
-        #[cfg(not(target_arch = "wasm32"))]
-        unsafe extern "C" fn cancel_read(_: u32) -> u32 {
-            unreachable!()
-        }
-        #[cfg(not(target_arch = "wasm32"))]
-        unsafe extern "C" fn close_writable(_: u32) {
-            unreachable!()
-        }
-        #[cfg(not(target_arch = "wasm32"))]
-        unsafe extern "C" fn close_readable(_: u32) {
-            unreachable!()
-        }
-        #[cfg(not(target_arch = "wasm32"))]
-        unsafe extern "C" fn new() -> u64 {
-            unreachable!()
-        }
-        #[cfg(not(target_arch = "wasm32"))]
-        unsafe extern "C" fn start_read(_: u32, _: *mut u8, _: usize) -> u32 {
-            unreachable!()
-        }
-        #[cfg(not(target_arch = "wasm32"))]
-        unsafe extern "C" fn start_write(_: u32, _: *const u8, _: usize) -> u32 {
-            unreachable!()
-        }
-
-        #[cfg(target_arch = "wasm32")]
-        #[link(wasm_import_module = "a:b/the-test")]
-        unsafe extern "C" {
-            #[link_name = "[stream-new-0]f"]
-            fn new() -> u64;
-            #[link_name = "[stream-cancel-write-0]f"]
-            fn cancel_write(_: u32) -> u32;
-            #[link_name = "[stream-cancel-read-0]f"]
-            fn cancel_read(_: u32) -> u32;
-            #[link_name = "[stream-close-writable-0]f"]
-            fn close_writable(_: u32);
-            #[link_name = "[stream-close-readable-0]f"]
-            fn close_readable(_: u32);
-            #[link_name = "[async-lower][stream-read-0]f"]
-            fn start_read(_: u32, _: *mut u8, _: usize) -> u32;
-            #[link_name = "[async-lower][stream-write-0]f"]
-            fn start_write(_: u32, _: *const u8, _: usize) -> u32;
-        }
 
         unsafe fn lift(ptr: *mut u8) -> super::super::_rt::String {
             unsafe {
@@ -141,17 +95,9 @@ pub mod wit_stream {
         pub static VTABLE: wit_bindgen_symmetric_rt::async_support::StreamVtable<
             super::super::_rt::String,
         > = wit_bindgen_symmetric_rt::async_support::StreamVtable::<super::super::_rt::String> {
-            cancel_write,
-            cancel_read,
-            close_writable,
-            close_readable,
-            dealloc_lists: Some(dealloc_lists),
             layout: unsafe { ::std::alloc::Layout::from_size_align_unchecked(8, 4) },
             lift: Some(lift),
             lower: Some(lower),
-            new,
-            start_read,
-            start_write,
         };
 
         impl super::StreamPayload for super::super::_rt::String {
@@ -164,7 +110,7 @@ pub mod wit_stream {
         wit_bindgen_symmetric_rt::async_support::StreamWriter<T>,
         wit_bindgen_symmetric_rt::async_support::StreamReader<T>,
     ) {
-        wit_bindgen_symmetric_rt::async_support::stream_support::new_stream()
+        wit_bindgen_symmetric_rt::async_support::stream_support::new_stream(T::VTABLE)
     }
 }
 

@@ -6,6 +6,7 @@ use crate::{
 use {
     futures::sink::Sink,
     std::{
+        alloc::Layout,
         convert::Infallible,
         fmt,
         future::Future,
@@ -17,7 +18,12 @@ use {
     },
 };
 
-pub use super::future_support::FutureVtable as StreamVtable;
+#[doc(hidden)]
+pub struct StreamVtable<T> {
+    pub layout: Layout,
+    pub lower: Option<unsafe fn(value: T, dst: *mut u8)>,
+    pub lift: Option<unsafe fn(dst: *mut u8) -> T>,
+}
 
 fn ceiling(x: usize, y: usize) -> usize {
     (x / y) + if x % y == 0 { 0 } else { 1 }
@@ -29,19 +35,84 @@ pub mod results {
     pub const CANCELED: isize = 0;
 }
 
+pub struct AbiBuffer<T: 'static>(PhantomData<T>);
+
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum StreamResult {
+    Complete(usize),
+    // Closed,
+    // Cancelled,
+}
+
+pub struct StreamWrite<'a, T: 'static> {
+    _phantom: PhantomData<&'a T>,
+    writer: &'a mut StreamWriter<T>,
+    future: Option<Pin<Box<dyn Future<Output = ()> + 'static + Send>>>,
+    values: Vec<T>,
+}
+
+impl<T: Unpin+Send+'static> Future for StreamWrite<'_, T> {
+    type Output = (StreamResult, AbiBuffer<T>);
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+         let me = self.get_mut();
+         match Pin::new(&mut me.writer).poll_ready(cx) {
+            Poll::Ready(_) => {
+                let values = me.values.drain(..).collect();
+                Pin::new(&mut me.writer).start_send(values).unwrap();
+                match Pin::new(&mut me.writer).poll_ready(cx) {
+                    Poll::Ready(_) => Poll::Ready((StreamResult::Complete(1), AbiBuffer(PhantomData))),
+                    Poll::Pending => Poll::Pending,
+                }
+            }
+            Poll::Pending => Poll::Pending,
+        }
+
+//         if me.future.is_none() {
+//             let handle = me.writer.handle.clone();
+//             let values = &mut me.values;
+//             let lower = me.writer.vtable.lower;
+//             me.future = Some(Box::pin(async move {
+//                 if !handle.is_ready_to_write() {
+//                     let subsc = handle.write_ready_subscribe();
+//                     wait_on(subsc).await;
+//                 }
+//                 let buffer = handle.start_writing();
+//                 let addr = buffer.get_address().take_handle() as *mut MaybeUninit<T> as *mut u8;
+//                 if let Some(lower) = lower {
+
+//                 }
+// //                unsafe { (lower)(data, addr) };
+//                 buffer.set_size(1);
+//                 handle.finish_writing(Some(buffer));
+//             }) as Pin<Box<dyn Future<Output = _> + Send>>);
+//         }
+//         me.future.as_mut().unwrap().poll_unpin(cx)
+    }
+}
+
 pub struct StreamWriter<T: 'static> {
     handle: Stream,
     future: Option<Pin<Box<dyn Future<Output = ()> + 'static + Send>>>,
-    _phantom: PhantomData<T>,
+    vtable: &'static StreamVtable<T>,
 }
 
 impl<T> StreamWriter<T> {
     #[doc(hidden)]
-    pub fn new(handle: Stream) -> Self {
+    pub fn new(handle: Stream,vtable: &'static StreamVtable<T>,) -> Self {
         Self {
             handle,
             future: None,
+            vtable,
+        }
+    }
+
+    pub fn write(&mut self, values: Vec<T>) -> StreamWrite<'_, T> {
+        StreamWrite{
+            writer: self,
+            future: None,
             _phantom: PhantomData,
+            values,
         }
     }
 
@@ -129,7 +200,7 @@ impl<T> Drop for StreamWriter<T> {
 pub struct StreamReader<T: 'static> {
     handle: Stream,
     future: Option<Pin<Box<dyn Future<Output = Option<Vec<T>>> + 'static + Send>>>,
-    _phantom: PhantomData<T>,
+    vtable: &'static StreamVtable<T>,
 }
 
 impl<T> fmt::Debug for StreamReader<T> {
@@ -142,16 +213,16 @@ impl<T> fmt::Debug for StreamReader<T> {
 
 impl<T> StreamReader<T> {
     #[doc(hidden)]
-    pub fn new(handle: Stream) -> Self {
+    pub fn new(handle: Stream, vtable: &'static StreamVtable<T>,) -> Self {
         Self {
             handle,
             future: None,
-            _phantom: PhantomData,
+            vtable,
         }
     }
 
-    pub unsafe fn from_handle(handle: *mut u8) -> Self {
-        Self::new(unsafe { Stream::from_handle(handle as usize) })
+    pub unsafe fn from_handle(handle: *mut u8,vtable: &'static StreamVtable<T>,) -> Self {
+        Self::new(unsafe { Stream::from_handle(handle as usize) }, vtable)
     }
 
     /// Cancel the current pending read operation.
@@ -221,10 +292,8 @@ impl<T> Drop for StreamReader<T> {
     }
 }
 
-// pub type StreamHandle2 = Stream;
-
-pub fn new_stream<T: 'static>() -> (StreamWriter<T>, StreamReader<T>) {
+pub fn new_stream<T: 'static>(vtable: &'static StreamVtable<T>,) -> (StreamWriter<T>, StreamReader<T>) {
     let handle = Stream::new();
     let handle2 = handle.clone();
-    (StreamWriter::new(handle), StreamReader::new(handle2))
+    (StreamWriter::new(handle, vtable), StreamReader::new(handle2, vtable))
 }

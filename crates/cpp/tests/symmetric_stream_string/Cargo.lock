@@ -102,6 +102,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "libc"
+version = "0.2.172"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d750af042f7ef4f724306de029d18836c26c1765a54a6a3f094cbd23a7267ffa"
+
+[[package]]
 name = "memchr"
 version = "2.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -155,10 +161,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "symmetric_executor"
+version = "0.1.0"
+dependencies = [
+ "dummy-rt",
+ "futures",
+ "libc",
+]
+
+[[package]]
+name = "symmetric_stream"
+version = "0.1.0"
+dependencies = [
+ "dummy-rt",
+ "symmetric_executor",
+ "wit-bindgen-symmetric-rt",
+]
+
+[[package]]
 name = "symmetric_stream_string"
 version = "0.1.0"
 dependencies = [
+ "futures-util",
+ "mini-bindgen",
+ "symmetric_executor",
+ "symmetric_stream",
  "test",
+ "wit-bindgen-symmetric-rt",
 ]
 
 [[package]]
