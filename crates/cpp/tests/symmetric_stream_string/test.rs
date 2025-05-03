@@ -11,7 +11,7 @@ use wit_bindgen::rt::async_support::FutureReader;
 
 impl Guest for Component {
     fn f() -> FutureReader {
-        let (wr,rd) = wit_future::new();
+        let (wr, rd) = wit_future::new();
         async_support::spawn(move || async {
             wr.write(String::from("Hello")).await;
         });

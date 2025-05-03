@@ -2,32 +2,34 @@
 // Options used:
 #[allow(dead_code, clippy::all)]
 pub mod exports {
-  pub mod a {
-    pub mod b {
+    pub mod a {
+        pub mod b {
 
-      #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
-      pub mod the_test {
-        #[used]
-        #[doc(hidden)]
-        static __FORCE_SECTION_REF: fn() =
-        super::super::super::super::__link_custom_section_describing_imports;
-        
-        use super::super::super::super::_rt;
-        #[doc(hidden)]
-        #[allow(non_snake_case, unused_unsafe)]
-        pub unsafe fn _export_f_cabi<T: Guest>() -> *mut u8 { unsafe {#[cfg(target_arch="wasm32")]
-        _rt::run_ctors_once();let result0 = {
-          T::f()
-        };
-        (result0).take_handle() as *mut u8
-      } }
-      pub trait Guest {
-        #[allow(async_fn_in_trait)]
-        fn f() -> wit_bindgen_symmetric_rt::async_support::FutureReader<_rt::String>;
-      }
-      #[doc(hidden)]
+            #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
+            pub mod the_test {
+                #[used]
+                #[doc(hidden)]
+                static __FORCE_SECTION_REF: fn() =
+                    super::super::super::super::__link_custom_section_describing_imports;
 
-      macro_rules! __export_a_b_the_test_cabi{
+                use super::super::super::super::_rt;
+                #[doc(hidden)]
+                #[allow(non_snake_case, unused_unsafe)]
+                pub unsafe fn _export_f_cabi<T: Guest>() -> *mut u8 {
+                    unsafe {
+                        #[cfg(target_arch = "wasm32")]
+                        _rt::run_ctors_once();
+                        let result0 = { T::f() };
+                        (result0).take_handle() as *mut u8
+                    }
+                }
+                pub trait Guest {
+                    #[allow(async_fn_in_trait)]
+                    fn f() -> wit_bindgen_symmetric_rt::async_support::FutureReader<_rt::String>;
+                }
+                #[doc(hidden)]
+
+                macro_rules! __export_a_b_the_test_cabi{
         ($ty:ident with_types_in $($path_to_types:tt)*) => (const _: () = {
 
           #[cfg_attr(target_arch = "wasm32", export_name = "f")]
@@ -37,120 +39,148 @@ pub mod exports {
           }
         };);
       }
-      #[doc(hidden)]
-      pub(crate) use __export_a_b_the_test_cabi;
-
+                #[doc(hidden)]
+                pub(crate) use __export_a_b_the_test_cabi;
+            }
+        }
     }
-
-  }
-}
 }
 mod _rt {
-  #![allow(dead_code, clippy::all)]
-  pub use alloc_crate::string::String;
-  pub use alloc_crate::vec::Vec;
-  pub unsafe fn cabi_dealloc(ptr: *mut u8, size: usize, align: usize) {
-    if size == 0 {
-      return;
+    #![allow(dead_code, clippy::all)]
+    pub use alloc_crate::string::String;
+    pub use alloc_crate::vec::Vec;
+    pub unsafe fn cabi_dealloc(ptr: *mut u8, size: usize, align: usize) {
+        if size == 0 {
+            return;
+        }
+        unsafe {
+            let layout = alloc::Layout::from_size_align_unchecked(size, align);
+            alloc::dealloc(ptr, layout);
+        }
     }
-    unsafe {
-      let layout = alloc::Layout::from_size_align_unchecked(size, align);
-      alloc::dealloc(ptr, layout);
-    }
-  }
-  
-  #[cfg(target_arch = "wasm32")]
-  pub fn run_ctors_once() {
-    wit_bindgen::rt::run_ctors_once();
-  }
-  extern crate alloc as alloc_crate;
-  pub use alloc_crate::alloc;
-}
-pub mod wit_future {
-  #![allow(dead_code, unused_variables, clippy::all)]
-
-  #[doc(hidden)]
-  pub trait FuturePayload: Unpin + Sized + 'static {}
-  #[doc(hidden)]
-  #[allow(unused_unsafe)]
-  pub mod vtable0 {
-
-    #[cfg(not(target_arch = "wasm32"))]
-    unsafe extern "C" fn cancel_write(_: u32) -> u32 { unreachable!() }
-    #[cfg(not(target_arch = "wasm32"))]
-    unsafe extern "C" fn cancel_read(_: u32) -> u32 { unreachable!() }
-    #[cfg(not(target_arch = "wasm32"))]
-    unsafe extern "C" fn close_writable(_: u32) { unreachable!() }
-    #[cfg(not(target_arch = "wasm32"))]
-    unsafe extern "C" fn close_readable(_: u32) { unreachable!() }
-    #[cfg(not(target_arch = "wasm32"))]
-    unsafe extern "C" fn new() -> u64 { unreachable!() }
-    #[cfg(not(target_arch = "wasm32"))]
-    unsafe extern "C" fn start_read(_: u32, _: *mut u8) -> u32 { unreachable!() }
-    #[cfg(not(target_arch = "wasm32"))]
-    unsafe extern "C" fn start_write(_: u32, _: *const u8) -> u32 { unreachable!() }
 
     #[cfg(target_arch = "wasm32")]
-    #[link(wasm_import_module = "[export]a:b/the-test")]
-    unsafe extern "C" {
-      #[link_name = "[future-new-0]f"]
-      fn new() -> u64;
-      #[link_name = "[future-cancel-write-0]f"]
-      fn cancel_write(_: u32) -> u32;
-      #[link_name = "[future-cancel-read-0]f"]
-      fn cancel_read(_: u32) -> u32;
-      #[link_name = "[future-close-writable-0]f"]
-      fn close_writable(_: u32);
-      #[link_name = "[future-close-readable-0]f"]
-      fn close_readable(_: u32);
-      #[link_name = "[async-lower][future-read-0]f"]
-      fn start_read(_: u32, _: *mut u8) -> u32;
-      #[link_name = "[async-lower][future-write-0]f"]
-      fn start_write(_: u32, _: *const u8) -> u32;
+    pub fn run_ctors_once() {
+        wit_bindgen::rt::run_ctors_once();
     }
-
-    unsafe fn lift(ptr: *mut u8) -> super::super::_rt::String { unsafe { let l0 = *ptr.add(0).cast::<*mut u8>();
-    let l1 = *ptr.add(::core::mem::size_of::<*const u8>()).cast::<usize>();
-    let len2 = l1;
-    let string2 = String::from(std::str::from_utf8(std::slice::from_raw_parts(l0, len2)).unwrap());
-
-    string2 } }
-    unsafe fn lower(value: super::super::_rt::String, ptr: *mut u8) { unsafe { let vec0 = (value.into_bytes()).into_boxed_slice();
-    let ptr0 = vec0.as_ptr().cast::<u8>();
-    let len0 = vec0.len();
-    ::core::mem::forget(vec0);
-    *ptr.add(::core::mem::size_of::<*const u8>()).cast::<usize>() = len0;
-    *ptr.add(0).cast::<*mut u8>() = ptr0.cast_mut();
-  } }
-  unsafe fn dealloc_lists(ptr: *mut u8) { unsafe { let l0 = *ptr.add(0).cast::<*mut u8>();
-  let l1 = *ptr.add(::core::mem::size_of::<*const u8>()).cast::<usize>();
-  super::super::_rt::cabi_dealloc(l0, l1, 1);
-} }
-
-pub static VTABLE: wit_bindgen_symmetric_rt::async_support::FutureVtable<super::super::_rt::String> = wit_bindgen_symmetric_rt::async_support::FutureVtable::<super::super::_rt::String> {
-  cancel_write,
-  cancel_read,
-  close_writable,
-  close_readable,
-  dealloc_lists,
-  layout: unsafe {
-    ::std::alloc::Layout::from_size_align_unchecked(8, 4)
-  },
-  lift,
-  lower,
-  new,
-  start_read,
-  start_write,
-};
-
-impl super::FuturePayload for super::super::_rt::String {
-  const VTABLE: &'static wit_bindgen_symmetric_rt::async_support::FutureVtable<Self> = &VTABLE;
+    extern crate alloc as alloc_crate;
+    pub use alloc_crate::alloc;
 }
-}
-/// Creates a new Component Model `future` with the specified payload type.
-pub fn new<T: FuturePayload>() -> (wit_bindgen_symmetric_rt::async_support::FutureWriter<T>, wit_bindgen_symmetric_rt::async_support::FutureReader<T>) {
-  wit_bindgen_symmetric_rt::async_support::future_support::new_future()
-}
+pub mod wit_future {
+    #![allow(dead_code, unused_variables, clippy::all)]
+
+    #[doc(hidden)]
+    pub trait FuturePayload: Unpin + Sized + 'static {}
+    #[doc(hidden)]
+    #[allow(unused_unsafe)]
+    pub mod vtable0 {
+
+        #[cfg(not(target_arch = "wasm32"))]
+        unsafe extern "C" fn cancel_write(_: u32) -> u32 {
+            unreachable!()
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        unsafe extern "C" fn cancel_read(_: u32) -> u32 {
+            unreachable!()
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        unsafe extern "C" fn close_writable(_: u32) {
+            unreachable!()
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        unsafe extern "C" fn close_readable(_: u32) {
+            unreachable!()
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        unsafe extern "C" fn new() -> u64 {
+            unreachable!()
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        unsafe extern "C" fn start_read(_: u32, _: *mut u8) -> u32 {
+            unreachable!()
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        unsafe extern "C" fn start_write(_: u32, _: *const u8) -> u32 {
+            unreachable!()
+        }
+
+        #[cfg(target_arch = "wasm32")]
+        #[link(wasm_import_module = "[export]a:b/the-test")]
+        unsafe extern "C" {
+            #[link_name = "[future-new-0]f"]
+            fn new() -> u64;
+            #[link_name = "[future-cancel-write-0]f"]
+            fn cancel_write(_: u32) -> u32;
+            #[link_name = "[future-cancel-read-0]f"]
+            fn cancel_read(_: u32) -> u32;
+            #[link_name = "[future-close-writable-0]f"]
+            fn close_writable(_: u32);
+            #[link_name = "[future-close-readable-0]f"]
+            fn close_readable(_: u32);
+            #[link_name = "[async-lower][future-read-0]f"]
+            fn start_read(_: u32, _: *mut u8) -> u32;
+            #[link_name = "[async-lower][future-write-0]f"]
+            fn start_write(_: u32, _: *const u8) -> u32;
+        }
+
+        unsafe fn lift(ptr: *mut u8) -> super::super::_rt::String {
+            unsafe {
+                let l0 = *ptr.add(0).cast::<*mut u8>();
+                let l1 = *ptr.add(::core::mem::size_of::<*const u8>()).cast::<usize>();
+                let len2 = l1;
+                let string2 = String::from(
+                    std::str::from_utf8(std::slice::from_raw_parts(l0, len2)).unwrap(),
+                );
+
+                string2
+            }
+        }
+        unsafe fn lower(value: super::super::_rt::String, ptr: *mut u8) {
+            unsafe {
+                let vec0 = (value.into_bytes()).into_boxed_slice();
+                let ptr0 = vec0.as_ptr().cast::<u8>();
+                let len0 = vec0.len();
+                ::core::mem::forget(vec0);
+                *ptr.add(::core::mem::size_of::<*const u8>()).cast::<usize>() = len0;
+                *ptr.add(0).cast::<*mut u8>() = ptr0.cast_mut();
+            }
+        }
+        unsafe fn dealloc_lists(ptr: *mut u8) {
+            unsafe {
+                let l0 = *ptr.add(0).cast::<*mut u8>();
+                let l1 = *ptr.add(::core::mem::size_of::<*const u8>()).cast::<usize>();
+                super::super::_rt::cabi_dealloc(l0, l1, 1);
+            }
+        }
+
+        pub static VTABLE: wit_bindgen_symmetric_rt::async_support::FutureVtable<
+            super::super::_rt::String,
+        > = wit_bindgen_symmetric_rt::async_support::FutureVtable::<super::super::_rt::String> {
+            cancel_write,
+            cancel_read,
+            close_writable,
+            close_readable,
+            dealloc_lists,
+            layout: unsafe { ::std::alloc::Layout::from_size_align_unchecked(8, 4) },
+            lift,
+            lower,
+            new,
+            start_read,
+            start_write,
+        };
+
+        impl super::FuturePayload for super::super::_rt::String {
+            const VTABLE: &'static wit_bindgen_symmetric_rt::async_support::FutureVtable<Self> =
+                &VTABLE;
+        }
+    }
+    /// Creates a new Component Model `future` with the specified payload type.
+    pub fn new<T: FuturePayload>() -> (
+        wit_bindgen_symmetric_rt::async_support::FutureWriter<T>,
+        wit_bindgen_symmetric_rt::async_support::FutureReader<T>,
+    ) {
+        wit_bindgen_symmetric_rt::async_support::future_support::new_future()
+    }
 }
 
 /// Generates `#[unsafe(no_mangle)]` functions to export the specified type as
@@ -194,6 +224,5 @@ a:b/test\x04\0\x0b\x0a\x01\0\x04test\x03\0\0\0G\x09producers\x01\x0cprocessed-by
 #[inline(never)]
 #[doc(hidden)]
 pub fn __link_custom_section_describing_imports() {
-  wit_bindgen::rt::maybe_link_cabi_realloc();
+    wit_bindgen::rt::maybe_link_cabi_realloc();
 }
-
