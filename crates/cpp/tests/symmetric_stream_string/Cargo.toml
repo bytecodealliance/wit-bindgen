@@ -9,7 +9,7 @@ edition = "2024"
 [dependencies]
 test = { path = "test" }
 symmetric_executor = { path = "../../../symmetric_executor", features = ["trace"]}
-symmetric_stream = { path = "../../../symmetric_executor/symmetric_stream" }
+symmetric_stream = { path = "../../../symmetric_executor/symmetric_stream", features = ["trace"] }
 wit-bindgen-symmetric-rt = { path = "../../../symmetric_executor/rust-client" }
 wit-bindgen = { path = "../../../symmetric_executor/dummy-bindgen", package = "mini-bindgen" }
 futures-util = "0.3.31"

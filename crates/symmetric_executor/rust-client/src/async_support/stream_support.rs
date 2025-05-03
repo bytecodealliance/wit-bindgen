@@ -51,43 +51,29 @@ pub struct StreamWrite<'a, T: 'static> {
     values: Vec<T>,
 }
 
-impl<T: Unpin+Send+'static> Future for StreamWrite<'_, T> {
+impl<T: Unpin + Send + 'static> Future for StreamWrite<'_, T> {
     type Output = (StreamResult, AbiBuffer<T>);
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-         let me = self.get_mut();
-         match Pin::new(&mut me.writer).poll_ready(cx) {
+        let me = self.get_mut();
+        match Pin::new(&mut me.writer).poll_ready(cx) {
             Poll::Ready(_) => {
-                let values = me.values.drain(..).collect();
-                Pin::new(&mut me.writer).start_send(values).unwrap();
-                match Pin::new(&mut me.writer).poll_ready(cx) {
-                    Poll::Ready(_) => Poll::Ready((StreamResult::Complete(1), AbiBuffer(PhantomData))),
-                    Poll::Pending => Poll::Pending,
+                let values: Vec<_> = me.values.drain(..).collect();
+                if values.is_empty() {
+                    // delayed flush
+                    Poll::Ready((StreamResult::Complete(1), AbiBuffer(PhantomData)))
+                } else {
+                    Pin::new(&mut me.writer).start_send(values).unwrap();
+                    match Pin::new(&mut me.writer).poll_ready(cx) {
+                        Poll::Ready(_) => {
+                            Poll::Ready((StreamResult::Complete(1), AbiBuffer(PhantomData)))
+                        }
+                        Poll::Pending => Poll::Pending,
+                    }
                 }
             }
             Poll::Pending => Poll::Pending,
         }
-
-//         if me.future.is_none() {
-//             let handle = me.writer.handle.clone();
-//             let values = &mut me.values;
-//             let lower = me.writer.vtable.lower;
-//             me.future = Some(Box::pin(async move {
-//                 if !handle.is_ready_to_write() {
-//                     let subsc = handle.write_ready_subscribe();
-//                     wait_on(subsc).await;
-//                 }
-//                 let buffer = handle.start_writing();
-//                 let addr = buffer.get_address().take_handle() as *mut MaybeUninit<T> as *mut u8;
-//                 if let Some(lower) = lower {
-
-//                 }
-// //                unsafe { (lower)(data, addr) };
-//                 buffer.set_size(1);
-//                 handle.finish_writing(Some(buffer));
-//             }) as Pin<Box<dyn Future<Output = _> + Send>>);
-//         }
-//         me.future.as_mut().unwrap().poll_unpin(cx)
     }
 }
 
@@ -99,7 +85,7 @@ pub struct StreamWriter<T: 'static> {
 
 impl<T> StreamWriter<T> {
     #[doc(hidden)]
-    pub fn new(handle: Stream,vtable: &'static StreamVtable<T>,) -> Self {
+    pub fn new(handle: Stream, vtable: &'static StreamVtable<T>) -> Self {
         Self {
             handle,
             future: None,
@@ -108,7 +94,7 @@ impl<T> StreamWriter<T> {
     }
 
     pub fn write(&mut self, values: Vec<T>) -> StreamWrite<'_, T> {
-        StreamWrite{
+        StreamWrite {
             writer: self,
             future: None,
             _phantom: PhantomData,
@@ -213,7 +199,7 @@ impl<T> fmt::Debug for StreamReader<T> {
 
 impl<T> StreamReader<T> {
     #[doc(hidden)]
-    pub fn new(handle: Stream, vtable: &'static StreamVtable<T>,) -> Self {
+    pub fn new(handle: Stream, vtable: &'static StreamVtable<T>) -> Self {
         Self {
             handle,
             future: None,
@@ -221,7 +207,7 @@ impl<T> StreamReader<T> {
         }
     }
 
-    pub unsafe fn from_handle(handle: *mut u8,vtable: &'static StreamVtable<T>,) -> Self {
+    pub unsafe fn from_handle(handle: *mut u8, vtable: &'static StreamVtable<T>) -> Self {
         Self::new(unsafe { Stream::from_handle(handle as usize) }, vtable)
     }
 
@@ -292,8 +278,13 @@ impl<T> Drop for StreamReader<T> {
     }
 }
 
-pub fn new_stream<T: 'static>(vtable: &'static StreamVtable<T>,) -> (StreamWriter<T>, StreamReader<T>) {
+pub fn new_stream<T: 'static>(
+    vtable: &'static StreamVtable<T>,
+) -> (StreamWriter<T>, StreamReader<T>) {
     let handle = Stream::new();
     let handle2 = handle.clone();
-    (StreamWriter::new(handle, vtable), StreamReader::new(handle2, vtable))
+    (
+        StreamWriter::new(handle, vtable),
+        StreamReader::new(handle2, vtable),
+    )
 }
