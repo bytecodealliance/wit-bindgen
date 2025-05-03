@@ -864,7 +864,11 @@ pub fn deallocate_lists_and_own_in_types<B: Bindgen>(
     ptr: B::Operand,
     bindgen: &mut B,
 ) {
-    Generator::new(resolve, bindgen, false).deallocate_in_types(types, ptr, Deallocate::ListsAndOwn);
+    Generator::new(resolve, bindgen, false).deallocate_in_types(
+        types,
+        ptr,
+        Deallocate::ListsAndOwn,
+    );
 }
 
 #[derive(Copy, Clone)]
