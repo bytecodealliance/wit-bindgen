@@ -22,6 +22,27 @@ void *cabi_realloc(void *ptr, size_t old_size, size_t align, size_t new_size) {
   return ret;
 }
 
+template <>
+const uint32_t wit::StreamProperties<uint32_t>::lowered_size = 4;
+template <>
+uint32_t wit::StreamProperties<uint32_t>::lift(uint8_t const*ptr) {
+  return *(uint32_t const*)ptr;
+}
+template <>
+void wit::StreamProperties<uint32_t>::lower(uint32_t && value, uint8_t *ptr) {
+  *(uint32_t*)ptr = value;
+}
+
+// struct IntLifting {
+//   static constexpr size_t SIZE = sizeof(T);
+//   static T lift(uint8_t const*ptr) {
+//     return *(T const*)ptr;
+//   }
+//   static void lower(T&& obj, uint8_t *ptr) {
+// //    new ((T*)ptr) T(std::move(obj));
+//     *(T*)ptr = obj;
+//   }
+// };
 
 extern "C" uint8_t* testX3AtestX2Fstream_sourceX00create();
 wit::stream<uint32_t> test::test::stream_source::Create()

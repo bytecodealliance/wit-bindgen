@@ -30,6 +30,10 @@ struct IntLifting {
   static T lift(uint8_t const*ptr) {
     return *(T const*)ptr;
   }
+  static void lower(T&& obj, uint8_t *ptr) {
+//    new ((T*)ptr) T(std::move(obj));
+    *(T*)ptr = obj;
+  }
 };
 
 extern "C" uint8_t* testX3AtestX2Ffuture_sourceX00create();
@@ -42,7 +46,7 @@ extern "C"
 uint8_t* testX3AtestX2Ffuture_testX00create()
 {
   auto result0 = exports::test::test::future_test::Create();
-  return lower_future<uint32_t>(std::move(result0));
+  return lower_future<uint32_t, IntLifting<uint32_t>>(std::move(result0));
 }
 
 // Component Adapters

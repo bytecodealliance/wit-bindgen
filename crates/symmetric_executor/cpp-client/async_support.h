@@ -134,11 +134,11 @@ template <class T> struct stream_writer {
             }
             auto buffer = handle.StartWriting();
             auto capacity = buffer.Capacity();
-            T* dest = (T*)buffer.GetAddress().into_handle();
+            uint8_t* dest = (uint8_t*)buffer.GetAddress().into_handle();
             auto elements = data.size();
             if (elements<capacity) elements=capacity;
             for (uint32_t i = 0; i<elements; ++i) {
-                new (dest+i) T(std::move(data[i]));
+                wit::StreamProperties<T>::lower(std::move(data[i]), dest+(i*wit::StreamProperties<T>::lowered_size));
             }
             buffer.SetSize(elements);
             handle.FinishWriting(std::optional<symmetric::runtime::symmetric_stream::Buffer>(std::move(buffer)));
@@ -172,16 +172,16 @@ struct write_to_future_data {
     std::future<T> fut;
 };
 
-template <class T>
+template <class T, class LOWER>
 static symmetric::runtime::symmetric_executor::CallbackState write_to_future(void* data) {
     std::unique_ptr<write_to_future_data<T>> ptr((write_to_future_data<T>*)data);
     // is future ready?
     if (ptr->fut.wait_for(std::chrono::seconds::zero()) == std::future_status::ready) {
         auto buffer = ptr->wr.handle.StartWriting();
         assert(buffer.GetSize()==1); //sizeof(T));
-        T* dataptr = (T*)(buffer.GetAddress().into_handle());
+        uint8_t* dataptr = (uint8_t*)(buffer.GetAddress().into_handle());
         auto result = ptr->fut.get();
-        new (dataptr) T(std::move(result));
+        LOWER::lower(std::move(result), dataptr);
         buffer.SetSize(1);
         ptr->wr.handle.FinishWriting(std::optional<symmetric::runtime::symmetric_stream::Buffer>(std::move(buffer)));
     } else {
@@ -193,9 +193,9 @@ static symmetric::runtime::symmetric_executor::CallbackState write_to_future(voi
             symmetric::runtime::symmetric_executor::EventGenerator &&gen){
             auto buffer = ptr->wr.handle.StartWriting();
             // assert(buffer.GetSize()==1); //sizeof(T));
-            T* dataptr = (T*)(buffer.GetAddress().into_handle());        
+            uint8_t* dataptr = (uint8_t*)(buffer.GetAddress().into_handle());        
             auto result = ptr->fut.get();
-            new (dataptr) T(std::move(result));
+            LOWER::lower(std::move(result), dataptr);
             buffer.SetSize(1);
             ptr->wr.handle.FinishWriting(std::optional<symmetric::runtime::symmetric_stream::Buffer>(std::move(buffer)));
             gen.Activate();
@@ -208,13 +208,13 @@ static symmetric::runtime::symmetric_executor::CallbackState write_to_future(voi
     return symmetric::runtime::symmetric_executor::CallbackState::kReady;
 }
 
-template <class T>
+template <class T, class LOWER>
 uint8_t* lower_future(std::future<T> &&f) {
     auto handles = create_wasi_future<T>();
     auto wait_on = handles.first.handle.WriteReadySubscribe();
     auto fut = std::make_unique<write_to_future_data<T>>(write_to_future_data<T>{std::move(handles.first), std::move(f)});
     symmetric::runtime::symmetric_executor::Register(std::move(wait_on), 
-        symmetric::runtime::symmetric_executor::CallbackFunction(wit::ResourceImportBase((uint8_t*)&write_to_future<T>)),
+        symmetric::runtime::symmetric_executor::CallbackFunction(wit::ResourceImportBase((uint8_t*)&write_to_future<T, LOWER>)),
         symmetric::runtime::symmetric_executor::CallbackData(wit::ResourceImportBase((uint8_t*)fut.release())));
     return handles.second.handle.into_handle();
 }
