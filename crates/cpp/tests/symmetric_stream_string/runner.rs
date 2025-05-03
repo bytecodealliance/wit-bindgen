@@ -1,6 +1,7 @@
 //@ args = '--async=-none'
 
-include!(env!("BINDINGS"));
+//include!(env!("BINDINGS"));
+include!("bindings/runner.rs");
 
 use wit_bindgen::rt::async_support;
 

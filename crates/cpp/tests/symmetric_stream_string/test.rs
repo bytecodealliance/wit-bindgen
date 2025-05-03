@@ -1,4 +1,5 @@
-include!(env!("BINDINGS"));
+// include!(env!("BINDINGS"));
+include!("bindings/test.rs");
 
 struct Component;
 
