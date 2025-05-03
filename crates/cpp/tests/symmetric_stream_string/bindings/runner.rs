@@ -22,7 +22,10 @@ pub mod a {
                         fn aX3AbX2Fthe_testX00f() -> *mut u8;
                     }
                     let ret = aX3AbX2Fthe_testX00f();
-                    wit_bindgen_symmetric_rt::async_support::FutureReader::from_handle(ret)
+                    wit_bindgen_symmetric_rt::async_support::FutureReader::from_handle(
+                        ret,
+                        <_rt::String as super::super::super::wit_future::FuturePayload>::lift,
+                    )
                 }
             }
         }

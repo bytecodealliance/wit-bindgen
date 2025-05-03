@@ -1,12 +1,10 @@
 use futures::{task::Waker, FutureExt};
 use std::{
-    future::Future,
-    pin::Pin,
-    task::{Context, Poll, RawWaker, RawWakerVTable},
+    future::Future, mem::MaybeUninit, pin::Pin, sync::{Arc, RwLock}, task::{Context, Poll, RawWaker, RawWakerVTable}
 };
 
 use crate::module::symmetric::runtime::symmetric_executor::{
-    CallbackState, EventGenerator, EventSubscription,
+    self, CallbackState, EventGenerator, EventSubscription
 };
 
 pub use future_support::{FutureReader, FutureWriter};
@@ -154,4 +152,16 @@ pub unsafe fn spawn_unchecked(future: impl Future<Output = ()>) {
         let wait_for = unsafe { EventSubscription::from_handle(wait_for as usize) };
         drop(wait_for);
     }
+}
+
+pub fn block_on<T: 'static>(future: impl Future<Output = T> + 'static) -> T {
+    // ugly but might do the trick
+    let result: Arc<RwLock<MaybeUninit<T>>> = Arc::new(RwLock::new(MaybeUninit::uninit()));
+    let result2 = Arc::clone(&result);
+    let future2 = async move {
+        result2.write().unwrap().write(future.await);
+    };
+    unsafe { spawn_unchecked(future2) };
+    symmetric_executor::run();
+    return unsafe { result.to_owned().write().unwrap().assume_init_read() }
 }

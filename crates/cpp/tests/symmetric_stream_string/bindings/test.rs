@@ -70,59 +70,17 @@ pub mod wit_future {
     #![allow(dead_code, unused_variables, clippy::all)]
 
     #[doc(hidden)]
-    pub trait FuturePayload: Unpin + Sized + 'static {}
+    pub trait FuturePayload: Unpin + Sized + 'static {
+        unsafe fn lower(value: Self, dst: *mut u8) {
+            todo!()
+        }
+        unsafe fn lift(src: *const u8) -> Self {
+            todo!()
+        }
+    }
     #[doc(hidden)]
     #[allow(unused_unsafe)]
     pub mod vtable0 {
-
-        #[cfg(not(target_arch = "wasm32"))]
-        unsafe extern "C" fn cancel_write(_: u32) -> u32 {
-            unreachable!()
-        }
-        #[cfg(not(target_arch = "wasm32"))]
-        unsafe extern "C" fn cancel_read(_: u32) -> u32 {
-            unreachable!()
-        }
-        #[cfg(not(target_arch = "wasm32"))]
-        unsafe extern "C" fn close_writable(_: u32) {
-            unreachable!()
-        }
-        #[cfg(not(target_arch = "wasm32"))]
-        unsafe extern "C" fn close_readable(_: u32) {
-            unreachable!()
-        }
-        #[cfg(not(target_arch = "wasm32"))]
-        unsafe extern "C" fn new() -> u64 {
-            unreachable!()
-        }
-        #[cfg(not(target_arch = "wasm32"))]
-        unsafe extern "C" fn start_read(_: u32, _: *mut u8) -> u32 {
-            unreachable!()
-        }
-        #[cfg(not(target_arch = "wasm32"))]
-        unsafe extern "C" fn start_write(_: u32, _: *const u8) -> u32 {
-            unreachable!()
-        }
-
-        #[cfg(target_arch = "wasm32")]
-        #[link(wasm_import_module = "[export]a:b/the-test")]
-        unsafe extern "C" {
-            #[link_name = "[future-new-0]f"]
-            fn new() -> u64;
-            #[link_name = "[future-cancel-write-0]f"]
-            fn cancel_write(_: u32) -> u32;
-            #[link_name = "[future-cancel-read-0]f"]
-            fn cancel_read(_: u32) -> u32;
-            #[link_name = "[future-close-writable-0]f"]
-            fn close_writable(_: u32);
-            #[link_name = "[future-close-readable-0]f"]
-            fn close_readable(_: u32);
-            #[link_name = "[async-lower][future-read-0]f"]
-            fn start_read(_: u32, _: *mut u8) -> u32;
-            #[link_name = "[async-lower][future-write-0]f"]
-            fn start_write(_: u32, _: *const u8) -> u32;
-        }
-
         unsafe fn lift(ptr: *mut u8) -> super::super::_rt::String {
             unsafe {
                 let l0 = *ptr.add(0).cast::<*mut u8>();
@@ -153,33 +111,14 @@ pub mod wit_future {
             }
         }
 
-        pub static VTABLE: wit_bindgen_symmetric_rt::async_support::FutureVtable<
-            super::super::_rt::String,
-        > = wit_bindgen_symmetric_rt::async_support::FutureVtable::<super::super::_rt::String> {
-            cancel_write,
-            cancel_read,
-            close_writable,
-            close_readable,
-            dealloc_lists,
-            layout: unsafe { ::std::alloc::Layout::from_size_align_unchecked(8, 4) },
-            lift,
-            lower,
-            new,
-            start_read,
-            start_write,
-        };
-
-        impl super::FuturePayload for super::super::_rt::String {
-            const VTABLE: &'static wit_bindgen_symmetric_rt::async_support::FutureVtable<Self> =
-                &VTABLE;
-        }
+        impl super::FuturePayload for super::super::_rt::String {}
     }
     /// Creates a new Component Model `future` with the specified payload type.
     pub fn new<T: FuturePayload>() -> (
         wit_bindgen_symmetric_rt::async_support::FutureWriter<T>,
         wit_bindgen_symmetric_rt::async_support::FutureReader<T>,
     ) {
-        wit_bindgen_symmetric_rt::async_support::future_support::new_future()
+        wit_bindgen_symmetric_rt::async_support::future_support::new_future(T::lower, T::lift)
     }
 }
 
