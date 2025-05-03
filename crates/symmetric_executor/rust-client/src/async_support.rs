@@ -1,14 +1,18 @@
 use futures::{task::Waker, FutureExt};
 use std::{
-    future::Future, mem::MaybeUninit, pin::Pin, sync::{Arc, RwLock}, task::{Context, Poll, RawWaker, RawWakerVTable}
+    future::Future,
+    mem::MaybeUninit,
+    pin::Pin,
+    sync::{Arc, RwLock},
+    task::{Context, Poll, RawWaker, RawWakerVTable},
 };
 
 use crate::module::symmetric::runtime::symmetric_executor::{
-    self, CallbackState, EventGenerator, EventSubscription
+    self, CallbackState, EventGenerator, EventSubscription,
 };
 
-pub use future_support::{FutureReader, FutureWriter};
-pub use stream_support::{results, Stream, StreamReader, StreamWriter};
+pub use future_support::{FutureReader, FutureVtable, FutureWriter};
+pub use stream_support::{results, Stream, StreamReader, StreamVtable, StreamWriter};
 
 pub mod future_support;
 // later make it non-pub
@@ -163,5 +167,5 @@ pub fn block_on<T: 'static>(future: impl Future<Output = T> + 'static) -> T {
     };
     unsafe { spawn_unchecked(future2) };
     symmetric_executor::run();
-    return unsafe { result.to_owned().write().unwrap().assume_init_read() }
+    return unsafe { result.to_owned().write().unwrap().assume_init_read() };
 }

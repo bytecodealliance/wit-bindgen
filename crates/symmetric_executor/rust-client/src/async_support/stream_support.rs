@@ -17,6 +17,8 @@ use {
     },
 };
 
+pub use super::future_support::FutureVtable as StreamVtable;
+
 fn ceiling(x: usize, y: usize) -> usize {
     (x / y) + if x % y == 0 { 0 } else { 1 }
 }

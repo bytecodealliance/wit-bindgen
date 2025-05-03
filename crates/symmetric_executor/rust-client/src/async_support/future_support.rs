@@ -1,6 +1,7 @@
+use core::ptr::{self, NonNull};
 use std::{
+    alloc::{self, Layout},
     future::{Future, IntoFuture},
-    marker::PhantomData,
     mem::MaybeUninit,
     pin::Pin,
     task::{Context, Poll},
@@ -12,21 +13,55 @@ use crate::symmetric_stream::{Address, Buffer};
 
 use super::{wait_on, Stream};
 
+#[doc(hidden)]
+pub struct FutureVtable<T> {
+    pub layout: Layout,
+    pub lower: unsafe fn(value: T, dst: *mut u8),
+    pub lift: unsafe fn(dst: *mut u8) -> T,
+}
+
+// stolen from guest-rust/rt/src/lib.rs
+pub struct Cleanup {
+    ptr: NonNull<u8>,
+    layout: Layout,
+}
+
+// Usage of the returned pointer is always unsafe and must abide by these
+// conventions, but this structure itself has no inherent reason to not be
+// send/sync.
+unsafe impl Send for Cleanup {}
+unsafe impl Sync for Cleanup {}
+
+impl Cleanup {
+    pub fn new(layout: Layout) -> (*mut u8, Option<Cleanup>) {
+        if layout.size() == 0 {
+            return (ptr::null_mut(), None);
+        }
+        let ptr = unsafe { alloc::alloc(layout) };
+        let ptr = match NonNull::new(ptr) {
+            Some(ptr) => ptr,
+            None => alloc::handle_alloc_error(layout),
+        };
+        (ptr.as_ptr(), Some(Cleanup { ptr, layout }))
+    }
+}
+
+impl Drop for Cleanup {
+    fn drop(&mut self) {
+        unsafe {
+            alloc::dealloc(self.ptr.as_ptr(), self.layout);
+        }
+    }
+}
+
 pub struct FutureWriter<T: 'static> {
     handle: Stream,
-    // future: Option<Pin<Box<dyn Future<Output = ()> + 'static + Send>>>,
-    _phantom: PhantomData<T>,
-    lower: unsafe fn(value: T, dst: *mut u8),
+    vtable: &'static FutureVtable<T>,
 }
 
 impl<T> FutureWriter<T> {
-    pub fn new(handle: Stream, lower: unsafe fn(value: T, dst: *mut u8)) -> Self {
-        Self {
-            handle,
-            // future: None,
-            _phantom: PhantomData,
-            lower,
-        }
+    pub fn new(handle: Stream, vtable: &'static FutureVtable<T>) -> Self {
+        Self { handle, vtable }
     }
 
     pub fn write(self, data: T) -> CancelableWrite<T> {
@@ -54,7 +89,7 @@ impl<T: Unpin + Send> Future for CancelableWrite<T> {
         if me.future.is_none() {
             let handle = me.writer.handle.clone();
             let data = me.data.take().unwrap();
-            let lower = me.writer.lower;
+            let lower = me.writer.vtable.lower;
             me.future = Some(Box::pin(async move {
                 if !handle.is_ready_to_write() {
                     let subsc = handle.write_ready_subscribe();
@@ -79,19 +114,12 @@ pub struct CancelableRead<T: 'static> {
 
 pub struct FutureReader<T: 'static> {
     handle: Stream,
-    // future: Option<Pin<Box<dyn Future<Output = Option<Vec<T>>> + 'static + Send>>>,
-    _phantom: PhantomData<T>,
-    lift: unsafe fn(src: *const u8) -> T,
+    vtable: &'static FutureVtable<T>,
 }
 
 impl<T> FutureReader<T> {
-    pub fn new(handle: Stream, lift: unsafe fn(src: *const u8) -> T) -> Self {
-        Self {
-            handle,
-            // future: None,
-            _phantom: PhantomData,
-            lift,
-        }
+    pub fn new(handle: Stream, vtable: &'static FutureVtable<T>) -> Self {
+        Self { handle, vtable }
     }
 
     pub fn read(self) -> CancelableRead<T> {
@@ -101,8 +129,8 @@ impl<T> FutureReader<T> {
         }
     }
 
-    pub unsafe fn from_handle(handle: *mut u8, lift: unsafe fn(src: *const u8) -> T) -> Self {
-        Self::new(unsafe { Stream::from_handle(handle as usize) }, lift)
+    pub unsafe fn from_handle(handle: *mut u8, vtable: &'static FutureVtable<T>) -> Self {
+        Self::new(unsafe { Stream::from_handle(handle as usize) }, vtable)
     }
 
     pub fn take_handle(&self) -> *mut () {
@@ -118,10 +146,11 @@ impl<T: Unpin + Sized + Send> Future for CancelableRead<T> {
 
         if me.future.is_none() {
             let handle = me.reader.handle.clone();
-            let lift = me.reader.lift;
+            let vtable = me.reader.vtable;
             me.future = Some(Box::pin(async move {
-                let mut buffer0 = MaybeUninit::<T>::uninit();
-                let address = unsafe { Address::from_handle(&mut buffer0 as *mut _ as usize) };
+                // sadly there is no easy way to embed this in the future as the size is not accessible at compile time
+                let (buffer0, cleanup) = Cleanup::new(vtable.layout);
+                let address = unsafe { Address::from_handle(buffer0 as usize) };
                 let buffer = Buffer::new(address, 1);
                 handle.start_reading(buffer);
                 let subsc = handle.read_ready_subscribe();
@@ -131,8 +160,12 @@ impl<T: Unpin + Sized + Send> Future for CancelableRead<T> {
                 if let Some(buffer2) = buffer2 {
                     let count = buffer2.get_size();
                     if count > 0 {
-                        Some(unsafe { (lift)(buffer2.get_address().take_handle() as *const u8) })
+                        Some(unsafe {
+                            (vtable.lift)(buffer2.get_address().take_handle() as *mut u8)
+                        })
                     } else {
+                        // make sure it lives long enough
+                        drop(cleanup);
                         None
                     }
                 } else {
@@ -174,13 +207,12 @@ impl<T: Send + Unpin + Sized> IntoFuture for FutureReader<T> {
 }
 
 pub fn new_future<T: 'static>(
-    lower: unsafe fn(value: T, dst: *mut u8),
-    lift: unsafe fn(src: *const u8) -> T,
+    vtable: &'static FutureVtable<T>,
 ) -> (FutureWriter<T>, FutureReader<T>) {
     let handle = Stream::new();
     let handle2 = handle.clone();
     (
-        FutureWriter::new(handle, lower),
-        FutureReader::new(handle2, lift),
+        FutureWriter::new(handle, vtable),
+        FutureReader::new(handle2, vtable),
     )
 }
