@@ -1,0 +1,8 @@
+[package]
+name = "mini-bindgen"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+wit-bindgen-symmetric-rt = { path = "../rust-client" }
+dummy-rt = { path = "../dummy-rt" }
