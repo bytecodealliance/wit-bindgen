@@ -10,7 +10,7 @@ struct MyStruct;
 
 impl stream_world::exports::test::test::stream_test::Guest for MyStruct {
     fn create() -> async_support::StreamReader<u32> {
-        let (mut writer, reader) = async_support::stream_support::new_stream();
+        let (mut writer, reader) = stream_world::wit_stream::new();
         let mut input = create();
 
         async_support::spawn(async move {

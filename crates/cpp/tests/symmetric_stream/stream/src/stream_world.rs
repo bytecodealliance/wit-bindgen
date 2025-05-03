@@ -22,7 +22,10 @@ pub mod test {
                         fn testX3AtestX2Fstream_sourceX00create() -> *mut u8;
                     }
                     let ret = testX3AtestX2Fstream_sourceX00create();
-                    wit_bindgen_symmetric_rt::async_support::StreamReader::from_handle(ret)
+                    wit_bindgen_symmetric_rt::async_support::StreamReader::from_handle(
+                        ret,
+                        <u32 as super::super::super::wit_stream::StreamPayload>::VTABLE,
+                    )
                 }
             }
         }
@@ -84,14 +87,39 @@ mod _rt {
 pub mod wit_stream {
     #![allow(dead_code, unused_variables, clippy::all)]
 
-    pub trait StreamPayload: Unpin + Sized + 'static {}
-    impl StreamPayload for u32 {}
+    pub trait StreamPayload: Unpin + Sized + 'static {
+        const VTABLE: &'static wit_bindgen_symmetric_rt::async_support::StreamVtable<Self>;
+    }
+    #[doc(hidden)]
+    #[allow(unused_unsafe)]
+    pub mod vtable0 {
+
+        unsafe fn lift(ptr: *mut u8) -> u32 {
+            unsafe { *ptr.cast::<u32>() }
+        }
+        unsafe fn lower(value: u32, ptr: *mut u8) {
+            unsafe {
+                *ptr.cast::<u32>() = value;
+            }
+        }
+
+        pub static VTABLE: wit_bindgen_symmetric_rt::async_support::StreamVtable<u32> =
+            wit_bindgen_symmetric_rt::async_support::StreamVtable::<u32> {
+                layout: unsafe { ::std::alloc::Layout::from_size_align_unchecked(4, 4) },
+                lift: Some(lift),
+                lower: Some(lower),
+            };
+        impl super::StreamPayload for u32 {
+            const VTABLE: &'static wit_bindgen_symmetric_rt::async_support::StreamVtable<Self> =
+                &VTABLE;
+        }
+    }
     /// Creates a new Component Model `stream` with the specified payload type.
     pub fn new<T: StreamPayload>() -> (
         wit_bindgen_symmetric_rt::async_support::StreamWriter<T>,
         wit_bindgen_symmetric_rt::async_support::StreamReader<T>,
     ) {
-        wit_bindgen_symmetric_rt::async_support::stream_support::new_stream()
+        wit_bindgen_symmetric_rt::async_support::stream_support::new_stream(T::VTABLE)
     }
 }
 
