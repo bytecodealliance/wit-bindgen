@@ -24,7 +24,7 @@ pub mod test {
                     let ret = testX3AtestX2Ffuture_sourceX00create();
                     wit_bindgen_symmetric_rt::async_support::FutureReader::new(
                         wit_bindgen_symmetric_rt::async_support::Stream::from_handle(ret),
-                        <u32 as super::super::super::wit_future::FuturePayload>::lift
+                        <u32 as super::super::super::wit_future::FuturePayload>::VTABLE,
                     )
                 }
             }
@@ -158,15 +158,33 @@ pub mod wit_future {
 
     #[doc(hidden)]
     pub trait FuturePayload: Unpin + Sized + 'static {
-        unsafe fn lower(value: Self, dst: *mut u8) { todo!() }
-        unsafe fn lift(src: *const u8) -> Self { todo!() }
+        const VTABLE: &'static wit_bindgen_symmetric_rt::async_support::FutureVtable<Self>;
     }
-    impl FuturePayload for u32 {
-        unsafe fn lower(value: Self, dst: *mut u8) {
-            *dst.cast() = value;
+    #[doc(hidden)]
+    #[allow(unused_unsafe)]
+    pub mod vtable0 {
+        unsafe fn lift(ptr: *mut u8) -> u32 {
+            unsafe {
+                let l0 = *ptr.add(0).cast::<i32>();
+
+                l0 as u32
+            }
         }
-        unsafe fn lift(src: *const u8) -> Self {
-            *src.cast()
+        unsafe fn lower(value: u32, ptr: *mut u8) {
+            unsafe {
+                *ptr.add(0).cast::<i32>() = super::super::_rt::as_i32(value);
+            }
+        }
+        pub static VTABLE: wit_bindgen_symmetric_rt::async_support::FutureVtable<u32> =
+            wit_bindgen_symmetric_rt::async_support::FutureVtable::<u32> {
+                layout: unsafe { ::std::alloc::Layout::from_size_align_unchecked(4, 4) },
+                lift,
+                lower,
+            };
+
+        impl super::FuturePayload for u32 {
+            const VTABLE: &'static wit_bindgen_symmetric_rt::async_support::FutureVtable<Self> =
+                &VTABLE;
         }
     }
     /// Creates a new Component Model `future` with the specified payload type.
@@ -174,7 +192,7 @@ pub mod wit_future {
         wit_bindgen_symmetric_rt::async_support::FutureWriter<T>,
         wit_bindgen_symmetric_rt::async_support::FutureReader<T>,
     ) {
-        wit_bindgen_symmetric_rt::async_support::future_support::new_future(T::lower, T::lift)
+        wit_bindgen_symmetric_rt::async_support::future_support::new_future(T::VTABLE)
     }
 }
 
