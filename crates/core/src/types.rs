@@ -203,6 +203,7 @@ impl Types {
                 // should use the same ownership semantics as `own<T>`
                 info.has_own_handle = true;
             }
+            TypeDefKind::FixedSizeList(..) => todo!(),
             TypeDefKind::Unknown => unreachable!(),
         }
         let prev = self.type_info.insert(ty, info);
