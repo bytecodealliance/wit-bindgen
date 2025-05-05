@@ -1141,7 +1141,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         // value was stored at. Allocate some space here
                         // (statically) and then write the result into that
                         // memory, returning the pointer at the end.
-                        AbiVariant::GuestExport => {
+                        AbiVariant::GuestExport | AbiVariant::GuestExportAsync => {
                             let ElementInfo { size, align } =
                                 self.bindgen.sizes().params(&func.result);
                             let ptr = self.bindgen.return_pointer(size, align);
@@ -1153,9 +1153,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                             self.stack.push(ptr);
                         }
 
-                        AbiVariant::GuestImportAsync
-                        | AbiVariant::GuestExportAsync
-                        | AbiVariant::GuestExportAsyncStackful => {
+                        AbiVariant::GuestImportAsync | AbiVariant::GuestExportAsyncStackful => {
                             unreachable!()
                         }
                     }

@@ -1134,6 +1134,8 @@ unsafe fn call_import(params: *mut u8, results: *mut u8) -> u32 {{
 
     fn print_export_sig(&mut self, func: &Function, async_: bool) -> Vec<String> {
         self.src.push_str("(");
+        // FIXME: this should use `GuestExportAsync` once that's fixed in
+        // wit-parser
         let sig = self.resolve.wasm_signature(AbiVariant::GuestExport, func);
         let mut params = Vec::new();
         for (i, param) in sig.params.iter().enumerate() {

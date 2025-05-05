@@ -1,0 +1,13 @@
+package a:b;
+
+interface i {
+  f: async func();
+}
+
+world test {
+  export i;
+}
+
+world runner {
+  import i;
+}

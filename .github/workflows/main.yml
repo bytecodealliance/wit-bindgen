@@ -132,10 +132,11 @@ jobs:
         curl -L https://github.com/bytecodealliance/wasip3-prototyping/releases/download/dev/wasmtime-dev-x86_64-linux.tar.xz | tar xJvf -
         echo "WASMTIME=`pwd`/wasmtime-dev-x86_64-linux/wasmtime" >> $GITHUB_ENV
     - run: |
-        cargo run test --languages rust tests/runtime-async \
+        cargo run test --languages rust,c tests/runtime-async \
           --artifacts target/artifacts \
           --rust-wit-bindgen-path ./crates/guest-rust \
           --rust-target wasm32-wasip1 \
+          --c-target wasm32-wasip1 \
           --runner "$WASMTIME -W component-model-async"
 
   test_unit:

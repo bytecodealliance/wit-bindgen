@@ -18,3 +18,9 @@ doctest = false
 wit-parser = { workspace = true }
 anyhow = { workspace = true }
 heck = { workspace = true }
+serde = { workspace = true, optional = true }
+clap = { workspace = true, optional = true }
+
+[features]
+serde = ['dep:serde']
+clap = ['dep:clap']

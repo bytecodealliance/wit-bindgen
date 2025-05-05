@@ -1,4 +1,5 @@
 //@ async = true
+//@ error-context = true
 
 package foo:foo;
 
