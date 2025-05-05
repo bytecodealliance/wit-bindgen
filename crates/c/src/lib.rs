@@ -910,6 +910,7 @@ fn is_prim_type_id(resolve: &Resolve, id: TypeId) -> bool {
         | TypeDefKind::Future(_)
         | TypeDefKind::Stream(_)
         | TypeDefKind::Unknown => false,
+        TypeDefKind::FixedSizeList(..) => todo!(),
     }
 }
 
@@ -994,6 +995,7 @@ pub fn push_ty_name(resolve: &Resolve, ty: &Type, src: &mut String) {
                     push_ty_name(resolve, &Type::Id(*resource), src);
                 }
                 TypeDefKind::Unknown => unreachable!(),
+                TypeDefKind::FixedSizeList(..) => todo!(),
             }
         }
     }
@@ -1206,6 +1208,7 @@ impl Return {
 
             TypeDefKind::Resource => todo!("return_single for resource"),
             TypeDefKind::Unknown => unreachable!(),
+            TypeDefKind::FixedSizeList(..) => todo!(),
         }
 
         self.retptrs.push(*orig_ty);
@@ -1839,6 +1842,7 @@ impl InterfaceGenerator<'_> {
                 self.free(&Type::Id(*id), "*ptr");
             }
             TypeDefKind::Unknown => unreachable!(),
+            TypeDefKind::FixedSizeList(..) => todo!(),
         }
         if c_helpers_body_start == self.src.c_helpers.len() {
             self.src.c_helpers.as_mut_string().truncate(c_helpers_start);
@@ -2497,6 +2501,7 @@ void {name}_return({return_ty}) {{
                 TypeDefKind::Type(ty) => self.contains_droppable_borrow(ty),
 
                 TypeDefKind::Unknown => false,
+                TypeDefKind::FixedSizeList(..) => todo!(),
             }
         } else {
             false
@@ -3862,6 +3867,7 @@ pub fn is_arg_by_pointer(resolve: &Resolve, ty: &Type) -> bool {
             TypeDefKind::Stream(_) => false,
             TypeDefKind::Resource => todo!("is_arg_by_pointer for resource"),
             TypeDefKind::Unknown => unreachable!(),
+            TypeDefKind::FixedSizeList(..) => todo!(),
         },
         Type::String => true,
         _ => false,

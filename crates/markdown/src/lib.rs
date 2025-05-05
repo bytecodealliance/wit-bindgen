@@ -419,6 +419,7 @@ impl InterfaceGenerator<'_> {
                         self.push_str(">");
                     }
                     TypeDefKind::Unknown => unreachable!(),
+                    TypeDefKind::FixedSizeList(..) => todo!(),
                 }
             }
         }
