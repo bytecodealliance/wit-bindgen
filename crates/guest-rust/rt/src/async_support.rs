@@ -460,7 +460,10 @@ pub fn yield_blocking() -> bool {
         #[link_name = "[yield]"]
         fn yield_() -> bool;
     }
-    unsafe { yield_() }
+    // Note that the return value from the raw intrinsic is inverted, the
+    // canonical ABI returns "did this task get cancelled" while this function
+    // works as "should work continue going".
+    unsafe { !yield_() }
 }
 
 /// The asynchronous counterpart to [`yield_blocking`].
