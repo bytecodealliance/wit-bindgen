@@ -2694,7 +2694,13 @@ struct FunctionBindgen<'a, 'b> {
     import_return_pointer_area_size: ArchitectureSize,
     import_return_pointer_area_align: Alignment,
 
-    /// TODO
+    /// State of what to generate for the `task.return` intrinsic in the case
+    /// that this bindings generator is being used for an async export.
+    ///
+    /// This typically stays at `DeferredTaskReturn::None` except for the case
+    /// of async exports where they'll fill this in after the `CallInterface`
+    /// instruction. For some more information see the documentation on
+    /// `DeferredTaskReturn`.
     deferred_task_return: DeferredTaskReturn,
 
     /// Borrows observed during lifting an export, that will need to be dropped when the guest
@@ -2705,14 +2711,48 @@ struct FunctionBindgen<'a, 'b> {
     borrow_decls: wit_bindgen_core::Source,
 }
 
+/// State associated with the generation of the `task.return` intrinsic function
+/// with async exports.
 enum DeferredTaskReturn {
+    /// Default state, meaning that either bindings generation isn't happening
+    /// for an async export or the async export is in the bindings generation
+    /// mode before `CallInterface`.
     None,
+
+    /// An async export is having bindings generated and `CallInterface` has
+    /// been seen. After that instruction the `deferred_task_return` field
+    /// transitions to this state.
+    ///
+    /// This state is then present until the `AsyncTaskReturn` instruction is
+    /// met at which point this changes to `Emitted` below.
     Generating {
+        /// The previous contents of `self.src` just after the `CallInterface`
+        /// had its code generator. This is effectively the bindings-generated
+        /// contents of the export and this will get replaced back into
+        /// `self.src` once the `AsyncTaskReturn` is generated.
         prev_src: wit_bindgen_core::Source,
     },
+
+    /// An `AsyncTaskReturn` has been seen and all state is now located here to
+    /// be used for generating the `task.return` intrinsic.
+    ///
+    /// This state is only generated during `AsyncTaskReturn` and is used to
+    /// record everything necessary to generate `task.return` meaning that the
+    /// in-`FunctionBindgen` state is now "back to normal" where it's intended
+    /// for the main function having bindings generated.
     Emitted {
+        /// The name of the `task.return` intrinsic that should be imported.
+        /// Note that this does not include the module.
         name: String,
+        /// The wasm type of each parameter provided to the `task.return`
+        /// intrinsic as well as the C expression necessary to produce this
+        /// parameter. The type is used to declare the intrinsic and the C
+        /// expression is used to call the intrinsic from the generated
+        /// function.
         params: Vec<(WasmType, String)>,
+        /// The body of the `task.return` intrinsic. This contains the bulk of
+        /// the lowering code from a function's return value to the canonical
+        /// ABI.
         body: wit_bindgen_core::Source,
     },
 }

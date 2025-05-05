@@ -55,7 +55,7 @@ int main() {
     // subtask didn't actually start, so close it here.
     test_future_void_close_readable(reader2);
 
-    // Assert both write ends are closed
+    // Assert both read ends are closed from the POV of the write ends
     runner_waitable_status_t status2 = test_future_void_write(writer1);
     assert(RUNNER_WAITABLE_STATE(status2) == RUNNER_WAITABLE_CLOSED);
     assert(RUNNER_WAITABLE_COUNT(status2) == 0);
