@@ -3,8 +3,8 @@ include!(env!("BINDINGS"));
 use crate::my::test::i::*;
 use futures::task::noop_waker_ref;
 use std::future::Future;
-use std::pin::Pin;
-use std::task::{Context, Poll};
+use std::task::Context;
+use wit_bindgen::yield_async;
 
 fn main() {
     // Test that Rust-level polling twice works.
@@ -37,31 +37,8 @@ fn main() {
         tx.write(()).await.unwrap();
 
         for _ in 0..5 {
-            yield_().await;
+            yield_async().await;
         }
         drop(import);
     });
-}
-
-async fn yield_() {
-    #[derive(Default)]
-    struct Yield {
-        yielded: bool,
-    }
-
-    impl Future for Yield {
-        type Output = ();
-
-        fn poll(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<()> {
-            if self.yielded {
-                Poll::Ready(())
-            } else {
-                self.yielded = true;
-                context.waker().wake_by_ref();
-                Poll::Pending
-            }
-        }
-    }
-
-    Yield::default().await;
 }
