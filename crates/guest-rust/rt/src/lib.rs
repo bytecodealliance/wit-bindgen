@@ -15,7 +15,7 @@ pub use bitflags;
 
 /// For more information about this see `./ci/rebuild-libwit-bindgen-cabi.sh`.
 #[cfg(not(target_env = "p2"))]
-mod wit_bindgen_cabi;
+mod wit_bindgen_cabi_realloc;
 
 /// This function is called from generated bindings and will be deleted by
 /// the linker. The purpose of this function is to force a reference to the
