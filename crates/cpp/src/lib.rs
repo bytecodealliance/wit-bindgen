@@ -214,7 +214,10 @@ pub struct Opts {
 
     /// Symmetric API, same API for imported and exported functions.
     /// Reduces the allocation overhead for symmetric ABI.
-    #[cfg_attr(feature = "clap", arg(long, default_value_t = true, overrides_with = "_old_api"))]
+    #[cfg_attr(
+        feature = "clap",
+        arg(long, default_value_t = true, overrides_with = "_old_api")
+    )]
     pub new_api: bool,
 
     /// Asymmetric API: Imported functions borrow arguments (const&),
@@ -794,6 +797,7 @@ impl CppInterfaceGenerator<'_> {
             TypeDefKind::Future(_) => todo!("generate for future"),
             TypeDefKind::Stream(_) => todo!("generate for stream"),
             TypeDefKind::Handle(_) => todo!("generate for handle"),
+            TypeDefKind::FixedSizeList(_, _) => todo!(),
             TypeDefKind::Unknown => unreachable!(),
         }
     }
@@ -1562,6 +1566,7 @@ impl CppInterfaceGenerator<'_> {
                 TypeDefKind::Future(_) => todo!(),
                 TypeDefKind::Stream(_) => todo!(),
                 TypeDefKind::Type(ty) => self.type_name(ty, from_namespace, flavor),
+                TypeDefKind::FixedSizeList(_, _) => todo!(),
                 TypeDefKind::Unknown => todo!(),
             },
             Type::ErrorContext => todo!(),
@@ -2176,6 +2181,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                 Type::Id(id) => self.has_resources(id),
                 _ => false,
             },
+            TypeDefKind::FixedSizeList(_, _) => todo!(),
             TypeDefKind::Unknown => todo!(),
         }
     }
@@ -3134,6 +3140,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 }
             }
             abi::Instruction::AsyncTaskReturn { .. } => todo!(),
+            abi::Instruction::DropHandle { .. } => todo!(),
         }
     }
 

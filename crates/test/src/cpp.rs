@@ -59,9 +59,9 @@ impl LanguageMethods for Cpp17 {
         let compiler = clangpp(runner);
         let cwd = std::env::current_dir()?;
         let dir = cwd.join(&runner.opts.artifacts).join("cpp");
-    
+
         super::write_if_different(&dir.join("test.cpp"), "int main() { return 0; }")?;
-    
+
         println!("Testing if `{}` works...", compiler.display());
         runner
             .run_command(Command::new(&compiler).current_dir(&dir).arg("test.c"))
@@ -71,7 +71,7 @@ impl LanguageMethods for Cpp17 {
                     compiler.display()
                 );
             })?;
-    
+
         Ok(())
     }
 
@@ -104,7 +104,7 @@ impl LanguageMethods for Cpp17 {
         .arg("-o")
         .arg(&bindings_object);
         runner.run_command(&mut cmd)?;
-    
+
         // Now compile the runner's source code to with the above object and the
         // component-type object into a final component.
         let mut cmd = Command::new(compiler);
