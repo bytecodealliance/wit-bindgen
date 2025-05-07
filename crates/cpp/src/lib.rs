@@ -962,6 +962,7 @@ impl CppInterfaceGenerator<'_> {
             TypeDefKind::Stream(_) => todo!("generate for stream"),
             TypeDefKind::Handle(_) => todo!("generate for handle"),
             TypeDefKind::Unknown => unreachable!(),
+            TypeDefKind::FixedSizeList(_, _) => todo!(),
         }
     }
 
@@ -2055,6 +2056,7 @@ impl CppInterfaceGenerator<'_> {
                 }
                 TypeDefKind::Type(ty) => self.type_name(ty, from_namespace, flavor),
                 TypeDefKind::Unknown => todo!(),
+                TypeDefKind::FixedSizeList(_, _) => todo!(),
             },
             Type::ErrorContext => todo!(),
         }
@@ -2702,6 +2704,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                 _ => false,
             },
             TypeDefKind::Unknown => todo!(),
+            TypeDefKind::FixedSizeList(_, _) => todo!(),
         }
     }
 }

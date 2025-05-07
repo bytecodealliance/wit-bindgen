@@ -2271,22 +2271,31 @@ fn cast(from: WasmType, to: WasmType) -> Bitcast {
     }
 }
 
-fn push_flat_symmetric(resolve: &Resolve, ty: &Type, vec: &mut Vec<WasmType>) {
+fn push_flat_symmetric(resolve: &Resolve, ty: &Type, vec: &mut FlatTypes<'_>) -> bool {
     if let Type::Id(id) = ty {
         if matches!(
             &resolve.types[*id].kind,
             TypeDefKind::Handle(_) | TypeDefKind::Stream(_) | TypeDefKind::Future(_)
         ) {
-            vec.push(WasmType::Pointer);
+            vec.push(WasmType::Pointer)
         } else {
-            resolve.push_flat(ty, vec);
+            resolve.push_flat(ty, vec)
         }
     } else {
-        resolve.push_flat(ty, vec);
+        resolve.push_flat(ty, vec)
     }
 }
 
 // another hack
+fn push_flat_list_symmetric<'a>(
+    resolve: &Resolve,
+    mut list: impl Iterator<Item = &'a Type>,
+    result: &mut FlatTypes<'_>,
+//    _symmetric: bool,
+) -> bool {
+    list.all(|ty| push_flat_symmetric(resolve, ty, result))
+}
+
 pub fn wasm_signature_symmetric(
     resolve: &Resolve,
     variant: AbiVariant,
@@ -2299,39 +2308,90 @@ pub fn wasm_signature_symmetric(
     const MAX_FLAT_PARAMS: usize = 16;
     const MAX_FLAT_RESULTS: usize = 1;
 
-    let mut params = Vec::new();
-    let mut indirect_params = false;
-    for (_, param) in func.params.iter() {
-        push_flat_symmetric(resolve, param, &mut params);
-    }
+    let mut storage = [WasmType::I32; MAX_FLAT_PARAMS + 1];
+    let mut params = FlatTypes::new(&mut storage);
+    let ok = push_flat_list_symmetric(resolve, func.params.iter().map(|(_, param)| param), &mut params);
+    // assert_eq!(ok, !params.overflow);
 
-    if params.len() > MAX_FLAT_PARAMS {
-        params.truncate(0);
+    let indirect_params = !ok || params.to_vec().len() > MAX_FLAT_PARAMS;
+    if indirect_params {
+        params = FlatTypes::new(&mut storage);
         params.push(WasmType::Pointer);
-        indirect_params = true;
+    } else {
+        if matches!(
+            (&func.kind, variant),
+            (
+                crate::FunctionKind::Method(_) | crate::FunctionKind::AsyncMethod(_),
+                AbiVariant::GuestExport
+                    | AbiVariant::GuestExportAsync
+                    | AbiVariant::GuestExportAsyncStackful
+            )
+        ) {
+            // Guest exported methods always receive resource rep as first argument
+            //
+            // TODO: Ideally you would distinguish between imported and exported
+            // resource Handles and then use either I32 or Pointer in abi::push_flat().
+            // But this contextual information isn't available, yet.
+            // See https://github.com/bytecodealliance/wasm-tools/pull/1438 for more details.
+            let mut old = params.to_vec();
+            assert!(matches!(old[0], WasmType::I32));
+            old[0] = WasmType::Pointer;
+            params = FlatTypes::new(&mut storage);
+            old.iter().for_each(|e| { params.push(*e); });
+//            params.push(WasmType::Pointer);
+        }
     }
 
-    let mut results = Vec::new();
-    for ty in func.result.iter() {
-        push_flat_symmetric(resolve, ty, &mut results)
+    match variant {
+        AbiVariant::GuestExportAsync => {
+            return WasmSignature {
+                params: params.to_vec(),
+                indirect_params,
+                results: vec![WasmType::Pointer],
+                retptr: false,
+            };
+        }
+        AbiVariant::GuestExportAsyncStackful => {
+            return WasmSignature {
+                params: params.to_vec(),
+                indirect_params,
+                results: Vec::new(),
+                retptr: false,
+            };
+        }
+        _ => {}
     }
 
-    let mut retptr = false;
+    let mut storage = [WasmType::I32; MAX_FLAT_RESULTS+1];
+    let mut results = FlatTypes::new(&mut storage);
+    if let Some(ty) = &func.result {
+        push_flat_symmetric(resolve, ty, &mut results);
+    }
+
+    let retptr = results.to_vec().len()>MAX_FLAT_RESULTS;
 
     // Rust/C don't support multi-value well right now, so if a function
     // would have multiple results then instead truncate it. Imports take a
     // return pointer to write into and exports return a pointer they wrote
     // into.
-    if results.len() > MAX_FLAT_RESULTS {
-        retptr = true;
-        results.truncate(0);
-        params.push(WasmType::Pointer);
+    if retptr {
+        results = FlatTypes::new(&mut storage);
+//        results.cur = 0;
+        match variant {
+            AbiVariant::GuestImport => {
+                assert!(params.push(WasmType::Pointer));
+            }
+            AbiVariant::GuestExport => {
+                assert!(results.push(WasmType::Pointer));
+            }
+            _ => unreachable!(),
+        }
     }
 
     WasmSignature {
-        params,
+        params: params.to_vec(),
         indirect_params,
-        results,
+        results: results.to_vec(),
         retptr,
     }
 }
