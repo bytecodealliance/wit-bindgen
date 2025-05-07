@@ -3,11 +3,11 @@ include!(env!("BINDINGS"));
 use crate::my::test::i::*;
 use futures::task::noop_waker_ref;
 use std::future::Future;
-use std::pin::Pin;
-use std::task::{Context, Poll};
+use std::task::Context;
+use wit_bindgen::yield_async;
 
 fn main() {
-    // Cancel an import in-progress
+    println!("test cancelling an import in progress");
     wit_bindgen::block_on(async {
         let (tx, rx) = wit_future::new();
         let mut import = Box::pin(pending_import(rx));
@@ -19,7 +19,7 @@ fn main() {
         tx.write(()).await.unwrap_err();
     });
 
-    // Cancel an import before it starts
+    println!("test cancelling an import before it starts");
     wit_bindgen::block_on(async {
         let (tx, rx) = wit_future::new();
         let import = Box::pin(pending_import(rx));
@@ -27,7 +27,7 @@ fn main() {
         tx.write(()).await.unwrap_err();
     });
 
-    // Cancel an import in the "started" state
+    println!("test cancelling an import in the started state");
     wit_bindgen::block_on(async {
         let (tx1, rx1) = wit_future::new();
         let (tx2, rx2) = wit_future::new();
@@ -63,6 +63,7 @@ fn main() {
     });
 
     // Race an import's cancellation with a status code saying it's done.
+    println!("test cancellation with a status code saying it's done");
     wit_bindgen::block_on(async {
         // Start a subtask and get it into the "started" state
         let (tx, rx) = wit_future::new();
@@ -78,7 +79,7 @@ fn main() {
         // Let the subtask's completion notification make its way to our task
         // here.
         for _ in 0..5 {
-            yield_().await;
+            yield_async().await;
         }
 
         // Now cancel the import, despite it actually being done. This should
@@ -88,6 +89,7 @@ fn main() {
 
     // Race an import's cancellation with a pending status code indicating that
     // it's transitioning from started => returned.
+    println!("race cancellation with pending status code");
     wit_bindgen::block_on(async {
         // Start a subtask and get it into the "started" state
         let (tx1, rx1) = wit_future::new();
@@ -112,7 +114,7 @@ fn main() {
         // notification that it's entered the "STARTED" state.
         backpressure_set(false);
         for _ in 0..5 {
-            yield_().await;
+            yield_async().await;
         }
 
         // Now cancel the `starting_import`. This should correctly pick up the
@@ -128,27 +130,4 @@ fn main() {
         tx1.write(()).await.unwrap();
         started_import.await;
     });
-}
-
-async fn yield_() {
-    #[derive(Default)]
-    struct Yield {
-        yielded: bool,
-    }
-
-    impl Future for Yield {
-        type Output = ();
-
-        fn poll(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<()> {
-            if self.yielded {
-                Poll::Ready(())
-            } else {
-                self.yielded = true;
-                context.waker().wake_by_ref();
-                Poll::Pending
-            }
-        }
-    }
-
-    Yield::default().await;
 }

@@ -1,5 +1,5 @@
 use std::fmt;
-pub use wit_parser::abi::{AbiVariant, WasmSignature, WasmType};
+pub use wit_parser::abi::{AbiVariant, FlatTypes, WasmSignature, WasmType};
 use wit_parser::{
     align_to_arch, Alignment, ArchitectureSize, ElementInfo, Enum, Flags, FlagsRepr, Function,
     Handle, Int, Record, Resolve, Result_, SizeAlign, Tuple, Type, TypeDefKind, TypeId, Variant,
@@ -828,6 +828,7 @@ fn needs_deallocate(resolve: &Resolve, ty: &Type, what: Deallocate) -> bool {
             TypeDefKind::Flags(_) | TypeDefKind::Enum(_) => false,
             TypeDefKind::Future(_) | TypeDefKind::Stream(_) => what.handles(),
             TypeDefKind::Unknown => unreachable!(),
+            TypeDefKind::FixedSizeList(..) => todo!(),
         },
 
         Type::Bool
@@ -906,6 +907,8 @@ struct Generator<'a, B: Bindgen> {
     realloc: Option<Realloc>,
     symmetric: bool,
 }
+
+const MAX_FLAT_PARAMS: usize = 16;
 
 impl<'a, B: Bindgen> Generator<'a, B> {
     fn new(resolve: &'a Resolve, bindgen: &'a mut B, symmetric: bool) -> Generator<'a, B> {
@@ -1103,11 +1106,9 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     // argument in succession from the component wasm types that
                     // make-up the type.
                     let mut offset = 0;
-                    let mut temp = Vec::new();
                     for (_, ty) in func.params.iter() {
-                        temp.truncate(0);
-                        self.resolve.push_flat(ty, &mut temp);
-                        for _ in 0..temp.len() {
+                        let types = flat_types(self.resolve, ty).unwrap();
+                        for _ in 0..types.len() {
                             self.emit(&Instruction::GetArg { nth: offset });
                             offset += 1;
                         }
@@ -1129,11 +1130,11 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 // based on slightly different logic for the `task.return`
                 // intrinsic.
                 let (lower_to_memory, async_flat_results) = if async_ {
-                    let mut results = Vec::new();
-                    if let Some(ty) = &func.result {
-                        self.resolve.push_flat(ty, &mut results);
-                    }
-                    (results.len() > MAX_FLAT_PARAMS, Some(results))
+                    let results = match &func.result {
+                        Some(ty) => flat_types(self.resolve, ty),
+                        None => Some(Vec::new()),
+                    };
+                    (results.is_none(), Some(results))
                 } else {
                     (sig.retptr, None)
                 };
@@ -1202,7 +1203,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
 
                     if matches!(
                         variant,
-                        AbiVariant::GuestImportAsync | AbiVariant::GuestExportAsync
+                        AbiVariant::GuestImportAsync | AbiVariant::GuestExportAsyncStackful
                     ) {
                         unreachable!()
                     }
@@ -1210,11 +1211,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
 
                 if let Some(results) = async_flat_results {
                     let name = &format!("[task-return]{}", func.name);
-                    let params = if lower_to_memory {
-                        &[WasmType::Pointer]
-                    } else {
-                        &results[..]
-                    };
+                    let params = results.as_deref().unwrap_or(&[WasmType::Pointer]);
 
                     self.emit(&Instruction::AsyncTaskReturn { name, params });
                 } else {
@@ -1440,6 +1437,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     });
                 }
                 TypeDefKind::Unknown => unreachable!(),
+                TypeDefKind::FixedSizeList(..) => todo!(),
             },
         }
     }
@@ -1450,10 +1448,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         cases: impl IntoIterator<Item = Option<&'b Type>>,
     ) -> Vec<WasmType> {
         use Instruction::*;
-        let mut results = Vec::new();
-        let mut temp = Vec::new();
+        let results = flat_types(self.resolve, ty).unwrap();
         let mut casts = Vec::new();
-        self.resolve.push_flat(ty, &mut results);
         for (i, ty) in cases.into_iter().enumerate() {
             self.push_block();
             self.emit(&VariantPayloadName);
@@ -1469,8 +1465,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 // Determine the types of all the wasm values we just
                 // pushed, and record how many. If we pushed too few
                 // then we'll need to push some zeros after this.
-                temp.truncate(0);
-                self.resolve.push_flat(ty, &mut temp);
+                let temp = flat_types(self.resolve, ty).unwrap();
                 pushed += temp.len();
 
                 // For all the types pushed we may need to insert some
@@ -1554,15 +1549,13 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     todo!();
                 }
                 TypeDefKind::Record(record) => {
-                    let mut temp = Vec::new();
-                    self.resolve.push_flat(ty, &mut temp);
+                    let temp = flat_types(self.resolve, ty).unwrap();
                     let mut args = self
                         .stack
                         .drain(self.stack.len() - temp.len()..)
                         .collect::<Vec<_>>();
                     for field in record.fields.iter() {
-                        temp.truncate(0);
-                        self.resolve.push_flat(&field.ty, &mut temp);
+                        let temp = flat_types(self.resolve, &field.ty).unwrap();
                         self.stack.extend(args.drain(..temp.len()));
                         self.lift(&field.ty);
                     }
@@ -1573,15 +1566,13 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     });
                 }
                 TypeDefKind::Tuple(tuple) => {
-                    let mut temp = Vec::new();
-                    self.resolve.push_flat(ty, &mut temp);
+                    let temp = flat_types(self.resolve, ty).unwrap();
                     let mut args = self
                         .stack
                         .drain(self.stack.len() - temp.len()..)
                         .collect::<Vec<_>>();
                     for ty in tuple.types.iter() {
-                        temp.truncate(0);
-                        self.resolve.push_flat(ty, &mut temp);
+                        let temp = flat_types(self.resolve, ty).unwrap();
                         self.stack.extend(args.drain(..temp.len()));
                         self.lift(ty);
                     }
@@ -1635,6 +1626,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     });
                 }
                 TypeDefKind::Unknown => unreachable!(),
+                TypeDefKind::FixedSizeList(..) => todo!(),
             },
         }
     }
@@ -1644,10 +1636,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         ty: &Type,
         cases: impl IntoIterator<Item = Option<&'b Type>>,
     ) {
-        let mut params = Vec::new();
-        let mut temp = Vec::new();
+        let params = flat_types(self.resolve, ty).unwrap();
         let mut casts = Vec::new();
-        self.resolve.push_flat(ty, &mut params);
         let block_inputs = self
             .stack
             .drain(self.stack.len() + 1 - params.len()..)
@@ -1657,8 +1647,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             if let Some(ty) = ty {
                 // Push only the values we need for this variant onto
                 // the stack.
-                temp.truncate(0);
-                self.resolve.push_flat(ty, &mut temp);
+                let temp = flat_types(self.resolve, ty).unwrap();
                 self.stack
                     .extend(block_inputs[..temp.len()].iter().cloned());
 
@@ -1797,6 +1786,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
 
                 TypeDefKind::Unknown => unreachable!(),
+                TypeDefKind::FixedSizeList(..) => todo!(),
             },
         }
     }
@@ -1987,6 +1977,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
 
                 TypeDefKind::Unknown => unreachable!(),
+                TypeDefKind::FixedSizeList(..) => todo!(),
             },
         }
     }
@@ -2186,6 +2177,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 TypeDefKind::Future(_) => unreachable!(),
                 TypeDefKind::Stream(_) => unreachable!(),
                 TypeDefKind::Unknown => unreachable!(),
+                TypeDefKind::FixedSizeList(..) => todo!(),
             },
         }
     }
@@ -2341,5 +2333,15 @@ pub fn wasm_signature_symmetric(
         indirect_params,
         results,
         retptr,
+    }
+}
+
+fn flat_types(resolve: &Resolve, ty: &Type) -> Option<Vec<WasmType>> {
+    let mut storage = [WasmType::I32; MAX_FLAT_PARAMS];
+    let mut flat = FlatTypes::new(&mut storage);
+    if resolve.push_flat(ty, &mut flat) {
+        Some(flat.to_vec())
+    } else {
+        None
     }
 }

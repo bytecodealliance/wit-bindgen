@@ -431,11 +431,26 @@ pub fn block_on<T: 'static>(future: impl Future<Output = T> + 'static) -> T {
 /// Call the `yield` canonical built-in function.
 ///
 /// This yields control to the host temporarily, allowing other tasks to make
-/// progress.  It's a good idea to call this inside a busy loop which does not
-/// otherwise ever yield control the the host.
-pub fn task_yield() {
+/// progress. It's a good idea to call this inside a busy loop which does not
+/// otherwise ever yield control the host.
+///
+/// Note that this function is a blocking function, not an `async` function.
+/// That means that this is not an async yield which allows other tasks in this
+/// component to progress, but instead this will block the current function
+/// until the host gets back around to returning from this yield. Asynchronous
+/// functions should probably use [`yield_async`] instead.
+///
+/// # Return Value
+///
+/// This function returns a `bool` which indicates whether execution should
+/// continue after this yield point. A return value of `true` means that the
+/// task was not cancelled and execution should continue. A return value of
+/// `false`, however, means that the task was cancelled while it was suspended
+/// at this yield point. The caller should return back and exit from the task
+/// ASAP in this situation.
+pub fn yield_blocking() -> bool {
     #[cfg(not(target_arch = "wasm32"))]
-    unsafe fn yield_() {
+    unsafe fn yield_() -> bool {
         unreachable!();
     }
 
@@ -443,9 +458,49 @@ pub fn task_yield() {
     #[link(wasm_import_module = "$root")]
     extern "C" {
         #[link_name = "[yield]"]
-        fn yield_();
+        fn yield_() -> bool;
     }
-    unsafe { yield_() }
+    // Note that the return value from the raw intrinsic is inverted, the
+    // canonical ABI returns "did this task get cancelled" while this function
+    // works as "should work continue going".
+    unsafe { !yield_() }
+}
+
+/// The asynchronous counterpart to [`yield_blocking`].
+///
+/// This function does not block the current task but instead gives the
+/// Rust-level executor a chance to yield control back to the host temporarily.
+/// This means that other Rust-level tasks may also be able to progress during
+/// this yield operation.
+///
+/// # Return Value
+///
+/// Unlike [`yield_blocking`] this function does not return anything. If this
+/// component task is cancelled while paused at this yield point then the future
+/// will be dropped and a Rust-level destructor will take over and clean up the
+/// task. It's not necessary to do anything with the return value of this
+/// function other than ensuring that you `.await` the function call.
+pub async fn yield_async() {
+    #[derive(Default)]
+    struct Yield {
+        yielded: bool,
+    }
+
+    impl Future for Yield {
+        type Output = ();
+
+        fn poll(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<()> {
+            if self.yielded {
+                Poll::Ready(())
+            } else {
+                self.yielded = true;
+                context.waker().wake_by_ref();
+                Poll::Pending
+            }
+        }
+    }
+
+    Yield::default().await;
 }
 
 /// Call the `backpressure.set` canonical built-in function.

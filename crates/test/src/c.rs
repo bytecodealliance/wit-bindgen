@@ -1,6 +1,6 @@
 use crate::config::StringList;
 use crate::{Compile, Kind, LanguageMethods, Runner, Verify};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::Parser;
 use heck::ToSnakeCase;
 use serde::Deserialize;
@@ -13,6 +13,10 @@ pub struct COpts {
     /// Path to the installation of wasi-sdk
     #[clap(long, env = "WASI_SDK_PATH", value_name = "PATH")]
     wasi_sdk_path: Option<PathBuf>,
+
+    /// Name of the C target to compile for.
+    #[clap(long, default_value = "wasm32-wasip2", value_name = "TARGET")]
+    c_target: String,
 }
 
 pub struct C;
@@ -29,16 +33,18 @@ struct LangConfig {
 }
 
 fn clang(runner: &Runner<'_>) -> PathBuf {
+    let target = &runner.opts.c.c_target;
     match &runner.opts.c.wasi_sdk_path {
-        Some(path) => path.join("bin/wasm32-wasip2-clang"),
-        None => "wasm32-wasip2-clang".into(),
+        Some(path) => path.join(format!("bin/{target}-clang")),
+        None => format!("{target}-clang").into(),
     }
 }
 
 fn clangpp(runner: &Runner<'_>) -> PathBuf {
+    let target = &runner.opts.c.c_target;
     match &runner.opts.c.wasi_sdk_path {
-        Some(path) => path.join("bin/wasm32-wasip2-clang++"),
-        None => "wasm32-wasip2-clang++".into(),
+        Some(path) => path.join(format!("bin/{target}-clang++")),
+        None => format!("{target}-clang++").into(),
     }
 }
 
@@ -57,13 +63,14 @@ impl LanguageMethods for C {
         config: &crate::config::WitConfig,
         _args: &[String],
     ) -> bool {
-        config.async_
+        config.error_context
     }
 
     fn codegen_test_variants(&self) -> &[(&str, &[&str])] {
         &[
             ("no-sig-flattening", &["--no-sig-flattening"]),
             ("autodrop", &["--autodrop-borrows=yes"]),
+            ("async", &["--async=all"]),
         ]
     }
 
@@ -154,10 +161,18 @@ fn compile(runner: &Runner<'_>, compile: &Compile<'_>, compiler: PathBuf) -> Res
     .arg("-c")
     .arg("-o")
     .arg(&bindings_object);
+    for flag in Vec::from(config.cflags.clone()) {
+        cmd.arg(flag);
+    }
     runner.run_command(&mut cmd)?;
 
     // Now compile the runner's source code to with the above object and the
     // component-type object into a final component.
+    let output = if produces_component(runner) {
+        compile.output.to_path_buf()
+    } else {
+        compile.output.with_extension("core.wasm")
+    };
     let mut cmd = Command::new(compiler);
     cmd.arg(&compile.component.path)
         .arg(&bindings_object)
@@ -174,7 +189,7 @@ fn compile(runner: &Runner<'_>, compile: &Compile<'_>, compiler: PathBuf) -> Res
         .arg("-Wno-unused-parameter")
         .arg("-g")
         .arg("-o")
-        .arg(&compile.output);
+        .arg(&output);
     for flag in Vec::from(config.cflags) {
         cmd.arg(flag);
     }
@@ -185,7 +200,20 @@ fn compile(runner: &Runner<'_>, compile: &Compile<'_>, compiler: PathBuf) -> Res
         }
     }
     runner.run_command(&mut cmd)?;
+
+    if !produces_component(runner) {
+        runner
+            .convert_p1_to_component(&output, compile)
+            .with_context(|| format!("failed to convert {output:?}"))?;
+    }
     Ok(())
+}
+
+fn produces_component(runner: &Runner<'_>) -> bool {
+    match runner.opts.c.c_target.as_str() {
+        "wasm32-wasip1" => false,
+        _ => true,
+    }
 }
 
 fn verify(runner: &Runner<'_>, verify: &Verify<'_>, compiler: PathBuf) -> Result<()> {

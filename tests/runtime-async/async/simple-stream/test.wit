@@ -1,0 +1,13 @@
+package my:test;
+
+interface i {
+  read-stream: async func(x: stream);
+}
+
+world test {
+  export i;
+}
+
+world runner {
+  import i;
+}

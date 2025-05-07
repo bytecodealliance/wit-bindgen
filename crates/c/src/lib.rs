@@ -2,13 +2,14 @@ pub mod component_type_object;
 
 use anyhow::Result;
 use heck::*;
+use indexmap::IndexSet;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 use std::mem;
 use wit_bindgen_core::abi::{self, AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType};
 use wit_bindgen_core::{
-    dealias, uwrite, uwriteln, wit_parser::*, AnonymousTypeGenerator, Direction, Files,
-    InterfaceGenerator as _, Ns, WorldGenerator,
+    dealias, uwrite, uwriteln, wit_parser::*, AnonymousTypeGenerator, AsyncFilterSet, Direction,
+    Files, InterfaceGenerator as _, Ns, WorldGenerator,
 };
 use wit_component::StringEncoding;
 
@@ -26,6 +27,7 @@ struct C {
     needs_union_float_int32: bool,
     needs_union_int64_double: bool,
     needs_union_double_int64: bool,
+    needs_async: bool,
     prim_names: HashSet<String>,
     world: String,
     sizes: SizeAlign,
@@ -35,6 +37,7 @@ struct C {
     dtor_funcs: HashMap<TypeId, String>,
     type_names: HashMap<TypeId, String>,
     resources: HashMap<TypeId, ResourceInfo>,
+    futures: IndexSet<TypeId>,
 }
 
 #[derive(Default)]
@@ -70,7 +73,14 @@ pub struct Opts {
     pub no_helpers: bool,
 
     /// Set component string encoding
-    #[cfg_attr(feature = "clap", arg(long, default_value_t = StringEncoding::default()))]
+    #[cfg_attr(
+        feature = "clap",
+        arg(
+            long,
+            default_value_t = StringEncoding::default(),
+            value_name = "ENCODING",
+        ),
+    )]
     pub string_encoding: StringEncoding,
 
     /// Skip optional null pointer and boolean result argument signature
@@ -88,17 +98,27 @@ pub struct Opts {
     pub rename: Vec<(String, String)>,
 
     /// Rename the world in the generated source code and file names.
-    #[cfg_attr(feature = "clap", arg(long))]
+    #[cfg_attr(feature = "clap", arg(long, value_name = "NAME"))]
     pub rename_world: Option<String>,
 
     /// Add the specified suffix to the name of the custome section containing
     /// the component type.
-    #[cfg_attr(feature = "clap", arg(long))]
+    #[cfg_attr(feature = "clap", arg(long, value_name = "STRING"))]
     pub type_section_suffix: Option<String>,
 
     /// Configure the autodropping of borrows in exported functions.
-    #[cfg_attr(feature = "clap", arg(long, default_value_t = Enabled::default()))]
+    #[cfg_attr(
+        feature = "clap",
+        arg(
+            long,
+            default_value_t = Enabled::default(),
+            value_name = "ENABLED",
+        ),
+    )]
     pub autodrop_borrows: Enabled,
+
+    #[cfg_attr(feature = "clap", clap(flatten))]
+    pub async_: AsyncFilterSet,
 }
 
 #[cfg(feature = "clap")]
@@ -374,27 +394,30 @@ impl WorldGenerator for C {
         }
         if self.needs_union_int32_float {
             uwriteln!(
-                self.src.c_helpers,
+                self.src.c_defs,
                 "\nunion int32_float {{ int32_t a; float b; }};"
             );
         }
         if self.needs_union_float_int32 {
             uwriteln!(
-                self.src.c_helpers,
+                self.src.c_defs,
                 "\nunion float_int32 {{ float a; int32_t b; }};"
             );
         }
         if self.needs_union_int64_double {
             uwriteln!(
-                self.src.c_helpers,
+                self.src.c_defs,
                 "\nunion int64_double {{ int64_t a; double b; }};"
             );
         }
         if self.needs_union_double_int64 {
             uwriteln!(
-                self.src.c_helpers,
+                self.src.c_defs,
                 "\nunion double_int64 {{ double a; int64_t b; }};"
             );
+        }
+        if self.needs_async || self.futures.len() > 0 {
+            self.generate_async_helpers();
         }
         let version = env!("CARGO_PKG_VERSION");
         let mut h_str = wit_bindgen_core::Source::default();
@@ -430,36 +453,6 @@ impl WorldGenerator for C {
         c_str.push_str(&self.src.c_defs);
         c_str.push_str(&self.src.c_fns);
 
-        if self.needs_string {
-            uwriteln!(
-                h_str,
-                "
-                typedef struct {snake}_string_t {{\n\
-                  {ty} *ptr;\n\
-                  size_t len;\n\
-                }} {snake}_string_t;",
-                ty = self.char_type(),
-            );
-        }
-        if self.src.h_defs.len() > 0 {
-            h_str.push_str(&self.src.h_defs);
-        }
-
-        h_str.push_str(&self.src.h_fns);
-
-        if !self.opts.no_helpers && self.src.h_helpers.len() > 0 {
-            uwriteln!(h_str, "\n// Helper Functions");
-            h_str.push_str(&self.src.h_helpers);
-            h_str.push_str("\n");
-        }
-
-        if !self.opts.no_helpers && self.src.c_helpers.len() > 0 {
-            uwriteln!(c_str, "\n// Helper Functions");
-            c_str.push_str(self.src.c_helpers.as_mut_string());
-        }
-
-        uwriteln!(c_str, "\n// Component Adapters");
-
         // Declare a statically-allocated return area, if needed. We only do
         // this for export bindings, because import bindings allocate their
         // return-area on the stack.
@@ -477,6 +470,50 @@ impl WorldGenerator for C {
                     .format(POINTER_SIZE_EXPRESSION),
             );
         }
+
+        if self.needs_string {
+            uwriteln!(
+                h_str,
+                "
+                typedef struct {snake}_string_t {{\n\
+                  {ty} *ptr;\n\
+                  size_t len;\n\
+                }} {snake}_string_t;",
+                ty = self.char_type(),
+            );
+        }
+
+        if self.src.h_async.len() > 0 {
+            uwriteln!(h_str, "\n// Async Helper Functions");
+            h_str.push_str(&self.src.h_async);
+            h_str.push_str("\n");
+        }
+
+        if self.src.h_defs.len() > 0 {
+            h_str.push_str(&self.src.h_defs);
+        }
+
+        h_str.push_str(&self.src.h_fns);
+
+        if !self.opts.no_helpers && self.src.h_helpers.len() > 0 {
+            uwriteln!(h_str, "\n// Helper Functions");
+            h_str.push_str(&self.src.h_helpers);
+            h_str.push_str("\n");
+        }
+
+        if !self.opts.no_helpers && self.src.c_helpers.len() > 0 {
+            uwriteln!(c_str, "\n// Helper Functions");
+            c_str.push_str(self.src.c_helpers.as_mut_string());
+        }
+
+        if self.src.c_async.len() > 0 {
+            uwriteln!(c_str, "\n// Async Helper Functions");
+            c_str.push_str(&self.src.c_async);
+            c_str.push_str("\n");
+        }
+
+        uwriteln!(c_str, "\n// Component Adapters");
+
         c_str.push_str(&self.src.c_adapters);
 
         uwriteln!(
@@ -573,7 +610,7 @@ impl C {
                 dst.push_str("string_t");
                 self.needs_string = true;
             }
-            Type::ErrorContext => todo!("C error context type name"),
+            Type::ErrorContext => dst.push_str("error_context"),
             Type::Id(id) => {
                 if let Some(name) = self.type_names.get(id) {
                     dst.push_str(name);
@@ -649,6 +686,157 @@ impl C {
             }
         }
     }
+
+    fn generate_async_helpers(&mut self) {
+        let snake = self.world.to_snake_case();
+        let shouty = self.world.to_shouty_snake_case();
+        uwriteln!(
+            self.src.h_async,
+            "
+typedef uint32_t {snake}_subtask_status_t;
+typedef uint32_t {snake}_subtask_t;
+#define {shouty}_SUBTASK_STATE(status) (({snake}_subtask_state_t) ((status) & 0xf))
+#define {shouty}_SUBTASK_HANDLE(status) (({snake}_subtask_t) ((status) >> 4))
+
+typedef enum {snake}_subtask_state {{
+    {shouty}_SUBTASK_STARTING,
+    {shouty}_SUBTASK_STARTED,
+    {shouty}_SUBTASK_RETURNED,
+    {shouty}_SUBTASK_STARTED_CANCELLED,
+    {shouty}_SUBTASK_RETURNED_CANCELLED,
+}} {snake}_subtask_state_t;
+
+{snake}_subtask_status_t {snake}_subtask_cancel({snake}_subtask_t subtask);
+void {snake}_subtask_drop({snake}_subtask_t subtask);
+
+typedef uint32_t {snake}_callback_code_t;
+#define {shouty}_CALLBACK_CODE_EXIT 0
+#define {shouty}_CALLBACK_CODE_YIELD 1
+#define {shouty}_CALLBACK_CODE_WAIT(set) (2 | (set << 4))
+#define {shouty}_CALLBACK_CODE_POLL(set) (3 | (set << 4))
+
+typedef enum {snake}_event_code {{
+    {shouty}_EVENT_NONE,
+    {shouty}_EVENT_SUBTASK,
+    {shouty}_EVENT_STREAM_READ,
+    {shouty}_EVENT_STREAM_WRITE,
+    {shouty}_EVENT_FUTURE_READ,
+    {shouty}_EVENT_FUTURE_WRITE,
+    {shouty}_EVENT_CANCEL,
+}} {snake}_event_code_t;
+
+typedef struct {snake}_event {{
+    {snake}_event_code_t event;
+    uint32_t waitable;
+    uint32_t code;
+}} {snake}_event_t;
+
+typedef uint32_t {snake}_waitable_set_t;
+{snake}_waitable_set_t {snake}_waitable_set_new(void);
+void {snake}_waitable_join(uint32_t waitable, {snake}_waitable_set_t set);
+void {snake}_waitable_set_drop({snake}_waitable_set_t set);
+void {snake}_waitable_set_wait({snake}_waitable_set_t set, {snake}_event_t *event);
+void {snake}_waitable_set_poll({snake}_waitable_set_t set, {snake}_event_t *event);
+
+void {snake}_task_cancel(void);
+
+typedef uint32_t {snake}_waitable_status_t;
+#define {shouty}_WAITABLE_STATE(status) (({snake}_waitable_state_t) ((status) & 0xf))
+#define {shouty}_WAITABLE_COUNT(status) ((uint32_t) ((status) >> 4))
+#define {shouty}_WAITABLE_STATUS_BLOCKED (({snake}_waitable_status_t) -1)
+
+typedef enum {snake}_waitable_state {{
+    {shouty}_WAITABLE_COMPLETED,
+    {shouty}_WAITABLE_CLOSED,
+    {shouty}_WAITABLE_CANCELLED,
+}} {snake}_waitable_state_t;
+
+void {snake}_backpressure_set(bool enable);
+void* {snake}_context_get(void);
+void {snake}_context_set(void*);
+            "
+        );
+        uwriteln!(
+            self.src.c_async,
+            r#"
+__attribute__((__import_module__("$root"), __import_name__("[subtask-cancel]")))
+extern uint32_t __subtask_cancel(uint32_t handle);
+
+{snake}_subtask_status_t {snake}_subtask_cancel({snake}_subtask_t subtask) {{
+    return __subtask_cancel(subtask);
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[subtask-drop]")))
+extern void __subtask_drop(uint32_t handle);
+
+void {snake}_subtask_drop({snake}_subtask_t subtask) {{
+    __subtask_drop(subtask);
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[waitable-set-new]")))
+extern uint32_t __waitable_set_new(void);
+
+{snake}_waitable_set_t {snake}_waitable_set_new(void) {{
+    return __waitable_set_new();
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[waitable-join]")))
+extern void __waitable_join(uint32_t, uint32_t);
+
+void {snake}_waitable_join(uint32_t waitable, {snake}_waitable_set_t set) {{
+    __waitable_join(waitable, set);
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[waitable-set-drop]")))
+extern void __waitable_set_drop(uint32_t);
+
+void {snake}_waitable_set_drop({snake}_waitable_set_t set) {{
+    __waitable_set_drop(set);
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[waitable-set-wait]")))
+extern uint32_t __waitable_set_wait(uint32_t, uint32_t*);
+__attribute__((__import_module__("$root"), __import_name__("[waitable-set-poll]")))
+extern uint32_t __waitable_set_poll(uint32_t, uint32_t*);
+
+void {snake}_waitable_set_wait({snake}_waitable_set_t set, {snake}_event_t *event) {{
+    event->event = __waitable_set_wait(set, &event->waitable);
+}}
+
+void {snake}_waitable_set_poll({snake}_waitable_set_t set, {snake}_event_t *event) {{
+    event->event = __waitable_set_poll(set, &event->waitable);
+}}
+
+__attribute__((__import_module__("[export]$root"), __import_name__("[task-cancel]")))
+extern void __task_cancel(void);
+
+void {snake}_task_cancel() {{
+    __task_cancel();
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[backpressure-set]")))
+extern void __backpressure_set(bool enable);
+
+void {snake}_backpressure_set(bool enable) {{
+    __backpressure_set(enable);
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[context-get-0]")))
+extern void* __context_get(void);
+
+void* {snake}_context_get() {{
+    return __context_get();
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[context-set-0]")))
+extern void __context_set(void*);
+
+void {snake}_context_set(void *val) {{
+    return __context_set(val);
+}}
+            "#
+        );
+    }
 }
 
 pub fn imported_types_used_by_exported_interfaces(
@@ -722,6 +910,7 @@ fn is_prim_type_id(resolve: &Resolve, id: TypeId) -> bool {
         | TypeDefKind::Future(_)
         | TypeDefKind::Stream(_)
         | TypeDefKind::Unknown => false,
+        TypeDefKind::FixedSizeList(..) => todo!(),
     }
 }
 
@@ -783,8 +972,20 @@ pub fn push_ty_name(resolve: &Resolve, ty: &Type, src: &mut String) {
                     src.push_str("list_");
                     push_ty_name(resolve, ty, src);
                 }
-                TypeDefKind::Future(_) => todo!(),
-                TypeDefKind::Stream(_) => todo!(),
+                TypeDefKind::Future(ty) => {
+                    src.push_str("future_");
+                    match ty {
+                        Some(ty) => push_ty_name(resolve, ty, src),
+                        None => src.push_str("void"),
+                    }
+                }
+                TypeDefKind::Stream(ty) => {
+                    src.push_str("stream_");
+                    match ty {
+                        Some(ty) => push_ty_name(resolve, ty, src),
+                        None => src.push_str("void"),
+                    }
+                }
                 TypeDefKind::Handle(Handle::Own(resource)) => {
                     src.push_str("own_");
                     push_ty_name(resolve, &Type::Id(*resource), src);
@@ -794,6 +995,7 @@ pub fn push_ty_name(resolve: &Resolve, ty: &Type, src: &mut String) {
                     push_ty_name(resolve, &Type::Id(*resource), src);
                 }
                 TypeDefKind::Unknown => unreachable!(),
+                TypeDefKind::FixedSizeList(..) => todo!(),
             }
         }
     }
@@ -963,7 +1165,11 @@ impl Return {
             TypeDefKind::Type(t) => return self.return_single(resolve, t, orig_ty, sig_flattening),
 
             // Flags are returned as their bare values, and enums and handles are scalars
-            TypeDefKind::Flags(_) | TypeDefKind::Enum(_) | TypeDefKind::Handle(_) => {
+            TypeDefKind::Flags(_)
+            | TypeDefKind::Enum(_)
+            | TypeDefKind::Handle(_)
+            | TypeDefKind::Future(_)
+            | TypeDefKind::Stream(_) => {
                 self.scalar = Some(Scalar::Type(*orig_ty));
                 return;
             }
@@ -1000,10 +1206,9 @@ impl Return {
             | TypeDefKind::List(_)
             | TypeDefKind::Variant(_) => {}
 
-            TypeDefKind::Future(_) => todo!("return_single for future"),
-            TypeDefKind::Stream(_) => todo!("return_single for stream"),
             TypeDefKind::Resource => todo!("return_single for resource"),
             TypeDefKind::Unknown => unreachable!(),
+            TypeDefKind::FixedSizeList(..) => todo!(),
         }
 
         self.retptrs.push(*orig_ty);
@@ -1349,14 +1554,18 @@ void __wasm_export_{ns}_{snake}_dtor({ns}_{snake}_t* arg) {{
         self.finish_typedef_struct(id);
     }
 
-    fn type_future(&mut self, id: TypeId, name: &str, ty: &Option<Type>, docs: &Docs) {
-        _ = (id, name, ty, docs);
-        todo!()
+    fn type_future(&mut self, id: TypeId, _name: &str, _ty: &Option<Type>, docs: &Docs) {
+        self.src.h_defs("\n");
+        self.docs(docs, SourceType::HDefs);
+        self.src.h_defs("\ntypedef uint32_t ");
+        self.print_typedef_target(id);
     }
 
-    fn type_stream(&mut self, id: TypeId, name: &str, ty: &Option<Type>, docs: &Docs) {
-        _ = (id, name, ty, docs);
-        todo!()
+    fn type_stream(&mut self, id: TypeId, _name: &str, _ty: &Option<Type>, docs: &Docs) {
+        self.src.h_defs("\n");
+        self.docs(docs, SourceType::HDefs);
+        self.src.h_defs("\ntypedef uint32_t ");
+        self.print_typedef_target(id);
     }
 
     fn type_builtin(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
@@ -1443,12 +1652,14 @@ impl<'a> wit_bindgen_core::AnonymousTypeGenerator<'a> for InterfaceGenerator<'a>
         self.print_typedef_target(id);
     }
 
-    fn anonymous_type_future(&mut self, _id: TypeId, _ty: &Option<Type>, _docs: &Docs) {
-        todo!("print_anonymous_type for future");
+    fn anonymous_type_future(&mut self, id: TypeId, _ty: &Option<Type>, _docs: &Docs) {
+        self.src.h_defs("\ntypedef uint32_t ");
+        self.print_typedef_target(id);
     }
 
-    fn anonymous_type_stream(&mut self, _id: TypeId, _ty: &Option<Type>, _docs: &Docs) {
-        todo!("print_anonymous_type for stream");
+    fn anonymous_type_stream(&mut self, id: TypeId, _ty: &Option<Type>, _docs: &Docs) {
+        self.src.h_defs("\ntypedef uint32_t ");
+        self.print_typedef_target(id);
     }
 
     fn anonymous_type_type(&mut self, _id: TypeId, _ty: &Type, _docs: &Docs) {
@@ -1623,13 +1834,15 @@ impl InterfaceGenerator<'_> {
                 }
                 self.src.c_helpers("}\n");
             }
-            TypeDefKind::Future(_) => todo!("print_dtor for future"),
-            TypeDefKind::Stream(_) => todo!("print_dtor for stream"),
+            TypeDefKind::Future(_) | TypeDefKind::Stream(_) => {
+                self.free(&Type::Id(id), "*ptr");
+            }
             TypeDefKind::Resource => {}
             TypeDefKind::Handle(Handle::Borrow(id) | Handle::Own(id)) => {
                 self.free(&Type::Id(*id), "*ptr");
             }
             TypeDefKind::Unknown => unreachable!(),
+            TypeDefKind::FixedSizeList(..) => todo!(),
         }
         if c_helpers_body_start == self.src.c_helpers.len() {
             self.src.c_helpers.as_mut_string().truncate(c_helpers_start);
@@ -1680,8 +1893,22 @@ impl InterfaceGenerator<'_> {
     }
 
     fn import(&mut self, interface_name: Option<&WorldKey>, func: &Function) {
+        let async_ = self
+            .gen
+            .opts
+            .async_
+            .is_async(self.resolve, interface_name, func, true);
+        if async_ {
+            self.gen.needs_async = true;
+        }
+
         self.docs(&func.docs, SourceType::HFns);
-        let sig = self.resolve.wasm_signature(AbiVariant::GuestImport, func);
+        let (variant, import_prefix) = if async_ {
+            (AbiVariant::GuestImportAsync, "[async-lower]")
+        } else {
+            (AbiVariant::GuestImport, "")
+        };
+        let sig = self.resolve.wasm_signature(variant, func);
 
         self.src.c_fns("\n");
 
@@ -1690,7 +1917,7 @@ impl InterfaceGenerator<'_> {
         // signature.
         uwriteln!(
             self.src.c_fns,
-            "__attribute__((__import_module__(\"{}\"), __import_name__(\"{}\")))",
+            "__attribute__((__import_module__(\"{}\"), __import_name__(\"{import_prefix}{}\")))",
             match interface_name {
                 Some(name) => self.resolve.name_world_key(name),
                 None => "$root".to_string(),
@@ -1722,11 +1949,23 @@ impl InterfaceGenerator<'_> {
         // Print the public facing signature into the header, and since that's
         // what we are defining also print it into the C file.
         self.src.h_fns("extern ");
-        let c_sig = self.print_sig(interface_name, func, !self.gen.opts.no_sig_flattening);
+        let c_sig = self.print_sig(interface_name, func, async_);
         self.src.c_adapters("\n");
         self.src.c_adapters(&c_sig.sig);
         self.src.c_adapters(" {\n");
 
+        if async_ {
+            self.import_body_async(func, c_sig, &import_name);
+        } else {
+            self.import_body_sync(func, c_sig, &import_name);
+        }
+
+        self.src.c_adapters("}\n");
+
+        self.generate_async_futures_and_streams("", func, interface_name);
+    }
+
+    fn import_body_sync(&mut self, func: &Function, c_sig: CSig, import_name: &str) {
         // construct optional adapters from maybe pointers to real optional
         // structs internally
         let mut optional_adapters = String::from("");
@@ -1793,11 +2032,43 @@ impl InterfaceGenerator<'_> {
         }
 
         self.src.c_adapters(&String::from(src));
-        self.src.c_adapters("}\n");
+    }
+
+    fn import_body_async(&mut self, func: &Function, sig: CSig, import_name: &str) {
+        let params = match &func.params[..] {
+            [] => "NULL".to_string(),
+            _ => format!("(uint8_t*) {}", sig.params[0].1),
+        };
+        let results = match &func.result {
+            None => "NULL".to_string(),
+            Some(_) => format!("(uint8_t*) {}", sig.params.last().unwrap().1),
+        };
+
+        uwriteln!(
+            self.src.c_adapters,
+            "return {import_name}({params}, {results});"
+        );
     }
 
     fn export(&mut self, func: &Function, interface_name: Option<&WorldKey>) {
-        let sig = self.resolve.wasm_signature(AbiVariant::GuestExport, func);
+        let async_ = self
+            .gen
+            .opts
+            .async_
+            .is_async(self.resolve, interface_name, func, false);
+
+        let (variant, prefix) = if async_ {
+            self.gen.needs_async = true;
+            (AbiVariant::GuestExportAsync, "[async-lift]")
+        } else {
+            (AbiVariant::GuestExport, "")
+        };
+
+        let mut sig = self.resolve.wasm_signature(variant, func);
+        if async_ {
+            assert_eq!(sig.results, [WasmType::Pointer]);
+            sig.results[0] = WasmType::I32;
+        }
 
         self.src.c_fns("\n");
 
@@ -1806,13 +2077,13 @@ impl InterfaceGenerator<'_> {
 
         // Print the actual header for this function into the header file, and
         // it's what we'll be calling.
-        let h_sig = self.print_sig(interface_name, func, !self.gen.opts.no_sig_flattening);
+        let h_sig = self.print_sig(interface_name, func, async_);
 
         // Generate, in the C source file, the raw wasm signature that has the
         // canonical ABI.
         uwriteln!(
             self.src.c_adapters,
-            "\n__attribute__((__export_name__(\"{export_name}\")))"
+            "\n__attribute__((__export_name__(\"{prefix}{export_name}\")))"
         );
         let name = self.c_func_name(interface_name, func);
         let import_name = self.gen.names.tmp(&format!("__wasm_export_{name}"));
@@ -1842,17 +2113,76 @@ impl InterfaceGenerator<'_> {
         // Perform all lifting/lowering and append it to our src.
         abi::call(
             f.gen.resolve,
-            AbiVariant::GuestExport,
+            variant,
             LiftLower::LiftArgsLowerResults,
             func,
             &mut f,
-            false,
+            async_,
         );
-        let FunctionBindgen { src, .. } = f;
+        let FunctionBindgen {
+            src,
+            deferred_task_return,
+            ..
+        } = f;
         self.src.c_adapters(&src);
         self.src.c_adapters("}\n");
 
-        if abi::guest_export_needs_post_return(self.resolve, func) {
+        if async_ {
+            let snake = self.gen.world.to_snake_case();
+            let return_ty = match &func.result {
+                Some(ty) => format!("{} ret", self.gen.type_name(ty)),
+                None => "void".to_string(),
+            };
+            let DeferredTaskReturn::Emitted {
+                body: mut task_return_body,
+                name: task_return_name,
+                params: task_return_params,
+            } = deferred_task_return
+            else {
+                unreachable!()
+            };
+            let task_return_param_tys = task_return_params
+                .iter()
+                .map(|(ty, _expr)| wasm_type(*ty))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let task_return_param_exprs = task_return_params
+                .iter()
+                .map(|(_ty, expr)| expr.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            let task_return_body = task_return_body.as_mut_string();
+            uwriteln!(
+                self.src.h_fns,
+                "{snake}_callback_code_t {name}_callback({snake}_event_t *event);",
+            );
+            uwriteln!(self.src.h_helpers, "void {name}_return({return_ty});");
+            let import_module = match interface_name {
+                Some(name) => self.resolve.name_world_key(name),
+                None => "$root".to_string(),
+            };
+            uwriteln!(
+                self.src.c_helpers,
+                r#"
+__attribute__((__export_name__("[callback]{prefix}{export_name}")))
+uint32_t {import_name}_callback(uint32_t event_raw, uint32_t waitable, uint32_t code) {{
+    {snake}_event_t event;
+    event.event = event_raw;
+    event.waitable = waitable;
+    event.code = code;
+    return {name}_callback(&event);
+}}
+
+__attribute__((__import_module__("[export]{import_module}"), __import_name__("{task_return_name}")))
+void {import_name}__task_return({task_return_param_tys});
+
+void {name}_return({return_ty}) {{
+    {task_return_body}
+    {import_name}__task_return({task_return_param_exprs});
+}}
+                "#
+            );
+        } else if abi::guest_export_needs_post_return(self.resolve, func) {
             uwriteln!(
                 self.src.c_fns,
                 "__attribute__((__weak__, __export_name__(\"cabi_post_{export_name}\")))"
@@ -1882,13 +2212,15 @@ impl InterfaceGenerator<'_> {
             self.src.c_fns(&src);
             self.src.c_fns("}\n");
         }
+
+        self.generate_async_futures_and_streams("[export]", func, interface_name);
     }
 
     fn print_sig(
         &mut self,
         interface_name: Option<&WorldKey>,
         func: &Function,
-        sig_flattening: bool,
+        async_: bool,
     ) -> CSig {
         let name = self.c_func_name(interface_name, func);
         self.gen.names.insert(&name).expect("duplicate symbols");
@@ -1897,20 +2229,125 @@ impl InterfaceGenerator<'_> {
         let mut result_rets = false;
         let mut result_rets_has_ok_type = false;
 
-        let ret = self.classify_ret(func, sig_flattening);
-        match &ret.scalar {
-            None | Some(Scalar::Void) => self.src.h_fns("void"),
-            Some(Scalar::OptionBool(_id)) => self.src.h_fns("bool"),
-            Some(Scalar::ResultBool(ok, _err)) => {
-                result_rets = true;
-                result_rets_has_ok_type = ok.is_some();
-                self.src.h_fns("bool");
+        let ret = if async_ && !self.in_import {
+            Return {
+                scalar: func.result.map(Scalar::Type),
+                retptrs: Vec::new(),
             }
-            Some(Scalar::Type(ty)) => self.print_ty(SourceType::HFns, ty),
+        } else {
+            self.classify_ret(func)
+        };
+        if async_ {
+            let snake = self.gen.world.to_snake_case();
+            if self.in_import {
+                uwrite!(self.src.h_fns, "{snake}_subtask_status_t");
+            } else {
+                uwrite!(self.src.h_fns, "{snake}_callback_code_t");
+            }
+        } else {
+            match &ret.scalar {
+                None | Some(Scalar::Void) => self.src.h_fns("void"),
+                Some(Scalar::OptionBool(_id)) => self.src.h_fns("bool"),
+                Some(Scalar::ResultBool(ok, _err)) => {
+                    result_rets = true;
+                    result_rets_has_ok_type = ok.is_some();
+                    self.src.h_fns("bool");
+                }
+                Some(Scalar::Type(ty)) => self.print_ty(SourceType::HFns, ty),
+            }
         }
         self.src.h_fns(" ");
         self.src.h_fns(&name);
         self.src.h_fns("(");
+        let mut params = Vec::new();
+        let mut retptrs = Vec::new();
+        if async_ && self.in_import {
+            let mut printed = false;
+            match &func.params[..] {
+                [] => {}
+                [(_name, ty)] => {
+                    printed = true;
+                    let name = "arg".to_string();
+                    self.print_ty(SourceType::HFns, ty);
+                    self.src.h_fns(" *");
+                    self.src.h_fns(&name);
+                    params.push((true, name));
+                }
+                multiple => {
+                    printed = true;
+                    let names = multiple
+                        .iter()
+                        .map(|(name, ty)| (to_c_ident(name), self.gen.type_name(ty)))
+                        .collect::<Vec<_>>();
+                    uwriteln!(self.src.h_defs, "typedef struct {name}_args {{");
+                    for (name, ty) in names {
+                        uwriteln!(self.src.h_defs, "{ty} {name};");
+                    }
+                    uwriteln!(self.src.h_defs, "}} {name}_args_t;");
+                    uwrite!(self.src.h_fns, "{name}_args_t *args");
+                    params.push((true, "args".to_string()));
+                }
+            }
+            if let Some(ty) = &func.result {
+                if printed {
+                    self.src.h_fns(", ");
+                } else {
+                    printed = true;
+                }
+                let name = "result".to_string();
+                self.print_ty(SourceType::HFns, ty);
+                self.src.h_fns(" *");
+                self.src.h_fns(&name);
+                params.push((true, name));
+            }
+            if !printed {
+                self.src.h_fns("void");
+            }
+        } else if async_ && !self.in_import {
+            params = self.print_sig_params(func);
+        } else {
+            params = self.print_sig_params(func);
+            let single_ret = ret.retptrs.len() == 1;
+            for (i, ty) in ret.retptrs.iter().enumerate() {
+                if i > 0 || func.params.len() > 0 {
+                    self.src.h_fns(", ");
+                }
+                self.print_ty(SourceType::HFns, ty);
+                self.src.h_fns(" *");
+                let name: String = if result_rets {
+                    assert!(i <= 1);
+                    if i == 0 && result_rets_has_ok_type {
+                        "ret".into()
+                    } else {
+                        "err".into()
+                    }
+                } else if single_ret {
+                    "ret".into()
+                } else {
+                    format!("ret{}", i)
+                };
+                self.src.h_fns(&name);
+                retptrs.push(name);
+            }
+            if func.params.len() == 0 && ret.retptrs.len() == 0 {
+                self.src.h_fns("void");
+            }
+        }
+        self.src.h_fns(")");
+
+        let sig = self.src.h_fns[start..].to_string();
+        self.src.h_fns(";\n");
+
+        CSig {
+            sig,
+            name,
+            params,
+            ret,
+            retptrs,
+        }
+    }
+
+    fn print_sig_params(&mut self, func: &Function) -> Vec<(bool, String)> {
         let mut params = Vec::new();
         for (i, (name, ty)) in func.params.iter().enumerate() {
             if i > 0 {
@@ -1920,7 +2357,7 @@ impl InterfaceGenerator<'_> {
             // optional param pointer sig_flattening
             let optional_type = if let Type::Id(id) = ty {
                 if let TypeDefKind::Option(option_ty) = &self.resolve.types[*id].kind {
-                    if sig_flattening {
+                    if !self.gen.opts.no_sig_flattening {
                         Some(option_ty)
                     } else {
                         None
@@ -1931,7 +2368,7 @@ impl InterfaceGenerator<'_> {
             } else {
                 None
             };
-            let (print_ty, print_name) = if sig_flattening {
+            let (print_ty, print_name) = if !self.gen.opts.no_sig_flattening {
                 if let Some(option_ty) = optional_type {
                     (option_ty, format!("maybe_{}", to_c_ident(name)))
                 } else {
@@ -1948,52 +2385,15 @@ impl InterfaceGenerator<'_> {
             self.src.h_fns(&print_name);
             params.push((optional_type.is_none() && pointer, to_c_ident(name)));
         }
-        let mut retptrs = Vec::new();
-        let single_ret = ret.retptrs.len() == 1;
-        for (i, ty) in ret.retptrs.iter().enumerate() {
-            if i > 0 || func.params.len() > 0 {
-                self.src.h_fns(", ");
-            }
-            self.print_ty(SourceType::HFns, ty);
-            self.src.h_fns(" *");
-            let name: String = if result_rets {
-                assert!(i <= 1);
-                if i == 0 && result_rets_has_ok_type {
-                    "ret".into()
-                } else {
-                    "err".into()
-                }
-            } else if single_ret {
-                "ret".into()
-            } else {
-                format!("ret{}", i)
-            };
-            self.src.h_fns(&name);
-            retptrs.push(name);
-        }
-        if func.params.len() == 0 && ret.retptrs.len() == 0 {
-            self.src.h_fns("void");
-        }
-        self.src.h_fns(")");
-
-        let sig = self.src.h_fns[start..].to_string();
-        self.src.h_fns(";\n");
-
-        CSig {
-            sig,
-            name,
-            params,
-            ret,
-            retptrs,
-        }
+        params
     }
 
-    fn classify_ret(&mut self, func: &Function, sig_flattening: bool) -> Return {
+    fn classify_ret(&mut self, func: &Function) -> Return {
         let mut ret = Return::default();
         match &func.result {
             None => ret.scalar = Some(Scalar::Void),
             Some(ty) => {
-                ret.return_single(self.resolve, ty, ty, sig_flattening);
+                ret.return_single(self.resolve, ty, ty, !self.gen.opts.no_sig_flattening);
             }
         }
         return ret;
@@ -2101,11 +2501,182 @@ impl InterfaceGenerator<'_> {
                 TypeDefKind::Type(ty) => self.contains_droppable_borrow(ty),
 
                 TypeDefKind::Unknown => false,
+                TypeDefKind::FixedSizeList(..) => todo!(),
             }
         } else {
             false
         }
     }
+
+    fn generate_async_futures_and_streams(
+        &mut self,
+        prefix: &str,
+        func: &Function,
+        interface: Option<&WorldKey>,
+    ) {
+        let module = format!(
+            "{prefix}{}",
+            interface
+                .map(|name| self.resolve.name_world_key(name))
+                .unwrap_or_else(|| "$root".into())
+        );
+        for (index, ty) in func
+            .find_futures_and_streams(self.resolve)
+            .into_iter()
+            .enumerate()
+        {
+            let func_name = &func.name;
+
+            match &self.resolve.types[ty].kind {
+                TypeDefKind::Future(payload_type) => {
+                    self.generate_async_future_or_stream(
+                        PayloadFor::Future,
+                        &module,
+                        index,
+                        func_name,
+                        ty,
+                        payload_type.as_ref(),
+                    );
+                }
+                TypeDefKind::Stream(payload_type) => {
+                    self.generate_async_future_or_stream(
+                        PayloadFor::Stream,
+                        &module,
+                        index,
+                        func_name,
+                        ty,
+                        payload_type.as_ref(),
+                    );
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    fn generate_async_future_or_stream(
+        &mut self,
+        payload_for: PayloadFor,
+        module: &str,
+        index: usize,
+        func_name: &str,
+        ty: TypeId,
+        payload_type: Option<&Type>,
+    ) {
+        if !self.gen.futures.insert(ty) {
+            return;
+        }
+        let ty = self.gen.type_name(&Type::Id(ty));
+        let name = ty.strip_suffix("_t").unwrap();
+        let snake = self.gen.world.to_snake_case();
+        let kind = match payload_for {
+            PayloadFor::Future => "future",
+            PayloadFor::Stream => "stream",
+        };
+        let payload_len_arg = match payload_for {
+            PayloadFor::Future => "",
+            PayloadFor::Stream => ", size_t",
+        };
+        let (read_arg_ty, read_arg_expr, write_arg_ty, write_arg_expr) =
+            match (payload_for, payload_type) {
+                (PayloadFor::Future, None) => ("".to_string(), "NULL", "".to_string(), "NULL"),
+                (PayloadFor::Future, Some(ty)) => {
+                    let ty = self.gen.type_name(ty);
+                    (
+                        format!(", {ty} *buf"),
+                        "(uint8_t*) buf",
+                        format!(", const {ty} *buf"),
+                        "(const uint8_t*) buf",
+                    )
+                }
+                (PayloadFor::Stream, None) => (
+                    ", size_t amt".to_string(),
+                    "NULL, amt",
+                    ", size_t amt".to_string(),
+                    "NULL, amt",
+                ),
+                (PayloadFor::Stream, Some(ty)) => {
+                    let ty = self.gen.type_name(ty);
+                    (
+                        format!(", {ty} *buf, size_t amt"),
+                        "(uint8_t*) buf, amt",
+                        format!(", const {ty} *buf, size_t amt"),
+                        "(const uint8_t*) buf, amt",
+                    )
+                }
+            };
+
+        // TODO: this is a hack around space-stripping in `source.rs`, ideally
+        // wouldn't be necessary.
+        let empty = "";
+        uwriteln!(
+            self.src.h_helpers,
+            r#"
+typedef uint32_t {name}_writer_t;
+
+{ty} {name}_new({name}_writer_t *writer);
+{snake}_waitable_status_t {name}_read({ty} reader{read_arg_ty});
+{snake}_waitable_status_t {name}_write({name}_writer_t writer{write_arg_ty});
+{snake}_waitable_status_t {name}_cancel_read({ty} reader);
+{snake}_waitable_status_t {name}_cancel_write({name}_writer_t writer);
+void {name}_close_readable({ty} reader);{empty}
+void {name}_close_writable({name}_writer_t writer);
+            "#,
+        );
+        uwriteln!(
+            self.src.c_helpers,
+            r#"
+__attribute__((__import_module__("{module}"), __import_name__("[{kind}-new-{index}]{func_name}")))
+extern uint64_t {name}__new(void);
+__attribute__((__import_module__("{module}"), __import_name__("[async-lower][{kind}-read-{index}]{func_name}")))
+extern uint32_t {name}__read(uint32_t, uint8_t*{payload_len_arg});
+__attribute__((__import_module__("{module}"), __import_name__("[async-lower][{kind}-write-{index}]{func_name}")))
+extern uint32_t {name}__write(uint32_t, const uint8_t*{payload_len_arg});
+__attribute__((__import_module__("{module}"), __import_name__("[{kind}-cancel-read-{index}]{func_name}")))
+extern uint32_t {name}__cancel_read(uint32_t);
+__attribute__((__import_module__("{module}"), __import_name__("[{kind}-cancel-write-{index}]{func_name}")))
+extern uint32_t {name}__cancel_write(uint32_t);
+__attribute__((__import_module__("{module}"), __import_name__("[{kind}-close-readable-{index}]{func_name}")))
+extern void {name}__close_readable(uint32_t);
+__attribute__((__import_module__("{module}"), __import_name__("[{kind}-close-writable-{index}]{func_name}")))
+extern void {name}__close_writable(uint32_t);
+
+{ty} {name}_new({name}_writer_t *writer) {{
+    uint64_t packed = {name}__new();
+    *writer = (uint32_t) (packed >> 32);
+    return (uint32_t) packed;
+}}
+
+{snake}_waitable_status_t {name}_read({ty} reader{read_arg_ty}) {{
+    return {name}__read(reader, {read_arg_expr});
+}}
+
+{snake}_waitable_status_t {name}_write({name}_writer_t writer{write_arg_ty}) {{
+    return {name}__write(writer, {write_arg_expr});
+}}
+
+{snake}_waitable_status_t {name}_cancel_read({ty} reader){empty} {{
+    return {name}__cancel_read(reader);
+}}
+
+{snake}_waitable_status_t {name}_cancel_write({name}_writer_t writer) {{
+    return {name}__cancel_write(writer);
+}}
+
+void {name}_close_readable({ty} reader){empty} {{
+    {name}__close_readable(reader);
+}}
+
+void {name}_close_writable({name}_writer_t writer) {{
+    {name}__close_writable(writer);
+}}
+            "#,
+        );
+    }
+}
+
+enum PayloadFor {
+    Future,
+    Stream,
 }
 
 struct DroppableBorrow {
@@ -2128,12 +2699,67 @@ struct FunctionBindgen<'a, 'b> {
     import_return_pointer_area_size: ArchitectureSize,
     import_return_pointer_area_align: Alignment,
 
+    /// State of what to generate for the `task.return` intrinsic in the case
+    /// that this bindings generator is being used for an async export.
+    ///
+    /// This typically stays at `DeferredTaskReturn::None` except for the case
+    /// of async exports where they'll fill this in after the `CallInterface`
+    /// instruction. For some more information see the documentation on
+    /// `DeferredTaskReturn`.
+    deferred_task_return: DeferredTaskReturn,
+
     /// Borrows observed during lifting an export, that will need to be dropped when the guest
     /// function exits.
     borrows: Vec<DroppableBorrow>,
 
     /// Forward declarations for temporary storage of borrow copies.
     borrow_decls: wit_bindgen_core::Source,
+}
+
+/// State associated with the generation of the `task.return` intrinsic function
+/// with async exports.
+enum DeferredTaskReturn {
+    /// Default state, meaning that either bindings generation isn't happening
+    /// for an async export or the async export is in the bindings generation
+    /// mode before `CallInterface`.
+    None,
+
+    /// An async export is having bindings generated and `CallInterface` has
+    /// been seen. After that instruction the `deferred_task_return` field
+    /// transitions to this state.
+    ///
+    /// This state is then present until the `AsyncTaskReturn` instruction is
+    /// met at which point this changes to `Emitted` below.
+    Generating {
+        /// The previous contents of `self.src` just after the `CallInterface`
+        /// had its code generator. This is effectively the bindings-generated
+        /// contents of the export and this will get replaced back into
+        /// `self.src` once the `AsyncTaskReturn` is generated.
+        prev_src: wit_bindgen_core::Source,
+    },
+
+    /// An `AsyncTaskReturn` has been seen and all state is now located here to
+    /// be used for generating the `task.return` intrinsic.
+    ///
+    /// This state is only generated during `AsyncTaskReturn` and is used to
+    /// record everything necessary to generate `task.return` meaning that the
+    /// in-`FunctionBindgen` state is now "back to normal" where it's intended
+    /// for the main function having bindings generated.
+    Emitted {
+        /// The name of the `task.return` intrinsic that should be imported.
+        /// Note that this does not include the module.
+        name: String,
+        /// The wasm type of each parameter provided to the `task.return`
+        /// intrinsic as well as the C expression necessary to produce this
+        /// parameter. The type is used to declare the intrinsic and the C
+        /// expression is used to call the intrinsic from the generated
+        /// function.
+        params: Vec<(WasmType, String)>,
+        /// The body of the `task.return` intrinsic. This contains the bulk of
+        /// the lowering code from a function's return value to the canonical
+        /// ABI.
+        body: wit_bindgen_core::Source,
+    },
 }
 
 impl<'a, 'b> FunctionBindgen<'a, 'b> {
@@ -2158,6 +2784,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             import_return_pointer_area_align: Default::default(),
             borrow_decls: Default::default(),
             borrows: Vec::new(),
+            deferred_task_return: DeferredTaskReturn::None,
         }
     }
 
@@ -2780,7 +3407,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.src.push_str(");\n");
             }
 
-            Instruction::CallInterface { func, .. } => {
+            Instruction::CallInterface { func, async_ } => {
                 let mut args = String::new();
                 for (i, (op, (byref, _))) in operands.iter().zip(&self.sig.params).enumerate() {
                     if i > 0 {
@@ -2804,6 +3431,27 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         }
                         args.push_str(op);
                     }
+                }
+                if *async_ {
+                    let ret = self.locals.tmp("ret");
+                    let snake = self.gen.gen.world.to_snake_case();
+                    uwriteln!(
+                        self.src,
+                        "{snake}_callback_code_t {ret} = {}({args});",
+                        self.sig.name,
+                    );
+                    uwriteln!(self.src, "return {ret};");
+                    if func.result.is_some() {
+                        results.push("ret".to_string());
+                    }
+                    assert!(matches!(
+                        self.deferred_task_return,
+                        DeferredTaskReturn::None
+                    ));
+                    self.deferred_task_return = DeferredTaskReturn::Generating {
+                        prev_src: mem::take(&mut self.src),
+                    };
+                    return;
                 }
                 match &self.sig.ret.scalar {
                     None => {
@@ -3072,6 +3720,39 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.extend(operands.iter().take(*amt).map(|v| v.clone()));
             }
 
+            Instruction::AsyncTaskReturn { name, params } => {
+                let body = match &mut self.deferred_task_return {
+                    DeferredTaskReturn::Generating { prev_src } => {
+                        mem::swap(&mut self.src, prev_src);
+                        mem::take(prev_src)
+                    }
+                    _ => unreachable!(),
+                };
+                assert_eq!(params.len(), operands.len());
+                self.deferred_task_return = DeferredTaskReturn::Emitted {
+                    name: name.to_string(),
+                    body,
+                    params: params
+                        .iter()
+                        .zip(operands)
+                        .map(|(a, b)| (a.clone(), b.clone()))
+                        .collect(),
+                };
+            }
+
+            Instruction::FutureLift { .. } => {
+                results.push(format!("((uint32_t) {})", operands[0]));
+            }
+            Instruction::FutureLower { .. } => {
+                results.push(format!("((int32_t) {})", operands[0]));
+            }
+            Instruction::StreamLift { .. } => {
+                results.push(format!("((uint32_t) {})", operands[0]));
+            }
+            Instruction::StreamLower { .. } => {
+                results.push(format!("((int32_t) {})", operands[0]));
+            }
+
             i => unimplemented!("{:?}", i),
         }
     }
@@ -3094,10 +3775,12 @@ struct Source {
     h_defs: wit_bindgen_core::Source,
     h_fns: wit_bindgen_core::Source,
     h_helpers: wit_bindgen_core::Source,
+    h_async: wit_bindgen_core::Source,
     c_defs: wit_bindgen_core::Source,
     c_fns: wit_bindgen_core::Source,
     c_helpers: wit_bindgen_core::Source,
     c_adapters: wit_bindgen_core::Source,
+    c_async: wit_bindgen_core::Source,
 }
 
 impl Source {
@@ -3111,10 +3794,12 @@ impl Source {
         self.h_defs.push_str(&append_src.h_defs);
         self.h_fns.push_str(&append_src.h_fns);
         self.h_helpers.push_str(&append_src.h_helpers);
+        self.h_async.push_str(&append_src.h_async);
         self.c_defs.push_str(&append_src.c_defs);
         self.c_fns.push_str(&append_src.c_fns);
         self.c_helpers.push_str(&append_src.c_helpers);
         self.c_adapters.push_str(&append_src.c_adapters);
+        self.c_async.push_str(&append_src.c_async);
     }
     fn h_defs(&mut self, s: &str) {
         self.h_defs.push_str(s);
@@ -3178,10 +3863,11 @@ pub fn is_arg_by_pointer(resolve: &Resolve, ty: &Type) -> bool {
             TypeDefKind::Flags(_) => false,
             TypeDefKind::Handle(_) => false,
             TypeDefKind::Tuple(_) | TypeDefKind::Record(_) | TypeDefKind::List(_) => true,
-            TypeDefKind::Future(_) => todo!("is_arg_by_pointer for future"),
-            TypeDefKind::Stream(_) => todo!("is_arg_by_pointer for stream"),
+            TypeDefKind::Future(_) => false,
+            TypeDefKind::Stream(_) => false,
             TypeDefKind::Resource => todo!("is_arg_by_pointer for resource"),
             TypeDefKind::Unknown => unreachable!(),
+            TypeDefKind::FixedSizeList(..) => todo!(),
         },
         Type::String => true,
         _ => false,

@@ -9,8 +9,8 @@ use std::mem;
 use std::str::FromStr;
 use wit_bindgen_core::abi::{Bitcast, WasmType};
 use wit_bindgen_core::{
-    dealias, name_package_module, uwrite, uwriteln, wit_parser::*, Files, InterfaceGenerator as _,
-    Source, Types, WorldGenerator,
+    dealias, name_package_module, uwrite, uwriteln, wit_parser::*, AsyncFilterSet, Files,
+    InterfaceGenerator as _, Source, Types, WorldGenerator,
 };
 
 mod bindgen;
@@ -62,7 +62,6 @@ struct RustWasm {
 
     future_payloads: IndexMap<String, String>,
     stream_payloads: IndexMap<String, String>,
-    used_async_options: HashSet<usize>,
 }
 
 #[derive(Default)]
@@ -149,67 +148,6 @@ fn parse_with(s: &str) -> Result<(String, WithOption), String> {
     Ok((k.to_string(), v))
 }
 
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
-pub struct Async {
-    pub enabled: bool,
-    pub filter: AsyncFilter,
-}
-
-impl Async {
-    pub fn parse(s: &str) -> Async {
-        let (s, enabled) = match s.strip_prefix('-') {
-            Some(s) => (s, false),
-            None => (s, true),
-        };
-        let filter = match s {
-            "all" => AsyncFilter::All,
-            other => match other.strip_prefix("import:") {
-                Some(s) => AsyncFilter::Import(s.to_string()),
-                None => match other.strip_prefix("export:") {
-                    Some(s) => AsyncFilter::Export(s.to_string()),
-                    None => AsyncFilter::Function(s.to_string()),
-                },
-            },
-        };
-        Async { enabled, filter }
-    }
-}
-
-impl fmt::Display for Async {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if !self.enabled {
-            write!(f, "-")?;
-        }
-        self.filter.fmt(f)
-    }
-}
-
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
-pub enum AsyncFilter {
-    All,
-    Function(String),
-    Import(String),
-    Export(String),
-}
-
-impl fmt::Display for AsyncFilter {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            AsyncFilter::All => write!(f, "all"),
-            AsyncFilter::Function(s) => write!(f, "{s}"),
-            AsyncFilter::Import(s) => write!(f, "import:{s}"),
-            AsyncFilter::Export(s) => write!(f, "export:{s}"),
-        }
-    }
-}
-
-#[cfg(feature = "clap")]
-fn parse_async(s: &str) -> Result<Async, String> {
-    Ok(Async::parse(s))
-}
-
 #[derive(Default, Debug, Clone)]
 #[cfg_attr(feature = "clap", derive(clap::Parser))]
 #[cfg_attr(
@@ -235,7 +173,7 @@ pub struct Opts {
     pub raw_strings: bool,
 
     /// Names of functions to skip generating bindings for.
-    #[cfg_attr(feature = "clap", arg(long))]
+    #[cfg_attr(feature = "clap", arg(long, value_name = "NAME"))]
     pub skip: Vec<String>,
 
     /// If true, generate stub implementations for any exported functions,
@@ -246,7 +184,7 @@ pub struct Opts {
     /// Optionally prefix any export names with the specified value.
     ///
     /// This is useful to avoid name conflicts when testing.
-    #[cfg_attr(feature = "clap", arg(long))]
+    #[cfg_attr(feature = "clap", arg(long, value_name = "STRING"))]
     pub export_prefix: Option<String>,
 
     /// Whether to generate owning or borrowing type definitions.
@@ -268,7 +206,7 @@ pub struct Opts {
     /// The optional path to the wit-bindgen runtime module to use.
     ///
     /// This defaults to `wit_bindgen::rt`.
-    #[cfg_attr(feature = "clap", arg(long))]
+    #[cfg_attr(feature = "clap", arg(long, value_name = "PATH"))]
     pub runtime_path: Option<String>,
 
     /// The optional path to the bitflags crate to use.
@@ -281,7 +219,7 @@ pub struct Opts {
     /// specified multiple times to add multiple attributes.
     ///
     /// These derive attributes will be added to any generated structs or enums
-    #[cfg_attr(feature = "clap", arg(long, short = 'd'))]
+    #[cfg_attr(feature = "clap", arg(long, short = 'd', value_name = "DERIVE"))]
     pub additional_derive_attributes: Vec<String>,
 
     /// Variants and records to ignore when applying additional derive attributes.
@@ -290,7 +228,7 @@ pub struct Opts {
     /// This feature allows some variants and records to use types for which adding traits will cause
     /// compilation to fail, such as serde::Deserialize on wasi:io/streams.
     ///
-    #[cfg_attr(feature = "clap", arg(long))]
+    #[cfg_attr(feature = "clap", arg(long, value_name = "NAME"))]
     pub additional_derive_ignore: Vec<String>,
 
     /// Remapping of wit interface and type names to Rust module names and types.
@@ -308,7 +246,7 @@ pub struct Opts {
 
     /// Add the specified suffix to the name of the custome section containing
     /// the component type.
-    #[cfg_attr(feature = "clap", arg(long))]
+    #[cfg_attr(feature = "clap", arg(long, value_name = "STRING"))]
     pub type_section_suffix: Option<String>,
 
     /// Disable a workaround used to prevent libc ctors/dtors from being invoked
@@ -318,11 +256,11 @@ pub struct Opts {
 
     /// Changes the default module used in the generated `export!` macro to
     /// something other than `self`.
-    #[cfg_attr(feature = "clap", arg(long))]
+    #[cfg_attr(feature = "clap", arg(long, value_name = "NAME"))]
     pub default_bindings_module: Option<String>,
 
     /// Alternative name to use for the `export!` macro if one is generated.
-    #[cfg_attr(feature = "clap", arg(long))]
+    #[cfg_attr(feature = "clap", arg(long, value_name = "NAME"))]
     pub export_macro_name: Option<String>,
 
     /// Ensures that the `export!` macro will be defined as `pub` so it is a
@@ -355,35 +293,9 @@ pub struct Opts {
     #[cfg_attr(feature = "clap", arg(long))]
     pub disable_custom_section_link_helpers: bool,
 
-    /// Determines which functions to lift or lower `async`, if any.
-    ///
-    /// This option can be passed multiple times and additionally accepts
-    /// comma-separated values for each option passed. Each individual argument
-    /// passed here can be one of:
-    ///
-    /// - `all` - all imports and exports will be async
-    /// - `-all` - force all imports and exports to be sync
-    /// - `foo:bar/baz#method` - force this method to be async
-    /// - `import:foo:bar/baz#method` - force this method to be async, but only
-    ///   as an import
-    /// - `-export:foo:bar/baz#method` - force this export to be sync
-    ///
-    /// If a method is not listed in this option then the WIT's default bindings
-    /// mode will be used. If the WIT function is defined as `async` then async
-    /// bindings will be generated, otherwise sync bindings will be generated.
-    ///
-    /// Options are processed in the order they are passed here, so if a method
-    /// matches two directives passed the least-specific one should be last.
-    #[cfg_attr(
-        feature = "clap",
-        arg(
-            long = "async",
-            value_parser = parse_async,
-            value_delimiter =',',
-        ),
-    )]
-    #[cfg_attr(feature = "serde", serde(rename = "async"))]
-    pub async_: Vec<Async>,
+    #[cfg_attr(feature = "clap", clap(flatten))]
+    #[cfg_attr(feature = "serde", serde(flatten))]
+    pub async_: AsyncFilterSet,
 }
 
 impl Opts {
@@ -1107,45 +1019,9 @@ macro_rules! __export_{world_name}_impl {{
         func: &Function,
         is_import: bool,
     ) -> bool {
-        let name_to_test = match interface {
-            Some(key) => format!("{}#{}", resolve.name_world_key(key), func.name),
-            None => func.name.clone(),
-        };
-        for (i, opt) in self.opts.async_.iter().enumerate() {
-            let name = match &opt.filter {
-                AsyncFilter::All => {
-                    self.used_async_options.insert(i);
-                    return opt.enabled;
-                }
-                AsyncFilter::Function(s) => s,
-                AsyncFilter::Import(s) => {
-                    if !is_import {
-                        continue;
-                    }
-                    s
-                }
-                AsyncFilter::Export(s) => {
-                    if is_import {
-                        continue;
-                    }
-                    s
-                }
-            };
-            if *name == name_to_test {
-                self.used_async_options.insert(i);
-                return opt.enabled;
-            }
-        }
-
-        match &func.kind {
-            FunctionKind::Freestanding
-            | FunctionKind::Method(_)
-            | FunctionKind::Static(_)
-            | FunctionKind::Constructor(_) => false,
-            FunctionKind::AsyncFreestanding
-            | FunctionKind::AsyncMethod(_)
-            | FunctionKind::AsyncStatic(_) => true,
-        }
+        self.opts
+            .async_
+            .is_async(resolve, interface, func, is_import)
     }
 }
 
@@ -1243,7 +1119,7 @@ impl WorldGenerator for RustWasm {
                 "//   * disable_custom_section_link_helpers"
             );
         }
-        for opt in self.opts.async_.iter() {
+        for opt in self.opts.async_.debug_opts() {
             uwriteln!(self.src_preamble, "//   * async: {opt}");
         }
         self.types.analyze(resolve);
@@ -1579,14 +1455,7 @@ impl WorldGenerator for RustWasm {
 
         // Error about unused async configuration to help catch configuration
         // errors.
-        for (i, opt) in self.opts.async_.iter().enumerate() {
-            if self.used_async_options.contains(&i) {
-                continue;
-            }
-            if !matches!(opt.filter, AsyncFilter::All) {
-                bail!("unused async option: {opt}");
-            }
-        }
+        self.opts.async_.ensure_all_used()?;
 
         Ok(())
     }

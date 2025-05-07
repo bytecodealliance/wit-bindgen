@@ -15,8 +15,8 @@ Used when compiling Rust programs to the component model.
 all-features = true
 
 [dependencies]
-wit-bindgen-rust-macro = { path = "./macro", optional = true, version = "0.41.0" }
-wit-bindgen-rt = { path = "./rt", version = "0.41.0", features = ["bitflags"] }
+wit-bindgen-rust-macro = { path = "./macro", optional = true, version = "0.42.1" }
+wit-bindgen-rt = { path = "./rt", version = "0.42.1", features = ["bitflags"] }
 
 [features]
 default = ["macros", "realloc", "async"]

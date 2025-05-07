@@ -13,6 +13,8 @@ pub use types::{TypeInfo, Types};
 mod path;
 pub use path::name_package_module;
 pub mod symmetric;
+mod async_;
+pub use async_::AsyncFilterSet;
 
 #[derive(Default, Copy, Clone, PartialEq, Eq, Debug)]
 pub enum Direction {
@@ -182,6 +184,7 @@ pub trait InterfaceGenerator<'a> {
             TypeDefKind::Future(t) => self.type_future(id, name, t, &ty.docs),
             TypeDefKind::Stream(t) => self.type_stream(id, name, t, &ty.docs),
             TypeDefKind::Handle(_) => panic!("handle types do not require definition"),
+            TypeDefKind::FixedSizeList(..) => todo!(),
             TypeDefKind::Unknown => unreachable!(),
         }
     }
@@ -217,6 +220,7 @@ pub trait AnonymousTypeGenerator<'a> {
             TypeDefKind::Future(f) => self.anonymous_type_future(id, f, &ty.docs),
             TypeDefKind::Stream(s) => self.anonymous_type_stream(id, s, &ty.docs),
             TypeDefKind::Handle(handle) => self.anonymous_type_handle(id, handle, &ty.docs),
+            TypeDefKind::FixedSizeList(..) => todo!(),
             TypeDefKind::Unknown => unreachable!(),
         }
     }
