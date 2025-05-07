@@ -937,7 +937,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         lift_lower: LiftLower,
         async_: bool,
     ) {
-        const MAX_FLAT_PARAMS: usize = 16;
+        // const MAX_FLAT_PARAMS: usize = 16;
 
         // Lowering parameters calling a wasm import _or_ returning a result
         // from an async-lifted wasm export means we don't need to pass
