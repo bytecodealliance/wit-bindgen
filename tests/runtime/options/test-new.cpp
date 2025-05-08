@@ -1,7 +1,7 @@
 #include <assert.h>
 #include <limits.h>
 #include <math.h>
-#include <options_cpp.h>
+#include <test_cpp.h>
 
 template <class T>
 static bool equal(T const& a, T const& b) {
