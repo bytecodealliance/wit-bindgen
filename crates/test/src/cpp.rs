@@ -64,7 +64,7 @@ impl LanguageMethods for Cpp17 {
 
         println!("Testing if `{}` works...", compiler.display());
         runner
-            .run_command(Command::new(&compiler).current_dir(&dir).arg("test.c"))
+            .run_command(Command::new(&compiler).current_dir(&dir).arg("test.cpp"))
             .inspect_err(|_| {
                 eprintln!(
                     "Error: failed to find `{}`. Hint: pass `--wasi-sdk-path` or set `WASI_SDK_PATH`",
