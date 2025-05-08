@@ -1,12 +1,12 @@
 #include <assert.h>
-#include <many_arguments_cpp.h>
+#include <test_cpp.h>
 
 template <class T>
 bool equal(T const&a, T const&b) {
     return a==b;
 }
 
-void exports::many_arguments::ManyArguments(
+void exports::test::many_arguments::to_test::ManyArguments(
     uint64_t a1,
     uint64_t a2,
     uint64_t a3,
@@ -40,7 +40,4 @@ void exports::many_arguments::ManyArguments(
     assert(equal(a14, (uint64_t)14));
     assert(equal(a15, (uint64_t)15));
     assert(equal(a16, (uint64_t)16));
-    ::test::many_arguments::ManyArguments(
-        a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16
-    );
 }
