@@ -239,7 +239,7 @@ impl Opts {
     }
 
     fn ptr_type(&self) -> &'static str {
-        "int32_t"
+        "uint8_t*"
     }
 }
 
