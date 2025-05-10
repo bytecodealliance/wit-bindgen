@@ -2386,7 +2386,19 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let tmp = self.tmp();
                 let len = format!("len{}", tmp);
                 uwriteln!(self.src, "auto {} = {};\n", len, operands[1]);
-                let result = format!("wit::string((char const*)({}), {len})", operands[0]);
+                let result = if self.gen.gen.opts.new_api
+                    && matches!(self.variant, AbiVariant::GuestExport)
+                {
+                    assert!(self.needs_dealloc);
+                    uwriteln!(
+                        self.src,
+                        "if ({len}>0) _deallocate.push_back({});\n",
+                        operands[0]
+                    );
+                    format!("std::string_view((char const*)({}), {len})", operands[0])
+                } else {
+                    format!("wit::string((char const*)({}), {len})", operands[0])
+                };
                 results.push(result);
             }
             abi::Instruction::ListLift { element, .. } => {
