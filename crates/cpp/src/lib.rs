@@ -976,7 +976,7 @@ impl CppInterfaceGenerator<'_> {
         func: &Function,
         abi_variant: AbiVariant,
         // import: bool,
-        _from_namespace: &Vec<String>,
+        from_namespace: &Vec<String>,
     ) -> HighlevelSignature {
         let mut res = HighlevelSignature::default();
         // let abi_variant = if import ^ self.gen.opts.host_side() {
@@ -1000,7 +1000,7 @@ impl CppInterfaceGenerator<'_> {
             if let Some(ty) = &func.result {
                 res.result.push_str(&self.type_name(
                     ty,
-                    &res.namespace,
+                    from_namespace,
                     Flavor::Result(abi_variant),
                 ));
             } else {
