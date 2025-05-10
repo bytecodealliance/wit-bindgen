@@ -228,8 +228,11 @@ pub struct Opts {
 }
 
 impl Opts {
-    pub fn build(self) -> Box<dyn WorldGenerator> {
+    pub fn build(mut self) -> Box<dyn WorldGenerator> {
         let mut r = Cpp::new();
+        if self._old_api {
+            self.new_api = false;
+        }
         r.opts = self;
         Box::new(r)
     }
