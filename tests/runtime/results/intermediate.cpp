@@ -1,5 +1,5 @@
 #include <assert.h>
-#include <results_cpp.h>
+#include <intermediate_cpp.h>
 
 template <class T>
 bool equal(T const&a, T const&b) {
