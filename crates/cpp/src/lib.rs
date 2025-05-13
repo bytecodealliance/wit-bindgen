@@ -752,8 +752,13 @@ impl SourceWithState {
                 self.src.push_str("::");
             }
         }
-        for i in target.iter().skip(same) {
-            uwrite!(self.src, "{i}::");
+        if same == target.len() && self.namespace.len() != target.len() && same > 0 {
+            // namespace is parent, qualify at least one namespace (and cross fingers)
+            uwrite!(self.src, "{}::", target[same - 1]);
+        } else {
+            for i in target.iter().skip(same) {
+                uwrite!(self.src, "{i}::");
+            }
         }
     }
 }
@@ -1535,11 +1540,14 @@ impl CppInterfaceGenerator<'_> {
                     "std::optional<".to_string() + &self.type_name(o, from_namespace, flavor) + ">"
                 }
                 TypeDefKind::Result(r) => {
+                    let err_type = r.err.as_ref().map_or(String::from("wit::Void"), |ty| {
+                        self.type_name(ty, from_namespace, flavor)
+                    });
                     self.gen.dependencies.needs_expected = true;
                     "std::expected<".to_string()
                         + &self.optional_type_name(r.ok.as_ref(), from_namespace, flavor)
                         + ", "
-                        + &self.optional_type_name(r.err.as_ref(), from_namespace, flavor)
+                        + &err_type
                         + ">"
                 }
                 TypeDefKind::List(ty) => {
@@ -1903,28 +1911,32 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
             NOT_IN_EXPORTED_NAMESPACE,
             &self.gen.opts,
         );
-        self.gen.h_src.change_namespace(&namespc);
-        Self::docs(&mut self.gen.h_src.src, docs);
-        let pascal = name.to_pascal_case();
-        uwriteln!(self.gen.h_src.src, "struct {pascal} {{");
-        let mut all_types = String::new();
-        for case in variant.cases.iter() {
-            Self::docs(&mut self.gen.h_src.src, &case.docs);
-            let case_pascal = case.name.to_pascal_case();
-            if !all_types.is_empty() {
-                all_types += ", ";
+        if self.gen.is_first_definition(&namespc, name) {
+            self.gen.h_src.change_namespace(&namespc);
+            Self::docs(&mut self.gen.h_src.src, docs);
+            let pascal = name.to_pascal_case();
+            uwriteln!(self.gen.h_src.src, "struct {pascal} {{");
+            let mut inner_namespace = namespc.clone();
+            inner_namespace.push(pascal.clone());
+            let mut all_types = String::new();
+            for case in variant.cases.iter() {
+                Self::docs(&mut self.gen.h_src.src, &case.docs);
+                let case_pascal = case.name.to_pascal_case();
+                if !all_types.is_empty() {
+                    all_types += ", ";
+                }
+                all_types += &case_pascal;
+                uwrite!(self.gen.h_src.src, "struct {case_pascal} {{");
+                if let Some(ty) = case.ty.as_ref() {
+                    let typestr = self.type_name(ty, &inner_namespace, Flavor::InStruct);
+                    uwrite!(self.gen.h_src.src, " {typestr} value; ")
+                }
+                uwriteln!(self.gen.h_src.src, "}};");
             }
-            all_types += &case_pascal;
-            uwrite!(self.gen.h_src.src, "struct {case_pascal} {{");
-            if let Some(ty) = case.ty.as_ref() {
-                let typestr = self.type_name(ty, &namespc, Flavor::InStruct);
-                uwrite!(self.gen.h_src.src, " {typestr} value; ")
-            }
+            uwriteln!(self.gen.h_src.src, "  std::variant<{all_types}> variants;");
             uwriteln!(self.gen.h_src.src, "}};");
+            self.gen.dependencies.needs_variant = true;
         }
-        uwriteln!(self.gen.h_src.src, "  std::variant<{all_types}> variants;");
-        uwriteln!(self.gen.h_src.src, "}};");
-        self.gen.dependencies.needs_variant = true;
     }
 
     fn type_option(
@@ -2900,7 +2912,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let (mut err, err_results) = self.blocks.pop().unwrap();
                 let (mut ok, ok_results) = self.blocks.pop().unwrap();
                 let mut ok_result = String::new();
-                let mut err_result = String::new();
+                let err_result;
                 if result.ok.is_none() {
                     ok.clear();
                 } else {
@@ -2908,6 +2920,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 }
                 if result.err.is_none() {
                     err.clear();
+                    err_result = String::from("wit::Void{}");
                 } else {
                     err_result = format!("std::move({})", err_results[0]);
                 }
@@ -2916,23 +2929,26 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     &self.namespace,
                     Flavor::InStruct,
                 );
-                let err_type = self.gen.optional_type_name(
-                    result.err.as_ref(),
-                    &self.namespace,
-                    Flavor::InStruct,
-                );
+                let err_type = result.err.as_ref().map_or(String::from("wit::Void"), |ty| {
+                    self.gen.type_name(ty, &self.namespace, Flavor::InStruct)
+                });
                 let full_type = format!("std::expected<{ok_type}, {err_type}>",);
                 let err_type = "std::unexpected";
                 let operand = &operands[0];
 
                 let tmp = self.tmp();
                 let resultname = self.tempname("result", tmp);
+                let ok_assign = if result.ok.is_some() {
+                    format!("{resultname}.emplace({ok_result});")
+                } else {
+                    String::new()
+                };
                 uwriteln!(
                     self.src,
                     "{full_type} {resultname};
                     if ({operand}==0) {{
                         {ok}
-                        {resultname}.emplace({ok_result});
+                        {ok_assign}
                     }} else {{
                         {err}
                         {resultname}={err_type}{{{err_result}}};
