@@ -123,7 +123,7 @@ impl GuestStreamObj for StreamObj {
             "Stream::read_result {:x} {addr:x?} {size}",
             self.0.read_ready_event_send.handle()
         );
-        if addr as usize == EOF_MARKER {
+        if addr as usize == EOF_MARKER || (addr == null_mut() && size == results::BLOCKED) {
             None
         } else {
             Some(symmetric_stream::Buffer::new(Buffer {
