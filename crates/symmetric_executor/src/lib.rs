@@ -389,13 +389,13 @@ impl QueuedEvent {
                     callback.1 as usize
                 ),
                 EventType::SystemTime(system_time) => {
-                    let diff = system_time.duration_since(SystemTime::now()).unwrap();
+                    let diff = match system_time.duration_since(SystemTime::now()) {
+                        Ok(diff) => format!("{}.{}", diff.as_secs(), diff.subsec_nanos()),
+                        Err(err) => format!("{err}"),
+                    };
                     println!(
-                        "register(Time {}.{}, {:x},{:x})",
-                        diff.as_secs(),
-                        diff.subsec_nanos(),
-                        callback.0 as usize,
-                        callback.1 as usize
+                        "register(Time {}, {:x},{:x})",
+                        diff, callback.0 as usize, callback.1 as usize
                     );
                 }
             }
