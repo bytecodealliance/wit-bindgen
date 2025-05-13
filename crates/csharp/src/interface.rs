@@ -3,7 +3,7 @@ use crate::function::FunctionBindgen;
 use crate::function::ResourceInfo;
 use crate::world_generator::CSharp;
 use heck::{ToShoutySnakeCase, ToUpperCamelCase};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fmt::Write;
 use std::ops::Deref;
 use wit_bindgen_core::abi::LiftLower;
@@ -20,8 +20,6 @@ pub(crate) struct InterfaceFragment {
     pub(crate) csharp_src: String,
     pub(crate) csharp_interop_src: String,
     pub(crate) stub: String,
-    pub(crate) usings: HashSet<String>,
-    pub(crate) interop_usings: HashSet<String>,
 }
 
 pub(crate) struct InterfaceTypeAndFragments {
@@ -49,8 +47,6 @@ pub(crate) struct InterfaceGenerator<'a> {
     pub(crate) resolve: &'a Resolve,
     pub(crate) name: &'a str,
     pub(crate) direction: Direction,
-    pub(crate) usings: HashSet<String>,
-    pub(crate) interop_usings: HashSet<String>,
 }
 
 impl InterfaceGenerator<'_> {
@@ -162,8 +158,6 @@ impl InterfaceGenerator<'_> {
                 csharp_src: self.src,
                 csharp_interop_src: self.csharp_interop_src,
                 stub: self.stub,
-                usings: self.usings,
-                interop_usings: self.interop_usings,
             });
     }
 
@@ -172,8 +166,6 @@ impl InterfaceGenerator<'_> {
             csharp_src: self.src,
             csharp_interop_src: self.csharp_interop_src,
             stub: self.stub,
-            usings: self.usings,
-            interop_usings: self.interop_usings,
         });
     }
 
@@ -261,14 +253,9 @@ impl InterfaceGenerator<'_> {
 
         let import_name = &func.name;
 
-        self.csharp_gen
-            .require_using("System.Runtime.InteropServices");
-
         let target = if let FunctionKind::Freestanding = &func.kind {
-            self.require_interop_using("System.Runtime.InteropServices");
             &mut self.csharp_interop_src
         } else {
-            self.require_using("System.Runtime.InteropServices");
             &mut self.src
         };
 
@@ -277,7 +264,7 @@ impl InterfaceGenerator<'_> {
             r#"
             internal static class {interop_camel_name}WasmInterop
             {{
-                [DllImport("{import_module_name}", EntryPoint = "{import_name}"), WasmImportLinkage]
+                [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "{import_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
                 internal static extern {wasm_result_type} wasmImport{interop_camel_name}({wasm_params});
             }}
             "#
@@ -462,11 +449,10 @@ impl InterfaceGenerator<'_> {
         let export_name = func.legacy_core_export_name(core_module_name.as_deref());
         let access = self.csharp_gen.access_modifier();
 
-        self.require_interop_using("System.Runtime.InteropServices");
         uwrite!(
             self.csharp_interop_src,
             r#"
-            [UnmanagedCallersOnly(EntryPoint = "{export_name}")]
+            [global::System.Runtime.InteropServices.UnmanagedCallersOnlyAttribute(EntryPoint = "{export_name}")]
             {access} static unsafe {wasm_result_type} {interop_name}({wasm_params}) {{
                 {vars}
                 {src}
@@ -502,7 +488,7 @@ impl InterfaceGenerator<'_> {
             uwrite!(
                 self.csharp_interop_src,
                 r#"
-                [UnmanagedCallersOnly(EntryPoint = "cabi_post_{export_name}")]
+                [global::System.Runtime.InteropServices.UnmanagedCallersOnlyAttribute(EntryPoint = "cabi_post_{export_name}")]
                 {access} static unsafe void cabi_post_{interop_name}({params}) {{
                     {src}
                 }}
@@ -526,7 +512,7 @@ impl InterfaceGenerator<'_> {
                 self.stub,
                 r#"
                 {sig} {{
-                    throw new NotImplementedException();
+                    throw new global::System.NotImplementedException();
                 }}
                 "#
             );
@@ -607,16 +593,19 @@ impl InterfaceGenerator<'_> {
                             && self.direction == Direction::Import
                             && parameter_type == ParameterType::Span
                         {
-                            format!("Span<{}>", self.type_name(ty))
+                            format!("global::System.Span<{}>", self.type_name(ty))
                         } else if crate::world_generator::is_primitive(ty)
                             && self.direction == Direction::Import
                             && parameter_type == ParameterType::Memory
                         {
-                            format!("Memory<{}>", self.type_name(ty))
+                            format!("global::System.Memory<{}>", self.type_name(ty))
                         } else if crate::world_generator::is_primitive(ty) {
                             format!("{}[]", self.type_name(ty))
                         } else {
-                            format!("List<{}>", self.type_name_with_qualifier(ty, qualifier))
+                            format!(
+                                "global::System.Collections.Generic.List<{}>",
+                                self.type_name_with_qualifier(ty, qualifier)
+                            )
                         }
                     }
                     TypeDefKind::Tuple(tuple) => {
@@ -725,20 +714,6 @@ impl InterfaceGenerator<'_> {
         }
     }
 
-    pub(crate) fn require_using(&mut self, using_ns: &str) {
-        if !self.usings.contains(using_ns) {
-            let using_ns_string = using_ns.to_string();
-            self.usings.insert(using_ns_string);
-        }
-    }
-
-    pub(crate) fn require_interop_using(&mut self, using_ns: &str) {
-        if !self.interop_usings.contains(using_ns) {
-            let using_ns_string = using_ns.to_string();
-            self.interop_usings.insert(using_ns_string);
-        }
-    }
-
     pub(crate) fn start_resource(&mut self, id: TypeId, key: Option<&WorldKey>) {
         let access = self.csharp_gen.access_modifier();
         let qualified = self.type_name_with_qualifier(&Type::Id(id), true);
@@ -754,7 +729,6 @@ impl InterfaceGenerator<'_> {
                     .map(|key| self.resolve.name_world_key(key))
                     .unwrap_or_else(|| "$root".into());
 
-                self.require_using("System.Runtime.InteropServices");
                 // As of this writing, we cannot safely drop a handle to an imported resource from a .NET finalizer
                 // because it may still have one or more open child resources.  Once WIT has explicit syntax for
                 // indicating parent/child relationships, we should be able to use that information to keep track
@@ -763,7 +737,7 @@ impl InterfaceGenerator<'_> {
                 uwriteln!(
                     self.src,
                     r#"
-                    {access} class {upper_camel}: IDisposable {{
+                    {access} class {upper_camel}: global::System.IDisposable {{
                         internal int Handle {{ get; set; }}
 
                         {access} readonly record struct THandle(int Handle);
@@ -776,7 +750,7 @@ impl InterfaceGenerator<'_> {
                             Dispose(true);
                         }}
 
-                        [DllImport("{module_name}", EntryPoint = "[resource-drop]{name}"), WasmImportLinkage]
+                        [global::System.Runtime.InteropServices.DllImportAttribute("{module_name}", EntryPoint = "[resource-drop]{name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
                         private static extern void wasmImportResourceDrop(int p0);
 
                         protected virtual void Dispose(bool disposing) {{
@@ -793,11 +767,10 @@ impl InterfaceGenerator<'_> {
                     .map(|s| format!("{}#", self.resolve.name_world_key(s)))
                     .unwrap_or_else(String::new);
 
-                self.require_interop_using("System.Runtime.InteropServices");
                 uwrite!(
                     self.csharp_interop_src,
                     r#"
-                    [UnmanagedCallersOnly(EntryPoint = "{prefix}[dtor]{name}")]
+                    [global::System.Runtime.InteropServices.UnmanagedCallersOnlyAttribute(EntryPoint = "{prefix}[dtor]{name}")]
                     {access} static unsafe void wasmExportResourceDtor{upper_camel}(int rep) {{
                         var val = ({qualified}) {qualified}.repTable.Remove(rep);
                         val.Handle = 0;
@@ -812,7 +785,6 @@ impl InterfaceGenerator<'_> {
                     .map(|key| format!("[export]{}", self.resolve.name_world_key(key)))
                     .unwrap_or_else(|| "[export]$root".into());
 
-                self.require_using("System.Runtime.InteropServices");
                 // The ergonomics of exported resources are not ideal, currently. Implementing such a resource
                 // requires both extending a class and implementing an interface. The reason for the class is to
                 // allow implementers to inherit code which tracks and disposes of the resource handle; the reason
@@ -831,7 +803,7 @@ impl InterfaceGenerator<'_> {
                 uwriteln!(
                     self.src,
                     r#"
-                    {access} abstract class {upper_camel}: IDisposable {{
+                    {access} abstract class {upper_camel}: global::System.IDisposable {{
                         internal static RepTable<{upper_camel}> repTable = new ();
                         internal int Handle {{ get; set; }}
 
@@ -841,13 +813,13 @@ impl InterfaceGenerator<'_> {
                         }}
 
                         internal static class WasmInterop {{
-                            [DllImport("{module_name}", EntryPoint = "[resource-drop]{name}"), WasmImportLinkage]
+                            [global::System.Runtime.InteropServices.DllImportAttribute("{module_name}", EntryPoint = "[resource-drop]{name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
                             internal static extern void wasmImportResourceDrop(int p0);
 
-                            [DllImport("{module_name}", EntryPoint = "[resource-new]{name}"), WasmImportLinkage]
+                            [global::System.Runtime.InteropServices.DllImportAttribute("{module_name}", EntryPoint = "[resource-new]{name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
                             internal static extern int wasmImportResourceNew(int p0);
 
-                            [DllImport("{module_name}", EntryPoint = "[resource-rep]{name}"), WasmImportLinkage]
+                            [global::System.Runtime.InteropServices.DllImportAttribute("{module_name}", EntryPoint = "[resource-rep]{name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
                             internal static extern int wasmImportResourceRep(int p0);
                         }}
 
@@ -1127,7 +1099,7 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
                                 if (Tag == Tags.{tag})
                                     return ({ty})value!;
                                 else
-                                    throw new ArgumentException("expected {tag}, got " + Tag);
+                                    throw new global::System.ArgumentException("expected {tag}, got " + Tag);
                             }}
                         }}
                         "#
