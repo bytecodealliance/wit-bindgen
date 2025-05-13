@@ -101,6 +101,7 @@ impl LanguageMethods for Cpp17 {
         .arg("-Wextra")
         .arg("-Werror")
         .arg("-Wno-unused-parameter")
+        .arg("-std=c++17")
         .arg("-c")
         .arg("-o")
         .arg(&bindings_object);
@@ -125,6 +126,7 @@ impl LanguageMethods for Cpp17 {
             .arg("-Werror")
             .arg("-Wc++-compat")
             .arg("-Wno-unused-parameter")
+            .arg("-std=c++17")
             .arg("-g")
             .arg("-o")
             .arg(&compile.output);
