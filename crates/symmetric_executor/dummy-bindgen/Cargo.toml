@@ -4,5 +4,12 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-wit-bindgen-symmetric-rt = { path = "../rust-client" }
-dummy-rt = { path = "../dummy-rt" }
+wit-bindgen-symmetric-rt = { path = "../rust-client", optional = true }
+dummy-rt = { path = "../dummy-rt", optional = true }
+original = { path = "../../guest-rust", optional = true, package = "wit-bindgen" }
+
+[features]
+# no default gives you the original wit-bindgen crate with rt
+default = [ "symmetric" ]
+symmetric = [ "dep:dummy-rt", "dep:wit-bindgen-symmetric-rt" ]
+canonical = [ "dep:original" ]

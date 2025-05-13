@@ -1,7 +1,7 @@
 [workspace]
 package.version = "0.1.0"
 package.edition = "2021"
-members = [ "dummy-rt","symmetric_stream","rust-client" ]
+members = [ "dummy-rt","symmetric_stream","rust-client","dummy-bindgen" ]
 
 [package]
 name = "symmetric_executor"
@@ -11,8 +11,6 @@ version.workspace = true
 [dependencies]
 futures = "0.3.31"
 libc = "0.2.167"
-#wit-bindgen = { path = "../guest-rust" }
-#wit-bindgen-rt = { path = "../guest-rust/rt" }
 
 [dependencies.wit-bindgen]
 package = "dummy-rt"
