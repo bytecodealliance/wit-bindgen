@@ -410,7 +410,7 @@ impl Runner<'_> {
             .and_then(|s| s.to_str())
             .context("non-utf-8 path extension")?;
 
-        let language = match extension {
+        let mut language = match extension {
             "rs" => Language::Rust,
             "c" => Language::C,
             "cpp" => Language::Cpp17,
@@ -429,6 +429,16 @@ impl Runner<'_> {
         };
         assert!(bindgen.args.is_empty());
         bindgen.args = config.args.into();
+        if language == Language::Cpp17 {
+            bindgen.args.retain(|elem| {
+                if elem == "--language=Cpp" {
+                    language = Language::Cpp;
+                    false
+                } else {
+                    true
+                }
+            });
+        }
 
         Ok(Component {
             name: path.file_stem().unwrap().to_str().unwrap().to_string(),
