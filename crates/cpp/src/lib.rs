@@ -2202,6 +2202,15 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
     }
 }
 
+fn move_if_necessary(arg: &str) -> String {
+    // if it is a name of a variable move it
+    if arg.chars().all(char::is_alphanumeric) {
+        format!("std::move({arg})")
+    } else {
+        arg.into()
+    }
+}
+
 impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
     type Operand = String;
 
@@ -2467,7 +2476,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                         ));
                     }
                 } else {
-                    results.push(format!("std::move({result})"));
+                    results.push(move_if_necessary(&result));
                 }
             }
             abi::Instruction::IterElem { .. } => results.push("IterElem".to_string()),
@@ -2486,9 +2495,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 // self.typename_lift(*ty);
                 result.push_str("{");
                 for (_field, val) in record.fields.iter().zip(operands) {
-                    result.push_str("std::move(");
-                    result.push_str(&val);
-                    result.push_str("), ");
+                    result.push_str(&move_if_necessary(&val));
                 }
                 result.push_str("}");
                 results.push(result);
@@ -2916,13 +2923,15 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 if result.ok.is_none() {
                     ok.clear();
                 } else {
-                    ok_result = format!("std::move({})", ok_results[0]);
+                    ok_result = move_if_necessary(&ok_results[0]);
+                    //                    format!("std::move({})", ok_results[0]);
                 }
                 if result.err.is_none() {
                     err.clear();
                     err_result = String::from("wit::Void{}");
                 } else {
-                    err_result = format!("std::move({})", err_results[0]);
+                    err_result = move_if_necessary(&err_results[0]);
+                    //                    format!("std::move({})", err_results[0]);
                 }
                 let ok_type = self.gen.optional_type_name(
                     result.ok.as_ref(),
