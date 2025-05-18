@@ -2495,7 +2495,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 // self.typename_lift(*ty);
                 result.push_str("{");
                 for (_field, val) in record.fields.iter().zip(operands) {
-                    result.push_str(&move_if_necessary(&val));
+                    result.push_str(&(move_if_necessary(&val) + ", "));
                 }
                 result.push_str("}");
                 results.push(result);
