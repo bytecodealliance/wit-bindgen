@@ -2664,11 +2664,10 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             abi::Instruction::VariantLower {
                 variant,
                 results: result_types,
+                ty: var_ty,
+                name: _var_name,
                 ..
             } => {
-                //let name = self.gen.type_name(*ty);
-                // let op0 = &operands[0];
-                // self.push_str(&format!("({name}){op0}"));
                 let blocks = self
                     .blocks
                     .drain(self.blocks.len() - variant.cases.len()..)
@@ -2689,7 +2688,10 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     variant_results.push(name);
                 }
 
-                let expr_to_match = format!("({}).tag", operands[0]);
+                let expr_to_match = format!("({}).variants.index()", operands[0]);
+                let elem_ns =
+                    self.gen
+                        .type_name(&Type::Id(*var_ty), &self.namespace, Flavor::InStruct);
 
                 uwriteln!(self.src, "switch ((int32_t) {}) {{", expr_to_match);
                 for (i, ((case, (block, block_results)), payload)) in
@@ -2698,17 +2700,16 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     uwriteln!(self.src, "case {}: {{", i);
                     if let Some(ty) = case.ty.as_ref() {
                         let ty = self.gen.type_name(ty, &self.namespace, Flavor::InStruct);
-                        uwrite!(
+                        let case = format!("{elem_ns}::{}", case.name.to_pascal_case());
+                        uwriteln!(
                             self.src,
-                            "const {} *{} = &({}).val",
+                            "const {} &{} = std::get<{case}>({}.variants).value;",
                             ty,
                             payload,
                             operands[0],
                         );
-                        self.src.push_str(".");
-                        self.src.push_str(&to_c_ident(&case.name));
-                        self.src.push_str(";\n");
                     }
+
                     self.src.push_str(&block);
 
                     for (name, result) in variant_results.iter().zip(&block_results) {
