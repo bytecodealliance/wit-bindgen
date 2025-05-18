@@ -7,12 +7,6 @@ uint32_t exports::test::lists::to_test::AllocatedBytes() {
     return 0;
 }
 
-// static bool equal(wit::string const&a, std::string_view b) {
-//     return a.get_view() == b;
-// }
-// static bool equal(wit::string const&a, const char x[]) {
-//     return a.get_view() == x;
-// }
 template <class T, class S>
 static bool equal(T const&a, S const& b) {
     return a == b;
@@ -41,9 +35,6 @@ template<class R>
 static bool equal(wit::vector<R> const&a, std::vector<R> const& b) {
     return equal(a.get_view(), wit::span<R>(b));
 }
-// static bool equal(wit::vector<wit::string> const&a, std::vector<std::string_view> const& b) {
-//     return equal(a.get_view(), wit::span<std::string_view>(b));
-// }
 template<class R,class S, class T, class U>
 static bool equal(std::tuple<R,S> const&a, std::tuple<T,U> const& b) {
     return equal(std::get<0>(a), std::get<0>(b)) && equal(std::get<1>(a), std::get<1>(b));
