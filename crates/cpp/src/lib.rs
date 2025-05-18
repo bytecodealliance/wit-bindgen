@@ -2744,13 +2744,13 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     variant.cases.iter().zip(blocks).enumerate()
                 {
                     let tp = case.name.clone().to_pascal_case();
-                    uwriteln!(self.src, "case {i}: {block}");
+                    uwriteln!(self.src, "case {i}: {{ {block}");
                     uwriteln!(
                         self.src,
                         "{result}.variants = {ty}::{tp}{{{}}};",
                         move_if_necessary(&block_results.get(0).cloned().unwrap_or_default())
                     );
-                    uwriteln!(self.src, "break;");
+                    uwriteln!(self.src, "}} break;");
                 }
                 uwriteln!(self.src, "}}");
                 // uwriteln!(self.src, "}}");
