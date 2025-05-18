@@ -2720,61 +2720,37 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 self.src.push_str("}\n");
             }
             abi::Instruction::VariantLift { variant, ty, .. } => {
-                let mut result = String::new();
-                result.push_str("{");
+                let blocks = self
+                    .blocks
+                    .drain(self.blocks.len() - variant.cases.len()..)
+                    .collect::<Vec<_>>();
 
-                let named_enum = variant.cases.iter().all(|c| c.ty.is_none());
-                // let blocks = self
-                //     .blocks
-                //     .drain(self.blocks.len() - variant.cases.len()..)
-                //     .collect::<Vec<_>>();
+                let ty = self
+                    .gen
+                    .type_name(&Type::Id(*ty), &self.namespace, Flavor::InStruct);
+                let resultno = self.tmp();
+                let result = format!("variant{resultno}");
+
+                uwriteln!(self.src, "{ty} {result};");
+
                 let op0 = &operands[0];
 
-                if named_enum {
-                    // In unchecked mode when this type is a named enum then we know we
-                    // defined the type so we can transmute directly into it.
-                    // result.push_str("#[cfg(not(debug_assertions))]");
-                    // result.push_str("{");
-                    // result.push_str("::core::mem::transmute::<_, ");
-                    // result.push_str(&name.to_upper_camel_case());
-                    // result.push_str(">(");
-                    // result.push_str(op0);
-                    // result.push_str(" as ");
-                    // result.push_str(int_repr(variant.tag()));
-                    // result.push_str(")");
-                    // result.push_str("}");
+                uwriteln!(self.src, "switch ({op0}) {{");
+                for (i, (case, (block, block_results))) in
+                    variant.cases.iter().zip(blocks).enumerate()
+                {
+                    let tp = case.name.clone().to_pascal_case();
+                    uwriteln!(self.src, "case {i}: {block}");
+                    uwriteln!(
+                        self.src,
+                        "{result}.variants = {ty}::{tp}{{{}}};",
+                        move_if_necessary(&block_results[0])
+                    );
+                    uwriteln!(self.src, "break;");
                 }
+                uwriteln!(self.src, "}}");
+                // uwriteln!(self.src, "}}");
 
-                // if named_enum {
-                //     result.push_str("#[cfg(debug_assertions)]");
-                // }
-                let blocks: Vec<String> = Vec::new();
-                result.push_str("{");
-                result.push_str(&format!("match {op0} {{\n"));
-                let name = self.typename_lift(*ty);
-                for (i, (case, block)) in variant.cases.iter().zip(blocks).enumerate() {
-                    let pat = i.to_string();
-                    let block = if case.ty.is_some() {
-                        format!("({block})")
-                    } else {
-                        String::new()
-                    };
-                    let case = case.name.to_upper_camel_case();
-                    // if i == variant.cases.len() - 1 {
-                    //     result.push_str("#[cfg(debug_assertions)]");
-                    //     result.push_str(&format!("{pat} => {name}::{case}{block},\n"));
-                    //     result.push_str("#[cfg(not(debug_assertions))]");
-                    //     result.push_str(&format!("_ => {name}::{case}{block},\n"));
-                    // } else {
-                    result.push_str(&format!("{pat} => {name}::{case}{block},\n"));
-                    // }
-                }
-                // result.push_str("#[cfg(debug_assertions)]");
-                // result.push_str("_ => panic!(\"invalid enum discriminant\"),\n");
-                result.push_str("}");
-                result.push_str("}");
-
-                result.push_str("}");
                 results.push(result);
             }
             abi::Instruction::EnumLower { .. } => results.push(format!("int32_t({})", operands[0])),

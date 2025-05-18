@@ -79,10 +79,15 @@ impl LanguageMethods for Cpp17 {
         let compiler = clangpp(runner);
         let config = compile.component.deserialize_lang_config::<LangConfig>()?;
         let cwd = std::env::current_dir()?;
-        let mut helper_dir = cwd;
+        let mut helper_dir = cwd.clone();
         helper_dir.push("crates");
         helper_dir.push("cpp");
         helper_dir.push("helper-types");
+        // for expected
+        let mut helper_dir2 = cwd;
+        helper_dir2.push("crates");
+        helper_dir2.push("cpp");
+        helper_dir2.push("test_headers");
 
         // Compile the C-based bindings to an object file.
         let bindings_object = compile.output.with_extension("bindings.o");
@@ -96,6 +101,8 @@ impl LanguageMethods for Cpp17 {
         .arg(&compile.bindings_dir)
         .arg("-I")
         .arg(helper_dir.to_str().unwrap().to_string())
+        .arg("-I")
+        .arg(helper_dir2.to_str().unwrap().to_string())
         .arg("-fno-exceptions")
         .arg("-Wall")
         .arg("-Wextra")
@@ -120,6 +127,8 @@ impl LanguageMethods for Cpp17 {
             .arg(&compile.bindings_dir)
             .arg("-I")
             .arg(helper_dir.to_str().unwrap().to_string())
+            .arg("-I")
+            .arg(helper_dir2.to_str().unwrap().to_string())
             .arg("-fno-exceptions")
             .arg("-Wall")
             .arg("-Wextra")
