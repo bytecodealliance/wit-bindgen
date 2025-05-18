@@ -312,16 +312,20 @@ impl Cpp {
     fn perform_cast(&mut self, op: &str, cast: &Bitcast) -> String {
         match cast {
             Bitcast::I32ToF32 | Bitcast::I64ToF32 => {
-                format!("((union {{ int32_t a; float b; }}){{ {} }}).b", op)
+                self.dependencies.needs_wit = true;
+                format!("wit::bit_cast<float, int32_t>({})", op)
             }
             Bitcast::F32ToI32 | Bitcast::F32ToI64 => {
-                format!("((union {{ float a; int32_t b; }}){{ {} }}).b", op)
+                self.dependencies.needs_wit = true;
+                format!("wit::bit_cast<int32_t, float>({})", op)
             }
             Bitcast::I64ToF64 => {
-                format!("((union {{ int64_t a; double b; }}){{ {} }}).b", op)
+                self.dependencies.needs_wit = true;
+                format!("wit::bit_cast<double, int64_t>({})", op)
             }
             Bitcast::F64ToI64 => {
-                format!("((union {{ double a; int64_t b; }}){{ {} }}).b", op)
+                self.dependencies.needs_wit = true;
+                format!("wit::bit_cast<int64_t, double>({})", op)
             }
             Bitcast::I32ToI64 | Bitcast::LToI64 | Bitcast::PToP64 => {
                 format!("(int64_t) {}", op)
@@ -2204,7 +2208,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
 
 fn move_if_necessary(arg: &str) -> String {
     // if it is a name of a variable move it
-    if arg.chars().all(char::is_alphanumeric) {
+    if !arg.is_empty() && arg.chars().all(char::is_alphanumeric) {
         format!("std::move({arg})")
     } else {
         arg.into()
@@ -2744,7 +2748,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     uwriteln!(
                         self.src,
                         "{result}.variants = {ty}::{tp}{{{}}};",
-                        move_if_necessary(&block_results[0])
+                        move_if_necessary(&block_results.get(0).cloned().unwrap_or_default())
                     );
                     uwriteln!(self.src, "break;");
                 }
@@ -2905,6 +2909,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 }
                 if result.err.is_none() {
                     err.clear();
+                    self.gen.gen.dependencies.needs_wit = true;
                     err_result = String::from("wit::Void{}");
                 } else {
                     err_result = move_if_necessary(&err_results[0]);
