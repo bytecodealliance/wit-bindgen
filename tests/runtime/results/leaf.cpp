@@ -1,5 +1,5 @@
 #include <assert.h>
-#include <results_cpp.h>
+#include <leaf_cpp.h>
 
 template <class T>
 bool equal(T const&a, T const&b) {
@@ -7,50 +7,70 @@ bool equal(T const&a, T const&b) {
 }
 
 std::expected<float, wit::string> exports::test::results::test::StringError(float a) {
-    return ::test::results::test::StringError(a);
+    if (a==0.0) {
+        return std::unexpected(wit::string::from_view("zero"));
+    }
+    else {
+        return a;
+    }
 }
 
 std::expected<float, ::test::results::test::E> exports::test::results::test::EnumError(float a) {
-    auto result = ::test::results::test::EnumError(a);
-    if (result.has_value()) { return result.value(); }
-    return std::unexpected(result.error());
-    // if (result.error()==::test::results::test::E::kA) { return std::unexpected(::test::results::test::E::kA); }
-    // if (result.error()==::test::results::test::E::kB) { return std::unexpected(::test::results::test::E::kB); }
-    // if (result.error()==::test::results::test::E::kC) { return std::unexpected(::test::results::test::E::kC); }
+    if (a==0.0) {
+        return std::unexpected(::test::results::test::E::kA);
+    }
+    else {
+        return a;
+    }
 }
 
 std::expected<float, ::test::results::test::E2> exports::test::results::test::RecordError(float a) {
-    auto result = ::test::results::test::RecordError(a);
-    if (result.has_value()) { return result.value(); }
-    return std::unexpected(::test::results::test::E2{ result.error().line, result.error().column });
+    if (a==0.0) {
+        return std::unexpected(::test::results::test::E2{420, 0});
+    }
+    else if (a==1.0) {
+        return std::unexpected(::test::results::test::E2{77, 2});
+    }
+    else {
+        return a;
+    }
 }
 
 std::expected<float, ::test::results::test::E3> exports::test::results::test::VariantError(float a) {
-    auto result = ::test::results::test::VariantError(a);
-    if (result.has_value()) { return result.value(); }
-    return std::unexpected(result.error());
-
-    // match test_imports::variant_error(a) {
-    //     Ok(b) => Ok(b),
-    //     Err(test_imports::E3::E1(test_imports::E::A)) => {
-    //         Err(test_exports::E3::E1(test_exports::E::A))
-    //     }
-    //     Err(test_imports::E3::E1(test_imports::E::B)) => {
-    //         Err(test_exports::E3::E1(test_exports::E::B))
-    //     }
-    //     Err(test_imports::E3::E1(test_imports::E::C)) => {
-    //         Err(test_exports::E3::E1(test_exports::E::C))
-    //     }
-    //     Err(test_imports::E3::E2(test_imports::E2 { line, column })) => {
-    //         Err(test_exports::E3::E2(test_exports::E2 { line, column }))
-    //     }
-    // }
+    if (a==0.0) {
+        return std::unexpected(::test::results::test::E3{::test::results::test::E3::E2{::test::results::test::E2{420, 0}}});
+    }
+    else if (a==1.0) {
+        return std::unexpected(::test::results::test::E3{::test::results::test::E3::E1{::test::results::test::E::kB}});
+    }
+    else if (a==2.0) {
+        return std::unexpected(::test::results::test::E3{::test::results::test::E3::E1{::test::results::test::E::kC}});
+    }
+    else {
+        return a;
+    }
 }
 
 std::expected<uint32_t, wit::Void> exports::test::results::test::EmptyError(uint32_t a) {
-    return ::test::results::test::EmptyError(a);
+    if (a==0) {
+        return std::unexpected(wit::Void{});
+    }
+    else if (a==1) {
+        return 42;
+    }
+    else {
+        return a;
+    }
 }
 
 std::expected<std::expected<void, wit::string>, wit::string> exports::test::results::test::DoubleError(uint32_t a) {
-    return ::test::results::test::DoubleError(a);
+    if (a==0) {
+        return std::expected<void, wit::string>();
+    }
+    else if (a==1) {
+        return std::expected<void, wit::string>(std::unexpected(wit::string::from_view("one")));
+    }
+    else {
+        return std::unexpected(wit::string::from_view("two"));
+    }
 }
