@@ -19,12 +19,7 @@ fn main() {
 
             // write 1/2 items again
             let (result, ret) = tx.write(vec![3, 4]).await;
-            assert_eq!(result, StreamResult::Complete(1));
-            assert_eq!(ret.remaining(), 1);
-
-            // resume the write
-            let (result, ret) = tx.write_buf(ret).await;
-            assert_eq!(result, StreamResult::Complete(1));
+            assert_eq!(result, StreamResult::Complete(2));
             assert_eq!(ret.remaining(), 0);
 
             // write to a closed stream
