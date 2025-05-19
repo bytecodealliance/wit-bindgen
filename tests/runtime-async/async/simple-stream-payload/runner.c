@@ -44,12 +44,7 @@ int main() {
   assert(event.event == RUNNER_EVENT_STREAM_WRITE);
   assert(event.waitable == writer);
   assert(RUNNER_WAITABLE_STATE(event.code) == RUNNER_WAITABLE_COMPLETED);
-  assert(RUNNER_WAITABLE_COUNT(event.code) == 1);
-
-  // write the second item
-  status = test_stream_u8_write(writer, buf + 1, 1);
-  assert(RUNNER_WAITABLE_STATE(status) == RUNNER_WAITABLE_COMPLETED);
-  assert(RUNNER_WAITABLE_COUNT(status) == 1);
+  assert(RUNNER_WAITABLE_COUNT(event.code) == 2);
 
   // clean up the writer
   runner_waitable_join(writer, 0);

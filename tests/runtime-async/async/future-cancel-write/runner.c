@@ -53,7 +53,7 @@ int main() {
     assert(status2 == RUNNER_SUBTASK_RETURNED);
 
     status = test_future_string_cancel_write(writer);
-    assert(RUNNER_WAITABLE_STATE(status) == RUNNER_WAITABLE_COMPLETED);
+    assert(RUNNER_WAITABLE_STATE(status) == RUNNER_WAITABLE_CLOSED);
     assert(RUNNER_WAITABLE_COUNT(status) == 1);
 
     test_future_string_close_writable(writer);

@@ -13,7 +13,7 @@ int main() {
   assert(subtask != 0);
 
   runner_waitable_status_t status2 = test_future_void_write(writer);
-  assert(RUNNER_WAITABLE_STATE(status2) == RUNNER_WAITABLE_COMPLETED);
+  assert(RUNNER_WAITABLE_STATE(status2) == RUNNER_WAITABLE_CLOSED);
   assert(RUNNER_WAITABLE_COUNT(status2) == 1);
   test_future_void_close_writable(writer);
 
