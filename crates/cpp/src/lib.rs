@@ -1009,12 +1009,18 @@ impl CppInterfaceGenerator<'_> {
             && !(matches!(is_drop, SpecialMethod::ResourceDrop)
                 && matches!(abi_variant, AbiVariant::GuestImport))
         {
-            if let Some(ty) = &func.result {
-                res.result.push_str(&self.type_name(
-                    ty,
-                    outer_namespace,
-                    Flavor::Result(abi_variant),
-                ));
+            if matches!(is_drop, SpecialMethod::Allocate) {
+                // func.name == "$alloc"
+                res.result.push_str("Owned");
+            } else if let Some(ty) = &func.result {
+                res.result.push_str(
+                    &(self.type_name(ty, outer_namespace, Flavor::Result(abi_variant))
+                        + if matches!(is_drop, SpecialMethod::ResourceRep) {
+                            "*"
+                        } else {
+                            ""
+                        }),
+                );
             } else {
                 res.result = "void".into();
             }
@@ -1031,16 +1037,27 @@ impl CppInterfaceGenerator<'_> {
             res.static_member = true;
         }
         for (i, (name, param)) in func.params.iter().enumerate() {
-            if i == 0 && name == "self" && matches!(&func.kind, FunctionKind::Method(_))
-                || (matches!(&is_drop, SpecialMethod::ResourceDrop)
-                    && matches!(abi_variant, AbiVariant::GuestImport))
+            if i == 0
+                && name == "self"
+                && (matches!(&func.kind, FunctionKind::Method(_))
+                    || (matches!(&is_drop, SpecialMethod::ResourceDrop)
+                        && matches!(abi_variant, AbiVariant::GuestImport)))
             {
                 res.implicit_self = true;
                 continue;
             }
+            let is_pointer = if i == 0
+                && name == "self"
+                && matches!(&is_drop, SpecialMethod::Dtor | SpecialMethod::ResourceNew)
+                && matches!(abi_variant, AbiVariant::GuestExport)
+            {
+                "*"
+            } else {
+                ""
+            };
             res.arguments.push((
                 name.to_snake_case(),
-                self.type_name(param, &res.namespace, Flavor::Argument(abi_variant)),
+                self.type_name(param, &res.namespace, Flavor::Argument(abi_variant)) + is_pointer,
             ));
         }
         // default to non-const when exporting a method
@@ -1083,7 +1100,7 @@ impl CppInterfaceGenerator<'_> {
         }
         match (&is_special, false, &variant) {
             (SpecialMethod::Allocate, _, _) => {
-                uwrite!(
+                uwriteln!(
                     self.gen.h_src.src,
                     "{{\
                         return {OWNED_CLASS_NAME}(new {}({}));\
@@ -1099,9 +1116,9 @@ impl CppInterfaceGenerator<'_> {
                 // body is inside the header
                 return Vec::default();
             }
-            (SpecialMethod::Dtor, _, AbiVariant::GuestImport)
+            (SpecialMethod::Dtor, _, _ /*AbiVariant::GuestImport*/)
             | (SpecialMethod::ResourceDrop, true, _) => {
-                uwrite!(
+                uwriteln!(
                     self.gen.h_src.src,
                     "{{\
                         delete {};\

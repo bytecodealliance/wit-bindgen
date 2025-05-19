@@ -78,6 +78,9 @@ impl LanguageMethods for Cpp17 {
     fn compile(&self, runner: &crate::Runner<'_>, compile: &crate::Compile) -> anyhow::Result<()> {
         let compiler = clangpp(runner);
         let config = compile.component.deserialize_lang_config::<LangConfig>()?;
+        let mut export_header_dir = compile.component.path.clone();
+        export_header_dir.pop();
+        export_header_dir.push("cpp17");
         let cwd = std::env::current_dir()?;
         let mut helper_dir = cwd.clone();
         helper_dir.push("crates");
@@ -97,6 +100,8 @@ impl LanguageMethods for Cpp17 {
                 .bindings_dir
                 .join(format!("{}.cpp", compile.component.bindgen.world)),
         )
+        .arg("-I")
+        .arg(export_header_dir.clone())
         .arg("-I")
         .arg(&compile.bindings_dir)
         .arg("-I")
@@ -123,6 +128,8 @@ impl LanguageMethods for Cpp17 {
                 "{}_component_type.o",
                 compile.component.bindgen.world
             )))
+            .arg("-I")
+            .arg(export_header_dir)
             .arg("-I")
             .arg(&compile.bindings_dir)
             .arg("-I")
