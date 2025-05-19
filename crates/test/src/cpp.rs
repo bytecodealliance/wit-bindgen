@@ -78,9 +78,23 @@ impl LanguageMethods for Cpp17 {
     fn compile(&self, runner: &crate::Runner<'_>, compile: &crate::Compile) -> anyhow::Result<()> {
         let compiler = clangpp(runner);
         let config = compile.component.deserialize_lang_config::<LangConfig>()?;
+
         let mut export_header_dir = compile.component.path.clone();
         export_header_dir.pop();
         export_header_dir.push("cpp17");
+
+        let mut source_files = export_header_dir.clone();
+        source_files.push("*");
+        let mut copycmd = Command::new("sh");
+        copycmd.arg("-c");
+        copycmd.arg(
+            String::from("cp ")
+                + source_files.to_str().unwrap()
+                + " "
+                + compile.bindings_dir.to_str().unwrap(),
+        );
+        runner.run_command(&mut copycmd)?;
+
         let cwd = std::env::current_dir()?;
         let mut helper_dir = cwd.clone();
         helper_dir.push("crates");

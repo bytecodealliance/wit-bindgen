@@ -10,12 +10,14 @@
 namespace exports {namespace test {namespace resources {class Z : public wit::ResourceExportBase<Z>{
         int32_t value;
         public:
+        static uint32_t num_dropped;
 
         static void Dtor(resources::Z* self){delete self;}
         Z(int32_t a) : value(a) {}
         static Owned New(int32_t a){return Owned(new Z(a));}
         int32_t GetA() const { return value; }
-        static uint32_t NumDropped();
+        ~Z() { num_dropped+=1; }
+        static uint32_t NumDropped() { return num_dropped+1; }
         static int32_t ResourceNew(resources::Z* self);
         static Z* ResourceRep(int32_t id);
         static void ResourceDrop(int32_t id);

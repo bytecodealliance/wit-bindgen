@@ -12,3 +12,5 @@ std::expected<void, wit::string> exports::test::resources::TestImports() {
     auto y = ::test::resources::Y(10);
     return std::expected<void, wit::string>();
 }
+
+uint32_t exports::test::resources::Z::num_dropped = 0;
