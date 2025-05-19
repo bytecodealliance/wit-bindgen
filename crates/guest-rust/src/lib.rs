@@ -643,6 +643,14 @@
 ///     // The name of the world that bindings are being generated for. If this
 ///     // is not specified then it's required that the package selected
 ///     // below has a single `world` in it.
+///     //
+///     // Optionally, you can specify the fully qualified path to the world
+///     // to read from the `wit/deps` folder:
+///     //
+///     // "example:test/my-world"
+///     //
+///     // This would read from your `my-world.wit` file in
+///     // `wit/deps/example:test/my-world`.
 ///     world: "my-world",
 ///
 ///     // Path to parse WIT and its dependencies from. Defaults to the `wit`
