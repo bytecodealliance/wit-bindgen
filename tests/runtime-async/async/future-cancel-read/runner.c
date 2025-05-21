@@ -12,7 +12,7 @@ int main() {
     test_future_u32_writer_t writer;
     test_future_u32_t reader = test_future_u32_new(&writer);
 
-    runner_subtask_status_t status = test_async_cancel_before_read(&reader);
+    runner_subtask_status_t status = test_async_cancel_before_read(reader);
     assert(status == RUNNER_SUBTASK_RETURNED);
     test_future_u32_close_writable(writer);
   }
@@ -21,7 +21,7 @@ int main() {
     test_future_u32_writer_t writer;
     test_future_u32_t reader = test_future_u32_new(&writer);
 
-    runner_subtask_status_t status = test_async_cancel_after_read(&reader);
+    runner_subtask_status_t status = test_async_cancel_after_read(reader);
     assert(status == RUNNER_SUBTASK_RETURNED);
     test_future_u32_close_writable(writer);
   }
