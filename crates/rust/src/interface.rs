@@ -201,6 +201,21 @@ impl<'i> InterfaceGenerator<'i> {
             let resource_name = self.resolve.types[resource].name.as_ref().unwrap();
             let (_, interface_name) = interface.unwrap();
             let module = self.resolve.name_world_key(interface_name);
+            let wasm_import_module = format!("[export]{module}");
+            let import_new = crate::declare_import(
+                &wasm_import_module,
+                &format!("[resource-new]{resource_name}"),
+                "new",
+                &[abi::WasmType::Pointer],
+                &[abi::WasmType::I32],
+            );
+            let import_rep = crate::declare_import(
+                &wasm_import_module,
+                &format!("[resource-rep]{resource_name}"),
+                "rep",
+                &[abi::WasmType::I32],
+                &[abi::WasmType::Pointer],
+            );
             uwriteln!(
                 self.src,
                 r#"
@@ -208,44 +223,16 @@ impl<'i> InterfaceGenerator<'i> {
 unsafe fn _resource_new(val: *mut u8) -> u32
     where Self: Sized
 {{
-    #[cfg(not(target_arch = "wasm32"))]
-    {{
-        let _ = val;
-        unreachable!();
-    }}
-
-    #[cfg(target_arch = "wasm32")]
-    {{
-        #[link(wasm_import_module = "[export]{module}")]
-        unsafe extern "C" {{
-            #[link_name = "[resource-new]{resource_name}"]
-            fn new(_: *mut u8) -> u32;
-        }}
-        unsafe {{ new(val) }}
-    }}
+    {import_new}
+    unsafe {{ new(val) as u32 }}
 }}
 
 #[doc(hidden)]
 fn _resource_rep(handle: u32) -> *mut u8
     where Self: Sized
 {{
-    #[cfg(not(target_arch = "wasm32"))]
-    {{
-        let _ = handle;
-        unreachable!();
-    }}
-
-    #[cfg(target_arch = "wasm32")]
-    {{
-        #[link(wasm_import_module = "[export]{module}")]
-        unsafe extern "C" {{
-            #[link_name = "[resource-rep]{resource_name}"]
-            fn rep(_: u32) -> *mut u8;
-        }}
-        unsafe {{
-            rep(handle)
-        }}
-    }}
+    {import_rep}
+    unsafe {{ rep(handle as i32) }}
 }}
 
                     "#
@@ -571,8 +558,12 @@ macro_rules! {macro_name} {{
         let dealloc_lists;
         if let Some(payload_type) = payload_type {
             lift = self.lift_from_memory("ptr", &payload_type, &module);
-            dealloc_lists =
-                self.deallocate_lists("ptr", std::slice::from_ref(payload_type), &module);
+            dealloc_lists = self.deallocate_lists(
+                std::slice::from_ref(payload_type),
+                &["ptr".to_string()],
+                true,
+                &module,
+            );
             lower = self.lower_to_memory("ptr", "value", &payload_type, &module);
         } else {
             lift = format!("let _ = ptr;");
@@ -737,15 +728,27 @@ pub mod vtable{ordinal} {{
         format!("unsafe {{ {} }}", String::from(f.src))
     }
 
-    fn deallocate_lists(&mut self, address: &str, types: &[Type], module: &str) -> String {
+    fn deallocate_lists(
+        &mut self,
+        types: &[Type],
+        operands: &[String],
+        indirect: bool,
+        module: &str,
+    ) -> String {
         let mut f = FunctionBindgen::new(self, Vec::new(), module, true);
-        abi::deallocate_lists_in_types(f.r#gen.resolve, types, address.into(), &mut f);
+        abi::deallocate_lists_in_types(f.r#gen.resolve, types, operands, indirect, &mut f);
         format!("unsafe {{ {} }}", String::from(f.src))
     }
 
-    fn deallocate_lists_and_own(&mut self, address: &str, types: &[Type], module: &str) -> String {
+    fn deallocate_lists_and_own(
+        &mut self,
+        types: &[Type],
+        operands: &[String],
+        indirect: bool,
+        module: &str,
+    ) -> String {
         let mut f = FunctionBindgen::new(self, Vec::new(), module, true);
-        abi::deallocate_lists_and_own_in_types(f.r#gen.resolve, types, address.into(), &mut f);
+        abi::deallocate_lists_and_own_in_types(f.r#gen.resolve, types, operands, indirect, &mut f);
         format!("unsafe {{ {} }}", String::from(f.src))
     }
 
@@ -805,6 +808,9 @@ pub mod vtable{ordinal} {{
     ) {
         let param_tys = func.params.iter().map(|(_, ty)| *ty).collect::<Vec<_>>();
         let async_support = self.r#gen.async_support_path();
+        let sig = self
+            .resolve
+            .wasm_signature(AbiVariant::GuestImportAsync, func);
         uwriteln!(
             self.src,
             "
@@ -836,8 +842,26 @@ unsafe impl<'a> _Subtask for _MySubtask<'a> {{
             }
         }
 
+        // Generate `type ParamsLower`
+        uwrite!(self.src, "type ParamsLower = (");
+        let mut params_lower = sig.params.as_slice();
+        if sig.retptr {
+            params_lower = &params_lower[..params_lower.len() - 1];
+        }
+        for ty in params_lower {
+            self.src.push_str(wasm_type(*ty));
+            self.src.push_str(", ");
+        }
+        uwriteln!(self.src, ");");
+
         // Generate `const ABI_LAYOUT`
-        let layout = self.sizes.record(param_tys.iter().chain(&func.result));
+        let mut heap_types = Vec::new();
+        if sig.indirect_params {
+            heap_types.extend(param_tys.iter().cloned());
+        }
+        heap_types.extend(func.result);
+
+        let layout = self.sizes.record(&heap_types);
         uwriteln!(
             self.src,
             r#"
@@ -852,9 +876,7 @@ const ABI_LAYOUT: ::core::alloc::Layout = unsafe {{
         // Generate `const RESULTS_OFFSET`
         let offset = match func.result {
             Some(_) => {
-                let offsets = self
-                    .sizes
-                    .field_offsets(param_tys.iter().chain(&func.result));
+                let offsets = self.sizes.field_offsets(&heap_types);
                 offsets.last().unwrap().0.format(POINTER_SIZE_EXPRESSION)
             }
             None => "0".to_string(),
@@ -863,61 +885,102 @@ const ABI_LAYOUT: ::core::alloc::Layout = unsafe {{
 
         // Generate `fn call_import`
         let import_name = &func.name;
+        let intrinsic = crate::declare_import(
+            &module,
+            &format!("[async-lower]{import_name}"),
+            "call",
+            &sig.params,
+            &sig.results,
+        );
+        let mut args = String::new();
+        for i in 0..params_lower.len() {
+            args.push_str(&format!("_params.{i},"));
+        }
+        if func.result.is_some() {
+            args.push_str("_results");
+        }
         uwriteln!(
             self.src,
             r#"
-unsafe fn call_import(params: *mut u8, results: *mut u8) -> u32 {{
-    #[cfg(not(target_arch = "wasm32"))]
-    unsafe extern "C" fn call(_: *mut u8, _: *mut u8) -> u32 {{ unreachable!() }}
-
-    #[cfg(target_arch = "wasm32")]
-    #[link(wasm_import_module = "{module}")]
-    unsafe extern "C" {{
-        #[link_name = "[async-lower]{import_name}"]
-        fn call(_: *mut u8, _: *mut u8) -> u32;
-    }}
-    unsafe {{ call(params, results) }}
+unsafe fn call_import(_params: Self::ParamsLower, _results: *mut u8) -> u32 {{
+    {intrinsic}
+    unsafe {{ call({args}) as u32 }}
 }}
             "#
         );
 
         // Generate `fn params_dealloc_lists`
-        let dealloc_lists = self.deallocate_lists("_ptr", &param_tys, module);
-        uwriteln!(self.src, "unsafe fn params_dealloc_lists(_ptr: *mut u8) {{");
+        let mut dealloc_lists_params = Vec::new();
+        for i in 0..params_lower.len() {
+            dealloc_lists_params.push(format!("_params.{i}"));
+        }
+        let dealloc_lists = self.deallocate_lists(
+            &param_tys,
+            &dealloc_lists_params,
+            sig.indirect_params,
+            module,
+        );
+        uwriteln!(
+            self.src,
+            "unsafe fn params_dealloc_lists(_params: Self::ParamsLower) {{"
+        );
         uwriteln!(self.src, "{dealloc_lists}");
         uwriteln!(self.src, "}}");
 
         // Generate `fn params_dealloc_lists_and_own`
-        let dealloc_lists_and_own = self.deallocate_lists_and_own("_ptr", &param_tys, module);
+        let dealloc_lists_and_own = self.deallocate_lists_and_own(
+            &param_tys,
+            &dealloc_lists_params,
+            sig.indirect_params,
+            module,
+        );
         uwriteln!(
             self.src,
-            "unsafe fn params_dealloc_lists_and_own(_ptr: *mut u8) {{"
+            "unsafe fn params_dealloc_lists_and_own(_params: Self::ParamsLower) {{"
         );
         uwriteln!(self.src, "{dealloc_lists_and_own}");
         uwriteln!(self.src, "}}");
 
         // Generate `fn params_lower`
         let mut lowers = Vec::new();
-        let offsets = self
-            .sizes
-            .field_offsets(func.params.iter().map(|(_, ty)| ty));
         let mut param_lowers = Vec::new();
-        for (i, (offset, ty)) in offsets.into_iter().enumerate() {
-            let mut name = format!("_lower{i}");
-            let mut start = format!(
-                "let _param_ptr = unsafe {{ _ptr.add({}) }};\n",
-                offset.format(POINTER_SIZE_EXPRESSION)
-            );
-            let lower = self.lower_to_memory("_param_ptr", &name, ty, module);
-            start.push_str(&lower);
-            lowers.push(start);
-            name.push_str(",");
-            param_lowers.push(name);
+        if sig.indirect_params {
+            let offsets = self
+                .sizes
+                .field_offsets(func.params.iter().map(|(_, ty)| ty));
+            for (i, (offset, ty)) in offsets.into_iter().enumerate() {
+                let name = format!("_lower{i}");
+                let mut start = format!(
+                    "let _param_ptr = unsafe {{ _ptr.add({}) }};\n",
+                    offset.format(POINTER_SIZE_EXPRESSION)
+                );
+                let lower = self.lower_to_memory("_param_ptr", &name, ty, module);
+                start.push_str(&lower);
+                lowers.push(start);
+                param_lowers.push(name);
+            }
+            lowers.push("(_ptr,)".to_string());
+        } else {
+            let mut f = FunctionBindgen::new(self, Vec::new(), module, true);
+            let mut results = Vec::new();
+            for (i, (_, ty)) in func.params.iter().enumerate() {
+                let name = format!("_lower{i}");
+                results.extend(abi::lower_flat(f.r#gen.resolve, &mut f, name.clone(), ty));
+                param_lowers.push(name);
+            }
+            for result in results.iter_mut() {
+                result.push_str(",");
+            }
+            let result = format!("({})", results.join(" "));
+            lowers.push(format!("unsafe {{ {} {result} }}", String::from(f.src)));
         }
 
+        for param in param_lowers.iter_mut() {
+            param.push_str(",");
+        }
         uwriteln!(
             self.src,
-            "unsafe fn params_lower(({}): Self::Params, _ptr: *mut u8) {{",
+            "unsafe fn params_lower(({}): Self::Params, _ptr: *mut u8) -> Self::ParamsLower {{",
             param_lowers.join(" "),
         );
         for lower in lowers.iter() {
@@ -984,9 +1047,14 @@ unsafe fn call_import(params: *mut u8, results: *mut u8) -> u32 {{
         }
 
         let mut f = FunctionBindgen::new(self, params, self.wasm_import_module, false);
+        let variant = if async_ {
+            AbiVariant::GuestExportAsync
+        } else {
+            AbiVariant::GuestExport
+        };
         abi::call(
             f.r#gen.resolve,
-            AbiVariant::GuestExport,
+            variant,
             LiftLower::LiftArgsLowerResults,
             func,
             &mut f,
@@ -1134,9 +1202,12 @@ unsafe fn call_import(params: *mut u8, results: *mut u8) -> u32 {{
 
     fn print_export_sig(&mut self, func: &Function, async_: bool) -> Vec<String> {
         self.src.push_str("(");
-        // FIXME: this should use `GuestExportAsync` once that's fixed in
-        // wit-parser
-        let sig = self.resolve.wasm_signature(AbiVariant::GuestExport, func);
+        let variant = if async_ {
+            AbiVariant::GuestExportAsync
+        } else {
+            AbiVariant::GuestExport
+        };
+        let sig = self.resolve.wasm_signature(variant, func);
         let mut params = Vec::new();
         for (i, param) in sig.params.iter().enumerate() {
             let name = format!("arg{}", i);
@@ -1145,16 +1216,12 @@ unsafe fn call_import(params: *mut u8, results: *mut u8) -> u32 {{
         }
         self.src.push_str(")");
 
-        if async_ {
-            self.push_str(" -> u32");
-        } else {
-            match sig.results.len() {
-                0 => {}
-                1 => {
-                    uwrite!(self.src, " -> {}", wasm_type(sig.results[0]));
-                }
-                _ => unimplemented!(),
+        match sig.results.len() {
+            0 => {}
+            1 => {
+                uwrite!(self.src, " -> {}", wasm_type(sig.results[0]));
             }
+            _ => unimplemented!(),
         }
 
         params
@@ -2652,25 +2719,21 @@ impl<'a> {camel}Borrow<'a>{{
         };
 
         let wasm_resource = self.path_to_wasm_resource();
+        let intrinsic = crate::declare_import(
+            &wasm_import_module,
+            &format!("[resource-drop]{name}"),
+            "drop",
+            &[abi::WasmType::I32],
+            &[],
+        );
         uwriteln!(
             self.src,
             r#"
                 unsafe impl {wasm_resource} for {camel} {{
                      #[inline]
                      unsafe fn drop(_handle: u32) {{
-                         #[cfg(not(target_arch = "wasm32"))]
-                         unreachable!();
-
-                         #[cfg(target_arch = "wasm32")]
-                         {{
-                             #[link(wasm_import_module = "{wasm_import_module}")]
-                             unsafe extern "C" {{
-                                 #[link_name = "[resource-drop]{name}"]
-                                 fn drop(_: u32);
-                             }}
-
-                             unsafe {{ drop(_handle) }};
-                         }}
+                         {intrinsic}
+                         unsafe {{ drop(_handle as i32); }}
                      }}
                 }}
             "#

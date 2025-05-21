@@ -6,7 +6,9 @@ use indexmap::IndexSet;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 use std::mem;
-use wit_bindgen_core::abi::{self, AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType};
+use wit_bindgen_core::abi::{
+    self, AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmSignature, WasmType,
+};
 use wit_bindgen_core::{
     dealias, uwrite, uwriteln, wit_parser::*, AnonymousTypeGenerator, AsyncFilterSet, Direction,
     Files, InterfaceGenerator as _, Ns, WorldGenerator,
@@ -139,12 +141,13 @@ impl Opts {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 struct Return {
     scalar: Option<Scalar>,
     retptrs: Vec<Type>,
 }
 
+#[derive(Clone)]
 struct CSig {
     name: String,
     sig: String,
@@ -153,7 +156,7 @@ struct CSig {
     retptrs: Vec<String>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 enum Scalar {
     Void,
     OptionBool(Type),
@@ -1949,13 +1952,13 @@ impl InterfaceGenerator<'_> {
         // Print the public facing signature into the header, and since that's
         // what we are defining also print it into the C file.
         self.src.h_fns("extern ");
-        let c_sig = self.print_sig(interface_name, func, async_);
+        let c_sig = self.print_sig(interface_name, func, &sig, async_);
         self.src.c_adapters("\n");
         self.src.c_adapters(&c_sig.sig);
         self.src.c_adapters(" {\n");
 
         if async_ {
-            self.import_body_async(func, c_sig, &import_name);
+            self.import_body_async(func, c_sig, &sig, &import_name);
         } else {
             self.import_body_sync(func, c_sig, &import_name);
         }
@@ -1993,7 +1996,6 @@ impl InterfaceGenerator<'_> {
 
         let mut f = FunctionBindgen::new(self, c_sig, &import_name);
         for (pointer, param) in f.sig.params.iter() {
-            f.locals.insert(&param).unwrap();
             if *pointer {
                 f.params.push(format!("*{}", param));
             } else {
@@ -2034,19 +2036,31 @@ impl InterfaceGenerator<'_> {
         self.src.c_adapters(&String::from(src));
     }
 
-    fn import_body_async(&mut self, func: &Function, sig: CSig, import_name: &str) {
-        let params = match &func.params[..] {
-            [] => "NULL".to_string(),
-            _ => format!("(uint8_t*) {}", sig.params[0].1),
-        };
-        let results = match &func.result {
-            None => "NULL".to_string(),
-            Some(_) => format!("(uint8_t*) {}", sig.params.last().unwrap().1),
-        };
-
+    fn import_body_async(
+        &mut self,
+        func: &Function,
+        c_sig: CSig,
+        wasm_sig: &WasmSignature,
+        import_name: &str,
+    ) {
+        let mut params = Vec::new();
+        if wasm_sig.indirect_params {
+            params.push(format!("(uint8_t*) {}", c_sig.params[0].1));
+        } else {
+            let mut f = FunctionBindgen::new(self, c_sig.clone(), "INVALID");
+            for (i, (_, ty)) in func.params.iter().enumerate() {
+                let param = &c_sig.params[i].1;
+                params.extend(abi::lower_flat(f.gen.resolve, &mut f, param.clone(), ty));
+            }
+            f.gen.src.c_adapters.push_str(&f.src);
+        }
+        if func.result.is_some() {
+            params.push(format!("(uint8_t*) {}", c_sig.params.last().unwrap().1));
+        }
         uwriteln!(
             self.src.c_adapters,
-            "return {import_name}({params}, {results});"
+            "return {import_name}({});",
+            params.join(", "),
         );
     }
 
@@ -2064,11 +2078,7 @@ impl InterfaceGenerator<'_> {
             (AbiVariant::GuestExport, "")
         };
 
-        let mut sig = self.resolve.wasm_signature(variant, func);
-        if async_ {
-            assert_eq!(sig.results, [WasmType::Pointer]);
-            sig.results[0] = WasmType::I32;
-        }
+        let sig = self.resolve.wasm_signature(variant, func);
 
         self.src.c_fns("\n");
 
@@ -2077,7 +2087,7 @@ impl InterfaceGenerator<'_> {
 
         // Print the actual header for this function into the header file, and
         // it's what we'll be calling.
-        let h_sig = self.print_sig(interface_name, func, async_);
+        let h_sig = self.print_sig(interface_name, func, &sig, async_);
 
         // Generate, in the C source file, the raw wasm signature that has the
         // canonical ABI.
@@ -2220,6 +2230,7 @@ void {name}_return({return_ty}) {{
         &mut self,
         interface_name: Option<&WorldKey>,
         func: &Function,
+        sig: &WasmSignature,
         async_: bool,
     ) -> CSig {
         let name = self.c_func_name(interface_name, func);
@@ -2259,50 +2270,10 @@ void {name}_return({return_ty}) {{
         self.src.h_fns(" ");
         self.src.h_fns(&name);
         self.src.h_fns("(");
-        let mut params = Vec::new();
+        let params;
         let mut retptrs = Vec::new();
         if async_ && self.in_import {
-            let mut printed = false;
-            match &func.params[..] {
-                [] => {}
-                [(_name, ty)] => {
-                    printed = true;
-                    let name = "arg".to_string();
-                    self.print_ty(SourceType::HFns, ty);
-                    self.src.h_fns(" *");
-                    self.src.h_fns(&name);
-                    params.push((true, name));
-                }
-                multiple => {
-                    printed = true;
-                    let names = multiple
-                        .iter()
-                        .map(|(name, ty)| (to_c_ident(name), self.gen.type_name(ty)))
-                        .collect::<Vec<_>>();
-                    uwriteln!(self.src.h_defs, "typedef struct {name}_args {{");
-                    for (name, ty) in names {
-                        uwriteln!(self.src.h_defs, "{ty} {name};");
-                    }
-                    uwriteln!(self.src.h_defs, "}} {name}_args_t;");
-                    uwrite!(self.src.h_fns, "{name}_args_t *args");
-                    params.push((true, "args".to_string()));
-                }
-            }
-            if let Some(ty) = &func.result {
-                if printed {
-                    self.src.h_fns(", ");
-                } else {
-                    printed = true;
-                }
-                let name = "result".to_string();
-                self.print_ty(SourceType::HFns, ty);
-                self.src.h_fns(" *");
-                self.src.h_fns(&name);
-                params.push((true, name));
-            }
-            if !printed {
-                self.src.h_fns("void");
-            }
+            params = self.print_sig_async_import_params(&name, func, sig);
         } else if async_ && !self.in_import {
             params = self.print_sig_params(func);
         } else {
@@ -2384,6 +2355,72 @@ void {name}_return({return_ty}) {{
             }
             self.src.h_fns(&print_name);
             params.push((optional_type.is_none() && pointer, to_c_ident(name)));
+        }
+        params
+    }
+
+    fn print_sig_async_import_params(
+        &mut self,
+        c_func_name: &str,
+        func: &Function,
+        sig: &WasmSignature,
+    ) -> Vec<(bool, String)> {
+        let mut params = Vec::new();
+        let mut printed = false;
+        if sig.indirect_params {
+            match &func.params[..] {
+                [] => {}
+                [(_name, ty)] => {
+                    printed = true;
+                    let name = "arg".to_string();
+                    self.print_ty(SourceType::HFns, ty);
+                    self.src.h_fns(" *");
+                    self.src.h_fns(&name);
+                    params.push((true, name));
+                }
+                multiple => {
+                    printed = true;
+                    let names = multiple
+                        .iter()
+                        .map(|(name, ty)| (to_c_ident(name), self.gen.type_name(ty)))
+                        .collect::<Vec<_>>();
+                    uwriteln!(self.src.h_defs, "typedef struct {c_func_name}_args {{");
+                    for (name, ty) in names {
+                        uwriteln!(self.src.h_defs, "{ty} {name};");
+                    }
+                    uwriteln!(self.src.h_defs, "}} {c_func_name}_args_t;");
+                    uwrite!(self.src.h_fns, "{c_func_name}_args_t *args");
+                    params.push((true, "args".to_string()));
+                }
+            }
+        } else {
+            for (name, ty) in func.params.iter() {
+                let name = to_c_ident(name);
+                if printed {
+                    self.src.h_fns(", ");
+                } else {
+                    printed = true;
+                }
+                self.print_ty(SourceType::HFns, ty);
+                self.src.h_fns(" ");
+                self.src.h_fns(&name);
+                params.push((false, name));
+            }
+        }
+        if let Some(ty) = &func.result {
+            if printed {
+                self.src.h_fns(", ");
+            } else {
+                printed = true;
+            }
+            let name = "result".to_string();
+            self.print_ty(SourceType::HFns, ty);
+            self.src.h_fns(" *");
+            self.src.h_fns(&name);
+            params.push((true, name));
+        }
+        if !printed {
+            self.src.h_fns("void");
         }
         params
     }
@@ -2768,10 +2805,14 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         sig: CSig,
         func_to_call: &'a str,
     ) -> FunctionBindgen<'a, 'b> {
+        let mut locals = Ns::default();
+        for (_, name) in sig.params.iter() {
+            locals.insert(name).unwrap();
+        }
         FunctionBindgen {
             gen,
             sig,
-            locals: Default::default(),
+            locals,
             src: Default::default(),
             func_to_call,
             block_storage: Vec::new(),

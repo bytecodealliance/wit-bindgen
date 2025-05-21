@@ -8,7 +8,7 @@ int main() {
   {
     test_future_void_writer_t writer;
     test_future_void_t reader = test_future_void_new(&writer);
-    runner_subtask_status_t status = test_async_pending_import(&reader);
+    runner_subtask_status_t status = test_async_pending_import(reader);
     assert(RUNNER_SUBTASK_STATE(status) == RUNNER_SUBTASK_STARTED);
     runner_subtask_t subtask = RUNNER_SUBTASK_HANDLE(status);
     assert(subtask != 0);
@@ -30,7 +30,7 @@ int main() {
     test_future_void_t reader2 = test_future_void_new(&writer2);
 
     // start up one task, it'll be in "STARTED"
-    runner_subtask_status_t status = test_async_pending_import(&reader1);
+    runner_subtask_status_t status = test_async_pending_import(reader1);
     assert(RUNNER_SUBTASK_STATE(status) == RUNNER_SUBTASK_STARTED);
     runner_subtask_t subtask1 = RUNNER_SUBTASK_HANDLE(status);
     assert(subtask1 != 0);
@@ -38,7 +38,7 @@ int main() {
     // Start up a second task after setting the backpressure flag, forcing it
     // to be in the "STARTING" state.
     test_backpressure_set(true);
-    status = test_async_pending_import(&reader2);
+    status = test_async_pending_import(reader2);
     assert(RUNNER_SUBTASK_STATE(status) == RUNNER_SUBTASK_STARTING);
     runner_subtask_t subtask2 = RUNNER_SUBTASK_HANDLE(status);
     assert(subtask2 != 0);

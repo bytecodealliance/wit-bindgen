@@ -350,7 +350,7 @@ impl ReturnCode {
 /// with this export, and the callback will be used if this task doesn't exit
 /// immediately with its result.
 #[doc(hidden)]
-pub fn start_task(task: impl Future<Output = ()> + 'static) -> u32 {
+pub fn start_task(task: impl Future<Output = ()> + 'static) -> i32 {
     // Allocate a new `FutureState` which will track all state necessary for
     // our exported task.
     let state = Box::into_raw(Box::new(FutureState::new(Box::pin(task))));
@@ -364,7 +364,7 @@ pub fn start_task(task: impl Future<Output = ()> + 'static) -> u32 {
     unsafe {
         assert!(context_get().is_null());
         context_set(state.cast());
-        callback(EVENT_NONE, 0, 0)
+        callback(EVENT_NONE, 0, 0) as i32
     }
 }
 

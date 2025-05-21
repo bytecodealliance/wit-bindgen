@@ -1,4 +1,4 @@
-use crate::{int_repr, to_rust_ident, wasm_type, Identifier, InterfaceGenerator, RustFlagsRepr};
+use crate::{int_repr, to_rust_ident, Identifier, InterfaceGenerator, RustFlagsRepr};
 use heck::*;
 use std::fmt::Write as _;
 use std::mem;
@@ -53,36 +53,16 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
     }
 
     fn declare_import(&mut self, name: &str, params: &[WasmType], results: &[WasmType]) -> String {
-        // Define the actual function we're calling inline
         let tmp = self.tmp();
-        let mut sig = "(".to_owned();
-        for param in params.iter() {
-            sig.push_str("_: ");
-            sig.push_str(wasm_type(*param));
-            sig.push_str(", ");
-        }
-        sig.push(')');
-        assert!(results.len() < 2);
-        for result in results.iter() {
-            sig.push_str(" -> ");
-            sig.push_str(wasm_type(*result));
-        }
-        let module_name = self.wasm_import_module;
-        uwrite!(
-            self.src,
-            "
-                #[cfg(target_arch = \"wasm32\")]
-                #[link(wasm_import_module = \"{module_name}\")]
-                unsafe extern \"C\" {{
-                    #[link_name = \"{name}\"]
-                    fn wit_import{tmp}{sig};
-                }}
-
-                #[cfg(not(target_arch = \"wasm32\"))]
-                unsafe extern \"C\" fn wit_import{tmp}{sig} {{ unreachable!() }}
-            "
-        );
-        format!("wit_import{tmp}")
+        let rust_name = format!("wit_import{tmp}");
+        self.src.push_str(&crate::declare_import(
+            self.wasm_import_module,
+            name,
+            &rust_name,
+            params,
+            results,
+        ));
+        rust_name
     }
 
     fn let_results(&mut self, amt: usize, results: &mut Vec<String>) {
