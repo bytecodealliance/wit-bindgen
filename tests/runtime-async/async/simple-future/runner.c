@@ -3,23 +3,6 @@
 #include <runner.h>
 #include <assert.h>
 
-/* include!(env!("BINDINGS")); */
-
-/* use crate::my::test::i::*; */
-
-/* fn main() { */
-/*     wit_bindgen::block_on(async { */
-/*         let (tx, rx) = wit_future::new(); */
-/*         let (res, ()) = futures::join!(tx.write(()), read_future(rx)); */
-/*         assert!(res.is_ok()); */
-
-/*         let (tx, rx) = wit_future::new(); */
-/*         let (res, ()) = futures::join!(tx.write(()), close_future(rx)); */
-/*         assert!(res.is_err()); */
-/*     }); */
-/* } */
-
-
 int main() {
   {
     test_future_void_writer_t writer;
@@ -28,7 +11,7 @@ int main() {
     runner_waitable_status_t status = test_future_void_write(writer);
     assert(status == RUNNER_WAITABLE_STATUS_BLOCKED);
 
-    runner_subtask_status_t subtask = test_async_read_future(&reader);
+    runner_subtask_status_t subtask = test_async_read_future(reader);
     assert(RUNNER_SUBTASK_STATE(subtask) == RUNNER_SUBTASK_RETURNED);
 
     runner_waitable_set_t set = runner_waitable_set_new();
@@ -51,7 +34,7 @@ int main() {
     runner_waitable_status_t status = test_future_void_write(writer);
     assert(status == RUNNER_WAITABLE_STATUS_BLOCKED);
 
-    runner_subtask_status_t subtask = test_async_close_future(&reader);
+    runner_subtask_status_t subtask = test_async_close_future(reader);
     assert(RUNNER_SUBTASK_STATE(subtask) == RUNNER_SUBTASK_RETURNED);
 
     runner_waitable_set_t set = runner_waitable_set_new();

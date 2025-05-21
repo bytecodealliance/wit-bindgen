@@ -9,11 +9,10 @@ int main() {
   test_future_string_t reader = test_future_string_new(&writer);
 
   // Start the "ping" subtask
-  test_async_ping_args_t args;
-  args.x = reader;
-  runner_string_set(&args.y, "world");
+  runner_string_t y;
+  runner_string_set(&y, "world");
   test_future_string_t ping_result;
-  runner_subtask_status_t status = test_async_ping(&args, &ping_result);
+  runner_subtask_status_t status = test_async_ping(reader, y, &ping_result);
   assert(RUNNER_SUBTASK_STATE(status) == RUNNER_SUBTASK_STARTED);
   runner_subtask_t ping = RUNNER_SUBTASK_HANDLE(status);
 
@@ -47,7 +46,7 @@ int main() {
   // Start the `pong` subtask
   runner_string_t pong_result;
   reader = test_future_string_new(&writer);
-  status = test_async_pong(&reader, &pong_result);
+  status = test_async_pong(reader, &pong_result);
   assert(RUNNER_SUBTASK_STATE(status) == RUNNER_SUBTASK_STARTED);
   runner_subtask_t pong = RUNNER_SUBTASK_HANDLE(status);
 
