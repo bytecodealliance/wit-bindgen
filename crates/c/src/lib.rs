@@ -1996,7 +1996,6 @@ impl InterfaceGenerator<'_> {
 
         let mut f = FunctionBindgen::new(self, c_sig, &import_name);
         for (pointer, param) in f.sig.params.iter() {
-            f.locals.insert(&param).unwrap();
             if *pointer {
                 f.params.push(format!("*{}", param));
             } else {
@@ -2396,6 +2395,7 @@ void {name}_return({return_ty}) {{
             }
         } else {
             for (name, ty) in func.params.iter() {
+                let name = to_c_ident(name);
                 if printed {
                     self.src.h_fns(", ");
                 } else {
@@ -2404,7 +2404,7 @@ void {name}_return({return_ty}) {{
                 self.print_ty(SourceType::HFns, ty);
                 self.src.h_fns(" ");
                 self.src.h_fns(&name);
-                params.push((false, name.clone()));
+                params.push((false, name));
             }
         }
         if let Some(ty) = &func.result {
@@ -2805,10 +2805,14 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         sig: CSig,
         func_to_call: &'a str,
     ) -> FunctionBindgen<'a, 'b> {
+        let mut locals = Ns::default();
+        for (_, name) in sig.params.iter() {
+            locals.insert(name).unwrap();
+        }
         FunctionBindgen {
             gen,
             sig,
-            locals: Default::default(),
+            locals,
             src: Default::default(),
             func_to_call,
             block_storage: Vec::new(),
