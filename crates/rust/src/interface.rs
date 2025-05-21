@@ -212,7 +212,7 @@ impl<'i> InterfaceGenerator<'i> {
             let import_rep = crate::declare_import(
                 &wasm_import_module,
                 &format!("[resource-rep]{resource_name}"),
-                "new",
+                "rep",
                 &[abi::WasmType::I32],
                 &[abi::WasmType::Pointer],
             );
@@ -959,6 +959,7 @@ unsafe fn call_import(_params: Self::ParamsLower, _results: *mut u8) -> u32 {{
                 lowers.push(start);
                 param_lowers.push(name);
             }
+            lowers.push("(_ptr,)".to_string());
         } else {
             let mut f = FunctionBindgen::new(self, Vec::new(), module, true);
             let mut results = Vec::new();
@@ -1046,9 +1047,14 @@ unsafe fn call_import(_params: Self::ParamsLower, _results: *mut u8) -> u32 {{
         }
 
         let mut f = FunctionBindgen::new(self, params, self.wasm_import_module, false);
+        let variant = if async_ {
+            AbiVariant::GuestExportAsync
+        } else {
+            AbiVariant::GuestExport
+        };
         abi::call(
             f.r#gen.resolve,
-            AbiVariant::GuestExport,
+            variant,
             LiftLower::LiftArgsLowerResults,
             func,
             &mut f,
@@ -2727,7 +2733,7 @@ impl<'a> {camel}Borrow<'a>{{
                      #[inline]
                      unsafe fn drop(_handle: u32) {{
                          {intrinsic}
-                         drop(_handle as i32);
+                         unsafe {{ drop(_handle as i32); }}
                      }}
                 }}
             "#

@@ -942,7 +942,13 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         // ownership, but we pass ownership in all other cases.
         let realloc = match (variant, lift_lower, async_) {
             (AbiVariant::GuestImport, LiftLower::LowerArgsLiftResults, _)
-            | (AbiVariant::GuestExport, LiftLower::LiftArgsLowerResults, true) => Realloc::None,
+            | (
+                AbiVariant::GuestExport
+                | AbiVariant::GuestExportAsync
+                | AbiVariant::GuestExportAsyncStackful,
+                LiftLower::LiftArgsLowerResults,
+                true,
+            ) => Realloc::None,
             _ => Realloc::Export("cabi_realloc"),
         };
         assert!(self.realloc.is_none());
@@ -1125,7 +1131,10 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 // This was dynamically allocated by the caller (or async start
                 // function) so after it's been read by the guest we need to
                 // deallocate it.
-                if let AbiVariant::GuestExport = variant {
+                if let AbiVariant::GuestExport
+                | AbiVariant::GuestExportAsync
+                | AbiVariant::GuestExportAsyncStackful = variant
+                {
                     if sig.indirect_params && !async_ {
                         let ElementInfo { size, align } = self
                             .bindgen
@@ -1258,6 +1267,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     self.stack.len()
                 );
             }
+            assert!(operands.is_empty());
         }
     }
 
@@ -1268,8 +1278,9 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         let operands_len = inst.operands_len();
         assert!(
             self.stack.len() >= operands_len,
-            "not enough operands on stack for {:?}",
-            inst
+            "not enough operands on stack for {:?}: have {} need {operands_len}",
+            inst,
+            self.stack.len(),
         );
         self.operands
             .extend(self.stack.drain((self.stack.len() - operands_len)..));
@@ -1569,6 +1580,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 TypeDefKind::Variant(v) => {
                     self.flat_for_each_variant_arm(
                         ty,
+                        true,
                         v.cases.iter().map(|c| c.ty.as_ref()),
                         Self::lift,
                     );
@@ -1588,12 +1600,17 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
 
                 TypeDefKind::Option(t) => {
-                    self.flat_for_each_variant_arm(ty, [None, Some(t)], Self::lift);
+                    self.flat_for_each_variant_arm(ty, true, [None, Some(t)], Self::lift);
                     self.emit(&OptionLift { payload: t, ty: id });
                 }
 
                 TypeDefKind::Result(r) => {
-                    self.flat_for_each_variant_arm(ty, [r.ok.as_ref(), r.err.as_ref()], Self::lift);
+                    self.flat_for_each_variant_arm(
+                        ty,
+                        true,
+                        [r.ok.as_ref(), r.err.as_ref()],
+                        Self::lift,
+                    );
                     self.emit(&ResultLift { result: r, ty: id });
                 }
 
@@ -1636,6 +1653,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
     fn flat_for_each_variant_arm<'b>(
         &mut self,
         ty: &Type,
+        blocks_with_type_have_result: bool,
         cases: impl IntoIterator<Item = Option<&'b Type>>,
         mut iter: impl FnMut(&mut Self, &Type),
     ) {
@@ -1667,7 +1685,11 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 // Then recursively lift this variant's payload.
                 iter(self, ty);
             }
-            self.finish_block(ty.is_some() as usize);
+            self.finish_block(if blocks_with_type_have_result {
+                ty.is_some() as usize
+            } else {
+                0
+            });
         }
     }
 
@@ -2123,6 +2145,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 TypeDefKind::Variant(variant) => {
                     self.flat_for_each_variant_arm(
                         ty,
+                        false,
                         variant.cases.iter().map(|c| c.ty.as_ref()),
                         |me, ty| me.deallocate(ty, what),
                     );
@@ -2132,7 +2155,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
 
                 TypeDefKind::Option(t) => {
-                    self.flat_for_each_variant_arm(ty, [None, Some(t)], |me, ty| {
+                    self.flat_for_each_variant_arm(ty, false, [None, Some(t)], |me, ty| {
                         me.deallocate(ty, what)
                     });
                     self.emit(&GuestDeallocateVariant { blocks: 2 });
@@ -2141,6 +2164,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 TypeDefKind::Result(e) => {
                     self.flat_for_each_variant_arm(
                         ty,
+                        false,
                         [e.ok.as_ref(), e.err.as_ref()],
                         |me, ty| me.deallocate(ty, what),
                     );
