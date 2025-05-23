@@ -1140,6 +1140,16 @@ trait LanguageMethods {
     /// downloading or caching dependencies.
     fn prepare(&self, runner: &mut Runner<'_>) -> Result<()>;
 
+    /// Add some files to the generated directory _before_ calling bindgen
+    fn generate_bindings_prepare(
+        &self,
+        _runner: &Runner<'_>,
+        _bindgen: &Bindgen,
+        _dir: &Path,
+    ) -> Result<()> {
+        Ok(())
+    }
+
     /// Generates bindings for `component` into `dir`.
     ///
     /// Runs `wit-bindgen` in aa subprocess to catch failures such as panics.
@@ -1148,6 +1158,7 @@ trait LanguageMethods {
             Some(name) => name,
             None => return Ok(()),
         };
+        self.generate_bindings_prepare(runner, bindgen, dir)?;
         let mut cmd = Command::new(runner.wit_bindgen);
         cmd.arg(name)
             .arg(&bindgen.wit_path)

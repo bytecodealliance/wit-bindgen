@@ -137,7 +137,7 @@ fn main() -> Result<()> {
         #[cfg(feature = "c")]
         Opt::C { opts, args } => (opts.build(), args),
         #[cfg(feature = "cpp")]
-        Opt::Cpp { opts, args } => (opts.build(), args),
+        Opt::Cpp { opts, args } => (opts.build(args.out_dir.as_ref()), args),
         #[cfg(feature = "rust")]
         Opt::Rust { opts, args } => (opts.build(), args),
         #[cfg(feature = "go")]

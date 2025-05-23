@@ -48,10 +48,6 @@ impl LanguageMethods for Cpp17 {
         false
     }
 
-    // fn default_bindgen_args(&self) -> &[&str] {
-    //     &[]
-    // }
-
     fn prepare(&self, runner: &mut crate::Runner<'_>) -> anyhow::Result<()> {
         let compiler = clangpp(runner);
         let cwd = std::env::current_dir()?;
@@ -72,24 +68,38 @@ impl LanguageMethods for Cpp17 {
         Ok(())
     }
 
-    fn compile(&self, runner: &crate::Runner<'_>, compile: &crate::Compile) -> anyhow::Result<()> {
-        let compiler = clangpp(runner);
-        let config = compile.component.deserialize_lang_config::<LangConfig>()?;
-
-        let mut export_header_dir = compile.component.path.clone();
+    fn generate_bindings_prepare(
+        &self,
+        _runner: &Runner<'_>,
+        bindgen: &crate::Bindgen,
+        dir: &std::path::Path,
+    ) -> anyhow::Result<()> {
+        let mut export_header_dir = bindgen.wit_path.clone();
         export_header_dir.pop();
         export_header_dir.push("cpp17");
 
         // copy resource implementation in header files to target dir
         if export_header_dir.is_dir() {
-            for entry in export_header_dir.read_dir().context("failed to read test header directory")? {
+            if !dir.exists() {
+                std::fs::create_dir_all(dir).context("failed to create bindings dir")?;
+            }
+            for entry in export_header_dir
+                .read_dir()
+                .context("failed to read test header directory")?
+            {
                 let entry = entry.context("failed to read test header directory entry")?;
                 let path = entry.path();
-                let mut dest = PathBuf::from(compile.bindings_dir);
+                let mut dest = PathBuf::from(dir);
                 dest.push(path.file_name().unwrap());
                 std::fs::copy(path, dest).context("failed to copy header file")?;
             }
         }
+        Ok(())
+    }
+
+    fn compile(&self, runner: &crate::Runner<'_>, compile: &crate::Compile) -> anyhow::Result<()> {
+        let compiler = clangpp(runner);
+        let config = compile.component.deserialize_lang_config::<LangConfig>()?;
 
         let cwd = std::env::current_dir()?;
         let mut helper_dir = cwd.clone();
@@ -110,8 +120,6 @@ impl LanguageMethods for Cpp17 {
                 .bindings_dir
                 .join(format!("{}.cpp", compile.component.bindgen.world)),
         )
-        .arg("-I")
-        .arg(export_header_dir.clone())
         .arg("-I")
         .arg(&compile.bindings_dir)
         .arg("-I")
@@ -139,8 +147,6 @@ impl LanguageMethods for Cpp17 {
                 "{}_component_type.o",
                 compile.component.bindgen.world
             )))
-            .arg("-I")
-            .arg(export_header_dir)
             .arg("-I")
             .arg(&compile.bindings_dir)
             .arg("-I")

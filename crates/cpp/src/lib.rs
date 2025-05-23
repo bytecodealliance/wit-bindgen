@@ -3,6 +3,7 @@ use std::{
     collections::{HashMap, HashSet},
     fmt::Write as FmtWrite,
     io::{Read, Write},
+    path::PathBuf,
     process::{Command, Stdio},
     str::FromStr,
 };
@@ -225,11 +226,16 @@ pub struct Opts {
     /// Reduces the allocation overhead for canonical ABI.
     #[cfg_attr(feature = "clap", arg(long))]
     pub _old_api: bool,
+
+    /// Where to place output files
+    #[cfg_attr(feature = "clap", arg(skip))]
+    out_dir: Option<PathBuf>,
 }
 
 impl Opts {
-    pub fn build(mut self) -> Box<dyn WorldGenerator> {
+    pub fn build(mut self, out_dir: Option<&PathBuf>) -> Box<dyn WorldGenerator> {
         let mut r = Cpp::new();
+        self.out_dir = out_dir.cloned();
         if self._old_api {
             self.new_api = false;
         }
@@ -667,7 +673,11 @@ impl WorldGenerator for Cpp {
         files.push(&format!("{snake}_cpp.h"), h_str.src.as_bytes());
         for (name, content) in self.user_class_files.iter() {
             // if the user class file exists create an updated .template
-            if std::path::Path::exists(&std::path::PathBuf::from(name)) {
+            let dst = match &self.opts.out_dir {
+                Some(path) => path.join(name),
+                None => name.into(),
+            };
+            if std::path::Path::exists(&std::path::PathBuf::from(dst)) {
                 files.push(&(String::from(name) + ".template"), content.as_bytes());
             } else {
                 files.push(name, content.as_bytes());
