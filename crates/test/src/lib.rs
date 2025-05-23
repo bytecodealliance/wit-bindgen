@@ -14,6 +14,7 @@ use wit_component::{ComponentEncoder, StringEncoding};
 
 mod c;
 mod config;
+mod cpp;
 mod csharp;
 mod custom;
 mod moonbit;
@@ -191,6 +192,7 @@ enum Language {
     Rust,
     C,
     Cpp,
+    Cpp17,
     Wat,
     Csharp,
     MoonBit,
@@ -408,10 +410,10 @@ impl Runner<'_> {
             .and_then(|s| s.to_str())
             .context("non-utf-8 path extension")?;
 
-        let language = match extension {
+        let mut language = match extension {
             "rs" => Language::Rust,
             "c" => Language::C,
-            "cpp" => Language::Cpp,
+            "cpp" => Language::Cpp17,
             "wat" => Language::Wat,
             "cs" => Language::Csharp,
             "mbt" => Language::MoonBit,
@@ -427,6 +429,16 @@ impl Runner<'_> {
         };
         assert!(bindgen.args.is_empty());
         bindgen.args = config.args.into();
+        if language == Language::Cpp17 {
+            bindgen.args.retain(|elem| {
+                if elem == "--language=Cpp" {
+                    language = Language::Cpp;
+                    false
+                } else {
+                    true
+                }
+            });
+        }
 
         Ok(Component {
             name: path.file_stem().unwrap().to_str().unwrap().to_string(),
@@ -1128,6 +1140,16 @@ trait LanguageMethods {
     /// downloading or caching dependencies.
     fn prepare(&self, runner: &mut Runner<'_>) -> Result<()>;
 
+    /// Add some files to the generated directory _before_ calling bindgen
+    fn generate_bindings_prepare(
+        &self,
+        _runner: &Runner<'_>,
+        _bindgen: &Bindgen,
+        _dir: &Path,
+    ) -> Result<()> {
+        Ok(())
+    }
+
     /// Generates bindings for `component` into `dir`.
     ///
     /// Runs `wit-bindgen` in aa subprocess to catch failures such as panics.
@@ -1136,6 +1158,7 @@ trait LanguageMethods {
             Some(name) => name,
             None => return Ok(()),
         };
+        self.generate_bindings_prepare(runner, bindgen, dir)?;
         let mut cmd = Command::new(runner.wit_bindgen);
         cmd.arg(name)
             .arg(&bindgen.wit_path)
@@ -1201,6 +1224,7 @@ impl Language {
         Language::Rust,
         Language::C,
         Language::Cpp,
+        Language::Cpp17,
         Language::Wat,
         Language::Csharp,
         Language::MoonBit,
@@ -1211,6 +1235,7 @@ impl Language {
             Language::Rust => &rust::Rust,
             Language::C => &c::C,
             Language::Cpp => &c::Cpp,
+            Language::Cpp17 => &cpp::Cpp17,
             Language::Wat => &wat::Wat,
             Language::Csharp => &csharp::Csharp,
             Language::MoonBit => &moonbit::MoonBit,
