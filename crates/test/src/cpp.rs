@@ -1,11 +1,8 @@
 use crate::config::StringList;
 use crate::{Kind, LanguageMethods, Runner};
-// use anyhow::bail;
-// use anyhow::Result;
-// use clap::Parser;
+use anyhow::Context;
 use heck::ToSnakeCase;
 use serde::Deserialize;
-// use std::env;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -83,17 +80,16 @@ impl LanguageMethods for Cpp17 {
         export_header_dir.pop();
         export_header_dir.push("cpp17");
 
-        let mut source_files = export_header_dir.clone();
-        source_files.push("*");
-        let mut copycmd = Command::new("sh");
-        copycmd.arg("-c");
-        copycmd.arg(
-            String::from("cp ")
-                + source_files.to_str().unwrap()
-                + " "
-                + compile.bindings_dir.to_str().unwrap(),
-        );
-        runner.run_command(&mut copycmd)?;
+        // copy resource implementation in header files to target dir
+        if export_header_dir.is_dir() {
+            for entry in export_header_dir.read_dir().context("failed to read test header directory")? {
+                let entry = entry.context("failed to read test header directory entry")?;
+                let path = entry.path();
+                let mut dest = PathBuf::from(compile.bindings_dir);
+                dest.push(path.file_name().unwrap());
+                std::fs::copy(path, dest).context("failed to copy header file")?;
+            }
+        }
 
         let cwd = std::env::current_dir()?;
         let mut helper_dir = cwd.clone();
@@ -129,6 +125,7 @@ impl LanguageMethods for Cpp17 {
         .arg("-Wno-unused-parameter")
         .arg("-std=c++17")
         .arg("-c")
+        .arg("-g")
         .arg("-o")
         .arg(&bindings_object);
         runner.run_command(&mut cmd)?;

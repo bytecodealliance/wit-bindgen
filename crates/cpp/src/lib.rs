@@ -2587,7 +2587,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                                 "auto {var} = {tname}::Owned({tname}::ResourceRep({op}));"
                             );
 
-                            uwriteln!(self.src, "{var}->into_handle();");
+                            // uwriteln!(self.src, "{var}->into_handle();");
 
                             results.push(format!("std::move({var})"))
                         }
