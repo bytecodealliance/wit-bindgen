@@ -27,14 +27,14 @@ impl crate::exports::my::test::i::Guest for Component {
         drop(reader);
     }
 
-    async fn start_read_then_cancel() {
-        let (tx, rx) = wit_future::new::<u32>();
-        let mut read = Box::pin(rx.into_future());
+    async fn start_read_then_cancel(data: FutureReader<u32>, signal: FutureReader<()>) {
+        let mut read = Box::pin(data.into_future());
         assert!(read
             .as_mut()
             .poll(&mut Context::from_waker(noop_waker_ref()))
             .is_pending());
-        drop(tx);
-        assert!(read.as_mut().cancel().unwrap().is_none());
+
+        signal.await;
+        assert_eq!(read.as_mut().cancel().unwrap(), 4);
     }
 }
