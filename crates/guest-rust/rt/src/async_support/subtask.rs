@@ -39,23 +39,36 @@ pub unsafe trait Subtask {
 
     /// The parameters to this task.
     type Params;
+    /// The representation of lowered parameters for this task.
+    ///
+    /// This is used to account for how lowered imports may have up to 4 flat
+    /// arguments or may also be indirect as well in memory. Either way this
+    /// represents the actual ABI values passed to the import.
+    type ParamsLower: Copy;
     /// The results of this task.
     type Results;
 
     /// The raw function import using `[async-lower]` and the canonical ABI.
-    unsafe fn call_import(params: *mut u8, results: *mut u8) -> u32;
+    unsafe fn call_import(params: Self::ParamsLower, results: *mut u8) -> u32;
 
-    /// Bindings-generated version of lowering `params` into a heap-allocated
-    /// `dst`.
-    unsafe fn params_lower(params: Self::Params, dst: *mut u8);
+    /// Bindings-generated version of lowering `params`.
+    ///
+    /// This may use the heap-allocated `dst`, which is an uninitialized
+    /// allocation of `Self::ABI_LAYOUT`. This returns any ABI parameters
+    /// necessary to actually invoke the imported function.
+    ///
+    /// Note that `ParamsLower` may return `dst` if there are more ABI
+    /// parameters than are allowed flat params (as specified by the canonical
+    /// ABI).
+    unsafe fn params_lower(params: Self::Params, dst: *mut u8) -> Self::ParamsLower;
 
     /// Bindings-generated version of deallocating any lists stored within
-    /// `dst`.
-    unsafe fn params_dealloc_lists(dst: *mut u8);
+    /// `lower`.
+    unsafe fn params_dealloc_lists(lower: Self::ParamsLower);
 
     /// Bindings-generated version of deallocating not only owned lists within
-    /// `src` but also deallocating any owned resources.
-    unsafe fn params_dealloc_lists_and_own(src: *mut u8);
+    /// `lower` but also deallocating any owned resources.
+    unsafe fn params_dealloc_lists_and_own(lower: Self::ParamsLower);
 
     /// Bindings-generated version of lifting the results stored at `src`.
     unsafe fn results_lift(src: *mut u8) -> Self::Results;
@@ -94,8 +107,8 @@ unsafe impl<T: Subtask> WaitableOp for SubtaskOps<T> {
         unsafe {
             let (ptr_params, cleanup) = Cleanup::new(T::ABI_LAYOUT);
             let ptr_results = ptr_params.add(T::RESULTS_OFFSET);
-            T::params_lower(state.params, ptr_params);
-            let packed = T::call_import(ptr_params, ptr_results);
+            let params_lower = T::params_lower(state.params, ptr_params);
+            let packed = T::call_import(params_lower, ptr_results);
             let code = packed & 0xf;
             let subtask = NonZeroU32::new(packed >> 4).map(|handle| SubtaskHandle { handle });
             rtdebug!("<import>({ptr_params:?}, {ptr_results:?}) = ({code:#x}, {subtask:#x?})");
@@ -103,6 +116,7 @@ unsafe impl<T: Subtask> WaitableOp for SubtaskOps<T> {
             (
                 code,
                 InProgress {
+                    params_lower,
                     params_and_results: cleanup,
                     subtask,
                     started: false,
@@ -162,7 +176,7 @@ unsafe impl<T: Subtask> WaitableOp for SubtaskOps<T> {
             STATUS_STARTED_CANCELLED => {
                 assert!(!state.started);
                 unsafe {
-                    T::params_dealloc_lists_and_own(state.ptr_params());
+                    T::params_dealloc_lists_and_own(state.params_lower);
                 }
                 Ok(Err(()))
             }
@@ -223,6 +237,7 @@ impl Drop for SubtaskHandle {
 
 struct InProgress<T: Subtask> {
     params_and_results: Option<Cleanup>,
+    params_lower: T::ParamsLower,
     started: bool,
     subtask: Option<SubtaskHandle>,
     _marker: marker::PhantomData<T>,
@@ -237,21 +252,20 @@ impl<T: Subtask> InProgress<T> {
         // setup correctly and we're obeying the invariants of the vtable,
         // deallocating lists in an allocation that we exclusively own.
         unsafe {
-            T::params_dealloc_lists(self.ptr_params());
+            T::params_dealloc_lists(self.params_lower);
         }
-    }
-
-    fn ptr_params(&self) -> *mut u8 {
-        self.params_and_results
-            .as_ref()
-            .map(|c| c.ptr.as_ptr())
-            .unwrap_or(ptr::null_mut())
     }
 
     fn ptr_results(&self) -> *mut u8 {
         // SAFETY: the `T` trait has unsafely promised us that the offset is
         // in-bounds of the allocation layout.
-        unsafe { self.ptr_params().add(T::RESULTS_OFFSET) }
+        unsafe {
+            self.params_and_results
+                .as_ref()
+                .map(|c| c.ptr.as_ptr())
+                .unwrap_or(ptr::null_mut())
+                .add(T::RESULTS_OFFSET)
+        }
     }
 }
 

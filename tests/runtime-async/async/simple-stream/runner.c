@@ -12,7 +12,7 @@ int main() {
   assert(status == RUNNER_WAITABLE_STATUS_BLOCKED);
 
   // Start the subtask
-  runner_subtask_status_t subtask_status = test_async_read_stream(&reader);
+  runner_subtask_status_t subtask_status = test_async_read_stream(reader);
   assert(RUNNER_SUBTASK_STATE(subtask_status) == RUNNER_SUBTASK_STARTED);
   runner_subtask_t subtask = RUNNER_SUBTASK_HANDLE(subtask_status);
 
