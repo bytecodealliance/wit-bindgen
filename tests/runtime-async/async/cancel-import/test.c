@@ -35,7 +35,7 @@ test_callback_code_t exports_test_async_pending_import_callback(test_event_t *ev
   } else {
     assert(event->event == TEST_EVENT_FUTURE_READ);
     assert(event->waitable == task->future);
-    assert(TEST_WAITABLE_STATE(event->code) == TEST_WAITABLE_COMPLETED);
+    assert(TEST_WAITABLE_STATE(event->code) == TEST_WAITABLE_CLOSED);
     assert(TEST_WAITABLE_COUNT(event->code) == 1);
     exports_test_async_pending_import_return();
   }
