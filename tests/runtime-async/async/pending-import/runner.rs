@@ -9,7 +9,7 @@ use wit_bindgen::yield_async;
 fn main() {
     // Test that Rust-level polling twice works.
     wit_bindgen::block_on(async {
-        let (tx, rx) = wit_future::new();
+        let (tx, rx) = wit_future::new(|| unreachable!());
         let mut import = Box::pin(pending_import(rx));
         assert!(import
             .as_mut()
@@ -28,7 +28,7 @@ fn main() {
     // the completion of the task-at-hand, and then drop it without completing
     // it.
     wit_bindgen::block_on(async {
-        let (tx, rx) = wit_future::new();
+        let (tx, rx) = wit_future::new(|| unreachable!());
         let mut import = Box::pin(pending_import(rx));
         assert!(import
             .as_mut()

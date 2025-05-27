@@ -8,8 +8,8 @@ export!(Component);
 
 impl crate::exports::my::test::i::Guest for Component {
     async fn ping(x: FutureReader<String>, y: String) -> FutureReader<String> {
-        let msg = x.await.unwrap() + y.as_str();
-        let (tx, rx) = wit_future::new();
+        let msg = x.await + y.as_str();
+        let (tx, rx) = wit_future::new(|| unreachable!());
         wit_bindgen::spawn(async move {
             tx.write(msg).await.unwrap();
         });
@@ -17,6 +17,6 @@ impl crate::exports::my::test::i::Guest for Component {
     }
 
     async fn pong(x: FutureReader<String>) -> String {
-        x.await.unwrap()
+        x.await
     }
 }

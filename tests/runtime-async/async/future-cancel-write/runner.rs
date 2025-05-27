@@ -9,14 +9,14 @@ use wit_bindgen::FutureWriteCancel;
 fn main() {
     wit_bindgen::block_on(async {
         // cancel from the other end
-        let (tx, rx) = wit_future::new();
+        let (tx, rx) = wit_future::new(|| unreachable!());
         let f1 = async { tx.write("hello".into()).await };
         let f2 = async { take_then_close(rx) };
         let (result, ()) = futures::join!(f1, f2);
         assert_eq!(result.unwrap_err().value, "hello");
 
         // cancel before we actually hit the intrinsic
-        let (tx, _rx) = wit_future::new::<String>();
+        let (tx, _rx) = wit_future::new::<String>(|| String::new());
         let mut future = Box::pin(tx.write("hello2".into()));
         let tx = match future.as_mut().cancel() {
             FutureWriteCancel::Cancelled(val, tx) => {
@@ -40,7 +40,7 @@ fn main() {
         };
 
         // cancel after we hit the intrinsic and then close the other end
-        let (tx, rx) = wit_future::new::<String>();
+        let (tx, rx) = wit_future::new::<String>(|| unreachable!());
         let mut future = Box::pin(tx.write("hello3".into()));
         assert!(future
             .as_mut()
@@ -55,7 +55,7 @@ fn main() {
         // Start a write, wait for it to be pending, then go complete the write
         // in some async work, then cancel it and witness that it was written,
         // not cancelled.
-        let (tx, rx) = wit_future::new::<String>();
+        let (tx, rx) = wit_future::new::<String>(|| unreachable!());
         let mut future = Box::pin(tx.write("hello3".into()));
         assert!(future
             .as_mut()

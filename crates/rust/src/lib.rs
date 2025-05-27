@@ -452,8 +452,11 @@ pub mod wit_future {{
             self.src.push_str(&format!(
                 "\
     /// Creates a new Component Model `future` with the specified payload type.
-    pub fn new<T: FuturePayload>() -> ({async_support}::FutureWriter<T>, {async_support}::FutureReader<T>) {{
-        unsafe {{ {async_support}::future_new::<T>(T::VTABLE) }}
+    ///
+    /// The `default` function provided computes the default value to be sent in
+    /// this future if no other value was otherwise sent.
+    pub fn new<T: FuturePayload>(default: fn() -> T) -> ({async_support}::FutureWriter<T>, {async_support}::FutureReader<T>) {{
+        unsafe {{ {async_support}::future_new::<T>(default, T::VTABLE) }}
     }}
 }}
                 ",

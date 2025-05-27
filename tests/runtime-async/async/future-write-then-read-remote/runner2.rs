@@ -8,7 +8,7 @@ use crate::a::b::the_test::f;
 
 fn main() {
     async_support::block_on(async {
-        let (tx, rx) = wit_future::new();
+        let (tx, rx) = wit_future::new(|| unreachable!());
 
         let a = tx.write(());
         let b = async { f(rx) };
