@@ -31,13 +31,13 @@ prettyplease = "0.2.20"
 syn = { version = "2.0.89", features = ["printing"] }
 futures = "0.3.31"
 
-wat = "1.230.0"
-wasmparser = "0.230.0"
-wasm-encoder = "0.230.0"
-wasm-metadata = { version = "0.230.0", default-features = false }
-wit-parser = "0.230.0"
-wit-component = "0.230.0"
-wasm-compose = "0.230.0"
+wat = "1.232.0"
+wasmparser = "0.232.0"
+wasm-encoder = "0.232.0"
+wasm-metadata = { version = "0.232.0", default-features = false }
+wit-parser = "0.232.0"
+wit-component = "0.232.0"
+wasm-compose = "0.232.0"
 
 wit-bindgen-core = { path = 'crates/core', version = '0.42.1' }
 wit-bindgen-c = { path = 'crates/c', version = '0.42.1' }
