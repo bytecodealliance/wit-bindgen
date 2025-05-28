@@ -118,7 +118,7 @@ jobs:
   # bit unstable as the async foundations are shifting over time but this at
   # least enables testing async things in this repository more easily.
   async:
-    name: Test Async
+    name: Test Async (allowed to fail)
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
