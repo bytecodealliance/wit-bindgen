@@ -1,3 +1,5 @@
+//@ args = '--language=Cpp'
+
 #include <runner.h>
 
 int main() {
