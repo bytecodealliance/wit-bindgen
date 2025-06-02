@@ -10,6 +10,10 @@ int main() {
 
     runner_subtask_status_t status = test_async_cancel_before_read(reader);
     assert(status == RUNNER_SUBTASK_RETURNED);
+    uint32_t value = 0;
+    runner_waitable_status_t wstatus = test_future_u32_write(writer, &value);
+    assert(RUNNER_WAITABLE_STATE(wstatus) == RUNNER_WAITABLE_CLOSED);
+    assert(RUNNER_WAITABLE_COUNT(wstatus) == 0);
     test_future_u32_close_writable(writer);
   }
 
@@ -19,6 +23,11 @@ int main() {
 
     runner_subtask_status_t status = test_async_cancel_after_read(reader);
     assert(status == RUNNER_SUBTASK_RETURNED);
+
+    uint32_t value = 0;
+    runner_waitable_status_t wstatus = test_future_u32_write(writer, &value);
+    assert(RUNNER_WAITABLE_STATE(wstatus) == RUNNER_WAITABLE_CLOSED);
+    assert(RUNNER_WAITABLE_COUNT(wstatus) == 0);
     test_future_u32_close_writable(writer);
   }
 

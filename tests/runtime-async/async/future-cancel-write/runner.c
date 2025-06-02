@@ -38,8 +38,12 @@ int main() {
     assert(RUNNER_WAITABLE_STATE(status) == RUNNER_WAITABLE_CANCELLED);
     assert(RUNNER_WAITABLE_COUNT(status) == 0);
 
-    test_future_string_close_writable(writer);
     test_future_string_close_readable(reader);
+
+    status = test_future_string_write(writer, &string);
+    assert(RUNNER_WAITABLE_STATE(status) == RUNNER_WAITABLE_CLOSED);
+    assert(RUNNER_WAITABLE_COUNT(status) == 0);
+    test_future_string_close_writable(writer);
   }
 
   {
