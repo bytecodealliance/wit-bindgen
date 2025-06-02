@@ -1,15 +1,17 @@
 package wha:hoo;
 
-interface imports {
+interface iii {
   enum fetch-text-error {
     io-error,
     http-error,
   }
 
-  fetch-text: async func(location: string) -> result<string, fetch-text-error>;
+  resource rrr {
+    fff: async func();
+  }
+
 }
 
 world core {
-  import imports;
+  export iii;
 }
-
