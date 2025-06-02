@@ -27,10 +27,7 @@ int main() {
     test_future_u32_t data_reader = test_future_u32_new(&data_writer);
     test_future_void_writer_t signal_writer;
     test_future_void_t signal_reader = test_future_void_new(&signal_writer);
-    test_async_start_read_then_cancel_args_t args;
-    args.data = data_reader;
-    args.signal = signal_reader;
-    runner_subtask_status_t status = test_async_start_read_then_cancel(&args);
+    runner_subtask_status_t status = test_async_start_read_then_cancel(data_reader, signal_reader);
     assert(RUNNER_SUBTASK_STATE(status) == RUNNER_SUBTASK_STARTED);
     runner_subtask_t task = RUNNER_SUBTASK_HANDLE(status);
 
