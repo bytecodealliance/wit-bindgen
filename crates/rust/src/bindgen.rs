@@ -401,6 +401,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         .as_deref()
                         .unwrap()
                         .to_upper_camel_case();
+                    // FIXME this does not compile!
                     format!("{name}Borrow::lift({op} as u32 as usize)")
                 } else {
                     let tmp = format!("handle{}", self.tmp());
