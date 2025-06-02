@@ -1152,12 +1152,7 @@ impl CppInterfaceGenerator<'_> {
         }
     }
 
-    fn generate_function(
-        &mut self,
-        func: &Function,
-        owner: &TypeOwner,
-        variant: AbiVariant,
-    ) {
+    fn generate_function(&mut self, func: &Function, owner: &TypeOwner, variant: AbiVariant) {
         fn class_namespace(
             cifg: &CppInterfaceGenerator,
             func: &Function,
@@ -1207,8 +1202,8 @@ impl CppInterfaceGenerator<'_> {
             match is_special_method(func) {
                 SpecialMethod::ResourceDrop => match lift_lower {
                     LiftLower::LiftArgsLowerResults => {
-                        let module_name = String::from("[export]")
-                            + &self.wasm_import_module.clone().unwrap();
+                        let module_name =
+                            String::from("[export]") + &self.wasm_import_module.clone().unwrap();
                         let wasm_sig =
                             self.declare_import(&module_name, &func.name, &[WasmType::I32], &[]);
                         uwriteln!(
@@ -1218,8 +1213,7 @@ impl CppInterfaceGenerator<'_> {
                         );
                     }
                     LiftLower::LowerArgsLiftResults => {
-                        let module_name =
-                            self.wasm_import_module.clone().unwrap();
+                        let module_name = self.wasm_import_module.clone().unwrap();
                         let name =
                             self.declare_import(&module_name, &func.name, &[WasmType::I32], &[]);
                         uwriteln!(
@@ -1236,8 +1230,8 @@ impl CppInterfaceGenerator<'_> {
                     uwriteln!(self.gen.c_src.src, "{0}::Dtor(({0}*)arg0);", classname);
                 }
                 SpecialMethod::ResourceNew => {
-                    let module_name = String::from("[export]")
-                        + &self.wasm_import_module.clone().unwrap();
+                    let module_name =
+                        String::from("[export]") + &self.wasm_import_module.clone().unwrap();
                     let wasm_sig = self.declare_import(
                         &module_name,
                         &func.name,
@@ -1252,8 +1246,8 @@ impl CppInterfaceGenerator<'_> {
                     );
                 }
                 SpecialMethod::ResourceRep => {
-                    let module_name = String::from("[export]")
-                        + &self.wasm_import_module.clone().unwrap();
+                    let module_name =
+                        String::from("[export]") + &self.wasm_import_module.clone().unwrap();
                     let wasm_sig = self.declare_import(
                         &module_name,
                         &func.name,
@@ -1355,7 +1349,6 @@ impl CppInterfaceGenerator<'_> {
                 self.gen.c_src.src.push_str("}\n");
             }
         }
-
     }
 
     // in C this is print_optional_ty
