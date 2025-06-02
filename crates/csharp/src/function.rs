@@ -145,7 +145,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             switch ({op}.Tag) {{
                 {cases}
 
-                default: throw new ArgumentException($"invalid discriminant: {{{op}}}");
+                default: throw new global::System.ArgumentException("invalid discriminant: " + {op});
             }}
             "#
         );
@@ -222,7 +222,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             switch ({op}) {{
                 {cases}
 
-                default: throw new ArgumentException($"invalid discriminant: {{{op}}}");
+                default: throw new global::System.ArgumentException("invalid discriminant:" + {op});
             }}
             "#
         );
@@ -363,7 +363,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                         {{
                             {cases}
 
-                            default: throw new ArgumentException($"invalid nesting level: {{e.NestingLevel}}");
+                            default: throw new global::System.ArgumentException($"invalid nesting level: {{e.NestingLevel}}");
                         }}
                     }}
                 "#
@@ -400,22 +400,22 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             })),
             Instruction::I32Load { offset }
             | Instruction::PointerLoad { offset }
-            | Instruction::LengthLoad { offset } => results.push(format!("BitConverter.ToInt32(new Span<byte>((void*)({} + {offset}), 4))",operands[0],offset = offset.size_wasm32())),
-            Instruction::I32Load8U { offset } => results.push(format!("new Span<byte>((void*)({} + {offset}), 1)[0]",operands[0],offset = offset.size_wasm32())),
-            Instruction::I32Load8S { offset } => results.push(format!("(sbyte)new Span<byte>((void*)({} + {offset}), 1)[0]",operands[0],offset = offset.size_wasm32())),
-            Instruction::I32Load16U { offset } => results.push(format!("BitConverter.ToUInt16(new Span<byte>((void*)({} + {offset}), 2))",operands[0],offset = offset.size_wasm32())),
-            Instruction::I32Load16S { offset } => results.push(format!("BitConverter.ToInt16(new Span<byte>((void*)({} + {offset}), 2))",operands[0],offset = offset.size_wasm32())),
-            Instruction::I64Load { offset } => results.push(format!("BitConverter.ToInt64(new Span<byte>((void*)({} + {offset}), 8))",operands[0],offset = offset.size_wasm32())),
-            Instruction::F32Load { offset } => results.push(format!("BitConverter.ToSingle(new Span<byte>((void*)({} + {offset}), 4))",operands[0],offset = offset.size_wasm32())),
-            Instruction::F64Load { offset } => results.push(format!("BitConverter.ToDouble(new Span<byte>((void*)({} + {offset}), 8))",operands[0],offset = offset.size_wasm32())),
+            | Instruction::LengthLoad { offset } => results.push(format!("global::System.BitConverter.ToInt32(new global::System.Span<byte>((void*)({} + {offset}), 4))",operands[0],offset = offset.size_wasm32())),
+            Instruction::I32Load8U { offset } => results.push(format!("new global::System.Span<byte>((void*)({} + {offset}), 1)[0]",operands[0],offset = offset.size_wasm32())),
+            Instruction::I32Load8S { offset } => results.push(format!("(sbyte)new global::System.Span<byte>((void*)({} + {offset}), 1)[0]",operands[0],offset = offset.size_wasm32())),
+            Instruction::I32Load16U { offset } => results.push(format!("global::System.BitConverter.ToUInt16(new global::System.Span<byte>((void*)({} + {offset}), 2))",operands[0],offset = offset.size_wasm32())),
+            Instruction::I32Load16S { offset } => results.push(format!("global::System.BitConverter.ToInt16(new global::System.Span<byte>((void*)({} + {offset}), 2))",operands[0],offset = offset.size_wasm32())),
+            Instruction::I64Load { offset } => results.push(format!("global::System.BitConverter.ToInt64(new global::System.Span<byte>((void*)({} + {offset}), 8))",operands[0],offset = offset.size_wasm32())),
+            Instruction::F32Load { offset } => results.push(format!("global::System.BitConverter.ToSingle(new global::System.Span<byte>((void*)({} + {offset}), 4))",operands[0],offset = offset.size_wasm32())),
+            Instruction::F64Load { offset } => results.push(format!("global::System.BitConverter.ToDouble(new global::System.Span<byte>((void*)({} + {offset}), 8))",operands[0],offset = offset.size_wasm32())),
             Instruction::I32Store { offset }
             | Instruction::PointerStore { offset }
-            | Instruction::LengthStore { offset } => uwriteln!(self.src, "BitConverter.TryWriteBytes(new Span<byte>((void*)({} + {offset}), 4), {});", operands[1], operands[0],offset = offset.size_wasm32()),
+            | Instruction::LengthStore { offset } => uwriteln!(self.src, "global::System.BitConverter.TryWriteBytes(new global::System.Span<byte>((void*)({} + {offset}), 4), {});", operands[1], operands[0],offset = offset.size_wasm32()),
             Instruction::I32Store8 { offset } => uwriteln!(self.src, "*(byte*)({} + {offset}) = (byte){};", operands[1], operands[0],offset = offset.size_wasm32()),
-            Instruction::I32Store16 { offset } => uwriteln!(self.src, "BitConverter.TryWriteBytes(new Span<byte>((void*)({} + {offset}), 2), (short){});", operands[1], operands[0],offset = offset.size_wasm32()),
-            Instruction::I64Store { offset } => uwriteln!(self.src, "BitConverter.TryWriteBytes(new Span<byte>((void*)({} + {offset}), 8), unchecked((long){}));", operands[1], operands[0],offset = offset.size_wasm32()),
-            Instruction::F32Store { offset } => uwriteln!(self.src, "BitConverter.TryWriteBytes(new Span<byte>((void*)({} + {offset}), 4), unchecked((float){}));", operands[1], operands[0],offset = offset.size_wasm32()),
-            Instruction::F64Store { offset } => uwriteln!(self.src, "BitConverter.TryWriteBytes(new Span<byte>((void*)({} + {offset}), 8), unchecked((double){}));", operands[1], operands[0],offset = offset.size_wasm32()),
+            Instruction::I32Store16 { offset } => uwriteln!(self.src, "global::System.BitConverter.TryWriteBytes(new global::System.Span<byte>((void*)({} + {offset}), 2), (short){});", operands[1], operands[0],offset = offset.size_wasm32()),
+            Instruction::I64Store { offset } => uwriteln!(self.src, "global::System.BitConverter.TryWriteBytes(new global::System.Span<byte>((void*)({} + {offset}), 8), unchecked((long){}));", operands[1], operands[0],offset = offset.size_wasm32()),
+            Instruction::F32Store { offset } => uwriteln!(self.src, "global::System.BitConverter.TryWriteBytes(new global::System.Span<byte>((void*)({} + {offset}), 4), unchecked((float){}));", operands[1], operands[0],offset = offset.size_wasm32()),
+            Instruction::F64Store { offset } => uwriteln!(self.src, "global::System.BitConverter.TryWriteBytes(new global::System.Span<byte>((void*)({} + {offset}), 8), unchecked((double){}));", operands[1], operands[0],offset = offset.size_wasm32()),
 
             Instruction::I64FromU64 => results.push(format!("unchecked((long)({}))", operands[0])),
             Instruction::I32FromChar => results.push(format!("((int){})", operands[0])),
@@ -680,7 +680,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             break;
                         }}
 
-                        default: throw new ArgumentException("invalid discriminant: " + ({op}));
+                        default: throw new global::System.ArgumentException("invalid discriminant: " + ({op}));
                     }}
                     "#
                 );
@@ -748,7 +748,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             uwrite!(
                                 self.src,
                                 "
-                                var {handle} = GCHandle.Alloc({list}, GCHandleType.Pinned);
+                                var {handle} = global::System.Runtime.InteropServices.GCHandle.Alloc({list}, global::System.Runtime.InteropServices.GCHandleType.Pinned);
                                 var {ptr} = {handle}.AddrOfPinnedObject();
                                 cleanups.Add(()=> {handle}.Free());
                                 "
@@ -766,8 +766,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             self.src,
                             "
                             var {byte_length} = ({size}) * {list}.Length;
-                            var {address} = NativeMemory.Alloc((nuint)({byte_length}));
-                            {list}.AsSpan().CopyTo(new Span<{ty}>({address},{byte_length}));
+                            var {address} = global::System.Runtime.InteropServices.NativeMemory.Alloc((nuint)({byte_length}));
+                            global::System.MemoryExtensions.AsSpan({list}).CopyTo(new global::System.Span<{ty}>({address},{byte_length}));
                             "
                         );
 
@@ -787,7 +787,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.src,
                     "
                     var {array} = new {ty}[{length}];
-                    new Span<{ty}>((void*)({address}), {length}).CopyTo(new Span<{ty}>({array}));
+                    new global::System.Span<{ty}>((void*)({address}), {length}).CopyTo(new global::System.Span<{ty}>({array}));
                     "
                 );
 
@@ -805,9 +805,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     uwriteln!(
                         self.src,
                         "
-                        var {utf8_bytes} = Encoding.UTF8.GetBytes({op});
+                        var {utf8_bytes} = global::System.Text.Encoding.UTF8.GetBytes({op});
                         var {length} = {utf8_bytes}.Length;
-                        var {gc_handle} = GCHandle.Alloc({utf8_bytes}, GCHandleType.Pinned);
+                        var {gc_handle} = global::System.Runtime.InteropServices.GCHandle.Alloc({utf8_bytes}, global::System.Runtime.InteropServices.GCHandleType.Pinned);
                         var {str_ptr} = {gc_handle}.AddrOfPinnedObject();
                         "
                     );
@@ -825,34 +825,21 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     uwriteln!(
                         self.src,
                         "
-                        var {string_span} = {op}.AsSpan();
-                        var {length} = Encoding.UTF8.GetByteCount({string_span});
-                        var {str_ptr} = NativeMemory.Alloc((nuint){length});
-                        Encoding.UTF8.GetBytes({string_span}, new Span<byte>({str_ptr}, {length}));
+                        var {string_span} = global::System.MemoryExtensions.AsSpan({op});
+                        var {length} = global::System.Text.Encoding.UTF8.GetByteCount({string_span});
+                        var {str_ptr} = global::System.Runtime.InteropServices.NativeMemory.Alloc((nuint){length});
+                        global::System.Text.Encoding.UTF8.GetBytes({string_span}, new global::System.Span<byte>({str_ptr}, {length}));
                         "
                     );
                     results.push(format!("(int){str_ptr}"));
                 }
 
                 results.push(format!("{length}"));
-                if FunctionKind::Freestanding == *self.kind || self.interface_gen.direction == Direction::Export {
-                    self.interface_gen.require_interop_using("System.Text");
-                    self.interface_gen.require_interop_using("System.Runtime.InteropServices");
-                } else {
-                    self.interface_gen.require_using("System.Text");
-                    self.interface_gen.require_using("System.Runtime.InteropServices");
-                }
             }
 
             Instruction::StringLift { .. } => {
-                if FunctionKind::Freestanding == *self.kind || self.interface_gen.direction == Direction::Export {
-                    self.interface_gen.require_interop_using("System.Text");
-                } else {
-                    self.interface_gen.require_using("System.Text");
-                }
-
                 results.push(format!(
-                    "Encoding.UTF8.GetString((byte*){}, {})",
+                    "global::System.Text.Encoding.UTF8.GetString((byte*){}, {})",
                     operands[0], operands[1]
                 ));
             }
@@ -895,8 +882,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             else
                             {{
                                 var {buffer_size} = {size} * (nuint){list}.Count;
-                                {address} = NativeMemory.AlignedAlloc({buffer_size}, {align});
-                                cleanups.Add(() => NativeMemory.AlignedFree({address}));
+                                {address} = global::System.Runtime.InteropServices.NativeMemory.AlignedAlloc({buffer_size}, {align});
+                                cleanups.Add(() => global::System.Runtime.InteropServices.NativeMemory.AlignedFree({address}));
                             }}
                             "
                         );
@@ -906,7 +893,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         uwrite!(self.src,
                             "
                             var {buffer_size} = {size} * (nuint){list}.Count;
-                            void* {address} = NativeMemory.AlignedAlloc({buffer_size}, {align});
+                            void* {address} = global::System.Runtime.InteropServices.NativeMemory.AlignedAlloc({buffer_size}, {align});
                             "
                         );
                     }
@@ -948,7 +935,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwrite!(
                     self.src,
                     "
-                    var {array} = new List<{ty}>({length});
+                    var {array} = new global::System.Collections.Generic.List<{ty}>({length});
                     for (int {index} = 0; {index} < {length}; ++{index}) {{
                         nint {base} = {address} + ({index} * {size});
                         {body}
@@ -1054,7 +1041,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
 
                 if self.needs_cleanup {
-                    self.src.insert_str(0, "var cleanups = new List<Action>();
+                    self.src.insert_str(0, "var cleanups = new global::System.Collections.Generic.List<global::System.Action>();
                         ");
 
                     uwriteln!(self.src, "
@@ -1086,11 +1073,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::GuestDeallocate { .. } => {
                 // the original alloc here comes from cabi_realloc implementation (wasi-libc in .net)
-                uwriteln!(self.src, r#"NativeMemory.Free((void*){});"#, operands[0]);
+                uwriteln!(self.src, r#"global::System.Runtime.InteropServices.NativeMemory.Free((void*){});"#, operands[0]);
             }
 
             Instruction::GuestDeallocateString => {
-                uwriteln!(self.src, r#"NativeMemory.Free((void*){});"#, operands[0]);
+                uwriteln!(self.src, r#"global::System.Runtime.InteropServices.NativeMemory.Free((void*){});"#, operands[0]);
             }
 
             Instruction::GuestDeallocateVariant { blocks } => {
@@ -1150,7 +1137,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     );
                 }
 
-                uwriteln!(self.src, r#"NativeMemory.Free((void*){});"#, operands[0]);
+                uwriteln!(self.src, r#"global::System.Runtime.InteropServices.NativeMemory.Free((void*){});"#, operands[0]);
             }
 
             Instruction::HandleLower {
@@ -1387,12 +1374,12 @@ fn list_element_info(ty: &Type) -> (usize, &'static str) {
 
 fn perform_cast(op: &String, cast: &Bitcast) -> String {
     match cast {
-        Bitcast::I32ToF32 => format!("BitConverter.Int32BitsToSingle((int){op})"),
-        Bitcast::I64ToF32 => format!("BitConverter.Int32BitsToSingle((int){op})"),
-        Bitcast::F32ToI32 => format!("BitConverter.SingleToInt32Bits({op})"),
-        Bitcast::F32ToI64 => format!("BitConverter.SingleToInt32Bits({op})"),
-        Bitcast::I64ToF64 => format!("BitConverter.Int64BitsToDouble({op})"),
-        Bitcast::F64ToI64 => format!("BitConverter.DoubleToInt64Bits({op})"),
+        Bitcast::I32ToF32 => format!("global::System.BitConverter.Int32BitsToSingle((int){op})"),
+        Bitcast::I64ToF32 => format!("global::System.BitConverter.Int32BitsToSingle((int){op})"),
+        Bitcast::F32ToI32 => format!("global::System.BitConverter.SingleToInt32Bits({op})"),
+        Bitcast::F32ToI64 => format!("global::System.BitConverter.SingleToInt32Bits({op})"),
+        Bitcast::I64ToF64 => format!("global::System.BitConverter.Int64BitsToDouble({op})"),
+        Bitcast::F64ToI64 => format!("global::System.BitConverter.DoubleToInt64Bits({op})"),
         Bitcast::I32ToI64 => format!("(long) ({op})"),
         Bitcast::I64ToI32 => format!("(int) ({op})"),
         Bitcast::I64ToP64 => format!("{op}"),

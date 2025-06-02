@@ -452,8 +452,11 @@ pub mod wit_future {{
             self.src.push_str(&format!(
                 "\
     /// Creates a new Component Model `future` with the specified payload type.
-    pub fn new<T: FuturePayload>() -> ({async_support}::FutureWriter<T>, {async_support}::FutureReader<T>) {{
-        unsafe {{ {async_support}::future_new::<T>(T::VTABLE) }}
+    ///
+    /// The `default` function provided computes the default value to be sent in
+    /// this future if no other value was otherwise sent.
+    pub fn new<T: FuturePayload>(default: fn() -> T) -> ({async_support}::FutureWriter<T>, {async_support}::FutureReader<T>) {{
+        unsafe {{ {async_support}::future_new::<T>(default, T::VTABLE) }}
     }}
 }}
                 ",
@@ -1613,6 +1616,40 @@ fn wasm_type(ty: WasmType) -> &'static str {
         // [documented]: https://github.com/rust-lang/rfcs/blob/master/text/3559-rust-has-provenance.md#reference-level-explanation
         WasmType::PointerOrI64 => "::core::mem::MaybeUninit::<u64>",
     }
+}
+
+fn declare_import(
+    wasm_import_module: &str,
+    wasm_import_name: &str,
+    rust_name: &str,
+    params: &[WasmType],
+    results: &[WasmType],
+) -> String {
+    let mut sig = "(".to_owned();
+    for param in params.iter() {
+        sig.push_str("_: ");
+        sig.push_str(wasm_type(*param));
+        sig.push_str(", ");
+    }
+    sig.push(')');
+    assert!(results.len() < 2);
+    for result in results.iter() {
+        sig.push_str(" -> ");
+        sig.push_str(wasm_type(*result));
+    }
+    format!(
+        "
+            #[cfg(target_arch = \"wasm32\")]
+            #[link(wasm_import_module = \"{wasm_import_module}\")]
+            unsafe extern \"C\" {{
+                #[link_name = \"{wasm_import_name}\"]
+                fn {rust_name}{sig};
+            }}
+
+            #[cfg(not(target_arch = \"wasm32\"))]
+            unsafe extern \"C\" fn {rust_name}{sig} {{ unreachable!() }}
+        "
+    )
 }
 
 fn int_repr(repr: Int) -> &'static str {

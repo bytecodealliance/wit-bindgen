@@ -2,6 +2,7 @@
 
 #include <assert.h>
 #include <test.h>
+#include <stdlib.h>
 
 // This is a test of a Rust-ism, nothing to do in C.
 test_callback_code_t exports_test_async_cancel_before_read(exports_test_future_u32_t x) {
@@ -32,24 +33,51 @@ test_callback_code_t exports_test_async_cancel_after_read_callback(test_event_t 
   assert(0);
 }
 
-test_callback_code_t exports_test_async_start_read_then_cancel() {
-  exports_test_future_u32_writer_t writer;
-  exports_test_future_u32_t reader = exports_test_future_u32_new(&writer);
-
+struct start_read_then_cancel_state {
+  exports_test_future_u32_t data;
+  exports_test_future_void_t signal;
+  test_waitable_set_t set;
   uint32_t result;
-  test_waitable_status_t status = exports_test_future_u32_read(reader, &result);
+};
+
+test_callback_code_t exports_test_async_start_read_then_cancel(
+  exports_test_future_u32_t data,
+  exports_test_future_void_t signal
+) {
+  struct start_read_then_cancel_state *state = malloc(sizeof(struct start_read_then_cancel_state));
+  assert(state != NULL);
+  state->data = data;
+  state->signal = signal;
+  state->set = test_waitable_set_new();;
+  test_waitable_status_t status = exports_test_future_u32_read(data, &state->result);
   assert(status == TEST_WAITABLE_STATUS_BLOCKED);
 
-  status = exports_test_future_u32_cancel_read(reader);
-  assert(status == TEST_WAITABLE_CANCELLED);
+  status = exports_test_future_void_read(signal);
+  assert(status == TEST_WAITABLE_STATUS_BLOCKED);
 
-  exports_test_future_u32_close_readable(reader);
-  exports_test_future_u32_close_writable(writer);
+  test_waitable_join(signal, state->set);
 
-  exports_test_async_start_read_then_cancel_return();
-  return TEST_CALLBACK_CODE_EXIT;
+  test_context_set(state);
+  return TEST_CALLBACK_CODE_WAIT(state->set);
 }
 
 test_callback_code_t exports_test_async_start_read_then_cancel_callback(test_event_t *event) {
-  assert(0);
+  struct start_read_then_cancel_state *state = test_context_get();
+  assert(event->event == TEST_EVENT_FUTURE_READ);
+  assert(event->waitable == state->signal);
+  assert(TEST_WAITABLE_STATE(event->code) == TEST_WAITABLE_CLOSED);
+  assert(TEST_WAITABLE_COUNT(event->code) == 1);
+
+  test_waitable_status_t status = exports_test_future_u32_cancel_read(state->data);
+  assert(TEST_WAITABLE_STATE(status) == TEST_WAITABLE_CLOSED);
+  assert(TEST_WAITABLE_COUNT(status) == 1);
+  assert(state->result == 4);
+
+  test_waitable_join(state->signal, 0);
+  exports_test_future_u32_close_readable(state->data);
+  exports_test_future_void_close_readable(state->signal);
+  test_waitable_set_drop(state->set);
+
+  exports_test_async_start_read_then_cancel_return();
+  return TEST_CALLBACK_CODE_EXIT;
 }

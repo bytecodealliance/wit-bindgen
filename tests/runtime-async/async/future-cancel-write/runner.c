@@ -38,8 +38,12 @@ int main() {
     assert(RUNNER_WAITABLE_STATE(status) == RUNNER_WAITABLE_CANCELLED);
     assert(RUNNER_WAITABLE_COUNT(status) == 0);
 
-    test_future_string_close_writable(writer);
     test_future_string_close_readable(reader);
+
+    status = test_future_string_write(writer, &string);
+    assert(RUNNER_WAITABLE_STATE(status) == RUNNER_WAITABLE_CLOSED);
+    assert(RUNNER_WAITABLE_COUNT(status) == 0);
+    test_future_string_close_writable(writer);
   }
 
   {
@@ -49,11 +53,11 @@ int main() {
     runner_waitable_status_t status = test_future_string_write(writer, &string);
     assert(status == RUNNER_WAITABLE_STATUS_BLOCKED);
 
-    runner_subtask_status_t status2 = test_async_read_and_drop(&reader);
+    runner_subtask_status_t status2 = test_async_read_and_drop(reader);
     assert(status2 == RUNNER_SUBTASK_RETURNED);
 
     status = test_future_string_cancel_write(writer);
-    assert(RUNNER_WAITABLE_STATE(status) == RUNNER_WAITABLE_COMPLETED);
+    assert(RUNNER_WAITABLE_STATE(status) == RUNNER_WAITABLE_CLOSED);
     assert(RUNNER_WAITABLE_COUNT(status) == 1);
 
     test_future_string_close_writable(writer);

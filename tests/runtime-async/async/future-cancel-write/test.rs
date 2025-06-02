@@ -11,6 +11,6 @@ impl crate::exports::my::test::i::Guest for Component {
         drop(x)
     }
     async fn read_and_drop(x: FutureReader<String>) {
-        x.await.unwrap();
+        let _ = x.await;
     }
 }
