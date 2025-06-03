@@ -1,15 +1,9 @@
 package wha:hoo;
 
 interface iii {
-  enum fetch-text-error {
-    io-error,
-    http-error,
-  }
-
   resource rrr {
     fff: async func();
   }
-
 }
 
 world core {
