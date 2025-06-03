@@ -401,7 +401,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         .as_deref()
                         .unwrap()
                         .to_upper_camel_case();
-                    // FIXME this does not compile!
+                    // FIXME this does not compile! see (codegen/async-trait-function.wit)
                     format!("{name}Borrow::lift({op} as u32 as usize)")
                 } else {
                     let tmp = format!("handle{}", self.tmp());
