@@ -309,7 +309,7 @@ const STATUS_RETURNED_CANCELLED: u32 = 4;
 
 const BLOCKED: u32 = 0xffff_ffff;
 const COMPLETED: u32 = 0x0;
-const CLOSED: u32 = 0x1;
+const DROPPED: u32 = 0x1;
 const CANCELLED: u32 = 0x2;
 
 /// Return code of stream/future operations.
@@ -319,9 +319,9 @@ enum ReturnCode {
     Blocked,
     /// The operation completed with the specified number of items.
     Completed(u32),
-    /// The other end is closed, but before that the specified number of items
+    /// The other end is dropped, but before that the specified number of items
     /// were transferred.
-    Closed(u32),
+    Dropped(u32),
     /// The operation was cancelled, but before that the specified number of
     /// items were transferred.
     Cancelled(u32),
@@ -335,7 +335,7 @@ impl ReturnCode {
         let amt = val >> 4;
         match val & 0xf {
             COMPLETED => ReturnCode::Completed(amt),
-            CLOSED => ReturnCode::Closed(amt),
+            DROPPED => ReturnCode::Dropped(amt),
             CANCELLED => ReturnCode::Cancelled(amt),
             _ => panic!("unknown return code {val:#x}"),
         }

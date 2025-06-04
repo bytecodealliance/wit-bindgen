@@ -1,7 +1,7 @@
 use crate::bindgen::{FunctionBindgen, POINTER_SIZE_EXPRESSION};
 use crate::{
     full_wit_type_name, int_repr, to_rust_ident, to_upper_camel_case, wasm_type, FnSig, Identifier,
-    InterfaceName, Ownership, RuntimeItem, RustFlagsRepr, RustWasm, TypeGeneration,
+    InterfaceName, Ownership, RuntimeItem, RustFlagsRepr, RustWasm, TypeGeneration, WasmType,
 };
 use anyhow::Result;
 use heck::*;
@@ -130,6 +130,32 @@ impl TypeOwnershipStyle {
 enum PayloadFor {
     Future,
     Stream,
+}
+
+fn from_core_val(ty: WasmType, val: &str) -> String {
+    match ty {
+        WasmType::I32 => format!("{val}.as_i32"),
+        WasmType::Pointer => format!("({val}.as_i32 as isize as *mut u8)"),
+        WasmType::Length => format!("({val}.as_i32 as isize as usize)"),
+        WasmType::I64 => format!("{val}.as_i64"),
+        WasmType::PointerOrI64 => {
+            format!("::core::mem::MaybeUninit::new({val}.as_i64 as u64)")
+        }
+        WasmType::F32 => format!("{val}.as_f32"),
+        WasmType::F64 => format!("{val}.as_f64"),
+    }
+}
+
+fn to_core_val(ty: WasmType, val: &str) -> String {
+    match ty {
+        WasmType::I32 => format!("as_i32: {val}"),
+        WasmType::Pointer => format!("as_i32: {val} as isize as i32"),
+        WasmType::Length => format!("as_i32: {val} as isize as i32"),
+        WasmType::I64 => format!("as_i64: {val}"),
+        WasmType::PointerOrI64 => format!("as_i64: {val}.assume_init() as i64"),
+        WasmType::F32 => format!("as_f32: {val}"),
+        WasmType::F64 => format!("as_f64: {val}"),
+    }
 }
 
 impl<'i> InterfaceGenerator<'i> {
@@ -536,6 +562,7 @@ macro_rules! {macro_name} {{
             return;
         }
         let ordinal = map.len();
+        let runtime = self.r#gen.runtime_path().to_owned();
         let async_support = self.r#gen.async_support_path();
         let (size, align) = if let Some(payload_type) = payload_type {
             (
@@ -553,23 +580,6 @@ macro_rules! {macro_name} {{
         };
         let size = size.size_wasm32();
         let align = align.align_wasm32();
-        let lift;
-        let lower;
-        let dealloc_lists;
-        if let Some(payload_type) = payload_type {
-            lift = self.lift_from_memory("ptr", &payload_type, &module);
-            dealloc_lists = self.deallocate_lists(
-                std::slice::from_ref(payload_type),
-                &["ptr".to_string()],
-                true,
-                &module,
-            );
-            lower = self.lower_to_memory("ptr", "value", &payload_type, &module);
-        } else {
-            lift = format!("let _ = ptr;");
-            lower = format!("let _ = (ptr, value);");
-            dealloc_lists = format!("let _ = ptr;");
-        }
         let import_prefix = match payload_for {
             PayloadFor::Future => "future",
             PayloadFor::Stream => "stream",
@@ -578,42 +588,200 @@ macro_rules! {macro_name} {{
             PayloadFor::Future => "Future",
             PayloadFor::Stream => "Stream",
         };
-        let start_extra = match payload_for {
-            PayloadFor::Future => "",
-            PayloadFor::Stream => ", _: usize",
-        };
-        let mut lift_fn = format!("unsafe fn lift(ptr: *mut u8) -> {name} {{ {lift} }}");
-        let mut lower_fn = format!("unsafe fn lower(value: {name}, ptr: *mut u8) {{ {lower} }}");
-        let mut dealloc_lists_fn =
-            format!("unsafe fn dealloc_lists(ptr: *mut u8) {{ {dealloc_lists} }}");
-        let mut lift_arg = "lift";
-        let mut lower_arg = "lower";
-        let mut dealloc_lists_arg = "dealloc_lists";
+        let mut dealloc_lists_fn;
+        let mut lift_fns;
+        let mut lower_fn;
+        let mut lift_args;
+        let mut lower_arg;
+        let mut dealloc_lists_arg;
+        let start_read_sig;
+        let start_write_sig;
+        match payload_for {
+            PayloadFor::Stream => {
+                let lift;
+                let lower;
+                let dealloc_lists;
+                if let Some(payload_type) = payload_type {
+                    lift = self.lift_from_memory("ptr", &payload_type, &module);
+                    dealloc_lists = self.deallocate_lists(
+                        std::slice::from_ref(payload_type),
+                        &["ptr".to_string()],
+                        true,
+                        &module,
+                    );
+                    lower = self.lower_to_memory("ptr", "value", &payload_type, &module);
+                } else {
+                    lift = format!("let _ = ptr;");
+                    lower = format!("let _ = (ptr, value);");
+                    dealloc_lists = format!("let _ = ptr;");
+                }
 
-        if let PayloadFor::Stream = payload_for {
-            lift_arg = "lift: Some(lift)";
-            lower_arg = "lower: Some(lower)";
-            dealloc_lists_arg = "dealloc_lists: Some(dealloc_lists)";
+                dealloc_lists_fn =
+                    format!("unsafe fn dealloc_lists(ptr: *mut u8) {{ {dealloc_lists} }}");
+                lift_fns = format!("unsafe fn lift(ptr: *mut u8) -> {name} {{ {lift} }}");
+                lower_fn = format!("unsafe fn lower(value: {name}, ptr: *mut u8) {{ {lower} }}");
+                lift_args = "lift: Some(lift)";
+                lower_arg = "lower: Some(lower)";
+                dealloc_lists_arg = "dealloc_lists: Some(dealloc_lists)";
 
-            let is_list_canonical = match payload_type {
-                Some(ty) => self.is_list_canonical(ty),
-                None => true,
-            };
+                let is_list_canonical = match payload_type {
+                    Some(ty) => self.is_list_canonical(ty),
+                    None => true,
+                };
 
-            if is_list_canonical {
-                lift_arg = "lift: None";
-                lower_arg = "lower: None";
-                dealloc_lists_arg = "dealloc_lists: None";
-                lift_fn = String::new();
-                lower_fn = String::new();
-                dealloc_lists_fn = String::new();
+                if is_list_canonical {
+                    lift_args = "lift: None";
+                    lower_arg = "lower: None";
+                    dealloc_lists_arg = "dealloc_lists: None";
+                    lift_fns = String::new();
+                    lower_fn = String::new();
+                    dealloc_lists_fn = String::new();
+                }
+
+                start_read_sig = "fn start_read(_: u32, _: *mut u8, _: usize) -> u32".to_owned();
+                start_write_sig =
+                    "fn start_write(_: u32, _: *const u8, _: usize) -> u32".to_owned();
+            }
+            PayloadFor::Future => {
+                let lift_write;
+                let lift_read;
+                let lower;
+                let dealloc_lists;
+                let start_read;
+                let start_write;
+                if let Some(payload_type) = payload_type {
+                    let sig = self.resolve.wasm_signature(
+                        AbiVariant::GuestImportAsync,
+                        &Function {
+                            name: String::new(),
+                            kind: FunctionKind::Freestanding,
+                            params: vec![(String::new(), *payload_type)],
+                            result: None,
+                            docs: Default::default(),
+                            stability: Stability::Unknown,
+                        },
+                    );
+                    dealloc_lists = self.deallocate_lists(
+                        std::slice::from_ref(payload_type),
+                        &sig.params
+                            .iter()
+                            .enumerate()
+                            .map(|(index, ty)| from_core_val(*ty, &format!("dst[{index}]")))
+                            .collect::<Vec<_>>(),
+                        sig.indirect_params,
+                        &module,
+                    );
+                    lift_read = self.lift_from_memory("src", &payload_type, &module);
+                    start_read_sig = "fn future_read(_: u32, _: *mut u8) -> u32".to_owned();
+                    start_read = "unsafe extern \"C\" fn start_read(future: u32, dst: *mut u8) \
+                                  -> u32 { future_read(future, dst) }"
+                        .to_owned();
+                    if sig.indirect_params {
+                        lift_write = self.lift_from_memory(
+                            "(src[0].as_i32 as isize as *mut u8)",
+                            &payload_type,
+                            &module,
+                        );
+                        let body = self.lower_to_memory("ptr", "value", &payload_type, &module);
+                        lower = format!(
+                            r#"
+                            let (ptr, cleanup) = {runtime}::Cleanup::new(
+                                ::std::alloc::Layout::from_size_align_unchecked({size}, {align})
+                            );
+                            {body}
+                            dst[0] = {async_support}::CoreVal {{ as_i32: ptr as isize as i32 }};
+                            cleanup
+                            "#
+                        );
+                        start_write_sig = "fn future_write(_: u32, _: *const u8) -> u32".to_owned();
+                        start_write = format!(
+                            "unsafe extern \"C\" fn start_write(future: u32, src: &{async_support}::LoweredWrite) \
+                             -> u32 {{ future_write(future, src[0].as_i32 as isize as *const u8) }}"
+                        );
+                    } else {
+                        lift_write = self.lift_flat(
+                            sig.params
+                                .iter()
+                                .enumerate()
+                                .map(|(index, ty)| from_core_val(*ty, &format!("src[{index}]")))
+                                .collect::<Vec<_>>(),
+                            &payload_type,
+                            &module,
+                        );
+                        let (body, results) = self.lower_flat("value", &payload_type, &module);
+                        let moves = results
+                            .into_iter()
+                            .zip(&sig.params)
+                            .enumerate()
+                            .map(|(index, (result, ty))| {
+                                format!(
+                                    "dst[{index}] = {async_support}::CoreVal {{ {} }};",
+                                    to_core_val(*ty, &result)
+                                )
+                            })
+                            .collect::<Vec<_>>()
+                            .concat();
+                        lower = format!("unsafe {{ {body} {moves} None }}");
+                        let params = sig
+                            .params
+                            .iter()
+                            .map(|ty| format!("_: {}", wasm_type(*ty)))
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        start_write_sig = format!("fn future_write(_: u32, {params}) -> u32");
+                        let args = sig
+                            .params
+                            .iter()
+                            .enumerate()
+                            .map(|(index, ty)| from_core_val(*ty, &format!("src[{index}]")))
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        start_write = format!(
+                            "unsafe extern \"C\" fn start_write(future: u32, src: &{async_support}::LoweredWrite) \
+                             -> u32 {{ future_write(future, {args}) }}"
+                        );
+                    }
+                } else {
+                    lift_write = format!("let _ = src;");
+                    lift_read = format!("let _ = src;");
+                    lower = format!("let _ = (dst, value); None");
+                    dealloc_lists = format!("let _ = dst;");
+                    start_read_sig = format!("fn future_read(_: u32) -> u32");
+                    start_write_sig = format!("fn future_write(_: u32) -> u32");
+                    start_read = format!(
+                        "unsafe extern \"C\" fn start_read(future: u32, _: *mut u8) -> u32 {{ future_read(future) }}"
+                    );
+                    start_write = format!(
+                        "unsafe extern \"C\" fn start_write(future: u32, _: &{async_support}::LoweredWrite) \
+                         -> u32 {{ future_write(future) }}"
+                    );
+                }
+
+                dealloc_lists_fn = format!(
+                    "unsafe fn dealloc_lists(dst: &{async_support}::LoweredWrite) {{ {dealloc_lists} }}"
+                );
+                lift_fns = format!(
+                    "\
+                    unsafe fn lift_write(src: &{async_support}::LoweredWrite) -> {name} {{ {lift_write} }} \
+                    unsafe fn lift_read(src: *mut u8) -> {name} {{ {lift_read} }}\
+                    {start_read}\
+                    {start_write}\
+                    "
+                );
+                lower_fn = format!(
+                    "unsafe fn lower_write(value: {name}, dst: &mut {async_support}::LoweredWrite) \
+                     -> ::std::option::Option<{runtime}::Cleanup> {{ {lower} }}"
+                );
+                lift_args = "lift_write, lift_read";
+                lower_arg = "lower_write";
+                dealloc_lists_arg = "dealloc_lists";
             }
         }
 
         let code = format!(
             r#"
 #[doc(hidden)]
-#[allow(unused_unsafe)]
+#[allow(unused_unsafe, unused_parens)]
 pub mod vtable{ordinal} {{
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -621,15 +789,15 @@ pub mod vtable{ordinal} {{
     #[cfg(not(target_arch = "wasm32"))]
     unsafe extern "C" fn cancel_read(_: u32) -> u32 {{ unreachable!() }}
     #[cfg(not(target_arch = "wasm32"))]
-    unsafe extern "C" fn close_writable(_: u32) {{ unreachable!() }}
+    unsafe extern "C" fn drop_writable(_: u32) {{ unreachable!() }}
     #[cfg(not(target_arch = "wasm32"))]
-    unsafe extern "C" fn close_readable(_: u32) {{ unreachable!() }}
+    unsafe extern "C" fn drop_readable(_: u32) {{ unreachable!() }}
     #[cfg(not(target_arch = "wasm32"))]
     unsafe extern "C" fn new() -> u64 {{ unreachable!() }}
     #[cfg(not(target_arch = "wasm32"))]
-    unsafe extern "C" fn start_read(_: u32, _: *mut u8{start_extra}) -> u32 {{ unreachable!() }}
+    unsafe extern "C" {start_read_sig} {{ unreachable!() }}
     #[cfg(not(target_arch = "wasm32"))]
-    unsafe extern "C" fn start_write(_: u32, _: *const u8{start_extra}) -> u32 {{ unreachable!() }}
+    unsafe extern "C" {start_write_sig} {{ unreachable!() }}
 
     #[cfg(target_arch = "wasm32")]
     #[link(wasm_import_module = "{module}")]
@@ -640,30 +808,30 @@ pub mod vtable{ordinal} {{
         fn cancel_write(_: u32) -> u32;
         #[link_name = "[{import_prefix}-cancel-read-{index}]{func_name}"]
         fn cancel_read(_: u32) -> u32;
-        #[link_name = "[{import_prefix}-close-writable-{index}]{func_name}"]
-        fn close_writable(_: u32);
-        #[link_name = "[{import_prefix}-close-readable-{index}]{func_name}"]
-        fn close_readable(_: u32);
+        #[link_name = "[{import_prefix}-drop-writable-{index}]{func_name}"]
+        fn drop_writable(_: u32);
+        #[link_name = "[{import_prefix}-drop-readable-{index}]{func_name}"]
+        fn drop_readable(_: u32);
         #[link_name = "[async-lower][{import_prefix}-read-{index}]{func_name}"]
-        fn start_read(_: u32, _: *mut u8{start_extra}) -> u32;
+        {start_read_sig};
         #[link_name = "[async-lower][{import_prefix}-write-{index}]{func_name}"]
-        fn start_write(_: u32, _: *const u8{start_extra}) -> u32;
+        {start_write_sig};
     }}
 
-    {lift_fn}
+    {lift_fns}
     {lower_fn}
     {dealloc_lists_fn}
 
     pub static VTABLE: {async_support}::{camel}Vtable<{name}> = {async_support}::{camel}Vtable::<{name}> {{
         cancel_write,
         cancel_read,
-        close_writable,
-        close_readable,
+        drop_writable,
+        drop_readable,
         {dealloc_lists_arg},
         layout: unsafe {{
             ::std::alloc::Layout::from_size_align_unchecked({size}, {align})
         }},
-        {lift_arg},
+        {lift_args},
         {lower_arg},
         new,
         start_read,
@@ -728,6 +896,12 @@ pub mod vtable{ordinal} {{
         format!("unsafe {{ {} }}", String::from(f.src))
     }
 
+    fn lower_flat(&mut self, value: &str, ty: &Type, module: &str) -> (String, Vec<String>) {
+        let mut f = FunctionBindgen::new(self, Vec::new(), module, true);
+        let results = abi::lower_flat(f.r#gen.resolve, &mut f, value.into(), ty);
+        (String::from(f.src), results)
+    }
+
     fn deallocate_lists(
         &mut self,
         types: &[Type],
@@ -755,6 +929,12 @@ pub mod vtable{ordinal} {{
     fn lift_from_memory(&mut self, address: &str, ty: &Type, module: &str) -> String {
         let mut f = FunctionBindgen::new(self, Vec::new(), module, true);
         let result = abi::lift_from_memory(f.r#gen.resolve, &mut f, address.into(), ty);
+        format!("unsafe {{ {}\n{result} }}", String::from(f.src))
+    }
+
+    fn lift_flat(&mut self, src: Vec<String>, ty: &Type, module: &str) -> String {
+        let mut f = FunctionBindgen::new(self, Vec::new(), module, true);
+        let result = abi::lift_flat(f.r#gen.resolve, &mut f, src, ty);
         format!("unsafe {{ {}\n{result} }}", String::from(f.src))
     }
 
@@ -1744,7 +1924,7 @@ unsafe fn call_import(_params: Self::ParamsLower, _results: *mut u8) -> u32 {{
             }
 
             Type::ErrorContext => {
-                let async_support = self.gen.async_support_path();
+                let async_support = self.r#gen.async_support_path();
                 self.push_str(&format!("{async_support}::ErrorContext"));
             }
         }
@@ -1921,7 +2101,7 @@ unsafe fn call_import(_params: Self::ParamsLower, _results: *mut u8) -> u32 {{
             self.rustdoc(docs);
             let mut derives = BTreeSet::new();
             if !self
-                .gen
+                .r#gen
                 .opts
                 .additional_derive_ignore
                 .contains(&name.to_kebab_case())
@@ -2032,7 +2212,7 @@ unsafe fn call_import(_params: Self::ParamsLower, _results: *mut u8) -> u32 {{
             self.rustdoc(docs);
             let mut derives = BTreeSet::new();
             if !self
-                .gen
+                .r#gen
                 .opts
                 .additional_derive_ignore
                 .contains(&name.to_kebab_case())
@@ -2193,7 +2373,7 @@ unsafe fn call_import(_params: Self::ParamsLower, _results: *mut u8) -> u32 {{
             .additional_derive_ignore
             .contains(&name.to_kebab_case())
         {
-            derives.extend(self.gen.opts.additional_derive_attributes.to_vec());
+            derives.extend(self.r#gen.opts.additional_derive_attributes.to_vec());
         }
         derives.extend(
             ["Clone", "Copy", "PartialEq", "Eq", "PartialOrd", "Ord"]

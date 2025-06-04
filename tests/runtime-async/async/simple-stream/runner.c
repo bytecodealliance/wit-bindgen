@@ -31,18 +31,18 @@ int main() {
   assert(RUNNER_WAITABLE_STATE(status) == RUNNER_WAITABLE_COMPLETED);
   assert(RUNNER_WAITABLE_COUNT(status) == 2);
 
-  // write, but see it closed
+  // write, but see it dropped
   status = test_stream_void_write(writer, 2);
   assert(status == RUNNER_WAITABLE_STATUS_BLOCKED);
   runner_waitable_set_wait(set, &event);
   assert(event.event == RUNNER_EVENT_STREAM_WRITE);
   assert(event.waitable == writer);
-  assert(RUNNER_WAITABLE_STATE(event.code) == RUNNER_WAITABLE_CLOSED);
+  assert(RUNNER_WAITABLE_STATE(event.code) == RUNNER_WAITABLE_DROPPED);
   assert(RUNNER_WAITABLE_COUNT(event.code) == 0);
 
   // clean up the writer
   runner_waitable_join(writer, 0);
-  test_stream_void_close_writable(writer);
+  test_stream_void_drop_writable(writer);
 
   // wait for the subtask to complete
   runner_waitable_join(subtask, set);

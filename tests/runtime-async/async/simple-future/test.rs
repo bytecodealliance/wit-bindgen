@@ -11,7 +11,7 @@ impl crate::exports::my::test::i::Guest for Component {
         x.await
     }
 
-    async fn close_future(x: FutureReader<()>) {
+    async fn drop_future(x: FutureReader<()>) {
         drop(x);
     }
 }

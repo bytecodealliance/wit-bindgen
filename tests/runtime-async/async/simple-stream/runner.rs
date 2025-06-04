@@ -19,7 +19,7 @@ fn main() {
 
             // write two items again
             let (result, ret) = tx.write(vec![(), ()]).await;
-            assert_eq!(result, StreamResult::Closed);
+            assert_eq!(result, StreamResult::Dropped);
             assert_eq!(ret.remaining(), 2);
         };
         let ((), ()) = futures::join!(test, read_stream(rx));

@@ -57,7 +57,7 @@ fn main() {
 
         backpressure_set(false);
 
-        // both channels should be closed
+        // both channels should be dropped
         tx1.write(()).await.unwrap_err();
         tx2.write(()).await.unwrap_err();
     });
