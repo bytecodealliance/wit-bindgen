@@ -2,7 +2,7 @@ package my:test;
 
 interface i {
   read-future: async func(x: future);
-  close-future: async func(x: future);
+  drop-future: async func(x: future);
 }
 
 world test {

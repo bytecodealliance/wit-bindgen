@@ -12,9 +12,9 @@ int main() {
     assert(status == RUNNER_SUBTASK_RETURNED);
     uint32_t value = 0;
     runner_waitable_status_t wstatus = test_future_u32_write(writer, &value);
-    assert(RUNNER_WAITABLE_STATE(wstatus) == RUNNER_WAITABLE_CLOSED);
+    assert(RUNNER_WAITABLE_STATE(wstatus) == RUNNER_WAITABLE_DROPPED);
     assert(RUNNER_WAITABLE_COUNT(wstatus) == 0);
-    test_future_u32_close_writable(writer);
+    test_future_u32_drop_writable(writer);
   }
 
   {
@@ -26,9 +26,9 @@ int main() {
 
     uint32_t value = 0;
     runner_waitable_status_t wstatus = test_future_u32_write(writer, &value);
-    assert(RUNNER_WAITABLE_STATE(wstatus) == RUNNER_WAITABLE_CLOSED);
+    assert(RUNNER_WAITABLE_STATE(wstatus) == RUNNER_WAITABLE_DROPPED);
     assert(RUNNER_WAITABLE_COUNT(wstatus) == 0);
-    test_future_u32_close_writable(writer);
+    test_future_u32_drop_writable(writer);
   }
 
   {
@@ -42,11 +42,11 @@ int main() {
 
     uint32_t to_write = 4;
     runner_waitable_status_t wstatus = test_future_u32_write(data_writer, &to_write);
-    assert(RUNNER_WAITABLE_STATE(wstatus) == RUNNER_WAITABLE_CLOSED);
+    assert(RUNNER_WAITABLE_STATE(wstatus) == RUNNER_WAITABLE_DROPPED);
     assert(RUNNER_WAITABLE_COUNT(wstatus) == 1);
 
     wstatus = test_future_void_write(signal_writer);
-    assert(RUNNER_WAITABLE_STATE(wstatus) == RUNNER_WAITABLE_CLOSED);
+    assert(RUNNER_WAITABLE_STATE(wstatus) == RUNNER_WAITABLE_DROPPED);
     assert(RUNNER_WAITABLE_COUNT(wstatus) == 1);
 
     runner_waitable_set_t set = runner_waitable_set_new();
