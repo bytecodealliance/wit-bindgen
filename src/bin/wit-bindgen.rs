@@ -54,7 +54,7 @@ enum Opt {
         #[clap(flatten)]
         args: Common,
     },
-    /// Generates bindings for C/CPP host modules.
+    /// Generates bindings for C++ modules.
     #[cfg(feature = "cpp")]
     Cpp {
         #[clap(flatten)]
@@ -147,7 +147,7 @@ fn main() -> Result<()> {
         #[cfg(feature = "bridge")]
         Opt::Bridge { opts, args } => (opts.build(), args),
         #[cfg(feature = "cpp")]
-        Opt::Cpp { opts, args } => (opts.build(), args),
+        Opt::Cpp { opts, args } => (opts.build(args.out_dir.as_ref()), args),
         #[cfg(feature = "rust")]
         Opt::Rust { opts, args } => (opts.build(), args),
         #[cfg(feature = "go")]

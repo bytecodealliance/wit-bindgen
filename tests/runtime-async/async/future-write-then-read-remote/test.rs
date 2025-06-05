@@ -11,7 +11,7 @@ use wit_bindgen::rt::async_support::FutureReader;
 impl Guest for Component {
     async fn f(future: FutureReader<()>) {
         eprintln!("e1");
-        future.await.unwrap();
+        future.await;
         eprintln!("e2");
     }
 }

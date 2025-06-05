@@ -768,6 +768,19 @@ pub fn lower_to_memory<B: Bindgen>(
     generator.write_to_memory(ty, address, Default::default());
 }
 
+pub fn lower_flat<B: Bindgen>(
+    resolve: &Resolve,
+    bindgen: &mut B,
+    value: B::Operand,
+    ty: &Type,
+) -> Vec<B::Operand> {
+    let mut generator = Generator::new(resolve, bindgen);
+    generator.stack.push(value);
+    generator.realloc = Some(Realloc::Export("cabi_realloc"));
+    generator.lower(ty);
+    generator.stack
+}
+
 pub fn lift_from_memory<B: Bindgen>(
     resolve: &Resolve,
     bindgen: &mut B,
@@ -851,10 +864,11 @@ fn needs_deallocate(resolve: &Resolve, ty: &Type, what: Deallocate) -> bool {
 pub fn deallocate_lists_in_types<B: Bindgen>(
     resolve: &Resolve,
     types: &[Type],
-    ptr: B::Operand,
+    operands: &[B::Operand],
+    indirect: bool,
     bindgen: &mut B,
 ) {
-    Generator::new(resolve, bindgen, false).deallocate_in_types(types, ptr, Deallocate::Lists);
+    Generator::new(resolve, bindgen, false).deallocate_in_types(types, operands, indirect, Deallocate::Lists);
 }
 
 /// Generate instructions in `bindgen` to deallocate all lists in `ptr` where
@@ -862,12 +876,14 @@ pub fn deallocate_lists_in_types<B: Bindgen>(
 pub fn deallocate_lists_and_own_in_types<B: Bindgen>(
     resolve: &Resolve,
     types: &[Type],
-    ptr: B::Operand,
+    operands: &[B::Operand],
+    indirect: bool,
     bindgen: &mut B,
 ) {
     Generator::new(resolve, bindgen, false).deallocate_in_types(
         types,
-        ptr,
+        operands,
+        indirect,
         Deallocate::ListsAndOwn,
     );
 }
@@ -944,7 +960,13 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         // ownership, but we pass ownership in all other cases.
         let realloc = match (variant, lift_lower, async_) {
             (AbiVariant::GuestImport, LiftLower::LowerArgsLiftResults, _)
-            | (AbiVariant::GuestExport, LiftLower::LiftArgsLowerResults, true) => Realloc::None,
+            | (
+                AbiVariant::GuestExport
+                | AbiVariant::GuestExportAsync
+                | AbiVariant::GuestExportAsyncStackful,
+                LiftLower::LiftArgsLowerResults,
+                true,
+            ) => Realloc::None,
             _ => Realloc::Export("cabi_realloc"),
         };
         assert!(self.realloc.is_none());
@@ -1142,7 +1164,10 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 // This was dynamically allocated by the caller (or async start
                 // function) so after it's been read by the guest we need to
                 // deallocate it.
-                if let AbiVariant::GuestExport = variant {
+                if let AbiVariant::GuestExport
+                | AbiVariant::GuestExportAsync
+                | AbiVariant::GuestExportAsyncStackful = variant
+                {
                     if sig.indirect_params && !async_ {
                         let ElementInfo { size, align } = self
                             .bindgen
@@ -1248,21 +1273,44 @@ impl<'a, B: Bindgen> Generator<'a, B> {
 
         let mut types = Vec::new();
         types.extend(func.result);
-        self.deallocate_in_types(&types, addr, Deallocate::Lists);
+        self.deallocate_in_types(&types, &[addr], true, Deallocate::Lists);
 
         self.emit(&Instruction::Return { func, amt: 0 });
     }
 
-    fn deallocate_in_types(&mut self, types: &[Type], addr: B::Operand, what: Deallocate) {
-        for (offset, ty) in self.bindgen.sizes().field_offsets(types) {
-            self.deallocate(ty, addr.clone(), offset, what);
+    fn deallocate_in_types(
+        &mut self,
+        types: &[Type],
+        operands: &[B::Operand],
+        indirect: bool,
+        what: Deallocate,
+    ) {
+        if indirect {
+            assert_eq!(operands.len(), 1);
+            for (offset, ty) in self.bindgen.sizes().field_offsets(types) {
+                self.deallocate_indirect(ty, operands[0].clone(), offset, what);
+            }
+            assert!(
+                self.stack.is_empty(),
+                "stack has {} items remaining",
+                self.stack.len()
+            );
+        } else {
+            let mut operands = operands;
+            let mut operands_for_ty;
+            for ty in types {
+                let types = flat_types(self.resolve, ty).unwrap();
+                (operands_for_ty, operands) = operands.split_at(types.len());
+                self.stack.extend_from_slice(operands_for_ty);
+                self.deallocate(ty, what);
+                assert!(
+                    self.stack.is_empty(),
+                    "stack has {} items remaining",
+                    self.stack.len()
+                );
+            }
+            assert!(operands.is_empty());
         }
-
-        assert!(
-            self.stack.is_empty(),
-            "stack has {} items remaining",
-            self.stack.len()
-        );
     }
 
     fn emit(&mut self, inst: &Instruction<'_>) {
@@ -1272,8 +1320,9 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         let operands_len = inst.operands_len();
         assert!(
             self.stack.len() >= operands_len,
-            "not enough operands on stack for {:?}",
-            inst
+            "not enough operands on stack for {:?}: have {} need {operands_len}",
+            inst,
+            self.stack.len(),
         );
         self.operands
             .extend(self.stack.drain((self.stack.len() - operands_len)..));
@@ -1549,16 +1598,11 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     todo!();
                 }
                 TypeDefKind::Record(record) => {
-                    let temp = flat_types(self.resolve, ty).unwrap();
-                    let mut args = self
-                        .stack
-                        .drain(self.stack.len() - temp.len()..)
-                        .collect::<Vec<_>>();
-                    for field in record.fields.iter() {
-                        let temp = flat_types(self.resolve, &field.ty).unwrap();
-                        self.stack.extend(args.drain(..temp.len()));
-                        self.lift(&field.ty);
-                    }
+                    self.flat_for_each_record_type(
+                        ty,
+                        record.fields.iter().map(|f| &f.ty),
+                        Self::lift,
+                    );
                     self.emit(&RecordLift {
                         record,
                         ty: id,
@@ -1566,16 +1610,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     });
                 }
                 TypeDefKind::Tuple(tuple) => {
-                    let temp = flat_types(self.resolve, ty).unwrap();
-                    let mut args = self
-                        .stack
-                        .drain(self.stack.len() - temp.len()..)
-                        .collect::<Vec<_>>();
-                    for ty in tuple.types.iter() {
-                        let temp = flat_types(self.resolve, ty).unwrap();
-                        self.stack.extend(args.drain(..temp.len()));
-                        self.lift(ty);
-                    }
+                    self.flat_for_each_record_type(ty, tuple.types.iter(), Self::lift);
                     self.emit(&TupleLift { tuple, ty: id });
                 }
                 TypeDefKind::Flags(flags) => {
@@ -1587,7 +1622,12 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
 
                 TypeDefKind::Variant(v) => {
-                    self.lift_variant_arms(ty, v.cases.iter().map(|c| c.ty.as_ref()));
+                    self.flat_for_each_variant_arm(
+                        ty,
+                        true,
+                        v.cases.iter().map(|c| c.ty.as_ref()),
+                        Self::lift,
+                    );
                     self.emit(&VariantLift {
                         variant: v,
                         ty: id,
@@ -1604,12 +1644,17 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
 
                 TypeDefKind::Option(t) => {
-                    self.lift_variant_arms(ty, [None, Some(t)]);
+                    self.flat_for_each_variant_arm(ty, true, [None, Some(t)], Self::lift);
                     self.emit(&OptionLift { payload: t, ty: id });
                 }
 
                 TypeDefKind::Result(r) => {
-                    self.lift_variant_arms(ty, [r.ok.as_ref(), r.err.as_ref()]);
+                    self.flat_for_each_variant_arm(
+                        ty,
+                        true,
+                        [r.ok.as_ref(), r.err.as_ref()],
+                        Self::lift,
+                    );
                     self.emit(&ResultLift { result: r, ty: id });
                 }
 
@@ -1631,10 +1676,30 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         }
     }
 
-    fn lift_variant_arms<'b>(
+    fn flat_for_each_record_type<'b>(
+        &mut self,
+        container: &Type,
+        types: impl Iterator<Item = &'b Type>,
+        mut iter: impl FnMut(&mut Self, &Type),
+    ) {
+        let temp = flat_types(self.resolve, container).unwrap();
+        let mut args = self
+            .stack
+            .drain(self.stack.len() - temp.len()..)
+            .collect::<Vec<_>>();
+        for ty in types {
+            let temp = flat_types(self.resolve, ty).unwrap();
+            self.stack.extend(args.drain(..temp.len()));
+            iter(self, ty);
+        }
+    }
+
+    fn flat_for_each_variant_arm<'b>(
         &mut self,
         ty: &Type,
+        blocks_with_type_have_result: bool,
         cases: impl IntoIterator<Item = Option<&'b Type>>,
+        mut iter: impl FnMut(&mut Self, &Type),
     ) {
         let params = flat_types(self.resolve, ty).unwrap();
         let mut casts = Vec::new();
@@ -1662,9 +1727,13 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
 
                 // Then recursively lift this variant's payload.
-                self.lift(ty);
+                iter(self, ty);
             }
-            self.finish_block(ty.is_some() as usize);
+            self.finish_block(if blocks_with_type_have_result {
+                ty.is_some() as usize
+            } else {
+                0
+            });
         }
     }
 
@@ -2057,7 +2126,120 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         });
     }
 
-    fn deallocate(
+    /// Runs the deallocation of `ty` for the operands currently on
+    /// `self.stack`.
+    ///
+    /// This will pop the ABI items of `ty` from `self.stack`.
+    fn deallocate(&mut self, ty: &Type, what: Deallocate) {
+        use Instruction::*;
+
+        match *ty {
+            Type::String => {
+                self.emit(&Instruction::GuestDeallocateString);
+            }
+
+            Type::Bool
+            | Type::U8
+            | Type::S8
+            | Type::U16
+            | Type::S16
+            | Type::U32
+            | Type::S32
+            | Type::Char
+            | Type::U64
+            | Type::S64
+            | Type::F32
+            | Type::F64
+            | Type::ErrorContext => {
+                // No deallocation necessary, just discard the operand on the
+                // stack.
+                self.stack.pop().unwrap();
+            }
+
+            Type::Id(id) => match &self.resolve.types[id].kind {
+                TypeDefKind::Type(t) => self.deallocate(t, what),
+
+                TypeDefKind::List(element) => {
+                    self.push_block();
+                    self.emit(&IterBasePointer);
+                    let elemaddr = self.stack.pop().unwrap();
+                    self.deallocate_indirect(element, elemaddr, Default::default(), what);
+                    self.finish_block(0);
+
+                    self.emit(&Instruction::GuestDeallocateList { element });
+                }
+
+                TypeDefKind::Handle(Handle::Own(_))
+                | TypeDefKind::Future(_)
+                | TypeDefKind::Stream(_)
+                    if what.handles() =>
+                {
+                    self.lift(ty);
+                    self.emit(&DropHandle { ty });
+                }
+
+                TypeDefKind::Record(record) => {
+                    self.flat_for_each_record_type(
+                        ty,
+                        record.fields.iter().map(|f| &f.ty),
+                        |me, ty| me.deallocate(ty, what),
+                    );
+                }
+
+                TypeDefKind::Tuple(tuple) => {
+                    self.flat_for_each_record_type(ty, tuple.types.iter(), |me, ty| {
+                        me.deallocate(ty, what)
+                    });
+                }
+
+                TypeDefKind::Variant(variant) => {
+                    self.flat_for_each_variant_arm(
+                        ty,
+                        false,
+                        variant.cases.iter().map(|c| c.ty.as_ref()),
+                        |me, ty| me.deallocate(ty, what),
+                    );
+                    self.emit(&GuestDeallocateVariant {
+                        blocks: variant.cases.len(),
+                    });
+                }
+
+                TypeDefKind::Option(t) => {
+                    self.flat_for_each_variant_arm(ty, false, [None, Some(t)], |me, ty| {
+                        me.deallocate(ty, what)
+                    });
+                    self.emit(&GuestDeallocateVariant { blocks: 2 });
+                }
+
+                TypeDefKind::Result(e) => {
+                    self.flat_for_each_variant_arm(
+                        ty,
+                        false,
+                        [e.ok.as_ref(), e.err.as_ref()],
+                        |me, ty| me.deallocate(ty, what),
+                    );
+                    self.emit(&GuestDeallocateVariant { blocks: 2 });
+                }
+
+                // discard the operand on the stack, otherwise nothing to free.
+                TypeDefKind::Flags(_)
+                | TypeDefKind::Enum(_)
+                | TypeDefKind::Future(_)
+                | TypeDefKind::Stream(_)
+                | TypeDefKind::Handle(Handle::Own(_))
+                | TypeDefKind::Handle(Handle::Borrow(_)) => {
+                    self.stack.pop().unwrap();
+                }
+
+                TypeDefKind::Resource => unreachable!(),
+                TypeDefKind::Unknown => unreachable!(),
+
+                TypeDefKind::FixedSizeList(..) => todo!(),
+            },
+        }
+    }
+
+    fn deallocate_indirect(
         &mut self,
         ty: &Type,
         addr: B::Operand,
@@ -2080,7 +2262,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 self.emit(&Instruction::LengthLoad {
                     offset: offset + self.bindgen.sizes().align(ty).into(),
                 });
-                self.emit(&Instruction::GuestDeallocateString);
+                self.deallocate(ty, what);
             }
             Type::Bool
             | Type::U8
@@ -2096,9 +2278,9 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             | Type::F64
             | Type::ErrorContext => {}
             Type::Id(id) => match &self.resolve.types[id].kind {
-                TypeDefKind::Type(t) => self.deallocate(t, addr, offset, what),
+                TypeDefKind::Type(t) => self.deallocate_indirect(t, addr, offset, what),
 
-                TypeDefKind::List(element) => {
+                TypeDefKind::List(_) => {
                     self.stack.push(addr.clone());
                     self.emit(&Instruction::PointerLoad { offset });
                     self.stack.push(addr);
@@ -2106,13 +2288,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         offset: offset + self.bindgen.sizes().align(ty).into(),
                     });
 
-                    self.push_block();
-                    self.emit(&IterBasePointer);
-                    let elemaddr = self.stack.pop().unwrap();
-                    self.deallocate(element, elemaddr, Default::default(), what);
-                    self.finish_block(0);
-
-                    self.emit(&Instruction::GuestDeallocateList { element });
+                    self.deallocate(ty, what);
                 }
 
                 TypeDefKind::Handle(Handle::Own(_))
@@ -2129,7 +2305,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 TypeDefKind::Resource => unreachable!(),
 
                 TypeDefKind::Record(record) => {
-                    self.deallocate_fields(
+                    self.deallocate_indirect_fields(
                         &record.fields.iter().map(|f| f.ty).collect::<Vec<_>>(),
                         addr,
                         offset,
@@ -2138,13 +2314,13 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
 
                 TypeDefKind::Tuple(tuple) => {
-                    self.deallocate_fields(&tuple.types, addr, offset, what);
+                    self.deallocate_indirect_fields(&tuple.types, addr, offset, what);
                 }
 
                 TypeDefKind::Flags(_) => {}
 
                 TypeDefKind::Variant(variant) => {
-                    self.deallocate_variant(
+                    self.deallocate_indirect_variant(
                         offset,
                         addr,
                         variant.tag(),
@@ -2157,12 +2333,12 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
 
                 TypeDefKind::Option(t) => {
-                    self.deallocate_variant(offset, addr, Int::U8, [None, Some(t)], what);
+                    self.deallocate_indirect_variant(offset, addr, Int::U8, [None, Some(t)], what);
                     self.emit(&GuestDeallocateVariant { blocks: 2 });
                 }
 
                 TypeDefKind::Result(e) => {
-                    self.deallocate_variant(
+                    self.deallocate_indirect_variant(
                         offset,
                         addr,
                         Int::U8,
@@ -2182,7 +2358,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         }
     }
 
-    fn deallocate_variant<'b>(
+    fn deallocate_indirect_variant<'b>(
         &mut self,
         offset: ArchitectureSize,
         addr: B::Operand,
@@ -2196,13 +2372,13 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         for ty in cases {
             self.push_block();
             if let Some(ty) = ty {
-                self.deallocate(ty, addr.clone(), payload_offset, what);
+                self.deallocate_indirect(ty, addr.clone(), payload_offset, what);
             }
             self.finish_block(0);
         }
     }
 
-    fn deallocate_fields(
+    fn deallocate_indirect_fields(
         &mut self,
         tys: &[Type],
         addr: B::Operand,
@@ -2210,7 +2386,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         what: Deallocate,
     ) {
         for (field_offset, ty) in self.bindgen.sizes().field_offsets(tys) {
-            self.deallocate(ty, addr.clone(), offset + (field_offset), what);
+            self.deallocate_indirect(ty, addr.clone(), offset + (field_offset), what);
         }
     }
 }

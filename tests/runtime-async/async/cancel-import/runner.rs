@@ -9,7 +9,7 @@ use wit_bindgen::yield_async;
 fn main() {
     println!("test cancelling an import in progress");
     wit_bindgen::block_on(async {
-        let (tx, rx) = wit_future::new();
+        let (tx, rx) = wit_future::new(|| unreachable!());
         let mut import = Box::pin(pending_import(rx));
         assert!(import
             .as_mut()
@@ -21,7 +21,7 @@ fn main() {
 
     println!("test cancelling an import before it starts");
     wit_bindgen::block_on(async {
-        let (tx, rx) = wit_future::new();
+        let (tx, rx) = wit_future::new(|| unreachable!());
         let import = Box::pin(pending_import(rx));
         drop(import);
         tx.write(()).await.unwrap_err();
@@ -29,8 +29,8 @@ fn main() {
 
     println!("test cancelling an import in the started state");
     wit_bindgen::block_on(async {
-        let (tx1, rx1) = wit_future::new();
-        let (tx2, rx2) = wit_future::new();
+        let (tx1, rx1) = wit_future::new(|| unreachable!());
+        let (tx2, rx2) = wit_future::new(|| unreachable!());
 
         // create a task in the "started" state, but don't complete it yet
         let mut started_import = Box::pin(pending_import(rx1));
@@ -66,7 +66,7 @@ fn main() {
     println!("test cancellation with a status code saying it's done");
     wit_bindgen::block_on(async {
         // Start a subtask and get it into the "started" state
-        let (tx, rx) = wit_future::new();
+        let (tx, rx) = wit_future::new(|| unreachable!());
         let mut import = Box::pin(pending_import(rx));
         assert!(import
             .as_mut()
@@ -92,7 +92,7 @@ fn main() {
     println!("race cancellation with pending status code");
     wit_bindgen::block_on(async {
         // Start a subtask and get it into the "started" state
-        let (tx1, rx1) = wit_future::new();
+        let (tx1, rx1) = wit_future::new(|| unreachable!());
         let mut started_import = Box::pin(pending_import(rx1));
         assert!(started_import
             .as_mut()
@@ -102,7 +102,7 @@ fn main() {
         // force the next subtask to start out in the "starting" state, not the
         // "started" state.
         backpressure_set(true);
-        let (tx2, rx2) = wit_future::new();
+        let (tx2, rx2) = wit_future::new(|| unreachable!());
         let mut starting_import = Box::pin(pending_import(rx2));
         assert!(starting_import
             .as_mut()

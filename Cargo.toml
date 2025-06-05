@@ -41,6 +41,7 @@ wasm-compose = { git = "https://github.com/cpetig/wasm-tools", branch = "symmetr
 
 wit-bindgen-core = { path = 'crates/core', version = '0.42.1' }
 wit-bindgen-c = { path = 'crates/c', version = '0.42.1' }
+wit-bindgen-cpp = { path = 'crates/cpp', version = '0.42.1' }
 wit-bindgen-rust = { path = "crates/rust", version = "0.42.1" }
 wit-bindgen-csharp = { path = 'crates/csharp', version = '0.42.1' }
 wit-bindgen-markdown = { path = 'crates/markdown', version = '0.42.1' }
@@ -60,6 +61,7 @@ clap = { workspace = true, features = ['wrap_help'] }
 wit-bindgen-core = { workspace = true }
 wit-bindgen-rust = { workspace = true, features = ['clap'], optional = true }
 wit-bindgen-c = { workspace = true, features = ['clap'], optional = true }
+wit-bindgen-cpp = { workspace = true, features = ['clap'], optional = true }
 wit-bindgen-markdown = { workspace = true, features = ['clap'], optional = true }
 wit-bindgen-moonbit = { workspace = true, features = ['clap'], optional = true }
 wit-bindgen-csharp = { workspace = true, features = ['clap'], optional = true }
@@ -76,7 +78,7 @@ default = [
   'rust',
   'markdown',
   'go',
-  # 'csharp',
+  'csharp',
   'cpp',
   'bridge',
   'moonbit',

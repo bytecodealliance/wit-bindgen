@@ -1,12 +1,13 @@
-//@ args = '--async=-all'
 include!(env!("BINDINGS"));
 
 use crate::a::b::the_test::f;
 
 fn main() {
-    let (tx, rx) = wit_future::new();
+    wit_bindgen::block_on(async {
+        let (tx, rx) = wit_future::new(|| ());
 
-    drop(tx);
+        drop(tx);
 
-    f(rx);
+        f(rx).await;
+    });
 }

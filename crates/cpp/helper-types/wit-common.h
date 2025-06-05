@@ -66,4 +66,10 @@ public:
 
 /// @brief Replaces void in the error position of a result
 struct Void {};
+
+template<class To, class From>
+constexpr To bit_cast(const From& from) noexcept {
+  union Bits { From from; To to; };
+  Bits b; b.from = from; return b.to;
+}
 } // namespace wit

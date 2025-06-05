@@ -387,7 +387,7 @@ wit-bindgen-go generate <path-to-wit-pkg>
 
 ### Guest: C++-17+
 
-This fork contains code to generate C++ code which uses the std types 
+The cpp crate contains code to generate C++ code which uses the std types 
 optional, string, string_view, vector, expected to represent generic
 WIT types.
 
