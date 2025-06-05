@@ -12,8 +12,8 @@ mod types;
 pub use types::{TypeInfo, Types};
 mod path;
 pub use path::name_package_module;
-pub mod symmetric;
 mod async_;
+pub mod symmetric;
 pub use async_::AsyncFilterSet;
 
 #[derive(Default, Copy, Clone, PartialEq, Eq, Debug)]

@@ -220,9 +220,11 @@ impl<'i> InterfaceGenerator<'i> {
             let module = self.resolve.name_world_key(interface_name);
             let wasm_import_module = format!("[export]{module}");
             let new_name = format!("[resource-new]{resource_name}");
-            let external_new = make_external_symbol(&wasm_import_module, &new_name, AbiVariant::GuestImport);
+            let external_new =
+                make_external_symbol(&wasm_import_module, &new_name, AbiVariant::GuestImport);
             let rep_name = format!("[resource-rep]{resource_name}");
-            let external_rep = make_external_symbol(&wasm_import_module, &rep_name, AbiVariant::GuestImport);
+            let external_rep =
+                make_external_symbol(&wasm_import_module, &rep_name, AbiVariant::GuestImport);
             let import_new = crate::declare_import(
                 &wasm_import_module,
                 &new_name,
@@ -237,7 +239,11 @@ impl<'i> InterfaceGenerator<'i> {
                 &[abi::WasmType::I32],
                 &[abi::WasmType::Pointer],
             );
-            let handle_type = if self.gen.opts.symmetric { "usize" } else { "u32" };
+            let handle_type = if self.gen.opts.symmetric {
+                "usize"
+            } else {
+                "u32"
+            };
             uwriteln!(
                 self.src,
                 r#"
@@ -257,8 +263,8 @@ fn _resource_rep(handle: {handle_type}) -> *mut u8
     unsafe {{ {external_rep}(handle as {handle_type}) }}
 }}
 
-                    "#);
-            }
+                    "#
+            );
             for method in methods {
                 self.src.push_str(method);
             }
@@ -1295,12 +1301,8 @@ unsafe fn call_import(_params: Self::ParamsLower, _results: *mut u8) -> u32 {{
         } else {
             AbiVariant::GuestExport
         };
-        let sig = abi::wasm_signature_symmetric(
-            self.resolve,
-            variant,
-            func,
-            self.gen.opts.symmetric,
-        );
+        let sig =
+            abi::wasm_signature_symmetric(self.resolve, variant, func, self.gen.opts.symmetric);
         let mut params = Vec::new();
         for (i, param) in sig.params.iter().enumerate() {
             let name = format!("arg{}", i);
@@ -2827,10 +2829,8 @@ impl<'a> {camel}Borrow<'a>{{
 
         let wasm_resource = self.path_to_wasm_resource();
         let drop_name = format!("[resource-drop]{name}");
-        let export_name = make_external_symbol(
-            &wasm_import_module,
-            &drop_name,
-            AbiVariant::GuestImport,);
+        let export_name =
+            make_external_symbol(&wasm_import_module, &drop_name, AbiVariant::GuestImport);
         let intrinsic = crate::declare_import(
             &wasm_import_module,
             &drop_name,

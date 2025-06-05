@@ -7,8 +7,8 @@ use std::{
     process::{Command, Stdio},
     str::FromStr,
 };
-use wit_bindgen_c::to_c_ident;
 use symbol_name::{make_external_component, make_external_symbol};
+use wit_bindgen_c::to_c_ident;
 use wit_bindgen_core::{
     abi::{self, AbiVariant, Bindgen, Bitcast, LiftLower, WasmSignature, WasmType},
     make_external_component, make_external_symbol, symmetric, uwrite, uwriteln,
@@ -19,8 +19,8 @@ use wit_bindgen_core::{
     Files, InterfaceGenerator, Source, WorldGenerator,
 };
 
-mod wamr;
 mod symbol_name;
+mod wamr;
 
 pub const RESOURCE_IMPORT_BASE_CLASS_NAME: &str = "ResourceImportBase";
 pub const RESOURCE_EXPORT_BASE_CLASS_NAME: &str = "ResourceExportBase";
@@ -1248,12 +1248,11 @@ impl CppInterfaceGenerator<'_> {
         {
             if matches!(is_drop, SpecialMethod::Allocate) {
                 res.result.push_str("Owned");
-            } if let Some(ty) = &func.result {
-                res.result.push_str(&(self.type_name(
-                    ty,
-                    outer_namespace,
-                    Flavor::Result(abi_variant),
-                )+ if matches!(is_drop, SpecialMethod::ResourceRep) {
+            }
+            if let Some(ty) = &func.result {
+                res.result.push_str(
+                    &(self.type_name(ty, outer_namespace, Flavor::Result(abi_variant))
+                        + if matches!(is_drop, SpecialMethod::ResourceRep) {
                             "*"
                         } else {
                             ""
@@ -1301,20 +1300,20 @@ impl CppInterfaceGenerator<'_> {
                 res.arguments
                     .push((name.to_snake_case(), "uint8_t*".into()));
             } else {
-                let is_pointer = matches!(
-                (&is_drop, self.gen.opts.host_side()),
-                (SpecialMethod::Dtor, _)
-                    | (SpecialMethod::ResourceNew, _)
-                    | (SpecialMethod::ResourceDrop, true)
-            )
-            {
-                "*"
-            } else {
-                ""
-            };
+                let is_pointer = if matches!(
+                    (&is_drop, self.gen.opts.host_side()),
+                    (SpecialMethod::Dtor, _)
+                        | (SpecialMethod::ResourceNew, _)
+                        | (SpecialMethod::ResourceDrop, true)
+                ) {
+                    "*"
+                } else {
+                    ""
+                };
                 res.arguments.push((
                     name.to_snake_case(),
-                    self.type_name(param, &res.namespace, Flavor::Argument(abi_variant)) + is_pointer,
+                    self.type_name(param, &res.namespace, Flavor::Argument(abi_variant))
+                        + is_pointer,
                 ));
             }
         }
@@ -1476,12 +1475,7 @@ impl CppInterfaceGenerator<'_> {
         }
     }
 
-    fn generate_function(
-        &mut self,
-        func: &Function,
-        owner: &TypeOwner,
-        variant: AbiVariant,
-    ) {
+    fn generate_function(&mut self, func: &Function, owner: &TypeOwner, variant: AbiVariant) {
         fn class_namespace(
             cifg: &CppInterfaceGenerator,
             func: &Function,
@@ -1786,7 +1780,7 @@ impl CppInterfaceGenerator<'_> {
                     }
                     None => make_external_component(&func.name),
                 };
-               let import_name = match module_name {
+                let import_name = match module_name {
                     Some(ref module_name) => make_external_symbol(
                         module_name,
                         &func.name,

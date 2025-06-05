@@ -49,7 +49,6 @@ wit-bindgen-moonbit = { path = 'crates/moonbit', version = '0.42.1' }
 wit-bindgen = { path = 'crates/guest-rust', version = '0.42.1', default-features = false }
 wit-bindgen-test = { path = 'crates/test', version = '0.42.1' }
 
-wit-bindgen-cpp = { path = 'crates/cpp', version = '0.3.0' }
 wit-bindgen-bridge = { path = 'crates/bridge', version = '0.1.0' }
 
 [[bin]]
@@ -68,7 +67,6 @@ wit-bindgen-csharp = { workspace = true, features = ['clap'], optional = true }
 wit-bindgen-test = { workspace = true }
 wit-component = { workspace = true }
 wasm-encoder = { workspace = true }
-wit-bindgen-cpp = { workspace = true, features = ['clap'], optional = true }
 wit-bindgen-bridge = { workspace = true, features = ['clap'], optional = true }
 env_logger = "0.11.7"
 

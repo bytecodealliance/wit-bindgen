@@ -1738,6 +1738,7 @@ fn wasm_type(ty: WasmType) -> &'static str {
 }
 
 fn declare_import(
+    module_prefix: &str,
     wasm_import_module: &str,
     wasm_import_name: &str,
     rust_name: &str,

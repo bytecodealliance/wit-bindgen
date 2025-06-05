@@ -868,7 +868,12 @@ pub fn deallocate_lists_in_types<B: Bindgen>(
     indirect: bool,
     bindgen: &mut B,
 ) {
-    Generator::new(resolve, bindgen, false).deallocate_in_types(types, operands, indirect, Deallocate::Lists);
+    Generator::new(resolve, bindgen, false).deallocate_in_types(
+        types,
+        operands,
+        indirect,
+        Deallocate::Lists,
+    );
 }
 
 /// Generate instructions in `bindgen` to deallocate all lists in `ptr` where
@@ -2467,7 +2472,7 @@ fn push_flat_list_symmetric<'a>(
     resolve: &Resolve,
     mut list: impl Iterator<Item = &'a Type>,
     result: &mut FlatTypes<'_>,
-//    _symmetric: bool,
+    //    _symmetric: bool,
 ) -> bool {
     list.all(|ty| push_flat_symmetric(resolve, ty, result))
 }
@@ -2486,7 +2491,11 @@ pub fn wasm_signature_symmetric(
 
     let mut storage = [WasmType::I32; MAX_FLAT_PARAMS + 1];
     let mut params = FlatTypes::new(&mut storage);
-    let ok = push_flat_list_symmetric(resolve, func.params.iter().map(|(_, param)| param), &mut params);
+    let ok = push_flat_list_symmetric(
+        resolve,
+        func.params.iter().map(|(_, param)| param),
+        &mut params,
+    );
     // assert_eq!(ok, !params.overflow);
 
     let indirect_params = !ok || params.to_vec().len() > MAX_FLAT_PARAMS;
@@ -2513,8 +2522,10 @@ pub fn wasm_signature_symmetric(
             assert!(matches!(old[0], WasmType::I32));
             old[0] = WasmType::Pointer;
             params = FlatTypes::new(&mut storage);
-            old.iter().for_each(|e| { params.push(*e); });
-//            params.push(WasmType::Pointer);
+            old.iter().for_each(|e| {
+                params.push(*e);
+            });
+            //            params.push(WasmType::Pointer);
         }
     }
 
@@ -2538,13 +2549,13 @@ pub fn wasm_signature_symmetric(
         _ => {}
     }
 
-    let mut storage = [WasmType::I32; MAX_FLAT_RESULTS+1];
+    let mut storage = [WasmType::I32; MAX_FLAT_RESULTS + 1];
     let mut results = FlatTypes::new(&mut storage);
     if let Some(ty) = &func.result {
         push_flat_symmetric(resolve, ty, &mut results);
     }
 
-    let retptr = results.to_vec().len()>MAX_FLAT_RESULTS;
+    let retptr = results.to_vec().len() > MAX_FLAT_RESULTS;
 
     // Rust/C don't support multi-value well right now, so if a function
     // would have multiple results then instead truncate it. Imports take a
@@ -2552,7 +2563,7 @@ pub fn wasm_signature_symmetric(
     // into.
     if retptr {
         results = FlatTypes::new(&mut storage);
-//        results.cur = 0;
+        //        results.cur = 0;
         match variant {
             AbiVariant::GuestImport => {
                 assert!(params.push(WasmType::Pointer));
