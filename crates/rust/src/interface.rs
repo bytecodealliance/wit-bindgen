@@ -674,7 +674,7 @@ macro_rules! {macro_name} {{
                     lift_read = self.lift_from_memory("src", &payload_type, &module);
                     start_read_sig = "fn future_read(_: u32, _: *mut u8) -> u32".to_owned();
                     start_read = "unsafe extern \"C\" fn start_read(future: u32, dst: *mut u8) \
-                                  -> u32 { future_read(future, dst) }"
+                                  -> u32 { unsafe { future_read(future, dst) } }"
                         .to_owned();
                     if sig.indirect_params {
                         lift_write = self.lift_from_memory(
@@ -686,7 +686,7 @@ macro_rules! {macro_name} {{
                         lower = format!(
                             r#"
                             let (ptr, cleanup) = {runtime}::Cleanup::new(
-                                ::std::alloc::Layout::from_size_align_unchecked({size}, {align})
+                                unsafe {{ ::std::alloc::Layout::from_size_align_unchecked({size}, {align}) }}
                             );
                             {body}
                             dst[0] = {async_support}::CoreVal {{ as_i32: ptr as isize as i32 }};
@@ -696,7 +696,7 @@ macro_rules! {macro_name} {{
                         start_write_sig = "fn future_write(_: u32, _: *const u8) -> u32".to_owned();
                         start_write = format!(
                             "unsafe extern \"C\" fn start_write(future: u32, src: &{async_support}::LoweredWrite) \
-                             -> u32 {{ future_write(future, src[0].as_i32 as isize as *const u8) }}"
+                             -> u32 {{ unsafe {{ future_write(future, src[0].as_i32 as isize as *const u8) }} }}"
                         );
                     } else {
                         lift_write = self.lift_flat(
@@ -738,7 +738,7 @@ macro_rules! {macro_name} {{
                             .join(", ");
                         start_write = format!(
                             "unsafe extern \"C\" fn start_write(future: u32, src: &{async_support}::LoweredWrite) \
-                             -> u32 {{ future_write(future, {args}) }}"
+                             -> u32 {{ unsafe {{ future_write(future, {args}) }} }}"
                         );
                     }
                 } else {
@@ -749,11 +749,12 @@ macro_rules! {macro_name} {{
                     start_read_sig = format!("fn future_read(_: u32) -> u32");
                     start_write_sig = format!("fn future_write(_: u32) -> u32");
                     start_read = format!(
-                        "unsafe extern \"C\" fn start_read(future: u32, _: *mut u8) -> u32 {{ future_read(future) }}"
+                        "unsafe extern \"C\" fn start_read(future: u32, _: *mut u8) \
+                         -> u32 {{ unsafe {{ future_read(future) }} }}"
                     );
                     start_write = format!(
                         "unsafe extern \"C\" fn start_write(future: u32, _: &{async_support}::LoweredWrite) \
-                         -> u32 {{ future_write(future) }}"
+                         -> u32 {{ unsafe {{ future_write(future) }} }}"
                     );
                 }
 
