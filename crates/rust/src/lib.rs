@@ -480,7 +480,7 @@ impl RustWasm {
             let construct = if self.opts.symmetric {
                 format!("{async_support}::future_support::new_future()")
             } else {
-                format!("unsafe {{ {async_support}::future_new::<T>(T::VTABLE) }}")
+                format!("unsafe {{ {async_support}::future_new::<T>(default, T::VTABLE) }}")
             };
             self.src.push_str(&format!(
                 "\
@@ -500,7 +500,7 @@ pub mod wit_future {{
     /// The `default` function provided computes the default value to be sent in
     /// this future if no other value was otherwise sent.
     pub fn new<T: FuturePayload>(default: fn() -> T) -> ({async_support}::FutureWriter<T>, {async_support}::FutureReader<T>) {{
-        unsafe {{ {async_support}::future_new::<T>(default, T::VTABLE) }}
+        {construct}
     }}
 }}
                 ",
@@ -1738,7 +1738,7 @@ fn wasm_type(ty: WasmType) -> &'static str {
 }
 
 fn declare_import(
-    module_prefix: &str,
+    //    module_prefix: &str,
     wasm_import_module: &str,
     wasm_import_name: &str,
     rust_name: &str,
@@ -1762,7 +1762,7 @@ fn declare_import(
             #[cfg(target_arch = \"wasm32\")]
             #[link(wasm_import_module = \"{wasm_import_module}\")]
             unsafe extern \"C\" {{
-                #[link_name = \"{wasm_import_name}\"]
+                #[cfg_attr(target_arch = \"wasm32\", link_name = \"{wasm_import_name}\")]
                 fn {rust_name}{sig};
             }}
 

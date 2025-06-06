@@ -11,7 +11,7 @@ use symbol_name::{make_external_component, make_external_symbol};
 use wit_bindgen_c::to_c_ident;
 use wit_bindgen_core::{
     abi::{self, AbiVariant, Bindgen, Bitcast, LiftLower, WasmSignature, WasmType},
-    make_external_component, make_external_symbol, symmetric, uwrite, uwriteln,
+    symmetric, uwrite, uwriteln,
     wit_parser::{
         Alignment, ArchitectureSize, Docs, Function, FunctionKind, Handle, Int, InterfaceId,
         Resolve, SizeAlign, Stability, Type, TypeDefKind, TypeId, TypeOwner, WorldId, WorldKey,
@@ -1829,49 +1829,49 @@ impl CppInterfaceGenerator<'_> {
         }
     }
 
-    pub fn type_path(&self, id: TypeId, owned: bool) -> String {
-        self.type_path_with_name(
-            id,
-            if owned {
-                self.result_name(id)
-            } else {
-                self.param_name(id)
-            },
-        )
-    }
+    // pub fn type_path(&self, id: TypeId, owned: bool) -> String {
+    //     self.type_path_with_name(
+    //         id,
+    //         if owned {
+    //             self.result_name(id)
+    //         } else {
+    //             self.param_name(id)
+    //         },
+    //     )
+    // }
 
-    fn type_path_with_name(&self, id: TypeId, name: String) -> String {
-        if let TypeOwner::Interface(id) = self.resolve.types[id].owner {
-            if let Some(path) = self.path_to_interface(id) {
-                return format!("{path}::{name}");
-            }
-        }
-        name
-    }
+    // fn type_path_with_name(&self, id: TypeId, name: String) -> String {
+    //     if let TypeOwner::Interface(id) = self.resolve.types[id].owner {
+    //         if let Some(path) = self.path_to_interface(id) {
+    //             return format!("{path}::{name}");
+    //         }
+    //     }
+    //     name
+    // }
 
-    fn path_to_interface(&self, interface: InterfaceId) -> Option<String> {
-        let iface = &self.resolve.interfaces[interface];
-        let name = iface.name.as_ref().unwrap();
-        let mut full_path = String::new();
-        full_path.push_str(name);
-        Some(full_path)
-    }
+    // fn path_to_interface(&self, interface: InterfaceId) -> Option<String> {
+    //     let iface = &self.resolve.interfaces[interface];
+    //     let name = iface.name.as_ref().unwrap();
+    //     let mut full_path = String::new();
+    //     full_path.push_str(name);
+    //     Some(full_path)
+    // }
 
-    fn param_name(&self, ty: TypeId) -> String {
-        self.resolve.types[ty]
-            .name
-            .as_ref()
-            .unwrap()
-            .to_upper_camel_case()
-    }
+    // fn param_name(&self, ty: TypeId) -> String {
+    //     self.resolve.types[ty]
+    //         .name
+    //         .as_ref()
+    //         .unwrap()
+    //         .to_upper_camel_case()
+    // }
 
-    fn result_name(&self, ty: TypeId) -> String {
-        self.resolve.types[ty]
-            .name
-            .as_ref()
-            .unwrap()
-            .to_upper_camel_case()
-    }
+    // fn result_name(&self, ty: TypeId) -> String {
+    //     self.resolve.types[ty]
+    //         .name
+    //         .as_ref()
+    //         .unwrap()
+    //         .to_upper_camel_case()
+    // }
 
     // in C this is print_optional_ty
     fn optional_type_name(
@@ -2555,9 +2555,9 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         self.src.push_str(s);
     }
 
-    fn typename_lift(&self, id: TypeId) -> String {
-        self.gen.type_path(id, true)
-    }
+    // fn typename_lift(&self, id: TypeId) -> String {
+    //     self.gen.type_path(id, true)
+    // }
 
     fn let_results(&mut self, amt: usize, results: &mut Vec<String>) {
         if amt > 0 {

@@ -774,7 +774,7 @@ pub fn lower_flat<B: Bindgen>(
     value: B::Operand,
     ty: &Type,
 ) -> Vec<B::Operand> {
-    let mut generator = Generator::new(resolve, bindgen);
+    let mut generator = Generator::new(resolve, bindgen, false);
     generator.stack.push(value);
     generator.realloc = Some(Realloc::Export("cabi_realloc"));
     generator.lower(ty);
