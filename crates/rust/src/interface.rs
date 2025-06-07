@@ -244,6 +244,11 @@ impl<'i> InterfaceGenerator<'i> {
             } else {
                 "u32"
             };
+            let casting = if self.gen.opts.symmetric {
+                ""
+            } else {
+                " as i32"
+            };
             uwriteln!(
                 self.src,
                 r#"
@@ -260,7 +265,7 @@ fn _resource_rep(handle: {handle_type}) -> *mut u8
     where Self: Sized
 {{
     {import_rep}
-    unsafe {{ {external_rep}(handle as {handle_type}) }}
+    unsafe {{ {external_rep}(handle{casting}) }}
 }}
 
                     "#
@@ -341,6 +346,7 @@ macro_rules! {macro_name} {{
                 uwriteln!(
                     self.src,
                     r#"    #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
+    #[allow(non_snake_case)]
     unsafe extern "C" fn {dtor_symbol}(arg0: usize) {{
       $($path_to_types)*::_export_drop_{name}_cabi::<<$ty as $($path_to_types)*::Guest>::{camel}>(arg0)
     }}
@@ -1242,6 +1248,7 @@ unsafe fn call_import(_params: Self::ParamsLower, _results: *mut u8) -> u32 {{
             "\
                 #[cfg_attr(target_arch = \"wasm32\", export_name = \"{export_prefix}{export_name}\")]
                 #[cfg_attr(not(target_arch = \"wasm32\"), no_mangle)]
+                #[allow(non_snake_case)]
                 unsafe extern \"C\" fn {external_name}\
         ",
         );
@@ -1280,6 +1287,7 @@ unsafe fn call_import(_params: Self::ParamsLower, _results: *mut u8) -> u32 {{
                 "\
                     #[cfg_attr(target_arch = \"wasm32\", export_name = \"{export_prefix}cabi_post_{export_name}\")]
                     #[cfg_attr(not(target_arch = \"wasm32\"), no_mangle)]
+                    #[allow(non_snake_case)]
                     unsafe extern \"C\" fn {external_name}\
             "
             );
@@ -2845,7 +2853,7 @@ impl<'a> {camel}Borrow<'a>{{
                      #[inline]
                      unsafe fn drop(_handle: {handle_type}) {{
                              {intrinsic}
-                             unsafe {{ {export_name}(_handle) }};
+                             unsafe {{ {export_name}(_handle{casting}) }};
                      }}
                 }}
             "#,
@@ -2853,7 +2861,12 @@ impl<'a> {camel}Borrow<'a>{{
                 "usize"
             } else {
                 "u32"
-            }
+            },
+            casting = if self.gen.opts.symmetric {
+                ""
+            } else {
+                " as i32"
+            },
         );
     }
 

@@ -25,7 +25,10 @@ fn needs_dealloc2(resolve: &Resolve, tp: &Type) -> bool {
             TypeDefKind::Handle(_) => false,
             TypeDefKind::Flags(_) => false,
             TypeDefKind::Tuple(t) => t.types.iter().any(|f| needs_dealloc2(resolve, f)),
-            TypeDefKind::Variant(_) => todo!(),
+            TypeDefKind::Variant(v) => v
+                .cases
+                .iter()
+                .any(|c| c.ty.map_or(false, |t| needs_dealloc2(resolve, &t))),
             TypeDefKind::Option(tp) => needs_dealloc2(resolve, tp),
             TypeDefKind::Result(r) => {
                 r.ok.as_ref()

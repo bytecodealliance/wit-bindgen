@@ -842,10 +842,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         "if !ptr.is_null() {{ _deallocate.push((ptr, {layout})); }}\n"
                     ));
                 }
-                self.push_str(&format!(
-                    "if ptr.is_null()\n{{\n{alloc}::handle_alloc_error({layout});\n}}\nptr\n}}",
-                ));
-                self.push_str("else {\n::core::ptr::null_mut()\n};\n");
+                // self.push_str(&format!(
+                //     "if ptr.is_null()\n{{\n{alloc}::handle_alloc_error({layout});\n}}\nptr\n}}",
+                // ));
+                // self.push_str("else {\n::core::ptr::null_mut()\n};\n");
                 if realloc.is_none() {
                     // If an allocator isn't requested then we must clean up the
                     // allocation ourselves since our callee isn't taking

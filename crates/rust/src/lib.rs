@@ -1759,15 +1759,12 @@ fn declare_import(
     }
     format!(
         "
-            #[cfg(target_arch = \"wasm32\")]
             #[link(wasm_import_module = \"{wasm_import_module}\")]
             unsafe extern \"C\" {{
+                #[allow(non_snake_case)]
                 #[cfg_attr(target_arch = \"wasm32\", link_name = \"{wasm_import_name}\")]
                 fn {rust_name}{sig};
             }}
-
-            #[cfg(not(target_arch = \"wasm32\"))]
-            unsafe extern \"C\" fn {rust_name}{sig} {{ unreachable!() }}
         "
     )
 }
