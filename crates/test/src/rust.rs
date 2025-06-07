@@ -132,20 +132,21 @@ path = 'lib.rs'
         super::write_if_different(&wit_bindgen.join("lib.rs"), "")?;
 
         println!("Building `wit-bindgen` from crates.io...");
-        runner.run_command(
-            Command::new("cargo")
-                .current_dir(&wit_bindgen)
-                .arg("build")
-                .arg("-pwit-bindgen")
-                .arg("-pfutures")
-                .arg("--target")
-                .arg(&opts.rust_target),
-        )?;
+        let mut cmd = Command::new("cargo");
+        cmd.current_dir(&wit_bindgen)
+            .arg("build")
+            .arg("-pwit-bindgen")
+            .arg("-pfutures");
+        if !runner.is_symmetric() {
+            cmd.arg("--target").arg(&opts.rust_target);
+        }
+        runner.run_command(&mut cmd)?;
 
-        let target_out_dir = wit_bindgen
-            .join("target")
-            .join(&opts.rust_target)
-            .join("debug");
+        let mut target_out_dir = wit_bindgen.join("target");
+        if !runner.is_symmetric() {
+            target_out_dir = target_out_dir.join(&opts.rust_target);
+        }
+        target_out_dir = target_out_dir.join("debug");
         let host_out_dir = wit_bindgen.join("target/debug");
         let wit_bindgen_rlib = target_out_dir.join("libwit_bindgen.rlib");
         let futures_rlib = target_out_dir.join("libfutures.rlib");
@@ -306,9 +307,13 @@ impl Runner<'_> {
     }
 
     fn produces_component(&self) -> bool {
-        match self.opts.rust.rust_target.as_str() {
-            "wasm32-unknown-unknown" | "wasm32-wasi" | "wasm32-wasip1" => false,
-            _ => true,
+        if self.is_symmetric() {
+            true
+        } else {
+            match self.opts.rust.rust_target.as_str() {
+                "wasm32-unknown-unknown" | "wasm32-wasi" | "wasm32-wasip1" => false,
+                _ => true,
+            }
         }
     }
 }

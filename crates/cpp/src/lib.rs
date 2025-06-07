@@ -3117,9 +3117,9 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                                 self.src,
                                 "auto {var} = {tname}::Owned({tname}::ResourceRep({op}));"
                             );
-                            if !self.gen.gen.opts.symmetric {
-                                uwriteln!(self.src, "{var}->into_handle();");
-                            }
+                            // if !self.gen.gen.opts.symmetric {
+                            //     uwriteln!(self.src, "{var}->into_handle();");
+                            // }
                             results.push(format!("std::move({var})"))
                         }
                         AbiVariant::GuestImportAsync => todo!(),

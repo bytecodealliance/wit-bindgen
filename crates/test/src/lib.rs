@@ -104,6 +104,10 @@ pub struct Opts {
     /// Passing `--lang rust` will only test Rust for example.
     #[clap(short, long, required = true, value_delimiter = ',')]
     languages: Vec<String>,
+
+    /// Generate code for symmetric ABI and compile to native
+    #[clap(short, long)]
+    symmetric: bool,
 }
 
 impl Opts {
@@ -523,6 +527,10 @@ impl Runner<'_> {
                 let mut args = Vec::new();
                 for arg in language.obj().default_bindgen_args_for_codegen() {
                     args.push(arg.to_string());
+                }
+
+                if self.is_symmetric() {
+                    args.push(String::from("--symmetric"))
                 }
 
                 codegen_tests.push((
@@ -1080,6 +1088,10 @@ status: {}",
             println!("{failures} tests FAILED");
             std::process::exit(1);
         }
+    }
+
+    fn is_symmetric(&self) -> bool {
+        self.opts.symmetric
     }
 }
 
