@@ -30,6 +30,7 @@ pub struct State {
     wit_bindgen_rlib: PathBuf,
     futures_rlib: PathBuf,
     wit_bindgen_deps: Vec<PathBuf>,
+    native_deps: Vec<PathBuf>,
 }
 
 /// Rust-specific configuration of component files
@@ -100,14 +101,28 @@ impl LanguageMethods for Rust {
         let dir = cwd.join(&runner.opts.artifacts).join("rust");
         let wit_bindgen = dir.join("wit-bindgen");
 
-        let wit_bindgen_dep = match &opts.rust_wit_bindgen_path {
-            Some(path) => format!("path = {:?}", cwd.join(path)),
-            None => {
-                let version = opts
-                    .rust_wit_bindgen_version
-                    .as_deref()
-                    .unwrap_or(env!("CARGO_PKG_VERSION"));
-                format!("version = \"{version}\"")
+        let mut symmetric_runtime = String::new();
+        let wit_bindgen_dep = if runner.is_symmetric() {
+            let bindgen_path = cwd.join("crates/symmetric_executor/dummy-bindgen");
+            let executor_path = cwd.join("crates/symmetric_executor");
+            symmetric_runtime.push_str(&format!(
+                "symmetric_executor = {{ path = {executor_path:?} }}\n"
+            ));
+            symmetric_runtime.push_str(&format!(
+                "symmetric_stream = {{ path = \"{}/symmetric_stream\" }}\n",
+                executor_path.display()
+            ));
+            format!("path = {bindgen_path:?}, package = \"mini-bindgen\"")
+        } else {
+            match &opts.rust_wit_bindgen_path {
+                Some(path) => format!("path = {:?}", cwd.join(path)),
+                None => {
+                    let version = opts
+                        .rust_wit_bindgen_version
+                        .as_deref()
+                        .unwrap_or(env!("CARGO_PKG_VERSION"));
+                    format!("version = \"{version}\"")
+                }
             }
         };
 
@@ -123,6 +138,7 @@ name = "tmp"
 [dependencies]
 wit-bindgen = {{ {wit_bindgen_dep} }}
 futures = "0.3.31"
+{symmetric_runtime}
 
 [lib]
 path = 'lib.rs'
@@ -135,10 +151,16 @@ path = 'lib.rs'
         let mut cmd = Command::new("cargo");
         cmd.current_dir(&wit_bindgen)
             .arg("build")
-            .arg("-pwit-bindgen")
+            .arg(if runner.is_symmetric() {
+                "-pmini-bindgen"
+            } else {
+                "-pwit-bindgen"
+            })
             .arg("-pfutures");
         if !runner.is_symmetric() {
             cmd.arg("--target").arg(&opts.rust_target);
+        } else {
+            cmd.arg("-psymmetric_executor").arg("-psymmetric_stream");
         }
         runner.run_command(&mut cmd)?;
 
@@ -148,15 +170,26 @@ path = 'lib.rs'
         }
         target_out_dir = target_out_dir.join("debug");
         let host_out_dir = wit_bindgen.join("target/debug");
-        let wit_bindgen_rlib = target_out_dir.join("libwit_bindgen.rlib");
+        let wit_bindgen_rlib = target_out_dir.join(if runner.is_symmetric() {
+            "libmini_bindgen.rlib"
+        } else {
+            "libwit_bindgen.rlib"
+        });
         let futures_rlib = target_out_dir.join("libfutures.rlib");
         assert!(wit_bindgen_rlib.exists());
         assert!(futures_rlib.exists());
 
+        let wit_bindgen_deps = vec![target_out_dir.join("deps"), host_out_dir.join("deps")];
+        let mut native_deps = Vec::new();
+        if runner.is_symmetric() {
+            native_deps.push(target_out_dir);
+        }
+
         runner.rust_state = Some(State {
             wit_bindgen_rlib,
             futures_rlib,
-            wit_bindgen_deps: vec![target_out_dir.join("deps"), host_out_dir.join("deps")],
+            wit_bindgen_deps,
+            native_deps,
         });
         Ok(())
     }
@@ -295,13 +328,16 @@ impl Runner<'_> {
         .arg(&format!(
             "--extern=futures={}",
             state.futures_rlib.display()
-        ))
-        .arg("--target")
-        .arg(&opts.rust_target)
-        .arg("-Dwarnings")
-        .arg("-Cdebuginfo=1");
+        ));
+        if !self.is_symmetric() {
+            cmd.arg("--target").arg(&opts.rust_target);
+        }
+        cmd.arg("-Dwarnings").arg("-Cdebuginfo=1");
         for dep in state.wit_bindgen_deps.iter() {
             cmd.arg(&format!("-Ldependency={}", dep.display()));
+        }
+        for dep in state.native_deps.iter() {
+            cmd.arg(&format!("-Lnative={}", dep.display()));
         }
         cmd
     }

@@ -815,7 +815,11 @@ impl Runner<'_> {
         let artifacts_dir = root_dir.join(format!("{}-{}", component.name, component.language));
         let _ = fs::remove_dir_all(&artifacts_dir);
         let bindings_dir = artifacts_dir.join("bindings");
-        let output = root_dir.join(format!("{}-{}.wasm", component.name, component.language));
+        let output = root_dir.join(if self.is_symmetric() {
+            format!("{}-{}.so", component.name, component.language)
+        } else {
+            format!("{}-{}.wasm", component.name, component.language)
+        });
         component
             .language
             .obj()
