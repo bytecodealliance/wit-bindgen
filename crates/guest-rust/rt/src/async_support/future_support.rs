@@ -373,8 +373,8 @@ where
             .as_ref()
             .map(|c| c.ptr.as_ptr())
             .unwrap_or(ptr::null_mut());
-        match ReturnCode::decode(code) {
-            ReturnCode::Blocked => Err((writer, cleanup)),
+        match code {
+            super::BLOCKED => Err((writer, cleanup)),
 
             // The other end has dropped its end.
             //
@@ -383,11 +383,11 @@ where
             // instance of `T` which takes ownership of pointers and resources
             // and such. The allocation of `ptr` is then cleaned up naturally
             // when `cleanup` goes out of scope.
-            c @ ReturnCode::Dropped(0) | c @ ReturnCode::Cancelled(0) => {
+            super::DROPPED | super::CANCELLED => {
                 // SAFETY: we're the ones managing `ptr` so we know it's safe to
                 // pass here.
                 let value = unsafe { (writer.vtable.lift)(ptr) };
-                let status = if c == ReturnCode::Dropped(0) {
+                let status = if code == super::DROPPED {
                     // This writer has been witnessed to be dropped, meaning that
                     // `writer` is going to get destroyed soon as this return
                     // value propagates up the stack. There's no need to write
@@ -409,7 +409,7 @@ where
             //
             // Afterwards the `cleanup` itself is naturally dropped and cleaned
             // up.
-            ReturnCode::Completed(0) => {
+            super::COMPLETED => {
                 // A value was written, so no need to write the default value.
                 writer.should_write_default_value = false;
 
