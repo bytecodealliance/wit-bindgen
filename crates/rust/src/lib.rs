@@ -281,6 +281,10 @@ pub struct Opts {
     #[cfg_attr(feature = "clap", arg(long, default_value_t = bool::default()))]
     pub symmetric: bool,
 
+    /// Library to link to for imports
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub link_name: Option<String>,
+
     /// Flip import and export on world (used for symmetric testing)
     #[cfg_attr(feature = "clap", arg(long, default_value_t = bool::default()))]
     pub invert_direction: bool,

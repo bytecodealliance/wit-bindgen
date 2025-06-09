@@ -43,7 +43,7 @@ impl LanguageMethods for Csharp {
         config.async_
     }
 
-    fn prepare(&self, runner: &mut Runner<'_>) -> Result<()> {
+    fn prepare(&self, runner: &mut Runner<'_>, _: &str) -> Result<()> {
         runner.run_command(dotnet().arg("--version"))?;
 
         Ok(())

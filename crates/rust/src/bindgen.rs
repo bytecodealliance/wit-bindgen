@@ -61,6 +61,9 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
     ) -> String {
         let rust_name = String::from(module_prefix)
             + &make_external_symbol(self.wasm_import_module, name, AbiVariant::GuestImport);
+        if let Some(library) = &self.r#gen.r#gen.opts.link_name {
+            self.src.push_str(&format!("\n#[link(name = \"{}\")]", library));
+        }
         self.src.push_str(&crate::declare_import(
             self.wasm_import_module,
             name,

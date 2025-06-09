@@ -48,7 +48,7 @@ impl LanguageMethods for Cpp17 {
         false
     }
 
-    fn prepare(&self, runner: &mut crate::Runner<'_>) -> anyhow::Result<()> {
+    fn prepare(&self, runner: &mut crate::Runner<'_>, _: &str) -> anyhow::Result<()> {
         let compiler = clangpp(runner);
         let cwd = std::env::current_dir()?;
         let dir = cwd.join(&runner.opts.artifacts).join("cpp");

@@ -95,7 +95,7 @@ impl LanguageMethods for Rust {
         &["--stubs"]
     }
 
-    fn prepare(&self, runner: &mut Runner<'_>) -> Result<()> {
+    fn prepare(&self, runner: &mut Runner<'_>, test_name: &str) -> Result<()> {
         let cwd = env::current_dir()?;
         let opts = &runner.opts.rust;
         let dir = cwd.join(&runner.opts.artifacts).join("rust");
@@ -183,6 +183,8 @@ path = 'lib.rs'
         let mut native_deps = Vec::new();
         if runner.is_symmetric() {
             native_deps.push(target_out_dir);
+            let root_dir = runner.opts.artifacts.join(test_name);
+            native_deps.push(root_dir);
         }
 
         runner.rust_state = Some(State {
