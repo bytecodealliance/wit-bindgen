@@ -20,8 +20,8 @@ int main() {
     runner_waitable_set_wait(set, &event);
     assert(event.event == RUNNER_EVENT_FUTURE_WRITE);
     assert(event.waitable == writer);
-    assert(RUNNER_WAITABLE_STATE(event.code) == RUNNER_WAITABLE_DROPPED);
-    assert(RUNNER_WAITABLE_COUNT(event.code) == 1);
+    assert(RUNNER_WAITABLE_STATE(event.code) == RUNNER_WAITABLE_COMPLETED);
+    assert(RUNNER_WAITABLE_COUNT(event.code) == 0);
 
     test_future_void_drop_writable(writer);
     runner_waitable_set_drop(set);

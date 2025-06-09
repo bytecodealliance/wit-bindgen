@@ -20,8 +20,8 @@ int main() {
   runner_string_t string_tmp;
   runner_string_set(&string_tmp, "hello");
   runner_waitable_status_t status2 = test_future_string_write(writer, &string_tmp);
-  assert(RUNNER_WAITABLE_STATE(status2) == RUNNER_WAITABLE_DROPPED);
-  assert(RUNNER_WAITABLE_COUNT(status2) == 1);
+  assert(RUNNER_WAITABLE_STATE(status2) == RUNNER_WAITABLE_COMPLETED);
+  assert(RUNNER_WAITABLE_COUNT(status2) == 0);
   test_future_string_drop_writable(writer);
 
   // Wait for the subtask to complete
@@ -38,8 +38,8 @@ int main() {
 
   // Read the result from our future
   status2 = test_future_string_read(ping_result, &string_tmp);
-  assert(RUNNER_WAITABLE_STATE(status2) == RUNNER_WAITABLE_DROPPED);
-  assert(RUNNER_WAITABLE_COUNT(status2) == 1);
+  assert(RUNNER_WAITABLE_STATE(status2) == RUNNER_WAITABLE_COMPLETED);
+  assert(RUNNER_WAITABLE_COUNT(status2) == 0);
   assert(memcmp(string_tmp.ptr, "helloworld", string_tmp.len) == 0);
   test_future_string_drop_readable(ping_result);
 
@@ -52,8 +52,8 @@ int main() {
 
   // Write our string to the "pong" subtask
   status2 = test_future_string_write(writer, &string_tmp);
-  assert(RUNNER_WAITABLE_STATE(status2) == RUNNER_WAITABLE_DROPPED);
-  assert(RUNNER_WAITABLE_COUNT(status2) == 1);
+  assert(RUNNER_WAITABLE_STATE(status2) == RUNNER_WAITABLE_COMPLETED);
+  assert(RUNNER_WAITABLE_COUNT(status2) == 0);
   runner_string_free(&string_tmp);
   test_future_string_drop_writable(writer);
 

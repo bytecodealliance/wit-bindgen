@@ -57,8 +57,8 @@ int main() {
     assert(status2 == RUNNER_SUBTASK_RETURNED);
 
     status = test_future_string_cancel_write(writer);
-    assert(RUNNER_WAITABLE_STATE(status) == RUNNER_WAITABLE_DROPPED);
-    assert(RUNNER_WAITABLE_COUNT(status) == 1);
+    assert(RUNNER_WAITABLE_STATE(status) == RUNNER_WAITABLE_COMPLETED);
+    assert(RUNNER_WAITABLE_COUNT(status) == 0);
 
     test_future_string_drop_writable(writer);
   }

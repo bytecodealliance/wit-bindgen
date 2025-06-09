@@ -65,12 +65,12 @@ test_callback_code_t exports_test_async_start_read_then_cancel_callback(test_eve
   struct start_read_then_cancel_state *state = test_context_get();
   assert(event->event == TEST_EVENT_FUTURE_READ);
   assert(event->waitable == state->signal);
-  assert(TEST_WAITABLE_STATE(event->code) == TEST_WAITABLE_DROPPED);
-  assert(TEST_WAITABLE_COUNT(event->code) == 1);
+  assert(TEST_WAITABLE_STATE(event->code) == TEST_WAITABLE_COMPLETED);
+  assert(TEST_WAITABLE_COUNT(event->code) == 0);
 
   test_waitable_status_t status = exports_test_future_u32_cancel_read(state->data);
-  assert(TEST_WAITABLE_STATE(status) == TEST_WAITABLE_DROPPED);
-  assert(TEST_WAITABLE_COUNT(status) == 1);
+  assert(TEST_WAITABLE_STATE(status) == TEST_WAITABLE_COMPLETED);
+  assert(TEST_WAITABLE_COUNT(status) == 0);
   assert(state->result == 4);
 
   test_waitable_join(state->signal, 0);
