@@ -17,9 +17,9 @@ int main() {
     assert(RUNNER_SUBTASK_HANDLE(status) == 0);
 
     runner_waitable_status_t status2 = test_future_void_write(writer);
-    assert(RUNNER_WAITABLE_STATE(status2) == RUNNER_WAITABLE_CLOSED);
+    assert(RUNNER_WAITABLE_STATE(status2) == RUNNER_WAITABLE_DROPPED);
     assert(RUNNER_WAITABLE_COUNT(status2) == 0);
-    test_future_void_close_writable(writer);
+    test_future_void_drop_writable(writer);
   }
 
   // One import in "started", one in "starting", then cancel both.
@@ -52,19 +52,19 @@ int main() {
     assert(RUNNER_SUBTASK_HANDLE(status) == 0);
 
     // We still own the readable end of `reader2` and `writer2` since the
-    // subtask didn't actually start, so close it here.
-    test_future_void_close_readable(reader2);
+    // subtask didn't actually start, so drop it here.
+    test_future_void_drop_readable(reader2);
 
-    // Assert both read ends are closed from the POV of the write ends
+    // Assert both read ends are dropped from the POV of the write ends
     runner_waitable_status_t status2 = test_future_void_write(writer1);
-    assert(RUNNER_WAITABLE_STATE(status2) == RUNNER_WAITABLE_CLOSED);
+    assert(RUNNER_WAITABLE_STATE(status2) == RUNNER_WAITABLE_DROPPED);
     assert(RUNNER_WAITABLE_COUNT(status2) == 0);
-    test_future_void_close_writable(writer1);
+    test_future_void_drop_writable(writer1);
 
     status2 = test_future_void_write(writer2);
-    assert(RUNNER_WAITABLE_STATE(status2) == RUNNER_WAITABLE_CLOSED);
+    assert(RUNNER_WAITABLE_STATE(status2) == RUNNER_WAITABLE_DROPPED);
     assert(RUNNER_WAITABLE_COUNT(status2) == 0);
-    test_future_void_close_writable(writer2);
+    test_future_void_drop_writable(writer2);
 
     // reset the backpressure flag
     test_backpressure_set(false);

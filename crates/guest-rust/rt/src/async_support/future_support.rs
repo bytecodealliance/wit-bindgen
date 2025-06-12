@@ -48,7 +48,7 @@
 //!
 //! * A `write` hasn't even started yet.
 //! * A `write` was started and then cancelled.
-//! * A `write` was started and then the other end closed the channel.
+//! * A `write` was started and then the other end dropped the channel.
 //! * A `write` was started and then the other end received the value.
 //!
 //! In all of these situations regardless of the structure of `T` we can't leak
@@ -90,7 +90,7 @@
 //! ## Linear (exactly once) Writes
 //!
 //! The component model requires that a writable end of a future must be written
-//! to before closing, otherwise the close operation traps. Ideally usage of
+//! to before closing, otherwise the drop operation traps. Ideally usage of
 //! this API shouldn't result in traps so this is modeled in the Rust-level API
 //! to prevent this trap from occurring. Rust does not support linear types
 //! (types that must be used exactly once), instead it only has affine types
@@ -170,10 +170,10 @@ pub struct FutureVtable<T> {
     pub cancel_write: unsafe extern "C" fn(future: u32) -> u32,
     /// The raw `future.cancel-read` intrinsic.
     pub cancel_read: unsafe extern "C" fn(future: u32) -> u32,
-    /// The raw `future.close-writable` intrinsic.
-    pub close_writable: unsafe extern "C" fn(future: u32),
-    /// The raw `future.close-readable` intrinsic.
-    pub close_readable: unsafe extern "C" fn(future: u32),
+    /// The raw `future.drop-writable` intrinsic.
+    pub drop_writable: unsafe extern "C" fn(future: u32),
+    /// The raw `future.drop-readable` intrinsic.
+    pub drop_readable: unsafe extern "C" fn(future: u32),
     /// The raw `future.new` intrinsic.
     pub new: unsafe extern "C" fn() -> u64,
 }
@@ -212,7 +212,7 @@ pub struct FutureWriter<T: 'static> {
     /// Whether or not a value should be written during `drop`.
     ///
     /// This is set to `false` when a value is successfully written or when a
-    /// value is written but the future is witnessed as being closed.
+    /// value is written but the future is witnessed as being dropped.
     ///
     /// Note that this is set to `true` on construction to ensure that only
     /// location which actually witness a completed write set it to `false`.
@@ -255,9 +255,9 @@ impl<T> FutureWriter<T> {
     /// * `Ok(())` - the `value` was sent and received. The `self` value was
     ///   consumed along the way and will no longer be accessible.
     /// * `Err(FutureWriteError { value })` - an attempt was made to send
-    ///   `value` but the other half of this [`FutureWriter`] was closed before
+    ///   `value` but the other half of this [`FutureWriter`] was dropped before
     ///   the value was received. This consumes `self` because the channel is
-    ///   now closed, but `value` is returned in case the caller wants to reuse
+    ///   now dropped, but `value` is returned in case the caller wants to reuse
     ///   it.
     ///
     /// # Cancellation
@@ -290,7 +290,7 @@ impl<T> Drop for FutureWriter<T> {
         // `false` to avoid infinite loops by accident. Once the task is spawned
         // we're done and the subtask's destructor of the closed-over
         // `FutureWriter` will be responsible for performing the
-        // `close-writable` call below.
+        // `drop-writable` call below.
         //
         // Note, though, that if `should_write_default_value` is `false` then a
         // write has already happened and we can go ahead and just synchronously
@@ -308,8 +308,8 @@ impl<T> Drop for FutureWriter<T> {
             });
         } else {
             unsafe {
-                rtdebug!("future.close-writable({})", self.handle);
-                (self.vtable.close_writable)(self.handle);
+                rtdebug!("future.drop-writable({})", self.handle);
+                (self.vtable.drop_writable)(self.handle);
             }
         }
     }
@@ -326,7 +326,7 @@ struct FutureWriteOp<T>(marker::PhantomData<T>);
 
 enum WriteComplete<T> {
     Written,
-    Closed(T),
+    Dropped(T),
     Cancelled(T),
 }
 
@@ -373,27 +373,27 @@ where
             .as_ref()
             .map(|c| c.ptr.as_ptr())
             .unwrap_or(ptr::null_mut());
-        match ReturnCode::decode(code) {
-            ReturnCode::Blocked => Err((writer, cleanup)),
+        match code {
+            super::BLOCKED => Err((writer, cleanup)),
 
-            // The other end has closed its end.
+            // The other end has dropped its end.
             //
             // The value was not received by the other end so `ptr` still has
             // all of its resources intact. Use `lift` to construct a new
             // instance of `T` which takes ownership of pointers and resources
             // and such. The allocation of `ptr` is then cleaned up naturally
             // when `cleanup` goes out of scope.
-            c @ ReturnCode::Closed(0) | c @ ReturnCode::Cancelled(0) => {
+            super::DROPPED | super::CANCELLED => {
                 // SAFETY: we're the ones managing `ptr` so we know it's safe to
                 // pass here.
                 let value = unsafe { (writer.vtable.lift)(ptr) };
-                let status = if c == ReturnCode::Closed(0) {
-                    // This writer has been witnessed to be closed, meaning that
+                let status = if code == super::DROPPED {
+                    // This writer has been witnessed to be dropped, meaning that
                     // `writer` is going to get destroyed soon as this return
                     // value propagates up the stack. There's no need to write
                     // the default value, so set this to `false`.
                     writer.should_write_default_value = false;
-                    WriteComplete::Closed(value)
+                    WriteComplete::Dropped(value)
                 } else {
                     WriteComplete::Cancelled(value)
                 };
@@ -409,7 +409,7 @@ where
             //
             // Afterwards the `cleanup` itself is naturally dropped and cleaned
             // up.
-            ReturnCode::Completed(1) | ReturnCode::Closed(1) | ReturnCode::Cancelled(1) => {
+            super::COMPLETED => {
                 // A value was written, so no need to write the default value.
                 writer.should_write_default_value = false;
 
@@ -446,7 +446,7 @@ where
             // The value was not sent because the other end either hung up or we
             // successfully cancelled. In both cases return back the value here
             // with the writer.
-            WriteComplete::Closed(val) => FutureWriteCancel::Closed(val),
+            WriteComplete::Dropped(val) => FutureWriteCancel::Dropped(val),
             WriteComplete::Cancelled(val) => FutureWriteCancel::Cancelled(val, writer),
         }
     }
@@ -460,7 +460,7 @@ impl<T: 'static> Future for FutureWrite<T> {
             .poll_complete(cx)
             .map(|(result, _writer)| match result {
                 WriteComplete::Written => Ok(()),
-                WriteComplete::Closed(value) | WriteComplete::Cancelled(value) => {
+                WriteComplete::Dropped(value) | WriteComplete::Cancelled(value) => {
                     Err(FutureWriteError { value })
                 }
             })
@@ -478,7 +478,7 @@ impl<T: 'static> FutureWrite<T> {
     ///
     /// This method can be used to cancel a write-in-progress and re-acquire
     /// the writer and the value being sent. Note that the write operation may
-    /// succeed racily or the other end may also close racily, and these
+    /// succeed racily or the other end may also drop racily, and these
     /// outcomes are reflected in the returned value here.
     ///
     /// # Panics
@@ -505,7 +505,7 @@ impl<T> fmt::Debug for FutureWriteError<T> {
 
 impl<T> fmt::Display for FutureWriteError<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        "read end closed".fmt(f)
+        "read end dropped".fmt(f)
     }
 }
 
@@ -519,11 +519,11 @@ pub enum FutureWriteCancel<T: 'static> {
     /// available here as both are gone.
     AlreadySent,
 
-    /// The other end was closed before cancellation happened.
+    /// The other end was dropped before cancellation happened.
     ///
     /// In this case the original value is returned back to the caller but the
     /// writer itself is not longer accessible as it's no longer usable.
-    Closed(T),
+    Dropped(T),
 
     /// The pending write was successfully cancelled and the value being written
     /// is returned along with the writer to resume again in the future if
@@ -592,8 +592,8 @@ impl<T> Drop for FutureReader<T> {
             return;
         };
         unsafe {
-            rtdebug!("future.close-readable({handle})");
-            (self.vtable.close_readable)(handle);
+            rtdebug!("future.drop-readable({handle})");
+            (self.vtable.drop_readable)(handle);
         }
     }
 }
@@ -651,7 +651,7 @@ where
             // The read has completed, so lift the value from the stored memory and
             // `cleanup` naturally falls out of scope after transferring ownership of
             // everything to the returned `value`.
-            ReturnCode::Completed(1) | ReturnCode::Closed(1) | ReturnCode::Cancelled(1) => {
+            ReturnCode::Completed(0) => {
                 let ptr = cleanup
                     .as_ref()
                     .map(|c| c.ptr.as_ptr())

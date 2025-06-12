@@ -207,7 +207,7 @@ mod tests {
     extern "C" fn cancel(_: u32) -> u32 {
         todo!()
     }
-    extern "C" fn close(_: u32) {
+    extern "C" fn drop(_: u32) {
         todo!()
     }
     extern "C" fn new() -> u64 {
@@ -223,8 +223,8 @@ mod tests {
     static BLANK: StreamVtable<u8> = StreamVtable {
         cancel_read: cancel,
         cancel_write: cancel,
-        close_readable: close,
-        close_writable: close,
+        drop_readable: drop,
+        drop_writable: drop,
         dealloc_lists: None,
         lift: None,
         lower: None,
@@ -299,8 +299,8 @@ mod tests {
     static OP: StreamVtable<B> = StreamVtable {
         cancel_read: cancel,
         cancel_write: cancel,
-        close_readable: close,
-        close_writable: close,
+        drop_readable: drop,
+        drop_writable: drop,
         dealloc_lists: Some(|_ptr| {}),
         lift: Some(|ptr| unsafe { B(*ptr - 1) }),
         lower: Some(|b, ptr| unsafe {
@@ -380,8 +380,8 @@ mod tests {
         static OP: StreamVtable<B> = StreamVtable {
             cancel_read: cancel,
             cancel_write: cancel,
-            close_readable: close,
-            close_writable: close,
+            drop_readable: drop,
+            drop_writable: drop,
             dealloc_lists: Some(|ptr| {
                 let prev = DEALLOCS.fetch_add(1, Relaxed);
                 assert_eq!(unsafe { usize::from(*ptr) }, prev + 1);

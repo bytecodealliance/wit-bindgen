@@ -1,6 +1,6 @@
 include!(env!("BINDINGS"));
 
-use crate::my::test::i::{read_and_drop, take_then_close};
+use crate::my::test::i::{read_and_drop, take_then_drop};
 use futures::task::noop_waker_ref;
 use std::future::Future;
 use std::task::Context;
@@ -11,7 +11,7 @@ fn main() {
         // cancel from the other end
         let (tx, rx) = wit_future::new(|| unreachable!());
         let f1 = async { tx.write("hello".into()).await };
-        let f2 = async { take_then_close(rx) };
+        let f2 = async { take_then_drop(rx) };
         let (result, ()) = futures::join!(f1, f2);
         assert_eq!(result.unwrap_err().value, "hello");
 
@@ -39,7 +39,7 @@ fn main() {
             _ => unreachable!(),
         };
 
-        // cancel after we hit the intrinsic and then close the other end
+        // cancel after we hit the intrinsic and then drop the other end
         let (tx, rx) = wit_future::new::<String>(|| unreachable!());
         let mut future = Box::pin(tx.write("hello3".into()));
         assert!(future
@@ -48,8 +48,8 @@ fn main() {
             .is_pending());
         drop(rx);
         match future.as_mut().cancel() {
-            FutureWriteCancel::Closed(val) => assert_eq!(val, "hello3"),
-            other => panic!("expected closed, got: {other:?}"),
+            FutureWriteCancel::Dropped(val) => assert_eq!(val, "hello3"),
+            other => panic!("expected dropped, got: {other:?}"),
         };
 
         // Start a write, wait for it to be pending, then go complete the write

@@ -621,9 +621,9 @@ pub mod vtable{ordinal} {{
     #[cfg(not(target_arch = "wasm32"))]
     unsafe extern "C" fn cancel_read(_: u32) -> u32 {{ unreachable!() }}
     #[cfg(not(target_arch = "wasm32"))]
-    unsafe extern "C" fn close_writable(_: u32) {{ unreachable!() }}
+    unsafe extern "C" fn drop_writable(_: u32) {{ unreachable!() }}
     #[cfg(not(target_arch = "wasm32"))]
-    unsafe extern "C" fn close_readable(_: u32) {{ unreachable!() }}
+    unsafe extern "C" fn drop_readable(_: u32) {{ unreachable!() }}
     #[cfg(not(target_arch = "wasm32"))]
     unsafe extern "C" fn new() -> u64 {{ unreachable!() }}
     #[cfg(not(target_arch = "wasm32"))]
@@ -640,10 +640,10 @@ pub mod vtable{ordinal} {{
         fn cancel_write(_: u32) -> u32;
         #[link_name = "[{import_prefix}-cancel-read-{index}]{func_name}"]
         fn cancel_read(_: u32) -> u32;
-        #[link_name = "[{import_prefix}-close-writable-{index}]{func_name}"]
-        fn close_writable(_: u32);
-        #[link_name = "[{import_prefix}-close-readable-{index}]{func_name}"]
-        fn close_readable(_: u32);
+        #[link_name = "[{import_prefix}-drop-writable-{index}]{func_name}"]
+        fn drop_writable(_: u32);
+        #[link_name = "[{import_prefix}-drop-readable-{index}]{func_name}"]
+        fn drop_readable(_: u32);
         #[link_name = "[async-lower][{import_prefix}-read-{index}]{func_name}"]
         fn start_read(_: u32, _: *mut u8{start_extra}) -> u32;
         #[link_name = "[async-lower][{import_prefix}-write-{index}]{func_name}"]
@@ -657,8 +657,8 @@ pub mod vtable{ordinal} {{
     pub static VTABLE: {async_support}::{camel}Vtable<{name}> = {async_support}::{camel}Vtable::<{name}> {{
         cancel_write,
         cancel_read,
-        close_writable,
-        close_readable,
+        drop_writable,
+        drop_readable,
         {dealloc_lists_arg},
         layout: unsafe {{
             ::std::alloc::Layout::from_size_align_unchecked({size}, {align})
@@ -1744,7 +1744,7 @@ unsafe fn call_import(_params: Self::ParamsLower, _results: *mut u8) -> u32 {{
             }
 
             Type::ErrorContext => {
-                let async_support = self.gen.async_support_path();
+                let async_support = self.r#gen.async_support_path();
                 self.push_str(&format!("{async_support}::ErrorContext"));
             }
         }
@@ -1921,7 +1921,7 @@ unsafe fn call_import(_params: Self::ParamsLower, _results: *mut u8) -> u32 {{
             self.rustdoc(docs);
             let mut derives = BTreeSet::new();
             if !self
-                .gen
+                .r#gen
                 .opts
                 .additional_derive_ignore
                 .contains(&name.to_kebab_case())
@@ -2032,7 +2032,7 @@ unsafe fn call_import(_params: Self::ParamsLower, _results: *mut u8) -> u32 {{
             self.rustdoc(docs);
             let mut derives = BTreeSet::new();
             if !self
-                .gen
+                .r#gen
                 .opts
                 .additional_derive_ignore
                 .contains(&name.to_kebab_case())
@@ -2193,7 +2193,7 @@ unsafe fn call_import(_params: Self::ParamsLower, _results: *mut u8) -> u32 {{
             .additional_derive_ignore
             .contains(&name.to_kebab_case())
         {
-            derives.extend(self.gen.opts.additional_derive_attributes.to_vec());
+            derives.extend(self.r#gen.opts.additional_derive_attributes.to_vec());
         }
         derives.extend(
             ["Clone", "Copy", "PartialEq", "Eq", "PartialOrd", "Ord"]
