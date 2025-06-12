@@ -47,7 +47,7 @@ pub enum StreamResult {
 pub struct StreamWrite<'a, T: 'static> {
     _phantom: PhantomData<&'a T>,
     writer: &'a mut StreamWriter<T>,
-    future: Option<Pin<Box<dyn Future<Output = ()> + 'static + Send>>>,
+    _future: Option<Pin<Box<dyn Future<Output = ()> + 'static + Send>>>,
     values: Vec<T>,
 }
 
@@ -80,7 +80,7 @@ impl<T: Unpin + Send + 'static> Future for StreamWrite<'_, T> {
 pub struct StreamWriter<T: 'static> {
     handle: Stream,
     future: Option<Pin<Box<dyn Future<Output = ()> + 'static + Send>>>,
-    vtable: &'static StreamVtable<T>,
+    _vtable: &'static StreamVtable<T>,
 }
 
 impl<T> StreamWriter<T> {
@@ -89,14 +89,14 @@ impl<T> StreamWriter<T> {
         Self {
             handle,
             future: None,
-            vtable,
+            _vtable: vtable,
         }
     }
 
     pub fn write(&mut self, values: Vec<T>) -> StreamWrite<'_, T> {
         StreamWrite {
             writer: self,
-            future: None,
+            _future: None,
             _phantom: PhantomData,
             values,
         }
@@ -186,7 +186,7 @@ impl<T> Drop for StreamWriter<T> {
 pub struct StreamReader<T: 'static> {
     handle: Stream,
     future: Option<Pin<Box<dyn Future<Output = Option<Vec<T>>> + 'static + Send>>>,
-    vtable: &'static StreamVtable<T>,
+    _vtable: &'static StreamVtable<T>,
 }
 
 impl<T> fmt::Debug for StreamReader<T> {
@@ -203,7 +203,7 @@ impl<T> StreamReader<T> {
         Self {
             handle,
             future: None,
-            vtable,
+            _vtable: vtable,
         }
     }
 

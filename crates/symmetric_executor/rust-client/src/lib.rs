@@ -1,8 +1,10 @@
+use core::ptr::{self, NonNull};
 use module::symmetric::runtime::symmetric_executor::{self, CallbackData, CallbackFunction};
 pub use module::symmetric::runtime::symmetric_executor::{
     run, CallbackState, EventGenerator, EventSubscription,
 };
 pub use module::symmetric::runtime::symmetric_stream;
+use std::alloc::{self, Layout};
 
 pub mod async_support;
 mod module;
@@ -31,17 +33,54 @@ pub fn register<T>(
 // }
 
 pub unsafe fn subscribe_event_send_ptr(event_send: *mut EventGenerator2) -> EventSubscription {
-    let gen: EventGenerator = unsafe { EventGenerator::from_handle(event_send as usize) };
+    let gener: EventGenerator = unsafe { EventGenerator::from_handle(event_send as usize) };
     // (unsafe {Arc::from_raw(event_send.cast()) });
-    let subscription = gen.subscribe();
+    let subscription = gener.subscribe();
     // avoid consuming the generator
-    std::mem::forget(gen);
+    std::mem::forget(gener);
     subscription
 }
 
 pub unsafe fn activate_event_send_ptr(event_send: *mut EventGenerator2) {
-    let gen: EventGenerator = unsafe { EventGenerator::from_handle(event_send as usize) };
-    gen.activate();
+    let gener: EventGenerator = unsafe { EventGenerator::from_handle(event_send as usize) };
+    gener.activate();
     // avoid consuming the generator
-    std::mem::forget(gen);
+    std::mem::forget(gener);
+}
+
+// stolen from guest-rust/rt/src/lib.rs
+pub struct Cleanup {
+    ptr: NonNull<u8>,
+    layout: Layout,
+}
+
+// Usage of the returned pointer is always unsafe and must abide by these
+// conventions, but this structure itself has no inherent reason to not be
+// send/sync.
+unsafe impl Send for Cleanup {}
+unsafe impl Sync for Cleanup {}
+
+impl Cleanup {
+    pub fn new(layout: Layout) -> (*mut u8, Option<Cleanup>) {
+        if layout.size() == 0 {
+            return (ptr::null_mut(), None);
+        }
+        let ptr = unsafe { alloc::alloc(layout) };
+        let ptr = match NonNull::new(ptr) {
+            Some(ptr) => ptr,
+            None => alloc::handle_alloc_error(layout),
+        };
+        (ptr.as_ptr(), Some(Cleanup { ptr, layout }))
+    }
+    pub fn forget(self) {
+        core::mem::forget(self);
+    }
+}
+
+impl Drop for Cleanup {
+    fn drop(&mut self) {
+        unsafe {
+            alloc::dealloc(self.ptr.as_ptr(), self.layout);
+        }
+    }
 }

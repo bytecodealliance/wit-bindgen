@@ -776,7 +776,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::StringLift => {
-                let vec = self.r#gen.path_to_vec();
                 let tmp = self.tmp();
                 let len = format!("len{}", tmp);
                 uwriteln!(self.src, "let {len} = {};", operands[1]);
@@ -788,6 +787,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     );
                     results.push(format!("string{tmp}"));
                 } else {
+                    let vec = self.r#gen.path_to_vec();
                     if self.r#gen.r#gen.opts.symmetric {
                         // symmetric must not access zero page memory
                         uwriteln!(
@@ -843,7 +843,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     assert!(self.r#gen.needs_deallocate);
                     //}
                     self.push_str(&format!(
-                        "if !ptr.is_null() {{ _deallocate.push((ptr, {layout})); }}\n"
+                        "if !{result}.is_null() {{ _deallocate.push(({result}, {layout})); }}\n"
                     ));
                 }
                 // self.push_str(&format!(

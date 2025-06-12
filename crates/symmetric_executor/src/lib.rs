@@ -25,6 +25,7 @@ struct Ignore;
 struct OpaqueData;
 impl symmetric_executor::GuestCallbackFunction for Ignore {}
 impl symmetric_executor::GuestCallbackData for OpaqueData {}
+#[allow(dead_code)]
 struct CallbackRegistrationInternal(usize);
 
 impl symmetric_executor::GuestEventSubscription for EventSubscriptionInternal {
