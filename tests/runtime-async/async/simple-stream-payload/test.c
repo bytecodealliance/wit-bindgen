@@ -46,7 +46,7 @@ test_subtask_status_t exports_test_async_read_stream_callback(test_event_t *even
 
   // clean up resources
   test_waitable_join(STREAM, 0);
-  exports_test_stream_u8_close_readable(STREAM);
+  exports_test_stream_u8_drop_readable(STREAM);
 
   test_waitable_set_drop(SET);
 

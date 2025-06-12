@@ -759,7 +759,7 @@ pub fn lower_to_memory<B: Bindgen>(
     ty: &Type,
 ) {
     let mut generator = Generator::new(resolve, bindgen, false);
-    // TODO: make this configurable? Right this this function is only called for
+    // TODO: make this configurable? Right now this function is only called for
     // future/stream callbacks so it's appropriate to skip realloc here as it's
     // all "lower for wasm import", but this might get reused for something else
     // in the future.

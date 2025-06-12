@@ -201,20 +201,20 @@ impl WorldGenerator for C {
         _files: &mut Files,
     ) -> Result<()> {
         let wasm_import_module = resolve.name_world_key(name);
-        let mut gen = self.interface(resolve, true, Some(&wasm_import_module));
-        gen.interface = Some((id, name));
-        gen.define_interface_types(id);
+        let mut r#gen = self.interface(resolve, true, Some(&wasm_import_module));
+        r#gen.interface = Some((id, name));
+        r#gen.define_interface_types(id);
 
         for (i, (_name, func)) in resolve.interfaces[id].functions.iter().enumerate() {
             if i == 0 {
                 let name = resolve.name_world_key(name);
-                uwriteln!(gen.src.h_fns, "\n// Imported Functions from `{name}`");
-                uwriteln!(gen.src.c_fns, "\n// Imported Functions from `{name}`");
+                uwriteln!(r#gen.src.h_fns, "\n// Imported Functions from `{name}`");
+                uwriteln!(r#gen.src.c_fns, "\n// Imported Functions from `{name}`");
             }
-            gen.import(Some(name), func);
+            r#gen.import(Some(name), func);
         }
 
-        gen.gen.src.append(&gen.src);
+        r#gen.r#gen.src.append(&r#gen.src);
 
         Ok(())
     }
@@ -227,18 +227,18 @@ impl WorldGenerator for C {
         _files: &mut Files,
     ) {
         let name = &resolve.worlds[world].name;
-        let mut gen = self.interface(resolve, true, Some("$root"));
-        gen.define_function_types(funcs);
+        let mut r#gen = self.interface(resolve, true, Some("$root"));
+        r#gen.define_function_types(funcs);
 
         for (i, (_name, func)) in funcs.iter().enumerate() {
             if i == 0 {
-                uwriteln!(gen.src.h_fns, "\n// Imported Functions from `{name}`");
-                uwriteln!(gen.src.c_fns, "\n// Imported Functions from `{name}`");
+                uwriteln!(r#gen.src.h_fns, "\n// Imported Functions from `{name}`");
+                uwriteln!(r#gen.src.c_fns, "\n// Imported Functions from `{name}`");
             }
-            gen.import(None, func);
+            r#gen.import(None, func);
         }
 
-        gen.gen.src.append(&gen.src);
+        r#gen.r#gen.src.append(&r#gen.src);
     }
 
     fn export_interface(
@@ -248,20 +248,20 @@ impl WorldGenerator for C {
         id: InterfaceId,
         _files: &mut Files,
     ) -> Result<()> {
-        let mut gen = self.interface(resolve, false, None);
-        gen.interface = Some((id, name));
-        gen.define_interface_types(id);
+        let mut r#gen = self.interface(resolve, false, None);
+        r#gen.interface = Some((id, name));
+        r#gen.define_interface_types(id);
 
         for (i, (_name, func)) in resolve.interfaces[id].functions.iter().enumerate() {
             if i == 0 {
                 let name = resolve.name_world_key(name);
-                uwriteln!(gen.src.h_fns, "\n// Exported Functions from `{name}`");
-                uwriteln!(gen.src.c_fns, "\n// Exported Functions from `{name}`");
+                uwriteln!(r#gen.src.h_fns, "\n// Exported Functions from `{name}`");
+                uwriteln!(r#gen.src.c_fns, "\n// Exported Functions from `{name}`");
             }
-            gen.export(func, Some(name));
+            r#gen.export(func, Some(name));
         }
 
-        gen.gen.src.append(&gen.src);
+        r#gen.r#gen.src.append(&r#gen.src);
         Ok(())
     }
 
@@ -273,18 +273,18 @@ impl WorldGenerator for C {
         _files: &mut Files,
     ) -> Result<()> {
         let name = &resolve.worlds[world].name;
-        let mut gen = self.interface(resolve, false, None);
-        gen.define_function_types(funcs);
+        let mut r#gen = self.interface(resolve, false, None);
+        r#gen.define_function_types(funcs);
 
         for (i, (_name, func)) in funcs.iter().enumerate() {
             if i == 0 {
-                uwriteln!(gen.src.h_fns, "\n// Exported Functions from `{name}`");
-                uwriteln!(gen.src.c_fns, "\n// Exported Functions from `{name}`");
+                uwriteln!(r#gen.src.h_fns, "\n// Exported Functions from `{name}`");
+                uwriteln!(r#gen.src.c_fns, "\n// Exported Functions from `{name}`");
             }
-            gen.export(func, None);
+            r#gen.export(func, None);
         }
 
-        gen.gen.src.append(&gen.src);
+        r#gen.r#gen.src.append(&r#gen.src);
         Ok(())
     }
 
@@ -295,13 +295,13 @@ impl WorldGenerator for C {
         types: &[(&str, TypeId)],
         _files: &mut Files,
     ) {
-        let mut gen = self.interface(resolve, true, Some("$root"));
+        let mut r#gen = self.interface(resolve, true, Some("$root"));
         let mut live = LiveTypes::default();
         for (_, id) in types {
             live.add_type_id(resolve, *id);
         }
-        gen.define_live_types(live);
-        gen.gen.src.append(&gen.src);
+        r#gen.define_live_types(live);
+        r#gen.r#gen.src.append(&r#gen.src);
     }
 
     fn finish(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) -> Result<()> {
@@ -563,7 +563,7 @@ impl C {
     ) -> InterfaceGenerator<'a> {
         InterfaceGenerator {
             src: Source::default(),
-            gen: self,
+            r#gen: self,
             resolve,
             interface: None,
             in_import,
@@ -750,7 +750,7 @@ typedef uint32_t {snake}_waitable_status_t;
 
 typedef enum {snake}_waitable_state {{
     {shouty}_WAITABLE_COMPLETED,
-    {shouty}_WAITABLE_CLOSED,
+    {shouty}_WAITABLE_DROPPED,
     {shouty}_WAITABLE_CANCELLED,
 }} {snake}_waitable_state_t;
 
@@ -1117,7 +1117,7 @@ pub fn c_func_name(
 struct InterfaceGenerator<'a> {
     src: Source,
     in_import: bool,
-    gen: &'a mut C,
+    r#gen: &'a mut C,
     resolve: &'a Resolve,
     interface: Option<(InterfaceId, &'a WorldKey)>,
     wasm_import_module: Option<&'a str>,
@@ -1334,7 +1334,7 @@ extern {borrow} {ns}_borrow_{snake}({own} handle);
             // will be required to fill in. This is an empty struct.
             self.src.h_defs("\n");
             self.src.h_defs("typedef struct ");
-            let ty_name = self.gen.type_names[&id].clone();
+            let ty_name = self.r#gen.type_names[&id].clone();
             self.src.h_defs(&ty_name);
             self.src.h_defs(" ");
             self.print_typedef_target(id);
@@ -1387,7 +1387,7 @@ void __wasm_export_{ns}_{snake}_dtor({ns}_{snake}_t* arg) {{
             ));
         }
 
-        self.gen.resources.insert(
+        self.r#gen.resources.insert(
             id,
             ResourceInfo {
                 own,
@@ -1586,7 +1586,7 @@ impl<'a> wit_bindgen_core::AnonymousTypeGenerator<'a> for InterfaceGenerator<'a>
         let resource = match handle {
             Handle::Borrow(id) | Handle::Own(id) => id,
         };
-        let info = &self.gen.resources[&dealias(self.resolve, *resource)];
+        let info = &self.r#gen.resources[&dealias(self.resolve, *resource)];
         match handle {
             Handle::Borrow(_) => self.src.h_defs(&info.borrow),
             Handle::Own(_) => self.src.h_defs(&info.own),
@@ -1599,7 +1599,7 @@ impl<'a> wit_bindgen_core::AnonymousTypeGenerator<'a> for InterfaceGenerator<'a>
         self.src.h_defs("\ntypedef ");
         self.src.h_defs("struct {\n");
         for (i, t) in ty.types.iter().enumerate() {
-            let ty = self.gen.type_name(t);
+            let ty = self.r#gen.type_name(t);
             uwriteln!(self.src.h_defs, "{ty} f{i};");
         }
         self.src.h_defs("}");
@@ -1611,7 +1611,7 @@ impl<'a> wit_bindgen_core::AnonymousTypeGenerator<'a> for InterfaceGenerator<'a>
         self.src.h_defs("\ntypedef ");
         self.src.h_defs("struct {\n");
         self.src.h_defs("bool is_some;\n");
-        let ty = self.gen.type_name(ty);
+        let ty = self.r#gen.type_name(ty);
         uwriteln!(self.src.h_defs, "{ty} val;");
         self.src.h_defs("}");
         self.src.h_defs(" ");
@@ -1630,11 +1630,11 @@ impl<'a> wit_bindgen_core::AnonymousTypeGenerator<'a> for InterfaceGenerator<'a>
         if ok_ty.is_some() || err_ty.is_some() {
             self.src.h_defs("union {\n");
             if let Some(ok) = ok_ty {
-                let ty = self.gen.type_name(ok);
+                let ty = self.r#gen.type_name(ok);
                 uwriteln!(self.src.h_defs, "{ty} ok;");
             }
             if let Some(err) = err_ty {
-                let ty = self.gen.type_name(err);
+                let ty = self.r#gen.type_name(err);
                 uwriteln!(self.src.h_defs, "{ty} err;");
             }
             self.src.h_defs("} val;\n");
@@ -1647,7 +1647,7 @@ impl<'a> wit_bindgen_core::AnonymousTypeGenerator<'a> for InterfaceGenerator<'a>
     fn anonymous_type_list(&mut self, id: TypeId, ty: &Type, _docs: &Docs) {
         self.src.h_defs("\ntypedef ");
         self.src.h_defs("struct {\n");
-        let ty = self.gen.type_name(ty);
+        let ty = self.r#gen.type_name(ty);
         uwriteln!(self.src.h_defs, "{ty} *ptr;");
         self.src.h_defs("size_t len;\n");
         self.src.h_defs("}");
@@ -1710,7 +1710,7 @@ impl InterfaceGenerator<'_> {
 
     fn define_live_types(&mut self, live: LiveTypes) {
         for ty in live.iter() {
-            if self.gen.type_names.contains_key(&ty) {
+            if self.r#gen.type_names.contains_key(&ty) {
                 continue;
             }
 
@@ -1718,7 +1718,7 @@ impl InterfaceGenerator<'_> {
             match info {
                 CTypeNameInfo::Named { name } => {
                     let typedef_name = format!("{}_{encoded}_t", self.owner_namespace(ty));
-                    let prev = self.gen.type_names.insert(ty, typedef_name.clone());
+                    let prev = self.r#gen.type_names.insert(ty, typedef_name.clone());
                     assert!(prev.is_none());
 
                     self.define_type(name, ty)
@@ -1726,16 +1726,16 @@ impl InterfaceGenerator<'_> {
 
                 CTypeNameInfo::Anonymous { is_prim } => {
                     let (defined, name) = if is_prim {
-                        let namespace = self.gen.world.to_snake_case();
+                        let namespace = self.r#gen.world.to_snake_case();
                         let name = format!("{namespace}_{encoded}_t");
-                        let new_prim = self.gen.prim_names.insert(name.clone());
+                        let new_prim = self.r#gen.prim_names.insert(name.clone());
                         (!new_prim, name)
                     } else {
                         let namespace = self.owner_namespace(ty);
                         (false, format!("{namespace}_{encoded}_t"))
                     };
 
-                    let prev = self.gen.type_names.insert(ty, name);
+                    let prev = self.r#gen.type_names.insert(ty, name);
                     assert!(prev.is_none());
 
                     if defined {
@@ -1765,7 +1765,7 @@ impl InterfaceGenerator<'_> {
         let h_helpers_start = self.src.h_helpers.len();
         let c_helpers_start = self.src.c_helpers.len();
 
-        let name = self.gen.type_names[&id].clone();
+        let name = self.r#gen.type_names[&id].clone();
         let prefix = name.strip_suffix("_t").unwrap();
 
         self.src
@@ -1795,7 +1795,7 @@ impl InterfaceGenerator<'_> {
                 self.src.c_helpers("size_t list_len = ptr->len;\n");
                 uwriteln!(self.src.c_helpers, "if (list_len > 0) {{");
                 let mut t_name = String::new();
-                self.gen.push_type_name(t, &mut t_name);
+                self.r#gen.push_type_name(t, &mut t_name);
                 self.src
                     .c_helpers(&format!("{t_name} *list_ptr = ptr->ptr;\n"));
                 self.src
@@ -1853,18 +1853,18 @@ impl InterfaceGenerator<'_> {
             return;
         }
         self.src.c_helpers("}\n");
-        self.gen.dtor_funcs.insert(id, format!("{prefix}_free"));
+        self.r#gen.dtor_funcs.insert(id, format!("{prefix}_free"));
     }
 
     fn free(&mut self, ty: &Type, expr: &str) {
         match ty {
             Type::Id(id) => {
-                if let Some(dtor) = self.gen.dtor_funcs.get(&id) {
+                if let Some(dtor) = self.r#gen.dtor_funcs.get(&id) {
                     self.src.c_helpers(&format!("{dtor}({expr});\n"));
                 }
             }
             Type::String => {
-                let snake = self.gen.world.to_snake_case();
+                let snake = self.r#gen.world.to_snake_case();
                 self.src
                     .c_helpers(&format!("{snake}_string_free({expr});\n"));
             }
@@ -1888,21 +1888,21 @@ impl InterfaceGenerator<'_> {
         c_func_name(
             self.in_import,
             self.resolve,
-            &self.gen.world,
+            &self.r#gen.world,
             interface_id,
             func,
-            &self.gen.renamed_interfaces,
+            &self.r#gen.renamed_interfaces,
         )
     }
 
     fn import(&mut self, interface_name: Option<&WorldKey>, func: &Function) {
         let async_ = self
-            .gen
+            .r#gen
             .opts
             .async_
             .is_async(self.resolve, interface_name, func, true);
         if async_ {
-            self.gen.needs_async = true;
+            self.r#gen.needs_async = true;
         }
 
         self.docs(&func.docs, SourceType::HFns);
@@ -1928,7 +1928,7 @@ impl InterfaceGenerator<'_> {
             func.name
         );
         let name = self.c_func_name(interface_name, func);
-        let import_name = self.gen.names.tmp(&format!("__wasm_import_{name}",));
+        let import_name = self.r#gen.names.tmp(&format!("__wasm_import_{name}",));
         self.src.c_fns("extern ");
         match sig.results.len() {
             0 => self.src.c_fns("void"),
@@ -1972,12 +1972,12 @@ impl InterfaceGenerator<'_> {
         // construct optional adapters from maybe pointers to real optional
         // structs internally
         let mut optional_adapters = String::from("");
-        if !self.gen.opts.no_sig_flattening {
+        if !self.r#gen.opts.no_sig_flattening {
             for (i, (_, param)) in c_sig.params.iter().enumerate() {
                 let ty = &func.params[i].1;
                 if let Type::Id(id) = ty {
                     if let TypeDefKind::Option(_) = &self.resolve.types[*id].kind {
-                        let ty = self.gen.type_name(ty);
+                        let ty = self.r#gen.type_name(ty);
                         uwrite!(
                             optional_adapters,
                             "{ty} {param};
@@ -2007,7 +2007,7 @@ impl InterfaceGenerator<'_> {
         }
         f.src.push_str(&optional_adapters);
         abi::call(
-            f.gen.resolve,
+            f.r#gen.resolve,
             AbiVariant::GuestImport,
             LiftLower::LowerArgsLiftResults,
             func,
@@ -2050,9 +2050,9 @@ impl InterfaceGenerator<'_> {
             let mut f = FunctionBindgen::new(self, c_sig.clone(), "INVALID");
             for (i, (_, ty)) in func.params.iter().enumerate() {
                 let param = &c_sig.params[i].1;
-                params.extend(abi::lower_flat(f.gen.resolve, &mut f, param.clone(), ty));
+                params.extend(abi::lower_flat(f.r#gen.resolve, &mut f, param.clone(), ty));
             }
-            f.gen.src.c_adapters.push_str(&f.src);
+            f.r#gen.src.c_adapters.push_str(&f.src);
         }
         if func.result.is_some() {
             params.push(format!("(uint8_t*) {}", c_sig.params.last().unwrap().1));
@@ -2066,13 +2066,13 @@ impl InterfaceGenerator<'_> {
 
     fn export(&mut self, func: &Function, interface_name: Option<&WorldKey>) {
         let async_ = self
-            .gen
+            .r#gen
             .opts
             .async_
             .is_async(self.resolve, interface_name, func, false);
 
         let (variant, prefix) = if async_ {
-            self.gen.needs_async = true;
+            self.r#gen.needs_async = true;
             (AbiVariant::GuestExportAsync, "[async-lift]")
         } else {
             (AbiVariant::GuestExport, "")
@@ -2096,33 +2096,33 @@ impl InterfaceGenerator<'_> {
             "\n__attribute__((__export_name__(\"{prefix}{export_name}\")))"
         );
         let name = self.c_func_name(interface_name, func);
-        let import_name = self.gen.names.tmp(&format!("__wasm_export_{name}"));
+        let import_name = self.r#gen.names.tmp(&format!("__wasm_export_{name}"));
 
         let mut f = FunctionBindgen::new(self, h_sig, &import_name);
         match sig.results.len() {
-            0 => f.gen.src.c_adapters("void"),
-            1 => f.gen.src.c_adapters(wasm_type(sig.results[0])),
+            0 => f.r#gen.src.c_adapters("void"),
+            1 => f.r#gen.src.c_adapters(wasm_type(sig.results[0])),
             _ => unimplemented!("multi-value return not supported"),
         }
-        f.gen.src.c_adapters(" ");
-        f.gen.src.c_adapters(&import_name);
-        f.gen.src.c_adapters("(");
+        f.r#gen.src.c_adapters(" ");
+        f.r#gen.src.c_adapters(&import_name);
+        f.r#gen.src.c_adapters("(");
         for (i, param) in sig.params.iter().enumerate() {
             if i > 0 {
-                f.gen.src.c_adapters(", ");
+                f.r#gen.src.c_adapters(", ");
             }
             let name = f.locals.tmp("arg");
-            uwrite!(f.gen.src.c_adapters, "{} {}", wasm_type(*param), name);
+            uwrite!(f.r#gen.src.c_adapters, "{} {}", wasm_type(*param), name);
             f.params.push(name);
         }
         if sig.params.len() == 0 {
-            f.gen.src.c_adapters("void");
+            f.r#gen.src.c_adapters("void");
         }
-        f.gen.src.c_adapters(") {\n");
+        f.r#gen.src.c_adapters(") {\n");
 
         // Perform all lifting/lowering and append it to our src.
         abi::call(
-            f.gen.resolve,
+            f.r#gen.resolve,
             variant,
             LiftLower::LiftArgsLowerResults,
             func,
@@ -2138,9 +2138,9 @@ impl InterfaceGenerator<'_> {
         self.src.c_adapters("}\n");
 
         if async_ {
-            let snake = self.gen.world.to_snake_case();
+            let snake = self.r#gen.world.to_snake_case();
             let return_ty = match &func.result {
-                Some(ty) => format!("{} ret", self.gen.type_name(ty)),
+                Some(ty) => format!("{} ret", self.r#gen.type_name(ty)),
                 None => "void".to_string(),
             };
             let DeferredTaskReturn::Emitted {
@@ -2217,7 +2217,7 @@ void {name}_return({return_ty}) {{
 
             let mut f = FunctionBindgen::new(self, c_sig, &import_name);
             f.params = params;
-            abi::post_return(f.gen.resolve, func, &mut f);
+            abi::post_return(f.r#gen.resolve, func, &mut f);
             let FunctionBindgen { src, .. } = f;
             self.src.c_fns(&src);
             self.src.c_fns("}\n");
@@ -2234,7 +2234,7 @@ void {name}_return({return_ty}) {{
         async_: bool,
     ) -> CSig {
         let name = self.c_func_name(interface_name, func);
-        self.gen.names.insert(&name).expect("duplicate symbols");
+        self.r#gen.names.insert(&name).expect("duplicate symbols");
 
         let start = self.src.h_fns.len();
         let mut result_rets = false;
@@ -2249,7 +2249,7 @@ void {name}_return({return_ty}) {{
             self.classify_ret(func)
         };
         if async_ {
-            let snake = self.gen.world.to_snake_case();
+            let snake = self.r#gen.world.to_snake_case();
             if self.in_import {
                 uwrite!(self.src.h_fns, "{snake}_subtask_status_t");
             } else {
@@ -2328,7 +2328,7 @@ void {name}_return({return_ty}) {{
             // optional param pointer sig_flattening
             let optional_type = if let Type::Id(id) = ty {
                 if let TypeDefKind::Option(option_ty) = &self.resolve.types[*id].kind {
-                    if !self.gen.opts.no_sig_flattening {
+                    if !self.r#gen.opts.no_sig_flattening {
                         Some(option_ty)
                     } else {
                         None
@@ -2339,7 +2339,7 @@ void {name}_return({return_ty}) {{
             } else {
                 None
             };
-            let (print_ty, print_name) = if !self.gen.opts.no_sig_flattening {
+            let (print_ty, print_name) = if !self.r#gen.opts.no_sig_flattening {
                 if let Some(option_ty) = optional_type {
                     (option_ty, format!("maybe_{}", to_c_ident(name)))
                 } else {
@@ -2382,7 +2382,7 @@ void {name}_return({return_ty}) {{
                     printed = true;
                     let names = multiple
                         .iter()
-                        .map(|(name, ty)| (to_c_ident(name), self.gen.type_name(ty)))
+                        .map(|(name, ty)| (to_c_ident(name), self.r#gen.type_name(ty)))
                         .collect::<Vec<_>>();
                     uwriteln!(self.src.h_defs, "typedef struct {c_func_name}_args {{");
                     for (name, ty) in names {
@@ -2430,20 +2430,20 @@ void {name}_return({return_ty}) {{
         match &func.result {
             None => ret.scalar = Some(Scalar::Void),
             Some(ty) => {
-                ret.return_single(self.resolve, ty, ty, !self.gen.opts.no_sig_flattening);
+                ret.return_single(self.resolve, ty, ty, !self.r#gen.opts.no_sig_flattening);
             }
         }
         return ret;
     }
 
     fn print_typedef_target(&mut self, id: TypeId) {
-        let name = &self.gen.type_names[&id];
+        let name = &self.r#gen.type_names[&id];
         self.src.h_defs(&name);
         self.src.h_defs(";\n");
     }
 
     fn start_typedef_struct(&mut self, id: TypeId) {
-        let name = &self.gen.type_names[&id];
+        let name = &self.r#gen.type_names[&id];
         self.src.h_defs("typedef struct ");
         self.src.h_defs(&name);
         self.src.h_defs(" {\n");
@@ -2458,15 +2458,15 @@ void {name}_return({return_ty}) {{
         owner_namespace(
             self.interface,
             self.in_import,
-            self.gen.world.clone(),
+            self.r#gen.world.clone(),
             self.resolve,
             id,
-            &self.gen.renamed_interfaces,
+            &self.r#gen.renamed_interfaces,
         )
     }
 
     fn print_ty(&mut self, stype: SourceType, ty: &Type) {
-        self.gen
+        self.r#gen
             .push_type_name(ty, self.src.src(stype).as_mut_string());
     }
 
@@ -2484,7 +2484,7 @@ void {name}_return({return_ty}) {{
     }
 
     fn autodrop_enabled(&self) -> bool {
-        self.gen.opts.autodrop_borrows == Enabled::Yes
+        self.r#gen.opts.autodrop_borrows == Enabled::Yes
     }
 
     fn contains_droppable_borrow(&self, ty: &Type) -> bool {
@@ -2496,7 +2496,7 @@ void {name}_return({return_ty}) {{
                     Handle::Borrow(id) => {
                         !self.in_import
                             && matches!(
-                                self.gen.resources[&dealias(self.resolve, *id)].direction,
+                                self.r#gen.resources[&dealias(self.resolve, *id)].direction,
                                 Direction::Import
                             )
                     }
@@ -2599,12 +2599,12 @@ void {name}_return({return_ty}) {{
         ty: TypeId,
         payload_type: Option<&Type>,
     ) {
-        if !self.gen.futures.insert(ty) {
+        if !self.r#gen.futures.insert(ty) {
             return;
         }
-        let ty = self.gen.type_name(&Type::Id(ty));
+        let ty = self.r#gen.type_name(&Type::Id(ty));
         let name = ty.strip_suffix("_t").unwrap();
-        let snake = self.gen.world.to_snake_case();
+        let snake = self.r#gen.world.to_snake_case();
         let kind = match payload_for {
             PayloadFor::Future => "future",
             PayloadFor::Stream => "stream",
@@ -2617,7 +2617,7 @@ void {name}_return({return_ty}) {{
             match (payload_for, payload_type) {
                 (PayloadFor::Future, None) => ("".to_string(), "NULL", "".to_string(), "NULL"),
                 (PayloadFor::Future, Some(ty)) => {
-                    let ty = self.gen.type_name(ty);
+                    let ty = self.r#gen.type_name(ty);
                     (
                         format!(", {ty} *buf"),
                         "(uint8_t*) buf",
@@ -2632,7 +2632,7 @@ void {name}_return({return_ty}) {{
                     "NULL, amt",
                 ),
                 (PayloadFor::Stream, Some(ty)) => {
-                    let ty = self.gen.type_name(ty);
+                    let ty = self.r#gen.type_name(ty);
                     (
                         format!(", {ty} *buf, size_t amt"),
                         "(uint8_t*) buf, amt",
@@ -2655,8 +2655,8 @@ typedef uint32_t {name}_writer_t;
 {snake}_waitable_status_t {name}_write({name}_writer_t writer{write_arg_ty});
 {snake}_waitable_status_t {name}_cancel_read({ty} reader);
 {snake}_waitable_status_t {name}_cancel_write({name}_writer_t writer);
-void {name}_close_readable({ty} reader);{empty}
-void {name}_close_writable({name}_writer_t writer);
+void {name}_drop_readable({ty} reader);{empty}
+void {name}_drop_writable({name}_writer_t writer);
             "#,
         );
         uwriteln!(
@@ -2672,10 +2672,10 @@ __attribute__((__import_module__("{module}"), __import_name__("[{kind}-cancel-re
 extern uint32_t {name}__cancel_read(uint32_t);
 __attribute__((__import_module__("{module}"), __import_name__("[{kind}-cancel-write-{index}]{func_name}")))
 extern uint32_t {name}__cancel_write(uint32_t);
-__attribute__((__import_module__("{module}"), __import_name__("[{kind}-close-readable-{index}]{func_name}")))
-extern void {name}__close_readable(uint32_t);
-__attribute__((__import_module__("{module}"), __import_name__("[{kind}-close-writable-{index}]{func_name}")))
-extern void {name}__close_writable(uint32_t);
+__attribute__((__import_module__("{module}"), __import_name__("[{kind}-drop-readable-{index}]{func_name}")))
+extern void {name}__drop_readable(uint32_t);
+__attribute__((__import_module__("{module}"), __import_name__("[{kind}-drop-writable-{index}]{func_name}")))
+extern void {name}__drop_writable(uint32_t);
 
 {ty} {name}_new({name}_writer_t *writer) {{
     uint64_t packed = {name}__new();
@@ -2699,12 +2699,12 @@ extern void {name}__close_writable(uint32_t);
     return {name}__cancel_write(writer);
 }}
 
-void {name}_close_readable({ty} reader){empty} {{
-    {name}__close_readable(reader);
+void {name}_drop_readable({ty} reader){empty} {{
+    {name}__drop_readable(reader);
 }}
 
-void {name}_close_writable({name}_writer_t writer) {{
-    {name}__close_writable(writer);
+void {name}_drop_writable({name}_writer_t writer) {{
+    {name}__drop_writable(writer);
 }}
             "#,
         );
@@ -2722,7 +2722,7 @@ struct DroppableBorrow {
 }
 
 struct FunctionBindgen<'a, 'b> {
-    gen: &'a mut InterfaceGenerator<'b>,
+    r#gen: &'a mut InterfaceGenerator<'b>,
     locals: Ns,
     src: wit_bindgen_core::Source,
     sig: CSig,
@@ -2801,7 +2801,7 @@ enum DeferredTaskReturn {
 
 impl<'a, 'b> FunctionBindgen<'a, 'b> {
     fn new(
-        gen: &'a mut InterfaceGenerator<'b>,
+        r#gen: &'a mut InterfaceGenerator<'b>,
         sig: CSig,
         func_to_call: &'a str,
     ) -> FunctionBindgen<'a, 'b> {
@@ -2810,7 +2810,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             locals.insert(name).unwrap();
         }
         FunctionBindgen {
-            gen,
+            r#gen,
             sig,
             locals,
             src: Default::default(),
@@ -2889,9 +2889,9 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
     }
 
     fn assert_no_droppable_borrows(&self, context: &str, ty: &Type) {
-        if !self.gen.in_import
-            && self.gen.autodrop_enabled()
-            && self.gen.contains_droppable_borrow(ty)
+        if !self.r#gen.in_import
+            && self.r#gen.autodrop_enabled()
+            && self.r#gen.contains_droppable_borrow(ty)
         {
             panic!(
                 "Unable to autodrop borrows in `{}` values, please disable autodrop",
@@ -2905,7 +2905,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
     type Operand = String;
 
     fn sizes(&self) -> &SizeAlign {
-        &self.gen.gen.sizes
+        &self.r#gen.r#gen.sizes
     }
 
     fn push_block(&mut self) {
@@ -2924,15 +2924,16 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
         // Use a stack-based return area for imports, because exports need
         // their return area to be live until the post-return call.
-        if self.gen.in_import {
+        if self.r#gen.in_import {
             self.import_return_pointer_area_size = self.import_return_pointer_area_size.max(size);
             self.import_return_pointer_area_align =
                 self.import_return_pointer_area_align.max(align);
             uwriteln!(self.src, "uint8_t *{} = (uint8_t *) &ret_area;", ptr);
         } else {
-            self.gen.gen.return_pointer_area_size = self.gen.gen.return_pointer_area_size.max(size);
-            self.gen.gen.return_pointer_area_align =
-                self.gen.gen.return_pointer_area_align.max(align);
+            self.r#gen.r#gen.return_pointer_area_size =
+                self.r#gen.r#gen.return_pointer_area_size.max(size);
+            self.r#gen.r#gen.return_pointer_area_align =
+                self.r#gen.r#gen.return_pointer_area_align.max(align);
             // Declare a statically-allocated return area.
             uwriteln!(self.src, "uint8_t *{} = (uint8_t *) &RET_AREA;", ptr);
         }
@@ -3000,7 +3001,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::Bitcasts { casts } => {
                 for (cast, op) in casts.iter().zip(operands) {
-                    let op = self.gen.gen.perform_cast(op, cast);
+                    let op = self.r#gen.r#gen.perform_cast(op, cast);
                     results.push(op);
                 }
             }
@@ -3016,10 +3017,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
             }
             Instruction::RecordLift { ty, record, .. } => {
-                let name = self.gen.gen.type_name(&Type::Id(*ty));
+                let name = self.r#gen.r#gen.type_name(&Type::Id(*ty));
                 let mut result = format!("({}) {{\n", name);
                 for (field, op) in record.fields.iter().zip(operands.iter()) {
-                    let field_ty = self.gen.gen.type_name(&field.ty);
+                    let field_ty = self.r#gen.r#gen.type_name(&field.ty);
                     uwriteln!(result, "({}) {},", field_ty, op);
                 }
                 result.push_str("}");
@@ -3033,10 +3034,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
             }
             Instruction::TupleLift { ty, tuple, .. } => {
-                let name = self.gen.gen.type_name(&Type::Id(*ty));
+                let name = self.r#gen.r#gen.type_name(&Type::Id(*ty));
                 let mut result = format!("({}) {{\n", name);
                 for (ty, op) in tuple.types.iter().zip(operands.iter()) {
-                    let ty = self.gen.gen.type_name(&ty);
+                    let ty = self.r#gen.r#gen.type_name(&ty);
                     uwriteln!(result, "({}) {},", ty, op);
                 }
                 result.push_str("}");
@@ -3051,7 +3052,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::HandleLift { handle, ty, .. } => match handle {
                 Handle::Borrow(resource)
                     if matches!(
-                        self.gen.gen.resources[&dealias(resolve, *resource)].direction,
+                        self.r#gen.r#gen.resources[&dealias(resolve, *resource)].direction,
                         Direction::Export
                     ) =>
                 {
@@ -3059,21 +3060,21 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     // it as a raw pointer rather than an opaque handle.
                     let op = &operands[0];
                     let name = self
-                        .gen
-                        .gen
+                        .r#gen
+                        .r#gen
                         .type_name(&Type::Id(dealias(resolve, *resource)));
                     results.push(format!("(({name}*) {op})"))
                 }
                 _ => {
                     let op = &operands[0];
-                    let name = self.gen.gen.type_name(&Type::Id(*ty));
+                    let name = self.r#gen.r#gen.type_name(&Type::Id(*ty));
                     results.push(format!("({name}) {{ {op} }}"));
 
                     if let Handle::Borrow(id) = handle {
-                        if !self.gen.in_import && self.gen.autodrop_enabled() {
+                        if !self.r#gen.in_import && self.r#gen.autodrop_enabled() {
                             // Here we've received a borrow of an imported resource, which is the
                             // kind we'll need to drop when the exported function is returning.
-                            let ty = dealias(self.gen.resolve, *id);
+                            let ty = dealias(self.r#gen.resolve, *id);
 
                             let name = self.locals.tmp("borrow");
                             uwriteln!(self.borrow_decls, "int32_t {name} = 0;");
@@ -3091,7 +3092,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     results.push(operands.pop().unwrap());
                 }
                 Int::U64 => {
-                    let name = self.gen.gen.type_name(&Type::Id(*ty));
+                    let name = self.r#gen.r#gen.type_name(&Type::Id(*ty));
                     let tmp = self.locals.tmp("flags");
                     uwriteln!(self.src, "{name} {tmp} = {};", operands[0]);
                     results.push(format!("{tmp} & 0xffffffff"));
@@ -3104,7 +3105,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     results.push(operands.pop().unwrap());
                 }
                 Int::U64 => {
-                    let name = self.gen.gen.type_name(&Type::Id(*ty));
+                    let name = self.r#gen.r#gen.type_name(&Type::Id(*ty));
                     let op0 = &operands[0];
                     let op1 = &operands[1];
                     results.push(format!("(({name}) ({op0})) | ((({name}) ({op1})) << 32)"));
@@ -3150,7 +3151,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 {
                     uwriteln!(self.src, "case {}: {{", i);
                     if let Some(ty) = case.ty.as_ref() {
-                        let ty = self.gen.gen.type_name(ty);
+                        let ty = self.r#gen.r#gen.type_name(ty);
                         uwrite!(
                             self.src,
                             "const {} *{} = &({}).val",
@@ -3178,7 +3179,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     .drain(self.blocks.len() - variant.cases.len()..)
                     .collect::<Vec<_>>();
 
-                let ty = self.gen.gen.type_name(&Type::Id(*ty));
+                let ty = self.r#gen.r#gen.type_name(&Type::Id(*ty));
                 let result = self.locals.tmp("variant");
                 uwriteln!(self.src, "{} {};", ty, result);
                 uwriteln!(self.src, "{}.tag = {};", result, operands[0]);
@@ -3226,7 +3227,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
 
                 let op0 = &operands[0];
-                let ty = self.gen.gen.type_name(payload);
+                let ty = self.r#gen.r#gen.type_name(payload);
                 let bind_some = format!("const {ty} *{some_payload} = &({op0}).val;");
 
                 uwrite!(
@@ -3247,7 +3248,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 assert!(some_results.len() == 1);
                 let some_result = &some_results[0];
 
-                let ty = self.gen.gen.type_name(&Type::Id(*ty));
+                let ty = self.r#gen.r#gen.type_name(&Type::Id(*ty));
                 let result = self.locals.tmp("option");
                 uwriteln!(self.src, "{ty} {result};");
                 let op0 = &operands[0];
@@ -3302,13 +3303,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 let op0 = &operands[0];
                 let bind_ok = if let Some(ok) = result.ok.as_ref() {
-                    let ok_ty = self.gen.gen.type_name(ok);
+                    let ok_ty = self.r#gen.r#gen.type_name(ok);
                     format!("const {ok_ty} *{ok_payload} = &({op0}).val.ok;")
                 } else {
                     String::new()
                 };
                 let bind_err = if let Some(err) = result.err.as_ref() {
-                    let err_ty = self.gen.gen.type_name(err);
+                    let err_ty = self.r#gen.r#gen.type_name(err);
                     format!("const {err_ty} *{err_payload} = &({op0}).val.err;")
                 } else {
                     String::new()
@@ -3354,7 +3355,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     String::new()
                 };
 
-                let ty = self.gen.gen.type_name(&Type::Id(*ty));
+                let ty = self.r#gen.r#gen.type_name(&Type::Id(*ty));
                 uwriteln!(self.src, "{ty} {result_tmp};");
                 let op0 = &operands[0];
                 uwriteln!(
@@ -3387,19 +3388,19 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::ListCanonLift { element, ty, .. } => {
                 self.assert_no_droppable_borrows("list", &Type::Id(*ty));
 
-                let list_name = self.gen.gen.type_name(&Type::Id(*ty));
-                let elem_name = self.gen.gen.type_name(element);
+                let list_name = self.r#gen.r#gen.type_name(&Type::Id(*ty));
+                let elem_name = self.r#gen.r#gen.type_name(element);
                 results.push(format!(
                     "({}) {{ ({}*)({}), ({}) }}",
                     list_name, elem_name, operands[0], operands[1]
                 ));
             }
             Instruction::StringLift { .. } => {
-                let list_name = self.gen.gen.type_name(&Type::String);
+                let list_name = self.r#gen.r#gen.type_name(&Type::String);
                 results.push(format!(
                     "({}) {{ ({}*)({}), ({}) }}",
                     list_name,
-                    self.gen.gen.char_type(),
+                    self.r#gen.r#gen.char_type(),
                     operands[0],
                     operands[1]
                 ));
@@ -3415,8 +3416,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.assert_no_droppable_borrows("list", &Type::Id(*ty));
 
                 let _body = self.blocks.pop().unwrap();
-                let list_name = self.gen.gen.type_name(&Type::Id(*ty));
-                let elem_name = self.gen.gen.type_name(element);
+                let list_name = self.r#gen.r#gen.type_name(&Type::Id(*ty));
+                let elem_name = self.r#gen.r#gen.type_name(element);
                 results.push(format!(
                     "({}) {{ ({}*)({}), ({}) }}",
                     list_name, elem_name, operands[0], operands[1]
@@ -3457,14 +3458,15 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     let ty = &func.params[i].1;
                     if *byref {
                         let name = self.locals.tmp("arg");
-                        let ty = self.gen.gen.type_name(ty);
+                        let ty = self.r#gen.r#gen.type_name(ty);
                         uwriteln!(self.src, "{} {} = {};", ty, name, op);
                         args.push_str("&");
                         args.push_str(&name);
                     } else {
-                        if !self.gen.in_import {
+                        if !self.r#gen.in_import {
                             if let Type::Id(id) = ty {
-                                if let TypeDefKind::Option(_) = &self.gen.resolve.types[*id].kind {
+                                if let TypeDefKind::Option(_) = &self.r#gen.resolve.types[*id].kind
+                                {
                                     uwrite!(args, "{op}.is_some ? &({op}.val) : NULL");
                                     continue;
                                 }
@@ -3475,7 +3477,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
                 if *async_ {
                     let ret = self.locals.tmp("ret");
-                    let snake = self.gen.gen.world.to_snake_case();
+                    let snake = self.r#gen.r#gen.world.to_snake_case();
                     uwriteln!(
                         self.src,
                         "{snake}_callback_code_t {ret} = {}({args});",
@@ -3499,7 +3501,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         let mut retptrs = Vec::new();
                         for ty in self.sig.ret.retptrs.iter() {
                             let name = self.locals.tmp("ret");
-                            let ty = self.gen.gen.type_name(ty);
+                            let ty = self.r#gen.r#gen.type_name(ty);
                             uwriteln!(self.src, "{} {};", ty, name);
                             if args.len() > 0 {
                                 args.push_str(", ");
@@ -3517,7 +3519,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     Some(Scalar::Type(_)) => {
                         let ret = self.locals.tmp("ret");
                         let ty = func.result.unwrap();
-                        let ty = self.gen.gen.type_name(&ty);
+                        let ty = self.r#gen.r#gen.type_name(&ty);
                         uwriteln!(self.src, "{} {} = {}({});", ty, ret, self.sig.name, args);
                         results.push(ret);
                     }
@@ -3529,11 +3531,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         }
                         args.push_str("&");
                         args.push_str(&val);
-                        let payload_ty = self.gen.gen.type_name(ty);
+                        let payload_ty = self.r#gen.r#gen.type_name(ty);
                         uwriteln!(self.src, "{} {};", payload_ty, val);
                         uwriteln!(self.src, "bool {} = {}({});", ret, self.sig.name, args);
                         let ty = func.result.unwrap();
-                        let option_ty = self.gen.gen.type_name(&ty);
+                        let option_ty = self.r#gen.r#gen.type_name(&ty);
                         let option_ret = self.locals.tmp("ret");
                         uwrite!(
                             self.src,
@@ -3547,7 +3549,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     }
                     Some(Scalar::ResultBool(ok, err)) => {
                         let ty = &func.result.unwrap();
-                        let result_ty = self.gen.gen.type_name(ty);
+                        let result_ty = self.r#gen.r#gen.type_name(ty);
                         let ret = self.locals.tmp("ret");
                         let mut ret_iter = self.sig.ret.retptrs.iter();
                         uwriteln!(self.src, "{result_ty} {ret};");
@@ -3558,7 +3560,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                                     uwrite!(args, ", ");
                                 }
                                 uwrite!(args, "&{val}");
-                                let ty = self.gen.gen.type_name(ty);
+                                let ty = self.r#gen.r#gen.type_name(ty);
                                 uwriteln!(self.src, "{} {};", ty, val);
                                 Some(val)
                             } else {
@@ -3573,7 +3575,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                                 uwrite!(args, ", ")
                             }
                             uwrite!(args, "&{val}");
-                            let ty = self.gen.gen.type_name(ty);
+                            let ty = self.r#gen.r#gen.type_name(ty);
                             uwriteln!(self.src, "{} {};", ty, val);
                             Some(val)
                         } else {
@@ -3608,7 +3610,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     }
                 }
             }
-            Instruction::Return { .. } if self.gen.in_import => match self.sig.ret.scalar {
+            Instruction::Return { .. } if self.r#gen.in_import => match self.sig.ret.scalar {
                 None => {
                     for op in operands.iter() {
                         self.store_in_retptr(op);
@@ -3669,7 +3671,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.src.append_src(&src);
 
                 for DroppableBorrow { name, ty } in self.borrows.iter() {
-                    let drop_fn = self.gen.gen.resources[ty].drop_fn.as_str();
+                    let drop_fn = self.r#gen.r#gen.resources[ty].drop_fn.as_str();
                     uwriteln!(self.src, "if ({name} != 0) {{");
                     uwriteln!(self.src, "  {drop_fn}({name});");
                     uwriteln!(self.src, "}}");
@@ -3744,7 +3746,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwriteln!(self.src, "uint8_t *{ptr} = {};", operands[0]);
                 let i = self.locals.tmp("i");
                 uwriteln!(self.src, "for (size_t {i} = 0; {i} < {len}; {i}++) {{");
-                let size = self.gen.gen.sizes.size(element);
+                let size = self.r#gen.r#gen.sizes.size(element);
                 uwriteln!(
                     self.src,
                     "uint8_t *base = {ptr} + {i} * {};",

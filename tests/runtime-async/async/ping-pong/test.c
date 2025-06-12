@@ -45,10 +45,10 @@ test_callback_code_t exports_test_async_ping_callback(test_event_t *event) {
       // future.
       assert(event->event == TEST_EVENT_FUTURE_READ);
       assert(event->waitable == task->future);
-      assert(TEST_WAITABLE_STATE(event->code) == TEST_WAITABLE_CLOSED);
-      assert(TEST_WAITABLE_COUNT(event->code) == 1);
+      assert(TEST_WAITABLE_STATE(event->code) == TEST_WAITABLE_COMPLETED);
+      assert(TEST_WAITABLE_COUNT(event->code) == 0);
       test_waitable_join(task->future, 0);
-      exports_test_future_string_close_readable(task->future);
+      exports_test_future_string_drop_readable(task->future);
       task->future = 0;
 
       // Create a new future and start the return of our task with this future.
@@ -83,10 +83,10 @@ test_callback_code_t exports_test_async_ping_callback(test_event_t *event) {
       // of the future.
       assert(event->event == TEST_EVENT_FUTURE_WRITE);
       assert(event->waitable == task->writer);
-      assert(TEST_WAITABLE_STATE(event->code) == TEST_WAITABLE_CLOSED);
-      assert(TEST_WAITABLE_COUNT(event->code) == 1);
+      assert(TEST_WAITABLE_STATE(event->code) == TEST_WAITABLE_COMPLETED);
+      assert(TEST_WAITABLE_COUNT(event->code) == 0);
       test_waitable_join(task->writer, 0);
-      exports_test_future_string_close_writable(task->writer);
+      exports_test_future_string_drop_writable(task->writer);
       task->writer = 0;
 
       // Drop our waitable set, it's no longer needed.
@@ -134,12 +134,12 @@ test_callback_code_t exports_test_async_pong_callback(test_event_t *event) {
   // assert this event is a future read completion
   assert(event->event == TEST_EVENT_FUTURE_READ);
   assert(event->waitable == task->future);
-  assert(TEST_WAITABLE_STATE(event->code) == TEST_WAITABLE_CLOSED);
-  assert(TEST_WAITABLE_COUNT(event->code) == 1);
+  assert(TEST_WAITABLE_STATE(event->code) == TEST_WAITABLE_COMPLETED);
+  assert(TEST_WAITABLE_COUNT(event->code) == 0);
 
   // deallocate/destroy our future
   test_waitable_join(task->future, 0);
-  exports_test_future_string_close_readable(task->future);
+  exports_test_future_string_drop_readable(task->future);
   task->future = 0;
 
   // deallocate/destroy our waitable set
