@@ -2,7 +2,7 @@
 //! module documentation in `future_support.rs`.
 
 use crate::async_support::waitable::{WaitableOp, WaitableOperation};
-use crate::async_support::{AbiBuffer, ReturnCode};
+use crate::async_support::{AbiBuffer, ReturnCode, DROPPED};
 use {
     crate::Cleanup,
     std::{
@@ -85,12 +85,17 @@ pub unsafe fn stream_new<T>(
 pub struct StreamWriter<T: 'static> {
     handle: u32,
     vtable: &'static StreamVtable<T>,
+    done: bool,
 }
 
 impl<T> StreamWriter<T> {
     #[doc(hidden)]
     pub unsafe fn new(handle: u32, vtable: &'static StreamVtable<T>) -> Self {
-        Self { handle, vtable }
+        Self {
+            handle,
+            vtable,
+            done: false,
+        }
     }
 
     /// Initiate a write of the `values` provided into this stream.
@@ -239,6 +244,10 @@ where
     type Cancel = (StreamResult, AbiBuffer<T>);
 
     fn start((writer, buf): Self::Start) -> (u32, Self::InProgress) {
+        if writer.done {
+            return (DROPPED, (writer, buf));
+        }
+
         let (ptr, len) = buf.abi_ptr_and_len();
         // SAFETY: sure hope this is safe, everything in this module and
         // `AbiBuffer` is trying to make this safe.
@@ -262,9 +271,14 @@ where
             ReturnCode::Blocked => Err((writer, buf)),
             ReturnCode::Dropped(0) => Ok((StreamResult::Dropped, buf)),
             ReturnCode::Cancelled(0) => Ok((StreamResult::Cancelled, buf)),
-            ReturnCode::Completed(amt) | ReturnCode::Dropped(amt) | ReturnCode::Cancelled(amt) => {
+            code @ (ReturnCode::Completed(amt)
+            | ReturnCode::Dropped(amt)
+            | ReturnCode::Cancelled(amt)) => {
                 let amt = amt.try_into().unwrap();
                 buf.advance(amt);
+                if let ReturnCode::Dropped(_) = code {
+                    writer.done = true;
+                }
                 Ok((StreamResult::Complete(amt), buf))
             }
         }
@@ -321,6 +335,7 @@ impl<'a, T: 'static> StreamWrite<'a, T> {
 pub struct StreamReader<T: 'static> {
     handle: AtomicU32,
     vtable: &'static StreamVtable<T>,
+    done: bool,
 }
 
 impl<T> fmt::Debug for StreamReader<T> {
@@ -337,6 +352,7 @@ impl<T> StreamReader<T> {
         Self {
             handle: AtomicU32::new(handle),
             vtable,
+            done: false,
         }
     }
 
@@ -444,6 +460,10 @@ where
     type Cancel = (StreamResult, Vec<T>);
 
     fn start((reader, mut buf): Self::Start) -> (u32, Self::InProgress) {
+        if reader.done {
+            return (DROPPED, (reader, buf, None));
+        }
+
         let cap = buf.spare_capacity_mut();
         let ptr;
         let cleanup;
@@ -493,7 +513,9 @@ where
             // the read allocation?
             ReturnCode::Cancelled(0) => Ok((StreamResult::Cancelled, buf)),
 
-            ReturnCode::Completed(amt) | ReturnCode::Dropped(amt) | ReturnCode::Cancelled(amt) => {
+            code @ (ReturnCode::Completed(amt)
+            | ReturnCode::Dropped(amt)
+            | ReturnCode::Cancelled(amt)) => {
                 let amt = usize::try_from(amt).unwrap();
                 let cur_len = buf.len();
                 assert!(amt <= buf.capacity() - cur_len);
@@ -523,6 +545,9 @@ where
                 // Intentionally dispose of `cleanup` here as, if it was used, all
                 // allocations have been read from it and appended to `buf`.
                 drop(cleanup);
+                if let ReturnCode::Dropped(_) = code {
+                    reader.done = true;
+                }
                 Ok((StreamResult::Complete(amt), buf))
             }
         }
