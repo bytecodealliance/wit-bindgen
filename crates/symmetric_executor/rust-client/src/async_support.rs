@@ -12,11 +12,15 @@ use crate::module::symmetric::runtime::symmetric_executor::{
 };
 
 pub use future_support::{FutureReader, FutureVtable, FutureWriter};
-pub use stream_support::{results, Stream, StreamReader, StreamVtable, StreamWriter, stream_new};
+pub use stream_support::{
+    results, stream_new, Stream, StreamReader, StreamResult, StreamVtable, StreamWriter,
+};
+pub use subtask::Subtask;
 
 pub mod future_support;
 // later make it non-pub
 pub mod stream_support;
+mod subtask;
 
 // See https://github.com/rust-lang/rust/issues/13231 for the limitation
 // / Send constraint on futures for spawn, loosen later

@@ -284,10 +284,9 @@ pub fn new_stream<T: 'static>(
 ) -> (StreamWriter<T>, StreamReader<T>) {
     let handle = Stream::new();
     let handle2 = handle.clone();
-    (
-        StreamWriter::new(handle, vtable),
-        unsafe { StreamReader::new(handle2.take_handle() as *mut u8, vtable) },
-    )
+    (StreamWriter::new(handle, vtable), unsafe {
+        StreamReader::new(handle2.take_handle() as *mut u8, vtable)
+    })
 }
 
 pub fn stream_new<T: 'static>(
