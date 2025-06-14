@@ -199,16 +199,16 @@ impl<T> fmt::Debug for StreamReader<T> {
 
 impl<T> StreamReader<T> {
     #[doc(hidden)]
-    pub fn new(handle: Stream, vtable: &'static StreamVtable<T>) -> Self {
+    pub unsafe fn new(handle: *mut u8, vtable: &'static StreamVtable<T>) -> Self {
         Self {
-            handle,
+            handle: unsafe { Stream::from_handle(handle as usize) },
             future: None,
             _vtable: vtable,
         }
     }
 
     pub unsafe fn from_handle(handle: *mut u8, vtable: &'static StreamVtable<T>) -> Self {
-        Self::new(unsafe { Stream::from_handle(handle as usize) }, vtable)
+        Self::new(handle, vtable)
     }
 
     /// Cancel the current pending read operation.
@@ -278,6 +278,7 @@ impl<T> Drop for StreamReader<T> {
     }
 }
 
+/// deprecate this, replace with stream_new
 pub fn new_stream<T: 'static>(
     vtable: &'static StreamVtable<T>,
 ) -> (StreamWriter<T>, StreamReader<T>) {
@@ -285,6 +286,12 @@ pub fn new_stream<T: 'static>(
     let handle2 = handle.clone();
     (
         StreamWriter::new(handle, vtable),
-        StreamReader::new(handle2, vtable),
+        unsafe { StreamReader::new(handle2.take_handle() as *mut u8, vtable) },
     )
+}
+
+pub fn stream_new<T: 'static>(
+    vtable: &'static StreamVtable<T>,
+) -> (StreamWriter<T>, StreamReader<T>) {
+    new_stream(vtable)
 }

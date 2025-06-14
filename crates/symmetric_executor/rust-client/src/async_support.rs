@@ -12,7 +12,7 @@ use crate::module::symmetric::runtime::symmetric_executor::{
 };
 
 pub use future_support::{FutureReader, FutureVtable, FutureWriter};
-pub use stream_support::{results, Stream, StreamReader, StreamVtable, StreamWriter};
+pub use stream_support::{results, Stream, StreamReader, StreamVtable, StreamWriter, stream_new};
 
 pub mod future_support;
 // later make it non-pub
