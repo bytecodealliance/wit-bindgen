@@ -1,13 +1,13 @@
 //! Generic support for "any waitable" and performing asynchronous operations on
 //! that waitable.
 
-#[cfg(not(feature = "symmetric"))]
-use {super::cabi, std::ffi::c_void, std::ptr};
 use std::future::Future;
 use std::marker;
 use std::mem;
 use std::pin::Pin;
 use std::task::{Context, Poll, Waker};
+#[cfg(not(feature = "symmetric"))]
+use {super::cabi, std::ffi::c_void, std::ptr};
 
 /// Generic future-based operation on any "waitable" in the component model.
 ///

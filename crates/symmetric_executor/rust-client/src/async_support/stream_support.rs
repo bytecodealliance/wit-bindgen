@@ -1,6 +1,6 @@
 pub use crate::module::symmetric::runtime::symmetric_stream::StreamObj as Stream;
 use crate::{
-    async_support::wait_on,
+    async_support::{abi_buffer::AbiBuffer, wait_on},
     symmetric_stream::{Address, Buffer},
 };
 use {
@@ -35,14 +35,6 @@ pub mod results {
     pub const CANCELED: isize = 0;
 }
 
-pub struct AbiBuffer<T: 'static>(PhantomData<T>);
-
-impl<T: 'static> AbiBuffer<T> {
-    pub fn remaining(&self) -> usize {
-        todo!()
-    }
-}
-
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum StreamResult {
     Complete(usize),
@@ -67,13 +59,17 @@ impl<T: Unpin + Send + 'static> Future for StreamWrite<'_, T> {
                 let values: Vec<_> = me.values.drain(..).collect();
                 if values.is_empty() {
                     // delayed flush
-                    Poll::Ready((StreamResult::Complete(1), AbiBuffer(PhantomData)))
+                    Poll::Ready((
+                        StreamResult::Complete(1),
+                        AbiBuffer::new(Vec::new(), me.writer._vtable),
+                    ))
                 } else {
                     Pin::new(&mut me.writer).start_send(values).unwrap();
                     match Pin::new(&mut me.writer).poll_ready(cx) {
-                        Poll::Ready(_) => {
-                            Poll::Ready((StreamResult::Complete(1), AbiBuffer(PhantomData)))
-                        }
+                        Poll::Ready(_) => Poll::Ready((
+                            StreamResult::Complete(1),
+                            AbiBuffer::new(Vec::new(), me.writer._vtable),
+                        )),
                         Poll::Pending => Poll::Pending,
                     }
                 }
@@ -164,6 +160,7 @@ impl<T: Unpin> Sink<Vec<T>> for StreamWriter<T> {
         let slice =
             unsafe { std::slice::from_raw_parts_mut(addr.cast::<MaybeUninit<T>>(), item_len) };
         for (a, b) in slice.iter_mut().zip(item.drain(..)) {
+            // TODO: lower
             a.write(b);
         }
         buffer.set_size(item_len as u64);
@@ -267,6 +264,7 @@ impl<T: Unpin + Send> futures::stream::Stream for StreamReader<T> {
                 if let Some(buffer2) = buffer2 {
                     let count = buffer2.get_size();
                     buffer0.truncate(count as usize);
+                    // TODO: lift
                     Some(unsafe { mem::transmute::<Vec<MaybeUninit<T>>, Vec<T>>(buffer0) })
                 } else {
                     None
