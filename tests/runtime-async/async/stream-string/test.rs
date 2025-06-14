@@ -21,7 +21,3 @@ impl Guest for Component {
         rd
     }
 }
-
-#[inline(never)]
-#[cfg(not(target_arch = "wasm32"))]
-pub fn force_link() {}
