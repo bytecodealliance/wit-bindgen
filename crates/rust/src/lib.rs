@@ -405,11 +405,7 @@ impl RustWasm {
     }
 
     fn async_support_path(&self) -> String {
-        if self.opts.symmetric {
-            "wit_bindgen_symmetric_rt::async_support".into()
-        } else {
-            format!("{}::async_support", self.runtime_path())
-        }
+        format!("{}::async_support", self.runtime_path())
     }
 
     fn name_interface(
@@ -513,17 +509,14 @@ pub mod wit_future {{
 
         if !self.stream_payloads.is_empty() {
             let async_support = self.async_support_path();
-            let vtable_def = if self.opts.symmetric {
-                "".into()
-            } else {
-                format!(
-                    "
+            let vtable_def = format!(
+                "
         const VTABLE: &'static {async_support}::StreamVtable<Self>;
     "
-                )
-            };
+            );
             let construct = if self.opts.symmetric {
-                format!("{async_support}::stream_support::new_stream()")
+                // no unsafe needed
+                format!("{async_support}::stream_new::<T>(T::VTABLE)")
             } else {
                 format!("unsafe {{ {async_support}::stream_new::<T>(T::VTABLE) }}")
             };
