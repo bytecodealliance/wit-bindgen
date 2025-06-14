@@ -37,10 +37,16 @@ pub mod results {
 
 pub struct AbiBuffer<T: 'static>(PhantomData<T>);
 
+impl<T: 'static> AbiBuffer<T> {
+    pub fn remaining(&self) -> usize {
+        todo!()
+    }
+}
+
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum StreamResult {
     Complete(usize),
-    // Closed,
+    Dropped,
     // Cancelled,
 }
 

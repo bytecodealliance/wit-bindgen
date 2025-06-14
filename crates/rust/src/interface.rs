@@ -893,9 +893,11 @@ pub mod vtable{ordinal} {{
     ) {
         let param_tys = func.params.iter().map(|(_, ty)| *ty).collect::<Vec<_>>();
         let async_support = self.r#gen.async_support_path();
-        let sig = self
-            .resolve
-            .wasm_signature(AbiVariant::GuestImportAsync, func);
+        let sig = self.resolve.wasm_signature_symmetric(
+            AbiVariant::GuestImportAsync,
+            func,
+            self.r#gen.opts.symmetric,
+        );
         uwriteln!(
             self.src,
             "
