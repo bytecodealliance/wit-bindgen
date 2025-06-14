@@ -86,7 +86,10 @@ pub struct FutureReader<T: 'static> {
 
 impl<T> FutureReader<T> {
     pub fn new(handle: *mut u8, vtable: &'static FutureVtable<T>) -> Self {
-        Self { handle: unsafe { Stream::from_handle(handle as usize) }, vtable }
+        Self {
+            handle: unsafe { Stream::from_handle(handle as usize) },
+            vtable,
+        }
     }
 
     pub fn read(self) -> FutureRead<T> {

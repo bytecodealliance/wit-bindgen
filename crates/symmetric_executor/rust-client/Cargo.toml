@@ -16,3 +16,5 @@ path = "../dummy-rt"
 [features]
 # always off feature
 never = []
+default = ["symmetric"]
+symmetric = []

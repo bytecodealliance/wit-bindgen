@@ -17,10 +17,13 @@ pub use stream_support::{
 };
 pub use subtask::Subtask;
 
+#[path = "../../../guest-rust/rt/src/async_support/abi_buffer.rs"]
+pub mod abi_buffer;
 pub mod future_support;
-// later make it non-pub
 pub mod stream_support;
 mod subtask;
+#[path = "../../../guest-rust/rt/src/async_support/waitable.rs"]
+mod waitable;
 
 // See https://github.com/rust-lang/rust/issues/13231 for the limitation
 // / Send constraint on futures for spawn, loosen later
