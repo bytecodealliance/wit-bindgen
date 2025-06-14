@@ -29,8 +29,8 @@ impl<T> FutureWriter<T> {
         Self { handle, vtable }
     }
 
-    pub fn write(self, data: T) -> CancelableWrite<T> {
-        CancelableWrite {
+    pub fn write(self, data: T) -> FutureWrite<T> {
+        FutureWrite {
             writer: self,
             future: None,
             data: Some(data),
@@ -39,16 +39,16 @@ impl<T> FutureWriter<T> {
 }
 
 /// Represents a write operation which may be canceled prior to completion.
-pub struct CancelableWrite<T: 'static> {
+pub struct FutureWrite<T: 'static> {
     writer: FutureWriter<T>,
-    future: Option<Pin<Box<dyn Future<Output = ()> + 'static + Send>>>,
+    future: Option<Pin<Box<dyn Future<Output = Result<(), ()>> + 'static + Send>>>,
     data: Option<T>,
 }
 
-impl<T: Unpin + Send> Future for CancelableWrite<T> {
-    type Output = ();
+impl<T: Unpin + Send> Future for FutureWrite<T> {
+    type Output = Result<(), ()>;
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<()> {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let me = self.get_mut();
 
         if me.future.is_none() {
@@ -65,16 +65,18 @@ impl<T: Unpin + Send> Future for CancelableWrite<T> {
                 unsafe { (lower)(data, addr) };
                 buffer.set_size(1);
                 handle.finish_writing(Some(buffer));
-            }) as Pin<Box<dyn Future<Output = _> + Send>>);
+                Ok(())
+            })
+                as Pin<Box<dyn Future<Output = Self::Output> + Send>>);
         }
         me.future.as_mut().unwrap().poll_unpin(cx)
     }
 }
 
 /// Represents a read operation which may be canceled prior to completion.
-pub struct CancelableRead<T: 'static> {
+pub struct FutureRead<T: 'static> {
     reader: FutureReader<T>,
-    future: Option<Pin<Box<dyn Future<Output = Option<T>> + 'static + Send>>>,
+    future: Option<Pin<Box<dyn Future<Output = T> + 'static + Send>>>,
 }
 
 pub struct FutureReader<T: 'static> {
@@ -83,19 +85,19 @@ pub struct FutureReader<T: 'static> {
 }
 
 impl<T> FutureReader<T> {
-    pub fn new(handle: Stream, vtable: &'static FutureVtable<T>) -> Self {
-        Self { handle, vtable }
+    pub fn new(handle: *mut u8, vtable: &'static FutureVtable<T>) -> Self {
+        Self { handle: unsafe { Stream::from_handle(handle as usize) }, vtable }
     }
 
-    pub fn read(self) -> CancelableRead<T> {
-        CancelableRead {
+    pub fn read(self) -> FutureRead<T> {
+        FutureRead {
             reader: self,
             future: None,
         }
     }
 
     pub unsafe fn from_handle(handle: *mut u8, vtable: &'static FutureVtable<T>) -> Self {
-        Self::new(unsafe { Stream::from_handle(handle as usize) }, vtable)
+        Self::new(handle, vtable)
     }
 
     pub fn take_handle(&self) -> *mut () {
@@ -103,10 +105,10 @@ impl<T> FutureReader<T> {
     }
 }
 
-impl<T: Unpin + Sized + Send> Future for CancelableRead<T> {
-    type Output = Option<T>;
+impl<T: Unpin + Sized + Send> Future for FutureRead<T> {
+    type Output = T;
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<T>> {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<T> {
         let me = self.get_mut();
 
         if me.future.is_none() {
@@ -125,16 +127,14 @@ impl<T: Unpin + Sized + Send> Future for CancelableRead<T> {
                 if let Some(buffer2) = buffer2 {
                     let count = buffer2.get_size();
                     if count > 0 {
-                        Some(unsafe {
-                            (vtable.lift)(buffer2.get_address().take_handle() as *mut u8)
-                        })
+                        unsafe { (vtable.lift)(buffer2.get_address().take_handle() as *mut u8) }
                     } else {
                         // make sure it lives long enough
                         drop(cleanup);
-                        None
+                        todo!()
                     }
                 } else {
-                    None
+                    todo!()
                 }
             }) as Pin<Box<dyn Future<Output = _> + Send>>);
         }
@@ -149,7 +149,7 @@ impl<T: Unpin + Sized + Send> Future for CancelableRead<T> {
     }
 }
 
-impl<T> CancelableRead<T> {
+impl<T> FutureRead<T> {
     pub fn cancel(mut self) -> FutureReader<T> {
         self.cancel_mut()
     }
@@ -160,8 +160,8 @@ impl<T> CancelableRead<T> {
 }
 
 impl<T: Send + Unpin + Sized> IntoFuture for FutureReader<T> {
-    type Output = Option<T>;
-    type IntoFuture = CancelableRead<T>;
+    type Output = T;
+    type IntoFuture = FutureRead<T>;
 
     /// Convert this object into a `Future` which will resolve when a value is
     /// written to the writable end of this `future` (yielding a `Some` result)
@@ -178,6 +178,19 @@ pub fn new_future<T: 'static>(
     let handle2 = handle.clone();
     (
         FutureWriter::new(handle, vtable),
-        FutureReader::new(handle2, vtable),
+        FutureReader::new(handle2.take_handle() as *mut u8, vtable),
     )
+}
+
+pub unsafe fn future_new<T: 'static>(
+    _default: fn() -> T,
+    vtable: &'static FutureVtable<T>,
+) -> (FutureWriter<T>, FutureReader<T>) {
+    new_future(vtable)
+    // let handle = Stream::new();
+    // let handle2 = handle.clone();
+    // (
+    //     FutureWriter::new(handle, vtable),
+    //     FutureReader::new(handle2, vtable),
+    // )
 }

@@ -468,20 +468,13 @@ impl RustWasm {
 
         if !self.future_payloads.is_empty() {
             let async_support = self.async_support_path();
-            let vtable_def = if self.opts.symmetric {
-                "".into()
-            } else {
-                format!(
-                    "
+            let vtable_def = format!(
+                "
         const VTABLE: &'static {async_support}::FutureVtable<Self>;
     "
-                )
-            };
-            let construct = if self.opts.symmetric {
-                format!("{async_support}::future_support::new_future()")
-            } else {
-                format!("unsafe {{ {async_support}::future_new::<T>(default, T::VTABLE) }}")
-            };
+            );
+            let construct =
+                format!("unsafe {{ {async_support}::future_new::<T>(default, T::VTABLE) }}");
             self.src.push_str(&format!(
                 "\
 pub mod wit_future {{
