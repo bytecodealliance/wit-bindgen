@@ -479,15 +479,16 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     .future_payloads
                     .get_index_of(&name)
                     .unwrap();
-                if self.r#gen.r#gen.opts.symmetric {
-                    results.push(format!("{async_support}::FutureReader::from_handle({op})"))
+                let path = self.r#gen.path_to_root();
+                let recast = if self.r#gen.r#gen.opts.symmetric {
+                    ""
                 } else {
-                    let path = self.r#gen.path_to_root();
-                    results.push(format!(
-                        "{async_support}::FutureReader::new\
-                        ({op} as u32, &{path}wit_future::vtable{ordinal}::VTABLE)"
-                    ))
-                }
+                    " as u32"
+                };
+                results.push(format!(
+                    "{async_support}::FutureReader::new\
+                        ({op}{recast}, &{path}wit_future::vtable{ordinal}::VTABLE)"
+                ));
             }
 
             Instruction::StreamLower { .. } => {
@@ -515,15 +516,16 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     .stream_payloads
                     .get_index_of(&name)
                     .unwrap();
-                if self.r#gen.r#gen.opts.symmetric {
-                    results.push(format!("{async_support}::StreamReader::from_handle({op})"))
+                let path = self.r#gen.path_to_root();
+                let recast = if self.r#gen.r#gen.opts.symmetric {
+                    ""
                 } else {
-                    let path = self.r#gen.path_to_root();
-                    results.push(format!(
-                        "{async_support}::StreamReader::new\
-                     ({op} as u32, &{path}wit_stream::vtable{ordinal}::VTABLE)"
-                    ))
-                }
+                    " as u32"
+                };
+                results.push(format!(
+                    "{async_support}::StreamReader::new\
+                     ({op}{recast}, &{path}wit_stream::vtable{ordinal}::VTABLE)"
+                ))
             }
 
             Instruction::ErrorContextLower { .. } => {
