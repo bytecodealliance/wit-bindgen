@@ -401,7 +401,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         .as_deref()
                         .unwrap()
                         .to_upper_camel_case();
-                    // FIXME this does not compile! see (codegen/async-trait-function.wit)
                     format!("{name}Borrow::lift({op} as u32 as usize)")
                 } else {
                     let tmp = format!("handle{}", self.tmp());
@@ -898,7 +897,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     // Automatically convert `Borrow<'_, AResource>` to
                     // `&Self` since traits have `&self` as their
                     // first arguments.
-                    if i == 0 && matches!(func.kind, FunctionKind::Method(_)) {
+                    if i == 0
+                        && (matches!(func.kind, FunctionKind::Method(_))
+                            || matches!(func.kind, FunctionKind::AsyncMethod(_)))
+                    {
                         self.push_str(".get()")
                     }
                 }
