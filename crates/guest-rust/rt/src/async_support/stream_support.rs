@@ -56,10 +56,10 @@ pub struct StreamVtable<T> {
     pub cancel_write: unsafe extern "C" fn(stream: u32) -> u32,
     /// The raw `stream.cancel-read` intrinsic.
     pub cancel_read: unsafe extern "C" fn(stream: u32) -> u32,
-    /// The raw `stream.close-writable` intrinsic.
-    pub close_writable: unsafe extern "C" fn(stream: u32),
-    /// The raw `stream.close-readable` intrinsic.
-    pub close_readable: unsafe extern "C" fn(stream: u32),
+    /// The raw `stream.drop-writable` intrinsic.
+    pub drop_writable: unsafe extern "C" fn(stream: u32),
+    /// The raw `stream.drop-readable` intrinsic.
+    pub drop_readable: unsafe extern "C" fn(stream: u32),
     /// The raw `stream.new` intrinsic.
     pub new: unsafe extern "C" fn() -> u64,
 }
@@ -107,7 +107,7 @@ impl<T> StreamWriter<T> {
     /// The returned [`StreamWrite`] future returns a tuple of `(result, buf)`.
     /// The `result` can be `StreamResult::Complete(n)` meaning that `n` values
     /// were sent from `values` into this writer. A result of
-    /// `StreamResult::Closed` means that no values were sent and the other side
+    /// `StreamResult::Dropped` means that no values were sent and the other side
     /// has hung-up and sending values will no longer be possible.
     ///
     /// The `buf` returned is an [`AbiBuffer<T>`] which retains ownership of the
@@ -148,7 +148,7 @@ impl<T> StreamWriter<T> {
     /// expose cancellation for example. This will successively attempt to write
     /// all of `values` provided into this stream. Upon completion the same
     /// vector will be returned and any remaining elements in the vector were
-    /// not sent because the stream was closed.
+    /// not sent because the stream was dropped.
     pub async fn write_all(&mut self, values: Vec<T>) -> Vec<T> {
         // Perform an initial write which converts `values` into `AbiBuffer`.
         let (mut status, mut buf) = self.write(values).await;
@@ -169,7 +169,7 @@ impl<T> StreamWriter<T> {
 
         // Return back any values that weren't written by shifting them to the
         // front of the returned vector.
-        assert!(buf.remaining() == 0 || matches!(status, StreamResult::Closed));
+        assert!(buf.remaining() == 0 || matches!(status, StreamResult::Dropped));
         buf.into_vec()
     }
 
@@ -200,9 +200,9 @@ impl<T> fmt::Debug for StreamWriter<T> {
 
 impl<T> Drop for StreamWriter<T> {
     fn drop(&mut self) {
-        rtdebug!("stream.close-writable({})", self.handle);
+        rtdebug!("stream.drop-writable({})", self.handle);
         unsafe {
-            (self.vtable.close_writable)(self.handle);
+            (self.vtable.drop_writable)(self.handle);
         }
     }
 }
@@ -223,8 +223,8 @@ pub enum StreamResult {
     /// For writes this is how many items were written, and for reads this is
     /// how many items were read.
     Complete(usize),
-    /// No values were written, the other end has closed its handle.
-    Closed,
+    /// No values were written, the other end has dropped its handle.
+    Dropped,
     /// No values were written, the operation was cancelled.
     Cancelled,
 }
@@ -260,9 +260,9 @@ where
     ) -> Result<Self::Result, Self::InProgress> {
         match ReturnCode::decode(code) {
             ReturnCode::Blocked => Err((writer, buf)),
-            ReturnCode::Closed(0) => Ok((StreamResult::Closed, buf)),
+            ReturnCode::Dropped(0) => Ok((StreamResult::Dropped, buf)),
             ReturnCode::Cancelled(0) => Ok((StreamResult::Cancelled, buf)),
-            ReturnCode::Completed(amt) | ReturnCode::Closed(amt) | ReturnCode::Cancelled(amt) => {
+            ReturnCode::Completed(amt) | ReturnCode::Dropped(amt) | ReturnCode::Cancelled(amt) => {
                 let amt = amt.try_into().unwrap();
                 buf.advance(amt);
                 Ok((StreamResult::Complete(amt), buf))
@@ -393,7 +393,7 @@ impl<T> StreamReader<T> {
     /// Reads all items from this stream and returns the list.
     ///
     /// This method will read all remaining items from this stream into a list
-    /// and await the stream to be closed.
+    /// and await the stream to be dropped.
     pub async fn collect(mut self) -> Vec<T> {
         let mut ret = Vec::new();
         loop {
@@ -407,7 +407,7 @@ impl<T> StreamReader<T> {
             ret = buf;
             match status {
                 StreamResult::Complete(_) => {}
-                StreamResult::Closed => break,
+                StreamResult::Dropped => break,
                 StreamResult::Cancelled => unreachable!(),
             }
         }
@@ -421,8 +421,8 @@ impl<T> Drop for StreamReader<T> {
             return;
         };
         unsafe {
-            rtdebug!("stream.close-readable({})", handle);
-            (self.vtable.close_readable)(handle);
+            rtdebug!("stream.drop-readable({})", handle);
+            (self.vtable.drop_readable)(handle);
         }
     }
 }
@@ -484,7 +484,7 @@ where
             ReturnCode::Blocked => Err((reader, buf, cleanup)),
 
             // Note that the `cleanup`, if any, is discarded here.
-            ReturnCode::Closed(0) => Ok((StreamResult::Closed, buf)),
+            ReturnCode::Dropped(0) => Ok((StreamResult::Dropped, buf)),
 
             // When an in-progress read is successfully cancelled then the
             // allocation that was being read into, if any, is just discarded.
@@ -493,7 +493,7 @@ where
             // the read allocation?
             ReturnCode::Cancelled(0) => Ok((StreamResult::Cancelled, buf)),
 
-            ReturnCode::Completed(amt) | ReturnCode::Closed(amt) | ReturnCode::Cancelled(amt) => {
+            ReturnCode::Completed(amt) | ReturnCode::Dropped(amt) | ReturnCode::Cancelled(amt) => {
                 let amt = usize::try_from(amt).unwrap();
                 let cur_len = buf.len();
                 assert!(amt <= buf.capacity() - cur_len);

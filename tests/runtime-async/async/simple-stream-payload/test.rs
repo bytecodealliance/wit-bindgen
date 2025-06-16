@@ -28,7 +28,7 @@ impl crate::exports::my::test::i::Guest for Component {
         assert_eq!(result, StreamResult::Complete(1));
         assert_eq!(buf, [4]);
 
-        // close
+        // drop
         drop(x);
     }
 }

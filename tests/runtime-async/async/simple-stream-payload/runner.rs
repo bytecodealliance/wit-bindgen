@@ -22,9 +22,9 @@ fn main() {
             assert_eq!(result, StreamResult::Complete(2));
             assert_eq!(ret.remaining(), 0);
 
-            // write to a closed stream
+            // write to a dropped stream
             let (result, ret) = tx.write(vec![0]).await;
-            assert_eq!(result, StreamResult::Closed);
+            assert_eq!(result, StreamResult::Dropped);
             assert_eq!(ret.remaining(), 1);
         };
         let ((), ()) = futures::join!(test, read_stream(rx));
