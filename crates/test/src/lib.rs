@@ -6,6 +6,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::fs;
 use std::io::Write;
+use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
@@ -684,19 +685,6 @@ impl Runner<'_> {
 
         println!("Compiling {} components:", components.len());
 
-        //     if self.is_symmetric() {
-        //     for (_, comp) in tests.iter_mut() {
-        //         match comp.kind {
-        //             Kind::Runner => {
-        //                 comp.bindgen.args.push(String::from("--"));
-        //                 // TODO: proper language handling
-        //                 comp.bindgen.args.push(String::from("test-rust"));
-        //             }
-        //             Kind::Test => (),
-        //         }
-        //     }
-        // }
-
         // In parallel compile all sources to their binary component
         // form.
         let compile_results = components
@@ -896,7 +884,9 @@ impl Runner<'_> {
         // done for async tests at this time to ensure that there's a version of
         // composition that's done which is at the same version as wasmparser
         // and friends.
-        let composed = if case.config.wac.is_none() && test_components.len() == 1 {
+        let composed = if self.is_symmetric() {
+            Vec::new()
+        } else if case.config.wac.is_none() && test_components.len() == 1 {
             self.compose_wasm_with_wasm_compose(runner_wasm, test_components)?
         } else {
             self.compose_wasm_with_wac(case, runner, runner_wasm, test_components)?
@@ -911,11 +901,40 @@ impl Runner<'_> {
             filename.push_str("-");
             filename.push_str(test.path.file_name().unwrap().to_str().unwrap());
         }
-        filename.push_str(".wasm");
+        if !self.is_symmetric() {
+            filename.push_str(".wasm");
+        }
         let composed_wasm = dst.join(filename);
-        write_if_different(&composed_wasm, &composed)?;
+        if !self.is_symmetric() {
+            write_if_different(&composed_wasm, &composed)?;
 
-        self.run_command(self.test_runner.command().arg(&composed_wasm))?;
+            self.run_command(self.test_runner.command().arg(&composed_wasm))?;
+        } else {
+            if std::fs::exists(composed_wasm.clone())? {
+                std::fs::remove_dir_all(composed_wasm.clone())?;
+            }
+            std::fs::create_dir(composed_wasm.clone())?;
+
+            let mut new_file = composed_wasm.clone();
+            new_file.push(&(runner_wasm.file_name().unwrap()));
+            symlink(runner_wasm, new_file)?;
+            for (_c, p) in test_components.iter() {
+                let mut new_file = composed_wasm.clone();
+                new_file.push(&(p.file_name().unwrap()));
+                symlink(p, new_file)?;
+            }
+            let cwd = runner_wasm.parent().unwrap().parent().unwrap();
+            let dir = cwd.join("rust");
+            let wit_bindgen = dir.join("wit-bindgen");
+            let so_dir = wit_bindgen.join("target").join("debug").join("deps");
+            symlink(so_dir.join("libsymmetric_executor.so"), composed_wasm.join("libsymmetric_executor.so"))?;
+            symlink(so_dir.join("libsymmetric_stream.so"), composed_wasm.join("libsymmetric_stream.so"))?;
+
+            let mut cmd = Command::new(runner_wasm);
+            cmd.env("LD_LIBRARY_PATH", ".");
+            cmd.current_dir(composed_wasm);
+            self.run_command(&mut cmd)?;
+        }
         Ok(())
     }
 
