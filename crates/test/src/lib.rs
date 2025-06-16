@@ -116,6 +116,7 @@ impl Opts {
         Runner {
             opts: self,
             rust_state: None,
+            cpp_state: None,
             wit_bindgen,
             test_runner: runner::TestRunner::new(&self.runner)?,
         }
@@ -227,6 +228,7 @@ struct Verify<'a> {
 struct Runner<'a> {
     opts: &'a Opts,
     rust_state: Option<rust::State>,
+    cpp_state: Option<cpp::State>,
     wit_bindgen: &'a Path,
     test_runner: runner::TestRunner,
 }

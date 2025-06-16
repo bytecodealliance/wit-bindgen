@@ -10,6 +10,10 @@ use std::process::Command;
 
 pub struct Cpp17;
 
+pub struct State {
+    native_deps: Vec<PathBuf>,
+}
+
 /// C/C++-specific configuration of component files
 #[derive(Default, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -52,7 +56,7 @@ impl LanguageMethods for Cpp17 {
         false
     }
 
-    fn prepare(&self, runner: &mut crate::Runner<'_>, _: &str) -> anyhow::Result<()> {
+    fn prepare(&self, runner: &mut crate::Runner<'_>, test_name: &str) -> anyhow::Result<()> {
         let compiler = clangpp(runner);
         let cwd = std::env::current_dir()?;
         let dir = cwd.join(&runner.opts.artifacts).join("cpp");
@@ -69,6 +73,20 @@ impl LanguageMethods for Cpp17 {
                 );
             })?;
 
+        let mut native_deps = Vec::new();
+        if runner.is_symmetric() {
+            let cwd = std::env::current_dir()?;
+            let dir = cwd.join(&runner.opts.artifacts).join("rust");
+            let wit_bindgen = dir.join("wit-bindgen");
+            let mut target_out_dir = wit_bindgen.join("target");
+            target_out_dir.push("debug");
+
+            native_deps.push(target_out_dir);
+            let root_dir = runner.opts.artifacts.join(test_name);
+            native_deps.push(root_dir);
+        }
+
+        runner.cpp_state = Some(State { native_deps });
         Ok(())
     }
 
@@ -157,9 +175,11 @@ impl LanguageMethods for Cpp17 {
             .arg("-I")
             .arg(helper_dir.to_str().unwrap().to_string())
             .arg("-I")
-            .arg(helper_dir2.to_str().unwrap().to_string())
-            .arg("-fno-exceptions")
-            .arg("-Wall")
+            .arg(helper_dir2.to_str().unwrap().to_string());
+        if !runner.is_symmetric() {
+            cmd.arg("-fno-exceptions");
+        }
+        cmd.arg("-Wall")
             .arg("-Wextra")
             .arg("-Werror")
             .arg("-Wc++-compat")
@@ -180,7 +200,15 @@ impl LanguageMethods for Cpp17 {
             }
         }
         if runner.is_symmetric() {
-            cmd.arg("-fPIC").arg("-shared");
+            cmd.arg("-fPIC");
+            if !matches!(compile.component.kind, Kind::Runner) {
+                cmd.arg("-shared");
+            } else {
+                for i in runner.cpp_state.as_ref().unwrap().native_deps.iter() {
+                    cmd.arg(format!("-L{}", i.as_os_str().to_str().unwrap()));
+                }
+                cmd.arg("-ltest-cpp17");
+            }
         }
         runner.run_command(&mut cmd)?;
         Ok(())
