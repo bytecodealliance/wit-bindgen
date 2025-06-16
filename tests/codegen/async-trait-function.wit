@@ -1,0 +1,11 @@
+package wha:hoo;
+
+interface iii {
+  resource rrr {
+    fff: async func();
+  }
+}
+
+world core {
+  export iii;
+}
