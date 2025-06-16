@@ -20,9 +20,13 @@ struct LangConfig {
 }
 
 fn clangpp(runner: &Runner<'_>) -> PathBuf {
-    match &runner.opts.c.wasi_sdk_path {
-        Some(path) => path.join("bin/wasm32-wasip2-clang++"),
-        None => "wasm32-wasip2-clang++".into(),
+    if runner.is_symmetric() {
+        "clang++".into()
+    } else {
+        match &runner.opts.c.wasi_sdk_path {
+            Some(path) => path.join("bin/wasm32-wasip2-clang++"),
+            None => "wasm32-wasip2-clang++".into(),
+        }
     }
 }
 
@@ -141,13 +145,14 @@ impl LanguageMethods for Cpp17 {
         // Now compile the runner's source code to with the above object and the
         // component-type object into a final component.
         let mut cmd = Command::new(compiler);
-        cmd.arg(&compile.component.path)
-            .arg(&bindings_object)
-            .arg(compile.bindings_dir.join(format!(
+        cmd.arg(&compile.component.path).arg(&bindings_object);
+        if !runner.is_symmetric() {
+            cmd.arg(compile.bindings_dir.join(format!(
                 "{}_component_type.o",
                 compile.component.bindgen.world
-            )))
-            .arg("-I")
+            )));
+        }
+        cmd.arg("-I")
             .arg(&compile.bindings_dir)
             .arg("-I")
             .arg(helper_dir.to_str().unwrap().to_string())
@@ -169,8 +174,13 @@ impl LanguageMethods for Cpp17 {
         match compile.component.kind {
             Kind::Runner => {}
             Kind::Test => {
-                cmd.arg("-mexec-model=reactor");
+                if !runner.is_symmetric() {
+                    cmd.arg("-mexec-model=reactor");
+                }
             }
+        }
+        if runner.is_symmetric() {
+            cmd.arg("-fPIC").arg("-shared");
         }
         runner.run_command(&mut cmd)?;
         Ok(())

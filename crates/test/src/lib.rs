@@ -927,8 +927,14 @@ impl Runner<'_> {
             let dir = cwd.join("rust");
             let wit_bindgen = dir.join("wit-bindgen");
             let so_dir = wit_bindgen.join("target").join("debug").join("deps");
-            symlink(so_dir.join("libsymmetric_executor.so"), composed_wasm.join("libsymmetric_executor.so"))?;
-            symlink(so_dir.join("libsymmetric_stream.so"), composed_wasm.join("libsymmetric_stream.so"))?;
+            symlink(
+                so_dir.join("libsymmetric_executor.so"),
+                composed_wasm.join("libsymmetric_executor.so"),
+            )?;
+            symlink(
+                so_dir.join("libsymmetric_stream.so"),
+                composed_wasm.join("libsymmetric_stream.so"),
+            )?;
 
             let mut cmd = Command::new(runner_wasm);
             cmd.env("LD_LIBRARY_PATH", ".");

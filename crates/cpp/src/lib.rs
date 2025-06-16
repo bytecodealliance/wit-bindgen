@@ -494,6 +494,11 @@ impl WorldGenerator for Cpp {
         self.world_id = Some(world);
         //        self.sizes.fill(resolve);
         if !self.opts.host_side() {
+            let export_name = if self.opts.symmetric {
+                ""
+            } else {
+                ", __export_name__(\"cabi_realloc\")"
+            };
             uwriteln!(
                 self.c_src_head,
                 r#"#include "{}_cpp.h"
@@ -501,7 +506,7 @@ impl WorldGenerator for Cpp {
 
             extern "C" void *cabi_realloc(void *ptr, size_t old_size, size_t align, size_t new_size);
 
-            __attribute__((__weak__, __export_name__("cabi_realloc")))
+            __attribute__((__weak__{export_name}))
             void *cabi_realloc(void *ptr, size_t old_size, size_t align, size_t new_size) {{
                 (void) old_size;
                 if (new_size == 0) return (void*) align;
