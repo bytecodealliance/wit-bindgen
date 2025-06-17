@@ -9,6 +9,11 @@ use std::alloc::{self, Layout};
 pub mod async_support;
 mod module;
 
+// Re-export `bitflags` so that we can reference it from macros.
+#[cfg(feature = "bitflags")]
+#[doc(hidden)]
+pub use bitflags;
+
 pub struct EventSubscription2;
 pub struct EventGenerator2;
 

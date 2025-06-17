@@ -424,6 +424,7 @@ dependencies = [
 name = "wit-bindgen-symmetric-rt"
 version = "0.36.0"
 dependencies = [
+ "bitflags",
  "dummy-rt",
  "futures",
 ]

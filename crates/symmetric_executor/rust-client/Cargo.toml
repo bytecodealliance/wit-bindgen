@@ -6,6 +6,7 @@ version = "0.36.0"
 edition = "2021"
 
 [dependencies]
+bitflags = "2.9.1"
 futures = "0.3.31"
 #wit-bindgen = { path = "../../guest-rust" }
 
@@ -18,3 +19,4 @@ path = "../dummy-rt"
 never = []
 default = ["symmetric"]
 symmetric = []
+bitflags = []
