@@ -710,7 +710,7 @@ pub unsafe trait WasmResource {{
 impl<T: WasmResource> Resource<T> {{
     #[doc(hidden)]
     pub unsafe fn from_handle(handle: {handle_type}) -> Self {{
-        debug_assert!(handle != {invalid_value});
+        debug_assert!(handle != 0 && handle != {invalid_value});
         Self {{
             handle: {atomic_type}::new(handle),
             _marker: marker::PhantomData,

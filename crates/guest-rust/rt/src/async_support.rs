@@ -313,7 +313,7 @@ const DROPPED: u32 = 0x1;
 const CANCELLED: u32 = 0x2;
 
 /// Return code of stream/future operations.
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Copy, Clone)]
 enum ReturnCode {
     /// The operation is blocked and has not completed.
     Blocked,
