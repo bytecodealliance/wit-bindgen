@@ -1267,7 +1267,7 @@ unsafe fn call_import(_params: Self::ParamsLower, _results: *mut u8) -> u32 {{
             Identifier::StreamOrFuturePayload => unreachable!(),
         };
         let export_prefix = self.r#gen.opts.export_prefix.as_deref().unwrap_or("");
-        let mut library_name = String::new();
+        // let mut library_name = String::new();
         let (export_name, external_name) = if self.r#gen.opts.symmetric {
             let export_name = func.name.clone(); // item_name().to_owned();
             let mut external_name = make_external_symbol(
@@ -1278,9 +1278,9 @@ unsafe fn call_import(_params: Self::ParamsLower, _results: *mut u8) -> u32 {{
             if let Some(export_prefix) = self.r#gen.opts.export_prefix.as_ref() {
                 external_name.insert_str(0, export_prefix);
             }
-            if let Some(library) = &self.r#gen.opts.link_name {
-                library_name = format!("\n#[link(name = \"{}\")]", library);
-            }
+            // if let Some(library) = &self.r#gen.opts.link_name {
+            //     library_name = format!("\n#[link(name = \"{}\")]", library);
+            // }
             (export_name, external_name)
         } else {
             let export_name = func.legacy_core_export_name(wasm_module_export_name.as_deref());
@@ -1298,7 +1298,7 @@ unsafe fn call_import(_params: Self::ParamsLower, _results: *mut u8) -> u32 {{
             "\
                 #[cfg_attr(target_arch = \"wasm32\", export_name = \"{export_prefix}{export_name}\")]
                 #[cfg_attr(not(target_arch = \"wasm32\"), no_mangle)]
-                #[allow(non_snake_case)]{library_name}
+                #[allow(non_snake_case)]
                 unsafe extern \"C\" fn {external_name}\
         ",
         );

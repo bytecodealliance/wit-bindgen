@@ -436,21 +436,18 @@ impl Runner<'_> {
         };
         assert!(bindgen.args.is_empty());
         bindgen.args = config.args.into();
-        let mut has_link_name = false;
         if language == Language::Cpp17 {
             bindgen.args.retain(|elem| {
                 if elem == "--language=Cpp" {
                     language = Language::Cpp;
                     false
                 } else {
-                    if elem.starts_with("--link_name") {
-                        has_link_name = true;
-                    }
                     true
                 }
             });
         }
 
+        let has_link_name = bindgen.args.iter().any(|elem| elem.starts_with("--link-name"));
         if self.is_symmetric() && matches!(kind, Kind::Runner) && !has_link_name {
             match &language {
                 Language::Rust => {

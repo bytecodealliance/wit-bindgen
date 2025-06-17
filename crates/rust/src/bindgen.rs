@@ -445,7 +445,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             &{tmp}
                         }}",
                         cast = if self.r#gen.r#gen.opts.symmetric {
-                            ""
+                            " as usize"
                         } else {
                             " as u32"
                         }
