@@ -225,18 +225,23 @@ impl<'i> InterfaceGenerator<'i> {
             let rep_name = format!("[resource-rep]{resource_name}");
             let external_rep =
                 make_external_symbol(&wasm_import_module, &rep_name, AbiVariant::GuestImport);
+            let handle_type = if self.gen.opts.symmetric {
+                abi::WasmType::Pointer
+            } else {
+                abi::WasmType::I32
+            };
             let import_new = crate::declare_import(
                 &wasm_import_module,
                 &new_name,
                 &external_new,
                 &[abi::WasmType::Pointer],
-                &[abi::WasmType::I32],
+                &[handle_type],
             );
             let import_rep = crate::declare_import(
                 &wasm_import_module,
                 &rep_name,
                 &external_rep,
-                &[abi::WasmType::I32],
+                &[handle_type],
                 &[abi::WasmType::Pointer],
             );
             let handle_type = if self.gen.opts.symmetric {
@@ -245,13 +250,34 @@ impl<'i> InterfaceGenerator<'i> {
                 "u32"
             };
             let casting = if self.gen.opts.symmetric {
-                ""
+                " as *mut u8"
             } else {
                 " as i32"
             };
-            uwriteln!(
-                self.src,
-                r#"
+            if self.gen.opts.symmetric {
+                uwriteln!(
+                    self.src,
+                    r#"
+#[doc(hidden)]
+unsafe fn _resource_new(val: *mut u8) -> {handle_type}
+    where Self: Sized
+{{
+    val as {handle_type}
+}}
+
+#[doc(hidden)]
+fn _resource_rep(handle: {handle_type}) -> *mut u8
+    where Self: Sized
+{{
+    handle as *mut u8
+}}
+
+                    "#
+                );
+            } else {
+                uwriteln!(
+                    self.src,
+                    r#"
 #[doc(hidden)]
 unsafe fn _resource_new(val: *mut u8) -> {handle_type}
     where Self: Sized
@@ -269,7 +295,8 @@ fn _resource_rep(handle: {handle_type}) -> *mut u8
 }}
 
                     "#
-            );
+                );
+            }
             for method in methods {
                 self.src.push_str(method);
             }
@@ -343,12 +370,13 @@ macro_rules! {macro_name} {{
                     &(String::from("[resource-drop]") + &name),
                     AbiVariant::GuestImport,
                 );
+                let resource_lowercase = name.to_lower_camel_case();
                 uwriteln!(
                     self.src,
                     r#"    #[cfg_attr(not(target_arch = "wasm32"), no_mangle)]
     #[allow(non_snake_case)]
     unsafe extern "C" fn {dtor_symbol}(arg0: usize) {{
-      $($path_to_types)*::_export_drop_{name}_cabi::<<$ty as $($path_to_types)*::Guest>::{camel}>(arg0)
+      $($path_to_types)*::_export_drop_{resource_lowercase}_cabi::<<$ty as $($path_to_types)*::Guest>::{camel}>(arg0)
     }}
 "#
                 );
@@ -782,6 +810,7 @@ pub mod vtable{ordinal} {{
             && symmetric::has_non_canonical_list_rust(self.resolve, &func.params)
         {
             self.needs_deallocate = true;
+            let _ = self.path_to_std_alloc_module();
             uwriteln!(
                 self.src,
                 "let mut _deallocate: Vec<(*mut u8, _rt::alloc::Layout)> = Vec::new();"
@@ -2864,7 +2893,11 @@ impl<'a> {camel}Borrow<'a>{{
             &wasm_import_module,
             &drop_name,
             &export_name,
-            &[abi::WasmType::I32],
+            &[if self.gen.opts.symmetric {
+                abi::WasmType::Pointer
+            } else {
+                abi::WasmType::I32
+            }],
             &[],
         );
         uwriteln!(
@@ -2884,7 +2917,7 @@ impl<'a> {camel}Borrow<'a>{{
                 "u32"
             },
             casting = if self.gen.opts.symmetric {
-                ""
+                " as *mut u8"
             } else {
                 " as i32"
             },
