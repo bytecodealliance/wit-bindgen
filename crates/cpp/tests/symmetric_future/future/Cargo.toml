@@ -6,12 +6,8 @@ edition = "2021"
 [dependencies]
 futures = "0.3.31"
 source = { path = "../source" }
-wit-bindgen-symmetric-rt = { path = "../../../../symmetric_executor/rust-client" }
 symmetric_stream = { path = "../../../../symmetric_executor/symmetric_stream" }
-
-[dependencies.wit-bindgen]
-package = "dummy-rt"
-path = "../../../../symmetric_executor/dummy-rt"
+wit-bindgen = { path = "../../../../symmetric_executor/dummy-bindgen", package = "mini-bindgen" }
 
 [lib]
 crate-type = ["cdylib"]
