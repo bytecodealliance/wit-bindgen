@@ -447,7 +447,10 @@ impl Runner<'_> {
             });
         }
 
-        let has_link_name = bindgen.args.iter().any(|elem| elem.starts_with("--link-name"));
+        let has_link_name = bindgen
+            .args
+            .iter()
+            .any(|elem| elem.starts_with("--link-name"));
         if self.is_symmetric() && matches!(kind, Kind::Runner) && !has_link_name {
             match &language {
                 Language::Rust => {

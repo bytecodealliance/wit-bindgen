@@ -129,10 +129,15 @@ impl LanguageMethods for Cpp17 {
         helper_dir.push("cpp");
         helper_dir.push("helper-types");
         // for expected
-        let mut helper_dir2 = cwd;
+        let mut helper_dir2 = cwd.clone();
         helper_dir2.push("crates");
         helper_dir2.push("cpp");
         helper_dir2.push("test_headers");
+        // for async_support.h
+        let mut helper_dir3 = cwd.clone();
+        helper_dir3.push("crates");
+        helper_dir3.push("symmetric_executor");
+        helper_dir3.push("cpp-client");
 
         // Compile the C-based bindings to an object file.
         let bindings_object = compile.output.with_extension("bindings.o");
@@ -147,17 +152,20 @@ impl LanguageMethods for Cpp17 {
         .arg("-I")
         .arg(helper_dir.to_str().unwrap().to_string())
         .arg("-I")
-        .arg(helper_dir2.to_str().unwrap().to_string())
-        .arg("-fno-exceptions")
-        .arg("-Wall")
-        .arg("-Wextra")
-        .arg("-Werror")
-        .arg("-Wno-unused-parameter")
-        .arg("-std=c++17")
-        .arg("-c")
-        .arg("-g")
-        .arg("-o")
-        .arg(&bindings_object);
+        .arg(helper_dir2.to_str().unwrap().to_string());
+        if runner.is_symmetric() {
+            cmd.arg("-I").arg(helper_dir3.to_str().unwrap().to_string());
+        }
+        cmd.arg("-fno-exceptions")
+            .arg("-Wall")
+            .arg("-Wextra")
+            .arg("-Werror")
+            .arg("-Wno-unused-parameter")
+            .arg("-std=c++17")
+            .arg("-c")
+            .arg("-g")
+            .arg("-o")
+            .arg(&bindings_object);
         runner.run_command(&mut cmd)?;
 
         // Now compile the runner's source code to with the above object and the
@@ -178,6 +186,8 @@ impl LanguageMethods for Cpp17 {
             .arg(helper_dir2.to_str().unwrap().to_string());
         if !runner.is_symmetric() {
             cmd.arg("-fno-exceptions");
+        } else {
+            cmd.arg("-I").arg(helper_dir3.to_str().unwrap().to_string());
         }
         cmd.arg("-Wall")
             .arg("-Wextra")
