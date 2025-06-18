@@ -17,6 +17,7 @@ pub mod test {
       pub fn create() -> wit_bindgen::rt::async_support::FutureReader<u32>{
         unsafe {
 
+          #[link(name = "source")]
           #[link(wasm_import_module = "test:test/future-source")]
           unsafe extern "C" {
             #[allow(non_snake_case)]
