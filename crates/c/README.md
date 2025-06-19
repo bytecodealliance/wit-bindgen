@@ -233,7 +233,7 @@ typedef struct my_world_list_u8_t {
 } my_world_list_u8_t;
 ``` 
 
-Helper functions are generated for freeing lists:
+A helper function is generated for freeing lists:
 
 ```c
 // Frees the memory associated with the list
@@ -256,6 +256,12 @@ typedef struct my_world_cat_toy_t {
 #define MY_WORLD_CAT_TOY_BALL 0
 #define MY_WORLD_CAT_TOY_TEDDY 1
 #define MY_WORLD_CAT_TOY_WAND 2
+```
+
+A helper function is generated for freeing variants:
+
+```c
+void my_world_cat_toy_free(my_world_cat_toy_t *ptr);
 ```
 
 #### Results
@@ -293,6 +299,11 @@ extern void my_example_string_getter_get_string_by_index(uint32_t index, my_exam
 extern bool my_example_string_getter_get_string_by_index(uint32_t index, string_getter_user_string_t *ret, my_example_string_getter_error_t *err);
 ```
 
+A helper function is generated to free variants:
+
+```c
+void my_world_result_string_u32_free(my_world_result_string_u32_t *ptr);
+```
 
 #### Options
 
@@ -323,6 +334,12 @@ extern void my_example_string_getter_get_string_by_index(uint32_t index, string_
 
 // Flag not passed, the return value is flattened
 extern bool my_example_string_getter_get_string_by_index(uint32_t index, string_getter_user_string_t *ret);
+```
+
+A helper function is generated to free options:
+
+```c
+void my_world_option_string_free(my_world_option_string_t *ptr);
 ```
 
 #### Enums and Flags
