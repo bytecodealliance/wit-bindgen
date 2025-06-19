@@ -178,7 +178,7 @@ static symmetric::runtime::symmetric_executor::CallbackState write_to_future(voi
     // is future ready?
     if (ptr->fut.wait_for(std::chrono::seconds::zero()) == std::future_status::ready) {
         auto buffer = ptr->wr.handle.StartWriting();
-        assert(buffer.GetSize()==1); //sizeof(T));
+        assert(buffer.Capacity()==1);
         uint8_t* dataptr = (uint8_t*)(buffer.GetAddress().into_handle());
         auto result = ptr->fut.get();
         LOWER::lower(std::move(result), dataptr);
