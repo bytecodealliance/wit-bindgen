@@ -636,8 +636,6 @@ macro_rules! {macro_name} {{
                 Alignment::default(),
             )
         };
-        let size = size.size_wasm32();
-        let align = align.align_wasm32();
         let lift;
         let lower;
         let dealloc_lists;
@@ -775,6 +773,8 @@ pub mod vtable{ordinal} {{
     }}
 }}
                         "#,
+                        size = size.format_term(POINTER_SIZE_EXPRESSION, true),
+                        align = align.format(POINTER_SIZE_EXPRESSION),
         ));
 
         let map = match payload_for {
