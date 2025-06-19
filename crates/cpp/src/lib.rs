@@ -2709,6 +2709,8 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             String::new()
         };
         let mut bindgen = FunctionBindgen::new(self.gen, Vec::new());
+        // GuestImport doesn't leak the objects (string)
+        bindgen.variant = AbiVariant::GuestExport;
         let lower = if let Some(ty) = payload {
             wit_bindgen_core::abi::lower_to_memory(
                 bindgen.r#gen.resolve,

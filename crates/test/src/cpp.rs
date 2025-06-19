@@ -258,4 +258,8 @@ impl LanguageMethods for Cpp17 {
         .arg(verify.artifacts_dir.join("tmp.o"));
         runner.run_command(&mut cmd)
     }
+
+    fn default_bindgen_args(&self) -> &[&str] {
+        &["--format"]
+    }
 }
