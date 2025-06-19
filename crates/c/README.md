@@ -14,8 +14,8 @@ See the output of `wit-bindgen c help` for available options.
 
 This command will generate either two or three files, depending on command line options:
 
-- `<world>.h`: Header file that declares the available bindings.
-- `<world>.c`: Implementation file that defines the bindings.
+- `<world>.h`: Header file that declares the available bindings. 
+- `<world>.c`: Source file that implements bindings for imports, helper functions, and wrappers around exported functions.
 - `<world>_component_type.o`: An object file that contains type information for the world that bindings were generated for. This file is not generated if the `--no-object-file` command line flag is passed.
 
 `<world>` in each of these is the name of the WIT world, converted to snake case (e.g. `i-am-a-component` generates `i_am_a_component.h`)
