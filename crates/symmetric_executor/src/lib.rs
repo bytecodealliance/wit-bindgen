@@ -1,5 +1,4 @@
 use std::{
-    ffi::c_int,
     mem::transmute,
     sync::{
         atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering},
@@ -25,6 +24,158 @@ struct Ignore;
 struct OpaqueData;
 impl symmetric_executor::GuestCallbackFunction for Ignore {}
 impl symmetric_executor::GuestCallbackData for OpaqueData {}
+
+// Hide the specifics of eventfd
+mod event_fd {
+    pub type EventFd = core::ffi::c_int;
+
+    pub fn activate(fd: EventFd) {
+        let file_signal: u64 = 1;
+        if super::DEBUGGING {
+            println!("activate(fd {fd})");
+        }
+
+        let result = unsafe {
+            libc::write(
+                fd,
+                core::ptr::from_ref(&file_signal).cast(),
+                core::mem::size_of_val(&file_signal),
+            )
+        };
+        if result >= 0 {
+            assert_eq!(
+                result,
+                core::mem::size_of_val(&file_signal).try_into().unwrap()
+            );
+        }
+    }
+    pub fn consume(fd: EventFd) {
+        let mut dummy: u64 = 0;
+
+        let readresult = unsafe {
+            libc::read(
+                fd,
+                core::ptr::from_mut(&mut dummy).cast(),
+                core::mem::size_of_val(&dummy),
+            )
+        };
+        assert!(
+            readresult <= 0
+                || readresult == isize::try_from(core::mem::size_of_val(&dummy)).unwrap()
+        );
+    }
+}
+
+use event_fd::EventFd;
+
+struct WaitSet {
+    wait: libc::timeval,
+    // non null if timeval is finite (timeout)
+    tvptr: *mut libc::timeval,
+    maxfd: EventFd,
+    rfds: core::mem::MaybeUninit<libc::fd_set>,
+}
+
+struct WaitSetIterator<'a> {
+    ws: &'a WaitSet,
+    fd: EventFd,
+}
+
+impl<'a> Iterator for WaitSetIterator<'a> {
+    type Item = EventFd;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let rfd_ptr = self.ws.rfds.as_ptr();
+        while self.fd < self.ws.maxfd {
+            let fd = self.fd;
+            self.fd += 1;
+            if unsafe { libc::FD_ISSET(fd, rfd_ptr) } {
+                return Some(fd);
+            }
+        }
+        None
+    }
+}
+
+impl WaitSet {
+    fn new(change_event: Option<EventFd>) -> Self {
+        let wait = libc::timeval {
+            tv_sec: i64::MAX,
+            tv_usec: 999999,
+        };
+        let tvptr = core::ptr::null_mut();
+        let maxfd = change_event.map_or(0, |fd| fd + 1);
+        //let now = SystemTime::now();
+        let mut rfds = core::mem::MaybeUninit::<libc::fd_set>::uninit();
+        let rfd_ptr = rfds.as_mut_ptr();
+        unsafe { libc::FD_ZERO(rfd_ptr) };
+        if let Some(fd) = change_event {
+            unsafe {
+                libc::FD_SET(fd, rfd_ptr);
+            }
+        }
+        Self {
+            wait,
+            tvptr,
+            maxfd,
+            rfds,
+        }
+    }
+
+    fn register(&mut self, fd: EventFd) {
+        let rfd_ptr = self.rfds.as_mut_ptr();
+        unsafe { libc::FD_SET(fd, rfd_ptr) };
+        if fd >= self.maxfd {
+            self.maxfd = fd + 1;
+        }
+    }
+
+    fn timeout(&mut self, diff: Duration) {
+        let secs = diff.as_secs() as i64;
+        let usecs = diff.subsec_micros() as i64;
+        if secs < self.wait.tv_sec || (secs == self.wait.tv_sec && usecs < self.wait.tv_usec) {
+            self.wait.tv_sec = secs;
+            self.wait.tv_usec = usecs;
+        }
+        self.tvptr = core::ptr::from_mut(&mut self.wait);
+    }
+
+    fn debug(&self) {
+        let rfd_ptr = self.rfds.as_ptr();
+        if self.tvptr.is_null() {
+            println!("select({}, {:x}, null)", self.maxfd, unsafe {
+                *rfd_ptr.cast::<u32>()
+            },);
+        } else {
+            println!(
+                "select({}, {:x}, {}.{})",
+                self.maxfd,
+                unsafe { *rfd_ptr.cast::<u32>() },
+                self.wait.tv_sec,
+                self.wait.tv_usec
+            );
+        }
+    }
+
+    // see select for the return value
+    fn wait(&mut self) -> i32 {
+        let rfd_ptr = self.rfds.as_mut_ptr();
+        unsafe {
+            libc::select(
+                self.maxfd,
+                rfd_ptr,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                self.tvptr,
+            )
+        }
+    }
+
+    fn iter_active(&self) -> WaitSetIterator<'_> {
+        WaitSetIterator { ws: self, fd: 0 }
+    }
+}
+
 #[allow(dead_code)]
 struct CallbackRegistrationInternal(usize);
 
@@ -87,24 +238,8 @@ impl symmetric_executor::GuestEventGenerator for EventGenerator {
                     event.counter
                 );
             }
-            let file_signal: u64 = 1;
             event.waiting.iter().for_each(|fd| {
-                if DEBUGGING {
-                    println!("activate(fd {fd})");
-                }
-                let result = unsafe {
-                    libc::write(
-                        *fd,
-                        core::ptr::from_ref(&file_signal).cast(),
-                        core::mem::size_of_val(&file_signal),
-                    )
-                };
-                if result >= 0 {
-                    assert_eq!(
-                        result,
-                        core::mem::size_of_val(&file_signal).try_into().unwrap()
-                    );
-                }
+                event_fd::activate(*fd);
             });
         } else if DEBUGGING {
             println!("activate failure");
@@ -133,6 +268,53 @@ impl Executor {
             fd
         })
     }
+
+    /// run the executor until it would block, returns number of handled events
+    fn tick(ex: &mut std::sync::MutexGuard<'_, Self>, ws: &mut WaitSet) -> (usize, usize) {
+        let mut count_events = 0;
+        let mut count_waiting = 0;
+        let now = SystemTime::now();
+        let old_busy = EXECUTOR_BUSY.swap(true, Ordering::Acquire);
+        assert!(!old_busy);
+        ex.active_tasks.iter_mut().for_each(|task| {
+            if task.inner.ready() {
+                if DEBUGGING {
+                    println!(
+                        "task ready {:x} {:x}",
+                        task.callback.as_ref().unwrap().0 as usize,
+                        task.callback.as_ref().unwrap().1 as usize
+                    );
+                }
+                count_events += 1;
+                task.callback
+                    .take_if(|CallbackEntry(f, data)| matches!((f)(*data), CallbackState::Ready));
+            } else {
+                count_waiting += 1;
+                match &task.inner {
+                    EventType::Triggered {
+                        last_counter: _,
+                        event: _,
+                    } => {
+                        ws.register(task.event_fd);
+                    }
+                    EventType::SystemTime(system_time) => {
+                        if *system_time > now {
+                            let diff = system_time.duration_since(now).unwrap_or_default();
+                            ws.timeout(diff);
+                        } else {
+                            task.callback.take_if(|CallbackEntry(f, data)| {
+                                matches!((f)(*data), CallbackState::Ready)
+                            });
+                        }
+                    }
+                }
+            }
+        });
+        let old_busy = EXECUTOR_BUSY.swap(false, Ordering::Release);
+        assert!(old_busy);
+        ex.active_tasks.retain(|task| task.callback.is_some());
+        (count_events, count_waiting)
+    }
 }
 
 static EXECUTOR: Mutex<Executor> = Mutex::new(Executor {
@@ -153,70 +335,23 @@ impl symmetric_executor::Guest for Guest {
     fn run() {
         let change_event = EXECUTOR.lock().unwrap().change_event();
         loop {
-            let mut wait = libc::timeval {
-                tv_sec: i64::MAX,
-                tv_usec: 999999,
-            };
-            let mut tvptr = core::ptr::null_mut();
-            let mut maxfd = change_event + 1;
-            let now = SystemTime::now();
-            let mut rfds = core::mem::MaybeUninit::<libc::fd_set>::uninit();
-            let rfd_ptr = rfds.as_mut_ptr();
-            unsafe { libc::FD_ZERO(rfd_ptr) };
-            unsafe {
-                libc::FD_SET(change_event, rfd_ptr);
-            }
-            {
+            let mut ws = WaitSet::new(Some(change_event));
+            // let mut wait = libc::timeval {
+            //     tv_sec: i64::MAX,
+            //     tv_usec: 999999,
+            // };
+            // let mut tvptr = core::ptr::null_mut();
+            // let mut maxfd = change_event + 1;
+            // let now = SystemTime::now();
+            // let mut rfds = core::mem::MaybeUninit::<libc::fd_set>::uninit();
+            // let rfd_ptr = rfds.as_mut_ptr();
+            // unsafe { libc::FD_ZERO(rfd_ptr) };
+            // unsafe {
+            //     libc::FD_SET(change_event, rfd_ptr);
+            // }
+            let count_waiting = {
                 let mut ex = EXECUTOR.lock().unwrap();
-                let old_busy = EXECUTOR_BUSY.swap(true, Ordering::Acquire);
-                assert!(!old_busy);
-                ex.active_tasks.iter_mut().for_each(|task| {
-                    if task.inner.ready() {
-                        if DEBUGGING {
-                            println!(
-                                "task ready {:x} {:x}",
-                                task.callback.as_ref().unwrap().0 as usize,
-                                task.callback.as_ref().unwrap().1 as usize
-                            );
-                        }
-                        task.callback.take_if(|CallbackEntry(f, data)| {
-                            matches!((f)(*data), CallbackState::Ready)
-                        });
-                    } else {
-                        match &task.inner {
-                            EventType::Triggered {
-                                last_counter: _,
-                                event: _,
-                            } => {
-                                unsafe { libc::FD_SET(task.event_fd, rfd_ptr) };
-                                if task.event_fd >= maxfd {
-                                    maxfd = task.event_fd + 1;
-                                }
-                            }
-                            EventType::SystemTime(system_time) => {
-                                if *system_time > now {
-                                    let diff = system_time.duration_since(now).unwrap_or_default();
-                                    let secs = diff.as_secs() as i64;
-                                    let usecs = diff.subsec_micros() as i64;
-                                    if secs < wait.tv_sec
-                                        || (secs == wait.tv_sec && usecs < wait.tv_usec)
-                                    {
-                                        wait.tv_sec = secs;
-                                        wait.tv_usec = usecs;
-                                    }
-                                    tvptr = core::ptr::from_mut(&mut wait);
-                                } else {
-                                    task.callback.take_if(|CallbackEntry(f, data)| {
-                                        matches!((f)(*data), CallbackState::Ready)
-                                    });
-                                }
-                            }
-                        }
-                    }
-                });
-                let old_busy = EXECUTOR_BUSY.swap(false, Ordering::Release);
-                assert!(old_busy);
-                ex.active_tasks.retain(|task| task.callback.is_some());
+                let (_, count_waiting) = Executor::tick(&mut ex, &mut ws);
                 {
                     let mut new_tasks = NEW_TASKS.lock().unwrap();
                     if !new_tasks.is_empty() {
@@ -228,10 +363,12 @@ impl symmetric_executor::Guest for Guest {
                 if ex.active_tasks.is_empty() {
                     break;
                 }
-            }
-            if tvptr.is_null()
-                && maxfd == change_event + 1
-                && !(0..change_event).any(|f| unsafe { libc::FD_ISSET(f, rfd_ptr) })
+                count_waiting
+            };
+            if count_waiting == 0
+            // tvptr.is_null()
+            //     && maxfd == change_event + 1
+            //     && !(0..change_event).any(|f| unsafe { libc::FD_ISSET(f, rfd_ptr) })
             {
                 // probably only active tasks, all returned pending, try again
                 if DEBUGGING {
@@ -245,47 +382,14 @@ impl symmetric_executor::Guest for Guest {
             // with no work left the break should have occured
             // assert!(!tvptr.is_null() || maxfd > 0);
             if DEBUGGING {
-                if tvptr.is_null() {
-                    println!("select({maxfd}, {:x}, null)", unsafe {
-                        *rfd_ptr.cast::<u32>()
-                    },);
-                } else {
-                    println!(
-                        "select({maxfd}, {:x}, {}.{})",
-                        unsafe { *rfd_ptr.cast::<u32>() },
-                        wait.tv_sec,
-                        wait.tv_usec
-                    );
-                }
+                ws.debug();
             }
-            let selectresult = unsafe {
-                libc::select(
-                    maxfd,
-                    rfd_ptr,
-                    std::ptr::null_mut(),
-                    std::ptr::null_mut(),
-                    tvptr,
-                )
-            };
+            let selectresult = ws.wait();
             // we could look directly for the timeout
             if selectresult > 0 {
-                let mut dummy: u64 = 0;
                 // reset active file descriptors
-                for i in 0..maxfd {
-                    if unsafe { libc::FD_ISSET(i, rfd_ptr) } {
-                        let readresult = unsafe {
-                            libc::read(
-                                i,
-                                core::ptr::from_mut(&mut dummy).cast(),
-                                core::mem::size_of_val(&dummy),
-                            )
-                        };
-                        assert!(
-                            readresult <= 0
-                                || readresult
-                                    == isize::try_from(core::mem::size_of_val(&dummy)).unwrap()
-                        );
-                    }
+                for i in ws.iter_active() {
+                    event_fd::consume(i);
                 }
             }
         }
@@ -319,21 +423,22 @@ impl symmetric_executor::Guest for Guest {
         match EXECUTOR.try_lock() {
             Ok(mut lock) => {
                 lock.active_tasks.push(subscr);
-                let file_signal: u64 = 1;
-                let fd = lock.change_event();
-                let result = unsafe {
-                    libc::write(
-                        fd,
-                        core::ptr::from_ref(&file_signal).cast(),
-                        core::mem::size_of_val(&file_signal),
-                    )
-                };
-                if result >= 0 {
-                    assert_eq!(
-                        result,
-                        core::mem::size_of_val(&file_signal).try_into().unwrap()
-                    );
-                }
+                // let file_signal: u64 = 1;
+                // let fd = ;
+                event_fd::activate(lock.change_event());
+                // let result = unsafe {
+                //     libc::write(
+                //         fd,
+                //         core::ptr::from_ref(&file_signal).cast(),
+                //         core::mem::size_of_val(&file_signal),
+                //     )
+                // };
+                // if result >= 0 {
+                //     assert_eq!(
+                //         result,
+                //         core::mem::size_of_val(&file_signal).try_into().unwrap()
+                //     );
+                // }
             }
             Err(_err) => {
                 if EXECUTOR_BUSY.load(Ordering::Acquire) {
@@ -348,7 +453,6 @@ impl symmetric_executor::Guest for Guest {
     }
 }
 
-type EventFd = c_int;
 type Count = u32;
 
 struct EventInner {
@@ -374,7 +478,7 @@ struct QueuedEvent {
     callback: Option<CallbackEntry>,
 }
 
-static ID_SOURCE: AtomicUsize = AtomicUsize::new(0);
+static ID_SOURCE: AtomicUsize = AtomicUsize::new(1);
 
 impl QueuedEvent {
     fn new(trigger: EventSubscriptionInternal, callback: CallbackEntry) -> Self {
