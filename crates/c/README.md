@@ -293,10 +293,14 @@ Depending on the command line options passed, this will generate one of these tw
 
 ```c
 // --no-sig-flattening passed, the usual single out parameter is used
-extern void my_example_string_getter_get_string_by_index(uint32_t index, my_example_string_getter_result_string_error_t *ret);
+extern void
+my_example_string_getter_get_string_by_index(
+    uint32_t index, my_example_string_getter_result_string_error_t *ret);
 
 // Flag not passed, the return value is flattened
-extern bool my_example_string_getter_get_string_by_index(uint32_t index, string_getter_user_string_t *ret, my_example_string_getter_error_t *err);
+extern bool
+my_example_string_getter_get_string_by_index(
+    uint32_t index, string_getter_user_string_t *ret, my_example_string_getter_error_t *err);
 ```
 
 A helper function is generated to free variants:
@@ -439,18 +443,28 @@ typedef struct cat_example_registry_api_borrow_cat_t {
 } cat_example_registry_api_borrow_cat_t;
 
 // Functions to call the methods of the cat resource
-extern void cat_example_registry_api_method_cat_get_name(cat_example_registry_api_borrow_cat_t self, adoption_authority_string_t *ret);
-extern void cat_example_registry_api_method_cat_get_nicknames(cat_example_registry_api_borrow_cat_t self, adoption_authority_list_string_t *ret);
+extern void
+cat_example_registry_api_method_cat_get_name(
+    cat_example_registry_api_borrow_cat_t self, adoption_authority_string_t *ret);
+extern void
+cat_example_registry_api_method_cat_get_nicknames(
+    cat_example_registry_api_borrow_cat_t self, adoption_authority_list_string_t *ret);
 
 // Drop an owning handle to a cat
-extern void cat_example_registry_api_cat_drop_own(cat_example_registry_api_own_cat_t handle);
+extern void
+cat_example_registry_api_cat_drop_own(
+    cat_example_registry_api_own_cat_t handle);
 
 // Drop a borrowing handle to a cat
 // Only generated if autodropping borrows is turned off (described below)
-extern void cat_example_registry_api_cat_drop_borrow(cat_example_registry_api_borrow_cat_t handle);
+extern void
+cat_example_registry_api_cat_drop_borrow(
+    cat_example_registry_api_borrow_cat_t handle);
 
 // Retrieve a borrowing handle to a cat from an owning handle
-extern cat_example_registry_api_borrow_cat_t cat_example_registry_api_borrow_cat(cat_example_registry_api_own_cat_t handle);
+extern cat_example_registry_api_borrow_cat_t
+cat_example_registry_api_borrow_cat(
+    cat_example_registry_api_own_cat_t handle);
 
 ```
 
@@ -535,25 +549,37 @@ typedef struct exports_cat_example_registry_api_own_cat_t {
 } exports_cat_example_registry_api_own_cat_t;
 
 // The internal representation of the resource - must be implemented by the exporting component
-typedef struct exports_cat_example_registry_api_cat_t exports_cat_example_registry_api_cat_t;
+typedef struct exports_cat_example_registry_api_cat_t
+    exports_cat_example_registry_api_cat_t;
 
 // Borrows are represented as a pointer to the internal representation rather than an opaque handle
-typedef exports_cat_example_registry_api_cat_t* exports_cat_example_registry_api_borrow_cat_t;
+typedef exports_cat_example_registry_api_cat_t*
+    exports_cat_example_registry_api_borrow_cat_t;
 
 // Declarations for the resource methods that the exporting component must implement
-void exports_cat_example_registry_api_method_cat_get_name(exports_cat_example_registry_api_borrow_cat_t self, registry_string_t *ret);
-void exports_cat_example_registry_api_method_cat_get_nicknames(exports_cat_example_registry_api_borrow_cat_t self, registry_list_string_t *ret);
+void exports_cat_example_registry_api_method_cat_get_name(
+    exports_cat_example_registry_api_borrow_cat_t self, registry_string_t *ret);
+void exports_cat_example_registry_api_method_cat_get_nicknames(
+    exports_cat_example_registry_api_borrow_cat_t self, registry_list_string_t *ret);
 
 // Drop an owning handle to a cat
-extern void exports_cat_example_registry_api_cat_drop_own(exports_cat_example_registry_api_own_cat_t handle);
+extern void
+exports_cat_example_registry_api_cat_drop_own(
+    exports_cat_example_registry_api_own_cat_t handle);
 
 // Create an owning opaque handle to a cat from an internal representation
-extern exports_cat_example_registry_api_own_cat_t exports_cat_example_registry_api_cat_new(exports_cat_example_registry_api_cat_t *rep);
+extern exports_cat_example_registry_api_own_cat_t
+exports_cat_example_registry_api_cat_new(
+    exports_cat_example_registry_api_cat_t *rep);
+
 // Get the internal representation of a cat from an owning opaque handle
-extern exports_cat_example_registry_api_cat_t* exports_cat_example_registry_api_cat_rep(exports_cat_example_registry_api_own_cat_t handle);
+extern exports_cat_example_registry_api_cat_t*
+exports_cat_example_registry_api_cat_rep(
+    exports_cat_example_registry_api_own_cat_t handle);
 
 // Destroy a cat resource - must be implemented by the exporting component
-void exports_cat_example_registry_api_cat_destructor(exports_cat_example_registry_api_cat_t *rep);
+void exports_cat_example_registry_api_cat_destructor(
+    exports_cat_example_registry_api_cat_t *rep);
 ```
 
 Here are possible implementations for the functions and type that must be implemented by the component:
@@ -593,7 +619,7 @@ void exports_cat_example_registry_api_method_cat_get_nicknames(
 }
 ```
 
-A component may _borrow_ or _own_ an exported resource. This is communicated in WIT by whether the resource type is wrapped in `borrow<...>` or not. The exporting component is responsible for dropping any owning references to resources that it creates through calls to `*_new` using the generated `*_drop_own` function. Components never need to drop borrowing handles to resources that they export.
+A component may _borrow_ or _own_ an exported resource. This is communicated in WIT by whether the resource type is wrapped in `borrow<...>` or not. The exporting component is responsible for dropping any owning references to resources that it creates through calls to `*_new` using the generated `*_drop_own` function. Components must not drop borrowing handles to resources that they export.
 
 The implementations of the destructor and the `cat` methods would be the same as the above example. Here are possible implementations of the other functions:
 
