@@ -105,7 +105,6 @@ impl WaitSet {
         };
         let tvptr = core::ptr::null_mut();
         let maxfd = change_event.map_or(0, |fd| fd + 1);
-        //let now = SystemTime::now();
         let mut rfds = core::mem::MaybeUninit::<libc::fd_set>::uninit();
         let rfd_ptr = rfds.as_mut_ptr();
         unsafe { libc::FD_ZERO(rfd_ptr) };
@@ -336,22 +335,9 @@ impl symmetric_executor::Guest for Guest {
         let change_event = EXECUTOR.lock().unwrap().change_event();
         loop {
             let mut ws = WaitSet::new(Some(change_event));
-            // let mut wait = libc::timeval {
-            //     tv_sec: i64::MAX,
-            //     tv_usec: 999999,
-            // };
-            // let mut tvptr = core::ptr::null_mut();
-            // let mut maxfd = change_event + 1;
-            // let now = SystemTime::now();
-            // let mut rfds = core::mem::MaybeUninit::<libc::fd_set>::uninit();
-            // let rfd_ptr = rfds.as_mut_ptr();
-            // unsafe { libc::FD_ZERO(rfd_ptr) };
-            // unsafe {
-            //     libc::FD_SET(change_event, rfd_ptr);
-            // }
-            let count_waiting = {
+            let (count_events, count_waiting) = {
                 let mut ex = EXECUTOR.lock().unwrap();
-                let (_, count_waiting) = Executor::tick(&mut ex, &mut ws);
+                let (count_events, count_waiting) = Executor::tick(&mut ex, &mut ws);
                 {
                     let mut new_tasks = NEW_TASKS.lock().unwrap();
                     if !new_tasks.is_empty() {
@@ -363,17 +349,13 @@ impl symmetric_executor::Guest for Guest {
                 if ex.active_tasks.is_empty() {
                     break;
                 }
-                count_waiting
+                (count_events, count_waiting)
             };
-            if count_waiting == 0
-            // tvptr.is_null()
-            //     && maxfd == change_event + 1
-            //     && !(0..change_event).any(|f| unsafe { libc::FD_ISSET(f, rfd_ptr) })
-            {
-                // probably only active tasks, all returned pending, try again
+            if count_events != 0 {
+                // we processed events, perhaps more became ready
                 if DEBUGGING {
                     println!(
-                        "Relooping with {} tasks",
+                        "Relooping with {} tasks after {count_events} events, {count_waiting} waiting",
                         EXECUTOR.lock().unwrap().active_tasks.len()
                     );
                 }
@@ -400,7 +382,6 @@ impl symmetric_executor::Guest for Guest {
         callback: symmetric_executor::CallbackFunction,
         data: symmetric_executor::CallbackData,
     ) -> symmetric_executor::CallbackRegistration {
-        // let trigger: EventSubscriptionInternal = trigger.into_inner();
         let cb: CallbackType = unsafe { transmute(callback.take_handle()) };
         let data = data.take_handle() as *mut OpaqueData;
 
@@ -423,22 +404,16 @@ impl symmetric_executor::Guest for Guest {
         match EXECUTOR.try_lock() {
             Ok(mut lock) => {
                 lock.active_tasks.push(subscr);
-                // let file_signal: u64 = 1;
-                // let fd = ;
+                let mut ws = WaitSet::new(None);
+                // process as long as there is immediate progress
+                loop {
+                    let (count_events, _count_waiting) = Executor::tick(&mut lock, &mut ws);
+                    if count_events == 0 {
+                        break;
+                    }
+                }
+                // wake other threads last
                 event_fd::activate(lock.change_event());
-                // let result = unsafe {
-                //     libc::write(
-                //         fd,
-                //         core::ptr::from_ref(&file_signal).cast(),
-                //         core::mem::size_of_val(&file_signal),
-                //     )
-                // };
-                // if result >= 0 {
-                //     assert_eq!(
-                //         result,
-                //         core::mem::size_of_val(&file_signal).try_into().unwrap()
-                //     );
-                // }
             }
             Err(_err) => {
                 if EXECUTOR_BUSY.load(Ordering::Acquire) {
@@ -483,7 +458,6 @@ static ID_SOURCE: AtomicUsize = AtomicUsize::new(1);
 impl QueuedEvent {
     fn new(trigger: EventSubscriptionInternal, callback: CallbackEntry) -> Self {
         let id = ID_SOURCE.fetch_add(1, Ordering::Relaxed);
-        // let trigger: EventSubscriptionInternal = event.into_inner();
         let inner = trigger.inner;
         let event_fd = match &inner {
             EventType::Triggered {

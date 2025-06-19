@@ -9,6 +9,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ace50bade8e6234aa140d9a2f552bbee1db4d353f69b8217bc503490fc1a9f26"
 
 [[package]]
+name = "bitflags"
+version = "2.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1b8e56985ec62d17e9c1001dc89c88ecd7dc08e47eba5ec7c29c7b5eeecde967"
+
+[[package]]
 name = "dummy-rt"
 version = "0.1.0"
 
@@ -221,6 +227,7 @@ checksum = "adb9e6ca4f869e1180728b7950e35922a7fc6397f7b641499e8f3ef06e50dc83"
 name = "wit-bindgen-symmetric-rt"
 version = "0.36.0"
 dependencies = [
+ "bitflags",
  "dummy-rt",
  "futures",
 ]
