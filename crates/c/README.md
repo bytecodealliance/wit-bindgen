@@ -82,7 +82,7 @@ void exports_cat_registry_user_run(void) {
 }
 ```
 
-Your component must free both the memory allocated for arguments to imported functions, and the memory allocated for the return values of imported functions.
+Note that we free the memory allocated for the import's argument as well as its return value.
 
 #### Exported functions
 
