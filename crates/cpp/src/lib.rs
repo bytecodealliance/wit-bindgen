@@ -124,6 +124,8 @@ struct Cpp {
     // needed for symmetric disambiguation
     interface_prefixes: HashMap<(Direction, WorldKey), String>,
     import_prefix: Option<String>,
+
+    temp: usize,
 }
 
 #[derive(Default, Debug, Clone, Copy)]
@@ -477,6 +479,11 @@ impl Cpp {
             let _ = std::mem::replace(&mut self.dependencies, store.dependencies);
             self.includes.push(String::from("\"") + &filename + "\"");
         }
+    }
+
+    fn tmp(&mut self) -> usize {
+        self.temp += 1;
+        self.temp
     }
 }
 
@@ -2675,6 +2682,56 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             TypeDefKind::Unknown => todo!(),
         }
     }
+
+    fn lower_lift(&mut self, payload: Option<&Type>) -> String {
+        let typestr = self
+            .gen
+            .optional_type_name(payload, &self.namespace, Flavor::InStruct);
+        let tmpnr = self.r#gen.r#gen.tmp();
+        uwriteln!(self.r#gen.r#gen.c_src_head, "struct Lift{tmpnr} {{");
+        let mut bindgen = FunctionBindgen::new(self.gen, Vec::new());
+        let lift = if let Some(ty) = payload {
+            let res = wit_bindgen_core::abi::lift_from_memory(
+                bindgen.r#gen.resolve,
+                &mut bindgen,
+                "ptr".into(),
+                ty,
+            );
+            format!("{} return {res};", String::from(bindgen.src))
+        } else {
+            String::new()
+        };
+        let mut bindgen = FunctionBindgen::new(self.gen, Vec::new());
+        let lower = if let Some(ty) = payload {
+            wit_bindgen_core::abi::lower_to_memory(
+                bindgen.r#gen.resolve,
+                &mut bindgen,
+                "ptr".into(),
+                "value".into(),
+                ty,
+            );
+            String::from(bindgen.src)
+        } else {
+            String::new()
+        };
+        let lowered_size = if let Some(ty) = payload {
+            self.r#gen
+                .sizes
+                .size(ty)
+                .format_term(POINTER_SIZE_EXPRESSION, true)
+        } else {
+            String::from("1")
+        };
+
+        uwriteln!(
+            self.r#gen.r#gen.c_src_head,
+            "static {typestr} lift(uint8_t const* ptr) {{ {lift} }}
+                    static void lower({typestr} && value, uint8_t *ptr) {{ {lower} }}
+                    static constexpr size_t SIZE = {lowered_size};"
+        );
+        uwriteln!(self.r#gen.r#gen.c_src_head, "}};");
+        format!("Lift{tmpnr}")
+    }
 }
 
 fn move_if_necessary(arg: &str) -> String {
@@ -3796,8 +3853,9 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             }
             abi::Instruction::LengthStore { offset } => self.store("size_t", *offset, operands),
             abi::Instruction::FutureLower { payload, .. } => {
+                let lower_lift = self.lower_lift(payload.as_ref());
                 results.push(format!(
-                    "lower_future<{}>(std::move({}))",
+                    "lower_future<{}, {lower_lift}>(std::move({}))",
                     self.gen.optional_type_name(
                         payload.as_ref(),
                         &self.namespace,
@@ -3807,8 +3865,9 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 ));
             }
             abi::Instruction::FutureLift { payload, .. } => {
+                let lower_lift = self.lower_lift(payload.as_ref());
                 results.push(format!(
-                    "lift_future<{}>({})",
+                    "lift_future<{}, {lower_lift}>({})",
                     self.gen.optional_type_name(
                         payload.as_ref(),
                         &self.namespace,
@@ -3818,8 +3877,9 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 ));
             }
             abi::Instruction::StreamLower { payload, .. } => {
+                let lower_lift = self.lower_lift(payload.as_ref());
                 results.push(format!(
-                    "lower_stream<{}>(std::move({}))",
+                    "lower_stream<{}, {lower_lift}>(std::move({}))",
                     self.gen.optional_type_name(
                         payload.as_ref(),
                         &self.namespace,
@@ -3829,8 +3889,9 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 ));
             }
             abi::Instruction::StreamLift { payload, .. } => {
+                let lower_lift = self.lower_lift(payload.as_ref());
                 results.push(format!(
-                    "lift_stream<{}>({})",
+                    "lift_stream<{}, {lower_lift}>({})",
                     self.gen.optional_type_name(
                         payload.as_ref(),
                         &self.namespace,

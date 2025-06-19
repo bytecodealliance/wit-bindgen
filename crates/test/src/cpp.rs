@@ -154,7 +154,9 @@ impl LanguageMethods for Cpp17 {
         .arg("-I")
         .arg(helper_dir2.to_str().unwrap().to_string());
         if runner.is_symmetric() {
-            cmd.arg("-I").arg(helper_dir3.to_str().unwrap().to_string());
+            cmd.arg("-I")
+                .arg(helper_dir3.to_str().unwrap().to_string())
+                .arg("-fPIC");
         }
         cmd.arg("-fno-exceptions")
             .arg("-Wall")
@@ -211,14 +213,19 @@ impl LanguageMethods for Cpp17 {
         }
         if runner.is_symmetric() {
             cmd.arg("-fPIC");
+            for i in runner.cpp_state.as_ref().unwrap().native_deps.iter() {
+                cmd.arg(format!("-L{}", i.as_os_str().to_str().unwrap()));
+            }
             if !matches!(compile.component.kind, Kind::Runner) {
                 cmd.arg("-shared");
             } else {
-                for i in runner.cpp_state.as_ref().unwrap().native_deps.iter() {
-                    cmd.arg(format!("-L{}", i.as_os_str().to_str().unwrap()));
-                }
                 cmd.arg("-ltest-cpp17");
             }
+            cmd.arg("-L")
+                .arg(helper_dir3.to_str().unwrap().to_string())
+                .arg("-lruntime")
+                .arg("-lsymmetric_stream")
+                .arg("-lsymmetric_executor");
         }
         runner.run_command(&mut cmd)?;
         Ok(())

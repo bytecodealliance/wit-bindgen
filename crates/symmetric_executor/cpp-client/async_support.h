@@ -3,13 +3,13 @@
 #include "module_cpp.h"
 #include "stream_support.h"
 
-static symmetric::runtime::symmetric_executor::CallbackState fulfil_promise_void(void* data) {
+static inline symmetric::runtime::symmetric_executor::CallbackState fulfil_promise_void(void* data) {
     std::unique_ptr<std::promise<void>> ptr((std::promise<void>*)data);
     ptr->set_value();
     return symmetric::runtime::symmetric_executor::CallbackState::kReady;
 }
   
-static std::future<void> lift_event(void* event) {
+static inline std::future<void> lift_event(void* event) {
     std::promise<void> result;
     std::future<void> result1 = result.get_future();
     if (!event) { 
@@ -24,7 +24,7 @@ static std::future<void> lift_event(void* event) {
     return result1;
 }
 
-static symmetric::runtime::symmetric_executor::CallbackState wait_on_future(std::future<void>* fut) {
+static inline symmetric::runtime::symmetric_executor::CallbackState wait_on_future(std::future<void>* fut) {
     fut->get();
     delete fut;
     return symmetric::runtime::symmetric_executor::CallbackState::kReady;
@@ -90,7 +90,7 @@ std::future<T> lift_future(uint8_t* stream) {
     std::future<T> result= promise.get_future();
     auto stream2 = symmetric::runtime::symmetric_stream::StreamObj(wit::ResourceImportBase(stream));
     auto event = stream2.ReadReadySubscribe();
-    std::unique_ptr<fulfil_promise_data<T, LIFT>> data = std::make_unique<fulfil_promise_data<T, LIFT>>(fulfil_promise_data<T, LIFT>{std::move(stream2), std::move(promise)});
+    std::unique_ptr<fulfil_promise_data<T, LIFT>> data = std::make_unique<fulfil_promise_data<T, LIFT>>(fulfil_promise_data<T, LIFT>{std::move(stream2), std::move(promise), {0}});
     symmetric::runtime::symmetric_stream::Buffer buf = symmetric::runtime::symmetric_stream::Buffer(
         symmetric::runtime::symmetric_stream::Address(wit::ResourceImportBase((wit::ResourceImportBase::handle_t)&data->value)),
         1
