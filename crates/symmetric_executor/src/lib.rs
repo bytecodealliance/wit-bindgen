@@ -300,6 +300,20 @@ impl symmetric_executor::Guest for Guest {
         let cb: CallbackType = unsafe { transmute(callback.take_handle()) };
         let data = data.take_handle() as *mut OpaqueData;
 
+        // try to take a short cut
+        let trigger: EventSubscriptionInternal = trigger.into_inner();
+        if trigger.inner.ready() {
+            if DEBUGGING {
+                println!("register ready event {:x} {:x}", cb as usize, data as usize);
+            }
+            if matches!((cb)(data), CallbackState::Ready) {
+                println!("registration unnecessary");
+                return symmetric_executor::CallbackRegistration::new(
+                    CallbackRegistrationInternal(0),
+                );
+            }
+        }
+
         let subscr = QueuedEvent::new(trigger, CallbackEntry(cb, data));
         let id = subscr.id;
         match EXECUTOR.try_lock() {
@@ -363,9 +377,9 @@ struct QueuedEvent {
 static ID_SOURCE: AtomicUsize = AtomicUsize::new(0);
 
 impl QueuedEvent {
-    fn new(event: symmetric_executor::EventSubscription, callback: CallbackEntry) -> Self {
+    fn new(trigger: EventSubscriptionInternal, callback: CallbackEntry) -> Self {
         let id = ID_SOURCE.fetch_add(1, Ordering::Relaxed);
-        let trigger: EventSubscriptionInternal = event.into_inner();
+        // let trigger: EventSubscriptionInternal = event.into_inner();
         let inner = trigger.inner;
         let event_fd = match &inner {
             EventType::Triggered {
