@@ -146,20 +146,20 @@ Importantly, the generated `*_post_return` function that frees the return value 
 
 #### Primitive types
 
-| WIT Type | C Type    |
-|----------|-----------|
-| bool     | bool      |
-| u8       | uint8_t   |
-| u16      | uint16_t  |
-| u32      | uint32_t  |
-| u64      | uint64_t  |
-| s8       | int8_t    |
-| s16      | int16_t   |
-| s32      | int32_t   |
-| s64      | int64_t   |
-| f32      | float     |
-| f64      | double    |
-| char     | uint32_t  |
+| WIT Type | C Type     |
+|----------|------------|
+| `bool`   | `bool`     |
+| `u8`     | `uint8_t`  |
+| `u16`    | `uint16_t` |
+| `u32`    | `uint32_t` |
+| `u64`    | `uint64_t` |
+| `s8`     | `int8_t`   |
+| `s16`    | `int16_t`  |
+| `s32`    | `int32_t`  |
+| `s64`    | `int64_t`  |
+| `f32`    | `float`    |
+| `f64`    | `double`   |
+| `char`   | `uint32_t` |
 
 Note that `uint32_t` is used to represent WIT's `char` type because WIT `char`s are [Unicode Scalar Values](https://www.unicode.org/glossary/#unicode_scalar_value).
 
