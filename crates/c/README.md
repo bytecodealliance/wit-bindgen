@@ -135,8 +135,7 @@ bool exports_cat_registry_cat_registry_api_get_cat_by_name(
   // We own the memory for input parameter, so we must free it
   cat_registry_string_free(name);
 
-  // We allocated memory for the return value, but freeing it is handled by the
-  // generated bindings
+  // We allocated memory for the return value, but freeing it is handled by the generated bindings
   return false;
 }
 ```
