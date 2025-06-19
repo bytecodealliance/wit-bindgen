@@ -1047,6 +1047,9 @@ impl Runner<'_> {
             .output()
             .with_context(|| format!("failed to spawn {cmd:?}"))?;
         if output.status.success() {
+            if std::env::var("WIT_BINDGEN_TRACE").is_ok() {
+                eprintln!("$ {cmd:?}");
+            }
             return Ok(());
         }
 

@@ -850,6 +850,13 @@ impl WorldGenerator for Cpp {
             .unwrap()
             .as_slice(),
         );
+        if self.opts.symmetric {
+            // this keeps the symbols down for shared objects, could be more specific
+            files.push(
+                &format!("{}.verscr", world.name),
+                b"{\n  global:\n    *X00*;\n  local: *;\n};\n",
+            );
+        }
         Ok(())
     }
 

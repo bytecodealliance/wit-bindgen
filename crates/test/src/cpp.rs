@@ -212,7 +212,14 @@ impl LanguageMethods for Cpp17 {
             }
         }
         if runner.is_symmetric() {
-            cmd.arg("-fPIC");
+            cmd.arg("-fPIC").arg(format!(
+                "-Wl,--version-script={}",
+                compile
+                    .bindings_dir
+                    .join(format!("{}.verscr", compile.component.bindgen.world))
+                    .to_str()
+                    .unwrap() // .to_string(),
+            ));
             for i in runner.cpp_state.as_ref().unwrap().native_deps.iter() {
                 cmd.arg(format!("-L{}", i.as_os_str().to_str().unwrap()));
             }
