@@ -26,7 +26,7 @@ This command will generate either two or three files, depending on command line 
 
 In this section, *your component* refers to the component for which you are generating bindings.
 
-In general, your component is responsible for allocating memory for data it produces and freeing memory for data it consumes. `wit-bindgen` automatically generates `*_free` functions for types that require allocation (e.g. strings, lists, records with fields that require allocation) to properly deallocate the memory for the type and any of its nested allocations.
+In general, your component is responsible for allocating memory for data it produces and freeing memory for data it consumes. `wit-bindgen` automatically generates `*_free` functions for types that require allocation (e.g. strings, lists, records with fields that require allocation) to properly deallocate their memory, including any nested allocated types.
 
 There are additional ownership considerations for `string` and `resource`. See the [Strings](#strings) and [Resources](#resources) sections for details.
 
