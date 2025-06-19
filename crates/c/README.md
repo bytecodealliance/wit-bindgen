@@ -112,7 +112,7 @@ world cat-registry {
 }
 ```
 
-Here is a possible implementation of the `get-cat-by-name` export that correctly manages the memory of the paremeter and return value:
+Here is a possible implementation of the `get-cat-by-name` export that correctly manages the memory of the parameter and return value:
 
 ```c
 bool exports_cat_registry_cat_registry_api_get_cat_by_name(
