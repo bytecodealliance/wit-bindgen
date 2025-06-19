@@ -36,9 +36,9 @@ Ownership rules differ for imported functions and exported functions, so we'll t
 
 Imported functions are functions that are implemented in another component and that your component calls.
 
-**Ownership rules:**
+_Ownership rules_:
 
-- **Arguments**: Your is responsible for allocating memory for the input arguments and freeing this memory when it is no longer required. Your input data will not be modified or freed by the import's implementation: complex types like strings and records will be copied into the implementation's storage. 
+- **Arguments**: Your component is responsible for allocating memory for the input arguments and freeing this memory when it is no longer required. Your input data will not be modified or freed by the import's implementation: complex types like strings and records will be copied into the implementation's storage. 
 - **Return values**: Your component receives ownership of data returned by imported functions and is responsible for freeing it.
 
 Here is an example of an imported function that requires allocations for both input parameters and the return value:
@@ -88,7 +88,7 @@ Your component must free both the memory allocated for arguments to imported fun
 
 Exported functions are functions that your component implements and makes available to other components.
 
-**Ownership rules:**
+_Ownership rules_:
 
 - **Arguments**: Your component receives ownership of all arguments passed to the exported function and is responsible for freeing them.
 - **Return values**: Your component is responsible for allocating the memory for return values. It is not responsible for freeing them: `wit-bindgen` automatically generates cleanup functions named `*_post_return` which will be called by the component who imports your function. This generated function assumes that all `string`s and `list`s in the return value are dynamically allocated.
