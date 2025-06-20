@@ -46,6 +46,14 @@ enum Opt {
         #[clap(flatten)]
         args: Common,
     },
+    /// Generates bindings for C++ modules.
+    #[cfg(feature = "cpp")]
+    Cpp {
+        #[clap(flatten)]
+        opts: wit_bindgen_cpp::Opts,
+        #[clap(flatten)]
+        args: Common,
+    },
 
     /// Generates bindings for TinyGo-based Go guest modules (Deprecated)
     #[cfg(feature = "go")]
@@ -128,6 +136,8 @@ fn main() -> Result<()> {
         Opt::Moonbit { opts, args } => (opts.build(), args),
         #[cfg(feature = "c")]
         Opt::C { opts, args } => (opts.build(), args),
+        #[cfg(feature = "cpp")]
+        Opt::Cpp { opts, args } => (opts.build(args.out_dir.as_ref()), args),
         #[cfg(feature = "rust")]
         Opt::Rust { opts, args } => (opts.build(), args),
         #[cfg(feature = "go")]
