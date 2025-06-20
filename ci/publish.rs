@@ -19,6 +19,7 @@ use std::time::Duration;
 const CRATES_TO_PUBLISH: &[&str] = &[
     "wit-bindgen-core",
     "wit-bindgen-c",
+    "wit-bindgen-cpp",
     "wit-bindgen-rust",
     "wit-bindgen-csharp",
     "wit-bindgen-markdown",
