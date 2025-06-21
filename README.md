@@ -263,6 +263,8 @@ which in this case, as expected, is the same as the input world.
 
 ### Guest: C/C++
 
+See the [`wit-bindgen` C and C++ Bindings Generator documentation](/crates/c/README.md) for details.
+
 C and C++ code can be compiled for the `wasm32-wasip1` target using the [WASI
 SDK] project. The releases on that repository have precompiled `clang` binaries
 which are pre-configured to compile for WebAssembly.
