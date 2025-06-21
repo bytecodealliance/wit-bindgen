@@ -145,8 +145,13 @@ where
         todo!()
         //        WriteInProgress{StreamResult::Cancelled, writer, buf, amount: 0}
     }
-    fn in_progress_waitable(_progr: &Self::InProgress) -> crate::async_support::waitable::Handle {
-        todo!()
+    fn in_progress_waitable(_progr: &Self::InProgress) -> Self::Handle {
+        if let Some(evt) = _progr.event.as_ref() {
+            evt.dup()
+        //            symmetric_executor::register()
+        } else {
+            todo!()
+        }
         // writer.handle.handle() as crate::async_support::waitable::Handle
     }
     fn in_progress_cancel(_progr: &Self::InProgress) -> u32 {
