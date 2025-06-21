@@ -1,0 +1,39 @@
+//@ dependencies = ['exporter', 'borrower', 'autodropper']
+//@ wac = 'compose.wac'
+
+package test:resource-borrow-imported;
+
+interface test {
+  resource thing {
+    constructor();
+    get-int: func() -> u32;
+  }
+}
+
+interface borrow-thing {
+    use test.{thing};
+    do-borrow: func(handle: borrow<thing>);
+}
+
+interface autodrop-borrow-thing {
+    use test.{thing};
+    do-borrow: func(handle: borrow<thing>);
+}
+
+world exporter {
+  export test;
+}
+
+world borrower {
+  export borrow-thing;
+}
+
+world autodropper {
+    export autodrop-borrow-thing;
+}
+
+world runner {
+  import test;
+  import autodrop-borrow-thing;
+  import borrow-thing;
+}
