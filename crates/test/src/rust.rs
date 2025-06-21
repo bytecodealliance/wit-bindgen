@@ -109,7 +109,7 @@ impl LanguageMethods for Rust {
                 "symmetric_executor = {{ path = {executor_path:?} }}\n"
             ));
             symmetric_runtime.push_str(&format!(
-                "symmetric_stream = {{ path = \"{}/symmetric_stream\" }}\n",
+                "symmetric_stream = {{ path = \"{}/symmetric_stream\", features = [\"trace\"] }}\n",
                 executor_path.display()
             ));
             format!("path = {bindgen_path:?}, package = \"mini-bindgen\"")
