@@ -106,7 +106,7 @@ impl LanguageMethods for Rust {
             let bindgen_path = cwd.join("crates/symmetric_executor/dummy-bindgen");
             let executor_path = cwd.join("crates/symmetric_executor");
             symmetric_runtime.push_str(&format!(
-                "symmetric_executor = {{ path = {executor_path:?} }}\n"
+                "symmetric_executor = {{ path = {executor_path:?}, features = [\"trace\"] }}\n"
             ));
             symmetric_runtime.push_str(&format!(
                 "symmetric_stream = {{ path = \"{}/symmetric_stream\", features = [\"trace\"] }}\n",

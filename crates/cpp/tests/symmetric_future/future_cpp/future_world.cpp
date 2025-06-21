@@ -22,31 +22,32 @@ void *cabi_realloc(void *ptr, size_t old_size, size_t align, size_t new_size) {
 }
 
 
-#include "async_support.h"
-
-template <class T>
-struct IntLifting {
-  static constexpr size_t SIZE = sizeof(T);
-  static T lift(uint8_t const*ptr) {
-    return *(T const*)ptr;
-  }
-  static void lower(T&& obj, uint8_t *ptr) {
-//    new ((T*)ptr) T(std::move(obj));
-    *(T*)ptr = obj;
-  }
+struct Lift1 {
+  static uint32_t lift(uint8_t const* ptr) { int32_t l0 = *((int32_t const*)(ptr + 0));
+  return (uint32_t(l0));}
+  static void lower(uint32_t && value, uint8_t *ptr) { *((int32_t*)(ptr + 0)) = (int32_t(value));
+}
+static constexpr size_t SIZE = 4;
 };
-
+struct Lift2 {
+  static uint32_t lift(uint8_t const* ptr) { int32_t l0 = *((int32_t const*)(ptr + 0));
+  return (uint32_t(l0));}
+  static void lower(uint32_t && value, uint8_t *ptr) { *((int32_t*)(ptr + 0)) = (int32_t(value));
+}
+static constexpr size_t SIZE = 4;
+};
+#include "async_support.h"
 extern "C" uint8_t* testX3AtestX2Ffuture_sourceX00create();
 std::future<uint32_t> test::test::future_source::Create()
 {
   auto ret = testX3AtestX2Ffuture_sourceX00create();
-  return lift_future<uint32_t, IntLifting<uint32_t>>(ret);
+  return lift_future<uint32_t, Lift1>(ret);
 }
 extern "C" 
 uint8_t* testX3AtestX2Ffuture_testX00create()
 {
   auto result0 = exports::test::test::future_test::Create();
-  return lower_future<uint32_t, IntLifting<uint32_t>>(std::move(result0));
+  return lower_future<uint32_t, Lift2>(std::move(result0));
 }
 
 // Component Adapters

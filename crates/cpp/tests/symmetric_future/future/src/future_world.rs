@@ -161,13 +161,12 @@ pub mod wit_future {
         unsafe fn dealloc_lists(ptr: *mut u8) {
             unsafe {}
         }
-        pub static VTABLE: wit_bindgen::rt::async_support::FutureVtable<u32> = wit_bindgen::rt::async_support::FutureVtable::<
-            u32,
-        > {
-            layout: unsafe { ::std::alloc::Layout::from_size_align_unchecked(4, 4) },
-            lift,
-            lower,
-        };
+        pub static VTABLE: wit_bindgen::rt::async_support::FutureVtable<u32> =
+            wit_bindgen::rt::async_support::FutureVtable::<u32> {
+                layout: unsafe { ::std::alloc::Layout::from_size_align_unchecked(4, 4) },
+                lift,
+                lower,
+            };
         impl super::FuturePayload for u32 {
             const VTABLE: &'static wit_bindgen::rt::async_support::FutureVtable<Self> = &VTABLE;
         }
