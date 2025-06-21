@@ -209,13 +209,8 @@ where
 
     #[cfg(feature = "symmetric")]
     pub fn register_waker(self: Pin<&mut Self>, waitable: S::Handle, cx: &mut Context) {
-        let data = cx.waker().data();
-        let mut copy = Some(waitable);
-        std::mem::swap(
-            unsafe { &mut *(data.cast::<Option<S::Handle>>().cast_mut()) },
-            &mut copy,
-        );
-        //        todo!()
+        // Safety: we assume S::Handle is a EventSubscription
+        crate::async_support::context_set_wait(cx, unsafe { std::mem::transmute(&waitable) });
     }
     #[cfg(feature = "symmetric")]
     pub fn unregister_waker(self: Pin<&mut Self>, _waitable: S::Handle) {
