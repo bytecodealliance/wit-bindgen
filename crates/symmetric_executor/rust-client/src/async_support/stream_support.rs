@@ -1,6 +1,10 @@
 pub use crate::module::symmetric::runtime::symmetric_stream::StreamObj as Stream;
 use crate::{
-    async_support::{abi_buffer::AbiBuffer, wait_on},
+    async_support::{
+        rust_buffer::RustBuffer,
+        wait_on,
+        waitable::{WaitableOp, WaitableOperation},
+    },
     symmetric_stream::{Address, Buffer},
 };
 use {
@@ -11,7 +15,7 @@ use {
         fmt,
         future::Future,
         iter,
-        marker::PhantomData,
+        marker::{self, PhantomData},
         mem::{self, MaybeUninit},
         pin::Pin,
         task::{Context, Poll},
@@ -23,9 +27,10 @@ pub struct StreamVtable<T> {
     pub layout: Layout,
     pub lower: Option<unsafe fn(value: T, dst: *mut u8)>,
     pub lift: Option<unsafe fn(dst: *mut u8) -> T>,
+    //pub dealloc_lists: Option<unsafe fn(dst: *mut u8)>,
 }
 
-fn ceiling(x: usize, y: usize) -> usize {
+const fn ceiling(x: usize, y: usize) -> usize {
     (x / y) + if x % y == 0 { 0 } else { 1 }
 }
 
@@ -35,54 +40,174 @@ pub mod results {
     pub const CANCELED: isize = 0;
 }
 
+// Used within Waitable
+pub mod new_state {
+    pub const DROPPED: u32 = 1;
+    pub const WAITING_FOR_READY: u32 = 2;
+    pub const WAITING_FOR_FINISH: u32 = 3;
+    pub const FINISHED: u32 = 0;
+    pub const UNKNOWN: u32 = 4;
+}
+
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum StreamResult {
     Complete(usize),
     Dropped,
-    // Cancelled,
+    Cancelled,
 }
 
 pub struct StreamWrite<'a, T: 'static> {
-    _phantom: PhantomData<&'a T>,
-    writer: &'a mut StreamWriter<T>,
-    _future: Option<Pin<Box<dyn Future<Output = ()> + 'static + Send>>>,
-    values: Vec<T>,
+    op: WaitableOperation<StreamWriteOp<'a, T>>,
+    // _phantom: PhantomData<&'a T>,
+    // writer: &'a mut StreamWriter<T>,
+    // _future: Option<Pin<Box<dyn Future<Output = ()> + 'static + Send>>>,
+    // values: Vec<T>,
 }
 
-impl<T: Unpin + Send + 'static> Future for StreamWrite<'_, T> {
-    type Output = (StreamResult, AbiBuffer<T>);
+struct WriteInProgress<'a, T: 'static> {
+    writer: &'a mut StreamWriter<T>,
+    buf: RustBuffer<T>,
+    event: Option<crate::EventSubscription>,
+    amount: usize,
+}
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let me = self.get_mut();
-        match Pin::new(&mut me.writer).poll_ready(cx) {
-            Poll::Ready(_) => {
-                let values: Vec<_> = me.values.drain(..).collect();
-                if values.is_empty() {
-                    // delayed flush
-                    Poll::Ready((
-                        StreamResult::Complete(1),
-                        AbiBuffer::new(Vec::new(), me.writer._vtable),
-                    ))
-                } else {
-                    Pin::new(&mut me.writer).start_send(values).unwrap();
-                    match Pin::new(&mut me.writer).poll_ready(cx) {
-                        Poll::Ready(_) => Poll::Ready((
-                            StreamResult::Complete(1),
-                            AbiBuffer::new(Vec::new(), me.writer._vtable),
-                        )),
-                        Poll::Pending => Poll::Pending,
-                    }
+unsafe impl<'a, T> WaitableOp for StreamWriteOp<'a, T>
+where
+    T: 'static,
+{
+    type Start = (&'a mut StreamWriter<T>, RustBuffer<T>);
+    type InProgress = WriteInProgress<'a, T>;
+    type Result = (StreamResult, RustBuffer<T>);
+    type Cancel = (StreamResult, RustBuffer<T>);
+    type Handle = crate::EventSubscription;
+
+    fn start((writer, buf): Self::Start) -> (u32, Self::InProgress) {
+        (
+            new_state::UNKNOWN,
+            WriteInProgress {
+                writer,
+                buf,
+                event: None,
+                amount: 0,
+            },
+        )
+    }
+    fn in_progress_update(
+        WriteInProgress {
+            writer,
+            mut buf,
+            event,
+            mut amount,
+        }: Self::InProgress,
+        code: u32,
+    ) -> Result<Self::Result, Self::InProgress> {
+        loop {
+            if writer.done {
+                return Ok((
+                    if amount == 0 {
+                        StreamResult::Dropped
+                    } else {
+                        StreamResult::Complete(amount)
+                    },
+                    buf,
+                ));
+            }
+
+            // was poll_ready
+            let ready = writer.handle.is_ready_to_write();
+
+            if !ready {
+                let subscr = writer.handle.write_ready_subscribe();
+                subscr.reset();
+                break Err(WriteInProgress {
+                    writer,
+                    buf,
+                    event: Some(subscr),
+                    amount,
+                });
+                //(new_state::WAITING_FOR_READY, (writer, buf, Some(subscr)));
+            } else {
+                // was start_send
+                let buffer = writer.handle.start_writing();
+                let addr = buffer.get_address().take_handle() as *mut u8;
+                let size = buffer.capacity() as usize;
+                buf.take_n(size, |v| todo!());
+                writer.handle.finish_writing(Some(buffer));
+                amount += size;
+                if buf.remaining() == 0 {
+                    break Ok((StreamResult::Complete(amount), buf));
+                    //(new_state::FINISHED, (writer, buf, None));
                 }
             }
-            Poll::Pending => Poll::Pending,
         }
+    }
+    fn start_cancelled((writer, buf): Self::Start) -> Self::Cancel {
+        todo!()
+        //        WriteInProgress{StreamResult::Cancelled, writer, buf, amount: 0}
+    }
+    fn in_progress_waitable(_progr: &Self::InProgress) -> crate::async_support::waitable::Handle {
+        todo!()
+        // writer.handle.handle() as crate::async_support::waitable::Handle
+    }
+    fn in_progress_cancel(_progr: &Self::InProgress) -> u32 {
+        todo!()
+    }
+    fn result_into_cancel(result: Self::Result) -> Self::Cancel {
+        result
+    }
+}
+
+struct StreamWriteOp<'a, T: 'static>(marker::PhantomData<(&'a mut StreamWriter<T>, T)>);
+
+impl<T: Unpin + Send + 'static> Future for StreamWrite<'_, T> {
+    type Output = (StreamResult, RustBuffer<T>);
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        self.pin_project().poll_complete(cx)
+        // todo!()
+        // let me = self.get_mut();
+        // match Pin::new(&mut me.writer).poll_ready(cx) {
+        //     Poll::Ready(_) => {
+        //         let values: Vec<_> = me.values.drain(..).collect();
+        //         if values.is_empty() {
+        //             // delayed flush
+        //             Poll::Ready((
+        //                 StreamResult::Complete(1),
+        //                 RustBuffer::new(Vec::new(), me.writer._vtable),
+        //             ))
+        //         } else {
+        //             Pin::new(&mut me.writer).start_send(values).unwrap();
+        //             match Pin::new(&mut me.writer).poll_ready(cx) {
+        //                 Poll::Ready(_) => Poll::Ready((
+        //                     StreamResult::Complete(1),
+        //                     RustBuffer::new(Vec::new(), me.writer._vtable),
+        //                 )),
+        //                 Poll::Pending => Poll::Pending,
+        //             }
+        //         }
+        //     }
+        //     Poll::Pending => Poll::Pending,
+        // }
+    }
+}
+
+impl<'a, T: 'static> StreamWrite<'a, T> {
+    fn pin_project(self: Pin<&mut Self>) -> Pin<&mut WaitableOperation<StreamWriteOp<'a, T>>> {
+        // SAFETY: we've chosen that when `Self` is pinned that it translates to
+        // always pinning the inner field, so that's codified here.
+        unsafe { Pin::new_unchecked(&mut self.get_unchecked_mut().op) }
+    }
+
+    pub fn cancel(self: Pin<&mut Self>) -> (StreamResult, RustBuffer<T>) {
+        self.pin_project().cancel()
     }
 }
 
 pub struct StreamWriter<T: 'static> {
     handle: Stream,
-    future: Option<Pin<Box<dyn Future<Output = ()> + 'static + Send>>>,
+    /*?*/ future: Option<Pin<Box<dyn Future<Output = ()> + 'static + Send>>>,
     _vtable: &'static StreamVtable<T>,
+    done: bool,
 }
 
 impl<T> StreamWriter<T> {
@@ -92,15 +217,23 @@ impl<T> StreamWriter<T> {
             handle,
             future: None,
             _vtable: vtable,
+            done: false,
         }
     }
 
     pub fn write(&mut self, values: Vec<T>) -> StreamWrite<'_, T> {
+        self.write_buf(RustBuffer::new(values)) //, self._vtable))
+                                                // StreamWrite {
+                                                // writer: self,
+                                                // _future: None,
+                                                // _phantom: PhantomData,
+                                                // values,
+                                                // }
+    }
+
+    pub fn write_buf(&mut self, values: RustBuffer<T>) -> StreamWrite<'_, T> {
         StreamWrite {
-            writer: self,
-            _future: None,
-            _phantom: PhantomData,
-            values,
+            op: WaitableOperation::new((self, values)),
         }
     }
 

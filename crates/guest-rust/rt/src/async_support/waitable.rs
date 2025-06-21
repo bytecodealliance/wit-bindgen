@@ -9,6 +9,11 @@ use std::task::{Context, Poll, Waker};
 #[cfg(not(feature = "symmetric"))]
 use {super::cabi, std::ffi::c_void, std::ptr};
 
+#[cfg(not(feature = "symmetric"))]
+pub type Handle = u32;
+#[cfg(feature = "symmetric")]
+pub type Handle = *mut u8;
+
 /// Generic future-based operation on any "waitable" in the component model.
 ///
 /// This is used right now to power futures and streams for both read/write
@@ -77,6 +82,9 @@ pub unsafe trait WaitableOp {
     /// Result of when this operation is cancelled.
     type Cancel;
 
+    /// Waitable type, u32 for wasm
+    type Handle;
+
     /// Starts the async operation.
     ///
     /// This method will actually call `{future,stream}.{read,write}` with
@@ -103,7 +111,7 @@ pub unsafe trait WaitableOp {
 
     /// Acquires the component-model `waitable` index that the `InProgress`
     /// state is waiting on.
-    fn in_progress_waitable(state: &Self::InProgress) -> u32;
+    fn in_progress_waitable(state: &Self::InProgress) -> Handle;
 
     /// Initiates a request for cancellation of this operation. Returns the
     /// status code returned by the `{future,stream}.cancel-{read,write}`
@@ -163,7 +171,7 @@ where
     /// * Fill in `completion_status` with the result of a completion event.
     /// * Call `cx.waker().wake()`.
     #[cfg(not(feature = "symmetric"))]
-    pub fn register_waker(self: Pin<&mut Self>, waitable: u32, cx: &mut Context) {
+    pub fn register_waker(self: Pin<&mut Self>, waitable: Handle, cx: &mut Context) {
         let (_, mut completion_status) = self.pin_project();
         debug_assert!(completion_status.as_mut().code_mut().is_none());
         *completion_status.as_mut().waker_mut() = Some(cx.waker().clone());
@@ -200,11 +208,11 @@ where
     }
 
     #[cfg(feature = "symmetric")]
-    pub fn register_waker(self: Pin<&mut Self>, _waitable: u32, _cx: &mut Context) {
+    pub fn register_waker(self: Pin<&mut Self>, _waitable: Handle, _cx: &mut Context) {
         todo!()
     }
     #[cfg(feature = "symmetric")]
-    pub fn unregister_waker(self: Pin<&mut Self>, _waitable: u32) {
+    pub fn unregister_waker(self: Pin<&mut Self>, _waitable: Handle) {
         todo!()
     }
 
