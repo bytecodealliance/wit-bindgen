@@ -1295,7 +1295,8 @@ void {ns}_{snake}_drop_own({own} handle) {{
                 "\ntypedef struct {borrow} {{\nint32_t __handle;\n}} {borrow};\n"
             ));
 
-            if self.autodrop_enabled() {
+            // Explicit borrow dropping is not required if autodrop is enabled.
+            if !self.autodrop_enabled() {
                 // As we have two different types for owned vs borrowed resources,
                 // but owns and borrows are dropped using the same intrinsic we
                 // also generate a version of the drop function for borrows that we
