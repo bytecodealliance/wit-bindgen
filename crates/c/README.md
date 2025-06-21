@@ -10,7 +10,7 @@ To generate bindings with this crate, issue the `c` subcommand to `wit-bindgen`:
 $ wit-bindgen c [OPTIONS] <WIT>
 ```
 
-See the output of `wit-bindgen c help` for available options.
+See the output of `wit-bindgen help c` for available options.
 
 This command will generate either two or three files, depending on command line options:
 
@@ -38,7 +38,7 @@ Imported functions are functions that are implemented in another component and t
 
 _Ownership rules_:
 
-- **Arguments**: Your component is responsible for allocating memory for the input arguments and freeing this memory when it is no longer required. Your input data will not be modified or freed by the import's implementation: complex types like strings and records will be copied into the implementation's storage. 
+- **Arguments**: Your component is responsible for allocating memory for the input arguments and freeing this memory when it is no longer required. Your input data will not be modified or freed when you call the imported function; the data will be copied into the linear memory of the component that implements the function.
 - **Return values**: Your component receives ownership of data returned by imported functions and is responsible for freeing it.
 
 Here is an example of an imported function that requires allocations for both input parameters and the return value:
@@ -66,6 +66,8 @@ Here is a possible implementation of the `run` export that calls `get-cat-by-nam
 void exports_cat_registry_user_run(void) {
   cat_registry_user_string_t name;
   // Allocates memory for the string and sets it to "Poptart"
+  // (This could call cat_registry_user_string_set to avoid allocating,
+  // the allocation is just for demonstration purposes)
   cat_registry_user_string_dup(&name, "Poptart");
   cat_registry_cat_registry_api_cat_t cat;
   bool got_cat = cat_registry_cat_registry_api_get_cat_by_name(&name, &cat);
@@ -119,28 +121,30 @@ bool exports_cat_registry_cat_registry_api_get_cat_by_name(
     cat_registry_string_t *name,
     exports_cat_registry_cat_registry_api_cat_t *ret) {
   // We only support the name "Poptart" for this example
-  if (strcmp((const char *)name->ptr, "Poptart") == 0) {
+  bool found = strncmp((const char *)name->ptr, "Poptart", name->len) == 0;
+
+  if (found) {
     // Allocate memory for the return name and copy the name in
     cat_registry_string_dup(&ret->name, "Poptart");
 
     // Allocate memory for the nicknames list
     ret->nicknames.ptr =
-        (cat_registry_string_t *)malloc(2 * sizeof(cat_registry_string_t));
+      (cat_registry_string_t *)malloc(2 * sizeof(cat_registry_string_t));
     ret->nicknames.len = 2;
     // Allocate memory for each nickname and copy the strings in
     cat_registry_string_dup(&ret->nicknames.ptr[0], "Poppy");
     cat_registry_string_dup(&ret->nicknames.ptr[1], "Popster");
   }
 
-  // We own the memory for input parameter, so we must free it
+  // We own the memory for the input parameter, so we must free it
   cat_registry_string_free(name);
 
   // We allocated memory for the return value, but freeing it is handled by the generated bindings
-  return false;
+  return found;
 }
 ```
 
-Importantly, the generated `*_post_return` function that frees the return value assumes that lists and strings in the return value reference dynamically-allocated memory that can be freed with `free`. As such, if you call `*_string_set` with a string literal to set one of the fields of the return value, the bindings will try to free the string literal. Unless you want to replace the generated `*_post_return` function with a version that only frees some of the data, always dynamically allocate the contents of your strings and lists in your return values.
+Importantly, the generated `*_post_return` function that frees the return value assumes that lists and strings in the return value reference dynamically-allocated memory that can be freed with `free`. As such, if you call `*_string_set` with a string literal to set one of the fields of the return value, the bindings will try to free the string literal. Unless you want to replace the generated `*_post_return` function with a version that only frees some of the data, always dynamically allocate the contents of your strings and lists in your return values. The `*_post_return` functions are defined as [weak symbols](https://en.wikipedia.org/wiki/Weak_symbol) so that you can simply define your own versions to override the defaults and they will be selected by the linker.
 
 ### Type Mappings
 
@@ -233,7 +237,7 @@ typedef struct my_world_list_u8_t {
 } my_world_list_u8_t;
 ``` 
 
-A helper function is generated for freeing lists:
+A helper function is generated for freeing `list`s:
 
 ```c
 // Frees the memory associated with the list
@@ -258,7 +262,7 @@ typedef struct my_world_cat_toy_t {
 #define MY_WORLD_CAT_TOY_WAND 2
 ```
 
-A helper function is generated for freeing variants:
+A helper function is generated for freeing `variant`s:
 
 ```c
 void my_world_cat_toy_free(my_world_cat_toy_t *ptr);
@@ -303,7 +307,7 @@ my_example_string_getter_get_string_by_index(
     uint32_t index, string_getter_user_string_t *ret, my_example_string_getter_error_t *err);
 ```
 
-A helper function is generated to free variants:
+A helper function is generated for freeing `result`s:
 
 ```c
 void my_world_result_string_u32_free(my_world_result_string_u32_t *ptr);
@@ -340,7 +344,7 @@ extern void my_example_string_getter_get_string_by_index(uint32_t index, string_
 extern bool my_example_string_getter_get_string_by_index(uint32_t index, string_getter_user_string_t *ret);
 ```
 
-A helper function is generated to free options:
+A helper function is generated for freeing `option`s:
 
 ```c
 void my_world_option_string_free(my_world_option_string_t *ptr);
@@ -503,9 +507,7 @@ bool exports_wasi_cli_run_run(void) {
         cat_example_registry_api_borrow_cat(cat));
 
     // We must drop the owning handle when we are done with it
-    if (got_cat) {
-      cat_example_registry_api_cat_drop_own(cat);
-    }
+    cat_example_registry_api_cat_drop_own(cat);
   }
 
   cat_example_registry_api_destroy();
@@ -641,7 +643,8 @@ bool exports_cat_example_registry_api_adopt_cat(
     exports_cat_example_registry_api_cat_t *cat_rep =
         exports_cat_example_registry_api_cat_rep(*cat);
     // If the name matches, we found the cat to adopt
-    if (strcmp((const char *)cat_rep->name.ptr, (const char *)name->ptr) == 0) {
+    if (cat_rep->name.len == name->len &&
+        memcmp(cat_rep->name.ptr, name->ptr, name->len) == 0) {
       *ret = *cat;
       found = true;
 
