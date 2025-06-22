@@ -25,6 +25,5 @@ wit::string exports::test::strings::to_test::ReturnEmpty() {
 }
 
 wit::string exports::test::strings::to_test::Roundtrip(wit::string str) {
-  assert(str.size() > 0);
   return str;
 }

@@ -19,7 +19,7 @@
 | API | | | ABI | |
 | --- | --- | --- | --- | --- |
 | 🌓 | asymmetric | | 📘 | canonical |
-| 🪞 | symmetric | | 🪞 | symmetric |
+| ⚖️ | symmetric | | 🪞 | symmetric |
 
 | Code | mode | WIT Type | Rust type | C++ Type | Lower | Reason |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -36,9 +36,9 @@
 | | | list | Vec | wit::vector | &(a,l) |
 | | | result<string,list> | Result<String, Vec> | std::expected<wit::string, wit::vector> | &(d,a,l) |
 | GEA | t | string | String | 🌓 wit::string | addr, len |
-| | | | | 🪞 string_view | |
+| | | | | ⚖️ string_view | |
 | | | result<string,list> | Result<String, Vec> | 🌓 std::expected<wit::string, wit::vector> | d,a,l |
-| | | | | 🪞 std::expected<string_view, wit::span> | |
+| | | | | ⚖️ std::expected<string_view, wit::span> | |
 | GER | p | string | String | wit::string (or std?) | 📘 -> &(a,l) cabi_post_N:P/I#F [^7] |
 | | | | | | 🪞 &(a,l) |
 | | | result<string,list> | Result<String, Vec> | std::expected<wit::string, wit::vector> | 📘 -> &(d,a,l) cabi_post |

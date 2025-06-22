@@ -4,7 +4,7 @@
 #include <test_cpp.h>
 
 static bool equal(std::optional<wit::string> const& a, std::optional<std::string_view> const& b) {
-    return a->get_view()==b.value();
+    return a.has_value() == b.has_value() && a->get_view()==b.value();
 }
 
 void exports::test::options::to_test::OptionNoneParam(std::optional<wit::string> a)
@@ -25,8 +25,7 @@ std::optional<wit::string> exports::test::options::to_test::OptionSomeResult() {
 }
 
 std::optional<wit::string> exports::test::options::to_test::OptionRoundtrip(std::optional<wit::string> a) {
-    if (!a.has_value()) return std::optional<wit::string>();
-    return std::optional<wit::string>(a);
+    return a;
 }
 
 std::optional<std::optional<uint32_t>> exports::test::options::to_test::DoubleOptionRoundtrip(std::optional<std::optional<uint32_t>> a) {
