@@ -1,10 +1,6 @@
 pub use crate::module::symmetric::runtime::symmetric_stream::StreamObj as Stream;
 use crate::{
-    async_support::{
-        rust_buffer::RustBuffer,
-        wait_on,
-        waitable::{WaitableOp, WaitableOperation},
-    },
+    async_support::{rust_buffer::RustBuffer, wait_on},
     symmetric_stream::{Address, Buffer},
 };
 use {
@@ -21,6 +17,10 @@ use {
         task::{Context, Poll},
     },
 };
+
+// waitable::{WaitableOp, WaitableOperation} looked cool, but
+// as it waits for the runtime and uses Wakers I don't think the
+// logic fits
 
 #[doc(hidden)]
 pub struct StreamVtable<T> {

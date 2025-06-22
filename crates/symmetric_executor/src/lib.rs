@@ -191,7 +191,10 @@ impl symmetric_executor::GuestEventSubscription for EventSubscriptionInternal {
     }
 
     fn dup(&self) -> symmetric_executor::EventSubscription {
-        symmetric_executor::EventSubscription::new(self.dup())
+        let res = symmetric_executor::EventSubscription::new(self.dup());
+        // to avoid endless recursion de-activate the original
+        self.reset();
+        res
     }
 
     fn reset(&self) {
