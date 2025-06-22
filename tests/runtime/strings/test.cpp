@@ -25,5 +25,9 @@ wit::string exports::test::strings::to_test::ReturnEmpty() {
 }
 
 wit::string exports::test::strings::to_test::Roundtrip(wit::string str) {
+<<<<<<< HEAD
+=======
+  assert(str.size() > 0);
+>>>>>>> 2661d5e6 (Use value types for asymmetric API)
   return str;
 }

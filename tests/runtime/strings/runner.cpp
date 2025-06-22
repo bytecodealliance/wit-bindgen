@@ -1,3 +1,8 @@
+<<<<<<< HEAD
+=======
+//@ args = '--api-style symmetric'
+
+>>>>>>> 2661d5e6 (Use value types for asymmetric API)
 #include <assert.h>
 #include <stdlib.h>
 #include <string.h>

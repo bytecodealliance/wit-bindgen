@@ -82,7 +82,10 @@ void exports::test::lists::to_test::ListParam4(wit::vector<wit::vector<wit::stri
     assert(equal(ptr[1][0], std::string_view("baz")));
 }
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> 2661d5e6 (Use value types for asymmetric API)
 void exports::test::lists::to_test::ListParam5(wit::vector<std::tuple<uint8_t, uint32_t, uint8_t>> a) {
 
 }
