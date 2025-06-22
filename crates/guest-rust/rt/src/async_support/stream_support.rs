@@ -242,7 +242,6 @@ where
     type InProgress = (&'a mut StreamWriter<T>, AbiBuffer<T>);
     type Result = (StreamResult, AbiBuffer<T>);
     type Cancel = (StreamResult, AbiBuffer<T>);
-    type Handle = u32;
 
     fn start((writer, buf): Self::Start) -> (u32, Self::InProgress) {
         if writer.done {
@@ -459,7 +458,6 @@ where
     type InProgress = (&'a mut StreamReader<T>, Vec<T>, Option<Cleanup>);
     type Result = (StreamResult, Vec<T>);
     type Cancel = (StreamResult, Vec<T>);
-    type Handle = u32;
 
     fn start((reader, mut buf): Self::Start) -> (u32, Self::InProgress) {
         if reader.done {

@@ -1,18 +1,14 @@
 //! Generic support for "any waitable" and performing asynchronous operations on
 //! that waitable.
 
+use super::cabi;
+use std::ffi::c_void;
 use std::future::Future;
 use std::marker;
 use std::mem;
 use std::pin::Pin;
+use std::ptr;
 use std::task::{Context, Poll, Waker};
-#[cfg(not(feature = "symmetric"))]
-use {super::cabi, std::ffi::c_void, std::ptr};
-
-// #[cfg(not(feature = "symmetric"))]
-// pub type Handle = u32;
-// #[cfg(feature = "symmetric")]
-// pub type Handle = *mut u8;
 
 /// Generic future-based operation on any "waitable" in the component model.
 ///
@@ -82,9 +78,6 @@ pub unsafe trait WaitableOp {
     /// Result of when this operation is cancelled.
     type Cancel;
 
-    /// Waitable type, u32 for wasm
-    type Handle;
-
     /// Starts the async operation.
     ///
     /// This method will actually call `{future,stream}.{read,write}` with
@@ -111,7 +104,7 @@ pub unsafe trait WaitableOp {
 
     /// Acquires the component-model `waitable` index that the `InProgress`
     /// state is waiting on.
-    fn in_progress_waitable(state: &Self::InProgress) -> Self::Handle;
+    fn in_progress_waitable(state: &Self::InProgress) -> u32;
 
     /// Initiates a request for cancellation of this operation. Returns the
     /// status code returned by the `{future,stream}.cancel-{read,write}`
@@ -170,8 +163,7 @@ where
     ///
     /// * Fill in `completion_status` with the result of a completion event.
     /// * Call `cx.waker().wake()`.
-    #[cfg(not(feature = "symmetric"))]
-    pub fn register_waker(self: Pin<&mut Self>, waitable: S::Handle, cx: &mut Context) {
+    pub fn register_waker(self: Pin<&mut Self>, waitable: u32, cx: &mut Context) {
         let (_, mut completion_status) = self.pin_project();
         debug_assert!(completion_status.as_mut().code_mut().is_none());
         *completion_status.as_mut().waker_mut() = Some(cx.waker().clone());
@@ -207,22 +199,11 @@ where
         }
     }
 
-    #[cfg(feature = "symmetric")]
-    pub fn register_waker(self: Pin<&mut Self>, waitable: S::Handle, cx: &mut Context) {
-        // Safety: we assume S::Handle is a EventSubscription
-        crate::async_support::context_set_wait(cx, unsafe { std::mem::transmute(&waitable) });
-    }
-    #[cfg(feature = "symmetric")]
-    pub fn unregister_waker(self: Pin<&mut Self>, _waitable: S::Handle) {
-        todo!()
-    }
-
     /// Deregisters the corresponding `register_waker` within the current task
     /// for the `waitable` passed here.
     ///
     /// This relinquishes control of the original `completion_status` pointer
     /// passed to `register_waker` after this call has completed.
-    #[cfg(not(feature = "symmetric"))]
     pub fn unregister_waker(self: Pin<&mut Self>, waitable: u32) {
         // SAFETY: the contract of `wasip3_task_set` is that the returned
         // pointer is valid for the lifetime of our entire task, so it's valid

@@ -102,7 +102,6 @@ unsafe impl<T: Subtask> WaitableOp for SubtaskOps<T> {
     type InProgress = InProgress<T>;
     type Result = Result<T::Results, ()>;
     type Cancel = Result<T::Results, ()>;
-    type Handle = u32;
 
     fn start(state: Self::Start) -> (u32, Self::InProgress) {
         unsafe {

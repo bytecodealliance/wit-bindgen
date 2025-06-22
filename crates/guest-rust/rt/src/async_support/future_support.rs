@@ -338,7 +338,6 @@ where
     type InProgress = (FutureWriter<T>, Option<Cleanup>);
     type Result = (WriteComplete<T>, FutureWriter<T>);
     type Cancel = FutureWriteCancel<T>;
-    type Handle = u32;
 
     fn start((writer, value): Self::Start) -> (u32, Self::InProgress) {
         // TODO: it should be safe to store the lower-destination in
@@ -622,7 +621,6 @@ where
     type InProgress = (FutureReader<T>, Option<Cleanup>);
     type Result = (ReadComplete<T>, FutureReader<T>);
     type Cancel = Result<T, FutureReader<T>>;
-    type Handle = u32;
 
     fn start(reader: Self::Start) -> (u32, Self::InProgress) {
         let (ptr, cleanup) = Cleanup::new(reader.vtable.layout);
