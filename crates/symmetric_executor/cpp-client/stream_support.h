@@ -65,8 +65,15 @@ namespace wit {
                 }
                 if (size>0)
                     data->reader(wit::span<T>(lifted.data(), size));
-                data->handle.StartReading(std::move(*buffer));
-                return symmetric::runtime::symmetric_executor::CallbackState::kPending;
+                // if closed we won't get another notification
+                if (data->handle.IsWriteClosed()) {
+                    data->reader(wit::span<T>(nullptr, 0));
+                    auto release = std::unique_ptr<background_object>(data);
+                    return symmetric::runtime::symmetric_executor::CallbackState::kReady;
+                } else {
+                    data->handle.StartReading(std::move(*buffer));
+                    return symmetric::runtime::symmetric_executor::CallbackState::kPending;
+                }
             } else {
                 data->reader(wit::span<T>(nullptr, 0));
                 auto release = std::unique_ptr<background_object>(data);
