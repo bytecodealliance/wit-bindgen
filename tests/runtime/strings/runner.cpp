@@ -1,4 +1,4 @@
-//@ args = '--new-api'
+//@ args = '--api-style symmetric'
 
 #include <assert.h>
 #include <stdlib.h>
