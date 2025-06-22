@@ -217,10 +217,14 @@ pub struct Opts {
         feature = "clap", 
         arg(
 <<<<<<< HEAD
+<<<<<<< HEAD
             long,
 =======
             long, 
 >>>>>>> 2661d5e6 (Use value types for asymmetric API)
+=======
+            long,
+>>>>>>> 78169a8a (Format)
             default_value_t = APIStyle::default(),
             value_name = "STYLE",
         ),
@@ -259,13 +263,19 @@ impl FromStr for APIStyle {
             "asymmetric" => Ok(APIStyle::Asymmetric),
             "symmetric" => Ok(APIStyle::Symmetric),
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 78169a8a (Format)
             _ => bail!(
                 "unrecognized API style: `{}`; expected `asymmetric` or `symmetric`",
                 s
             ),
+<<<<<<< HEAD
 =======
             _ => bail!("unrecognized API style: `{}`; expected `asymmetric` or `symmetric`", s),
 >>>>>>> 2661d5e6 (Use value types for asymmetric API)
+=======
+>>>>>>> 78169a8a (Format)
         }
     }
 }
@@ -1235,6 +1245,9 @@ impl CppInterfaceGenerator<'_> {
         if !matches!(special, SpecialMethod::Allocate) {
             self.gen.c_src.src.push_str("{\n");
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 78169a8a (Format)
             let needs_dealloc = if self.gen.opts.api_style == APIStyle::Symmetric
                 && matches!(variant, AbiVariant::GuestExport)
             {
@@ -1247,6 +1260,7 @@ impl CppInterfaceGenerator<'_> {
             } else {
                 false
             };
+<<<<<<< HEAD
 =======
             let needs_dealloc =
                 if self.gen.opts.api_style == APIStyle::Symmetric && matches!(variant, AbiVariant::GuestExport) {
@@ -1260,6 +1274,8 @@ impl CppInterfaceGenerator<'_> {
                     false
                 };
 >>>>>>> 2661d5e6 (Use value types for asymmetric API)
+=======
+>>>>>>> 78169a8a (Format)
             let lift_lower = if export {
                 LiftLower::LiftArgsLowerResults
             } else {
@@ -1469,11 +1485,16 @@ impl CppInterfaceGenerator<'_> {
                 }
                 Flavor::Argument(var)
 <<<<<<< HEAD
+<<<<<<< HEAD
                     if matches!(var, AbiVariant::GuestImport)
                         || self.gen.opts.api_style == APIStyle::Symmetric =>
 =======
                     if matches!(var, AbiVariant::GuestImport) || self.gen.opts.api_style == APIStyle::Symmetric =>
 >>>>>>> 2661d5e6 (Use value types for asymmetric API)
+=======
+                    if matches!(var, AbiVariant::GuestImport)
+                        || self.gen.opts.api_style == APIStyle::Symmetric =>
+>>>>>>> 78169a8a (Format)
                 {
                     self.gen.dependencies.needs_string_view = true;
                     "std::string_view".into()
@@ -1563,11 +1584,16 @@ impl CppInterfaceGenerator<'_> {
                         }
                         Flavor::Argument(var)
 <<<<<<< HEAD
+<<<<<<< HEAD
                             if matches!(var, AbiVariant::GuestImport)
                                 || self.gen.opts.api_style == APIStyle::Symmetric =>
 =======
                             if matches!(var, AbiVariant::GuestImport) || self.gen.opts.api_style == APIStyle::Symmetric =>
 >>>>>>> 2661d5e6 (Use value types for asymmetric API)
+=======
+                            if matches!(var, AbiVariant::GuestImport)
+                                || self.gen.opts.api_style == APIStyle::Symmetric =>
+>>>>>>> 78169a8a (Format)
                         {
                             self.gen.dependencies.needs_span = true;
                             format!("std::span<{inner} const>")
@@ -2416,12 +2442,18 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     "#,
                 ));
 <<<<<<< HEAD
+<<<<<<< HEAD
                 if self.gen.gen.opts.api_style == APIStyle::Symmetric
                     && matches!(self.variant, AbiVariant::GuestExport)
                 {
 =======
                 if self.gen.gen.opts.api_style == APIStyle::Symmetric && matches!(self.variant, AbiVariant::GuestExport) {
 >>>>>>> 2661d5e6 (Use value types for asymmetric API)
+=======
+                if self.gen.gen.opts.api_style == APIStyle::Symmetric
+                    && matches!(self.variant, AbiVariant::GuestExport)
+                {
+>>>>>>> 78169a8a (Format)
                     assert!(self.needs_dealloc);
                     self.push_str(&format!("if ({len}>0) _deallocate.push_back({base});\n"));
                 }
@@ -2442,6 +2474,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 uwriteln!(self.src, "{result}.initialize(i, std::move(e{tmp}));");
                 uwriteln!(self.src, "}}");
 <<<<<<< HEAD
+<<<<<<< HEAD
                 if self.gen.gen.opts.api_style == APIStyle::Symmetric
                     && matches!(self.variant, AbiVariant::GuestExport)
                 {
@@ -2453,6 +2486,14 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     results.push(format!("{result}.get_const_view()"));
                     if self.gen.gen.opts.api_style == APIStyle::Symmetric && matches!(self.variant, AbiVariant::GuestExport)
 >>>>>>> 2661d5e6 (Use value types for asymmetric API)
+=======
+                if self.gen.gen.opts.api_style == APIStyle::Symmetric
+                    && matches!(self.variant, AbiVariant::GuestExport)
+                {
+                    results.push(format!("{result}.get_const_view()"));
+                    if self.gen.gen.opts.api_style == APIStyle::Symmetric
+                        && matches!(self.variant, AbiVariant::GuestExport)
+>>>>>>> 78169a8a (Format)
                     {
                         self.leak_on_insertion.replace(format!(
                             "if ({len}>0) _deallocate.push_back((void*){result}.leak());\n"
@@ -2764,11 +2805,15 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
 
                 let op0 = &operands[0];
 <<<<<<< HEAD
+<<<<<<< HEAD
                 let flavor = if matches!(self.variant, AbiVariant::GuestImport) {
 =======
                 let flavor = if matches!(self.variant, AbiVariant::GuestImport)
                 {
 >>>>>>> 2661d5e6 (Use value types for asymmetric API)
+=======
+                let flavor = if matches!(self.variant, AbiVariant::GuestImport) {
+>>>>>>> 78169a8a (Format)
                     Flavor::BorrowedArgument
                 } else {
                     Flavor::InStruct
