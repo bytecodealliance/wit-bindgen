@@ -168,6 +168,8 @@ impl GuestStreamObj for StreamObj {
             }
             if !self.0.ready_addr.load(Ordering::Relaxed).is_null() {
                 self.0.write_closed.store(true, Ordering::Release);
+                #[cfg(feature = "trace")]
+                println!("Stream::finish_write CLOSE {:x}", self.0.read_ready_event_send.handle());
                 return;
             }
             (0, EOF_MARKER as usize as *mut ())

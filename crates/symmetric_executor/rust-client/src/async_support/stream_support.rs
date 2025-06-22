@@ -345,6 +345,9 @@ impl<T: Unpin + Send + 'static> Future for StreamRead<'_, T> {
         let me = &mut me2.reader;
 
         if me.future.is_none() {
+            if me.handle.is_write_closed() {
+                return Poll::Ready(None);
+            }
             let mut buffer2 = Vec::new();
             std::mem::swap(&mut buffer2, &mut me2.buf);
             let handle = me.handle.clone();
