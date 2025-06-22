@@ -700,7 +700,7 @@ impl WorldGenerator for Cpp {
                 world.name.to_shouty_snake_case(),
             );
         }
-        if self.dependencies.needs_future {
+        if self.dependencies.needs_future || self.dependencies.needs_stream {
             uwriteln!(self.c_src_head, "#include \"async_support.h\"")
         }
         self.finish_includes();
@@ -2746,6 +2746,58 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         uwriteln!(self.r#gen.r#gen.c_src_head, "}};");
         format!("Lift{tmpnr}")
     }
+
+    fn lower_lift_stream(&mut self, payload: Option<&Type>) {
+        let typestr = self
+            .gen
+            .optional_type_name(payload, &self.namespace, Flavor::InStruct);
+        //        let tmpnr = self.r#gen.r#gen.tmp();
+        let mut bindgen = FunctionBindgen::new(self.gen, Vec::new());
+        let lift = if let Some(ty) = payload {
+            let res = wit_bindgen_core::abi::lift_from_memory(
+                bindgen.r#gen.resolve,
+                &mut bindgen,
+                "ptr".into(),
+                ty,
+            );
+            format!("{} return {res};", String::from(bindgen.src))
+        } else {
+            String::new()
+        };
+        let mut bindgen = FunctionBindgen::new(self.gen, Vec::new());
+        // GuestImport doesn't leak the objects (string)
+        bindgen.variant = AbiVariant::GuestExport;
+        let lower = if let Some(ty) = payload {
+            wit_bindgen_core::abi::lower_to_memory(
+                bindgen.r#gen.resolve,
+                &mut bindgen,
+                "ptr".into(),
+                "value".into(),
+                ty,
+            );
+            String::from(bindgen.src)
+        } else {
+            String::new()
+        };
+        let lowered_size = if let Some(ty) = payload {
+            self.r#gen
+                .sizes
+                .size(ty)
+                .format_term(POINTER_SIZE_EXPRESSION, true)
+        } else {
+            String::from("1")
+        };
+
+        uwriteln!(self.r#gen.r#gen.c_src_head, "template <>
+            const uint32_t wit::StreamProperties<{typestr}>::lowered_size = {lowered_size};
+            template <>
+            {typestr} wit::StreamProperties<{typestr}>::lift(uint8_t const*ptr) {{ {lift} }}
+            template <>
+            void wit::StreamProperties<{typestr}>::lower({typestr} && value, uint8_t *ptr) {{ {lower} }}"
+        );
+        //        uwriteln!(self.r#gen.r#gen.c_src_head, "}};");
+        //        format!("Lift{tmpnr}")
+    }
 }
 
 fn move_if_necessary(arg: &str) -> String {
@@ -3891,9 +3943,9 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 ));
             }
             abi::Instruction::StreamLower { payload, .. } => {
-                let lower_lift = self.lower_lift(payload.as_ref());
+                self.lower_lift_stream(payload.as_ref());
                 results.push(format!(
-                    "lower_stream<{}, {lower_lift}>(std::move({}))",
+                    "lower_stream<{}>(std::move({}))",
                     self.gen.optional_type_name(
                         payload.as_ref(),
                         &self.namespace,
@@ -3903,9 +3955,9 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 ));
             }
             abi::Instruction::StreamLift { payload, .. } => {
-                let lower_lift = self.lower_lift(payload.as_ref());
+                self.lower_lift_stream(payload.as_ref());
                 results.push(format!(
-                    "lift_stream<{}, {lower_lift}>({})",
+                    "lift_stream<{}>({})",
                     self.gen.optional_type_name(
                         payload.as_ref(),
                         &self.namespace,
