@@ -1,6 +1,6 @@
 #pragma once
-#ifndef _STREAM_SUPPORT_H
-#define _STREAM_SUPPORT_H
+#ifndef WIT_STREAM_SUPPORT_H
+#define WIT_STREAM_SUPPORT_H
 
 #include "module_cpp.h"
 #include <functional>

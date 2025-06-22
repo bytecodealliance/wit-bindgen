@@ -84,6 +84,7 @@ struct Includes {
     needs_wit: bool,
     needs_memory: bool,
     needs_future: bool,
+    needs_stream: bool,
 }
 
 #[derive(Clone)]
@@ -411,6 +412,9 @@ impl Cpp {
         }
         if self.dependencies.needs_future {
             self.include("<future>");
+        }
+        if self.dependencies.needs_stream {
+            self.include("<stream_support.h>");
         }
         if self.dependencies.needs_optional {
             self.include("<optional>");
@@ -2062,6 +2066,7 @@ impl CppInterfaceGenerator<'_> {
                         + ">"
                 }
                 TypeDefKind::Stream(ty) => {
+                    self.gen.dependencies.needs_stream = true;
                     "wit::stream<".to_string()
                         + &self.optional_type_name(ty.as_ref(), from_namespace, flavor)
                         + ">"
