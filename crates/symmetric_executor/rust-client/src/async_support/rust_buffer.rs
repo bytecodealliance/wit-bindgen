@@ -7,6 +7,10 @@ pub struct RustBuffer<T: 'static> {
     buf: VecDeque<T>,
 }
 
+// struct BufIterator<'a, T: 'static> {
+//     buf: &'a mut RustBuffer<T>,
+// }
+
 impl<T: 'static> RustBuffer<T> {
     pub(crate) fn new(vec: Vec<T>) -> Self {
         Self { buf: vec.into() }
@@ -16,7 +20,7 @@ impl<T: 'static> RustBuffer<T> {
         self.buf.len()
     }
 
-    pub(crate) fn take_n<F: Fn(&[T])>(&mut self, _n: usize, _f: F) {
-        todo!()
+    pub(crate) fn drain_n(&mut self, n: usize) -> impl Iterator<Item = T> + use<'_, T> {
+        self.buf.drain(0..n)
     }
 }

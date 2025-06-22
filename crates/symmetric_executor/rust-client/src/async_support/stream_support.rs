@@ -11,8 +11,8 @@ use {
         fmt,
         future::Future,
         iter,
-        marker::{self, PhantomData},
-        mem::{self, MaybeUninit},
+        marker::PhantomData,
+        mem::MaybeUninit,
         pin::Pin,
         task::{Context, Poll},
     },
@@ -30,9 +30,9 @@ pub struct StreamVtable<T> {
     //pub dealloc_lists: Option<unsafe fn(dst: *mut u8)>,
 }
 
-const fn ceiling(x: usize, y: usize) -> usize {
-    (x / y) + if x % y == 0 { 0 } else { 1 }
-}
+// const fn ceiling(x: usize, y: usize) -> usize {
+//     (x / y) + if x % y == 0 { 0 } else { 1 }
+// }
 
 pub mod results {
     pub const BLOCKED: isize = -1;
@@ -63,20 +63,33 @@ impl<T: Unpin + Send + 'static> Future for StreamWrite<'_, T> {
         let me = self.get_mut();
         match Pin::new(&mut me.writer).poll_ready(cx) {
             Poll::Ready(_) => {
-                let mut values = RustBuffer::new(Vec::new());
                 if me.values.remaining() == 0 {
                     // delayed flush
-                    std::mem::swap(&mut me.values, &mut values);
+                    let values = RustBuffer::new(Vec::new());
+                    // std::mem::swap(&mut me.values, &mut values);
+                    // I assume EOF
+                    me.writer.handle.finish_writing(None);
                     Poll::Ready((StreamResult::Complete(0), values))
                 } else {
-                    Pin::new(&mut me.writer).start_send(Vec::new()).unwrap();
-                    match Pin::new(&mut me.writer).poll_ready(cx) {
-                        Poll::Ready(_) => {
-                            std::mem::swap(&mut me.values, &mut values);
-                            Poll::Ready((StreamResult::Complete(0), values))
+                    // send data
+                    // Pin::new(&mut me.writer).start_send(Vec::new()).unwrap();
+                    let buffer = me.writer.handle.start_writing();
+                    let addr = buffer.get_address().take_handle() as *mut u8;
+                    let size = (buffer.capacity() as usize).min(me.values.remaining());
+                    let mut dest = addr;
+                    if let Some(lower) = me.writer._vtable.lower {
+                        for i in me.values.drain_n(size) {
+                            unsafe { (lower)(i, dest) };
+                            dest = unsafe { dest.byte_add(me.writer._vtable.layout.size()) };
                         }
-                        Poll::Pending => Poll::Pending,
+                    } else {
+                        todo!();
                     }
+                    buffer.set_size(size as u64);
+                    me.writer.handle.finish_writing(Some(buffer));
+                    let mut values = RustBuffer::new(Vec::new());
+                    std::mem::swap(&mut me.values, &mut values);
+                    Poll::Ready((StreamResult::Complete(size), values))
                 }
             }
             Poll::Pending => Poll::Pending,
@@ -164,23 +177,24 @@ impl<T: Unpin> Sink<Vec<T>> for StreamWriter<T> {
         }
     }
 
-    fn start_send(self: Pin<&mut Self>, mut item: Vec<T>) -> Result<(), Self::Error> {
-        let item_len = item.len();
-        let me = self.get_mut();
-        let stream = &me.handle;
-        let buffer = stream.start_writing();
-        let addr = buffer.get_address().take_handle() as *mut u8;
-        let size = buffer.capacity() as usize;
-        assert!(size >= item_len);
-        let slice =
-            unsafe { std::slice::from_raw_parts_mut(addr.cast::<MaybeUninit<T>>(), item_len) };
-        for (a, b) in slice.iter_mut().zip(item.drain(..)) {
-            // TODO: lower
-            a.write(b);
-        }
-        buffer.set_size(item_len as u64);
-        stream.finish_writing(Some(buffer));
-        Ok(())
+    fn start_send(self: Pin<&mut Self>, _item: Vec<T>) -> Result<(), Self::Error> {
+        todo!();
+        // let item_len = item.len();
+        // let me = self.get_mut();
+        // let stream = &me.handle;
+        // let buffer = stream.start_writing();
+        // let addr = buffer.get_address().take_handle() as *mut u8;
+        // let size = buffer.capacity() as usize;
+        // assert!(size >= item_len);
+        // let slice =
+        //     unsafe { std::slice::from_raw_parts_mut(addr.cast::<MaybeUninit<T>>(), item_len) };
+        // for (a, b) in slice.iter_mut().zip(item.drain(..)) {
+        //     // TODO: lower
+        //     a.write(b);
+        // }
+        // buffer.set_size(item_len as u64);
+        // stream.finish_writing(Some(buffer));
+        // Ok(())
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
@@ -334,21 +348,32 @@ impl<T: Unpin + Send + 'static> Future for StreamRead<'_, T> {
             let mut buffer2 = Vec::new();
             std::mem::swap(&mut buffer2, &mut me2.buf);
             let handle = me.handle.clone();
+            let vtable = me._vtable;
             me.future = Some(Box::pin(async move {
-                let mut buffer0 = iter::repeat_with(MaybeUninit::uninit)
-                    .take(ceiling(4 * 1024, mem::size_of::<T>()))
+                let mut buffer0: Vec<MaybeUninit<u8>> = iter::repeat_with(MaybeUninit::uninit)
+                    .take(vtable.layout.size() * buffer2.capacity())
                     .collect::<Vec<_>>();
                 let address = unsafe { Address::from_handle(buffer0.as_mut_ptr() as usize) };
-                let buffer = Buffer::new(address, buffer0.capacity() as u64);
+                let buffer = Buffer::new(address, buffer2.capacity() as u64);
                 handle.start_reading(buffer);
                 let subsc = handle.read_ready_subscribe();
                 subsc.reset();
                 wait_on(subsc).await;
-                let buffer2 = handle.read_result();
-                if let Some(buffer2) = buffer2 {
-                    let count = buffer2.get_size();
-                    buffer0.truncate(count as usize);
-                    Some(unsafe { mem::transmute::<Vec<MaybeUninit<T>>, Vec<T>>(buffer0) })
+                let buffer3 = handle.read_result();
+                // let mut srcptr = buffer0.as_mut_ptr();
+                if let Some(buffer3) = buffer3 {
+                    let count = buffer3.get_size();
+                    let mut srcptr = buffer3.get_address().take_handle() as *mut u8;
+                    if let Some(lift) = vtable.lift {
+                        for _ in 0..count {
+                            buffer2.push(unsafe { (lift)(srcptr) });
+                            srcptr = unsafe { srcptr.byte_add(vtable.layout.size()) };
+                        }
+                    } else {
+                        todo!()
+                    }
+                    //buffer0.truncate(count as usize);
+                    Some(buffer2)
                 } else {
                     None
                 }
