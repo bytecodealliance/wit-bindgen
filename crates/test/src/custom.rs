@@ -117,7 +117,7 @@ impl LanguageMethods for Language {
         )
     }
 
-    fn prepare(&self, runner: &mut Runner<'_>) -> Result<()> {
+    fn prepare(&self, runner: &mut Runner<'_>, _: &str) -> Result<()> {
         let dir = env::current_dir()?
             .join(&runner.opts.artifacts)
             .join(&self.extension);

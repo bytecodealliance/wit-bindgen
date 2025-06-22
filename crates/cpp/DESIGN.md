@@ -96,3 +96,32 @@ For now for functions the guest import convention is used in both directions:
   with one modification:
 
    Resource IDs become usize, so you can optimize the resource table away.
+
+## Structs proposal
+
+See also the explanation of ownership at https://docs.rs/wit-bindgen/0.42.1/wit_bindgen/macro.generate.html
+
+```
+resource r; 
+record d { s: string, l: list<r> }
+arg: func(d: d);
+result: func() -> d;
+```
+
+```
+struct DResult {
+  wit::string s;
+  wit::list<R> l;
+}
+struct DParam {
+  std::string_view s;
+  std::span<R> l;
+}
+```
+
+|direction|style|
+|---|---|
+|GIA|void arg(DParam d);|
+|GIR|DResult result();|
+|GEA|void arg(DResult d);|
+|GER|DResult result();|

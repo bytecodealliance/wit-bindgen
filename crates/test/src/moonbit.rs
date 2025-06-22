@@ -26,7 +26,7 @@ impl LanguageMethods for MoonBit {
         &["--derive-show", "--derive-eq", "--derive-error"]
     }
 
-    fn prepare(&self, runner: &mut crate::Runner<'_>) -> anyhow::Result<()> {
+    fn prepare(&self, runner: &mut crate::Runner<'_>, _: &str) -> anyhow::Result<()> {
         println!("Testing if MoonBit toolchain exists...");
         if runner
             .run_command(Command::new("moon").arg("version"))

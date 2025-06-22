@@ -125,6 +125,7 @@ impl<T: 'static> AbiBuffer<T> {
     /// This signals that `amt` items are no longer going to be yielded from
     /// `abi_ptr_and_len`. Additionally this will perform any deallocation
     /// necessary for the starting `amt` items in this list.
+    #[cfg(not(feature = "symmetric"))]
     pub(crate) fn advance(&mut self, amt: usize) {
         assert!(amt + self.cursor <= self.rust_storage.len());
         let Some(dealloc_lists) = self.vtable.dealloc_lists else {

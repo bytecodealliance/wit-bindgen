@@ -1,0 +1,12 @@
+package a:b;
+
+interface the-test {
+  f: func() -> future<string>;
+}
+
+world test {
+  export the-test;
+}
+world runner {
+  import the-test;
+}

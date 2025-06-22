@@ -25,7 +25,7 @@ impl LanguageMethods for Wat {
         Some(";;@")
     }
 
-    fn prepare(&self, _runner: &mut Runner<'_>) -> Result<()> {
+    fn prepare(&self, _runner: &mut Runner<'_>, _: &str) -> Result<()> {
         Ok(())
     }
 

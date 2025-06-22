@@ -1,3 +1,5 @@
+//@ args = '--link-name intermediate-rust'
+
 include!(env!("BINDINGS"));
 
 use exports::Float as Float2;

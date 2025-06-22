@@ -74,7 +74,7 @@ impl LanguageMethods for C {
         ]
     }
 
-    fn prepare(&self, runner: &mut Runner<'_>) -> Result<()> {
+    fn prepare(&self, runner: &mut Runner<'_>, _: &str) -> Result<()> {
         prepare(runner, clang(runner))
     }
 
@@ -109,7 +109,7 @@ impl LanguageMethods for Cpp {
         C.should_fail_verify(name, config, args)
     }
 
-    fn prepare(&self, runner: &mut Runner<'_>) -> Result<()> {
+    fn prepare(&self, runner: &mut Runner<'_>, _: &str) -> Result<()> {
         prepare(runner, clangpp(runner))
     }
 

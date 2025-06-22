@@ -1,3 +1,5 @@
+//@ args = '--link-name leaf-rust'
+
 include!(env!("BINDINGS"));
 
 use exports::exports::{Float as FloatExport, GuestFloat};
