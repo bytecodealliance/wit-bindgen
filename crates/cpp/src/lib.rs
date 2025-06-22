@@ -380,7 +380,7 @@ impl Cpp {
             self.include("<tuple>");
         }
         if self.dependencies.needs_wit {
-            self.include("<wit-guest.h>");
+            self.include("\"wit-guest.h\"");
         }
         if self.dependencies.needs_memory {
             self.include("<memory>");
@@ -684,6 +684,13 @@ impl WorldGenerator for Cpp {
             .unwrap()
             .as_slice(),
         );
+
+        if self.dependencies.needs_wit {
+            files.push(
+                &format!("wit-guest.h"),
+                include_bytes!("../helper-types/wit-guest.h"),
+            );
+        }
         Ok(())
     }
 }
