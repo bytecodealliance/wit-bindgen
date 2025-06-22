@@ -84,7 +84,6 @@ impl<T: Unpin + Send + 'static> Future for StreamWrite<'_, T> {
     }
 }
 
-
 pub struct StreamWriter<T: 'static> {
     handle: Stream,
     /*?*/ future: Option<Pin<Box<dyn Future<Output = ()> + 'static + Send>>>,
@@ -258,45 +257,52 @@ impl<T> StreamReader<T> {
     }
 }
 
-impl<T: Unpin + Send> futures::stream::Stream for StreamReader<T> {
-    type Item = Vec<T>;
-
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        let me = self.get_mut();
-
-        if me.future.is_none() {
-            let handle = me.handle.clone();
-            me.future = Some(Box::pin(async move {
-                let mut buffer0 = iter::repeat_with(MaybeUninit::uninit)
-                    .take(ceiling(4 * 1024, mem::size_of::<T>()))
-                    .collect::<Vec<_>>();
-                let address = unsafe { Address::from_handle(buffer0.as_mut_ptr() as usize) };
-                let buffer = Buffer::new(address, buffer0.len() as u64);
-                handle.start_reading(buffer);
-                let subsc = handle.read_ready_subscribe();
-                subsc.reset();
-                wait_on(subsc).await;
-                let buffer2 = handle.read_result();
-                if let Some(buffer2) = buffer2 {
-                    let count = buffer2.get_size();
-                    buffer0.truncate(count as usize);
-                    // TODO: lift
-                    Some(unsafe { mem::transmute::<Vec<MaybeUninit<T>>, Vec<T>>(buffer0) })
-                } else {
-                    None
-                }
-            }) as Pin<Box<dyn Future<Output = _> + Send>>);
-        }
-
-        match me.future.as_mut().unwrap().as_mut().poll(cx) {
-            Poll::Ready(v) => {
-                me.future = None;
-                Poll::Ready(v)
-            }
-            Poll::Pending => Poll::Pending,
-        }
+impl<T: Send + Unpin + 'static> StreamReader<T> {
+    pub async fn next(&mut self) -> Option<T> {
+        let buf = self.read(Vec::with_capacity(1)).await;
+        buf.and_then(|mut v| v.pop())
     }
 }
+
+// impl<T: Unpin + Send> futures::stream::Stream for StreamReader<T> {
+//     type Item = Vec<T>;
+
+//     fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+//         let me = self.get_mut();
+
+//         if me.future.is_none() {
+//             let handle = me.handle.clone();
+//             me.future = Some(Box::pin(async move {
+//                 let mut buffer0 = iter::repeat_with(MaybeUninit::uninit)
+//                     .take(ceiling(4 * 1024, mem::size_of::<T>()))
+//                     .collect::<Vec<_>>();
+//                 let address = unsafe { Address::from_handle(buffer0.as_mut_ptr() as usize) };
+//                 let buffer = Buffer::new(address, buffer0.len() as u64);
+//                 handle.start_reading(buffer);
+//                 let subsc = handle.read_ready_subscribe();
+//                 subsc.reset();
+//                 wait_on(subsc).await;
+//                 let buffer2 = handle.read_result();
+//                 if let Some(buffer2) = buffer2 {
+//                     let count = buffer2.get_size();
+//                     buffer0.truncate(count as usize);
+//                     // TODO: lift
+//                     Some(unsafe { mem::transmute::<Vec<MaybeUninit<T>>, Vec<T>>(buffer0) })
+//                 } else {
+//                     None
+//                 }
+//             }) as Pin<Box<dyn Future<Output = _> + Send>>);
+//         }
+
+//         match me.future.as_mut().unwrap().as_mut().poll(cx) {
+//             Poll::Ready(v) => {
+//                 me.future = None;
+//                 Poll::Ready(v)
+//             }
+//             Poll::Pending => Poll::Pending,
+//         }
+//     }
+// }
 
 impl<T> Drop for StreamReader<T> {
     fn drop(&mut self) {
@@ -312,50 +318,50 @@ pub struct StreamRead<'a, T: 'static> {
     reader: &'a mut StreamReader<T>,
 }
 
-impl<T: 'static> Future for StreamRead<'_, T> {
-    type Output = (StreamResult, Vec<T>);
+impl<T: Unpin + Send + 'static> Future for StreamRead<'_, T> {
+    type Output = Option<Vec<T>>;
 
-    fn poll(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Self::Output> {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         // TODO: Check whether WaitableOperation helps here
         //self.pin_project().poll_complete(cx)
 
-        todo!()
+        // todo!()
 
-        // let me2 = self.get_mut();
-        // let me = &mut me2.reader;
+        let me2 = self.get_mut();
+        let me = &mut me2.reader;
 
-        // if me.future.is_none() {
-        //     let mut buffer2 = Vec::new();
-        //     std::mem::swap(&mut buffer2, &mut me2.buf);
-        //     let handle = me.handle.clone();
-        //     me.future = Some(Box::pin(async move {
-        //         let mut buffer0 = iter::repeat_with(MaybeUninit::uninit)
-        //             .take(ceiling(4 * 1024, mem::size_of::<T>()))
-        //             .collect::<Vec<_>>();
-        //         let address = unsafe { Address::from_handle(buffer0.as_mut_ptr() as usize) };
-        //         let buffer = Buffer::new(address, buffer0.capacity() as u64);
-        //         handle.start_reading(buffer);
-        //         let subsc = handle.read_ready_subscribe();
-        //         subsc.reset();
-        //         wait_on(subsc).await;
-        //         let buffer2 = handle.read_result();
-        //         if let Some(buffer2) = buffer2 {
-        //             let count = buffer2.get_size();
-        //             buffer0.truncate(count as usize);
-        //             Some(unsafe { mem::transmute::<Vec<MaybeUninit<T>>, Vec<T>>(buffer0) })
-        //         } else {
-        //             None
-        //         }
-        //     }) as Pin<Box<dyn Future<Output = _> + Send>>);
-        // }
+        if me.future.is_none() {
+            let mut buffer2 = Vec::new();
+            std::mem::swap(&mut buffer2, &mut me2.buf);
+            let handle = me.handle.clone();
+            me.future = Some(Box::pin(async move {
+                let mut buffer0 = iter::repeat_with(MaybeUninit::uninit)
+                    .take(ceiling(4 * 1024, mem::size_of::<T>()))
+                    .collect::<Vec<_>>();
+                let address = unsafe { Address::from_handle(buffer0.as_mut_ptr() as usize) };
+                let buffer = Buffer::new(address, buffer0.capacity() as u64);
+                handle.start_reading(buffer);
+                let subsc = handle.read_ready_subscribe();
+                subsc.reset();
+                wait_on(subsc).await;
+                let buffer2 = handle.read_result();
+                if let Some(buffer2) = buffer2 {
+                    let count = buffer2.get_size();
+                    buffer0.truncate(count as usize);
+                    Some(unsafe { mem::transmute::<Vec<MaybeUninit<T>>, Vec<T>>(buffer0) })
+                } else {
+                    None
+                }
+            }) as Pin<Box<dyn Future<Output = _> + Send>>);
+        }
 
-        // match me.future.as_mut().unwrap().as_mut().poll(cx) {
-        //     Poll::Ready(v) => {
-        //         me.future = None;
-        //         Poll::Ready(v)
-        //     }
-        //     Poll::Pending => Poll::Pending,
-        // }
+        match me.future.as_mut().unwrap().as_mut().poll(cx) {
+            Poll::Ready(v) => {
+                me.future = None;
+                Poll::Ready(v)
+            }
+            Poll::Pending => Poll::Pending,
+        }
     }
 }
 
