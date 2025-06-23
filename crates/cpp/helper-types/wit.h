@@ -5,11 +5,6 @@
 #include <optional>
 #include <stddef.h> // size_t
 #include <stdint.h>
-#ifdef __cpp_lib_span
-#include <span>
-#else
-#include <vector>
-#endif
 #include <memory> // unique_ptr
 #include <stdint.h>
 #include <string>
@@ -20,31 +15,6 @@
 
 
 namespace wit {
-#ifdef __cpp_lib_span
-using std::span;
-#else
-/// Minimal span (vector view) implementation for older C++ environments
-template <class T> class span {
-  T const *address;
-  size_t length;
-
-public:
-  T const *data() const { return address; }
-  size_t size() const { return length; }
-
-  typedef T const *const_iterator;
-
-  const_iterator begin() const { return address; }
-  const_iterator end() const { return address + length; }
-  bool empty() const { return !length; }
-  T const &operator[](size_t index) const { return address[index]; }
-  span(T *a, size_t l) : address(a), length(l) {}
-  // create from any compatible vector (borrows data!)
-  template <class U>
-  span(std::vector<U> const &vec) : address(vec.data()), length(vec.size()) {}
-};
-#endif
-
 /// @brief Helper class to map between IDs and resources
 /// @tparam R Type of the Resource
 template <class R> class ResourceTable {
@@ -183,9 +153,9 @@ public:
   T* leak() { T*result = data_; data_ = nullptr; return result; }
   // typically called by post
   static void drop_raw(void *ptr) { if (ptr!=empty_ptr()) free(ptr); }
-  wit::span<T> get_view() const { return wit::span<T>(data_, length); }
-  wit::span<const T> get_const_view() const { return wit::span<const T>(data_, length); }
-  template <class U> static vector<T> from_view(wit::span<U> const& a) {
+  std::span<T> get_view() const { return std::span<T>(data_, length); }
+  std::span<const T> get_const_view() const { return std::span<const T>(data_, length); }
+  template <class U> static vector<T> from_view(std::span<U> const& a) {
     auto result = vector<T>::allocate(a.size());
     for (uint32_t i=0;i<a.size();++i) {
       new ((void*)(result.data_+i)) T(a[i]);
