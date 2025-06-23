@@ -1,7 +1,8 @@
+use anyhow::bail;
 use heck::{ToPascalCase, ToShoutySnakeCase, ToSnakeCase, ToUpperCamelCase};
 use std::{
     collections::{HashMap, HashSet},
-    fmt::Write as FmtWrite,
+    fmt::{Display, Write as FmtWrite},
     io::{Read, Write},
     path::PathBuf,
     process::{Command, Stdio},
@@ -209,32 +210,60 @@ pub struct Opts {
     #[cfg_attr(feature = "clap", arg(long, default_value_t = Ownership::Owning))]
     pub ownership: Ownership,
 
-    /// Symmetric API, same API for imported and exported functions.
-    /// Reduces the allocation overhead for symmetric ABI.
+    /// Set API style to symmetric or asymmetric
     #[cfg_attr(
-        feature = "clap",
-        arg(long, default_value_t = true, overrides_with = "_old_api")
+        feature = "clap", 
+        arg(
+            long,
+            default_value_t = APIStyle::default(),
+            value_name = "STYLE",
+        ),
     )]
-    pub new_api: bool,
-
-    /// Asymmetric API: Imported functions borrow arguments (const&),
-    /// while exported functions received owned arguments (&&).
-    /// Reduces the allocation overhead for canonical ABI.
-    #[cfg_attr(feature = "clap", arg(long))]
-    pub _old_api: bool,
+    pub api_style: APIStyle,
 
     /// Where to place output files
     #[cfg_attr(feature = "clap", arg(skip))]
     out_dir: Option<PathBuf>,
 }
 
+/// Supported API styles for the generated bindings.
+#[derive(Default, Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub enum APIStyle {
+    /// Imported functions borrow arguments, while exported functions receive owned arguments. Reduces the allocation overhead for the canonical ABI.
+    #[default]
+    Asymmetric,
+    /// Same API for imported and exported functions. Reduces the allocation overhead for symmetric ABI.
+    Symmetric,
+}
+
+impl Display for APIStyle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            APIStyle::Asymmetric => write!(f, "asymmetric"),
+            APIStyle::Symmetric => write!(f, "symmetric"),
+        }
+    }
+}
+
+impl FromStr for APIStyle {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "asymmetric" => Ok(APIStyle::Asymmetric),
+            "symmetric" => Ok(APIStyle::Symmetric),
+            _ => bail!(
+                "unrecognized API style: `{}`; expected `asymmetric` or `symmetric`",
+                s
+            ),
+        }
+    }
+}
+
 impl Opts {
     pub fn build(mut self, out_dir: Option<&PathBuf>) -> Box<dyn WorldGenerator> {
         let mut r = Cpp::new();
         self.out_dir = out_dir.cloned();
-        if self._old_api {
-            self.new_api = false;
-        }
         r.opts = self;
         Box::new(r)
     }
@@ -684,6 +713,7 @@ impl WorldGenerator for Cpp {
             .unwrap()
             .as_slice(),
         );
+
         Ok(())
     }
 }
@@ -1183,17 +1213,18 @@ impl CppInterfaceGenerator<'_> {
         let special = is_special_method(func);
         if !matches!(special, SpecialMethod::Allocate) {
             self.gen.c_src.src.push_str("{\n");
-            let needs_dealloc =
-                if self.gen.opts.new_api && matches!(variant, AbiVariant::GuestExport) {
-                    self.gen
-                        .c_src
-                        .src
-                        .push_str("std::vector<void*> _deallocate;\n");
-                    self.gen.dependencies.needs_vector = true;
-                    true
-                } else {
-                    false
-                };
+            let needs_dealloc = if self.gen.opts.api_style == APIStyle::Symmetric
+                && matches!(variant, AbiVariant::GuestExport)
+            {
+                self.gen
+                    .c_src
+                    .src
+                    .push_str("std::vector<void*> _deallocate;\n");
+                self.gen.dependencies.needs_vector = true;
+                true
+            } else {
+                false
+            };
             let lift_lower = if export {
                 LiftLower::LiftArgsLowerResults
             } else {
@@ -1402,14 +1433,15 @@ impl CppInterfaceGenerator<'_> {
                     "std::string_view".into()
                 }
                 Flavor::Argument(var)
-                    if matches!(var, AbiVariant::GuestImport) || self.gen.opts.new_api =>
+                    if matches!(var, AbiVariant::GuestImport)
+                        || self.gen.opts.api_style == APIStyle::Symmetric =>
                 {
                     self.gen.dependencies.needs_string_view = true;
                     "std::string_view".into()
                 }
                 Flavor::Argument(AbiVariant::GuestExport) => {
                     self.gen.dependencies.needs_wit = true;
-                    "wit::string &&".into()
+                    "wit::string".into()
                 }
                 _ => {
                     self.gen.dependencies.needs_wit = true;
@@ -1491,14 +1523,15 @@ impl CppInterfaceGenerator<'_> {
                             format!("wit::span<{inner} const>")
                         }
                         Flavor::Argument(var)
-                            if matches!(var, AbiVariant::GuestImport) || self.gen.opts.new_api =>
+                            if matches!(var, AbiVariant::GuestImport)
+                                || self.gen.opts.api_style == APIStyle::Symmetric =>
                         {
                             self.gen.dependencies.needs_wit = true;
                             format!("wit::span<{inner} const>")
                         }
                         Flavor::Argument(AbiVariant::GuestExport) => {
                             self.gen.dependencies.needs_wit = true;
-                            format!("wit::vector<{inner}>&&")
+                            format!("wit::vector<{inner}>")
                         }
                         _ => {
                             self.gen.dependencies.needs_wit = true;
@@ -2280,7 +2313,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     .gen
                     .type_name(element, &self.namespace, Flavor::InStruct);
                 self.push_str(&format!("auto {} = {};\n", len, operands[1]));
-                let result = if self.gen.gen.opts.new_api
+                let result = if self.gen.gen.opts.api_style == APIStyle::Symmetric
                     && matches!(self.variant, AbiVariant::GuestExport)
                 {
                     format!(
@@ -2296,7 +2329,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let tmp = self.tmp();
                 let len = format!("len{}", tmp);
                 uwriteln!(self.src, "auto {} = {};\n", len, operands[1]);
-                let result = if self.gen.gen.opts.new_api
+                let result = if self.gen.gen.opts.api_style == APIStyle::Symmetric
                     && matches!(self.variant, AbiVariant::GuestExport)
                 {
                     assert!(self.needs_dealloc);
@@ -2316,7 +2349,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let tmp = self.tmp();
                 let size = self.gen.sizes.size(element);
                 let _align = self.gen.sizes.align(element);
-                let flavor = if self.gen.gen.opts.new_api
+                let flavor = if self.gen.gen.opts.api_style == APIStyle::Symmetric
                     && matches!(self.variant, AbiVariant::GuestExport)
                 {
                     Flavor::BorrowedArgument
@@ -2339,7 +2372,9 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     r#"auto {result} = wit::vector<{vtype}>::allocate({len});
                     "#,
                 ));
-                if self.gen.gen.opts.new_api && matches!(self.variant, AbiVariant::GuestExport) {
+                if self.gen.gen.opts.api_style == APIStyle::Symmetric
+                    && matches!(self.variant, AbiVariant::GuestExport)
+                {
                     assert!(self.needs_dealloc);
                     self.push_str(&format!("if ({len}>0) _deallocate.push_back({base});\n"));
                 }
@@ -2359,9 +2394,12 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 // inplace construct
                 uwriteln!(self.src, "{result}.initialize(i, std::move(e{tmp}));");
                 uwriteln!(self.src, "}}");
-                if self.gen.gen.opts.new_api && matches!(self.variant, AbiVariant::GuestExport) {
+                if self.gen.gen.opts.api_style == APIStyle::Symmetric
+                    && matches!(self.variant, AbiVariant::GuestExport)
+                {
                     results.push(format!("{result}.get_const_view()"));
-                    if self.gen.gen.opts.new_api && matches!(self.variant, AbiVariant::GuestExport)
+                    if self.gen.gen.opts.api_style == APIStyle::Symmetric
+                        && matches!(self.variant, AbiVariant::GuestExport)
                     {
                         self.leak_on_insertion.replace(format!(
                             "if ({len}>0) _deallocate.push_back((void*){result}.leak());\n"
@@ -2672,9 +2710,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 }
 
                 let op0 = &operands[0];
-                let flavor = if self.gen.gen.opts.new_api
-                    && matches!(self.variant, AbiVariant::GuestImport)
-                {
+                let flavor = if matches!(self.variant, AbiVariant::GuestImport) {
                     Flavor::BorrowedArgument
                 } else {
                     Flavor::InStruct
@@ -2697,7 +2733,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let (_none, none_results) = self.blocks.pop().unwrap();
                 assert!(none_results.is_empty());
                 assert!(some_results.len() == 1);
-                let flavor = if self.gen.gen.opts.new_api
+                let flavor = if self.gen.gen.opts.api_style == APIStyle::Symmetric
                     && matches!(self.variant, AbiVariant::GuestExport)
                 {
                     Flavor::BorrowedArgument

@@ -40,11 +40,15 @@ static bool equal(std::tuple<R,S> const&a, std::tuple<T,U> const& b) {
     return equal(std::get<0>(a), std::get<0>(b)) && equal(std::get<1>(a), std::get<1>(b));
 }
 
-void exports::test::lists::to_test::EmptyListParam(wit::span<uint8_t const> a) {
+static bool equal(wit::string const& a, std::string_view b) {
+    return a.get_view() == b;
+}
+
+void exports::test::lists::to_test::EmptyListParam(wit::vector<uint8_t> a) {
     assert(a.empty());
 }
 
-void exports::test::lists::to_test::EmptyStringParam(std::string_view a) {
+void exports::test::lists::to_test::EmptyStringParam(wit::string a) {
     assert(a.empty());
 }
 
@@ -56,33 +60,33 @@ wit::string exports::test::lists::to_test::EmptyStringResult() {
     return wit::string::from_view(std::string_view());
 }
 
-void exports::test::lists::to_test::ListParam(wit::span<const uint8_t> list) {
+void exports::test::lists::to_test::ListParam(wit::vector<uint8_t> list) {
     assert(equal(list, std::vector<uint8_t>{1, 2, 3, 4}));
 }
 
-void exports::test::lists::to_test::ListParam2(std::string_view ptr) {
+void exports::test::lists::to_test::ListParam2(wit::string ptr) {
     assert(equal(ptr, std::string_view("foo")));
 }
 
-void exports::test::lists::to_test::ListParam3(wit::span<const std::string_view> ptr) {
+void exports::test::lists::to_test::ListParam3(wit::vector<wit::string> ptr) {
     assert(equal(ptr.size(), size_t(3)));
     assert(equal(ptr[0], std::string_view("foo")));
     assert(equal(ptr[1], std::string_view("bar")));
     assert(equal(ptr[2], std::string_view("baz")));
 }
 
-void exports::test::lists::to_test::ListParam4(wit::span<const wit::span<const std::string_view>> ptr) {
+void exports::test::lists::to_test::ListParam4(wit::vector<wit::vector<wit::string>> ptr) {
     assert(equal(ptr.size(), size_t(2)));
     assert(equal(ptr[0][0], std::string_view("foo")));
     assert(equal(ptr[0][1], std::string_view("bar")));
     assert(equal(ptr[1][0], std::string_view("baz")));
 }
 
-void exports::test::lists::to_test::ListParam5(wit::span<std::tuple<uint8_t, uint32_t, uint8_t> const> a) {
+void exports::test::lists::to_test::ListParam5(wit::vector<std::tuple<uint8_t, uint32_t, uint8_t>> a) {
 
 }
 
-void exports::test::lists::to_test::ListParamLarge(wit::span<std::string_view const> a) {
+void exports::test::lists::to_test::ListParamLarge(wit::vector<wit::string> a) {
 
 }
 
@@ -98,30 +102,30 @@ wit::vector<wit::string> exports::test::lists::to_test::ListResult3() {
     return wit::vector<wit::string>::from_view(wit::span<wit::string>(std::vector<wit::string>{wit::string::from_view("hello,"), wit::string::from_view("world!")}));
 }
 
-wit::vector<uint8_t> exports::test::lists::to_test::ListRoundtrip(wit::span<const uint8_t> x) {
-    return wit::vector<uint8_t>::from_view(x);
+wit::vector<uint8_t> exports::test::lists::to_test::ListRoundtrip(wit::vector<uint8_t> x) {
+    return x;
 }
 
-wit::string exports::test::lists::to_test::StringRoundtrip(std::string_view x) {
-    return wit::string::from_view(x);
+wit::string exports::test::lists::to_test::StringRoundtrip(wit::string x) {
+    return x;
 }
 
-std::tuple<wit::vector<uint8_t>, wit::vector<int8_t>> exports::test::lists::to_test::ListMinmax8(wit::span<uint8_t const> a, wit::span<int8_t const> b) {
-    return std::make_tuple(wit::vector<uint8_t>::from_view(a), wit::vector<int8_t>::from_view(b));
+std::tuple<wit::vector<uint8_t>, wit::vector<int8_t>> exports::test::lists::to_test::ListMinmax8(wit::vector<uint8_t> a, wit::vector<int8_t> b) {
+    return std::make_tuple(std::move(a), std::move(b));
 }
 
-std::tuple<wit::vector<uint16_t>, wit::vector<int16_t>> exports::test::lists::to_test::ListMinmax16(wit::span<uint16_t const> a, wit::span<int16_t const> b) {
-    return std::make_tuple(wit::vector<uint16_t>::from_view(a), wit::vector<int16_t>::from_view(b));
+std::tuple<wit::vector<uint16_t>, wit::vector<int16_t>> exports::test::lists::to_test::ListMinmax16(wit::vector<uint16_t> a, wit::vector<int16_t> b) {
+    return std::make_tuple(std::move(a), std::move(b));
 }
 
-std::tuple<wit::vector<uint32_t>, wit::vector<int32_t>> exports::test::lists::to_test::ListMinmax32(wit::span<uint32_t const> a, wit::span<int32_t const> b) {
-    return std::make_tuple(wit::vector<uint32_t>::from_view(a), wit::vector<int32_t>::from_view(b));
+std::tuple<wit::vector<uint32_t>, wit::vector<int32_t>> exports::test::lists::to_test::ListMinmax32(wit::vector<uint32_t> a, wit::vector<int32_t> b) {
+    return std::make_tuple(std::move(a), std::move(b));
 }
 
-std::tuple<wit::vector<uint64_t>, wit::vector<int64_t>> exports::test::lists::to_test::ListMinmax64(wit::span<uint64_t const> a, wit::span<int64_t const> b) {
-    return std::make_tuple(wit::vector<uint64_t>::from_view(a), wit::vector<int64_t>::from_view(b));
+std::tuple<wit::vector<uint64_t>, wit::vector<int64_t>> exports::test::lists::to_test::ListMinmax64(wit::vector<uint64_t> a, wit::vector<int64_t> b) {
+    return std::make_tuple(std::move(a), std::move(b));
 }
 
-std::tuple<wit::vector<float>, wit::vector<double>> exports::test::lists::to_test::ListMinmaxFloat(wit::span<float const> a, wit::span<double const> b) {
-    return std::make_tuple(wit::vector<float>::from_view(a), wit::vector<double>::from_view(b));
+std::tuple<wit::vector<float>, wit::vector<double>> exports::test::lists::to_test::ListMinmaxFloat(wit::vector<float> a, wit::vector<double> b) {
+    return std::make_tuple(std::move(a), std::move(b));
 }

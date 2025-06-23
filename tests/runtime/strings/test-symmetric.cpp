@@ -1,4 +1,4 @@
-//@ args = '--old-api'
+//@ args = '--api-style symmetric'
 
 #include <assert.h>
 #include <test_cpp.h>
@@ -12,8 +12,9 @@ void assert_str(std::string_view const& str, const char* expected) {
   assert(memcmp(str.data(), expected, expected_len) == 0);
 }
 
-void exports::test::strings::to_test::TakeBasic(wit::string&& str) {
-  assert_str(str.get_view(), "latin utf16");
+// new API: Identical for guest import and export
+void exports::test::strings::to_test::TakeBasic(std::string_view str) {
+  assert_str(str, "latin utf16");
 }
 
 wit::string exports::test::strings::to_test::ReturnUnicode() {
@@ -26,7 +27,8 @@ wit::string exports::test::strings::to_test::ReturnEmpty() {
   return wit::string((char const*)1, 0);
 }
 
-wit::string exports::test::strings::to_test::Roundtrip(wit::string &&str) {
+// new API: Identical for guest import and export
+wit::string exports::test::strings::to_test::Roundtrip(std::string_view str) {
   assert(str.size() > 0);
-  return std::move(str);
+  return wit::string::from_view(str);
 }
