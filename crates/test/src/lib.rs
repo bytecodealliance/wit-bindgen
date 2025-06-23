@@ -192,7 +192,6 @@ enum Language {
     Rust,
     C,
     Cpp,
-    Cpp17,
     Wat,
     Csharp,
     MoonBit,
@@ -410,10 +409,10 @@ impl Runner<'_> {
             .and_then(|s| s.to_str())
             .context("non-utf-8 path extension")?;
 
-        let mut language = match extension {
+        let language = match extension {
             "rs" => Language::Rust,
             "c" => Language::C,
-            "cpp" => Language::Cpp17,
+            "cpp" => Language::Cpp,
             "wat" => Language::Wat,
             "cs" => Language::Csharp,
             "mbt" => Language::MoonBit,
@@ -429,16 +428,6 @@ impl Runner<'_> {
         };
         assert!(bindgen.args.is_empty());
         bindgen.args = config.args.into();
-        if language == Language::Cpp17 {
-            bindgen.args.retain(|elem| {
-                if elem == "--language=Cpp" {
-                    language = Language::Cpp;
-                    false
-                } else {
-                    true
-                }
-            });
-        }
 
         Ok(Component {
             name: path.file_stem().unwrap().to_str().unwrap().to_string(),
@@ -508,12 +497,6 @@ impl Runner<'_> {
                 }
             }
             for language in languages.iter() {
-                // Right now C++'s generator is the same as C's, so don't
-                // duplicate everything there.
-                if *language == Language::Cpp {
-                    continue;
-                }
-
                 // If the CLI arguments filter out this language, then discard
                 // the test case.
                 if !self.include_language(&language) {
@@ -1224,7 +1207,6 @@ impl Language {
         Language::Rust,
         Language::C,
         Language::Cpp,
-        Language::Cpp17,
         Language::Wat,
         Language::Csharp,
         Language::MoonBit,
@@ -1234,8 +1216,7 @@ impl Language {
         match self {
             Language::Rust => &rust::Rust,
             Language::C => &c::C,
-            Language::Cpp => &c::Cpp,
-            Language::Cpp17 => &cpp::Cpp17,
+            Language::Cpp => &cpp::Cpp,
             Language::Wat => &wat::Wat,
             Language::Csharp => &csharp::Csharp,
             Language::MoonBit => &moonbit::MoonBit,

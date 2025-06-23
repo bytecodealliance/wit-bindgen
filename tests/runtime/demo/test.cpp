@@ -1,6 +1,4 @@
-//@ args = '--language=Cpp'
+#include <test_cpp.h>
 
-#include <test.h>
-
-void exports_a_b_the_test_x() {
+void exports::a::b::the_test::X() {
 }

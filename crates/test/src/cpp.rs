@@ -8,7 +8,7 @@ use std::process::Command;
 
 // option wasi_sdk_path is inherited from C
 
-pub struct Cpp17;
+pub struct Cpp;
 
 /// C/C++-specific configuration of component files
 #[derive(Default, Deserialize)]
@@ -26,9 +26,9 @@ fn clangpp(runner: &Runner<'_>) -> PathBuf {
     }
 }
 
-impl LanguageMethods for Cpp17 {
+impl LanguageMethods for Cpp {
     fn display(&self) -> &str {
-        "cpp17"
+        "cpp"
     }
 
     fn comment_prefix_for_test_config(&self) -> Option<&str> {
@@ -76,7 +76,7 @@ impl LanguageMethods for Cpp17 {
     ) -> anyhow::Result<()> {
         let mut export_header_dir = bindgen.wit_path.clone();
         export_header_dir.pop();
-        export_header_dir.push("cpp17");
+        export_header_dir.push("cpp");
 
         // copy resource implementation in header files to target dir
         if export_header_dir.is_dir() {
