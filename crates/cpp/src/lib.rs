@@ -691,10 +691,7 @@ impl WorldGenerator for Cpp {
         );
 
         if self.dependencies.needs_wit {
-            files.push(
-                &format!("wit.h"),
-                include_bytes!("../helper-types/wit.h"),
-            );
+            files.push(&format!("wit.h"), include_bytes!("../helper-types/wit.h"));
         }
         Ok(())
     }
