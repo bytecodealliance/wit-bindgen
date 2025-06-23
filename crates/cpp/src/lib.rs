@@ -1,8 +1,9 @@
 use anyhow::bail;
 use heck::{ToPascalCase, ToShoutySnakeCase, ToSnakeCase, ToUpperCamelCase};
 use std::{
+    any::Any,
     collections::{HashMap, HashSet},
-    fmt::{Display, Write as FmtWrite},
+    fmt::{self, Display, Write as FmtWrite},
     io::{Read, Write},
     path::PathBuf,
     process::{Command, Stdio},
@@ -15,7 +16,8 @@ use wit_bindgen_core::{
     uwrite, uwriteln,
     wit_parser::{
         Alignment, ArchitectureSize, Docs, Function, FunctionKind, Handle, Int, InterfaceId,
-        Resolve, SizeAlign, Stability, Type, TypeDefKind, TypeId, TypeOwner, WorldId, WorldKey,
+        Resolve, SizeAlign, Stability, Type, TypeDef, TypeDefKind, TypeId, TypeOwner, WorldId,
+        WorldKey,
     },
     Files, InterfaceGenerator, Source, WorldGenerator,
 };
@@ -119,59 +121,6 @@ struct Cpp {
     import_prefix: Option<String>,
 }
 
-#[derive(Default, Debug, Clone, Copy)]
-pub enum Ownership {
-    /// Generated types will be composed entirely of owning fields, regardless
-    /// of whether they are used as parameters to imports or not.
-    #[default]
-    Owning,
-
-    /// Generated types used as parameters to imports will be "deeply
-    /// borrowing", i.e. contain references rather than owned values when
-    /// applicable.
-    Borrowing {
-        /// Whether or not to generate "duplicate" type definitions for a single
-        /// WIT type if necessary, for example if it's used as both an import
-        /// and an export, or if it's used both as a parameter to an import and
-        /// a return value from an import.
-        duplicate_if_necessary: bool,
-    },
-}
-
-impl FromStr for Ownership {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "owning" => Ok(Self::Owning),
-            "borrowing" => Ok(Self::Borrowing {
-                duplicate_if_necessary: false,
-            }),
-            "borrowing-duplicate-if-necessary" => Ok(Self::Borrowing {
-                duplicate_if_necessary: true,
-            }),
-            _ => Err(format!(
-                "unrecognized ownership: `{s}`; \
-                 expected `owning`, `borrowing`, or `borrowing-duplicate-if-necessary`"
-            )),
-        }
-    }
-}
-
-impl core::fmt::Display for Ownership {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        f.write_str(match self {
-            Ownership::Owning => "owning",
-            Ownership::Borrowing {
-                duplicate_if_necessary: false,
-            } => "borrowing",
-            Ownership::Borrowing {
-                duplicate_if_necessary: true,
-            } => "borrowing-duplicate-if-necessary",
-        })
-    }
-}
-
 #[derive(Default, Debug, Clone)]
 #[cfg_attr(feature = "clap", derive(clap::Args))]
 pub struct Opts {
@@ -196,22 +145,6 @@ pub struct Opts {
     #[cfg_attr(feature = "clap", arg(long))]
     pub internal_prefix: Option<String>,
 
-    /// Whether to generate owning or borrowing type definitions.
-    ///
-    /// Valid values include:
-    ///
-    /// - `owning`: Generated types will be composed entirely of owning fields,
-    ///   regardless of whether they are used as parameters to imports or not.
-    ///
-    /// - `borrowing`: Generated types used as parameters to imports will be
-    ///   "deeply borrowing", i.e. contain references rather than owned values
-    ///   when applicable.
-    ///
-    /// - `borrowing-duplicate-if-necessary`: As above, but generating distinct
-    ///   types for borrowing and owning, if necessary.
-    #[cfg_attr(feature = "clap", arg(long, default_value_t = Ownership::Owning))]
-    pub ownership: Ownership,
-
     /// Set API style to symmetric or asymmetric
     #[cfg_attr(
         feature = "clap", 
@@ -230,6 +163,24 @@ pub struct Opts {
         ),
     )]
     pub api_style: APIStyle,
+
+    /// Whether to generate owning or borrowing type definitions for `record` arguments to imported functions.
+    ///
+    /// Valid values include:
+    ///
+    /// - `owning`: Generated types will be composed entirely of owning fields,
+    /// regardless of whether they are used as parameters to imports or not.
+    ///
+    /// - `coarse-borrowing`: Generated types used as parameters to imports will be
+    /// "deeply borrowing", i.e. contain references rather than owned values,
+    /// so long as they don't contain resources, in which case they will be
+    /// owning.
+    ///
+    /// - `fine-borrowing": Generated types used as parameters to imports will be
+    /// "deeply borrowing", i.e. contain references rather than owned values
+    /// for all fields that are not resources, which will be owning.
+    #[cfg_attr(feature = "clap", arg(long, default_value_t = Ownership::Owning))]
+    pub ownership: Ownership,
 
     /// Where to place output files
     #[cfg_attr(feature = "clap", arg(skip))]
@@ -277,6 +228,50 @@ impl FromStr for APIStyle {
 =======
 >>>>>>> 78169a8a (Format)
         }
+    }
+}
+
+#[derive(Default, Debug, Clone, Copy)]
+pub enum Ownership {
+    /// Generated types will be composed entirely of owning fields, regardless
+    /// of whether they are used as parameters to imports or not.
+    #[default]
+    Owning,
+
+    /// Generated types used as parameters to imports will be "deeply
+    /// borrowing", i.e. contain references rather than owned values when
+    /// applicable.
+    CoarseBorrowing,
+
+    /// Generated types used as parameters to imports will be "deeply
+    /// borrowing", i.e. contain references rather than owned values
+    /// for all fields that are not resources, which will be owning.
+    FineBorrowing,
+}
+
+impl FromStr for Ownership {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "owning" => Ok(Self::Owning),
+            "coarse-borrowing" => Ok(Self::CoarseBorrowing),
+            "fine-borrowing" => Ok(Self::FineBorrowing),
+            _ => Err(format!(
+                "unrecognized ownership: `{s}`; \
+                 expected `owning`, `coarse-borrowing`, or `fine-borrowing`"
+            )),
+        }
+    }
+}
+
+impl fmt::Display for Ownership {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match self {
+            Ownership::Owning => "owning",
+            Ownership::CoarseBorrowing => "coarse-borrowing",
+            Ownership::FineBorrowing => "fine-borrowing",
+        })
     }
 }
 
@@ -786,15 +781,11 @@ impl SourceWithState {
             }
         }
         for _i in same..self.namespace.len() {
-            uwrite!(self.src, "}}");
-        }
-        if same != self.namespace.len() {
-            // finish closing brackets by a newline
-            uwriteln!(self.src, "");
+            uwrite!(self.src, "}}\n");
         }
         self.namespace.truncate(same);
         for i in target.iter().skip(same) {
-            uwrite!(self.src, "namespace {} {{", i);
+            uwrite!(self.src, "namespace {} {{\n", i);
             self.namespace.push(i.clone());
         }
     }
@@ -1150,7 +1141,7 @@ impl CppInterfaceGenerator<'_> {
                     cpp_sig
                         .arguments
                         .iter()
-                        .map(|(arg, _)| arg.clone())
+                        .map(|(arg, _)| format!("std::move({})", arg))
                         .collect::<Vec<_>>()
                         .join(", ")
                 );
@@ -1446,6 +1437,44 @@ impl CppInterfaceGenerator<'_> {
         }
     }
 
+    fn scoped_record_name(
+        &self,
+        id: TypeId,
+        from_namespace: &[String],
+        guest_export: bool,
+        flavor: Flavor,
+    ) -> String {
+        let name = self.scoped_type_name(id, from_namespace, guest_export);
+
+        if let Flavor::Argument(AbiVariant::GuestImport) = flavor {
+            match self.gen.opts.ownership {
+                Ownership::Owning => {
+                    if self.has_resources(&id) {
+                        format!("{}&&", name)
+                    } else {
+                        format!("{} const&", name)
+                    }
+                }
+                Ownership::CoarseBorrowing => {
+                    if self.has_resources(&id) {
+                        format!("{}&&", name)
+                    } else {
+                        format!("{}Param const&", name)
+                    }
+                }
+                Ownership::FineBorrowing => {
+                    if self.has_resources(&id) {
+                        format!("{}Param&&", name)
+                    } else {
+                        format!("{}Param const&", name)
+                    }
+                }
+            }
+        } else {
+            name
+        }
+    }
+
     fn scoped_type_name(
         &self,
         id: TypeId,
@@ -1509,11 +1538,13 @@ impl CppInterfaceGenerator<'_> {
                 }
             },
             Type::Id(id) => match &self.resolve.types[*id].kind {
-                TypeDefKind::Record(_r) => {
-                    self.scoped_type_name(*id, from_namespace, NOT_IN_EXPORTED_NAMESPACE)
+                TypeDefKind::Record(_) => {
+                    let guest_export = self.is_exported_type(&self.resolve.types[*id]);
+                    self.scoped_record_name(*id, from_namespace, guest_export, flavor)
                 }
                 TypeDefKind::Resource => {
-                    self.scoped_type_name(*id, from_namespace, flavor.is_guest_export())
+                    let guest_export = self.is_exported_type(&self.resolve.types[*id]);
+                    self.scoped_type_name(*id, from_namespace, guest_export)
                 }
                 TypeDefKind::Handle(Handle::Own(id)) => {
                     let mut typename = self.type_name(&Type::Id(*id), from_namespace, flavor);
@@ -1534,6 +1565,10 @@ impl CppInterfaceGenerator<'_> {
                         (false, Flavor::BorrowedArgument) => (),
                         (_, _) => todo!(),
                     }
+                    let ty = &self.resolve.types[*id];
+                    if matches!(flavor, Flavor::InStruct) && self.is_exported_type(ty) {
+                        typename.push_str(&format!("::{OWNED_CLASS_NAME}"))
+                    }
                     typename
                 }
                 TypeDefKind::Handle(Handle::Borrow(id)) => {
@@ -1542,7 +1577,9 @@ impl CppInterfaceGenerator<'_> {
                         + ">"
                 }
                 TypeDefKind::Flags(_f) => {
-                    self.scoped_type_name(*id, from_namespace, NOT_IN_EXPORTED_NAMESPACE)
+                    let ty = &self.resolve.types[*id];
+                    let guest_export = self.is_exported_type(ty);
+                    self.scoped_type_name(*id, from_namespace, guest_export)
                 }
                 TypeDefKind::Tuple(t) => {
                     let types = t.types.iter().fold(String::new(), |mut a, b| {
@@ -1555,10 +1592,14 @@ impl CppInterfaceGenerator<'_> {
                     String::from("std::tuple<") + &types + ">"
                 }
                 TypeDefKind::Variant(_v) => {
-                    self.scoped_type_name(*id, from_namespace, NOT_IN_EXPORTED_NAMESPACE)
+                    let ty = &self.resolve.types[*id];
+                    let guest_export = self.is_exported_type(ty);
+                    self.scoped_type_name(*id, from_namespace, guest_export)
                 }
                 TypeDefKind::Enum(_e) => {
-                    self.scoped_type_name(*id, from_namespace, NOT_IN_EXPORTED_NAMESPACE)
+                    let ty = &self.resolve.types[*id];
+                    let guest_export = self.is_exported_type(ty);
+                    self.scoped_type_name(*id, from_namespace, guest_export)
                 }
                 TypeDefKind::Option(o) => {
                     self.gen.dependencies.needs_optional = true;
@@ -1666,6 +1707,104 @@ impl CppInterfaceGenerator<'_> {
             }
         }
     }
+
+    fn variant_for_type(&self, ty: &TypeDef) -> AbiVariant {
+        if self.is_exported_type(ty) {
+            AbiVariant::GuestExport
+        } else {
+            AbiVariant::GuestImport
+        }
+    }
+
+    fn has_resources2(&self, ty: &Type) -> bool {
+        match ty {
+            Type::Bool
+            | Type::U8
+            | Type::U16
+            | Type::U32
+            | Type::U64
+            | Type::S8
+            | Type::S16
+            | Type::S32
+            | Type::S64
+            | Type::F32
+            | Type::F64
+            | Type::Char => false,
+            Type::String => false,
+            Type::Id(id) => self.has_resources(id),
+            Type::ErrorContext => todo!(),
+        }
+    }
+    fn has_resources(&self, id: &TypeId) -> bool {
+        match &self.resolve.types[*id].kind {
+            TypeDefKind::Record(r) => r.fields.iter().any(|f| self.has_resources2(&f.ty)),
+            TypeDefKind::Resource => true,
+            TypeDefKind::Handle(_) => true,
+            TypeDefKind::Flags(_) => false,
+            TypeDefKind::Tuple(t) => t.types.iter().any(|ty| self.has_resources2(ty)),
+            TypeDefKind::Variant(v) => v
+                .cases
+                .iter()
+                .any(|c| c.ty.map_or(false, |ty| self.has_resources2(&ty))),
+            TypeDefKind::Enum(_) => false,
+            TypeDefKind::Option(ty) => self.has_resources2(ty),
+            TypeDefKind::Result(r) => {
+                r.ok.as_ref().map_or(false, |ok| self.has_resources2(ok))
+                    || r.err.as_ref().map_or(false, |err| self.has_resources2(err))
+            }
+            TypeDefKind::List(ty) => self.has_resources2(ty),
+            TypeDefKind::Future(_) => todo!(),
+            TypeDefKind::Stream(_) => todo!(),
+            TypeDefKind::Type(ty) => match ty {
+                Type::Id(id) => self.has_resources(id),
+                _ => false,
+            },
+            TypeDefKind::FixedSizeList(_, _) => todo!(),
+            TypeDefKind::Unknown => todo!(),
+        }
+    }
+
+    fn type_record_param(
+        &mut self,
+        id: TypeId,
+        name: &str,
+        record: &wit_bindgen_core::wit_parser::Record,
+        namespc: &[String],
+    ) {
+        let (flavor, needs_param_type) = {
+            match self.gen.opts.ownership {
+                Ownership::Owning => (Flavor::InStruct, false),
+                Ownership::CoarseBorrowing => {
+                    if self.has_resources(&id) {
+                        (Flavor::InStruct, false)
+                    } else {
+                        (Flavor::BorrowedArgument, true)
+                    }
+                }
+                Ownership::FineBorrowing => (Flavor::BorrowedArgument, true),
+            }
+        };
+
+        if needs_param_type {
+            let pascal = format!("{name}-param").to_pascal_case();
+
+            uwriteln!(self.gen.h_src.src, "struct {pascal} {{");
+            for field in record.fields.iter() {
+                let typename = self.type_name(&field.ty, namespc, flavor);
+                let fname = field.name.to_snake_case();
+                uwriteln!(self.gen.h_src.src, "{typename} {fname};");
+            }
+            uwriteln!(self.gen.h_src.src, "}};");
+        }
+    }
+
+    fn is_exported_type(&self, ty: &TypeDef) -> bool {
+        if let TypeOwner::Interface(intf) = ty.owner {
+            !self.gen.imported_interfaces.contains(&intf)
+        } else {
+            true
+        }
+    }
 }
 
 impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> {
@@ -1681,16 +1820,14 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
         docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
         let ty = &self.resolve.types[id];
-        let namespc = namespace(
-            self.resolve,
-            &ty.owner,
-            NOT_IN_EXPORTED_NAMESPACE,
-            &self.gen.opts,
-        );
-        if self.gen.is_first_definition(&namespc, name) {
+        let guest_export = self.is_exported_type(ty);
+        let namespc = namespace(self.resolve, &ty.owner, guest_export, &self.gen.opts);
+
+        if self.gen.is_first_definition(&namespc, &name) {
             self.gen.h_src.change_namespace(&namespc);
             Self::docs(&mut self.gen.h_src.src, docs);
             let pascal = name.to_pascal_case();
+
             uwriteln!(self.gen.h_src.src, "struct {pascal} {{");
             for field in record.fields.iter() {
                 Self::docs(&mut self.gen.h_src.src, &field.docs);
@@ -1699,6 +1836,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                 uwriteln!(self.gen.h_src.src, "{typename} {fname};");
             }
             uwriteln!(self.gen.h_src.src, "}};");
+            self.type_record_param(id, name, record, namespc.as_slice());
         }
     }
 
@@ -1864,10 +2002,11 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
         docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
         let ty = &self.resolve.types[id];
+        let guest_export = self.is_exported_type(ty);
         let namespc = namespace(
             self.resolve,
             &ty.owner,
-            NOT_IN_EXPORTED_NAMESPACE,
+            guest_export,
             &self.gen.opts,
         );
         if self.gen.is_first_definition(&namespc, name) {
@@ -1909,12 +2048,8 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
         docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
         let ty = &self.resolve.types[id];
-        let namespc = namespace(
-            self.resolve,
-            &ty.owner,
-            NOT_IN_EXPORTED_NAMESPACE,
-            &self.gen.opts,
-        );
+        let guest_export = self.is_exported_type(ty);
+        let namespc = namespace(self.resolve, &ty.owner, guest_export, &self.gen.opts);
         if self.gen.is_first_definition(&namespc, name) {
             self.gen.h_src.change_namespace(&namespc);
             Self::docs(&mut self.gen.h_src.src, docs);
@@ -1971,12 +2106,8 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
         docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
         let ty = &self.resolve.types[id];
-        let namespc = namespace(
-            self.resolve,
-            &ty.owner,
-            NOT_IN_EXPORTED_NAMESPACE,
-            &self.gen.opts,
-        );
+        let guest_export = self.is_exported_type(ty);
+        let namespc = namespace(self.resolve, &ty.owner, guest_export, &self.gen.opts);
         if self.gen.is_first_definition(&namespc, name) {
             self.gen.h_src.change_namespace(&namespc);
             let pascal = name.to_pascal_case();
@@ -2003,12 +2134,8 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
         docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
         let ty = &self.resolve.types[id];
-        let namespc = namespace(
-            self.resolve,
-            &ty.owner,
-            NOT_IN_EXPORTED_NAMESPACE,
-            &self.gen.opts,
-        );
+        let guest_export = self.is_exported_type(ty);
+        let namespc = namespace(self.resolve, &ty.owner, guest_export, &self.gen.opts);
         self.gen.h_src.change_namespace(&namespc);
         let pascal = name.to_pascal_case();
         Self::docs(&mut self.gen.h_src.src, docs);
@@ -2153,48 +2280,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             offset.format(POINTER_SIZE_EXPRESSION),
             operands[0]
         );
-    }
-
-    fn has_resources2(&self, ty: &Type) -> bool {
-        match ty {
-            Type::Bool
-            | Type::U8
-            | Type::U16
-            | Type::U32
-            | Type::U64
-            | Type::S8
-            | Type::S16
-            | Type::S32
-            | Type::S64
-            | Type::F32
-            | Type::F64
-            | Type::Char => false,
-            Type::String => false,
-            Type::Id(id) => self.has_resources(id),
-            Type::ErrorContext => todo!(),
-        }
-    }
-    fn has_resources(&self, id: &TypeId) -> bool {
-        match &self.gen.resolve.types[*id].kind {
-            TypeDefKind::Record(_) => todo!(),
-            TypeDefKind::Resource => true,
-            TypeDefKind::Handle(_) => true,
-            TypeDefKind::Flags(_) => false,
-            TypeDefKind::Tuple(t) => t.types.iter().any(|ty| self.has_resources2(ty)),
-            TypeDefKind::Variant(_) => todo!(),
-            TypeDefKind::Enum(_) => false,
-            TypeDefKind::Option(_) => todo!(),
-            TypeDefKind::Result(_) => todo!(),
-            TypeDefKind::List(_) => todo!(),
-            TypeDefKind::Future(_) => todo!(),
-            TypeDefKind::Stream(_) => todo!(),
-            TypeDefKind::Type(ty) => match ty {
-                Type::Id(id) => self.has_resources(id),
-                _ => false,
-            },
-            TypeDefKind::FixedSizeList(_, _) => todo!(),
-            TypeDefKind::Unknown => todo!(),
-        }
     }
 }
 
@@ -3220,7 +3305,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             return false;
         }
         match ty {
-            Type::Id(id) => !self.has_resources(id),
+            Type::Id(id) => !self.gen.has_resources(id),
             _ => true,
         }
     }
