@@ -1,1 +1,1 @@
-../helper-types/wit-guest.h
+../helper-types/wit.h
