@@ -80,6 +80,7 @@ struct Includes {
     needs_tuple: bool,
     needs_assert: bool,
     needs_bit: bool,
+    needs_span: bool,
     // needs wit types
     needs_wit: bool,
     needs_memory: bool,
@@ -692,7 +693,7 @@ impl WorldGenerator for Cpp {
         if self.dependencies.needs_wit {
             files.push(
                 &format!("wit-guest.h"),
-                include_bytes!("../helper-types/wit-guest.h"),
+                include_bytes!("../helper-types/wit.h"),
             );
         }
         Ok(())
@@ -1498,13 +1499,13 @@ impl CppInterfaceGenerator<'_> {
                     let inner = self.type_name(ty, from_namespace, flavor);
                     match flavor {
                         Flavor::BorrowedArgument => {
-                            self.gen.dependencies.needs_wit = true;
+                            self.gen.dependencies.needs_span = true;
                             format!("std::span<{inner} const>")
                         }
                         Flavor::Argument(var)
                             if matches!(var, AbiVariant::GuestImport) || self.gen.opts.new_api =>
                         {
-                            self.gen.dependencies.needs_wit = true;
+                            self.gen.dependencies.needs_span = true;
                             format!("std::span<{inner} const>")
                         }
                         Flavor::Argument(AbiVariant::GuestExport) => {

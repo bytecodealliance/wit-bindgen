@@ -12,7 +12,7 @@
 #include <string.h> // memcpy
 #include <stdlib.h> // free
 #include <new>
-
+#include <span>
 
 namespace wit {
 /// @brief Helper class to map between IDs and resources
@@ -44,12 +44,6 @@ public:
 
 /// @brief Replaces void in the error position of a result
 struct Void {};
-
-template<class To, class From>
-constexpr To bit_cast(const From& from) noexcept {
-  union Bits { From from; To to; };
-  Bits b; b.from = from; return b.to;
-}
 
 /// A string in linear memory, freed unconditionally using free
 ///

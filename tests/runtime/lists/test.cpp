@@ -29,7 +29,7 @@ static bool equal(std::span<const R> const&a, wit::vector<R> const& b) {
 }
 template<class R>
 static bool equal(std::span<const R> const&a, std::vector<R> const& b) {
-    return equal(a, std::span<R>(b));
+    return equal(a, std::span<const R>(b));
 }
 template<class R>
 static bool equal(wit::vector<R> const&a, std::vector<R> const& b) {
@@ -87,7 +87,7 @@ void exports::test::lists::to_test::ListParamLarge(std::span<std::string_view co
 }
 
 wit::vector<uint8_t> exports::test::lists::to_test::ListResult() {
-    return wit::vector<uint8_t>::from_view(std::span<uint8_t>(std::vector<uint8_t>{1, 2, 3, 4, 5}));
+    return wit::vector<uint8_t>::from_view(std::span<uint8_t const>(std::vector<uint8_t>{1, 2, 3, 4, 5}));
 }
 
 wit::string exports::test::lists::to_test::ListResult2() {
@@ -95,7 +95,7 @@ wit::string exports::test::lists::to_test::ListResult2() {
 }
 
 wit::vector<wit::string> exports::test::lists::to_test::ListResult3() {
-    return wit::vector<wit::string>::from_view(std::span<wit::string>(std::vector<wit::string>{wit::string::from_view("hello,"), wit::string::from_view("world!")}));
+    return wit::vector<wit::string>::from_view(std::span<wit::string const>(std::vector<wit::string>{wit::string::from_view("hello,"), wit::string::from_view("world!")}));
 }
 
 wit::vector<uint8_t> exports::test::lists::to_test::ListRoundtrip(std::span<const uint8_t> x) {
