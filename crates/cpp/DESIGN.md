@@ -46,9 +46,9 @@
 | HIA | v | string | | string_view | a,l |
 | HIR | t | string | | wit::string[^3] | &(a,l) |
 | HEA | t | string | | 🌓 wit::string[^4] | a,l |
-| | | | | 🪞 string_view [^6] | |
+| | | | | ⚖️ string_view [^6] | |
 | HER | p | string | | 🌓 wit::guest_owned<string_view> | 📘 -> &(a,l) |
-| | | | | 🪞 wit::string [^6] | 🪞 &(a,l) |
+| | | | | ⚖️ wit::string [^6] | 🪞 &(a,l) |
 
 [^1]: The host never frees memory (is never passed ownership)!
 
