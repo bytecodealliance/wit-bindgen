@@ -1268,7 +1268,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen"
-version = "0.42.1"
+version = "0.43.0"
 dependencies = [
  "wit-bindgen-rt",
  "wit-bindgen-rust-macro",
@@ -1276,7 +1276,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-c"
-version = "0.42.1"
+version = "0.43.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1290,7 +1290,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-cli"
-version = "0.42.1"
+version = "0.43.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1309,7 +1309,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-core"
-version = "0.42.1"
+version = "0.43.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1320,7 +1320,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-cpp"
-version = "0.42.1"
+version = "0.43.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1335,7 +1335,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-csharp"
-version = "0.42.1"
+version = "0.43.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1349,7 +1349,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-markdown"
-version = "0.42.1"
+version = "0.43.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1360,7 +1360,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-moonbit"
-version = "0.42.1"
+version = "0.43.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1370,7 +1370,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-rt"
-version = "0.42.1"
+version = "0.43.0"
 dependencies = [
  "bitflags",
  "futures",
@@ -1379,7 +1379,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-rust"
-version = "0.42.1"
+version = "0.43.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1400,7 +1400,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-rust-macro"
-version = "0.42.1"
+version = "0.43.0"
 dependencies = [
  "anyhow",
  "prettyplease",
@@ -1413,7 +1413,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-test"
-version = "0.42.1"
+version = "0.43.0"
 dependencies = [
  "anyhow",
  "clap",
