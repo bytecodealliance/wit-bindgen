@@ -316,6 +316,7 @@ impl WorldGenerator for C {
             self.src.c_adapters,
             "
                extern void {linking_symbol}(void);
+               __attribute__((used))
                void {linking_symbol}_public_use_in_this_compilation_unit(void) {{
                    {linking_symbol}();
                }}
