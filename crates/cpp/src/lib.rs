@@ -654,7 +654,8 @@ impl WorldGenerator for Cpp {
         uwrite!(
             c_str.src,
             "#ifdef __wasm32__
-                   extern void {linking_symbol}(void);
+                   extern \"C\" void {linking_symbol}(void);
+                   __attribute__((used))
                    void {linking_symbol}_public_use_in_this_compilation_unit(void) {{
                        {linking_symbol}();
                    }}
