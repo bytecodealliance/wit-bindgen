@@ -5,17 +5,10 @@
 int main() {
   std::array<std::string_view, 2> a1 = {"value1", "value2"};
   std::array<std::string_view, 2> a2 = {"value3", "value4"};
-<<<<<<< HEAD
   std::array<std::span<std::string_view const>, 2> as = {
       std::span<std::string_view const>(a1.data(), a1.size()),
       std::span<std::string_view const>(a2.data(), a2.size())};
   std::span<std::span<std::string_view const> const> input(as.data(),
-=======
-  std::array<wit::span<std::string_view const>, 2> as = {
-      wit::span<std::string_view const>(a1.data(), a1.size()),
-      wit::span<std::string_view const>(a2.data(), a2.size())};
-  wit::span<wit::span<std::string_view const> const> input(as.data(),
->>>>>>> 25d17a0c (Implement different ownership rules)
                                                            as.size());
   auto res = test::ownership::Foo(input);
   assert(res.size() == 2);
@@ -29,11 +22,7 @@ int main() {
   test::ownership::ThingParam thing;
   thing.name = std::string_view("thing");
   std::array<std::string_view, 2> values = {"value1", "value2"};
-<<<<<<< HEAD
   thing.value = std::span<std::string_view const>(values.data(), values.size());
-=======
-  thing.value = wit::span<std::string_view const>(values.data(), values.size());
->>>>>>> 25d17a0c (Implement different ownership rules)
   test::ownership::Bar(thing);
   auto result = test::ownership::Baz(thing);
   assert(result.name.get_view() == "THING");
@@ -48,11 +37,7 @@ int main() {
   test::ownership::both_list_and_resource::Thing resource_thing{
       std::move(v1),
       test::ownership::both_list_and_resource::TheResource(
-<<<<<<< HEAD
           std::span<std::string_view const>(v2.data(), v2.size()))};
-=======
-          wit::span<std::string_view const>(v2.data(), v2.size()))};
->>>>>>> 25d17a0c (Implement different ownership rules)
   test::ownership::both_list_and_resource::ListAndResource(
       std::move(resource_thing));
 }

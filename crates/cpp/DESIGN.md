@@ -19,15 +19,7 @@
 | API | | | ABI | |
 | --- | --- | --- | --- | --- |
 | 🌓 | asymmetric | | 📘 | canonical |
-<<<<<<< HEAD
-<<<<<<< HEAD
 | ⚖️ | symmetric | | 🪞 | symmetric |
-=======
-| 🪞 | symmetric | | 🪞 | symmetric |
->>>>>>> 95814ef8 (Update docs)
-=======
-| ⚖️ | symmetric | | 🪞 | symmetric |
->>>>>>> efa3a695 (Review feedback)
 
 | Code | mode | WIT Type | Rust type | C++ Type | Lower | Reason |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -44,36 +36,19 @@
 | | | list | Vec | wit::vector | &(a,l) |
 | | | result<string,list> | Result<String, Vec> | std::expected<wit::string, wit::vector> | &(d,a,l) |
 | GEA | t | string | String | 🌓 wit::string | addr, len |
-<<<<<<< HEAD
-<<<<<<< HEAD
 | | | | | ⚖️ string_view | |
 | | | result<string,list> | Result<String, Vec> | 🌓 std::expected<wit::string, wit::vector> | d,a,l |
 | | | | | ⚖️ std::expected<string_view, wit::span> | |
 | GER | p | string | String | wit::string (or std?) | 📘 -> &(a,l) cabi_post_N:P/I#F [^6] |
-=======
-| | | | | 🪞 string_view | |
-=======
-| | | | | ⚖️ string_view | |
->>>>>>> efa3a695 (Review feedback)
-| | | result<string,list> | Result<String, Vec> | 🌓 std::expected<wit::string, wit::vector> | d,a,l |
-| | | | | ⚖️ std::expected<string_view, wit::span> | |
-| GER | p | string | String | wit::string (or std?) | 📘 -> &(a,l) cabi_post_N:P/I#F [^7] |
->>>>>>> 95814ef8 (Update docs)
 | | | | | | 🪞 &(a,l) |
 | | | result<string,list> | Result<String, Vec> | std::expected<wit::string, wit::vector> | 📘 -> &(d,a,l) cabi_post |
 | --S | ? | string | String | wit::string | addr, len |
 | HIA | v | string | | string_view | a,l |
 | HIR | t | string | | wit::string[^3] | &(a,l) |
 | HEA | t | string | | 🌓 wit::string[^4] | a,l |
-<<<<<<< HEAD
 | | | | | ⚖️ string_view [^5] | |
 | HER | p | string | | 🌓 wit::guest_owned<string_view> | 📘 -> &(a,l) |
 | | | | | ⚖️ wit::string [^5] | 🪞 &(a,l) |
-=======
-| | | | | 🪞 string_view [^6] | |
-| HER | p | string | | 🌓 wit::guest_owned<string_view> | 📘 -> &(a,l) |
-| | | | | 🪞 wit::string [^6] | 🪞 &(a,l) |
->>>>>>> 95814ef8 (Update docs)
 
 [^1]: The host never frees memory (is never passed ownership)!
 

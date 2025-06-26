@@ -21,14 +21,14 @@ public:
     return Owned(new TheResource(std::move(the_list)));
   }
   wit::vector<wit::string> ToUpper() {
-    wit::vector<wit::string> result;
-    result.reserve(the_list_.size());
+    wit::vector<wit::string> result =
+        wit::vector<wit::string>::allocate(the_list_.size());
     for (size_t i = 0; i < the_list_.size(); ++i) {
       auto str = the_list_[i];
       for (char &c : str) {
         c = std::toupper(c);
       }
-      result.emplace_back(std::move(str));
+      result.initialize(i, std::move(str));
     }
     return result;
   }
