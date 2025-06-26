@@ -226,7 +226,7 @@ impl LanguageMethods for Cpp {
             if !matches!(compile.component.kind, Kind::Runner) {
                 cmd.arg("-shared");
             } else {
-                cmd.arg("-ltest-cpp17");
+                cmd.arg("-ltest-cpp");
             }
             cmd.arg("-L")
                 .arg(helper_dir3.to_str().unwrap().to_string())
