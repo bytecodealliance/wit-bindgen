@@ -192,7 +192,10 @@ impl FromStr for APIStyle {
         match s {
             "asymmetric" => Ok(APIStyle::Asymmetric),
             "symmetric" => Ok(APIStyle::Symmetric),
-            _ => bail!("unrecognized API style: `{}`; expected `asymmetric` or `symmetric`", s),
+            _ => bail!(
+                "unrecognized API style: `{}`; expected `asymmetric` or `symmetric`",
+                s
+            ),
         }
     }
 }
@@ -1455,7 +1458,8 @@ impl CppInterfaceGenerator<'_> {
                     "std::string_view".into()
                 }
                 Flavor::Argument(var)
-                    if matches!(var, AbiVariant::GuestImport) || self.gen.opts.api_style == APIStyle::Symmetric =>
+                    if matches!(var, AbiVariant::GuestImport)
+                        || self.gen.opts.api_style == APIStyle::Symmetric =>
                 {
                     self.gen.dependencies.needs_string_view = true;
                     "std::string_view".into()
@@ -1558,7 +1562,6 @@ impl CppInterfaceGenerator<'_> {
                         Flavor::Argument(var)
                             if matches!(var, AbiVariant::GuestImport)
                                 || self.gen.opts.api_style == APIStyle::Symmetric =>
-
                         {
                             self.gen.dependencies.needs_span = true;
                             format!("std::span<{inner} const>")
@@ -1919,12 +1922,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
     ) {
         let ty = &self.resolve.types[id];
         let guest_export = self.is_exported_type(ty);
-        let namespc = namespace(
-            self.resolve,
-            &ty.owner,
-            guest_export,
-            &self.gen.opts,
-        );
+        let namespc = namespace(self.resolve, &ty.owner, guest_export, &self.gen.opts);
         if self.gen.is_first_definition(&namespc, name) {
             self.gen.h_src.change_namespace(&namespc);
             Self::docs(&mut self.gen.h_src.src, docs);
