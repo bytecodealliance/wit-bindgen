@@ -1,6 +1,10 @@
 #pragma once
-#include "wit-common.h"
-#include <malloc.h>
+
+#include <assert.h>
+#include <map>
+#include <optional>
+#include <stddef.h> // size_t
+#include <stdint.h>
 #include <memory> // unique_ptr
 #include <stdint.h>
 #include <string>
@@ -8,8 +12,39 @@
 #include <string.h> // memcpy
 #include <stdlib.h> // free
 #include <new>
+#include <span>
 
 namespace wit {
+/// @brief Helper class to map between IDs and resources
+/// @tparam R Type of the Resource
+template <class R> class ResourceTable {
+  static std::map<int32_t, R> resources;
+
+public:
+  static R *lookup_resource(int32_t id) {
+    auto result = resources.find(id);
+    return result == resources.end() ? nullptr : &result->second;
+  }
+  static int32_t store_resource(R &&value) {
+    auto last = resources.rbegin();
+    int32_t id = last == resources.rend() ? 0 : last->first + 1;
+    resources.insert(std::pair<int32_t, R>(id, std::move(value)));
+    return id;
+  }
+  static std::optional<R> remove_resource(int32_t id) {
+    auto iter = resources.find(id);
+    std::optional<R> result;
+    if (iter != resources.end()) {
+      result = std::move(iter->second);
+      resources.erase(iter);
+    }
+    return std::move(result);
+  }
+};
+
+/// @brief Replaces void in the error position of a result
+struct Void {};
+
 /// A string in linear memory, freed unconditionally using free
 ///
 /// A normal C++ string makes no guarantees about where the characters
@@ -112,9 +147,9 @@ public:
   T* leak() { T*result = data_; data_ = nullptr; return result; }
   // typically called by post
   static void drop_raw(void *ptr) { if (ptr!=empty_ptr()) free(ptr); }
-  wit::span<T> get_view() const { return wit::span<T>(data_, length); }
-  wit::span<const T> get_const_view() const { return wit::span<const T>(data_, length); }
-  template <class U> static vector<T> from_view(wit::span<U> const& a) {
+  std::span<T> get_view() const { return std::span<T>(data_, length); }
+  std::span<const T> get_const_view() const { return std::span<const T>(data_, length); }
+  template <class U> static vector<T> from_view(std::span<U> const& a) {
     auto result = vector<T>::allocate(a.size());
     for (uint32_t i=0;i<a.size();++i) {
       new ((void*)(result.data_+i)) T(a[i]);

@@ -14,7 +14,7 @@ static bool equal(T const&a, S const& b) {
     return a == b;
 }
 template<class R, class S>
-static bool equal(wit::span<R> const&a, wit::span<S> const& b) {
+static bool equal(std::span<R> const&a, std::span<S> const& b) {
     if (a.size() != b.size()) { return false; }
     for (uint32_t i = 0; i<a.size(); ++i) {
         if (!equal(a[i], b[i])) { return false; }
@@ -22,23 +22,23 @@ static bool equal(wit::span<R> const&a, wit::span<S> const& b) {
     return true;
 }
 template<class R>
-static bool equal(wit::vector<R> const&a, wit::span<R> const& b) {
+static bool equal(wit::vector<R> const&a, std::span<R> const& b) {
     return equal(a.get_view(), b);
 }
 template<class R>
-static bool equal(wit::span<const R> const&a, wit::vector<R> const& b) {
+static bool equal(std::span<const R> const&a, wit::vector<R> const& b) {
     return equal(b, a);
 }
 template<class R>
-static bool equal(wit::span<const R> const&a, std::vector<R> const& b) {
-    return equal(a, wit::span<R>(b));
+static bool equal(std::span<const R> const&a, std::vector<R> const& b) {
+    return equal(a, std::span<R>(b));
 }
 template<class R>
 static bool equal(wit::vector<R> const&a, std::vector<R> const& b) {
-    return equal(a.get_view(), wit::span<R>(b));
+    return equal(a.get_view(), std::span<R const>(b));
 }
 static bool equal(wit::vector<wit::string> const&a, std::vector<std::string_view> const& b) {
-    return equal(a.get_view(), wit::span<std::string_view>(b));
+    return equal(a.get_view(), std::span<std::string_view const>(b));
 }
 template<class R,class S, class T, class U>
 static bool equal(std::tuple<R,S> const&a, std::tuple<T,U> const& b) {
@@ -54,7 +54,7 @@ int main()
 {
     using namespace ::test::lists::to_test;
 
-    EmptyListParam(wit::span<const uint8_t>(std::vector<uint8_t>()));
+    EmptyListParam(std::span<const uint8_t>(std::vector<uint8_t>()));
     EmptyStringParam("");
     assert(EmptyListResult().empty());
     assert(EmptyStringResult().empty());
@@ -62,7 +62,7 @@ int main()
     ListParam(std::vector<uint8_t>{1, 2, 3, 4});
     ListParam2("foo");
     ListParam3(std::vector<std::string_view>{"foo", "bar", "baz"});
-    ListParam4(std::vector<wit::span<const std::string_view>>{
+    ListParam4(std::vector<std::span<const std::string_view>>{
         std::vector<std::string_view>{"foo", "bar"},
         std::vector<std::string_view>{"baz"},
     });
@@ -70,9 +70,9 @@ int main()
     assert(equal(ListResult2(), "hello!"));
     assert(equal(ListResult3(), std::vector<std::string_view>{"hello,", "world!"}));
 
-    assert(equal(ListRoundtrip(wit::span<const uint8_t>(std::vector<uint8_t>())), std::vector<uint8_t>()));
-    assert(equal(ListRoundtrip(wit::span<const uint8_t>(std::vector<uint8_t>{'x'})), std::vector<uint8_t>{'x'}));
-    assert(equal(ListRoundtrip(wit::span<const uint8_t>(std::vector<uint8_t>{'h', 'e', 'l', 'l', 'o'})), std::vector<uint8_t>{'h', 'e', 'l', 'l', 'o'}));
+    assert(equal(ListRoundtrip(std::span<const uint8_t>(std::vector<uint8_t>())), std::vector<uint8_t>()));
+    assert(equal(ListRoundtrip(std::span<const uint8_t>(std::vector<uint8_t>{'x'})), std::vector<uint8_t>{'x'}));
+    assert(equal(ListRoundtrip(std::span<const uint8_t>(std::vector<uint8_t>{'h', 'e', 'l', 'l', 'o'})), std::vector<uint8_t>{'h', 'e', 'l', 'l', 'o'}));
 
     assert(equal(StringRoundtrip("x"), "x"));
     assert(equal(StringRoundtrip(""), ""));

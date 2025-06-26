@@ -80,6 +80,8 @@ struct Includes {
     needs_variant: bool,
     needs_tuple: bool,
     needs_assert: bool,
+    needs_bit: bool,
+    needs_span: bool,
     // needs wit types
     needs_wit: bool,
     needs_memory: bool,
@@ -339,20 +341,20 @@ impl Cpp {
     fn perform_cast(&mut self, op: &str, cast: &Bitcast) -> String {
         match cast {
             Bitcast::I32ToF32 | Bitcast::I64ToF32 => {
-                self.dependencies.needs_wit = true;
-                format!("wit::bit_cast<float, int32_t>({})", op)
+                self.dependencies.needs_bit = true;
+                format!("std::bit_cast<float, int32_t>({})", op)
             }
             Bitcast::F32ToI32 | Bitcast::F32ToI64 => {
-                self.dependencies.needs_wit = true;
-                format!("wit::bit_cast<int32_t, float>({})", op)
+                self.dependencies.needs_bit = true;
+                format!("std::bit_cast<int32_t, float>({})", op)
             }
             Bitcast::I64ToF64 => {
-                self.dependencies.needs_wit = true;
-                format!("wit::bit_cast<double, int64_t>({})", op)
+                self.dependencies.needs_bit = true;
+                format!("std::bit_cast<double, int64_t>({})", op)
             }
             Bitcast::F64ToI64 => {
-                self.dependencies.needs_wit = true;
-                format!("wit::bit_cast<int64_t, double>({})", op)
+                self.dependencies.needs_bit = true;
+                format!("std::bit_cast<int64_t, double>({})", op)
             }
             Bitcast::I32ToI64 | Bitcast::LToI64 | Bitcast::PToP64 => {
                 format!("(int64_t) {}", op)
@@ -409,10 +411,13 @@ impl Cpp {
             self.include("<tuple>");
         }
         if self.dependencies.needs_wit {
-            self.include("<wit-guest.h>");
+            self.include("\"wit.h\"");
         }
         if self.dependencies.needs_memory {
             self.include("<memory>");
+        }
+        if self.dependencies.needs_bit {
+            self.include("<bit>");
         }
     }
 
@@ -714,6 +719,10 @@ impl WorldGenerator for Cpp {
             .unwrap()
             .as_slice(),
         );
+
+        if self.dependencies.needs_wit {
+            files.push(&format!("wit.h"), include_bytes!("../helper-types/wit.h"));
+        }
 
         Ok(())
     }
@@ -1520,15 +1529,15 @@ impl CppInterfaceGenerator<'_> {
                     let inner = self.type_name(ty, from_namespace, flavor);
                     match flavor {
                         Flavor::BorrowedArgument => {
-                            self.gen.dependencies.needs_wit = true;
-                            format!("wit::span<{inner} const>")
+                            self.gen.dependencies.needs_span = true;
+                            format!("std::span<{inner} const>")
                         }
                         Flavor::Argument(var)
                             if matches!(var, AbiVariant::GuestImport)
                                 || self.gen.opts.api_style == APIStyle::Symmetric =>
                         {
-                            self.gen.dependencies.needs_wit = true;
-                            format!("wit::span<{inner} const>")
+                            self.gen.dependencies.needs_span = true;
+                            format!("std::span<{inner} const>")
                         }
                         Flavor::Argument(AbiVariant::GuestExport) => {
                             self.gen.dependencies.needs_wit = true;
