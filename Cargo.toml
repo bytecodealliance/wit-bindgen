@@ -15,7 +15,7 @@ resolver = "2"
 
 [workspace.package]
 edition = "2021"
-version = "0.42.1"
+version = "0.43.0"
 license = "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT"
 repository = "https://github.com/bytecodealliance/wit-bindgen"
 
@@ -39,15 +39,15 @@ wit-parser = { git = "https://github.com/cpetig/wasm-tools", branch = "symmetric
 wit-component = { git = "https://github.com/cpetig/wasm-tools", branch = "symmetric" }
 wasm-compose = { git = "https://github.com/cpetig/wasm-tools", branch = "symmetric" }
 
-wit-bindgen-core = { path = 'crates/core', version = '0.42.1' }
-wit-bindgen-c = { path = 'crates/c', version = '0.42.1' }
-wit-bindgen-cpp = { path = 'crates/cpp', version = '0.42.1' }
-wit-bindgen-rust = { path = "crates/rust", version = "0.42.1" }
-wit-bindgen-csharp = { path = 'crates/csharp', version = '0.42.1' }
-wit-bindgen-markdown = { path = 'crates/markdown', version = '0.42.1' }
-wit-bindgen-moonbit = { path = 'crates/moonbit', version = '0.42.1' }
-wit-bindgen = { path = 'crates/guest-rust', version = '0.42.1', default-features = false }
-wit-bindgen-test = { path = 'crates/test', version = '0.42.1' }
+wit-bindgen-core = { path = 'crates/core', version = '0.43.0' }
+wit-bindgen-c = { path = 'crates/c', version = '0.43.0' }
+wit-bindgen-cpp = { path = 'crates/cpp', version = '0.43.0' }
+wit-bindgen-rust = { path = "crates/rust", version = "0.43.0" }
+wit-bindgen-csharp = { path = 'crates/csharp', version = '0.43.0' }
+wit-bindgen-markdown = { path = 'crates/markdown', version = '0.43.0' }
+wit-bindgen-moonbit = { path = 'crates/moonbit', version = '0.43.0' }
+wit-bindgen = { path = 'crates/guest-rust', version = '0.43.0', default-features = false }
+wit-bindgen-test = { path = 'crates/test', version = '0.43.0' }
 
 wit-bindgen-bridge = { path = 'crates/bridge', version = '0.1.0' }
 

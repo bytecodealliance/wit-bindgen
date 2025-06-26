@@ -316,6 +316,7 @@ impl WorldGenerator for C {
             self.src.c_adapters,
             "
                extern void {linking_symbol}(void);
+               __attribute__((used))
                void {linking_symbol}_public_use_in_this_compilation_unit(void) {{
                    {linking_symbol}();
                }}
@@ -333,6 +334,7 @@ impl WorldGenerator for C {
                     uwrite!(
                         self.src.h_helpers,
                         "
+                            // Returns the length of the UTF-16 string `s` in code units
                             size_t {snake}_string_len(const char16_t* s);
                         ",
                     );
@@ -359,10 +361,10 @@ impl WorldGenerator for C {
             uwrite!(
                 self.src.h_helpers,
                 "
-                   // Transfers ownership of `s` into the string `ret`
+                   // Sets the string `ret` to reference the input string `s` without copying it
                    void {snake}_string_set({snake}_string_t *ret, const {c_string_ty} *s);
 
-                   // Creates a copy of the input nul-terminate string `s` and
+                   // Creates a copy of the input nul-terminated string `s` and
                    // stores it into the component model string `ret`.
                    void {snake}_string_dup({snake}_string_t *ret, const {c_string_ty} *s);
 
