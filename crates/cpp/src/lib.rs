@@ -18,7 +18,7 @@ use wit_bindgen_core::{
         Resolve, SizeAlign, Stability, Type, TypeDef, TypeDefKind, TypeId, TypeOwner, WorldId,
         WorldKey,
     },
-    Files, InterfaceGenerator, Source, WorldGenerator,
+    Files, InterfaceGenerator, Source, Types, WorldGenerator,
 };
 
 // mod wamr;
@@ -102,6 +102,7 @@ struct Cpp {
     imported_interfaces: HashSet<InterfaceId>,
     user_class_files: HashMap<String, String>,
     defined_types: HashSet<(Vec<String>, String)>,
+    types: Types,
 
     // needed for symmetric disambiguation
     interface_prefixes: HashMap<(Direction, WorldKey), String>,
@@ -451,6 +452,7 @@ impl WorldGenerator for Cpp {
     fn preprocess(&mut self, resolve: &Resolve, world: WorldId) {
         let name = &resolve.worlds[world].name;
         self.world = name.to_string();
+        self.types.analyze(resolve);
         self.world_id = Some(world);
         uwriteln!(
             self.c_src_head,
@@ -1394,25 +1396,17 @@ impl CppInterfaceGenerator<'_> {
         if let Flavor::Argument(AbiVariant::GuestImport) = flavor {
             match self.gen.opts.ownership {
                 Ownership::Owning => {
-                    if self.has_resources(&id) {
-                        format!("{}&&", name)
-                    } else {
-                        format!("{} const&", name)
-                    }
+                    format!("{}", name)
                 }
                 Ownership::CoarseBorrowing => {
-                    if self.has_resources(&id) {
-                        format!("{}&&", name)
+                    if self.gen.types.get(id).has_own_handle {
+                        format!("{}", name)
                     } else {
-                        format!("{}Param const&", name)
+                        format!("{}Param", name)
                     }
                 }
                 Ownership::FineBorrowing => {
-                    if self.has_resources(&id) {
-                        format!("{}Param&&", name)
-                    } else {
-                        format!("{}Param const&", name)
-                    }
+                    format!("{}Param", name)
                 }
             }
         } else {
@@ -1564,7 +1558,13 @@ impl CppInterfaceGenerator<'_> {
                                 || self.gen.opts.api_style == APIStyle::Symmetric =>
                         {
                             self.gen.dependencies.needs_span = true;
-                            format!("std::span<{inner} const>")
+                            // If the list has an owning handle, it must support moving, so can't be const
+                            let constness = if self.gen.types.get(*id).has_own_handle {
+                                ""
+                            } else {
+                                " const"
+                            };
+                            format!("std::span<{inner}{constness}>")
                         }
                         Flavor::Argument(AbiVariant::GuestExport) => {
                             self.gen.dependencies.needs_wit = true;
@@ -1635,54 +1635,6 @@ impl CppInterfaceGenerator<'_> {
         }
     }
 
-    fn has_resources2(&self, ty: &Type) -> bool {
-        match ty {
-            Type::Bool
-            | Type::U8
-            | Type::U16
-            | Type::U32
-            | Type::U64
-            | Type::S8
-            | Type::S16
-            | Type::S32
-            | Type::S64
-            | Type::F32
-            | Type::F64
-            | Type::Char => false,
-            Type::String => false,
-            Type::Id(id) => self.has_resources(id),
-            Type::ErrorContext => todo!(),
-        }
-    }
-    fn has_resources(&self, id: &TypeId) -> bool {
-        match &self.resolve.types[*id].kind {
-            TypeDefKind::Record(r) => r.fields.iter().any(|f| self.has_resources2(&f.ty)),
-            TypeDefKind::Resource => true,
-            TypeDefKind::Handle(_) => true,
-            TypeDefKind::Flags(_) => false,
-            TypeDefKind::Tuple(t) => t.types.iter().any(|ty| self.has_resources2(ty)),
-            TypeDefKind::Variant(v) => v
-                .cases
-                .iter()
-                .any(|c| c.ty.map_or(false, |ty| self.has_resources2(&ty))),
-            TypeDefKind::Enum(_) => false,
-            TypeDefKind::Option(ty) => self.has_resources2(ty),
-            TypeDefKind::Result(r) => {
-                r.ok.as_ref().map_or(false, |ok| self.has_resources2(ok))
-                    || r.err.as_ref().map_or(false, |err| self.has_resources2(err))
-            }
-            TypeDefKind::List(ty) => self.has_resources2(ty),
-            TypeDefKind::Future(_) => todo!(),
-            TypeDefKind::Stream(_) => todo!(),
-            TypeDefKind::Type(ty) => match ty {
-                Type::Id(id) => self.has_resources(id),
-                _ => false,
-            },
-            TypeDefKind::FixedSizeList(_, _) => todo!(),
-            TypeDefKind::Unknown => todo!(),
-        }
-    }
-
     fn type_record_param(
         &mut self,
         id: TypeId,
@@ -1694,7 +1646,7 @@ impl CppInterfaceGenerator<'_> {
             match self.gen.opts.ownership {
                 Ownership::Owning => (Flavor::InStruct, false),
                 Ownership::CoarseBorrowing => {
-                    if self.has_resources(&id) {
+                    if self.gen.types.get(id).has_own_handle {
                         (Flavor::InStruct, false)
                     } else {
                         (Flavor::BorrowedArgument, true)
@@ -2313,7 +2265,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let val = format!("vec{}", tmp);
                 let ptr = format!("ptr{}", tmp);
                 let len = format!("len{}", tmp);
-                self.push_str(&format!("auto const&{} = {};\n", val, operands[0]));
+                self.push_str(&format!("auto&& {} = {};\n", val, operands[0]));
                 self.push_str(&format!(
                     "auto {} = ({})({}.data());\n",
                     ptr,
@@ -2334,7 +2286,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let val = format!("vec{}", tmp);
                 let ptr = format!("ptr{}", tmp);
                 let len = format!("len{}", tmp);
-                self.push_str(&format!("auto const&{} = {};\n", val, operands[0]));
+                self.push_str(&format!("auto&& {} = {};\n", val, operands[0]));
                 self.push_str(&format!(
                     "auto {} = ({})({}.data());\n",
                     ptr,
@@ -2351,14 +2303,16 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 results.push(len);
             }
             abi::Instruction::ListLower {
-                element: _,
+                element,
                 realloc,
             } => {
                 let tmp = self.tmp();
+                let body = self.blocks.pop().unwrap();
                 let val = format!("vec{}", tmp);
                 let ptr = format!("ptr{}", tmp);
                 let len = format!("len{}", tmp);
-                self.push_str(&format!("auto const&{} = {};\n", val, operands[0]));
+                let size = self.gen.sizes.size(element);
+                self.push_str(&format!("auto&& {} = {};\n", val, operands[0]));
                 self.push_str(&format!(
                     "auto {} = ({})({}.data());\n",
                     ptr,
@@ -2366,6 +2320,14 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     val
                 ));
                 self.push_str(&format!("auto {} = (size_t)({}.size());\n", len, val));
+                self.push_str(&format!("for (size_t i = 0; i < {len}; ++i) {{\n"));
+                self.push_str(&format!(
+                    "auto base = {ptr} + i * {size};\n",
+                    size = size.format(POINTER_SIZE_EXPRESSION)
+                ));
+                self.push_str(&format!("auto&& IterElem = {val}[i];\n"));
+                self.push_str(&format!("{}\n", body.0));
+                self.push_str("}\n");
                 if realloc.is_none() {
                     results.push(ptr);
                 } else {
@@ -3187,7 +3149,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             return false;
         }
         match ty {
-            Type::Id(id) => !self.gen.has_resources(id),
+            Type::Id(id) => !self.gen.gen.types.get(*id).has_resource,
             _ => true,
         }
     }
