@@ -12,7 +12,7 @@ static bool equal(T const&a, S const& b) {
     return a == b;
 }
 template<class R, class S>
-static bool equal(wit::span<R> const&a, wit::span<S> const& b) {
+static bool equal(std::span<R> const&a, std::span<S> const& b) {
     if (a.size() != b.size()) { return false; }
     for (uint32_t i = 0; i<a.size(); ++i) {
         if (!equal(a[i], b[i])) { return false; }
@@ -20,20 +20,20 @@ static bool equal(wit::span<R> const&a, wit::span<S> const& b) {
     return true;
 }
 template<class R>
-static bool equal(wit::vector<R> const&a, wit::span<R> const& b) {
+static bool equal(wit::vector<R> const&a, std::span<R> const& b) {
     return equal(a.get_view(), b);
 }
 template<class R>
-static bool equal(wit::span<const R> const&a, wit::vector<R> const& b) {
+static bool equal(std::span<const R> const&a, wit::vector<R> const& b) {
     return equal(b, a);
 }
 template<class R>
-static bool equal(wit::span<const R> const&a, std::vector<R> const& b) {
-    return equal(a, wit::span<R>(b));
+static bool equal(std::span<const R> const&a, std::vector<R> const& b) {
+    return equal(a, std::span<const R>(b));
 }
 template<class R>
 static bool equal(wit::vector<R> const&a, std::vector<R> const& b) {
-    return equal(a.get_view(), wit::span<R>(b));
+    return equal(a.get_view(), std::span<R>(b));
 }
 template<class R,class S, class T, class U>
 static bool equal(std::tuple<R,S> const&a, std::tuple<T,U> const& b) {
@@ -82,6 +82,7 @@ void exports::test::lists::to_test::ListParam4(wit::vector<wit::vector<wit::stri
     assert(equal(ptr[1][0], std::string_view("baz")));
 }
 
+
 void exports::test::lists::to_test::ListParam5(wit::vector<std::tuple<uint8_t, uint32_t, uint8_t>> a) {
 
 }
@@ -91,7 +92,7 @@ void exports::test::lists::to_test::ListParamLarge(wit::vector<wit::string> a) {
 }
 
 wit::vector<uint8_t> exports::test::lists::to_test::ListResult() {
-    return wit::vector<uint8_t>::from_view(wit::span<uint8_t>(std::vector<uint8_t>{1, 2, 3, 4, 5}));
+    return wit::vector<uint8_t>::from_view(std::span<uint8_t const>(std::vector<uint8_t>{1, 2, 3, 4, 5}));
 }
 
 wit::string exports::test::lists::to_test::ListResult2() {
@@ -99,7 +100,7 @@ wit::string exports::test::lists::to_test::ListResult2() {
 }
 
 wit::vector<wit::string> exports::test::lists::to_test::ListResult3() {
-    return wit::vector<wit::string>::from_view(wit::span<wit::string>(std::vector<wit::string>{wit::string::from_view("hello,"), wit::string::from_view("world!")}));
+    return wit::vector<wit::string>::from_view(std::span<wit::string const>(std::vector<wit::string>{wit::string::from_view("hello,"), wit::string::from_view("world!")}));
 }
 
 wit::vector<uint8_t> exports::test::lists::to_test::ListRoundtrip(wit::vector<uint8_t> x) {
