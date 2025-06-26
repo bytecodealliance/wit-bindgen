@@ -6,7 +6,7 @@
 #include <utility>
 #include <optional>
 #include <cassert>
-#include <wit-guest.h>
+#include <wit.h>
 namespace symmetric {namespace runtime {namespace symmetric_executor {/// These pseudo-resources are just used to
 /// pass pointers to register
 /// Return value of an event callback
