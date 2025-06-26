@@ -2302,10 +2302,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 }
                 results.push(len);
             }
-            abi::Instruction::ListLower {
-                element,
-                realloc,
-            } => {
+            abi::Instruction::ListLower { element, realloc } => {
                 let tmp = self.tmp();
                 let body = self.blocks.pop().unwrap();
                 let val = format!("vec{}", tmp);
