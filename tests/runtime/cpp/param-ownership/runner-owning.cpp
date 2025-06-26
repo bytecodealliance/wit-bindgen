@@ -19,9 +19,10 @@ int main() {
   assert(res[1][0].get_view() == "VALUE3");
   assert(res[1][1].get_view() == "VALUE4");
 
-  test::ownership::Thing thing;
-  thing.name = wit::string::from_view("thing");
-  thing.value = wit::vector<wit::string>::allocate(2);
+  test::ownership::Thing thing {
+    wit::string::from_view("thing"),
+        wit::vector<wit::string>::allocate(2)
+  };
   thing.value.initialize(0, wit::string::from_view("value1"));
   thing.value.initialize(1, wit::string::from_view("value2"));
   test::ownership::Bar(thing);

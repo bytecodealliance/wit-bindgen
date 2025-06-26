@@ -57,7 +57,6 @@ class string {
   static uint8_t const* empty_ptr() { return (uint8_t const *)1; }
 
 public:
-  string() : data_(empty_ptr()), length(0) {}
   // this constructor is helpful for creating vector<string>
   string(string const &b) : string(string::from_view(b.get_view())) {}
   string(string &&b) : data_(b.data_), length(b.length) { b.data_ = nullptr; }
