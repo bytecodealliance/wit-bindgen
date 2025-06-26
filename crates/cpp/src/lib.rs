@@ -3078,7 +3078,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let len = format!("len{}", tmp);
                 uwriteln!(self.src, "auto {} = {};\n", len, operands[1]);
                 let result = if self.gen.gen.opts.symmetric
-                    && !self.gen.gen.opts.api_style == APIStyle::Symmetric
+                    && self.gen.gen.opts.api_style == APIStyle::Asymmetric
                     && matches!(self.variant, AbiVariant::GuestExport)
                 {
                     uwriteln!(self.src, "auto string{tmp} = wit::string::from_view(std::string_view((char const *)({}), {len}));\n", operands[0]);
