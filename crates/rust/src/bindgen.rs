@@ -874,6 +874,24 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.push(len);
             }
 
+            Instruction::FixedSizeListLowerBlock {
+                element,
+                size: _,
+                id: _,
+            } => {
+                let body = self.blocks.pop().unwrap();
+                let vec = operands[0].clone();
+                let target = operands[1].clone();
+                let size = self.r#gen.sizes.size(element);
+                self.push_str(&format!("for (i, e) in {vec}.into_iter().enumerate() {{\n",));
+                self.push_str(&format!(
+                    "let base = {target}.add(i * {});\n",
+                    size.format(POINTER_SIZE_EXPRESSION)
+                ));
+                self.push_str(&body);
+                self.push_str("\n}\n");
+            }
+
             Instruction::ListLift { element, .. } => {
                 let body = self.blocks.pop().unwrap();
                 let tmp = self.tmp();
@@ -1304,6 +1322,30 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::DropHandle { .. } => {
                 uwriteln!(self.src, "let _ = {};", operands[0]);
+            }
+            Instruction::FixedSizeListLift {
+                element: _,
+                size,
+                id: _,
+            } => {
+                let tmp = self.tmp();
+                let result = format!("result{tmp}");
+                self.push_str(&format!("let {result} = [",));
+                for a in operands.drain(0..(*size as usize)) {
+                    self.push_str(&a);
+                    self.push_str(", ");
+                }
+                self.push_str("];\n");
+                results.push(result);
+            }
+            Instruction::FixedSizeListLower {
+                element: _,
+                size,
+                id: _,
+            } => {
+                for i in 0..(*size as usize) {
+                    results.push(format!("{}[{i}]", operands[0]));
+                }
             }
         }
     }

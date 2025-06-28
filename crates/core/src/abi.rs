@@ -307,6 +307,28 @@ def_instruction! {
             ty: TypeId,
         } : [2] => [1],
 
+        /// Pops all fields for a fixed list off the stack and then composes them
+        /// into an array.
+        FixedSizeListLift {
+            element: &'a Type,
+            size: u32,
+            id: TypeId,
+        } : [*size as usize] => [1],
+
+        /// Pops an array off the stack, decomposes the elements and then pushes them onto the stack.
+        FixedSizeListLower {
+            element: &'a Type,
+            size: u32,
+            id: TypeId,
+        } : [1] => [*size as usize],
+
+        /// Pops an array and an address off the stack, passes each element to a block storing it
+        FixedSizeListLowerBlock {
+            element: &'a Type,
+            size: u32,
+            id: TypeId,
+        } : [2] => [0],
+
         /// Pushes an operand onto the stack representing the list item from
         /// each iteration of the list.
         ///
@@ -1491,7 +1513,21 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     });
                 }
                 TypeDefKind::Unknown => unreachable!(),
-                TypeDefKind::FixedSizeList(..) => todo!(),
+                TypeDefKind::FixedSizeList(ty, size) => {
+                    self.emit(&FixedSizeListLower {
+                        element: ty,
+                        size: *size,
+                        id,
+                    });
+                    let mut values = self
+                        .stack
+                        .drain(self.stack.len() - (*size as usize)..)
+                        .collect::<Vec<_>>();
+                    for value in values.drain(..) {
+                        self.stack.push(value);
+                        self.lower(ty);
+                    }
+                }
             },
         }
     }
@@ -1676,7 +1712,25 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     });
                 }
                 TypeDefKind::Unknown => unreachable!(),
-                TypeDefKind::FixedSizeList(..) => todo!(),
+                TypeDefKind::FixedSizeList(ty, size) => {
+                    let mut temp = Vec::new();
+                    self.resolve.push_flat(&Type::Id(id), &mut temp);
+                    let mut args = self
+                        .stack
+                        .drain(self.stack.len() - temp.len()..)
+                        .collect::<Vec<_>>();
+                    for _ in 0..*size {
+                        temp.truncate(0);
+                        self.resolve.push_flat(ty, &mut temp);
+                        self.stack.extend(args.drain(..temp.len()));
+                        self.lift(ty);
+                    }
+                    self.emit(&FixedSizeListLift {
+                        element: ty,
+                        size: *size,
+                        id,
+                    });
+                }
             },
         }
     }
@@ -1860,7 +1914,21 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
 
                 TypeDefKind::Unknown => unreachable!(),
-                TypeDefKind::FixedSizeList(..) => todo!(),
+                TypeDefKind::FixedSizeList(element, size) => {
+                    // resembles write_list_to_memory
+                    self.push_block();
+                    self.emit(&IterElem { element });
+                    self.emit(&IterBasePointer);
+                    let elem_addr = self.stack.pop().unwrap();
+                    self.write_to_memory(element, elem_addr, Default::default());
+                    self.finish_block(0);
+                    self.stack.push(addr);
+                    self.emit(&FixedSizeListLowerBlock {
+                        element,
+                        size: *size,
+                        id,
+                    });
+                }
             },
         }
     }
@@ -2051,7 +2119,19 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
 
                 TypeDefKind::Unknown => unreachable!(),
-                TypeDefKind::FixedSizeList(..) => todo!(),
+                TypeDefKind::FixedSizeList(ty, size) => {
+                    let increment = self.bindgen.sizes().size(ty);
+                    let mut position = offset;
+                    for _ in 0..*size {
+                        self.read_from_memory(ty, addr.clone(), position);
+                        position = position + increment;
+                    }
+                    self.emit(&FixedSizeListLift {
+                        element: ty,
+                        size: *size,
+                        id,
+                    });
+                }
             },
         }
     }
@@ -2358,7 +2438,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 TypeDefKind::Future(_) => unreachable!(),
                 TypeDefKind::Stream(_) => unreachable!(),
                 TypeDefKind::Unknown => unreachable!(),
-                TypeDefKind::FixedSizeList(..) => todo!(),
+                TypeDefKind::FixedSizeList(_, _) => {}
             },
         }
     }
