@@ -1,0 +1,30 @@
+//@ dependencies = ['middle', 'leaf']
+//@ wac = 'compose.wac'
+
+package test:common;
+
+interface test-types {
+    flags f1 { a, b }
+    record r1 { a: u8, b: f1 }
+    variant v1 { a, b(u8) }
+}
+
+interface to-test {
+    use test-types.{f1, r1, v1};
+
+    wrap: func(flag: f1) -> r1;
+    var-f: func() -> v1;
+}
+
+world leaf {
+    export to-test;
+}
+
+world middle {
+    import to-test;
+    export to-test;
+}
+
+world runner {
+    import to-test;
+}
