@@ -23,6 +23,7 @@ wit-bindgen-rust = { workspace = true }
 anyhow = { workspace = true }
 syn = { workspace = true }
 prettyplease = { workspace = true }
+heck = { workspace = true }
 
 [features]
 async = []

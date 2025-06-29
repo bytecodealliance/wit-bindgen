@@ -1,3 +1,4 @@
+use anyhow::Context;
 use proc_macro2::{Span, TokenStream};
 use quote::ToTokens;
 use std::collections::HashMap;
@@ -10,6 +11,7 @@ use syn::{braced, token, LitStr, Token};
 use wit_bindgen_core::wit_parser::{PackageId, Resolve, UnresolvedPackageGroup, WorldId};
 use wit_bindgen_core::AsyncFilterSet;
 use wit_bindgen_rust::{Opts, Ownership, WithOption};
+use heck::{ToSnakeCase, ToUpperCamelCase};
 
 #[proc_macro]
 pub fn generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
@@ -21,11 +23,70 @@ pub fn generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
 fn anyhow_to_syn(span: Span, err: anyhow::Error) -> Error {
     let err = attach_with_context(err);
-    let mut msg = err.to_string();
+    let mut msg = enhance_error_message(&err);
     for cause in err.chain().skip(1) {
         msg.push_str(&format!("\n\nCaused by:\n  {cause}"));
     }
     Error::new(span, msg)
+}
+
+fn enhance_error_message(err: &anyhow::Error) -> String {
+    let err_str = err.to_string();
+    
+    // Enhance common WIT parsing errors with actionable suggestions
+    if err_str.contains("failed to resolve directory while parsing WIT") {
+        return format!(
+            "{}\n\n\
+            Common causes and solutions:\n\
+            1. Missing dependencies in deps.toml or deps/ directory\n\
+            2. Incorrect package imports in .wit files\n\
+            3. Invalid WIT syntax in one of the .wit files\n\
+            \n\
+            To debug:\n\
+            1. Run `wit-bindgen validate <wit-path>` to check dependencies\n\
+            2. Check that all imported packages exist in deps/ or deps.toml\n\
+            3. Verify WIT syntax with a simpler world file first\n\
+            \n\
+            Example deps.toml:\n\
+            [deps.\"package:name\"]\n\
+            path = \"./deps/package-name\"\n\
+            ",
+            err_str
+        );
+    }
+    
+    if err_str.contains("package not found") || err_str.contains("unresolved import") {
+        return format!(
+            "{}\n\n\
+            This usually means a WIT package dependency is missing.\n\
+            \n\
+            Solutions:\n\
+            1. Add the missing package to deps.toml:\n\
+               [deps.\"missing:package\"]\n\
+               path = \"./deps/missing-package\"\n\
+            \n\
+            2. Or place the package in the deps/ directory\n\
+            3. Check that the package name in the import matches the package declaration\n\
+            ",
+            err_str
+        );
+    }
+    
+    if err_str.contains("world not found") {
+        return format!(
+            "{}\n\n\
+            The specified world name was not found in the WIT files.\n\
+            \n\
+            Solutions:\n\
+            1. Check that the world name in generate!() matches the world declaration\n\
+            2. Verify the world is in the specified WIT path\n\
+            3. Use `wit-bindgen list-worlds <wit-path>` to see available worlds\n\
+            ",
+            err_str
+        );
+    }
+    
+    err_str
 }
 
 fn attach_with_context(err: anyhow::Error) -> anyhow::Error {
@@ -48,6 +109,7 @@ struct Config {
     world: WorldId,
     files: Vec<PathBuf>,
     debug: bool,
+    show_module_paths: bool,
 }
 
 /// The source of the wit package definition
@@ -67,6 +129,7 @@ impl Parse for Config {
         let mut features = Vec::new();
         let mut async_configured = false;
         let mut debug = false;
+        let mut show_module_paths = false;
 
         if input.peek(token::Brace) {
             let content;
@@ -151,6 +214,9 @@ impl Parse for Config {
                     Opt::Debug(enable) => {
                         debug = enable.value();
                     }
+                    Opt::ShowModulePaths(enable) => {
+                        show_module_paths = enable.value();
+                    }
                     Opt::Async(val, span) => {
                         if async_configured {
                             return Err(Error::new(span, "cannot specify second async config"));
@@ -184,6 +250,7 @@ impl Parse for Config {
             world,
             files,
             debug,
+            show_module_paths,
         })
     }
 }
@@ -245,7 +312,17 @@ fn parse_source(
                 Ok(p) => p,
                 Err(_) => p.to_path_buf(),
             };
-            let (pkg, sources) = resolve.push_path(normalized_path)?;
+            let (pkg, sources) = resolve.push_path(&normalized_path)
+                .with_context(|| format!(
+                    "Failed to parse WIT directory: {}\n\
+                     \n\
+                     Ensure this directory contains:\n\
+                     1. Valid .wit files with proper syntax\n\
+                     2. A package.wit file (if using packages)\n\
+                     3. A deps.toml file (if using dependencies)\n\
+                     4. All imported packages in deps/ directory or deps.toml",
+                    normalized_path.display()
+                ))?;
             pkgs.push(pkg);
             files.extend(sources.paths().map(|p| p.to_owned()));
         }
@@ -274,6 +351,11 @@ impl Config {
             .map_err(|e| anyhow_to_syn(Span::call_site(), e))?;
         let (_, src) = files.iter().next().unwrap();
         let mut src = std::str::from_utf8(src).unwrap().to_string();
+        
+        // Show module paths if requested
+        if self.show_module_paths {
+            Self::print_module_paths(&self.resolve, self.world, &src);
+        }
 
         // If a magical `WIT_BINDGEN_DEBUG` environment variable is set then
         // place a formatted version of the expanded code into a file. This file
@@ -312,6 +394,73 @@ impl Config {
 
         Ok(contents)
     }
+
+    fn print_module_paths(resolve: &Resolve, world_id: WorldId, _generated_code: &str) {
+        let world = &resolve.worlds[world_id];
+        eprintln!("wit-bindgen: Generated module paths for world '{}':", world.name);
+        
+        // Print exported interfaces
+        for (key, item) in world.exports.iter() {
+            if let wit_bindgen_core::wit_parser::WorldItem::Interface { id, .. } = item {
+                let interface = &resolve.interfaces[*id];
+                let module_path = Self::compute_export_module_path(resolve, key);
+                eprintln!("  export '{}' -> impl {}::Guest", 
+                         Self::key_name(resolve, key), 
+                         module_path);
+                
+                // Print resource types if any
+                for (name, type_id) in interface.types.iter() {
+                    if let wit_bindgen_core::wit_parser::TypeDefKind::Resource = &resolve.types[*type_id].kind {
+                        let resource_name = name.to_upper_camel_case();
+                        eprintln!("    resource '{}' -> impl {}::Guest{}", 
+                                 name, module_path, resource_name);
+                    }
+                }
+            } else if let wit_bindgen_core::wit_parser::WorldItem::Function(_) = item {
+                eprintln!("  export function '{}' -> impl Guest::{}", 
+                         Self::key_name(resolve, key),
+                         Self::key_name(resolve, key).to_snake_case().replace('-', "_"));
+            }
+        }
+        
+        // Print imported interfaces for context
+        if !world.imports.is_empty() {
+            eprintln!("  imports:");
+            for (key, _item) in world.imports.iter() {
+                eprintln!("    import '{}'", Self::key_name(resolve, key));
+            }
+        }
+        
+        eprintln!();
+    }
+    
+    fn compute_export_module_path(resolve: &Resolve, key: &wit_bindgen_core::wit_parser::WorldKey) -> String {
+        use wit_bindgen_core::wit_parser::WorldKey;
+        let mut path = vec!["exports".to_string()];
+        
+        match key {
+            WorldKey::Name(name) => {
+                path.push(name.to_snake_case().replace('-', "_"));
+            }
+            WorldKey::Interface(id) => {
+                let interface = &resolve.interfaces[*id];
+                if let Some(pkg_id) = interface.package {
+                    let pkg = &resolve.packages[pkg_id];
+                    path.push(pkg.name.namespace.to_snake_case().replace('-', "_"));
+                    path.push(pkg.name.name.to_snake_case().replace('-', "_"));
+                    if let Some(ref name) = interface.name {
+                        path.push(name.to_snake_case().replace('-', "_"));
+                    }
+                }
+            }
+        }
+        
+        path.join("::")
+    }
+    
+    fn key_name(resolve: &Resolve, key: &wit_bindgen_core::wit_parser::WorldKey) -> String {
+        resolve.name_world_key(key)
+    }
 }
 
 mod kw {
@@ -341,6 +490,7 @@ mod kw {
     syn::custom_keyword!(disable_custom_section_link_helpers);
     syn::custom_keyword!(imports);
     syn::custom_keyword!(debug);
+    syn::custom_keyword!(show_module_paths);
 }
 
 #[derive(Clone)]
@@ -397,6 +547,7 @@ enum Opt {
     DisableCustomSectionLinkHelpers(syn::LitBool),
     Async(AsyncFilterSet, Span),
     Debug(syn::LitBool),
+    ShowModulePaths(syn::LitBool),
 }
 
 impl Parse for Opt {
@@ -555,6 +706,10 @@ impl Parse for Opt {
             input.parse::<kw::debug>()?;
             input.parse::<Token![:]>()?;
             Ok(Opt::Debug(input.parse()?))
+        } else if l.peek(kw::show_module_paths) {
+            input.parse::<kw::show_module_paths>()?;
+            input.parse::<Token![:]>()?;
+            Ok(Opt::ShowModulePaths(input.parse()?))
         } else if l.peek(Token![async]) {
             let span = input.parse::<Token![async]>()?.span;
             input.parse::<Token![:]>()?;

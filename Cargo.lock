@@ -1403,6 +1403,7 @@ name = "wit-bindgen-rust-macro"
 version = "0.43.0"
 dependencies = [
  "anyhow",
+ "heck 0.5.0",
  "prettyplease",
  "proc-macro2",
  "quote",
