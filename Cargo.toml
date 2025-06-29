@@ -16,36 +16,13 @@ path = "src/bin/wit-bindgen.rs"
 anyhow = "1.0"
 clap = { version = "4.0", features = ["derive"] }
 wit-bindgen-core = { path = "crates/core" }
-
-[dependencies.wit-bindgen-rust]
-path = "crates/rust"
-optional = true
-
-[dependencies.wit-bindgen-c]
-path = "crates/c"
-optional = true
-
-[dependencies.wit-bindgen-cpp]
-path = "crates/cpp"
-optional = true
-
-[dependencies.wit-bindgen-csharp]
-path = "crates/csharp"
-optional = true
-
-[dependencies.wit-bindgen-markdown]
-path = "crates/markdown"
-optional = true
-
-[dependencies.wit-bindgen-moonbit]
-path = "crates/moonbit"
-optional = true
-
-[dependencies.wit-bindgen-test]
-path = "crates/test"
-optional = true
-
-[dependencies]
+wit-bindgen-rust = { path = "crates/rust", optional = true }
+wit-bindgen-c = { path = "crates/c", optional = true }
+wit-bindgen-cpp = { path = "crates/cpp", optional = true }
+wit-bindgen-csharp = { path = "crates/csharp", optional = true }
+wit-bindgen-markdown = { path = "crates/markdown", optional = true }
+wit-bindgen-moonbit = { path = "crates/moonbit", optional = true }
+wit-bindgen-test = { path = "crates/test", optional = true }
 env_logger = "0.10"
 
 [dev-dependencies]
