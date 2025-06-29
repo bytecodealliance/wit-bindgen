@@ -1,0 +1,11 @@
+package test:invalid@1.0.0;
+
+/// Intentionally invalid WIT for error testing
+interface broken {
+    // Missing semicolon to cause syntax error
+    invalid-func: func(param: undefined-type) -> result<string>
+}
+
+world invalid-world {
+    export broken;
+}

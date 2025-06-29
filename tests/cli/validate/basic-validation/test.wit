@@ -1,0 +1,12 @@
+package test:validation@1.0.0;
+
+/// Simple interface for testing validation
+interface greeting {
+    /// Say hello
+    hello: func(name: string) -> string;
+}
+
+/// Basic world for validation testing
+world basic-validation {
+    export greeting;
+}

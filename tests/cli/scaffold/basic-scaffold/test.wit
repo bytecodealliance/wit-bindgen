@@ -1,0 +1,10 @@
+package test:scaffold@1.0.0;
+
+interface calculator {
+    add: func(a: u32, b: u32) -> u32;
+    multiply: func(a: u32, b: u32) -> u32;
+}
+
+world math-component {
+    export calculator;
+}
