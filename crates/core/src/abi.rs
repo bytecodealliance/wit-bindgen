@@ -1713,18 +1713,20 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
                 TypeDefKind::Unknown => unreachable!(),
                 TypeDefKind::FixedSizeList(ty, size) => {
-                    let mut temp = Vec::new();
-                    self.resolve.push_flat(&Type::Id(id), &mut temp);
+                    let temp = flat_types(self.resolve, ty).unwrap();
+                    // let mut storage = [WasmType::I32; MAX_FLAT_PARAMS];
+                    // let mut temp = FlatTypes::new(&mut storage);
+                    // self.resolve.push_flat(&Type::Id(id), &mut temp);
                     let mut args = self
                         .stack
                         .drain(self.stack.len() - temp.len()..)
                         .collect::<Vec<_>>();
-                    for _ in 0..*size {
-                        temp.truncate(0);
-                        self.resolve.push_flat(ty, &mut temp);
-                        self.stack.extend(args.drain(..temp.len()));
-                        self.lift(ty);
-                    }
+                    // for _ in 0..*size {
+                    //     temp.truncate(0);
+                    //     self.resolve.push_flat(ty, &mut temp);
+                    //     self.stack.extend(args.drain(..temp.len()));
+                    //     self.lift(ty);
+                    // }
                     self.emit(&FixedSizeListLift {
                         element: ty,
                         size: *size,
