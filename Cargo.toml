@@ -1,38 +1,98 @@
 [package]
 name = "wit-bindgen-cli"
-version = "0.43.0"
-edition = "2021"
-description = "CLI for wit-bindgen - WebAssembly Interface Types bindings generator"
 authors = ["Alex Crichton <alex@alexcrichton.com>"]
-license = "Apache-2.0 WITH LLVM-exception"
-repository = "https://github.com/bytecodealliance/wit-bindgen"
+version = { workspace = true }
+edition = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
 homepage = "https://github.com/bytecodealliance/wit-bindgen"
+description = "CLI for wit-bindgen - WebAssembly Interface Types bindings generator"
+
+[workspace]
+resolver = "2"
+members = [
+    "crates/*",
+    "crates/test-helpers/codegen-macro"
+]
+
+[workspace.package]
+edition = "2021"
+version = "0.43.0"
+license = "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT"
+repository = "https://github.com/bytecodealliance/wit-bindgen"
+
+[workspace.dependencies]
+anyhow = "1.0.72"
+bitflags = "2.3.3"
+heck = { version = "0.5" }
+pulldown-cmark = { version = "0.9", default-features = false }
+serde = { version = "1.0.218", features = ["derive"] }
+clap = { version = "4.3.19", features = ["derive"] }
+indexmap = "2.0.0"
+prettyplease = "0.2.20"
+syn = { version = "2.0.89", features = ["printing"] }
+futures = "0.3.31"
+
+wat = "1.235.0"
+wasmparser = "0.235.0"
+wasm-encoder = "0.235.0"
+wasm-metadata = { version = "0.235.0", default-features = false }
+wit-parser = "0.235.0"
+wit-component = "0.235.0"
+wasm-compose = "0.235.0"
+
+wit-bindgen-core = { path = 'crates/core', version = '0.43.0' }
+wit-bindgen-c = { path = 'crates/c', version = '0.43.0' }
+wit-bindgen-cpp = { path = 'crates/cpp', version = '0.43.0' }
+wit-bindgen-rust = { path = "crates/rust", version = "0.43.0" }
+wit-bindgen-csharp = { path = 'crates/csharp', version = '0.43.0' }
+wit-bindgen-markdown = { path = 'crates/markdown', version = '0.43.0' }
+wit-bindgen-moonbit = { path = 'crates/moonbit', version = '0.43.0' }
+wit-bindgen = { path = 'crates/guest-rust', version = '0.43.0', default-features = false }
+wit-bindgen-test = { path = 'crates/test', version = '0.43.0' }
 
 [[bin]]
 name = "wit-bindgen"
 path = "src/bin/wit-bindgen.rs"
 
 [dependencies]
-anyhow = "1.0"
-clap = { version = "4.0", features = ["derive"] }
-wit-bindgen-core = { path = "crates/core" }
-wit-bindgen-rust = { path = "crates/rust", optional = true }
-wit-bindgen-c = { path = "crates/c", optional = true }
-wit-bindgen-cpp = { path = "crates/cpp", optional = true }
-wit-bindgen-csharp = { path = "crates/csharp", optional = true }
-wit-bindgen-markdown = { path = "crates/markdown", optional = true }
-wit-bindgen-moonbit = { path = "crates/moonbit", optional = true }
-wit-bindgen-test = { path = "crates/test", optional = true }
-env_logger = "0.10"
+anyhow = { workspace = true }
+clap = { workspace = true, features = ['wrap_help'] }
+wit-bindgen-core = { workspace = true, features = ['serde'] }
+wit-bindgen-rust = { workspace = true, features = ['clap'], optional = true }
+wit-bindgen-c = { workspace = true, features = ['clap'], optional = true }
+wit-bindgen-cpp = { workspace = true, features = ['clap'], optional = true }
+wit-bindgen-markdown = { workspace = true, features = ['clap'], optional = true }
+wit-bindgen-moonbit = { workspace = true, features = ['clap'], optional = true }
+wit-bindgen-csharp = { workspace = true, features = ['clap'], optional = true }
+wit-bindgen-test = { workspace = true, optional = true }
+wit-component = { workspace = true }
+wasm-encoder = { workspace = true }
+env_logger = "0.11.7"
+serde = { workspace = true }
+serde_json = "1.0"
+heck = { workspace = true }
+dirs = "5.0"
+once_cell = "1.19"
 
 [dev-dependencies]
 tempfile = "3.0"
+serde_json = "1.0"
 
 [features]
-default = ["rust", "c", "cpp", "csharp", "markdown", "moonbit"]
-rust = ["dep:wit-bindgen-rust"]
-c = ["dep:wit-bindgen-c"] 
-cpp = ["dep:wit-bindgen-cpp"]
-csharp = ["dep:wit-bindgen-csharp"]
-markdown = ["dep:wit-bindgen-markdown"]
-moonbit = ["dep:wit-bindgen-moonbit"]
+default = [
+  'c',
+  'rust',
+  'markdown',
+  'csharp',
+  'cpp',
+  'moonbit',
+  'test',
+]
+c = ['wit-bindgen-c']
+rust = ['wit-bindgen-rust']
+markdown = ['wit-bindgen-markdown']
+csharp = ['wit-bindgen-csharp']
+cpp = ['wit-bindgen-cpp']
+moonbit = ['wit-bindgen-moonbit']
+test = ['wit-bindgen-test']
