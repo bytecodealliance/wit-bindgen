@@ -33,7 +33,7 @@ static bool equal(std::span<const R> const&a, std::vector<R> const& b) {
 }
 template<class R>
 static bool equal(wit::vector<R> const&a, std::vector<R> const& b) {
-    return equal(a.get_view(), std::span<R>(b));
+    return equal(a.get_view(), std::span<const R>(b.begin(), b.end()));
 }
 template<class R,class S, class T, class U>
 static bool equal(std::tuple<R,S> const&a, std::tuple<T,U> const& b) {
