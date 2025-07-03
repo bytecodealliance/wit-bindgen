@@ -484,6 +484,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             }
             self.push_str("\n");
         }
+        self.push_str("\n");
     }
 
     fn type_resource(&mut self, _id: TypeId, name: &str, docs: &Docs) {
@@ -538,6 +539,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             }
             self.push_str("\n");
         }
+        self.push_str("\n");
     }
 
     fn type_variant(&mut self, _id: TypeId, name: &str, variant: &Variant, docs: &Docs) {
@@ -568,6 +570,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             }
             self.push_str("\n");
         }
+        self.push_str("\n");
     }
 
     fn type_enum(&mut self, _id: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
@@ -594,6 +597,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             }
             self.push_str("\n");
         }
+        self.push_str("\n");
     }
 
     fn type_option(&mut self, _id: TypeId, name: &str, payload: &Type, docs: &Docs) {
