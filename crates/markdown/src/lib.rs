@@ -428,7 +428,7 @@ impl InterfaceGenerator<'_> {
     fn docs(&mut self, docs: &Docs) {
         let docs = match &docs.contents {
             Some(docs) => docs,
-            None => return,
+            None => "\n",
         };
         for line in docs.lines() {
             self.push_str(line.trim());
@@ -511,6 +511,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             self.print_ty(ty);
             self.push_str("\n");
         }
+        self.push_str("\n");
     }
 
     fn type_flags(&mut self, _id: TypeId, name: &str, flags: &Flags, docs: &Docs) {
