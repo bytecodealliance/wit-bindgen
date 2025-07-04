@@ -19,13 +19,21 @@ int main() {
   assert(res[1][0].get_view() == "VALUE3");
   assert(res[1][1].get_view() == "VALUE4");
 
-  test::ownership::Thing thing;
-  thing.name = wit::string::from_view("thing");
-  thing.value = wit::vector<wit::string>::allocate(2);
-  thing.value.initialize(0, wit::string::from_view("value1"));
-  thing.value.initialize(1, wit::string::from_view("value2"));
-  test::ownership::Bar(thing);
-  auto result = test::ownership::Baz(thing);
+  test::ownership::Thing thing1 {
+    wit::string::from_view("thing"),
+        wit::vector<wit::string>::allocate(2)
+  };
+  thing1.value.initialize(0, wit::string::from_view("value1"));
+  thing1.value.initialize(1, wit::string::from_view("value2"));
+  test::ownership::Bar(std::move(thing1));
+
+  test::ownership::Thing thing2 {
+    wit::string::from_view("thing"),
+        wit::vector<wit::string>::allocate(2)
+  };
+  thing2.value.initialize(0, wit::string::from_view("value1"));
+  thing2.value.initialize(1, wit::string::from_view("value2"));
+  auto result = test::ownership::Baz(std::move(thing2));
   assert(result.name.get_view() == "THING");
   assert(result.value.size() == 2);
   assert(result.value[0].get_view() == "VALUE1");

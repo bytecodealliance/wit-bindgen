@@ -1,30 +1,32 @@
 #include <assert.h>
 #include <test_cpp.h>
 
-std::tuple<uint8_t, uint16_t> exports::test::records::to_test::MultipleResults() {
+namespace test_exports = ::exports::test::records::to_test;
+
+std::tuple<uint8_t, uint16_t> test_exports::MultipleResults() {
     return std::tuple<uint8_t, uint16_t>(4, 5);
 }
 
-std::tuple<uint32_t, uint8_t> exports::test::records::to_test::SwapTuple(std::tuple<uint8_t, uint32_t> a) {
+std::tuple<uint32_t, uint8_t> test_exports::SwapTuple(std::tuple<uint8_t, uint32_t> a) {
     return std::tuple<uint32_t, uint8_t>(std::get<1>(a), std::get<0>(a));
 }
 
-test::records::to_test::F1 exports::test::records::to_test::RoundtripFlags1(::test::records::to_test::F1 a) {
+test_exports::F1 test_exports::RoundtripFlags1(test_exports::F1 a) {
     return a;
 }
 
-test::records::to_test::F2 exports::test::records::to_test::RoundtripFlags2(::test::records::to_test::F2 a) {
+test_exports::F2 test_exports::RoundtripFlags2(test_exports::F2 a) {
     return a;
 }
 
-std::tuple<test::records::to_test::Flag8, test::records::to_test::Flag16, test::records::to_test::Flag32> exports::test::records::to_test::RoundtripFlags3(::test::records::to_test::Flag8 a, ::test::records::to_test::Flag16 b, ::test::records::to_test::Flag32 c) {
-    return std::tuple<::test::records::to_test::Flag8, ::test::records::to_test::Flag16, ::test::records::to_test::Flag32>(a, b, c);
+std::tuple<test_exports::Flag8, test_exports::Flag16, test_exports::Flag32> test_exports::RoundtripFlags3(test_exports::Flag8 a, test_exports::Flag16 b, test_exports::Flag32 c) {
+    return std::tuple<test_exports::Flag8, test_exports::Flag16, test_exports::Flag32>(a, b, c);
 }
 
-test::records::to_test::R1 exports::test::records::to_test::RoundtripRecord1(::test::records::to_test::R1 a) {
+test_exports::R1 test_exports::RoundtripRecord1(R1 a) {
     return a;
 }
 
-std::tuple<uint8_t> exports::test::records::to_test::Tuple1(std::tuple<uint8_t> a) {
+std::tuple<uint8_t> test_exports::Tuple1(std::tuple<uint8_t> a) {
     return std::tuple<uint8_t>(std::get<0>(a));
 }
