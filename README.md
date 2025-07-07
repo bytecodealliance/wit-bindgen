@@ -30,10 +30,13 @@ between bindings definitions.
 [component model]: https://github.com/WebAssembly/component-model
 
 The `wit-bindgen` repository is currently focused on **guest** programs which
-are those compiled to WebAssembly. Executing a component in a host is not
+are those compiled to WebAssembly.  
+Languages developed in this repository are Rust, C, Java (TeaVM
+Java), Go (TinyGo), and C#.  
+
+Executing a component in a host is not
 managed in this repository, and some options of how to do so are [described
-below][hosts]. Languages developed in this repository are Rust, C, Java (TeaVM
-Java), Go (TinyGo), and C#. If you encounter any problems feel free to [open an
+below][hosts]. If you encounter any problems feel free to [open an
 issue](https://github.com/bytecodealliance/wit-bindgen/issues/new) or chat with
 us on [Zulip][zulip].
 
