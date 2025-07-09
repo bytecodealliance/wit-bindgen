@@ -95,6 +95,18 @@ public:
     memcpy(addr, v.data(), v.size());
     return string(addr, v.size());
   }
+  char* begin() {
+    return (char*)data_;
+  }
+  char* end() {
+    return (char*)data_ + length;
+  }
+  char const* begin() const {
+    return (char const*)data_;
+  }
+  char const* end() const {
+    return (char const*)data_ + length;
+  }
 };
 
 /// A vector in linear memory, freed unconditionally using free
@@ -113,7 +125,7 @@ public:
   vector &operator=(vector const &) = delete;
   vector &operator=(vector &&b) {
     if (data_ && length>0) {
-      free(const_cast<uint8_t *>(data_));
+      free(data_);
     }
     data_ = b.data_;
     length = b.length;
