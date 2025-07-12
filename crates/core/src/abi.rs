@@ -863,7 +863,7 @@ fn needs_deallocate(resolve: &Resolve, ty: &Type, what: Deallocate) -> bool {
             TypeDefKind::Flags(_) | TypeDefKind::Enum(_) => false,
             TypeDefKind::Future(_) | TypeDefKind::Stream(_) => what.handles(),
             TypeDefKind::Unknown => unreachable!(),
-            TypeDefKind::FixedSizeList(..) => todo!(),
+            TypeDefKind::FixedSizeList(t, _) => needs_deallocate(resolve, t, what),
         },
 
         Type::Bool
@@ -1714,19 +1714,16 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 TypeDefKind::Unknown => unreachable!(),
                 TypeDefKind::FixedSizeList(ty, size) => {
                     let temp = flat_types(self.resolve, ty).unwrap();
-                    // let mut storage = [WasmType::I32; MAX_FLAT_PARAMS];
-                    // let mut temp = FlatTypes::new(&mut storage);
-                    // self.resolve.push_flat(&Type::Id(id), &mut temp);
-                    let mut args = self
+                    let flat_per_elem = temp.to_vec().len();
+                    let flatsize = flat_per_elem * (*size as usize);
+                    let mut lowered_args = self
                         .stack
-                        .drain(self.stack.len() - temp.len()..)
+                        .drain(self.stack.len() - flatsize..)
                         .collect::<Vec<_>>();
-                    // for _ in 0..*size {
-                    //     temp.truncate(0);
-                    //     self.resolve.push_flat(ty, &mut temp);
-                    //     self.stack.extend(args.drain(..temp.len()));
-                    //     self.lift(ty);
-                    // }
+                    for _ in 0..*size {
+                        self.stack.extend(lowered_args.drain(..flat_per_elem));
+                        self.lift(ty);
+                    }
                     self.emit(&FixedSizeListLift {
                         element: ty,
                         size: *size,
