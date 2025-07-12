@@ -12,5 +12,9 @@ int main() {
     assert(res2.b == F1::kB);
     assert(res2.a == 2);
 
+    V1 res3 = test::common::to_test::VarF();
+    assert(res3.variants.index() == 1);
+    assert(std::get<1>(res3.variants).value == 42);
+
     return 0;
 }

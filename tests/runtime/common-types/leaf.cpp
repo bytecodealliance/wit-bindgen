@@ -9,3 +9,7 @@ R1 exports::test::common::to_test::Wrap(F1 flag) {
         return R1{ 2, flag };
     }
 }
+
+V1 exports::test::common::to_test::VarF(void) {
+    return V1(V1::B(42));
+}

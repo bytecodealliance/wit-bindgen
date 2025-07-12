@@ -30,10 +30,13 @@ between bindings definitions.
 [component model]: https://github.com/WebAssembly/component-model
 
 The `wit-bindgen` repository is currently focused on **guest** programs which
-are those compiled to WebAssembly. Executing a component in a host is not
+are those compiled to WebAssembly. Languages developed in this repository are
+Rust, C, C++, and C#. For other languages see the [documentation
+below](#guest-other-languages).
+
+Executing a component in a host is not
 managed in this repository, and some options of how to do so are [described
-below][hosts]. Languages developed in this repository are Rust, C, Java (TeaVM
-Java), Go (TinyGo), and C#. If you encounter any problems feel free to [open an
+below][hosts]. If you encounter any problems feel free to [open an
 issue](https://github.com/bytecodealliance/wit-bindgen/issues/new) or chat with
 us on [Zulip][zulip].
 
@@ -389,7 +392,7 @@ wit-bindgen-go generate <path-to-wit-pkg>
 
 ### Guest: C++-17+
 
-The cpp crate contains code to generate C++ code which uses the std types 
+The cpp crate contains code to generate C++ code which uses the std types
 optional, string, string_view, vector, expected to represent generic
 WIT types.
 
@@ -426,16 +429,19 @@ To avoid touching the files during regeneration (including `moon.pkg.json` or `m
 
 ### Guest: Other Languages
 
-Guest component support for JavaScript and Python is available in
-[componentize-js](https://github.com/bytecodealliance/ComponentizeJS) and
-[componentize-py](https://github.com/bytecodealliance/componentize-py), respectively.
+A (non-exhaustive) list of other languages known to support components are:
+
+* JavaScript through [componentize-js](https://github.com/bytecodealliance/ComponentizeJS)
+* Python through [componentize-py](https://github.com/bytecodealliance/componentize-py)
+* Go through [wit-bindgen-go](https://github.com/bytecodealliance/go-modules).
+
 See also
 [The WebAssembly Component Model developer's guide](https://component-model.bytecodealliance.org/language-support.html)
 for examples of how to build components using various languages.
 
 Other languages such as Ruby, etc, are hoped to be supported one day
 with `wit-bindgen` or with components in general. It's recommended to reach out
-on [zulip] if you're intersted in contributing a generator for one of these
+on [zulip] if you're interested in contributing a generator for one of these
 langauges. It's worth noting, however, that turning an interpreted language into
 a component is significantly different from how compiled languages currently
 work (e.g. Rust or C/C++). It's expected that the first interpreted language
