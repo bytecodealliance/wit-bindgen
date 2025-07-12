@@ -3191,6 +3191,9 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     results.push(move_if_necessary(&result));
                 }
             }
+            abi::Instruction::FixedSizeListLift { .. }
+            | abi::Instruction::FixedSizeListLower { .. }
+            | abi::Instruction::FixedSizeListLowerBlock { .. } => todo!(),
             abi::Instruction::IterElem { .. } => results.push("IterElem".to_string()),
             abi::Instruction::IterBasePointer => results.push("base".to_string()),
             abi::Instruction::RecordLower { record, .. } => {

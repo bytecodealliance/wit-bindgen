@@ -27,6 +27,7 @@ wasi-preview1-component-adapter-provider = "30.0.2"
 wac-parser = { git = "https://github.com/cpetig/wac", branch = "fixed-size-lists" }
 wac-types = { git = "https://github.com/cpetig/wac", branch = "fixed-size-lists" }
 wac-graph = { git = "https://github.com/cpetig/wac", branch = "fixed-size-lists" }
+wasm-compose = { workspace = true }
 indexmap = { workspace = true }
 wasm-encoder = { workspace = true }
 wasmparser = { workspace = true, features = ["features"] }
