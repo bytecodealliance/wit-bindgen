@@ -2117,7 +2117,9 @@ impl CppInterfaceGenerator<'_> {
                         + ">"
                 }
                 TypeDefKind::Type(ty) => self.type_name(ty, from_namespace, flavor),
-                TypeDefKind::FixedSizeList(_, _) => todo!(),
+                TypeDefKind::FixedSizeList(ty, size) => {
+                    format!("{}[{size}]", self.type_name(ty, from_namespace, flavor))
+                }
                 TypeDefKind::Unknown => todo!(),
             },
             Type::ErrorContext => todo!(),
@@ -3191,9 +3193,38 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     results.push(move_if_necessary(&result));
                 }
             }
-            abi::Instruction::FixedSizeListLift { .. }
-            | abi::Instruction::FixedSizeListLower { .. }
-            | abi::Instruction::FixedSizeListLowerMemory { .. } => todo!(),
+            abi::Instruction::FixedSizeListLift {
+                element,
+                size,
+                id: _,
+            } => {
+                let tmp = self.tmp();
+                let result = format!("result{tmp}");
+                let typename = self
+                    .gen
+                    .type_name(element, &self.namespace, Flavor::InStruct);
+                self.push_str(&format!("{typename}[{size}] {result} = {{",));
+                for a in operands.drain(0..(*size as usize)) {
+                    self.push_str(&a);
+                    self.push_str(", ");
+                }
+                self.push_str("};\n");
+                results.push(result);
+            }
+            abi::Instruction::FixedSizeListLower { .. } => todo!(),
+            abi::Instruction::FixedSizeListLowerMemory { element, size:_, id:_  } => {
+                let body = self.blocks.pop().unwrap();
+                let vec = operands[0].clone();
+                let target = operands[1].clone();
+                let size = self.r#gen.sizes.size(element);
+                self.push_str(&format!("for (i, e) in {vec}.into_iter().enumerate() {{\n",));
+                self.push_str(&format!(
+                    "let base = {target}.add(i * {});\n",
+                    size.format(POINTER_SIZE_EXPRESSION)
+                ));
+                self.push_str(&body.0);
+                self.push_str("\n}\n");
+            }
             abi::Instruction::IterElem { .. } => results.push("IterElem".to_string()),
             abi::Instruction::IterBasePointer => results.push("base".to_string()),
             abi::Instruction::RecordLower { record, .. } => {

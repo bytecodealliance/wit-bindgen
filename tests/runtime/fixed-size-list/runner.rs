@@ -57,4 +57,9 @@ fn main() {
             )
         );
     }
+    {
+        let result = nightmare_on_cpp([Nested { l: [1, -1] }, Nested { l: [2, -2] }]);
+        assert_eq!(result[0].l, [1, -1]);
+        assert_eq!(result[1].l, [2, -2]);
+    }
 }

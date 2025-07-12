@@ -1,12 +1,8 @@
-include!(env!("BINDINGS"));
+#include <assert.h>
+#include <test_cpp.h>
+// #include <float.h>
+// #include <math.h>
 
-struct Component;
-
-export!(Component);
-
-use crate::exports::test::fixed_size_lists::to_test::Nested;
-
-impl exports::test::fixed_size_lists::to_test::Guest for Component {
     fn list_param(a: [u32; 4]) {
         assert_eq!(a, [1, 2, 3, 4]);
     }
@@ -37,7 +33,3 @@ impl exports::test::fixed_size_lists::to_test::Guest for Component {
     fn large_roundtrip(a: [[u32; 2]; 2], b: [[i32; 4]; 4]) -> ([[u32; 2]; 2], [[i32; 4]; 4]) {
         (a, b)
     }
-    fn nightmare_on_cpp(a: [Nested; 2]) -> [Nested; 2] {
-        a
-    }
-}
