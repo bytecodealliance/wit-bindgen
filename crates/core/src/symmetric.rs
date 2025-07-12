@@ -173,7 +173,7 @@ fn has_non_canonical_list_rust2(resolve: &Resolve, ty: &Type) -> bool {
             TypeDefKind::Future(_) | TypeDefKind::Stream(_) => false,
             TypeDefKind::Type(ty) => has_non_canonical_list_rust2(resolve, ty),
             TypeDefKind::Unknown => false,
-            TypeDefKind::FixedSizeList(_, _) => todo!(),
+            TypeDefKind::FixedSizeList(ty, _) => has_non_canonical_list_rust2(resolve, ty),
         },
         Type::ErrorContext => todo!(),
     }

@@ -323,7 +323,7 @@ def_instruction! {
         } : [1] => [*size as usize],
 
         /// Pops an array and an address off the stack, passes each element to a block storing it
-        FixedSizeListLowerBlock {
+        FixedSizeListLowerMemory {
             element: &'a Type,
             size: u32,
             id: TypeId,
@@ -1195,7 +1195,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 | AbiVariant::GuestExportAsync
                 | AbiVariant::GuestExportAsyncStackful = variant
                 {
-                    if sig.indirect_params && !async_ {
+                    if sig.indirect_params && !async_ && lift_lower != LiftLower::Symmetric {
                         let ElementInfo { size, align } = self
                             .bindgen
                             .sizes()
@@ -1919,10 +1919,10 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     self.emit(&IterElem { element });
                     self.emit(&IterBasePointer);
                     let elem_addr = self.stack.pop().unwrap();
-                    self.write_to_memory(element, elem_addr, Default::default());
+                    self.write_to_memory(element, elem_addr, offset);
                     self.finish_block(0);
                     self.stack.push(addr);
-                    self.emit(&FixedSizeListLowerBlock {
+                    self.emit(&FixedSizeListLowerMemory {
                         element,
                         size: *size,
                         id,

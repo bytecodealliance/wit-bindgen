@@ -3193,7 +3193,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             }
             abi::Instruction::FixedSizeListLift { .. }
             | abi::Instruction::FixedSizeListLower { .. }
-            | abi::Instruction::FixedSizeListLowerBlock { .. } => todo!(),
+            | abi::Instruction::FixedSizeListLowerMemory { .. } => todo!(),
             abi::Instruction::IterElem { .. } => results.push("IterElem".to_string()),
             abi::Instruction::IterBasePointer => results.push("base".to_string()),
             abi::Instruction::RecordLower { record, .. } => {

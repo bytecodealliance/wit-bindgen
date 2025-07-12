@@ -1254,7 +1254,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
              => todo!(),
             Instruction::FixedSizeListLift { .. } => todo!(),
             Instruction::FixedSizeListLower { .. } => todo!(),
-            Instruction::FixedSizeListLowerBlock { .. } => todo!(),
+            Instruction::FixedSizeListLowerMemory { .. } => todo!(),
         }
     }
 
