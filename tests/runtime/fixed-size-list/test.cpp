@@ -26,6 +26,10 @@ std::tuple<std::array<float, 2>, std::array<double, 2>>
 exports::test::fixed_size_lists::to_test::ListMinmaxFloat(std::array<float, 2> a, std::array<double, 2> b) {
     return std::tuple<std::array<float, 2>, std::array<double, 2>>(a,b);
 }
+std::array<uint8_t, 12> exports::test::fixed_size_lists::to_test::ListRoundtrip(std::array<uint8_t, 12> a) {
+    return a;
+}
+
 std::tuple<std::array<std::array<uint32_t, 2>, 2>,
            std::array<std::array<int32_t, 2>, 2>>
 exports::test::fixed_size_lists::to_test::NestedRoundtrip(std::array<std::array<uint32_t, 2>, 2> a,
