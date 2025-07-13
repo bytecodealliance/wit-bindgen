@@ -3,33 +3,45 @@
 // #include <float.h>
 // #include <math.h>
 
-    fn list_param(a: [u32; 4]) {
-        assert_eq!(a, [1, 2, 3, 4]);
-    }
-    fn list_param2(a: [[u32; 2]; 2]) {
-        assert_eq!(a, [[1, 2], [3, 4]]);
-    }
-    fn list_param3(a: [i32; 20]) {
-        assert_eq!(
-            a,
-            [-1, 2, -3, 4, -5, 6, -7, 8, -9, 10, -11, 12, -13, 14, -15, 16, -17, 18, -19, 20]
-        );
-    }
-    fn list_minmax16(a: [u16; 4], b: [i16; 4]) -> ([u16; 4], [i16; 4]) {
-        (a, b)
-    }
-    fn list_minmax_float(a: [f32; 2], b: [f64; 2]) -> ([f32; 2], [f64; 2]) {
-        (a, b)
-    }
-    fn list_roundtrip(a: [u8; 12]) -> [u8; 12] {
-        a
-    }
-    fn list_result() -> [u8; 8] {
-        [b'0', b'1', b'A', b'B', b'a', b'b', 128, 255]
-    }
-    fn nested_roundtrip(a: [[u32; 2]; 2], b: [[i32; 2]; 2]) -> ([[u32; 2]; 2], [[i32; 2]; 2]) {
-        (a, b)
-    }
-    fn large_roundtrip(a: [[u32; 2]; 2], b: [[i32; 4]; 4]) -> ([[u32; 2]; 2], [[i32; 4]; 4]) {
-        (a, b)
-    }
+void exports::test::fixed_size_lists::to_test::ListParam(std::array<uint32_t, 4> a) {
+    std::array<uint32_t, 4> b = std::array<uint32_t, 4>{1, 2, 3, 4};
+    assert(a == b);
+}
+void exports::test::fixed_size_lists::to_test::ListParam2(std::array<std::array<uint32_t, 2>, 2> a) {
+    std::array<std::array<uint32_t, 2>, 2> b = std::array<std::array<uint32_t, 2>, 2>{std::array<uint32_t, 2>{1, 2}, std::array<uint32_t, 2>{3, 4}};
+    assert(a == b);
+}
+void exports::test::fixed_size_lists::to_test::ListParam3(std::array<int32_t, 20> a) {
+    std::array<int32_t, 20> b = std::array<int32_t, 20>{-1, 2, -3, 4, -5, 6, -7, 8, -9, 10, -11, 12, -13, 14, -15, 16, -17, 18, -19, 20};
+    assert(a == b);
+}
+std::array<uint8_t, 8> exports::test::fixed_size_lists::to_test::ListResult() {
+    return std::array<uint8_t, 8>{'0', '1', 'A', 'B', 'a', 'b', 128, 255};
+}
+std::tuple<std::array<uint16_t, 4>, std::array<int16_t, 4>>
+exports::test::fixed_size_lists::to_test::ListMinmax16(std::array<uint16_t, 4> a, std::array<int16_t, 4> b) {
+    return std::tuple<std::array<uint16_t, 4>, std::array<int16_t, 4>>(a, b);
+}
+std::tuple<std::array<float, 2>, std::array<double, 2>>
+exports::test::fixed_size_lists::to_test::ListMinmaxFloat(std::array<float, 2> a, std::array<double, 2> b) {
+    return std::tuple<std::array<float, 2>, std::array<double, 2>>(a,b);
+}
+std::tuple<std::array<std::array<uint32_t, 2>, 2>,
+           std::array<std::array<int32_t, 2>, 2>>
+exports::test::fixed_size_lists::to_test::NestedRoundtrip(std::array<std::array<uint32_t, 2>, 2> a,
+                std::array<std::array<int32_t, 2>, 2> b) {
+    return std::tuple<std::array<std::array<uint32_t, 2>, 2>,
+           std::array<std::array<int32_t, 2>, 2>>(a, b);
+}
+
+std::tuple<std::array<std::array<uint32_t, 2>, 2>,
+           std::array<std::array<int32_t, 4>, 4>>
+exports::test::fixed_size_lists::to_test::LargeRoundtrip(std::array<std::array<uint32_t, 2>, 2> a,
+               std::array<std::array<int32_t, 4>, 4> b) {
+    return std::tuple<std::array<std::array<uint32_t, 2>, 2>,
+           std::array<std::array<int32_t, 4>, 4>>(a, b);
+}
+std::array<::test::fixed_size_lists::to_test::Nested, 2>
+exports::test::fixed_size_lists::to_test::NightmareOnCpp(std::array<::test::fixed_size_lists::to_test::Nested, 2> a) {
+    return a;
+}
