@@ -58,7 +58,7 @@ struct HighlevelSignature {
     const_member: bool,
     static_member: bool,
     result: CppType,
-    arguments: Vec<(String, CppType)>,
+    arguments: Vec<(String, CppType, String)>,
     name: String,
     namespace: Vec<String>,
     implicit_self: bool,
@@ -525,6 +525,16 @@ impl Cpp {
     fn tmp(&mut self) -> usize {
         self.temp += 1;
         self.temp
+    }
+
+    fn array_dimension(&mut self, resolve: &Resolve, ty: &Type) -> String {
+        match ty {
+            Type::Id(id) => match &resolve.types[*id].kind {
+                TypeDefKind::FixedSizeList(_, size) => format!("[{size}]"),
+                _ => String::new(),
+            },
+            _ => String::new(),
+        }
     }
 }
 
@@ -1364,7 +1374,7 @@ impl CppInterfaceGenerator<'_> {
                 )
             {
                 res.arguments
-                    .push((name.to_snake_case(), "uint8_t*".into()));
+                    .push((name.to_snake_case(), "uint8_t*".into(), String::new()));
             } else {
                 let is_pointer = if matches!(
                     (&is_drop, self.gen.opts.host_side()),
@@ -1380,6 +1390,7 @@ impl CppInterfaceGenerator<'_> {
                     name.to_snake_case(),
                     self.type_name(param, &res.namespace, Flavor::Argument(abi_variant))
                         + is_pointer,
+                    self.gen.array_dimension(self.resolve, param),
                 ));
             }
         }
@@ -1432,13 +1443,14 @@ impl CppInterfaceGenerator<'_> {
                     self.gen.h_src.src.push_str(", ");
                 }
             }
-            for (num, (arg, typ)) in cpp_sig.arguments.iter().enumerate() {
+            for (num, (arg, typ, array)) in cpp_sig.arguments.iter().enumerate() {
                 if num > 0 {
                     self.gen.h_src.src.push_str(", ");
                 }
                 self.gen.h_src.src.push_str(typ);
                 self.gen.h_src.src.push_str(" ");
                 self.gen.h_src.src.push_str(arg);
+                self.gen.h_src.src.push_str(array);
             }
             self.gen.h_src.src.push_str(")");
             if cpp_sig.const_member {
@@ -1455,7 +1467,7 @@ impl CppInterfaceGenerator<'_> {
                         cpp_sig
                             .arguments
                             .iter()
-                            .map(|(arg, _)| arg.clone())
+                            .map(|(arg, _, _)| arg.clone())
                             .collect::<Vec<_>>()
                             .join(", ")
                     );
@@ -1523,13 +1535,14 @@ impl CppInterfaceGenerator<'_> {
             if cpp_sig.implicit_self {
                 params.push("(*this)".into());
             }
-            for (num, (arg, typ)) in cpp_sig.arguments.iter().enumerate() {
+            for (num, (arg, typ, array)) in cpp_sig.arguments.iter().enumerate() {
                 if num > 0 {
                     self.gen.c_src.src.push_str(", ");
                 }
                 self.gen.c_src.src.push_str(typ);
                 self.gen.c_src.src.push_str(" ");
                 self.gen.c_src.src.push_str(arg);
+                self.gen.c_src.src.push_str(array);
                 params.push(arg.clone());
             }
             self.gen.c_src.src.push_str(")");
@@ -2117,9 +2130,7 @@ impl CppInterfaceGenerator<'_> {
                         + ">"
                 }
                 TypeDefKind::Type(ty) => self.type_name(ty, from_namespace, flavor),
-                TypeDefKind::FixedSizeList(ty, size) => {
-                    format!("{}[{size}]", self.type_name(ty, from_namespace, flavor))
-                }
+                TypeDefKind::FixedSizeList(ty, _size) => self.type_name(ty, from_namespace, flavor),
                 TypeDefKind::Unknown => todo!(),
             },
             Type::ErrorContext => todo!(),
@@ -2211,7 +2222,8 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                 Self::docs(&mut self.gen.h_src.src, &field.docs);
                 let typename = self.type_name(&field.ty, &namespc, Flavor::InStruct);
                 let fname = field.name.to_snake_case();
-                uwriteln!(self.gen.h_src.src, "{typename} {fname};");
+                let array = self.r#gen.array_dimension(self.resolve, &field.ty);
+                uwriteln!(self.gen.h_src.src, "{typename} {fname}{array};");
             }
             uwriteln!(self.gen.h_src.src, "}};");
         }
@@ -3212,7 +3224,11 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 results.push(result);
             }
             abi::Instruction::FixedSizeListLower { .. } => todo!(),
-            abi::Instruction::FixedSizeListLowerMemory { element, size:_, id:_  } => {
+            abi::Instruction::FixedSizeListLowerMemory {
+                element,
+                size: _,
+                id: _,
+            } => {
                 let body = self.blocks.pop().unwrap();
                 let vec = operands[0].clone();
                 let target = operands[1].clone();
