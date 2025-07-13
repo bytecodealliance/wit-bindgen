@@ -1264,7 +1264,7 @@ checksum = "ddbd7f2a9e3635abe5d4df93b12cadc8d6818079785ee4fab3719ae3c85a064e"
 [[package]]
 name = "wasm-compose"
 version = "0.235.0"
-source = "git+https://github.com/cpetig/wasm-tools?branch=symmetric#cab9bcb81e7fc2cf96b31e972557ca1a691872f2"
+source = "git+https://github.com/cpetig/wasm-tools?branch=symmetric#01714cbaf85b5549c737eb41251d6cf3f2f5550f"
 dependencies = [
  "anyhow",
  "heck 0.4.1",
@@ -1294,7 +1294,7 @@ dependencies = [
 [[package]]
 name = "wasm-encoder"
 version = "0.235.0"
-source = "git+https://github.com/cpetig/wasm-tools?branch=symmetric#cab9bcb81e7fc2cf96b31e972557ca1a691872f2"
+source = "git+https://github.com/cpetig/wasm-tools?branch=symmetric#01714cbaf85b5549c737eb41251d6cf3f2f5550f"
 dependencies = [
  "leb128fmt",
  "wasmparser 0.235.0 (git+https://github.com/cpetig/wasm-tools?branch=symmetric)",
@@ -1322,7 +1322,7 @@ dependencies = [
 [[package]]
 name = "wasm-metadata"
 version = "0.235.0"
-source = "git+https://github.com/cpetig/wasm-tools?branch=symmetric#cab9bcb81e7fc2cf96b31e972557ca1a691872f2"
+source = "git+https://github.com/cpetig/wasm-tools?branch=symmetric#01714cbaf85b5549c737eb41251d6cf3f2f5550f"
 dependencies = [
  "anyhow",
  "indexmap",
@@ -1346,7 +1346,7 @@ dependencies = [
 [[package]]
 name = "wasmparser"
 version = "0.235.0"
-source = "git+https://github.com/cpetig/wasm-tools?branch=symmetric#cab9bcb81e7fc2cf96b31e972557ca1a691872f2"
+source = "git+https://github.com/cpetig/wasm-tools?branch=symmetric#01714cbaf85b5549c737eb41251d6cf3f2f5550f"
 dependencies = [
  "bitflags",
  "hashbrown",
@@ -1358,7 +1358,7 @@ dependencies = [
 [[package]]
 name = "wast"
 version = "235.0.0"
-source = "git+https://github.com/cpetig/wasm-tools?branch=symmetric#cab9bcb81e7fc2cf96b31e972557ca1a691872f2"
+source = "git+https://github.com/cpetig/wasm-tools?branch=symmetric#01714cbaf85b5549c737eb41251d6cf3f2f5550f"
 dependencies = [
  "bumpalo",
  "leb128fmt",
@@ -1370,7 +1370,7 @@ dependencies = [
 [[package]]
 name = "wat"
 version = "1.235.0"
-source = "git+https://github.com/cpetig/wasm-tools?branch=symmetric#cab9bcb81e7fc2cf96b31e972557ca1a691872f2"
+source = "git+https://github.com/cpetig/wasm-tools?branch=symmetric#01714cbaf85b5549c737eb41251d6cf3f2f5550f"
 dependencies = [
  "wast",
 ]
@@ -1716,7 +1716,7 @@ dependencies = [
 [[package]]
 name = "wit-component"
 version = "0.235.0"
-source = "git+https://github.com/cpetig/wasm-tools?branch=symmetric#cab9bcb81e7fc2cf96b31e972557ca1a691872f2"
+source = "git+https://github.com/cpetig/wasm-tools?branch=symmetric#01714cbaf85b5549c737eb41251d6cf3f2f5550f"
 dependencies = [
  "anyhow",
  "bitflags",
@@ -1735,7 +1735,7 @@ dependencies = [
 [[package]]
 name = "wit-parser"
 version = "0.235.0"
-source = "git+https://github.com/cpetig/wasm-tools?branch=symmetric#cab9bcb81e7fc2cf96b31e972557ca1a691872f2"
+source = "git+https://github.com/cpetig/wasm-tools?branch=symmetric#01714cbaf85b5549c737eb41251d6cf3f2f5550f"
 dependencies = [
  "anyhow",
  "id-arena",
