@@ -3063,7 +3063,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 for i in operands.iter().take(*amt) {
                     let tmp = self.tmp();
                     let result = format!("result{}", tmp);
-                    uwriteln!(self.src, "auto {result} = {};", i);
+                    uwriteln!(self.src, "auto {result} = {};", move_if_necessary(i));
                     results.push(result);
                 }
             }
