@@ -2639,7 +2639,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                         let case = format!("{elem_ns}::{}", case.name.to_pascal_case());
                         uwriteln!(
                             self.src,
-                            "const {} &{} = std::get<{case}>({}.variants).value;",
+                            "{} &{} = std::get<{case}>({}.variants).value;",
                             ty,
                             payload,
                             operands[0],
@@ -3063,7 +3063,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 for i in operands.iter().take(*amt) {
                     let tmp = self.tmp();
                     let result = format!("result{}", tmp);
-                    uwriteln!(self.src, "auto {result} = {};", i);
+                    uwriteln!(self.src, "auto {result} = {};", move_if_necessary(i));
                     results.push(result);
                 }
             }
