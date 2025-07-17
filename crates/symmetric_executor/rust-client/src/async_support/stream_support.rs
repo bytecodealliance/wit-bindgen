@@ -57,12 +57,12 @@ pub struct StreamWrite<'a, T: 'static> {
 
 impl<T: Unpin + Send + 'static> StreamWrite<'_, T> {
     fn start_send(&mut self) -> Poll<(StreamResult, RustBuffer<T>)> {
-        if self.values.remaining() == 0 {
+        let mut values = RustBuffer::new(Vec::new());
+        let size = if self.values.remaining() == 0 {
             // delayed flush
-            let values = RustBuffer::new(Vec::new());
             // I assume EOF
             self.writer.handle.finish_writing(None);
-            Poll::Ready((StreamResult::Complete(0), values))
+            0
         } else {
             // send data
             let buffer = self.writer.handle.start_writing();
@@ -79,10 +79,10 @@ impl<T: Unpin + Send + 'static> StreamWrite<'_, T> {
             }
             buffer.set_size(size as u64);
             self.writer.handle.finish_writing(Some(buffer));
-            let mut values = RustBuffer::new(Vec::new());
             std::mem::swap(&mut self.values, &mut values);
-            Poll::Ready((StreamResult::Complete(size), values))
-        }
+            size
+        };
+        Poll::Ready((StreamResult::Complete(size), values))
     }
 }
 
@@ -180,9 +180,9 @@ impl<T: Unpin + Send> Sink<Vec<T>> for StreamWriter<T> {
 
     fn start_send(self: Pin<&mut Self>, item: Vec<T>) -> Result<(), Self::Error> {
         let me = self.get_mut();
-        let size = item.len();
         let mut val = me.write(item);
-        let res = val.start_send();
+        let poll = val.start_send();
+        assert!(matches!(poll, Poll::Ready((StreamResult::Complete(_), _))));
         Ok(())
     }
 

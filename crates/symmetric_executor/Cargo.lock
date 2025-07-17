@@ -369,7 +369,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen"
-version = "0.42.1"
+version = "0.43.0"
 dependencies = [
  "wit-bindgen-rt",
  "wit-bindgen-rust-macro",
@@ -377,7 +377,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-core"
-version = "0.42.1"
+version = "0.43.0"
 dependencies = [
  "anyhow",
  "heck",
@@ -386,7 +386,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-rt"
-version = "0.42.1"
+version = "0.43.0"
 dependencies = [
  "bitflags",
  "futures",
@@ -395,7 +395,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-rust"
-version = "0.42.1"
+version = "0.43.0"
 dependencies = [
  "anyhow",
  "heck",
@@ -409,7 +409,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-rust-macro"
-version = "0.42.1"
+version = "0.43.0"
 dependencies = [
  "anyhow",
  "prettyplease",

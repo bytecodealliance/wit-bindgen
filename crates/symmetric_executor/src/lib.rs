@@ -265,7 +265,7 @@ impl Executor {
         *self.change_event.get_or_insert_with(|| {
             let fd = unsafe { libc::eventfd(0, libc::EFD_NONBLOCK) };
             if DEBUGGING {
-                println!("change event fd={}", fd);
+                println!("change event fd={fd}");
             }
             fd
         })
@@ -518,7 +518,7 @@ impl EventSubscriptionInternal {
                 if DEBUGGING {
                     println!(
                         "dup(subscr {last_counter} {:x})",
-                        Arc::as_ptr(&event) as usize
+                        Arc::as_ptr(event) as usize
                     );
                 }
                 EventType::Triggered {

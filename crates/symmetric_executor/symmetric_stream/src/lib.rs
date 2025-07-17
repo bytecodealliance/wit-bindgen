@@ -44,7 +44,7 @@ impl GuestBuffer for Buffer {
         self.size.load(Ordering::Relaxed) as u64
     }
 
-    fn set_size(&self, size: u64) -> () {
+    fn set_size(&self, size: u64) {
         self.size.store(size as usize, Ordering::Relaxed)
     }
 
@@ -123,7 +123,7 @@ impl GuestStreamObj for StreamObj {
             "Stream::read_result {:x} {addr:x?} {size}",
             self.0.read_ready_event_send.handle()
         );
-        if addr as usize == EOF_MARKER || (addr == null_mut() && size == results::BLOCKED) {
+        if addr as usize == EOF_MARKER || (addr.is_null() && size == results::BLOCKED) {
             None
         } else {
             Some(symmetric_stream::Buffer::new(Buffer {
@@ -157,7 +157,7 @@ impl GuestStreamObj for StreamObj {
         })
     }
 
-    fn finish_writing(&self, buffer: Option<symmetric_stream::Buffer>) -> () {
+    fn finish_writing(&self, buffer: Option<symmetric_stream::Buffer>) {
         let (elements, addr) = if let Some(buffer) = buffer {
             let elements = buffer.get::<Buffer>().get_size() as isize;
             let addr = buffer.get::<Buffer>().get_address().take_handle() as *mut ();
@@ -175,15 +175,15 @@ impl GuestStreamObj for StreamObj {
                 );
                 return;
             }
-            (0, EOF_MARKER as usize as *mut ())
+            (0, EOF_MARKER as *mut ())
         };
         #[cfg(feature = "trace")]
         println!(
             "Stream::finish_write {:x} {addr:x?} {elements} =>",
             self.0.read_ready_event_send.handle()
         );
-        let old_ready = self.0.ready_size.swap(elements as isize, Ordering::Relaxed);
-        let _old_readya = self.0.ready_addr.swap(addr, Ordering::Release);
+        let old_ready = self.0.ready_size.swap(elements, Ordering::Relaxed);
+        let _old_ready_addr = self.0.ready_addr.swap(addr, Ordering::Release);
         assert_eq!(old_ready, results::BLOCKED);
         self.read_ready_activate();
     }

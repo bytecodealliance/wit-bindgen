@@ -175,7 +175,8 @@ pub fn block_on<T: 'static>(future: impl Future<Output = T> + 'static) -> T {
     let result: Arc<RwLock<MaybeUninit<T>>> = Arc::new(RwLock::new(MaybeUninit::uninit()));
     let result2 = Arc::clone(&result);
     let future2 = async move {
-        result2.write().unwrap().write(future.await);
+        let vec = future.await;
+        result2.write().unwrap().write(vec);
     };
     unsafe { spawn_unchecked(future2) };
     symmetric_executor::run();
