@@ -2639,7 +2639,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                         let case = format!("{elem_ns}::{}", case.name.to_pascal_case());
                         uwriteln!(
                             self.src,
-                            "const {} &{} = std::get<{case}>({}.variants).value;",
+                            "{} &{} = std::get<{case}>({}.variants).value;",
                             ty,
                             payload,
                             operands[0],
