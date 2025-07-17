@@ -177,6 +177,13 @@ impl LanguageMethods for Cpp {
     }
 
     fn verify(&self, runner: &crate::Runner<'_>, verify: &crate::Verify) -> anyhow::Result<()> {
+        // for expected
+        let cwd = std::env::current_dir()?;
+        let mut helper_dir2 = cwd;
+        helper_dir2.push("crates");
+        helper_dir2.push("cpp");
+        helper_dir2.push("test_headers");
+
         let compiler = clangpp(runner);
         let mut cmd = Command::new(compiler);
         cmd.arg(
@@ -186,11 +193,14 @@ impl LanguageMethods for Cpp {
         )
         .arg("-I")
         .arg(&verify.bindings_dir)
+        .arg("-I")
+        .arg(helper_dir2.to_str().unwrap().to_string())
         .arg("-Wall")
         .arg("-Wextra")
         .arg("-Werror")
         .arg("-Wc++-compat")
         .arg("-Wno-unused-parameter")
+        .arg("-std=c++20")
         .arg("-c")
         .arg("-o")
         .arg(verify.artifacts_dir.join("tmp.o"));
