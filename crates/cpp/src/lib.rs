@@ -2860,9 +2860,10 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
     fn lower_lift(&mut self, payload: Option<&Type>) -> String {
         let typestr = self
             .gen
-            .optional_type_name(payload, &self.namespace, Flavor::InStruct);
+            .optional_type_name(payload, &Vec::new(), Flavor::InStruct);
         let tmpnr = self.r#gen.r#gen.tmp();
         uwriteln!(self.r#gen.r#gen.c_src_head, "struct Lift{tmpnr} {{");
+        let symmetric = self.r#gen.r#gen.opts.symmetric;
         let mut bindgen = FunctionBindgen::new(self.gen, Vec::new());
         let lift = if let Some(ty) = payload {
             let res = wit_bindgen_core::abi::lift_from_memory(
@@ -2870,6 +2871,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                 &mut bindgen,
                 "ptr".into(),
                 ty,
+                symmetric,
             );
             format!("{} return {res};", String::from(bindgen.src))
         } else {
@@ -2885,6 +2887,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                 "ptr".into(),
                 "value".into(),
                 ty,
+                symmetric,
             );
             String::from(bindgen.src)
         } else {
@@ -2912,8 +2915,8 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
     fn lower_lift_stream(&mut self, payload: Option<&Type>) {
         let typestr = self
             .gen
-            .optional_type_name(payload, &self.namespace, Flavor::InStruct);
-        //        let tmpnr = self.r#gen.r#gen.tmp();
+            .optional_type_name(payload, &Vec::new(), Flavor::InStruct);
+        let symmetric = self.r#gen.r#gen.opts.symmetric;
         let mut bindgen = FunctionBindgen::new(self.gen, Vec::new());
         let lift = if let Some(ty) = payload {
             let res = wit_bindgen_core::abi::lift_from_memory(
@@ -2921,6 +2924,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                 &mut bindgen,
                 "ptr".into(),
                 ty,
+                symmetric,
             );
             format!("{} return {res};", String::from(bindgen.src))
         } else {
@@ -2936,6 +2940,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                 "ptr".into(),
                 "value".into(),
                 ty,
+                symmetric,
             );
             String::from(bindgen.src)
         } else {
@@ -2957,8 +2962,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             template <>
             void wit::StreamProperties<{typestr}>::lower({typestr} && value, uint8_t *ptr) {{ {lower} }}"
         );
-        //        uwriteln!(self.r#gen.r#gen.c_src_head, "}};");
-        //        format!("Lift{tmpnr}")
     }
 }
 
@@ -3352,8 +3355,10 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     .r#gen
                     .type_name(element, &self.namespace, Flavor::InStruct);
                 let ptr_type = self.r#gen.r#gen.opts.ptr_type();
-                self.push_str(&format!("{{
-                    {ptr_type} outer_base = {target};\n"));
+                self.push_str(&format!(
+                    "{{
+                    {ptr_type} outer_base = {target};\n"
+                ));
                 let target: String = "outer_base".into();
                 self.push_str(&format!(
                     "std::array<{typename}, {elemsize}>& outer_vec = {vec};\n"
@@ -4027,7 +4032,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                             self.src.push_str(">(");
                         }
                         if *amt == 1 {
-                            if operands[0].starts_with("std::move(") {
+                            if operands[0].starts_with("std::move(") && !operands[0].contains('.') {
                                 // remove the std::move due to return value optimization (and complex rules about when std::move harms)
                                 self.src.push_str(&operands[0][9..]);
                             } else {

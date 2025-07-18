@@ -833,8 +833,16 @@ pub mod vtable{ordinal} {{
     }
 
     fn lower_to_memory(&mut self, address: &str, value: &str, ty: &Type, module: &str) -> String {
+        let symmetric = self.r#gen.opts.symmetric;
         let mut f = FunctionBindgen::new(self, Vec::new(), module, true);
-        abi::lower_to_memory(f.r#gen.resolve, &mut f, address.into(), value.into(), ty);
+        abi::lower_to_memory(
+            f.r#gen.resolve,
+            &mut f,
+            address.into(),
+            value.into(),
+            ty,
+            symmetric,
+        );
         format!("unsafe {{ {} }}", String::from(f.src))
     }
 
@@ -863,8 +871,9 @@ pub mod vtable{ordinal} {{
     }
 
     fn lift_from_memory(&mut self, address: &str, ty: &Type, module: &str) -> String {
+        let symmetric = self.r#gen.opts.symmetric;
         let mut f = FunctionBindgen::new(self, Vec::new(), module, true);
-        let result = abi::lift_from_memory(f.r#gen.resolve, &mut f, address.into(), ty);
+        let result = abi::lift_from_memory(f.r#gen.resolve, &mut f, address.into(), ty, symmetric);
         format!("unsafe {{ {}\n{result} }}", String::from(f.src))
     }
 
@@ -920,6 +929,7 @@ pub mod vtable{ordinal} {{
         func: &Function,
         mut params: Vec<String>,
     ) {
+        let symmetric = self.r#gen.opts.symmetric;
         let param_tys = func.params.iter().map(|(_, ty)| *ty).collect::<Vec<_>>();
         let async_support = self.r#gen.async_support_path();
         let sig = self.resolve.wasm_signature_symmetric(
@@ -1081,7 +1091,13 @@ unsafe fn call_import(_params: Self::ParamsLower, _results: *mut u8) -> u32 {{
             let mut results = Vec::new();
             for (i, (_, ty)) in func.params.iter().enumerate() {
                 let name = format!("_lower{i}");
-                results.extend(abi::lower_flat(f.r#gen.resolve, &mut f, name.clone(), ty));
+                results.extend(abi::lower_flat(
+                    f.r#gen.resolve,
+                    &mut f,
+                    name.clone(),
+                    ty,
+                    symmetric,
+                ));
                 param_lowers.push(name);
             }
             for result in results.iter_mut() {

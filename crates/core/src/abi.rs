@@ -779,8 +779,9 @@ pub fn lower_to_memory<B: Bindgen>(
     address: B::Operand,
     value: B::Operand,
     ty: &Type,
+    symmetric: bool,
 ) {
-    let mut generator = Generator::new(resolve, bindgen, false);
+    let mut generator = Generator::new(resolve, bindgen, symmetric);
     // TODO: make this configurable? Right now this function is only called for
     // future/stream callbacks so it's appropriate to skip realloc here as it's
     // all "lower for wasm import", but this might get reused for something else
@@ -795,8 +796,9 @@ pub fn lower_flat<B: Bindgen>(
     bindgen: &mut B,
     value: B::Operand,
     ty: &Type,
+    symmetric: bool,
 ) -> Vec<B::Operand> {
-    let mut generator = Generator::new(resolve, bindgen, false);
+    let mut generator = Generator::new(resolve, bindgen, symmetric);
     generator.stack.push(value);
     generator.realloc = Some(Realloc::Export("cabi_realloc"));
     generator.lower(ty);
@@ -808,8 +810,9 @@ pub fn lift_from_memory<B: Bindgen>(
     bindgen: &mut B,
     address: B::Operand,
     ty: &Type,
+    symmetric: bool,
 ) -> B::Operand {
-    let mut generator = Generator::new(resolve, bindgen, false);
+    let mut generator = Generator::new(resolve, bindgen, symmetric);
     generator.read_from_memory(ty, address, Default::default());
     generator.stack.pop().unwrap()
 }

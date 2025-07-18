@@ -2063,7 +2063,13 @@ impl InterfaceGenerator<'_> {
             let mut f = FunctionBindgen::new(self, c_sig.clone(), "INVALID");
             for (i, (_, ty)) in func.params.iter().enumerate() {
                 let param = &c_sig.params[i].1;
-                params.extend(abi::lower_flat(f.r#gen.resolve, &mut f, param.clone(), ty));
+                params.extend(abi::lower_flat(
+                    f.r#gen.resolve,
+                    &mut f,
+                    param.clone(),
+                    ty,
+                    false,
+                ));
             }
             f.r#gen.src.c_adapters.push_str(&f.src);
         }
