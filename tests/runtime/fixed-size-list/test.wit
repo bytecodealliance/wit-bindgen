@@ -13,6 +13,15 @@ interface to-test {
     -> tuple<list<f32, 2>, list<f64, 2>>;
 
   list-roundtrip: func(a: list<u8, 12>) -> list<u8, 12>;
+
+  nested-roundtrip: func(a: list<list<u32, 2>, 2>, b: list<list<s32, 2>, 2>) -> tuple<list<list<u32, 2>,2>, list<list<s32, 2>, 2>>;
+  large-roundtrip: func(a: list<list<u32, 2>, 2>, b: list<list<s32, 4>, 4>) -> tuple<list<list<u32, 2>,2>, list<list<s32, 4>, 4>>;
+
+  record nested {
+    l: list<s32, 2>,
+  }
+
+  nightmare-on-cpp: func(a: list<nested, 2>) -> list<nested, 2>;
 }
 
 world test {

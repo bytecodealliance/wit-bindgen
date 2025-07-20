@@ -325,7 +325,7 @@ def_instruction! {
         } : [1] => [*size as usize],
 
         /// Pops an array and an address off the stack, passes each element to a block storing it
-        FixedSizeListLowerBlock {
+        FixedSizeListLowerMemory {
             element: &'a Type,
             size: u32,
             id: TypeId,
@@ -862,7 +862,7 @@ fn needs_deallocate(resolve: &Resolve, ty: &Type, what: Deallocate) -> bool {
             TypeDefKind::Flags(_) | TypeDefKind::Enum(_) => false,
             TypeDefKind::Future(_) | TypeDefKind::Stream(_) => what.handles(),
             TypeDefKind::Unknown => unreachable!(),
-            TypeDefKind::FixedSizeList(..) => todo!(),
+            TypeDefKind::FixedSizeList(t, _) => needs_deallocate(resolve, t, what),
             TypeDefKind::Map(..) => todo!(),
         },
 
@@ -1785,16 +1785,15 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
                 TypeDefKind::Unknown => unreachable!(),
                 TypeDefKind::FixedSizeList(ty, size) => {
-                    let mut temp = Vec::new();
-                    self.resolve.push_flat(&Type::Id(id), &mut temp);
-                    let mut args = self
+                    let temp = flat_types(self.resolve, ty).unwrap();
+                    let flat_per_elem = temp.to_vec().len();
+                    let flatsize = flat_per_elem * (*size as usize);
+                    let mut lowered_args = self
                         .stack
-                        .drain(self.stack.len() - temp.len()..)
+                        .drain(self.stack.len() - flatsize..)
                         .collect::<Vec<_>>();
                     for _ in 0..*size {
-                        temp.truncate(0);
-                        self.resolve.push_flat(ty, &mut temp);
-                        self.stack.extend(args.drain(..temp.len()));
+                        self.stack.extend(lowered_args.drain(..flat_per_elem));
                         self.lift(ty);
                     }
                     self.emit(&FixedSizeListLift {
@@ -1991,10 +1990,10 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     self.emit(&IterElem { element });
                     self.emit(&IterBasePointer);
                     let elem_addr = self.stack.pop().unwrap();
-                    self.write_to_memory(element, elem_addr, Default::default());
+                    self.write_to_memory(element, elem_addr, offset);
                     self.finish_block(0);
                     self.stack.push(addr);
-                    self.emit(&FixedSizeListLowerBlock {
+                    self.emit(&FixedSizeListLowerMemory {
                         element,
                         size: *size,
                         id,

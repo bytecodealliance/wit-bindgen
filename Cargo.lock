@@ -107,6 +107,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "bitmaps"
+version = "2.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "031043d04099746d8db04daf1fa424b2bc8bd69d92b25962dcde24da39ab64a2"
+dependencies = [
+ "typenum",
+]
+
+[[package]]
 name = "bumpalo"
 version = "3.19.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -153,7 +162,7 @@ version = "4.5.49"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2a0b5487afeab2deb2ff4e03a807ad1a03ac532ff5a2cee5d86884440c7f7671"
 dependencies = [
- "heck",
+ "heck 0.5.0",
  "proc-macro2",
  "quote",
  "syn",
@@ -169,7 +178,7 @@ checksum = "a1d728cc89cf3aee9ff92b05e62b19ee65a02b5702cff7d5a377e32c6ae29d8d"
 name = "codegen-macro"
 version = "0.0.0"
 dependencies = [
- "heck",
+ "heck 0.5.0",
  "quote",
 ]
 
@@ -385,6 +394,12 @@ name = "hashbrown"
 version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "841d1cc9bed7f9236f321df977030373f4a4163ae1a7dbfe1a51a2c1a51d9100"
+
+[[package]]
+name = "heck"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "95505c38b4572b2d910cecb0281560f54b440a19336cbbcb27bf6ce6adc6f5a8"
 
 [[package]]
 name = "heck"
@@ -1465,7 +1480,7 @@ version = "0.51.0"
 dependencies = [
  "anyhow",
  "clap",
- "heck",
+ "heck 0.5.0",
  "indexmap",
  "wasm-encoder 0.244.0",
  "wasm-metadata 0.244.0",
@@ -1499,7 +1514,7 @@ version = "0.51.0"
 dependencies = [
  "anyhow",
  "clap",
- "heck",
+ "heck 0.5.0",
  "serde",
  "wit-parser",
 ]
@@ -1510,7 +1525,7 @@ version = "0.51.0"
 dependencies = [
  "anyhow",
  "clap",
- "heck",
+ "heck 0.5.0",
  "test-helpers",
  "wasm-encoder 0.244.0",
  "wasm-metadata 0.244.0",
@@ -1525,7 +1540,7 @@ version = "0.51.0"
 dependencies = [
  "anyhow",
  "clap",
- "heck",
+ "heck 0.5.0",
  "indexmap",
  "wasm-metadata 0.244.0",
  "wit-bindgen-core",
@@ -1552,7 +1567,7 @@ version = "0.51.0"
 dependencies = [
  "anyhow",
  "clap",
- "heck",
+ "heck 0.5.0",
  "pulldown-cmark",
  "wit-bindgen-core",
 ]
@@ -1563,7 +1578,7 @@ version = "0.51.0"
 dependencies = [
  "anyhow",
  "clap",
- "heck",
+ "heck 0.5.0",
  "wit-bindgen-core",
 ]
 
@@ -1575,7 +1590,7 @@ dependencies = [
  "bytes",
  "clap",
  "futures",
- "heck",
+ "heck 0.5.0",
  "indexmap",
  "prettyplease",
  "serde",
@@ -1607,7 +1622,7 @@ version = "0.51.0"
 dependencies = [
  "anyhow",
  "clap",
- "heck",
+ "heck 0.5.0",
  "indexmap",
  "libtest-mimic",
  "log",
