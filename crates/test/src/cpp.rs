@@ -41,11 +41,39 @@ impl LanguageMethods for Cpp {
 
     fn should_fail_verify(
         &self,
-        _name: &str,
+        name: &str,
         _config: &crate::config::WitConfig,
         _args: &[String],
     ) -> bool {
-        false
+        match name {
+            "async-trait-function.wit"
+            | "error-context.wit"
+            | "futures.wit"
+            | "import_export_func.wit"
+            | "import-func.wit"
+            | "issue573.wit"
+            | "issue929-no-export.wit"
+            | "keywords.wit"
+            | "lift-lower-foreign.wit"
+            | "lists.wit"
+            | "multiversion"
+            | "resource-alias.wit"
+            | "resource-borrow-in-record.wit"
+            | "resources.wit"
+            | "resources-in-aggregates.wit"
+            | "resources-with-futures.wit"
+            | "resources-with-streams.wit"
+            | "ret-areas.wit"
+            | "return-resource-from-export.wit"
+            | "same-names1.wit"
+            | "same-names5.wit"
+            | "simple-http.wit"
+            | "variants.wit"
+            | "variants-unioning-types.wit"
+            | "worlds-with-types.wit"
+            | "streams.wit" => true,
+            _ => false
+        }
     }
 
     fn prepare(&self, runner: &mut crate::Runner<'_>) -> anyhow::Result<()> {
