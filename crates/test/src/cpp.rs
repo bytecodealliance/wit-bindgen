@@ -70,6 +70,10 @@ impl LanguageMethods for Cpp {
             | "simple-http.wit"
             | "variants.wit"
             | "variants-unioning-types.wit"
+            | "wasi-cli"
+            | "wasi-filesystem"
+            | "wasi-http"
+            | "wasi-io"
             | "worlds-with-types.wit"
             | "streams.wit" => true,
             _ => false,
