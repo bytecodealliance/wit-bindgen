@@ -72,7 +72,7 @@ impl LanguageMethods for Cpp {
             | "variants-unioning-types.wit"
             | "worlds-with-types.wit"
             | "streams.wit" => true,
-            _ => false
+            _ => false,
         }
     }
 
