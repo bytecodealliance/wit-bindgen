@@ -17,6 +17,6 @@ pub unsafe trait Subtask {
     where
         Self: Sized,
     {
-        async { todo!() }
+        async { unimplemented!("Async call support missing") }
     }
 }

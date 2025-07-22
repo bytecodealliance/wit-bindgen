@@ -75,7 +75,13 @@ impl<T: Unpin + Send + 'static> StreamWrite<'_, T> {
                     dest = unsafe { dest.byte_add(self.writer._vtable.layout.size()) };
                 }
             } else {
-                todo!();
+                assert_eq!(self.writer._vtable.layout.size(), core::mem::size_of::<T>());
+                unsafe { std::slice::from_raw_parts_mut(dest.cast::<MaybeUninit<T>>(), size) }
+                    .iter_mut()
+                    .zip(self.values.drain_n(size))
+                    .for_each(|(d, s)| {
+                        d.write(s);
+                    });
             }
             buffer.set_size(size as u64);
             self.writer.handle.finish_writing(Some(buffer));
@@ -115,13 +121,7 @@ impl<T> StreamWriter<T> {
     }
 
     pub fn write(&mut self, values: Vec<T>) -> StreamWrite<'_, T> {
-        self.write_buf(RustBuffer::new(values)) //, self._vtable))
-                                                // StreamWrite {
-                                                // writer: self,
-                                                // _future: None,
-                                                // _phantom: PhantomData,
-                                                // values,
-                                                // }
+        self.write_buf(RustBuffer::new(values))
     }
 
     pub fn write_buf(&mut self, values: RustBuffer<T>) -> StreamWrite<'_, T> {
@@ -347,6 +347,7 @@ impl<T: Unpin + Send + 'static> Future for StreamRead<'_, T> {
                 let buffer3 = handle.read_result();
                 if let Some(buffer3) = buffer3 {
                     let count = buffer3.get_size();
+                    buffer2.reserve(count as usize);
                     let mut srcptr = buffer3.get_address().take_handle() as *mut u8;
                     if let Some(lift) = vtable.lift {
                         for _ in 0..count {
@@ -354,7 +355,10 @@ impl<T: Unpin + Send + 'static> Future for StreamRead<'_, T> {
                             srcptr = unsafe { srcptr.byte_add(vtable.layout.size()) };
                         }
                     } else {
-                        todo!()
+                        for _ in 0..count {
+                            buffer2.push(unsafe { srcptr.cast::<T>().read() });
+                            srcptr = unsafe { srcptr.byte_add(vtable.layout.size()) };
+                        }
                     }
                     (StreamResult::Complete(count as usize), buffer2)
                 } else {
