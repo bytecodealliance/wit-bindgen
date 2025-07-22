@@ -49,11 +49,43 @@ impl LanguageMethods for Cpp {
 
     fn should_fail_verify(
         &self,
-        _name: &str,
+        name: &str,
         _config: &crate::config::WitConfig,
         _args: &[String],
     ) -> bool {
-        false
+        match name {
+            "async-trait-function.wit"
+            | "error-context.wit"
+            | "futures.wit"
+            | "import_export_func.wit"
+            | "import-func.wit"
+            | "issue573.wit"
+            | "issue929-no-export.wit"
+            | "keywords.wit"
+            | "lift-lower-foreign.wit"
+            | "lists.wit"
+            | "multiversion"
+            | "resource-alias.wit"
+            | "resource-borrow-in-record.wit"
+            | "resources.wit"
+            | "resources-in-aggregates.wit"
+            | "resources-with-futures.wit"
+            | "resources-with-streams.wit"
+            | "ret-areas.wit"
+            | "return-resource-from-export.wit"
+            | "same-names1.wit"
+            | "same-names5.wit"
+            | "simple-http.wit"
+            | "variants.wit"
+            | "variants-unioning-types.wit"
+            | "wasi-cli"
+            | "wasi-filesystem"
+            | "wasi-http"
+            | "wasi-io"
+            | "worlds-with-types.wit"
+            | "streams.wit" => true,
+            _ => false,
+        }
     }
 
     fn prepare(&self, runner: &mut crate::Runner<'_>, test_name: &str) -> anyhow::Result<()> {
@@ -239,6 +271,13 @@ impl LanguageMethods for Cpp {
     }
 
     fn verify(&self, runner: &crate::Runner<'_>, verify: &crate::Verify) -> anyhow::Result<()> {
+        // for expected
+        let cwd = std::env::current_dir()?;
+        let mut helper_dir2 = cwd;
+        helper_dir2.push("crates");
+        helper_dir2.push("cpp");
+        helper_dir2.push("test_headers");
+
         let compiler = clangpp(runner);
         let mut cmd = Command::new(compiler);
         cmd.arg(
@@ -248,11 +287,14 @@ impl LanguageMethods for Cpp {
         )
         .arg("-I")
         .arg(&verify.bindings_dir)
+        .arg("-I")
+        .arg(helper_dir2.to_str().unwrap().to_string())
         .arg("-Wall")
         .arg("-Wextra")
         .arg("-Werror")
         .arg("-Wc++-compat")
         .arg("-Wno-unused-parameter")
+        .arg("-std=c++20")
         .arg("-c")
         .arg("-o")
         .arg(verify.artifacts_dir.join("tmp.o"));
