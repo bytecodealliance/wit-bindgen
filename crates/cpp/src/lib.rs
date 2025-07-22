@@ -74,6 +74,7 @@ struct Includes {
     // needs wit types
     needs_wit: bool,
     needs_memory: bool,
+    needs_array: bool,
 }
 
 #[derive(Default)]
@@ -398,6 +399,9 @@ impl Cpp {
         }
         if self.dependencies.needs_memory {
             self.include("<memory>");
+        }
+        if self.dependencies.needs_array {
+            self.include("<array>");
         }
         if self.dependencies.needs_bit {
             self.include("<bit>");
@@ -1579,7 +1583,13 @@ impl CppInterfaceGenerator<'_> {
                 TypeDefKind::Future(_) => todo!(),
                 TypeDefKind::Stream(_) => todo!(),
                 TypeDefKind::Type(ty) => self.type_name(ty, from_namespace, flavor),
-                TypeDefKind::FixedSizeList(_, _) => todo!(),
+                TypeDefKind::FixedSizeList(ty, size) => {
+                    self.r#gen.dependencies.needs_array = true;
+                    format!(
+                        "std::array<{}, {size}>",
+                        self.type_name(ty, from_namespace, flavor)
+                    )
+                }
                 TypeDefKind::Unknown => todo!(),
             },
             Type::ErrorContext => todo!(),
@@ -2438,7 +2448,57 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     results.push(move_if_necessary(&result));
                 }
             }
-            abi::Instruction::IterElem { .. } => results.push("IterElem".to_string()),
+            abi::Instruction::FixedSizeListLift {
+                element,
+                size,
+                id: _,
+            } => {
+                let tmp = self.tmp();
+                let result = format!("result{tmp}");
+                let typename = self
+                    .gen
+                    .type_name(element, &self.namespace, Flavor::InStruct);
+                self.push_str(&format!("std::array<{typename}, {size}> {result} = {{",));
+                for a in operands.drain(0..(*size as usize)) {
+                    self.push_str(&a);
+                    self.push_str(", ");
+                }
+                self.push_str("};\n");
+                results.push(result);
+            }
+            abi::Instruction::FixedSizeListLower { .. } => todo!(),
+            abi::Instruction::FixedSizeListLowerMemory {
+                element,
+                size: elemsize,
+                id: _,
+            } => {
+                let body = self.blocks.pop().unwrap();
+                let vec = operands[0].clone();
+                let target = operands[1].clone();
+                let size = self.r#gen.sizes.size(element);
+                let size_str = size.format(POINTER_SIZE_EXPRESSION);
+                let typename = self
+                    .r#gen
+                    .type_name(element, &self.namespace, Flavor::InStruct);
+                let ptr_type = self.r#gen.r#gen.opts.ptr_type();
+                self.push_str(&format!(
+                    "{{
+                    {ptr_type} outer_base = {target};\n"
+                ));
+                let target: String = "outer_base".into();
+                self.push_str(&format!(
+                    "std::array<{typename}, {elemsize}>& outer_vec = {vec};\n"
+                ));
+                let vec: String = "outer_vec".into();
+                self.push_str(&format!("for (unsigned i = 0; i<{vec}.size(); ++i) {{\n",));
+                self.push_str(&format!(
+                    "{ptr_type} base = {target} + i * {size_str};
+                     {typename}& iter_elem = {vec}[i];\n"
+                ));
+                self.push_str(&body.0);
+                self.push_str("\n}\n}\n");
+            }
+            abi::Instruction::IterElem { .. } => results.push("iter_elem".to_string()),
             abi::Instruction::IterBasePointer => results.push("base".to_string()),
             abi::Instruction::RecordLower { record, .. } => {
                 let op = &operands[0];
@@ -2975,7 +3035,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                             self.src.push_str(">(");
                         }
                         if *amt == 1 {
-                            if operands[0].starts_with("std::move(") {
+                            if operands[0].starts_with("std::move(") && !operands[0].contains('.') {
                                 // remove the std::move due to return value optimization (and complex rules about when std::move harms)
                                 self.src.push_str(&operands[0][9..]);
                             } else {

@@ -1,0 +1,33 @@
+// run with "--runner wasmtime -W component-model-fixed-size-list"
+
+package test:fixed-size-lists;
+
+interface to-test {
+  list-param: func(a: list<u32, 4>);
+  list-param2: func(a: list<list<u32, 2>, 2>);
+  list-param3: func(a: list<s32, 20>);
+  list-result: func() -> list<u8, 8>;
+
+  list-minmax16: func(a: list<u16, 4>, b: list<s16, 4>) -> tuple<list<u16, 4>, list<s16, 4>>;
+  list-minmax-float: func(a: list<f32, 2>, b: list<f64, 2>)
+    -> tuple<list<f32, 2>, list<f64, 2>>;
+
+  list-roundtrip: func(a: list<u8, 12>) -> list<u8, 12>;
+
+  nested-roundtrip: func(a: list<list<u32, 2>, 2>, b: list<list<s32, 2>, 2>) -> tuple<list<list<u32, 2>,2>, list<list<s32, 2>, 2>>;
+  large-roundtrip: func(a: list<list<u32, 2>, 2>, b: list<list<s32, 4>, 4>) -> tuple<list<list<u32, 2>,2>, list<list<s32, 4>, 4>>;
+
+  record nested {
+    l: list<s32, 2>,
+  }
+
+  nightmare-on-cpp: func(a: list<nested, 2>) -> list<nested, 2>;
+}
+
+world test {
+  export to-test;
+}
+
+world runner {
+  import to-test;
+}

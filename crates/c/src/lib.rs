@@ -1671,6 +1671,16 @@ impl<'a> wit_bindgen_core::AnonymousTypeGenerator<'a> for InterfaceGenerator<'a>
     fn anonymous_type_type(&mut self, _id: TypeId, _ty: &Type, _docs: &Docs) {
         todo!("print_anonymous_type for type");
     }
+
+    fn anonymous_type_fixed_size_list(
+        &mut self,
+        _id: TypeId,
+        _ty: &Type,
+        _size: u32,
+        _docs: &Docs,
+    ) {
+        todo!("print_anonymous_type for fixed size list");
+    }
 }
 
 pub enum CTypeNameInfo<'a> {

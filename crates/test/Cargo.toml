@@ -24,9 +24,10 @@ regex = "1.11.1"
 serde = { workspace = true }
 toml = "0.8.20"
 wasi-preview1-component-adapter-provider = "30.0.2"
-wac-parser = "0.6.1"
-wac-types = "0.6.1"
-wac-graph = "0.6.1"
+# We need https://github.com/bytecodealliance/wac/pull/156 which isn't released, yet
+wac-parser = { git = "https://github.com/bytecodealliance/wac" }
+wac-types = { git = "https://github.com/bytecodealliance/wac" }
+wac-graph = { git = "https://github.com/bytecodealliance/wac" }
 wasm-compose = { workspace = true }
 indexmap = { workspace = true }
 wasm-encoder = { workspace = true }
