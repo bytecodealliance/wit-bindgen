@@ -789,6 +789,9 @@ impl WorldGenerator for Cpp {
         if self.dependencies.needs_assert {
             uwriteln!(c_str.src, "#include <assert.h>");
         }
+        if self.dependencies.needs_span {
+            uwriteln!(c_str.src, "#include <span>");
+        }
 
         h_str.change_namespace(&Vec::default());
 
