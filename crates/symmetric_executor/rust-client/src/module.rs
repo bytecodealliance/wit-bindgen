@@ -324,6 +324,7 @@ pub mod symmetric {
                 #[allow(async_fn_in_trait)]
                 pub fn ready(&self) -> bool {
                     unsafe {
+                        #[link(name = "symmetric_executor")]
                         #[link(
                             wasm_import_module = "symmetric:runtime/symmetric-executor@0.2.1"
                         )]
@@ -350,6 +351,7 @@ pub mod symmetric {
                 #[allow(async_fn_in_trait)]
                 pub fn from_timeout(nanoseconds: u64) -> EventSubscription {
                     unsafe {
+                        #[link(name = "symmetric_executor")]
                         #[link(
                             wasm_import_module = "symmetric:runtime/symmetric-executor@0.2.1"
                         )]
@@ -376,6 +378,7 @@ pub mod symmetric {
                 #[allow(async_fn_in_trait)]
                 pub fn dup(&self) -> EventSubscription {
                     unsafe {
+                        #[link(name = "symmetric_executor")]
                         #[link(
                             wasm_import_module = "symmetric:runtime/symmetric-executor@0.2.1"
                         )]
@@ -402,6 +405,7 @@ pub mod symmetric {
                 #[allow(async_fn_in_trait)]
                 pub fn reset(&self) -> () {
                     unsafe {
+                        #[link(name = "symmetric_executor")]
                         #[link(
                             wasm_import_module = "symmetric:runtime/symmetric-executor@0.2.1"
                         )]
@@ -426,6 +430,7 @@ pub mod symmetric {
                 #[allow(async_fn_in_trait)]
                 pub fn new() -> Self {
                     unsafe {
+                        #[link(name = "symmetric_executor")]
                         #[link(
                             wasm_import_module = "symmetric:runtime/symmetric-executor@0.2.1"
                         )]
@@ -448,6 +453,7 @@ pub mod symmetric {
                 #[allow(async_fn_in_trait)]
                 pub fn subscribe(&self) -> EventSubscription {
                     unsafe {
+                        #[link(name = "symmetric_executor")]
                         #[link(
                             wasm_import_module = "symmetric:runtime/symmetric-executor@0.2.1"
                         )]
@@ -474,6 +480,7 @@ pub mod symmetric {
                 #[allow(async_fn_in_trait)]
                 pub fn activate(&self) -> () {
                     unsafe {
+                        #[link(name = "symmetric_executor")]
                         #[link(
                             wasm_import_module = "symmetric:runtime/symmetric-executor@0.2.1"
                         )]
@@ -499,6 +506,7 @@ pub mod symmetric {
                 #[allow(async_fn_in_trait)]
                 pub fn cancel(obj: CallbackRegistration) -> CallbackData {
                     unsafe {
+                        #[link(name = "symmetric_executor")]
                         #[link(
                             wasm_import_module = "symmetric:runtime/symmetric-executor@0.2.1"
                         )]
@@ -524,6 +532,7 @@ pub mod symmetric {
             #[allow(async_fn_in_trait)]
             pub fn run() -> () {
                 unsafe {
+                    #[link(name = "symmetric_executor")]
                     #[link(
                         wasm_import_module = "symmetric:runtime/symmetric-executor@0.2.1"
                     )]
@@ -544,6 +553,7 @@ pub mod symmetric {
                 data: CallbackData,
             ) -> CallbackRegistration {
                 unsafe {
+                    #[link(name = "symmetric_executor")]
                     #[link(
                         wasm_import_module = "symmetric:runtime/symmetric-executor@0.2.1"
                     )]
@@ -569,6 +579,7 @@ pub mod symmetric {
             #[allow(async_fn_in_trait)]
             pub fn block_on(trigger: EventSubscription) -> () {
                 unsafe {
+                    #[link(name = "symmetric_executor")]
                     #[link(
                         wasm_import_module = "symmetric:runtime/symmetric-executor@0.2.1"
                     )]
@@ -731,6 +742,7 @@ pub mod symmetric {
                 #[allow(async_fn_in_trait)]
                 pub fn new(addr: Address, capacity: u64) -> Self {
                     unsafe {
+                        #[link(name = "symmetric_stream")]
                         #[link(
                             wasm_import_module = "symmetric:runtime/symmetric-stream@0.2.1"
                         )]
@@ -758,6 +770,7 @@ pub mod symmetric {
                 #[allow(async_fn_in_trait)]
                 pub fn get_address(&self) -> Address {
                     unsafe {
+                        #[link(name = "symmetric_stream")]
                         #[link(
                             wasm_import_module = "symmetric:runtime/symmetric-stream@0.2.1"
                         )]
@@ -783,6 +796,7 @@ pub mod symmetric {
                 #[allow(async_fn_in_trait)]
                 pub fn get_size(&self) -> u64 {
                     unsafe {
+                        #[link(name = "symmetric_stream")]
                         #[link(
                             wasm_import_module = "symmetric:runtime/symmetric-stream@0.2.1"
                         )]
@@ -808,6 +822,7 @@ pub mod symmetric {
                 #[allow(async_fn_in_trait)]
                 pub fn set_size(&self, size: u64) -> () {
                     unsafe {
+                        #[link(name = "symmetric_stream")]
                         #[link(
                             wasm_import_module = "symmetric:runtime/symmetric-stream@0.2.1"
                         )]
@@ -834,6 +849,7 @@ pub mod symmetric {
                 #[allow(async_fn_in_trait)]
                 pub fn capacity(&self) -> u64 {
                     unsafe {
+                        #[link(name = "symmetric_stream")]
                         #[link(
                             wasm_import_module = "symmetric:runtime/symmetric-stream@0.2.1"
                         )]
@@ -859,6 +875,7 @@ pub mod symmetric {
                 #[allow(async_fn_in_trait)]
                 pub fn new() -> Self {
                     unsafe {
+                        #[link(name = "symmetric_stream")]
                         #[link(
                             wasm_import_module = "symmetric:runtime/symmetric-stream@0.2.1"
                         )]
@@ -881,6 +898,7 @@ pub mod symmetric {
                 #[allow(async_fn_in_trait)]
                 pub fn clone(&self) -> StreamObj {
                     unsafe {
+                        #[link(name = "symmetric_stream")]
                         #[link(
                             wasm_import_module = "symmetric:runtime/symmetric-stream@0.2.1"
                         )]
@@ -908,6 +926,7 @@ pub mod symmetric {
                 #[allow(async_fn_in_trait)]
                 pub fn is_write_closed(&self) -> bool {
                     unsafe {
+                        #[link(name = "symmetric_stream")]
                         #[link(
                             wasm_import_module = "symmetric:runtime/symmetric-stream@0.2.1"
                         )]
@@ -933,6 +952,7 @@ pub mod symmetric {
                 #[allow(async_fn_in_trait)]
                 pub fn start_reading(&self, buffer: Buffer) -> () {
                     unsafe {
+                        #[link(name = "symmetric_stream")]
                         #[link(
                             wasm_import_module = "symmetric:runtime/symmetric-stream@0.2.1"
                         )]
@@ -959,6 +979,7 @@ pub mod symmetric {
                 #[allow(async_fn_in_trait)]
                 pub fn write_ready_activate(&self) -> () {
                     unsafe {
+                        #[link(name = "symmetric_stream")]
                         #[link(
                             wasm_import_module = "symmetric:runtime/symmetric-stream@0.2.1"
                         )]
@@ -983,6 +1004,7 @@ pub mod symmetric {
                 #[allow(async_fn_in_trait)]
                 pub fn read_ready_subscribe(&self) -> EventSubscription {
                     unsafe {
+                        #[link(name = "symmetric_stream")]
                         #[link(
                             wasm_import_module = "symmetric:runtime/symmetric-stream@0.2.1"
                         )]
@@ -1023,6 +1045,7 @@ pub mod symmetric {
                                 * ::core::mem::size_of::<*const u8>()],
                         );
                         let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                        #[link(name = "symmetric_stream")]
                         #[link(
                             wasm_import_module = "symmetric:runtime/symmetric-stream@0.2.1"
                         )]
@@ -1064,6 +1087,7 @@ pub mod symmetric {
                 #[allow(async_fn_in_trait)]
                 pub fn is_ready_to_write(&self) -> bool {
                     unsafe {
+                        #[link(name = "symmetric_stream")]
                         #[link(
                             wasm_import_module = "symmetric:runtime/symmetric-stream@0.2.1"
                         )]
@@ -1089,6 +1113,7 @@ pub mod symmetric {
                 #[allow(async_fn_in_trait)]
                 pub fn write_ready_subscribe(&self) -> EventSubscription {
                     unsafe {
+                        #[link(name = "symmetric_stream")]
                         #[link(
                             wasm_import_module = "symmetric:runtime/symmetric-stream@0.2.1"
                         )]
@@ -1116,6 +1141,7 @@ pub mod symmetric {
                 #[allow(async_fn_in_trait)]
                 pub fn start_writing(&self) -> Buffer {
                     unsafe {
+                        #[link(name = "symmetric_stream")]
                         #[link(
                             wasm_import_module = "symmetric:runtime/symmetric-stream@0.2.1"
                         )]
@@ -1146,6 +1172,7 @@ pub mod symmetric {
                             Some(e) => (1i32, (e).take_handle() as *mut u8),
                             None => (0i32, std::ptr::null_mut()),
                         };
+                        #[link(name = "symmetric_stream")]
                         #[link(
                             wasm_import_module = "symmetric:runtime/symmetric-stream@0.2.1"
                         )]
@@ -1174,6 +1201,7 @@ pub mod symmetric {
                 #[allow(async_fn_in_trait)]
                 pub fn read_ready_activate(&self) -> () {
                     unsafe {
+                        #[link(name = "symmetric_stream")]
                         #[link(
                             wasm_import_module = "symmetric:runtime/symmetric-stream@0.2.1"
                         )]
