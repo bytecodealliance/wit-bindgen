@@ -7,10 +7,11 @@ edition.workspace = true
 wit-bindgen-symmetric-rt = { path = "../rust-client", optional = true }
 dummy-rt = { path = "../dummy-rt", optional = true }
 original = { path = "../../guest-rust", optional = true, package = "wit-bindgen" }
+wit-bindgen-rust-macro = { path = "../../guest-rust/macro", optional = true }
 
 [features]
 # no default gives you the original wit-bindgen crate with rt
 default = [ "symmetric", "async" ]
-symmetric = [ "dep:dummy-rt", "dep:wit-bindgen-symmetric-rt" ]
+symmetric = [ "dep:dummy-rt", "dep:wit-bindgen-symmetric-rt", "dep:wit-bindgen-rust-macro", "wit-bindgen-symmetric-rt/bitflags" ]
 canonical = [ "dep:original" ]
 async = []
