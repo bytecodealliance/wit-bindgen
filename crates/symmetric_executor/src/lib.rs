@@ -429,6 +429,22 @@ impl symmetric_executor::Guest for Guest {
         }
         symmetric_executor::CallbackRegistration::new(CallbackRegistrationInternal(id))
     }
+
+    fn block_on(trigger: symmetric_executor::EventSubscription) {
+        let trigger: EventSubscriptionInternal = trigger.into_inner();
+        // part of this function is never used
+        let queue = QueuedEvent::new(
+            trigger,
+            CallbackEntry(
+                unsafe { std::mem::transmute(std::ptr::null::<u8>()) },
+                std::ptr::null_mut(),
+            ),
+        );
+        let mut set = WaitSet::new(None);
+        set.register(queue.event_fd);
+        let active = set.wait();
+        assert_eq!(active, queue.event_fd);
+    }
 }
 
 type Count = u32;

@@ -193,6 +193,7 @@ version = "0.1.0"
 dependencies = [
  "dummy-rt",
  "wit-bindgen",
+ "wit-bindgen-rust-macro",
  "wit-bindgen-symmetric-rt",
 ]
 

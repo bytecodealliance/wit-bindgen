@@ -1,4 +1,4 @@
-CXXFLAGS=-I../../cpp/helper-types -g -fPIC
+CXXFLAGS=-I../../cpp/helper-types -g -fPIC -std=c++20
 
 all: libruntime.a
 
