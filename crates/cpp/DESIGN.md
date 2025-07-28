@@ -95,6 +95,19 @@ For now for functions the guest import convention is used in both directions:
 
    Resource IDs become usize, so you can optimize the resource table away.
 
+### Async functions (WASI 0.3)
+
+- The *exported* ABI guides the symmetric choice, arguments are directly 
+  passed like with synchronous function calls, if a return value is used a 
+  return pointer is added. The returned value is either nullptr (finished)
+  or the handle/address of an event subscription (see symmetric_executor crate).
+
+  No need for externally visible callbacks as the code directly registered 
+  its callbacks with the executor. No need for set_results.
+
+- Stream and future handles become pointer size, the internal API is described via
+  a WIT file (symmetric_stream)
+
 ## Structs proposal
 
 See also the explanation of ownership at https://docs.rs/wit-bindgen/0.42.1/wit_bindgen/macro.generate.html
