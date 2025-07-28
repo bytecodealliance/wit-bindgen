@@ -6,21 +6,8 @@
 #include <functional>
 
 namespace wit { 
-    // template <class T>
-    // union MaybeUninit
-    // {
-    //     T value;
-    //     char dummy;
-    //     MaybeUninit()
-    //         : dummy()
-    //     { }
-    //     MaybeUninit(MaybeUninit const& b)
-    //         : dummy()
-    //     { }
-    //     ~MaybeUninit()
-    //     { }
-    // };
-
+    /// Lifting (bytes to data), lowering and encoded byte size,
+    /// Specialize this struct for all types sent via streams
     template <class T>
     struct StreamProperties {
         static const uint32_t lowered_size;
@@ -30,29 +17,25 @@ namespace wit {
 
     template<class T> struct stream {
         symmetric::runtime::symmetric_stream::StreamObj handle;
-        // StreamProperties<T> const* lifting;
 
         uint32_t buffer_size = 1;
 
+        /// Construct this object with an invalid stream
         static stream<T> new_empty() {
             return stream<T>{symmetric::runtime::symmetric_stream::StreamObj(wit::ResourceImportBase()), 1};
         }
        
+private:
         struct background_object {
             symmetric::runtime::symmetric_stream::StreamObj handle;
             std::function<void(wit::span<T>)> reader;
             std::vector<uint8_t> buffer;
-            // StreamProperties<T> const* lifting;
 
             background_object(symmetric::runtime::symmetric_stream::StreamObj && h,
                 std::function<void(wit::span<T>)>&& r, std::vector<uint8_t> &&b)
                 : handle(std::move(h)), reader(std::move(r)), buffer(std::move(b)) {}
         };
 
-        stream<T>& buffering(uint32_t amount) {
-            buffer_size = amount;
-            return *this;
-        }
         static symmetric::runtime::symmetric_executor::CallbackState data_available(background_object* data) {
             auto buffer = data->handle.ReadResult();
             if (buffer.has_value()) {
@@ -80,7 +63,15 @@ namespace wit {
                 return symmetric::runtime::symmetric_executor::CallbackState::kReady;
             }
         }
-        void set_reader(std::function<void (wit::span<T>)> &&fun) && {
+public:
+        /// Amount of objects cached, builder like parametrization for set_reader
+        stream<T>& buffering(uint32_t amount) {
+            buffer_size = amount;
+            return *this;
+        }
+        /// @brief Register a reader for data sent via the stream
+        /// @return Handle to remove callback
+        symmetric::runtime::symmetric_executor::CallbackRegistration set_reader(std::function<void (wit::span<T>)> &&fun) && {
             std::vector<uint8_t> buffer(buffer_size*StreamProperties<T>::lowered_size, uint8_t(0));
             background_object* object = 
                 std::make_unique<background_object>(background_object{std::move(handle), std::move(fun), std::move(buffer)}).release();
@@ -89,7 +80,7 @@ namespace wit {
                 symmetric::runtime::symmetric_stream::Address(wit::ResourceImportBase{(wit::ResourceImportBase::handle_t)object->buffer.data()}), buffer_size);
 
             object->handle.StartReading(std::move(b));
-            symmetric::runtime::symmetric_executor::Register(object->handle.ReadReadySubscribe(),
+            return symmetric::runtime::symmetric_executor::Register(object->handle.ReadReadySubscribe(),
                 symmetric::runtime::symmetric_executor::CallbackFunction(wit::ResourceImportBase{(wit::ResourceImportBase::handle_t)&data_available}),
                 symmetric::runtime::symmetric_executor::CallbackData(wit::ResourceImportBase{(wit::ResourceImportBase::handle_t)object}));
         }
