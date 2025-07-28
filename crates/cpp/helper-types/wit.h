@@ -15,6 +15,7 @@
 #include <span>
 
 namespace wit {
+template <class T> using span=std::span<T>;
 /// @brief Helper class to map between IDs and resources
 /// @tparam R Type of the Resource
 template <class R> class ResourceTable {
