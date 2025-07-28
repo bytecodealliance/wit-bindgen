@@ -1006,7 +1006,10 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 && matches!(variant, AbiVariant::GuestImport));
         match language_to_abi {
             true => {
-                assert!(!async_, "generators should not be using this for async");
+                assert!(
+                    !async_ || matches!(lift_lower, LiftLower::Symmetric),
+                    "generators should not be using this for async"
+                );
 
                 self.realloc = Some(realloc);
                 if let (AbiVariant::GuestExport, true) = (variant, async_) {
@@ -1099,6 +1102,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     if let Some(ty) = &func.result {
                         self.lift(ty)
                     }
+                } else if async_ {
+                    // todo
                 } else {
                     let ptr = match variant {
                         // imports into guests means it's a wasm module
