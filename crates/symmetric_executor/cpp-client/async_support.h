@@ -3,6 +3,7 @@
 #include "module_cpp.h"
 #include "stream_support.h"
 
+// internal calback used by lift_event
 static inline symmetric::runtime::symmetric_executor::CallbackState fulfil_promise_void(void* data) {
     std::unique_ptr<std::promise<void>> ptr((std::promise<void>*)data);
     ptr->set_value();
@@ -24,6 +25,7 @@ static inline std::future<void> lift_event(void* event) {
     return result1;
 }
 
+// internal callback for lower_async
 static inline symmetric::runtime::symmetric_executor::CallbackState wait_on_future(std::future<void>* fut) {
     fut->get();
     delete fut;
@@ -56,6 +58,7 @@ void* lower_async(std::future<T> &&result1, std::function<void(T&&)> &&lower_res
     }    
 }
 
+#if 0 // unused? Likely replaced by lowered data (bytes)
 template <class T>
 union MaybeUninit {
     T value;
@@ -69,6 +72,8 @@ union MaybeUninit {
     // assume that value isn't valid yet
     MaybeUninit(MaybeUninit &&b) : dummy() { }
 };
+#endif
+// internal data structure used by lift_future
 template <class T, class LIFT>
 struct fulfil_promise_data {
     symmetric::runtime::symmetric_stream::StreamObj stream;
@@ -76,6 +81,7 @@ struct fulfil_promise_data {
     uint8_t value[LIFT::SIZE];
 };
 
+// internal callback used by lift_future
 template <class T, class LIFT>
 static symmetric::runtime::symmetric_executor::CallbackState fulfil_promise(void* data) {
     std::unique_ptr<fulfil_promise_data<T, LIFT>> ptr((fulfil_promise_data<T, LIFT>*)data);
@@ -129,8 +135,8 @@ template <class T> struct stream_writer {
     void write(std::vector<T>&& data) {
         while (!data.empty()) {
             if (!handle.IsReadyToWrite()) {
-                abort();
-                // symmetric::runtime::symmetric_executor::BlockOn(handle.WriteReadySubscribe());
+                // abort();
+                symmetric::runtime::symmetric_executor::BlockOn(handle.WriteReadySubscribe());
             }
             auto buffer = handle.StartWriting();
             auto capacity = buffer.Capacity();
@@ -146,6 +152,9 @@ template <class T> struct stream_writer {
             if (capacity>data.size()) capacity = data.size();
             data.erase(data.begin(), data.begin() + capacity);
         }        
+    }
+    bool IsReadyToWrite() const {
+        return handle.IsReadyToWrite();
     }
     ~stream_writer() {
         if (handle.get_handle()!=wit::ResourceImportBase::invalid) {
@@ -166,12 +175,14 @@ std::pair<stream_writer<T>, wit::stream<T>> create_wasi_stream() {
         stream_writer<T>{std::move(stream)}, wit::stream<T>{std::move(stream2)});
 }
 
+// internal struct used by lower_future
 template <class T>
 struct write_to_future_data {
     future_writer<T> wr;
     std::future<T> fut;
 };
 
+// internal function used by lower_future
 template <class T, class LOWER>
 static symmetric::runtime::symmetric_executor::CallbackState write_to_future(void* data) {
     std::unique_ptr<write_to_future_data<T>> ptr((write_to_future_data<T>*)data);
