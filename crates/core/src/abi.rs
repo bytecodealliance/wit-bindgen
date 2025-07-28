@@ -1,9 +1,13 @@
 use std::fmt;
+use std::iter;
+
 pub use wit_parser::abi::{AbiVariant, FlatTypes, WasmSignature, WasmType};
 use wit_parser::{
     align_to_arch, Alignment, ArchitectureSize, ElementInfo, Enum, Flags, FlagsRepr, Function,
     Handle, Int, Record, Resolve, Result_, SizeAlign, Tuple, Type, TypeDefKind, TypeId, Variant,
 };
+
+use crate::symmetric;
 
 // Helper macro for defining instructions without having to have tons of
 // exhaustive `match` statements to update
@@ -955,6 +959,7 @@ struct Generator<'a, B: Bindgen> {
 }
 
 const MAX_FLAT_PARAMS: usize = 16;
+const MAX_FLAT_ASYNC_PARAMS: usize = 4;
 
 impl<'a, B: Bindgen> Generator<'a, B> {
     fn new(resolve: &'a Resolve, bindgen: &'a mut B, symmetric: bool) -> Generator<'a, B> {
@@ -1144,13 +1149,20 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 });
             }
             false => {
-                if let (AbiVariant::GuestImport, true) = (variant, async_) {
-                    todo!("implement host-side support for async lift/lower");
-                }
+                let max_flat_params = match (variant, async_) {
+                    (AbiVariant::GuestImport | AbiVariant::GuestImportAsync, _is_async @ true) => {
+                        MAX_FLAT_ASYNC_PARAMS
+                    }
+                    _ => MAX_FLAT_PARAMS,
+                };
 
+                // Read parameters from memory
                 let read_from_memory = |self_: &mut Self| {
                     let mut offset = ArchitectureSize::default();
-                    let ptr = self_.stack.pop().unwrap();
+                    let ptr = self_
+                        .stack
+                        .pop()
+                        .expect("empty stack during read param from memory");
                     for (_, ty) in func.params.iter() {
                         offset = align_to_arch(offset, self_.bindgen.sizes().align(ty));
                         self_.read_from_memory(ty, ptr.clone(), offset);
@@ -1158,42 +1170,70 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     }
                 };
 
-                if !sig.indirect_params {
-                    // If parameters are not passed indirectly then we lift each
+                // Resolve parameters
+                if sig.indirect_params {
+                    // If parameters were passed indirectly, arguments must be
+                    // read in succession from memory, with the pointer to the arguments
+                    // being the first argument to the function.
+                    self.emit(&Instruction::GetArg { nth: 0 });
+                    read_from_memory(self);
+                } else {
+                    // ... otherwise, if parameters were passed directly then we lift each
                     // argument in succession from the component wasm types that
                     // make-up the type.
                     let mut offset = 0;
                     for (_, ty) in func.params.iter() {
-                        let types = flat_types(self.resolve, ty).unwrap();
+                        let types = flat_types(self.resolve, ty, Some(max_flat_params))
+                            .expect("direct parameter load failed to produce types during generation of fn call");
                         for _ in 0..types.len() {
                             self.emit(&Instruction::GetArg { nth: offset });
                             offset += 1;
                         }
                         self.lift(ty);
                     }
-                } else {
-                    // ... otherwise argument is read in succession from memory
-                    // where the pointer to the arguments is the first argument
-                    // to the function.
-                    self.emit(&Instruction::GetArg { nth: 0 });
-                    read_from_memory(self);
                 }
 
                 // ... and that allows us to call the interface types function
                 self.emit(&Instruction::CallInterface { func, async_ });
 
+                // The return value of an async function is *not* the result of the function
+                // itself or a pointer but rather a status code.
+                //
                 // Asynchronous functions will call `task.return` after the
                 // interface function completes, so lowering is conditional
                 // based on slightly different logic for the `task.return`
                 // intrinsic.
-                let (lower_to_memory, async_flat_results) = if async_ {
-                    let results = match &func.result {
-                        Some(ty) => flat_types(self.resolve, ty),
-                        None => Some(Vec::new()),
-                    };
-                    (results.is_none(), Some(results))
-                } else {
-                    (sig.retptr, None)
+                let (lower_to_memory, async_flat_results) = match (variant, async_, &func.result) {
+                    // Async guest imports return a i32 status code
+                    (
+                        AbiVariant::GuestImport | AbiVariant::GuestImportAsync,
+                        _is_async @ true,
+                        None,
+                    ) => {
+                        unreachable!("async guest imports always return a result")
+                    }
+                    // Async guest imports return a i32 status code
+                    (
+                        AbiVariant::GuestImport | AbiVariant::GuestImportAsync,
+                        _is_async @ true,
+                        Some(ty),
+                    ) => {
+                        // For async guest imports, we know whether we must lower results
+                        // if there are no params (i.e. the usual out pointer wasn't even required)
+                        // and we always know the return value will be a i32 status code
+                        assert!(matches!(ty, Type::U32 | Type::S32));
+                        (sig.params.is_empty(), Some(Some(vec![WasmType::I32])))
+                    }
+                    // All other async cases
+                    (_, _is_async @ true, func_result) => {
+                        let results = match &func_result {
+                            Some(ty) => flat_types(self.resolve, ty, Some(max_flat_params)),
+                            None => Some(Vec::new()),
+                        };
+                        (results.is_none(), Some(results))
+                    }
+                    // All other non-async cases
+                    (_, _is_async @ false, _) => (sig.retptr, None),
                 };
 
                 // This was dynamically allocated by the caller (or async start
@@ -1215,34 +1255,67 @@ impl<'a, B: Bindgen> Generator<'a, B> {
 
                 self.realloc = Some(realloc);
 
-                if !lower_to_memory {
-                    // With no return pointer in use we simply lower the
-                    // result(s) and return that directly from the function.
-                    if let Some(ty) = &func.result {
-                        self.lower(ty);
+                // Perform memory lowing of relevant results, including out pointers as well as traditional results
+                match (
+                    lower_to_memory,
+                    sig.retptr,
+                    variant,
+                    lift_lower == LiftLower::Symmetric,
+                ) {
+                    // Async guest imports with do no lowering cannot have ret pointers
+                    // not having to do lowering implies that there was no return pointer provided
+                    (_lower_to_memory @ false, _has_ret_ptr @ true, AbiVariant::GuestImport, _)
+                        if async_ =>
+                    {
+                        unreachable!(
+                            "async guest import cannot avoid lowering when a ret ptr is present ({async_note} func [{func_name}], variant {variant:#?})",
+                            async_note = async_.then_some("async").unwrap_or("sync"),
+                            func_name = func.name,
+                        )
                     }
-                } else {
-                    match variant == AbiVariant::GuestImport || lift_lower == LiftLower::Symmetric {
-                        // When a function is imported to a guest this means
-                        // it's a host providing the implementation of the
-                        // import. The result is stored in the pointer
-                        // specified in the last argument, so we get the
-                        // pointer here and then write the return value into
-                        // it.
-                        true => {
-                            self.emit(&Instruction::GetArg {
-                                nth: sig.params.len() - 1,
-                            });
-                            let ptr = self.stack.pop().unwrap();
-                            self.write_params_to_memory(&func.result, ptr, Default::default());
-                        }
 
-                        // For a guest import this is a function defined in
-                        // wasm, so we're returning a pointer where the
-                        // value was stored at. Allocate some space here
-                        // (statically) and then write the result into that
-                        // memory, returning the pointer at the end.
-                        false => {
+                    // For sync calls, if no lowering to memory is required and there *is* a return pointer in use
+                    // then we need to lower then simply lower the result(s) and return that directly from the function.
+                    (_lower_to_memory @ false, _, _, _) => {
+                        if let Some(ty) = &func.result {
+                            self.lower(ty);
+                        }
+                    }
+
+                    // Lowering to memory for a guest import
+                    //
+                    // When a function is imported to a guest this means
+                    // it's a host providing the implementation of the
+                    // import. The result is stored in the pointer
+                    // specified in the last argument, so we get the
+                    // pointer here and then write the return value into
+                    // it.
+                    (
+                        _lower_to_memory @ true,
+                        _has_ret_ptr @ true,
+                        AbiVariant::GuestImport | AbiVariant::GuestImportAsync,
+                        false,
+                    )
+                    | (_lower_to_memory @ _, _has_ret_ptr @ _, _, true) => {
+                        self.emit(&Instruction::GetArg {
+                            nth: sig.params.len() - 1,
+                        });
+                        let ptr = self
+                            .stack
+                            .pop()
+                            .expect("empty stack during result lower to memory");
+                        self.write_params_to_memory(&func.result, ptr, Default::default());
+                    }
+
+                    // Lowering to memory for a guest export
+                    //
+                    // For a guest import this is a function defined in
+                    // wasm, so we're returning a pointer where the
+                    // value was stored at. Allocate some space here
+                    // (statically) and then write the result into that
+                    // memory, returning the pointer at the end.
+                    (_lower_to_memory @ true, _, variant, _) => match variant {
+                        AbiVariant::GuestExport | AbiVariant::GuestExportAsync => {
                             let ElementInfo { size, align } =
                                 self.bindgen.sizes().params(&func.result);
                             let ptr = self.bindgen.return_pointer(size, align);
@@ -1254,32 +1327,57 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                             if !matches!(lift_lower, LiftLower::Symmetric) {
                                 self.stack.push(ptr);
                             }
-                        } // AbiVariant::GuestImportAsync
-                          // | AbiVariant::GuestExportAsync
-                          // | AbiVariant::GuestExportAsyncStackful => {
-                          //     unreachable!()
-                          // }
+                        }
+                        AbiVariant::GuestImport | AbiVariant::GuestImportAsync => {
+                            unreachable!(
+                                "lowering to memory cannot be performed without a return pointer ({async_note} func [{func_name}], variant {variant:#?})",
+                                async_note = async_.then_some("async").unwrap_or("sync"),
+                                func_name = func.name,
+                            )
+                        }
+                        AbiVariant::GuestExportAsyncStackful => {
+                            todo!("stackful exports are not yet supported")
+                        }
+                    },
+                }
+
+                // Build and emit the appropriate return
+                match (variant, async_flat_results) {
+                    // Async guest imports always return a i32 status code
+                    (AbiVariant::GuestImport | AbiVariant::GuestImportAsync, None) if async_ => {
+                        unreachable!("async guest imports must have a return")
                     }
 
-                    if matches!(
-                        variant,
-                        AbiVariant::GuestImportAsync | AbiVariant::GuestExportAsyncStackful
-                    ) {
-                        unreachable!()
+                    // Async guest imports with results return the status code, not a pointer to any results
+                    (AbiVariant::GuestImport | AbiVariant::GuestImportAsync, Some(results))
+                        if async_ =>
+                    {
+                        let name = &format!("[task-return]{}", func.name);
+                        let params = results.as_deref().unwrap_or(&[WasmType::I32]);
+                        self.emit(&Instruction::AsyncTaskReturn { name, params });
+                    }
+
+                    // All async/non-async cases with results that need to be returned are present here
+                    //
+                    // In practice, async imports should not end up here, as the returned result of an
+                    // async import is *not* a pointer but instead a status code.
+                    (_, Some(results)) => {
+                        let name = &format!("[task-return]{}", func.name);
+                        let params = results.as_deref().unwrap_or(&[WasmType::Pointer]);
+                        self.emit(&Instruction::AsyncTaskReturn { name, params });
+                    }
+
+                    // All async/non-async cases with no results simply return
+                    //
+                    // In practice, an async import will never get here (it always has a result, the error code)
+                    (_, None) => {
+                        self.emit(&Instruction::Return {
+                            func,
+                            amt: sig.results.len(),
+                        });
                     }
                 }
 
-                if let Some(results) = async_flat_results {
-                    let name = &format!("[task-return]{}", func.name);
-                    let params = results.as_deref().unwrap_or(&[WasmType::Pointer]);
-
-                    self.emit(&Instruction::AsyncTaskReturn { name, params });
-                } else {
-                    self.emit(&Instruction::Return {
-                        func,
-                        amt: sig.results.len(),
-                    });
-                }
                 self.realloc = None;
             }
         }
@@ -1334,7 +1432,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             let mut operands = operands;
             let mut operands_for_ty;
             for ty in types {
-                let types = flat_types(self.resolve, ty).unwrap();
+                let types = flat_types(self.resolve, ty, None).unwrap();
                 (operands_for_ty, operands) = operands.split_at(types.len());
                 self.stack.extend_from_slice(operands_for_ty);
                 self.deallocate(ty, what);
@@ -1546,7 +1644,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         cases: impl IntoIterator<Item = Option<&'b Type>>,
     ) -> Vec<WasmType> {
         use Instruction::*;
-        let results = flat_types(self.resolve, ty).unwrap();
+        let results = flat_types(self.resolve, ty, None).unwrap();
         let mut casts = Vec::new();
         for (i, ty) in cases.into_iter().enumerate() {
             self.push_block();
@@ -1563,7 +1661,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 // Determine the types of all the wasm values we just
                 // pushed, and record how many. If we pushed too few
                 // then we'll need to push some zeros after this.
-                let temp = flat_types(self.resolve, ty).unwrap();
+                let temp = flat_types(self.resolve, ty, None).unwrap();
                 pushed += temp.len();
 
                 // For all the types pushed we may need to insert some
@@ -1721,7 +1819,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
                 TypeDefKind::Unknown => unreachable!(),
                 TypeDefKind::FixedSizeList(ty, size) => {
-                    let temp = flat_types(self.resolve, ty).unwrap();
+                    let temp = flat_types(self.resolve, ty, Some(MAX_FLAT_PARAMS)).unwrap();
                     let flat_per_elem = temp.to_vec().len();
                     let flatsize = flat_per_elem * (*size as usize);
                     let mut lowered_args = self
@@ -1748,13 +1846,13 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         types: impl Iterator<Item = &'b Type>,
         mut iter: impl FnMut(&mut Self, &Type),
     ) {
-        let temp = flat_types(self.resolve, container).unwrap();
+        let temp = flat_types(self.resolve, container, None).unwrap();
         let mut args = self
             .stack
             .drain(self.stack.len() - temp.len()..)
             .collect::<Vec<_>>();
         for ty in types {
-            let temp = flat_types(self.resolve, ty).unwrap();
+            let temp = flat_types(self.resolve, ty, None).unwrap();
             self.stack.extend(args.drain(..temp.len()));
             iter(self, ty);
         }
@@ -1767,7 +1865,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         cases: impl IntoIterator<Item = Option<&'b Type>>,
         mut iter: impl FnMut(&mut Self, &Type),
     ) {
-        let params = flat_types(self.resolve, ty).unwrap();
+        let params = flat_types(self.resolve, ty, None).unwrap();
         let mut casts = Vec::new();
         let block_inputs = self
             .stack
@@ -1778,7 +1876,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             if let Some(ty) = ty {
                 // Push only the values we need for this variant onto
                 // the stack.
-                let temp = flat_types(self.resolve, ty).unwrap();
+                let temp = flat_types(self.resolve, ty, None).unwrap();
                 self.stack
                     .extend(block_inputs[..temp.len()].iter().cloned());
 
@@ -2548,9 +2646,14 @@ pub fn wasm_signature_symmetric(
     resolve.wasm_signature_symmetric(variant, func, symmetric)
 }
 
-fn flat_types(resolve: &Resolve, ty: &Type) -> Option<Vec<WasmType>> {
-    let mut storage = [WasmType::I32; MAX_FLAT_PARAMS];
-    let mut flat = FlatTypes::new(&mut storage);
+/// Flatten types in a given type
+///
+/// It is sometimes necessary to restrict the number of max parameters dynamically,
+/// for example during an async guest import call (flat params are limited to 4)
+fn flat_types(resolve: &Resolve, ty: &Type, max_params: Option<usize>) -> Option<Vec<WasmType>> {
+    let mut storage =
+        iter::repeat_n(WasmType::I32, max_params.unwrap_or(MAX_FLAT_PARAMS)).collect::<Vec<_>>();
+    let mut flat = FlatTypes::new(storage.as_mut_slice());
     if resolve.push_flat(ty, &mut flat) {
         Some(flat.to_vec())
     } else {
