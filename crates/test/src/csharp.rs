@@ -40,7 +40,7 @@ impl LanguageMethods for Csharp {
         config: &crate::config::WitConfig,
         _args: &[String],
     ) -> bool {
-        config.async_
+        false
     }
 
     fn prepare(&self, runner: &mut Runner<'_>) -> Result<()> {
@@ -89,6 +89,18 @@ impl LanguageMethods for Csharp {
             // .arg("/bl") // to diagnose dotnet build problems
             .arg("-o")
             .arg(&out_wasm);
+
+        let os = match std::env::consts::OS {
+            "windows" => "win",
+            "linux" => std::env::consts::OS,
+            other => todo!("OS {} not supported", other),
+        };
+
+        // TODO: Workaround for no aarch64(arm64 in dotnet parlance) packages on Windows
+        if os == "win" && std::env::consts::ARCH == "aarch64" {
+            cmd.arg("/p:_hostArchitecture=x64");
+        }
+
         runner.run_command(&mut cmd)?;
 
         fs::copy(&wasm_filename, &compile.output)?;

@@ -1003,6 +1003,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     }
                 }
 
+                let is_async = matches!(
+                    self.kind,
+                    FunctionKind::AsyncStatic(_) | FunctionKind::AsyncMethod(_) | FunctionKind::AsyncFreestanding
+                );
                 match self.kind {
                     FunctionKind::Constructor(id) => {
                         let target = self.interface_gen.csharp_gen.all_resources[id].export_impl_name();
@@ -1018,13 +1022,33 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         };
 
                         match func.result {
-                            None => uwriteln!(self.src, "{target}.{func_name}({oper});"),
+                            None => {
+                                if is_async{
+                                    uwriteln!(self.src, "var task = {target}.{func_name}({oper});");
+                                } else {
+                                    uwriteln!(self.src, "{target}.{func_name}({oper});");
+                                }
+                            }
                             Some(_ty) => {
                                 let ret = self.handle_result_call(func, target, func_name, oper);
                                 results.push(ret);
                             }
                         }
                     }
+                }
+
+                if is_async {
+                    self.interface_gen.csharp_gen.needs_async_support = true;
+                    let name = self.func_name.to_upper_camel_case();
+
+                    uwriteln!(self.src, "if (task.IsCompletedSuccessfully) 
+                    {{
+                        {name}TaskReturn();
+                        return (uint)CallbackCode.Exit;
+                    }}
+                    
+                    return (uint)CallbackCode.Yield;
+                    ");
                 }
 
                 for (_,  drop) in &self.resource_drops {
@@ -1243,15 +1267,25 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.extend(operands.iter().take(*amt).map(|v| v.clone()));
             }
 
-            Instruction::AsyncTaskReturn { .. }
-            | Instruction::FutureLower { .. }
-            | Instruction::FutureLift { .. }
+            Instruction::FutureLower { .. } => {
+                let op = &operands[0];
+                results.push(format!("{op}.Handle"));
+            }
+
+            Instruction::AsyncTaskReturn { name, params } => {
+                uwriteln!(self.src, "// TODO_task_cancel.forget();");
+            }
+
+            Instruction::FutureLift { .. }
             | Instruction::StreamLower { .. }
             | Instruction::StreamLift { .. }
             | Instruction::ErrorContextLower { .. }
             | Instruction::ErrorContextLift { .. }
             | Instruction::DropHandle { .. }
-            => todo!(),
+            => {
+                dbg!(inst);
+                todo!()
+            }
         }
     }
 

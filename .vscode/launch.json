@@ -1,0 +1,64 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Run wit-bindgen test",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/target/aarch64-pc-windows-msvc/debug/wit-bindgen.exe",
+            "args": [
+                "test",
+                "--artifacts",
+                ".\\target\\artifacts",
+                "--languages",
+                "csharp",
+                ".\\tests\\codegen\\futures.wit"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "stopAtEntry": false
+        },
+        {
+            "name": "Run wit-bindgen codegen csharp futures.wit",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/target/aarch64-pc-windows-msvc/debug/wit-bindgen.exe",
+            "args": [
+                "csharp",
+                ".\\tests\\codegen\\futures.wit",
+                "--world",
+                "%the-futures",
+                "--out-dir",
+                ".\\target\\artifacts\\csharp",
+                "--runtime=native-aot",
+                "--generate-stub"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "stopAtEntry": false
+        },
+        {
+            "name": "Run wit-bindgen codegen csharp async-simple-params-results.wit",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/target/debug/wit-bindgen.exe",
+            "args": [
+                "csharp",
+                ".\\tests\\codegen\\async-simple-params-results.wit",
+                "--world",
+                "%test",
+                "--out-dir",
+                ".\\target\\artifacts\\codegen\\csharp\\async-simple-params-results",
+                "--runtime=native-aot",
+                "--generate-stub"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "stopAtEntry": false,
+            "preLaunchTask": "cargo build"
+        }
+    ],
+    "env": {
+    "RUST_BACKTRACE": "1"
+    }
+}

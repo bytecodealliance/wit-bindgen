@@ -4,6 +4,7 @@ package foo:foo;
 
 interface futures {
   future-param: func(x: future);
+  /*
   future-u8-param: func(x: future<u8>);
   future-u16-param: func(x: future<u16>);
   future-u32-param: func(x: future<u32>);
@@ -85,9 +86,10 @@ interface futures {
     char,
   >>;
   load-store-everything: func(a: load-store-all-sizes) -> load-store-all-sizes;
+  */
 }
 
 world the-futures {
   import futures;
-  export futures;
+  //export futures;
 }

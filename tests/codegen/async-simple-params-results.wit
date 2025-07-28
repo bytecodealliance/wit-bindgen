@@ -9,9 +9,7 @@ interface i {
 }
 
 world test {
+  import i;
   export i;
 }
 
-world runner {
-  import i;
-}
