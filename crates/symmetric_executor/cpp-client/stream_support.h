@@ -50,7 +50,7 @@ private:
                     data->reader(wit::span<T>(lifted.data(), size));
                 // if closed we won't get another notification
                 if (data->handle.IsWriteClosed()) {
-                    data->reader(wit::span<T>(nullptr, 0));
+                    data->reader(wit::span<T>());
                     auto release = std::unique_ptr<background_object>(data);
                     return symmetric::runtime::symmetric_executor::CallbackState::kReady;
                 } else {
@@ -58,7 +58,7 @@ private:
                     return symmetric::runtime::symmetric_executor::CallbackState::kPending;
                 }
             } else {
-                data->reader(wit::span<T>(nullptr, 0));
+                data->reader(wit::span<T>());
                 auto release = std::unique_ptr<background_object>(data);
                 return symmetric::runtime::symmetric_executor::CallbackState::kReady;
             }
@@ -84,6 +84,8 @@ public:
                 symmetric::runtime::symmetric_executor::CallbackFunction(wit::ResourceImportBase{(wit::ResourceImportBase::handle_t)&data_available}),
                 symmetric::runtime::symmetric_executor::CallbackData(wit::ResourceImportBase{(wit::ResourceImportBase::handle_t)object}));
         }
+        /// construct from external handle
+        stream(symmetric::runtime::symmetric_stream::StreamObj &&h) : handle(std::move(h)) {}
         stream(const stream&) = delete;
         stream(stream&&) = default;
         stream& operator=(const stream&) = delete;
