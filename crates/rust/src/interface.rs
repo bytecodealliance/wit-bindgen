@@ -887,7 +887,11 @@ pub mod vtable{ordinal} {{
         let mut f = FunctionBindgen::new(self, params, module, false);
         abi::call(
             f.r#gen.resolve,
-            AbiVariant::GuestImport,
+            if async_ {
+                AbiVariant::GuestImportAsync
+            } else {
+                AbiVariant::GuestImport
+            },
             if f.gen.gen.opts.symmetric {
                 LiftLower::Symmetric
             } else {
