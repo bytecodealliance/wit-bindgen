@@ -135,7 +135,6 @@ template <class T> struct stream_writer {
     void write(std::vector<T>&& data) {
         while (!data.empty()) {
             if (!handle.IsReadyToWrite()) {
-                // abort();
                 symmetric::runtime::symmetric_executor::BlockOn(handle.WriteReadySubscribe());
             }
             auto buffer = handle.StartWriting();
@@ -161,6 +160,7 @@ template <class T> struct stream_writer {
             handle.FinishWriting(std::optional<symmetric::runtime::symmetric_stream::Buffer>());
         }
     }
+    stream_writer(symmetric::runtime::symmetric_stream::StreamObj &&h) : handle(std::move(h)) {}
     stream_writer(const stream_writer&) = delete;
     stream_writer& operator=(const stream_writer&) = delete;
     stream_writer(stream_writer&&) = default;
