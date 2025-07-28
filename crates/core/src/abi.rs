@@ -1210,7 +1210,11 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         _is_async @ true,
                         None,
                     ) => {
-                        unreachable!("async guest imports always return a result")
+                        if !self.symmetric {
+                            unreachable!("async guest imports always return a result")
+                        } else {
+                            (sig.params.is_empty(), Some(Some(vec![WasmType::Pointer])))
+                        }
                     }
                     // Async guest imports return a i32 status code
                     (
@@ -1342,16 +1346,20 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
 
                 // Build and emit the appropriate return
-                match (variant, async_flat_results) {
+                match (variant, async_flat_results, self.symmetric) {
                     // Async guest imports always return a i32 status code
-                    (AbiVariant::GuestImport | AbiVariant::GuestImportAsync, None) if async_ => {
+                    (AbiVariant::GuestImport | AbiVariant::GuestImportAsync, None, false)
+                        if async_ =>
+                    {
                         unreachable!("async guest imports must have a return")
                     }
 
                     // Async guest imports with results return the status code, not a pointer to any results
-                    (AbiVariant::GuestImport | AbiVariant::GuestImportAsync, Some(results))
-                        if async_ =>
-                    {
+                    (
+                        AbiVariant::GuestImport | AbiVariant::GuestImportAsync,
+                        Some(results),
+                        false,
+                    ) if async_ => {
                         let name = &format!("[task-return]{}", func.name);
                         let params = results.as_deref().unwrap_or(&[WasmType::I32]);
                         self.emit(&Instruction::AsyncTaskReturn { name, params });
@@ -1361,7 +1369,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     //
                     // In practice, async imports should not end up here, as the returned result of an
                     // async import is *not* a pointer but instead a status code.
-                    (_, Some(results)) => {
+                    (_, Some(results), false) => {
                         let name = &format!("[task-return]{}", func.name);
                         let params = results.as_deref().unwrap_or(&[WasmType::Pointer]);
                         self.emit(&Instruction::AsyncTaskReturn { name, params });
@@ -1370,12 +1378,14 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     // All async/non-async cases with no results simply return
                     //
                     // In practice, an async import will never get here (it always has a result, the error code)
-                    (_, None) => {
+                    (_, None, false) => {
                         self.emit(&Instruction::Return {
                             func,
                             amt: sig.results.len(),
                         });
                     }
+                    // not right, but avoids trap for now
+                    (_, _, true) => (),
                 }
 
                 self.realloc = None;
