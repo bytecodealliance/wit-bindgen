@@ -1378,7 +1378,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     // All async/non-async cases with no results simply return
                     //
                     // In practice, an async import will never get here (it always has a result, the error code)
-                    (_, None, false) => {
+                    (_, None, _) => {
                         self.emit(&Instruction::Return {
                             func,
                             amt: sig.results.len(),
