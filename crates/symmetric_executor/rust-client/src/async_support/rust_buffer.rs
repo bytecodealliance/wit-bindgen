@@ -23,4 +23,8 @@ impl<T: 'static> RustBuffer<T> {
     pub(crate) fn drain_n(&mut self, n: usize) -> impl Iterator<Item = T> + use<'_, T> {
         self.buf.drain(0..n)
     }
+
+    pub(crate) fn into_vec(&mut self) -> Vec<T> {
+        todo!()
+    }
 }

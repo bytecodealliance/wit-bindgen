@@ -120,6 +120,7 @@ impl<T> StreamWriter<T> {
         }
     }
 
+    // TODO: Make this non-blocking
     pub fn write(&mut self, values: Vec<T>) -> StreamWrite<'_, T> {
         self.write_buf(RustBuffer::new(values))
     }
@@ -135,6 +136,30 @@ impl<T> StreamWriter<T> {
 
     pub fn cancel(&mut self) {
         todo!()
+    }
+}
+
+impl<T: Unpin + Send> StreamWriter<T> {
+    pub async fn write_all(&mut self, values: Vec<T>) -> Vec<T> {
+        let (mut status, mut buf) = self.write(values).await;
+
+        while let StreamResult::Complete(_) = status {
+            if buf.remaining() == 0 {
+                break;
+            }
+            (status, buf) = self.write_buf(buf).await;
+
+            // FIXME(WebAssembly/component-model#490)
+            if status == StreamResult::Cancelled {
+                status = StreamResult::Complete(0);
+            }
+        }
+        assert!(buf.remaining() == 0 || matches!(status, StreamResult::Dropped));
+        buf.into_vec()
+    }
+
+    pub async fn write_one(&mut self, value: T) -> Option<T> {
+        self.write_all(std::vec![value]).await.pop()
     }
 }
 
