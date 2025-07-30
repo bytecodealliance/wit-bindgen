@@ -15,6 +15,7 @@ int main() {
     status = runner_subtask_cancel(subtask);
     assert(RUNNER_SUBTASK_STATE(status) == RUNNER_SUBTASK_RETURNED_CANCELLED);
     assert(RUNNER_SUBTASK_HANDLE(status) == 0);
+    runner_subtask_drop(subtask);
 
     runner_waitable_status_t status2 = test_future_void_write(writer);
     assert(RUNNER_WAITABLE_STATE(status2) == RUNNER_WAITABLE_DROPPED);
@@ -47,9 +48,12 @@ int main() {
     status = runner_subtask_cancel(subtask1);
     assert(RUNNER_SUBTASK_STATE(status) == RUNNER_SUBTASK_RETURNED_CANCELLED);
     assert(RUNNER_SUBTASK_HANDLE(status) == 0);
+    runner_subtask_drop(subtask1);
+
     status = runner_subtask_cancel(subtask2);
     assert(RUNNER_SUBTASK_STATE(status) == RUNNER_SUBTASK_STARTED_CANCELLED);
     assert(RUNNER_SUBTASK_HANDLE(status) == 0);
+    runner_subtask_drop(subtask2);
 
     // We still own the readable end of `reader2` and `writer2` since the
     // subtask didn't actually start, so drop it here.
