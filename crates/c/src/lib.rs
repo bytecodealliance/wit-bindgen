@@ -1382,7 +1382,7 @@ extern int32_t __wasm_import_{ns}_{snake}_rep(int32_t);
     return ({ns}_{snake}_t*) __wasm_import_{ns}_{snake}_rep(handle.__handle);
 }}
 
-__attribute__((__export_name__("{module}#[dtor]{snake}")))
+__attribute__((__export_name__("{module}#[dtor]{name}")))
 void __wasm_export_{ns}_{snake}_dtor({ns}_{snake}_t* arg) {{
     {ns}_{snake}_destructor(arg);
 }}
