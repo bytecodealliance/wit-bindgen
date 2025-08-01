@@ -3,6 +3,7 @@ name = "wit-bindgen-cpp"
 authors = ["Christof Petig <christof.petig@arcor.de>"]
 version = "0.44.0"
 edition.workspace = true
+rust-version.workspace = true
 repository = 'https://github.com/cpetig/wit-bindgen'
 license = "Apache-2.0 WITH LLVM-exception"
 description = """
