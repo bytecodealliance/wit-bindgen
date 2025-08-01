@@ -9,10 +9,10 @@ pub mod rt {
 }
 
 #[cfg(feature = "canonical")]
-pub use original::rt;
+pub use original::{generate, rt};
 
 #[cfg(feature = "async")]
-pub use wit_bindgen_symmetric_rt::async_support::{
+pub use rt::async_support::{
     block_on, spawn, FutureReader, FutureWriter, StreamReader, StreamResult, StreamWriter,
 };
 
