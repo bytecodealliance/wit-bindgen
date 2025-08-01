@@ -32,10 +32,6 @@ static inline symmetric::runtime::symmetric_executor::CallbackState wait_on_futu
     return symmetric::runtime::symmetric_executor::CallbackState::kReady;
 }
 
-// static void run_in_background() {
-
-// }
-
 template <class T>
 void* lower_async(std::future<T> &&result1, std::function<void(T&&)> &&lower_result) {
     if (result1.wait_for(std::chrono::seconds::zero()) == std::future_status::ready) {
@@ -58,21 +54,6 @@ void* lower_async(std::future<T> &&result1, std::function<void(T&&)> &&lower_res
     }    
 }
 
-#if 0 // unused? Likely replaced by lowered data (bytes)
-template <class T>
-union MaybeUninit {
-    T value;
-    char dummy;
-    MaybeUninit()
-    : dummy()
-    { }
-    ~MaybeUninit()
-    { }
-    MaybeUninit(const MaybeUninit &) = delete;
-    // assume that value isn't valid yet
-    MaybeUninit(MaybeUninit &&b) : dummy() { }
-};
-#endif
 // internal data structure used by lift_future
 template <class T, class LIFT>
 struct fulfil_promise_data {
@@ -132,29 +113,39 @@ std::pair<future_writer<T>, future_reader<T>> create_wasi_future() {
 template <class T> struct stream_writer {
     symmetric::runtime::symmetric_stream::StreamObj handle;
 
+    // non blocking write, returns remaining data
+    std::vector<T> write_nb(std::vector<T> data) {
+        auto buffer = handle.StartWriting();
+        auto capacity = buffer.Capacity();
+        uint8_t* dest = (uint8_t*)buffer.GetAddress().into_handle();
+        auto elements = data.size();
+        if (elements<capacity) elements=capacity;
+        for (uint32_t i = 0; i<elements; ++i) {
+            wit::StreamProperties<T>::lower(std::move(data[i]), dest+(i*wit::StreamProperties<T>::lowered_size));
+        }
+        buffer.SetSize(elements);
+        handle.FinishWriting(std::optional<symmetric::runtime::symmetric_stream::Buffer>(std::move(buffer)));
+
+        if (capacity>data.size()) capacity = data.size();
+        data.erase(data.begin(), data.begin() + capacity);
+        return data;
+    }
+
     void write(std::vector<T>&& data) {
         while (!data.empty()) {
-            if (!handle.IsReadyToWrite()) {
+            if (!IsReadyToWrite()) {
                 symmetric::runtime::symmetric_executor::BlockOn(handle.WriteReadySubscribe());
             }
-            auto buffer = handle.StartWriting();
-            auto capacity = buffer.Capacity();
-            uint8_t* dest = (uint8_t*)buffer.GetAddress().into_handle();
-            auto elements = data.size();
-            if (elements<capacity) elements=capacity;
-            for (uint32_t i = 0; i<elements; ++i) {
-                wit::StreamProperties<T>::lower(std::move(data[i]), dest+(i*wit::StreamProperties<T>::lowered_size));
-            }
-            buffer.SetSize(elements);
-            handle.FinishWriting(std::optional<symmetric::runtime::symmetric_stream::Buffer>(std::move(buffer)));
-
-            if (capacity>data.size()) capacity = data.size();
-            data.erase(data.begin(), data.begin() + capacity);
-        }        
+            data = write_nb(std::move(data));
+        }
     }
     bool IsReadyToWrite() const {
         return handle.IsReadyToWrite();
     }
+    symmetric::runtime::symmetric_executor::EventSubscription WriteReadySubscribe() const {
+        return handle.WriteReadySubscribe();
+    }
+
     ~stream_writer() {
         if (handle.get_handle()!=wit::ResourceImportBase::invalid) {
             handle.FinishWriting(std::optional<symmetric::runtime::symmetric_stream::Buffer>());
