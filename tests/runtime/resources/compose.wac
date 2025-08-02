@@ -1,0 +1,14 @@
+package example:composition;
+
+let leaf = new test:leaf { ... };
+let resources = new test:resources {
+  imports: leaf.imports,
+  ...
+};
+let runner = new test:runner {
+  exports: resources.exports,
+  ...
+};
+
+export runner...;
+

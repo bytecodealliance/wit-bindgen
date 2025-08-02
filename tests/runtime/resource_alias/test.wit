@@ -1,0 +1,29 @@
+package test:resource-alias;
+
+interface e1 {
+  resource x {
+    constructor(v: u32);
+  }
+
+  record foo { x: x }
+
+  a: func(f: foo) -> list<x>;
+}
+
+interface e2 {
+  use e1.{x as y, foo as bar};
+
+  record foo { x: y }
+
+  a: func(f: foo, g: bar, h: borrow<y>) -> list<y>;
+}
+
+world test {
+  export e1;
+  export e2;
+}
+
+world runner {
+  import e1;
+  import e2;
+}

@@ -681,23 +681,30 @@
 ///     // already has generated bindings for all WASI types and structures. In this
 ///     // situation the key `with` here can be used to use those types
 ///     // elsewhere rather than regenerating types.
+///     // If for example your world refers to some type and you want to use
+///     // your own custom implementation of that type then you can specify
+///     // that here as well. There is a requirement on the remapped (custom)
+///     // type to have the same internal structure and identical to what would
+///     // wit-bindgen generate (including alignment, etc.), since
+///     // lifting/lowering uses its fields directly.
 ///     //
 ///     // If, however, your world refers to interfaces for which you don't have
 ///     // already generated bindings then you can use the special `generate` value
 ///     // to have those bindings generated.
 ///     //
-///     // The `with` key only supports replacing types at the interface level
-///     // at this time.
+///     // The `with` key here works for interfaces and individual types.
 ///     //
-///     // When an interface is specified no bindings will be generated at
-///     // all. It's assumed bindings are fully generated somewhere else. This is an
-///     // indicator that any further references to types defined in these
-///     // interfaces should use the upstream paths specified here instead.
+///     // When an interface or type is specified here no bindings will be
+///     // generated at all. It's assumed bindings are fully generated
+///     // somewhere else. This is an indicator that any further references to types
+///     // defined in these interfaces should use the upstream paths specified
+///     // here instead.
 ///     //
 ///     // Any unused keys in this map are considered an error.
 ///     with: {
 ///         "wasi:io/poll": wasi::io::poll,
 ///         "some:package/my-interface": generate,
+///         "some:package/my-interface/my-type": my_crate::types::MyType,
 ///     },
 ///
 ///     // Indicates that all interfaces not present in `with` should be assumed
@@ -832,18 +839,19 @@
 ///     //
 ///     // The resulting bindings will use the component model
 ///     // [async ABI](https://github.com/WebAssembly/component-model/blob/main/design/mvp/Async.md).
-///     // This may be specified either as a boolean (e.g. `async: true`, meaning
-///     // all imports and exports should use the async ABI) or as lists of
-///     // specific imports and/or exports as shown here:
-///     async: {
-///         imports: [
-///             "wasi:http/types@0.3.0-draft#[static]body.finish",
-///             "wasi:http/handler@0.3.0-draft#handle",
-///         ],
-///         exports: [
-///             "wasi:http/handler@0.3.0-draft#handle",
-///         ]
-///     }
+///     //
+///     // If this option is not provided then the WIT's source annotation will
+///     // be used instead.
+///     async: true,    // all bindings are async
+///     async: false,   // all bindings are sync
+///     // With an array per-function configuration can be specified. A leading
+///     // '-' will disable async for that particular function.
+///     async: [
+///         "wasi:http/types@0.3.0-draft#[static]body.finish",
+///         "import:wasi:http/handler@0.3.0-draft#handle",
+///         "-export:wasi:http/handler@0.3.0-draft#handle",
+///         "all",
+///     ],
 /// });
 /// ```
 ///
@@ -881,4 +889,13 @@ pub mod rt {
     pub use wit_bindgen_rt::async_support;
 
     pub use crate::pre_wit_bindgen_0_20_0::*;
+
+    pub use wit_bindgen_rt::Cleanup;
 }
+
+#[cfg(feature = "async")]
+pub use wit_bindgen_rt::async_support::{
+    backpressure_set, block_on, spawn, yield_async, yield_blocking, AbiBuffer, FutureRead,
+    FutureReader, FutureWrite, FutureWriteCancel, FutureWriteError, FutureWriter, StreamRead,
+    StreamReader, StreamResult, StreamWrite, StreamWriter,
+};

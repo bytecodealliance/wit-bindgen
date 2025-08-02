@@ -1,0 +1,59 @@
+//@ dependencies = ['intermediate', 'leaf']
+//@ wac = 'compose.wac'
+
+package test:resource-floats;
+
+interface test {
+  resource float {
+    constructor(v: f64);
+    get: func() -> f64;
+  }
+}
+
+world leaf {
+  export test;
+
+  export imports: interface {
+    resource float {
+      constructor(v: f64);
+      get: func() -> f64;
+      add: static func(a: float, b: f64) -> float;
+    }
+  }
+}
+
+world intermediate {
+  use test.{float};
+
+  export exports: interface {
+    resource float {
+      constructor(v: f64);
+      get: func() -> f64;
+      add: static func(a: float, b: f64) -> float;
+    }
+  }
+
+  import imports: interface {
+    resource float {
+      constructor(v: f64);
+      get: func() -> f64;
+      add: static func(a: float, b: f64) -> float;
+    }
+  }
+
+  export add: func(a: borrow<float>, b: borrow<float>) -> own<float>;
+}
+
+world runner {
+  use test.{float};
+
+  import exports: interface {
+    resource float {
+      constructor(v: f64);
+      get: func() -> f64;
+      add: static func(a: float, b: f64) -> float;
+    }
+  }
+
+  import add: func(a: borrow<float>, b: borrow<float>) -> own<float>;
+}

@@ -1,0 +1,20 @@
+package test:options;
+
+interface to-test {
+  option-none-param: func(a: option<string>);
+  option-some-param: func(a: option<string>);
+  option-none-result: func() -> option<string>;
+  option-some-result: func() -> option<string>;
+
+  option-roundtrip: func(a: option<string>) -> option<string>;
+
+  double-option-roundtrip: func(a: option<option<u32>>) -> option<option<u32>>;
+}
+
+world test {
+  export to-test;
+}
+
+world runner {
+  import to-test;
+}

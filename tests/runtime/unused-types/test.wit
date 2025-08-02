@@ -1,0 +1,23 @@
+package foo:bar;
+
+world test {
+    export component;
+}
+world runner {
+    import component;
+}
+
+interface component {
+    variant unused-variant {
+        %enum(unused-enum),
+        %record(unused-record)
+    }
+    enum unused-enum {
+        unused
+    }
+    record unused-record {
+        x: u32
+    }
+
+    foo: func();
+}

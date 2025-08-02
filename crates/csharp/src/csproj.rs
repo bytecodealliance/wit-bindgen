@@ -11,6 +11,7 @@ pub struct CSProjectLLVMBuilder {
     aot: bool,
     clean_targets: bool,
     world_name: String,
+    binary: bool,
 }
 
 pub struct CSProjectMonoBuilder {
@@ -29,6 +30,7 @@ impl CSProject {
             aot: false,
             clean_targets: false,
             world_name: world_name.to_string(),
+            binary: false,
         }
     }
 
@@ -61,9 +63,15 @@ impl CSProjectLLVMBuilder {
             ),
         )?;
 
+        let output_type = if self.binary {
+            "<OutputType>Exe</OutputType>"
+        } else {
+            "<OutputType>Library</OutputType>"
+        };
+
         let mut csproj = format!(
             "<Project Sdk=\"Microsoft.NET.Sdk\">
-    
+
         <PropertyGroup>
             <TargetFramework>net9.0</TargetFramework>
             <LangVersion>preview</LangVersion>
@@ -73,8 +81,9 @@ impl CSProjectLLVMBuilder {
             <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
             <!-- treat these are errors so they are caught during code generation tests -->
             <WarningsAsErrors>CS0105</WarningsAsErrors>
+            {output_type}
         </PropertyGroup>
-        
+
         <PropertyGroup>
             <PublishTrimmed>true</PublishTrimmed>
             <AssemblyName>{name}</AssemblyName>
@@ -91,13 +100,20 @@ impl CSProjectLLVMBuilder {
         );
 
         if self.aot {
+            let os = match std::env::consts::OS {
+                "windows" => "win",
+                "linux" => std::env::consts::OS,
+                other => todo!("OS {} not supported", other),
+            };
+
             csproj.push_str(
-                r#"
+                &format!(
+                    r#"
                 <ItemGroup>
                     <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-*" />
-                    <PackageReference Include="runtime.win-x64.Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-*" />
+                    <PackageReference Include="runtime.{os}-x64.Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-*" />
                 </ItemGroup>
-                "#,
+                "#),
             );
 
             fs::write(
@@ -150,6 +166,10 @@ impl CSProjectLLVMBuilder {
         self.aot = true;
     }
 
+    pub fn binary(&mut self) {
+        self.binary = true;
+    }
+
     pub fn clean(&mut self) -> &mut Self {
         self.clean_targets = true;
 
@@ -172,7 +192,7 @@ impl CSProjectMonoBuilder {
 
         let mut csproj = format!(
             "<Project Sdk=\"Microsoft.NET.Sdk\">
-    
+
         <PropertyGroup>
             <TargetFramework>net9.0</TargetFramework>
             <RuntimeIdentifier>wasi-wasm</RuntimeIdentifier>
@@ -188,7 +208,7 @@ impl CSProjectMonoBuilder {
             <!-- treat these are errors so they are caught during code generation tests -->
             <WarningsAsErrors>CS0105</WarningsAsErrors>
         </PropertyGroup>
-        
+
         <PropertyGroup>
             <PublishTrimmed>true</PublishTrimmed>
             <AssemblyName>{name}</AssemblyName>

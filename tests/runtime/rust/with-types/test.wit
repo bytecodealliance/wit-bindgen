@@ -1,0 +1,76 @@
+//@ default-bindgen-args = false
+
+package my:inline;
+
+interface foo {
+
+    record a {
+        inner: f64,
+    }
+
+    resource b;
+
+    variant c {
+        a(a),
+        b(b),
+    }
+
+    // test type definition generation with `generate` option
+    record f {
+        inner: u32,
+    }
+
+    // test type definition generation without `generate` option
+    record g {
+        inner: u32,
+    }
+
+    func1: func(v: a) -> a;
+    func2: func(v: b) -> b;
+    func3: func(v: list<a>) -> list<b>;
+    func4: func(v: option<a>) -> option<a>;
+    func5: func() -> result<a>;
+    func6: func() -> result<f>;
+    func7: func() -> result<g>;
+}
+
+interface bar {
+    record e {
+        inner: u32,
+    }
+
+    func6: func(v: e) -> e;
+}
+
+world test {
+    export i: interface {
+      // test remapping with importing type directly
+      use foo.{c};
+      func7: func(v: c) -> c;
+
+      // test remapping the type defined in world
+      record d {
+          inner: u32,
+      }
+
+      func8: func(v: d) -> d;
+    }
+
+    export foo;
+    export bar;
+}
+
+world runner {
+    import i: interface {
+      use foo.{c};
+      func7: func(v: c) -> c;
+
+      record d {
+          inner: u32,
+      }
+
+      func8: func(v: d) -> d;
+    }
+
+    import bar;
+}

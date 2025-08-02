@@ -16,16 +16,16 @@ fn main() {
 
     let mut src = env::current_dir().unwrap();
     src.push("src");
-    src.push("libwit_bindgen_cabi_realloc.a");
+    src.push("libwit_bindgen_cabi.a");
 
     let dst_name = format!(
-        "wit_bindgen_cabi_realloc{}",
+        "wit_bindgen_cabi{}",
         env!("CARGO_PKG_VERSION").replace(".", "_")
     );
     let dst = out_dir.join(format!("lib{dst_name}.a"));
 
     std::fs::copy(&src, &dst).unwrap();
 
-    println!("cargo:rustc-link-lib={dst_name}");
+    println!("cargo:rustc-link-lib=static={dst_name}");
     println!("cargo:rustc-link-search=native={}", out_dir.display());
 }

@@ -1,0 +1,15 @@
+package example:composition;
+
+let leaf = new test:leaf {
+  ... 
+};
+let middle = new test:middle {
+  to-test: leaf.to-test,
+  ...
+};
+let runner = new test:runner {
+  to-test: middle.to-test,
+  ...
+};
+
+export runner...;

@@ -1,3 +1,5 @@
+//@ async = true
+
 package foo:foo;
 
 interface transmit {
@@ -38,6 +40,10 @@ interface streams {
   stream-s64-ret: func() -> stream<s64>;
   stream-f32-ret: func() -> stream<f32>;
   stream-f64-ret: func() -> stream<f64>;
+
+  stream-result-list-string-ret: func() -> stream<result<list<string>>>;
+  stream-result-list-list-u8-ret: func() -> stream<result<list<list<u8>>>>;
+  stream-list-list-list-u8-ret: func() -> stream<list<list<list<u8>>>>;
 
   tuple-stream: func(x: stream<tuple<u8, s8>>) -> stream<tuple<s64, u32>>;
   string-stream-arg: func(a: stream<string>);

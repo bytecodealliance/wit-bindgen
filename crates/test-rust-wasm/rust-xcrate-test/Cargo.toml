@@ -1,7 +1,0 @@
-[package]
-name = "rust-xcrate-test"
-edition.workspace = true
-publish = false
-
-[dependencies]
-wit-bindgen = { path = '../../guest-rust' }

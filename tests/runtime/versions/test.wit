@@ -1,0 +1,11 @@
+package test:versions;
+
+world runner {
+  import test:dep/test@0.1.0;
+  import test:dep/test@0.2.0;
+}
+
+world test {
+  export test:dep/test@0.1.0;
+  export test:dep/test@0.2.0;
+}

@@ -291,30 +291,14 @@ impl InterfaceGenerator<'_> {
             }
         }
 
-        if func.results.len() > 0 {
+        if let Some(ty) = &func.result {
             self.push_str("\n##### Return values\n\n");
-            match &func.results {
-                Results::Named(params) => {
-                    for (name, ty) in params.iter() {
-                        self.push_str(&format!(
-                            "- <a id=\"{f}.{p}\"></a>`{}`: ",
-                            name,
-                            f = func.name.to_snake_case(),
-                            p = name,
-                        ));
-                        self.print_ty(ty);
-                        self.push_str("\n");
-                    }
-                }
-                Results::Anon(ty) => {
-                    self.push_str(&format!(
-                        "- <a id=\"{f}.0\"></a> ",
-                        f = func.name.to_snake_case(),
-                    ));
-                    self.print_ty(ty);
-                    self.push_str("\n");
-                }
-            }
+            self.push_str(&format!(
+                "- <a id=\"{f}.0\"></a> ",
+                f = func.name.to_snake_case(),
+            ));
+            self.print_ty(ty);
+            self.push_str("\n");
         }
 
         self.push_str("\n");
@@ -339,6 +323,7 @@ impl InterfaceGenerator<'_> {
             Type::F64 => self.push_str("`f64`"),
             Type::Char => self.push_str("`char`"),
             Type::String => self.push_str("`string`"),
+            Type::ErrorContext => self.push_str("`error-context`"),
             Type::Id(id) => {
                 let ty = &self.resolve.types[*id];
                 if let Some(name) = &ty.name {
@@ -423,9 +408,6 @@ impl InterfaceGenerator<'_> {
                             self.push_str("stream");
                         }
                     },
-                    TypeDefKind::ErrorContext => {
-                        self.push_str("error-context");
-                    }
                     TypeDefKind::Handle(Handle::Own(ty)) => {
                         self.push_str("own<");
                         self.print_ty(&Type::Id(*ty));
@@ -437,6 +419,7 @@ impl InterfaceGenerator<'_> {
                         self.push_str(">");
                     }
                     TypeDefKind::Unknown => unreachable!(),
+                    TypeDefKind::FixedSizeList(..) => todo!(),
                 }
             }
         }
@@ -445,7 +428,7 @@ impl InterfaceGenerator<'_> {
     fn docs(&mut self, docs: &Docs) {
         let docs = match &docs.contents {
             Some(docs) => docs,
-            None => return,
+            None => "\n",
         };
         for line in docs.lines() {
             self.push_str(line.trim());
@@ -501,6 +484,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             }
             self.push_str("\n");
         }
+        self.push_str("\n");
     }
 
     fn type_resource(&mut self, _id: TypeId, name: &str, docs: &Docs) {
@@ -528,6 +512,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             self.print_ty(ty);
             self.push_str("\n");
         }
+        self.push_str("\n");
     }
 
     fn type_flags(&mut self, _id: TypeId, name: &str, flags: &Flags, docs: &Docs) {
@@ -554,6 +539,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             }
             self.push_str("\n");
         }
+        self.push_str("\n");
     }
 
     fn type_variant(&mut self, _id: TypeId, name: &str, variant: &Variant, docs: &Docs) {
@@ -584,6 +570,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             }
             self.push_str("\n");
         }
+        self.push_str("\n");
     }
 
     fn type_enum(&mut self, _id: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
@@ -610,6 +597,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             }
             self.push_str("\n");
         }
+        self.push_str("\n");
     }
 
     fn type_option(&mut self, _id: TypeId, name: &str, payload: &Type, docs: &Docs) {
@@ -668,11 +656,6 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
     fn type_stream(&mut self, id: TypeId, name: &str, ty: &Option<Type>, docs: &Docs) {
         _ = (id, name, ty, docs);
-        todo!()
-    }
-
-    fn type_error_context(&mut self, id: TypeId, name: &str, docs: &Docs) {
-        _ = (id, name, docs);
         todo!()
     }
 

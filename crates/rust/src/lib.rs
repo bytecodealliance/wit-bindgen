@@ -1,5 +1,6 @@
 use crate::interface::InterfaceGenerator;
 use anyhow::{bail, Result};
+use core::panic;
 use heck::*;
 use indexmap::{IndexMap, IndexSet};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -8,8 +9,8 @@ use std::mem;
 use std::str::FromStr;
 use wit_bindgen_core::abi::{Bitcast, WasmType};
 use wit_bindgen_core::{
-    name_package_module, uwrite, uwriteln, wit_parser::*, Files, InterfaceGenerator as _, Source,
-    Types, WorldGenerator,
+    dealias, name_package_module, uwrite, uwriteln, wit_parser::*, AsyncFilterSet, Files,
+    InterfaceGenerator as _, Source, Types, WorldGenerator,
 };
 
 mod bindgen;
@@ -38,15 +39,15 @@ struct RustWasm {
     interface_last_seen_as_import: HashMap<InterfaceId, bool>,
     import_funcs_called: bool,
     with_name_counter: usize,
-    // Track which interfaces were generated. Remapped interfaces provided via `with`
+    // Track which interfaces and types are generated. Remapped interfaces and types provided via `with`
     // are required to be used.
-    generated_interfaces: HashSet<String>,
+    generated_types: HashSet<String>,
     world: Option<WorldId>,
 
     rt_module: IndexSet<RuntimeItem>,
     export_macros: Vec<(String, String)>,
 
-    /// Interface names to how they should be generated
+    /// Maps wit interface and type names to their Rust identifiers
     with: GenerationConfiguration,
 
     future_payloads: IndexMap<String, String>,
@@ -55,33 +56,43 @@ struct RustWasm {
 
 #[derive(Default)]
 struct GenerationConfiguration {
-    map: HashMap<String, InterfaceGeneration>,
+    map: HashMap<String, TypeGeneration>,
     generate_by_default: bool,
 }
 
 impl GenerationConfiguration {
-    fn get(&self, key: &str) -> Option<&InterfaceGeneration> {
+    fn get(&self, key: &str) -> Option<&TypeGeneration> {
         self.map.get(key).or_else(|| {
             self.generate_by_default
-                .then_some(&InterfaceGeneration::Generate)
+                .then_some(&TypeGeneration::Generate)
         })
     }
 
-    fn insert(&mut self, name: String, generate: InterfaceGeneration) {
+    fn insert(&mut self, name: String, generate: TypeGeneration) {
         self.map.insert(name, generate);
     }
 
-    fn iter(&self) -> impl Iterator<Item = (&String, &InterfaceGeneration)> {
+    fn iter(&self) -> impl Iterator<Item = (&String, &TypeGeneration)> {
         self.map.iter()
     }
 }
 
-/// How an interface should be generated.
-enum InterfaceGeneration {
-    /// Remapped to some other type
+/// How a wit interface or type should be rendered in Rust
+enum TypeGeneration {
+    /// Uses a Rust identifier defined elsewhere
     Remap(String),
-    /// Generate the interface
+    /// Define the interface or type with this bindgen invocation
     Generate,
+}
+
+impl TypeGeneration {
+    /// Returns true if the interface or type should be defined with this bindgen invocation
+    fn generated(&self) -> bool {
+        match self {
+            TypeGeneration::Generate => true,
+            TypeGeneration::Remap(_) => false,
+        }
+    }
 }
 
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
@@ -105,6 +116,11 @@ enum RuntimeItem {
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Deserialize),
+    serde(rename_all = "kebab-case")
+)]
 pub enum ExportKey {
     World,
     Name(String),
@@ -123,53 +139,12 @@ fn parse_with(s: &str) -> Result<(String, WithOption), String> {
 }
 
 #[derive(Default, Debug, Clone)]
-pub enum AsyncConfig {
-    #[default]
-    None,
-    Some {
-        imports: Vec<String>,
-        exports: Vec<String>,
-    },
-    All,
-}
-
-#[cfg(feature = "clap")]
-fn parse_async(s: &str) -> Result<AsyncConfig, String> {
-    Ok(match s {
-        "none" => AsyncConfig::None,
-        "all" => AsyncConfig::All,
-        _ => {
-            if let Some(values) = s.strip_prefix("some=") {
-                let mut imports = Vec::new();
-                let mut exports = Vec::new();
-                for value in values.split(',') {
-                    let error = || {
-                        Err(format!(
-                            "expected string of form `import:<name>` or `export:<name>`; got `{value}`"
-                        ))
-                    };
-                    if let Some((k, v)) = value.split_once(":") {
-                        match k {
-                            "import" => imports.push(v.into()),
-                            "export" => exports.push(v.into()),
-                            _ => return error(),
-                        }
-                    } else {
-                        return error();
-                    }
-                }
-                AsyncConfig::Some { imports, exports }
-            } else {
-                return Err(format!(
-                    "expected string of form `none`, `all`, or `some=<value>[,<value>...]`; got `{s}`"
-                ));
-            }
-        }
-    })
-}
-
-#[derive(Default, Debug, Clone)]
-#[cfg_attr(feature = "clap", derive(clap::Args))]
+#[cfg_attr(feature = "clap", derive(clap::Parser))]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Deserialize),
+    serde(default, rename_all = "kebab-case")
+)]
 pub struct Opts {
     /// Whether or not a formatter is executed to format generated code.
     #[cfg_attr(feature = "clap", arg(long))]
@@ -188,7 +163,7 @@ pub struct Opts {
     pub raw_strings: bool,
 
     /// Names of functions to skip generating bindings for.
-    #[cfg_attr(feature = "clap", arg(long))]
+    #[cfg_attr(feature = "clap", arg(long, value_name = "NAME"))]
     pub skip: Vec<String>,
 
     /// If true, generate stub implementations for any exported functions,
@@ -199,7 +174,7 @@ pub struct Opts {
     /// Optionally prefix any export names with the specified value.
     ///
     /// This is useful to avoid name conflicts when testing.
-    #[cfg_attr(feature = "clap", arg(long))]
+    #[cfg_attr(feature = "clap", arg(long, value_name = "STRING"))]
     pub export_prefix: Option<String>,
 
     /// Whether to generate owning or borrowing type definitions.
@@ -221,7 +196,7 @@ pub struct Opts {
     /// The optional path to the wit-bindgen runtime module to use.
     ///
     /// This defaults to `wit_bindgen::rt`.
-    #[cfg_attr(feature = "clap", arg(long))]
+    #[cfg_attr(feature = "clap", arg(long, value_name = "PATH"))]
     pub runtime_path: Option<String>,
 
     /// The optional path to the bitflags crate to use.
@@ -234,10 +209,19 @@ pub struct Opts {
     /// specified multiple times to add multiple attributes.
     ///
     /// These derive attributes will be added to any generated structs or enums
-    #[cfg_attr(feature = "clap", arg(long = "additional_derive_attribute", short = 'd', default_values_t = Vec::<String>::new()))]
+    #[cfg_attr(feature = "clap", arg(long, short = 'd', value_name = "DERIVE"))]
     pub additional_derive_attributes: Vec<String>,
 
-    /// Remapping of interface names to rust module names.
+    /// Variants and records to ignore when applying additional derive attributes.
+    ///
+    /// These names are specified as they are listed in the wit file, i.e. in kebab case.
+    /// This feature allows some variants and records to use types for which adding traits will cause
+    /// compilation to fail, such as serde::Deserialize on wasi:io/streams.
+    ///
+    #[cfg_attr(feature = "clap", arg(long, value_name = "NAME"))]
+    pub additional_derive_ignore: Vec<String>,
+
+    /// Remapping of wit interface and type names to Rust module names and types.
     ///
     /// Argument must be of the form `k=v` and this option can be passed
     /// multiple times or one option can be comma separated, for example
@@ -252,7 +236,7 @@ pub struct Opts {
 
     /// Add the specified suffix to the name of the custome section containing
     /// the component type.
-    #[cfg_attr(feature = "clap", arg(long))]
+    #[cfg_attr(feature = "clap", arg(long, value_name = "STRING"))]
     pub type_section_suffix: Option<String>,
 
     /// Disable a workaround used to prevent libc ctors/dtors from being invoked
@@ -262,11 +246,11 @@ pub struct Opts {
 
     /// Changes the default module used in the generated `export!` macro to
     /// something other than `self`.
-    #[cfg_attr(feature = "clap", arg(long))]
+    #[cfg_attr(feature = "clap", arg(long, value_name = "NAME"))]
     pub default_bindings_module: Option<String>,
 
     /// Alternative name to use for the `export!` macro if one is generated.
-    #[cfg_attr(feature = "clap", arg(long))]
+    #[cfg_attr(feature = "clap", arg(long, value_name = "NAME"))]
     pub export_macro_name: Option<String>,
 
     /// Ensures that the `export!` macro will be defined as `pub` so it is a
@@ -286,16 +270,9 @@ pub struct Opts {
     #[cfg_attr(feature = "clap", arg(long))]
     pub disable_custom_section_link_helpers: bool,
 
-    /// Determines which functions to lift or lower `async`, if any.
-    ///
-    /// Accepted values are:
-    ///     - none
-    ///     - all
-    ///     - some=<value>[,<value>...], where each <value> is of the form:
-    ///         - import:<name> or
-    ///         - export:<name>
-    #[cfg_attr(feature = "clap", arg(long = "async", value_parser = parse_async, default_value = "none"))]
-    pub async_: AsyncConfig,
+    #[cfg_attr(feature = "clap", clap(flatten))]
+    #[cfg_attr(feature = "serde", serde(flatten))]
+    pub async_: AsyncFilterSet,
 }
 
 impl Opts {
@@ -327,11 +304,11 @@ impl RustWasm {
             wasm_import_module,
             src: Source::default(),
             in_import,
-            gen: self,
+            r#gen: self,
             sizes,
             resolve,
-            return_pointer_area_size: 0,
-            return_pointer_area_align: 0,
+            return_pointer_area_size: Default::default(),
+            return_pointer_area_align: Default::default(),
             needs_runtime_module: false,
         }
     }
@@ -410,9 +387,9 @@ impl RustWasm {
         let Some(remapping) = self.with.get(&with_name) else {
             bail!(MissingWith(with_name));
         };
-        self.generated_interfaces.insert(with_name);
+        self.generated_types.insert(with_name);
         let entry = match remapping {
-            InterfaceGeneration::Remap(remapped_path) => {
+            TypeGeneration::Remap(remapped_path) => {
                 let name = format!("__with_name{}", self.with_name_counter);
                 self.with_name_counter += 1;
                 uwriteln!(self.src, "use {remapped_path} as {name};");
@@ -421,7 +398,7 @@ impl RustWasm {
                     path: name,
                 }
             }
-            InterfaceGeneration::Generate => {
+            TypeGeneration::Generate => {
                 let path = compute_module_path(name, resolve, is_export).join("::");
 
                 InterfaceName {
@@ -438,26 +415,24 @@ impl RustWasm {
     }
 
     fn finish_runtime_module(&mut self) {
-        if self.rt_module.is_empty() {
-            return;
-        }
+        if !self.rt_module.is_empty() {
+            // As above, disable rustfmt, as we use prettyplease.
+            if self.opts.format {
+                uwriteln!(self.src, "#[rustfmt::skip]");
+            }
 
-        // As above, disable rustfmt, as we use prettyplease.
-        if self.opts.format {
-            uwriteln!(self.src, "#[rustfmt::skip]");
-        }
-
-        self.src.push_str("mod _rt {\n");
-        self.src.push_str("#![allow(dead_code, clippy::all)]\n");
-        let mut emitted = IndexSet::new();
-        while !self.rt_module.is_empty() {
-            for item in mem::take(&mut self.rt_module) {
-                if emitted.insert(item) {
-                    self.emit_runtime_item(item);
+            self.src.push_str("mod _rt {\n");
+            self.src.push_str("#![allow(dead_code, clippy::all)]\n");
+            let mut emitted = IndexSet::new();
+            while !self.rt_module.is_empty() {
+                for item in mem::take(&mut self.rt_module) {
+                    if emitted.insert(item) {
+                        self.emit_runtime_item(item);
+                    }
                 }
             }
+            self.src.push_str("}\n");
         }
-        self.src.push_str("}\n");
 
         if !self.future_payloads.is_empty() {
             let async_support = self.async_support_path();
@@ -468,7 +443,7 @@ pub mod wit_future {{
 
     #[doc(hidden)]
     pub trait FuturePayload: Unpin + Sized + 'static {{
-       fn new() -> (u32, &'static {async_support}::FutureVtable<Self>);
+        const VTABLE: &'static {async_support}::FutureVtable<Self>;
     }}"
             ));
             for code in self.future_payloads.values() {
@@ -477,18 +452,11 @@ pub mod wit_future {{
             self.src.push_str(&format!(
                 "\
     /// Creates a new Component Model `future` with the specified payload type.
-    pub fn new<T: FuturePayload>() -> ({async_support}::FutureWriter<T>, {async_support}::FutureReader<T>) {{
-        let (handle, vtable) = T::new();
-        {async_support}::with_entry(handle, |entry| match entry {{
-            ::std::collections::hash_map::Entry::Vacant(entry) => {{
-                entry.insert({async_support}::Handle::LocalOpen);
-            }}
-            ::std::collections::hash_map::Entry::Occupied(_) => unreachable!(),
-        }});
-        (
-            {async_support}::FutureWriter::new(handle, vtable),
-            {async_support}::FutureReader::new(handle, vtable),
-        )
+    ///
+    /// The `default` function provided computes the default value to be sent in
+    /// this future if no other value was otherwise sent.
+    pub fn new<T: FuturePayload>(default: fn() -> T) -> ({async_support}::FutureWriter<T>, {async_support}::FutureReader<T>) {{
+        unsafe {{ {async_support}::future_new::<T>(default, T::VTABLE) }}
     }}
 }}
                 ",
@@ -503,7 +471,7 @@ pub mod wit_stream {{
     #![allow(dead_code, unused_variables, clippy::all)]
 
     pub trait StreamPayload: Unpin + Sized + 'static {{
-       fn new() -> (u32, &'static {async_support}::StreamVtable<Self>);
+        const VTABLE: &'static {async_support}::StreamVtable<Self>;
     }}"
             ));
             for code in self.stream_payloads.values() {
@@ -513,17 +481,7 @@ pub mod wit_stream {{
                 &format!("\
     /// Creates a new Component Model `stream` with the specified payload type.
     pub fn new<T: StreamPayload>() -> ({async_support}::StreamWriter<T>, {async_support}::StreamReader<T>) {{
-        let (handle, vtable) = T::new();
-        {async_support}::with_entry(handle, |entry| match entry {{
-            ::std::collections::hash_map::Entry::Vacant(entry) => {{
-                entry.insert({async_support}::Handle::LocalOpen);
-            }}
-            ::std::collections::hash_map::Entry::Occupied(_) => unreachable!(),
-        }});
-        (
-            {async_support}::StreamWriter::new(handle, vtable),
-            {async_support}::StreamReader::new(handle, vtable),
-        )
+        unsafe {{ {async_support}::stream_new::<T>(T::VTABLE) }}
     }}
 }}
                 "),
@@ -560,8 +518,10 @@ pub unsafe fn cabi_dealloc(ptr: *mut u8, size: usize, align: usize) {
     if size == 0 {
         return;
     }
-    let layout = alloc::Layout::from_size_align_unchecked(size, align);
-    alloc::dealloc(ptr, layout);
+    unsafe {
+        let layout = alloc::Layout::from_size_align_unchecked(size, align);
+        alloc::dealloc(ptr, layout);
+    }
 }
                     ",
                 );
@@ -575,7 +535,7 @@ pub unsafe fn string_lift(bytes: Vec<u8>) -> String {
     if cfg!(debug_assertions) {
         String::from_utf8(bytes).unwrap()
     } else {
-        String::from_utf8_unchecked(bytes)
+        unsafe { String::from_utf8_unchecked(bytes) }
     }
 }
                     ",
@@ -589,7 +549,7 @@ pub unsafe fn invalid_enum_discriminant<T>() -> T {
     if cfg!(debug_assertions) {
         panic!(\"invalid enum discriminant\")
     } else {
-        core::hint::unreachable_unchecked()
+        unsafe { core::hint::unreachable_unchecked() }
     }
 }
                     ",
@@ -603,7 +563,7 @@ pub unsafe fn char_lift(val: u32) -> char {
     if cfg!(debug_assertions) {
         core::char::from_u32(val).unwrap()
     } else {
-        core::char::from_u32_unchecked(val)
+        unsafe { core::char::from_u32_unchecked(val) }
     }
 }
                     ",
@@ -704,7 +664,7 @@ pub unsafe trait WasmResource {
 impl<T: WasmResource> Resource<T> {
     #[doc(hidden)]
     pub unsafe fn from_handle(handle: u32) -> Self {
-        debug_assert!(handle != u32::MAX);
+        debug_assert!(handle != 0 && handle != u32::MAX);
         Self {
             handle: AtomicU32::new(handle),
             _marker: marker::PhantomData,
@@ -901,6 +861,10 @@ macro_rules! __export_{world_name}_impl {{
         section_suffix: &str,
         func_name: Option<&str>,
     ) {
+        // As above, disable rustfmt, as we use prettyplease.
+        if self.opts.format {
+            uwriteln!(self.src, "#[rustfmt::skip]");
+        }
         self.src.push_str("\n#[cfg(target_arch = \"wasm32\")]\n");
 
         // The custom section name here must start with "component-type" but
@@ -987,6 +951,18 @@ macro_rules! __export_{world_name}_impl {{
             );
         }
     }
+
+    fn is_async(
+        &mut self,
+        resolve: &Resolve,
+        interface: Option<&WorldKey>,
+        func: &Function,
+        is_import: bool,
+    ) -> bool {
+        self.opts
+            .async_
+            .is_async(resolve, interface, func, is_import)
+    }
 }
 
 impl WorldGenerator for RustWasm {
@@ -1039,6 +1015,13 @@ impl WorldGenerator for RustWasm {
                 self.opts.additional_derive_attributes
             );
         }
+        if !self.opts.additional_derive_ignore.is_empty() {
+            uwriteln!(
+                self.src_preamble,
+                "//   * additional derives ignored {:?}",
+                self.opts.additional_derive_ignore
+            );
+        }
         for (k, v) in self.opts.with.iter() {
             uwriteln!(self.src_preamble, "//   * with {k:?} = {v}");
         }
@@ -1076,6 +1059,9 @@ impl WorldGenerator for RustWasm {
                 "//   * disable_custom_section_link_helpers"
             );
         }
+        for opt in self.opts.async_.debug_opts() {
+            uwriteln!(self.src_preamble, "//   * async: {opt}");
+        }
         self.types.analyze(resolve);
         self.world = Some(world);
 
@@ -1086,7 +1072,7 @@ impl WorldGenerator for RustWasm {
                 if resolve.interfaces[*id].package == world.package {
                     let name = resolve.name_world_key(key);
                     if self.with.get(&name).is_none() {
-                        self.with.insert(name, InterfaceGeneration::Generate);
+                        self.with.insert(name, TypeGeneration::Generate);
                     }
                 }
             }
@@ -1105,25 +1091,42 @@ impl WorldGenerator for RustWasm {
         id: InterfaceId,
         _files: &mut Files,
     ) -> Result<()> {
+        let mut to_define = Vec::new();
+        for (name, ty_id) in resolve.interfaces[id].types.iter() {
+            let full_name = full_wit_type_name(resolve, *ty_id);
+            if let Some(type_gen) = self.with.get(&full_name) {
+                // skip type definition generation for remapped types
+                if type_gen.generated() {
+                    to_define.push((name, ty_id));
+                }
+            } else {
+                to_define.push((name, ty_id));
+            }
+            self.generated_types.insert(full_name);
+        }
+
         self.interface_last_seen_as_import.insert(id, true);
         let wasm_import_module = resolve.name_world_key(name);
-        let mut gen = self.interface(
+        let mut r#gen = self.interface(
             Identifier::Interface(id, name),
             &wasm_import_module,
             resolve,
             true,
         );
-        let (snake, module_path) = gen.start_append_submodule(name);
-        if gen.gen.name_interface(resolve, id, name, false)? {
+        let (snake, module_path) = r#gen.start_append_submodule(name);
+        if r#gen.r#gen.name_interface(resolve, id, name, false)? {
             return Ok(());
         }
-        gen.types(id);
 
-        gen.generate_imports(resolve.interfaces[id].functions.values(), Some(name));
+        for (name, ty_id) in to_define {
+            r#gen.define_type(&name, *ty_id);
+        }
+
+        r#gen.generate_imports(resolve.interfaces[id].functions.values(), Some(name));
 
         let docs = &resolve.interfaces[id].docs;
 
-        gen.finish_append_submodule(&snake, module_path, docs);
+        r#gen.finish_append_submodule(&snake, module_path, docs);
 
         Ok(())
     }
@@ -1137,11 +1140,11 @@ impl WorldGenerator for RustWasm {
     ) {
         self.import_funcs_called = true;
 
-        let mut gen = self.interface(Identifier::World(world), "$root", resolve, true);
+        let mut r#gen = self.interface(Identifier::World(world), "$root", resolve, true);
 
-        gen.generate_imports(funcs.iter().map(|(_, func)| *func), None);
+        r#gen.generate_imports(funcs.iter().map(|(_, func)| *func), None);
 
-        let src = gen.finish();
+        let src = r#gen.finish();
         self.src.push_str(&src);
     }
 
@@ -1152,38 +1155,56 @@ impl WorldGenerator for RustWasm {
         id: InterfaceId,
         _files: &mut Files,
     ) -> Result<()> {
+        let mut to_define = Vec::new();
+        for (name, ty_id) in resolve.interfaces[id].types.iter() {
+            let full_name = full_wit_type_name(resolve, *ty_id);
+            if let Some(type_gen) = self.with.get(&full_name) {
+                // skip type definition generation for remapped types
+                if type_gen.generated() {
+                    to_define.push((name, ty_id));
+                }
+            } else {
+                to_define.push((name, ty_id));
+            }
+            self.generated_types.insert(full_name);
+        }
+
         self.interface_last_seen_as_import.insert(id, false);
         let wasm_import_module = format!("[export]{}", resolve.name_world_key(name));
-        let mut gen = self.interface(
+        let mut r#gen = self.interface(
             Identifier::Interface(id, name),
             &wasm_import_module,
             resolve,
             false,
         );
-        let (snake, module_path) = gen.start_append_submodule(name);
-        if gen.gen.name_interface(resolve, id, name, true)? {
+        let (snake, module_path) = r#gen.start_append_submodule(name);
+        if r#gen.r#gen.name_interface(resolve, id, name, true)? {
             return Ok(());
         }
-        gen.types(id);
+
+        for (name, ty_id) in to_define {
+            r#gen.define_type(&name, *ty_id);
+        }
+
         let macro_name =
-            gen.generate_exports(Some((id, name)), resolve.interfaces[id].functions.values())?;
+            r#gen.generate_exports(Some((id, name)), resolve.interfaces[id].functions.values())?;
 
         let docs = &resolve.interfaces[id].docs;
 
-        gen.finish_append_submodule(&snake, module_path, docs);
+        r#gen.finish_append_submodule(&snake, module_path, docs);
         self.export_macros
             .push((macro_name, self.interface_names[&id].path.clone()));
 
         if self.opts.stubs {
             let world_id = self.world.unwrap();
-            let mut gen = self.interface(
+            let mut r#gen = self.interface(
                 Identifier::World(world_id),
                 &wasm_import_module,
                 resolve,
                 false,
             );
-            gen.generate_stub(Some((id, name)), resolve.interfaces[id].functions.values());
-            let stub = gen.finish();
+            r#gen.generate_stub(Some((id, name)), resolve.interfaces[id].functions.values());
+            let stub = r#gen.finish();
             self.src.push_str(&stub);
         }
         Ok(())
@@ -1196,16 +1217,17 @@ impl WorldGenerator for RustWasm {
         funcs: &[(&str, &Function)],
         _files: &mut Files,
     ) -> Result<()> {
-        let mut gen = self.interface(Identifier::World(world), "[export]$root", resolve, false);
-        let macro_name = gen.generate_exports(None, funcs.iter().map(|f| f.1))?;
-        let src = gen.finish();
+        let mut r#gen = self.interface(Identifier::World(world), "[export]$root", resolve, false);
+        let macro_name = r#gen.generate_exports(None, funcs.iter().map(|f| f.1))?;
+        let src = r#gen.finish();
         self.src.push_str(&src);
         self.export_macros.push((macro_name, String::new()));
 
         if self.opts.stubs {
-            let mut gen = self.interface(Identifier::World(world), "[export]$root", resolve, false);
-            gen.generate_stub(None, funcs.iter().map(|f| f.1));
-            let stub = gen.finish();
+            let mut r#gen =
+                self.interface(Identifier::World(world), "[export]$root", resolve, false);
+            r#gen.generate_stub(None, funcs.iter().map(|f| f.1));
+            let stub = r#gen.finish();
             self.src.push_str(&stub);
         }
         Ok(())
@@ -1218,11 +1240,24 @@ impl WorldGenerator for RustWasm {
         types: &[(&str, TypeId)],
         _files: &mut Files,
     ) {
-        let mut gen = self.interface(Identifier::World(world), "$root", resolve, true);
-        for (name, ty) in types {
-            gen.define_type(name, *ty);
+        let mut to_define = Vec::new();
+        for (name, ty_id) in types {
+            let full_name = full_wit_type_name(resolve, *ty_id);
+            if let Some(type_gen) = self.with.get(&full_name) {
+                // skip type definition generation for remapped types
+                if type_gen.generated() {
+                    to_define.push((name, ty_id));
+                }
+            } else {
+                to_define.push((name, ty_id));
+            }
+            self.generated_types.insert(full_name);
         }
-        let src = gen.finish();
+        let mut r#gen = self.interface(Identifier::World(world), "$root", resolve, true);
+        for (name, ty) in to_define {
+            r#gen.define_type(name, *ty);
+        }
+        let src = r#gen.finish();
         self.src.push_str(&src);
     }
 
@@ -1333,7 +1368,7 @@ impl WorldGenerator for RustWasm {
             .collect::<HashSet<String>>();
 
         let mut unused_keys = remapped_keys
-            .difference(&self.generated_interfaces)
+            .difference(&self.generated_types)
             .collect::<Vec<&String>>();
 
         unused_keys.sort();
@@ -1341,6 +1376,10 @@ impl WorldGenerator for RustWasm {
         if !unused_keys.is_empty() {
             bail!("unused remappings provided via `with`: {unused_keys:?}");
         }
+
+        // Error about unused async configuration to help catch configuration
+        // errors.
+        self.opts.async_.ensure_all_used()?;
 
         Ok(())
     }
@@ -1378,17 +1417,20 @@ fn group_by_resource<'a>(
 ) -> BTreeMap<Option<TypeId>, Vec<&'a Function>> {
     let mut by_resource = BTreeMap::<_, Vec<_>>::new();
     for func in funcs {
-        match &func.kind {
-            FunctionKind::Freestanding => by_resource.entry(None).or_default().push(func),
-            FunctionKind::Method(ty) | FunctionKind::Static(ty) | FunctionKind::Constructor(ty) => {
-                by_resource.entry(Some(*ty)).or_default().push(func);
-            }
-        }
+        by_resource
+            .entry(func.kind.resource())
+            .or_default()
+            .push(func);
     }
     by_resource
 }
 
 #[derive(Default, Debug, Clone, Copy)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Deserialize),
+    serde(rename_all = "kebab-case")
+)]
 pub enum Ownership {
     /// Generated types will be composed entirely of owning fields, regardless
     /// of whether they are used as parameters to imports or not.
@@ -1443,6 +1485,11 @@ impl fmt::Display for Ownership {
 
 /// Options for with "with" remappings.
 #[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Deserialize),
+    serde(rename_all = "kebab-case")
+)]
 pub enum WithOption {
     Path(String),
     Generate,
@@ -1457,11 +1504,11 @@ impl std::fmt::Display for WithOption {
     }
 }
 
-impl From<WithOption> for InterfaceGeneration {
+impl From<WithOption> for TypeGeneration {
     fn from(opt: WithOption) -> Self {
         match opt {
-            WithOption::Path(p) => InterfaceGeneration::Remap(p),
-            WithOption::Generate => InterfaceGeneration::Generate,
+            WithOption::Path(p) => TypeGeneration::Remap(p),
+            WithOption::Generate => TypeGeneration::Generate,
         }
     }
 }
@@ -1475,6 +1522,15 @@ struct FnSig {
     generics: Option<String>,
     self_arg: Option<String>,
     self_is_first_param: bool,
+}
+
+impl FnSig {
+    fn update_for_func(&mut self, func: &Function) {
+        if let FunctionKind::Method(_) | FunctionKind::AsyncMethod(_) = &func.kind {
+            self.self_arg = Some("&self".into());
+            self.self_is_first_param = true;
+        }
+    }
 }
 
 pub fn to_rust_ident(name: &str) -> String {
@@ -1560,6 +1616,40 @@ fn wasm_type(ty: WasmType) -> &'static str {
         // [documented]: https://github.com/rust-lang/rfcs/blob/master/text/3559-rust-has-provenance.md#reference-level-explanation
         WasmType::PointerOrI64 => "::core::mem::MaybeUninit::<u64>",
     }
+}
+
+fn declare_import(
+    wasm_import_module: &str,
+    wasm_import_name: &str,
+    rust_name: &str,
+    params: &[WasmType],
+    results: &[WasmType],
+) -> String {
+    let mut sig = "(".to_owned();
+    for param in params.iter() {
+        sig.push_str("_: ");
+        sig.push_str(wasm_type(*param));
+        sig.push_str(", ");
+    }
+    sig.push(')');
+    assert!(results.len() < 2);
+    for result in results.iter() {
+        sig.push_str(" -> ");
+        sig.push_str(wasm_type(*result));
+    }
+    format!(
+        "
+            #[cfg(target_arch = \"wasm32\")]
+            #[link(wasm_import_module = \"{wasm_import_module}\")]
+            unsafe extern \"C\" {{
+                #[link_name = \"{wasm_import_name}\"]
+                fn {rust_name}{sig};
+            }}
+
+            #[cfg(not(target_arch = \"wasm32\"))]
+            unsafe extern \"C\" fn {rust_name}{sig} {{ unreachable!() }}
+        "
+    )
 }
 
 fn int_repr(repr: Int) -> &'static str {
@@ -1682,3 +1772,18 @@ impl std::error::Error for MissingWith {}
 // ```
 // with: {{\n\t{with_name:?}: generate\n}}
 // ```")
+
+/// Returns the full WIT type name with fully qualified interface name
+fn full_wit_type_name(resolve: &Resolve, id: TypeId) -> String {
+    let id = dealias(resolve, id);
+    let type_def = &resolve.types[id];
+    let interface_name = match type_def.owner {
+        TypeOwner::World(w) => Some(resolve.worlds[w].name.clone()),
+        TypeOwner::Interface(id) => resolve.id_of(id),
+        TypeOwner::None => None,
+    };
+    match interface_name {
+        Some(interface_name) => format!("{}/{}", interface_name, type_def.name.clone().unwrap()),
+        None => type_def.name.clone().unwrap(),
+    }
+}

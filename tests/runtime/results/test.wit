@@ -1,0 +1,35 @@
+//@ dependencies = ['intermediate', 'leaf']
+//@ wac = 'compose.wac'
+
+package test:results;
+
+interface test {
+  string-error: func(a: f32) -> result<f32, string>;
+
+  enum e { a, b, c }
+  enum-error: func(a: f32) -> result<f32, e>;
+
+  record e2 { line: u32, column: u32 }
+  record-error: func(a: f32) -> result<f32, e2>;
+
+
+  variant e3 { e1(e), e2(e2) }
+  variant-error: func(a: f32) -> result<f32, e3>;
+
+  empty-error: func(a: u32) -> result<u32>;
+
+  double-error: func(a: u32) -> result<result<_, string>, string>;
+}
+
+world leaf {
+  export test;
+}
+
+world intermediate {
+  import test;
+  export test;
+}
+
+world runner {
+  import test;
+}

@@ -1,0 +1,22 @@
+package test:resource-borrow-in-record;
+
+interface to-test {
+  resource thing {
+    constructor(s: string);
+    get: func() -> string;
+  }
+
+  record foo {
+    thing: borrow<thing>
+  }
+
+  test: func(a: list<foo>) -> list<thing>;
+}
+
+world test {
+  export to-test;
+}
+
+world runner {
+  import to-test;
+}

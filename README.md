@@ -30,10 +30,13 @@ between bindings definitions.
 [component model]: https://github.com/WebAssembly/component-model
 
 The `wit-bindgen` repository is currently focused on **guest** programs which
-are those compiled to WebAssembly. Executing a component in a host is not
+are those compiled to WebAssembly. Languages developed in this repository are
+Rust, C, C++, and C#. For other languages see the [documentation
+below](#guest-other-languages).
+
+Executing a component in a host is not
 managed in this repository, and some options of how to do so are [described
-below][hosts]. Languages developed in this repository are Rust, C, Java (TeaVM
-Java), Go (TinyGo), and C#. If you encounter any problems feel free to [open an
+below][hosts]. If you encounter any problems feel free to [open an
 issue](https://github.com/bytecodealliance/wit-bindgen/issues/new) or chat with
 us on [Zulip][zulip].
 
@@ -263,6 +266,8 @@ which in this case, as expected, is the same as the input world.
 
 ### Guest: C/C++
 
+See the [`wit-bindgen` C and C++ Bindings Generator documentation](/crates/c/README.md) for details.
+
 C and C++ code can be compiled for the `wasm32-wasip1` target using the [WASI
 SDK] project. The releases on that repository have precompiled `clang` binaries
 which are pre-configured to compile for WebAssembly.
@@ -314,7 +319,7 @@ wasm-tools component wit ./my-component.wasm
 To generate the bindings:
 
 ```
-wit-bindgen c-sharp -w command -r native-aot --generate-stub wit/
+wit-bindgen csharp -w command -r native-aot --generate-stub wit/
 ```
 
 Now you create a c# project file:
@@ -325,7 +330,7 @@ cd MyApp
 dotnet new nugetconfig
 ```
 
-In the `nuget.config` after `<clear />`make sure you have: 
+In the `nuget.config` after `<clear />`make sure you have:
 
 ```
 <add key="dotnet-experimental" value="https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json" />
@@ -347,7 +352,7 @@ In the MyApp.csproj add the following to the property group:
 Add the native-aot compiler (substitute `win-x64` for `linux-x64` on Linux):
 
 ```
-dotnet add package Microsoft.DotNet.ILCompiler.LLVM --prerelease 
+dotnet add package Microsoft.DotNet.ILCompiler.LLVM --prerelease
 dotnet add package runtime.win-x64.Microsoft.DotNet.ILCompiler.LLVM --prerelease
 ```
 
@@ -361,20 +366,21 @@ Checkout out [componentize-dotnet](https://github.com/bytecodealliance/component
 
 ### Guest: Java
 
-Java bytecode can be compiled to WebAssembly using
-[TeaVM-WASI](https://github.com/fermyon/teavm-wasi). With this generator,
-`wit-bindgen` will emit `*.java` files which may be used with any JVM language,
-e.g. Java, Kotlin, Clojure, Scala, etc.
+This project historically had some support for
+[TeaVM-WASI](https://github.com/fermyon/teavm-wasi), but it was unmaintained for
+a long time and never was at feature parity with other generators, so it was
+removed. The last commit with support for TeaVM-WASI was
+https://github.com/bytecodealliance/wit-bindgen/commit/86e8ae2b8b97f11b73b273345b0e00340f017270.
 
 ### Guest: TinyGo
 
 The **new** TinyGo WIT bindings generator is currently in development at the
-[wasm-tools-go](https://github.com/bytecodealliance/wasm-tools-go) repository.
+[go.bytecodealliance.org](https://github.com/bytecodealliance/go-modules) repository.
 
 To install the `wit-bindgen-go` CLI, run:
 
 ```sh
-go install github.com/bytecodealliance/wasm-tools-go/cmd/wit-bindgen-go
+go install go.bytecodealliance.org/cmd/wit-bindgen-go@latest
 ```
 > Note: it requires `wasm-tools` to be installed.
 
@@ -383,6 +389,14 @@ Then, you can generate the bindings for your project:
 ```sh
 wit-bindgen-go generate <path-to-wit-pkg>
 ```
+
+### Guest: C++-17+
+
+The cpp crate contains code to generate C++ code which uses the std types
+optional, string, string_view, vector, expected to represent generic
+WIT types.
+
+This relies on wasi-SDK for guest compilation.
 
 ### Guest: MoonBit
 
@@ -412,16 +426,19 @@ To avoid touching the files during regeneration (including `moon.pkg.json` or `m
 
 ### Guest: Other Languages
 
-Guest component support for JavaScript and Python is available in
-[componentize-js](https://github.com/bytecodealliance/ComponentizeJS) and
-[componentize-py](https://github.com/bytecodealliance/componentize-py), respectively.
+A (non-exhaustive) list of other languages known to support components are:
+
+* JavaScript through [componentize-js](https://github.com/bytecodealliance/ComponentizeJS)
+* Python through [componentize-py](https://github.com/bytecodealliance/componentize-py)
+* Go through [wit-bindgen-go](https://github.com/bytecodealliance/go-modules).
+
 See also
 [The WebAssembly Component Model developer's guide](https://component-model.bytecodealliance.org/language-support.html)
 for examples of how to build components using various languages.
 
 Other languages such as Ruby, etc, are hoped to be supported one day
 with `wit-bindgen` or with components in general. It's recommended to reach out
-on [zulip] if you're intersted in contributing a generator for one of these
+on [zulip] if you're interested in contributing a generator for one of these
 langauges. It's worth noting, however, that turning an interpreted language into
 a component is significantly different from how compiled languages currently
 work (e.g. Rust or C/C++). It's expected that the first interpreted language
@@ -475,6 +492,10 @@ components:
   that works similar to the JS integration. Given a concrete component this will
   generate Python source code to interact with the component using an embedding
   of Wasmtime for its core WebAssembly support.
+
+- Ruby: the [`wasmtime-rb`](https://github.com/bytecodealliance/wasmtime-rb)
+  project has initial support for components since
+  [v27](https://github.com/bytecodealliance/wasmtime-rb/releases/tag/v27.0.0).
 
 - Tooling: the [`wasm-tools`] project can be used to inspect and modify
   low-level details of components. For example as previously mentioned you can

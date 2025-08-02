@@ -1,0 +1,26 @@
+//@ dependencies = ['resource-with-lists', 'leaf']
+//@ wac = 'compose.wac'
+
+package test:resource-with-lists;
+
+interface test {
+  resource thing {
+    constructor(l: list<u8>);
+    foo: func() -> list<u8>;
+    bar: func(l: list<u8>);
+    baz: static func(l: list<u8>) -> list<u8>;
+ }
+}
+
+world leaf {
+  export test;
+}
+
+world resource-with-lists {
+  import test;
+  export test;
+}
+
+world runner {
+  import test;
+}

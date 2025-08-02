@@ -94,7 +94,7 @@ pub unsafe fn bool_lift(val: u8) -> bool {
             _ => panic!("invalid bool discriminant"),
         }
     } else {
-        core::mem::transmute::<u8, bool>(val)
+        val == 1
     }
 }
 
@@ -147,7 +147,7 @@ pub unsafe trait RustResource: WasmResource {
 impl<T: WasmResource> Resource<T> {
     #[doc(hidden)]
     pub unsafe fn from_handle(handle: u32) -> Self {
-        debug_assert!(handle != u32::MAX);
+        debug_assert!(handle != 0 && handle != u32::MAX);
         Self {
             handle: AtomicU32::new(handle),
             _marker: marker::PhantomData,

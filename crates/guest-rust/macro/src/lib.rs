@@ -8,7 +8,8 @@ use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::{braced, token, LitStr, Token};
 use wit_bindgen_core::wit_parser::{PackageId, Resolve, UnresolvedPackageGroup, WorldId};
-use wit_bindgen_rust::{AsyncConfig, Opts, Ownership, WithOption};
+use wit_bindgen_core::AsyncFilterSet;
+use wit_bindgen_rust::{Opts, Ownership, WithOption};
 
 #[proc_macro]
 pub fn generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
@@ -115,6 +116,10 @@ impl Parse for Config {
                             .map(|p| p.into_token_stream().to_string())
                             .collect()
                     }
+                    Opt::AdditionalDerivesIgnore(list) => {
+                        opts.additional_derive_ignore =
+                            list.into_iter().map(|i| i.value()).collect()
+                    }
                     Opt::With(with) => opts.with.extend(with),
                     Opt::GenerateAll => {
                         opts.generate_all = true;
@@ -151,7 +156,7 @@ impl Parse for Config {
                             return Err(Error::new(span, "cannot specify second async config"));
                         }
                         async_configured = true;
-                        if !matches!(val, AsyncConfig::None) && !cfg!(feature = "async") {
+                        if val.any_enabled() && !cfg!(feature = "async") {
                             return Err(Error::new(
                                 span,
                                 "must enable `async` feature to enable async imports and/or exports",
@@ -323,6 +328,7 @@ mod kw {
     syn::custom_keyword!(stubs);
     syn::custom_keyword!(export_prefix);
     syn::custom_keyword!(additional_derives);
+    syn::custom_keyword!(additional_derives_ignore);
     syn::custom_keyword!(with);
     syn::custom_keyword!(generate_all);
     syn::custom_keyword!(type_section_suffix);
@@ -364,11 +370,6 @@ impl From<ExportKey> for wit_bindgen_rust::ExportKey {
     }
 }
 
-enum AsyncConfigSomeKind {
-    Imports,
-    Exports,
-}
-
 enum Opt {
     World(syn::LitStr),
     Path(Span, Vec<syn::LitStr>),
@@ -383,6 +384,7 @@ enum Opt {
     ExportPrefix(syn::LitStr),
     // Parse as paths so we can take the concrete types/macro names rather than raw strings
     AdditionalDerives(Vec<syn::Path>),
+    AdditionalDerivesIgnore(Vec<syn::LitStr>),
     With(HashMap<String, WithOption>),
     GenerateAll,
     TypeSectionSuffix(syn::LitStr),
@@ -393,7 +395,7 @@ enum Opt {
     GenerateUnusedTypes(syn::LitBool),
     Features(Vec<syn::LitStr>),
     DisableCustomSectionLinkHelpers(syn::LitBool),
-    Async(AsyncConfig, Span),
+    Async(AsyncFilterSet, Span),
     Debug(syn::LitBool),
 }
 
@@ -496,6 +498,13 @@ impl Parse for Opt {
             syn::bracketed!(contents in input);
             let list = Punctuated::<_, Token![,]>::parse_terminated(&contents)?;
             Ok(Opt::AdditionalDerives(list.iter().cloned().collect()))
+        } else if l.peek(kw::additional_derives_ignore) {
+            input.parse::<kw::additional_derives_ignore>()?;
+            input.parse::<Token![:]>()?;
+            let contents;
+            syn::bracketed!(contents in input);
+            let list = Punctuated::<_, Token![,]>::parse_terminated(&contents)?;
+            Ok(Opt::AdditionalDerivesIgnore(list.iter().cloned().collect()))
         } else if l.peek(kw::with) {
             input.parse::<kw::with>()?;
             input.parse::<Token![:]>()?;
@@ -550,25 +559,16 @@ impl Parse for Opt {
             let span = input.parse::<Token![async]>()?.span;
             input.parse::<Token![:]>()?;
             if input.peek(syn::LitBool) {
-                if input.parse::<syn::LitBool>()?.value {
-                    Ok(Opt::Async(AsyncConfig::All, span))
-                } else {
-                    Ok(Opt::Async(AsyncConfig::None, span))
-                }
+                let enabled = input.parse::<syn::LitBool>()?.value;
+                Ok(Opt::Async(AsyncFilterSet::all(enabled), span))
             } else {
-                let mut imports = Vec::new();
-                let mut exports = Vec::new();
+                let mut set = AsyncFilterSet::default();
                 let contents;
-                syn::braced!(contents in input);
-                for (kind, values) in
-                    contents.parse_terminated(parse_async_some_field, Token![,])?
-                {
-                    match kind {
-                        AsyncConfigSomeKind::Imports => imports = values,
-                        AsyncConfigSomeKind::Exports => exports = values,
-                    }
+                syn::bracketed!(contents in input);
+                for val in contents.parse_terminated(|p| p.parse::<syn::LitStr>(), Token![,])? {
+                    set.push(&val.value());
                 }
-                Ok(Opt::Async(AsyncConfig::Some { imports, exports }, span))
+                Ok(Opt::Async(set, span))
             }
         } else {
             Err(l.error())
@@ -627,28 +627,4 @@ fn with_field_parse(input: ParseStream<'_>) -> Result<(String, WithOption)> {
 fn fmt(input: &str) -> Result<String> {
     let syntax_tree = syn::parse_file(&input)?;
     Ok(prettyplease::unparse(&syntax_tree))
-}
-
-fn parse_async_some_field(input: ParseStream<'_>) -> Result<(AsyncConfigSomeKind, Vec<String>)> {
-    let lookahead = input.lookahead1();
-    let kind = if lookahead.peek(kw::imports) {
-        input.parse::<kw::imports>()?;
-        input.parse::<Token![:]>()?;
-        AsyncConfigSomeKind::Imports
-    } else if lookahead.peek(kw::exports) {
-        input.parse::<kw::exports>()?;
-        input.parse::<Token![:]>()?;
-        AsyncConfigSomeKind::Exports
-    } else {
-        return Err(lookahead.error());
-    };
-
-    let list;
-    syn::bracketed!(list in input);
-    let fields = list.parse_terminated(Parse::parse, Token![,])?;
-
-    Ok((
-        kind,
-        fields.iter().map(|s: &syn::LitStr| s.value()).collect(),
-    ))
 }

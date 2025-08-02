@@ -6,9 +6,9 @@ use wit_bindgen_core::{
     abi::{self, AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType},
     dealias, uwrite, uwriteln,
     wit_parser::{
-        Docs, Enum, Flags, FlagsRepr, Function, FunctionKind, Handle, Int, InterfaceId, Record,
-        Resolve, Result_, SizeAlign, Tuple, Type, TypeDef, TypeDefKind, TypeId, TypeOwner, Variant,
-        WorldId, WorldKey,
+        Alignment, ArchitectureSize, Docs, Enum, Flags, FlagsRepr, Function, FunctionKind, Handle,
+        Int, InterfaceId, Record, Resolve, Result_, SizeAlign, Tuple, Type, TypeDef, TypeDefKind,
+        TypeId, TypeOwner, Variant, WorldId, WorldKey,
     },
     Direction, Files, InterfaceGenerator as _, Ns, Source, WorldGenerator,
 };
@@ -20,9 +20,7 @@ use wit_bindgen_core::{
 // Organization:
 // - one package per interface (export and import are treated as different interfaces)
 // - ffi utils are under `./ffi`, and the project entrance (package as link target) is under `./gen`
-// TODO: Migrate f32 to Float when the support becomes mature
 // TODO: Export will share the type signatures with the import by using a newtype alias
-// TODO: Export resource is not handled correctly : resource.new / resource.drop / resource.rep / dtor
 
 const FFI_DIR: &str = "ffi";
 
@@ -81,44 +79,36 @@ pub extern "wasm" fn f32_to_i32(value : Float) -> Int =
 pub extern "wasm" fn f32_to_i64(value : Float) -> Int64 =
   #|(func (param f32) (result i64) local.get 0 f32.convert_i64_s)
 
-extern "wasm" fn malloc_inline(size : Int) -> Int =
-  #|(func (param i32) (result i32) local.get 0 call $moonbit.malloc)
-
-pub fn malloc(size : Int) -> Int {
-  let words = size / 4 + 1
-  let address = malloc_inline(8 + words * 4)
-  store32(address, 1)
-  store32(address + 4, (words << 8) | 246)
-  store8(address + words * 4 + 7, 3 - size % 4)
-  address + 8
-}
+// set pseudo header; allocate extra bytes for string
+pub extern "wasm" fn malloc(size : Int) -> Int =
+  #|(func (param i32) (result i32) (local i32)
+  #| local.get 0 i32.const 4 i32.add call $moonbit.gc.malloc
+  #| local.tee 1 i32.const 0 call $moonbit.init_array8
+  #| local.get 1 i32.const 8 i32.add)
 
 pub extern "wasm" fn free(position : Int) =
   #|(func (param i32) local.get 0 i32.const 8 i32.sub call $moonbit.decref)
 
-pub fn copy(dest : Int, src : Int) -> Unit {
-  let src = src - 8
-  let dest = dest - 8
-  let src_len = load32(src + 4).land(0xFFFFFF)
-  let dest_len = load32(dest + 4).land(0xFFFFFF)
-  let min = if src_len < dest_len { src_len } else { dest_len }
-  copy_inline(dest, src, min)
-}
-
-extern "wasm" fn copy_inline(dest : Int, src : Int, len : Int) =
+extern "wasm" fn copy(dest : Int, src : Int, len : Int) =
   #|(func (param i32) (param i32) (param i32) local.get 0 local.get 1 local.get 2 memory.copy)
 
 pub extern "wasm" fn str2ptr(str : String) -> Int =
   #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.add)
 
-pub extern "wasm" fn ptr2str(ptr : Int) -> String =
-  #|(func (param i32) (result i32) local.get 0 i32.const 4 i32.sub i32.const 243 i32.store8 local.get 0 i32.const 8 i32.sub)
+pub extern "wasm" fn ptr2str(ptr : Int, len : Int) -> String =
+  #|(func (param i32) (param i32) (result i32) (local i32)
+  #| local.get 0 i32.const 8 i32.sub local.tee 2
+  #| local.get 1 call $moonbit.init_array16
+  #| local.get 2)
 
-pub extern "wasm" fn bytes2ptr(bytes : Bytes) -> Int =
+pub extern "wasm" fn bytes2ptr(bytes : FixedArray[Byte]) -> Int =
   #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.add)
 
-pub extern "wasm" fn ptr2bytes(ptr : Int) -> Bytes =
-  #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.sub)
+pub extern "wasm" fn ptr2bytes(ptr : Int, len : Int) -> FixedArray[Byte] =
+  #|(func (param i32) (param i32) (result i32) (local i32)
+  #| local.get 0 i32.const 8 i32.sub local.tee 2
+  #| local.get 1 call $moonbit.init_array8
+  #| local.get 2)
 
 pub extern "wasm" fn uint_array2ptr(array : FixedArray[UInt]) -> Int =
   #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.add)
@@ -138,47 +128,66 @@ pub extern "wasm" fn float_array2ptr(array : FixedArray[Float]) -> Int =
 pub extern "wasm" fn double_array2ptr(array : FixedArray[Double]) -> Int =
   #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.add)
 
-pub extern "wasm" fn ptr2uint_array(ptr : Int) -> FixedArray[UInt] =
-  #|(func (param i32) (result i32) local.get 0 i32.const 4 i32.sub i32.const 241 i32.store8 local.get 0 i32.const 8 i32.sub)
+pub extern "wasm" fn ptr2uint_array(ptr : Int, len : Int) -> FixedArray[UInt] =
+  #|(func (param i32) (param i32) (result i32) (local i32)
+  #| local.get 0 i32.const 8 i32.sub local.tee 2
+  #| local.get 1 call $moonbit.init_array32
+  #| local.get 2)
 
-pub extern "wasm" fn ptr2int_array(ptr : Int) -> FixedArray[Int] =
-  #|(func (param i32) (result i32) local.get 0 i32.const 4 i32.sub i32.const 241 i32.store8 local.get 0 i32.const 8 i32.sub)
+pub extern "wasm" fn ptr2int_array(ptr : Int, len : Int) -> FixedArray[Int] =
+  #|(func (param i32) (param i32) (result i32) (local i32)
+  #| local.get 0 i32.const 8 i32.sub local.tee 2
+  #| local.get 1 call $moonbit.init_array32
+  #| local.get 2)
 
-pub extern "wasm" fn ptr2float_array(ptr : Int) -> FixedArray[Float] =
-  #|(func (param i32) (result i32) local.get 0 i32.const 4 i32.sub i32.const 241 i32.store8 local.get 0 i32.const 8 i32.sub)
+pub extern "wasm" fn ptr2float_array(ptr : Int, len : Int) -> FixedArray[Float] =
+  #|(func (param i32) (param i32) (result i32) (local i32)
+  #| local.get 0 i32.const 8 i32.sub local.tee 2
+  #| local.get 1 call $moonbit.init_array32
+  #| local.get 2)
 
-extern "wasm" fn ptr2uint64_array_ffi(ptr : Int) -> FixedArray[UInt64] =
-  #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.sub)
+pub extern "wasm" fn ptr2uint64_array(ptr : Int, len : Int) -> FixedArray[UInt64] =
+  #|(func (param i32) (param i32) (result i32) (local i32)
+  #| local.get 0 i32.const 8 i32.sub local.tee 2
+  #| local.get 1 call $moonbit.init_array64
+  #| local.get 2)
 
-pub fn ptr2uint64_array(ptr : Int) -> FixedArray[UInt64] {
-  set_64_header_ffi(ptr - 4)
-  ptr2uint64_array_ffi(ptr)
-}
+pub extern "wasm" fn ptr2int64_array(ptr : Int, len : Int) -> FixedArray[Int64] =
+  #|(func (param i32) (param i32) (result i32) (local i32)
+  #| local.get 0 i32.const 8 i32.sub local.tee 2
+  #| local.get 1 call $moonbit.init_array64
+  #| local.get 2)
 
-extern "wasm" fn ptr2int64_array_ffi(ptr : Int) -> FixedArray[Int64] =
-  #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.sub)
+pub extern "wasm" fn ptr2double_array(ptr : Int, len : Int) -> FixedArray[Double] =
+  #|(func (param i32) (param i32) (result i32) (local i32)
+  #| local.get 0 i32.const 8 i32.sub local.tee 2
+  #| local.get 1 call $moonbit.init_array64
+  #| local.get 2)
 
-pub fn ptr2int64_array(ptr : Int) -> FixedArray[Int64] {
-  set_64_header_ffi(ptr - 4)
-  ptr2int64_array_ffi(ptr)
-}
+pub fn cabi_realloc(
+    src_offset : Int,
+    src_size : Int,
+    _dst_alignment : Int,
+    dst_size : Int
+) -> Int {{
+    // malloc
+    if src_offset == 0 && src_size == 0 {{
+        return malloc(dst_size)
+    }}
+    // free
+    if dst_size == 0 {{
+        free(src_offset)
+        return 0
+    }}
+    // realloc
+    let dst = malloc(dst_size)
+    copy(dst, src_offset, if src_size < dst_size { src_size } else { dst_size })
+    free(src_offset)
+    dst
+}}
 
-extern "wasm" fn ptr2double_array_ffi(ptr : Int) -> FixedArray[Double] =
-  #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.sub)
-
-pub fn ptr2double_array(ptr : Int) -> FixedArray[Double] {
-  set_64_header_ffi(ptr - 4)
-  ptr2double_array_ffi(ptr)
-}
-
-fn set_64_header_ffi(offset : Int) -> Unit {
-  let len = load32(offset)
-  store32(offset, len >> 1)
-  store8(offset, 241)
-}
-
-pub trait Any {}
-pub struct Cleanup {
+pub(open) trait Any {}
+pub(all) struct Cleanup {
     address : Int
     size : Int
     align : Int
@@ -200,9 +209,15 @@ pub struct Opts {
     /// Whether or not to generate stub files ; useful for update after WIT change
     #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
     pub ignore_stub: bool,
+    /// Whether or not to generate moon.mod.json ; useful if the project is part of a larger project
+    #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
+    pub ignore_module_file: bool,
     /// The package/dir to generate the program entrance
     #[cfg_attr(feature = "clap", arg(long, default_value = "gen"))]
     pub gen_dir: String,
+    /// The project name ; or the package path prefix if the project is part of a larger project
+    #[cfg_attr(feature = "clap", arg(long, default_value = None))]
+    pub project_name: Option<String>,
 }
 
 impl Opts {
@@ -244,8 +259,8 @@ pub struct MoonBit {
     export: HashMap<String, String>,
     export_ns: Ns,
     // return area allocation
-    return_area_size: usize,
-    return_area_align: usize,
+    return_area_size: ArchitectureSize,
+    return_area_align: Alignment,
 }
 
 impl MoonBit {
@@ -393,12 +408,14 @@ impl WorldGenerator for MoonBit {
     }
 
     fn finish(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) -> Result<()> {
-        let project_name = resolve.worlds[id]
-            .package
-            .map(|id| {
+        let project_name = self
+            .opts
+            .project_name
+            .clone()
+            .or(resolve.worlds[id].package.map(|id| {
                 let package = &resolve.packages[id].name;
                 format!("{}/{}", package.namespace, package.name)
-            })
+            }))
             .unwrap_or("generated".into());
         let name = world_name(resolve, id);
 
@@ -413,9 +430,9 @@ impl WorldGenerator for MoonBit {
 
         let version = env!("CARGO_PKG_VERSION");
 
-        let mut generate_pkg_definition = |name: &String, files: &mut Files| {
+        let generate_pkg_definition = |name: &String, files: &mut Files| {
             let directory = name.replace('.', "/");
-            let imports: Option<&mut Imports> = self.package_import.get_mut(name);
+            let imports: Option<&Imports> = self.package_import.get(name);
             if let Some(imports) = imports {
                 let mut deps = imports
                     .packages
@@ -547,10 +564,13 @@ impl WorldGenerator for MoonBit {
         wit_bindgen_core::generated_preamble(&mut body, version);
         body.push_str(FFI);
         files.push(&format!("{FFI_DIR}/top.mbt"), indent(&body).as_bytes());
-        files.push(&format!("{FFI_DIR}/moon.pkg.json"), "{}".as_bytes());
+        files.push(
+            &format!("{FFI_DIR}/moon.pkg.json"),
+            "{ \"warn-list\": \"-44\", \"supported-targets\": [\"wasm\"] }".as_bytes(),
+        );
 
         // Export project files
-        if !self.opts.ignore_stub {
+        if !self.opts.ignore_stub && !self.opts.ignore_module_file {
             let mut body = Source::default();
             uwriteln!(&mut body, "{{ \"name\": \"{project_name}\" }}");
             files.push(&format!("moon.mod.json"), body.as_bytes());
@@ -560,7 +580,7 @@ impl WorldGenerator for MoonBit {
 
         // Export project entry point
         let mut gen = self.interface(resolve, &export_dir.as_str(), "", Direction::Export);
-        let ffi_qualifier = gen.qualify_package(&FFI_DIR.to_string());
+        let ffi_qualifier = gen.qualify_package(FFI_DIR);
 
         let mut body = Source::default();
         wit_bindgen_core::generated_preamble(&mut body, version);
@@ -570,33 +590,20 @@ impl WorldGenerator for MoonBit {
             pub fn cabi_realloc(
                 src_offset : Int,
                 src_size : Int,
-                _dst_alignment : Int,
+                dst_alignment : Int,
                 dst_size : Int
             ) -> Int {{
-                // malloc
-                if src_offset == 0 && src_size == 0 {{
-                    return {ffi_qualifier}malloc(dst_size)
-                }}
-                // free
-                if dst_size <= 0 {{
-                    {ffi_qualifier}free(src_offset)
-                    return 0
-                }}
-                // realloc
-                let dst = {ffi_qualifier}malloc(dst_size)
-                {ffi_qualifier}copy(dst, src_offset)
-                {ffi_qualifier}free(src_offset)
-                dst
+                {ffi_qualifier}cabi_realloc(src_offset, src_size, dst_alignment, dst_size)
             }}
             "
         );
-        if self.return_area_size != 0 {
+        if !self.return_area_size.is_empty() {
             uwriteln!(
                 &mut body,
                 "
                 let return_area : Int = {ffi_qualifier}malloc({})
                 ",
-                self.return_area_size,
+                self.return_area_size.size_wasm32(),
             );
         }
         files.push(
@@ -628,7 +635,7 @@ impl WorldGenerator for MoonBit {
             "#,
             exports.join(", ")
         );
-        if let Some(imports) = self.package_import.get_mut(&self.opts.gen_dir) {
+        if let Some(imports) = self.package_import.get(&self.opts.gen_dir) {
             let mut deps = imports
                 .packages
                 .iter()
@@ -672,12 +679,19 @@ struct InterfaceGenerator<'a> {
 }
 
 impl InterfaceGenerator<'_> {
-    fn qualify_package(&mut self, name: &String) -> String {
+    fn qualify_package(&mut self, name: &str) -> String {
         if name != self.name {
             let imports = self
                 .gen
                 .package_import
-                .entry(self.name.to_string())
+                .entry(
+                    // This is a hack: the exported ffi calls are actually under the gen directory
+                    if self.direction == Direction::Export && name == FFI_DIR {
+                        self.gen.opts.gen_dir.clone()
+                    } else {
+                        self.name.to_string()
+                    },
+                )
                 .or_default();
             if let Some(alias) = imports.packages.get(name) {
                 return format!("@{}.", alias);
@@ -787,11 +801,11 @@ impl InterfaceGenerator<'_> {
         let cleanup_list = if bindgen.needs_cleanup_list {
             self.gen.needs_cleanup = true;
 
-            let ffi_qualifier = self.qualify_package(&FFI_DIR.to_string());
+            let ffi_qualifier = self.qualify_package(FFI_DIR);
 
             format!(
                 r#"let cleanupList : Array[{ffi_qualifier}Cleanup] = []
-                   let ignoreList : Array[{ffi_qualifier}Any] = []"#
+                   let ignoreList : Array[&{ffi_qualifier}Any] = []"#
             )
         } else {
             String::new()
@@ -929,7 +943,7 @@ impl InterfaceGenerator<'_> {
                 (0..sig.results.len()).map(|i| format!("p{i}")).collect(),
             );
 
-            abi::post_return(bindgen.gen.resolve, func, &mut bindgen, false);
+            abi::post_return(bindgen.gen.resolve, func, &mut bindgen);
 
             let src = bindgen.src;
 
@@ -956,7 +970,7 @@ impl InterfaceGenerator<'_> {
             self.stub,
             r#"
             {func_sig} {{
-                abort("todo")
+                ...
             }}
             "#
         );
@@ -971,8 +985,10 @@ impl InterfaceGenerator<'_> {
             Type::Char => "Char".into(),
             Type::U64 => "UInt64".into(),
             Type::S64 => "Int64".into(),
-            Type::F32 | Type::F64 => "Double".into(),
+            Type::F32 => "Float".into(),
+            Type::F64 => "Double".into(),
             Type::String => "String".into(),
+            Type::ErrorContext => todo!("moonbit error context type name"),
             Type::Id(id) => {
                 let ty = &self.resolve.types[dealias(self.resolve, *id)];
                 match &ty.kind {
@@ -980,8 +996,13 @@ impl InterfaceGenerator<'_> {
                     TypeDefKind::List(ty) => {
                         if type_variable {
                             match ty {
-                                Type::U8 => "Bytes".into(),
-                                Type::U32 | Type::U64 | Type::S32 | Type::S64 | Type::F64 => {
+                                Type::U8
+                                | Type::U32
+                                | Type::U64
+                                | Type::S32
+                                | Type::S64
+                                | Type::F32
+                                | Type::F64 => {
                                     format!("FixedArray[{}]", self.type_name(ty, type_variable))
                                 }
                                 _ => format!("Array[{}]", self.type_name(ty, type_variable)),
@@ -1076,26 +1097,16 @@ impl InterfaceGenerator<'_> {
             }
             _ => func.name.split(".").last().unwrap().to_moonbit_ident(),
         };
-        let type_name = match func.kind {
-            FunctionKind::Freestanding => "".into(),
-            FunctionKind::Method(ty) | FunctionKind::Constructor(ty) | FunctionKind::Static(ty) => {
+        let type_name = match func.kind.resource() {
+            Some(ty) => {
                 format!("{}::", self.type_name(&Type::Id(ty), true))
             }
+            None => "".into(),
         };
 
-        let result_type = match func.results.len() {
-            0 => "Unit".into(),
-            1 => self.type_name(func.results.iter_types().next().unwrap(), true),
-            _ => {
-                format!(
-                    "({})",
-                    func.results
-                        .iter_types()
-                        .map(|ty| self.type_name(ty, true))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )
-            }
+        let result_type = match &func.result {
+            None => "Unit".into(),
+            Some(ty) => self.type_name(ty, true),
         };
 
         let params = func
@@ -1151,7 +1162,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         uwrite!(
             self.src,
             "
-            pub struct {name} {{
+            pub(all) struct {name} {{
                 {parameters}
             }} derive({})
             ",
@@ -1180,7 +1191,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         uwrite!(
             self.src,
             r#"
-            pub {declaration} {name} Int derive({})
+            pub(all) {declaration} {name} Int derive({})
             "#,
             deriviation.join(", "),
         );
@@ -1236,7 +1247,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 r#"
                 /// Destructor of the resource.
                 pub fn {name}::dtor(_self : {name}) -> Unit {{
-                  abort("todo")
+                  ...
                 }}
                 "#
             );
@@ -1321,11 +1332,11 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         uwrite!(
             self.src,
             "
-            pub {declaration} {name} {ty} derive({})
+            pub(all) {declaration} {name} {ty} derive({})
             pub fn {name}::default() -> {name} {{
                 {}
             }}
-            pub enum {name}Flag {{
+            pub(all) enum {name}Flag {{
                 {cases}
             }}
             fn {name}Flag::value(self : {name}Flag) -> {ty} {{
@@ -1396,7 +1407,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         uwrite!(
             self.src,
             "
-            pub {declaration} {name} {{
+            pub(all) {declaration} {name} {{
               {cases}
             }} derive({})
             ",
@@ -1441,7 +1452,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         uwrite!(
             self.src,
             "
-            pub {declaration} {name} {{
+            pub(all) {declaration} {name} {{
                 {cases}
             }} derive({})
             ",
@@ -1460,7 +1471,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         uwrite!(
             self.src,
             "
-            pub fn ordinal(self : {name}) -> Int {{
+            pub fn {name}::ordinal(self : {name}) -> Int {{
               match self {{
                 {cases}
               }}
@@ -1506,11 +1517,6 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
     fn type_stream(&mut self, id: TypeId, name: &str, ty: &Option<Type>, docs: &Docs) {
         _ = (id, name, ty, docs);
-        todo!()
-    }
-
-    fn type_error_context(&mut self, id: TypeId, name: &str, docs: &Docs) {
-        _ = (id, name, docs);
         todo!()
     }
 
@@ -1746,7 +1752,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
         operands: &mut Vec<String>,
         results: &mut Vec<String>,
     ) {
-        let ffi_qualifier = self.gen.qualify_package(&FFI_DIR.to_string());
         match inst {
             Instruction::GetArg { nth } => results.push(self.params[*nth].clone()),
             Instruction::I32Const { val } => results.push(format!("({})", val.to_string())),
@@ -1777,8 +1782,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             | Instruction::CoreF64FromF64
             | Instruction::F64FromCoreF64 => results.push(operands[0].clone()),
 
-            Instruction::F32FromCoreF32 => results.push(format!("({}).to_double()", operands[0])),
-            Instruction::CoreF32FromF32 => results.push(format!("({}).to_float()", operands[0])),
+            Instruction::F32FromCoreF32 => results.push(operands[0].clone()),
+            Instruction::CoreF32FromF32 => results.push(operands[0].clone()),
 
             Instruction::CharFromI32 => results.push(format!("Char::from_int({})", operands[0])),
             Instruction::I32FromChar => results.push(format!("({}).to_int()", operands[0])),
@@ -1789,14 +1794,18 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
             Instruction::U8FromI32 => results.push(format!("({}).to_byte()", operands[0])),
 
-            Instruction::I32FromS8 => {
-                results.push(format!("{ffi_qualifier}extend8({})", operands[0]))
-            }
+            Instruction::I32FromS8 => results.push(format!(
+                "{}extend8({})",
+                self.gen.qualify_package(FFI_DIR),
+                operands[0]
+            )),
             Instruction::S8FromI32 => results.push(format!("({} - 0x100)", operands[0])),
             Instruction::S16FromI32 => results.push(format!("({} - 0x10000)", operands[0])),
-            Instruction::I32FromS16 => {
-                results.push(format!("{ffi_qualifier}extend16({})", operands[0]))
-            }
+            Instruction::I32FromS16 => results.push(format!(
+                "{}extend16({})",
+                self.gen.qualify_package(FFI_DIR),
+                operands[0]
+            )),
             Instruction::U16FromI32 => results.push(format!(
                 "({}.land(0xFFFF).reinterpret_as_uint())",
                 operands[0]
@@ -2132,13 +2141,16 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 Type::U8 => {
                     let op = &operands[0];
 
-                    results.push(format!("{ffi_qualifier}bytes2ptr({op})"));
+                    results.push(format!(
+                        "{}bytes2ptr({op})",
+                        self.gen.qualify_package(FFI_DIR)
+                    ));
                     results.push(format!("{op}.length()"));
                     if realloc.is_none() {
                         self.cleanup.push(Cleanup::Object(op.clone()));
                     }
                 }
-                Type::U32 | Type::U64 | Type::S32 | Type::S64 | Type::F64 => {
+                Type::U32 | Type::U64 | Type::S32 | Type::S64 | Type::F32 | Type::F64 => {
                     let op = &operands[0];
 
                     let ty = match element {
@@ -2146,11 +2158,15 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         Type::U64 => "uint64",
                         Type::S32 => "int",
                         Type::S64 => "int64",
+                        Type::F32 => "float",
                         Type::F64 => "double",
                         _ => unreachable!(),
                     };
 
-                    results.push(format!("{ffi_qualifier}{ty}_array2ptr({op})"));
+                    results.push(format!(
+                        "{}{ty}_array2ptr({op})",
+                        self.gen.qualify_package(FFI_DIR)
+                    ));
                     results.push(format!("{op}.length()"));
                     if realloc.is_none() {
                         self.cleanup.push(Cleanup::Object(op.clone()));
@@ -2168,19 +2184,20 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     uwrite!(
                         self.src,
                         "
-                        ignore({length})
-                        let {result} = {ffi_qualifier}ptr2bytes({address})
-                        "
+                        let {result} = {}ptr2bytes({address}, {length})
+                        ",
+                        self.gen.qualify_package(FFI_DIR)
                     );
 
                     results.push(result);
                 }
-                Type::U32 | Type::U64 | Type::S32 | Type::S64 | Type::F64 => {
+                Type::U32 | Type::U64 | Type::S32 | Type::S64 | Type::F32 | Type::F64 => {
                     let ty = match element {
                         Type::U32 => "uint",
                         Type::U64 => "uint64",
                         Type::S32 => "int",
                         Type::S64 => "int64",
+                        Type::F32 => "float",
                         Type::F64 => "double",
                         _ => unreachable!(),
                     };
@@ -2192,9 +2209,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     uwrite!(
                         self.src,
                         "
-                        ignore({length})
-                        let {result} = {ffi_qualifier}ptr2{ty}_array({address})
-                        "
+                        let {result} = {}ptr2{ty}_array({address}, {length})
+                        ",
+                        self.gen.qualify_package(FFI_DIR)
                     );
 
                     results.push(result);
@@ -2205,8 +2222,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::StringLower { realloc } => {
                 let op = &operands[0];
 
-                results.push(format!("{ffi_qualifier}str2ptr({op})"));
-                results.push(format!("{op}.iter().count()"));
+                results.push(format!(
+                    "{}str2ptr({op})",
+                    self.gen.qualify_package(FFI_DIR)
+                ));
+                results.push(format!("{op}.length()"));
                 if realloc.is_none() {
                     self.cleanup.push(Cleanup::Object(op.clone()));
                 }
@@ -2220,9 +2240,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwrite!(
                     self.src,
                     "
-                    ignore({length})
-                    let {result} = {ffi_qualifier}ptr2str({address})
-                    "
+                    let {result} = {}ptr2str({address}, {length})
+                    ",
+                    self.gen.qualify_package(FFI_DIR)
                 );
 
                 results.push(result);
@@ -2247,13 +2267,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwrite!(
                     self.src,
                     "
-                    let {address} = {ffi_qualifier}malloc(({op}).length() * {size});
+                    let {address} = {}malloc(({op}).length() * {size});
                     for {index} = 0; {index} < ({op}).length(); {index} = {index} + 1 {{
                         let {block_element} : {ty} = ({op})[({index})]
                         let {base} = {address} + ({index} * {size});
                         {body}
                     }}
-                    "
+                    ",
+                    self.gen.qualify_package(FFI_DIR)
                 );
 
                 if realloc.is_none() {
@@ -2297,8 +2318,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         {body}
                         {array}.push({result})
                     }}
-                    {ffi_qualifier}free({address})
-                    "
+                    {}free({address})
+                    ",
+                    self.gen.qualify_package(FFI_DIR)
                 );
 
                 results.push(array);
@@ -2335,37 +2357,19 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::CallInterface { func, .. } => {
-                let assignment = match func.results.len() {
-                    0 => "let _ = ".into(),
-                    _ => {
-                        let ty = format!(
-                            "({})",
-                            func.results
-                                .iter_types()
-                                .map(|ty| self.gen.type_name(ty, true))
-                                .collect::<Vec<_>>()
-                                .join(", ")
-                        );
-
-                        let result = func
-                            .results
-                            .iter_types()
-                            .map(|_ty| {
-                                let result = self.locals.tmp("result");
-                                results.push(result.clone());
-                                result
-                            })
-                            .collect::<Vec<_>>()
-                            .join(", ");
-
+                let assignment = match func.result {
+                    None => "let _ = ".into(),
+                    Some(ty) => {
+                        let ty = format!("({})", self.gen.type_name(&ty, true));
+                        let result = self.locals.tmp("result");
+                        results.push(result.clone());
                         let assignment = format!("let ({result}) : {ty} = ");
-
                         assignment
                     }
                 };
 
                 let name = match func.kind {
-                    FunctionKind::Freestanding => {
+                    FunctionKind::Freestanding | FunctionKind::AsyncFreestanding => {
                         format!(
                             "{}{}",
                             self.r#gen.qualify_package(&self.func_interface.to_string()),
@@ -2380,7 +2384,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             func.name.replace("[constructor]", "").to_moonbit_ident()
                         )
                     }
-                    FunctionKind::Method(ty) | FunctionKind::Static(ty) => {
+                    FunctionKind::Method(ty)
+                    | FunctionKind::Static(ty)
+                    | FunctionKind::AsyncMethod(ty)
+                    | FunctionKind::AsyncStatic(ty) => {
                         let name = self.gen.type_name(&Type::Id(ty), false);
                         format!(
                             "{}::{}",
@@ -2407,7 +2414,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             address,
                             size: _,
                             align: _,
-                        } => uwriteln!(self.src, "{ffi_qualifier}free({address})"),
+                        } => uwriteln!(
+                            self.src,
+                            "{}free({address})",
+                            self.gen.qualify_package(FFI_DIR)
+                        ),
                         Cleanup::Object(obj) => uwriteln!(self.src, "ignore({obj})"),
                     }
                 }
@@ -2417,10 +2428,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         self.src,
                         "
                         cleanupList.each(fn(cleanup) {{
-                            {ffi_qualifier}free(cleanup.address);
+                            {}free(cleanup.address);
                         }})
                         ignore(ignoreList)
-                        "
+                        ",
+                        self.gen.qualify_package(FFI_DIR)
                     );
                 }
 
@@ -2437,99 +2449,142 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::I32Load { offset }
             | Instruction::PointerLoad { offset }
             | Instruction::LengthLoad { offset } => results.push(format!(
-                "{ffi_qualifier}load32(({}) + {offset})",
-                operands[0]
+                "{}load32(({}) + {offset})",
+                self.gen.qualify_package(FFI_DIR),
+                operands[0],
+                offset = offset.size_wasm32()
             )),
 
             Instruction::I32Load8U { offset } => results.push(format!(
-                "{ffi_qualifier}load8_u(({}) + {offset})",
-                operands[0]
+                "{}load8_u(({}) + {offset})",
+                self.gen.qualify_package(FFI_DIR),
+                operands[0],
+                offset = offset.size_wasm32()
             )),
 
             Instruction::I32Load8S { offset } => results.push(format!(
-                "{ffi_qualifier}load8(({}) + {offset})",
-                operands[0]
+                "{}load8(({}) + {offset})",
+                self.gen.qualify_package(FFI_DIR),
+                operands[0],
+                offset = offset.size_wasm32()
             )),
 
             Instruction::I32Load16U { offset } => results.push(format!(
-                "{ffi_qualifier}load16_u(({}) + {offset})",
-                operands[0]
+                "{}load16_u(({}) + {offset})",
+                self.gen.qualify_package(FFI_DIR),
+                operands[0],
+                offset = offset.size_wasm32()
             )),
 
             Instruction::I32Load16S { offset } => results.push(format!(
-                "{ffi_qualifier}load16(({}) + {offset})",
-                operands[0]
+                "{}load16(({}) + {offset})",
+                self.gen.qualify_package(FFI_DIR),
+                operands[0],
+                offset = offset.size_wasm32()
             )),
 
             Instruction::I64Load { offset } => results.push(format!(
-                "{ffi_qualifier}load64(({}) + {offset})",
-                operands[0]
+                "{}load64(({}) + {offset})",
+                self.gen.qualify_package(FFI_DIR),
+                operands[0],
+                offset = offset.size_wasm32()
             )),
 
             Instruction::F32Load { offset } => results.push(format!(
-                "{ffi_qualifier}loadf32(({}) + {offset})",
-                operands[0]
+                "{}loadf32(({}) + {offset})",
+                self.gen.qualify_package(FFI_DIR),
+                operands[0],
+                offset = offset.size_wasm32()
             )),
 
             Instruction::F64Load { offset } => results.push(format!(
-                "{ffi_qualifier}loadf64(({}) + {offset})",
-                operands[0]
+                "{}loadf64(({}) + {offset})",
+                self.gen.qualify_package(FFI_DIR),
+                operands[0],
+                offset = offset.size_wasm32()
             )),
 
             Instruction::I32Store { offset }
             | Instruction::PointerStore { offset }
             | Instruction::LengthStore { offset } => uwriteln!(
                 self.src,
-                "{ffi_qualifier}store32(({}) + {offset}, {})",
+                "{}store32(({}) + {offset}, {})",
+                self.gen.qualify_package(FFI_DIR),
                 operands[1],
-                operands[0]
+                operands[0],
+                offset = offset.size_wasm32()
             ),
 
             Instruction::I32Store8 { offset } => uwriteln!(
                 self.src,
-                "{ffi_qualifier}store8(({}) + {offset}, {})",
+                "{}store8(({}) + {offset}, {})",
+                self.gen.qualify_package(FFI_DIR),
                 operands[1],
-                operands[0]
+                operands[0],
+                offset = offset.size_wasm32()
             ),
 
             Instruction::I32Store16 { offset } => uwriteln!(
                 self.src,
-                "{ffi_qualifier}store16(({}) + {offset}, {})",
+                "{}store16(({}) + {offset}, {})",
+                self.gen.qualify_package(FFI_DIR),
                 operands[1],
-                operands[0]
+                operands[0],
+                offset = offset.size_wasm32()
             ),
 
             Instruction::I64Store { offset } => uwriteln!(
                 self.src,
-                "{ffi_qualifier}store64(({}) + {offset}, {})",
+                "{}store64(({}) + {offset}, {})",
+                self.gen.qualify_package(FFI_DIR),
                 operands[1],
-                operands[0]
+                operands[0],
+                offset = offset.size_wasm32()
             ),
 
             Instruction::F32Store { offset } => uwriteln!(
                 self.src,
-                "{ffi_qualifier}storef32(({}) + {offset}, {})",
+                "{}storef32(({}) + {offset}, {})",
+                self.gen.qualify_package(FFI_DIR),
                 operands[1],
-                operands[0]
+                operands[0],
+                offset = offset.size_wasm32()
             ),
 
             Instruction::F64Store { offset } => uwriteln!(
                 self.src,
-                "{ffi_qualifier}storef64(({}) + {offset}, {})",
+                "{}storef64(({}) + {offset}, {})",
+                self.gen.qualify_package(FFI_DIR),
                 operands[1],
-                operands[0]
+                operands[0],
+                offset = offset.size_wasm32()
             ),
             // TODO: see what we can do with align
             Instruction::Malloc { size, .. } => {
-                uwriteln!(self.src, "{ffi_qualifier}malloc({})", size)
+                uwriteln!(
+                    self.src,
+                    "{}malloc({})",
+                    self.gen.qualify_package(FFI_DIR),
+                    size.size_wasm32()
+                )
             }
 
             Instruction::GuestDeallocate { .. } => {
-                uwriteln!(self.src, "{ffi_qualifier}free({})", operands[0])
+                uwriteln!(
+                    self.src,
+                    "{}free({})",
+                    self.gen.qualify_package(FFI_DIR),
+                    operands[0]
+                )
             }
 
             Instruction::GuestDeallocateString => {
-                uwriteln!(self.src, "{ffi_qualifier}free({})", operands[0])
+                uwriteln!(
+                    self.src,
+                    "{}free({})",
+                    self.gen.qualify_package(FFI_DIR),
+                    operands[0]
+                )
             }
 
             Instruction::GuestDeallocateVariant { blocks } => {
@@ -2594,35 +2649,41 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     );
                 }
 
-                uwriteln!(self.src, "{ffi_qualifier}free({address})");
+                uwriteln!(
+                    self.src,
+                    "{}free({address})",
+                    self.gen.qualify_package(FFI_DIR)
+                );
             }
 
             Instruction::Flush { amt } => {
                 results.extend(operands.iter().take(*amt).map(|v| v.clone()));
             }
 
-            Instruction::AsyncMalloc { .. }
-            | Instruction::AsyncPostCallInterface { .. }
-            | Instruction::AsyncCallReturn { .. }
+            Instruction::AsyncTaskReturn { .. }
             | Instruction::FutureLower { .. }
             | Instruction::FutureLift { .. }
             | Instruction::StreamLower { .. }
             | Instruction::StreamLift { .. }
             | Instruction::ErrorContextLower { .. }
             | Instruction::ErrorContextLift { .. }
-            | Instruction::AsyncCallWasm { .. } => todo!(),
+            | Instruction::DropHandle { .. } => todo!(),
         }
     }
 
-    fn return_pointer(&mut self, size: usize, align: usize) -> String {
+    fn return_pointer(&mut self, size: ArchitectureSize, align: Alignment) -> String {
         if self.gen.direction == Direction::Import {
-            let ffi_qualifier = self.gen.qualify_package(&FFI_DIR.to_string());
+            let ffi_qualifier = self.gen.qualify_package(FFI_DIR);
             let address = self.locals.tmp("return_area");
-            uwriteln!(self.src, "let {address} = {ffi_qualifier}malloc({})", size,);
+            uwriteln!(
+                self.src,
+                "let {address} = {ffi_qualifier}malloc({})",
+                size.size_wasm32(),
+            );
             self.cleanup.push(Cleanup::Memory {
                 address: address.clone(),
-                size: size.to_string(),
-                align,
+                size: size.size_wasm32().to_string(),
+                align: align.align_wasm32(),
             });
             address
         } else {
@@ -2684,7 +2745,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
     fn is_list_canonical(&self, _resolve: &Resolve, element: &Type) -> bool {
         matches!(
             element,
-            Type::U8 | Type::U32 | Type::U64 | Type::S32 | Type::S64 | Type::F64
+            Type::U8 | Type::U32 | Type::U64 | Type::S32 | Type::S64 | Type::F32 | Type::F64
         )
     }
 }
@@ -2692,18 +2753,18 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 fn perform_cast(op: &str, cast: &Bitcast) -> String {
     match cast {
         Bitcast::I32ToF32 => {
-            format!("({op}).to_float()")
+            format!("({op}).reinterpret_as_float()")
         }
-        Bitcast::I64ToF32 => format!("Int64::to_int({op}).to_float()"),
+        Bitcast::I64ToF32 => format!("({op}).to_int().reinterpret_as_float()"),
         Bitcast::F32ToI32 => {
-            format!("@ffi.f32_to_i32({op})")
+            format!("({op}).reinterpret_as_int()")
         }
-        Bitcast::F32ToI64 => format!("@ffi.f32_to_i64({op})"),
+        Bitcast::F32ToI64 => format!("({op}).reinterpret_as_int().to_int64()"),
         Bitcast::I64ToF64 => {
-            format!("Int64::to_double({op})")
+            format!("({op}).reinterpret_as_double()")
         }
         Bitcast::F64ToI64 => {
-            format!("Double::to_int64({op})")
+            format!("({op}).reinterpret_as_int64()")
         }
         Bitcast::LToI64 | Bitcast::PToP64 | Bitcast::I32ToI64 => format!("Int::to_int64({op})"),
         Bitcast::I64ToL | Bitcast::P64ToP | Bitcast::I64ToI32 => format!("Int64::to_int({op})"),
@@ -2811,12 +2872,16 @@ trait ToMoonBitIdent: ToOwned {
 
 impl ToMoonBitIdent for str {
     fn to_moonbit_ident(&self) -> String {
-        // Escape MoonBit keywords
+        // Escape MoonBit keywords and reserved keywords
         match self {
-            "continue" | "for" | "match" | "if" | "pub" | "priv" | "readonly" | "break"
-            | "raise" | "try" | "except" | "catch" | "else" | "enum" | "struct" | "type"
-            | "trait" | "return" | "let" | "mut" | "while" | "loop" | "extern" | "with"
-            | "throw" | "init" | "main" | "test" | "in" | "guard" | "typealias" => {
+            "module" | "move" | "ref" | "static" | "super" | "unsafe" | "use" | "where"
+            | "await" | "dyn" | "abstract" | "do" | "final" | "macro" | "override" | "typeof"
+            | "virtual" | "yield" | "local" | "method" | "alias" | "assert" | "as" | "else"
+            | "extern" | "fn" | "if" | "let" | "const" | "match" | "mut" | "type" | "typealias"
+            | "struct" | "enum" | "trait" | "traitalias" | "derive" | "while" | "break"
+            | "continue" | "import" | "return" | "throw" | "raise" | "try" | "catch" | "pub"
+            | "priv" | "readonly" | "true" | "false" | "_" | "test" | "loop" | "for" | "in"
+            | "impl" | "with" | "guard" | "async" | "is" | "init" | "main" => {
                 format!("{self}_")
             }
             _ => self.to_snake_case(),

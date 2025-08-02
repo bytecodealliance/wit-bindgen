@@ -59,7 +59,11 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         # moonbit removed from language matrix for now - causing CI failures
-        lang: [c, rust, teavm-java, go, csharp]
+        lang: [c, rust, csharp, cpp]
+        exclude:
+          # For now csharp doesn't work on macos, so exclude it from testing.
+          - os: macos-latest
+            lang: csharp
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
@@ -67,13 +71,12 @@ jobs:
         submodules: true
     - name: Install Rust
       run: rustup update stable --no-self-update && rustup default stable
-    - run: rustup target add wasm32-wasip1
+    - run: rustup target add wasm32-wasip1 wasm32-wasip2
 
     - run: rustup target add wasm32-unknown-unknown
       if: matrix.lang == 'rust'
 
     - uses: ./.github/actions/install-wasi-sdk
-      if: matrix.lang == 'c' || (matrix.lang == 'csharp' && matrix.os == 'windows-latest')
 
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
@@ -95,29 +98,46 @@ jobs:
       shell: powershell
       if: matrix.os == 'windows-latest' && matrix.lang == 'moonbit'
 
-    - run: ci/download-teavm.sh
-      if: matrix.lang == 'teavm-java'
-    - uses: actions/setup-java@v4
-      if: matrix.lang == 'teavm-java'
-      with:
-        java-version: '18'
-        distribution: 'adopt'
-
-    - uses: actions/setup-go@v4
-      if: matrix.lang == 'go'
-      with:
-        go-version: '1.20'
-    - uses: acifani/setup-tinygo@v2
-      if: matrix.lang == 'go'
-      with:
-        tinygo-version: 0.31.0
-
+    # Run all codegen tests for this language
     - run: |
-        cargo test \
-          -p wit-bindgen-cli \
-          -p wit-bindgen-${{ matrix.lang }} \
-          --no-default-features \
-          --features ${{ matrix.lang }}
+        cargo run test --languages ${{ matrix.lang }} tests/codegen \
+          --artifacts target/artifacts \
+          --rust-wit-bindgen-path ./crates/guest-rust
+
+    # Run all runtime tests for this language, and also enable Rust in case this
+    # language only implements either the runner or test component
+    - run: |
+        cargo run test --languages rust,${{ matrix.lang }} tests/runtime \
+          --artifacts target/artifacts \
+          --rust-wit-bindgen-path ./crates/guest-rust
+
+  # While we're working on getting wasip3-prototyping upstream in wasmtime
+  # itself run tests here in separate async job. Note that this job is NOT
+  # required for merging but it reports its status anyway to alert folks to at
+  # least the "big red X" status. The goal here is that this is known to be a
+  # bit unstable as the async foundations are shifting over time but this at
+  # least enables testing async things in this repository more easily.
+  async:
+    name: Test Async (allowed to fail)
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+    - name: Install Rust
+      run: rustup update stable --no-self-update && rustup default stable
+    - run: rustup target add wasm32-wasip1
+    - uses: ./.github/actions/install-wasi-sdk
+    - run: |
+        curl -L https://github.com/bytecodealliance/wasip3-prototyping/releases/download/dev/wasmtime-dev-x86_64-linux.tar.xz | tar xJvf -
+        echo "WASMTIME=`pwd`/wasmtime-dev-x86_64-linux/wasmtime" >> $GITHUB_ENV
+    - run: |
+        cargo run test --languages rust,c tests/runtime-async \
+          --artifacts target/artifacts \
+          --rust-wit-bindgen-path ./crates/guest-rust \
+          --rust-target wasm32-wasip1 \
+          --c-target wasm32-wasip1 \
+          --runner "$WASMTIME -W component-model-async"
 
   test_unit:
     name: Crate Unit Tests
@@ -129,9 +149,15 @@ jobs:
     - name: Install Rust
       run: rustup update stable --no-self-update && rustup default stable
     - run: rustup target add wasm32-wasip1
+    - run: cargo test
     - run: cargo test -p wit-bindgen-core
     - run: cargo test -p wit-bindgen
     - run: cargo test --workspace --exclude 'wit-bindgen*'
+    - run: cargo test -p wit-bindgen-rt --all-features
+    - run: rustup update nightly --no-self-update
+    - run: rustup component add miri --toolchain nightly
+    - run: rustup component add rust-src --toolchain nightly
+    - run: cargo +nightly miri test -p wit-bindgen-rt --all-features
 
   check:
     name: Check
@@ -145,10 +171,10 @@ jobs:
     - name: Install wasm32-wasip1 target
       run: rustup target add wasm32-wasip1
 
-    # Verify the output of the `./ci/rebuild-libcabi-realloc.sh` script is
+    # Verify the output of the `./ci/rebuild-libwit-bindgen-cabi.sh` script is
     # up-to-date.
     - uses: ./.github/actions/install-wasi-sdk
-    - run: ./ci/rebuild-libcabi-realloc.sh
+    - run: ./ci/rebuild-libwit-bindgen-cabi.sh
     - run: git diff --exit-code
 
     # Test various feature combinations, make sure they all build
@@ -156,7 +182,6 @@ jobs:
     - run: cargo build --no-default-features
     - run: cargo build --no-default-features --features rust
     - run: cargo build --no-default-features --features c
-    - run: cargo build --no-default-features --features teavm-java
     - run: cargo build --no-default-features --features go
     - run: cargo build --no-default-features --features csharp
     - run: cargo build --no-default-features --features markdown

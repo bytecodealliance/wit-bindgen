@@ -1,0 +1,38 @@
+//@ dependencies = ['intermediate', 'leaf-thing', 'leaf-toplevel']
+//@ wac = 'compose.wac'
+
+package test:resource-import-and-export;
+
+interface test {
+  resource thing {
+    constructor(v: u32);
+
+    foo: func() -> u32;
+    bar: func(v: u32);
+
+    baz: static func(a: thing, b: thing) -> thing;
+  }
+}
+
+world leaf-thing {
+  export test;
+}
+
+world leaf-toplevel {
+  use test.{thing};
+  export toplevel-export: func(a: thing) -> thing;
+}
+
+world intermediate {
+  import test;
+  export test;
+
+  use test.{thing};
+
+  import toplevel-import: func(a: thing) -> thing;
+  export toplevel-export: func(a: thing) -> thing;
+}
+
+world runner {
+  import test;
+}

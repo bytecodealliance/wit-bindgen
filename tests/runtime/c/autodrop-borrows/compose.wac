@@ -1,0 +1,19 @@
+package example:composition;
+
+let exporter = new test:exporter { ... };
+let borrower = new test:borrower {
+  test: exporter.test,
+  ...
+};
+let autodropper = new test:autodropper {
+  test: exporter.test,
+  ...
+};
+let runner = new test:runner { 
+  test: exporter.test,
+  borrow-thing: borrower.borrow-thing,
+  autodrop-borrow-thing: autodropper.autodrop-borrow-thing,
+  ...
+};
+
+export runner...;
