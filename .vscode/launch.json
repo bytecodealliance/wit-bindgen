@@ -1,6 +1,7 @@
 {
     "version": "0.2.0",
     "configurations": [
+
         {
             "name": "Run wit-bindgen test",
             "type": "cppvsdbg",
@@ -51,6 +52,24 @@
                 ".\\target\\artifacts\\codegen\\csharp\\async-simple-params-results",
                 "--runtime=native-aot",
                 "--generate-stub"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "stopAtEntry": false,
+            "preLaunchTask": "cargo build"
+        },
+        {
+            "name": "Run wit-bindgen codegen C async-simple-params-results.wit",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/target/debug/wit-bindgen.exe",
+            "args": [
+                "c",
+                ".\\tests\\codegen\\async-simple-params-results.wit",
+                "--world",
+                "%test",
+                "--out-dir",
+                ".\\target\\artifacts\\codegen\\c\\async-simple-params-results",
             ],
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",

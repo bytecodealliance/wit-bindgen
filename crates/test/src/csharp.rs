@@ -37,7 +37,7 @@ impl LanguageMethods for Csharp {
     fn should_fail_verify(
         &self,
         _name: &str,
-        config: &crate::config::WitConfig,
+        _config: &crate::config::WitConfig,
         _args: &[String],
     ) -> bool {
         false

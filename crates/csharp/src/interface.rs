@@ -50,6 +50,15 @@ pub(crate) struct InterfaceGenerator<'a> {
 }
 
 impl InterfaceGenerator<'_> {
+    pub fn is_async(kind: &FunctionKind) -> bool {
+       matches!(
+            kind,
+            FunctionKind::AsyncFreestanding
+                | FunctionKind::AsyncStatic(_)
+                | FunctionKind::AsyncMethod(_)
+        )
+    }
+ 
     pub(crate) fn define_interface_types(&mut self, id: InterfaceId) {
         let mut live = LiveTypes::default();
         live.add_interface(self.resolve, id);
@@ -198,7 +207,7 @@ impl InterfaceGenerator<'_> {
                 | FunctionKind::AsyncMethod(_)
         );
 
-        let wasm_result_type = match &sig.results[..] {
+        let mut wasm_result_type = match &sig.results[..] {
             [] => {
                 if is_async {
                     "uint"
@@ -212,16 +221,37 @@ impl InterfaceGenerator<'_> {
 
         let (result_type, results) = self.func_payload_and_return_type(func);
 
-        let wasm_params = sig
-            .params
-            .iter()
-            .enumerate()
-            .map(|(i, param)| {
-                let ty = crate::world_generator::wasm_type(*param);
-                format!("{ty} p{i}")
-            })
-            .collect::<Vec<_>>()
-            .join(", ");
+        let is_async = InterfaceGenerator::is_async(&func.kind);
+
+        let requires_async_return_buffer_param = is_async && !sig.results.is_empty();
+        let sig_unsafe = if requires_async_return_buffer_param {
+            "unsafe "
+        } else {
+            ""
+        };
+
+        let wasm_params: String = {
+            let param_list = sig
+                .params
+                .iter()
+                .enumerate()
+                .map(|(i, param)| {
+                    let ty = crate::world_generator::wasm_type(*param);
+                    format!("{ty} p{i}")
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+
+            if requires_async_return_buffer_param {
+                if param_list.is_empty() {
+                    "void *taskResultBuffer".to_string()
+                } else {
+                    format!("{}, void *taskResultBuffer", param_list)
+                }
+            } else {
+                param_list
+            }
+        };
 
         let mut funcs: Vec<(String, String)> = Vec::new();
         funcs.push(self.gen_import_src(func, &results, ParameterType::ABI));
@@ -241,14 +271,8 @@ impl InterfaceGenerator<'_> {
             funcs.push(self.gen_import_src(func, &results, ParameterType::Memory));
         }
 
-        let is_async = matches!(
-            func.kind,
-            FunctionKind::AsyncFreestanding
-                | FunctionKind::AsyncStatic(_)
-                | FunctionKind::AsyncMethod(_)
-        );
-
         let import_name = if is_async {
+            wasm_result_type = "uint";
             format!("[async-lower]{}", func.name)
         } else {
             func.name.to_string()
@@ -266,23 +290,10 @@ impl InterfaceGenerator<'_> {
             internal static class {interop_camel_name}WasmInterop
             {{
                 [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "{import_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
-                internal static extern {wasm_result_type} wasmImport{interop_camel_name}({wasm_params});
+                internal static extern {sig_unsafe}{wasm_result_type} wasmImport{interop_camel_name}({wasm_params});
             }}
             "#
         );
-
-        if is_async {
-            let async_name = func.name.to_string();
-            let export_name = format!("[export]{import_module_name}#[task-return]{async_name}");
-            let async_name_upper_camel = async_name.to_upper_camel_case();
-
-            uwriteln!(target, 
-            r#"
-            [global::System.Runtime.InteropServices.UnmanagedCallersOnlyAttribute(EntryPoint = "{export_name}")]
-            internal static unsafe void TaskReturn{async_name_upper_camel}() {{
-            }}
-            "#);
-        }
 
         for (src, params) in funcs {
             uwrite!(
@@ -305,7 +316,7 @@ impl InterfaceGenerator<'_> {
             let payload = match func.result {
                 None => Vec::new(),
                 Some(ty) => {
-                    let (payload, results) = payload_and_results(
+                    let (_payload, results) = payload_and_results(
                         self.resolve,
                         ty,
                         self.csharp_gen.opts.with_wit_results,
@@ -326,11 +337,11 @@ impl InterfaceGenerator<'_> {
         } else {
             let base_type = match func.result {
                 None => "void".to_string(),
-                Some(ty) => {
+                Some(_ty) => {
                     let result_type = match func.result {
                         None => "void".to_string(),
                         Some(ty) => {
-                            let (payload, results) = payload_and_results(
+                            let (payload, _results) = payload_and_results(
                                 self.resolve,
                                 ty,
                                 self.csharp_gen.opts.with_wit_results,
@@ -354,7 +365,7 @@ impl InterfaceGenerator<'_> {
                 | FunctionKind::AsyncMethod(_) => {
                     match func.result {
                         None => "Task".to_string(),
-                        Some(ty) => format!("Task<{}>", base_type)
+                        Some(_ty) => format!("Task<{}>", base_type)
                     }
                 },  
                 _ => base_type
@@ -389,6 +400,7 @@ impl InterfaceGenerator<'_> {
                 .collect(),
             results.clone(),
             parameter_type,
+            func.result
         );
 
         abi::call(
@@ -450,6 +462,7 @@ impl InterfaceGenerator<'_> {
             (0..sig.params.len()).map(|i| format!("p{i}")).collect(),
             results,
             ParameterType::ABI,
+            func.result,
         );
 
         let async_ = matches!(
@@ -477,11 +490,14 @@ impl InterfaceGenerator<'_> {
             .collect::<Vec<_>>()
             .join(";\n");
 
-        let wasm_result_type = match &sig.results[..] {
-            [] => if async_ {"uint"} else {"void"},
-            [result] => crate::world_generator::wasm_type(*result),
-            _ => unreachable!(),
-        };
+        let wasm_result_type = 
+            if async_ {"uint"
+            } else { match &sig.results[..] {
+                [] => "void",
+                [result] => crate::world_generator::wasm_type(*result),
+                _ => unreachable!(),
+                }
+            };
 
         let wasm_params = sig
             .params
@@ -553,6 +569,7 @@ impl InterfaceGenerator<'_> {
                 (0..sig.results.len()).map(|i| format!("p{i}")).collect(),
                 Vec::new(),
                 ParameterType::ABI,
+                func.result
             );
 
             abi::post_return(bindgen.interface_gen.resolve, func, &mut bindgen);
@@ -576,8 +593,25 @@ impl InterfaceGenerator<'_> {
 
             uwriteln!(self.csharp_interop_src, 
             r#"
+            [global::System.Runtime.InteropServices.UnmanagedCallersOnlyAttribute(EntryPoint = "[callback][async-lift]{import_module_name}#{wasm_func_name}")]
+            public static uint {camel_name}Callback(uint eventRaw, uint waitable, uint code)
+            {{
+                // TODO: decode the parameters
+                return (uint)CallbackCode.Exit;
+            }}
+            "#);
+
+            let task_return_param = 
+                 match &sig.results[..] {
+                    [] => "",
+                    [_result] => &format!("{} result", wasm_result_type),
+                    _ => unreachable!(),
+                };
+
+            uwriteln!(self.csharp_interop_src, 
+            r#"
             [global::System.Runtime.InteropServices.DllImportAttribute("[export]{import_module_name}", EntryPoint = "[task-return]{wasm_func_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
-            internal static extern void {camel_name}TaskReturn();
+            internal static extern void {camel_name}TaskReturn({task_return_param});
             "#);
         }
 
