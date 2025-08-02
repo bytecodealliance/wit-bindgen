@@ -41,7 +41,14 @@ impl LanguageMethods for Csharp {
         _args: &[String],
     ) -> bool {
         // TODO: remove this exclusions as support is created
-        matches!(name, "resources-with-streams.wit" | "resources-with-futures.wit" | "futures.wit" | "streams.wit" | "error-context.wit")
+        matches!(
+            name,
+            "resources-with-streams.wit"
+                | "resources-with-futures.wit"
+                | "futures.wit"
+                | "streams.wit"
+                | "error-context.wit"
+        )
     }
 
     fn prepare(&self, runner: &mut Runner<'_>) -> Result<()> {
