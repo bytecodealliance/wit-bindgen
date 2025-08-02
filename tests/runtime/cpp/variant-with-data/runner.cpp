@@ -1,6 +1,8 @@
 #include <assert.h>
 #include <runner_cpp.h>
 
+using ::test::variant_with_data::to_test::DataVariant;
+
 template <class T>
 static bool equal(T const& a, T const& b) {
     return a == b;
@@ -19,12 +21,12 @@ static bool equal(wit::string const& a, wit::string const& b) {
     return a.get_view() == b.get_view();
 }
 
-static bool equal(::test::variant_with_data::to_test::DataVariant const& a, ::test::variant_with_data::to_test::DataVariant const& b) {
+static bool equal(DataVariant const& a, DataVariant const& b) {
     if (a.variants.index() != b.variants.index()) return false;
     switch (a.variants.index()) {
-        case 0: return equal(std::get<::test::variant_with_data::to_test::DataVariant::Bytes>(a.variants).value, std::get<::test::variant_with_data::to_test::DataVariant::Bytes>(b.variants).value);
-        case 1: return equal(std::get<::test::variant_with_data::to_test::DataVariant::Number>(a.variants).value, std::get<::test::variant_with_data::to_test::DataVariant::Number>(b.variants).value);
-        case 2: return equal(std::get<::test::variant_with_data::to_test::DataVariant::Text>(a.variants).value, std::get<::test::variant_with_data::to_test::DataVariant::Text>(b.variants).value);
+        case 0: return equal(std::get<DataVariant::Bytes>(a.variants).value, std::get<DataVariant::Bytes>(b.variants).value);
+        case 1: return equal(std::get<DataVariant::Number>(a.variants).value, std::get<DataVariant::Number>(b.variants).value);
+        case 2: return equal(std::get<DataVariant::Text>(a.variants).value, std::get<DataVariant::Text>(b.variants).value);
     }
     return false;
 }
