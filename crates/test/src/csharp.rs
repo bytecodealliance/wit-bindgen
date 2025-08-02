@@ -36,11 +36,12 @@ impl LanguageMethods for Csharp {
 
     fn should_fail_verify(
         &self,
-        _name: &str,
+        name: &str,
         _config: &crate::config::WitConfig,
         _args: &[String],
     ) -> bool {
-        false
+        // TODO: remove this exclusions as support is created
+        matches!(name, "resources-with-streams.wit" | "resources-with-futures.wit" | "futures.wit" | "streams.wit" | "error-context.wit")
     }
 
     fn prepare(&self, runner: &mut Runner<'_>) -> Result<()> {
