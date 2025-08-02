@@ -9,7 +9,8 @@ use wit_bindgen_core::abi::{self, Bindgen, Bitcast, Instruction};
 use wit_bindgen_core::{uwrite, uwriteln, Direction, Ns};
 use wit_parser::abi::WasmType;
 use wit_parser::{
-    Alignment, ArchitectureSize, Docs, FunctionKind, Handle, Resolve, SizeAlign, Type, TypeDefKind, TypeId
+    Alignment, ArchitectureSize, Docs, FunctionKind, Handle, Resolve, SizeAlign, Type, TypeDefKind,
+    TypeId,
 };
 
 /// FunctionBindgen generates the C# code for calling functions defined in wit
@@ -42,7 +43,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         params: Box<[String]>,
         results: Vec<TypeId>,
         parameter_type: ParameterType,
-        result_type: Option<Type>
+        result_type: Option<Type>,
     ) -> FunctionBindgen<'a, 'b> {
         let mut locals = Ns::default();
         // Ensure temporary variable names don't clash with parameter names:
@@ -307,7 +308,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             .interface_gen
             .type_name_with_qualifier(&func.result.unwrap(), true);
         let is_async = InterfaceGenerator::is_async(&func.kind);
-        
+
         if is_async {
             uwriteln!(self.src, "Task<{ty}> {ret};");
         } else {
@@ -383,7 +384,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
     fn emit_allocation_for_type(&mut self, results: &[WasmType]) -> String {
         let address = self.locals.tmp("address");
         let buffer_size = self.get_size_for_type(results);
-        let align= self.get_align_for_type(results);
+        let align = self.get_align_for_type(results);
         uwriteln!(self.src, "void* {address} = global::System.Runtime.InteropServices.NativeMemory.AlignedAlloc({buffer_size}, {align});");
 
         // TODO: Store the address somewhere so we can free it when the task completes.
@@ -396,7 +397,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             [WasmType::I64] => 8,
             [WasmType::F32] => 4,
             [WasmType::F64] => 8,
-            [WasmType::Pointer, WasmType::Length] => 4,  // TODO: Wasm64
+            [WasmType::Pointer, WasmType::Length] => 4, // TODO: Wasm64
             [WasmType::PointerOrI64, WasmType::Length] => 8,
             _ => {
                 todo!("other types not yet supported");
@@ -410,7 +411,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             [WasmType::I64] => 8,
             [WasmType::F32] => 4,
             [WasmType::F64] => 8,
-            [WasmType::Pointer, WasmType::Length] => 4,  // TODO: Wasm64
+            [WasmType::Pointer, WasmType::Length] => 4, // TODO: Wasm64
             [WasmType::PointerOrI64, WasmType::Length] => 8,
             _ => {
                 todo!("other types not yet supported");
