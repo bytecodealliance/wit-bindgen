@@ -25,10 +25,6 @@ clap = { workspace = true, optional = true }
 anyhow = { workspace = true }
 indexmap = { workspace = true }
 
-[dev-dependencies]
-futures = { workspace = true }
-wit-bindgen = { path = '../guest-rust', features = ['async'] }
-
 [features]
 default = ["aot"]
 aot = []

@@ -1,5 +1,5 @@
 /**
- * This file proviedes helper enums for the async support.
+ * Helpers for the async support.
  */
 
  public enum CallbackCode
