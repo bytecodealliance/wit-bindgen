@@ -2874,14 +2874,21 @@ impl ToMoonBitIdent for str {
     fn to_moonbit_ident(&self) -> String {
         // Escape MoonBit keywords and reserved keywords
         match self {
-            "module" | "move" | "ref" | "static" | "super" | "unsafe" | "use" | "where"
-            | "await" | "dyn" | "abstract" | "do" | "final" | "macro" | "override" | "typeof"
-            | "virtual" | "yield" | "local" | "method" | "alias" | "assert" | "as" | "else"
-            | "extern" | "fn" | "if" | "let" | "const" | "match" | "mut" | "type" | "typealias"
-            | "struct" | "enum" | "trait" | "traitalias" | "derive" | "while" | "break"
-            | "continue" | "import" | "return" | "throw" | "raise" | "try" | "catch" | "pub"
-            | "priv" | "readonly" | "true" | "false" | "_" | "test" | "loop" | "for" | "in"
-            | "impl" | "with" | "guard" | "async" | "is" | "init" | "main" => {
+            // Keywords
+            "as" | "else" | "extern" | "fn" | "fnalias" | "if" | "let" | "const" | "match" | "using"
+            | "mut" | "type" | "typealias" | "struct" | "enum" | "trait" | "traitalias" | "derive"
+            | "while" | "break" | "continue" | "import" | "return" | "throw" | "raise" | "try" | "catch"
+            | "pub" | "priv" | "readonly" | "true" | "false" | "_" | "test" | "loop" | "for" | "in" | "impl"
+            | "with" | "guard" | "async" | "is" | "suberror" | "and" | "letrec" | "enumview" | "noraise" 
+            | "defer" | "init" | "main"
+            // Reserved keywords
+            | "module" | "move" | "ref" | "static" | "super" | "unsafe" | "use" | "where" | "await"
+            | "dyn" | "abstract" | "do" | "final" | "macro" | "override" | "typeof" | "virtual" | "yield"
+            | "local" | "method" | "alias" | "assert" | "package" | "recur" | "isnot" | "define" | "downcast"
+            | "inherit" | "member" | "namespace" | "upcast" | "void" | "lazy" | "include" | "mixin"
+            | "protected" | "sealed" | "constructor" | "atomic" | "volatile" | "anyframe" | "anytype"
+            | "asm" | "comptime" | "errdefer" | "export" | "opaque" | "orelse" | "resume" | "threadlocal"
+            | "unreachable" | "dynclass" | "dynobj" | "dynrec" | "var" | "finally" | "noasync" => {
                 format!("{self}_")
             }
             _ => self.to_snake_case(),
