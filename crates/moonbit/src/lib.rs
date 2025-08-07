@@ -1785,7 +1785,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::F32FromCoreF32 => results.push(operands[0].clone()),
             Instruction::CoreF32FromF32 => results.push(operands[0].clone()),
 
-            Instruction::CharFromI32 => results.push(format!("Int::unsafe_to_char({})", operands[0])),
+            Instruction::CharFromI32 => {
+                results.push(format!("Int::unsafe_to_char({})", operands[0]))
+            }
             Instruction::I32FromChar => results.push(format!("({}).to_int()", operands[0])),
 
             Instruction::I32FromU8 => results.push(format!("({}).to_int()", operands[0])),
