@@ -136,7 +136,6 @@ jobs:
           --artifacts target/artifacts \
           --rust-wit-bindgen-path ./crates/guest-rust \
           --rust-target wasm32-wasip1 \
-          --c-target wasm32-wasip1 \
           --runner "$WASMTIME -W component-model-async -Sp3"
 
   test_unit:
