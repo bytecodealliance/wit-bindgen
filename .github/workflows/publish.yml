@@ -9,11 +9,13 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   create_tag:
     name: Publish artifacts of build
     runs-on: ubuntu-latest
+    environment: release
     if: |
       github.repository_owner == 'bytecodealliance'
       && github.event_name == 'push'
