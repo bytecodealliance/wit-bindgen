@@ -410,7 +410,7 @@ fn verify(crates: &[Crate]) {
     fn verify_crates_io(krate: &Crate) {
         let name = &krate.name;
         let Some(owners) = curl(&format!("https://crates.io/api/v1/crates/{name}/owners")) else {
-            println!(
+            panic!(
                 "
 failed to get owners for {name}
 
@@ -424,7 +424,7 @@ that the trusted publishing workflow must be configured as well.
 
         // This is the id of the `wasmtime-publish` user on crates.io
         if !owners.contains("\"id\":73222,") {
-            println!(
+            panic!(
                 "
 crate {name} is not owned by wasmtime-publish, please run:
 
@@ -435,7 +435,7 @@ crate {name} is not owned by wasmtime-publish, please run:
         }
 
         if owners.split("\"id\"").count() != 2 {
-            println!(
+            panic!(
                 "
 crate {name} is not exclusively owned by wasmtime-publish
 
