@@ -47,6 +47,7 @@ pub(crate) struct InterfaceGenerator<'a> {
     pub(crate) resolve: &'a Resolve,
     pub(crate) name: &'a str,
     pub(crate) direction: Direction,
+    pub(crate) futures: Vec<String>,
 }
 
 impl InterfaceGenerator<'_> {
@@ -171,6 +172,95 @@ impl InterfaceGenerator<'_> {
             });
     }
 
+    pub(crate) fn add_futures(&mut self, import_module_name: &str) {
+        for future in &self.futures {
+            let camel_name = future.to_upper_camel_case();
+
+            uwrite!(
+                self.csharp_interop_src,
+                r#"
+                [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-new-0][async]{future}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
+                internal static extern ulong {camel_name}_void_new();
+                "#
+            );
+
+            uwrite!(
+                self.csharp_interop_src,
+                r#"
+                [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[async-lower][future-read-0][async]{future}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
+                internal static unsafe extern ulong {camel_name}_void_read(uint readable, byte* buffer);
+                "#
+            );
+
+            uwrite!(
+                self.csharp_interop_src,
+                r#"
+                [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[async-lower][future-write-0][async]{future}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
+                internal static unsafe extern ulong {camel_name}_void_write(uint writeable, byte* buffer);
+                "#
+            );
+
+            uwrite!(
+                self.csharp_interop_src,
+                r#"
+                [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-cancel-read-0][async]{future}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
+                internal static extern uint {camel_name}CancelRead(uint readable);
+                "#
+            );
+
+            uwrite!(
+                self.csharp_interop_src,
+                r#"
+                [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-cancel-write-0][async]{future}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
+                internal static extern uint {camel_name}CancelWrite(uint writeable);
+                "#
+            );
+
+            uwrite!(
+                self.csharp_interop_src,
+                r#"
+                [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-drop-readable-0][async]{future}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
+                internal static extern void {camel_name}DropReadable(uint readable);
+                "#
+            );
+
+            uwrite!(
+                self.csharp_interop_src,
+                r#"
+                [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-drop-writeable-0][async]{future}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
+                internal static extern void {camel_name}DropWriteable(uint writeable);
+                "#
+            );
+
+            let (_namespace, interface_name) =
+                &CSharp::get_class_name_from_qualified_name(self.name);
+            let interop_name = format!("{}Interop", interface_name.strip_prefix("I").unwrap());
+            self.csharp_gen
+                .interface_fragments
+                .entry(self.name.to_string())
+                .or_insert_with(|| InterfaceTypeAndFragments::new(false))
+                .interface_fragments
+                .push(InterfaceFragment {
+                    csharp_src: format!(r#"
+                    public static (FutureReader, FutureWriter) {camel_name}New() 
+                    {{
+                         var packed = {interop_name}.{camel_name}_void_new();
+                         var readerHandle = (int)(packed & 0xFFFFFFFF);
+                         var writerHandle = (int)(packed >> 32);
+
+                         return (new FutureReader(readerHandle), new FutureWriter(writerHandle));
+                    }}
+
+
+                    "#).to_string(),
+                    csharp_interop_src: "".to_string(),
+                    stub: "".to_string(),
+                });
+            
+            self.csharp_gen.needs_future_support = true;
+        }
+    }
+
     pub(crate) fn add_world_fragment(self) {
         self.csharp_gen.world_fragments.push(InterfaceFragment {
             csharp_src: self.src,
@@ -279,14 +369,8 @@ impl InterfaceGenerator<'_> {
             func.name.to_string()
         };
 
-        let target = if let FunctionKind::Freestanding = &func.kind {
-            &mut self.csharp_interop_src
-        } else {
-            &mut self.src
-        };
-
         uwrite!(
-            target,
+            self.csharp_interop_src,
             r#"
             internal static class {interop_camel_name}WasmInterop
             {{
@@ -298,7 +382,7 @@ impl InterfaceGenerator<'_> {
 
         for (src, params) in funcs {
             uwrite!(
-                target,
+                self.src,
                 r#"
                     {access} {modifiers} unsafe {result_type} {camel_name}({params})
                     {{
@@ -785,9 +869,9 @@ impl InterfaceGenerator<'_> {
                             .map(|ty| self.type_name_with_qualifier(ty, qualifier))
                             .unwrap_or_else(|| "".to_owned());
                         if name.is_empty() {
-                            return "Task".to_owned();
+                            return "FutureReader".to_owned();
                         } else {
-                            return format!("Task<{name}>");
+                            return format!("FutureReader<{name}>");
                         }
                     }
                     _ => {
@@ -1049,6 +1133,10 @@ impl InterfaceGenerator<'_> {
         let access = self.csharp_gen.access_modifier();
 
         format!("{access} {modifiers} {result_type} {camel_name}({params})")
+    }
+    
+    pub(crate) fn add_future(&mut self, func_name: &str) {
+        self.futures.push(func_name.to_string());
     }
 }
 

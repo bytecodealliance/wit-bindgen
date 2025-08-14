@@ -1038,9 +1038,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     None => operands.join(", "),
                 };
 
+                let (_namespace, interface_name) =
+                    &CSharp::get_class_name_from_qualified_name(self.interface_gen.name);
+                let interop_name = format!("{}Interop", interface_name.strip_prefix("I").unwrap());
+                
                 uwriteln!(
                     self.src,
-                    "{assignment} {func_name}WasmInterop.wasmImport{func_name}({operands});"
+                    "{assignment} {interop_name}.{func_name}WasmInterop.wasmImport{func_name}({operands});"
                 );
 
                 if let Some(buffer) = async_return_buffer {
@@ -1350,6 +1354,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::FutureLower { .. } => {
                 let op = &operands[0];
+                self.interface_gen.add_future(self.func_name);
+
                 results.push(format!("{op}.Handle"));
             }
 
@@ -1357,8 +1363,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwriteln!(self.src, "// TODO_task_cancel.forget();");
             }
 
-            Instruction::FutureLift { .. }
-            | Instruction::StreamLower { .. }
+            Instruction::FutureLift { payload, ty } => {
+                uwriteln!(self.src, "var reader = new FutureReader({});",  operands[0]);
+                self.interface_gen.csharp_gen.needs_future_support = true;
+                results.push("reader".to_string());
+            }
+
+            Instruction::StreamLower { .. }
             | Instruction::StreamLift { .. }
             | Instruction::ErrorContextLower { .. }
             | Instruction::ErrorContextLift { .. }

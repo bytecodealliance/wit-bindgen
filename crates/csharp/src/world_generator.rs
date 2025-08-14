@@ -33,6 +33,7 @@ pub struct CSharp {
     pub(crate) needs_rep_table: bool,
     pub(crate) needs_wit_exception: bool,
     pub(crate) needs_async_support: bool,
+    pub(crate) needs_future_support: bool,
     pub(crate) interface_fragments: HashMap<String, InterfaceTypeAndFragments>,
     pub(crate) world_fragments: Vec<InterfaceFragment>,
     pub(crate) sizes: SizeAlign,
@@ -71,6 +72,7 @@ impl CSharp {
             resolve,
             name,
             direction,
+            futures: Vec::new(),
         }
     }
 
@@ -113,6 +115,7 @@ impl WorldGenerator for CSharp {
         old_resources.extend(new_resources.clone());
         gen.csharp_gen.all_resources = old_resources;
 
+        let import_module_name = &resolve.name_world_key(key);
         for (resource, funcs) in by_resource(
             resolve.interfaces[id]
                 .functions
@@ -124,7 +127,6 @@ impl WorldGenerator for CSharp {
                 gen.start_resource(resource, Some(key));
             }
 
-            let import_module_name = &resolve.name_world_key(key);
             for func in funcs {
                 gen.import(import_module_name, func);
             }
@@ -137,8 +139,10 @@ impl WorldGenerator for CSharp {
         // for anonymous types
         gen.define_interface_types(id);
 
-        gen.add_interface_fragment(false);
+        gen.add_futures(import_module_name);
 
+        gen.add_interface_fragment(false);
+        
         Ok(())
     }
 
@@ -214,6 +218,9 @@ impl WorldGenerator for CSharp {
 
         // for anonymous types
         gen.define_interface_types(id);
+
+        let import_module_name = &resolve.name_world_key(key);
+        gen.add_futures(import_module_name);
 
         gen.add_interface_fragment(true);
         Ok(())
@@ -511,6 +518,11 @@ impl WorldGenerator for CSharp {
         if self.needs_async_support {
             src.push_str("\n");
             src.push_str(include_str!("AsyncSupport.cs"));
+        }
+
+        if self.needs_future_support {
+            src.push_str("\n");
+            src.push_str(include_str!("FutureSupport.cs"));
         }
 
         src.push_str("\n");
