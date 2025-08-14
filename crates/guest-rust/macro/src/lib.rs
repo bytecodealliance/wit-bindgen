@@ -488,6 +488,7 @@ impl Parse for Opt {
             input.parse::<Token![:]>()?;
             let stubs_mode = input.parse::<syn::Ident>()?;
             Ok(Opt::Stubs(match stubs_mode.to_string().as_str() {
+                "Omit" => StubsMode::Omit,
                 "Embedded" => StubsMode::Embedded,
                 "Separate" => StubsMode::Separate,
                 name => {
@@ -495,7 +496,7 @@ impl Parse for Opt {
                         stubs_mode.span(),
                         format!(
                             "unrecognized stubs mode: `{name}`; \
-                             expected `Embedded` or `Separate`"
+                             expected `Omit`, `Embedded`, or `Separate`"
                         ),
                     ));
                 }

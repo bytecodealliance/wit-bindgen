@@ -169,8 +169,17 @@ pub struct Opts {
     #[cfg_attr(feature = "clap", arg(long, value_name = "NAME"))]
     pub skip: Vec<String>,
 
-    /// If set to anything but `Omit`, generate stub implementations for any exported functions,
+
+    /// Whether to generate stub implementations for any exported functions,
     /// interfaces, and/or resources.
+    ///
+    /// Valid values are:
+    ///
+    /// - `omit`: Stubs will not be generated.
+    ///
+    /// - `embedded`: Stubs will be generated in the bindings file.
+    ///
+    /// - `separate`: Stubs will be generated in a separate _impl file.
     #[cfg_attr(feature = "clap", arg(long, default_value_t = StubsMode::Omit))]
     pub stubs: StubsMode,
 
