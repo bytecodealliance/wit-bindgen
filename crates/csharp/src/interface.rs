@@ -279,14 +279,8 @@ impl InterfaceGenerator<'_> {
             func.name.to_string()
         };
 
-        let target = if let FunctionKind::Freestanding = &func.kind {
-            &mut self.csharp_interop_src
-        } else {
-            &mut self.src
-        };
-
         uwrite!(
-            target,
+            self.csharp_interop_src,
             r#"
             internal static class {interop_camel_name}WasmInterop
             {{
@@ -298,7 +292,7 @@ impl InterfaceGenerator<'_> {
 
         for (src, params) in funcs {
             uwrite!(
-                target,
+                self.src,
                 r#"
                     {access} {modifiers} unsafe {result_type} {camel_name}({params})
                     {{
@@ -601,6 +595,7 @@ impl InterfaceGenerator<'_> {
             "#
             );
 
+            // TODO: The task return function can take up to 16 core parameters.
             let task_return_param = match &sig.results[..] {
                 [] => "",
                 [_result] => &format!("{} result", wasm_result_type),
@@ -610,6 +605,7 @@ impl InterfaceGenerator<'_> {
             uwriteln!(
                 self.csharp_interop_src,
                 r#"
+            // TODO: The task return function can take up to 16 core parameters.
             [global::System.Runtime.InteropServices.DllImportAttribute("[export]{import_module_name}", EntryPoint = "[task-return]{wasm_func_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
             internal static extern void {camel_name}TaskReturn({task_return_param});
             "#
