@@ -5,6 +5,7 @@ use heck::*;
 use indexmap::{IndexMap, IndexSet};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::{self, Write as _};
+use std::hint::unreachable_unchecked;
 use std::mem;
 use std::str::FromStr;
 use wit_bindgen_core::abi::{Bitcast, WasmType};
@@ -30,6 +31,8 @@ struct RustWasm {
     types: Types,
     src_preamble: Source,
     src: Source,
+    /// Used when stubs == StubsMode::Separate
+    stubs_src: Source,
     opts: Opts,
     import_modules: Vec<(String, Vec<String>)>,
     export_modules: Vec<(String, Vec<String>)>,
@@ -166,10 +169,10 @@ pub struct Opts {
     #[cfg_attr(feature = "clap", arg(long, value_name = "NAME"))]
     pub skip: Vec<String>,
 
-    /// If true, generate stub implementations for any exported functions,
+    /// If set to anything but `Omit`, generate stub implementations for any exported functions,
     /// interfaces, and/or resources.
-    #[cfg_attr(feature = "clap", arg(long))]
-    pub stubs: bool,
+    #[cfg_attr(feature = "clap", arg(long, default_value_t = StubsMode::Omit))]
+    pub stubs: StubsMode,
 
     /// Optionally prefix any export names with the specified value.
     ///
@@ -839,8 +842,13 @@ macro_rules! __export_{world_name}_impl {{
             {use_vis} use __export_{world_name}_impl as {export_macro_name};"
         );
 
-        if self.opts.stubs {
-            uwriteln!(self.src, "export!(Stub);");
+        let stubs = match self.opts.stubs {
+            StubsMode::Omit => None,
+            StubsMode::Embedded => Some(&mut self.src),
+            StubsMode::Separate => Some(&mut self.stubs_src),
+        };
+        if let Some(stubs) = stubs {
+            uwriteln!(stubs, "export!(Stub);");
         }
     }
 
@@ -981,8 +989,8 @@ impl WorldGenerator for RustWasm {
         if !self.opts.skip.is_empty() {
             uwriteln!(self.src_preamble, "//   * skip: {:?}", self.opts.skip);
         }
-        if self.opts.stubs {
-            uwriteln!(self.src_preamble, "//   * stubs");
+        if !matches!(self.opts.stubs, StubsMode::Omit) {
+            uwriteln!(self.src_preamble, "//   * stubs: {:?}", self.opts.stubs);
         }
         if let Some(export_prefix) = &self.opts.export_prefix {
             uwriteln!(
@@ -1195,7 +1203,7 @@ impl WorldGenerator for RustWasm {
         self.export_macros
             .push((macro_name, self.interface_names[&id].path.clone()));
 
-        if self.opts.stubs {
+        if !matches!(self.opts.stubs, StubsMode::Omit) {
             let world_id = self.world.unwrap();
             let mut r#gen = self.interface(
                 Identifier::World(world_id),
@@ -1205,7 +1213,12 @@ impl WorldGenerator for RustWasm {
             );
             r#gen.generate_stub(Some((id, name)), resolve.interfaces[id].functions.values());
             let stub = r#gen.finish();
-            self.src.push_str(&stub);
+            let stubs = match self.opts.stubs {
+                StubsMode::Omit => unsafe { unreachable_unchecked() },
+                StubsMode::Embedded => &mut self.src,
+                StubsMode::Separate => &mut self.stubs_src,
+            };
+            stubs.push_str(&stub);
         }
         Ok(())
     }
@@ -1223,12 +1236,17 @@ impl WorldGenerator for RustWasm {
         self.src.push_str(&src);
         self.export_macros.push((macro_name, String::new()));
 
-        if self.opts.stubs {
+        if !matches!(self.opts.stubs, StubsMode::Omit) {
             let mut r#gen =
                 self.interface(Identifier::World(world), "[export]$root", resolve, false);
             r#gen.generate_stub(None, funcs.iter().map(|f| f.1));
             let stub = r#gen.finish();
-            self.src.push_str(&stub);
+            let stubs = match self.opts.stubs {
+                StubsMode::Omit => unsafe { unreachable_unchecked() },
+                StubsMode::Embedded => &mut self.src,
+                StubsMode::Separate => &mut self.stubs_src,
+            };
+            stubs.push_str(&stub);
         }
         Ok(())
     }
@@ -1342,8 +1360,13 @@ impl WorldGenerator for RustWasm {
             },
         );
 
-        if self.opts.stubs {
-            self.src.push_str("\n#[derive(Debug)]\npub struct Stub;\n");
+        if !matches!(self.opts.stubs, StubsMode::Omit) {
+            let stubs = match self.opts.stubs {
+                StubsMode::Omit => unsafe { unreachable_unchecked() },
+                StubsMode::Embedded => &mut self.src,
+                StubsMode::Separate => &mut self.stubs_src,
+            };
+            stubs.push_str("\n#[derive(Debug)]\npub struct Stub;\n");
         }
 
         let mut src = mem::take(&mut self.src);
@@ -1359,6 +1382,16 @@ impl WorldGenerator for RustWasm {
 
         let module_name = name.to_snake_case();
         files.push(&format!("{module_name}.rs"), src.as_bytes());
+
+        if matches!(self.opts.stubs, StubsMode::Separate) {
+            let mut src = mem::take(&mut self.stubs_src);
+            if self.opts.format {
+                let syntax_tree = syn::parse_file(src.as_str()).unwrap();
+                *src.as_mut_string() = prettyplease::unparse(&syntax_tree);
+            }
+
+            files.push(&format!("{module_name}_impl.rs"), src.as_bytes());
+        }
 
         let remapped_keys = self
             .with
@@ -1479,6 +1512,50 @@ impl fmt::Display for Ownership {
             Ownership::Borrowing {
                 duplicate_if_necessary: true,
             } => "borrowing-duplicate-if-necessary",
+        })
+    }
+}
+
+#[derive(Default, Debug, Clone, Copy)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Deserialize),
+    serde(rename_all = "kebab-case")
+)]
+pub enum StubsMode {
+    /// Stubs will not be generated.
+    #[default]
+    Omit,
+
+    /// Stubs will be generated in the bindings file.
+    Embedded,
+
+    /// Stubs will be generated in a separate file.
+    Separate,
+}
+
+impl FromStr for StubsMode {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "omit" => Ok(Self::Omit),
+            "embedded" => Ok(Self::Embedded),
+            "separate" => Ok(Self::Separate),
+            _ => Err(format!(
+                "unrecognized stubsMode: `{s}`; \
+                 expected 'omit', `embedded`, or `separate`"
+            )),
+        }
+    }
+}
+
+impl fmt::Display for StubsMode {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match self {
+            StubsMode::Omit => "omit",
+            StubsMode::Embedded => "embedded",
+            StubsMode::Separate => "separate",
         })
     }
 }

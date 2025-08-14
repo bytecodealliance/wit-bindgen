@@ -2,6 +2,7 @@ use proc_macro2::{Span, TokenStream};
 use quote::ToTokens;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 use syn::parse::{Error, Parse, ParseStream, Result};
 use syn::punctuated::Punctuated;
@@ -9,7 +10,7 @@ use syn::spanned::Spanned;
 use syn::{braced, token, LitStr, Token};
 use wit_bindgen_core::wit_parser::{PackageId, Resolve, UnresolvedPackageGroup, WorldId};
 use wit_bindgen_core::AsyncFilterSet;
-use wit_bindgen_rust::{Opts, Ownership, WithOption};
+use wit_bindgen_rust::{Opts, Ownership, StubsMode, WithOption};
 
 #[proc_macro]
 pub fn generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
@@ -106,9 +107,7 @@ impl Parse for Config {
                     Opt::Skip(list) => opts.skip.extend(list.iter().map(|i| i.value())),
                     Opt::RuntimePath(path) => opts.runtime_path = Some(path.value()),
                     Opt::BitflagsPath(path) => opts.bitflags_path = Some(path.value()),
-                    Opt::Stubs => {
-                        opts.stubs = true;
-                    }
+                    Opt::Stubs(mode) => opts.stubs = mode,
                     Opt::ExportPrefix(prefix) => opts.export_prefix = Some(prefix.value()),
                     Opt::AdditionalDerives(paths) => {
                         opts.additional_derive_attributes = paths
@@ -380,7 +379,7 @@ enum Opt {
     Ownership(Ownership),
     RuntimePath(syn::LitStr),
     BitflagsPath(syn::LitStr),
-    Stubs,
+    Stubs(StubsMode),
     ExportPrefix(syn::LitStr),
     // Parse as paths so we can take the concrete types/macro names rather than raw strings
     AdditionalDerives(Vec<syn::Path>),
@@ -486,7 +485,21 @@ impl Parse for Opt {
             Ok(Opt::BitflagsPath(input.parse()?))
         } else if l.peek(kw::stubs) {
             input.parse::<kw::stubs>()?;
-            Ok(Opt::Stubs)
+            input.parse::<Token![:]>()?;
+            let stubs_mode = input.parse::<syn::Ident>()?;
+            Ok(Opt::Stubs(match stubs_mode.to_string().as_str() {
+                "Embedded" => StubsMode::Embedded,
+                "Separate" => StubsMode::Separate,
+                name => {
+                    return Err(Error::new(
+                        stubs_mode.span(),
+                        format!(
+                            "unrecognized stubs mode: `{name}`; \
+                             expected `Embedded` or `Separate`"
+                        ),
+                    ));
+                }
+            }))
         } else if l.peek(kw::export_prefix) {
             input.parse::<kw::export_prefix>()?;
             input.parse::<Token![:]>()?;

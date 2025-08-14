@@ -91,7 +91,7 @@ impl LanguageMethods for Rust {
     }
 
     fn default_bindgen_args_for_codegen(&self) -> &[&str] {
-        &["--stubs"]
+        &["--stubs", "embedded"]
     }
 
     fn prepare(&self, runner: &mut Runner<'_>) -> Result<()> {
