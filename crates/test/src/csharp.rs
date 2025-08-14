@@ -36,11 +36,14 @@ impl LanguageMethods for Csharp {
 
     fn should_fail_verify(
         &self,
-        _name: &str,
+        name: &str,
         config: &crate::config::WitConfig,
         _args: &[String],
     ) -> bool {
-        config.async_
+        match name {
+            "resource-fallible-constructor.wit" => true,
+            _ => config.async_,
+        }
     }
 
     fn prepare(&self, runner: &mut Runner<'_>) -> Result<()> {

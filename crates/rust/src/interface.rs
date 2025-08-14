@@ -1,7 +1,8 @@
 use crate::bindgen::{FunctionBindgen, POINTER_SIZE_EXPRESSION};
 use crate::{
-    full_wit_type_name, int_repr, to_rust_ident, to_upper_camel_case, wasm_type, FnSig, Identifier,
-    InterfaceName, Ownership, RuntimeItem, RustFlagsRepr, RustWasm, TypeGeneration,
+    classify_constructor_return_type, full_wit_type_name, int_repr, to_rust_ident,
+    to_upper_camel_case, wasm_type, ConstructorReturnType, FnSig, Identifier, InterfaceName,
+    Ownership, RuntimeItem, RustFlagsRepr, RustWasm, TypeGeneration,
 };
 use anyhow::Result;
 use heck::*;
@@ -1363,10 +1364,20 @@ unsafe fn call_import(_params: Self::ParamsLower, _results: *mut u8) -> u32 {{
 
     fn print_signature(&mut self, func: &Function, params_owned: bool, sig: &FnSig) -> Vec<String> {
         let params = self.print_docs_and_params(func, params_owned, sig);
-        if let FunctionKind::Constructor(_) = &func.kind {
-            self.push_str(" -> Self")
+        self.push_str(" -> ");
+        if let FunctionKind::Constructor(resource_id) = &func.kind {
+            match classify_constructor_return_type(&self.resolve, *resource_id, &func.result) {
+                ConstructorReturnType::Self_ => {
+                    self.push_str("Self");
+                }
+                ConstructorReturnType::Result { err } => {
+                    self.push_str("Result<Self, ");
+                    self.print_result_type(&err);
+                    self.push_str("> where Self: Sized");
+                }
+            }
         } else {
-            self.print_results(&func.result);
+            self.print_result_type(&func.result);
         }
         params
     }
@@ -1482,9 +1493,7 @@ unsafe fn call_import(_params: Self::ParamsLower, _results: *mut u8) -> u32 {{
         params
     }
 
-    fn print_results(&mut self, result: &Option<Type>) {
-        self.push_str(" -> ");
-
+    fn print_result_type(&mut self, result: &Option<Type>) {
         match result {
             None => {
                 self.push_str("()");
