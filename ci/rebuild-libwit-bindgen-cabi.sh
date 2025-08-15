@@ -91,7 +91,7 @@ EOF
 build() {
   file=$1
   $WASI_SDK_PATH/bin/clang crates/guest-rust/rt/src/$1.c \
-    -O -c -o crates/guest-rust/rt/src/$1.o
+    -O -c -o crates/guest-rust/rt/src/$1.o -mcpu=mvp
   # Remove the `producers` section. This appears to differ whether the host for
   # clang is either macOS or Linux. Not needed here anyway, so discard it to help
   # either host produce the same object.
