@@ -45,6 +45,8 @@ struct RustConfig {
     externs: Vec<String>,
 }
 
+const STUB_SEPARATE: bool = false;
+
 impl LanguageMethods for Rust {
     fn display(&self) -> &str {
         "rust"
@@ -91,7 +93,11 @@ impl LanguageMethods for Rust {
     }
 
     fn default_bindgen_args_for_codegen(&self) -> &[&str] {
-        &["--stubs", "embedded"]
+        if STUB_SEPARATE {
+            &["--stubs", "separate"]
+        } else {
+            &["--stubs", "embedded"]
+        }
     }
 
     fn prepare(&self, runner: &mut Runner<'_>) -> Result<()> {
@@ -230,7 +236,10 @@ path = 'lib.rs'
     fn verify(&self, runner: &Runner<'_>, verify: &Verify<'_>) -> Result<()> {
         let bindings = verify
             .bindings_dir
-            .join(format!("{}.rs", verify.world.to_snake_case()));
+            .join(format!("{}{}.rs",
+                          verify.world.to_snake_case(),
+                          if STUB_SEPARATE { "_impl" } else { "" },
+            ));
         let test_edition = |edition: Edition| -> Result<()> {
             let mut cmd = runner.rustc(edition);
             cmd.arg(&bindings)
