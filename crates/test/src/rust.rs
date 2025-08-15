@@ -234,12 +234,11 @@ path = 'lib.rs'
     }
 
     fn verify(&self, runner: &Runner<'_>, verify: &Verify<'_>) -> Result<()> {
-        let bindings = verify
-            .bindings_dir
-            .join(format!("{}{}.rs",
-                          verify.world.to_snake_case(),
-                          if STUB_SEPARATE { "_impl" } else { "" },
-            ));
+        let bindings = verify.bindings_dir.join(format!(
+            "{}{}.rs",
+            verify.world.to_snake_case(),
+            if STUB_SEPARATE { "_impl" } else { "" },
+        ));
         let test_edition = |edition: Edition| -> Result<()> {
             let mut cmd = runner.rustc(edition);
             cmd.arg(&bindings)

@@ -170,7 +170,6 @@ pub struct Opts {
     #[cfg_attr(feature = "clap", arg(long, value_name = "NAME"))]
     pub skip: Vec<String>,
 
-
     /// Whether to generate stub implementations for any exported functions,
     /// interfaces, and/or resources.
     ///
@@ -861,9 +860,12 @@ macro_rules! __export_{world_name}_impl {{
             StubsMode::Separate => {
                 let name = &resolve.worlds[world_id].name;
                 let module_name = to_rust_module_raw(name.to_snake_case().as_str());
-                uwriteln!(self.stubs_src, "export!(Stub with_types_in crate::{module_name});")
-            },
-            StubsMode::Omit => {},
+                uwriteln!(
+                    self.stubs_src,
+                    "export!(Stub with_types_in crate::{module_name});"
+                )
+            }
+            StubsMode::Omit => {}
         };
     }
 
@@ -1016,9 +1018,12 @@ impl WorldGenerator for RustWasm {
                     // so a `mod core;` here would conflict with the built-in `core` crate
                     uwriteln!(self.stubs_src, "#[path = \"{module_name}.rs\"]\n");
                 }
-                uwriteln!(self.stubs_src, r#"mod {module_name_ident};
+                uwriteln!(
+                    self.stubs_src,
+                    r#"mod {module_name_ident};
 #[allow(warnings)]
-use crate::{module_name_ident}::*;"#);
+use crate::{module_name_ident}::*;"#
+                );
                 self.stubs_src.push_str("\n");
             }
         }
@@ -1642,63 +1647,11 @@ impl FnSig {
 static RUST_KEYWORDS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     // Source: https://doc.rust-lang.org/reference/keywords.html
     HashSet::from([
-        // strict keywords
-        "as",
-        "break",
-        "const",
-        "continue",
-        "crate",
-        "else",
-        "enum",
-        "extern",
-        "false",
-        "fn",
-        "for",
-        "if",
-        "impl",
-        "in",
-        "let",
-        "loop",
-        "match",
-        "mod",
-        "move",
-        "mut",
-        "pub",
-        "ref",
-        "return",
-        "self",
-        "Self",
-        "static",
-        "struct",
-        "super",
-        "trait",
-        "true",
-        "type",
-        "unsafe",
-        "use",
-        "where",
-        "while",
-        // added in edition 2018
-        "async",
-        "await",
-        "dyn",
-
-        // reserved keywords
-        "abstract",
-        "become",
-        "box",
-        "do",
-        "final",
-        "macro",
-        "override",
-        "priv",
-        "typeof",
-        "unsized",
-        "virtual",
-        "yield",
-        // added in edition 2018
-        "try",
-        // added in edition 2024
+        "as", "break", "const", "continue", "crate", "else", "enum", "extern", "false", "fn",
+        "for", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub", "ref",
+        "return", "self", "Self", "static", "struct", "super", "trait", "true", "type", "unsafe",
+        "use", "where", "while", "async", "await", "dyn", "abstract", "become", "box", "do",
+        "final", "macro", "override", "priv", "typeof", "unsized", "virtual", "yield", "try",
         "gen",
     ])
 });
@@ -1721,12 +1674,8 @@ pub fn to_rust_ident_raw(name: &str) -> String {
     }
 }
 
-static RUST_CRATE_NAMES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
-    HashSet::from([
-        "core",
-        "alloc",
-        "std",
-])});
+static RUST_CRATE_NAMES: LazyLock<HashSet<&'static str>> =
+    LazyLock::new(|| HashSet::from(["core", "alloc", "std"]));
 
 pub fn to_rust_module_raw(name: &str) -> String {
     if RUST_CRATE_NAMES.contains(name) {
