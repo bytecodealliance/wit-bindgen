@@ -279,8 +279,14 @@ impl InterfaceGenerator<'_> {
             func.name.to_string()
         };
 
+        let target = if let FunctionKind::Freestanding = &func.kind {
+            &mut self.csharp_interop_src
+        } else {
+            &mut self.src
+        };
+
         uwrite!(
-            self.csharp_interop_src,
+            target,
             r#"
             internal static class {interop_camel_name}WasmInterop
             {{
@@ -292,7 +298,7 @@ impl InterfaceGenerator<'_> {
 
         for (src, params) in funcs {
             uwrite!(
-                self.src,
+                target,
                 r#"
                     {access} {modifiers} unsafe {result_type} {camel_name}({params})
                     {{

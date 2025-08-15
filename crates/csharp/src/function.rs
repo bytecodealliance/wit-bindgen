@@ -1038,13 +1038,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     None => operands.join(", "),
                 };
 
-                let (_namespace, interface_name) =
-                    &CSharp::get_class_name_from_qualified_name(self.interface_gen.name);
-                let interop_name = format!("{}Interop", interface_name.strip_prefix("I").unwrap());
-
                 uwriteln!(
                     self.src,
-                    "{assignment} {interop_name}.{func_name}WasmInterop.wasmImport{func_name}({operands});"
+                    "{assignment} {func_name}WasmInterop.wasmImport{func_name}({operands});"
                 );
 
                 if let Some(buffer) = async_return_buffer {
