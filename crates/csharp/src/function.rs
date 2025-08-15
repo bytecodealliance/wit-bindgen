@@ -1008,7 +1008,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let requires_async_return_buffer_param = is_async && sig.results.len() >= 1;
                 let async_return_buffer = if requires_async_return_buffer_param {
                     let buffer = self.emit_allocation_for_type(&sig.results);
-                    uwriteln!(self.src, "//TODO: store somewhere with the TaskCompletionSource.");
+                    uwriteln!(self.src, "//TODO: store somewhere with the TaskCompletionSource, possibly in the state, using Task.AsyncState to retrieve it later.");
                     Some(buffer)
                 } else {
                     None
@@ -1132,6 +1132,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         return (uint)CallbackCode.Exit;
                     }}
                     
+                    // TODO: Defer dropping borrowed resources until a result is returned.
                     return (uint)CallbackCode.Yield;
                     "#);
                 }

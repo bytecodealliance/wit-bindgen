@@ -685,6 +685,7 @@ impl InterfaceGenerator<'_> {
             "#
             );
 
+            // TODO: The task return function can take up to 16 core parameters.
             let task_return_param = match &sig.results[..] {
                 [] => "",
                 [_result] => &format!("{} result", wasm_result_type),
@@ -694,6 +695,7 @@ impl InterfaceGenerator<'_> {
             uwriteln!(
                 self.csharp_interop_src,
                 r#"
+            // TODO: The task return function can take up to 16 core parameters.
             [global::System.Runtime.InteropServices.DllImportAttribute("[export]{import_module_name}", EntryPoint = "[task-return]{wasm_func_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
             internal static extern void {camel_name}TaskReturn({task_return_param});
             "#
