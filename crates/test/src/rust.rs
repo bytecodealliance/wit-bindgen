@@ -67,7 +67,9 @@ impl LanguageMethods for Rust {
 
         // Currently there's a bug with this borrowing mode which means that
         // this variant does not pass.
-        if name.starts_with("wasi-http-borrowed-duplicate") {
+        if name == "wasi-http-borrowed-duplicate"
+            || name == "wasi-http-borrowed-duplicate-separate-stubs"
+        {
             return true;
         }
 
