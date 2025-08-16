@@ -1172,18 +1172,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
 
                 // Perform memory lowing of relevant results, including out pointers as well as traditional results
                 match (lower_to_memory, sig.retptr, variant) {
-                    // Async guest imports with do no lowering cannot have ret pointers
-                    // not having to do lowering implies that there was no return pointer provided
-                    (_lower_to_memory @ false, _has_ret_ptr @ true, AbiVariant::GuestImport)
-                        if async_ =>
-                    {
-                        unreachable!(
-                            "async guest import cannot avoid lowering when a ret ptr is present ({async_note} func [{func_name}], variant {variant:#?})",
-                            async_note = async_.then_some("async").unwrap_or("sync"),
-                            func_name = func.name,
-                        )
-                    }
-
                     // For sync calls, if no lowering to memory is required and there *is* a return pointer in use
                     // then we need to lower then simply lower the result(s) and return that directly from the function.
                     (_lower_to_memory @ false, _, _) => {
