@@ -1115,7 +1115,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     let mut offset = 0;
                     for (_, ty) in func.params.iter() {
                         let types = flat_types(self.resolve, ty, Some(max_flat_params))
-                            .expect("direct parameter load failed to produce types during generation of fn call");
+                            .expect(&format!("direct parameter load failed to produce types during generation of fn call (func name: '{}')", func.name));
                         for _ in 0..types.len() {
                             self.emit(&Instruction::GetArg { nth: offset });
                             offset += 1;
@@ -1134,29 +1134,13 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 // interface function completes, so lowering is conditional
                 // based on slightly different logic for the `task.return`
                 // intrinsic.
-                let (lower_to_memory, async_flat_results) = match (variant, async_, &func.result) {
-                    // Async guest imports return a i32 status code
-                    (
-                        AbiVariant::GuestImport | AbiVariant::GuestImportAsync,
-                        _is_async @ true,
-                        None,
-                    ) => {
-                        unreachable!("async guest imports always return a result")
-                    }
-                    // Async guest imports return a i32 status code
-                    (
-                        AbiVariant::GuestImport | AbiVariant::GuestImportAsync,
-                        _is_async @ true,
-                        Some(ty),
-                    ) => {
-                        // For async guest imports, we know whether we must lower results
-                        // if there are no params (i.e. the usual out pointer wasn't even required)
-                        // and we always know the return value will be a i32 status code
-                        assert!(matches!(ty, Type::U32 | Type::S32));
-                        (sig.params.is_empty(), Some(Some(vec![WasmType::I32])))
-                    }
-                    // All other async cases
-                    (_, _is_async @ true, func_result) => {
+                //
+                // Note that in the async import case teh code below deals with the CM function being lowered,
+                // not the core function that is underneath that (i.e. func.result may be empty,
+                // where the associated core function underneath must have a i32 status code result)
+                let (lower_to_memory, async_flat_results) = match (async_, &func.result) {
+                    // All async cases pass along the function results and flatten where necesary
+                    (_is_async @ true, func_result) => {
                         let results = match &func_result {
                             Some(ty) => flat_types(self.resolve, ty, Some(max_flat_params)),
                             None => Some(Vec::new()),
@@ -1164,7 +1148,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         (results.is_none(), Some(results))
                     }
                     // All other non-async cases
-                    (_, _is_async @ false, _) => (sig.retptr, None),
+                    (_is_async @ false, _) => (sig.retptr, None),
                 };
 
                 // This was dynamically allocated by the caller (or async start
