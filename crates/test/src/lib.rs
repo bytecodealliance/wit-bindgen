@@ -214,6 +214,7 @@ struct Verify<'a> {
     bindings_dir: &'a Path,
     artifacts_dir: &'a Path,
     args: &'a [String],
+    args_kind: &'a str,
     world: &'a str,
 }
 
@@ -503,21 +504,9 @@ impl Runner<'_> {
                     continue;
                 }
 
-                let mut args = Vec::new();
-                for arg in language.obj().default_bindgen_args_for_codegen() {
-                    args.push(arg.to_string());
-                }
-
-                codegen_tests.push((
-                    language.clone(),
-                    test,
-                    name.to_string(),
-                    args.clone(),
-                    config.clone(),
-                ));
-
                 for (args_kind, new_args) in language.obj().codegen_test_variants() {
                     let mut args = args.clone();
+                    let mut args = Vec::new();
                     for arg in new_args.iter() {
                         args.push(arg.to_string());
                     }
@@ -615,6 +604,7 @@ impl Runner<'_> {
                     bindings_dir: &bindings_dir,
                     wit_test: test,
                     args: &bindgen.args,
+                    args_kind,
                 },
             )
             .context("failed to verify generated bindings")?;
@@ -1107,16 +1097,15 @@ trait LanguageMethods {
     /// `//@` for Rust or `;;@` for WebAssembly Text.
     fn comment_prefix_for_test_config(&self) -> Option<&str>;
 
-    /// Returns the extra permutations, if any, of arguments to use with codegen
-    /// tests.
+    /// Returns all test permutations of arguments to use with codegen tests.
     ///
     /// This is used to run all codegen tests with a variety of bindings
     /// generator options. The first element in the tuple is a descriptive
-    /// string that should be unique (used in file names) and the second elemtn
+    /// string that should be unique (used in file names) and the second element
     /// is the list of arguments for that variant to pass to the bindings
     /// generator.
     fn codegen_test_variants(&self) -> &[(&str, &[&str])] {
-        &[]
+        &[("base", &[])]
     }
 
     /// Performs any one-time preparation necessary for this language, such as
@@ -1171,12 +1160,6 @@ trait LanguageMethods {
     ///
     /// Defaults to empty, but each language can override it.
     fn default_bindgen_args(&self) -> &[&str] {
-        &[]
-    }
-
-    /// Same as `default_bindgen_args` but specifically applied during codegen
-    /// tests, such as generating stub impls by default.
-    fn default_bindgen_args_for_codegen(&self) -> &[&str] {
         &[]
     }
 

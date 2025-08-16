@@ -30,8 +30,8 @@ impl LanguageMethods for Csharp {
         &["--runtime=native-aot"]
     }
 
-    fn default_bindgen_args_for_codegen(&self) -> &[&str] {
-        &["--generate-stub"]
+    fn codegen_test_variants(&self) -> &[(&str, &[&str])] {
+        &[("base", &["--generate-stub"])]
     }
 
     fn should_fail_verify(

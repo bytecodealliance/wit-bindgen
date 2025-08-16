@@ -45,8 +45,6 @@ struct RustConfig {
     externs: Vec<String>,
 }
 
-const STUB_SEPARATE: bool = false;
-
 impl LanguageMethods for Rust {
     fn display(&self) -> &str {
         "rust"
@@ -69,7 +67,7 @@ impl LanguageMethods for Rust {
 
         // Currently there's a bug with this borrowing mode which means that
         // this variant does not pass.
-        if name == "wasi-http-borrowed-duplicate" {
+        if name.starts_with("wasi-http-borrowed-duplicate") {
             return true;
         }
 
@@ -78,26 +76,40 @@ impl LanguageMethods for Rust {
 
     fn codegen_test_variants(&self) -> &[(&str, &[&str])] {
         &[
-            ("borrowed", &["--ownership=borrowing"]),
+            // embedded stubs
+            ("base", &["--stubs=embedded"]),
+            ("borrowed", &["--stubs=embedded", "--ownership=borrowing"]),
             (
                 "borrowed-duplicate",
-                &["--ownership=borrowing-duplicate-if-necessary"],
+                &[
+                    "--stubs=embedded",
+                    "--ownership=borrowing-duplicate-if-necessary",
+                ],
             ),
-            ("async", &["--async=all"]),
-            ("no-std", &["--std-feature"]),
+            ("async", &["--stubs=embedded", "--async=all"]),
+            ("no-std", &["--stubs=embedded", "--std-feature"]),
+            // separate stubs
+            (
+                "separate-stubs",
+                &["--stubs=separate", "--ownership=borrowing"],
+            ),
+            (
+                "borrowed-duplicate-separate-stubs",
+                &[
+                    "--stubs=separate",
+                    "--ownership=borrowing-duplicate-if-necessary",
+                ],
+            ),
+            ("async-separate-stubs", &["--stubs=separate", "--async=all"]),
+            (
+                "no-std-separate-stubs",
+                &["--stubs=separate", "--std-feature"],
+            ),
         ]
     }
 
     fn default_bindgen_args(&self) -> &[&str] {
         &["--generate-all", "--format"]
-    }
-
-    fn default_bindgen_args_for_codegen(&self) -> &[&str] {
-        if STUB_SEPARATE {
-            &["--stubs", "separate"]
-        } else {
-            &["--stubs", "embedded"]
-        }
     }
 
     fn prepare(&self, runner: &mut Runner<'_>) -> Result<()> {
@@ -237,7 +249,11 @@ path = 'lib.rs'
         let bindings = verify.bindings_dir.join(format!(
             "{}{}.rs",
             verify.world.to_snake_case(),
-            if STUB_SEPARATE { "_impl" } else { "" },
+            if verify.args_kind.ends_with("separate-stubs") {
+                "_impl"
+            } else {
+                ""
+            },
         ));
         let test_edition = |edition: Edition| -> Result<()> {
             let mut cmd = runner.rustc(edition);
