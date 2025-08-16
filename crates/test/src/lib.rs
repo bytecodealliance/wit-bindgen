@@ -505,7 +505,6 @@ impl Runner<'_> {
                 }
 
                 for (args_kind, new_args) in language.obj().codegen_test_variants() {
-                    let mut args = args.clone();
                     let mut args = Vec::new();
                     for arg in new_args.iter() {
                         args.push(arg.to_string());
