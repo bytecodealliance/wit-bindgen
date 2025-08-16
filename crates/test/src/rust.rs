@@ -92,7 +92,7 @@ impl LanguageMethods for Rust {
             ("no-std", &["--stubs=embedded", "--std-feature"]),
             // separate stubs
             (
-                "separate-stubs",
+                "base-separate-stubs",
                 &["--stubs=separate", "--ownership=borrowing"],
             ),
             (
@@ -251,7 +251,7 @@ path = 'lib.rs'
         let bindings = verify.bindings_dir.join(format!(
             "{}{}.rs",
             verify.world.to_snake_case(),
-            if verify.args_kind.ends_with("separate-stubs") {
+            if verify.args_kind.ends_with("-separate-stubs") {
                 "_impl"
             } else {
                 ""
