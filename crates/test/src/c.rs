@@ -68,6 +68,7 @@ impl LanguageMethods for C {
 
     fn codegen_test_variants(&self) -> &[(&str, &[&str])] {
         &[
+            ("base", &[]),
             ("no-sig-flattening", &["--no-sig-flattening"]),
             ("autodrop", &["--autodrop-borrows=yes"]),
             ("async", &["--async=all"]),
