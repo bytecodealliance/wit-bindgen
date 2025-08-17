@@ -1364,10 +1364,15 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwriteln!(self.src, "// TODO_task_cancel.forget();");
             }
 
-            Instruction::FutureLift { payload, ty } => {
-                uwriteln!(self.src, "var reader = new FutureReader({});",  operands[0]);
-                self.interface_gen.csharp_gen.needs_future_support = true;
+            Instruction::FutureLift { payload: _, ty } => {
+                // TODO get the prefix for the type
+                let sig_type_name = "Void";
+                uwriteln!(self.src, "var reader = new {}.FutureReader{}({});", self.interface_gen.name, sig_type_name, operands[0]);
+                self.interface_gen.csharp_gen.needs_future_reader_support = true;
                 results.push("reader".to_string());
+
+                self.interface_gen.add_future(self.func_name);
+                self.interface_gen.csharp_gen.needs_future_reader_support = true;
             }
 
             Instruction::StreamLower { .. }

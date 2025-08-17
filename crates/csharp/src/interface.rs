@@ -173,38 +173,33 @@ impl InterfaceGenerator<'_> {
     }
 
     pub(crate) fn add_futures(&mut self, import_module_name: &str) {
+        if(self.futures.is_empty()) {
+            return;
+        }
+
+        let (_namespace, interface_name) =
+            &CSharp::get_class_name_from_qualified_name(self.name);
+        let interop_name = format!("{}Interop", interface_name.strip_prefix("I").unwrap());
+
         for future in &self.futures {
             let camel_name = future.to_upper_camel_case();
 
+            //TODO: we need these per future type.
+            // Create a hash map..
             uwrite!(
                 self.csharp_interop_src,
                 r#"
                 [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-new-0][async]{future}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
-                internal static extern ulong {camel_name}_void_new();
+                internal static extern ulong {camel_name}VoidNew();
                 "#
             );
 
-            uwrite!(
-                self.csharp_interop_src,
-                r#"
-                [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[async-lower][future-read-0][async]{future}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
-                internal static unsafe extern ulong {camel_name}_void_read(uint readable, byte* buffer);
-                "#
-            );
-
-            uwrite!(
-                self.csharp_interop_src,
-                r#"
-                [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[async-lower][future-write-0][async]{future}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
-                internal static unsafe extern ulong {camel_name}_void_write(uint writeable, byte* buffer);
-                "#
-            );
-
+            // TODO: Move this and other type dependent functions out to another function.
             uwrite!(
                 self.csharp_interop_src,
                 r#"
                 [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-cancel-read-0][async]{future}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
-                internal static extern uint {camel_name}CancelRead(uint readable);
+                internal static extern uint {camel_name}CancelRead(int readable);
                 "#
             );
 
@@ -212,7 +207,7 @@ impl InterfaceGenerator<'_> {
                 self.csharp_interop_src,
                 r#"
                 [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-cancel-write-0][async]{future}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
-                internal static extern uint {camel_name}CancelWrite(uint writeable);
+                internal static extern uint {camel_name}CancelWrite(int writeable);
                 "#
             );
 
@@ -220,7 +215,7 @@ impl InterfaceGenerator<'_> {
                 self.csharp_interop_src,
                 r#"
                 [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-drop-readable-0][async]{future}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
-                internal static extern void {camel_name}DropReadable(uint readable);
+                internal static extern void {camel_name}DropReadable(int readable);
                 "#
             );
 
@@ -228,13 +223,10 @@ impl InterfaceGenerator<'_> {
                 self.csharp_interop_src,
                 r#"
                 [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-drop-writeable-0][async]{future}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
-                internal static extern void {camel_name}DropWriteable(uint writeable);
+                internal static extern void {camel_name}DropWriteable(int writeable);
                 "#
             );
 
-            let (_namespace, interface_name) =
-                &CSharp::get_class_name_from_qualified_name(self.name);
-            let interop_name = format!("{}Interop", interface_name.strip_prefix("I").unwrap());
             self.csharp_gen
                 .interface_fragments
                 .entry(self.name.to_string())
@@ -242,23 +234,118 @@ impl InterfaceGenerator<'_> {
                 .interface_fragments
                 .push(InterfaceFragment {
                     csharp_src: format!(r#"
-                    public static (FutureReader, FutureWriter) {camel_name}New() 
+                    public static (FutureReader, FutureWriter) {camel_name}VoidNew() 
                     {{
-                         var packed = {interop_name}.{camel_name}_void_new();
+                         var packed = {interop_name}.{camel_name}VoidNew();
                          var readerHandle = (int)(packed & 0xFFFFFFFF);
                          var writerHandle = (int)(packed >> 32);
 
-                         return (new FutureReader(readerHandle), new FutureWriter(writerHandle));
+                         return (new FutureReaderVoid(readerHandle), new FutureWriterVoid(writerHandle));
                     }}
-
-
                     "#).to_string(),
                     csharp_interop_src: "".to_string(),
                     stub: "".to_string(),
                 });
             
-            self.csharp_gen.needs_future_support = true;
+            self.csharp_gen.needs_future_reader_support = true;
+            self.csharp_gen.needs_future_writer_support = true;
         }
+
+        uwrite!(
+                self.csharp_interop_src,
+                r#"
+                [global::System.Runtime.InteropServices.DllImportAttribute("$root", EntryPoint = "[waitable-set-new]"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
+                internal static extern int WaitableSetNew();
+                "#
+        );
+
+        uwrite!(
+                self.csharp_interop_src,
+                r#"
+                [global::System.Runtime.InteropServices.DllImportAttribute("$root", EntryPoint = "[waitable-join]"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
+                internal static extern void WaitableJoin(int waitable, int set);
+                "#
+        );
+
+        uwrite!(
+                self.csharp_interop_src,
+                r#"
+                [global::System.Runtime.InteropServices.DllImportAttribute("$root", EntryPoint = "[waitable-set-wait]"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
+                internal static unsafe extern int WaitableSetWait(int waitable, EventWaitable* evPtr);
+                "#
+        );
+
+        // TODO: for each type:
+        let future_type_name = "Void";
+
+        self.csharp_gen
+            .interface_fragments
+            .entry(self.name.to_string())
+            .or_insert_with(|| InterfaceTypeAndFragments::new(false))
+            .interface_fragments
+            .push(InterfaceFragment {
+                csharp_src: format!(r#"
+                    public class FutureReader{future_type_name} : FutureReader
+                    {{
+                        public FutureReader{future_type_name}(int handle) : base(handle) {{ }}
+
+                        protected override int Read(int handle)
+                        {{
+                            return {interop_name}.FutureRead{future_type_name}(handle, IntPtr.Zero);
+                        }}
+                    }}
+
+                    public class FutureWriter{future_type_name} : FutureWriter
+                    {{
+                        public FutureWriter{future_type_name}(int handle) : base(handle) {{ }}
+
+                        protected override int Write(int handle, IntPtr buffer)
+                        {{
+                            return {interop_name}.FutureWrite{future_type_name}(handle, buffer);
+                        }}
+                    }}
+
+                "#).to_string(),
+                csharp_interop_src: format!(r#"
+                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[async-lower][future-read-0][async]read-future"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
+                    internal static unsafe extern int FutureReadVoid(int readable, IntPtr ptr);
+
+                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[async-lower][future-write-0][async]read-future"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
+                    internal static unsafe extern int FutureWriteVoid(int writeable, IntPtr buffer);
+                "#).to_string(),
+                stub: "".to_string(),
+            });
+
+        self.csharp_gen
+            .interface_fragments
+            .entry(self.name.to_string())
+            .or_insert_with(|| InterfaceTypeAndFragments::new(false))
+            .interface_fragments
+            .push(InterfaceFragment {
+                csharp_src: format!(r#"
+                public static WaitableSet WaitableSetNew() 
+                {{
+                        var waitable = {interop_name}.WaitableSetNew();
+                        return new WaitableSet(waitable);
+                }}
+
+                public static void Join(FutureWriter writer, WaitableSet set) 
+                {{
+                        {interop_name}.WaitableJoin(writer.Handle, set.Handle);
+                }}
+
+                public unsafe static void WaitableSetWait(WaitableSet set, ref EventWaitable ev) 
+                {{
+                    fixed(EventWaitable* ptr = &ev)
+                    {{
+                        ev.EventCode = (EventCode){interop_name}.WaitableSetWait(set.Handle, ptr);
+                    }}
+                }}
+
+                "#).to_string(),
+                csharp_interop_src: "".to_string(),
+                stub: "".to_string(),
+        });
     }
 
     pub(crate) fn add_world_fragment(self) {

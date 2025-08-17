@@ -33,7 +33,8 @@ pub struct CSharp {
     pub(crate) needs_rep_table: bool,
     pub(crate) needs_wit_exception: bool,
     pub(crate) needs_async_support: bool,
-    pub(crate) needs_future_support: bool,
+    pub(crate) needs_future_reader_support: bool,
+    pub(crate) needs_future_writer_support: bool,
     pub(crate) interface_fragments: HashMap<String, InterfaceTypeAndFragments>,
     pub(crate) world_fragments: Vec<InterfaceFragment>,
     pub(crate) sizes: SizeAlign,
@@ -220,7 +221,7 @@ impl WorldGenerator for CSharp {
         gen.define_interface_types(id);
 
         let import_module_name = &resolve.name_world_key(key);
-        gen.add_futures(import_module_name);
+        gen.add_futures(&format!("[export]{import_module_name}"));
 
         gen.add_interface_fragment(true);
         Ok(())
@@ -520,9 +521,19 @@ impl WorldGenerator for CSharp {
             src.push_str(include_str!("AsyncSupport.cs"));
         }
 
-        if self.needs_future_support {
+        if self.needs_future_reader_support || self.needs_future_writer_support {
             src.push_str("\n");
-            src.push_str(include_str!("FutureSupport.cs"));
+            src.push_str(include_str!("FutureCommonSupport.cs"));
+        }
+
+        if self.needs_future_reader_support {
+            src.push_str("\n");
+            src.push_str(include_str!("FutureReaderSupport.cs"));
+        }
+
+        if self.needs_future_writer_support {
+            src.push_str("\n");
+            src.push_str(include_str!("FutureWriterSupport.cs"));
         }
 
         src.push_str("\n");
