@@ -545,9 +545,11 @@ impl WorldGenerator for Cpp {
             __attribute__((__weak__{export_name}))
             void *cabi_realloc(void *ptr, size_t old_size, size_t align, size_t new_size) {{
                 (void) old_size;
-                if (new_size == 0) return (void*) align;
-                void *ret = realloc(ptr, new_size);
-                if (!ret) abort();
+                void *ret = reinterpret_cast<void*>(align);
+                if (new_size != 0) {{
+                    ret = realloc(ptr, new_size);
+                    if (!ret) {{ abort(); }}
+                }}
                 return ret;
             }}
 
