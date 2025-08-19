@@ -262,14 +262,14 @@ fn parse_source(
                 // whether it exists and only if there is it parsed.
                 None => {
                     if default.exists() {
-                        parse(default)?;
+                        parse(&[default])?;
                     }
                 }
             }
             pkgs.push(resolve.push_group(UnresolvedPackageGroup::parse("macro-input", s)?)?);
         }
         Some(Source::Paths(p)) => parse(p)?,
-        None => parse(&vec![default])?,
+        None => parse(&[default])?,
     };
 
     Ok((resolve, pkgs, files))
