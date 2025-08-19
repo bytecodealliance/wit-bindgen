@@ -1184,7 +1184,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     let mut offset = 0;
                     for (_, ty) in func.params.iter() {
                         let types = flat_types(self.resolve, ty, Some(max_flat_params))
-                            .expect("direct parameter load failed to produce types during generation of fn call");
+                            .expect(&format!("direct parameter load failed to produce types during generation of fn call (func name: '{}')", func.name));
                         for _ in 0..types.len() {
                             self.emit(&Instruction::GetArg { nth: offset });
                             offset += 1;
@@ -1203,42 +1203,30 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 // interface function completes, so lowering is conditional
                 // based on slightly different logic for the `task.return`
                 // intrinsic.
-                let (lower_to_memory, async_flat_results) = match (variant, async_, &func.result) {
-                    // Async guest imports return a i32 status code
-                    (
-                        AbiVariant::GuestImport | AbiVariant::GuestImportAsync,
-                        _is_async @ true,
-                        None,
-                    ) => {
-                        if !self.symmetric {
-                            unreachable!("async guest imports always return a result")
-                        } else {
-                            (sig.params.is_empty(), Some(Some(vec![WasmType::Pointer])))
+                //
+                // Note that in the async import case teh code below deals with the CM function being lowered,
+                // not the core function that is underneath that (i.e. func.result may be empty,
+                // where the associated core function underneath must have a i32 status code result)
+                let (lower_to_memory, async_flat_results) =
+                    match (variant, async_, &func.result, self.symmetric) {
+                        // Async guest imports return a i32 status code
+                        (
+                            AbiVariant::GuestImport | AbiVariant::GuestImportAsync,
+                            _is_async @ true,
+                            None,
+                            true,
+                        ) => (sig.params.is_empty(), Some(Some(vec![WasmType::Pointer]))),
+                        // All async cases pass along the function results and flatten where necesary
+                        (_, _is_async @ true, func_result, _) => {
+                            let results = match &func_result {
+                                Some(ty) => flat_types(self.resolve, ty, Some(max_flat_params)),
+                                None => Some(Vec::new()),
+                            };
+                            (results.is_none(), Some(results))
                         }
-                    }
-                    // Async guest imports return a i32 status code
-                    (
-                        AbiVariant::GuestImport | AbiVariant::GuestImportAsync,
-                        _is_async @ true,
-                        Some(ty),
-                    ) => {
-                        // For async guest imports, we know whether we must lower results
-                        // if there are no params (i.e. the usual out pointer wasn't even required)
-                        // and we always know the return value will be a i32 status code
-                        assert!(matches!(ty, Type::U32 | Type::S32));
-                        (sig.params.is_empty(), Some(Some(vec![WasmType::I32])))
-                    }
-                    // All other async cases
-                    (_, _is_async @ true, func_result) => {
-                        let results = match &func_result {
-                            Some(ty) => flat_types(self.resolve, ty, Some(max_flat_params)),
-                            None => Some(Vec::new()),
-                        };
-                        (results.is_none(), Some(results))
-                    }
-                    // All other non-async cases
-                    (_, _is_async @ false, _) => (sig.retptr, None),
-                };
+                        // All other non-async cases
+                        (_, _is_async @ false, _, _) => (sig.retptr, None),
+                    };
 
                 // This was dynamically allocated by the caller (or async start
                 // function) so after it's been read by the guest we need to
@@ -1266,18 +1254,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     variant,
                     lift_lower == LiftLower::Symmetric,
                 ) {
-                    // Async guest imports with do no lowering cannot have ret pointers
-                    // not having to do lowering implies that there was no return pointer provided
-                    (_lower_to_memory @ false, _has_ret_ptr @ true, AbiVariant::GuestImport, _)
-                        if async_ =>
-                    {
-                        unreachable!(
-                            "async guest import cannot avoid lowering when a ret ptr is present ({async_note} func [{func_name}], variant {variant:#?})",
-                            async_note = async_.then_some("async").unwrap_or("sync"),
-                            func_name = func.name,
-                        )
-                    }
-
                     // For sync calls, if no lowering to memory is required and there *is* a return pointer in use
                     // then we need to lower then simply lower the result(s) and return that directly from the function.
                     (_lower_to_memory @ false, _, _, _) => {

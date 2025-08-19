@@ -260,15 +260,25 @@ fn parse_source(
         }
         Ok(())
     };
+    let default = root.join("wit");
     match source {
         Some(Source::Inline(s, path)) => {
-            if let Some(p) = path {
-                parse(p)?;
+            match path {
+                Some(p) => parse(p)?,
+                // If no `path` is explicitly specified still parse the default
+                // `wit` directory if it exists. Don't require its existence,
+                // however, as `inline` can be used in lieu of a folder. Test
+                // whether it exists and only if there is it parsed.
+                None => {
+                    if default.exists() {
+                        parse(&[default])?;
+                    }
+                }
             }
             pkgs.push(resolve.push_group(UnresolvedPackageGroup::parse("macro-input", s)?)?);
         }
         Some(Source::Paths(p)) => parse(p)?,
-        None => parse(&vec![root.join("wit")])?,
+        None => parse(&[default])?,
     };
 
     Ok((resolve, pkgs, files))
