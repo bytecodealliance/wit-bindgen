@@ -2818,48 +2818,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         }
     }
 
-    fn has_resources2(&self, ty: &Type) -> bool {
-        match ty {
-            Type::Bool
-            | Type::U8
-            | Type::U16
-            | Type::U32
-            | Type::U64
-            | Type::S8
-            | Type::S16
-            | Type::S32
-            | Type::S64
-            | Type::F32
-            | Type::F64
-            | Type::Char => false,
-            Type::String => false,
-            Type::Id(id) => self.has_resources(id),
-            Type::ErrorContext => todo!(),
-        }
-    }
-    fn has_resources(&self, id: &TypeId) -> bool {
-        match &self.gen.resolve.types[*id].kind {
-            TypeDefKind::Record(_) => todo!(),
-            TypeDefKind::Resource => true,
-            TypeDefKind::Handle(_) => true,
-            TypeDefKind::Flags(_) => false,
-            TypeDefKind::Tuple(t) => t.types.iter().any(|ty| self.has_resources2(ty)),
-            TypeDefKind::Variant(_) => todo!(),
-            TypeDefKind::Enum(_) => false,
-            TypeDefKind::Option(_) => todo!(),
-            TypeDefKind::Result(_) => todo!(),
-            TypeDefKind::List(_) => todo!(),
-            TypeDefKind::Future(_) => todo!(),
-            TypeDefKind::Stream(_) => todo!(),
-            TypeDefKind::Type(ty) => match ty {
-                Type::Id(id) => self.has_resources(id),
-                _ => false,
-            },
-            TypeDefKind::FixedSizeList(_, _) => todo!(),
-            TypeDefKind::Unknown => todo!(),
-        }
-    }
-
     fn lower_lift(&mut self, payload: Option<&Type>) -> String {
         let typestr = self
             .gen

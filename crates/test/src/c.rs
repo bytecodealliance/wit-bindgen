@@ -21,8 +21,6 @@ pub struct COpts {
 
 pub struct C;
 
-pub struct Cpp;
-
 /// C/C++-specific configuration of component files
 #[derive(Default, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -37,14 +35,6 @@ fn clang(runner: &Runner<'_>) -> PathBuf {
     match &runner.opts.c.wasi_sdk_path {
         Some(path) => path.join(format!("bin/{target}-clang")),
         None => format!("{target}-clang").into(),
-    }
-}
-
-fn clangpp(runner: &Runner<'_>) -> PathBuf {
-    let target = &runner.opts.c.c_target;
-    match &runner.opts.c.wasi_sdk_path {
-        Some(path) => path.join(format!("bin/{target}-clang++")),
-        None => format!("{target}-clang++").into(),
     }
 }
 
@@ -84,41 +74,6 @@ impl LanguageMethods for C {
 
     fn verify(&self, runner: &Runner<'_>, v: &Verify<'_>) -> Result<()> {
         verify(runner, v, clang(runner))
-    }
-}
-
-impl LanguageMethods for Cpp {
-    fn display(&self) -> &str {
-        "cpp"
-    }
-
-    fn bindgen_name(&self) -> Option<&str> {
-        Some("c")
-    }
-
-    fn comment_prefix_for_test_config(&self) -> Option<&str> {
-        Some("//@")
-    }
-
-    fn should_fail_verify(
-        &self,
-        name: &str,
-        config: &crate::config::WitConfig,
-        args: &[String],
-    ) -> bool {
-        C.should_fail_verify(name, config, args)
-    }
-
-    fn prepare(&self, runner: &mut Runner<'_>, _: &str) -> Result<()> {
-        prepare(runner, clangpp(runner))
-    }
-
-    fn compile(&self, runner: &Runner<'_>, c: &Compile<'_>) -> Result<()> {
-        compile(runner, c, clangpp(runner))
-    }
-
-    fn verify(&self, runner: &Runner<'_>, v: &Verify<'_>) -> Result<()> {
-        verify(runner, v, clangpp(runner))
     }
 }
 

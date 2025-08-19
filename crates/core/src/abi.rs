@@ -7,8 +7,6 @@ use wit_parser::{
     Handle, Int, Record, Resolve, Result_, SizeAlign, Tuple, Type, TypeDefKind, TypeId, Variant,
 };
 
-use crate::symmetric;
-
 // Helper macro for defining instructions without having to have tons of
 // exhaustive `match` statements to update
 macro_rules! def_instruction {
