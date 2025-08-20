@@ -354,9 +354,7 @@ impl InterfaceGenerator<'_> {
                 {{
                     int* buffer = stackalloc int[2];
                     var eventCode = (EventCode){interop_name}.WaitableSetWait(set.Handle, buffer);
-                    var res = new EventWaitable(eventCode, buffer[1]);
-                    res.Waitable = buffer[0];
-                    return res;
+                    return new EventWaitable(eventCode, buffer[0], buffer[1]);
                 }}
 
                 "#).to_string(),

@@ -2,7 +2,7 @@
  * Helpers for future support.
  */
 
-public class WaitableStatus (int status)
+public readonly struct WaitableStatus (int status)
 {
     public int State => status & 0xf;
     public int Count => (int)(status >> 4);
@@ -22,15 +22,16 @@ public enum EventCode
     Cancel,
 }
 
-public struct EventWaitable
+public readonly struct EventWaitable
 {
-    public EventWaitable(EventCode eventCode, int code)
+    public EventWaitable(EventCode eventCode, int waitable, int code)
     {
         Event = eventCode;
+        Waitable = waitable;
         Status = new WaitableStatus(code);
     }
-    public EventCode Event;
-    public int Waitable;
+    public readonly EventCode Event;
+    public readonly int Waitable;
     public readonly int Code;
 
     public readonly WaitableStatus Status;
