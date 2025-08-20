@@ -521,9 +521,17 @@ impl WorldGenerator for CSharp {
             src.push_str(include_str!("AsyncSupport.cs"));
         }
 
-        if self.needs_future_reader_support || self.needs_future_writer_support {
+        if (self.needs_future_reader_support || self.needs_future_writer_support) && self.interface_fragments.len() > 0 {
+
+
+            let full_name = self.interface_fragments.iter().next().unwrap().0;
+
+            let (namespace, interface_name) =
+                &CSharp::get_class_name_from_qualified_name(full_name);
+            let base_name = interface_name.strip_prefix("I").unwrap();
+            let full_name = format!("{namespace}.{base_name}Interop");
             src.push_str("\n");
-            src.push_str(include_str!("FutureCommonSupport.cs"));
+            src.push_str(&include_str!("FutureCommonSupport.cs").replace("{{interop_name}}", full_name.as_str()));
         }
 
         if self.needs_future_reader_support {

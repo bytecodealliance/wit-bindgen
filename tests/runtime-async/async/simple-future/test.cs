@@ -11,16 +11,28 @@ namespace TestWorld.wit.exports.my.test
             Debug.Assert(task.IsCompleted);
             // TODO: Should we check the Count?
 
-//   exports_test_future_void_drop_readable(future);
-            //   exports_test_async_read_future_return();
-            //   return TEST_CALLBACK_CODE_EXIT;
+            reader.Dispose();
 
             return Task.CompletedTask;
+        }
+
+        public static int ReadFutureCallback()
+        {
+            Debug.Assert(false);
+            return 0;
         }
 
         public static Task DropFuture(FutureReader reader)
         {
+            reader.Dispose();
             return Task.CompletedTask;
         }
+
+        public static int DropFutureCallback()
+        {
+            Debug.Assert(false);
+            return 0;
+        }
+
     }
 }

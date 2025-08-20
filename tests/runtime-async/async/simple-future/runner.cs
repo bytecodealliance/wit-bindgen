@@ -21,11 +21,37 @@ public class Program
             II.Join(writer, set);
 
             var ev = new EventWaitable();
-            II.WaitableSetWait(set, ref ev);
-            //      assert(event.event == RUNNER_EVENT_FUTURE_WRITE);
-            // assert(event.waitable == writer);
-            // assert(RUNNER_WAITABLE_STATE(event.code) == RUNNER_WAITABLE_COMPLETED);
-            // assert(RUNNER_WAITABLE_COUNT(event.code) == 0);
+            var status = II.WaitableSetWait(set);
+            Debug.Assert(status.Event == EventCode.FutureWrite);
+            Debug.Assert(status.Waitable == writer.Handle);
+            Debug.Assert(status.Status.IsCompleted);
+            Debug.Assert(status.Status.Count == 0);
+
+            writer.Dispose();
+            set.Dispose();
+        }   
+
+        {
+            var (reader, writer) = II.DropFutureVoidNew();
+
+            var writeTask = writer.Write();
+            Debug.Assert(!writeTask.IsCompleted);
+
+            var task = II.DropFuture(reader);
+            Debug.Assert(task.IsCompleted);
+
+            var set = II.WaitableSetNew();
+            II.Join(writer, set);
+
+            var ev = new EventWaitable();
+            var status = II.WaitableSetWait(set);
+            Debug.Assert(status.Event == EventCode.FutureWrite);
+            Debug.Assert(status.Waitable == writer.Handle);
+            Debug.Assert(status.Status.IsDropped);
+            Debug.Assert(status.Status.Count == 0);
+
+            writer.Dispose();
+            set.Dispose();
         }
     }
 }

@@ -8,6 +8,7 @@ public class WaitableStatus (int status)
     public int Count => (int)(status >> 4);
     public bool IsBlocked => status == -1;
     public bool IsCompleted => State == 0;
+    public bool IsDropped => State == 1;
 }
 
 public enum EventCode
@@ -21,15 +22,37 @@ public enum EventCode
     Cancel,
 }
 
-[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
-public ref struct EventWaitable
+public struct EventWaitable
 {
-    public EventCode EventCode;
-    int Waitable;
-    int Code;
+    public EventWaitable(EventCode eventCode, int code)
+    {
+        Event = eventCode;
+        Status = new WaitableStatus(code);
+    }
+    public EventCode Event;
+    public int Waitable;
+    public readonly int Code;
+
+    public readonly WaitableStatus Status;
 }
 
-public class WaitableSet(int handle)
+public partial class WaitableSet(int handle) : IDisposable
 {
     public int Handle { get; } = handle;
+
+    void Dispose(bool _disposing)
+    {
+        {{interop_name}}.WaitableSetDrop(Handle);
+    }
+
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    ~WaitableSet()
+    {
+        Dispose(false);
+    }
 }

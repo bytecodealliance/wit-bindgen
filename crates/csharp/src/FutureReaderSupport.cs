@@ -2,7 +2,7 @@
  * Helpers for future reader support.
  */
 
-public abstract class FutureReader(int handle) // : TODO Waitable
+public abstract class FutureReader(int handle) : IDisposable // : TODO Waitable
 {
     public int Handle { get; } = handle;
 
@@ -11,7 +11,7 @@ public abstract class FutureReader(int handle) // : TODO Waitable
     {
         // TODO: Generate for the interop name and the namespace.
 
-        var status = new WaitableStatus(Read(Handle));
+        var status = new WaitableStatus(ReadInternal());
         if (status.IsBlocked)
         {
             //TODO: store somewhere so we can complete it later.
@@ -27,5 +27,23 @@ public abstract class FutureReader(int handle) // : TODO Waitable
         throw new NotImplementedException();
     }
 
-    protected abstract int Read(int handle);
+    void Dispose(bool _disposing)
+    {
+        // Free unmanaged resources if any.
+        Drop();
+    }
+
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    ~FutureReader()
+    {
+        Dispose(false);
+    }
+
+    protected abstract int ReadInternal();
+    protected abstract void Drop();
 }

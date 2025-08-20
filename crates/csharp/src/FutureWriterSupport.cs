@@ -21,5 +21,24 @@ public abstract class FutureWriter(int handle) // : TODO Waitable
         throw new NotImplementedException();
     }
 
+    protected abstract void Drop();
+
+    void Dispose(bool _disposing)
+    {
+        // Free unmanaged resources if any.
+        Drop();
+    }
+
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    ~FutureWriter()
+    {
+        Dispose(false);
+    }
+    
     protected abstract int Write(int handle, IntPtr buffer);
 }
