@@ -177,8 +177,7 @@ impl InterfaceGenerator<'_> {
             return;
         }
 
-        let (_namespace, interface_name) =
-            &CSharp::get_class_name_from_qualified_name(self.name);
+        let (_namespace, interface_name) = &CSharp::get_class_name_from_qualified_name(self.name);
         let interop_name = format!("{}Interop", interface_name.strip_prefix("I").unwrap());
 
         for future in &self.futures {
@@ -238,43 +237,42 @@ impl InterfaceGenerator<'_> {
                     csharp_interop_src: "".to_string(),
                     stub: "".to_string(),
                 });
-            
+
             self.csharp_gen.needs_future_reader_support = true;
             self.csharp_gen.needs_future_writer_support = true;
         }
 
         uwrite!(
-                self.csharp_interop_src,
-                r#"
+            self.csharp_interop_src,
+            r#"
                 [global::System.Runtime.InteropServices.DllImportAttribute("$root", EntryPoint = "[waitable-set-new]"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
                 internal static extern int WaitableSetNew();
                 "#
         );
 
         uwrite!(
-                self.csharp_interop_src,
-                r#"
+            self.csharp_interop_src,
+            r#"
                 [global::System.Runtime.InteropServices.DllImportAttribute("$root", EntryPoint = "[waitable-join]"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
                 internal static extern void WaitableJoin(int waitable, int set);
                 "#
         );
 
         uwrite!(
-                self.csharp_interop_src,
-                r#"
+            self.csharp_interop_src,
+            r#"
                 [global::System.Runtime.InteropServices.DllImportAttribute("$root", EntryPoint = "[waitable-set-wait]"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
                 internal static unsafe extern int WaitableSetWait(int waitable, int* waitableHandlePtr);
                 "#
         );
 
         uwrite!(
-                self.csharp_interop_src,
-                r#"
+            self.csharp_interop_src,
+            r#"
                 [global::System.Runtime.InteropServices.DllImportAttribute("$root", EntryPoint = "[waitable-set-drop]"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
                 internal static unsafe extern void WaitableSetDrop(int waitable);
                 "#
         );
-
 
         // TODO: for each type:
         let future_type_name = "Void";
@@ -338,7 +336,8 @@ impl InterfaceGenerator<'_> {
             .or_insert_with(|| InterfaceTypeAndFragments::new(false))
             .interface_fragments
             .push(InterfaceFragment {
-                csharp_src: format!(r#"
+                csharp_src: format!(
+                    r#"
                 public static WaitableSet WaitableSetNew() 
                 {{
                         var waitable = {interop_name}.WaitableSetNew();
@@ -357,10 +356,12 @@ impl InterfaceGenerator<'_> {
                     return new EventWaitable(eventCode, buffer[0], buffer[1]);
                 }}
 
-                "#).to_string(),
+                "#
+                )
+                .to_string(),
                 csharp_interop_src: "".to_string(),
                 stub: "".to_string(),
-        });
+            });
     }
 
     pub(crate) fn add_world_fragment(self) {
@@ -787,13 +788,15 @@ impl InterfaceGenerator<'_> {
                 // TODO: decode the parameters
                 return {impl_name}.{camel_name}Callback();
             }}
-            "#);
+            "#
+            );
 
             uwriteln!(
                 self.src,
                 r#"
             public static abstract int {camel_name}Callback();
-            "#);
+            "#
+            );
 
             // TODO: The task return function can take up to 16 core parameters.
             let task_return_param = match &sig.results[..] {
@@ -1246,7 +1249,7 @@ impl InterfaceGenerator<'_> {
 
         format!("{access} {modifiers} {result_type} {camel_name}({params})")
     }
-    
+
     pub(crate) fn add_future(&mut self, func_name: &str) {
         self.futures.push(func_name.to_string());
     }

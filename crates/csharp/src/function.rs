@@ -1041,7 +1041,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let (_namespace, interface_name) =
                     &CSharp::get_class_name_from_qualified_name(self.interface_gen.name);
                 let interop_name = format!("{}Interop", interface_name.strip_prefix("I").unwrap());
-                
+
                 uwriteln!(
                     self.src,
                     "{assignment} {interop_name}.{func_name}WasmInterop.wasmImport{func_name}({operands});"
@@ -1364,7 +1364,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwriteln!(self.src, "// TODO_task_cancel.forget();");
             }
 
-            Instruction::FutureLift { payload: _, ty } => {
+            Instruction::FutureLift { payload: _, ty: _ } => {
                 // TODO get the prefix for the type
                 let sig_type_name = "Void";
                 uwriteln!(self.src, "var reader = new {}.FutureReader{}({});", self.interface_gen.name, sig_type_name, operands[0]);
