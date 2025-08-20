@@ -65,7 +65,7 @@ impl LanguageMethods for MoonBit {
             .arg("embed")
             .args(["--encoding", "utf16"])
             .args(["-o", artifact.to_str().unwrap()])
-            .args(["-w", &compile.component.kind.to_string()])
+            .args(["-w", &compile.component.bindgen.world])
             .arg(manifest_dir)
             .arg(&artifact);
         runner.run_command(&mut cmd)?;

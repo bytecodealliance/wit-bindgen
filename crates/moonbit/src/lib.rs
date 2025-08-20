@@ -1183,15 +1183,15 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             deriviation.push("Eq")
         }
         let declaration = if self.gen.opts.derive_error && name.contains("Error") {
-            "type!"
+            "suberror"
         } else {
-            "type"
+            "struct"
         };
 
         uwrite!(
             self.src,
             r#"
-            pub(all) {declaration} {name} Int derive({})
+            pub(all) {declaration} {name}(Int) derive({})
             "#,
             deriviation.join(", "),
         );
@@ -1227,14 +1227,14 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 fn wasmExportResourceNew{name}(rep : Int) -> Int = "[export]{module}" "[resource-new]{type_name}"
 
                 /// Drops a resource handle.
-                pub fn {name}::drop(self : {name}) -> Unit {{
+                pub fn {name}::drop(self : Self) -> Unit {{
                     let {name}(resource) = self
                     wasmExportResourceDrop{name}(resource)
                 }}
                 fn wasmExportResourceDrop{name}(resource : Int) = "[export]{module}" "[resource-drop]{type_name}"
 
                 /// Gets the `Int` representation of the resource pointed to the given handle.
-                pub fn {name}::rep(self : {name}) -> Int {{
+                pub fn {name}::rep(self : Self) -> Int {{
                     let {name}(resource) = self
                     wasmExportResourceRep{name}(resource)
                 }}
@@ -1324,15 +1324,15 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             deriviation.push("Eq")
         }
         let declaration = if self.gen.opts.derive_error && name.contains("Error") {
-            "type!"
+            "suberror"
         } else {
-            "type"
+            "struct"
         };
 
         uwrite!(
             self.src,
             "
-            pub(all) {declaration} {name} {ty} derive({})
+            pub(all) {declaration} {name}({ty}) derive({})
             pub fn {name}::default() -> {name} {{
                 {}
             }}
@@ -1344,15 +1344,15 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 {map_to_int}
               }}
             }}
-            pub fn {name}::set(self : {name}, other: {name}Flag) -> {name} {{
+            pub fn {name}::set(self : Self, other: {name}Flag) -> {name} {{
               let {name}(flag) = self
               flag.lor(other.value())
             }}
-            pub fn {name}::unset(self : {name}, other: {name}Flag) -> {name} {{
+            pub fn {name}::unset(self : Self, other: {name}Flag) -> {name} {{
               let {name}(flag) = self
               flag.land(other.value().lnot())
             }}
-            pub fn {name}::is_set(self : {name}, other: {name}Flag) -> Bool {{
+            pub fn {name}::is_set(self : Self, other: {name}Flag) -> Bool {{
               let {name}(flag) = self
               (flag.land(other.value()) == other.value())
             }}
@@ -1399,7 +1399,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             deriviation.push("Eq")
         }
         let declaration = if self.gen.opts.derive_error && name.contains("Error") {
-            "type!"
+            "suberror"
         } else {
             "enum"
         };
@@ -1444,7 +1444,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             deriviation.push("Eq")
         }
         let declaration = if self.gen.opts.derive_error && name.contains("Error") {
-            "type!"
+            "suberror"
         } else {
             "enum"
         };
@@ -1785,7 +1785,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::F32FromCoreF32 => results.push(operands[0].clone()),
             Instruction::CoreF32FromF32 => results.push(operands[0].clone()),
 
-            Instruction::CharFromI32 => results.push(format!("Char::from_int({})", operands[0])),
+            Instruction::CharFromI32 => {
+                results.push(format!("Int::unsafe_to_char({})", operands[0]))
+            }
             Instruction::I32FromChar => results.push(format!("({}).to_int()", operands[0])),
 
             Instruction::I32FromU8 => results.push(format!("({}).to_int()", operands[0])),
@@ -2874,14 +2876,21 @@ impl ToMoonBitIdent for str {
     fn to_moonbit_ident(&self) -> String {
         // Escape MoonBit keywords and reserved keywords
         match self {
-            "module" | "move" | "ref" | "static" | "super" | "unsafe" | "use" | "where"
-            | "await" | "dyn" | "abstract" | "do" | "final" | "macro" | "override" | "typeof"
-            | "virtual" | "yield" | "local" | "method" | "alias" | "assert" | "as" | "else"
-            | "extern" | "fn" | "if" | "let" | "const" | "match" | "mut" | "type" | "typealias"
-            | "struct" | "enum" | "trait" | "traitalias" | "derive" | "while" | "break"
-            | "continue" | "import" | "return" | "throw" | "raise" | "try" | "catch" | "pub"
-            | "priv" | "readonly" | "true" | "false" | "_" | "test" | "loop" | "for" | "in"
-            | "impl" | "with" | "guard" | "async" | "is" | "init" | "main" => {
+            // Keywords
+            "as" | "else" | "extern" | "fn" | "fnalias" | "if" | "let" | "const" | "match" | "using"
+            | "mut" | "type" | "typealias" | "struct" | "enum" | "trait" | "traitalias" | "derive"
+            | "while" | "break" | "continue" | "import" | "return" | "throw" | "raise" | "try" | "catch"
+            | "pub" | "priv" | "readonly" | "true" | "false" | "_" | "test" | "loop" | "for" | "in" | "impl"
+            | "with" | "guard" | "async" | "is" | "suberror" | "and" | "letrec" | "enumview" | "noraise" 
+            | "defer" | "init" | "main"
+            // Reserved keywords
+            | "module" | "move" | "ref" | "static" | "super" | "unsafe" | "use" | "where" | "await"
+            | "dyn" | "abstract" | "do" | "final" | "macro" | "override" | "typeof" | "virtual" | "yield"
+            | "local" | "method" | "alias" | "assert" | "package" | "recur" | "isnot" | "define" | "downcast"
+            | "inherit" | "member" | "namespace" | "upcast" | "void" | "lazy" | "include" | "mixin"
+            | "protected" | "sealed" | "constructor" | "atomic" | "volatile" | "anyframe" | "anytype"
+            | "asm" | "comptime" | "errdefer" | "export" | "opaque" | "orelse" | "resume" | "threadlocal"
+            | "unreachable" | "dynclass" | "dynobj" | "dynrec" | "var" | "finally" | "noasync" => {
                 format!("{self}_")
             }
             _ => self.to_snake_case(),
