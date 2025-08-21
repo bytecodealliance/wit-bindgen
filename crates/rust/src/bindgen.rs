@@ -975,7 +975,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 // this instruction the result is going to be lowered. This
                 // lowering must happen in terms of `&T`, so force the result
                 // of this expression to have `&` in front.
-                if func.result.is_some() && *async_ {
+                if func.result.is_some() && *async_ && !self.gen.gen.opts.symmetric {
                     self.push_str("&");
                 }
 

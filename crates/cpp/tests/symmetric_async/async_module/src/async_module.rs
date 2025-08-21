@@ -81,8 +81,9 @@ pub mod exports {
                         "[async]forward")] #[cfg_attr(not(target_arch = "wasm32"),
                         no_mangle)] #[allow(non_snake_case)] unsafe extern "C" fn
                         testX3AtestX2Fstring_delayX00X5BasyncX5Dforward(arg0 : * mut u8,
-                        arg1 : usize,arg2: *mut u8,) -> * mut u8 { unsafe { $($path_to_types)*::
-                        _export_async_forward_cabi::<$ty > (arg0, arg1, arg2) } }  };
+                        arg1 : usize, arg2 : * mut u8,) -> * mut u8 { unsafe {
+                        $($path_to_types)*:: _export_async_forward_cabi::<$ty > (arg0,
+                        arg1, arg2) } } };
                     };
                 }
                 #[doc(hidden)]
@@ -144,7 +145,7 @@ A\x04\x01B\x02\x01@\x01\x0bnanosecondsw\x01\0\x04\0\x0c[async]sleep\x01\0\x03\0\
 test:test/wait\x05\0\x01B\x02\x01@\x01\x01ss\0s\x04\0\x0e[async]forward\x01\0\x04\
 \0\x16test:test/string-delay\x05\x01\x04\0\x16test:test/async-module\x04\0\x0b\x12\
 \x01\0\x0casync-module\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwit-co\
-mponent\x070.236.1\x10wit-bindgen-rust\x060.44.0";
+mponent\x070.237.0\x10wit-bindgen-rust\x060.44.0";
 #[inline(never)]
 #[doc(hidden)]
 pub fn __link_custom_section_describing_imports() {
