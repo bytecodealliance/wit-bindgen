@@ -1192,7 +1192,7 @@ unsafe fn call_import(_params: Self::ParamsLower, _results: *mut u8) -> u32 {{
         abi::call(
             f.r#gen.resolve,
             variant,
-            if f.gen.gen.opts.symmetric {
+            if f.r#gen.r#gen.opts.symmetric {
                 LiftLower::Symmetric
             } else {
                 LiftLower::LiftArgsLowerResults
@@ -1231,7 +1231,7 @@ unsafe fn call_import(_params: Self::ParamsLower, _results: *mut u8) -> u32 {{
         }
         self.src.push_str("} }\n");
 
-        if async_ {
+        if async_ && !self.gen.opts.symmetric {
             let async_support = self.r#gen.async_support_path();
             uwrite!(
                 self.src,
@@ -1334,7 +1334,7 @@ unsafe fn call_import(_params: Self::ParamsLower, _results: *mut u8) -> u32 {{
         self.push_str("}\n");
 
         let export_prefix = self.r#gen.opts.export_prefix.as_deref().unwrap_or("");
-        if async_ {
+        if async_ && !self.gen.opts.symmetric {
             uwrite!(
                 self.src,
                 "\
