@@ -1215,12 +1215,15 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                             true,
                         ) => (sig.params.is_empty(), Some(Some(vec![WasmType::Pointer]))),
                         // All async cases pass along the function results and flatten where necesary
-                        (_, _is_async @ true, func_result, _) => {
+                        (_, _is_async @ true, func_result, false) => {
                             let results = match &func_result {
                                 Some(ty) => flat_types(self.resolve, ty, Some(max_flat_params)),
                                 None => Some(Vec::new()),
                             };
                             (results.is_none(), Some(results))
+                        }
+                        (_, _is_async @ true, func_result, true) => {
+                            (func_result.is_some(), Some(Some(vec![WasmType::Pointer])))
                         }
                         // All other non-async cases
                         (_, _is_async @ false, _, _) => (sig.retptr, None),

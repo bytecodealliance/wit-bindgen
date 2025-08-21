@@ -8,12 +8,7 @@ futures = "0.3.31"
 sleep = { path = "../sleep" }
 symmetric_executor = { path = "../../../../symmetric_executor" }
 symmetric_stream = { path = "../../../../symmetric_executor/symmetric_stream" }
-#wit-bindgen = { version = "0.36.0", path = "../../../../guest-rust" }
-wit-bindgen-symmetric-rt = { path = "../../../../symmetric_executor/rust-client" }
-
-[dependencies.wit-bindgen]
-package = "dummy-rt"
-path = "../../../../symmetric_executor/dummy-rt"
+wit-bindgen = { path = "../../../../symmetric_executor/dummy-bindgen", package = "mini-bindgen" }
 
 [lib]
 crate-type = ["cdylib"]
