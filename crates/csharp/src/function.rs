@@ -1040,8 +1040,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 let (_namespace, interface_name) =
                     &CSharp::get_class_name_from_qualified_name(self.interface_gen.name);
-                let interop_name = format!("{}Interop", interface_name.strip_prefix("I").unwrap());
+                let mut interop_name = format!("{}Interop", interface_name.strip_prefix("I").unwrap());
 
+                if self.interface_gen.is_world && self.interface_gen.direction == Direction::Import {
+                    interop_name = format!("exports.{interop_name}");
+                }
+                
                 uwriteln!(
                     self.src,
                     "{assignment} {interop_name}.{func_name}WasmInterop.wasmImport{func_name}({operands});"
@@ -1410,7 +1414,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwrite!(
                     self.src,
                     "
-                    var {ret_area} = stackalloc {element_type}[{array_size}+1];
+                    var {ret_area} = stackalloc {element_type}[{array_size} + 1];
                     var {ptr} = ((int){ret_area}) + ({align} - 1) & -{align};
                     ",
                     align = align.align_wasm32()

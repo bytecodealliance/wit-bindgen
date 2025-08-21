@@ -65,6 +65,26 @@
             "preLaunchTask": "cargo build"
         },
         {
+            "name": "Run wit-bindgen codegen csharp go_params.wit",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/target/debug/wit-bindgen.exe",
+            "args": [
+                "csharp",
+                ".\\tests\\codegen\\go_params.wit",
+                "--world",
+                "%go-params",
+                "--out-dir",
+                ".\\target\\artifacts\\codegen\\csharp\\go_params.wit\\bindings",
+                "--runtime=native-aot",
+                "--generate-stub"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "stopAtEntry": false,
+            "preLaunchTask": "cargo build"
+        },
+        {
             "name": "Run wit-bindgen codegen C async-simple-params-results.wit",
             "type": "cppvsdbg",
             "request": "launch",

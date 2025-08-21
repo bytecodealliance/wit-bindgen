@@ -48,6 +48,7 @@ pub(crate) struct InterfaceGenerator<'a> {
     pub(crate) name: &'a str,
     pub(crate) direction: Direction,
     pub(crate) futures: Vec<String>,
+    pub(crate) is_world: bool,
 }
 
 impl InterfaceGenerator<'_> {
