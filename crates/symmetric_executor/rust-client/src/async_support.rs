@@ -142,6 +142,11 @@ pub fn first_poll(future: impl Future<Output = ()> + 'static) -> *mut () {
     first_poll_sub(Box::pin(future))
 }
 
+#[doc(hidden)]
+pub fn start_task(future: impl Future<Output = ()> + 'static) -> *mut u8 {
+    first_poll(future).cast()
+}
+
 /// Await the completion of a call to an async-lowered import.
 #[doc(hidden)]
 pub async unsafe fn await_result(function: impl Fn() -> *mut u8) {
@@ -184,15 +189,10 @@ pub struct TaskCancelOnDrop;
 
 impl TaskCancelOnDrop {
     pub fn new() -> Self {
-        todo!();
-        // Self
+        // todo!();
+        Self
     }
     pub fn forget(self) {}
-}
-
-pub fn start_task(future: impl Future<Output = ()>) -> i32 {
-    unsafe { spawn_unchecked(future) };
-    todo!()
 }
 
 pub unsafe fn callback(_event0: u32, _event1: u32, _event2: u32) -> u32 {

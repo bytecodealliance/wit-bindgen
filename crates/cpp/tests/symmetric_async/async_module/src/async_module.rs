@@ -49,8 +49,8 @@ pub mod exports {
                 ) -> *mut u8 {
                     unsafe {
                         #[cfg(target_arch = "wasm32")] _rt::run_ctors_once();
-                        wit_bindgen::rt::async_support::first_poll(async move {
-                            //let _task_cancel = wit_bindgen::rt::async_support::TaskCancelOnDrop::new();
+                        wit_bindgen::rt::async_support::start_task(async move {
+                            let _task_cancel = wit_bindgen::rt::async_support::TaskCancelOnDrop::new();
                             let result1 = {
                                 let len0 = arg1;
                                 let string0 = String::from(
@@ -67,7 +67,7 @@ pub mod exports {
                                 .add(::core::mem::size_of::<*const u8>())
                                 .cast::<usize>() = len2;
                             *arg2.add(0).cast::<*mut u8>() = ptr2.cast_mut();
-                        }).cast()
+                        })
                     }
                 }
                 pub trait Guest {
