@@ -58,17 +58,15 @@ pub mod exports {
                             std::str::from_utf8(std::slice::from_raw_parts(arg0, len0)).unwrap(),
                         );
                         let result = T::async_forward(string0).await;
-                        result
-                    };
-                    let result = wit_bindgen_symmetric_rt::async_support::first_poll(result, move |result1| {
-                        let vec2 = (result1.into_bytes()).into_boxed_slice();
+                        let vec2 = (result.into_bytes()).into_boxed_slice();
                         let ptr2 = vec2.as_ptr().cast::<u8>();
                         let len2 = vec2.len();
                         ::core::mem::forget(vec2);
                         let output = arg2.cast::<usize>();
-                            *unsafe { &mut *output } = ptr2 as usize;
-                            *unsafe { &mut *output.add(1) } = len2;
-                    });
+                        *unsafe { &mut *output } = ptr2 as usize;
+                        *unsafe { &mut *output.add(1) } = len2;
+                    };
+                    let result = wit_bindgen_symmetric_rt::async_support::first_poll(result);
                     result.cast()
                 }
                 pub trait Guest {
