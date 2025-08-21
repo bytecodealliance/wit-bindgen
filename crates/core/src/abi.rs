@@ -1006,7 +1006,10 @@ impl<'a, B: Bindgen> Generator<'a, B> {
 
         let language_to_abi = matches!(lift_lower, LiftLower::LowerArgsLiftResults)
             || (matches!(lift_lower, LiftLower::Symmetric)
-                && matches!(variant, AbiVariant::GuestImport));
+                && matches!(
+                    variant,
+                    AbiVariant::GuestImport | AbiVariant::GuestImportAsync
+                ));
         match language_to_abi {
             true => {
                 assert!(
@@ -1107,6 +1110,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     }
                 } else if async_ {
                     // todo
+                    // await_result
+                    self.stack.pop().unwrap();
                 } else {
                     let ptr = match variant {
                         // imports into guests means it's a wasm module

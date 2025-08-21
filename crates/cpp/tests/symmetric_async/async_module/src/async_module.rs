@@ -10,20 +10,21 @@ pub mod test {
             #[used]
             #[doc(hidden)]
             static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
+            use super::super::super::_rt;
             #[allow(unused_unsafe, clippy::all)]
             #[allow(async_fn_in_trait)]
             pub async fn sleep(nanoseconds: u64) -> () {
                 unsafe {
-                    #[link(wasm_import_module = "test:test/wait")]
                     #[link(name = "sleep")]
-                    extern "C" {
+                    #[link(wasm_import_module = "test:test/wait")]
+                    unsafe extern "C" {
+                        #[allow(non_snake_case)]
                         #[cfg_attr(target_arch = "wasm32", link_name = "[async]sleep")]
-                        fn testX3AtestX2FwaitX00X5BasyncX5Dsleep(_: u64) -> *mut u8;
+                        fn testX3AtestX2FwaitX00X5BasyncX5Dsleep(_: i64) -> *mut u8;
                     }
-                    ::wit_bindgen::rt::async_support::await_result(move || unsafe {
-                        testX3AtestX2FwaitX00X5BasyncX5Dsleep(nanoseconds)
-                    })
-                    .await;
+                    let ret = wit_bindgen::rt::async_support::await_result(move || unsafe {testX3AtestX2FwaitX00X5BasyncX5Dsleep(
+                        _rt::as_i64(nanoseconds),
+                    )}).await;
                 }
             }
         }
@@ -95,6 +96,29 @@ pub mod exports {
 #[rustfmt::skip]
 mod _rt {
     #![allow(dead_code, clippy::all)]
+    pub fn as_i64<T: AsI64>(t: T) -> i64 {
+        t.as_i64()
+    }
+    pub trait AsI64 {
+        fn as_i64(self) -> i64;
+    }
+    impl<'a, T: Copy + AsI64> AsI64 for &'a T {
+        fn as_i64(self) -> i64 {
+            (*self).as_i64()
+        }
+    }
+    impl AsI64 for i64 {
+        #[inline]
+        fn as_i64(self) -> i64 {
+            self as i64
+        }
+    }
+    impl AsI64 for u64 {
+        #[inline]
+        fn as_i64(self) -> i64 {
+            self as i64
+        }
+    }
     #[cfg(target_arch = "wasm32")]
     pub fn run_ctors_once() {
         wit_bindgen::rt::run_ctors_once();
