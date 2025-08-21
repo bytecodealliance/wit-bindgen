@@ -1105,22 +1105,8 @@ impl CppInterfaceGenerator<'_> {
 
     // local patching of borrows function needs more complex solution
     fn patched_wasm_signature(&self, variant: AbiVariant, func: &Function) -> WasmSignature {
-        abi::wasm_signature_symmetric(self.resolve, variant, func, self.gen.opts.symmetric)
-        // if matches!(res.params.get(0), Some(WasmType::I32))
-        //     && matches!(func.kind, FunctionKind::Freestanding)
-        // {
-        //     if let Some((_, ty)) = func.params.get(0) {
-        //         if let Type::Id(id) = ty {
-        //             if let Some(td) = self.resolve.types.get(*id) {
-        //                 if let TypeDefKind::Handle(Handle::Borrow(id2)) = &td.kind {
-        //                     if let Some(ty2) = self.resolve.types.get(*id2) {
-        //                         dbg!((&self.gen.imported_interfaces, id2, ty2, &func));
-        //                     }
-        //                 }
-        //             }
-        //         }
-        //     }
-        // }
+        self.resolve
+            .wasm_signature_symmetric(variant, func, self.gen.opts.symmetric)
     }
 
     // print the signature of the guest export (lowered (wasm) function calling into highlevel)

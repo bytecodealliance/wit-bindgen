@@ -767,7 +767,7 @@ pub fn call(
     async_: bool,
 ) {
     if matches!(lift_lower, LiftLower::Symmetric) {
-        let sig = wasm_signature_symmetric(resolve, variant, func, true);
+        let sig = resolve.wasm_signature_symmetric(variant, func, true);
         Generator::new(resolve, bindgen, true)
             .call_with_signature(func, sig, variant, lift_lower, async_);
     } else {
@@ -2622,15 +2622,6 @@ fn cast(from: WasmType, to: WasmType) -> Bitcast {
             unreachable!("Don't know how to bitcast from {:?} to {:?}", from, to);
         }
     }
-}
-
-pub fn wasm_signature_symmetric(
-    resolve: &Resolve,
-    variant: AbiVariant,
-    func: &Function,
-    symmetric: bool,
-) -> WasmSignature {
-    resolve.wasm_signature_symmetric(variant, func, symmetric)
 }
 
 /// Flatten types in a given type

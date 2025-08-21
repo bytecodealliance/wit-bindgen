@@ -1380,8 +1380,9 @@ unsafe fn call_import(_params: Self::ParamsLower, _results: *mut u8) -> u32 {{
         } else {
             AbiVariant::GuestExport
         };
-        let sig =
-            abi::wasm_signature_symmetric(self.resolve, variant, func, self.gen.opts.symmetric);
+        let sig = self
+            .resolve
+            .wasm_signature_symmetric(variant, func, self.gen.opts.symmetric);
         let mut params = Vec::new();
         for (i, param) in sig.params.iter().enumerate() {
             let name = format!("arg{}", i);
