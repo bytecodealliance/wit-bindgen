@@ -5,6 +5,7 @@ version = { workspace = true }
 edition = { workspace = true }
 repository = { workspace = true }
 license = { workspace = true }
+rust-version = { workspace = true }
 homepage = 'https://github.com/bytecodealliance/wit-bindgen'
 description = """
 CLI tool to generate bindings for WIT documents and the component model.
@@ -18,6 +19,7 @@ edition = "2021"
 version = "0.44.0"
 license = "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT"
 repository = "https://github.com/bytecodealliance/wit-bindgen"
+rust-version = "1.82.0"
 
 [workspace.dependencies]
 anyhow = "1.0.72"
