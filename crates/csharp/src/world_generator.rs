@@ -32,6 +32,9 @@ pub struct CSharp {
     pub(crate) needs_export_return_area: bool,
     pub(crate) needs_rep_table: bool,
     pub(crate) needs_wit_exception: bool,
+    pub(crate) needs_async_support: bool,
+    pub(crate) needs_future_reader_support: bool,
+    pub(crate) needs_future_writer_support: bool,
     pub(crate) interface_fragments: HashMap<String, InterfaceTypeAndFragments>,
     pub(crate) world_fragments: Vec<InterfaceFragment>,
     pub(crate) sizes: SizeAlign,
@@ -70,6 +73,7 @@ impl CSharp {
             resolve,
             name,
             direction,
+            futures: Vec::new(),
         }
     }
 
@@ -112,6 +116,7 @@ impl WorldGenerator for CSharp {
         old_resources.extend(new_resources.clone());
         gen.csharp_gen.all_resources = old_resources;
 
+        let import_module_name = &resolve.name_world_key(key);
         for (resource, funcs) in by_resource(
             resolve.interfaces[id]
                 .functions
@@ -123,7 +128,6 @@ impl WorldGenerator for CSharp {
                 gen.start_resource(resource, Some(key));
             }
 
-            let import_module_name = &resolve.name_world_key(key);
             for func in funcs {
                 gen.import(import_module_name, func);
             }
@@ -135,6 +139,8 @@ impl WorldGenerator for CSharp {
 
         // for anonymous types
         gen.define_interface_types(id);
+
+        gen.add_futures(import_module_name);
 
         gen.add_interface_fragment(false);
 
@@ -213,6 +219,9 @@ impl WorldGenerator for CSharp {
 
         // for anonymous types
         gen.define_interface_types(id);
+
+        let import_module_name = &resolve.name_world_key(key);
+        gen.add_futures(&format!("[export]{import_module_name}"));
 
         gen.add_interface_fragment(true);
         Ok(())
@@ -505,6 +514,37 @@ impl WorldGenerator for CSharp {
             }
             src.push_str("}\n");
             src.push_str("}\n");
+        }
+
+        if self.needs_async_support {
+            src.push_str("\n");
+            src.push_str(include_str!("AsyncSupport.cs"));
+        }
+
+        if (self.needs_future_reader_support || self.needs_future_writer_support)
+            && self.interface_fragments.len() > 0
+        {
+            let full_name = self.interface_fragments.iter().next().unwrap().0;
+
+            let (namespace, interface_name) =
+                &CSharp::get_class_name_from_qualified_name(full_name);
+            let base_name = interface_name.strip_prefix("I").unwrap();
+            let full_name = format!("{namespace}.{base_name}Interop");
+            src.push_str("\n");
+            src.push_str(
+                &include_str!("FutureCommonSupport.cs")
+                    .replace("{{interop_name}}", full_name.as_str()),
+            );
+        }
+
+        if self.needs_future_reader_support {
+            src.push_str("\n");
+            src.push_str(include_str!("FutureReaderSupport.cs"));
+        }
+
+        if self.needs_future_writer_support {
+            src.push_str("\n");
+            src.push_str(include_str!("FutureWriterSupport.cs"));
         }
 
         src.push_str("\n");
