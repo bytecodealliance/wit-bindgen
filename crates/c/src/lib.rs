@@ -1671,6 +1671,16 @@ impl<'a> wit_bindgen_core::AnonymousTypeGenerator<'a> for InterfaceGenerator<'a>
     fn anonymous_type_type(&mut self, _id: TypeId, _ty: &Type, _docs: &Docs) {
         todo!("print_anonymous_type for type");
     }
+
+    fn anonymous_type_fixed_size_list(
+        &mut self,
+        _id: TypeId,
+        _ty: &Type,
+        _size: u32,
+        _docs: &Docs,
+    ) {
+        todo!("print_anonymous_type for fixed size list");
+    }
 }
 
 pub enum CTypeNameInfo<'a> {
@@ -2053,7 +2063,13 @@ impl InterfaceGenerator<'_> {
             let mut f = FunctionBindgen::new(self, c_sig.clone(), "INVALID");
             for (i, (_, ty)) in func.params.iter().enumerate() {
                 let param = &c_sig.params[i].1;
-                params.extend(abi::lower_flat(f.r#gen.resolve, &mut f, param.clone(), ty));
+                params.extend(abi::lower_flat(
+                    f.r#gen.resolve,
+                    &mut f,
+                    param.clone(),
+                    ty,
+                    false,
+                ));
             }
             f.r#gen.src.c_adapters.push_str(&f.src);
         }
@@ -4030,4 +4046,4 @@ pub fn to_c_ident(name: &str) -> String {
     }
 }
 
-const POINTER_SIZE_EXPRESSION: &str = "sizeof(void*)";
+pub const POINTER_SIZE_EXPRESSION: &str = "sizeof(void*)";

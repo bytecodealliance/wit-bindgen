@@ -109,6 +109,9 @@ impl Parse for Config {
                     Opt::Stubs => {
                         opts.stubs = true;
                     }
+                    Opt::Wasm64 => {
+                        opts.wasm64 = true;
+                    }
                     Opt::ExportPrefix(prefix) => opts.export_prefix = Some(prefix.value()),
                     Opt::AdditionalDerives(paths) => {
                         opts.additional_derive_attributes = paths
@@ -147,6 +150,12 @@ impl Parse for Config {
                     }
                     Opt::DisableCustomSectionLinkHelpers(disable) => {
                         opts.disable_custom_section_link_helpers = disable.value();
+                    }
+                    Opt::Symmetric(enable) => {
+                        opts.symmetric = enable.value();
+                    }
+                    Opt::InvertDirection(enable) => {
+                        opts.invert_direction = enable.value();
                     }
                     Opt::Debug(enable) => {
                         debug = enable.value();
@@ -247,7 +256,7 @@ fn parse_source(
             };
             let (pkg, sources) = resolve.push_path(normalized_path)?;
             pkgs.push(pkg);
-            files.extend(sources.paths().map(|p| p.to_owned()));
+            files.extend(sources.package_paths(pkg).unwrap().map(|v| v.to_owned()));
         }
         Ok(())
     };
@@ -277,9 +286,14 @@ fn parse_source(
 }
 
 impl Config {
-    fn expand(self) -> Result<TokenStream> {
+    fn expand(mut self) -> Result<TokenStream> {
         let mut files = Default::default();
+        // for testing the symmetric ABI (modify guest code)
+        if std::env::var("SYMMETRIC_ABI").is_ok() {
+            self.opts.symmetric = true;
+        }
         let mut generator = self.opts.build();
+        generator.apply_resolve_options(&mut self.resolve, &mut self.world);
         generator
             .generate(&self.resolve, self.world, &mut files)
             .map_err(|e| anyhow_to_syn(Span::call_site(), e))?;
@@ -347,9 +361,12 @@ mod kw {
     syn::custom_keyword!(default_bindings_module);
     syn::custom_keyword!(export_macro_name);
     syn::custom_keyword!(pub_export_macro);
+    syn::custom_keyword!(wasm64);
     syn::custom_keyword!(generate_unused_types);
     syn::custom_keyword!(features);
     syn::custom_keyword!(disable_custom_section_link_helpers);
+    syn::custom_keyword!(symmetric);
+    syn::custom_keyword!(invert_direction);
     syn::custom_keyword!(imports);
     syn::custom_keyword!(debug);
 }
@@ -403,9 +420,12 @@ enum Opt {
     DefaultBindingsModule(syn::LitStr),
     ExportMacroName(syn::LitStr),
     PubExportMacro(syn::LitBool),
+    Wasm64,
     GenerateUnusedTypes(syn::LitBool),
     Features(Vec<syn::LitStr>),
     DisableCustomSectionLinkHelpers(syn::LitBool),
+    Symmetric(syn::LitBool),
+    InvertDirection(syn::LitBool),
     Async(AsyncFilterSet, Span),
     Debug(syn::LitBool),
 }
@@ -498,6 +518,9 @@ impl Parse for Opt {
         } else if l.peek(kw::stubs) {
             input.parse::<kw::stubs>()?;
             Ok(Opt::Stubs)
+        } else if l.peek(kw::wasm64) {
+            input.parse::<kw::wasm64>()?;
+            Ok(Opt::Wasm64)
         } else if l.peek(kw::export_prefix) {
             input.parse::<kw::export_prefix>()?;
             input.parse::<Token![:]>()?;
@@ -562,6 +585,14 @@ impl Parse for Opt {
             input.parse::<kw::disable_custom_section_link_helpers>()?;
             input.parse::<Token![:]>()?;
             Ok(Opt::DisableCustomSectionLinkHelpers(input.parse()?))
+        } else if l.peek(kw::symmetric) {
+            input.parse::<kw::symmetric>()?;
+            input.parse::<Token![:]>()?;
+            Ok(Opt::Symmetric(input.parse()?))
+        } else if l.peek(kw::invert_direction) {
+            input.parse::<kw::invert_direction>()?;
+            input.parse::<Token![:]>()?;
+            Ok(Opt::InvertDirection(input.parse()?))
         } else if l.peek(kw::debug) {
             input.parse::<kw::debug>()?;
             input.parse::<Token![:]>()?;

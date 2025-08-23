@@ -1,0 +1,19 @@
+[package]
+name = "wit-bindgen-symmetric-rt"
+version = "0.36.0"
+edition = "2021"
+
+[dependencies]
+bitflags = "2.9.1"
+futures = "0.3.31"
+
+[dependencies.wit-bindgen]
+package = "dummy-rt"
+path = "../dummy-rt"
+
+[features]
+# always off feature
+never = []
+default = ["symmetric"]
+symmetric = []
+bitflags = []

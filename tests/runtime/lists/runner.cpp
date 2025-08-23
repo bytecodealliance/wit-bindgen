@@ -1,7 +1,9 @@
 #include <assert.h>
 #include <limits.h>
+#include <math.h>
 #include <float.h>
 #include <runner_cpp.h>
+#include <vector>
 
 static bool equal(wit::string const&a, std::string_view b) {
     return a.get_view() == b;

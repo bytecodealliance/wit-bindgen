@@ -1,0 +1,14 @@
+package test:test;
+
+interface future-source {
+    create: func() -> future<u32>;
+}
+
+interface future-test {
+    create: func() -> future<u32>;
+}
+
+world future-world {
+    import future-source;
+    export future-test;
+}

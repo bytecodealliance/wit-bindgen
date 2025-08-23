@@ -1,0 +1,8 @@
+[package]
+name = "test"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+wit-bindgen-symmetric-rt = { path = "../../../../symmetric_executor/rust-client" }
+wit-bindgen = { path = "../../../../symmetric_executor/dummy-bindgen", package = "mini-bindgen" }

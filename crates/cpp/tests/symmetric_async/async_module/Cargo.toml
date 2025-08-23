@@ -1,0 +1,14 @@
+[package]
+name = "async_module"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+futures = "0.3.31"
+sleep = { path = "../sleep" }
+symmetric_executor = { path = "../../../../symmetric_executor" }
+symmetric_stream = { path = "../../../../symmetric_executor/symmetric_stream" }
+wit-bindgen = { path = "../../../../symmetric_executor/dummy-bindgen", package = "mini-bindgen" }
+
+[lib]
+crate-type = ["cdylib"]

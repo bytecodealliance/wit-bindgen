@@ -24,7 +24,7 @@ rust-version = "1.82.0"
 [workspace.dependencies]
 anyhow = "1.0.72"
 bitflags = "2.3.3"
-heck = { version = "0.5" }
+heck =  { version = "0.5" }
 pulldown-cmark = { version = "0.9", default-features = false }
 serde = { version = "1.0.218", features = ["derive"] }
 clap = { version = "4.3.19", features = ["derive"] }
@@ -33,13 +33,13 @@ prettyplease = "0.2.20"
 syn = { version = "2.0.89", features = ["printing"] }
 futures = "0.3.31"
 
-wat = "1.236.0"
-wasmparser = "0.236.0"
-wasm-encoder = "0.236.0"
-wasm-metadata = { version = "0.236.0", default-features = false }
-wit-parser = "0.236.0"
-wit-component = "0.236.0"
-wasm-compose = "0.236.0"
+wat = { git = "https://github.com/cpetig/wasm-tools", branch = "symmetric" }
+wasmparser = { git = "https://github.com/cpetig/wasm-tools", branch = "symmetric" }
+wasm-encoder = { git = "https://github.com/cpetig/wasm-tools", branch = "symmetric" }
+wasm-metadata = { git = "https://github.com/cpetig/wasm-tools", branch = "symmetric", default-features = false }
+wit-parser = { git = "https://github.com/cpetig/wasm-tools", branch = "symmetric" }
+wit-component = { git = "https://github.com/cpetig/wasm-tools", branch = "symmetric" }
+wasm-compose = { git = "https://github.com/cpetig/wasm-tools", branch = "symmetric" }
 
 wit-bindgen-core = { path = 'crates/core', version = '0.44.0' }
 wit-bindgen-c = { path = 'crates/c', version = '0.44.0' }
@@ -50,6 +50,8 @@ wit-bindgen-markdown = { path = 'crates/markdown', version = '0.44.0' }
 wit-bindgen-moonbit = { path = 'crates/moonbit', version = '0.44.0' }
 wit-bindgen = { path = 'crates/guest-rust', version = '0.44.0', default-features = false }
 wit-bindgen-test = { path = 'crates/test', version = '0.44.0' }
+
+wit-bindgen-bridge = { path = 'crates/bridge', version = '0.1.0' }
 
 [[bin]]
 name = "wit-bindgen"
@@ -67,6 +69,7 @@ wit-bindgen-csharp = { workspace = true, features = ['clap'], optional = true }
 wit-bindgen-test = { workspace = true }
 wit-component = { workspace = true }
 wasm-encoder = { workspace = true }
+wit-bindgen-bridge = { workspace = true, features = ['clap'], optional = true }
 env_logger = "0.11.7"
 
 [features]
@@ -77,9 +80,11 @@ default = [
   'go',
   'csharp',
   'cpp',
+  'bridge',
   'moonbit',
   'async',
 ]
+bridge = ['dep:wit-bindgen-bridge']
 c = ['dep:wit-bindgen-c']
 cpp = ['dep:wit-bindgen-cpp']
 rust = ['dep:wit-bindgen-rust']

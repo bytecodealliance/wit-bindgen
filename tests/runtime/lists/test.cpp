@@ -2,6 +2,7 @@
 #include <test_cpp.h>
 #include <float.h>
 #include <math.h>
+#include <vector>
 
 uint32_t exports::test::lists::to_test::AllocatedBytes() {
     return 0;

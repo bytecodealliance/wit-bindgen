@@ -398,6 +398,9 @@ WIT types.
 
 This relies on wasi-SDK for guest compilation.
 
+A separate subcommand (cpp-host) will generate C++ host code for 
+WebAssembly micro runtime.
+
 ### Guest: MoonBit
 
 MoonBit can be compiled to WebAssembly using [its toolchain](https://moonbitlang.com/download):
@@ -492,6 +495,8 @@ components:
   that works similar to the JS integration. Given a concrete component this will
   generate Python source code to interact with the component using an embedding
   of Wasmtime for its core WebAssembly support.
+
+- C++-17+: see above chapter for WAMR host code generation.
 
 - Ruby: the [`wasmtime-rb`](https://github.com/bytecodealliance/wasmtime-rb)
   project has initial support for components since

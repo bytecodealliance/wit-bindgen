@@ -309,6 +309,28 @@ def_instruction! {
             ty: TypeId,
         } : [2] => [1],
 
+        /// Pops all fields for a fixed list off the stack and then composes them
+        /// into an array.
+        FixedSizeListLift {
+            element: &'a Type,
+            size: u32,
+            id: TypeId,
+        } : [*size as usize] => [1],
+
+        /// Pops an array off the stack, decomposes the elements and then pushes them onto the stack.
+        FixedSizeListLower {
+            element: &'a Type,
+            size: u32,
+            id: TypeId,
+        } : [1] => [*size as usize],
+
+        /// Pops an array and an address off the stack, passes each element to a block storing it
+        FixedSizeListLowerMemory {
+            element: &'a Type,
+            size: u32,
+            id: TypeId,
+        } : [2] => [0],
+
         /// Pushes an operand onto the stack representing the list item from
         /// each iteration of the list.
         ///
@@ -495,6 +517,7 @@ def_instruction! {
         CallWasm {
             name: &'a str,
             sig: &'a WasmSignature,
+            module_prefix: &'a str,
         } : [sig.params.len()] => [sig.results.len()],
 
         /// Same as `CallWasm`, except the dual where an interface is being
@@ -642,6 +665,8 @@ pub enum LiftLower {
     /// SourceLanguage --lower-args--> Wasm; call; Wasm --lift-results--> SourceLanguage
     /// ```
     LowerArgsLiftResults,
+    /// Symmetric calling convention
+    Symmetric,
 }
 
 /// Trait for language implementors to use to generate glue code between native
@@ -741,7 +766,13 @@ pub fn call(
     bindgen: &mut impl Bindgen,
     async_: bool,
 ) {
-    Generator::new(resolve, bindgen).call(func, variant, lift_lower, async_);
+    if matches!(lift_lower, LiftLower::Symmetric) {
+        let sig = resolve.wasm_signature_symmetric(variant, func, true);
+        Generator::new(resolve, bindgen, true)
+            .call_with_signature(func, sig, variant, lift_lower, async_);
+    } else {
+        Generator::new(resolve, bindgen, false).call(func, variant, lift_lower, async_);
+    }
 }
 
 pub fn lower_to_memory<B: Bindgen>(
@@ -750,8 +781,9 @@ pub fn lower_to_memory<B: Bindgen>(
     address: B::Operand,
     value: B::Operand,
     ty: &Type,
+    symmetric: bool,
 ) {
-    let mut generator = Generator::new(resolve, bindgen);
+    let mut generator = Generator::new(resolve, bindgen, symmetric);
     // TODO: make this configurable? Right now this function is only called for
     // future/stream callbacks so it's appropriate to skip realloc here as it's
     // all "lower for wasm import", but this might get reused for something else
@@ -766,8 +798,9 @@ pub fn lower_flat<B: Bindgen>(
     bindgen: &mut B,
     value: B::Operand,
     ty: &Type,
+    symmetric: bool,
 ) -> Vec<B::Operand> {
-    let mut generator = Generator::new(resolve, bindgen);
+    let mut generator = Generator::new(resolve, bindgen, symmetric);
     generator.stack.push(value);
     generator.realloc = Some(Realloc::Export("cabi_realloc"));
     generator.lower(ty);
@@ -779,8 +812,9 @@ pub fn lift_from_memory<B: Bindgen>(
     bindgen: &mut B,
     address: B::Operand,
     ty: &Type,
+    symmetric: bool,
 ) -> B::Operand {
-    let mut generator = Generator::new(resolve, bindgen);
+    let mut generator = Generator::new(resolve, bindgen, symmetric);
     generator.read_from_memory(ty, address, Default::default());
     generator.stack.pop().unwrap()
 }
@@ -792,7 +826,7 @@ pub fn lift_from_memory<B: Bindgen>(
 /// functions and will primarily generate `GuestDeallocate*` instructions,
 /// plus others used as input to those instructions.
 pub fn post_return(resolve: &Resolve, func: &Function, bindgen: &mut impl Bindgen) {
-    Generator::new(resolve, bindgen).post_return(func);
+    Generator::new(resolve, bindgen, false).post_return(func);
 }
 
 /// Returns whether the `Function` specified needs a post-return function to
@@ -834,7 +868,7 @@ fn needs_deallocate(resolve: &Resolve, ty: &Type, what: Deallocate) -> bool {
             TypeDefKind::Flags(_) | TypeDefKind::Enum(_) => false,
             TypeDefKind::Future(_) | TypeDefKind::Stream(_) => what.handles(),
             TypeDefKind::Unknown => unreachable!(),
-            TypeDefKind::FixedSizeList(..) => todo!(),
+            TypeDefKind::FixedSizeList(t, _) => needs_deallocate(resolve, t, what),
         },
 
         Type::Bool
@@ -861,7 +895,7 @@ pub fn deallocate_lists_in_types<B: Bindgen>(
     indirect: bool,
     bindgen: &mut B,
 ) {
-    Generator::new(resolve, bindgen).deallocate_in_types(
+    Generator::new(resolve, bindgen, false).deallocate_in_types(
         types,
         operands,
         indirect,
@@ -878,7 +912,7 @@ pub fn deallocate_lists_and_own_in_types<B: Bindgen>(
     indirect: bool,
     bindgen: &mut B,
 ) {
-    Generator::new(resolve, bindgen).deallocate_in_types(
+    Generator::new(resolve, bindgen, false).deallocate_in_types(
         types,
         operands,
         indirect,
@@ -919,13 +953,14 @@ struct Generator<'a, B: Bindgen> {
     stack: Vec<B::Operand>,
     return_pointer: Option<B::Operand>,
     realloc: Option<Realloc>,
+    symmetric: bool,
 }
 
 const MAX_FLAT_PARAMS: usize = 16;
 const MAX_FLAT_ASYNC_PARAMS: usize = 4;
 
 impl<'a, B: Bindgen> Generator<'a, B> {
-    fn new(resolve: &'a Resolve, bindgen: &'a mut B) -> Generator<'a, B> {
+    fn new(resolve: &'a Resolve, bindgen: &'a mut B, symmetric: bool) -> Generator<'a, B> {
         Generator {
             resolve,
             bindgen,
@@ -934,11 +969,24 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             stack: Vec::new(),
             return_pointer: None,
             realloc: None,
+            symmetric,
         }
     }
 
     fn call(&mut self, func: &Function, variant: AbiVariant, lift_lower: LiftLower, async_: bool) {
         let sig = self.resolve.wasm_signature(variant, func);
+        self.call_with_signature(func, sig, variant, lift_lower, async_);
+    }
+
+    fn call_with_signature(
+        &mut self,
+        func: &Function,
+        sig: WasmSignature,
+        variant: AbiVariant,
+        lift_lower: LiftLower,
+        async_: bool,
+    ) {
+        // const MAX_FLAT_PARAMS: usize = 16;
 
         // Lowering parameters calling a wasm import _or_ returning a result
         // from an async-lifted wasm export means we don't need to pass
@@ -956,9 +1004,18 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         };
         assert!(self.realloc.is_none());
 
-        match lift_lower {
-            LiftLower::LowerArgsLiftResults => {
-                assert!(!async_, "generators should not be using this for async");
+        let language_to_abi = matches!(lift_lower, LiftLower::LowerArgsLiftResults)
+            || (matches!(lift_lower, LiftLower::Symmetric)
+                && matches!(
+                    variant,
+                    AbiVariant::GuestImport | AbiVariant::GuestImportAsync
+                ));
+        match language_to_abi {
+            true => {
+                assert!(
+                    !async_ || matches!(lift_lower, LiftLower::Symmetric),
+                    "generators should not be using this for async"
+                );
 
                 self.realloc = Some(realloc);
                 if let (AbiVariant::GuestExport, true) = (variant, async_) {
@@ -1017,12 +1074,15 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
                 self.realloc = None;
 
+                let mut retptr_oprnd = None;
+
                 // If necessary we may need to prepare a return pointer for
                 // this ABI.
                 if variant == AbiVariant::GuestImport && sig.retptr {
                     let info = self.bindgen.sizes().params(&func.result);
                     let ptr = self.bindgen.return_pointer(info.size, info.align);
                     self.return_pointer = Some(ptr.clone());
+                    retptr_oprnd = Some(ptr.clone());
                     self.stack.push(ptr);
                 }
 
@@ -1030,15 +1090,28 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 self.emit(&Instruction::CallWasm {
                     name: &func.name,
                     sig: &sig,
+                    module_prefix: Default::default(),
                 });
 
-                if !sig.retptr {
+                if matches!(lift_lower, LiftLower::Symmetric) && sig.retptr {
+                    if let Some(ptr) = retptr_oprnd {
+                        self.read_results_from_memory(
+                            &func.result,
+                            ptr.clone(),
+                            Default::default(),
+                        );
+                    }
+                } else if !(sig.retptr || async_) {
                     // With no return pointer in use we can simply lift the
                     // result(s) of the function from the result of the core
                     // wasm function.
                     if let Some(ty) = &func.result {
                         self.lift(ty)
                     }
+                } else if async_ {
+                    // todo
+                    // await_result
+                    self.stack.pop().unwrap();
                 } else {
                     let ptr = match variant {
                         // imports into guests means it's a wasm module
@@ -1078,8 +1151,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     amt: usize::from(func.result.is_some()),
                 });
             }
-
-            LiftLower::LiftArgsLowerResults => {
+            false => {
                 let max_flat_params = match (variant, async_) {
                     (AbiVariant::GuestImport | AbiVariant::GuestImportAsync, _is_async @ true) => {
                         MAX_FLAT_ASYNC_PARAMS
@@ -1138,18 +1210,29 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 // Note that in the async import case teh code below deals with the CM function being lowered,
                 // not the core function that is underneath that (i.e. func.result may be empty,
                 // where the associated core function underneath must have a i32 status code result)
-                let (lower_to_memory, async_flat_results) = match (async_, &func.result) {
-                    // All async cases pass along the function results and flatten where necesary
-                    (_is_async @ true, func_result) => {
-                        let results = match &func_result {
-                            Some(ty) => flat_types(self.resolve, ty, Some(max_flat_params)),
-                            None => Some(Vec::new()),
-                        };
-                        (results.is_none(), Some(results))
-                    }
-                    // All other non-async cases
-                    (_is_async @ false, _) => (sig.retptr, None),
-                };
+                let (lower_to_memory, async_flat_results) =
+                    match (variant, async_, &func.result, self.symmetric) {
+                        // Async guest imports return a i32 status code
+                        (
+                            AbiVariant::GuestImport | AbiVariant::GuestImportAsync,
+                            _is_async @ true,
+                            None,
+                            true,
+                        ) => (sig.params.is_empty(), Some(Some(vec![WasmType::Pointer]))),
+                        // All async cases pass along the function results and flatten where necesary
+                        (_, _is_async @ true, func_result, false) => {
+                            let results = match &func_result {
+                                Some(ty) => flat_types(self.resolve, ty, Some(max_flat_params)),
+                                None => Some(Vec::new()),
+                            };
+                            (results.is_none(), Some(results))
+                        }
+                        (_, _is_async @ true, func_result, true) => {
+                            (func_result.is_some(), Some(Some(vec![WasmType::Pointer])))
+                        }
+                        // All other non-async cases
+                        (_, _is_async @ false, _, _) => (sig.retptr, None),
+                    };
 
                 // This was dynamically allocated by the caller (or async start
                 // function) so after it's been read by the guest we need to
@@ -1158,7 +1241,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 | AbiVariant::GuestExportAsync
                 | AbiVariant::GuestExportAsyncStackful = variant
                 {
-                    if sig.indirect_params && !async_ {
+                    if sig.indirect_params && !async_ && lift_lower != LiftLower::Symmetric {
                         let ElementInfo { size, align } = self
                             .bindgen
                             .sizes()
@@ -1171,10 +1254,15 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 self.realloc = Some(realloc);
 
                 // Perform memory lowing of relevant results, including out pointers as well as traditional results
-                match (lower_to_memory, sig.retptr, variant) {
+                match (
+                    lower_to_memory,
+                    sig.retptr,
+                    variant,
+                    lift_lower == LiftLower::Symmetric,
+                ) {
                     // For sync calls, if no lowering to memory is required and there *is* a return pointer in use
                     // then we need to lower then simply lower the result(s) and return that directly from the function.
-                    (_lower_to_memory @ false, _, _) => {
+                    (_lower_to_memory @ false, _, _, _) => {
                         if let Some(ty) = &func.result {
                             self.lower(ty);
                         }
@@ -1192,7 +1280,9 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         _lower_to_memory @ true,
                         _has_ret_ptr @ true,
                         AbiVariant::GuestImport | AbiVariant::GuestImportAsync,
-                    ) => {
+                        false,
+                    )
+                    | (_lower_to_memory @ _, _has_ret_ptr @ _, _, true) => {
                         self.emit(&Instruction::GetArg {
                             nth: sig.params.len() - 1,
                         });
@@ -1210,7 +1300,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     // value was stored at. Allocate some space here
                     // (statically) and then write the result into that
                     // memory, returning the pointer at the end.
-                    (_lower_to_memory @ true, _, variant) => match variant {
+                    (_lower_to_memory @ true, _, variant, _) => match variant {
                         AbiVariant::GuestExport | AbiVariant::GuestExportAsync => {
                             let ElementInfo { size, align } =
                                 self.bindgen.sizes().params(&func.result);
@@ -1220,7 +1310,9 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                                 ptr.clone(),
                                 Default::default(),
                             );
-                            self.stack.push(ptr);
+                            if !matches!(lift_lower, LiftLower::Symmetric) {
+                                self.stack.push(ptr);
+                            }
                         }
                         AbiVariant::GuestImport | AbiVariant::GuestImportAsync => {
                             unreachable!(
@@ -1236,16 +1328,20 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
 
                 // Build and emit the appropriate return
-                match (variant, async_flat_results) {
+                match (variant, async_flat_results, self.symmetric) {
                     // Async guest imports always return a i32 status code
-                    (AbiVariant::GuestImport | AbiVariant::GuestImportAsync, None) if async_ => {
+                    (AbiVariant::GuestImport | AbiVariant::GuestImportAsync, None, false)
+                        if async_ =>
+                    {
                         unreachable!("async guest imports must have a return")
                     }
 
                     // Async guest imports with results return the status code, not a pointer to any results
-                    (AbiVariant::GuestImport | AbiVariant::GuestImportAsync, Some(results))
-                        if async_ =>
-                    {
+                    (
+                        AbiVariant::GuestImport | AbiVariant::GuestImportAsync,
+                        Some(results),
+                        false,
+                    ) if async_ => {
                         let name = &format!("[task-return]{}", func.name);
                         let params = results.as_deref().unwrap_or(&[WasmType::I32]);
                         self.emit(&Instruction::AsyncTaskReturn { name, params });
@@ -1255,7 +1351,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     //
                     // In practice, async imports should not end up here, as the returned result of an
                     // async import is *not* a pointer but instead a status code.
-                    (_, Some(results)) => {
+                    (_, Some(results), false) => {
                         let name = &format!("[task-return]{}", func.name);
                         let params = results.as_deref().unwrap_or(&[WasmType::Pointer]);
                         self.emit(&Instruction::AsyncTaskReturn { name, params });
@@ -1264,12 +1360,14 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     // All async/non-async cases with no results simply return
                     //
                     // In practice, an async import will never get here (it always has a result, the error code)
-                    (_, None) => {
+                    (_, None, _) => {
                         self.emit(&Instruction::Return {
                             func,
                             amt: sig.results.len(),
                         });
                     }
+                    // not right, but avoids trap for now
+                    (_, _, true) => (),
                 }
 
                 self.realloc = None;
@@ -1513,7 +1611,21 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     });
                 }
                 TypeDefKind::Unknown => unreachable!(),
-                TypeDefKind::FixedSizeList(..) => todo!(),
+                TypeDefKind::FixedSizeList(ty, size) => {
+                    self.emit(&FixedSizeListLower {
+                        element: ty,
+                        size: *size,
+                        id,
+                    });
+                    let mut values = self
+                        .stack
+                        .drain(self.stack.len() - (*size as usize)..)
+                        .collect::<Vec<_>>();
+                    for value in values.drain(..) {
+                        self.stack.push(value);
+                        self.lower(ty);
+                    }
+                }
             },
         }
     }
@@ -1583,6 +1695,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         use Instruction::*;
 
         match *ty {
+            // Builtin types need different flavors of storage instructions
+            // depending on the size of the value written.
             Type::Bool => self.emit(&BoolFromI32),
             Type::S8 => self.emit(&S8FromI32),
             Type::U8 => self.emit(&U8FromI32),
@@ -1696,7 +1810,24 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     });
                 }
                 TypeDefKind::Unknown => unreachable!(),
-                TypeDefKind::FixedSizeList(..) => todo!(),
+                TypeDefKind::FixedSizeList(ty, size) => {
+                    let temp = flat_types(self.resolve, ty, Some(MAX_FLAT_PARAMS)).unwrap();
+                    let flat_per_elem = temp.to_vec().len();
+                    let flatsize = flat_per_elem * (*size as usize);
+                    let mut lowered_args = self
+                        .stack
+                        .drain(self.stack.len() - flatsize..)
+                        .collect::<Vec<_>>();
+                    for _ in 0..*size {
+                        self.stack.extend(lowered_args.drain(..flat_per_elem));
+                        self.lift(ty);
+                    }
+                    self.emit(&FixedSizeListLift {
+                        element: ty,
+                        size: *size,
+                        id,
+                    });
+                }
             },
         }
     }
@@ -1766,8 +1897,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         use Instruction::*;
 
         match *ty {
-            // Builtin types need different flavors of storage instructions
-            // depending on the size of the value written.
             Type::Bool | Type::U8 | Type::S8 => {
                 self.lower_and_emit(ty, addr, &I32Store8 { offset })
             }
@@ -1786,7 +1915,11 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 TypeDefKind::List(_) => self.write_list_to_memory(ty, addr, offset),
 
                 TypeDefKind::Future(_) | TypeDefKind::Stream(_) | TypeDefKind::Handle(_) => {
-                    self.lower_and_emit(ty, addr, &I32Store { offset })
+                    if self.symmetric {
+                        self.lower_and_emit(ty, addr, &PointerStore { offset })
+                    } else {
+                        self.lower_and_emit(ty, addr, &I32Store { offset })
+                    }
                 }
 
                 // Decompose the record into its components and then write all
@@ -1878,7 +2011,21 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
 
                 TypeDefKind::Unknown => unreachable!(),
-                TypeDefKind::FixedSizeList(..) => todo!(),
+                TypeDefKind::FixedSizeList(element, size) => {
+                    // resembles write_list_to_memory
+                    self.push_block();
+                    self.emit(&IterElem { element });
+                    self.emit(&IterBasePointer);
+                    let elem_addr = self.stack.pop().unwrap();
+                    self.write_to_memory(element, elem_addr, offset);
+                    self.finish_block(0);
+                    self.stack.push(addr);
+                    self.emit(&FixedSizeListLowerMemory {
+                        element,
+                        size: *size,
+                        id,
+                    });
+                }
             },
         }
     }
@@ -1979,7 +2126,11 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 TypeDefKind::List(_) => self.read_list_from_memory(ty, addr, offset),
 
                 TypeDefKind::Future(_) | TypeDefKind::Stream(_) | TypeDefKind::Handle(_) => {
-                    self.emit_and_lift(ty, addr, &I32Load { offset })
+                    if self.symmetric {
+                        self.emit_and_lift(ty, addr, &PointerLoad { offset })
+                    } else {
+                        self.emit_and_lift(ty, addr, &I32Load { offset })
+                    }
                 }
 
                 TypeDefKind::Resource => {
@@ -2065,7 +2216,19 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
 
                 TypeDefKind::Unknown => unreachable!(),
-                TypeDefKind::FixedSizeList(..) => todo!(),
+                TypeDefKind::FixedSizeList(ty, size) => {
+                    let increment = self.bindgen.sizes().size(ty);
+                    let mut position = offset;
+                    for _ in 0..*size {
+                        self.read_from_memory(ty, addr.clone(), position);
+                        position = position + increment;
+                    }
+                    self.emit(&FixedSizeListLift {
+                        element: ty,
+                        size: *size,
+                        id,
+                    });
+                }
             },
         }
     }
@@ -2283,7 +2446,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 });
                 self.deallocate(ty, what);
             }
-
             Type::Bool
             | Type::U8
             | Type::S8
@@ -2297,7 +2459,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             | Type::F32
             | Type::F64
             | Type::ErrorContext => {}
-
             Type::Id(id) => match &self.resolve.types[id].kind {
                 TypeDefKind::Type(t) => self.deallocate_indirect(t, addr, offset, what),
 
@@ -2374,7 +2535,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 TypeDefKind::Future(_) => unreachable!(),
                 TypeDefKind::Stream(_) => unreachable!(),
                 TypeDefKind::Unknown => unreachable!(),
-                TypeDefKind::FixedSizeList(..) => todo!(),
+                TypeDefKind::FixedSizeList(_, _) => {}
             },
         }
     }

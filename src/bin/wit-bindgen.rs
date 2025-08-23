@@ -46,6 +46,14 @@ enum Opt {
         #[clap(flatten)]
         args: Common,
     },
+    /// Generates bindings for bridge modules between wasm and native.
+    #[cfg(feature = "bridge")]
+    Bridge {
+        #[clap(flatten)]
+        opts: wit_bindgen_bridge::Opts,
+        #[clap(flatten)]
+        args: Common,
+    },
     /// Generates bindings for C++ modules.
     #[cfg(feature = "cpp")]
     Cpp {
@@ -136,6 +144,8 @@ fn main() -> Result<()> {
         Opt::Moonbit { opts, args } => (opts.build(), args),
         #[cfg(feature = "c")]
         Opt::C { opts, args } => (opts.build(), args),
+        #[cfg(feature = "bridge")]
+        Opt::Bridge { opts, args } => (opts.build(), args),
         #[cfg(feature = "cpp")]
         Opt::Cpp { opts, args } => (opts.build(args.out_dir.as_ref()), args),
         #[cfg(feature = "rust")]
@@ -220,7 +230,8 @@ fn gen_world(
         }
     }
     let (pkg, _files) = resolve.push_path(&opts.wit)?;
-    let world = resolve.select_world(pkg, opts.world.as_deref())?;
+    let mut world = resolve.select_world(pkg, opts.world.as_deref())?;
+    generator.apply_resolve_options(&mut resolve, &mut world);
     generator.generate(&resolve, world, files)?;
 
     Ok(())
