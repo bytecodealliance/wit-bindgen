@@ -117,7 +117,7 @@ pub unsafe fn cabi_realloc(
     align: usize,
     new_len: usize,
 ) -> *mut u8 {
-    use crate::alloc::alloc::{self, Layout};
+    use alloc::alloc::{alloc as allocate, handle_alloc_error, realloc, Layout};
 
     let layout;
     let ptr = if old_len == 0 {
@@ -125,18 +125,18 @@ pub unsafe fn cabi_realloc(
             return align as *mut u8;
         }
         layout = Layout::from_size_align_unchecked(new_len, align);
-        alloc::alloc(layout)
+        allocate(layout)
     } else {
         debug_assert_ne!(new_len, 0, "non-zero old_len requires non-zero new_len!");
         layout = Layout::from_size_align_unchecked(old_len, align);
-        alloc::realloc(old_ptr, layout, new_len)
+        realloc(old_ptr, layout, new_len)
     };
     if ptr.is_null() {
         // Print a nice message in debug mode, but in release mode don't
         // pull in so many dependencies related to printing so just emit an
         // `unreachable` instruction.
         if cfg!(debug_assertions) {
-            alloc::handle_alloc_error(layout);
+            handle_alloc_error(layout);
         } else {
             #[cfg(target_arch = "wasm32")]
             core::arch::wasm32::unreachable();
