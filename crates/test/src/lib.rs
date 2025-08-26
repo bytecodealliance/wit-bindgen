@@ -342,7 +342,7 @@ impl Runner<'_> {
         let mut worlds = Vec::new();
 
         let mut push_world = |kind: Kind, name: &str| -> Result<()> {
-            let world = resolve.select_world(pkg, Some(name)).with_context(|| {
+            let world = resolve.select_world(&[pkg], Some(name)).with_context(|| {
                 format!("failed to find expected `{name}` world to generate bindings")
             })?;
             worlds.push((world, kind));
@@ -582,8 +582,12 @@ impl Runner<'_> {
         let mut resolve = wit_parser::Resolve::default();
         let (pkg, _) = resolve.push_path(test).context("failed to load WIT")?;
         let world = resolve
-            .select_world(pkg, None)
-            .or_else(|err| resolve.select_world(pkg, Some("imports")).map_err(|_| err))
+            .select_world(&[pkg], None)
+            .or_else(|err| {
+                resolve
+                    .select_world(&[pkg], Some("imports"))
+                    .map_err(|_| err)
+            })
             .context("failed to select a world for bindings generation")?;
         let world = resolve.worlds[world].name.clone();
 
@@ -992,7 +996,7 @@ status: {}",
         let (pkg, _) = resolve
             .push_path(&compile.component.bindgen.wit_path)
             .context("failed to load WIT")?;
-        let world = resolve.select_world(pkg, Some(&compile.component.bindgen.world))?;
+        let world = resolve.select_world(&[pkg], Some(&compile.component.bindgen.world))?;
         let mut module = fs::read(&p1).context("failed to read wasm file")?;
         let encoded = wit_component::metadata::encode(&resolve, world, StringEncoding::UTF8, None)?;
 
