@@ -117,7 +117,7 @@ pub unsafe fn cabi_realloc(
     align: usize,
     new_len: usize,
 ) -> *mut u8 {
-    use alloc::alloc::{self, Layout};
+    use crate::alloc::alloc::{self, Layout};
 
     let layout;
     let ptr = if old_len == 0 {
