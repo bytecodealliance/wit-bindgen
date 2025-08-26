@@ -152,6 +152,7 @@ jobs:
     - run: cargo test
     - run: cargo test -p wit-bindgen-core
     - run: cargo test -p wit-bindgen
+    - run: cargo test -p wit-bindgen-rust
     - run: cargo test --workspace --exclude 'wit-bindgen*'
     - run: cargo test -p wit-bindgen-rt --all-features
     - run: rustup update nightly --no-self-update
