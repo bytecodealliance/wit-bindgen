@@ -10,6 +10,10 @@
 
 #![no_std]
 
+extern crate alloc;
+#[cfg(feature = "std")]
+extern crate std;
+
 /// Generate bindings for an input WIT document.
 ///
 /// This macro is the bread-and-butter of the `wit-bindgen` crate. The macro
@@ -864,35 +868,17 @@ pub use wit_bindgen_rust_macro::generate;
 // This re-export is no longer needed in new bindings and is only
 // here for compatibility.
 #[doc(hidden)]
-pub use rt::bitflags;
+#[cfg(feature = "bitflags")]
+pub use bitflags;
 
 #[cfg(docsrs)]
 pub mod examples;
 
 #[doc(hidden)]
-pub mod rt {
-    // Re-export `bitflags` so that we can reference it from macros.
-    pub use wit_bindgen_rt::bitflags;
-
-    #[cfg(target_arch = "wasm32")]
-    pub use wit_bindgen_rt::run_ctors_once;
-
-    pub fn maybe_link_cabi_realloc() {
-        #[cfg(feature = "realloc")]
-        wit_bindgen_rt::maybe_link_cabi_realloc();
-    }
-
-    #[cfg(all(feature = "realloc", not(target_env = "p2")))]
-    pub use wit_bindgen_rt::cabi_realloc;
-
-    #[cfg(feature = "async")]
-    pub use wit_bindgen_rt::async_support;
-
-    pub use wit_bindgen_rt::Cleanup;
-}
+pub mod rt;
 
 #[cfg(feature = "async")]
-pub use wit_bindgen_rt::async_support::{
+pub use rt::async_support::{
     backpressure_set, block_on, spawn, yield_async, yield_blocking, AbiBuffer, FutureRead,
     FutureReader, FutureWrite, FutureWriteCancel, FutureWriteError, FutureWriter, StreamRead,
     StreamReader, StreamResult, StreamWrite, StreamWriter,

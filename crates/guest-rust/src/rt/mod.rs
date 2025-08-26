@@ -1,11 +1,4 @@
-#![no_std]
-
-#[cfg(feature = "async")]
-extern crate std;
-
-extern crate alloc;
-
-use alloc::alloc::Layout;
+use core::alloc::Layout;
 use core::ptr::{self, NonNull};
 
 // Re-export `bitflags` so that we can reference it from macros.

@@ -16,6 +16,7 @@ fn main() {
 
     let mut src = env::current_dir().unwrap();
     src.push("src");
+    src.push("rt");
     src.push("libwit_bindgen_cabi.a");
 
     let dst_name = format!(
