@@ -85,14 +85,18 @@ struct Common {
     #[clap(long = "out-dir")]
     out_dir: Option<PathBuf>,
 
-    /// Location of WIT file(s) to generate bindings for.
+    /// Locations of WIT file(s) to generate bindings for.
     ///
-    /// This path can be either a directory containing `*.wit` files, a `*.wit`
-    /// file itself, or a `*.wasm` file which is a wasm-encoded WIT package.
-    /// Most of the time it's likely to be a directory containing `*.wit` files
-    /// with an optional `deps` folder inside of it.
+    /// These paths can be either directories containing `*.wit` files, `*.wit`
+    /// files themselves, or `*.wasm` files which are wasm-encoded WIT packages.
+    /// Most of the time they're likely to be directories containing `*.wit`
+    /// files with optional `deps` folders inside of them.
+    ///
+    /// Currently these locations must be ordered, as later paths can't contain
+    /// dependencies on earlier paths. This restriction may be lifted in the
+    /// future.
     #[clap(value_name = "WIT", index = 1)]
-    wit: PathBuf,
+    wit: Vec<PathBuf>,
 
     /// Optionally specified world that bindings are generated for.
     ///
@@ -219,8 +223,12 @@ fn gen_world(
             resolve.features.insert(feature.to_string());
         }
     }
-    let (pkg, _files) = resolve.push_path(&opts.wit)?;
-    let world = resolve.select_world(pkg, opts.world.as_deref())?;
+    let mut main_packages = Vec::new();
+    for wit in &opts.wit {
+        let (pkg, _files) = resolve.push_path(wit)?;
+        main_packages.push(pkg);
+    }
+    let world = resolve.select_world(&main_packages, opts.world.as_deref())?;
     generator.generate(&resolve, world, files)?;
 
     Ok(())

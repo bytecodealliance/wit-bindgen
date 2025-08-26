@@ -652,7 +652,9 @@
 ///     // ["../path/to/wit1", "../path/to/wit2"]
 ///     // Usually used in testing, our test suite may want to generate code
 ///     // from wit files located in multiple paths within a single mod, and we
-///     // don't want to copy these files again.
+///     // don't want to copy these files again. Currently these locations must
+///     // be ordered, as later paths can't contain dependencies on earlier
+///     // paths. This restriction may be lifted in the future.
 ///     path: "../path/to/wit",
 ///
 ///     // Enables passing "inline WIT". If specified this is the default
