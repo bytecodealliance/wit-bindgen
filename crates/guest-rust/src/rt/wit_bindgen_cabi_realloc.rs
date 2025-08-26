@@ -7,5 +7,5 @@ pub unsafe extern "C" fn cabi_realloc_wit_bindgen_0_44_0(
     align: usize,
     new_len: usize,
 ) -> *mut u8 {
-    crate::cabi_realloc(old_ptr, old_len, align, new_len)
+    crate::rt::cabi_realloc(old_ptr, old_len, align, new_len)
 }

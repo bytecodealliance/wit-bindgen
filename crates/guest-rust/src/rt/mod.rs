@@ -1,17 +1,71 @@
-#![no_std]
-
-#[cfg(feature = "async")]
-extern crate std;
-
-extern crate alloc;
-
-use alloc::alloc::Layout;
+use core::alloc::Layout;
 use core::ptr::{self, NonNull};
 
 // Re-export `bitflags` so that we can reference it from macros.
 #[cfg(feature = "bitflags")]
-#[doc(hidden)]
 pub use bitflags;
+
+#[cfg(not(feature = "bitflags"))]
+pub mod bitflags {
+    #[macro_export]
+    macro_rules! bitflags {
+        (
+            $(#[$attr:meta])*
+            $vis:vis struct $name:ident : $repr:ty {
+                $(
+                    $(#[$flag_attr:meta])*
+                    const $flag:ident = $val:expr;
+                )*
+            }
+        ) => {
+            $(#[$attr])*
+            $vis struct $name {
+                bits: $repr,
+            }
+
+            impl $name {
+                $(
+                    $(#[$flag_attr])*
+                    $vis const $flag: Self = Self { bits: $val };
+                )*
+                $vis fn empty() -> Self {
+                    Self { bits: 0 }
+                }
+
+                $vis fn from_bits_retain(bits: $repr) -> Self {
+                    Self { bits }
+                }
+
+                $vis fn bits(&self) -> $repr {
+                    self.bits
+                }
+            }
+
+            impl core::ops::BitOr<$name> for $name {
+                type Output = Self;
+                fn bitor(self, rhs: $name) -> $name {
+                    Self { bits: self.bits | rhs.bits }
+                }
+            }
+
+            impl core::ops::BitAnd<$name> for $name {
+                type Output = Self;
+                fn bitand(self, rhs: $name) -> $name {
+                    Self { bits: self.bits & rhs.bits }
+                }
+            }
+
+            impl core::ops::BitXor<$name> for $name {
+                type Output = Self;
+                fn bitxor(self, rhs: $name) -> $name {
+                    Self { bits: self.bits ^ rhs.bits }
+                }
+            }
+        };
+    }
+
+    pub use crate::bitflags;
+}
 
 /// For more information about this see `./ci/rebuild-libwit-bindgen-cabi.sh`.
 #[cfg(not(target_env = "p2"))]
@@ -63,7 +117,7 @@ pub unsafe fn cabi_realloc(
     align: usize,
     new_len: usize,
 ) -> *mut u8 {
-    use self::alloc::alloc::{self, Layout};
+    use alloc::alloc::{alloc as allocate, handle_alloc_error, realloc, Layout};
 
     let layout;
     let ptr = if old_len == 0 {
@@ -71,18 +125,18 @@ pub unsafe fn cabi_realloc(
             return align as *mut u8;
         }
         layout = Layout::from_size_align_unchecked(new_len, align);
-        alloc::alloc(layout)
+        allocate(layout)
     } else {
         debug_assert_ne!(new_len, 0, "non-zero old_len requires non-zero new_len!");
         layout = Layout::from_size_align_unchecked(old_len, align);
-        alloc::realloc(old_ptr, layout, new_len)
+        realloc(old_ptr, layout, new_len)
     };
     if ptr.is_null() {
         // Print a nice message in debug mode, but in release mode don't
         // pull in so many dependencies related to printing so just emit an
         // `unreachable` instruction.
         if cfg!(debug_assertions) {
-            alloc::handle_alloc_error(layout);
+            handle_alloc_error(layout);
         } else {
             #[cfg(target_arch = "wasm32")]
             core::arch::wasm32::unreachable();
