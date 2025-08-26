@@ -2,7 +2,7 @@
 
 include!(env!("BINDINGS"));
 
-pub(crate) use wit_bindgen::bitflags as my_bitflags;
+pub(crate) use wit_bindgen::rt::bitflags as my_bitflags;
 
 struct Component;
 

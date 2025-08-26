@@ -10,6 +10,7 @@
 
 #![no_std]
 
+#[cfg(not(feature = "rustc-dep-of-std"))]
 extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
@@ -864,12 +865,6 @@ extern crate std;
 /// [WIT package]: https://component-model.bytecodealliance.org/design/packages.html
 #[cfg(feature = "macros")]
 pub use wit_bindgen_rust_macro::generate;
-
-// This re-export is no longer needed in new bindings and is only
-// here for compatibility.
-#[doc(hidden)]
-#[cfg(feature = "bitflags")]
-pub use bitflags;
 
 #[cfg(docsrs)]
 pub mod examples;
