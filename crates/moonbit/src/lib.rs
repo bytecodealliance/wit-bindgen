@@ -572,7 +572,10 @@ impl WorldGenerator for MoonBit {
         // Export project files
         if !self.opts.ignore_stub && !self.opts.ignore_module_file {
             let mut body = Source::default();
-            uwriteln!(&mut body, "{{ \"name\": \"{project_name}\" }}");
+            uwriteln!(
+                &mut body,
+                "{{ \"name\": \"{project_name}\", \"preferred-target\": \"wasm\" }}"
+            );
             files.push(&format!("moon.mod.json"), body.as_bytes());
         }
 
