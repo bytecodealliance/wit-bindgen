@@ -1,10 +1,5 @@
 //@ args = '--with my:inline/foo=other::my::inline::foo'
 
-#![expect(
-    unused_imports,
-    reason = "using `with` is known to produce possibly dead imports"
-)]
-
 include!(env!("BINDINGS"));
 
 mod other {
