@@ -398,7 +398,10 @@ impl RustWasm {
             TypeGeneration::Remap(remapped_path) => {
                 let name = format!("__with_name{}", self.with_name_counter);
                 self.with_name_counter += 1;
-                uwriteln!(self.src, "#[allow(unfulfilled_lint_expectations, unused_imports)]");
+                uwriteln!(
+                    self.src,
+                    "#[allow(unfulfilled_lint_expectations, unused_imports)]"
+                );
                 uwriteln!(self.src, "use {remapped_path} as {name};");
                 InterfaceName {
                     remapped: true,
