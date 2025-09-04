@@ -599,6 +599,6 @@ impl<'a, T> StreamRead<'a, T> {
     /// Panics if the operation has already been completed via `Future::poll`,
     /// or if this method is called twice.
     pub fn cancel(self: Pin<&mut Self>) -> (StreamResult, Vec<T>) {
-        todo!()
+        self.pin_project().cancel()
     }
 }
