@@ -26,8 +26,9 @@ macro_rules! rtdebug {
         // Change this flag to enable debugging, right now we're not using a
         // crate like `log` or such to reduce runtime deps. Intended to be used
         // during development for now.
-        if false {
-            std::eprintln!($($f)*);
+        {
+          #[cfg(false)]
+          std::eprintln!($($f)*);
         }
     }
 
