@@ -112,9 +112,9 @@
 //! else.
 
 use {
-    super::waitable::{WaitableOp, WaitableOperation},
-    super::ReturnCode,
-    crate::Cleanup,
+    crate::rt::async_support::waitable::{WaitableOp, WaitableOperation},
+    crate::rt::async_support::ReturnCode,
+    crate::rt::Cleanup,
     std::{
         alloc::Layout,
         fmt,
@@ -302,7 +302,7 @@ impl<T> Drop for FutureWriter<T> {
                 should_write_default_value: false,
                 vtable: self.vtable,
             };
-            crate::async_support::spawn(async move {
+            crate::rt::async_support::spawn(async move {
                 let value = (clone.default)();
                 let _ = clone.write(value).await;
             });

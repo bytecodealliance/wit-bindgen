@@ -221,7 +221,8 @@ pub struct Opts {
     #[cfg_attr(feature = "clap", arg(long, value_name = "NAME"))]
     pub additional_derive_ignore: Vec<String>,
 
-    /// Remapping of wit interface and type names to Rust module names and types.
+    /// Remapping of wit import interface and type names to Rust module names
+    /// and types.
     ///
     /// Argument must be of the form `k=v` and this option can be passed
     /// multiple times or one option can be comma separated, for example
@@ -384,14 +385,23 @@ impl RustWasm {
         is_export: bool,
     ) -> Result<bool> {
         let with_name = resolve.name_world_key(name);
-        let Some(remapping) = self.with.get(&with_name) else {
-            bail!(MissingWith(with_name));
+        let remapping = if is_export {
+            &TypeGeneration::Generate
+        } else {
+            match self.with.get(&with_name) {
+                Some(remapping) => remapping,
+                None => bail!(MissingWith(with_name)),
+            }
         };
         self.generated_types.insert(with_name);
         let entry = match remapping {
             TypeGeneration::Remap(remapped_path) => {
                 let name = format!("__with_name{}", self.with_name_counter);
                 self.with_name_counter += 1;
+                uwriteln!(
+                    self.src,
+                    "#[allow(unfulfilled_lint_expectations, unused_imports)]"
+                );
                 uwriteln!(self.src, "use {remapped_path} as {name};");
                 InterfaceName {
                     remapped: true,
@@ -1066,8 +1076,9 @@ impl WorldGenerator for RustWasm {
         self.world = Some(world);
 
         let world = &resolve.worlds[world];
-        // Specify that all imports local to the world's package should be generated
-        for (key, item) in world.imports.iter().chain(world.exports.iter()) {
+        // Specify that all imports local to the world's package should be
+        // generated
+        for (key, item) in world.imports.iter() {
             if let WorldItem::Interface { id, .. } = item {
                 if resolve.interfaces[*id].package == world.package {
                     let name = resolve.name_world_key(key);
@@ -1158,14 +1169,7 @@ impl WorldGenerator for RustWasm {
         let mut to_define = Vec::new();
         for (name, ty_id) in resolve.interfaces[id].types.iter() {
             let full_name = full_wit_type_name(resolve, *ty_id);
-            if let Some(type_gen) = self.with.get(&full_name) {
-                // skip type definition generation for remapped types
-                if type_gen.generated() {
-                    to_define.push((name, ty_id));
-                }
-            } else {
-                to_define.push((name, ty_id));
-            }
+            to_define.push((name, ty_id));
             self.generated_types.insert(full_name);
         }
 
@@ -1786,4 +1790,64 @@ fn full_wit_type_name(resolve: &Resolve, id: TypeId) -> String {
         Some(interface_name) => format!("{}/{}", interface_name, type_def.name.clone().unwrap()),
         None => type_def.name.clone().unwrap(),
     }
+}
+
+enum ConstructorReturnType {
+    /// Resource constructor is infallible. E.g.:
+    /// ```wit
+    /// resource R {
+    ///    constructor(..);
+    /// }
+    /// ```
+    Self_,
+
+    /// Resource constructor is fallible. E.g.:
+    /// ```wit
+    /// resource R {
+    ///    constructor(..) -> result<R, err>;
+    /// }
+    /// ```
+    Result { err: Option<Type> },
+}
+
+fn classify_constructor_return_type(
+    resolve: &Resolve,
+    resource_id: TypeId,
+    result: &Option<Type>,
+) -> ConstructorReturnType {
+    fn classify(
+        resolve: &Resolve,
+        resource_id: TypeId,
+        result: &Option<Type>,
+    ) -> Option<ConstructorReturnType> {
+        let resource_id = dealias(resolve, resource_id);
+        let typedef = match result.as_ref()? {
+            Type::Id(id) => &resolve.types[dealias(resolve, *id)],
+            _ => return None,
+        };
+
+        match &typedef.kind {
+            TypeDefKind::Handle(Handle::Own(id)) if dealias(resolve, *id) == resource_id => {
+                Some(ConstructorReturnType::Self_)
+            }
+            TypeDefKind::Result(Result_ { ok, err }) => {
+                let ok_typedef = match ok.as_ref()? {
+                    Type::Id(id) => &resolve.types[dealias(resolve, *id)],
+                    _ => return None,
+                };
+
+                match &ok_typedef.kind {
+                    TypeDefKind::Handle(Handle::Own(id))
+                        if dealias(resolve, *id) == resource_id =>
+                    {
+                        Some(ConstructorReturnType::Result { err: *err })
+                    }
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
+    }
+
+    classify(resolve, resource_id, result).expect("invalid constructor")
 }

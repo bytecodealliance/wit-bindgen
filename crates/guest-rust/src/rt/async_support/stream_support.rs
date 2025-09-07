@@ -1,10 +1,10 @@
 //! For a high-level overview of how this module is implemented see the
 //! module documentation in `future_support.rs`.
 
-use crate::async_support::waitable::{WaitableOp, WaitableOperation};
-use crate::async_support::{AbiBuffer, ReturnCode, DROPPED};
+use crate::rt::async_support::waitable::{WaitableOp, WaitableOperation};
+use crate::rt::async_support::{AbiBuffer, ReturnCode, DROPPED};
 use {
-    crate::Cleanup,
+    crate::rt::Cleanup,
     std::{
         alloc::Layout,
         fmt,
@@ -599,6 +599,6 @@ impl<'a, T> StreamRead<'a, T> {
     /// Panics if the operation has already been completed via `Future::poll`,
     /// or if this method is called twice.
     pub fn cancel(self: Pin<&mut Self>) -> (StreamResult, Vec<T>) {
-        todo!()
+        self.pin_project().cancel()
     }
 }
