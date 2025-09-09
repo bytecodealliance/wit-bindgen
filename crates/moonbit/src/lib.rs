@@ -36,9 +36,8 @@ pub(crate) const ASYNC_UTILS: [&str; 5] = [
     ASYNC_FUTURE,
     ASYNC_WASM_PRIMITIVE,
     ASYNC_WAITABLE_SET,
-    ASYNC_SUBTASK
+    ASYNC_SUBTASK,
 ];
-
 
 #[derive(Default, Debug, Clone)]
 #[cfg_attr(feature = "clap", derive(clap::Args))]
