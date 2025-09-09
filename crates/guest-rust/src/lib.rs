@@ -874,7 +874,8 @@ pub mod rt;
 
 #[cfg(feature = "async")]
 pub use rt::async_support::{
-    backpressure_set, block_on, spawn, yield_async, yield_blocking, AbiBuffer, FutureRead,
-    FutureReader, FutureWrite, FutureWriteCancel, FutureWriteError, FutureWriter, StreamRead,
-    StreamReader, StreamResult, StreamWrite, StreamWriter,
+    backpressure_dec, backpressure_inc, backpressure_set, block_on, spawn, yield_async,
+    yield_blocking, AbiBuffer, FutureRead, FutureReader, FutureWrite, FutureWriteCancel,
+    FutureWriteError, FutureWriter, StreamRead, StreamReader, StreamResult, StreamWrite,
+    StreamWriter,
 };

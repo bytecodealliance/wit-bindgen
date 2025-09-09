@@ -33,13 +33,13 @@ prettyplease = "0.2.20"
 syn = { version = "2.0.89", features = ["printing"] }
 futures = "0.3.31"
 
-wat = "1.238.0"
-wasmparser = "0.238.0"
-wasm-encoder = "0.238.0"
-wasm-metadata = { version = "0.238.0", default-features = false }
-wit-parser = "0.238.0"
-wit-component = "0.238.0"
-wasm-compose = "0.238.0"
+wat = "1.239.0"
+wasmparser = "0.239.0"
+wasm-encoder = "0.239.0"
+wasm-metadata = { version = "0.239.0", default-features = false }
+wit-parser = "0.239.0"
+wit-component = "0.239.0"
+wasm-compose = "0.239.0"
 
 wit-bindgen-core = { path = 'crates/core', version = '0.45.1' }
 wit-bindgen-c = { path = 'crates/c', version = '0.45.1' }
@@ -89,3 +89,4 @@ csharp = ['dep:wit-bindgen-csharp']
 csharp-mono = ['csharp']
 moonbit = ['dep:wit-bindgen-moonbit']
 async = []
+

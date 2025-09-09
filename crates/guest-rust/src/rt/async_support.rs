@@ -515,6 +515,7 @@ pub async fn yield_async() {
 /// When `enabled` is `true`, this tells the host to defer any new calls to this
 /// component instance until further notice (i.e. until `backpressure.set` is
 /// called again with `enabled` set to `false`).
+#[deprecated = "use backpressure_{inc,dec} instead"]
 pub fn backpressure_set(enabled: bool) {
     #[cfg(not(target_arch = "wasm32"))]
     unsafe fn backpressure_set(_: i32) {
@@ -529,6 +530,40 @@ pub fn backpressure_set(enabled: bool) {
     }
 
     unsafe { backpressure_set(if enabled { 1 } else { 0 }) }
+}
+
+/// Call the `backpressure.inc` canonical built-in function.
+pub fn backpressure_inc() {
+    #[cfg(not(target_arch = "wasm32"))]
+    unsafe fn backpressure_inc() {
+        unreachable!();
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    #[link(wasm_import_module = "$root")]
+    extern "C" {
+        #[link_name = "[backpressure-inc]"]
+        fn backpressure_inc();
+    }
+
+    unsafe { backpressure_inc() }
+}
+
+/// Call the `backpressure.dec` canonical built-in function.
+pub fn backpressure_dec() {
+    #[cfg(not(target_arch = "wasm32"))]
+    unsafe fn backpressure_dec() {
+        unreachable!();
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    #[link(wasm_import_module = "$root")]
+    extern "C" {
+        #[link_name = "[backpressure-dec]"]
+        fn backpressure_dec();
+    }
+
+    unsafe { backpressure_dec() }
 }
 
 fn context_get() -> *mut u8 {

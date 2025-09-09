@@ -757,6 +757,8 @@ typedef enum {snake}_waitable_state {{
 }} {snake}_waitable_state_t;
 
 void {snake}_backpressure_set(bool enable);
+void {snake}_backpressure_inc(void);
+void {snake}_backpressure_dec(void);
 void* {snake}_context_get(void);
 void {snake}_context_set(void*);
             "
@@ -824,6 +826,20 @@ extern void __backpressure_set(bool enable);
 
 void {snake}_backpressure_set(bool enable) {{
     __backpressure_set(enable);
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[backpressure-inc]")))
+extern void __backpressure_inc(void);
+
+void {snake}_backpressure_inc(void) {{
+    __backpressure_inc();
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[backpressure-dec]")))
+extern void __backpressure_dec(void);
+
+void {snake}_backpressure_dec(void) {{
+    __backpressure_dec();
 }}
 
 __attribute__((__import_module__("$root"), __import_name__("[context-get-0]")))
