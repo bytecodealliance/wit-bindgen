@@ -40,30 +40,36 @@ pub(crate) const ASYNC_UTILS: [&str; 5] = [
 ];
 
 #[derive(Default, Debug, Clone)]
-#[cfg_attr(feature = "clap", derive(clap::Args))]
+#[cfg_attr(feature = "clap", derive(clap::Parser))]
 pub struct Opts {
     /// Whether or not to derive Show for all types
     #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
     pub derive_show: bool,
+
     /// Whether or not to derive Eq for all types
     #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
     pub derive_eq: bool,
+
     /// Whether or not to declare as Error type for types ".*error"
     #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
     pub derive_error: bool,
+
     /// Whether or not to generate stub files ; useful for update after WIT change
     #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
     pub ignore_stub: bool,
+
     /// Whether or not to generate moon.mod.json ; useful if the project is part of a larger project
     #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
     pub ignore_module_file: bool,
+
     /// The package/dir to generate the program entrance
     #[cfg_attr(feature = "clap", arg(long, default_value = "gen"))]
     pub gen_dir: String,
+
     /// The project name ; or the package path prefix if the project is part of a larger project
     #[cfg_attr(feature = "clap", arg(long, default_value = None))]
     pub project_name: Option<String>,
-    // Async filter set
+
     #[cfg_attr(feature = "clap", clap(flatten))]
     pub async_: AsyncFilterSet,
 }
