@@ -12,23 +12,23 @@ pub fn Subtask::from_handle(handle : Int) -> Subtask {
   {handle: handle, defer_task: [], code: None}
 }
 
-pub impl WaitableTrait for Subtask with update(self, code~ : Int) -> Unit {
+pub impl Waitable for Subtask with update(self, code~ : Int) -> Unit {
   self.code = Some(code)
 }
 
-pub impl WaitableTrait for Subtask with handle(self) -> Int {
+pub impl Waitable for Subtask with handle(self) -> Int {
   self.handle
 }
 
-pub impl WaitableTrait for Subtask with cancel(self) -> Int {
+pub impl Waitable for Subtask with cancel(self) -> Int {
   subtask_cancel(self.handle)
 }
 
-pub impl WaitableTrait for Subtask with drop(self) -> Unit {
+pub impl Waitable for Subtask with drop(self) -> Unit {
   subtask_drop(self.handle)
 }
 
-pub impl WaitableTrait for Subtask with is_done(self) -> Bool {
+pub impl Waitable for Subtask with is_done(self) -> Bool {
   guard self.code is Some(code) else {
     return false
   }
@@ -38,6 +38,6 @@ pub impl WaitableTrait for Subtask with is_done(self) -> Bool {
   }
 }
 
-pub impl WaitableTrait for Subtask with defer_task(self) -> Unit raise {
+pub impl Waitable for Subtask with defer_task(self) -> Unit raise {
   self.defer_task.each(f => f())
 }

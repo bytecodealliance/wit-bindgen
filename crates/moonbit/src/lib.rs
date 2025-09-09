@@ -971,7 +971,7 @@ impl InterfaceGenerator<'_> {
                 "Unit" => "".into(),
                 _ => format!("{return_param}: {return_ty}",),
             };
-            let snake_func_name = format!("{}", func.name.to_snake_case());
+            let snake_func_name = format!("{}", func.name.to_moonbit_ident());
             let ffi = self.qualify_package(FFI_DIR);
 
             uwriteln!(
@@ -1077,7 +1077,7 @@ impl InterfaceGenerator<'_> {
                 (name, ty.clone())
             })
             .collect::<Vec<_>>();
-
+        
         MoonbitSignature {
             name: format!("{type_name}{name}"),
             params: params,
@@ -1392,16 +1392,19 @@ pub let static_{table_name}: {ffi}{camel_kind}VTable[{result}]  = {table_name}()
     }
 
     fn sig_string(&mut self, sig: &MoonbitSignature, async_: bool) -> String {
-        let params = sig
+        let mut params = sig
             .params
             .iter()
             .map(|(name, ty)| {
                 let ty = self.type_name(ty, true);
                 format!("{name} : {ty}")
             })
-            .collect::<Vec<_>>()
-            .join(", ");
-
+            .collect::<Vec<_>>();
+        if async_ {
+            params.insert(0, "task: @ffi.Task".into());
+        }
+        
+        let params = params.join(", ");
         let (async_prefix, async_suffix) = if async_ {
             ("async ", " raise")
         } else {
@@ -3300,7 +3303,7 @@ impl ToMoonBitIdent for str {
             | "unreachable" | "dynclass" | "dynobj" | "dynrec" | "var" | "finally" | "noasync" => {
                 format!("{self}_")
             }
-            _ => self.to_snake_case(),
+            _ => self.strip_prefix("[async]").unwrap_or(&self).to_snake_case(),
         }
     }
 }

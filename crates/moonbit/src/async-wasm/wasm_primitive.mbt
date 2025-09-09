@@ -1,5 +1,4 @@
-pub(open) trait WaitableTrait {
-  // run with code
+pub(open) trait Waitable {
   update(Self, code~: Int) -> Unit
   
   cancel(Self) -> Int
@@ -49,8 +48,8 @@ pub fn SubtaskStatus::handle(self : Self) -> Int {
     ReturnCancelled(handle) => handle
   }
 }
-pub(all) enum EventCode {
-  EventNone = 0
+pub(all) enum Event {
+  None = 0
   Subtask = 1
   StreamRead = 2
   StreamWrite = 3
@@ -59,9 +58,9 @@ pub(all) enum EventCode {
   TaskCancel = 6
 }
 
-pub fn EventCode::decode(int : Int) -> EventCode {
+pub fn Event::decode(int : Int) -> Event {
   match int {
-    0 => EventNone
+    0 => None
     1 => Subtask
     2 => StreamRead
     3 => StreamWrite
@@ -71,9 +70,9 @@ pub fn EventCode::decode(int : Int) -> EventCode {
     _ => panic()
   }
 }
-pub fn EventCode::encode(self : Self) -> Int {
+pub fn Event::encode(self : Self) -> Int {
   match self {
-    EventNone => 0
+    None => 0
     Subtask => 1
     StreamRead => 2
     StreamWrite => 3

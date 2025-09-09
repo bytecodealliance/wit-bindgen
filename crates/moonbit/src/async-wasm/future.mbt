@@ -51,27 +51,27 @@ pub struct Future[T] {
 }
 
 ///|
-pub impl[T] WaitableTrait for FutureReader[T] with update(self, code~ : Int) -> Unit {
+pub impl[T] Waitable for FutureReader[T] with update(self, code~ : Int) -> Unit {
   self.0.code = Some(code)
 }
 
 ///|
-pub impl[T] WaitableTrait for FutureReader[T] with handle(self) -> Int {
+pub impl[T] Waitable for FutureReader[T] with handle(self) -> Int {
   self.0.handle
 }
 
 ///|
-pub impl[T] WaitableTrait for FutureReader[T] with cancel(self) -> Int {
+pub impl[T] Waitable for FutureReader[T] with cancel(self) -> Int {
   self.0.cancel_read()
 }
 
 ///|
-pub impl[T] WaitableTrait for FutureReader[T] with drop(self) -> Unit {
+pub impl[T] Waitable for FutureReader[T] with drop(self) -> Unit {
   self.0.drop_readable()
 }
 
 ///|
-pub impl[T] WaitableTrait for FutureReader[T] with is_done(self) -> Bool {
+pub impl[T] Waitable for FutureReader[T] with is_done(self) -> Bool {
   match self.0.code {
     Some(c) =>
       match WaitableStatus::decode(c) {
@@ -83,32 +83,32 @@ pub impl[T] WaitableTrait for FutureReader[T] with is_done(self) -> Bool {
 }
 
 ///|
-pub impl[T] WaitableTrait for FutureReader[T] with defer_task(self) -> Unit raise {
+pub impl[T] Waitable for FutureReader[T] with defer_task(self) -> Unit raise {
   self.0.drop_readable()
 }
 
 ///|
-pub impl[T] WaitableTrait for FutureWriter[T] with update(self, code~ : Int) -> Unit {
+pub impl[T] Waitable for FutureWriter[T] with update(self, code~ : Int) -> Unit {
   self.0.code = Some(code)
 }
 
 ///|
-pub impl[T] WaitableTrait for FutureWriter[T] with handle(self) -> Int {
+pub impl[T] Waitable for FutureWriter[T] with handle(self) -> Int {
   self.0.handle
 }
 
 ///|
-pub impl[T] WaitableTrait for FutureWriter[T] with cancel(self) -> Int {
+pub impl[T] Waitable for FutureWriter[T] with cancel(self) -> Int {
   self.0.cancel_write()
 }
 
 ///|
-pub impl[T] WaitableTrait for FutureWriter[T] with drop(self) -> Unit {
+pub impl[T] Waitable for FutureWriter[T] with drop(self) -> Unit {
   self.0.drop_writable()
 }
 
 ///|
-pub impl[T] WaitableTrait for FutureWriter[T] with is_done(self) -> Bool {
+pub impl[T] Waitable for FutureWriter[T] with is_done(self) -> Bool {
   match self.0.code {
     Some(c) =>
       match WaitableStatus::decode(c) {
@@ -120,7 +120,7 @@ pub impl[T] WaitableTrait for FutureWriter[T] with is_done(self) -> Bool {
 }
 
 ///|
-pub impl[T] WaitableTrait for FutureWriter[T] with defer_task(self) -> Unit raise {
+pub impl[T] Waitable for FutureWriter[T] with defer_task(self) -> Unit raise {
   self.0.drop_writable()
 }
 
