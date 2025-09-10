@@ -962,9 +962,7 @@ impl InterfaceGenerator<'_> {
                 .collect::<Vec<_>>()
                 .join(", ");
             let return_ty = match &func.result {
-                Some(result) => {
-                    self.type_name(result, false).to_string()
-                }
+                Some(result) => self.type_name(result, false).to_string(),
                 None => "Unit".into(),
             };
             let return_expr = match return_ty.as_str() {
@@ -1077,7 +1075,7 @@ impl InterfaceGenerator<'_> {
                 (name, *ty)
             })
             .collect::<Vec<_>>();
-        
+
         MoonbitSignature {
             name: format!("{type_name}{name}"),
             params,
@@ -1173,7 +1171,7 @@ impl InterfaceGenerator<'_> {
                     TypeDefKind::Future(ty) => {
                         let qualifier = self.qualify_package(FFI_DIR);
                         format!(
-                            "{}Future[{}]",
+                            "{}FutureReader[{}]",
                             qualifier,
                             ty.as_ref()
                                 .map(|t| self.type_name(t, type_variable))
@@ -1403,7 +1401,7 @@ pub let static_{table_name}: {ffi}{camel_kind}VTable[{result}]  = {table_name}()
         if async_ {
             params.insert(0, "task: @ffi.Task".into());
         }
-        
+
         let params = params.join(", ");
         let (async_prefix, async_suffix) = if async_ {
             ("async ", " raise")
@@ -2236,13 +2234,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let ops = operands
                     .iter()
                     .enumerate()
-                    .map(|(i, op)| {
-                        format!(
-                            "{} : {}",
-                            record.fields[i].name.to_moonbit_ident(),
-                            op
-                        )
-                    })
+                    .map(|(i, op)| format!("{} : {}", record.fields[i].name.to_moonbit_ident(), op))
                     .collect::<Vec<_>>()
                     .join(", ");
 
@@ -3020,7 +3012,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 uwriteln!(
                     self.src,
-                    r#"let {result} = {ffi}Future::new({op}, {snake_name});"#,
+                    r#"let {result} = {ffi}FutureReader::new({op}, {snake_name});"#,
                 );
 
                 results.push(result);
