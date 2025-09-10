@@ -1347,13 +1347,13 @@ impl InterfaceGenerator<'_> {
         uwriteln!(
             self.src,
             r#"
-fn wasmImport{name}New() -> UInt64 = "{module}" "[{kind}-new-{index}]{func_name}"
-fn wasmImport{name}Read(handle : Int, buffer_ptr : Int{payload_len_arg}) -> Int = "{module}" "[async-lower][{kind}-read-{index}]{func_name}"
-fn wasmImport{name}Write(handle : Int, buffer_ptr : Int{payload_len_arg}) -> Int = "{module}" "[async-lower][{kind}-write-{index}]{func_name}"
-fn wasmImport{name}CancelRead(handle : Int) -> Int = "{module}" "[{kind}-cancel-read-{index}]{func_name}"
-fn wasmImport{name}CancelWrite(handle : Int) -> Int = "{module}" "[{kind}-cancel-write-{index}]{func_name}"
-fn wasmImport{name}DropReadable(handle : Int) = "{module}" "[{kind}-drop-readable-{index}]{func_name}"
-fn wasmImport{name}DropWritable(handle : Int) = "{module}" "[{kind}-drop-writable-{index}]{func_name}"
+fn wasmImport{name}{kind}New() -> UInt64 = "{module}" "[{kind}-new-{index}]{func_name}"
+fn wasmImport{name}{kind}Read(handle : Int, buffer_ptr : Int{payload_len_arg}) -> Int = "{module}" "[async-lower][{kind}-read-{index}]{func_name}"
+fn wasmImport{name}{kind}Write(handle : Int, buffer_ptr : Int{payload_len_arg}) -> Int = "{module}" "[async-lower][{kind}-write-{index}]{func_name}"
+fn wasmImport{name}{kind}CancelRead(handle : Int) -> Int = "{module}" "[{kind}-cancel-read-{index}]{func_name}"
+fn wasmImport{name}{kind}CancelWrite(handle : Int) -> Int = "{module}" "[{kind}-cancel-write-{index}]{func_name}"
+fn wasmImport{name}{kind}DropReadable(handle : Int) = "{module}" "[{kind}-drop-readable-{index}]{func_name}"
+fn wasmImport{name}{kind}DropWritable(handle : Int) = "{module}" "[{kind}-drop-writable-{index}]{func_name}"
 fn wasm{name}Lift(ptr: Int) -> {result} {{
     {lift}
     {lift_result}
@@ -1370,13 +1370,13 @@ fn wasm{name}Malloc() -> Int {{
 }}
 fn {table_name}() -> {ffi}{camel_kind}VTable[{result}] {{
     {ffi}{camel_kind}VTable::new(
-        wasmImport{name}New,
-        wasmImport{name}Read,
-        wasmImport{name}Write,
-        wasmImport{name}CancelRead,
-        wasmImport{name}CancelWrite,
-        wasmImport{name}DropReadable,
-        wasmImport{name}DropWritable,
+        wasmImport{name}{kind}New,
+        wasmImport{name}{kind}Read,
+        wasmImport{name}{kind}Write,
+        wasmImport{name}{kind}CancelRead,
+        wasmImport{name}{kind}CancelWrite,
+        wasmImport{name}{kind}DropReadable,
+        wasmImport{name}{kind}DropWritable,
         wasm{name}Malloc,
         wasm{name}Deallocate,
         wasm{name}Lift,
