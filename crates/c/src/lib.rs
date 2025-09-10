@@ -761,6 +761,8 @@ void {snake}_backpressure_inc(void);
 void {snake}_backpressure_dec(void);
 void* {snake}_context_get(void);
 void {snake}_context_set(void*);
+void {snake}_yield(void);
+uint32_t {snake}_yield_cancellable(void);
             "
         );
         uwriteln!(
@@ -854,6 +856,20 @@ extern void __context_set(void*);
 
 void {snake}_context_set(void *val) {{
     return __context_set(val);
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[thread-yield]")))
+extern uint32_t __thread_yield(void);
+
+void {snake}_yield(void) {{
+    __thread_yield();
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[cancellable][thread-yield]")))
+extern uint32_t __thread_yield_cancellable(void);
+
+uint32_t {snake}_yield_cancellable(void) {{
+    return __thread_yield_cancellable();
 }}
             "#
         );

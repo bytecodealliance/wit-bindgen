@@ -464,7 +464,7 @@ pub fn yield_blocking() -> bool {
     #[cfg(target_arch = "wasm32")]
     #[link(wasm_import_module = "$root")]
     extern "C" {
-        #[link_name = "[yield]"]
+        #[link_name = "[thread-yield]"]
         fn yield_() -> bool;
     }
     // Note that the return value from the raw intrinsic is inverted, the
