@@ -321,7 +321,7 @@ impl WorldGenerator for MoonBit {
             } else {
                 files.push(
                     &format!("{directory}/moon.pkg.json"),
-                    format!("{{ }}").as_bytes(),
+                    "{ }".to_string().as_bytes(),
                 );
             }
         };
@@ -403,7 +403,7 @@ impl WorldGenerator for MoonBit {
             let directory = name.replace('.', "/");
             files.push(&format!("{directory}/top.mbt"), indent(&src).as_bytes());
             files.push(&format!("{directory}/ffi.mbt"), indent(&ffi).as_bytes());
-            generate_pkg_definition(&name, files);
+            generate_pkg_definition(name, files);
         }
 
         // Export interface fragments
@@ -421,7 +421,7 @@ impl WorldGenerator for MoonBit {
             files.push(&format!("{directory}/top.mbt"), indent(&src).as_bytes());
             if !self.opts.ignore_stub {
                 files.push(&format!("{directory}/stub.mbt"), indent(&stub).as_bytes());
-                generate_pkg_definition(&name, files);
+                generate_pkg_definition(name, files);
             }
             generate_ffi(directory, fragments, files);
         }
@@ -433,7 +433,7 @@ impl WorldGenerator for MoonBit {
 
         // Export Async utils
         // If async is used, export async utils
-        if self.is_async || self.futures.len() > 0 {
+        if self.is_async || !self.futures.is_empty() {
             ASYNC_UTILS.iter().for_each(|s| {
                 body.push_str("\n");
                 body.push_str(s);
@@ -453,13 +453,13 @@ impl WorldGenerator for MoonBit {
                 &mut body,
                 "{{ \"name\": \"{project_name}\", \"preferred-target\": \"wasm\" }}"
             );
-            files.push(&format!("moon.mod.json"), body.as_bytes());
+            files.push("moon.mod.json", body.as_bytes());
         }
 
         let export_dir = self.opts.gen_dir.clone();
 
         // Export project entry point
-        let mut gen = self.interface(resolve, &export_dir.as_str(), "", Direction::Export);
+        let mut gen = self.interface(resolve, export_dir.as_str(), "", Direction::Export);
         let ffi_qualifier = gen.qualify_package(FFI_DIR);
 
         let mut body = Source::default();
@@ -567,7 +567,7 @@ impl InterfaceGenerator<'_> {
                 .entry(self.name.to_string())
                 .or_default();
             if let Some(alias) = imports.packages.get(name) {
-                return format!("@{}.", alias);
+                format!("@{alias}.")
             } else {
                 let alias = imports
                     .ns
@@ -576,7 +576,7 @@ impl InterfaceGenerator<'_> {
                     .packages
                     .entry(name.to_string())
                     .or_insert(alias.clone());
-                return format!("@{}.", alias);
+                format!("@{alias}.")
             }
         } else {
             "".into()
@@ -835,7 +835,7 @@ impl InterfaceGenerator<'_> {
             .gen
             .opts
             .async_
-            .is_async(&self.resolve, interface, func, false);
+            .is_async(self.resolve, interface, func, false);
         if async_ {
             self.gen.is_async = true;
         }
@@ -963,7 +963,7 @@ impl InterfaceGenerator<'_> {
                 .join(", ");
             let return_ty = match &func.result {
                 Some(result) => {
-                    format!("{}", self.type_name(result, false))
+                    self.type_name(result, false).to_string()
                 }
                 None => "Unit".into(),
             };
@@ -971,7 +971,7 @@ impl InterfaceGenerator<'_> {
                 "Unit" => "".into(),
                 _ => format!("{return_param}: {return_ty}",),
             };
-            let snake_func_name = format!("{}", func.name.to_moonbit_ident());
+            let snake_func_name = func.name.to_moonbit_ident().to_string();
             let ffi = self.qualify_package(FFI_DIR);
 
             uwriteln!(
@@ -1074,14 +1074,14 @@ impl InterfaceGenerator<'_> {
                 } else {
                     name.to_moonbit_ident()
                 };
-                (name, ty.clone())
+                (name, *ty)
             })
             .collect::<Vec<_>>();
         
         MoonbitSignature {
             name: format!("{type_name}{name}"),
-            params: params,
-            result_type: result_type,
+            params,
+            result_type,
         }
     }
 
@@ -1230,19 +1230,19 @@ impl InterfaceGenerator<'_> {
     ) -> String {
         let mut f = FunctionBindgen::new(self, "INVALID", module, Box::new([]));
         abi::deallocate_lists_in_types(f.r#gen.resolve, types, operands, indirect, &mut f);
-        String::from(f.src)
+        f.src
     }
 
     fn lift_from_memory(&mut self, address: &str, ty: &Type, module: &str) -> (String, String) {
         let mut f = FunctionBindgen::new(self, "INVALID", module, Box::new([]));
         let result = abi::lift_from_memory(f.gen.resolve, &mut f, address.into(), ty);
-        (String::from(f.src), result)
+        (f.src, result)
     }
 
     fn lower_to_memory(&mut self, address: &str, value: &str, ty: &Type, module: &str) -> String {
         let mut f = FunctionBindgen::new(self, "INVALID", module, Box::new([]));
         abi::lower_to_memory(f.r#gen.resolve, &mut f, address.into(), value.into(), ty);
-        String::from(f.src)
+        f.src
     }
 
     fn malloc_memory(&mut self, address: &str, ty: &Type) -> String {
@@ -1330,8 +1330,8 @@ impl InterfaceGenerator<'_> {
         let malloc;
         let lift_result;
         if let Some(result_type) = result_type {
-            (lift, lift_result) = self.lift_from_memory("ptr", &result_type, module);
-            lower = self.lower_to_memory("ptr", "value", &*result_type, module);
+            (lift, lift_result) = self.lift_from_memory("ptr", result_type, module);
+            lower = self.lower_to_memory("ptr", "value", result_type, module);
             dealloc_list = self.deallocate_lists(
                 std::slice::from_ref(result_type),
                 &[String::from("ptr")],
@@ -1340,9 +1340,9 @@ impl InterfaceGenerator<'_> {
             );
             malloc = self.malloc_memory("ptr", result_type);
         } else {
-            lift = format!("let _ = ptr");
-            lower = format!("let _ = (ptr, value)");
-            dealloc_list = format!("let _ = ptr");
+            lift = "let _ = ptr".to_string();
+            lower = "let _ = (ptr, value)".to_string();
+            dealloc_list = "let _ = ptr".to_string();
             malloc = "let ptr = 0;".into();
             lift_result = "".into();
         }
@@ -1556,7 +1556,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                     {}{name}::dtor(handle)
                 }}
                 "#,
-                gen.qualify_package(&self.name.to_string())
+                gen.qualify_package(self.name)
             );
 
             self.gen
@@ -1674,7 +1674,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                     let ty = self.type_name(&ty, true);
                     format!("{name}({ty})")
                 } else {
-                    format!("{name}")
+                    name.to_string()
                 }
             })
             .collect::<Vec<_>>()
@@ -1924,7 +1924,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                 let name = name.to_upper_camel_case();
                 let assignments = results
                     .iter()
-                    .map(|result| format!("{result}"))
+                    .map(|result| result.to_string())
                     .collect::<Vec<_>>()
                     .join(", ");
 
@@ -2056,7 +2056,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
     ) {
         match inst {
             Instruction::GetArg { nth } => results.push(self.params[*nth].clone()),
-            Instruction::I32Const { val } => results.push(format!("({})", val.to_string())),
+            Instruction::I32Const { val } => results.push(format!("({val})")),
             Instruction::ConstZero { tys } => results.extend(tys.iter().map(|ty| {
                 match ty {
                     WasmType::I32 => "0",
@@ -2218,7 +2218,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     "{}::{}({})",
                     ty,
                     if ty.starts_with("@") {
-                        ty.split('.').last().unwrap()
+                        ty.split('.').next_back().unwrap()
                     } else {
                         &ty
                     },
@@ -2240,7 +2240,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         format!(
                             "{} : {}",
                             record.fields[i].name.to_moonbit_ident(),
-                            op.to_string()
+                            op
                         )
                     })
                     .collect::<Vec<_>>()
@@ -2256,10 +2256,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let op = &operands[0];
                 // Empty tuple is Unit
                 // (T) is T
-                if tuple.types.len() == 0 {
+                if tuple.types.is_empty() {
                     results.push("()".into());
                 } else if tuple.types.len() == 1 {
-                    results.push(format!("{}", operands[0]));
+                    results.push(operands[0].to_string());
                 } else {
                     for i in 0..tuple.types.len() {
                         results.push(format!("({op}).{i}"));
@@ -2327,7 +2327,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 let declarations = lowered
                     .iter()
-                    .map(|lowered| format!("{lowered}"))
+                    .map(|lowered| lowered.to_string())
                     .collect::<Vec<_>>()
                     .join(", ");
 
@@ -2336,7 +2336,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let block = |Block { body, results, .. }| {
                     let assignments = results
                         .iter()
-                        .map(|result| format!("{result}"))
+                        .map(|result| result.to_string())
                         .collect::<Vec<_>>()
                         .join(", ");
 
@@ -2665,14 +2665,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     FunctionKind::Freestanding => {
                         format!(
                             "{}{}",
-                            self.r#gen.qualify_package(&self.func_interface.to_string()),
+                            self.r#gen.qualify_package(self.func_interface),
                             func.name.to_moonbit_ident()
                         )
                     }
                     FunctionKind::AsyncFreestanding => {
                         format!(
                             "{}{}",
-                            self.r#gen.qualify_package(&self.func_interface.to_string()),
+                            self.r#gen.qualify_package(self.func_interface),
                             func.name.to_moonbit_ident()
                         )
                     }
@@ -3003,13 +3003,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::Flush { amt } => {
-                results.extend(operands.iter().take(*amt).map(|v| v.clone()));
+                results.extend(operands.iter().take(*amt).cloned());
             }
 
             Instruction::FutureLift { ty, .. } => {
                 let result = self.locals.tmp("result");
                 let op = &operands[0];
-                let qualifier = self.r#gen.qualify_package(&self.func_interface.to_string());
+                let qualifier = self.r#gen.qualify_package(self.func_interface);
                 let ty = self.gen.type_name(&Type::Id(*ty), true);
                 let ffi = self.gen.qualify_package(FFI_DIR);
                 let snake_name = format!(
@@ -3028,7 +3028,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::FutureLower { .. } => {
                 let op = &operands[0];
-                results.push(format!("{}.handle", op));
+                results.push(format!("{op}.handle"));
             }
 
             Instruction::AsyncTaskReturn { params, .. } => {
@@ -3048,7 +3048,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     params: params
                         .iter()
                         .zip(operands)
-                        .map(|(a, b)| (a.clone(), b.clone()))
+                        .map(|(a, b)| (*a, b.clone()))
                         .collect(),
                     return_param,
                 };
@@ -3056,13 +3056,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::StreamLower { .. } => {
                 let op = &operands[0];
-                results.push(format!("{}.handle", op));
+                results.push(format!("{op}.handle"));
             }
 
             Instruction::StreamLift { ty, .. } => {
                 let result = self.locals.tmp("result");
                 let op = &operands[0];
-                let qualifier = self.r#gen.qualify_package(&self.func_interface.to_string());
+                let qualifier = self.r#gen.qualify_package(self.func_interface);
                 let ty = self.gen.type_name(&Type::Id(*ty), true);
                 let ffi = self.gen.qualify_package(FFI_DIR);
                 let snake_name = format!(
@@ -3303,7 +3303,7 @@ impl ToMoonBitIdent for str {
             | "unreachable" | "dynclass" | "dynobj" | "dynrec" | "var" | "finally" | "noasync" => {
                 format!("{self}_")
             }
-            _ => self.strip_prefix("[async]").unwrap_or(&self).to_snake_case(),
+            _ => self.strip_prefix("[async]").unwrap_or(self).to_snake_case(),
         }
     }
 }
