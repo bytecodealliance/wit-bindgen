@@ -8,7 +8,7 @@ pub fn take_then_drop(x : @ffi.Future[String]) -> Unit {
 
 
 ///|
-pub async fn async_read_and_drop(task: @ffi.WaitableTask, x : @ffi.Future[String]) -> Unit noraise {
+pub async fn read_and_drop(task: @ffi.Task, x : @ffi.Future[String]) -> Unit noraise {
   let _ = x.read_then_drop() catch {
     _ => panic()
   }
