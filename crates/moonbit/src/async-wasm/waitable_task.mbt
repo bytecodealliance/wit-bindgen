@@ -1,5 +1,5 @@
 ///|
-pub enum TaskStatus {
+enum TaskStatus {
   Fail(Error)
   Running
   Done
@@ -34,13 +34,16 @@ pub fn Task::from_raw(raw : Int) -> Task {
   { id: raw, tasks: {}, task_defer: [], status: Running }
 }
 
-///|
-pub fn Task::add_waitable(self : Self, waitable : Int) -> Unit {
-  waitable_join(waitable, self.id)
+
+pub fn Task::is_done(self : Self) -> Bool {
+  match self.status {
+    Running => false
+    Done | Fail(_) => true
+  }
 }
 
 ///|
-pub fn Task::set_wait(self : Self) -> (Int, Int, Int) {
+pub fn Task::blocking_wait(self : Self) -> (Int, Int, Int) {
   let result : FixedArray[Int] = FixedArray::make(2, 0)
   let result_ptr = int_array2ptr(result)
   let event0 = waitable_set_wait(self.id, result_ptr)
@@ -48,7 +51,7 @@ pub fn Task::set_wait(self : Self) -> (Int, Int, Int) {
 }
 
 ///|
-pub fn Task::set_poll(self : Self) -> (Int, Int, Int) {
+pub fn Task::poll(self : Self) -> (Int, Int, Int) {
   let result : FixedArray[Int] = FixedArray::make(2, 0)
   let result_ptr = int_array2ptr(result)
   let event0 = waitable_set_poll(self.id, result_ptr)
@@ -56,29 +59,45 @@ pub fn Task::set_poll(self : Self) -> (Int, Int, Int) {
 }
 
 ///|
-pub fn Task::remove_waitable(self : Self, waitable : Int) -> Unit {
-  waitable_join(waitable, self.id)
-  self.tasks.remove(waitable)
+fn[T : Waitable] Task::add_waitable(self : Self, waitable : T) -> Unit {
+  waitable_join(waitable.handle(), self.id)
 }
 
 ///|
-pub fn Task::drop(self : Self) -> Unit {
-  activate_waitable_task_context(0) // clear current context
-  waitable_set_drop(self.id) // runner will drop the waitable set
-  self.tasks.clear()
+/// When a waitable is done will be removed from the waitable set
+/// then waitable will be dropped
+fn[T : Waitable] Task::remove_waitable(self : Self, waitable : T) -> Unit {
+  waitable_join(waitable.handle(), self.id)
+  let waitable = self.tasks.get(waitable.handle())
+  guard waitable is Some((waitable, _)) else { return }
+  waitable.drop()
+  self.tasks.remove(waitable.handle())
 }
 
+///|
+/// Drop the waitable set and all waitables in it
+pub fn Task::drop(self : Self) -> Unit {
+  activate_waitable_task_context(0) // clear current context
+  // remove all waitables and drop them
+  for task in self.tasks.values() {
+    task.0.drop()
+  }
+  self.tasks.clear()
+  waitable_set_drop(self.id) // runner will drop the waitable set
+}
+
+///|
 pub fn Task::spawn(
   task : Self,
   f : async () -> Unit raise,
-  tracing : &Waitable,
+  state : &Waitable,
 ) -> Unit {
   let coro = spawn(fn() {
-    task.add_waitable(tracing.handle())
-    defer task.remove_waitable(tracing.handle())
+    task.add_waitable(state)
+    defer task.remove_waitable(state)
     f()
   })
-  task.tasks[tracing.handle()] = (tracing, coro)
+  task.tasks[state.handle()] = (state, coro)
 }
 
 ///|
@@ -86,14 +105,14 @@ pub fn Task::spawn(
 pub async fn Task::wait(
   task : Self,
   f : async () -> Unit raise,
-  tracing : &Waitable,
+  state : &Waitable,
 ) -> Unit raise {
   let coro = spawn(fn() {
-    task.add_waitable(tracing.handle())
-    defer task.remove_waitable(tracing.handle())
+    task.add_waitable(state)
+    defer task.remove_waitable(state)
     f()
   })
-  task.tasks[tracing.handle()] = (tracing, coro)
+  task.tasks[state.handle()] = (state, coro)
   Coroutine::wait(coro)
 }
 
@@ -106,20 +125,20 @@ pub fn Task::add_defer(self : Self, f : () -> Unit raise) -> Unit {
 /// This function is core of the wasm async runtime
 /// It is called by the host when an event happens
 pub fn callback(event : Int, waitable_id : Int, code : Int) -> Int {
+  let event = Event::decode(event)
   // Handle the event for the current waitable task
+  if event is None || event is TaskCancel {
+    rschedule()
+    return CallbackCode::Exit.encode()
+  }
   guard current_waitable_set() is Some(task)
   let (waitable, coro) = task.tasks[waitable_id]
-  let event = Event::decode(event)
   match event {
     FutureRead | FutureWrite | StreamRead | StreamWrite | Subtask => {
       waitable.update(code~)
       coro.run()
     }
-    TaskCancel => {
-      let _ = waitable.cancel()
-      task_cancel() // TODO: need validate this method
-    }
-    None => () 
+    TaskCancel | None => panic() // unreachable
   }
   rschedule()
   if waitable.is_done() {
@@ -135,6 +154,7 @@ pub fn Task::with_waitable_set(
   is_drop? : Bool = false,
 ) -> Unit noraise {
   let parent = spawn(async fn() -> Unit raise {
+    self.status = Running
     defer (if self.tasks.is_empty() {
       self.status = Done
       task_map.remove(self.id)

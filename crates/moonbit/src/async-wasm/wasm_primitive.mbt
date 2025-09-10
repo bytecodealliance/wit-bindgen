@@ -6,8 +6,6 @@ pub(open) trait Waitable {
   drop(Self) -> Unit
 
   is_done(Self) -> Bool
-  
-  defer_task(Self) -> Unit raise
 
   handle(Self) -> Int
 }
@@ -48,16 +46,17 @@ pub fn SubtaskStatus::handle(self : Self) -> Int {
     ReturnCancelled(handle) => handle
   }
 }
-pub(all) enum Event {
-  None = 0
-  Subtask = 1
-  StreamRead = 2
-  StreamWrite = 3
-  FutureRead = 4
-  FutureWrite = 5
-  TaskCancel = 6
-}
 
+pub(all) enum Event {
+  None
+  Subtask
+  StreamRead
+  StreamWrite
+  FutureRead
+  FutureWrite
+  // This event triggered when the wait/yield/poll operations in waitable_set are cancelled
+  TaskCancel
+}
 pub fn Event::decode(int : Int) -> Event {
   match int {
     0 => None

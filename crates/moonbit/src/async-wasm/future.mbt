@@ -102,10 +102,6 @@ pub impl[T] Waitable for FutureReader[T] with is_done(self) -> Bool {
   }
 }
 
-///|
-pub impl[T] Waitable for FutureReader[T] with defer_task(self) -> Unit {
-  self.drop()
-}
 
 ///|
 pub fn[T] FutureReader::malloc(self : FutureReader[T]) -> Int {
@@ -210,10 +206,6 @@ pub impl[T] Waitable for FutureWriter[T] with is_done(self) -> Bool {
   }
 }
 
-///|
-pub impl[T] Waitable for FutureWriter[T] with defer_task(self) -> Unit {
-  self.drop()
-}
 
 ///|
 pub fn[T] FutureWriter::malloc(self : FutureWriter[T]) -> Int {
