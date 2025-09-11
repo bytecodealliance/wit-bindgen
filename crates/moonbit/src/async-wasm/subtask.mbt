@@ -16,8 +16,8 @@ pub impl Waitable for Subtask with handle(self) -> Int {
   self.handle
 }
 
-pub impl Waitable for Subtask with cancel(self) -> Int {
-  subtask_cancel(self.handle)
+pub impl Waitable for Subtask with cancel(self) -> Unit {
+  self.code = Some(subtask_cancel(self.handle))
 }
 
 pub impl Waitable for Subtask with drop(self) -> Unit {

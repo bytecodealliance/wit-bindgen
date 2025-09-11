@@ -1,7 +1,7 @@
 pub(open) trait Waitable {
   update(Self, code~: Int) -> Unit
   
-  cancel(Self) -> Int
+  cancel(Self) -> Unit
 
   drop(Self) -> Unit
 

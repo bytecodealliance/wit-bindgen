@@ -41,6 +41,12 @@ pub fn Task::is_done(self : Self) -> Bool {
     Done | Fail(_) => true
   }
 }
+pub fn Task::is_fail(self: Self) -> Error? {
+  match self.status {
+    Fail(err) => Some(err)
+    _ => None
+  }
+}
 
 ///|
 pub fn Task::blocking_wait(self : Self) -> (Int, Int, Int) {
@@ -121,32 +127,37 @@ pub fn Task::add_defer(self : Self, f : () -> Unit raise) -> Unit {
   self.task_defer.push(f)
 }
 
-///|
-/// This function is core of the wasm async runtime
-/// It is called by the host when an event happens
 pub fn callback(event : Int, waitable_id : Int, code : Int) -> Int {
   let event = Event::decode(event)
-  // Handle the event for the current waitable task
-  if event is None || event is TaskCancel {
-    rschedule()
-    return CallbackCode::Exit.encode()
-  }
-  guard current_waitable_set() is Some(task)
-  let (waitable, coro) = task.tasks[waitable_id]
+  // Handle the event for the current waitable task  
   match event {
     FutureRead | FutureWrite | StreamRead | StreamWrite | Subtask => {
+      guard current_waitable_set() is Some(task)
+      let (waitable, coro) = task.tasks[waitable_id]
       waitable.update(code~)
       coro.run()
+      // schedule next coroutine
+      rschedule()
+      if waitable.is_done() {
+        return CallbackCode::Exit.encode()
+      }
+      return CallbackCode::Wait(waitable_id).encode()
     }
-    TaskCancel | None => panic() // unreachable
+    TaskCancel => {
+      guard current_waitable_set() is Some(task)
+      task.tasks.values().each(task => {
+        let _ = task.0.cancel()
+      })
+      defer task.drop()
+      rschedule()
+      return CallbackCode::Exit.encode()
+    }
+    None => {
+      rschedule()
+      return CallbackCode::Exit.encode()
+    }
   }
-  rschedule()
-  if waitable.is_done() {
-    return CallbackCode::Exit.encode()
-  }
-  return CallbackCode::Wait(waitable_id).encode()
 }
-
 ///|
 pub fn Task::with_waitable_set(
   self : Self,
@@ -196,6 +207,12 @@ pub fn get_or_create_waitable_set() -> Task {
   }
   curr_task.val = Some(ctx)
   ctx
+}
+
+pub fn create_waitable_set() -> Int {
+  let ctx = Task::new()
+  task_map[ctx.id] = ctx
+  ctx.id
 }
 
 ///|

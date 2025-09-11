@@ -81,8 +81,9 @@ pub impl[T] Waitable for FutureReader[T] with handle(self) -> Int {
 }
 
 ///|
-pub impl[T] Waitable for FutureReader[T] with cancel(self) -> Int {
-  (self.vtable.cancel_read)(self.handle)
+pub impl[T] Waitable for FutureReader[T] with cancel(self) -> Unit {
+  self.code = Some((self.vtable.cancel_read)(self.handle))
+  
 }
 
 ///|
@@ -185,8 +186,8 @@ pub impl[T] Waitable for FutureWriter[T] with handle(self) -> Int {
 }
 
 ///|
-pub impl[T] Waitable for FutureWriter[T] with cancel(self) -> Int {
-  (self.vtable.cancel_write)(self.handle)
+pub impl[T] Waitable for FutureWriter[T] with cancel(self) -> Unit {
+  self.code = Some((self.vtable.cancel_write)(self.handle))
 }
 
 ///|
@@ -318,4 +319,8 @@ pub struct Stream[T] {
   handle : Int
   vtable : StreamVTable[T]
   mode : Int?
+}
+
+pub fn[T] Stream::new(handle: Int, vtable : StreamVTable[T]) -> Stream[T] {
+      { handle, vtable, mode: None }
 }

@@ -1354,17 +1354,17 @@ fn wasmImport{name}{kind}CancelRead(handle : Int) -> Int = "{module}" "[{kind}-c
 fn wasmImport{name}{kind}CancelWrite(handle : Int) -> Int = "{module}" "[{kind}-cancel-write-{index}]{func_name}"
 fn wasmImport{name}{kind}DropReadable(handle : Int) = "{module}" "[{kind}-drop-readable-{index}]{func_name}"
 fn wasmImport{name}{kind}DropWritable(handle : Int) = "{module}" "[{kind}-drop-writable-{index}]{func_name}"
-fn wasm{name}Lift(ptr: Int) -> {result} {{
+fn wasm{name}{kind}Lift(ptr: Int) -> {result} {{
     {lift}
     {lift_result}
 }}
-fn wasm{name}Lower(value: {result}, ptr: Int) -> Unit {{
+fn wasm{name}{kind}Lower(value: {result}, ptr: Int) -> Unit {{
     {lower}
 }}
-fn wasm{name}Deallocate(ptr: Int) -> Unit {{
+fn wasm{name}{kind}Deallocate(ptr: Int) -> Unit {{
     {dealloc_list}
 }}
-fn wasm{name}Malloc() -> Int {{
+fn wasm{name}{kind}Malloc() -> Int {{
     {malloc}
     ptr
 }}
@@ -1377,10 +1377,10 @@ fn {table_name}() -> {ffi}{camel_kind}VTable[{result}] {{
         wasmImport{name}{kind}CancelWrite,
         wasmImport{name}{kind}DropReadable,
         wasmImport{name}{kind}DropWritable,
-        wasm{name}Malloc,
-        wasm{name}Deallocate,
-        wasm{name}Lift,
-        wasm{name}Lower
+        wasm{name}{kind}Malloc,
+        wasm{name}{kind}Deallocate,
+        wasm{name}{kind}Lift,
+        wasm{name}{kind}Lower
     )
 }}
 
@@ -2710,6 +2710,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             let {async_func_result} = {name}(task, {args});
                             {name}_task_return({task_return_result});
                         }})
+                        if task.is_fail() is Some(_) {{
+                                @ffi.task_cancel();
+                                return @ffi.CallbackCode::Exit.encode()
+                        }}
                         return @ffi.CallbackCode::Wait(task.id).encode()
                         "#,
                     );
@@ -3062,9 +3066,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     qualifier,
                     ty.replace(&qualifier, "").to_snake_case(),
                 );
-                uwrite!(
+
+                uwriteln!(
                     self.src,
-                    r#"let {result} = {ffi}Stream::new({op}, {qualifier}{snake_name});"#,
+                    r#"let {result} = {ffi}Stream::new({op}, {snake_name});"#,
                 );
 
                 results.push(result);
