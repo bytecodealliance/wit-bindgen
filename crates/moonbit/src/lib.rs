@@ -86,7 +86,7 @@ impl Opts {
 struct MoonbitSignature {
     name: String,
     params: Vec<(String, Type)>,
-    result_type: String,
+    result_type: Option<Type>,
 }
 
 struct InterfaceFragment {
@@ -751,8 +751,8 @@ impl InterfaceGenerator<'_> {
             self.src,
             r#"
             {sig} {{
-            {cleanup_list}
-            {src}
+                {cleanup_list}
+                {src}
             }}
             "#
         );
@@ -1062,10 +1062,6 @@ impl InterfaceGenerator<'_> {
             None => "".into(),
         };
 
-        let result_type = match &func.result {
-            None => "Unit".into(),
-            Some(ty) => self.type_name(ty, true),
-        };
         let params = func
             .params
             .iter()
@@ -1082,7 +1078,7 @@ impl InterfaceGenerator<'_> {
         MoonbitSignature {
             name: format!("{type_name}{name}"),
             params,
-            result_type,
+            result_type: func.result,
         }
     }
 
@@ -1515,9 +1511,13 @@ pub let static_{table_name}: {ffi}{camel_kind}VTable[{result}]  = {table_name}()
         } else {
             ("", "".into())
         };
+        let result_type = match &sig.result_type {
+            None => "Unit".into(),
+            Some(ty) => self.type_name(ty, true),
+        };
         format!(
             "pub {async_prefix}fn {}({params}) -> {}{async_suffix}",
-            sig.name, sig.result_type
+            sig.name, result_type
         )
     }
 }

@@ -36,6 +36,5 @@ pub async fn start_read_then_cancel(
     signal,
     fn() { signal.read() catch { _ => raise @ffi.Cancelled::Cancelled } },
   )
-  // task.add_defer(fn() {data.drop(); signal.drop()})
 }
 

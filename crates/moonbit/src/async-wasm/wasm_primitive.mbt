@@ -32,17 +32,6 @@ pub fn SubtaskStatus::decode(int : Int) -> SubtaskStatus {
 }
 
 ///|
-pub fn SubtaskStatus::encode(self : Self) -> Int {
-  match self {
-    Starting(_) => 0
-    Started(_) => 1
-    Returned(_) => 2
-    StartCancelled(_) => 3
-    ReturnCancelled(_) => 4
-  }
-}
-
-///|
 pub fn SubtaskStatus::handle(self : Self) -> Int {
   match self {
     Starting(handle) => handle
@@ -152,6 +141,7 @@ pub fn CallbackCode::decode(int : Int) -> CallbackCode {
 }
 
 ///|
+/// This function is empty, If you want to print debug info, you can hook it in your environment.
 pub fn _async_debug(_msg : String) -> Unit {
   ()
 }
