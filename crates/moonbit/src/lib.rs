@@ -31,14 +31,12 @@ pub(crate) const ASYNC_FUTURE: &str = include_str!("./async-wasm/future.mbt");
 pub(crate) const ASYNC_WASM_PRIMITIVE: &str = include_str!("./async-wasm/wasm_primitive.mbt");
 pub(crate) const ASYNC_WAITABLE_SET: &str = include_str!("./async-wasm/waitable_task.mbt");
 pub(crate) const ASYNC_SUBTASK: &str = include_str!("./async-wasm/subtask.mbt");
-pub(crate) const WASIP1: &str = include_str!("./async-wasm/wasip1.mbt");
-pub(crate) const ASYNC_UTILS: [&str; 6] = [
+pub(crate) const ASYNC_UTILS: [&str; 5] = [
     ASYNC_PRIMITIVE,
     ASYNC_FUTURE,
     ASYNC_WASM_PRIMITIVE,
     ASYNC_WAITABLE_SET,
     ASYNC_SUBTASK,
-    WASIP1,
 ];
 
 #[derive(Default, Debug, Clone)]
@@ -445,7 +443,7 @@ impl WorldGenerator for MoonBit {
         files.push(&format!("{FFI_DIR}/top.mbt"), indent(&body).as_bytes());
         files.push(
             &format!("{FFI_DIR}/moon.pkg.json"),
-            "{ \"warn-list\": \"-44\", \"supported-targets\": [\"wasm\"], \"import\": [\"peter-jerry-ye/wasi\",\"tonyfettes/encoding\"] }".as_bytes(),
+            "{ \"warn-list\": \"-44\", \"supported-targets\": [\"wasm\"] }".as_bytes(),
         );
 
         // Export project files
@@ -453,7 +451,7 @@ impl WorldGenerator for MoonBit {
             let mut body = Source::default();
             uwriteln!(
                 &mut body,
-                "{{ \"name\": \"{project_name}\", \"preferred-target\": \"wasm\", \"deps\": {{\"peter-jerry-ye/wasi\": \"0.22.0\"}}, }}"
+                "{{ \"name\": \"{project_name}\", \"preferred-target\": \"wasm\" }}"
             );
             files.push("moon.mod.json", body.as_bytes());
         }
