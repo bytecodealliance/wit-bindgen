@@ -110,7 +110,7 @@ fn[T : Waitable] Task::add_waitable(self : Self, waitable : T) -> Unit {
 /// When a waitable is done will be removed from the waitable set
 /// then waitable will be try to drop
 fn[T : Waitable] Task::remove_waitable(self : Self, state : T) -> Unit {
-  print("waitable-set-join(\{state.handle()}, 0)")
+  _async_debug("waitable-set-join(\{state.handle()}, 0)")
   waitable_join(state.handle(), 0)
   self.waiting -= 1
 }
@@ -125,7 +125,7 @@ fn[T : Waitable] Task::drop_waitable(self : Self, state : T) -> Unit {
 /// Cancel a waitable, remove it from the waitable set and force drop it
 pub fn[T : Waitable] Task::cancel_waitable(self : Self, state : T) -> Unit {
   waitable_join(state.handle(), 0)
-  print("waitable-set-join(\{state.handle()}, 0)")
+  _async_debug("waitable-set-join(\{state.handle()}, 0)")
   self.waiting -= 1
   state.cancel()
   state.drop()
@@ -137,7 +137,7 @@ pub fn[T : Waitable] Task::cancel_waitable(self : Self, state : T) -> Unit {
 pub fn Task::drop(self : Self) -> Unit {
   context_set(0)
   defer waitable_set_drop(self.id)
-  print("context-set(0)")
+  _async_debug("context-set(0)")
 }
 
 ///|
