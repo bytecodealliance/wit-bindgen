@@ -53,7 +53,6 @@ pub extern "wasm" fn f32_to_i64(value : Float) -> Int64 =
   #|(func (param f32) (result i64) local.get 0 f32.convert_i64_s)
 
 // set pseudo header; allocate extra bytes for string
-
 pub extern "wasm" fn malloc(size : Int) -> Int =
   #|(func (param i32) (result i32) (local i32)
   #| local.get 0 i32.const 4 i32.add call $moonbit.gc.malloc
@@ -120,10 +119,7 @@ pub extern "wasm" fn ptr2float_array(ptr : Int, len : Int) -> FixedArray[Float] 
   #| local.get 1 call $moonbit.init_array32
   #| local.get 2)
 
-pub extern "wasm" fn ptr2uint64_array(
-  ptr : Int,
-  len : Int,
-) -> FixedArray[UInt64] =
+pub extern "wasm" fn ptr2uint64_array(ptr : Int, len : Int) -> FixedArray[UInt64] =
   #|(func (param i32) (param i32) (result i32) (local i32)
   #| local.get 0 i32.const 8 i32.sub local.tee 2
   #| local.get 1 call $moonbit.init_array64
@@ -135,41 +131,37 @@ pub extern "wasm" fn ptr2int64_array(ptr : Int, len : Int) -> FixedArray[Int64] 
   #| local.get 1 call $moonbit.init_array64
   #| local.get 2)
 
-pub extern "wasm" fn ptr2double_array(
-  ptr : Int,
-  len : Int,
-) -> FixedArray[Double] =
+pub extern "wasm" fn ptr2double_array(ptr : Int, len : Int) -> FixedArray[Double] =
   #|(func (param i32) (param i32) (result i32) (local i32)
   #| local.get 0 i32.const 8 i32.sub local.tee 2
   #| local.get 1 call $moonbit.init_array64
   #| local.get 2)
 
 pub fn cabi_realloc(
-  src_offset : Int,
-  src_size : Int,
-  _dst_alignment : Int,
-  dst_size : Int,
-) -> Int {
-  // malloc
-  if src_offset == 0 && src_size == 0 {
-    return malloc(dst_size)
-  }
-  // free
-  if dst_size == 0 {
+    src_offset : Int,
+    src_size : Int,
+    _dst_alignment : Int,
+    dst_size : Int
+) -> Int {{
+    // malloc
+    if src_offset == 0 && src_size == 0 {{
+        return malloc(dst_size)
+    }}
+    // free
+    if dst_size == 0 {{
+        free(src_offset)
+        return 0
+    }}
+    // realloc
+    let dst = malloc(dst_size)
+    copy(dst, src_offset, if src_size < dst_size { src_size } else { dst_size })
     free(src_offset)
-    return 0
-  }
-  // realloc
-  let dst = malloc(dst_size)
-  copy(dst, src_offset, if src_size < dst_size { src_size } else { dst_size })
-  free(src_offset)
-  dst
-}
+    dst
+}}
 
 pub(open) trait Any {}
-
 pub(all) struct Cleanup {
-  address : Int
-  size : Int
-  align : Int
+    address : Int
+    size : Int
+    align : Int
 }

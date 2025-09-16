@@ -10,7 +10,8 @@ use wit_bindgen_core::{
         Int, InterfaceId, Record, Resolve, Result_, SizeAlign, Tuple, Type, TypeDef, TypeDefKind,
         TypeId, TypeOwner, Variant, WorldId, WorldKey,
     },
-    AsyncFilterSet, Direction, Files, InterfaceGenerator as _, Ns, Source, WorldGenerator,
+    AsyncFilterSet, Direction, Files, InterfaceGenerator as CoreInterfaceGenerator, Ns, Source,
+    WorldGenerator,
 };
 
 // Assumptions:
@@ -23,20 +24,21 @@ use wit_bindgen_core::{
 // TODO: Export will share the type signatures with the import by using a newtype alias
 pub(crate) const FFI_DIR: &str = "ffi";
 
-pub(crate) const FFI: &str = include_str!("ffi.mbt");
+pub(crate) const FFI: &str = include_str!("./async-wasm/ffi.mbt");
 
 pub(crate) const ASYNC_PRIMITIVE: &str = include_str!("./async-wasm/async_primitive.mbt");
 pub(crate) const ASYNC_FUTURE: &str = include_str!("./async-wasm/future.mbt");
 pub(crate) const ASYNC_WASM_PRIMITIVE: &str = include_str!("./async-wasm/wasm_primitive.mbt");
 pub(crate) const ASYNC_WAITABLE_SET: &str = include_str!("./async-wasm/waitable_task.mbt");
 pub(crate) const ASYNC_SUBTASK: &str = include_str!("./async-wasm/subtask.mbt");
-
-pub(crate) const ASYNC_UTILS: [&str; 5] = [
+pub(crate) const WASIP1: &str = include_str!("./async-wasm/wasip1.mbt");
+pub(crate) const ASYNC_UTILS: [&str; 6] = [
     ASYNC_PRIMITIVE,
     ASYNC_FUTURE,
     ASYNC_WASM_PRIMITIVE,
     ASYNC_WAITABLE_SET,
     ASYNC_SUBTASK,
+    WASIP1,
 ];
 
 #[derive(Default, Debug, Clone)]
@@ -443,7 +445,7 @@ impl WorldGenerator for MoonBit {
         files.push(&format!("{FFI_DIR}/top.mbt"), indent(&body).as_bytes());
         files.push(
             &format!("{FFI_DIR}/moon.pkg.json"),
-            "{ \"warn-list\": \"-44\", \"supported-targets\": [\"wasm\"] }".as_bytes(),
+            "{ \"warn-list\": \"-44\", \"supported-targets\": [\"wasm\"], \"import\": [\"peter-jerry-ye/wasi\",\"tonyfettes/encoding\"] }".as_bytes(),
         );
 
         // Export project files
@@ -451,7 +453,7 @@ impl WorldGenerator for MoonBit {
             let mut body = Source::default();
             uwriteln!(
                 &mut body,
-                "{{ \"name\": \"{project_name}\", \"preferred-target\": \"wasm\" }}"
+                "{{ \"name\": \"{project_name}\", \"preferred-target\": \"wasm\", \"deps\": {{\"peter-jerry-ye/wasi\": \"0.22.0\"}}, }}"
             );
             files.push("moon.mod.json", body.as_bytes());
         }
@@ -779,27 +781,29 @@ impl InterfaceGenerator<'_> {
 
         let func_name = func.name.to_upper_camel_case();
 
+        let ffi = self.qualify_package(FFI_DIR);
+
         let call_import = |params: &Vec<String>| {
             format!(
                 r#"
-                let subtask_status = @ffi.SubtaskStatus::decode(wasmImport{func_name}({}))
+                let subtask_status = {ffi}SubtaskStatus::decode(wasmImport{func_name}({}))
                 match subtask_status {{
                     Returned(_) => ()
                     _ => {{
-                        let task_group = @ffi.get_or_create_waitable_set()
-                        let subtask = @ffi.Subtask::from_handle(subtask_status.handle())
-                        task_group.wait(
+                        let task = {ffi}get_or_create_waitable_set()
+                        let subtask = {ffi}Subtask::from_handle(subtask_status.handle())
+                        task.wait(
+                            subtask,
                             async fn() -> Unit raise {{
                                 for {{
                                     if subtask.is_done() {{
                                         break
                                     }} else {{
-                                        @ffi.suspend()
+                                        {ffi}suspend()
                                     }}
                                 }}
                             }},
-                            subtask
-                        )
+                        ) catch {{ _ => raise {ffi}Cancelled::Cancelled }}
                     }}
                 }}
                 "#,
@@ -818,7 +822,7 @@ impl InterfaceGenerator<'_> {
                     {lift}
                     {lift_result}
                     "#,
-                    &self.malloc_memory("result_ptr", ty)
+                    &self.malloc_memory("result_ptr", "1", ty)
                 ));
             }
             None => {
@@ -875,6 +879,7 @@ impl InterfaceGenerator<'_> {
             async_,
         );
 
+        // TODO: adapt async cleanup
         assert!(!bindgen.needs_cleanup_list);
 
         // Async functions deferred task return
@@ -962,7 +967,7 @@ impl InterfaceGenerator<'_> {
                 .collect::<Vec<_>>()
                 .join(", ");
             let return_ty = match &func.result {
-                Some(result) => self.type_name(result, false).to_string(),
+                Some(result) => self.type_name(result, true).to_string(),
                 None => "Unit".into(),
             };
             let return_expr = match return_ty.as_str() {
@@ -1182,7 +1187,7 @@ impl InterfaceGenerator<'_> {
                     TypeDefKind::Stream(ty) => {
                         let qualifier = self.qualify_package(FFI_DIR);
                         format!(
-                            "{}Stream[{}]",
+                            "{}StreamReader[{}]",
                             qualifier,
                             ty.as_ref()
                                 .map(|t| self.type_name(t, type_variable))
@@ -1233,20 +1238,99 @@ impl InterfaceGenerator<'_> {
 
     fn lift_from_memory(&mut self, address: &str, ty: &Type, module: &str) -> (String, String) {
         let mut f = FunctionBindgen::new(self, "INVALID", module, Box::new([]));
+
         let result = abi::lift_from_memory(f.gen.resolve, &mut f, address.into(), ty);
         (f.src, result)
     }
 
     fn lower_to_memory(&mut self, address: &str, value: &str, ty: &Type, module: &str) -> String {
         let mut f = FunctionBindgen::new(self, "INVALID", module, Box::new([]));
-        abi::lower_to_memory(f.r#gen.resolve, &mut f, address.into(), value.into(), ty);
+        abi::lower_to_memory(f.gen.resolve, &mut f, address.into(), value.into(), ty);
         f.src
     }
 
-    fn malloc_memory(&mut self, address: &str, ty: &Type) -> String {
+    fn malloc_memory(&mut self, address: &str, length: &str, ty: &Type) -> String {
         let size = self.gen.sizes.size(ty).size_wasm32();
         let ffi = self.qualify_package(FFI_DIR);
-        format!("let {address} = {ffi}malloc({size});")
+        format!("let {address} = {ffi}malloc({size} * {length});")
+    }
+
+    fn is_list_canonical(&self, _resolve: &Resolve, element: &Type) -> bool {
+        matches!(
+            element,
+            Type::U8 | Type::U32 | Type::U64 | Type::S32 | Type::S64 | Type::F32 | Type::F64
+        )
+    }
+
+    fn list_lift_from_memory(
+        &mut self,
+        address: &str,
+        length: &str,
+        lift_func: &str,
+        ty: &Type,
+    ) -> String {
+        let ffi = self.qualify_package(FFI_DIR);
+        if self.is_list_canonical(self.resolve, ty) {
+            if ty == &Type::U8 {
+                return format!("{ffi}ptr2bytes({address}, {length})");
+            }
+            let ty = match ty {
+                Type::U32 => "uint",
+                Type::U64 => "uint64",
+                Type::S32 => "int",
+                Type::S64 => "int64",
+                Type::F32 => "float",
+                Type::F64 => "double",
+                _ => unreachable!(),
+            };
+
+            return format!("{ffi}ptr2{ty}_array({address}, {length})");
+        }
+        let size = self.gen.sizes.size(ty).size_wasm32();
+        format!(
+            r#"
+            FixedArray::makei(
+                {length},
+                (index) => {{ 
+                    let ptr = ({address}) + (index * {size});
+                    {lift_func}(ptr)
+                }}
+            )
+            "#
+        )
+    }
+
+    fn list_lower_to_memory(&mut self, lower_func: &str, value: &str, ty: &Type) -> String {
+        // Align the address, moonbit only supports wasm32 for now
+        let ffi = self.qualify_package(FFI_DIR);
+        if self.is_list_canonical(self.resolve, ty) {
+            if ty == &Type::U8 {
+                return format!("{ffi}bytes2ptr({value})");
+            }
+
+            let ty = match ty {
+                Type::U32 => "uint",
+                Type::U64 => "uint64",
+                Type::S32 => "int",
+                Type::S64 => "int64",
+                Type::F32 => "float",
+                Type::F64 => "double",
+                _ => unreachable!(),
+            };
+            return format!("{ffi}{ty}_array2ptr({value})");
+        }
+        let size = self.gen.sizes.size(ty).size_wasm32();
+        format!(
+            r#"
+            let address = {ffi}malloc(({value}).length() * {size});
+            for index = 0; index < ({value}).length(); index = index + 1 {{
+                let ptr = (address) + (index * {size});
+                let value = {value}[index];
+                {lower_func}(value, ptr);
+            }}
+            address 
+            "#
+        )
     }
 
     fn generation_futures_and_streams_import(
@@ -1302,7 +1386,6 @@ impl InterfaceGenerator<'_> {
             return;
         }
         self.gen.futures.push(ty);
-
         let result = match result_type {
             Some(ty) => self.type_name(ty, true),
             None => "Unit".into(),
@@ -1320,6 +1403,11 @@ impl InterfaceGenerator<'_> {
             PayloadFor::Future => "",
             PayloadFor::Stream => " ,length : Int",
         };
+
+        let payload_lift_func = match payload_for {
+            PayloadFor::Future => "",
+            PayloadFor::Stream => "List",
+        };
         let ffi = self.qualify_package(FFI_DIR);
 
         let lift;
@@ -1327,6 +1415,8 @@ impl InterfaceGenerator<'_> {
         let dealloc_list;
         let malloc;
         let lift_result;
+        let lift_list: String;
+        let lower_list: String;
         if let Some(result_type) = result_type {
             (lift, lift_result) = self.lift_from_memory("ptr", result_type, module);
             lower = self.lower_to_memory("ptr", "value", result_type, module);
@@ -1336,13 +1426,24 @@ impl InterfaceGenerator<'_> {
                 true,
                 module,
             );
-            malloc = self.malloc_memory("ptr", result_type);
+            lift_list = self.list_lift_from_memory(
+                "ptr",
+                "length",
+                &format!("wasm{name}{kind}Lift"),
+                result_type,
+            );
+            lower_list =
+                self.list_lower_to_memory(&format!("wasm{name}{kind}Lower"), "value", result_type);
+
+            malloc = self.malloc_memory("ptr", "length", result_type);
         } else {
             lift = "let _ = ptr".to_string();
             lower = "let _ = (ptr, value)".to_string();
             dealloc_list = "let _ = ptr".to_string();
             malloc = "let ptr = 0;".into();
             lift_result = "".into();
+            lift_list = "FixedArray::make(length, Unit::default())".into();
+            lower_list = "0".into();
         }
         uwriteln!(
             self.src,
@@ -1364,9 +1465,15 @@ fn wasm{name}{kind}Lower(value: {result}, ptr: Int) -> Unit {{
 fn wasm{name}{kind}Deallocate(ptr: Int) -> Unit {{
     {dealloc_list}
 }}
-fn wasm{name}{kind}Malloc() -> Int {{
+fn wasm{name}{kind}Malloc(length: Int) -> Int {{
     {malloc}
     ptr
+}}
+fn wasm{name}{kind}ListLift(ptr: Int, length: Int) -> FixedArray[{result}] {{ 
+    {lift_list}
+}}
+fn wasm{name}{kind}ListLower(value: FixedArray[{result}]) -> Int {{ 
+    {lower_list}
 }}
 fn {table_name}() -> {ffi}{camel_kind}VTable[{result}] {{
     {ffi}{camel_kind}VTable::new(
@@ -1379,8 +1486,8 @@ fn {table_name}() -> {ffi}{camel_kind}VTable[{result}] {{
         wasmImport{name}{kind}DropWritable,
         wasm{name}{kind}Malloc,
         wasm{name}{kind}Deallocate,
-        wasm{name}{kind}Lift,
-        wasm{name}{kind}Lower
+        wasm{name}{kind}{payload_lift_func}Lift,
+        wasm{name}{kind}{payload_lift_func}Lower,
     )
 }}
 
@@ -1399,14 +1506,16 @@ pub let static_{table_name}: {ffi}{camel_kind}VTable[{result}]  = {table_name}()
             })
             .collect::<Vec<_>>();
         if async_ {
-            params.insert(0, "task: @ffi.Task".into());
+            let ffi = self.qualify_package(FFI_DIR);
+            params.insert(0, format!("task: {ffi}Task"));
         }
 
         let params = params.join(", ");
         let (async_prefix, async_suffix) = if async_ {
-            ("async ", " raise")
+            let ffi = self.qualify_package(FFI_DIR);
+            ("async ", format!(" raise {ffi}Cancelled").to_string())
         } else {
-            ("", "")
+            ("", "".into())
         };
         format!(
             "pub {async_prefix}fn {}({params}) -> {}{async_suffix}",
@@ -2692,29 +2801,49 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let args = operands.join(", ");
 
                 if *async_ {
-                    let (async_func_result, task_return_result) = if func.result.is_some() {
-                        let res = self.locals.tmp("result");
-                        (res.clone(), res)
-                    } else {
-                        ("_".into(), "".into())
-                    };
+                    let (async_func_result, task_return_result, task_return_type) =
+                        match func.result {
+                            Some(ty) => {
+                                let res = self.locals.tmp("return_result");
+                                (res.clone(), res, self.gen.type_name(&ty, true))
+                            }
+                            None => ("_ignore".into(), "".into(), "Unit".into()),
+                        };
 
                     if func.result.is_some() {
                         results.push(async_func_result.clone());
                     }
+                    let ffi = self.gen.qualify_package(FFI_DIR);
                     uwrite!(
                         self.src,
                         r#"
-                        let task = @ffi.get_or_create_waitable_set();
-                        task.with_waitable_set(task => {{
-                            let {async_func_result} = {name}(task, {args});
-                            {name}_task_return({task_return_result});
+                        let task = {ffi}get_or_create_waitable_set();
+                        task.with_waitable_set(fn(task) {{
+                            let {async_func_result}: Ref[{task_return_type}?] = Ref::new(None)
+                            task.wait_func(fn() {{
+                                {async_func_result}.val = Some({name}(task, {args}));
+                            }})
+                            for {{
+                                if task.no_wait() && {async_func_result}.val is Some({async_func_result}){{
+                                   {name}_task_return({task_return_result});
+                                   break;
+                                }} else {{
+                                   {ffi}suspend() catch {{ 
+                                        _ => {{
+                                            {ffi}task_cancel();
+                                        }}
+                                   }}
+                                }}
+                            }}
                         }})
-                        if task.is_fail() is Some(_) {{
-                                @ffi.task_cancel();
-                                return @ffi.CallbackCode::Exit.encode()
+                        if task.is_fail() is Some({ffi}Cancelled::Cancelled) {{
+                                {ffi}task_cancel();
+                                return {ffi}CallbackCode::Exit.encode()
                         }}
-                        return @ffi.CallbackCode::Wait(task.id).encode()
+                        if task.is_done() {{
+                            return {ffi}CallbackCode::Exit.encode()
+                        }}
+                        return {ffi}CallbackCode::Wait(task.handle()).encode()
                         "#,
                     );
                     assert!(matches!(
@@ -3069,7 +3198,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 uwriteln!(
                     self.src,
-                    r#"let {result} = {ffi}Stream::new({op}, {snake_name});"#,
+                    r#"let {result} = {ffi}StreamReader::new({op}, {snake_name});"#,
                 );
 
                 results.push(result);

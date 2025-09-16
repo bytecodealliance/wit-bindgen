@@ -7,7 +7,7 @@ pub struct FutureVTable[T] {
   cancel_write : (Int) -> Int
   drop_readable : (Int) -> Unit
   drop_writable : (Int) -> Unit
-  malloc : () -> Int
+  malloc : (Int) -> Int
   free : (Int) -> Unit
   lift : (Int) -> T
   lower : (T, Int) -> Unit
@@ -22,7 +22,7 @@ pub fn[T] FutureVTable::new(
   cancel_write : (Int) -> Int,
   drop_readable : (Int) -> Unit,
   drop_writable : (Int) -> Unit,
-  malloc : () -> Int,
+  malloc : (Int) -> Int,
   free : (Int) -> Unit,
   lift : (Int) -> T,
   lower : (T, Int) -> Unit,
@@ -60,6 +60,7 @@ pub struct FutureReader[T] {
   handle : Int
   vtable : FutureVTable[T]
   mut code : Int?
+  memory_refs : Array[Int]
 }
 
 ///|
@@ -67,7 +68,7 @@ pub fn[T] FutureReader::new(
   handle : Int,
   vtable : FutureVTable[T],
 ) -> FutureReader[T] {
-  { handle, vtable, code: None }
+  { handle, vtable, code: None, memory_refs: [] }
 }
 
 ///|
@@ -82,13 +83,19 @@ pub impl[T] Waitable for FutureReader[T] with handle(self) -> Int {
 
 ///|
 pub impl[T] Waitable for FutureReader[T] with cancel(self) -> Unit {
+  if self.code is Some(code) && WaitableStatus::decode(code) is Cancelled(_) {
+    return
+  }
   self.code = Some((self.vtable.cancel_read)(self.handle))
-  
 }
 
 ///|
 pub impl[T] Waitable for FutureReader[T] with drop(self) -> Unit {
+  _async_debug("stream-reader-drop(\{self.handle})")
   (self.vtable.drop_readable)(self.handle)
+  for ptr in self.memory_refs {
+    self.free(ptr)
+  }
 }
 
 ///|
@@ -103,10 +110,10 @@ pub impl[T] Waitable for FutureReader[T] with is_done(self) -> Bool {
   }
 }
 
-
 ///|
 pub fn[T] FutureReader::malloc(self : FutureReader[T]) -> Int {
-  (self.vtable.malloc)()
+  let ptr = (self.vtable.malloc)(1)
+  ptr
 }
 
 ///|
@@ -116,7 +123,8 @@ pub fn[T] FutureReader::free(self : FutureReader[T], ptr : Int) -> Unit {
 
 ///|
 pub fn[T] FutureReader::lift(self : FutureReader[T], ptr : Int) -> T {
-  (self.vtable.lift)(ptr)
+  let res = (self.vtable.lift)(ptr)
+  res
 }
 
 ///|
@@ -127,15 +135,15 @@ pub fn[T] FutureReader::lower_read(self : FutureReader[T], ptr : Int) -> Int {
 ///|
 pub async fn[T] FutureReader::read(self : FutureReader[T]) -> T raise {
   let buf_ptr = self.malloc()
+  self.memory_refs.push(buf_ptr)
   self.code = Some(self.lower_read(buf_ptr))
-  defer self.free(buf_ptr)
+  _async_debug("future-read(\{self.handle}) -> \{self.code.unwrap()}")
   let status = WaitableStatus::decode(self.code.unwrap())
   match status {
     Completed(_) => {
       let value = self.lift(buf_ptr)
       return value
     }
-
     Dropped(_) | Cancelled(_) => raise Cancelled::Cancelled
     Blocking => suspend()
   }
@@ -154,17 +162,11 @@ pub async fn[T] FutureReader::read(self : FutureReader[T]) -> T raise {
 }
 
 ///|
-pub async fn[T] FutureReader::read_then_drop(self : FutureReader[T]) -> T raise {
-  defer self.drop()
-  let x = self.read() // defer bug
-  return x // self.read()
-}
-
-///|
 pub struct FutureWriter[T] {
   handle : Int
   vtable : FutureVTable[T]
   mut code : Int?
+  memory_refs : Array[Int]
 }
 
 ///|
@@ -172,7 +174,7 @@ pub fn[T] FutureWriter::new(
   handle : Int,
   vtable : FutureVTable[T],
 ) -> FutureWriter[T] {
-  { handle, vtable, code: None }
+  { handle, vtable, code: None, memory_refs: [] }
 }
 
 ///|
@@ -187,12 +189,19 @@ pub impl[T] Waitable for FutureWriter[T] with handle(self) -> Int {
 
 ///|
 pub impl[T] Waitable for FutureWriter[T] with cancel(self) -> Unit {
+  if self.code is Some(code) && WaitableStatus::decode(code) is Cancelled(_) {
+    return
+  }
   self.code = Some((self.vtable.cancel_write)(self.handle))
 }
 
 ///|
 pub impl[T] Waitable for FutureWriter[T] with drop(self) -> Unit {
+  _async_debug("stream-writer-drop(\{self.handle})")
   (self.vtable.drop_writable)(self.handle)
+  for ptr in self.memory_refs {
+    self.free(ptr)
+  }
 }
 
 ///|
@@ -207,10 +216,9 @@ pub impl[T] Waitable for FutureWriter[T] with is_done(self) -> Bool {
   }
 }
 
-
 ///|
 pub fn[T] FutureWriter::malloc(self : FutureWriter[T]) -> Int {
-  (self.vtable.malloc)()
+  (self.vtable.malloc)(1)
 }
 
 ///|
@@ -238,6 +246,7 @@ pub async fn[T] FutureWriter::write(
   value : T,
 ) -> Unit raise {
   let buf_ptr = self.malloc()
+  self.memory_refs.push(buf_ptr)
   self.lower(value, buf_ptr)
   self.code = Some(self.lower_write(buf_ptr))
   defer self.free(buf_ptr)
@@ -261,15 +270,9 @@ pub async fn[T] FutureWriter::write(
 }
 
 ///|
-pub async fn[T] FutureWriter::write_then_drop(
-  self : FutureWriter[T],
-  value : T,
-) -> Unit raise {
-  defer self.drop()
-  self.write(value) 
-  return
-}
+pub suberror StreamCancelled (Int, Cancelled) derive(Show)
 
+///|
 pub struct StreamVTable[T] {
   new : () -> UInt64
   read : (Int, Int, Int) -> Int
@@ -278,10 +281,10 @@ pub struct StreamVTable[T] {
   cancel_write : (Int) -> Int
   drop_readable : (Int) -> Unit
   drop_writable : (Int) -> Unit
-  malloc : () -> Int
+  malloc : (Int) -> Int
   free : (Int) -> Unit
-  lift : (Int) -> T
-  lower : (T, Int) -> Unit
+  lift : (Int, Int) -> FixedArray[T]
+  lower : (FixedArray[T]) -> Int
 }
 
 ///|
@@ -293,10 +296,10 @@ pub fn[T] StreamVTable::new(
   cancel_write : (Int) -> Int,
   drop_readable : (Int) -> Unit,
   drop_writable : (Int) -> Unit,
-  malloc : () -> Int,
+  malloc : (Int) -> Int,
   free : (Int) -> Unit,
-  lift : (Int) -> T,
-  lower : (T, Int) -> Unit,
+  lift : (Int, Int) -> FixedArray[T],
+  lower : (FixedArray[T]) -> Int,
 ) -> StreamVTable[T] {
   {
     new,
@@ -314,13 +317,186 @@ pub fn[T] StreamVTable::new(
 }
 
 ///|
-// pub struct Future[T](Int,FutureVTable[T])
-pub struct Stream[T] {
+pub struct StreamReader[T] {
   handle : Int
   vtable : StreamVTable[T]
-  mode : Int?
+  mut code : Int?
+  memory_refs : Array[Int]
 }
 
-pub fn[T] Stream::new(handle: Int, vtable : StreamVTable[T]) -> Stream[T] {
-      { handle, vtable, mode: None }
+///|
+pub impl[T] Waitable for StreamReader[T] with update(self, code~ : Int) -> Unit {
+  self.code = Some(code)
+}
+
+///|
+pub impl[T] Waitable for StreamReader[T] with handle(self) -> Int {
+  self.handle
+}
+
+///|
+pub impl[T] Waitable for StreamReader[T] with cancel(self) -> Unit {
+  if self.code is Some(code) && WaitableStatus::decode(code) is Cancelled(_) {
+    return
+  }
+  self.code = Some((self.vtable.cancel_read)(self.handle))
+}
+
+///|
+pub impl[T] Waitable for StreamReader[T] with drop(self) -> Unit {
+  _async_debug("stream-reader-drop(\{self.handle})")
+  (self.vtable.drop_readable)(self.handle)
+  for ptr in self.memory_refs {
+    (self.vtable.free)(ptr)
+  }
+}
+
+///|
+pub impl[T] Waitable for StreamReader[T] with is_done(self) -> Bool {
+  match self.code {
+    Some(c) =>
+      match WaitableStatus::decode(c) {
+        Completed(_) | Dropped(_) | Cancelled(_) => true
+        Blocking => false
+      }
+    None => false
+  }
+}
+
+///|
+pub fn[T] StreamReader::new(
+  handle : Int,
+  vtable : StreamVTable[T],
+) -> StreamReader[T] {
+  { handle, vtable, code: None, memory_refs: [] }
+}
+
+///|
+pub async fn[T] StreamReader::read(
+  self : StreamReader[T],
+  buffer : FixedArray[T],
+  offset? : Int = 0,
+  length : Int,
+) -> Int raise {
+  let buf_ptr = (self.vtable.malloc)(length)
+  self.code = Some((self.vtable.read)(self.handle, buf_ptr, length))
+  let status = WaitableStatus::decode(self.code.unwrap())
+  _async_debug("stream-read(\{self.handle}) -> \{self.code.unwrap()}")
+  match status {
+    Completed(n) => {
+      let read_result = (self.vtable.lift)(buf_ptr, n)
+      for i in 0..<n {
+        buffer[offset + i] = read_result[i]
+      }
+      return n
+    }
+    Dropped(n) | Cancelled(n) => {
+      let read_result = (self.vtable.lift)(buf_ptr, n)
+      for i in 0..<n {
+        buffer[offset + i] = read_result[i]
+      }
+      raise StreamCancelled::StreamCancelled((n, Cancelled::Cancelled))
+    }
+    Blocking => suspend()
+  }
+  for {
+    let status = WaitableStatus::decode(self.code.unwrap())
+    match status {
+      Completed(n) => {
+        let read_result = (self.vtable.lift)(buf_ptr, n)
+        for i in 0..<n {
+          buffer[offset + i] = read_result[i]
+        }
+        return n
+      }
+      Cancelled(n) | Dropped(n) => {
+        let read_result = (self.vtable.lift)(buf_ptr, n)
+        for i in 0..<n {
+          buffer[offset + i] = read_result[i]
+        }
+        raise StreamCancelled::StreamCancelled((n, Cancelled::Cancelled))
+      }
+      Blocking => suspend()
+    }
+  }
+}
+
+///|
+pub struct StreamWriter[T] {
+  handle : Int
+  vtable : StreamVTable[T]
+  mut code : Int?
+  memory_refs : Array[Int]
+}
+
+///|
+pub impl[T] Waitable for StreamWriter[T] with update(self, code~ : Int) -> Unit {
+  self.code = Some(code)
+}
+
+///|
+pub impl[T] Waitable for StreamWriter[T] with handle(self) -> Int {
+  self.handle
+}
+
+///|
+pub impl[T] Waitable for StreamWriter[T] with cancel(self) -> Unit {
+  if self.code is Some(code) && WaitableStatus::decode(code) is Cancelled(_) {
+    return
+  }
+  self.code = Some((self.vtable.cancel_write)(self.handle))
+}
+
+///|
+pub impl[T] Waitable for StreamWriter[T] with drop(self) -> Unit {
+  _async_debug("stream-writer-drop(\{self.handle})")
+  (self.vtable.drop_writable)(self.handle)
+  for ptr in self.memory_refs {
+    (self.vtable.free)(ptr)
+  }
+}
+
+///|
+pub impl[T] Waitable for StreamWriter[T] with is_done(self) -> Bool {
+  match self.code {
+    Some(c) =>
+      match WaitableStatus::decode(c) {
+        Completed(_) | Dropped(_) | Cancelled(_) => true
+        Blocking => false
+      }
+    None => false
+  }
+}
+
+///|
+pub fn[T] StreamWriter::new(
+  handle : Int,
+  vtable : StreamVTable[T],
+) -> StreamWriter[T] {
+  { handle, vtable, code: None, memory_refs: [] }
+}
+
+///|
+pub async fn[T] StreamWriter::write(
+  self : StreamWriter[T],
+  buffer : FixedArray[T],
+) -> Int raise {
+  let write_buf = (self.vtable.lower)(buffer)
+  self.code = Some((self.vtable.write)(self.handle, write_buf, buffer.length()))
+  let status = WaitableStatus::decode(self.code.unwrap())
+  match status {
+    Completed(n) => return n
+    Dropped(n) | Cancelled(n) =>
+      raise StreamCancelled::StreamCancelled((n, Cancelled::Cancelled))
+    Blocking => suspend()
+  }
+  for {
+    let status = WaitableStatus::decode(self.code.unwrap())
+    match status {
+      Completed(n) => return n
+      Cancelled(n) | Dropped(n) =>
+        raise StreamCancelled::StreamCancelled((n, Cancelled::Cancelled))
+      Blocking => suspend()
+    }
+  }
 }
