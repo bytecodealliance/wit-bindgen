@@ -143,7 +143,7 @@ impl<T> StreamWriter<T> {
     /// instead of `Vec<T>`.
     pub fn write_buf(&mut self, values: AbiBuffer<T>) -> StreamWrite<'_, T> {
         StreamWrite {
-            op: WaitableOperation::new((self, values)),
+            op: WaitableOperation::new(StreamWriteOp(marker::PhantomData), (self, values)),
         }
     }
 
@@ -243,7 +243,7 @@ where
     type Result = (StreamResult, AbiBuffer<T>);
     type Cancel = (StreamResult, AbiBuffer<T>);
 
-    fn start((writer, buf): Self::Start) -> (u32, Self::InProgress) {
+    fn start(&self, (writer, buf): Self::Start) -> (u32, Self::InProgress) {
         if writer.done {
             return (DROPPED, (writer, buf));
         }
@@ -259,11 +259,12 @@ where
         (code, (writer, buf))
     }
 
-    fn start_cancelled((_writer, buf): Self::Start) -> Self::Cancel {
+    fn start_cancelled(&self, (_writer, buf): Self::Start) -> Self::Cancel {
         (StreamResult::Cancelled, buf)
     }
 
     fn in_progress_update(
+        &self,
         (writer, mut buf): Self::InProgress,
         code: u32,
     ) -> Result<Self::Result, Self::InProgress> {
@@ -284,11 +285,11 @@ where
         }
     }
 
-    fn in_progress_waitable((writer, _): &Self::InProgress) -> u32 {
+    fn in_progress_waitable(&self, (writer, _): &Self::InProgress) -> u32 {
         writer.handle
     }
 
-    fn in_progress_cancel((writer, _): &Self::InProgress) -> u32 {
+    fn in_progress_cancel(&self, (writer, _): &Self::InProgress) -> u32 {
         // SAFETY: we're managing `writer` and all the various operational bits,
         // so this relies on `WaitableOperation` being safe.
         let code = unsafe { (writer.vtable.cancel_write)(writer.handle) };
@@ -296,7 +297,7 @@ where
         code
     }
 
-    fn result_into_cancel(result: Self::Result) -> Self::Cancel {
+    fn result_into_cancel(&self, result: Self::Result) -> Self::Cancel {
         result
     }
 }
@@ -391,7 +392,7 @@ impl<T> StreamReader<T> {
     /// used.
     pub fn read(&mut self, buf: Vec<T>) -> StreamRead<'_, T> {
         StreamRead {
-            op: WaitableOperation::new((self, buf)),
+            op: WaitableOperation::new(StreamReadOp(marker::PhantomData), (self, buf)),
         }
     }
 
@@ -459,7 +460,7 @@ where
     type Result = (StreamResult, Vec<T>);
     type Cancel = (StreamResult, Vec<T>);
 
-    fn start((reader, mut buf): Self::Start) -> (u32, Self::InProgress) {
+    fn start(&self, (reader, mut buf): Self::Start) -> (u32, Self::InProgress) {
         if reader.done {
             return (DROPPED, (reader, buf, None));
         }
@@ -492,11 +493,12 @@ where
         (code, (reader, buf, cleanup))
     }
 
-    fn start_cancelled((_, buf): Self::Start) -> Self::Cancel {
+    fn start_cancelled(&self, (_, buf): Self::Start) -> Self::Cancel {
         (StreamResult::Cancelled, buf)
     }
 
     fn in_progress_update(
+        &self,
         (reader, mut buf, cleanup): Self::InProgress,
         code: u32,
     ) -> Result<Self::Result, Self::InProgress> {
@@ -553,11 +555,11 @@ where
         }
     }
 
-    fn in_progress_waitable((reader, ..): &Self::InProgress) -> u32 {
+    fn in_progress_waitable(&self, (reader, ..): &Self::InProgress) -> u32 {
         reader.handle()
     }
 
-    fn in_progress_cancel((reader, ..): &Self::InProgress) -> u32 {
+    fn in_progress_cancel(&self, (reader, ..): &Self::InProgress) -> u32 {
         // SAFETY: we're managing `reader` and all the various operational bits,
         // so this relies on `WaitableOperation` being safe.
         let code = unsafe { (reader.vtable.cancel_read)(reader.handle()) };
@@ -565,7 +567,7 @@ where
         code
     }
 
-    fn result_into_cancel(result: Self::Result) -> Self::Cancel {
+    fn result_into_cancel(&self, result: Self::Result) -> Self::Cancel {
         result
     }
 }
