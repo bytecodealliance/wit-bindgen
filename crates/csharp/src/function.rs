@@ -850,7 +850,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.src,
                     "
                     var {str} = {get_str};
-                    global::System.Runtime.InteropServices.NativeMemory.Free((void*){op0});
+                    if (!string.IsNullOrEmpty({str})) {{
+                        global::System.Runtime.InteropServices.NativeMemory.Free((void*){op0});
+                    }}
                     "
                 );
 
