@@ -850,8 +850,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.src,
                     "
                     var {str} = {get_str};
-                    if ({op0} != 0) {{
-                        global::System.Runtime.InteropServices.NativeMemory.Free((void*){op0});
+                    if (global::System.BitConverter.ToInt32(new global::System.Span<byte>((void*)({op0}), 4)) != 0) {{
+                        global::System.Runtime.InteropServices.NativeMemory.Free((void*)global::System.BitConverter.ToInt32(new global::System.Span<byte>((void*)({op0}), 4)));
                     }}
                     "
                 );
