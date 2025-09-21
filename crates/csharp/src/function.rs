@@ -840,18 +840,19 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::StringLift { .. } => {
                 let str = self.locals.tmp("str");
                 let op0 = &operands[0];
+                let op1 = &operands[1];
 
                 let get_str = format!(
                     "global::System.Text.Encoding.UTF8.GetString((byte*){}, {})",
-                    op0, operands[1]
+                    op0, op1
                 );
 
                 uwriteln!(
                     self.src,
                     "
                     var {str} = {get_str};
-                    if (global::System.BitConverter.ToInt32(new global::System.Span<byte>((void*)({op0}), 4)) != 0) {{
-                        global::System.Runtime.InteropServices.NativeMemory.Free((void*)global::System.BitConverter.ToInt32(new global::System.Span<byte>((void*)({op0}), 4)));
+                    if ({op1} > 0) {{
+                        global::System.Runtime.InteropServices.NativeMemory.Free((void*){op0});
                     }}
                     "
                 );
