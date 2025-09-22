@@ -788,6 +788,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     "
                     var {array} = new {ty}[{length}];
                     new global::System.Span<{ty}>((void*)({address}), {length}).CopyTo(new global::System.Span<{ty}>({array}));
+
+                    if ({length} > 0) {{
+                        global::System.Runtime.InteropServices.NativeMemory.Free((void*){address});
+                    }}
                     "
                 );
 
@@ -956,6 +960,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         nint {base} = {address} + ({index} * {size});
                         {body}
                         {array}.Add({result});
+                    }}
+
+                    if ({length} > 0) {{
+                        global::System.Runtime.InteropServices.NativeMemory.Free((void*){address});
                     }}
                     "
                 );
