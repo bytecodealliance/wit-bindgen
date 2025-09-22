@@ -764,18 +764,50 @@ impl InterfaceGenerator<'_> {
         mbt_sig: MoonbitSignature,
         sig: &WasmSignature,
     ) -> String {
+        let mut body = String::default();
         let mut lower_params = Vec::new();
 
         if sig.indirect_params {
-            todo!("Unsupported indirect params");
+            match &func.params[..] {
+                [] => {}
+                [(_, _)] => {
+                    lower_params.push("_lower_ptr".into());
+                }
+                multiple_params => {
+                    let params = multiple_params.iter().map(|(_, ty)| ty);
+                    let offsets = self.gen.sizes.field_offsets(params.clone());
+                    let elem_info = self.gen.sizes.params(params);
+                    body.push_str(&format!(
+                        r#"
+                        let _lower_ptr : Int = {ffi}malloc({})
+                        "#,
+                        elem_info.size.size_wasm32(),
+                        ffi = self.qualify_package(FFI_DIR)
+                    ));
+
+                    for ((offset, ty), name) in offsets.iter().zip(
+                        multiple_params
+                            .iter()
+                            .map(|(name, _)| name.to_moonbit_ident()),
+                    ) {
+                        let result = self.lower_to_memory(
+                            &format!("_lower_ptr + {}", offset.size_wasm32()),
+                            &name,
+                            ty,
+                            self.name,
+                        );
+                        body.push_str(&result);
+                    }
+
+                    lower_params.push("_lower_ptr".into());
+                }
+            }
         } else {
             let mut f = FunctionBindgen::new(self, "INVALID", self.name, Box::new([]));
             for (name, ty) in mbt_sig.params.iter() {
                 lower_params.extend(abi::lower_flat(f.gen.resolve, &mut f, name.clone(), ty));
             }
         }
-
-        let mut body = String::default();
 
         let func_name = func.name.to_upper_camel_case();
 
@@ -810,9 +842,9 @@ impl InterfaceGenerator<'_> {
         };
         match &func.result {
             Some(ty) => {
-                lower_params.push("result_ptr".into());
+                lower_params.push("_result_ptr".into());
                 let call_import = call_import(&lower_params);
-                let (lift, lift_result) = &self.lift_from_memory("result_ptr", ty, self.name);
+                let (lift, lift_result) = &self.lift_from_memory("_result_ptr", ty, self.name);
                 body.push_str(&format!(
                     r#"
                     {}
@@ -820,7 +852,7 @@ impl InterfaceGenerator<'_> {
                     {lift}
                     {lift_result}
                     "#,
-                    &self.malloc_memory("result_ptr", "1", ty)
+                    &self.malloc_memory("_result_ptr", "1", ty)
                 ));
             }
             None => {
@@ -1761,9 +1793,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         );
     }
 
-    fn type_tuple(&mut self, _id: TypeId, _name: &str, _tuple: &Tuple, _docs: &Docs) {
-        unreachable!() // Not needed
-    }
+    fn type_tuple(&mut self, _id: TypeId, _name: &str, _tuple: &Tuple, _docs: &Docs) {}
 
     fn type_variant(&mut self, _id: TypeId, name: &str, variant: &Variant, docs: &Docs) {
         print_docs(&mut self.src, docs);
@@ -1895,9 +1925,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         );
     }
 
-    fn type_alias(&mut self, _id: TypeId, _name: &str, _ty: &Type, _docs: &Docs) {
-        unreachable!() // Not needed
-    }
+    fn type_alias(&mut self, _id: TypeId, _name: &str, _ty: &Type, _docs: &Docs) {}
 
     fn type_list(&mut self, _id: TypeId, _name: &str, _ty: &Type, _docs: &Docs) {
         unreachable!() // Not needed
