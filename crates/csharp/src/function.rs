@@ -788,6 +788,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     "
                     var {array} = new {ty}[{length}];
                     new global::System.Span<{ty}>((void*)({address}), {length}).CopyTo(new global::System.Span<{ty}>({array}));
+
+                    if ({length} > 0) {{
+                        global::System.Runtime.InteropServices.NativeMemory.Free((void*){address});
+                    }}
                     "
                 );
 
@@ -838,10 +842,26 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::StringLift { .. } => {
-                results.push(format!(
+                let str = self.locals.tmp("str");
+                let op0 = &operands[0];
+                let op1 = &operands[1];
+
+                let get_str = format!(
                     "global::System.Text.Encoding.UTF8.GetString((byte*){}, {})",
-                    operands[0], operands[1]
-                ));
+                    op0, op1
+                );
+
+                uwriteln!(
+                    self.src,
+                    "
+                    var {str} = {get_str};
+                    if ({op1} > 0) {{
+                        global::System.Runtime.InteropServices.NativeMemory.Free((void*){op0});
+                    }}
+                    "
+                );
+
+                results.push(str);
             }
 
             Instruction::ListLower { element, realloc } => {
@@ -940,6 +960,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         nint {base} = {address} + ({index} * {size});
                         {body}
                         {array}.Add({result});
+                    }}
+
+                    if ({length} > 0) {{
+                        global::System.Runtime.InteropServices.NativeMemory.Free((void*){address});
                     }}
                     "
                 );
