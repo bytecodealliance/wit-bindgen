@@ -1235,6 +1235,19 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     },
                 }
 
+                // Free things
+                let mut offset = 0;
+                for (_, ty) in func.params.iter() {
+                    let types = flat_types(self.resolve, ty, Some(max_flat_params))
+                        .expect(&format!("direct parameter load failed to produce types during generation of fn call (func name: '{}')", func.name));
+                    for _ in 0..types.len() {
+                        self.emit(&Instruction::GetArg { nth: offset });
+                        offset += 1;
+                    }
+
+                    self.deallocate(ty, Deallocate::Lists);
+                }
+
                 // Build and emit the appropriate return
                 match (variant, async_flat_results) {
                     // Async guest imports always return a i32 status code
