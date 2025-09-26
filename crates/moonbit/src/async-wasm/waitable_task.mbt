@@ -232,7 +232,14 @@ pub fn Task::with_waitable_set(
 ) -> Coroutine noraise {
   let parent = spawn(async fn() -> Unit noraise {
     self.status = Running
-    defer (if self.children.is_empty() {
+    defer {
+      while self.resources.pop_front() is Some(handle) {
+        let state = self.children.get(handle)
+        if state is Some((state, _)) {
+          let _ = state.drop()
+          self.children.remove(handle)
+        }
+      }
       if self.status is Running {
         self.status = Done
       }
@@ -250,7 +257,7 @@ pub fn Task::with_waitable_set(
       if is_drop {
         self.drop()
       }
-    })
+    }
     f(self) catch {
       err => if self.status is Running { self.status = Fail(err) }
     }
@@ -258,13 +265,6 @@ pub fn Task::with_waitable_set(
       _async_debug("task-wait-loop(\{self.id})")
       suspend() catch {
         err => if self.status is Running { self.status = Fail(err) }
-      }
-    }
-    while self.resources.pop_front() is Some(handle) {
-      let state = self.children.get(handle)
-      if state is Some((state, _)) {
-        let _ = state.drop()
-        
       }
     }
   })
