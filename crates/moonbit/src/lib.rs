@@ -1,7 +1,12 @@
 use anyhow::Result;
 use core::panic;
 use heck::{ToLowerCamelCase, ToShoutySnakeCase, ToSnakeCase, ToUpperCamelCase};
-use std::{collections::HashMap, fmt::Write, mem, ops::Deref};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Write,
+    mem,
+    ops::Deref,
+};
 use wit_bindgen_core::{
     abi::{self, AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmSignature, WasmType},
     dealias, uwrite, uwriteln,
@@ -126,7 +131,7 @@ pub struct MoonBit {
     // return area allocation
     return_area_size: ArchitectureSize,
     return_area_align: Alignment,
-    futures: Vec<TypeId>,
+    futures: HashMap<String, HashSet<TypeId>>,
     is_async: bool,
 }
 
@@ -768,6 +773,7 @@ impl InterfaceGenerator<'_> {
         let mut lower_params = Vec::new();
         let mut lower_results = Vec::new();
 
+        let mut lower_code = String::new();
         if sig.indirect_params {
             match &func.params[..] {
                 [] => {}
@@ -778,7 +784,7 @@ impl InterfaceGenerator<'_> {
                     let params = multiple_params.iter().map(|(_, ty)| ty);
                     let offsets = self.gen.sizes.field_offsets(params.clone());
                     let elem_info = self.gen.sizes.params(params);
-                    body.push_str(&format!(
+                    lower_code.push_str(&format!(
                         r#"
                         let _lower_ptr : Int = {ffi}malloc({})
                         "#,
@@ -797,7 +803,7 @@ impl InterfaceGenerator<'_> {
                             ty,
                             self.name,
                         );
-                        body.push_str(&result);
+                        lower_code.push_str(&result);
                     }
 
                     lower_params.push("_lower_ptr".into());
@@ -807,15 +813,73 @@ impl InterfaceGenerator<'_> {
             let mut f = FunctionBindgen::new(self, "INVALID", self.name, Box::new([]));
             for (name, ty) in mbt_sig.params.iter() {
                 lower_params.extend(abi::lower_flat(f.gen.resolve, &mut f, name.clone(), ty));
-                lower_results.push(f.src.clone());
             }
+            lower_results.push(f.src.clone());
         }
 
         let func_name = func.name.to_upper_camel_case();
 
         let ffi = self.qualify_package(FFI_DIR);
 
-        let call_import = |params: &Vec<String>| {
+        // Async callback parameters
+        let async_params = mbt_sig
+            .params
+            .iter()
+            .filter_map(|(name, ty)| match ty {
+                Type::Id(id) => {
+                    let tydef = &self.resolve.types[*id];
+                    match &tydef.kind {
+                        TypeDefKind::Future(_) => Some((name, ty)),
+                        TypeDefKind::Stream(_) => Some((name, ty)),
+                        _ => None,
+                    }
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        let callback_invocation = if async_params.is_empty() {
+            String::new()
+        } else {
+            let callback_args = (0..async_params.len())
+                .map(|i| format!("_w{i}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let defer_statements = (0..async_params.len())
+                .map(|i| format!("defer task.drop_waitable(_w{i})"))
+                .collect::<Vec<_>>()
+                .join("\n");
+
+            format!(
+                r#"
+            task.wait(
+                fn() {{
+                    callback({callback_args}) catch {{ _ => raise @ffi.Cancelled::Cancelled }} 
+                    {defer_statements}
+                }}
+            )
+            "#
+            )
+        };
+
+        let mut async_pipe_code = String::new();
+        for (idx, (name, ty)) in async_params.iter().enumerate() {
+            let prefix = match ty {
+                Type::Id(id) => match &self.resolve.types[*id].kind {
+                    TypeDefKind::Future(_) => "future",
+                    TypeDefKind::Stream(_) => "stream",
+                    _ => unreachable!(),
+                },
+                _ => unreachable!(),
+            };
+
+            async_pipe_code.push_str(&format!(
+                "let ({name}, _w{idx}) = @ffi.new_{prefix}(static_{}_{prefix}_table)\n",
+                self.type_name(ty, true).to_snake_case()
+            ));
+        }
+
+        let generate_async_call = |params: &Vec<String>| {
             format!(
                 r#"
                 let _subtask_code = wasmImport{func_name}({})
@@ -825,6 +889,8 @@ impl InterfaceGenerator<'_> {
                 let task = @ffi.current_task()
                 task.add_waitable(_subtask, @ffi.current_coroutine())
                 defer task.remove_waitable(_subtask)
+
+                {callback_invocation}
 
                 for {{
                         if _subtask.done() || _subtask_status is Returned(_) {{
@@ -838,16 +904,19 @@ impl InterfaceGenerator<'_> {
                 params.join(", ")
             )
         };
+
         match &func.result {
             Some(ty) => {
                 lower_params.push("_result_ptr".into());
-                let call_import = call_import(&lower_params);
+                let async_call = generate_async_call(&lower_params);
                 let (lift, lift_result) = &self.lift_from_memory("_result_ptr", ty, self.name);
                 body.push_str(&format!(
                     r#"
+                    {async_pipe_code}
+                    {lower_code}
                     {}
                     {}
-                    {call_import}
+                    {async_call}
                     {lift}
                     {lift_result}
                     "#,
@@ -856,8 +925,8 @@ impl InterfaceGenerator<'_> {
                 ));
             }
             None => {
-                let call_import = call_import(&lower_params);
-                body.push_str(&call_import);
+                let async_call_code = generate_async_call(&lower_params);
+                body.push_str(&async_call_code);
             }
         }
 
@@ -1408,10 +1477,18 @@ impl InterfaceGenerator<'_> {
         ty: TypeId,
         result_type: Option<&Type>,
     ) {
-        if self.gen.futures.contains(&ty) {
-            return;
+        if let Some(set) = self.gen.futures.get(module) {
+            if set.contains(&ty) {
+                return;
+            }
         }
-        self.gen.futures.push(ty);
+
+        self.gen
+            .futures
+            .entry(module.to_string())
+            .or_default()
+            .insert(ty);
+
         let result = match result_type {
             Some(ty) => self.type_name(ty, true),
             None => "Unit".into(),
@@ -1523,25 +1600,45 @@ pub let static_{table_name}: {ffi}{camel_kind}VTable[{result}]  = {table_name}()
     }
 
     fn sig_string(&mut self, sig: &MoonbitSignature, async_: bool) -> String {
-        let mut params = sig
-            .params
+        let (async_params, params): (Vec<_>, Vec<_>) = sig.params.iter().partition(|(_, ty)| {
+            if let Type::Id(id) = ty {
+                let ty = &self.resolve.types[dealias(self.resolve, *id)];
+                matches!(&ty.kind, TypeDefKind::Future(_) | TypeDefKind::Stream(_))
+            } else {
+                false
+            }
+        });
+
+        let async_callback = if !async_params.is_empty() {
+            format!(
+                "callback~: async ({}) -> Unit raise",
+                async_params
+                    .iter()
+                    .map(|(_, ty)| {
+                        let ty = self.type_name(ty, true);
+                        ty.replacen("Reader", "Writer", 1)
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        } else {
+            String::new()
+        };
+
+        let mut params = params
             .iter()
             .map(|(name, ty)| {
                 let ty = self.type_name(ty, true);
                 format!("{name} : {ty}")
             })
-            .collect::<Vec<_>>();
-        if async_ {
-            // let ffi = self.qualify_package(FFI_DIR);
-            // params.insert(0, format!("task: {ffi}Task"));
+            .collect::<Vec<_>>()
+            .join(", ");
+        if !params.is_empty() {
+            params.push_str(", ");
         }
+        params.push_str(&async_callback);
 
-        let params = params.join(", ");
-        let (async_prefix, async_suffix) = if async_ {
-            ("async ", "")
-        } else {
-            ("", "")
-        };
+        let (async_prefix, async_suffix) = if async_ { ("async ", "") } else { ("", "") };
         let result_type = match &sig.result_type {
             None => "Unit".into(),
             Some(ty) => self.type_name(ty, true),
@@ -3163,7 +3260,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let ty = self.gen.type_name(&Type::Id(*ty), true);
                 let ffi = self.gen.qualify_package(FFI_DIR);
 
-                // TODO
                 let snake_name = format!(
                     "{}static_{}_future_table",
                     qualifier,
