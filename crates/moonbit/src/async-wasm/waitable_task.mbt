@@ -12,6 +12,7 @@ struct Task {
   id : Int
   children : Map[Int, (&Waitable, Coroutine)]
   task_defer : Array[() -> Unit raise]
+  resources : @deque.Deque[Int]
   mut task : Coroutine?
   mut waiting : Int
   mut status : TaskStatus
@@ -28,6 +29,7 @@ pub fn Task::new() -> Task {
   {
     id: waitable_set,
     children: {},
+    resources: @deque.Deque::new(),
     task_defer: [],
     status: Running,
     waiting: 0,
@@ -43,6 +45,7 @@ pub fn Task::from_raw(raw : Int) -> Task {
   {
     id: raw,
     children: {},
+    resources: @deque.Deque::new(),
     task_defer: [],
     status: Running,
     waiting: 0,
@@ -90,7 +93,7 @@ pub fn Task::blocking_wait(self : Self) -> (Int, Int, Int) {
 }
 
 ///|
-pub fn Task::poll(self : Self) -> (Int, Int, Int) {
+pub fn Task::blocking_poll(self : Self) -> (Int, Int, Int) {
   let result : FixedArray[Int] = FixedArray::make(2, 0)
   let result_ptr = int_array2ptr(result)
   let event0 = waitable_set_poll(self.id, result_ptr)
@@ -100,8 +103,14 @@ pub fn Task::poll(self : Self) -> (Int, Int, Int) {
 
 ///|
 /// Add a waitable to the waitable set and increase the waiting count
-fn[T : Waitable] Task::add_waitable(self : Self, waitable : T) -> Unit {
+pub fn[T : Waitable] Task::add_waitable(
+  self : Self,
+  waitable : T,
+  coro : Coroutine,
+) -> Unit {
   waitable_join(waitable.handle(), self.id)
+  self.children[waitable.handle()] = (waitable, coro)
+  self.resources.push_back(waitable.handle())
   _async_debug("waitable-set-join(\{waitable.handle()}, \{self.id})")
   self.waiting += 1
 }
@@ -109,15 +118,20 @@ fn[T : Waitable] Task::add_waitable(self : Self, waitable : T) -> Unit {
 ///|
 /// When a waitable is done will be removed from the waitable set
 /// then waitable will be try to drop
-fn[T : Waitable] Task::remove_waitable(self : Self, state : T) -> Unit {
+pub fn[T : Waitable] Task::remove_waitable(self : Self, state : T) -> Unit {
   _async_debug("waitable-set-join(\{state.handle()}, 0)")
   waitable_join(state.handle(), 0)
   self.waiting -= 1
 }
 
 ///|
-fn[T : Waitable] Task::drop_waitable(self : Self, state : T) -> Unit {
-  state.drop()
+pub fn[T : Waitable] Task::drop_waitable(self : Self, state : T) -> Unit {
+  self.remove_waitable(state)
+  let _ = state.drop()
+  if self.resources.search(state.handle()) is Some(idx) {
+    let _ = self.resources.remove(idx)
+
+  }
   self.children.remove(state.handle())
 }
 
@@ -128,7 +142,7 @@ pub fn[T : Waitable] Task::cancel_waitable(self : Self, state : T) -> Unit {
   _async_debug("waitable-set-join(\{state.handle()}, 0)")
   self.waiting -= 1
   state.cancel()
-  state.drop()
+  let _ = state.drop()
   self.children.remove(state.handle())
 }
 
@@ -141,134 +155,18 @@ pub fn Task::drop(self : Self) -> Unit {
 }
 
 ///|
-pub async fn[T] Task::future_read(
-  self : Self,
-  reader : FutureReader[T],
-) -> T raise {
-  let result : Ref[T?] = Ref::new(None)
-  self.spawn(reader, fn() {
-    result.val = Some(reader.read() catch { _ => raise Cancelled::Cancelled })
-  })
-  while result.val is None {
-    suspend() catch {
-      _ => raise Cancelled::Cancelled
-    }
-  }
-  result.val.unwrap()
-}
-
-///|
-pub async fn[T] Task::future_write(
-  self : Self,
-  writer : FutureWriter[T],
-  value : T,
-) -> Unit noraise {
-  self.spawn(writer, fn() {
-    writer.write(value) catch {
-      _ => raise Cancelled::Cancelled
-    }
-  })
-}
-
-///|
-pub async fn[T] Task::stream_read(
-  self : Self,
-  reader : StreamReader[T],
-  buffer : FixedArray[T],
-  length : Int,
-  offset? : Int = 0,
-) -> Int raise {
-  let result : Ref[Int?] = Ref::new(None)
-  self.spawn(reader, fn() {
-    result.val = Some(
-      reader.read(buffer, length, offset~) catch {
-        StreamCancelled::StreamCancelled((n, _)) => {
-          result.val = Some(n)
-          raise Cancelled::Cancelled
-        }
-        _ => raise Cancelled::Cancelled
-      },
-    )
-  })
-  while result.val is None {
-    suspend() catch {
-      _ => raise Cancelled::Cancelled
-    }
-  }
-  result.val.unwrap()
-}
-
-///|
-pub async fn[T] Task::stream_write(
-  self : Self,
-  writer : StreamWriter[T],
-  buffer : FixedArray[T],
-) -> Int raise {
-  let result : Ref[Int?] = Ref::new(None)
-  self.spawn(writer, fn() {
-    result.val = Some(
-      writer.write(buffer) catch {
-        StreamCancelled::StreamCancelled((n, _)) => {
-          result.val = Some(n)
-          raise Cancelled::Cancelled
-        }
-        _ => raise Cancelled::Cancelled
-      },
-    )
-  })
-  while result.val is None {
-    suspend() catch {
-      _ => raise Cancelled::Cancelled
-    }
-  }
-  result.val.unwrap()
-}
-
-///|
 /// Spawns a coroutine to execute an async function and without waits for its completion
 /// while managing the waitable state.
-pub fn Task::spawn(
-  task : Self,
-  state : &Waitable,
-  f : async () -> Unit raise,
-) -> Unit {
-  task.add_waitable(state)
-  let coro = spawn(fn() {
-    defer task.remove_waitable(state)
-    f()
-  })
-  task.children[state.handle()] = (state, coro)
+pub fn Task::spawn(_self : Self, f : async () -> Unit) -> Unit {
+  let coro = spawn(fn() { f() })
   // start the coroutine when first spawn
   coro.run()
   rschedule()
 }
 
 ///|
-/// Spawns a coroutine to execute an async function and waits for its completion
-/// while managing the waitable state.
-pub async fn Task::wait(
-  task : Self,
-  state : &Waitable,
-  f : async () -> Unit raise,
-) -> Unit raise {
-  task.add_waitable(state)
-  let coro = spawn(fn() {
-    defer task.remove_waitable(state)
-    f()
-  })
-  task.children[state.handle()] = (state, coro)
-  // start the coroutine when first wait
-  coro.run()
-  rschedule()
-  Coroutine::wait(coro)
-}
-
-///|
 /// This function spawns a coroutine to run the async function and waits for its completion
-pub async fn Task::wait_func(
-  _ : Self,
-  f : async () -> Unit raise,
-) -> Unit raise {
+pub async fn Task::wait(_ : Self, f : async () -> Unit) -> Unit {
   let coro = spawn(fn() { f() })
   coro.run()
   rschedule()
@@ -286,7 +184,7 @@ pub fn callback(event : Int, waitable_id : Int, code : Int) -> Int {
   _async_debug("callback(\{event}, \{waitable_id}, \{code})")
   let task = match current_waitable_set() {
     Some(task) => task
-    None => create_waitable_set()
+    None => current_task()
   }
   // Handle the event for the current waitable task  
   match event {
@@ -329,51 +227,56 @@ pub fn callback(event : Int, waitable_id : Int, code : Int) -> Int {
 ///|
 pub fn Task::with_waitable_set(
   self : Self,
-  f : async (Self) -> Unit raise,
+  f : async (Self) -> Unit,
   is_drop? : Bool = false,
-) -> Unit noraise {
+) -> Coroutine noraise {
   let parent = spawn(async fn() -> Unit noraise {
     self.status = Running
-    defer {
-      for state in self.children.values() {
-        let (state, _) = state
-        self.drop_waitable(state)
+    defer (if self.children.is_empty() {
+      if self.status is Running {
+        self.status = Done
       }
-      if self.children.is_empty() {
-        if self.status is Running {
-          self.status = Done
-        }
-        task_map.remove(self.id)
+      task_map.remove(self.id)
 
-        // this defer block recycles waitable task resources
-        while self.task_defer.pop() is Some(defer_block) {
-          defer_block() catch {
-            err => if self.status is Done { self.status = Fail(err) }
-          }
+      // this defer block recycles waitable task resources
+      while self.task_defer.pop() is Some(defer_block) {
+        defer_block() catch {
+          err => if self.status is Done { self.status = Fail(err) }
         }
+      }
 
-        // runner will drop the waitable set
-        // export async function needs to keep the waitable set
-        if is_drop {
-          self.drop()
-        }
+      // runner will drop the waitable set
+      // export async function needs to keep the waitable set
+      if is_drop {
+        self.drop()
+      }
+    })
+    f(self) catch {
+      err => if self.status is Running { self.status = Fail(err) }
+    }
+    if !self.no_wait() {
+      _async_debug("task-wait-loop(\{self.id})")
+      suspend() catch {
+        err => if self.status is Running { self.status = Fail(err) }
       }
     }
-    f(self) catch {
-      err =>
-        if self.status is Running {
-          self.status = Fail(err)
-        }
+    while self.resources.pop_front() is Some(handle) {
+      let state = self.children.get(handle)
+      if state is Some((state, _)) {
+        let _ = state.drop()
+        
+      }
     }
   })
   self.task = Some(parent)
   // start the parent coroutine 
   parent.run()
   rschedule()
+  parent
 }
 
 ///|
-pub fn current_waitable_set() -> Task? {
+fn current_waitable_set() -> Task? {
   let ctx = context_get()
   _async_debug("context-get(\{ctx})")
   if ctx == 0 {
@@ -391,7 +294,7 @@ pub fn current_waitable_set() -> Task? {
 }
 
 ///|
-pub fn get_or_create_waitable_set() -> Task {
+pub fn current_task() -> Task {
   let ctx = context_get()
   if ctx == 0 {
     let ctx = Task::new()
@@ -410,7 +313,33 @@ pub fn get_or_create_waitable_set() -> Task {
 }
 
 ///|
-pub fn create_waitable_set() -> Task {
-  guard current_waitable_set() is None
-  Task::new()
+pub fn Task::run_forever(self : Self) -> Unit noraise {
+  let _ = spawn(fn() { pause() })
+  rschedule()
+}
+
+///|
+pub async fn Task::poll(self : Self) -> Bool {
+  if self.no_wait() {
+    return false
+  }
+  let mut event = (0, 0, 0)
+  for {
+    let code = callback(event.0, event.1, event.2)
+    match CallbackCode::decode(code) {
+      Exit => return false
+      Yield => event = self.blocking_poll()
+      _ => event = self.blocking_wait()
+    }
+  }
+  pause()
+  true
+}
+
+///|
+pub fn with_event_loop(f : async (Task) -> Unit) -> Unit raise {
+  let self = current_task()
+  let main = spawn(fn() { f(self) })
+  self.run_forever()
+  main.unwrap()
 }

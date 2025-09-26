@@ -79,7 +79,7 @@ pub fn Coroutine::cancel(self : Coroutine) -> Unit {
 }
 
 ///|
-pub async fn pause() -> Unit raise {
+pub async fn pause() -> Unit {
   guard scheduler.curr_coro is Some(coro)
   if coro.cancelled && not(coro.shielded) {
     raise Cancelled::Cancelled

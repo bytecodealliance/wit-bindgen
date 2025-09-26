@@ -766,6 +766,7 @@ impl InterfaceGenerator<'_> {
     ) -> String {
         let mut body = String::default();
         let mut lower_params = Vec::new();
+        let mut lower_results = Vec::new();
 
         if sig.indirect_params {
             match &func.params[..] {
@@ -806,6 +807,7 @@ impl InterfaceGenerator<'_> {
             let mut f = FunctionBindgen::new(self, "INVALID", self.name, Box::new([]));
             for (name, ty) in mbt_sig.params.iter() {
                 lower_params.extend(abi::lower_flat(f.gen.resolve, &mut f, name.clone(), ty));
+                lower_results.push(f.src.clone());
             }
         }
 
@@ -816,26 +818,22 @@ impl InterfaceGenerator<'_> {
         let call_import = |params: &Vec<String>| {
             format!(
                 r#"
-                let subtask_status = {ffi}SubtaskStatus::decode(wasmImport{func_name}({}))
-                match subtask_status {{
-                    Returned(_) => ()
-                    _ => {{
-                        let task = {ffi}get_or_create_waitable_set()
-                        let subtask = {ffi}Subtask::from_handle(subtask_status.handle())
-                        task.wait(
-                            subtask,
-                            async fn() -> Unit raise {{
-                                for {{
-                                    if subtask.is_done() {{
-                                        break
-                                    }} else {{
-                                        {ffi}suspend()
-                                    }}
-                                }}
-                            }},
-                        ) catch {{ _ => raise {ffi}Cancelled::Cancelled }}
+                let _subtask_code = wasmImport{func_name}({})
+                let _subtask_status = {ffi}SubtaskStatus::decode(_subtask_code)
+                let _subtask = @ffi.Subtask::from_handle(_subtask_status.handle(), code=_subtask_code)
+
+                let task = @ffi.current_task()
+                task.add_waitable(_subtask, @ffi.current_coroutine())
+                defer task.remove_waitable(_subtask)
+
+                for {{
+                        if _subtask.done() || _subtask_status is Returned(_) {{
+                            break
+                        }} else {{
+                            @ffi.suspend()
+                        }}
                     }}
-                }}
+
                 "#,
                 params.join(", ")
             )
@@ -848,10 +846,12 @@ impl InterfaceGenerator<'_> {
                 body.push_str(&format!(
                     r#"
                     {}
+                    {}
                     {call_import}
                     {lift}
                     {lift_result}
                     "#,
+                    lower_results.join("\n"),
                     &self.malloc_memory("_result_ptr", "1", ty)
                 ));
             }
@@ -1532,16 +1532,15 @@ pub let static_{table_name}: {ffi}{camel_kind}VTable[{result}]  = {table_name}()
             })
             .collect::<Vec<_>>();
         if async_ {
-            let ffi = self.qualify_package(FFI_DIR);
-            params.insert(0, format!("task: {ffi}Task"));
+            // let ffi = self.qualify_package(FFI_DIR);
+            // params.insert(0, format!("task: {ffi}Task"));
         }
 
         let params = params.join(", ");
         let (async_prefix, async_suffix) = if async_ {
-            let ffi = self.qualify_package(FFI_DIR);
-            ("async ", format!(" raise {ffi}Cancelled").to_string())
+            ("async ", "")
         } else {
-            ("", "".into())
+            ("", "")
         };
         let result_type = match &sig.result_type {
             None => "Unit".into(),
@@ -2843,11 +2842,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     uwrite!(
                         self.src,
                         r#"
-                        let task = {ffi}get_or_create_waitable_set();
-                        task.with_waitable_set(fn(task) {{
+                        let task = {ffi}current_task();
+                        let _ = task.with_waitable_set(fn(task) {{
                             let {async_func_result}: Ref[{task_return_type}?] = Ref::new(None)
-                            task.wait_func(fn() {{
-                                {async_func_result}.val = Some({name}(task, {args}));
+                            task.wait(fn() {{
+                                {async_func_result}.val = Some({name}({args}));
                             }})
                             for {{
                                 if task.no_wait() && {async_func_result}.val is Some({async_func_result}){{
@@ -3163,6 +3162,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let qualifier = self.r#gen.qualify_package(self.func_interface);
                 let ty = self.gen.type_name(&Type::Id(*ty), true);
                 let ffi = self.gen.qualify_package(FFI_DIR);
+
+                // TODO
                 let snake_name = format!(
                     "{}static_{}_future_table",
                     qualifier,

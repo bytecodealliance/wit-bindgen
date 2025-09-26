@@ -2,16 +2,21 @@
 pub struct Subtask {
   handle : Int
   mut code : Int?
+  mut dropped : Bool
 }
 
 ///|
-pub fn Subtask::from_handle(handle : Int) -> Subtask {
-  { handle, code: None }
+pub fn Subtask::from_handle(handle : Int, code?: Int) -> Subtask {
+  { handle, code: None, dropped: false }
 }
 
 ///|
 pub impl Waitable for Subtask with update(self, code~ : Int) -> Unit {
   self.code = Some(code)
+}
+
+pub impl Eq for Subtask with equal(self, other) -> Bool {
+  self.handle == other.handle
 }
 
 
@@ -29,16 +34,24 @@ pub impl Waitable for Subtask with cancel(self) -> Unit {
 }
 
 ///|
-pub impl Waitable for Subtask with drop(self) -> Unit {
+pub impl Waitable for Subtask with drop(self) -> Bool {
   _async_debug("subtask-drop(\{self.handle})")
+  if self.done() || self.dropped {
+    return false
+  }
   subtask_drop(self.handle)
+  self.dropped = true
+  true
 }
 
 ///|
-pub impl Waitable for Subtask with is_done(self) -> Bool {
+pub impl Waitable for Subtask with done(self) -> Bool {
   guard self.code is Some(code) else { return false }
-  match CallbackCode::decode(code) {
-    Exit | Cancel(_) => true
-    Yield | Wait(_) => false
+  match SubtaskStatus::decode(code) {
+    StartCancelled(_) => true
+    Returned(_) => true 
+    Started(_) => false
+    Starting(_) => false
+    ReturnCancelled(_) => true
   }
 }
