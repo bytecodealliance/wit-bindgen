@@ -3,15 +3,15 @@
 
 ///|
 pub fn take_then_drop(x : @ffi.FutureReader[String]) -> Unit {
-  x.drop()
+  let _ = x.drop()
 }
 
 ///|
 pub async fn read_and_drop(
-  task : @ffi.Task,
   x : @ffi.FutureReader[String],
 ) -> Unit noraise {
-  task.spawn(x, fn() {
+  let task = @ffi.current_task()
+  let _ = task.spawn(fn() {
     let _ = x.read() catch { _ => raise @ffi.Cancelled::Cancelled }
   })
 }

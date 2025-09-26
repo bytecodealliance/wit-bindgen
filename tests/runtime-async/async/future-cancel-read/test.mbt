@@ -3,19 +3,19 @@
 
 ///|
 pub async fn cancel_before_read(
-  task : @ffi.Task,
   x : @ffi.FutureReader[UInt],
 ) -> Unit noraise {
-  task.spawn(x, fn() {})
+  let task = @ffi.current_task()
+  let _ = x.drop()
 }
 
 ///|
 pub async fn cancel_after_read(
-  task : @ffi.Task,
   x : @ffi.FutureReader[UInt],
 ) -> Unit noraise {
+  let task = @ffi.current_task()
   task.spawn(
-    x, fn() {
+    fn() {
       let _ = x.read() catch { _ => raise @ffi.Cancelled::Cancelled }
     }
   )
@@ -24,16 +24,14 @@ pub async fn cancel_after_read(
 
 ///|
 pub async fn start_read_then_cancel(
-  task : @ffi.Task,
   data : @ffi.FutureReader[UInt],
   signal : @ffi.FutureReader[Unit],
 ) -> Unit noraise {
+  let task = @ffi.current_task()
   task.spawn(
-    data,
     fn() { let _ = data.read() catch { _ => raise @ffi.Cancelled::Cancelled } },
   ) 
   task.spawn(
-    signal,
     fn() { signal.read() catch { _ => raise @ffi.Cancelled::Cancelled } },
   )
 }
