@@ -688,7 +688,8 @@ impl Runner<'_> {
         let mut to_run = Vec::new();
         for (test, components) in compiled_components.iter() {
             for a in components.iter().filter(|(c, _)| c.kind == Kind::Runner) {
-                self.push_tests(&tests[test.as_str()], components, a, &mut to_run)?;
+                self.push_tests(&tests[test.as_str()], components, a, &mut to_run)
+                    .with_context(|| format!("failed to make test for `{test}`"))?;
             }
         }
 

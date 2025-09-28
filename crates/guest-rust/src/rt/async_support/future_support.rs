@@ -111,21 +111,18 @@
 //! alive until that write completes but otherwise shouldn't hinder anything
 //! else.
 
-use {
-    crate::rt::async_support::waitable::{WaitableOp, WaitableOperation},
-    crate::rt::async_support::ReturnCode,
-    crate::rt::Cleanup,
-    std::{
-        alloc::Layout,
-        fmt,
-        future::{Future, IntoFuture},
-        marker,
-        pin::Pin,
-        ptr,
-        sync::atomic::{AtomicU32, Ordering::Relaxed},
-        task::{Context, Poll},
-    },
-};
+use crate::rt::async_support::waitable::{WaitableOp, WaitableOperation};
+use crate::rt::async_support::ReturnCode;
+use crate::rt::Cleanup;
+use std::alloc::Layout;
+use std::fmt;
+use std::future::{Future, IntoFuture};
+use std::marker;
+use std::pin::Pin;
+use std::ptr;
+use std::sync::atomic::{AtomicU32, Ordering::Relaxed};
+use std::sync::{Arc, Mutex};
+use std::task::{Context, Poll, Wake, Waker};
 
 /// Function table used for [`FutureWriter`] and [`FutureReader`]
 ///
@@ -285,12 +282,11 @@ impl<T> fmt::Debug for FutureWriter<T> {
 impl<T> Drop for FutureWriter<T> {
     fn drop(&mut self) {
         // If a value has not yet been written into this writer than that must
-        // be done so now. Perform a "clone" of `self` by moving our data into a
-        // subtask, but ensure that `should_write_default_value` is set to
-        // `false` to avoid infinite loops by accident. Once the task is spawned
-        // we're done and the subtask's destructor of the closed-over
-        // `FutureWriter` will be responsible for performing the
-        // `drop-writable` call below.
+        // be done so now. Perform a "clone" of `self` ensuring that
+        // `should_write_default_value` is set to `false` to avoid infinite
+        // loops by accident. The cloned `FutureWriter` will be responsible for
+        // performing the `drop-writable` call below once the write has
+        // completed.
         //
         // Note, though, that if `should_write_default_value` is `false` then a
         // write has already happened and we can go ahead and just synchronously
@@ -302,16 +298,76 @@ impl<T> Drop for FutureWriter<T> {
                 should_write_default_value: false,
                 vtable: self.vtable,
             };
-            crate::rt::async_support::spawn(async move {
-                let value = (clone.default)();
-                let _ = clone.write(value).await;
-            });
+            let value = (clone.default)();
+            let write = clone.write(value);
+            Arc::new(DeferredWrite::new(write)).wake();
         } else {
             unsafe {
                 rtdebug!("future.drop-writable({})", self.handle);
                 (self.vtable.drop_writable)(self.handle);
             }
         }
+    }
+}
+
+/// Helper structure which behaves both as a future of sorts and an executor of
+/// sorts.
+///
+/// This type is constructed in `Drop for FutureWriter<T>` to send out a
+/// default value when no other has been written. This manages the
+/// `FutureWrite` operation happening internally through a `Wake`
+/// implementation. That means that this is a sort of cyclical future which,
+/// when woken, will complete the write operation.
+///
+/// The purpose of this is to be a "lightweight" way of "spawn"-ing a future
+/// write to happen in the background. Crucially, however, this doesn't require
+/// the `async-spawn` feature and instead works with the `wasip3_task` C ABI
+/// structures (which spawn doesn't support).
+struct DeferredWrite<T: 'static> {
+    write: Mutex<FutureWrite<T>>,
+}
+
+// TODO
+unsafe impl<T> Send for DeferredWrite<T> {}
+unsafe impl<T> Sync for DeferredWrite<T> {}
+
+impl<T> DeferredWrite<T> {
+    fn new(write: FutureWrite<T>) -> DeferredWrite<T> {
+        DeferredWrite {
+            write: Mutex::new(write),
+        }
+    }
+}
+
+impl<T> Wake for DeferredWrite<T> {
+    fn wake(self: Arc<Self>) {
+        // When a `wake` signal comes in that should happen in two locations:
+        //
+        // 1. When `DeferredWrite` is initially constructed.
+        // 2. When an event comes in indicating that the internal write has
+        //    completed.
+        //
+        // The implementation here is the same in both cases. A clone of `self`
+        // is converted to a `Waker`, and this `Waker` notably owns the
+        // internal future itself. The internal write operation is then pushed
+        // forward (e.g. it's issued in (1) or checked up on in (2)).
+        //
+        // If `Pending` is returned then `waker` should have been stored away
+        // within the `wasip3_task` C ABI structure. Otherwise it should not
+        // have been stored away and `self` should be the sole reference which
+        // means everything will get cleaned up when this function returns.
+        let poll = {
+            let waker = Waker::from(self.clone());
+            let mut cx = Context::from_waker(&waker);
+            let mut write = self.write.lock().unwrap();
+            unsafe { Pin::new_unchecked(&mut *write).poll(&mut cx) }
+        };
+        if poll.is_ready() {
+            assert_eq!(Arc::strong_count(&self), 1);
+        } else {
+            assert!(Arc::strong_count(&self) > 1);
+        }
+        assert_eq!(Arc::weak_count(&self), 0);
     }
 }
 
