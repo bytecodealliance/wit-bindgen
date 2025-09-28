@@ -1,7 +1,7 @@
 use anyhow::Result;
 use core::panic;
 use heck::{ToLowerCamelCase, ToShoutySnakeCase, ToSnakeCase, ToUpperCamelCase};
-use std::{collections::HashMap, fmt::Write, mem, ops::Deref};
+use std::{collections::{HashMap, HashSet}, fmt::Write, mem, ops::Deref};
 use wit_bindgen_core::{
     abi::{self, AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmSignature, WasmType},
     dealias, uwrite, uwriteln,
@@ -126,7 +126,8 @@ pub struct MoonBit {
     // return area allocation
     return_area_size: ArchitectureSize,
     return_area_align: Alignment,
-    futures: Vec<TypeId>,
+
+    futures: HashMap<String, HashSet<TypeId>>,
     is_async: bool,
 }
 
@@ -1408,10 +1409,17 @@ impl InterfaceGenerator<'_> {
         ty: TypeId,
         result_type: Option<&Type>,
     ) {
-        if self.gen.futures.contains(&ty) {
-            return;
+        if let Some(set) = self.gen.futures.get(module) {
+            if set.contains(&ty) {
+                return;
+            }
         }
-        self.gen.futures.push(ty);
+
+        self.gen
+            .futures
+            .entry(module.to_string())
+            .or_default()
+            .insert(ty);
         let result = match result_type {
             Some(ty) => self.type_name(ty, true),
             None => "Unit".into(),
