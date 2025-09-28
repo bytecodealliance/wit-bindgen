@@ -126,7 +126,6 @@ pub fn[T : Waitable] Task::remove_waitable(self : Self, state : T) -> Unit {
 
 ///|
 pub fn[T : Waitable] Task::drop_waitable(self : Self, state : T) -> Unit {
-  self.remove_waitable(state)
   let _ = state.drop()
   if self.resources.search(state.handle()) is Some(idx) {
     let _ = self.resources.remove(idx)
@@ -158,17 +157,16 @@ pub fn Task::drop(self : Self) -> Unit {
 /// Spawns a coroutine to execute an async function and without waits for its completion
 /// while managing the waitable state.
 pub fn Task::spawn(_self : Self, f : async () -> Unit) -> Unit {
-  let coro = spawn(fn() { f() })
-  // start the coroutine when first spawn
-  coro.run()
+  let _ = spawn(f)
+  // start the coroutine
   rschedule()
 }
 
 ///|
 /// This function spawns a coroutine to run the async function and waits for its completion
 pub async fn Task::wait(_ : Self, f : async () -> Unit) -> Unit {
-  let coro = spawn(fn() { f() })
-  coro.run()
+  let coro = spawn(f)
+  // start the coroutine
   rschedule()
   Coroutine::wait(coro)
 }
