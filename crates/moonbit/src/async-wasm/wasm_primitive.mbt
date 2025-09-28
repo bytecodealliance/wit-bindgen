@@ -145,7 +145,6 @@ pub fn CallbackCode::decode(int : Int) -> CallbackCode {
 ///|
 /// This function is empty, If you want to print debug info, you can hook it in your environment.
 pub fn _async_debug(_msg : String) -> Unit {
-  print(_msg)
 }
 
 // Component async primitives
