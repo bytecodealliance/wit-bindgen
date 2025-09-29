@@ -1,8 +1,4 @@
 #![deny(missing_docs)]
-// TODO: Switch to interior mutability (e.g. use Mutexes or thread-local
-// RefCells) and remove this, since even in single-threaded mode `static mut`
-// references can be a hazard due to recursive access.
-#![allow(static_mut_refs)]
 
 extern crate std;
 use core::sync::atomic::{AtomicBool, Ordering};
@@ -15,11 +11,6 @@ use std::pin::Pin;
 use std::ptr;
 use std::sync::Arc;
 use std::task::{Context, Poll, Wake, Waker};
-use std::vec::Vec;
-
-use futures::channel::oneshot;
-use futures::future::FutureExt;
-use futures::stream::{FuturesUnordered, StreamExt};
 
 macro_rules! rtdebug {
     ($($f:tt)*) => {
@@ -50,18 +41,25 @@ pub use stream_support::*;
 #[doc(hidden)]
 pub use subtask::Subtask;
 
-pub use futures;
+type BoxFuture<'a> = Pin<Box<dyn Future<Output = ()> + 'a>>;
 
-type BoxFuture = Pin<Box<dyn Future<Output = ()> + 'static>>;
+#[cfg(feature = "async-spawn")]
+mod spawn;
+#[cfg(feature = "async-spawn")]
+pub use spawn::spawn;
+#[cfg(not(feature = "async-spawn"))]
+mod spawn_disabled;
+#[cfg(not(feature = "async-spawn"))]
+use spawn_disabled as spawn;
 
 /// Represents a task created by either a call to an async-lifted export or a
 /// future run using `block_on` or `start_task`.
-struct FutureState {
+struct FutureState<'a> {
     /// Remaining work to do (if any) before this task can be considered "done".
     ///
     /// Note that we won't tell the host the task is done until this is drained
     /// and `waitables` is empty.
-    tasks: FuturesUnordered<BoxFuture>,
+    tasks: spawn::Tasks<'a>,
 
     /// The waitable set containing waitables created by this task, if any.
     waitable_set: Option<WaitableSet>,
@@ -88,13 +86,13 @@ struct FutureState {
     waker_clone: Waker,
 }
 
-impl FutureState {
-    fn new(future: BoxFuture) -> FutureState {
+impl FutureState<'_> {
+    fn new(future: BoxFuture<'_>) -> FutureState<'_> {
         let waker = Arc::new(FutureWaker::default());
         FutureState {
             waker_clone: waker.clone().into(),
             waker,
-            tasks: [future].into_iter().collect(),
+            tasks: spawn::Tasks::new(future),
             waitable_set: None,
             waitables: BTreeMap::new(),
             wasip3_task: cabi::wasip3_task {
@@ -176,31 +174,32 @@ impl FutureState {
                 // notification, if any.
                 me.waker.0.store(false, Ordering::Relaxed);
 
-                // Poll our future, handling `SPAWNED` around this.
-                let poll;
-                unsafe {
-                    poll = me.tasks.poll_next_unpin(&mut context);
-                    if !SPAWNED.is_empty() {
-                        me.tasks.extend(SPAWNED.drain(..));
-                    }
-                }
+                // Poll our future, seeing if it was able to make progress.
+                let poll = me.tasks.poll_next(&mut context);
 
                 match poll {
                     // A future completed, yay! Keep going to see if more have
                     // completed.
                     Poll::Ready(Some(())) => (),
 
-                    // The `FuturesUnordered` list is empty meaning that there's no
-                    // more work left to do, so we're done.
+                    // The task list is empty, but there might be remaining work
+                    // in terms of waitables through the cabi interface. In this
+                    // situation wait for all waitables to be resolved before
+                    // signaling that our own task is done.
                     Poll::Ready(None) => {
-                        assert!(!me.remaining_work());
                         assert!(me.tasks.is_empty());
-                        break (CALLBACK_CODE_EXIT, true);
+                        if me.remaining_work() {
+                            let waitable = me.waitable_set.as_ref().unwrap().as_raw();
+                            break (CALLBACK_CODE_WAIT | (waitable << 4), false);
+                        } else {
+                            break (CALLBACK_CODE_EXIT, true);
+                        }
                     }
 
-                    // Some future within `FuturesUnordered` is not ready yet. If
-                    // our `waker` was signaled then that means this is a yield
-                    // operation, otherwise it means we're blocking on something.
+                    // Some future within `self.tasks` is not ready yet. If our
+                    // `waker` was signaled then that means this is a yield
+                    // operation, otherwise it means we're blocking on
+                    // something.
                     Poll::Pending => {
                         assert!(!me.tasks.is_empty());
                         if me.waker.0.load(Ordering::Relaxed) {
@@ -229,7 +228,7 @@ impl FutureState {
                 }
             }
         }
-        let self_raw = self as *mut FutureState;
+        let self_raw = self as *mut FutureState<'_>;
         self.wasip3_task.ptr = self_raw.cast();
         let prev = unsafe { cabi::wasip3_task_set(&mut self.wasip3_task) };
         let _reset = ResetTask(prev);
@@ -238,7 +237,7 @@ impl FutureState {
     }
 }
 
-impl Drop for FutureState {
+impl Drop for FutureState<'_> {
     fn drop(&mut self) {
         // If this state has active tasks then they need to be dropped which may
         // execute arbitrary code. This arbitrary code might require the p3 APIs
@@ -259,7 +258,7 @@ unsafe extern "C" fn waitable_register(
     callback: unsafe extern "C" fn(*mut c_void, u32),
     callback_ptr: *mut c_void,
 ) -> *mut c_void {
-    let ptr = ptr.cast::<FutureState>();
+    let ptr = ptr.cast::<FutureState<'static>>();
     assert!(!ptr.is_null());
     (*ptr).add_waitable(waitable);
     match (*ptr).waitables.insert(waitable, (callback_ptr, callback)) {
@@ -269,7 +268,7 @@ unsafe extern "C" fn waitable_register(
 }
 
 unsafe extern "C" fn waitable_unregister(ptr: *mut c_void, waitable: u32) -> *mut c_void {
-    let ptr = ptr.cast::<FutureState>();
+    let ptr = ptr.cast::<FutureState<'static>>();
     assert!(!ptr.is_null());
     (*ptr).remove_waitable(waitable);
     match (*ptr).waitables.remove(&waitable) {
@@ -290,10 +289,6 @@ impl Wake for FutureWaker {
         self.0.store(true, Ordering::Relaxed)
     }
 }
-
-/// Any newly-deferred work queued by calls to the `spawn` function while
-/// polling the current task.
-static mut SPAWNED: Vec<BoxFuture> = Vec::new();
 
 const EVENT_NONE: u32 = 0;
 const EVENT_SUBTASK: u32 = 1;
@@ -386,7 +381,7 @@ pub unsafe fn callback(event0: u32, event1: u32, event2: u32) -> u32 {
     // Acquire our context-local state, assert it's not-null, and then reset
     // the state to null while we're running to help prevent any unintended
     // usage.
-    let state = context_get().cast::<FutureState>();
+    let state = context_get().cast::<FutureState<'static>>();
     assert!(!state.is_null());
     unsafe {
         context_set(ptr::null_mut());
@@ -408,27 +403,23 @@ pub unsafe fn callback(event0: u32, event1: u32, event2: u32) -> u32 {
     }
 }
 
-/// Defer the specified future to be run after the current async-lifted export
-/// task has returned a value.
-///
-/// The task will remain in a running state until all spawned futures have
-/// completed.
-pub fn spawn(future: impl Future<Output = ()> + 'static) {
-    unsafe { SPAWNED.push(Box::pin(future)) }
-}
-
 /// Run the specified future to completion, returning the result.
 ///
 /// This uses `waitable-set.wait` to poll for progress on any in-progress calls
 /// to async-lowered imports as necessary.
 // TODO: refactor so `'static` bounds aren't necessary
-pub fn block_on<T: 'static>(future: impl Future<Output = T> + 'static) -> T {
-    let (tx, mut rx) = oneshot::channel();
-    let state = &mut FutureState::new(Box::pin(future.map(move |v| drop(tx.send(v)))) as BoxFuture);
+pub fn block_on<T: 'static>(future: impl Future<Output = T>) -> T {
+    let mut result = None;
+    let mut state = FutureState::new(Box::pin(async {
+        result = Some(future.await);
+    }));
     let mut event = (EVENT_NONE, 0, 0);
     loop {
         match state.callback(event.0, event.1, event.2) {
-            (_, true) => break rx.try_recv().unwrap().unwrap(),
+            (_, true) => {
+                drop(state);
+                break result.unwrap();
+            }
             (CALLBACK_CODE_YIELD, false) => event = state.waitable_set.as_ref().unwrap().poll(),
             _ => event = state.waitable_set.as_ref().unwrap().wait(),
         }

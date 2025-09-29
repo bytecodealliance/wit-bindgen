@@ -19,7 +19,6 @@ all-features = true
 wit-bindgen-rust-macro = { path = "./macro", optional = true, version = "0.46.0" }
 bitflags = { workspace = true, optional = true }
 futures = { version = "0.3.30", optional = true }
-once_cell = { version = "1.19.0", optional = true }
 
 # When built as part of libstd
 core = { version = "1.0", optional = true, package = "rustc-std-workspace-core" }
@@ -30,8 +29,9 @@ default = ["macros", "realloc", "async", "std", "bitflags"]
 macros = ["dep:wit-bindgen-rust-macro"]
 realloc = []
 std = []
-async = ["macros", "std", "dep:futures", "dep:once_cell", "wit-bindgen-rust-macro/async"]
+async = ["macros", "std", "wit-bindgen-rust-macro/async"]
 bitflags = ["dep:bitflags"]
+async-spawn = ['async', 'dep:futures']
 
 # Unstable feature to support being a libstd dependency
 rustc-dep-of-std = ["dep:core", "dep:alloc"]
