@@ -9,7 +9,7 @@
 //! [Component Model]: https://component-model.bytecodealliance.org/
 
 #![no_std]
-#![cfg_attr(docsrs, feature(doc_auto_cfg))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 #[cfg(not(feature = "rustc-dep-of-std"))]
 extern crate alloc;
