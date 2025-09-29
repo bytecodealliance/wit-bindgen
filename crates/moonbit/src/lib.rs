@@ -1,7 +1,12 @@
 use anyhow::Result;
 use core::panic;
 use heck::{ToLowerCamelCase, ToShoutySnakeCase, ToSnakeCase, ToUpperCamelCase};
-use std::{collections::{HashMap, HashSet}, fmt::Write, mem, ops::Deref};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Write,
+    mem,
+    ops::Deref,
+};
 use wit_bindgen_core::{
     abi::{self, AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmSignature, WasmType},
     dealias, uwrite, uwriteln,
@@ -808,8 +813,8 @@ impl InterfaceGenerator<'_> {
             let mut f = FunctionBindgen::new(self, "INVALID", self.name, Box::new([]));
             for (name, ty) in mbt_sig.params.iter() {
                 lower_params.extend(abi::lower_flat(f.gen.resolve, &mut f, name.clone(), ty));
-                lower_results.push(f.src.clone());
             }
+            lower_results.push(f.src.clone());
         }
 
         let func_name = func.name.to_upper_camel_case();
@@ -1444,10 +1449,10 @@ impl InterfaceGenerator<'_> {
         };
         let ffi = self.qualify_package(FFI_DIR);
 
+        let mut dealloc_list;
+        let malloc;
         let lift;
         let lower;
-        let dealloc_list;
-        let malloc;
         let lift_result;
         let lift_list: String;
         let lower_list: String;
@@ -1470,6 +1475,10 @@ impl InterfaceGenerator<'_> {
                 self.list_lower_to_memory(&format!("wasm{name}{kind}Lower"), "value", result_type);
 
             malloc = self.malloc_memory("ptr", "length", result_type);
+
+            if dealloc_list.is_empty() {
+                dealloc_list = "let _ = ptr".to_string();
+            }
         } else {
             lift = "let _ = ptr".to_string();
             lower = "let _ = (ptr, value)".to_string();
@@ -1479,8 +1488,52 @@ impl InterfaceGenerator<'_> {
             lift_list = "FixedArray::make(length, Unit::default())".into();
             lower_list = "0".into();
         }
+
+        let (mut lift_func, mut lower_func) = if result_type
+            .is_some_and(|ty| self.is_list_canonical(self.resolve, ty))
+            && matches!(payload_for, PayloadFor::Stream)
+        {
+            ("".into(), "".into())
+        } else {
+            (
+                format!(
+                    r#"
+                fn wasm{name}{kind}Lift(ptr: Int) -> {result} {{
+                    {lift}
+                    {lift_result}
+                }}
+                "#
+                ),
+                format!(
+                    r#"
+                fn wasm{name}{kind}Lower(value: {result}, ptr: Int) -> Unit {{
+                    {lower}
+                }}
+                "#
+                ),
+            )
+        };
+
+        if matches!(payload_for, PayloadFor::Stream) {
+            lift_func.push_str(&format!(
+                r#"
+                fn wasm{name}{kind}ListLift(ptr: Int, length: Int) -> FixedArray[{result}] {{ 
+                    {lift_list}
+                }}
+                "#
+            ));
+
+            lower_func.push_str(&format!(
+                r#"
+                fn wasm{name}{kind}ListLower(value: FixedArray[{result}]) -> Int {{ 
+                    {lower_list}
+                }}
+                "#
+            ));
+        };
+
         uwriteln!(
-            self.src,
+            self.ffi,
             r#"
 fn wasmImport{name}{kind}New() -> UInt64 = "{module}" "[{kind}-new-{index}]{func_name}"
 fn wasmImport{name}{kind}Read(handle : Int, buffer_ptr : Int{payload_len_arg}) -> Int = "{module}" "[async-lower][{kind}-read-{index}]{func_name}"
@@ -1489,13 +1542,6 @@ fn wasmImport{name}{kind}CancelRead(handle : Int) -> Int = "{module}" "[{kind}-c
 fn wasmImport{name}{kind}CancelWrite(handle : Int) -> Int = "{module}" "[{kind}-cancel-write-{index}]{func_name}"
 fn wasmImport{name}{kind}DropReadable(handle : Int) = "{module}" "[{kind}-drop-readable-{index}]{func_name}"
 fn wasmImport{name}{kind}DropWritable(handle : Int) = "{module}" "[{kind}-drop-writable-{index}]{func_name}"
-fn wasm{name}{kind}Lift(ptr: Int) -> {result} {{
-    {lift}
-    {lift_result}
-}}
-fn wasm{name}{kind}Lower(value: {result}, ptr: Int) -> Unit {{
-    {lower}
-}}
 fn wasm{name}{kind}Deallocate(ptr: Int) -> Unit {{
     {dealloc_list}
 }}
@@ -1503,12 +1549,7 @@ fn wasm{name}{kind}Malloc(length: Int) -> Int {{
     {malloc}
     ptr
 }}
-fn wasm{name}{kind}ListLift(ptr: Int, length: Int) -> FixedArray[{result}] {{ 
-    {lift_list}
-}}
-fn wasm{name}{kind}ListLower(value: FixedArray[{result}]) -> Int {{ 
-    {lower_list}
-}}
+
 fn {table_name}() -> {ffi}{camel_kind}VTable[{result}] {{
     {ffi}{camel_kind}VTable::new(
         wasmImport{name}{kind}New,
@@ -1524,14 +1565,15 @@ fn {table_name}() -> {ffi}{camel_kind}VTable[{result}] {{
         wasm{name}{kind}{payload_lift_func}Lower,
     )
 }}
-
+{lift_func}
+{lower_func}
 pub let static_{table_name}: {ffi}{camel_kind}VTable[{result}]  = {table_name}();
 "#
         );
     }
 
     fn sig_string(&mut self, sig: &MoonbitSignature, async_: bool) -> String {
-        let mut params = sig
+        let params = sig
             .params
             .iter()
             .map(|(name, ty)| {
@@ -1539,17 +1581,9 @@ pub let static_{table_name}: {ffi}{camel_kind}VTable[{result}]  = {table_name}()
                 format!("{name} : {ty}")
             })
             .collect::<Vec<_>>();
-        if async_ {
-            // let ffi = self.qualify_package(FFI_DIR);
-            // params.insert(0, format!("task: {ffi}Task"));
-        }
 
         let params = params.join(", ");
-        let (async_prefix, async_suffix) = if async_ {
-            ("async ", "")
-        } else {
-            ("", "")
-        };
+        let (async_prefix, async_suffix) = if async_ { ("async ", "") } else { ("", "") };
         let result_type = match &sig.result_type {
             None => "Unit".into(),
             Some(ty) => self.type_name(ty, true),
@@ -3169,16 +3203,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::FutureLift { ty, .. } => {
                 let result = self.locals.tmp("result");
                 let op = &operands[0];
-                let qualifier = self.r#gen.qualify_package(self.func_interface);
+                // let qualifier = self.r#gen.qualify_package(self.func_interface);
                 let ty = self.gen.type_name(&Type::Id(*ty), true);
                 let ffi = self.gen.qualify_package(FFI_DIR);
 
-                // TODO
-                let snake_name = format!(
-                    "{}static_{}_future_table",
-                    qualifier,
-                    ty.replace(&qualifier, "").to_snake_case(),
-                );
+                let snake_name = format!("static_{}_future_table", ty.to_snake_case(),);
 
                 uwriteln!(
                     self.src,
@@ -3228,8 +3257,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let ty = self.gen.type_name(&Type::Id(*ty), true);
                 let ffi = self.gen.qualify_package(FFI_DIR);
                 let snake_name = format!(
-                    "{}static_{}_stream_table",
-                    qualifier,
+                    "static_{}_stream_table",
                     ty.replace(&qualifier, "").to_snake_case(),
                 );
 

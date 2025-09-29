@@ -309,35 +309,3 @@ pub fn current_task() -> Task {
     }
   }
 }
-
-///|
-pub fn Task::run_forever(self : Self) -> Unit noraise {
-  let _ = spawn(fn() { pause() })
-  rschedule()
-}
-
-///|
-pub async fn Task::poll(self : Self) -> Bool {
-  if self.no_wait() {
-    return false
-  }
-  let mut event = (0, 0, 0)
-  for {
-    let code = callback(event.0, event.1, event.2)
-    match CallbackCode::decode(code) {
-      Exit => return false
-      Yield => event = self.blocking_poll()
-      _ => event = self.blocking_wait()
-    }
-  }
-  pause()
-  true
-}
-
-///|
-pub fn with_event_loop(f : async (Task) -> Unit) -> Unit raise {
-  let self = current_task()
-  let main = spawn(fn() { f(self) })
-  self.run_forever()
-  main.unwrap()
-}

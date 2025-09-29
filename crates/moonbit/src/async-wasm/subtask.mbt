@@ -7,7 +7,7 @@ pub struct Subtask {
 
 ///|
 pub fn Subtask::from_handle(handle : Int, code?: Int) -> Subtask {
-  { handle, code: None, dropped: false }
+  { handle, code, dropped: false }
 }
 
 ///|
