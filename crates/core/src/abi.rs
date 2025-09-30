@@ -958,13 +958,9 @@ impl<'a, B: Bindgen> Generator<'a, B> {
 
         match lift_lower {
             LiftLower::LowerArgsLiftResults => {
-                assert!(!async_, "generators should not be using this for async");
-
                 self.realloc = Some(realloc);
-                if let (AbiVariant::GuestExport, true) = (variant, async_) {
-                    unimplemented!("host-side code generation for async lift/lower not supported");
-                }
 
+                // Create a function that performs individual lowering of operands
                 let lower_to_memory = |self_: &mut Self, ptr: B::Operand| {
                     let mut offset = ArchitectureSize::default();
                     for (nth, (_, ty)) in func.params.iter().enumerate() {
@@ -977,26 +973,27 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     self_.stack.push(ptr);
                 };
 
-                if !sig.indirect_params {
-                    // If the parameters for this function aren't indirect
-                    // (there aren't too many) then we simply do a normal lower
-                    // operation for them all.
-                    for (nth, (_, ty)) in func.params.iter().enumerate() {
-                        self.emit(&Instruction::GetArg { nth });
-                        self.lower(ty);
-                    }
-                } else {
-                    // ... otherwise if parameters are indirect space is
+                // Lower parameters
+                if sig.indirect_params {
+                    // If parameters are indirect space is
                     // allocated for them and each argument is lowered
                     // individually into memory.
                     let ElementInfo { size, align } = self
                         .bindgen
                         .sizes()
                         .record(func.params.iter().map(|t| &t.1));
+
+                    // Resolve the pointer to the indirectly stored parameters
                     let ptr = match variant {
                         // When a wasm module calls an import it will provide
                         // space that isn't explicitly deallocated.
                         AbiVariant::GuestImport => self.bindgen.return_pointer(size, align),
+
+                        // TODO
+                        AbiVariant::GuestImportAsync => {
+                            todo!("lowerargsliftresults for async guest import not yet implemented")
+                        }
+
                         // When calling a wasm module from the outside, though,
                         // malloc needs to be called.
                         AbiVariant::GuestExport => {
@@ -1007,18 +1004,28 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                             });
                             self.stack.pop().unwrap()
                         }
-                        AbiVariant::GuestImportAsync
-                        | AbiVariant::GuestExportAsync
-                        | AbiVariant::GuestExportAsyncStackful => {
-                            unreachable!()
+
+                        // TODO
+                        AbiVariant::GuestExportAsync | AbiVariant::GuestExportAsyncStackful => {
+                            // TODO: guest export parameters come from where?
+                            unreachable!("direct param lowering for async not implemented")
                         }
                     };
+
+                    // Lower the parameters to memory
                     lower_to_memory(self, ptr);
+                } else {
+                    // ... otherwise arguments are direct,
+                    // (there aren't too many) then we simply do a normal lower
+                    // operation for them all.
+                    for (nth, (_, ty)) in func.params.iter().enumerate() {
+                        self.emit(&Instruction::GetArg { nth });
+                        self.lower(ty);
+                    }
                 }
                 self.realloc = None;
 
-                // If necessary we may need to prepare a return pointer for
-                // this ABI.
+                // If necessary we may need to prepare a return pointer for this ABI.
                 if variant == AbiVariant::GuestImport && sig.retptr {
                     let info = self.bindgen.sizes().params(&func.result);
                     let ptr = self.bindgen.return_pointer(info.size, info.align);
@@ -1026,20 +1033,18 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     self.stack.push(ptr);
                 }
 
+                // Call the Wasm function
                 assert_eq!(self.stack.len(), sig.params.len());
                 self.emit(&Instruction::CallWasm {
                     name: &func.name,
                     sig: &sig,
                 });
 
-                if !sig.retptr {
-                    // With no return pointer in use we can simply lift the
-                    // result(s) of the function from the result of the core
-                    // wasm function.
-                    if let Some(ty) = &func.result {
-                        self.lift(ty)
-                    }
-                } else {
+                // Handle the result
+                if sig.retptr {
+                    // If there is a return pointer, we must get the pointer to where results
+                    // should be stored, and store the results there?
+
                     let ptr = match variant {
                         // imports into guests means it's a wasm module
                         // calling an imported function. We supplied the
@@ -1063,16 +1068,34 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         }
                     };
 
-                    self.read_results_from_memory(
-                        &func.result,
-                        ptr.clone(),
-                        ArchitectureSize::default(),
-                    );
-                    self.emit(&Instruction::Flush {
-                        amt: usize::from(func.result.is_some()),
-                    });
+                    if let (AbiVariant::GuestExport, true) = (variant, async_) {
+                        // If we're dealing with an async function, the result should not be read from memory
+                        // immediately, as it's the async call result
+                        //
+                        // We can leave the result of the call (the indication of what to do as an async call)
+                        // on the stack as a return
+                        self.stack.push(ptr);
+                    } else {
+                        // If we're not dealing with an async call, the result must be in memory at this point and can be read out
+                        self.read_results_from_memory(
+                            &func.result,
+                            ptr.clone(),
+                            ArchitectureSize::default(),
+                        );
+                        self.emit(&Instruction::Flush {
+                            amt: usize::from(func.result.is_some()),
+                        });
+                    }
+                } else {
+                    // With no return pointer in use we can simply lift the
+                    // result(s) of the function from the result of the core
+                    // wasm function.
+                    if let Some(ty) = &func.result {
+                        self.lift(ty)
+                    }
                 }
 
+                // Emit the function return
                 self.emit(&Instruction::Return {
                     func,
                     amt: usize::from(func.result.is_some()),
