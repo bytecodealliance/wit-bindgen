@@ -17,3 +17,6 @@ anyhow = { workspace = true }
 wit-bindgen-core = { workspace = true }
 heck = { workspace = true }
 clap = { workspace = true, optional = true }
+
+[features]
+clap = ['dep:clap', 'wit-bindgen-core/clap']
