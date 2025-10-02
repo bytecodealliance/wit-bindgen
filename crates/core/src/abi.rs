@@ -990,7 +990,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         AbiVariant::GuestImport => self.bindgen.return_pointer(size, align),
 
                         AbiVariant::GuestImportAsync => {
-                            todo!("lowerargsliftresults for async guest import not yet implemented")
+                            todo!("direct param lowering for async guest import not implemented")
                         }
 
                         // When calling a wasm module from the outside, though,
@@ -1005,7 +1005,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         }
 
                         AbiVariant::GuestExportAsync | AbiVariant::GuestExportAsyncStackful => {
-                            unreachable!("direct param lowering for async not implemented")
+                            todo!("direct param lowering for async not implemented")
                         }
                     };
 
