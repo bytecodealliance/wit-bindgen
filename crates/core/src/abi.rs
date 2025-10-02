@@ -989,7 +989,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         // space that isn't explicitly deallocated.
                         AbiVariant::GuestImport => self.bindgen.return_pointer(size, align),
 
-                        // TODO
                         AbiVariant::GuestImportAsync => {
                             todo!("lowerargsliftresults for async guest import not yet implemented")
                         }
@@ -1005,9 +1004,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                             self.stack.pop().unwrap()
                         }
 
-                        // TODO
                         AbiVariant::GuestExportAsync | AbiVariant::GuestExportAsyncStackful => {
-                            // TODO: guest export parameters come from where?
                             unreachable!("direct param lowering for async not implemented")
                         }
                     };
@@ -1104,9 +1101,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
 
             LiftLower::LiftArgsLowerResults => {
                 let max_flat_params = match (variant, async_) {
-                    (AbiVariant::GuestImport | AbiVariant::GuestImportAsync, _is_async @ true) => {
-                        MAX_FLAT_ASYNC_PARAMS
-                    }
+                    (AbiVariant::GuestImportAsync, _is_async @ true) => MAX_FLAT_ASYNC_PARAMS,
                     _ => MAX_FLAT_PARAMS,
                 };
 
@@ -1136,9 +1131,11 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     // argument in succession from the component wasm types that
                     // make-up the type.
                     let mut offset = 0;
-                    for (_, ty) in func.params.iter() {
-                        let types = flat_types(self.resolve, ty, Some(max_flat_params))
-                            .expect(&format!("direct parameter load failed to produce types during generation of fn call (func name: '{}')", func.name));
+                    for (param_name, ty) in func.params.iter() {
+                        let Some(types) = flat_types(self.resolve, ty, Some(max_flat_params))
+                        else {
+                            panic!("failed to flatten types during direct parameter lifting ('{param_name}' in func '{}')", func.name);
+                        };
                         for _ in 0..types.len() {
                             self.emit(&Instruction::GetArg { nth: offset });
                             offset += 1;
@@ -2496,12 +2493,8 @@ fn cast(from: WasmType, to: WasmType) -> Bitcast {
 /// It is sometimes necessary to restrict the number of max parameters dynamically,
 /// for example during an async guest import call (flat params are limited to 4)
 fn flat_types(resolve: &Resolve, ty: &Type, max_params: Option<usize>) -> Option<Vec<WasmType>> {
-    let mut storage =
-        iter::repeat_n(WasmType::I32, max_params.unwrap_or(MAX_FLAT_PARAMS)).collect::<Vec<_>>();
+    let max_params = max_params.unwrap_or(MAX_FLAT_PARAMS);
+    let mut storage = iter::repeat_n(WasmType::I32, max_params).collect::<Vec<_>>();
     let mut flat = FlatTypes::new(storage.as_mut_slice());
-    if resolve.push_flat(ty, &mut flat) {
-        Some(flat.to_vec())
-    } else {
-        None
-    }
+    resolve.push_flat(ty, &mut flat).then_some(flat.to_vec())
 }
