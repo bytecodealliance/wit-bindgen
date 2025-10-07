@@ -1,0 +1,5 @@
+[toolchain]
+channel = "stable"
+components = [ "rustfmt", "clippy", "rustc-dev" ]
+targets = [ "x86_64-unknown-linux-gnu" ]
+profile = "minimal"
