@@ -52,63 +52,63 @@ impl WorldGenerator for Markdown {
             format!("#{}", world.name.to_snake_case()),
         );
 
-        let mut gen = self.interface(resolve);
+        let mut r#gen = self.interface(resolve);
 
-        gen.docs(&world.docs);
-        gen.push_str("\n");
+        r#gen.docs(&world.docs);
+        r#gen.push_str("\n");
 
         // Produce a table of contents for the world.
         let mut first = true;
         for (name, import) in &world.imports {
             if first {
-                gen.push_str(" - Imports:\n");
+                r#gen.push_str(" - Imports:\n");
                 first = false;
             }
             let name = &resolve.name_world_key(name);
             match import {
                 WorldItem::Interface { .. } => {
-                    gen.push_str("    - interface `");
-                    gen.push_str(name);
-                    gen.push_str("`\n");
+                    r#gen.push_str("    - interface `");
+                    r#gen.push_str(name);
+                    r#gen.push_str("`\n");
                 }
                 WorldItem::Function(_) => {
-                    gen.push_str("    - function `");
-                    gen.push_str(name);
-                    gen.push_str("`\n");
+                    r#gen.push_str("    - function `");
+                    r#gen.push_str(name);
+                    r#gen.push_str("`\n");
                 }
                 WorldItem::Type(_) => {
-                    gen.push_str("    - type `");
-                    gen.push_str(name);
-                    gen.push_str("`\n");
+                    r#gen.push_str("    - type `");
+                    r#gen.push_str(name);
+                    r#gen.push_str("`\n");
                 }
             }
         }
         let mut first = true;
         for (name, export) in &world.exports {
             if first {
-                gen.push_str(" - Exports:\n");
+                r#gen.push_str(" - Exports:\n");
                 first = false;
             }
             let name = &resolve.name_world_key(name);
             match export {
                 WorldItem::Interface { .. } => {
-                    gen.push_str("    - interface `");
-                    gen.push_str(name);
-                    gen.push_str("`\n");
+                    r#gen.push_str("    - interface `");
+                    r#gen.push_str(name);
+                    r#gen.push_str("`\n");
                 }
                 WorldItem::Function(_) => {
-                    gen.push_str("    - function `");
-                    gen.push_str(name);
-                    gen.push_str("`\n");
+                    r#gen.push_str("    - function `");
+                    r#gen.push_str(name);
+                    r#gen.push_str("`\n");
                 }
                 WorldItem::Type(_) => {
-                    gen.push_str("    - type `");
-                    gen.push_str(name);
-                    gen.push_str("`\n");
+                    r#gen.push_str("    - type `");
+                    r#gen.push_str(name);
+                    r#gen.push_str("`\n");
                 }
             }
         }
-        gen.push_str("\n");
+        r#gen.push_str("\n");
     }
 
     fn import_interface(
@@ -126,11 +126,11 @@ impl WorldGenerator for Markdown {
         );
         self.hrefs
             .insert(name.to_string(), format!("#{}", name.to_snake_case()));
-        let mut gen = self.interface(resolve);
-        gen.docs(&resolve.interfaces[id].docs);
-        gen.push_str("\n");
-        gen.types(id);
-        gen.funcs(id);
+        let mut r#gen = self.interface(resolve);
+        r#gen.docs(&resolve.interfaces[id].docs);
+        r#gen.push_str("\n");
+        r#gen.types(id);
+        r#gen.funcs(id);
 
         Ok(())
     }
@@ -144,9 +144,9 @@ impl WorldGenerator for Markdown {
     ) {
         let name = &resolve.worlds[world].name;
         uwriteln!(self.src, "## Imported functions to world `{name}`\n");
-        let mut gen = self.interface(resolve);
+        let mut r#gen = self.interface(resolve);
         for (_, func) in funcs {
-            gen.func(func);
+            r#gen.func(func);
         }
     }
 
@@ -165,9 +165,9 @@ impl WorldGenerator for Markdown {
         );
         self.hrefs
             .insert(name.to_string(), format!("#{}", name.to_snake_case()));
-        let mut gen = self.interface(resolve);
-        gen.types(id);
-        gen.funcs(id);
+        let mut r#gen = self.interface(resolve);
+        r#gen.types(id);
+        r#gen.funcs(id);
         Ok(())
     }
 
@@ -180,9 +180,9 @@ impl WorldGenerator for Markdown {
     ) -> Result<()> {
         let name = &resolve.worlds[world].name;
         uwriteln!(self.src, "## Exported functions from world `{name}`\n");
-        let mut gen = self.interface(resolve);
+        let mut r#gen = self.interface(resolve);
         for (_, func) in funcs {
-            gen.func(func);
+            r#gen.func(func);
         }
         Ok(())
     }
@@ -196,9 +196,9 @@ impl WorldGenerator for Markdown {
     ) {
         let name = &resolve.worlds[world].name;
         uwriteln!(self.src, "## Exported types from world `{name}`\n");
-        let mut gen = self.interface(resolve);
+        let mut r#gen = self.interface(resolve);
         for (name, ty) in types {
-            gen.define_type(name, *ty);
+            r#gen.define_type(name, *ty);
         }
     }
 
@@ -237,7 +237,7 @@ impl WorldGenerator for Markdown {
 impl Markdown {
     fn interface<'a>(&'a mut self, resolve: &'a Resolve) -> InterfaceGenerator<'a> {
         InterfaceGenerator {
-            gen: self,
+            r#gen: self,
             resolve,
             types_header_printed: false,
         }
@@ -245,7 +245,7 @@ impl Markdown {
 }
 
 struct InterfaceGenerator<'a> {
-    gen: &'a mut Markdown,
+    r#gen: &'a mut Markdown,
     resolve: &'a Resolve,
     types_header_printed: bool,
 }
@@ -268,7 +268,7 @@ impl InterfaceGenerator<'_> {
             "#### <a id=\"{0}\"></a>`",
             func.name.to_snake_case()
         ));
-        self.gen
+        self.r#gen
             .hrefs
             .insert(func.name.clone(), format!("#{}", func.name.to_snake_case()));
         self.push_str(&func.name);
@@ -305,7 +305,7 @@ impl InterfaceGenerator<'_> {
     }
 
     fn push_str(&mut self, s: &str) {
-        self.gen.src.push_str(s);
+        self.r#gen.src.push_str(s);
     }
 
     fn print_ty(&mut self, ty: &Type) {
@@ -448,7 +448,7 @@ impl InterfaceGenerator<'_> {
             type_,
             name,
         ));
-        self.gen
+        self.r#gen
             .hrefs
             .insert(name.to_string(), format!("#{}", name.to_snake_case()));
     }
@@ -471,16 +471,16 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 f = field.name.to_snake_case(),
                 name = field.name,
             ));
-            self.gen.hrefs.insert(
+            self.r#gen.hrefs.insert(
                 format!("{}::{}", name, field.name),
                 format!("#{}.{}", name.to_snake_case(), field.name.to_snake_case()),
             );
             self.print_ty(&field.ty);
             if field.docs.contents.is_some() {
-                self.gen.src.indent(1);
+                self.r#gen.src.indent(1);
                 self.push_str("\n<p>");
                 self.docs(&field.docs);
-                self.gen.src.deindent(1);
+                self.r#gen.src.deindent(1);
             }
             self.push_str("\n");
         }
@@ -505,7 +505,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 f = i,
                 name = i,
             ));
-            self.gen.hrefs.insert(
+            self.r#gen.hrefs.insert(
                 format!("{}::{}", name, i),
                 format!("#{}.{}", name.to_snake_case(), i),
             );
@@ -527,15 +527,15 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 f = flag.name.to_snake_case(),
                 name = flag.name,
             ));
-            self.gen.hrefs.insert(
+            self.r#gen.hrefs.insert(
                 format!("{}::{}", name, flag.name),
                 format!("#{}.{}", name.to_snake_case(), flag.name.to_snake_case()),
             );
             if flag.docs.contents.is_some() {
-                self.gen.src.indent(1);
+                self.r#gen.src.indent(1);
                 self.push_str("\n<p>");
                 self.docs(&flag.docs);
-                self.gen.src.deindent(1);
+                self.r#gen.src.deindent(1);
             }
             self.push_str("\n");
         }
@@ -554,7 +554,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 c = case.name.to_snake_case(),
                 name = case.name,
             ));
-            self.gen.hrefs.insert(
+            self.r#gen.hrefs.insert(
                 format!("{}::{}", name, case.name),
                 format!("#{}.{}", name.to_snake_case(), case.name.to_snake_case()),
             );
@@ -563,10 +563,10 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 self.print_ty(ty);
             }
             if case.docs.contents.is_some() {
-                self.gen.src.indent(1);
+                self.r#gen.src.indent(1);
                 self.push_str("\n<p>");
                 self.docs(&case.docs);
-                self.gen.src.deindent(1);
+                self.r#gen.src.deindent(1);
             }
             self.push_str("\n");
         }
@@ -585,15 +585,15 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 c = case.name.to_snake_case(),
                 name = case.name,
             ));
-            self.gen.hrefs.insert(
+            self.r#gen.hrefs.insert(
                 format!("{}::{}", name, case.name),
                 format!("#{}.{}", name.to_snake_case(), case.name.to_snake_case()),
             );
             if case.docs.contents.is_some() {
-                self.gen.src.indent(1);
+                self.r#gen.src.indent(1);
                 self.push_str("\n<p>");
                 self.docs(&case.docs);
-                self.gen.src.deindent(1);
+                self.r#gen.src.deindent(1);
             }
             self.push_str("\n");
         }

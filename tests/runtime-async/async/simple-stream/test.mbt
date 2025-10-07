@@ -1,5 +1,5 @@
 //@ [lang]
-//@ path = 'gen/interface/my/test_/i/stub.mbt'
+//@ path = 'r#gen/interface/my/test_/i/stub.mbt'
 
 pub async fn read_stream(x : @ffi.StreamReader[Unit]) -> Unit noraise {
       let task = @ffi.current_task()

@@ -1,5 +1,5 @@
 //@ [lang]
-//@ path = 'gen/interface/a/b/i/stub.mbt'
+//@ path = 'r#gen/interface/a/b/i/stub.mbt'
 
 ///|
 pub async fn one_argument(x : UInt) -> Unit {

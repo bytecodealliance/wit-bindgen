@@ -1,5 +1,5 @@
 //@ [lang]
-//@ path = 'gen/interface/test_/flavorful/toTest/stub.mbt'
+//@ path = 'r#gen/interface/test_/flavorful/toTest/stub.mbt'
 
 ///|
 pub fn f_list_in_record1(_a : ListInRecord1) -> Unit {

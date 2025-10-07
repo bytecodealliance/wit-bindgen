@@ -736,7 +736,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::ListLower { element, realloc } => {
                 let alloc = self.r#gen.path_to_std_alloc_module();
-                let rt = self.gen.gen.runtime_path().to_string();
+                let rt = self.r#gen.r#gen.runtime_path().to_string();
                 let body = self.blocks.pop().unwrap();
                 let tmp = self.tmp();
                 let vec = format!("vec{tmp}");

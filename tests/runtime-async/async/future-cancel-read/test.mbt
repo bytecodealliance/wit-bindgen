@@ -1,5 +1,5 @@
 //@ [lang]
-//@ path = 'gen/interface/my/test_/i/stub.mbt'
+//@ path = 'r#gen/interface/my/test_/i/stub.mbt'
 
 ///|
 pub async fn cancel_before_read(
