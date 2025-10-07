@@ -11,6 +11,7 @@ use std::{
 use symbol_name::{make_external_component, make_external_symbol};
 use wit_bindgen_c::to_c_ident;
 use wit_bindgen_core::{
+    Files, InterfaceGenerator, Source, Types, WorldGenerator,
     abi::{self, AbiVariant, Bindgen, Bitcast, LiftLower, WasmSignature, WasmType},
     uwrite, uwriteln,
     wit_parser::{
@@ -18,7 +19,6 @@ use wit_bindgen_core::{
         Resolve, SizeAlign, Stability, Type, TypeDef, TypeDefKind, TypeId, TypeOwner, WorldId,
         WorldKey,
     },
-    Files, InterfaceGenerator, Source, Types, WorldGenerator,
 };
 
 // mod wamr;
@@ -1595,8 +1595,9 @@ impl CppInterfaceGenerator<'_> {
         variant: AbiVariant,
     ) -> (String, String) {
         let extern_name = make_external_symbol(module_name, name, variant);
-        let import = format!("extern \"C\" __attribute__((import_module(\"{module_name}\")))\n __attribute__((import_name(\"{name}\")))\n {result} {extern_name}({args});\n")
-        ;
+        let import = format!(
+            "extern \"C\" __attribute__((import_module(\"{module_name}\")))\n __attribute__((import_name(\"{name}\")))\n {result} {extern_name}({args});\n"
+        );
         (extern_name, import)
     }
 
@@ -1938,7 +1939,10 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                 }
                 uwriteln!(self.r#gen.h_src.src, "}};");
             }
-            uwriteln!(self.r#gen.h_src.src, "  std::variant<{all_types}> variants;");
+            uwriteln!(
+                self.r#gen.h_src.src,
+                "  std::variant<{all_types}> variants;"
+            );
             uwriteln!(self.r#gen.h_src.src, "}};");
             self.r#gen.dependencies.needs_variant = true;
         }

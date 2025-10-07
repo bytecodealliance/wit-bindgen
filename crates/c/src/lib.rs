@@ -10,8 +10,8 @@ use wit_bindgen_core::abi::{
     self, AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmSignature, WasmType,
 };
 use wit_bindgen_core::{
-    dealias, uwrite, uwriteln, wit_parser::*, AnonymousTypeGenerator, AsyncFilterSet, Direction,
-    Files, InterfaceGenerator as _, Ns, WorldGenerator,
+    AnonymousTypeGenerator, AsyncFilterSet, Direction, Files, InterfaceGenerator as _, Ns,
+    WorldGenerator, dealias, uwrite, uwriteln, wit_parser::*,
 };
 use wit_component::StringEncoding;
 

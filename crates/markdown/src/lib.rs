@@ -1,10 +1,10 @@
 use anyhow::Result;
 use heck::*;
-use pulldown_cmark::{html, Event, LinkType, Parser, Tag};
+use pulldown_cmark::{Event, LinkType, Parser, Tag, html};
 use std::collections::HashMap;
 use std::fmt::Write;
 use wit_bindgen_core::{
-    uwriteln, wit_parser, Files, InterfaceGenerator as _, Source, WorldGenerator,
+    Files, InterfaceGenerator as _, Source, WorldGenerator, uwriteln, wit_parser,
 };
 use wit_parser::*;
 
@@ -209,7 +209,12 @@ impl WorldGenerator for Markdown {
         for event in parser {
             if let Event::Code(code) = &event {
                 if let Some(dst) = self.hrefs.get(code.as_ref()) {
-                    let tag = Tag::Link{link_type: LinkType::Inline, dest_url: dst.as_str().into(), title: "".into(), id: "".into()};
+                    let tag = Tag::Link {
+                        link_type: LinkType::Inline,
+                        dest_url: dst.as_str().into(),
+                        title: "".into(),
+                        id: "".into(),
+                    };
                     events.push(Event::Start(tag.clone()));
                     events.push(event.clone());
                     events.push(Event::End(tag.into()));

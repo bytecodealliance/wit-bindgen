@@ -8,6 +8,8 @@ use std::{
     ops::Deref,
 };
 use wit_bindgen_core::{
+    AsyncFilterSet, Direction, Files, InterfaceGenerator as CoreInterfaceGenerator, Ns, Source,
+    WorldGenerator,
     abi::{self, AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmSignature, WasmType},
     dealias, uwrite, uwriteln,
     wit_parser::{
@@ -15,8 +17,6 @@ use wit_bindgen_core::{
         Int, InterfaceId, Record, Resolve, Result_, SizeAlign, Tuple, Type, TypeDef, TypeDefKind,
         TypeId, TypeOwner, Variant, WorldId, WorldKey,
     },
-    AsyncFilterSet, Direction, Files, InterfaceGenerator as CoreInterfaceGenerator, Ns, Source,
-    WorldGenerator,
 };
 
 // Assumptions:

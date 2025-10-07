@@ -117,19 +117,19 @@ pub unsafe fn cabi_realloc(
     align: usize,
     new_len: usize,
 ) -> *mut u8 {
-    use alloc::alloc::{alloc as allocate, handle_alloc_error, realloc, Layout};
+    use alloc::alloc::{Layout, alloc as allocate, handle_alloc_error, realloc};
 
     let layout;
     let ptr = if old_len == 0 {
         if new_len == 0 {
             return align as *mut u8;
         }
-        layout = Layout::from_size_align_unchecked(new_len, align);
-        allocate(layout)
+        layout = unsafe { Layout::from_size_align_unchecked(new_len, align) };
+        unsafe { allocate(layout) }
     } else {
         debug_assert_ne!(new_len, 0, "non-zero old_len requires non-zero new_len!");
-        layout = Layout::from_size_align_unchecked(old_len, align);
-        realloc(old_ptr, layout, new_len)
+        layout = unsafe { Layout::from_size_align_unchecked(old_len, align) };
+        unsafe { realloc(old_ptr, layout, new_len) }
     };
     if ptr.is_null() {
         // Print a nice message in debug mode, but in release mode don't

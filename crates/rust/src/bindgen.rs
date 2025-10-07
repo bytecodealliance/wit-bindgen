@@ -1,12 +1,12 @@
 use crate::{
-    classify_constructor_return_type, int_repr, to_rust_ident, ConstructorReturnType, Identifier,
-    InterfaceGenerator, RustFlagsRepr,
+    ConstructorReturnType, Identifier, InterfaceGenerator, RustFlagsRepr,
+    classify_constructor_return_type, int_repr, to_rust_ident,
 };
 use heck::*;
 use std::fmt::Write as _;
 use std::mem;
 use wit_bindgen_core::abi::{Bindgen, Instruction, LiftLower, WasmType};
-use wit_bindgen_core::{dealias, uwrite, uwriteln, wit_parser::*, Source};
+use wit_bindgen_core::{Source, dealias, uwrite, uwriteln, wit_parser::*};
 
 pub(super) struct FunctionBindgen<'a, 'b> {
     pub r#gen: &'b mut InterfaceGenerator<'a>,

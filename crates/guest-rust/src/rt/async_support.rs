@@ -260,20 +260,24 @@ unsafe extern "C" fn waitable_register(
 ) -> *mut c_void {
     let ptr = ptr.cast::<FutureState<'static>>();
     assert!(!ptr.is_null());
-    (*ptr).add_waitable(waitable);
-    match (*ptr).waitables.insert(waitable, (callback_ptr, callback)) {
-        Some((prev, _)) => prev,
-        None => ptr::null_mut(),
+    unsafe {
+        (*ptr).add_waitable(waitable);
+        match (*ptr).waitables.insert(waitable, (callback_ptr, callback)) {
+            Some((prev, _)) => prev,
+            None => ptr::null_mut(),
+        }
     }
 }
 
 unsafe extern "C" fn waitable_unregister(ptr: *mut c_void, waitable: u32) -> *mut c_void {
     let ptr = ptr.cast::<FutureState<'static>>();
     assert!(!ptr.is_null());
-    (*ptr).remove_waitable(waitable);
-    match (*ptr).waitables.remove(&waitable) {
-        Some((prev, _)) => prev,
-        None => ptr::null_mut(),
+    unsafe {
+        (*ptr).remove_waitable(waitable);
+        match (*ptr).waitables.remove(&waitable) {
+            Some((prev, _)) => prev,
+            None => ptr::null_mut(),
+        }
     }
 }
 

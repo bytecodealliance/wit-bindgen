@@ -2,7 +2,7 @@
 //! module documentation in `future_support.rs`.
 
 use crate::rt::async_support::waitable::{WaitableOp, WaitableOperation};
-use crate::rt::async_support::{AbiBuffer, ReturnCode, DROPPED};
+use crate::rt::async_support::{AbiBuffer, DROPPED, ReturnCode};
 use {
     crate::rt::Cleanup,
     std::{
