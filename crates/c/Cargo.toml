@@ -17,14 +17,14 @@ doctest = false
 test = false
 
 [dependencies]
-wit-bindgen-core = { workspace = true }
-wit-component = { workspace = true }
+anyhow = { workspace = true }
+clap = { workspace = true, optional = true }
+heck = { workspace = true }
+indexmap = { workspace = true }
 wasm-encoder = { workspace = true }
 wasm-metadata = { workspace = true }
-anyhow = { workspace = true }
-heck = { workspace = true }
-clap = { workspace = true, optional = true }
-indexmap = { workspace = true }
+wit-bindgen-core = { workspace = true }
+wit-component = { workspace = true }
 
 [features]
 clap = ['dep:clap', 'wit-bindgen-core/clap']

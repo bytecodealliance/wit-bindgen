@@ -17,16 +17,16 @@ doctest = false
 test = false
 
 [dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true, optional = true }
+heck = { workspace = true }
+indexmap = { workspace = true }
+wasm-metadata = { workspace = true }
 wit-bindgen-core = { workspace = true }
 wit-component = { workspace = true }
 wit-parser = { workspace = true }
-wasm-metadata = { workspace = true }
-heck = { workspace = true }
-clap = { workspace = true, optional = true }
-anyhow = { workspace = true }
-indexmap = { workspace = true }
 
 [features]
-default = ["aot"]
 aot = []
+default = ["aot"]
 mono = []

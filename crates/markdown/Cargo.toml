@@ -17,7 +17,7 @@ test = false
 
 [dependencies]
 anyhow = { workspace = true }
-heck = { workspace = true }
-pulldown-cmark = { workspace = true }
 clap = { workspace = true, optional = true }
+heck = { workspace = true }
+pulldown-cmark = { workspace = true, features = ['html'] }
 wit-bindgen-core = { workspace = true }

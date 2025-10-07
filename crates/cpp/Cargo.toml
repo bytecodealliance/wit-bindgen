@@ -15,14 +15,14 @@ doctest = false
 test = false
 
 [dependencies]
-wit-bindgen-core = { workspace = true }
-wit-component = { workspace = true }
+anyhow = { workspace = true }
+clap = { workspace = true, optional = true }
 wasm-encoder = { workspace = true }
 wasm-metadata = { workspace = true }
-wit-bindgen-c = { workspace = true }
-anyhow = { workspace = true }
 heck = { workspace = true }
-clap = { workspace = true, optional = true }
+wit-bindgen-c = { workspace = true }
+wit-bindgen-core = { workspace = true }
+wit-component = { workspace = true }
 
 [dev-dependencies]
 test-helpers = { path = '../test-helpers' }
