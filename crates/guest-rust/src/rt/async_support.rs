@@ -458,7 +458,7 @@ pub fn yield_blocking() -> bool {
 
     #[cfg(target_arch = "wasm32")]
     #[link(wasm_import_module = "$root")]
-    extern "C" {
+    unsafe extern "C" {
         #[link_name = "[thread-yield]"]
         fn yield_() -> bool;
     }
@@ -519,7 +519,7 @@ pub fn backpressure_set(enabled: bool) {
 
     #[cfg(target_arch = "wasm32")]
     #[link(wasm_import_module = "$root")]
-    extern "C" {
+    unsafe extern "C" {
         #[link_name = "[backpressure-set]"]
         fn backpressure_set(_: i32);
     }
@@ -536,7 +536,7 @@ pub fn backpressure_inc() {
 
     #[cfg(target_arch = "wasm32")]
     #[link(wasm_import_module = "$root")]
-    extern "C" {
+    unsafe extern "C" {
         #[link_name = "[backpressure-inc]"]
         fn backpressure_inc();
     }
@@ -553,7 +553,7 @@ pub fn backpressure_dec() {
 
     #[cfg(target_arch = "wasm32")]
     #[link(wasm_import_module = "$root")]
-    extern "C" {
+    unsafe extern "C" {
         #[link_name = "[backpressure-dec]"]
         fn backpressure_dec();
     }
@@ -569,7 +569,7 @@ fn context_get() -> *mut u8 {
 
     #[cfg(target_arch = "wasm32")]
     #[link(wasm_import_module = "$root")]
-    extern "C" {
+    unsafe extern "C" {
         #[link_name = "[context-get-0]"]
         fn get() -> *mut u8;
     }
@@ -585,7 +585,7 @@ unsafe fn context_set(value: *mut u8) {
 
     #[cfg(target_arch = "wasm32")]
     #[link(wasm_import_module = "$root")]
-    extern "C" {
+    unsafe extern "C" {
         #[link_name = "[context-set-0]"]
         fn set(value: *mut u8);
     }
@@ -619,7 +619,7 @@ impl Drop for TaskCancelOnDrop {
 
         #[cfg(target_arch = "wasm32")]
         #[link(wasm_import_module = "[export]$root")]
-        extern "C" {
+        unsafe extern "C" {
             #[link_name = "[task-cancel]"]
             fn cancel();
         }

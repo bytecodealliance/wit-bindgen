@@ -164,7 +164,7 @@ pub fn run_ctors_once() {
             // exported function to (unconditionally) run ctors. By using
             // this function, the linked module is opting into "manually"
             // running ctors.
-            extern "C" {
+            unsafe extern "C" {
                 fn __wasm_call_ctors();
             }
             __wasm_call_ctors();

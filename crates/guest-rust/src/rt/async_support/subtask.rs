@@ -284,7 +284,7 @@ unsafe fn cancel(_: u32) -> u32 {
 
 #[cfg(target_arch = "wasm32")]
 #[link(wasm_import_module = "$root")]
-extern "C" {
+unsafe extern "C" {
     #[link_name = "[subtask-cancel]"]
     fn cancel(handle: u32) -> u32;
     #[link_name = "[subtask-drop]"]

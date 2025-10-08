@@ -14,8 +14,7 @@
             "installOhMyZsh": false,
             "upgradePackages": true,
             "nonFreePackages": false
-        },
-        "ghcr.io/devcontainers-extra/features/zig:1.1.2": {}
+        }
     },
     "customizations": {
         "vscode": {
@@ -29,11 +28,7 @@
                 // "rust-analyzer.check.command": "clippy",
                 "explorer.compactFolders": false,
                 "rust-analyzer.inlayHints.implicitDrops.enable": true,
-                "editor.fontWeight": "bold",
-                "workbench.colorTheme": "Default Dark Modern",
-                "workbench.preferredDarkColorTheme": "Monokai",
-                "workbench.activityBar.location": "top",
-                "workbench.sideBar.location": "right"
+                "editor.fontWeight": "bold"
             },
             "extensions": [
                 "ms-azuretools.vscode-docker",
@@ -43,8 +38,7 @@
                 "tamasfe.even-better-toml",
                 "vadimcn.vscode-lldb",
                 "skellock.just",
-                "ms-vscode-remote.remote-containers",
-                "ziglang.vscode-zig"
+                "ms-vscode-remote.remote-containers"
             ]
         }
     },
