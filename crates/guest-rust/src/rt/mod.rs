@@ -81,7 +81,7 @@ mod wit_bindgen_cabi_realloc;
 pub fn maybe_link_cabi_realloc() {
     #[cfg(all(target_family = "wasm", not(target_env = "p2")))]
     {
-        extern "C" {
+        unsafe extern "C" {
             fn cabi_realloc(
                 old_ptr: *mut u8,
                 old_len: usize,

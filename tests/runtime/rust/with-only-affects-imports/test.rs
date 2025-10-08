@@ -13,7 +13,7 @@ mod other {
                 bar: func(a: a);
             }
 
-            world r#gen {
+            world gen {
                 import foo;
             }
         ",

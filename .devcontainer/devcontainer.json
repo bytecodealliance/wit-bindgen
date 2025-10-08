@@ -20,29 +20,20 @@
         "vscode": {
             "settings": {
                 "lldb.executable": "/usr/bin/lldb",
-                // VS Code don't watch files under ./target
                 "files.watcherExclude": {
                     "**/target/**": true
-                },
-                "rust-analyzer.checkOnSave": true,
-                // "rust-analyzer.check.command": "clippy",
-                "explorer.compactFolders": false,
-                "rust-analyzer.inlayHints.implicitDrops.enable": true,
-                "editor.fontWeight": "bold"
+                }
             },
             "extensions": [
                 "ms-azuretools.vscode-docker",
                 "rust-lang.rust-analyzer",
                 "fill-labs.dependi",
-                "BytecodeAlliance.wit-idl",
                 "tamasfe.even-better-toml",
                 "vadimcn.vscode-lldb",
-                "skellock.just",
                 "ms-vscode-remote.remote-containers"
             ]
         }
     },
     "postCreateCommand": "sh .devcontainer/setup.sh",
-    // Comment out to connect as root instead. More info: https://aka.ms/vscode-remote/containers/non-root.
     "remoteUser": "vscode"
 }

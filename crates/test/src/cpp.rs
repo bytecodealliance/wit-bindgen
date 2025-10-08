@@ -17,7 +17,7 @@ struct LangConfig {
     /// Space-separated list or array of compiler flags to pass.
     #[serde(default)]
     cflags: StringList,
-} 
+}
 
 fn clangpp(runner: &Runner<'_>) -> PathBuf {
     match &runner.opts.c.wasi_sdk_path {
