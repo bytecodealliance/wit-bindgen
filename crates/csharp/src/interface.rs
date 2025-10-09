@@ -50,6 +50,15 @@ pub(crate) struct InterfaceGenerator<'a> {
 }
 
 impl InterfaceGenerator<'_> {
+    pub fn is_async(kind: &FunctionKind) -> bool {
+        matches!(
+            kind,
+            FunctionKind::AsyncFreestanding
+                | FunctionKind::AsyncStatic(_)
+                | FunctionKind::AsyncMethod(_)
+        )
+    }
+
     pub(crate) fn define_interface_types(&mut self, id: InterfaceId) {
         let mut live = LiveTypes::default();
         live.add_interface(self.resolve, id);
@@ -117,6 +126,7 @@ impl InterfaceGenerator<'_> {
                 // Handles don't require a separate definition beyond what we already define for the corresponding
                 // resource types.
             }
+            TypeDefKind::Future(t) => self.type_future(type_id, typedef_name, t, &type_def.docs),
             _ => unreachable!(),
         }
     }
@@ -170,68 +180,79 @@ impl InterfaceGenerator<'_> {
     }
 
     pub(crate) fn import(&mut self, import_module_name: &str, func: &Function) {
-        let (camel_name, modifiers) = match &func.kind {
+        let camel_name = match &func.kind {
             FunctionKind::Freestanding
             | FunctionKind::Static(_)
             | FunctionKind::AsyncFreestanding
-            | FunctionKind::AsyncStatic(_) => (func.item_name().to_upper_camel_case(), "static"),
+            | FunctionKind::AsyncStatic(_) => func.item_name().to_upper_camel_case(),
             FunctionKind::Method(_) | FunctionKind::AsyncMethod(_) => {
-                (func.item_name().to_upper_camel_case(), "")
+                func.item_name().to_upper_camel_case()
             }
-            FunctionKind::Constructor(id) => (
-                self.csharp_gen.all_resources[id].name.to_upper_camel_case(),
-                "",
-            ),
+            FunctionKind::Constructor(id) => {
+                self.csharp_gen.all_resources[id].name.to_upper_camel_case()
+            }
         };
 
         let access = self.csharp_gen.access_modifier();
 
-        let extra_modifiers = extra_modifiers(func, &camel_name);
+        let modifiers = modifiers(func, &camel_name, Direction::Import);
 
         let interop_camel_name = func.item_name().to_upper_camel_case();
 
         let sig = self.resolve.wasm_signature(AbiVariant::GuestImport, func);
 
-        let wasm_result_type = match &sig.results[..] {
-            [] => "void",
+        let is_async = matches!(
+            func.kind,
+            FunctionKind::AsyncFreestanding
+                | FunctionKind::AsyncStatic(_)
+                | FunctionKind::AsyncMethod(_)
+        );
+
+        let mut wasm_result_type = match &sig.results[..] {
+            [] => {
+                if is_async {
+                    "uint"
+                } else {
+                    "void"
+                }
+            }
             [result] => crate::world_generator::wasm_type(*result),
             _ => unreachable!(),
         };
 
-        let (result_type, results) = if let FunctionKind::Constructor(_) = &func.kind {
-            (String::new(), Vec::new())
+        let (result_type, results) = self.func_payload_and_return_type(func);
+
+        let is_async = InterfaceGenerator::is_async(&func.kind);
+
+        let requires_async_return_buffer_param = is_async && !sig.results.is_empty();
+        let sig_unsafe = if requires_async_return_buffer_param {
+            "unsafe "
         } else {
-            match func.result {
-                None => ("void".to_string(), Vec::new()),
-                Some(ty) => {
-                    let (payload, results) = payload_and_results(
-                        self.resolve,
-                        ty,
-                        self.csharp_gen.opts.with_wit_results,
-                    );
-                    (
-                        if let Some(ty) = payload {
-                            self.csharp_gen.needs_result = true;
-                            self.type_name_with_qualifier(&ty, true)
-                        } else {
-                            "void".to_string()
-                        },
-                        results,
-                    )
-                }
-            }
+            ""
         };
 
-        let wasm_params = sig
-            .params
-            .iter()
-            .enumerate()
-            .map(|(i, param)| {
-                let ty = crate::world_generator::wasm_type(*param);
-                format!("{ty} p{i}")
-            })
-            .collect::<Vec<_>>()
-            .join(", ");
+        let wasm_params: String = {
+            let param_list = sig
+                .params
+                .iter()
+                .enumerate()
+                .map(|(i, param)| {
+                    let ty = crate::world_generator::wasm_type(*param);
+                    format!("{ty} p{i}")
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+
+            if requires_async_return_buffer_param {
+                if param_list.is_empty() {
+                    "void *taskResultBuffer".to_string()
+                } else {
+                    format!("{}, void *taskResultBuffer", param_list)
+                }
+            } else {
+                param_list
+            }
+        };
 
         let mut funcs: Vec<(String, String)> = Vec::new();
         funcs.push(self.gen_import_src(func, &results, ParameterType::ABI));
@@ -251,7 +272,12 @@ impl InterfaceGenerator<'_> {
             funcs.push(self.gen_import_src(func, &results, ParameterType::Memory));
         }
 
-        let import_name = &func.name;
+        let import_name = if is_async {
+            wasm_result_type = "uint";
+            format!("[async-lower]{}", func.name)
+        } else {
+            func.name.to_string()
+        };
 
         let target = if let FunctionKind::Freestanding = &func.kind {
             &mut self.csharp_interop_src
@@ -265,7 +291,7 @@ impl InterfaceGenerator<'_> {
             internal static class {interop_camel_name}WasmInterop
             {{
                 [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "{import_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
-                internal static extern {wasm_result_type} wasmImport{interop_camel_name}({wasm_params});
+                internal static extern {sig_unsafe}{wasm_result_type} wasmImport{interop_camel_name}({wasm_params});
             }}
             "#
         );
@@ -274,13 +300,80 @@ impl InterfaceGenerator<'_> {
             uwrite!(
                 target,
                 r#"
-                    {access} {extra_modifiers} {modifiers} unsafe {result_type} {camel_name}({params})
+                    {access} {modifiers} unsafe {result_type} {camel_name}({params})
                     {{
                         {src}
                     }}
                 "#
             );
         }
+    }
+
+    fn func_payload_and_return_type(&mut self, func: &Function) -> (String, Vec<TypeId>) {
+        let return_type = self.func_return_type(func);
+        let results = if let FunctionKind::Constructor(_) = &func.kind {
+            Vec::new()
+        } else {
+            let payload = match func.result {
+                None => Vec::new(),
+                Some(ty) => {
+                    let (_payload, results) = payload_and_results(
+                        self.resolve,
+                        ty,
+                        self.csharp_gen.opts.with_wit_results,
+                    );
+                    results
+                }
+            };
+
+            payload
+        };
+
+        (return_type, results)
+    }
+
+    fn func_return_type(&mut self, func: &Function) -> String {
+        let result_type = if let FunctionKind::Constructor(_) = &func.kind {
+            String::new()
+        } else {
+            let base_type = match func.result {
+                None => "void".to_string(),
+                Some(_ty) => {
+                    let result_type = match func.result {
+                        None => "void".to_string(),
+                        Some(ty) => {
+                            let (payload, _results) = payload_and_results(
+                                self.resolve,
+                                ty,
+                                self.csharp_gen.opts.with_wit_results,
+                            );
+                            if let Some(ty) = payload {
+                                self.csharp_gen.needs_result = true;
+                                self.type_name_with_qualifier(&ty, true)
+                            } else {
+                                "void".to_string()
+                            }
+                        }
+                    };
+
+                    result_type
+                }
+            };
+
+            let asyncified_type = match &func.kind {
+                FunctionKind::AsyncFreestanding
+                | FunctionKind::AsyncStatic(_)
+                | FunctionKind::AsyncMethod(_) => match func.result {
+                    None => "Task".to_string(),
+                    Some(_ty) => format!("Task<{}>", base_type),
+                },
+                _ => base_type,
+            };
+
+            asyncified_type
+        };
+
+        result_type
     }
 
     fn gen_import_src(
@@ -306,6 +399,7 @@ impl InterfaceGenerator<'_> {
                 .collect(),
             results.clone(),
             parameter_type,
+            func.result,
         );
 
         abi::call(
@@ -340,49 +434,24 @@ impl InterfaceGenerator<'_> {
     }
 
     pub(crate) fn export(&mut self, func: &Function, interface_name: Option<&WorldKey>) {
-        let (camel_name, modifiers) = match &func.kind {
+        let camel_name = match &func.kind {
             FunctionKind::Freestanding
             | FunctionKind::Static(_)
             | FunctionKind::AsyncFreestanding
-            | FunctionKind::AsyncStatic(_) => {
-                (func.item_name().to_upper_camel_case(), "static abstract")
-            }
+            | FunctionKind::AsyncStatic(_) => func.item_name().to_upper_camel_case(),
             FunctionKind::Method(_) | FunctionKind::AsyncMethod(_) => {
-                (func.item_name().to_upper_camel_case(), "")
+                func.item_name().to_upper_camel_case()
             }
-            FunctionKind::Constructor(id) => (
-                self.csharp_gen.all_resources[id].name.to_upper_camel_case(),
-                "",
-            ),
+            FunctionKind::Constructor(id) => {
+                self.csharp_gen.all_resources[id].name.to_upper_camel_case()
+            }
         };
 
-        let extra_modifiers = extra_modifiers(func, &camel_name);
+        let modifiers = modifiers(func, &camel_name, Direction::Export);
 
         let sig = self.resolve.wasm_signature(AbiVariant::GuestExport, func);
 
-        let (result_type, results) = if let FunctionKind::Constructor(_) = &func.kind {
-            (String::new(), Vec::new())
-        } else {
-            match func.result {
-                None => ("void".to_owned(), Vec::new()),
-                Some(ty) => {
-                    let (payload, results) = payload_and_results(
-                        self.resolve,
-                        ty,
-                        self.csharp_gen.opts.with_wit_results,
-                    );
-                    (
-                        if let Some(ty) = payload {
-                            self.csharp_gen.needs_result = true;
-                            self.type_name(&ty)
-                        } else {
-                            "void".to_string()
-                        },
-                        results,
-                    )
-                }
-            }
-        };
+        let (result_type, results) = self.func_payload_and_return_type(func);
 
         let mut bindgen = FunctionBindgen::new(
             self,
@@ -391,6 +460,14 @@ impl InterfaceGenerator<'_> {
             (0..sig.params.len()).map(|i| format!("p{i}")).collect(),
             results,
             ParameterType::ABI,
+            func.result,
+        );
+
+        let async_ = matches!(
+            func.kind,
+            FunctionKind::AsyncFreestanding
+                | FunctionKind::AsyncStatic(_)
+                | FunctionKind::AsyncMethod(_)
         );
 
         abi::call(
@@ -399,7 +476,7 @@ impl InterfaceGenerator<'_> {
             LiftLower::LiftArgsLowerResults,
             func,
             &mut bindgen,
-            false,
+            async_,
         );
 
         let src = bindgen.src;
@@ -411,10 +488,14 @@ impl InterfaceGenerator<'_> {
             .collect::<Vec<_>>()
             .join(";\n");
 
-        let wasm_result_type = match &sig.results[..] {
-            [] => "void",
-            [result] => crate::world_generator::wasm_type(*result),
-            _ => unreachable!(),
+        let wasm_result_type = if async_ {
+            "uint"
+        } else {
+            match &sig.results[..] {
+                [] => "void",
+                [result] => crate::world_generator::wasm_type(*result),
+                _ => unreachable!(),
+            }
         };
 
         let wasm_params = sig
@@ -444,9 +525,17 @@ impl InterfaceGenerator<'_> {
             .collect::<Vec<String>>()
             .join(", ");
 
-        let interop_name = format!("wasmExport{}", func.name.to_upper_camel_case());
+        let wasm_func_name = func.name.clone();
+        let interop_name = format!("wasmExport{}", wasm_func_name.to_upper_camel_case());
         let core_module_name = interface_name.map(|s| self.resolve.name_world_key(s));
         let export_name = func.legacy_core_export_name(core_module_name.as_deref());
+
+        let export_name = if async_ {
+            format!("[async-lift]{export_name}")
+        } else {
+            export_name.to_string()
+        };
+
         let access = self.csharp_gen.access_modifier();
 
         uwrite!(
@@ -479,6 +568,7 @@ impl InterfaceGenerator<'_> {
                 (0..sig.results.len()).map(|i| format!("p{i}")).collect(),
                 Vec::new(),
                 ParameterType::ABI,
+                func.result,
             );
 
             abi::post_return(bindgen.interface_gen.resolve, func, &mut bindgen);
@@ -496,10 +586,42 @@ impl InterfaceGenerator<'_> {
             );
         }
 
+        if async_ {
+            let import_module_name = &self.resolve.name_world_key(interface_name.unwrap());
+
+            uwriteln!(
+                self.csharp_interop_src,
+                r#"
+            [global::System.Runtime.InteropServices.UnmanagedCallersOnlyAttribute(EntryPoint = "[callback][async-lift]{import_module_name}#{wasm_func_name}")]
+            public static uint {camel_name}Callback(uint eventRaw, uint waitable, uint code)
+            {{
+                // TODO: decode the parameters
+                return (uint)CallbackCode.Exit;
+            }}
+            "#
+            );
+
+            // TODO: The task return function can take up to 16 core parameters.
+            let task_return_param = match &sig.results[..] {
+                [] => "",
+                [_result] => &format!("{} result", wasm_result_type),
+                _ => unreachable!(),
+            };
+
+            uwriteln!(
+                self.csharp_interop_src,
+                r#"
+            // TODO: The task return function can take up to 16 core parameters.
+            [global::System.Runtime.InteropServices.DllImportAttribute("[export]{import_module_name}", EntryPoint = "[task-return]{wasm_func_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
+            internal static extern void {camel_name}TaskReturn({task_return_param});
+            "#
+            );
+        }
+
         if !matches!(&func.kind, FunctionKind::Constructor(_)) {
             uwrite!(
                 self.src,
-                r#"{extra_modifiers} {modifiers} {result_type} {camel_name}({params});
+                r#"{modifiers} {result_type} {camel_name}({params});
 
             "#
             );
@@ -658,6 +780,17 @@ impl InterfaceGenerator<'_> {
                     TypeDefKind::Handle(handle) => {
                         let (Handle::Own(id) | Handle::Borrow(id)) = handle;
                         self.type_name_with_qualifier(&Type::Id(*id), qualifier)
+                    }
+                    TypeDefKind::Future(ty) => {
+                        let name = ty
+                            .as_ref()
+                            .map(|ty| self.type_name_with_qualifier(ty, qualifier))
+                            .unwrap_or_else(|| "".to_owned());
+                        if name.is_empty() {
+                            return "Task".to_owned();
+                        } else {
+                            return format!("Task<{name}>");
+                        }
                     }
                     _ => {
                         if let Some(name) = &ty.name {
@@ -883,26 +1016,7 @@ impl InterfaceGenerator<'_> {
     }
 
     fn sig_string(&mut self, func: &Function, qualifier: bool) -> String {
-        let result_type = if let FunctionKind::Constructor(_) = &func.kind {
-            String::new()
-        } else {
-            match func.result {
-                None => "void".into(),
-                Some(ty) => {
-                    let (payload, _) = payload_and_results(
-                        self.resolve,
-                        ty,
-                        self.csharp_gen.opts.with_wit_results,
-                    );
-                    if let Some(ty) = payload {
-                        self.csharp_gen.needs_result = true;
-                        self.type_name_with_qualifier(&ty, qualifier)
-                    } else {
-                        "void".to_string()
-                    }
-                }
-            }
-        };
+        let result_type = self.func_return_type(&func);
 
         let params = func
             .params
@@ -1202,14 +1316,12 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .direction = self.direction;
     }
 
-    fn type_future(&mut self, id: TypeId, name: &str, ty: &Option<Type>, docs: &Docs) {
-        _ = (id, name, ty, docs);
-        todo!()
+    fn type_future(&mut self, id: TypeId, _name: &str, _ty: &Option<Type>, _docs: &Docs) {
+        self.type_name(&Type::Id(id));
     }
 
-    fn type_stream(&mut self, id: TypeId, name: &str, ty: &Option<Type>, docs: &Docs) {
-        _ = (id, name, ty, docs);
-        todo!()
+    fn type_stream(&mut self, id: TypeId, _name: &str, _ty: &Option<Type>, _docs: &Docs) {
+        self.type_name(&Type::Id(id));
     }
 }
 
@@ -1251,17 +1363,41 @@ fn payload_and_results(
     (payload, results)
 }
 
-fn extra_modifiers(func: &Function, name: &str) -> &'static str {
-    if let FunctionKind::Method(_) = &func.kind {
+fn modifiers(func: &Function, name: &str, direction: Direction) -> String {
+    let new_modifier = match &func.kind {
         // Avoid warnings about name clashes.
         //
         // TODO: add other `object` method names here
-        if name == "GetType" {
-            return "new";
-        }
-    }
+        FunctionKind::Method(_) if name == "GetType" => " new",
+        _ => "",
+    };
 
-    ""
+    let static_modifiers = match &func.kind {
+        FunctionKind::Freestanding
+        | FunctionKind::Static(_)
+        | FunctionKind::AsyncFreestanding
+        | FunctionKind::AsyncStatic(_) => "static",
+        _ => "",
+    };
+
+    let abstract_modifier = if direction == Direction::Export {
+        " abstract"
+    } else {
+        ""
+    };
+
+    let async_modifier = match &func.kind {
+        FunctionKind::AsyncMethod(_)
+        | FunctionKind::AsyncFreestanding
+        | FunctionKind::AsyncStatic(_)
+            if abstract_modifier == "" =>
+        {
+            " async"
+        }
+        _ => "",
+    };
+
+    format!("{static_modifiers}{abstract_modifier}{async_modifier}{new_modifier}")
 }
 
 fn int_type(int: Int) -> &'static str {

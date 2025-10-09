@@ -37,13 +37,19 @@ impl LanguageMethods for Csharp {
     fn should_fail_verify(
         &self,
         name: &str,
-        config: &crate::config::WitConfig,
+        _config: &crate::config::WitConfig,
         _args: &[String],
     ) -> bool {
-        match name {
-            "resource-fallible-constructor.wit" => true,
-            _ => config.async_,
-        }
+        // TODO: remove this exclusions as support is created
+        matches!(
+            name,
+            "resources-with-streams.wit"
+                | "resources-with-futures.wit"
+                | "futures.wit"
+                | "streams.wit"
+                | "error-context.wit"
+                | "resource-fallible-constructor.wit"
+        )
     }
 
     fn prepare(&self, runner: &mut Runner<'_>) -> Result<()> {
@@ -92,6 +98,18 @@ impl LanguageMethods for Csharp {
             // .arg("/bl") // to diagnose dotnet build problems
             .arg("-o")
             .arg(&out_wasm);
+
+        let os = match std::env::consts::OS {
+            "windows" => "win",
+            "linux" => std::env::consts::OS,
+            other => todo!("OS {} not supported", other),
+        };
+
+        // TODO: Workaround for no aarch64(arm64 in dotnet parlance) packages on Windows
+        if os == "win" && std::env::consts::ARCH == "aarch64" {
+            cmd.arg("/p:_hostArchitecture=x64");
+        }
+
         runner.run_command(&mut cmd)?;
 
         fs::copy(&wasm_filename, &compile.output)?;
