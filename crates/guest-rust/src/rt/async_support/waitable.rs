@@ -204,7 +204,7 @@ where
         }
 
         unsafe extern "C" fn cabi_wake(ptr: *mut c_void, code: u32) {
-            let ptr: &mut CompletionStatus = &mut *ptr.cast::<CompletionStatus>();
+            let ptr: &mut CompletionStatus = unsafe { &mut *ptr.cast::<CompletionStatus>() };
             ptr.code = Some(code);
             ptr.waker.take().unwrap().wake()
         }
@@ -397,7 +397,7 @@ where
                     // situation no cancellation is necessary, the async
                     // operation is now inert, and we can immediately return.
                     Poll::Ready(result) => {
-                        return self.as_mut().pin_project().0.result_into_cancel(result)
+                        return self.as_mut().pin_project().0.result_into_cancel(result);
                     }
 
                     // The operation, despite receiving an update via a code,

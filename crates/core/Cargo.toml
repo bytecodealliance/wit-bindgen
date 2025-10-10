@@ -5,7 +5,6 @@ version = { workspace = true }
 edition = { workspace = true }
 repository = { workspace = true }
 license = { workspace = true }
-rust-version = { workspace = true }
 homepage = 'https://github.com/bytecodealliance/wit-bindgen'
 description = """
 Low-level support for bindings generation based on WIT files for use with
@@ -16,12 +15,12 @@ Low-level support for bindings generation based on WIT files for use with
 doctest = false
 
 [dependencies]
-wit-parser = { workspace = true }
 anyhow = { workspace = true }
+clap = { workspace = true, optional = true }
 heck = { workspace = true }
 serde = { workspace = true, optional = true }
-clap = { workspace = true, optional = true }
+wit-parser = { workspace = true }
 
 [features]
-serde = ['dep:serde']
 clap = ['dep:clap']
+serde = ['dep:serde']

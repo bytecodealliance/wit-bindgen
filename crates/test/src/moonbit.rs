@@ -55,7 +55,7 @@ impl LanguageMethods for MoonBit {
         // Build the component
         let artifact = compile
             .bindings_dir
-            .join("target/wasm/release/build/gen/gen.wasm");
+            .join("target/wasm/release/build/r#gen/r#gen.wasm");
         // Embed WIT files
         let manifest_dir = compile.component.path.parent().unwrap();
         let mut cmd = Command::new("wasm-tools");

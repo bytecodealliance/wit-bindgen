@@ -86,7 +86,7 @@ unsafe fn poll(_: u32, _: *mut [u32; 2]) -> u32 {
 
 #[cfg(target_arch = "wasm32")]
 #[link(wasm_import_module = "$root")]
-extern "C" {
+unsafe extern "C" {
     #[link_name = "[waitable-set-new]"]
     fn new() -> u32;
     #[link_name = "[waitable-set-drop]"]

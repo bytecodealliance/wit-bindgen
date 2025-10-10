@@ -1,12 +1,12 @@
 use crate::{
-    classify_constructor_return_type, int_repr, to_rust_ident, ConstructorReturnType, Identifier,
-    InterfaceGenerator, RustFlagsRepr,
+    ConstructorReturnType, Identifier, InterfaceGenerator, RustFlagsRepr,
+    classify_constructor_return_type, int_repr, to_rust_ident,
 };
 use heck::*;
 use std::fmt::Write as _;
 use std::mem;
 use wit_bindgen_core::abi::{Bindgen, Instruction, LiftLower, WasmType};
-use wit_bindgen_core::{dealias, uwrite, uwriteln, wit_parser::*, Source};
+use wit_bindgen_core::{Source, dealias, uwrite, uwriteln, wit_parser::*};
 
 pub(super) struct FunctionBindgen<'a, 'b> {
     pub r#gen: &'b mut InterfaceGenerator<'a>,
@@ -736,7 +736,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::ListLower { element, realloc } => {
                 let alloc = self.r#gen.path_to_std_alloc_module();
-                let rt = self.gen.gen.runtime_path().to_string();
+                let rt = self.r#gen.r#gen.runtime_path().to_string();
                 let body = self.blocks.pop().unwrap();
                 let tmp = self.tmp();
                 let vec = format!("vec{tmp}");

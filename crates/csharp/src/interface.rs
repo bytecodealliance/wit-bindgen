@@ -8,7 +8,7 @@ use std::fmt::Write;
 use std::ops::Deref;
 use wit_bindgen_core::abi::LiftLower;
 use wit_bindgen_core::{
-    abi, uwrite, uwriteln, Direction, InterfaceGenerator as CoreInterfaceGenerator,
+    Direction, InterfaceGenerator as CoreInterfaceGenerator, abi, uwrite, uwriteln,
 };
 use wit_parser::abi::AbiVariant;
 use wit_parser::{
@@ -552,7 +552,7 @@ impl InterfaceGenerator<'_> {
                 match &ty.kind {
                     TypeDefKind::Type(ty) => self.is_primative_list(ty),
                     TypeDefKind::List(ty) if crate::world_generator::is_primitive(ty) => {
-                        return true
+                        return true;
                     }
                     _ => false,
                 }

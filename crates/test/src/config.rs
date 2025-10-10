@@ -28,8 +28,8 @@
 
 use anyhow::Context;
 use anyhow::Result;
-use serde::de::DeserializeOwned;
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
 use std::collections::HashMap;
 
 /// Configuration that can be placed at the top of runtime tests in source

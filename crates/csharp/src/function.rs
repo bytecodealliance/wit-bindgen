@@ -6,7 +6,7 @@ use std::fmt::Write;
 use std::mem;
 use std::ops::Deref;
 use wit_bindgen_core::abi::{Bindgen, Bitcast, Instruction};
-use wit_bindgen_core::{uwrite, uwriteln, Direction, Ns};
+use wit_bindgen_core::{Direction, Ns, uwrite, uwriteln};
 use wit_parser::abi::WasmType;
 use wit_parser::{
     Alignment, ArchitectureSize, Docs, FunctionKind, Handle, Resolve, SizeAlign, Type, TypeDefKind,

@@ -1,6 +1,9 @@
-FROM mcr.microsoft.com/devcontainers/rust
+# Use an official base image as a parent image
+FROM rust:latest
 
-COPY .devcontainer/setup.sh /tmp/setup.sh
-RUN chmod +x /tmp/setup.sh
-USER vscode
-RUN /tmp/setup.sh
+# FROM mcr.microsoft.com/devcontainers/rust
+
+# COPY .devcontainer/setup.sh /tmp/setup.sh
+# RUN chmod +x /tmp/setup.sh
+# USER vscode
+# RUN /tmp/setup.sh

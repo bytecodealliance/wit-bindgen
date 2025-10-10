@@ -5,7 +5,35 @@
         "dockerfile": "Dockerfile",
         "context": ".."
     },
-
-    // Comment out to connect as root instead. More info: https://aka.ms/vscode-remote/containers/non-root.
+    "features": {
+        "ghcr.io/devcontainers/features/common-utils:2.5.4": {
+            "username": "vscode",
+            "uid": 1000,
+            "gid": 1000,
+            "installZsh": false,
+            "installOhMyZsh": false,
+            "upgradePackages": true,
+            "nonFreePackages": false
+        }
+    },
+    "customizations": {
+        "vscode": {
+            "settings": {
+                "lldb.executable": "/usr/bin/lldb",
+                "files.watcherExclude": {
+                    "**/target/**": true
+                }
+            },
+            "extensions": [
+                "ms-azuretools.vscode-docker",
+                "rust-lang.rust-analyzer",
+                "fill-labs.dependi",
+                "tamasfe.even-better-toml",
+                "vadimcn.vscode-lldb",
+                "ms-vscode-remote.remote-containers"
+            ]
+        }
+    },
+    "postCreateCommand": "sh .devcontainer/setup.sh",
     "remoteUser": "vscode"
 }

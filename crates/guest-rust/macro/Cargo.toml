@@ -16,8 +16,8 @@ doctest = false
 test = false
 
 [dependencies]
-proc-macro2 = "1.0"
-quote = "1"
+proc-macro2 = {version = "=1.0.101"}
+quote = {version = "=1.0.41"}
 wit-bindgen-core = { workspace = true }
 wit-bindgen-rust = { workspace = true }
 anyhow = { workspace = true }
