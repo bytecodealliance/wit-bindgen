@@ -1,5 +1,5 @@
 //@ [lang]
-//@ path = 'r#gen/interface/test_/many_arguments/toTest/stub.mbt'
+//@ path = 'gen/interface/test_/many_arguments/toTest/stub.mbt'
 ///|
 pub fn many_arguments(
   _a1 : UInt64,

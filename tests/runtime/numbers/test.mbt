@@ -1,5 +1,5 @@
 //@ [lang]
-//@ path = 'r#gen/interface/test_/numbers/numbers/stub.mbt'
+//@ path = 'gen/interface/test_/numbers/numbers/stub.mbt'
 
 ///|
 pub fn roundtrip_u8(a : Byte) -> Byte {

@@ -1,5 +1,5 @@
 //@ [lang]
-//@ path = 'r#gen/interface/test_/lists/toTest/stub.mbt'
+//@ path = 'gen/interface/test_/lists/toTest/stub.mbt'
 
 ///|
 pub fn empty_list_param(a : FixedArray[Byte]) -> Unit {

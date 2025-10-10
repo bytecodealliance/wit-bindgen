@@ -1,5 +1,5 @@
 //@ [lang]
-//@ path = 'r#gen/interface/test_/variants/toTest/stub.mbt'
+//@ path = 'gen/interface/test_/variants/toTest/stub.mbt'
 
 ///|
 pub fn roundtrip_option(a : Float?) -> Byte? {

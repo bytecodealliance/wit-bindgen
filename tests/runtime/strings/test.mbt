@@ -1,5 +1,5 @@
 //@ [lang]
-//@ path = 'r#gen/interface/test_/strings/toTest/stub.mbt'
+//@ path = 'gen/interface/test_/strings/toTest/stub.mbt'
 
 ///|
 pub fn take_basic(s : String) -> Unit {

@@ -1,5 +1,5 @@
 //@ [lang]
-//@ path = 'r#gen/interface/a/b/theTest/stub.mbt'
+//@ path = 'gen/interface/a/b/theTest/stub.mbt'
 
 ///|
 pub fn x() -> Unit {

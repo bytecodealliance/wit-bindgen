@@ -163,7 +163,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             .drain(self.blocks.len() - cases.len()..)
             .collect::<Vec<_>>();
         let ty = self.interface_gen.type_name_with_qualifier(ty, true);
-        //let ty = self.r#gen.type_name(ty);
+        //let ty = self.gen.type_name(ty);
         let generics_position = ty.find('<');
         let lifted = self.locals.tmp("lifted");
 

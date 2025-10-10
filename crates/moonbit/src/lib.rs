@@ -25,7 +25,7 @@ use wit_bindgen_core::{
 // - Lift/Lower list<T>: T == Int/UInt/Int64/UInt64/Float/Double -> FixedArray[T], T == Byte -> Bytes, T == Char -> String
 // Organization:
 // - one package per interface (export and import are treated as different interfaces)
-// - ffi utils are under `./ffi`, and the project entrance (package as link target) is under `./r#gen`
+// - ffi utils are under `./ffi`, and the project entrance (package as link target) is under `./gen`
 // TODO: Export will share the type signatures with the import by using a newtype alias
 pub(crate) const FFI_DIR: &str = "ffi";
 
@@ -68,7 +68,7 @@ pub struct Opts {
     pub ignore_module_file: bool,
 
     /// The package/dir to generate the program entrance
-    #[cfg_attr(feature = "clap", arg(long, default_value = "r#gen"))]
+    #[cfg_attr(feature = "clap", arg(long, default_value = "gen"))]
     pub gen_dir: String,
 
     /// The project name ; or the package path prefix if the project is part of a larger project
@@ -2775,7 +2775,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let array = self.locals.tmp("array");
                 let ty = self.r#gen.type_name(element, true);
                 let size = self.r#gen.r#gen.sizes.size(element).size_wasm32();
-                // let align = self.r#gen.r#gen.sizes.align(element);
+                // let align = self.gen.gen.sizes.align(element);
                 let index = self.locals.tmp("index");
 
                 let result = match &block_results[..] {
@@ -3173,7 +3173,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let length = &operands[1];
 
                 let size = self.r#gen.r#gen.sizes.size(element).size_wasm32();
-                // let align = self.r#gen.r#gen.sizes.align(element);
+                // let align = self.gen.gen.sizes.align(element);
 
                 if !body.trim().is_empty() {
                     let index = self.locals.tmp("index");
@@ -3203,7 +3203,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::FutureLift { ty, .. } => {
                 let result = self.locals.tmp("result");
                 let op = &operands[0];
-                // let qualifier = self.r#gen.qualify_package(self.func_interface);
+                // let qualifier = self.gen.qualify_package(self.func_interface);
                 let ty = self.r#gen.type_name(&Type::Id(*ty), true);
                 let ffi = self.r#gen.qualify_package(FFI_DIR);
 

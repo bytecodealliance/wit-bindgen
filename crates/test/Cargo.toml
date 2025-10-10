@@ -23,7 +23,7 @@ log = { version = "=0.4.28" }
 rayon = { version = "=1.11.0" }
 regex = { version = "=1.11.3" }
 serde = { workspace = true }
-toml = { version = "=0.9.7" }
+toml = { version = "=0.9.8" }
 wac-graph = { version = "=0.8.0" }
 wac-parser = { version = "=0.8.0" }
 wac-types = { version = "=0.8.0" }

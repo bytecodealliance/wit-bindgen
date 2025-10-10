@@ -406,14 +406,14 @@ MoonBit can be compiled to WebAssembly using [its toolchain](https://moonbitlang
 moon build --target wasm # --debug to keep symbols
 ```
 
-The generated core wasm will be found under `target/wasm/release/build/r#gen/r#gen.wasm` by default. Then you can use `wasm-tools` to componentize the module:
+The generated core wasm will be found under `target/wasm/release/build/gen/gen.wasm` by default. Then you can use `wasm-tools` to componentize the module:
 
 ```
-wasm-tools component embed wit target/wasm/release/build/r#gen/r#gen.wasm -o target/r#gen.wasm
-wasm-tools component new target/r#gen.wasm -o target/r#gen.component.wasm
+wasm-tools component embed wit target/wasm/release/build/gen/gen.wasm -o target/gen.wasm
+wasm-tools component new target/gen.wasm -o target/gen.component.wasm
 ```
 
-You may use `--r#gen-dir` to specify which package should be responsible for the exportation. The default is `r#gen` as mentioned above.
+You may use `--gen-dir` to specify which package should be responsible for the exportation. The default is `gen` as mentioned above.
 This can be useful having one project that exports multiple worlds.
 
 When using `wit-bindgen moonbit`, you may use `--derive-show` or `--derive-eq` to derive `Show` or `Eq` traits for all types.
