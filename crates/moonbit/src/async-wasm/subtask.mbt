@@ -6,7 +6,7 @@ pub struct Subtask {
 }
 
 ///|
-pub fn Subtask::from_handle(handle : Int, code?: Int) -> Subtask {
+pub fn Subtask::from_handle(handle : Int, code? : Int) -> Subtask {
   { handle, code, dropped: false }
 }
 
@@ -15,10 +15,10 @@ pub impl Waitable for Subtask with update(self, code~ : Int) -> Unit {
   self.code = Some(code)
 }
 
+///|
 pub impl Eq for Subtask with equal(self, other) -> Bool {
   self.handle == other.handle
 }
-
 
 ///|
 pub impl Waitable for Subtask with handle(self) -> Int {
@@ -49,7 +49,7 @@ pub impl Waitable for Subtask with done(self) -> Bool {
   guard self.code is Some(code) else { return false }
   match SubtaskStatus::decode(code) {
     StartCancelled(_) => true
-    Returned(_) => true 
+    Returned(_) => true
     Started(_) => false
     Starting(_) => false
     ReturnCancelled(_) => true

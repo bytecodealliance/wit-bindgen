@@ -2345,7 +2345,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         "#
                     );
                     results.push(format!("({flag}.to_int())"));
-                    results.push(format!("({flag}.lsr(32)).to_int())"));
+                    results.push(format!("({flag} >> 32).to_int())"));
                 }
             },
 
@@ -2518,36 +2518,24 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 let none = block(none);
                 let some = block(some);
-
-                if declarations.is_empty() {
-                    uwrite!(
-                        self.src,
-                        r#"
-                        match (({op})) {{
-                            None => {{
-                                {none}
-                            }}
-                            Some({some_payload}) => {{
-                                {some}
-                            }}
-                        }}
-                        "#
-                    );
+                let assignment = if declarations.is_empty() {
+                    "".into()
                 } else {
-                    uwrite!(
-                        self.src,
-                        r#"
-                        let ({declarations}) = match (({op})) {{
-                            None => {{
-                                {none}
-                            }}
-                            Some({some_payload}) => {{
-                                {some}
-                            }}
+                    format!("let ({declarations}) = ")
+                };
+                uwrite!(
+                    self.src,
+                    r#"
+                    {assignment}match ({op}) {{
+                        None => {{
+                            {none}
                         }}
-                        "#
-                    );
-                }
+                        Some({some_payload}) => {{
+                            {some}
+                        }}
+                    }}
+                    "#,
+                );
             }
 
             Instruction::OptionLift { payload, ty } => {
@@ -2970,7 +2958,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         cleanupList.each(fn(cleanup) {{
                             {}free(cleanup.address);
                         }})
-                    ignore(ignoreList)
+                        ignore(ignoreList)
                         ",
                         self.r#gen.qualify_package(FFI_DIR)
                     );
@@ -3522,6 +3510,7 @@ fn generated_preamble(src: &mut Source, version: &str) {
 }
 
 fn print_docs(src: &mut String, docs: &Docs) {
+    uwrite!(src, "///|");
     if let Some(docs) = &docs.contents {
         let lines = docs
             .trim()
@@ -3530,6 +3519,6 @@ fn print_docs(src: &mut String, docs: &Docs) {
             .collect::<Vec<_>>()
             .join("\n");
 
-        uwrite!(src, "{}", lines)
+        uwrite!(src, "\n{}", lines)
     }
 }

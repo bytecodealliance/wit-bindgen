@@ -60,7 +60,7 @@ pub struct FutureReader[T] {
   handle : Int
   vtable : FutureVTable[T]
   mut code : Int?
-  mut dropped : Bool 
+  mut dropped : Bool
   memory_refs : Array[Int]
 }
 
@@ -77,6 +77,7 @@ pub impl[T] Waitable for FutureReader[T] with update(self, code~ : Int) -> Unit 
   self.code = Some(code)
 }
 
+///|
 pub impl[T] Eq for FutureReader[T] with equal(self, other) -> Bool {
   self.handle == other.handle
 }
@@ -143,7 +144,7 @@ pub fn[T] FutureReader::lower_read(self : FutureReader[T], ptr : Int) -> Int {
 }
 
 ///|
-pub async fn[T] FutureReader::read(self : FutureReader[T]) -> T raise {
+pub async fn[T] FutureReader::read(self : FutureReader[T]) -> T {
   let buf_ptr = self.malloc()
   self.memory_refs.push(buf_ptr)
   self.code = Some(self.lower_read(buf_ptr))
@@ -189,6 +190,7 @@ pub impl[T] Waitable for FutureWriter[T] with update(self, code~ : Int) -> Unit 
   self.code = Some(code)
 }
 
+///|
 pub impl[T] Eq for FutureWriter[T] with equal(self, other) -> Bool {
   self.handle == other.handle
 }
@@ -257,15 +259,11 @@ pub fn[T] FutureWriter::lower_write(self : FutureWriter[T], ptr : Int) -> Int {
 }
 
 ///|
-pub async fn[T] FutureWriter::write(
-  self : FutureWriter[T],
-  value : T,
-) -> Unit raise {
+pub async fn[T] FutureWriter::write(self : FutureWriter[T], value : T) -> Unit {
   // register this waitable to the current task
   let task = current_task()
   task.add_waitable(self, current_coroutine())
   defer task.remove_waitable(self)
-
   let buf_ptr = self.malloc()
   self.memory_refs.push(buf_ptr)
   self.lower(value, buf_ptr)
@@ -332,6 +330,7 @@ pub fn[T] StreamVTable::new(
   }
 }
 
+///|
 pub fn[T] new_stream(
   vtable : StreamVTable[T],
 ) -> (StreamReader[T], StreamWriter[T]) {
@@ -343,7 +342,6 @@ pub fn[T] new_stream(
     StreamWriter::new(right_handle, vtable),
   )
 }
-
 
 ///|
 pub struct StreamReader[T] {
@@ -359,10 +357,10 @@ pub impl[T] Waitable for StreamReader[T] with update(self, code~ : Int) -> Unit 
   self.code = Some(code)
 }
 
+///|
 pub impl[T] Eq for StreamReader[T] with equal(self, other) -> Bool {
   self.handle == other.handle
 }
-
 
 ///|
 pub impl[T] Waitable for StreamReader[T] with handle(self) -> Int {
@@ -408,7 +406,7 @@ pub fn[T] StreamReader::new(
   handle : Int,
   vtable : StreamVTable[T],
 ) -> StreamReader[T] {
-  { handle, vtable, code: None, memory_refs: [], dropped: false}
+  { handle, vtable, code: None, memory_refs: [], dropped: false }
 }
 
 ///|
@@ -417,15 +415,13 @@ pub async fn[T] StreamReader::read(
   buffer : FixedArray[T],
   offset? : Int = 0,
   length : Int,
-) -> Int raise {
+) -> Int {
   // register this waitable to the current task
   let task = current_task()
   task.add_waitable(self, current_coroutine())
   defer task.remove_waitable(self)
-
   let buf_ptr = (self.vtable.malloc)(length)
   self.code = Some((self.vtable.read)(self.handle, buf_ptr, length))
-
   _async_debug("stream-read(\{self.handle}) -> \{self.code.unwrap()}")
   for {
     let status = WaitableStatus::decode(self.code.unwrap())
@@ -454,7 +450,6 @@ pub struct StreamWriter[T] {
   handle : Int
   vtable : StreamVTable[T]
   mut code : Int?
-
   mut dropped : Bool
   memory_refs : Array[Int]
 }
@@ -464,10 +459,10 @@ pub impl[T] Waitable for StreamWriter[T] with update(self, code~ : Int) -> Unit 
   self.code = Some(code)
 }
 
+///|
 pub impl[T] Eq for StreamWriter[T] with equal(self, other) -> Bool {
   self.handle == other.handle
 }
-
 
 ///|
 pub impl[T] Waitable for StreamWriter[T] with handle(self) -> Int {
@@ -519,19 +514,18 @@ pub fn[T] StreamWriter::new(
   handle : Int,
   vtable : StreamVTable[T],
 ) -> StreamWriter[T] {
-  { handle, vtable, code: None, memory_refs: [], dropped: false}
+  { handle, vtable, code: None, memory_refs: [], dropped: false }
 }
 
 ///|
 pub async fn[T] StreamWriter::write(
   self : StreamWriter[T],
   buffer : FixedArray[T],
-) -> Int raise {
+) -> Int {
   // register this waitable to the current task
   let task = current_task()
   task.add_waitable(self, current_coroutine())
   defer task.remove_waitable(self)
-
   let write_buf = (self.vtable.lower)(buffer)
   self.code = Some((self.vtable.write)(self.handle, write_buf, buffer.length()))
   for {
