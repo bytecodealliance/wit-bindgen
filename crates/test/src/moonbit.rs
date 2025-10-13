@@ -9,6 +9,8 @@ use std::process::Command;
 struct LangConfig {
     #[serde(default)]
     path: String,
+    #[serde(default)]
+    pkg_config: Option<String>,
 }
 
 pub struct MoonBit;
@@ -42,9 +44,21 @@ impl LanguageMethods for MoonBit {
         // Copy the file to the bindings directory
         if !config.path.is_empty() {
             let src_path = &compile.component.path;
-            let dest_path = compile.bindings_dir.join(config.path);
+            let dest_path = compile.bindings_dir.join(&config.path);
             std::fs::copy(src_path, dest_path)?;
+
+            // Write the moon.pkg.json if provided
+            if let Some(pkg_config) = config.pkg_config {
+                let dest_path = compile
+                    .bindings_dir
+                    .join(&config.path)
+                    .parent()
+                    .unwrap()
+                    .join("moon.pkg.json");
+                std::fs::write(dest_path, pkg_config)?;
+            }
         }
+
         // Compile the MoonBit bindings to a wasm file
         let mut cmd = Command::new("moon");
         cmd.arg("build")
