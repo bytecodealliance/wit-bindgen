@@ -2005,7 +2005,7 @@ unsafe fn call_import(&self, _params: Self::ParamsLower, _results: *mut u8) -> u
                 if self.r#gen.opts.std_feature {
                     self.push_str("#[cfg(feature = \"std\")]\n");
                 }
-                self.push_str("impl std::error::Error for ");
+                self.push_str("impl ::core::error::Error for ");
                 self.push_str(&name);
                 self.push_str(" {}\n");
             }
@@ -2109,7 +2109,7 @@ unsafe fn call_import(&self, _params: Self::ParamsLower, _results: *mut u8) -> u
                 }
                 self.push_str("impl");
                 self.print_generics(mode.lifetime);
-                self.push_str(" std::error::Error for ");
+                self.push_str(" ::core::error::Error for ");
                 self.push_str(&name);
                 self.print_generics(mode.lifetime);
                 self.push_str(" {}\n");
@@ -2291,7 +2291,7 @@ unsafe fn call_import(&self, _params: Self::ParamsLower, _results: *mut u8) -> u
             if self.r#gen.opts.std_feature {
                 self.push_str("#[cfg(feature = \"std\")]\n");
             }
-            self.push_str("impl std::error::Error for ");
+            self.push_str("impl ::core::error::Error for ");
             self.push_str(&name);
             self.push_str(" {}\n");
         } else {
