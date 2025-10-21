@@ -84,7 +84,7 @@ fn debug_message(_: u32, _: &mut RetPtr) {
 
 #[cfg(target_arch = "wasm32")]
 #[link(wasm_import_module = "$root")]
-extern "C" {
+unsafe extern "C" {
     #[link_name = "[error-context-new-utf8]"]
     fn new(_: *const u8, _: usize) -> u32;
     #[link_name = "[error-context-drop]"]

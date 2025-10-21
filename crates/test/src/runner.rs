@@ -17,7 +17,7 @@ impl TestRunner {
                 return Ok(TestRunner {
                     path: runner.clone(),
                     args: Vec::new(),
-                })
+                });
             }
             Err(e) => e,
         };

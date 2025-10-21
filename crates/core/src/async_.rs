@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use std::collections::HashSet;
 use std::fmt;
 use wit_parser::{Function, FunctionKind, Resolve, WorldKey};

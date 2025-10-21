@@ -1,5 +1,5 @@
 use crate::interface::InterfaceGenerator;
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use core::panic;
 use heck::*;
 use indexmap::{IndexMap, IndexSet};
@@ -9,8 +9,8 @@ use std::mem;
 use std::str::FromStr;
 use wit_bindgen_core::abi::{Bitcast, WasmType};
 use wit_bindgen_core::{
-    dealias, name_package_module, uwrite, uwriteln, wit_parser::*, AsyncFilterSet, Files,
-    InterfaceGenerator as _, Source, Types, WorldGenerator,
+    AsyncFilterSet, Files, InterfaceGenerator as _, Source, Types, WorldGenerator, dealias,
+    name_package_module, uwrite, uwriteln, wit_parser::*,
 };
 
 mod bindgen;

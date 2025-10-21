@@ -1,5 +1,5 @@
-use crate::rt::async_support::StreamVtable;
 use crate::rt::Cleanup;
+use crate::rt::async_support::StreamVtable;
 use std::alloc::Layout;
 use std::mem::{self, MaybeUninit};
 use std::ptr;

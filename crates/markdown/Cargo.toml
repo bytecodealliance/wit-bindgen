@@ -4,7 +4,6 @@ version = { workspace = true }
 edition = { workspace = true }
 repository = { workspace = true }
 license = { workspace = true }
-rust-version = { workspace = true }
 homepage = 'https://github.com/bytecodealliance/wit-bindgen'
 description = """
 Markdown generator for WIT and the component model, typically used
@@ -17,7 +16,7 @@ test = false
 
 [dependencies]
 anyhow = { workspace = true }
-heck = { workspace = true }
-pulldown-cmark = { workspace = true }
 clap = { workspace = true, optional = true }
+heck = { workspace = true }
+pulldown-cmark = { workspace = true, features = ['html'] }
 wit-bindgen-core = { workspace = true }
