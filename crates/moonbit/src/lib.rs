@@ -36,12 +36,32 @@ pub(crate) const ASYNC_FUTURE: &str = include_str!("./async-wasm/future.mbt");
 pub(crate) const ASYNC_WASM_PRIMITIVE: &str = include_str!("./async-wasm/wasm_primitive.mbt");
 pub(crate) const ASYNC_WAITABLE_SET: &str = include_str!("./async-wasm/waitable_task.mbt");
 pub(crate) const ASYNC_SUBTASK: &str = include_str!("./async-wasm/subtask.mbt");
-pub(crate) const ASYNC_UTILS: [&str; 5] = [
-    ASYNC_PRIMITIVE,
-    ASYNC_FUTURE,
-    ASYNC_WASM_PRIMITIVE,
-    ASYNC_WAITABLE_SET,
-    ASYNC_SUBTASK,
+struct Segment<'a> {
+    name: &'a str,
+    src: &'a str,
+}
+
+pub(crate) const ASYNC_UTILS: [&Segment; 5] = [
+    &Segment {
+        name: "async_primitive",
+        src: ASYNC_PRIMITIVE,
+    },
+    &Segment {
+        name: "async_future",
+        src: ASYNC_FUTURE,
+    },
+    &Segment {
+        name: "async_wasm_primitive",
+        src: ASYNC_WASM_PRIMITIVE,
+    },
+    &Segment {
+        name: "async_waitable_set",
+        src: ASYNC_WAITABLE_SET,
+    },
+    &Segment {
+        name: "async_subtask",
+        src: ASYNC_SUBTASK,
+    },
 ];
 
 #[derive(Default, Debug, Clone)]
@@ -436,17 +456,17 @@ impl WorldGenerator for MoonBit {
         let mut body = Source::default();
         wit_bindgen_core::generated_preamble(&mut body, version);
         body.push_str(FFI);
-
+        files.push(&format!("{FFI_DIR}/top.mbt"), indent(&body).as_bytes());
         // Export Async utils
         // If async is used, export async utils
         if self.is_async || !self.futures.is_empty() {
             ASYNC_UTILS.iter().for_each(|s| {
-                body.push_str("\n");
-                body.push_str(s);
+                files.push(
+                    &format!("{FFI_DIR}/{}.mbt", s.name),
+                    indent(s.src).as_bytes(),
+                );
             });
         }
-
-        files.push(&format!("{FFI_DIR}/top.mbt"), indent(&body).as_bytes());
         files.push(
             &format!("{FFI_DIR}/moon.pkg.json"),
             "{ \"warn-list\": \"-44\", \"supported-targets\": [\"wasm\"] }".as_bytes(),
