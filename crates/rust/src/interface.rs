@@ -812,6 +812,32 @@ pub mod vtable{ordinal} {{
         let sig = self
             .resolve
             .wasm_signature(AbiVariant::GuestImportAsync, func);
+
+        // Generate `type ParamsLower`
+        //
+        uwrite!(
+            self.src,
+            "
+#[derive(Copy, Clone)]
+struct ParamsLower(
+            "
+        );
+        let mut params_lower = sig.params.as_slice();
+        if sig.retptr {
+            params_lower = &params_lower[..params_lower.len() - 1];
+        }
+        for ty in params_lower {
+            self.src.push_str(wasm_type(*ty));
+            self.src.push_str(", ");
+        }
+        uwriteln!(
+            self.src,
+            "
+);
+unsafe impl Send for ParamsLower {{}}
+            "
+        );
+
         uwriteln!(
             self.src,
             "
@@ -844,16 +870,7 @@ unsafe impl<'a> _Subtask for _MySubtask<'a> {{
         }
 
         // Generate `type ParamsLower`
-        uwrite!(self.src, "type ParamsLower = (");
-        let mut params_lower = sig.params.as_slice();
-        if sig.retptr {
-            params_lower = &params_lower[..params_lower.len() - 1];
-        }
-        for ty in params_lower {
-            self.src.push_str(wasm_type(*ty));
-            self.src.push_str(", ");
-        }
-        uwriteln!(self.src, ");");
+        uwrite!(self.src, "type ParamsLower = ParamsLower;");
 
         // Generate `const ABI_LAYOUT`
         let mut heap_types = Vec::new();
@@ -962,7 +979,7 @@ unsafe fn call_import(&self, _params: Self::ParamsLower, _results: *mut u8) -> u
                 lowers.push(start);
                 param_lowers.push(name);
             }
-            lowers.push("(_ptr,)".to_string());
+            lowers.push("ParamsLower(_ptr,)".to_string());
         } else {
             let mut f = FunctionBindgen::new(self, Vec::new(), module, true);
             let mut results = Vec::new();
@@ -974,7 +991,7 @@ unsafe fn call_import(&self, _params: Self::ParamsLower, _results: *mut u8) -> u
             for result in results.iter_mut() {
                 result.push_str(",");
             }
-            let result = format!("({})", results.join(" "));
+            let result = format!("ParamsLower({})", results.join(" "));
             lowers.push(format!("unsafe {{ {} {result} }}", String::from(f.src)));
         }
 
