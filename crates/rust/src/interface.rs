@@ -2739,8 +2739,8 @@ impl<'a> {camel}Borrow<'a>{{
 
     // NB: mutable access is not allowed due to the component model allowing
     // multiple borrows of the same resource.
-
-    fn as_ptr<T: 'static>(&self) -> *mut _{camel}Rep<T> {{
+    #[doc(hidden)]
+    pub fn as_ptr<T: 'static>(&self) -> *mut _{camel}Rep<T> {{
        {camel}::type_guard::<T>();
        self.rep.cast()
     }}
