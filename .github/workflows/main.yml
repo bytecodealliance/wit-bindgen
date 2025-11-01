@@ -69,8 +69,9 @@ jobs:
     - uses: actions/checkout@v4
       with:
         submodules: true
+    # FIXME(rust-lang/rust#148347) current rust (1.91) is broken
     - name: Install Rust
-      run: rustup update stable --no-self-update && rustup default stable
+      run: rustup update 1.90.0 --no-self-update && rustup default 1.90.0
     - run: rustup target add wasm32-wasip1 wasm32-wasip2
 
     - run: rustup target add wasm32-unknown-unknown
