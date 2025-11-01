@@ -816,12 +816,7 @@ impl Runner<'_> {
         }
         wasmparser::Validator::new_with_features(wasmparser::WasmFeatures::all())
             .validate_all(&wasm)
-            .with_context(|| {
-                format!(
-                    "compiler produced invalid wasm file {output:?} for component {}",
-                    component.name
-                )
-            })?;
+            .with_context(|| format!("compiler produced invalid wasm file {output:?}"))?;
 
         Ok(output)
     }
