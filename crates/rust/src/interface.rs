@@ -1,7 +1,8 @@
 use crate::bindgen::{FunctionBindgen, POINTER_SIZE_EXPRESSION};
 use crate::{
-    full_wit_type_name, int_repr, to_rust_ident, to_upper_camel_case, wasm_type, FnSig, Identifier,
-    InterfaceName, Ownership, RuntimeItem, RustFlagsRepr, RustWasm, TypeGeneration,
+    classify_constructor_return_type, full_wit_type_name, int_repr, to_rust_ident,
+    to_upper_camel_case, wasm_type, ConstructorReturnType, FnSig, Identifier, InterfaceName,
+    Ownership, RuntimeItem, RustFlagsRepr, RustWasm, TypeGeneration,
 };
 use anyhow::Result;
 use heck::*;
@@ -811,11 +812,37 @@ pub mod vtable{ordinal} {{
         let sig = self
             .resolve
             .wasm_signature(AbiVariant::GuestImportAsync, func);
+
+        // Generate `type ParamsLower`
+        //
+        uwrite!(
+            self.src,
+            "
+#[derive(Copy, Clone)]
+struct ParamsLower(
+            "
+        );
+        let mut params_lower = sig.params.as_slice();
+        if sig.retptr {
+            params_lower = &params_lower[..params_lower.len() - 1];
+        }
+        for ty in params_lower {
+            self.src.push_str(wasm_type(*ty));
+            self.src.push_str(", ");
+        }
+        uwriteln!(
+            self.src,
+            "
+);
+unsafe impl Send for ParamsLower {{}}
+            "
+        );
+
         uwriteln!(
             self.src,
             "
 use {async_support}::Subtask as _Subtask;
-struct _MySubtask<'a> {{ _unused: &'a () }}
+struct _MySubtask<'a> {{ _unused: core::marker::PhantomData<&'a ()> }}
 #[allow(unused_parens)]
 unsafe impl<'a> _Subtask for _MySubtask<'a> {{
             "
@@ -843,16 +870,7 @@ unsafe impl<'a> _Subtask for _MySubtask<'a> {{
         }
 
         // Generate `type ParamsLower`
-        uwrite!(self.src, "type ParamsLower = (");
-        let mut params_lower = sig.params.as_slice();
-        if sig.retptr {
-            params_lower = &params_lower[..params_lower.len() - 1];
-        }
-        for ty in params_lower {
-            self.src.push_str(wasm_type(*ty));
-            self.src.push_str(", ");
-        }
-        uwriteln!(self.src, ");");
+        uwrite!(self.src, "type ParamsLower = ParamsLower;");
 
         // Generate `const ABI_LAYOUT`
         let mut heap_types = Vec::new();
@@ -865,9 +883,11 @@ unsafe impl<'a> _Subtask for _MySubtask<'a> {{
         uwriteln!(
             self.src,
             r#"
-const ABI_LAYOUT: ::core::alloc::Layout = unsafe {{
-    ::core::alloc::Layout::from_size_align_unchecked({}, {})
-}};
+fn abi_layout(&self) -> ::core::alloc::Layout {{
+    unsafe {{
+        ::core::alloc::Layout::from_size_align_unchecked({}, {})
+    }}
+}}
             "#,
             layout.size.format(POINTER_SIZE_EXPRESSION),
             layout.align.format(POINTER_SIZE_EXPRESSION),
@@ -881,7 +901,7 @@ const ABI_LAYOUT: ::core::alloc::Layout = unsafe {{
             }
             None => "0".to_string(),
         };
-        uwriteln!(self.src, "const RESULTS_OFFSET: usize = {offset};");
+        uwriteln!(self.src, "fn results_offset(&self) -> usize {{ {offset} }}");
 
         // Generate `fn call_import`
         let import_name = &func.name;
@@ -902,7 +922,7 @@ const ABI_LAYOUT: ::core::alloc::Layout = unsafe {{
         uwriteln!(
             self.src,
             r#"
-unsafe fn call_import(_params: Self::ParamsLower, _results: *mut u8) -> u32 {{
+unsafe fn call_import(&self, _params: Self::ParamsLower, _results: *mut u8) -> u32 {{
     {intrinsic}
     unsafe {{ call({args}) as u32 }}
 }}
@@ -922,7 +942,7 @@ unsafe fn call_import(_params: Self::ParamsLower, _results: *mut u8) -> u32 {{
         );
         uwriteln!(
             self.src,
-            "unsafe fn params_dealloc_lists(_params: Self::ParamsLower) {{"
+            "unsafe fn params_dealloc_lists(&self, _params: Self::ParamsLower) {{"
         );
         uwriteln!(self.src, "{dealloc_lists}");
         uwriteln!(self.src, "}}");
@@ -936,7 +956,7 @@ unsafe fn call_import(_params: Self::ParamsLower, _results: *mut u8) -> u32 {{
         );
         uwriteln!(
             self.src,
-            "unsafe fn params_dealloc_lists_and_own(_params: Self::ParamsLower) {{"
+            "unsafe fn params_dealloc_lists_and_own(&self, _params: Self::ParamsLower) {{"
         );
         uwriteln!(self.src, "{dealloc_lists_and_own}");
         uwriteln!(self.src, "}}");
@@ -959,7 +979,7 @@ unsafe fn call_import(_params: Self::ParamsLower, _results: *mut u8) -> u32 {{
                 lowers.push(start);
                 param_lowers.push(name);
             }
-            lowers.push("(_ptr,)".to_string());
+            lowers.push("ParamsLower(_ptr,)".to_string());
         } else {
             let mut f = FunctionBindgen::new(self, Vec::new(), module, true);
             let mut results = Vec::new();
@@ -971,7 +991,7 @@ unsafe fn call_import(_params: Self::ParamsLower, _results: *mut u8) -> u32 {{
             for result in results.iter_mut() {
                 result.push_str(",");
             }
-            let result = format!("({})", results.join(" "));
+            let result = format!("ParamsLower({})", results.join(" "));
             lowers.push(format!("unsafe {{ {} {result} }}", String::from(f.src)));
         }
 
@@ -980,7 +1000,7 @@ unsafe fn call_import(_params: Self::ParamsLower, _results: *mut u8) -> u32 {{
         }
         uwriteln!(
             self.src,
-            "unsafe fn params_lower(({}): Self::Params, _ptr: *mut u8) -> Self::ParamsLower {{",
+            "unsafe fn params_lower(&self, ({}): Self::Params, _ptr: *mut u8) -> Self::ParamsLower {{",
             param_lowers.join(" "),
         );
         for lower in lowers.iter() {
@@ -995,7 +1015,7 @@ unsafe fn call_import(_params: Self::ParamsLower, _results: *mut u8) -> u32 {{
         };
         uwriteln!(
             self.src,
-            "unsafe fn results_lift(_ptr: *mut u8) -> Self::Results {{"
+            "unsafe fn results_lift(&self, _ptr: *mut u8) -> Self::Results {{"
         );
         uwriteln!(self.src, "{lift}");
         uwriteln!(self.src, "}}");
@@ -1005,7 +1025,11 @@ unsafe fn call_import(_params: Self::ParamsLower, _results: *mut u8) -> u32 {{
         for param in params.iter_mut() {
             param.push_str(",");
         }
-        uwriteln!(self.src, "_MySubtask::call(({})).await", params.join(" "));
+        uwriteln!(
+            self.src,
+            "_MySubtask {{ _unused: core::marker::PhantomData }}.call(({})).await",
+            params.join(" ")
+        );
     }
 
     fn generate_guest_export(
@@ -1363,10 +1387,20 @@ unsafe fn call_import(_params: Self::ParamsLower, _results: *mut u8) -> u32 {{
 
     fn print_signature(&mut self, func: &Function, params_owned: bool, sig: &FnSig) -> Vec<String> {
         let params = self.print_docs_and_params(func, params_owned, sig);
-        if let FunctionKind::Constructor(_) = &func.kind {
-            self.push_str(" -> Self")
+        self.push_str(" -> ");
+        if let FunctionKind::Constructor(resource_id) = &func.kind {
+            match classify_constructor_return_type(&self.resolve, *resource_id, &func.result) {
+                ConstructorReturnType::Self_ => {
+                    self.push_str("Self");
+                }
+                ConstructorReturnType::Result { err } => {
+                    self.push_str("Result<Self, ");
+                    self.print_result_type(&err);
+                    self.push_str("> where Self: Sized");
+                }
+            }
         } else {
-            self.print_results(&func.result);
+            self.print_result_type(&func.result);
         }
         params
     }
@@ -1482,9 +1516,7 @@ unsafe fn call_import(_params: Self::ParamsLower, _results: *mut u8) -> u32 {{
         params
     }
 
-    fn print_results(&mut self, result: &Option<Type>) {
-        self.push_str(" -> ");
-
+    fn print_result_type(&mut self, result: &Option<Type>) {
         match result {
             None => {
                 self.push_str("()");
@@ -1990,7 +2022,7 @@ unsafe fn call_import(_params: Self::ParamsLower, _results: *mut u8) -> u32 {{
                 if self.r#gen.opts.std_feature {
                     self.push_str("#[cfg(feature = \"std\")]\n");
                 }
-                self.push_str("impl std::error::Error for ");
+                self.push_str("impl ::core::error::Error for ");
                 self.push_str(&name);
                 self.push_str(" {}\n");
             }
@@ -2094,7 +2126,7 @@ unsafe fn call_import(_params: Self::ParamsLower, _results: *mut u8) -> u32 {{
                 }
                 self.push_str("impl");
                 self.print_generics(mode.lifetime);
-                self.push_str(" std::error::Error for ");
+                self.push_str(" ::core::error::Error for ");
                 self.push_str(&name);
                 self.print_generics(mode.lifetime);
                 self.push_str(" {}\n");
@@ -2276,7 +2308,7 @@ unsafe fn call_import(_params: Self::ParamsLower, _results: *mut u8) -> u32 {{
             if self.r#gen.opts.std_feature {
                 self.push_str("#[cfg(feature = \"std\")]\n");
             }
-            self.push_str("impl std::error::Error for ");
+            self.push_str("impl ::core::error::Error for ");
             self.push_str(&name);
             self.push_str(" {}\n");
         } else {

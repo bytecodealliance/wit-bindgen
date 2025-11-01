@@ -1109,7 +1109,7 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
         uwrite!(
             self.src,
             "
-            {access} class {name} {{
+            {access} readonly struct {name} {{
                 {fields}
 
                 {access} {name}({parameters}) {{

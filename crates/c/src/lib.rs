@@ -757,8 +757,12 @@ typedef enum {snake}_waitable_state {{
 }} {snake}_waitable_state_t;
 
 void {snake}_backpressure_set(bool enable);
+void {snake}_backpressure_inc(void);
+void {snake}_backpressure_dec(void);
 void* {snake}_context_get(void);
 void {snake}_context_set(void*);
+void {snake}_yield(void);
+uint32_t {snake}_yield_cancellable(void);
             "
         );
         uwriteln!(
@@ -826,6 +830,20 @@ void {snake}_backpressure_set(bool enable) {{
     __backpressure_set(enable);
 }}
 
+__attribute__((__import_module__("$root"), __import_name__("[backpressure-inc]")))
+extern void __backpressure_inc(void);
+
+void {snake}_backpressure_inc(void) {{
+    __backpressure_inc();
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[backpressure-dec]")))
+extern void __backpressure_dec(void);
+
+void {snake}_backpressure_dec(void) {{
+    __backpressure_dec();
+}}
+
 __attribute__((__import_module__("$root"), __import_name__("[context-get-0]")))
 extern void* __context_get(void);
 
@@ -838,6 +856,20 @@ extern void __context_set(void*);
 
 void {snake}_context_set(void *val) {{
     return __context_set(val);
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[thread-yield]")))
+extern uint32_t __thread_yield(void);
+
+void {snake}_yield(void) {{
+    __thread_yield();
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[cancellable][thread-yield]")))
+extern uint32_t __thread_yield_cancellable(void);
+
+uint32_t {snake}_yield_cancellable(void) {{
+    return __thread_yield_cancellable();
 }}
             "#
         );

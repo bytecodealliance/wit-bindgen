@@ -5,6 +5,7 @@ version = { workspace = true }
 edition = { workspace = true }
 repository = { workspace = true }
 license = { workspace = true }
+rust-version = { workspace = true }
 homepage = 'https://github.com/bytecodealliance/wit-bindgen'
 description = """
 Rust bindings generator for WIT and the component model, typically used through
@@ -30,7 +31,6 @@ serde = { workspace = true, optional = true }
 [dev-dependencies]
 futures = { workspace = true }
 wit-bindgen = { path = '../guest-rust', features = ['async'] }
-wit-bindgen-rt = { path = '../guest-rust/rt' }
 test-helpers = { path = '../test-helpers' }
 # For use with the custom attributes test
 serde_json = "1"

@@ -49,8 +49,6 @@ impl LanguageMethods for MoonBit {
         let mut cmd = Command::new("moon");
         cmd.arg("build")
             .arg("--no-strip") // for debugging
-            .arg("--target")
-            .arg("wasm")
             .arg("-C")
             .arg(compile.bindings_dir);
         runner.run_command(&mut cmd)?;
@@ -65,7 +63,7 @@ impl LanguageMethods for MoonBit {
             .arg("embed")
             .args(["--encoding", "utf16"])
             .args(["-o", artifact.to_str().unwrap()])
-            .args(["-w", &compile.component.kind.to_string()])
+            .args(["-w", &compile.component.bindgen.world])
             .arg(manifest_dir)
             .arg(&artifact);
         runner.run_command(&mut cmd)?;
@@ -91,8 +89,6 @@ impl LanguageMethods for MoonBit {
     fn verify(&self, runner: &crate::Runner<'_>, verify: &crate::Verify) -> anyhow::Result<()> {
         let mut cmd = Command::new("moon");
         cmd.arg("check")
-            .arg("--target")
-            .arg("wasm")
             .arg("--warn-list")
             .arg("-28")
             .arg("--deny-warn")
@@ -102,8 +98,6 @@ impl LanguageMethods for MoonBit {
         runner.run_command(&mut cmd)?;
         let mut cmd = Command::new("moon");
         cmd.arg("build")
-            .arg("--target")
-            .arg("wasm")
             .arg("--source-dir")
             .arg(verify.bindings_dir);
 
