@@ -5,7 +5,7 @@ use heck::ToUpperCamelCase;
 use std::fmt::Write;
 use std::mem;
 use std::ops::Deref;
-use wit_bindgen_core::abi::{Bindgen, Bitcast, Instruction};
+use wit_bindgen_core::abi::{self, Bindgen, Bitcast, Instruction};
 use wit_bindgen_core::{uwrite, uwriteln, Direction, Ns};
 use wit_parser::abi::WasmType;
 use wit_parser::{
@@ -32,6 +32,7 @@ pub(crate) struct FunctionBindgen<'a, 'b> {
     is_block: bool,
     fixed_statments: Vec<Fixed>,
     parameter_type: ParameterType,
+    result_type: Option<Type>,
 }
 
 impl<'a, 'b> FunctionBindgen<'a, 'b> {
@@ -42,6 +43,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         params: Box<[String]>,
         results: Vec<TypeId>,
         parameter_type: ParameterType,
+        result_type: Option<Type>,
     ) -> FunctionBindgen<'a, 'b> {
         let mut locals = Ns::default();
         // Ensure temporary variable names don't clash with parameter names:
@@ -67,6 +69,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             is_block: false,
             fixed_statments: Vec::new(),
             parameter_type: parameter_type,
+            result_type: result_type,
         }
     }
 
@@ -304,7 +307,13 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         let ty = self
             .interface_gen
             .type_name_with_qualifier(&func.result.unwrap(), true);
-        uwriteln!(self.src, "{ty} {ret};");
+        let is_async = InterfaceGenerator::is_async(&func.kind);
+
+        if is_async {
+            uwriteln!(self.src, "Task<{ty}> {ret};");
+        } else {
+            uwriteln!(self.src, "{ty} {ret};");
+        }
         let mut cases = Vec::with_capacity(self.results.len());
         let mut oks = Vec::with_capacity(self.results.len());
         let mut payload_is_void = false;
@@ -371,6 +380,44 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         }
         ret
     }
+
+    fn emit_allocation_for_type(&mut self, results: &[WasmType]) -> String {
+        let address = self.locals.tmp("address");
+        let buffer_size = self.get_size_for_type(results);
+        let align = self.get_align_for_type(results);
+        uwriteln!(self.src, "void* {address} = global::System.Runtime.InteropServices.NativeMemory.AlignedAlloc({buffer_size}, {align});");
+
+        // TODO: Store the address somewhere so we can free it when the task completes.
+        address
+    }
+
+    fn get_size_for_type(&self, results: &[WasmType]) -> usize {
+        match results {
+            [WasmType::I32] => 4,
+            [WasmType::I64] => 8,
+            [WasmType::F32] => 4,
+            [WasmType::F64] => 8,
+            [WasmType::Pointer, WasmType::Length] => 4, // TODO: Wasm64
+            [WasmType::PointerOrI64, WasmType::Length] => 8,
+            _ => {
+                todo!("other types not yet supported");
+            }
+        }
+    }
+
+    fn get_align_for_type(&self, results: &[WasmType]) -> usize {
+        match results {
+            [WasmType::I32] => 4,
+            [WasmType::I64] => 8,
+            [WasmType::F32] => 4,
+            [WasmType::F64] => 8,
+            [WasmType::Pointer, WasmType::Length] => 4, // TODO: Wasm64
+            [WasmType::PointerOrI64, WasmType::Length] => 8,
+            _ => {
+                todo!("other types not yet supported");
+            }
+        }
+    }
 }
 
 impl Bindgen for FunctionBindgen<'_, '_> {
@@ -400,22 +447,22 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             })),
             Instruction::I32Load { offset }
             | Instruction::PointerLoad { offset }
-            | Instruction::LengthLoad { offset } => results.push(format!("global::System.BitConverter.ToInt32(new global::System.Span<byte>((void*)({} + {offset}), 4))",operands[0],offset = offset.size_wasm32())),
-            Instruction::I32Load8U { offset } => results.push(format!("new global::System.Span<byte>((void*)({} + {offset}), 1)[0]",operands[0],offset = offset.size_wasm32())),
-            Instruction::I32Load8S { offset } => results.push(format!("(sbyte)new global::System.Span<byte>((void*)({} + {offset}), 1)[0]",operands[0],offset = offset.size_wasm32())),
-            Instruction::I32Load16U { offset } => results.push(format!("global::System.BitConverter.ToUInt16(new global::System.Span<byte>((void*)({} + {offset}), 2))",operands[0],offset = offset.size_wasm32())),
-            Instruction::I32Load16S { offset } => results.push(format!("global::System.BitConverter.ToInt16(new global::System.Span<byte>((void*)({} + {offset}), 2))",operands[0],offset = offset.size_wasm32())),
-            Instruction::I64Load { offset } => results.push(format!("global::System.BitConverter.ToInt64(new global::System.Span<byte>((void*)({} + {offset}), 8))",operands[0],offset = offset.size_wasm32())),
-            Instruction::F32Load { offset } => results.push(format!("global::System.BitConverter.ToSingle(new global::System.Span<byte>((void*)({} + {offset}), 4))",operands[0],offset = offset.size_wasm32())),
-            Instruction::F64Load { offset } => results.push(format!("global::System.BitConverter.ToDouble(new global::System.Span<byte>((void*)({} + {offset}), 8))",operands[0],offset = offset.size_wasm32())),
+            | Instruction::LengthLoad { offset } => results.push(format!("global::System.BitConverter.ToInt32(new global::System.Span<byte>((byte*){} + {offset}, 4))",operands[0],offset = offset.size_wasm32())),
+            Instruction::I32Load8U { offset } => results.push(format!("new global::System.Span<byte>((byte*){} + {offset}, 1)[0]",operands[0],offset = offset.size_wasm32())),
+            Instruction::I32Load8S { offset } => results.push(format!("(sbyte)new global::System.Span<byte>((byte*){} + {offset}, 1)[0]",operands[0],offset = offset.size_wasm32())),
+            Instruction::I32Load16U { offset } => results.push(format!("global::System.BitConverter.ToUInt16(new global::System.Span<byte>((byte*){} + {offset}, 2))",operands[0],offset = offset.size_wasm32())),
+            Instruction::I32Load16S { offset } => results.push(format!("global::System.BitConverter.ToInt16(new global::System.Span<byte>((byte*){} + {offset}, 2))",operands[0],offset = offset.size_wasm32())),
+            Instruction::I64Load { offset } => results.push(format!("global::System.BitConverter.ToInt64(new global::System.Span<byte>((byte*){} + {offset}, 8))",operands[0],offset = offset.size_wasm32())),
+            Instruction::F32Load { offset } => results.push(format!("global::System.BitConverter.ToSingle(new global::System.Span<byte>((byte*){} + {offset}, 4))",operands[0],offset = offset.size_wasm32())),
+            Instruction::F64Load { offset } => results.push(format!("global::System.BitConverter.ToDouble(new global::System.Span<byte>((byte*){} + {offset}, 8))",operands[0],offset = offset.size_wasm32())),
             Instruction::I32Store { offset }
             | Instruction::PointerStore { offset }
-            | Instruction::LengthStore { offset } => uwriteln!(self.src, "global::System.BitConverter.TryWriteBytes(new global::System.Span<byte>((void*)({} + {offset}), 4), {});", operands[1], operands[0],offset = offset.size_wasm32()),
+            | Instruction::LengthStore { offset } => uwriteln!(self.src, "global::System.BitConverter.TryWriteBytes(new global::System.Span<byte>((byte*){} + {offset}, 4), {});", operands[1], operands[0],offset = offset.size_wasm32()),
             Instruction::I32Store8 { offset } => uwriteln!(self.src, "*(byte*)({} + {offset}) = (byte){};", operands[1], operands[0],offset = offset.size_wasm32()),
-            Instruction::I32Store16 { offset } => uwriteln!(self.src, "global::System.BitConverter.TryWriteBytes(new global::System.Span<byte>((void*)({} + {offset}), 2), (short){});", operands[1], operands[0],offset = offset.size_wasm32()),
-            Instruction::I64Store { offset } => uwriteln!(self.src, "global::System.BitConverter.TryWriteBytes(new global::System.Span<byte>((void*)({} + {offset}), 8), unchecked((long){}));", operands[1], operands[0],offset = offset.size_wasm32()),
-            Instruction::F32Store { offset } => uwriteln!(self.src, "global::System.BitConverter.TryWriteBytes(new global::System.Span<byte>((void*)({} + {offset}), 4), unchecked((float){}));", operands[1], operands[0],offset = offset.size_wasm32()),
-            Instruction::F64Store { offset } => uwriteln!(self.src, "global::System.BitConverter.TryWriteBytes(new global::System.Span<byte>((void*)({} + {offset}), 8), unchecked((double){}));", operands[1], operands[0],offset = offset.size_wasm32()),
+            Instruction::I32Store16 { offset } => uwriteln!(self.src, "global::System.BitConverter.TryWriteBytes(new global::System.Span<byte>((byte*){} + {offset}, 2), (short){});", operands[1], operands[0],offset = offset.size_wasm32()),
+            Instruction::I64Store { offset } => uwriteln!(self.src, "global::System.BitConverter.TryWriteBytes(new global::System.Span<byte>((byte*){} + {offset}, 8), unchecked((long){}));", operands[1], operands[0],offset = offset.size_wasm32()),
+            Instruction::F32Store { offset } => uwriteln!(self.src, "global::System.BitConverter.TryWriteBytes(new global::System.Span<byte>((byte*){} + {offset}, 4), unchecked((float){}));", operands[1], operands[0],offset = offset.size_wasm32()),
+            Instruction::F64Store { offset } => uwriteln!(self.src, "global::System.BitConverter.TryWriteBytes(new global::System.Span<byte>((byte*){} + {offset}, 8), unchecked((double){}));", operands[1], operands[0],offset = offset.size_wasm32()),
 
             Instruction::I64FromU64 => results.push(format!("unchecked((long)({}))", operands[0])),
             Instruction::I32FromChar => results.push(format!("((int){})", operands[0])),
@@ -980,11 +1027,24 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::CallWasm { sig, .. } => {
+                let is_async = InterfaceGenerator::is_async(self.kind);
+
+                let requires_async_return_buffer_param = is_async && sig.results.len() >= 1;
+                let async_return_buffer = if requires_async_return_buffer_param {
+                    let buffer = self.emit_allocation_for_type(&sig.results);
+                    uwriteln!(self.src, "//TODO: store somewhere with the TaskCompletionSource, possibly in the state, using Task.AsyncState to retrieve it later.");
+                    Some(buffer)
+                } else {
+                    None
+                };
+
                 let assignment = match &sig.results[..] {
                     [_] => {
                         let result = self.locals.tmp("result");
                         let assignment = format!("var {result} = ");
-                        results.push(result);
+                        if !requires_async_return_buffer_param {
+                            results.push(result);
+                        }
                         assignment
                     }
 
@@ -995,12 +1055,32 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 let func_name = self.func_name.to_upper_camel_case();
 
-                let operands = operands.join(", ");
+                // Async functions that return a result need to pass a buffer where the result will later be written.
+                let operands = match async_return_buffer {
+                    Some(ref buffer) if operands.is_empty() => buffer.clone(),
+                    Some(ref buffer) => format!("{}, {}", operands.join(", "), buffer),
+                    None => operands.join(", "),
+                };
 
                 uwriteln!(
                     self.src,
                     "{assignment} {func_name}WasmInterop.wasmImport{func_name}({operands});"
                 );
+
+                if let Some(buffer) = async_return_buffer {
+                    let result = abi::lift_from_memory(
+                        self.interface_gen.resolve,
+                        self,
+                        buffer.clone(),
+                        &self.result_type.unwrap(),
+                    );
+                    uwriteln!(
+                        self.src,
+                        "global::System.Runtime.InteropServices.NativeMemory.Free({});", 
+                        buffer
+                    );
+                    results.push(result);
+                }
             }
 
             Instruction::CallInterface { func, .. } => {
@@ -1027,6 +1107,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     }
                 }
 
+                let is_async = InterfaceGenerator::is_async(self.kind);
                 match self.kind {
                     FunctionKind::Constructor(id) => {
                         let target = self.interface_gen.csharp_gen.all_resources[id].export_impl_name();
@@ -1042,13 +1123,38 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         };
 
                         match func.result {
-                            None => uwriteln!(self.src, "{target}.{func_name}({oper});"),
+                            None => {
+                                if is_async{
+                                    uwriteln!(self.src, "var ret = {target}.{func_name}({oper});");
+                                } else {
+                                    uwriteln!(self.src, "{target}.{func_name}({oper});");
+                                }
+                            }
                             Some(_ty) => {
                                 let ret = self.handle_result_call(func, target, func_name, oper);
                                 results.push(ret);
                             }
                         }
                     }
+                }
+
+                if is_async {
+                    self.interface_gen.csharp_gen.needs_async_support = true;
+                    let name = self.func_name.to_upper_camel_case();
+                    let ret_param = match func.result {
+                            None => "",
+                            Some(_ty) => "ret.Result"
+                            };
+
+                    uwriteln!(self.src, r#"if (ret.IsCompletedSuccessfully) 
+                    {{
+                        {name}TaskReturn({ret_param});
+                        return (uint)CallbackCode.Exit;
+                    }}
+                    
+                    // TODO: Defer dropping borrowed resources until a result is returned.
+                    return (uint)CallbackCode.Yield;
+                    "#);
                 }
 
                 for (_,  drop) in &self.resource_drops {
@@ -1267,15 +1373,25 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.extend(operands.iter().take(*amt).map(|v| v.clone()));
             }
 
-            Instruction::AsyncTaskReturn { .. }
-            | Instruction::FutureLower { .. }
-            | Instruction::FutureLift { .. }
+            Instruction::FutureLower { .. } => {
+                let op = &operands[0];
+                results.push(format!("{op}.Handle"));
+            }
+
+            Instruction::AsyncTaskReturn { name: _, params: _ } => {
+                uwriteln!(self.src, "// TODO_task_cancel.forget();");
+            }
+
+            Instruction::FutureLift { .. }
             | Instruction::StreamLower { .. }
             | Instruction::StreamLift { .. }
             | Instruction::ErrorContextLower { .. }
             | Instruction::ErrorContextLift { .. }
             | Instruction::DropHandle { .. }
-            => todo!(),
+            => {
+                dbg!(inst);
+                todo!()
+            }
         }
     }
 
