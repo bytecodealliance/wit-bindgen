@@ -121,7 +121,7 @@ name = "tmp"
 [workspace]
 
 [dependencies]
-wit-bindgen = {{ {wit_bindgen_dep} }}
+wit-bindgen = {{ {wit_bindgen_dep}, features = ['async-spawn'] }}
 futures = "0.3.31"
 
 [lib]

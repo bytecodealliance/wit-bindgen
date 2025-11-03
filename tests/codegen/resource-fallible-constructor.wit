@@ -1,0 +1,12 @@
+package my:resources;
+
+interface fallible-constructor {
+  resource x {
+    constructor(s: string) -> result<x, string>;
+  }
+}
+
+world resources {
+  import fallible-constructor;
+  export fallible-constructor;
+}

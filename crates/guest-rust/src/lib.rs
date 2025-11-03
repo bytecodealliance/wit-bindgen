@@ -9,6 +9,12 @@
 //! [Component Model]: https://component-model.bytecodealliance.org/
 
 #![no_std]
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
+#[cfg(not(feature = "rustc-dep-of-std"))]
+extern crate alloc;
+#[cfg(feature = "std")]
+extern crate std;
 
 /// Generate bindings for an input WIT document.
 ///
@@ -652,7 +658,9 @@
 ///     // ["../path/to/wit1", "../path/to/wit2"]
 ///     // Usually used in testing, our test suite may want to generate code
 ///     // from wit files located in multiple paths within a single mod, and we
-///     // don't want to copy these files again.
+///     // don't want to copy these files again. Currently these locations must
+///     // be ordered, as later paths can't contain dependencies on earlier
+///     // paths. This restriction may be lifted in the future.
 ///     path: "../path/to/wit",
 ///
 ///     // Enables passing "inline WIT". If specified this is the default
@@ -859,43 +867,20 @@
 #[cfg(feature = "macros")]
 pub use wit_bindgen_rust_macro::generate;
 
-// This re-export is no longer needed in new bindings and is only
-// here for compatibility.
-#[doc(hidden)]
-pub use rt::bitflags;
-
-mod pre_wit_bindgen_0_20_0;
-
 #[cfg(docsrs)]
 pub mod examples;
 
 #[doc(hidden)]
-pub mod rt {
-    // Re-export `bitflags` so that we can reference it from macros.
-    pub use wit_bindgen_rt::bitflags;
-
-    #[cfg(target_arch = "wasm32")]
-    pub use wit_bindgen_rt::run_ctors_once;
-
-    pub fn maybe_link_cabi_realloc() {
-        #[cfg(feature = "realloc")]
-        wit_bindgen_rt::maybe_link_cabi_realloc();
-    }
-
-    #[cfg(all(feature = "realloc", not(target_env = "p2")))]
-    pub use wit_bindgen_rt::cabi_realloc;
-
-    #[cfg(feature = "async")]
-    pub use wit_bindgen_rt::async_support;
-
-    pub use crate::pre_wit_bindgen_0_20_0::*;
-
-    pub use wit_bindgen_rt::Cleanup;
-}
+pub mod rt;
 
 #[cfg(feature = "async")]
-pub use wit_bindgen_rt::async_support::{
-    backpressure_set, block_on, spawn, yield_async, yield_blocking, AbiBuffer, FutureRead,
-    FutureReader, FutureWrite, FutureWriteCancel, FutureWriteError, FutureWriter, StreamRead,
-    StreamReader, StreamResult, StreamWrite, StreamWriter,
+#[allow(deprecated)]
+pub use rt::async_support::backpressure_set;
+#[cfg(feature = "async-spawn")]
+pub use rt::async_support::spawn;
+#[cfg(feature = "async")]
+pub use rt::async_support::{
+    backpressure_dec, backpressure_inc, block_on, yield_async, yield_blocking, AbiBuffer,
+    FutureRead, FutureReader, FutureWrite, FutureWriteCancel, FutureWriteError, FutureWriter,
+    StreamRead, StreamReader, StreamResult, StreamWrite, StreamWriter,
 };

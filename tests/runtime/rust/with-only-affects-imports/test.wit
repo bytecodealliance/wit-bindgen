@@ -1,0 +1,25 @@
+//@ dependencies = ['test', 'leaf']
+//@ wac = 'compose.wac'
+
+package my:inline;
+
+interface foo {
+    record a {
+      b: u8,
+    }
+
+    bar: func(a: a);
+}
+
+world leaf {
+    export foo;
+}
+
+world test {
+    import foo;
+    export foo;
+}
+
+world runner {
+    import foo;
+}

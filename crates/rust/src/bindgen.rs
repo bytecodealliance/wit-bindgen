@@ -1,4 +1,7 @@
-use crate::{int_repr, to_rust_ident, Identifier, InterfaceGenerator, RustFlagsRepr};
+use crate::{
+    classify_constructor_return_type, int_repr, to_rust_ident, ConstructorReturnType, Identifier,
+    InterfaceGenerator, RustFlagsRepr,
+};
 use heck::*;
 use std::fmt::Write as _;
 use std::mem;
@@ -876,14 +879,24 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         None
                     }
                     FunctionKind::Constructor(ty) => {
+                        let return_type =
+                            classify_constructor_return_type(resolve, *ty, &func.result);
                         let ty = resolve.types[*ty]
                             .name
                             .as_deref()
                             .unwrap()
                             .to_upper_camel_case();
-                        let call = format!("{ty}::new(T::new");
-                        self.push_str(&call);
-                        Some(ty)
+
+                        match return_type {
+                            ConstructorReturnType::Self_ => {
+                                self.push_str(&format!("{ty}::new(T::new"));
+                            }
+                            ConstructorReturnType::Result { .. } => {
+                                self.push_str(&format!("T::new"));
+                            }
+                        }
+
+                        Some((ty, return_type))
                     }
                 };
                 self.push_str("(");
@@ -908,8 +921,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 if *async_ {
                     self.push_str(".await");
                 }
-                if constructor_type.is_some() {
-                    self.push_str(")");
+                match constructor_type {
+                    Some((_, ConstructorReturnType::Self_)) => self.push_str(")"),
+                    Some((ty, ConstructorReturnType::Result { .. })) => {
+                        self.push_str(&format!(".map({ty}::new)"))
+                    }
+                    None => {}
                 }
                 self.push_str("\n};\n");
             }

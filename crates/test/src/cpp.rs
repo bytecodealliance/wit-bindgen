@@ -59,6 +59,7 @@ impl LanguageMethods for Cpp {
             | "multiversion"
             | "resource-alias.wit"
             | "resource-borrow-in-record.wit"
+            | "resource-fallible-constructor.wit"
             | "resources.wit"
             | "resources-in-aggregates.wit"
             | "resources-with-futures.wit"

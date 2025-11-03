@@ -1311,7 +1311,7 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
         uwrite!(
             self.src,
             "
-            {access} class {name} {{
+            {access} readonly struct {name} {{
                 {fields}
 
                 {access} {name}({parameters}) {{
@@ -1582,10 +1582,11 @@ fn modifiers(func: &Function, name: &str, direction: Direction) -> String {
         _ => "",
     };
 
-    let abstract_modifier = if direction == Direction::Export {
-        " abstract"
-    } else {
-        ""
+    let abstract_modifier = match (direction, &func.kind) {
+        (Direction::Export, _) => " abstract",
+        (_, FunctionKind::AsyncFreestanding) => "static",
+        (_, FunctionKind::AsyncStatic(_)) => "static",
+        _ => "",
     };
 
     let async_modifier = match &func.kind {

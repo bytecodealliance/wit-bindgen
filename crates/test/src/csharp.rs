@@ -48,6 +48,7 @@ impl LanguageMethods for Csharp {
                 | "futures.wit"
                 | "streams.wit"
                 | "error-context.wit"
+                | "resource-fallible-constructor.wit"
         )
     }
 

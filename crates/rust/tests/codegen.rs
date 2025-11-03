@@ -16,3 +16,18 @@ mod multiple_paths {
         generate_all,
     });
 }
+
+#[allow(unused)]
+mod inline_and_path {
+    wit_bindgen::generate!({
+        inline: r#"
+        package test:paths;
+
+        world test {
+            import test:inline-and-path/bar;
+        }
+        "#,
+        path: ["tests/wit/path3"],
+        generate_all,
+    });
+}
