@@ -29,7 +29,7 @@ default = ["macros", "realloc", "async", "std", "bitflags"]
 macros = ["dep:wit-bindgen-rust-macro"]
 realloc = []
 std = []
-async = ["macros", "std", "wit-bindgen-rust-macro/async"]
+async = ["std", "wit-bindgen-rust-macro?/async"]
 bitflags = ["dep:bitflags"]
 async-spawn = ['async', 'dep:futures']
 
