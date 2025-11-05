@@ -20,6 +20,7 @@ pub(crate) struct InterfaceFragment {
     pub(crate) csharp_src: String,
     pub(crate) csharp_interop_src: String,
     pub(crate) stub: String,
+    pub(crate) direction: Option<Direction>,  // Types do not have a direction.
 }
 
 pub(crate) struct InterfaceTypeAndFragments {
@@ -153,7 +154,10 @@ impl InterfaceGenerator<'_> {
         }
 
         if when {
-            let name = self.name;
+            let mut name = self.name;
+            if self.is_world {
+                name = name.rsplitn(2, ".").nth(1).unwrap();
+            }
             format!("{global_prefix}{name}.")
         } else {
             String::new()
@@ -170,6 +174,7 @@ impl InterfaceGenerator<'_> {
                 csharp_src: self.src,
                 csharp_interop_src: self.csharp_interop_src,
                 stub: self.stub,
+                direction: Some(self.direction),
             });
     }
 
@@ -237,6 +242,7 @@ impl InterfaceGenerator<'_> {
                     "#).to_string(),
                     csharp_interop_src: "".to_string(),
                     stub: "".to_string(),
+                    direction: Some(self.direction),
                 });
 
             self.csharp_gen.needs_future_reader_support = true;
@@ -329,6 +335,7 @@ impl InterfaceGenerator<'_> {
                     internal static extern void FutureDropWriter{future_type_name}(int readable);
                 "#).to_string(),
                 stub: "".to_string(),
+                direction: Some(self.direction),
             });
 
         self.csharp_gen
@@ -362,14 +369,16 @@ impl InterfaceGenerator<'_> {
                 .to_string(),
                 csharp_interop_src: "".to_string(),
                 stub: "".to_string(),
+                direction: Some(self.direction),
             });
     }
 
-    pub(crate) fn add_world_fragment(self) {
+    pub(crate) fn add_world_fragment(self, direction: Option<Direction>) {
         self.csharp_gen.world_fragments.push(InterfaceFragment {
             csharp_src: self.src,
             csharp_interop_src: self.csharp_interop_src,
             stub: self.stub,
+            direction,
         });
     }
 

@@ -1,8 +1,6 @@
 {
     "version": "0.2.0",
     "configurations": [
-    
-        
 
         {
             "name": "Run wit-bindgen test",
@@ -44,6 +42,91 @@
             "preLaunchTask": "cargo build"
 
         },
+        {
+            "name": "Run wit-bindgen codegen csharp import-export-same-func.wit",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/target/debug/wit-bindgen.exe",
+            "args": [
+                "csharp",
+                ".\\tests\\codegen\\import-export-same-func.wit",
+                "--world",
+                "%my-world",
+                "--out-dir",
+                ".\\target\\artifacts\\codegen\\csharp\\import-export-same-func.wit\\bindings",
+                "--runtime=native-aot",
+                "--generate-stub"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "stopAtEntry": false,
+            "preLaunchTask": "cargo build"
+
+        },
+        {
+            "name": "Run wit-bindgen codegen csharp name5wit",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/target/debug/wit-bindgen.exe",
+            "args": [
+                "csharp",
+                ".\\tests\\codegen\\same-names5.wit",
+                "--world",
+                "%name5",
+                "--out-dir",
+                ".\\target\\artifacts\\codegen\\csharp\\same-names5.wit\\bindings",
+                "--runtime=native-aot",
+                "--generate-stub"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "stopAtEntry": false,
+            "preLaunchTask": "cargo build"
+
+        },
+        {
+            "name": "Run wit-bindgen codegen csharp flags",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/target/debug/wit-bindgen.exe",
+            "args": [
+                "csharp",
+                ".\\tests\\codegen\\flags.wit",
+                "--world",
+                "%the-flags",
+                "--out-dir",
+                ".\\target\\artifacts\\codegen\\csharp\\flags.wit\\bindings",
+                "--runtime=native-aot",
+                "--generate-stub"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "stopAtEntry": false,
+            "preLaunchTask": "cargo build"
+
+        },
+        {
+            "name": "Run wit-bindgen codegen csharp import_export_func",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/target/debug/wit-bindgen.exe",
+            "args": [
+                "csharp",
+                ".\\tests\\codegen\\import_export_func.wit",
+                "--world",
+                "%foo",
+                "--out-dir",
+                ".\\target\\artifacts\\codegen\\csharp\\import_export_func.wit\\bindings",
+                "--runtime=native-aot",
+                "--generate-stub"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "stopAtEntry": false,
+            "preLaunchTask": "cargo build"
+
+        },
+
         {
             "name": "Run wit-bindgen codegen csharp async-simple-params-results.wit",
             "type": "cppvsdbg",

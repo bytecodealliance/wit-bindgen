@@ -92,6 +92,27 @@ impl CSharp {
             (String::new(), String::new())
         }
     }
+
+    fn write_world_fragments(&mut self, direction: Direction, direction_name: &str, src: &mut String, access: &str, name: &String) {
+        if self.world_fragments.iter().any(|f| f.direction == Some(direction)) {
+            uwrite!(
+                src,
+                "
+                {access} interface I{name}World{direction_name}{{
+                "
+            );
+            src.push_str(
+                &self
+                    .world_fragments
+                    .iter()
+                    .filter(|f| f.direction == Some(direction))
+                    .map(|f| f.csharp_src.deref())
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            );
+            src.push_str("}\n");
+        }
+    }
 }
 
 impl WorldGenerator for CSharp {
@@ -159,7 +180,7 @@ impl WorldGenerator for CSharp {
         self.import_funcs_called = true;
 
         let name = &format!("{}-world", resolve.worlds[world].name).to_upper_camel_case();
-        let name = &format!("{name}.I{name}");
+        let name = &format!("{name}.I{name}Imports");
         let mut gen = self.interface(resolve, name, Direction::Import, true);
 
         for (resource, funcs) in by_resource(
@@ -179,7 +200,7 @@ impl WorldGenerator for CSharp {
             }
         }
 
-        gen.add_world_fragment();
+        gen.add_world_fragment(Some(Direction::Import));
     }
 
     fn export_interface(
@@ -237,7 +258,7 @@ impl WorldGenerator for CSharp {
         _files: &mut Files,
     ) -> anyhow::Result<()> {
         let name = &format!("{}-world", resolve.worlds[world].name).to_upper_camel_case();
-        let name = &format!("{name}.I{name}");
+        let name = &format!("{name}.I{name}Exports");
         let mut gen = self.interface(resolve, name, Direction::Export, true);
 
         for (resource, funcs) in by_resource(funcs.iter().copied(), iter::empty()) {
@@ -254,7 +275,7 @@ impl WorldGenerator for CSharp {
             }
         }
 
-        gen.add_world_fragment();
+        gen.add_world_fragment(Some(Direction::Export));
         Ok(())
     }
 
@@ -266,7 +287,7 @@ impl WorldGenerator for CSharp {
         _files: &mut Files,
     ) {
         let name = &format!("{}-world", resolve.worlds[world].name).to_upper_camel_case();
-        let name = &format!("{name}.I{name}");
+        let name = &format!("{name}.I{name}Imports");
         let mut gen = self.interface(resolve, name, Direction::Import, false);
 
         let mut old_resources = mem::take(&mut gen.csharp_gen.all_resources);
@@ -278,7 +299,7 @@ impl WorldGenerator for CSharp {
         gen.csharp_gen.all_resources = old_resources;
         gen.csharp_gen.world_resources = new_resources;
 
-        gen.add_world_fragment();
+        gen.add_world_fragment(None);
     }
 
     fn finish(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) -> anyhow::Result<()> {
@@ -304,26 +325,6 @@ impl WorldGenerator for CSharp {
         let mut src = String::new();
         src.push_str(&header);
 
-        let access = self.access_modifier();
-
-        uwrite!(
-            src,
-            "
-             namespace {world_namespace} {{
-
-             {access} interface I{name}World {{
-            "
-        );
-
-        src.push_str(
-            &self
-                .world_fragments
-                .iter()
-                .map(|f| f.csharp_src.deref())
-                .collect::<Vec<_>>()
-                .join("\n"),
-        );
-
         let mut producers = wasm_metadata::Producers::empty();
         producers.add(
             "processed-by",
@@ -331,7 +332,28 @@ impl WorldGenerator for CSharp {
             env!("CARGO_PKG_VERSION"),
         );
 
-        src.push_str("}\n");
+        let access = self.access_modifier();
+
+        uwrite!(
+            src,
+            "
+             namespace {world_namespace} {{
+
+            "
+        );
+
+        src.push_str(
+                &self
+                    .world_fragments
+                    .iter()
+                    .filter(|f| f.direction.is_none())
+                    .map(|f| f.csharp_src.deref())
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            );
+
+        self.write_world_fragments(Direction::Import, "Imports", &mut src, access, &name);
+        self.write_world_fragments(Direction::Export, "Exports", &mut src, access, &name);
 
         if self.needs_result {
             uwrite!(
@@ -504,18 +526,40 @@ impl WorldGenerator for CSharp {
         if !&self.world_fragments.is_empty() {
             src.push_str("\n");
 
-            src.push_str("namespace exports {\n");
-
-            src.push_str(&format!("{access} static class {name}WorldInterop\n"));
-            src.push_str("{");
-
-            for fragment in &self.world_fragments {
+            if self.world_fragments.iter().any(|f| f.direction == Some(Direction::Import)) {
                 src.push_str("\n");
 
-                src.push_str(&fragment.csharp_interop_src);
+                src.push_str("namespace Imports {\n");
+
+                src.push_str(&format!("{access} partial class {name}WorldImportsInterop : I{name}WorldImports\n"));
+                src.push_str("{");
+
+                for fragment in self.world_fragments.iter().filter(|f| f.direction == Some(Direction::Import)) {
+                    if !fragment.csharp_interop_src.is_empty() {
+                        src.push_str("\n");
+
+                        src.push_str(&fragment.csharp_interop_src);
+                    }
+                }
+                src.push_str("}\n");
+                src.push_str("}\n");
             }
-            src.push_str("}\n");
-            src.push_str("}\n");
+
+            if self.world_fragments.iter().any(|f| f.direction == Some(Direction::Export)) {
+                src.push_str("namespace Exports {\n");
+
+                src.push_str(&format!("{access} static class {name}WorldInterop\n"));
+                src.push_str("{");
+
+                for fragment in self.world_fragments.iter().filter(|f| f.direction == Some(Direction::Export)) {
+                    src.push_str("\n");
+
+                    src.push_str(&fragment.csharp_interop_src);
+                }
+                src.push_str("}\n");
+                src.push_str("}\n");
+            }
+
         }
 
         if self.needs_async_support {
@@ -611,7 +655,7 @@ impl WorldGenerator for CSharp {
 
         if self.opts.generate_stub {
             generate_stub(
-                format!("I{name}World"),
+                format!("I{name}WorldExports"),
                 files,
                 Stubs::World(&self.world_fragments),
             );
@@ -761,6 +805,7 @@ impl WorldGenerator for CSharp {
 
         Ok(())
     }
+    
 }
 
 enum Stubs<'a> {
@@ -836,14 +881,18 @@ fn interface_name(
         }
     };
 
-    let name = match name {
+    let name = format!("{}{}", match name {
         WorldKey::Name(name) => name.to_upper_camel_case(),
         WorldKey::Interface(id) => resolve.interfaces[*id]
             .name
             .as_ref()
             .unwrap()
             .to_upper_camel_case(),
-    };
+        },
+        match direction {
+            Direction::Import => "Imports",
+            Direction::Export => "Exports",
+        });
 
     let namespace = match &pkg {
         Some(name) => {
@@ -872,8 +921,8 @@ fn interface_name(
         "{}wit.{}.{}I{name}",
         world_namespace,
         match direction {
-            Direction::Import => "imports",
-            Direction::Export => "exports",
+            Direction::Import => "Imports",
+            Direction::Export => "Exports",
         },
         namespace
     )

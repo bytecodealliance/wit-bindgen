@@ -1064,10 +1064,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 let (_namespace, interface_name) =
                     &CSharp::get_class_name_from_qualified_name(self.interface_gen.name);
-                let mut interop_name = format!("{}Interop", interface_name.strip_prefix("I").unwrap());
+                let mut interop_name = format!("{}ImportsInterop", interface_name.strip_prefix("I").unwrap()
+                    .strip_suffix(if self.interface_gen.direction == Direction::Import { "Imports" } else { "Exports" }).unwrap().to_upper_camel_case());
 
                 if self.interface_gen.is_world && self.interface_gen.direction == Direction::Import {
-                    interop_name = format!("exports.{interop_name}");
+                    interop_name = format!("Imports.{interop_name}");
                 }
                 
                 uwriteln!(
