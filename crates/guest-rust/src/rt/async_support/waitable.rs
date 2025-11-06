@@ -441,6 +441,11 @@ where
             Poll::Pending => unreachable!(),
         }
     }
+
+    /// Returns whether or not this operation has completed.
+    pub fn is_done(&self) -> bool {
+        matches!(self.state, WaitableOperationState::Done)
+    }
 }
 
 impl<S: WaitableOp> Future for WaitableOperation<S> {
@@ -453,17 +458,15 @@ impl<S: WaitableOp> Future for WaitableOperation<S> {
 
 impl<S: WaitableOp> Drop for WaitableOperation<S> {
     fn drop(&mut self) {
-        // SAFETY: we're in the destructor here so the value `self` is about
-        // to go away and we can guarantee we're not moving out of it.
-        let mut pin = unsafe { Pin::new_unchecked(self) };
-
-        let (_, state, _) = pin.as_mut().pin_project();
-
         // If this operation has already completed then skip cancellation,
         // otherwise it's our job to cancel anything in-flight.
-        if let WaitableOperationState::Done = state {
+        if self.is_done() {
             return;
         }
+
+        // SAFETY: we're in the destructor here so the value `self` is about
+        // to go away and we can guarantee we're not moving out of it.
+        let pin = unsafe { Pin::new_unchecked(self) };
         pin.cancel();
     }
 }
