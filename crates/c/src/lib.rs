@@ -809,11 +809,11 @@ __attribute__((__import_module__("$root"), __import_name__("[waitable-set-poll]"
 extern uint32_t __waitable_set_poll(uint32_t, uint32_t*);
 
 void {snake}_waitable_set_wait({snake}_waitable_set_t set, {snake}_event_t *event) {{
-    event->event = __waitable_set_wait(set, &event->waitable);
+    event->event = ({snake}_event_code_t) __waitable_set_wait(set, &event->waitable);
 }}
 
 void {snake}_waitable_set_poll({snake}_waitable_set_t set, {snake}_event_t *event) {{
-    event->event = __waitable_set_poll(set, &event->waitable);
+    event->event = ({snake}_event_code_t) __waitable_set_poll(set, &event->waitable);
 }}
 
 __attribute__((__import_module__("[export]$root"), __import_name__("[task-cancel]")))
@@ -2212,7 +2212,7 @@ impl InterfaceGenerator<'_> {
 __attribute__((__export_name__("[callback]{prefix}{export_name}")))
 uint32_t {import_name}_callback(uint32_t event_raw, uint32_t waitable, uint32_t code) {{
     {snake}_event_t event;
-    event.event = event_raw;
+    event.event = ({snake}_event_code_t) event_raw;
     event.waitable = waitable;
     event.code = code;
     return {name}_callback(&event);
