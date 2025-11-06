@@ -395,7 +395,7 @@ where
     type Result = (WriteComplete<T>, FutureWriter<T>);
     type Cancel = FutureWriteCancel<T>;
 
-    fn start(&self, (writer, value): Self::Start) -> (u32, Self::InProgress) {
+    fn start(&mut self, (writer, value): Self::Start) -> (u32, Self::InProgress) {
         // TODO: it should be safe to store the lower-destination in
         // `WaitableOperation` using `Pin` memory and such, but that would
         // require some type-level trickery to get a correctly-sized value
@@ -417,12 +417,12 @@ where
         (code, (writer, cleanup))
     }
 
-    fn start_cancelled(&self, (writer, value): Self::Start) -> Self::Cancel {
+    fn start_cancelled(&mut self, (writer, value): Self::Start) -> Self::Cancel {
         FutureWriteCancel::Cancelled(value, writer)
     }
 
     fn in_progress_update(
-        &self,
+        &mut self,
         (mut writer, cleanup): Self::InProgress,
         code: u32,
     ) -> Result<Self::Result, Self::InProgress> {
@@ -482,11 +482,11 @@ where
         }
     }
 
-    fn in_progress_waitable(&self, (writer, _): &Self::InProgress) -> u32 {
+    fn in_progress_waitable(&mut self, (writer, _): &Self::InProgress) -> u32 {
         writer.handle
     }
 
-    fn in_progress_cancel(&self, (writer, _): &Self::InProgress) -> u32 {
+    fn in_progress_cancel(&mut self, (writer, _): &mut Self::InProgress) -> u32 {
         // SAFETY: we're managing `writer` and all the various operational bits,
         // so this relies on `WaitableOperation` being safe.
         let code = unsafe { (writer.vtable.cancel_write)(writer.handle) };
@@ -494,7 +494,7 @@ where
         code
     }
 
-    fn result_into_cancel(&self, (result, writer): Self::Result) -> Self::Cancel {
+    fn result_into_cancel(&mut self, (result, writer): Self::Result) -> Self::Cancel {
         match result {
             // The value was actually sent, meaning we can't yield back the
             // future nor the value.
@@ -679,7 +679,7 @@ where
     type Result = (ReadComplete<T>, FutureReader<T>);
     type Cancel = Result<T, FutureReader<T>>;
 
-    fn start(&self, reader: Self::Start) -> (u32, Self::InProgress) {
+    fn start(&mut self, reader: Self::Start) -> (u32, Self::InProgress) {
         let (ptr, cleanup) = Cleanup::new(reader.vtable.layout);
         // SAFETY: `ptr` is allocated with `vtable.layout` and should be
         // safe to use here. Its lifetime for the async operation is hinged on
@@ -689,12 +689,12 @@ where
         (code, (reader, cleanup))
     }
 
-    fn start_cancelled(&self, state: Self::Start) -> Self::Cancel {
+    fn start_cancelled(&mut self, state: Self::Start) -> Self::Cancel {
         Err(state)
     }
 
     fn in_progress_update(
-        &self,
+        &mut self,
         (reader, cleanup): Self::InProgress,
         code: u32,
     ) -> Result<Self::Result, Self::InProgress> {
@@ -725,11 +725,11 @@ where
         }
     }
 
-    fn in_progress_waitable(&self, (reader, _): &Self::InProgress) -> u32 {
+    fn in_progress_waitable(&mut self, (reader, _): &Self::InProgress) -> u32 {
         reader.handle()
     }
 
-    fn in_progress_cancel(&self, (reader, _): &Self::InProgress) -> u32 {
+    fn in_progress_cancel(&mut self, (reader, _): &mut Self::InProgress) -> u32 {
         // SAFETY: we're managing `reader` and all the various operational bits,
         // so this relies on `WaitableOperation` being safe.
         let code = unsafe { (reader.vtable.cancel_read)(reader.handle()) };
@@ -737,7 +737,7 @@ where
         code
     }
 
-    fn result_into_cancel(&self, (value, reader): Self::Result) -> Self::Cancel {
+    fn result_into_cancel(&mut self, (value, reader): Self::Result) -> Self::Cancel {
         match value {
             // The value was actually read, so thread that through here.
             ReadComplete::Value(value) => Ok(value),

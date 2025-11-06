@@ -243,7 +243,7 @@ where
     type Result = (StreamResult, AbiBuffer<T>);
     type Cancel = (StreamResult, AbiBuffer<T>);
 
-    fn start(&self, (writer, buf): Self::Start) -> (u32, Self::InProgress) {
+    fn start(&mut self, (writer, buf): Self::Start) -> (u32, Self::InProgress) {
         if writer.done {
             return (DROPPED, (writer, buf));
         }
@@ -259,12 +259,12 @@ where
         (code, (writer, buf))
     }
 
-    fn start_cancelled(&self, (_writer, buf): Self::Start) -> Self::Cancel {
+    fn start_cancelled(&mut self, (_writer, buf): Self::Start) -> Self::Cancel {
         (StreamResult::Cancelled, buf)
     }
 
     fn in_progress_update(
-        &self,
+        &mut self,
         (writer, mut buf): Self::InProgress,
         code: u32,
     ) -> Result<Self::Result, Self::InProgress> {
@@ -285,11 +285,11 @@ where
         }
     }
 
-    fn in_progress_waitable(&self, (writer, _): &Self::InProgress) -> u32 {
+    fn in_progress_waitable(&mut self, (writer, _): &Self::InProgress) -> u32 {
         writer.handle
     }
 
-    fn in_progress_cancel(&self, (writer, _): &Self::InProgress) -> u32 {
+    fn in_progress_cancel(&mut self, (writer, _): &mut Self::InProgress) -> u32 {
         // SAFETY: we're managing `writer` and all the various operational bits,
         // so this relies on `WaitableOperation` being safe.
         let code = unsafe { (writer.vtable.cancel_write)(writer.handle) };
@@ -297,7 +297,7 @@ where
         code
     }
 
-    fn result_into_cancel(&self, result: Self::Result) -> Self::Cancel {
+    fn result_into_cancel(&mut self, result: Self::Result) -> Self::Cancel {
         result
     }
 }
@@ -460,7 +460,7 @@ where
     type Result = (StreamResult, Vec<T>);
     type Cancel = (StreamResult, Vec<T>);
 
-    fn start(&self, (reader, mut buf): Self::Start) -> (u32, Self::InProgress) {
+    fn start(&mut self, (reader, mut buf): Self::Start) -> (u32, Self::InProgress) {
         if reader.done {
             return (DROPPED, (reader, buf, None));
         }
@@ -493,12 +493,12 @@ where
         (code, (reader, buf, cleanup))
     }
 
-    fn start_cancelled(&self, (_, buf): Self::Start) -> Self::Cancel {
+    fn start_cancelled(&mut self, (_, buf): Self::Start) -> Self::Cancel {
         (StreamResult::Cancelled, buf)
     }
 
     fn in_progress_update(
-        &self,
+        &mut self,
         (reader, mut buf, cleanup): Self::InProgress,
         code: u32,
     ) -> Result<Self::Result, Self::InProgress> {
@@ -555,11 +555,11 @@ where
         }
     }
 
-    fn in_progress_waitable(&self, (reader, ..): &Self::InProgress) -> u32 {
+    fn in_progress_waitable(&mut self, (reader, ..): &Self::InProgress) -> u32 {
         reader.handle()
     }
 
-    fn in_progress_cancel(&self, (reader, ..): &Self::InProgress) -> u32 {
+    fn in_progress_cancel(&mut self, (reader, ..): &mut Self::InProgress) -> u32 {
         // SAFETY: we're managing `reader` and all the various operational bits,
         // so this relies on `WaitableOperation` being safe.
         let code = unsafe { (reader.vtable.cancel_read)(reader.handle()) };
@@ -567,7 +567,7 @@ where
         code
     }
 
-    fn result_into_cancel(&self, result: Self::Result) -> Self::Cancel {
+    fn result_into_cancel(&mut self, result: Self::Result) -> Self::Cancel {
         result
     }
 }
