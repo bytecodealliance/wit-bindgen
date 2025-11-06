@@ -100,17 +100,17 @@ void exports_test_list_of_variants(
   assert(c->ptr[0] == EXPORTS_TEST_MY_ERRNO_SUCCESS);
   assert(c->ptr[1] == EXPORTS_TEST_MY_ERRNO_A);
 
-  ret->f0.ptr = malloc(2 * sizeof(bool));
+  ret->f0.ptr = (bool*) malloc(2 * sizeof(bool));
   ret->f0.len = 2;
   ret->f0.ptr[0] = false;
   ret->f0.ptr[1] = true;
 
-  ret->f1.ptr = malloc(2 * sizeof(exports_test_result_void_void_t));
+  ret->f1.ptr = (exports_test_result_void_void_t*) malloc(2 * sizeof(exports_test_result_void_void_t));
   ret->f1.len = 2;
   ret->f1.ptr[0].is_err = true;
   ret->f1.ptr[1].is_err = false;
 
-  ret->f2.ptr = malloc(2 * sizeof(exports_test_my_errno_t));
+  ret->f2.ptr = (exports_test_my_errno_t*) malloc(2 * sizeof(exports_test_my_errno_t));
   ret->f2.len = 2;
   ret->f2.ptr[0] = EXPORTS_TEST_MY_ERRNO_A;
   ret->f2.ptr[1] = EXPORTS_TEST_MY_ERRNO_B;

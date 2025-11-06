@@ -19,7 +19,7 @@ struct ping_task {
 
 test_callback_code_t exports_test_async_ping(exports_test_future_string_t x, test_string_t *y) {
   // Initialize a new task
-  struct ping_task *task = malloc(sizeof(struct ping_task));
+  struct ping_task *task = (struct ping_task*) malloc(sizeof(struct ping_task));
   assert(task != NULL);
   memset(task, 0, sizeof(struct ping_task));
   task->state = PING_S1;
@@ -38,9 +38,9 @@ test_callback_code_t exports_test_async_ping(exports_test_future_string_t x, tes
 }
 
 test_callback_code_t exports_test_async_ping_callback(test_event_t *event) {
-  struct ping_task *task = test_context_get();
+  struct ping_task *task = (struct ping_task*) test_context_get();
   switch (task->state) {
-    case PING_S1:
+    case PING_S1: {
       // Assert that our future read completed and discard the read end of the
       // future.
       assert(event->event == TEST_EVENT_FUTURE_READ);
@@ -60,7 +60,7 @@ test_callback_code_t exports_test_async_ping_callback(test_event_t *event) {
       // Concatenate `task->read_result` and `task->arg`.
       test_string_t concatenated;
       concatenated.len = task->arg.len + task->read_result.len;
-      concatenated.ptr = malloc(concatenated.len);
+      concatenated.ptr = (uint8_t*) malloc(concatenated.len);
       assert(concatenated.ptr != NULL);
       memcpy(concatenated.ptr, task->read_result.ptr, task->read_result.len);
       memcpy(concatenated.ptr + task->read_result.len, task->arg.ptr, task->arg.len);
@@ -77,8 +77,9 @@ test_callback_code_t exports_test_async_ping_callback(test_event_t *event) {
       task->state = PING_S2;
       test_waitable_join(writer, task->set);
       return TEST_CALLBACK_CODE_WAIT(task->set);
+    }
 
-    case PING_S2:
+    case PING_S2: {
       // Assert that our future write has completed, and discard the write end
       // of the future.
       assert(event->event == TEST_EVENT_FUTURE_WRITE);
@@ -99,6 +100,7 @@ test_callback_code_t exports_test_async_ping_callback(test_event_t *event) {
       // And finally deallocate the task, exiting afterwards.
       free(task);
       return TEST_CALLBACK_CODE_EXIT;
+    }
 
     default:
       assert(0);
@@ -113,7 +115,7 @@ struct pong_task {
 };
 
 test_callback_code_t exports_test_async_pong(exports_test_future_string_t x) {
-  struct pong_task *task = malloc(sizeof(struct pong_task));
+  struct pong_task *task = (struct pong_task*) malloc(sizeof(struct pong_task));
   assert(task != NULL);
   task->future = x;
   task->set = test_waitable_set_new();
@@ -129,7 +131,7 @@ test_callback_code_t exports_test_async_pong(exports_test_future_string_t x) {
 }
 
 test_callback_code_t exports_test_async_pong_callback(test_event_t *event) {
-  struct pong_task *task = test_context_get();
+  struct pong_task *task = (struct pong_task*) test_context_get();
 
   // assert this event is a future read completion
   assert(event->event == TEST_EVENT_FUTURE_READ);
