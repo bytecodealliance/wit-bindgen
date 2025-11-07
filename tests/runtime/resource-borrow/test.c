@@ -9,7 +9,7 @@ struct exports_test_thing_t {
 };
 
 exports_test_own_thing_t exports_test_constructor_thing(uint32_t v) {
-  exports_test_thing_t *rep = malloc(sizeof(exports_test_thing_t));
+  exports_test_thing_t *rep = (exports_test_thing_t*) malloc(sizeof(exports_test_thing_t));
   assert(rep != NULL);
   rep->my_state = v + 1;
   return exports_test_thing_new(rep);

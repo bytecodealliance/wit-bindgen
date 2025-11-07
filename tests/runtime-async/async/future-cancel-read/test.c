@@ -44,7 +44,8 @@ test_callback_code_t exports_test_async_start_read_then_cancel(
   exports_test_future_u32_t data,
   exports_test_future_void_t signal
 ) {
-  struct start_read_then_cancel_state *state = malloc(sizeof(struct start_read_then_cancel_state));
+  struct start_read_then_cancel_state *state =
+    (struct start_read_then_cancel_state*) malloc(sizeof(struct start_read_then_cancel_state));
   assert(state != NULL);
   state->data = data;
   state->signal = signal;
@@ -62,7 +63,8 @@ test_callback_code_t exports_test_async_start_read_then_cancel(
 }
 
 test_callback_code_t exports_test_async_start_read_then_cancel_callback(test_event_t *event) {
-  struct start_read_then_cancel_state *state = test_context_get();
+  struct start_read_then_cancel_state *state =
+    (struct start_read_then_cancel_state*) test_context_get();
   assert(event->event == TEST_EVENT_FUTURE_READ);
   assert(event->waitable == state->signal);
   assert(TEST_WAITABLE_STATE(event->code) == TEST_WAITABLE_COMPLETED);
