@@ -2707,8 +2707,7 @@ impl {camel} {{
         let _ = unsafe {{ {box_path}::from_raw(handle as *mut _{camel}Rep<T>) }};
     }}
 
-    #[doc(hidden)]
-    pub fn as_ptr<T: Guest{camel}>(&self) -> *mut _{camel}Rep<T> {{
+    fn as_ptr<T: Guest{camel}>(&self) -> *mut _{camel}Rep<T> {{
        {camel}::type_guard::<T>();
        T::_resource_rep(self.handle()).cast()
     }}
@@ -2733,15 +2732,15 @@ impl<'a> {camel}Borrow<'a>{{
     }}
 
     /// Gets access to the underlying `T` in this resource.
-    pub fn get<T: Guest{camel}>(&self) -> &T {{
+    pub fn get<T: Guest{camel}>(&self) -> &'a T {{
        let ptr = unsafe {{ &mut *self.as_ptr::<T>() }};
        ptr.as_ref().unwrap()
     }}
 
     // NB: mutable access is not allowed due to the component model allowing
     // multiple borrows of the same resource.
-    #[doc(hidden)]
-    pub fn as_ptr<T: 'static>(&self) -> *mut _{camel}Rep<T> {{
+ 
+    fn as_ptr<T: 'static>(&self) -> *mut _{camel}Rep<T> {{
        {camel}::type_guard::<T>();
        self.rep.cast()
     }}
