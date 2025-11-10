@@ -11,7 +11,7 @@ pub struct MyThing {
 }
 
 fn get_val<'a>(v: &ThingBorrow<'a>) -> &'a u32 {
-  v.get::<MyThing>().val
+  &v.get::<MyThing>().val
 }
 
 impl Guest for Test {
