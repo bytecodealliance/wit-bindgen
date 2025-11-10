@@ -84,7 +84,7 @@ pub unsafe trait WaitableOp {
     /// This method will actually call `{future,stream}.{read,write}` with
     /// `state` provided. The return code of the intrinsic is returned here
     /// along with the `InProgress` state.
-    fn start(&self, state: Self::Start) -> (u32, Self::InProgress);
+    fn start(&mut self, state: Self::Start) -> (u32, Self::InProgress);
 
     /// Optionally complete the async operation.
     ///
@@ -95,18 +95,18 @@ pub unsafe trait WaitableOp {
     /// * a new status code has been received by an async export's `callback`
     /// * cancellation returned a code to be processed here
     fn in_progress_update(
-        &self,
+        &mut self,
         state: Self::InProgress,
         code: u32,
     ) -> Result<Self::Result, Self::InProgress>;
 
     /// Conversion from the "start" state to the "cancel" result, needed when an
     /// operation is cancelled before it's started.
-    fn start_cancelled(&self, state: Self::Start) -> Self::Cancel;
+    fn start_cancelled(&mut self, state: Self::Start) -> Self::Cancel;
 
     /// Acquires the component-model `waitable` index that the `InProgress`
     /// state is waiting on.
-    fn in_progress_waitable(&self, state: &Self::InProgress) -> u32;
+    fn in_progress_waitable(&mut self, state: &Self::InProgress) -> u32;
 
     /// Initiates a request for cancellation of this operation. Returns the
     /// status code returned by the `{future,stream}.cancel-{read,write}`
@@ -117,12 +117,12 @@ pub unsafe trait WaitableOp {
     /// instead the operation must be complete with the returned code. That may
     /// mean that this intrinsic can block while figuring things out in the
     /// component model ABI, for example.
-    fn in_progress_cancel(&self, state: &Self::InProgress) -> u32;
+    fn in_progress_cancel(&mut self, state: &mut Self::InProgress) -> u32;
 
     /// Converts a "completion result" into a "cancel result". This is necessary
     /// when an in-progress operation is cancelled so the in-progress result is
     /// first acquired and then transitioned to a cancel request.
-    fn result_into_cancel(&self, result: Self::Result) -> Self::Cancel;
+    fn result_into_cancel(&mut self, result: Self::Result) -> Self::Cancel;
 }
 
 enum WaitableOperationState<S: WaitableOp> {
@@ -151,7 +151,7 @@ where
     fn pin_project(
         self: Pin<&mut Self>,
     ) -> (
-        &S,
+        &mut S,
         &mut WaitableOperationState<S>,
         Pin<&mut CompletionStatus>,
     ) {
@@ -163,7 +163,7 @@ where
         unsafe {
             let me = self.get_unchecked_mut();
             (
-                &me.op,
+                &mut me.op,
                 &mut me.state,
                 Pin::new_unchecked(&mut me.completion_status),
             )
@@ -441,6 +441,11 @@ where
             Poll::Pending => unreachable!(),
         }
     }
+
+    /// Returns whether or not this operation has completed.
+    pub fn is_done(&self) -> bool {
+        matches!(self.state, WaitableOperationState::Done)
+    }
 }
 
 impl<S: WaitableOp> Future for WaitableOperation<S> {
@@ -453,17 +458,15 @@ impl<S: WaitableOp> Future for WaitableOperation<S> {
 
 impl<S: WaitableOp> Drop for WaitableOperation<S> {
     fn drop(&mut self) {
-        // SAFETY: we're in the destructor here so the value `self` is about
-        // to go away and we can guarantee we're not moving out of it.
-        let mut pin = unsafe { Pin::new_unchecked(self) };
-
-        let (_, state, _) = pin.as_mut().pin_project();
-
         // If this operation has already completed then skip cancellation,
         // otherwise it's our job to cancel anything in-flight.
-        if let WaitableOperationState::Done = state {
+        if self.is_done() {
             return;
         }
+
+        // SAFETY: we're in the destructor here so the value `self` is about
+        // to go away and we can guarantee we're not moving out of it.
+        let pin = unsafe { Pin::new_unchecked(self) };
         pin.cancel();
     }
 }
