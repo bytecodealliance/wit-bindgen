@@ -719,12 +719,10 @@ impl InterfaceGenerator<'_> {
         let cleanup_list = if bindgen.needs_cleanup_list {
             self.r#gen.needs_cleanup = true;
 
-            let ffi_qualifier = self.qualify_package(FFI_DIR);
-
-            format!(
-                r#"let cleanupList : Array[{ffi_qualifier}Cleanup] = []
-                   let ignoreList : Array[&{ffi_qualifier}Any] = []"#
-            )
+            "
+            let cleanup_list : Array[Int] = []
+            "
+            .into()
         } else {
             String::new()
         };
@@ -2013,13 +2011,8 @@ struct Block {
     element: String,
     base: String,
 }
-enum Cleanup {
-    Memory {
-        address: String,
-        size: String,
-        align: usize,
-    },
-    Object(String),
+struct Cleanup {
+    address: String,
 }
 
 struct BlockStorage {
@@ -2622,19 +2615,23 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::ListCanonLower { element, realloc } => match element {
                 Type::U8 => {
                     let op = &operands[0];
-
-                    results.push(format!(
-                        "{}bytes2ptr({op})",
+                    let ptr = self.locals.tmp("ptr");
+                    uwriteln!(
+                        self.src,
+                        "
+                        let {ptr} = {}bytes2ptr({op})
+                        ",
                         self.r#gen.qualify_package(FFI_DIR)
-                    ));
+                    );
+                    results.push(ptr.clone());
                     results.push(format!("{op}.length()"));
                     if realloc.is_none() {
-                        self.cleanup.push(Cleanup::Object(op.clone()));
+                        self.cleanup.push(Cleanup { address: ptr });
                     }
                 }
                 Type::U32 | Type::U64 | Type::S32 | Type::S64 | Type::F32 | Type::F64 => {
                     let op = &operands[0];
-
+                    let ptr = self.locals.tmp("ptr");
                     let ty = match element {
                         Type::U32 => "uint",
                         Type::U64 => "uint64",
@@ -2645,13 +2642,17 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         _ => unreachable!(),
                     };
 
-                    results.push(format!(
-                        "{}{ty}_array2ptr({op})",
+                    uwriteln!(
+                        self.src,
+                        "
+                        let {ptr} = {}{ty}_array2ptr({op})
+                        ",
                         self.r#gen.qualify_package(FFI_DIR)
-                    ));
+                    );
+                    results.push(ptr.clone());
                     results.push(format!("{op}.length()"));
                     if realloc.is_none() {
-                        self.cleanup.push(Cleanup::Object(op.clone()));
+                        self.cleanup.push(Cleanup { address: ptr });
                     }
                 }
                 _ => unreachable!("unsupported list element type"),
@@ -2703,14 +2704,20 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::StringLower { realloc } => {
                 let op = &operands[0];
+                let ptr = self.locals.tmp("ptr");
 
-                results.push(format!(
-                    "{}str2ptr({op})",
+                uwrite!(
+                    self.src,
+                    "
+                    let {ptr} = {}str2ptr({op})
+                    ",
                     self.r#gen.qualify_package(FFI_DIR)
-                ));
+                );
+
+                results.push(ptr.clone());
                 results.push(format!("{op}.length()"));
                 if realloc.is_none() {
-                    self.cleanup.push(Cleanup::Object(op.clone()));
+                    self.cleanup.push(Cleanup { address: ptr });
                 }
             }
 
@@ -2741,7 +2748,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 let op = &operands[0];
                 let size = self.r#gen.r#gen.sizes.size(element).size_wasm32();
-                let align = self.r#gen.r#gen.sizes.align(element).align_wasm32();
+                let _align = self.r#gen.r#gen.sizes.align(element).align_wasm32();
                 let address = self.locals.tmp("address");
                 let ty = self.r#gen.type_name(element, true);
                 let index = self.locals.tmp("index");
@@ -2759,16 +2766,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.r#gen.qualify_package(FFI_DIR)
                 );
 
-                if realloc.is_none() {
-                    self.cleanup.push(Cleanup::Memory {
-                        address: address.clone(),
-                        size: format!("({op}).length() * {size}"),
-                        align,
-                    });
-                }
-
-                results.push(address);
+                results.push(address.clone());
                 results.push(format!("({op}).length()"));
+
+                if realloc.is_none() {
+                    self.cleanup.push(Cleanup { address });
+                }
             }
 
             Instruction::ListLift { element, .. } => {
@@ -2957,28 +2960,19 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::Return { amt, .. } => {
                 for clean in &self.cleanup {
-                    match clean {
-                        Cleanup::Memory {
-                            address,
-                            size: _,
-                            align: _,
-                        } => uwriteln!(
-                            self.src,
-                            "{}free({address})",
-                            self.r#gen.qualify_package(FFI_DIR)
-                        ),
-                        Cleanup::Object(obj) => uwriteln!(self.src, "ignore({obj})"),
-                    }
+                    let address = &clean.address;
+                    uwriteln!(
+                        self.src,
+                        "{}free({address})",
+                        self.r#gen.qualify_package(FFI_DIR)
+                    );
                 }
 
                 if self.needs_cleanup_list {
                     uwrite!(
                         self.src,
                         "
-                        cleanupList.each(fn(cleanup) {{
-                            {}free(cleanup.address);
-                        }})
-                        ignore(ignoreList)
+                        cleanup_list.each({}free)
                         ",
                         self.r#gen.qualify_package(FFI_DIR)
                     );
@@ -3291,10 +3285,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 "let {address} = {ffi_qualifier}malloc({})",
                 size.size_wasm32(),
             );
-            self.cleanup.push(Cleanup::Memory {
+            self.cleanup.push(Cleanup {
                 address: address.clone(),
-                size: size.size_wasm32().to_string(),
-                align: align.align_wasm32(),
             });
             address
         } else {
@@ -3325,17 +3317,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             self.needs_cleanup_list = true;
 
             for cleanup in &self.cleanup {
-                match cleanup {
-                    Cleanup::Memory {
-                        address,
-                        size,
-                        align,
-                    } => uwriteln!(
-                        self.src,
-                        "cleanupList.push({{address: {address}, size: {size}, align: {align}}})",
-                    ),
-                    Cleanup::Object(obj) => uwriteln!(self.src, "ignoreList.push({obj})",),
-                }
+                let address = &cleanup.address;
+                uwriteln!(
+                    self.src,
+                    "{}free({address})",
+                    self.gen.qualify_package(FFI_DIR)
+                );
             }
         }
 

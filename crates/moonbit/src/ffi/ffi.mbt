@@ -88,6 +88,7 @@ extern "wasm" fn copy(dest : Int, src : Int, len : Int) =
   #|(func (param i32) (param i32) (param i32) local.get 0 local.get 1 local.get 2 memory.copy)
 
 ///|
+#owned(str)
 pub extern "wasm" fn str2ptr(str : String) -> Int =
   #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.add)
 
@@ -99,6 +100,7 @@ pub extern "wasm" fn ptr2str(ptr : Int, len : Int) -> String =
   #| local.get 2)
 
 ///|
+#owned(bytes)
 pub extern "wasm" fn bytes2ptr(bytes : FixedArray[Byte]) -> Int =
   #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.add)
 
@@ -110,26 +112,32 @@ pub extern "wasm" fn ptr2bytes(ptr : Int, len : Int) -> FixedArray[Byte] =
   #| local.get 2)
 
 ///|
+#owned(array)
 pub extern "wasm" fn uint_array2ptr(array : FixedArray[UInt]) -> Int =
   #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.add)
 
 ///|
+#owned(array)
 pub extern "wasm" fn uint64_array2ptr(array : FixedArray[UInt64]) -> Int =
   #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.add)
 
 ///|
+#owned(array)
 pub extern "wasm" fn int_array2ptr(array : FixedArray[Int]) -> Int =
   #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.add)
 
 ///|
+#owned(array)
 pub extern "wasm" fn int64_array2ptr(array : FixedArray[Int64]) -> Int =
   #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.add)
 
 ///|
+#owned(array)
 pub extern "wasm" fn float_array2ptr(array : FixedArray[Float]) -> Int =
   #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.add)
 
 ///|
+#owned(array)
 pub extern "wasm" fn double_array2ptr(array : FixedArray[Double]) -> Int =
   #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.add)
 
@@ -202,14 +210,4 @@ pub fn cabi_realloc(
   copy(dst, src_offset, if src_size < dst_size { src_size } else { dst_size })
   free(src_offset)
   dst
-}
-
-///|
-pub(open) trait Any {}
-
-///|
-pub(all) struct Cleanup {
-  address : Int
-  size : Int
-  align : Int
 }

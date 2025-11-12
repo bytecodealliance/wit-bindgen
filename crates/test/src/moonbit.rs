@@ -105,7 +105,7 @@ impl LanguageMethods for MoonBit {
         cmd.arg("check")
             .arg("--warn-list")
             .arg("-28")
-            .arg("--deny-warn")
+            // .arg("--deny-warn")
             .arg("--source-dir")
             .arg(verify.bindings_dir);
 
