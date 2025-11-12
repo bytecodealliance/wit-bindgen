@@ -1271,7 +1271,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         self.emit(&Instruction::AsyncTaskReturn { name, params });
                     }
 
-                    // All async/non-async cases with results that need to be returned are present here
+                    // All async/non-async cases with results that need to be returned
                     //
                     // In practice, async imports should not end up here, as the returned result of an
                     // async import is *not* a pointer but instead a status code.
@@ -1281,14 +1281,24 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         self.emit(&Instruction::AsyncTaskReturn { name, params });
                     }
 
-                    // All async/non-async cases with no results simply return
-                    //
-                    // In practice, an async import will never get here (it always has a result, the error code)
+                    // All async/non-async cases with no results
                     (_, None) => {
-                        self.emit(&Instruction::Return {
-                            func,
-                            amt: sig.results.len(),
-                        });
+                        if async_ {
+                            let name = &format!("[task-return]{}", func.name);
+                            self.emit(&Instruction::AsyncTaskReturn {
+                                name: name,
+                                params: if sig.results.len() > MAX_FLAT_ASYNC_PARAMS {
+                                    &[WasmType::Pointer]
+                                } else {
+                                    &sig.results
+                                },
+                            });
+                        } else {
+                            self.emit(&Instruction::Return {
+                                func,
+                                amt: sig.results.len(),
+                            });
+                        }
                     }
                 }
 
