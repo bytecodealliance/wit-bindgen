@@ -29,13 +29,13 @@ use wit_bindgen_core::{
 // TODO: Export will share the type signatures with the import by using a newtype alias
 pub(crate) const FFI_DIR: &str = "ffi";
 
-pub(crate) const FFI: &str = include_str!("./async-wasm/ffi.mbt");
+pub(crate) const FFI: &str = include_str!("./ffi/ffi.mbt");
 
-pub(crate) const ASYNC_PRIMITIVE: &str = include_str!("./async-wasm/async_primitive.mbt");
-pub(crate) const ASYNC_FUTURE: &str = include_str!("./async-wasm/future.mbt");
-pub(crate) const ASYNC_WASM_PRIMITIVE: &str = include_str!("./async-wasm/wasm_primitive.mbt");
-pub(crate) const ASYNC_WAITABLE_SET: &str = include_str!("./async-wasm/waitable_task.mbt");
-pub(crate) const ASYNC_SUBTASK: &str = include_str!("./async-wasm/subtask.mbt");
+pub(crate) const ASYNC_PRIMITIVE: &str = include_str!("./ffi/async_primitive.mbt");
+pub(crate) const ASYNC_FUTURE: &str = include_str!("./ffi/future.mbt");
+pub(crate) const ASYNC_WASM_PRIMITIVE: &str = include_str!("./ffi/wasm_primitive.mbt");
+pub(crate) const ASYNC_WAITABLE_SET: &str = include_str!("./ffi/waitable_task.mbt");
+pub(crate) const ASYNC_SUBTASK: &str = include_str!("./ffi/subtask.mbt");
 struct Segment<'a> {
     name: &'a str,
     src: &'a str,
