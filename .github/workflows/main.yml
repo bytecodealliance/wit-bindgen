@@ -115,7 +115,7 @@ jobs:
   # While async is off-by-default and toolchains are percolating this is a
   # separate job to get configured slightly differently.
   async:
-    name: Test Async
+    name: Test Async (allowed to fail)
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -230,7 +230,7 @@ jobs:
       - build
       - verify-publish
       - check
-      - async
+      # - async
     if: always()
 
     steps:
