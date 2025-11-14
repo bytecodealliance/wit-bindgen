@@ -47,7 +47,7 @@
 use core::ffi::c_void;
 
 extern_wasm! {
-    extern "C" {
+    unsafe extern "C" {
         /// Sets the global task pointer to `ptr` provided. Returns the previous
         /// value.
         ///

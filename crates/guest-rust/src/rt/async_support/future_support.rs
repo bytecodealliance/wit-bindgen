@@ -111,9 +111,9 @@
 //! alive until that write completes but otherwise shouldn't hinder anything
 //! else.
 
-use crate::rt::async_support::waitable::{WaitableOp, WaitableOperation};
-use crate::rt::async_support::ReturnCode;
 use crate::rt::Cleanup;
+use crate::rt::async_support::ReturnCode;
+use crate::rt::async_support::waitable::{WaitableOp, WaitableOperation};
 use std::alloc::Layout;
 use std::fmt;
 use std::future::{Future, IntoFuture};
@@ -219,31 +219,31 @@ impl<T> FutureOps for &FutureVtable<T> {
         self.layout
     }
     unsafe fn lower(&mut self, payload: Self::Payload, dst: *mut u8) {
-        (self.lower)(payload, dst)
+        unsafe { (self.lower)(payload, dst) }
     }
     unsafe fn dealloc_lists(&mut self, dst: *mut u8) {
-        (self.dealloc_lists)(dst)
+        unsafe { (self.dealloc_lists)(dst) }
     }
     unsafe fn lift(&mut self, dst: *mut u8) -> Self::Payload {
-        (self.lift)(dst)
+        unsafe { (self.lift)(dst) }
     }
     unsafe fn start_write(&mut self, future: u32, val: *const u8) -> u32 {
-        (self.start_write)(future, val)
+        unsafe { (self.start_write)(future, val) }
     }
     unsafe fn start_read(&mut self, future: u32, val: *mut u8) -> u32 {
-        (self.start_read)(future, val)
+        unsafe { (self.start_read)(future, val) }
     }
     unsafe fn cancel_read(&mut self, future: u32) -> u32 {
-        (self.cancel_read)(future)
+        unsafe { (self.cancel_read)(future) }
     }
     unsafe fn cancel_write(&mut self, future: u32) -> u32 {
-        (self.cancel_write)(future)
+        unsafe { (self.cancel_write)(future) }
     }
     unsafe fn drop_readable(&mut self, future: u32) {
-        (self.drop_readable)(future)
+        unsafe { (self.drop_readable)(future) }
     }
     unsafe fn drop_writable(&mut self, future: u32) {
-        (self.drop_writable)(future)
+        unsafe { (self.drop_writable)(future) }
     }
 }
 
@@ -259,7 +259,7 @@ pub unsafe fn future_new<T>(
     vtable: &'static FutureVtable<T>,
 ) -> (FutureWriter<T>, FutureReader<T>) {
     let (tx, rx) = unsafe { raw_future_new(vtable) };
-    (FutureWriter::new(tx, default), rx)
+    (unsafe { FutureWriter::new(tx, default) }, rx)
 }
 
 /// Helper function to create a new read/write pair for a component model

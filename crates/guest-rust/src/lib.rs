@@ -873,15 +873,15 @@ pub mod examples;
 #[doc(hidden)]
 pub mod rt;
 
-#[cfg(feature = "async-spawn")]
-pub use rt::async_support::spawn;
 #[cfg(feature = "inter-task-wakeup")]
 pub use rt::async_support::UnitStreamOps;
+#[cfg(feature = "async-spawn")]
+pub use rt::async_support::spawn;
 #[cfg(feature = "async")]
 pub use rt::async_support::{
-    backpressure_dec, backpressure_inc, block_on, yield_async, yield_blocking, AbiBuffer,
-    FutureOps, FutureRead, FutureReader, FutureWrite, FutureWriteCancel, FutureWriteError,
-    FutureWriter, RawFutureRead, RawFutureReader, RawFutureWrite, RawFutureWriter, RawStreamRead,
-    RawStreamReader, RawStreamWrite, RawStreamWriter, StreamOps, StreamRead, StreamReader,
-    StreamResult, StreamWrite, StreamWriter,
+    AbiBuffer, FutureOps, FutureRead, FutureReader, FutureWrite, FutureWriteCancel,
+    FutureWriteError, FutureWriter, RawFutureRead, RawFutureReader, RawFutureWrite,
+    RawFutureWriter, RawStreamRead, RawStreamReader, RawStreamWrite, RawStreamWriter, StreamOps,
+    StreamRead, StreamReader, StreamResult, StreamWrite, StreamWriter, backpressure_dec,
+    backpressure_inc, block_on, yield_async, yield_blocking,
 };

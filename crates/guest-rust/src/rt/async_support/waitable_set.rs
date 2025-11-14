@@ -67,7 +67,7 @@ impl Drop for WaitableSet {
 
 extern_wasm! {
     #[link(wasm_import_module = "$root")]
-    extern "C" {
+    unsafe extern "C" {
         #[link_name = "[waitable-set-new]"]
         fn new() -> u32;
         #[link_name = "[waitable-set-drop]"]

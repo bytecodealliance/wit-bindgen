@@ -7,12 +7,12 @@
 //! the canonical ABI are additionally leaked with it which should be memory
 //! safe.
 
+use crate::rt::Cleanup;
 use crate::rt::async_support::waitable::{WaitableOp, WaitableOperation};
 use crate::rt::async_support::{
     STATUS_RETURNED, STATUS_RETURNED_CANCELLED, STATUS_STARTED, STATUS_STARTED_CANCELLED,
     STATUS_STARTING,
 };
-use crate::rt::Cleanup;
 use std::alloc::Layout;
 use std::future::Future;
 use std::marker;
@@ -275,7 +275,7 @@ impl<T: Subtask> InProgress<T> {
 
 extern_wasm! {
     #[link(wasm_import_module = "$root")]
-    extern "C" {
+    unsafe extern "C" {
         #[link_name = "[subtask-cancel]"]
         fn cancel(handle: u32) -> u32;
         #[link_name = "[subtask-drop]"]

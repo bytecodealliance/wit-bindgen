@@ -2,7 +2,7 @@
 //! module documentation in `future_support.rs`.
 
 use crate::rt::async_support::waitable::{WaitableOp, WaitableOperation};
-use crate::rt::async_support::{AbiBuffer, ReturnCode, DROPPED};
+use crate::rt::async_support::{AbiBuffer, DROPPED, ReturnCode};
 use {
     crate::rt::Cleanup,
     std::{
@@ -126,34 +126,34 @@ unsafe impl<T: 'static> StreamOps for &StreamVtable<T> {
     }
     unsafe fn lower(&mut self, payload: Self::Payload, dst: *mut u8) {
         if let Some(f) = self.lower {
-            f(payload, dst)
+            unsafe { f(payload, dst) }
         }
     }
     unsafe fn dealloc_lists(&mut self, dst: *mut u8) {
         if let Some(f) = self.dealloc_lists {
-            f(dst)
+            unsafe { f(dst) }
         }
     }
     unsafe fn lift(&mut self, dst: *mut u8) -> Self::Payload {
-        (self.lift.unwrap())(dst)
+        unsafe { (self.lift.unwrap())(dst) }
     }
     unsafe fn start_write(&mut self, stream: u32, val: *const u8, amt: usize) -> u32 {
-        (self.start_write)(stream, val, amt)
+        unsafe { (self.start_write)(stream, val, amt) }
     }
     unsafe fn start_read(&mut self, stream: u32, val: *mut u8, amt: usize) -> u32 {
-        (self.start_read)(stream, val, amt)
+        unsafe { (self.start_read)(stream, val, amt) }
     }
     unsafe fn cancel_read(&mut self, stream: u32) -> u32 {
-        (self.cancel_read)(stream)
+        unsafe { (self.cancel_read)(stream) }
     }
     unsafe fn cancel_write(&mut self, stream: u32) -> u32 {
-        (self.cancel_write)(stream)
+        unsafe { (self.cancel_write)(stream) }
     }
     unsafe fn drop_readable(&mut self, stream: u32) {
-        (self.drop_readable)(stream)
+        unsafe { (self.drop_readable)(stream) }
     }
     unsafe fn drop_writable(&mut self, stream: u32) {
-        (self.drop_writable)(stream)
+        unsafe { (self.drop_writable)(stream) }
     }
 }
 

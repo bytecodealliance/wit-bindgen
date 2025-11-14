@@ -11,7 +11,7 @@ pub struct UnitStreamOps;
 
 extern_wasm! {
     #[link(wasm_import_module = "$root")]
-    extern "C" {
+    unsafe extern "C" {
         #[link_name = "[stream-new-unit]"]
         fn unit_new() -> u64;
         #[link_name = "[async-lower][stream-write-unit]"]
