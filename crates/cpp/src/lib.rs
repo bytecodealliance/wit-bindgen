@@ -1055,7 +1055,7 @@ impl CppInterfaceGenerator<'_> {
                 ""
             };
             res.arguments.push((
-                name.to_snake_case(),
+                to_c_ident(name),
                 self.type_name(param, &res.namespace, Flavor::Argument(abi_variant)) + is_pointer,
             ));
         }
@@ -1662,7 +1662,7 @@ impl CppInterfaceGenerator<'_> {
             uwriteln!(self.gen.h_src.src, "struct {pascal} {{");
             for field in record.fields.iter() {
                 let typename = self.type_name(&field.ty, namespc, flavor);
-                let fname = field.name.to_snake_case();
+                let fname = to_c_ident(&field.name);
                 uwriteln!(self.gen.h_src.src, "{typename} {fname};");
             }
             uwriteln!(self.gen.h_src.src, "}};");
@@ -1703,7 +1703,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
             for field in record.fields.iter() {
                 Self::docs(&mut self.gen.h_src.src, &field.docs);
                 let typename = self.type_name(&field.ty, &namespc, Flavor::InStruct);
-                let fname = field.name.to_snake_case();
+                let fname = to_c_ident(&field.name);
                 uwriteln!(self.gen.h_src.src, "{typename} {fname};");
             }
             uwriteln!(self.gen.h_src.src, "}};");
@@ -1884,7 +1884,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
             uwriteln!(self.gen.h_src.src, "k_None = 0,");
             for (n, field) in flags.flags.iter().enumerate() {
                 Self::docs(&mut self.gen.h_src.src, &field.docs);
-                let fname = field.name.to_pascal_case();
+                let fname = to_c_ident(&field.name).to_pascal_case();
                 uwriteln!(self.gen.h_src.src, "k{fname} = (1ULL<<{n}),");
             }
             uwriteln!(self.gen.h_src.src, "}};");
@@ -1926,7 +1926,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
             let mut all_types = String::new();
             for case in variant.cases.iter() {
                 Self::docs(&mut self.gen.h_src.src, &case.docs);
-                let case_pascal = case.name.to_pascal_case();
+                let case_pascal = to_c_ident(&case.name).to_pascal_case();
                 if !all_types.is_empty() {
                     all_types += ", ";
                 }
@@ -1985,7 +1985,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                 uwriteln!(
                     self.gen.h_src.src,
                     " k{} = {i},",
-                    case.name.to_pascal_case(),
+                    to_c_ident(&case.name).to_pascal_case(),
                 );
             }
             uwriteln!(self.gen.h_src.src, "}};\n");
@@ -2655,7 +2655,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     uwriteln!(self.src, "case {}: {{", i);
                     if let Some(ty) = case.ty.as_ref() {
                         let ty = self.gen.type_name(ty, &self.namespace, Flavor::InStruct);
-                        let case = format!("{elem_ns}::{}", case.name.to_pascal_case());
+                        let case = format!("{elem_ns}::{}", to_c_ident(&case.name).to_pascal_case());
                         uwriteln!(
                             self.src,
                             "{} &{} = std::get<{case}>({}.variants).value;",
@@ -2690,20 +2690,24 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
 
                 let op0 = &operands[0];
 
+                // Use std::optional to avoid default constructor issues
+                self.gen.gen.dependencies.needs_optional = true;
+                uwriteln!(self.src, "std::optional<{ty}> {result}_opt;");
                 uwriteln!(self.src, "switch ({op0}) {{");
                 for (i, (case, (block, block_results))) in
                     variant.cases.iter().zip(blocks).enumerate()
                 {
-                    let tp = case.name.clone().to_pascal_case();
+                    let tp = to_c_ident(&case.name).to_pascal_case();
                     uwriteln!(self.src, "case {i}: {{ {block}");
                     uwriteln!(
                         self.src,
-                        "{result}.variants = {ty}::{tp}{{{}}};",
+                        "{result}_opt = {ty}{{{{{ty}::{tp}{{{}}}}}}};",
                         move_if_necessary(&block_results.first().cloned().unwrap_or_default())
                     );
                     uwriteln!(self.src, "}} break;");
                 }
                 uwriteln!(self.src, "}}");
+                uwriteln!(self.src, "{ty} {result} = std::move(*{result}_opt);");
 
                 results.push(result);
             }
