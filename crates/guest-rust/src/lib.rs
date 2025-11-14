@@ -747,17 +747,6 @@ extern crate std;
 ///     // more allocations than necessary.
 ///     ownership: Owning,
 ///
-///     // Specifies an alternative name for the `export!` macro generated for
-///     // any exports this world has.
-///     //
-///     // Defaults to "export"
-///     export_macro_name: "export",
-///
-///     // Indicates whether the `export!` macro is `pub` or just `pub(crate)`.
-///     //
-///     // This defaults to `false`.
-///     pub_export_macro: false,
-///
 ///     // The second mode of ownership is "Borrowing". This mode then
 ///     // additionally has a boolean flag indicating whether duplicate types
 ///     // should be generated if necessary.
@@ -777,6 +766,17 @@ extern crate std;
 ///     // `wit-bindgen` repository to help improve the default "Owning" use
 ///     // case above if possible.
 ///     ownership: Borrowing { duplicate_if_necessary: false },
+///
+///     // Specifies an alternative name for the `export!` macro generated for
+///     // any exports this world has.
+///     //
+///     // Defaults to "export"
+///     export_macro_name: "export",
+///
+///     // Indicates whether the `export!` macro is `pub` or just `pub(crate)`.
+///     //
+///     // This defaults to `false`.
+///     pub_export_macro: false,
 ///
 ///     // The generated `export!` macro, if any, will by default look for
 ///     // generated types adjacent to where the `export!` macro is invoked
