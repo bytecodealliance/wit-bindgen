@@ -4058,6 +4058,10 @@ pub fn to_c_ident(name: &str) -> String {
         //  variable names for option and result flattening.
         "ret" => "ret_".into(),
         "err" => "err_".into(),
+        // C standard library macros that conflict when used as identifiers
+        "stdin" => "stdin_".into(),
+        "stdout" => "stdout_".into(),
+        "stderr" => "stderr_".into(),
         s => s.to_snake_case(),
     }
 }

@@ -721,14 +721,14 @@ fn namespace(resolve: &Resolve, owner: &TypeOwner, guest_export: bool, opts: &Op
         result.push(String::from("exports"));
     }
     match owner {
-        TypeOwner::World(w) => result.push(resolve.worlds[*w].name.to_snake_case()),
+        TypeOwner::World(w) => result.push(to_c_ident(&resolve.worlds[*w].name)),
         TypeOwner::Interface(i) => {
             let iface = &resolve.interfaces[*i];
             let pkg = &resolve.packages[iface.package.unwrap()];
-            result.push(pkg.name.namespace.to_snake_case());
-            result.push(pkg.name.name.to_snake_case());
+            result.push(to_c_ident(&pkg.name.namespace));
+            result.push(to_c_ident(&pkg.name.name));
             if let Some(name) = &iface.name {
-                result.push(name.to_snake_case());
+                result.push(to_c_ident(name));
             }
         }
         TypeOwner::None => (),
@@ -797,8 +797,23 @@ struct CppInterfaceGenerator<'a> {
 
 impl CppInterfaceGenerator<'_> {
     fn types(&mut self, iface: InterfaceId) {
-        let iface = &self.resolve().interfaces[iface];
-        for (name, id) in iface.types.iter() {
+        let iface_data = &self.resolve().interfaces[iface];
+
+        // First pass: emit forward declarations for all resources
+        // This ensures resources can reference each other in method signatures
+        for (name, id) in iface_data.types.iter() {
+            let ty = &self.resolve().types[*id];
+            if matches!(&ty.kind, TypeDefKind::Resource) {
+                let pascal = name.to_upper_camel_case();
+                let guest_import = self.gen.imported_interfaces.contains(&iface);
+                let namespc = namespace(self.resolve, &ty.owner, !guest_import, &self.gen.opts);
+                self.gen.h_src.change_namespace(&namespc);
+                uwriteln!(self.gen.h_src.src, "class {pascal};");
+            }
+        }
+
+        // Second pass: emit full type definitions
+        for (name, id) in iface_data.types.iter() {
             self.define_type(name, *id);
         }
     }
@@ -1055,7 +1070,7 @@ impl CppInterfaceGenerator<'_> {
                 ""
             };
             res.arguments.push((
-                name.to_snake_case(),
+                to_c_ident(name),
                 self.type_name(param, &res.namespace, Flavor::Argument(abi_variant)) + is_pointer,
             ));
         }
@@ -1478,6 +1493,19 @@ impl CppInterfaceGenerator<'_> {
                 }
                 TypeDefKind::Handle(Handle::Own(id)) => {
                     let mut typename = self.type_name(&Type::Id(*id), from_namespace, flavor);
+                    let ty = &self.resolve.types[*id];
+
+                    // Follow type aliases to find the actual resource definition
+                    // When a resource is `use`d in another interface, we have a type alias
+                    // with the new interface as owner. We need to follow to the original resource.
+                    let resource_ty = match &ty.kind {
+                        TypeDefKind::Type(Type::Id(resource_id)) => {
+                            &self.resolve.types[*resource_id]
+                        }
+                        _ => ty,
+                    };
+
+                    let is_exported = self.is_exported_type(resource_ty);
                     match (false, flavor) {
                         (false, Flavor::Argument(AbiVariant::GuestImport))
                         | (true, Flavor::Argument(AbiVariant::GuestExport)) => {
@@ -1487,7 +1515,12 @@ impl CppInterfaceGenerator<'_> {
                         | (false, Flavor::Result(AbiVariant::GuestExport))
                         | (true, Flavor::Argument(AbiVariant::GuestImport))
                         | (true, Flavor::Result(AbiVariant::GuestImport)) => {
-                            typename.push_str(&format!("::{OWNED_CLASS_NAME}"))
+                            // Only exported resources have ::Owned typedef
+                            if is_exported {
+                                typename.push_str(&format!("::{OWNED_CLASS_NAME}"))
+                            } else {
+                                typename.push_str("&&")
+                            }
                         }
                         (false, Flavor::Result(AbiVariant::GuestImport))
                         | (true, Flavor::Result(AbiVariant::GuestExport)) => (),
@@ -1495,8 +1528,7 @@ impl CppInterfaceGenerator<'_> {
                         (false, Flavor::BorrowedArgument) => (),
                         (_, _) => todo!(),
                     }
-                    let ty = &self.resolve.types[*id];
-                    if matches!(flavor, Flavor::InStruct) && self.is_exported_type(ty) {
+                    if matches!(flavor, Flavor::InStruct) && is_exported {
                         typename.push_str(&format!("::{OWNED_CLASS_NAME}"))
                     }
                     typename
@@ -1532,16 +1564,26 @@ impl CppInterfaceGenerator<'_> {
                     self.scoped_type_name(*id, from_namespace, guest_export)
                 }
                 TypeDefKind::Option(o) => {
+                    // Template parameters need base types without && or other decorations
+                    // For import arguments, use BorrowedArgument flavor to get string_view
+                    let template_flavor = match flavor {
+                        Flavor::Argument(AbiVariant::GuestImport) => Flavor::BorrowedArgument,
+                        _ => Flavor::InStruct,
+                    };
                     self.gen.dependencies.needs_optional = true;
-                    "std::optional<".to_string() + &self.type_name(o, from_namespace, flavor) + ">"
+                    "std::optional<".to_string()
+                        + &self.type_name(o, from_namespace, template_flavor)
+                        + ">"
                 }
                 TypeDefKind::Result(r) => {
+                    // Template parameters need base types without && or other decorations
+                    let template_flavor = Flavor::InStruct;
                     let err_type = r.err.as_ref().map_or(String::from("wit::Void"), |ty| {
-                        self.type_name(ty, from_namespace, flavor)
+                        self.type_name(ty, from_namespace, template_flavor)
                     });
                     self.gen.dependencies.needs_expected = true;
                     "std::expected<".to_string()
-                        + &self.optional_type_name(r.ok.as_ref(), from_namespace, flavor)
+                        + &self.optional_type_name(r.ok.as_ref(), from_namespace, template_flavor)
                         + ", "
                         + &err_type
                         + ">"
@@ -1662,7 +1704,7 @@ impl CppInterfaceGenerator<'_> {
             uwriteln!(self.gen.h_src.src, "struct {pascal} {{");
             for field in record.fields.iter() {
                 let typename = self.type_name(&field.ty, namespc, flavor);
-                let fname = field.name.to_snake_case();
+                let fname = to_c_ident(&field.name);
                 uwriteln!(self.gen.h_src.src, "{typename} {fname};");
             }
             uwriteln!(self.gen.h_src.src, "}};");
@@ -1671,6 +1713,8 @@ impl CppInterfaceGenerator<'_> {
 
     fn is_exported_type(&self, ty: &TypeDef) -> bool {
         if let TypeOwner::Interface(intf) = ty.owner {
+            // For resources used in export functions, check if the resource's owner
+            // interface is in imported_interfaces (which was populated during import())
             !self.gen.imported_interfaces.contains(&intf)
         } else {
             true
@@ -1703,7 +1747,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
             for field in record.fields.iter() {
                 Self::docs(&mut self.gen.h_src.src, &field.docs);
                 let typename = self.type_name(&field.ty, &namespc, Flavor::InStruct);
-                let fname = field.name.to_snake_case();
+                let fname = to_c_ident(&field.name);
                 uwriteln!(self.gen.h_src.src, "{typename} {fname};");
             }
             uwriteln!(self.gen.h_src.src, "}};");
@@ -1722,7 +1766,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
             let guest_import = self.gen.imported_interfaces.contains(&intf);
             let definition = !(guest_import);
             let store = self.gen.start_new_file(Some(definition));
-            let mut world_name = self.gen.world.to_snake_case();
+            let mut world_name = to_c_ident(&self.gen.world);
             world_name.push_str("::");
             let namespc = namespace(self.resolve, &type_.owner, !guest_import, &self.gen.opts);
             let pascal = name.to_upper_camel_case();
@@ -1884,7 +1928,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
             uwriteln!(self.gen.h_src.src, "k_None = 0,");
             for (n, field) in flags.flags.iter().enumerate() {
                 Self::docs(&mut self.gen.h_src.src, &field.docs);
-                let fname = field.name.to_pascal_case();
+                let fname = to_c_ident(&field.name).to_pascal_case();
                 uwriteln!(self.gen.h_src.src, "k{fname} = (1ULL<<{n}),");
             }
             uwriteln!(self.gen.h_src.src, "}};");
@@ -1926,7 +1970,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
             let mut all_types = String::new();
             for case in variant.cases.iter() {
                 Self::docs(&mut self.gen.h_src.src, &case.docs);
-                let case_pascal = case.name.to_pascal_case();
+                let case_pascal = to_c_ident(&case.name).to_pascal_case();
                 if !all_types.is_empty() {
                     all_types += ", ";
                 }
@@ -1985,7 +2029,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                 uwriteln!(
                     self.gen.h_src.src,
                     " k{} = {i},",
-                    case.name.to_pascal_case(),
+                    to_c_ident(&case.name).to_pascal_case(),
                 );
             }
             uwriteln!(self.gen.h_src.src, "}};\n");
@@ -2518,10 +2562,28 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                                 &self.namespace,
                                 Flavor::Argument(self.variant),
                             );
-                            uwriteln!(
-                                self.src,
-                                "auto {var} = {tname}::Owned({tname}::ResourceRep({op}));"
-                            );
+
+                            // Check if this is an imported or exported resource
+                            let resource_ty = &self.gen.resolve.types[*ty];
+                            let resource_ty = match &resource_ty.kind {
+                                TypeDefKind::Type(Type::Id(id)) => &self.gen.resolve.types[*id],
+                                _ => resource_ty,
+                            };
+                            let is_exported = self.gen.is_exported_type(resource_ty);
+
+                            if is_exported {
+                                // Exported resources use ::Owned typedef
+                                uwriteln!(
+                                    self.src,
+                                    "auto {var} = {tname}::Owned({tname}::ResourceRep({op}));"
+                                );
+                            } else {
+                                // Imported resources construct from ResourceImportBase
+                                uwriteln!(
+                                    self.src,
+                                    "auto {var} = {tname}(wit::{RESOURCE_IMPORT_BASE_CLASS_NAME}{{{op}}});"
+                                );
+                            }
 
                             results.push(format!("std::move({var})"))
                         }
@@ -2655,7 +2717,8 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     uwriteln!(self.src, "case {}: {{", i);
                     if let Some(ty) = case.ty.as_ref() {
                         let ty = self.gen.type_name(ty, &self.namespace, Flavor::InStruct);
-                        let case = format!("{elem_ns}::{}", case.name.to_pascal_case());
+                        let case =
+                            format!("{elem_ns}::{}", to_c_ident(&case.name).to_pascal_case());
                         uwriteln!(
                             self.src,
                             "{} &{} = std::get<{case}>({}.variants).value;",
@@ -2686,24 +2749,26 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let resultno = self.tmp();
                 let result = format!("variant{resultno}");
 
-                uwriteln!(self.src, "{ty} {result};");
-
                 let op0 = &operands[0];
 
+                // Use std::optional to avoid default constructor issues
+                self.gen.gen.dependencies.needs_optional = true;
+                uwriteln!(self.src, "std::optional<{ty}> {result}_opt;");
                 uwriteln!(self.src, "switch ({op0}) {{");
                 for (i, (case, (block, block_results))) in
                     variant.cases.iter().zip(blocks).enumerate()
                 {
-                    let tp = case.name.clone().to_pascal_case();
+                    let tp = to_c_ident(&case.name).to_pascal_case();
                     uwriteln!(self.src, "case {i}: {{ {block}");
                     uwriteln!(
                         self.src,
-                        "{result}.variants = {ty}::{tp}{{{}}};",
+                        "{result}_opt = {ty}{{{{{ty}::{tp}{{{}}}}}}};",
                         move_if_necessary(&block_results.first().cloned().unwrap_or_default())
                     );
                     uwriteln!(self.src, "}} break;");
                 }
                 uwriteln!(self.src, "}}");
+                uwriteln!(self.src, "{ty} {result} = std::move(*{result}_opt);");
 
                 results.push(result);
             }
@@ -2745,7 +2810,18 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     Flavor::InStruct
                 };
                 let ty = self.gen.type_name(payload, &self.namespace, flavor);
-                let bind_some = format!("{ty} {some_payload} = (std::move({op0})).value();");
+                let is_function_param = self.params.iter().any(|p| p == op0);
+                let value_extract = if matches!(payload, Type::String)
+                    && matches!(self.variant, AbiVariant::GuestImport)
+                    && !is_function_param
+                {
+                    // Import from struct/variant field: optional<wit::string> needs .get_view()
+                    format!("(std::move({op0})).value().get_view()")
+                } else {
+                    // Direct parameter, export, or non-string: just .value()
+                    format!("(std::move({op0})).value()")
+                };
+                let bind_some = format!("{ty} {some_payload} = {value_extract};");
 
                 uwrite!(
                     self.src,
@@ -2775,14 +2851,14 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
 
                 let tmp = self.tmp();
                 let resultname = self.tempname("option", tmp);
+                let some_value = move_if_necessary(&some_results[0]);
                 uwriteln!(
                     self.src,
                     "{full_type} {resultname};
                     if ({op0}) {{
                         {some}
-                        {resultname}.emplace({});
-                    }}",
-                    some_results[0]
+                        {resultname}.emplace({some_value});
+                    }}"
                 );
                 results.push(format!("std::move({resultname})"));
             }
@@ -2874,21 +2950,24 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
 
                 let tmp = self.tmp();
                 let resultname = self.tempname("result", tmp);
+                // Use std::optional to avoid default constructor issues with std::expected
+                self.gen.gen.dependencies.needs_optional = true;
                 let ok_assign = if result.ok.is_some() {
-                    format!("{resultname}.emplace({ok_result});")
+                    format!("{resultname}_opt.emplace({full_type}({ok_result}));")
                 } else {
-                    String::new()
+                    format!("{resultname}_opt.emplace({full_type}());")
                 };
                 uwriteln!(
                     self.src,
-                    "{full_type} {resultname};
+                    "std::optional<{full_type}> {resultname}_opt;
                     if ({operand}==0) {{
                         {ok}
                         {ok_assign}
                     }} else {{
                         {err}
-                        {resultname}={err_type}{{{err_result}}};
-                    }}"
+                        {resultname}_opt.emplace({err_type}{{{err_result}}});
+                    }}
+                    {full_type} {resultname} = std::move(*{resultname}_opt);"
                 );
                 results.push(resultname);
             }
