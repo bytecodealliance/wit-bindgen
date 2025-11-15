@@ -1,0 +1,86 @@
+// Test file for C++ code generation fixes:
+// 1. C++ keyword escaping (parameter named 'this')
+// 2. Forward declarations for resources
+
+package test:cpp-http-owned;
+
+world cpp-http-owned {
+  // Test 1: Resource with forward reference
+  // IncomingBody returns FutureTrailers (forward declaration needed)
+  import test-interface: interface {
+    resource incoming-body {
+      // Static method with 'this' parameter (C++ keyword)
+      finish: static func(this: incoming-body) -> future-trailers;
+    }
+
+    resource future-trailers {
+      get: func() -> option<string>;
+    }
+
+    resource request {
+      // Method that returns another resource (forward declaration test)
+      consume: func() -> incoming-body;
+    }
+  }
+
+  // Test 2: Export interface with Owned types
+  export test-exports: interface {
+    resource request-data {
+      constructor();
+    }
+
+    resource response {
+      constructor();
+    }
+
+    // Function requiring ::Owned syntax
+    handle: func(req: request-data, resp: response);
+  }
+
+  // More C++ keywords as parameters
+  export keyword-test: func(this: string, class: u32, template: bool) -> string;
+
+  // Test 3: C++ keywords in records, enums, flags, and variants
+  export keyword-types: interface {
+    // Record with C++ keyword field names
+    record field-keywords {
+      class: string,
+      return: u32,
+      default: bool,
+      case: s64,
+      namespace: string,
+    }
+
+    // Enum with C++ keyword case names
+    enum case-keywords {
+      class,
+      return,
+      default,
+      case,
+      template,
+    }
+
+    // Flags with C++ keyword names
+    flags flag-keywords {
+      class,
+      return,
+      default,
+      case,
+      namespace,
+    }
+
+    // Variant with C++ keyword case names
+    variant variant-keywords {
+      class(string),
+      return(u32),
+      default,
+      case(bool),
+    }
+
+    // Functions using these types
+    test-record: func(input: field-keywords) -> field-keywords;
+    test-enum: func(input: case-keywords) -> case-keywords;
+    test-flags: func(input: flag-keywords) -> flag-keywords;
+    test-variant: func(input: variant-keywords) -> variant-keywords;
+  }
+}
