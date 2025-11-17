@@ -147,10 +147,11 @@ jobs:
     - run: cargo test -p wit-bindgen --all-features
     - run: cargo test -p wit-bindgen-rust
     - run: cargo test --workspace --exclude 'wit-bindgen*'
-    - run: rustup update nightly --no-self-update
-    - run: rustup component add miri --toolchain nightly
-    - run: rustup component add rust-src --toolchain nightly
-    - run: cargo +nightly miri test -p wit-bindgen --all-features
+    - run: rustup update nightly-2025-11-10 --no-self-update
+    - run: rustup default nightly-2025-11-10
+    - run: rustup component add miri
+    - run: rustup component add rust-src
+    - run: cargo miri test -p wit-bindgen --all-features
 
   check:
     name: Check
