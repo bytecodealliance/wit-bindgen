@@ -479,7 +479,7 @@ The importing component's responsibility for dropping borrows of imported resour
 - If the borrow was passed as an argument to one of the importing component's exports:
     - If the bindings were generated with `--autodrop-borrows=yes`, then borrowed handles will be automatically dropped when the exported function returns; no additional action is required by importing component
     - If the bindings were generated with `--autodrop-borrow=no`, or this command line option was not supplied, then the importing component must drop the borrowed handle by calling the generated `*_drop_borrow` function.
-- If the component obtained the borrow by calling `*_borrow*_` on an owned resource, it must not call `*_drop_borrow`
+- If the component obtained the borrow by calling `*_borrow*_` on an owned resource, it must **not** call `*_drop_borrow`
 
 Here is a potential implementation of the `run` export that correctly handles the lifetime of the owned cat resource retrieved from `get-cat-by-name`:
 
