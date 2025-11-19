@@ -2505,14 +2505,25 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 results.push(result);
             }
             abi::Instruction::HandleLower {
-                handle: Handle::Own(_ty),
+                handle: Handle::Own(ty),
                 ..
             } => {
                 let op = &operands[0];
-                if matches!(self.variant, AbiVariant::GuestImport) {
-                    results.push(format!("{op}.into_handle()"));
-                } else {
+
+                // Check if this is an imported or exported resource
+                let resource_ty = &self.gen.resolve.types[*ty];
+                let resource_ty = match &resource_ty.kind {
+                    TypeDefKind::Type(Type::Id(id)) => &self.gen.resolve.types[*id],
+                    _ => resource_ty,
+                };
+                let is_exported = self.gen.is_exported_type(resource_ty);
+
+                if is_exported {
+                    // Exported resources use .release()->handle
                     results.push(format!("{op}.release()->handle"));
+                } else {
+                    // Imported resources use .into_handle()
+                    results.push(format!("{op}.into_handle()"));
                 }
             }
             abi::Instruction::HandleLower {
@@ -2724,14 +2735,12 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     variant.cases.iter().zip(blocks).zip(payloads).enumerate()
                 {
                     uwriteln!(self.src, "case {}: {{", i);
-                    if let Some(ty) = case.ty.as_ref() {
-                        let ty = self.gen.type_name(ty, &self.namespace, Flavor::InStruct);
+                    if case.ty.is_some() {
                         let case =
                             format!("{elem_ns}::{}", to_c_ident(&case.name).to_pascal_case());
                         uwriteln!(
                             self.src,
-                            "{} &{} = std::get<{case}>({}.variants).value;",
-                            ty,
+                            "auto& {} = std::get<{case}>({}.variants).value;",
                             payload,
                             operands[0],
                         );
@@ -3211,11 +3220,11 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
         };
         uwriteln!(
             self.src,
-            "{static_var}{tp} ret_area[({size_string}+sizeof({tp})-1)/sizeof({tp})];"
+            "{static_var}{tp} ret_area{tmp}[({size_string}+sizeof({tp})-1)/sizeof({tp})];"
         );
         uwriteln!(
             self.src,
-            "{} ptr{tmp} = ({0})(&ret_area);",
+            "{} ptr{tmp} = ({0})(&ret_area{tmp});",
             self.gen.gen.opts.ptr_type(),
         );
 
