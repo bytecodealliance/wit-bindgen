@@ -149,16 +149,16 @@ pub struct Opts {
     /// Valid values include:
     ///
     /// - `owning`: Generated types will be composed entirely of owning fields,
-    /// regardless of whether they are used as parameters to imports or not.
+    ///   regardless of whether they are used as parameters to imports or not.
     ///
     /// - `coarse-borrowing`: Generated types used as parameters to imports will be
-    /// "deeply borrowing", i.e. contain references rather than owned values,
-    /// so long as they don't contain resources, in which case they will be
-    /// owning.
+    ///   "deeply borrowing", i.e. contain references rather than owned values,
+    ///   so long as they don't contain resources, in which case they will be
+    ///   owning.
     ///
     /// - `fine-borrowing": Generated types used as parameters to imports will be
-    /// "deeply borrowing", i.e. contain references rather than owned values
-    /// for all fields that are not resources, which will be owning.
+    ///   "deeply borrowing", i.e. contain references rather than owned values
+    ///   for all fields that are not resources, which will be owning.
     #[cfg_attr(feature = "clap", arg(long, default_value_t = Ownership::Owning))]
     pub ownership: Ownership,
 
@@ -279,6 +279,22 @@ impl Cpp {
 
     fn include(&mut self, s: &str) {
         self.includes.push(s.to_string());
+    }
+
+    /// Returns true if the function is a fallible constructor.
+    ///
+    /// Fallible constructors are constructors that return `result<T, E>` instead of just `T`.
+    /// In the generated C++ code, these become static factory methods named `Create` that
+    /// return `std::expected<T, E>`, rather than regular constructors.
+    fn is_fallible_constructor(&self, resolve: &Resolve, func: &Function) -> bool {
+        matches!(&func.kind, FunctionKind::Constructor(_))
+            && func.result.as_ref().is_some_and(|ty| {
+                if let Type::Id(id) = ty {
+                    matches!(&resolve.types[*id].kind, TypeDefKind::Result(_))
+                } else {
+                    false
+                }
+            })
     }
 
     fn interface<'a>(
@@ -706,7 +722,7 @@ impl WorldGenerator for Cpp {
         );
 
         if self.dependencies.needs_wit {
-            files.push(&format!("wit.h"), include_bytes!("../helper-types/wit.h"));
+            files.push("wit.h", include_bytes!("../helper-types/wit.h"));
         }
         Ok(())
     }
@@ -770,7 +786,11 @@ impl SourceWithState {
         }
         if same == 0 && !target.is_empty() {
             // if the root namespace exists below the current namespace we need to start at root
-            if self.namespace.contains(target.first().unwrap()) {
+            // Also ensure absolute qualification when crossing from exports to imports
+            if self.namespace.contains(target.first().unwrap())
+                || (self.namespace.first().map(|s| s.as_str()) == Some("exports")
+                    && target.first().map(|s| s.as_str()) != Some("exports"))
+            {
                 self.src.push_str("::");
             }
         }
@@ -871,7 +891,12 @@ impl CppInterfaceGenerator<'_> {
         let func_name_h = if !matches!(&func.kind, FunctionKind::Freestanding) {
             namespace.push(object.clone());
             if let FunctionKind::Constructor(_i) = &func.kind {
-                if guest_export && cpp_file {
+                // Fallible constructors return result<T, E> and are static factory methods
+                let is_fallible_constructor = self.gen.is_fallible_constructor(self.resolve, func);
+
+                if is_fallible_constructor {
+                    String::from("Create")
+                } else if guest_export && cpp_file {
                     String::from("New")
                 } else {
                     object.clone()
@@ -1022,8 +1047,12 @@ impl CppInterfaceGenerator<'_> {
         let is_drop = is_special_method(func);
         // we might want to separate c_sig and h_sig
         // let mut sig = String::new();
-        // not for ctor nor imported dtor on guest
-        if !matches!(&func.kind, FunctionKind::Constructor(_))
+
+        // Check if this is a fallible constructor (returns result<T, E>)
+        let is_fallible_constructor = self.gen.is_fallible_constructor(self.resolve, func);
+
+        // not for ctor nor imported dtor on guest (except fallible constructors)
+        if (!matches!(&func.kind, FunctionKind::Constructor(_)) || is_fallible_constructor)
             && !(matches!(is_drop, SpecialMethod::ResourceDrop)
                 && matches!(abi_variant, AbiVariant::GuestImport))
         {
@@ -1047,7 +1076,7 @@ impl CppInterfaceGenerator<'_> {
                 res.post_return = true;
             }
         }
-        if matches!(func.kind, FunctionKind::Static(_))
+        if (matches!(func.kind, FunctionKind::Static(_)) || is_fallible_constructor)
             && !(matches!(&is_drop, SpecialMethod::ResourceDrop)
                 && matches!(abi_variant, AbiVariant::GuestImport))
         {
@@ -1415,12 +1444,10 @@ impl CppInterfaceGenerator<'_> {
 
         if let Flavor::Argument(AbiVariant::GuestImport) = flavor {
             match self.gen.opts.ownership {
-                Ownership::Owning => {
-                    format!("{}", name)
-                }
+                Ownership::Owning => name.to_string(),
                 Ownership::CoarseBorrowing => {
                     if self.gen.types.get(id).has_own_handle {
-                        format!("{}", name)
+                        name.to_string()
                     } else {
                         format!("{}Param", name)
                     }
@@ -1442,12 +1469,14 @@ impl CppInterfaceGenerator<'_> {
     ) -> String {
         let ty = &self.resolve.types[id];
         let namespc = namespace(self.resolve, &ty.owner, guest_export, &self.gen.opts);
-        let mut relative = SourceWithState::default();
-        relative.namespace = Vec::from(from_namespace);
+        let mut relative = SourceWithState {
+            namespace: Vec::from(from_namespace),
+            ..Default::default()
+        };
         relative.qualify(&namespc);
         format!(
             "{}{}",
-            relative.src.to_string(),
+            &*relative.src,
             ty.name.as_ref().unwrap().to_pascal_case()
         )
     }
@@ -1594,7 +1623,16 @@ impl CppInterfaceGenerator<'_> {
                         + ">"
                 }
                 TypeDefKind::List(ty) => {
-                    let inner = self.type_name(ty, from_namespace, flavor);
+                    // For list elements, use BorrowedArgument flavor for imported functions
+                    // to get std::string_view instead of wit::string. Otherwise use InStruct
+                    // flavor to avoid adding && to owned resources (lists contain values, not rvalue references)
+                    let element_flavor = match flavor {
+                        Flavor::BorrowedArgument | Flavor::Argument(AbiVariant::GuestImport) => {
+                            Flavor::BorrowedArgument
+                        }
+                        _ => Flavor::InStruct,
+                    };
+                    let inner = self.type_name(ty, from_namespace, element_flavor);
                     match flavor {
                         Flavor::BorrowedArgument => {
                             self.gen.dependencies.needs_span = true;
@@ -1718,12 +1756,17 @@ impl CppInterfaceGenerator<'_> {
     }
 
     fn is_exported_type(&self, ty: &TypeDef) -> bool {
-        if let TypeOwner::Interface(intf) = ty.owner {
-            // For resources used in export functions, check if the resource's owner
-            // interface is in imported_interfaces (which was populated during import())
-            !self.gen.imported_interfaces.contains(&intf)
-        } else {
-            true
+        match ty.owner {
+            TypeOwner::Interface(intf) => {
+                // For resources used in export functions, check if the resource's owner
+                // interface is in imported_interfaces (which was populated during import())
+                !self.gen.imported_interfaces.contains(&intf)
+            }
+            TypeOwner::World(_) => {
+                // World-level resources are treated as imports, not exports
+                false
+            }
+            TypeOwner::None => true,
         }
     }
 }
@@ -1744,7 +1787,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
         let guest_export = self.is_exported_type(ty);
         let namespc = namespace(self.resolve, &ty.owner, guest_export, &self.gen.opts);
 
-        if self.gen.is_first_definition(&namespc, &name) {
+        if self.gen.is_first_definition(&namespc, name) {
             self.gen.h_src.change_namespace(&namespc);
             Self::docs(&mut self.gen.h_src.src, docs);
             let pascal = name.to_pascal_case();
@@ -1846,8 +1889,14 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                     FunctionKind::AsyncStatic(_id) => todo!(),
                 } {
                     self.generate_function(func, &TypeOwner::Interface(intf), variant);
+                    // For non-fallible constructors on export side, generate a New allocator method
+                    // For fallible constructors, the user provides their own Create method
+                    let is_fallible_constructor =
+                        self.gen.is_fallible_constructor(self.resolve, func);
+
                     if matches!(func.kind, FunctionKind::Constructor(_))
                         && matches!(variant, AbiVariant::GuestExport)
+                        && !is_fallible_constructor
                     {
                         // functional safety requires the option to use a different allocator, so move new into the implementation
                         let func2 = Function {
@@ -1912,6 +1961,33 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
             }
             uwriteln!(self.gen.h_src.src, "}};\n");
             self.gen.finish_file(&user_filename, store);
+        } else if matches!(type_.owner, TypeOwner::World(_)) {
+            // Handle world-level resources - treat as imported resources
+            let guest_export = false; // World-level resources are treated as imports
+            let namespc = namespace(self.resolve, &type_.owner, guest_export, &self.gen.opts);
+            self.gen.h_src.change_namespace(&namespc);
+
+            let pascal = name.to_upper_camel_case();
+            self.gen.dependencies.needs_imported_resources = true;
+            self.gen.dependencies.needs_wit = true;
+
+            let base_type = format!("wit::{RESOURCE_IMPORT_BASE_CLASS_NAME}");
+            let derive = format!(" : public {base_type}");
+            uwriteln!(self.gen.h_src.src, "class {pascal}{derive}{{\n");
+            uwriteln!(self.gen.h_src.src, "public:\n");
+
+            // Add destructor and constructor
+            uwriteln!(self.gen.h_src.src, "~{pascal}();");
+            uwriteln!(
+                self.gen.h_src.src,
+                "{pascal}(wit::{RESOURCE_IMPORT_BASE_CLASS_NAME} &&);"
+            );
+            uwriteln!(self.gen.h_src.src, "{pascal}({pascal}&&) = default;");
+            uwriteln!(
+                self.gen.h_src.src,
+                "{pascal}& operator=({pascal}&&) = default;"
+            );
+            uwriteln!(self.gen.h_src.src, "}};\n");
         }
     }
 
@@ -2509,7 +2585,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     size = size.format(POINTER_SIZE_EXPRESSION)
                 );
                 uwrite!(self.src, "{}", body.0);
-                uwriteln!(self.src, "auto e{tmp} = {};", body.1[0]);
+                uwriteln!(self.src, "auto e{tmp} = {};", move_if_necessary(&body.1[0]));
                 if let Some(code) = self.leak_on_insertion.take() {
                     assert!(self.needs_dealloc);
                     uwriteln!(self.src, "{code}");
@@ -3108,9 +3184,14 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     0 => {}
                     _ => {
                         assert!(*amt == operands.len());
+                        // Fallible constructors return expected, not void
+                        let is_fallible_constructor =
+                            self.gen.gen.is_fallible_constructor(self.gen.resolve, func);
+
                         match &func.kind {
                             FunctionKind::Constructor(_)
-                                if self.gen.gen.opts.is_only_handle(self.variant) =>
+                                if self.gen.gen.opts.is_only_handle(self.variant)
+                                    && !is_fallible_constructor =>
                             {
                                 // strange but works
                                 if matches!(self.variant, AbiVariant::GuestExport) {
@@ -3157,6 +3238,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                         }
                         if matches!(func.kind, FunctionKind::Constructor(_))
                             && self.gen.gen.opts.is_only_handle(self.variant)
+                            && !is_fallible_constructor
                         {
                             // we wrapped the handle in an object, so unpack it
 

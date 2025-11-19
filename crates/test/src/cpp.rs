@@ -49,16 +49,9 @@ impl LanguageMethods for Cpp {
             "async-trait-function.wit"
             | "error-context.wit"
             | "futures.wit"
-            | "lists.wit"
             | "multiversion"
-            | "resource-alias.wit"
-            | "resource-borrow-in-record.wit"
-            | "resource-fallible-constructor.wit"
-            | "resources.wit"
-            | "resources-in-aggregates.wit"
             | "resources-with-futures.wit"
             | "resources-with-streams.wit"
-            | "return-resource-from-export.wit"
             | "streams.wit" => true,
             _ => false,
         }
