@@ -3257,7 +3257,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
         let tmp = self.tmp();
         uwriteln!(
             self.src,
-            "{} ptr{tmp} = ({0})(&ret_area);",
+            "{} ptr{tmp} = ({0})(&ret_area{tmp});",
             self.gen.gen.opts.ptr_type(),
         );
 
