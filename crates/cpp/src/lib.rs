@@ -1338,7 +1338,8 @@ impl CppInterfaceGenerator<'_> {
                     f.needs_dealloc = needs_dealloc;
                     f.cabi_post = None;
                     abi::call(f.gen.resolve, variant, lift_lower, func, &mut f, false);
-                    let code = String::from(f.src);
+                    let ret_area_decl = f.emit_ret_area_if_needed();
+                    let code = format!("{}{}", ret_area_decl, String::from(f.src));
                     self.gen.c_src.src.push_str(&code);
                 }
             }
@@ -1382,8 +1383,9 @@ impl CppInterfaceGenerator<'_> {
                 let mut f = FunctionBindgen::new(self, params.clone());
                 f.params = params;
                 abi::post_return(f.gen.resolve, func, &mut f);
-                let FunctionBindgen { src, .. } = f;
-                self.gen.c_src.src.push_str(&src);
+                let ret_area_decl = f.emit_ret_area_if_needed();
+                let code = format!("{}{}", ret_area_decl, String::from(f.src));
+                self.gen.c_src.src.push_str(&code);
                 self.gen.c_src.src.push_str("}\n");
             }
         }
@@ -2107,6 +2109,8 @@ struct FunctionBindgen<'a, 'b> {
     cabi_post: Option<CabiPostInformation>,
     needs_dealloc: bool,
     leak_on_insertion: Option<String>,
+    return_pointer_area_size: ArchitectureSize,
+    return_pointer_area_align: Alignment,
 }
 
 impl<'a, 'b> FunctionBindgen<'a, 'b> {
@@ -2124,6 +2128,8 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             cabi_post: None,
             needs_dealloc: false,
             leak_on_insertion: None,
+            return_pointer_area_size: Default::default(),
+            return_pointer_area_align: Default::default(),
         }
     }
 
@@ -2194,6 +2200,47 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             offset.format(POINTER_SIZE_EXPRESSION),
             operands[0]
         );
+    }
+
+    /// Emits a shared return area declaration if needed by this function.
+    ///
+    /// During code generation, `return_pointer()` may be called multiple times for:
+    /// - Indirect parameter storage (when too many/large params)
+    /// - Return value storage (when return type is too large)
+    ///
+    /// **Safety:** This is safe because return pointers are used sequentially:
+    /// 1. Parameter marshaling (before call)
+    /// 2. Function execution
+    /// 3. Return value unmarshaling (after call)
+    ///
+    /// The scratch space is reused but never accessed simultaneously.
+    fn emit_ret_area_if_needed(&self) -> String {
+        if !self.return_pointer_area_size.is_empty() {
+            let size_string = self
+                .return_pointer_area_size
+                .format(POINTER_SIZE_EXPRESSION);
+            let tp = match self.return_pointer_area_align {
+                Alignment::Bytes(bytes) => match bytes.get() {
+                    1 => "uint8_t",
+                    2 => "uint16_t",
+                    4 => "uint32_t",
+                    8 => "uint64_t",
+                    // Fallback to uint8_t for unusual alignments (e.g., 16-byte SIMD).
+                    // This is safe: the size calculation ensures correct buffer size,
+                    // and uint8_t arrays can store any data regardless of alignment.
+                    _ => "uint8_t",
+                },
+                Alignment::Pointer => "uintptr_t",
+            };
+            let static_var = if self.gen.in_guest_import {
+                ""
+            } else {
+                "static "
+            };
+            format!("{static_var}{tp} ret_area[({size_string}+sizeof({tp})-1)/sizeof({tp})];\n")
+        } else {
+            String::new()
+        }
     }
 }
 
@@ -3202,30 +3249,15 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
     }
 
     fn return_pointer(&mut self, size: ArchitectureSize, align: Alignment) -> Self::Operand {
+        // Track maximum return area requirements
+        self.return_pointer_area_size = self.return_pointer_area_size.max(size);
+        self.return_pointer_area_align = self.return_pointer_area_align.max(align);
+
+        // Generate pointer to shared ret_area
         let tmp = self.tmp();
-        let size_string = size.format(POINTER_SIZE_EXPRESSION);
-        let tp = match align {
-            Alignment::Bytes(bytes) => match bytes.get() {
-                1 => "uint8_t",
-                2 => "uint16_t",
-                4 => "uint32_t",
-                8 => "uint64_t",
-                _ => todo!(),
-            },
-            Alignment::Pointer => "uintptr_t",
-        };
-        let static_var = if self.gen.in_guest_import {
-            ""
-        } else {
-            "static "
-        };
         uwriteln!(
             self.src,
-            "{static_var}{tp} ret_area{tmp}[({size_string}+sizeof({tp})-1)/sizeof({tp})];"
-        );
-        uwriteln!(
-            self.src,
-            "{} ptr{tmp} = ({0})(&ret_area{tmp});",
+            "{} ptr{tmp} = ({0})(&ret_area);",
             self.gen.gen.opts.ptr_type(),
         );
 
