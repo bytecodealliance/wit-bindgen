@@ -1639,7 +1639,8 @@ impl CppInterfaceGenerator<'_> {
         result: &str,
         variant: AbiVariant,
     ) -> (String, String) {
-        let extern_name = make_external_symbol(module_name, name, variant);
+        let mut extern_name = String::from("__wasm_import_");
+        extern_name.push_str(&make_external_symbol(module_name, name, variant));
         let import = format!("extern \"C\" __attribute__((import_module(\"{module_name}\")))\n __attribute__((import_name(\"{name}\")))\n {result} {extern_name}({args});\n")
         ;
         (extern_name, import)
