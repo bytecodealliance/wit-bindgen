@@ -66,10 +66,6 @@ impl LanguageMethods for Cpp {
             | "ret-areas.wit"
             | "return-resource-from-export.wit"
             | "same-names1.wit"
-            | "same-names5.wit"
-            | "variants.wit"
-            | "variants-unioning-types.wit"
-            | "worlds-with-types.wit"
             | "streams.wit" => true,
             _ => false,
         }

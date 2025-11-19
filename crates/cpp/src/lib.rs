@@ -591,13 +591,14 @@ impl WorldGenerator for Cpp {
 
     fn import_types(
         &mut self,
-        _resolve: &Resolve,
+        resolve: &Resolve,
         _world: WorldId,
         types: &[(&str, TypeId)],
         _files: &mut Files,
     ) {
-        for i in types.iter() {
-            uwriteln!(self.h_src.src, "// import_type {}", i.0);
+        let mut gen = self.interface(resolve, None, true, Some("$root".to_string()));
+        for (name, id) in types.iter() {
+            gen.define_type(name, *id);
         }
     }
 
@@ -973,6 +974,8 @@ impl CppInterfaceGenerator<'_> {
             Some(ref module_name) => make_external_symbol(module_name, &func_name, symbol_variant),
             None => make_external_component(&func_name),
         };
+        // Add prefix to C ABI export functions to avoid conflicts with C++ namespaces
+        self.gen.c_src.src.push_str("__wasm_export_");
         if let Some(prefix) = self.gen.opts.export_prefix.as_ref() {
             self.gen.c_src.src.push_str(prefix);
         }
@@ -2633,7 +2636,13 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     .join(", "),
                 );
                 self.src.push_str(">(");
-                self.src.push_str(&operands.join(", "));
+                self.src.push_str(
+                    &operands
+                        .iter()
+                        .map(|op| move_if_necessary(op))
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                );
                 self.src.push_str(");\n");
                 results.push(format!("std::move({name})"));
             }
@@ -2998,7 +3007,13 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 }
                 self.src.push_str(&func);
                 self.src.push_str("(");
-                self.src.push_str(&operands.join(", "));
+                self.src.push_str(
+                    &operands
+                        .iter()
+                        .map(|op| move_if_necessary(op))
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                );
                 self.src.push_str(");\n");
             }
             abi::Instruction::CallInterface { func, .. } => {
@@ -3015,7 +3030,13 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 }
                 self.src.push_str(&func_name_h);
                 self.push_str("(");
-                self.push_str(&operands.join(", "));
+                self.push_str(
+                    &operands
+                        .iter()
+                        .map(|op| move_if_necessary(op))
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                );
                 self.push_str(");\n");
                 if self.needs_dealloc {
                     uwriteln!(
