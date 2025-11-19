@@ -49,11 +49,6 @@ impl LanguageMethods for Cpp {
             "async-trait-function.wit"
             | "error-context.wit"
             | "futures.wit"
-            | "import_export_func.wit"
-            | "import-func.wit"
-            | "issue573.wit"
-            | "issue929-no-export.wit"
-            | "lift-lower-foreign.wit"
             | "lists.wit"
             | "multiversion"
             | "resource-alias.wit"
@@ -63,13 +58,7 @@ impl LanguageMethods for Cpp {
             | "resources-in-aggregates.wit"
             | "resources-with-futures.wit"
             | "resources-with-streams.wit"
-            | "ret-areas.wit"
             | "return-resource-from-export.wit"
-            | "same-names1.wit"
-            | "same-names5.wit"
-            | "variants.wit"
-            | "variants-unioning-types.wit"
-            | "worlds-with-types.wit"
             | "streams.wit" => true,
             _ => false,
         }

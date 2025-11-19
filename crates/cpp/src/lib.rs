@@ -591,13 +591,14 @@ impl WorldGenerator for Cpp {
 
     fn import_types(
         &mut self,
-        _resolve: &Resolve,
+        resolve: &Resolve,
         _world: WorldId,
         types: &[(&str, TypeId)],
         _files: &mut Files,
     ) {
-        for i in types.iter() {
-            uwriteln!(self.h_src.src, "// import_type {}", i.0);
+        let mut gen = self.interface(resolve, None, true, Some("$root".to_string()));
+        for (name, id) in types.iter() {
+            gen.define_type(name, *id);
         }
     }
 
@@ -973,6 +974,8 @@ impl CppInterfaceGenerator<'_> {
             Some(ref module_name) => make_external_symbol(module_name, &func_name, symbol_variant),
             None => make_external_component(&func_name),
         };
+        // Add prefix to C ABI export functions to avoid conflicts with C++ namespaces
+        self.gen.c_src.src.push_str("__wasm_export_");
         if let Some(prefix) = self.gen.opts.export_prefix.as_ref() {
             self.gen.c_src.src.push_str(prefix);
         }
@@ -1335,7 +1338,8 @@ impl CppInterfaceGenerator<'_> {
                     f.needs_dealloc = needs_dealloc;
                     f.cabi_post = None;
                     abi::call(f.gen.resolve, variant, lift_lower, func, &mut f, false);
-                    let code = String::from(f.src);
+                    let ret_area_decl = f.emit_ret_area_if_needed();
+                    let code = format!("{}{}", ret_area_decl, String::from(f.src));
                     self.gen.c_src.src.push_str(&code);
                 }
             }
@@ -1379,8 +1383,9 @@ impl CppInterfaceGenerator<'_> {
                 let mut f = FunctionBindgen::new(self, params.clone());
                 f.params = params;
                 abi::post_return(f.gen.resolve, func, &mut f);
-                let FunctionBindgen { src, .. } = f;
-                self.gen.c_src.src.push_str(&src);
+                let ret_area_decl = f.emit_ret_area_if_needed();
+                let code = format!("{}{}", ret_area_decl, String::from(f.src));
+                self.gen.c_src.src.push_str(&code);
                 self.gen.c_src.src.push_str("}\n");
             }
         }
@@ -1636,7 +1641,8 @@ impl CppInterfaceGenerator<'_> {
         result: &str,
         variant: AbiVariant,
     ) -> (String, String) {
-        let extern_name = make_external_symbol(module_name, name, variant);
+        let mut extern_name = String::from("__wasm_import_");
+        extern_name.push_str(&make_external_symbol(module_name, name, variant));
         let import = format!("extern \"C\" __attribute__((import_module(\"{module_name}\")))\n __attribute__((import_name(\"{name}\")))\n {result} {extern_name}({args});\n")
         ;
         (extern_name, import)
@@ -2103,6 +2109,8 @@ struct FunctionBindgen<'a, 'b> {
     cabi_post: Option<CabiPostInformation>,
     needs_dealloc: bool,
     leak_on_insertion: Option<String>,
+    return_pointer_area_size: ArchitectureSize,
+    return_pointer_area_align: Alignment,
 }
 
 impl<'a, 'b> FunctionBindgen<'a, 'b> {
@@ -2120,6 +2128,8 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             cabi_post: None,
             needs_dealloc: false,
             leak_on_insertion: None,
+            return_pointer_area_size: Default::default(),
+            return_pointer_area_align: Default::default(),
         }
     }
 
@@ -2190,6 +2200,47 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             offset.format(POINTER_SIZE_EXPRESSION),
             operands[0]
         );
+    }
+
+    /// Emits a shared return area declaration if needed by this function.
+    ///
+    /// During code generation, `return_pointer()` may be called multiple times for:
+    /// - Indirect parameter storage (when too many/large params)
+    /// - Return value storage (when return type is too large)
+    ///
+    /// **Safety:** This is safe because return pointers are used sequentially:
+    /// 1. Parameter marshaling (before call)
+    /// 2. Function execution
+    /// 3. Return value unmarshaling (after call)
+    ///
+    /// The scratch space is reused but never accessed simultaneously.
+    fn emit_ret_area_if_needed(&self) -> String {
+        if !self.return_pointer_area_size.is_empty() {
+            let size_string = self
+                .return_pointer_area_size
+                .format(POINTER_SIZE_EXPRESSION);
+            let tp = match self.return_pointer_area_align {
+                Alignment::Bytes(bytes) => match bytes.get() {
+                    1 => "uint8_t",
+                    2 => "uint16_t",
+                    4 => "uint32_t",
+                    8 => "uint64_t",
+                    // Fallback to uint8_t for unusual alignments (e.g., 16-byte SIMD).
+                    // This is safe: the size calculation ensures correct buffer size,
+                    // and uint8_t arrays can store any data regardless of alignment.
+                    _ => "uint8_t",
+                },
+                Alignment::Pointer => "uintptr_t",
+            };
+            let static_var = if self.gen.in_guest_import {
+                ""
+            } else {
+                "static "
+            };
+            format!("{static_var}{tp} ret_area[({size_string}+sizeof({tp})-1)/sizeof({tp})];\n")
+        } else {
+            String::new()
+        }
     }
 }
 
@@ -2502,14 +2553,25 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 results.push(result);
             }
             abi::Instruction::HandleLower {
-                handle: Handle::Own(_ty),
+                handle: Handle::Own(ty),
                 ..
             } => {
                 let op = &operands[0];
-                if matches!(self.variant, AbiVariant::GuestImport) {
-                    results.push(format!("{op}.into_handle()"));
-                } else {
+
+                // Check if this is an imported or exported resource
+                let resource_ty = &self.gen.resolve.types[*ty];
+                let resource_ty = match &resource_ty.kind {
+                    TypeDefKind::Type(Type::Id(id)) => &self.gen.resolve.types[*id],
+                    _ => resource_ty,
+                };
+                let is_exported = self.gen.is_exported_type(resource_ty);
+
+                if is_exported {
+                    // Exported resources use .release()->handle
                     results.push(format!("{op}.release()->handle"));
+                } else {
+                    // Imported resources use .into_handle()
+                    results.push(format!("{op}.into_handle()"));
                 }
             }
             abi::Instruction::HandleLower {
@@ -2633,7 +2695,13 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     .join(", "),
                 );
                 self.src.push_str(">(");
-                self.src.push_str(&operands.join(", "));
+                self.src.push_str(
+                    &operands
+                        .iter()
+                        .map(|op| move_if_necessary(op))
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                );
                 self.src.push_str(");\n");
                 results.push(format!("std::move({name})"));
             }
@@ -2715,14 +2783,12 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     variant.cases.iter().zip(blocks).zip(payloads).enumerate()
                 {
                     uwriteln!(self.src, "case {}: {{", i);
-                    if let Some(ty) = case.ty.as_ref() {
-                        let ty = self.gen.type_name(ty, &self.namespace, Flavor::InStruct);
+                    if case.ty.is_some() {
                         let case =
                             format!("{elem_ns}::{}", to_c_ident(&case.name).to_pascal_case());
                         uwriteln!(
                             self.src,
-                            "{} &{} = std::get<{case}>({}.variants).value;",
-                            ty,
+                            "auto& {} = std::get<{case}>({}.variants).value;",
                             payload,
                             operands[0],
                         );
@@ -2998,7 +3064,13 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 }
                 self.src.push_str(&func);
                 self.src.push_str("(");
-                self.src.push_str(&operands.join(", "));
+                self.src.push_str(
+                    &operands
+                        .iter()
+                        .map(|op| move_if_necessary(op))
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                );
                 self.src.push_str(");\n");
             }
             abi::Instruction::CallInterface { func, .. } => {
@@ -3015,7 +3087,13 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 }
                 self.src.push_str(&func_name_h);
                 self.push_str("(");
-                self.push_str(&operands.join(", "));
+                self.push_str(
+                    &operands
+                        .iter()
+                        .map(|op| move_if_necessary(op))
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                );
                 self.push_str(");\n");
                 if self.needs_dealloc {
                     uwriteln!(
@@ -3171,27 +3249,12 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
     }
 
     fn return_pointer(&mut self, size: ArchitectureSize, align: Alignment) -> Self::Operand {
+        // Track maximum return area requirements
+        self.return_pointer_area_size = self.return_pointer_area_size.max(size);
+        self.return_pointer_area_align = self.return_pointer_area_align.max(align);
+
+        // Generate pointer to shared ret_area
         let tmp = self.tmp();
-        let size_string = size.format(POINTER_SIZE_EXPRESSION);
-        let tp = match align {
-            Alignment::Bytes(bytes) => match bytes.get() {
-                1 => "uint8_t",
-                2 => "uint16_t",
-                4 => "uint32_t",
-                8 => "uint64_t",
-                _ => todo!(),
-            },
-            Alignment::Pointer => "uintptr_t",
-        };
-        let static_var = if self.gen.in_guest_import {
-            ""
-        } else {
-            "static "
-        };
-        uwriteln!(
-            self.src,
-            "{static_var}{tp} ret_area[({size_string}+sizeof({tp})-1)/sizeof({tp})];"
-        );
         uwriteln!(
             self.src,
             "{} ptr{tmp} = ({0})(&ret_area);",
