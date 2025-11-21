@@ -4,15 +4,15 @@
 #include <test.h>
 #include <stdio.h>
 
-test_subtask_status_t exports_test_async_f() {
+test_subtask_status_t exports_test_f() {
   return TEST_CALLBACK_CODE_YIELD;
 }
 
-test_subtask_status_t exports_test_async_f_callback(test_event_t *event) {
+test_subtask_status_t exports_test_f_callback(test_event_t *event) {
   assert(event->event == TEST_EVENT_NONE);
   assert(event->waitable == 0);
   assert(event->code == 0);
   test_yield();
-  exports_test_async_f_return();
+  exports_test_f_return();
   return TEST_CALLBACK_CODE_EXIT;
 }
