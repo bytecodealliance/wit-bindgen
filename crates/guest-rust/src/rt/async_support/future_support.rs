@@ -209,7 +209,7 @@ pub struct FutureVtable<T> {
     pub new: unsafe extern "C" fn() -> u64,
 }
 
-impl<T> FutureOps for &'static FutureVtable<T> {
+impl<T> FutureOps for &FutureVtable<T> {
     type Payload = T;
 
     fn new(&mut self) -> u64 {
