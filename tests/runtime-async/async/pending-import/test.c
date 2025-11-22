@@ -9,7 +9,7 @@ struct my_task {
   exports_test_future_void_t future;
 };
 
-test_callback_code_t exports_test_async_pending_import(exports_test_future_void_t x) {
+test_callback_code_t exports_test_pending_import(exports_test_future_void_t x) {
   struct my_task *task = (struct my_task*) malloc(sizeof(struct my_task));
   assert(task != NULL);
   test_waitable_status_t status = exports_test_future_void_read(x);
@@ -22,13 +22,13 @@ test_callback_code_t exports_test_async_pending_import(exports_test_future_void_
   return TEST_CALLBACK_CODE_WAIT(task->set);
 }
 
-test_callback_code_t exports_test_async_pending_import_callback(test_event_t *event) {
+test_callback_code_t exports_test_pending_import_callback(test_event_t *event) {
   struct my_task *task = (struct my_task*) test_context_get();
   assert(event->event == TEST_EVENT_FUTURE_READ);
   assert(event->waitable == task->future);
   assert(TEST_WAITABLE_STATE(event->code) == TEST_WAITABLE_COMPLETED);
   assert(TEST_WAITABLE_COUNT(event->code) == 0);
-  exports_test_async_pending_import_return();
+  exports_test_pending_import_return();
 
   test_waitable_join(task->future, 0);
   exports_test_future_void_drop_readable(task->future);

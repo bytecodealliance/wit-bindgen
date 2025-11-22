@@ -7,7 +7,7 @@ static test_waitable_set_t SET = 0;
 static exports_test_stream_u8_t STREAM = 0;
 static uint8_t BUF[2];
 
-test_subtask_status_t exports_test_async_read_stream(exports_test_stream_u8_t stream) {
+test_subtask_status_t exports_test_read_stream(exports_test_stream_u8_t stream) {
   test_waitable_status_t status = exports_test_stream_u8_read(stream, BUF, 1);
   assert(TEST_WAITABLE_STATE(status) == TEST_WAITABLE_COMPLETED);
   assert(TEST_WAITABLE_COUNT(status) == 1);
@@ -23,7 +23,7 @@ test_subtask_status_t exports_test_async_read_stream(exports_test_stream_u8_t st
   return TEST_CALLBACK_CODE_WAIT(SET);
 }
 
-test_subtask_status_t exports_test_async_read_stream_callback(test_event_t *event) {
+test_subtask_status_t exports_test_read_stream_callback(test_event_t *event) {
   assert(event->event == TEST_EVENT_STREAM_READ);
   assert(event->waitable == STREAM);
   assert(TEST_WAITABLE_STATE(event->code) == TEST_WAITABLE_COMPLETED);
@@ -50,6 +50,6 @@ test_subtask_status_t exports_test_async_read_stream_callback(test_event_t *even
 
   test_waitable_set_drop(SET);
 
-  exports_test_async_read_stream_return();
+  exports_test_read_stream_return();
   return TEST_CALLBACK_CODE_EXIT;
 }

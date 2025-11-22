@@ -17,7 +17,7 @@ struct ping_task {
   exports_test_future_string_writer_t writer;
 };
 
-test_callback_code_t exports_test_async_ping(exports_test_future_string_t x, test_string_t *y) {
+test_callback_code_t exports_test_ping(exports_test_future_string_t x, test_string_t *y) {
   // Initialize a new task
   struct ping_task *task = (struct ping_task*) malloc(sizeof(struct ping_task));
   assert(task != NULL);
@@ -37,7 +37,7 @@ test_callback_code_t exports_test_async_ping(exports_test_future_string_t x, tes
   return TEST_CALLBACK_CODE_WAIT(task->set);
 }
 
-test_callback_code_t exports_test_async_ping_callback(test_event_t *event) {
+test_callback_code_t exports_test_ping_callback(test_event_t *event) {
   struct ping_task *task = (struct ping_task*) test_context_get();
   switch (task->state) {
     case PING_S1: {
@@ -54,7 +54,7 @@ test_callback_code_t exports_test_async_ping_callback(test_event_t *event) {
       // Create a new future and start the return of our task with this future.
       exports_test_future_string_writer_t writer;
       exports_test_future_string_t reader = exports_test_future_string_new(&writer);
-      exports_test_async_ping_return(reader);
+      exports_test_ping_return(reader);
       task->writer = writer;
 
       // Concatenate `task->read_result` and `task->arg`.
@@ -114,7 +114,7 @@ struct pong_task {
   test_waitable_set_t set;
 };
 
-test_callback_code_t exports_test_async_pong(exports_test_future_string_t x) {
+test_callback_code_t exports_test_pong(exports_test_future_string_t x) {
   struct pong_task *task = (struct pong_task*) malloc(sizeof(struct pong_task));
   assert(task != NULL);
   task->future = x;
@@ -130,7 +130,7 @@ test_callback_code_t exports_test_async_pong(exports_test_future_string_t x) {
   return TEST_CALLBACK_CODE_WAIT(task->set);
 }
 
-test_callback_code_t exports_test_async_pong_callback(test_event_t *event) {
+test_callback_code_t exports_test_pong_callback(test_event_t *event) {
   struct pong_task *task = (struct pong_task*) test_context_get();
 
   // assert this event is a future read completion
@@ -149,7 +149,7 @@ test_callback_code_t exports_test_async_pong_callback(test_event_t *event) {
   task->set = 0;
 
   // return our string
-  exports_test_async_pong_return(task->read_result);
+  exports_test_pong_return(task->read_result);
   test_string_free(&task->read_result);
 
   free(task);
