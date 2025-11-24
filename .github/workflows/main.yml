@@ -189,6 +189,7 @@ jobs:
     - run: cargo build --target wasm32-wasip1 -p wit-bindgen --no-default-features --features async
     - run: cargo build --target wasm32-wasip1 -p wit-bindgen --no-default-features --features async-spawn
     - run: cargo build --target wasm32-wasip1 -p wit-bindgen --no-default-features --features async,macros
+    - run: cargo build --target wasm32-wasip1 -p wit-bindgen --no-default-features --features inter-task-wakeup
 
     # Verity that documentation can be generated for the rust bindings crate.
     - run: rustup update nightly --no-self-update

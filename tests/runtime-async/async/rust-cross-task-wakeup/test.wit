@@ -1,0 +1,14 @@
+package my:test;
+
+interface i {
+  pending-import: async func();
+  resolve-pending-import: func();
+}
+
+world test {
+  export i;
+}
+
+world runner {
+  import i;
+}
