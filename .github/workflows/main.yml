@@ -122,7 +122,7 @@ jobs:
       with:
         submodules: true
     - name: Install Rust
-      run: rustup update beta --no-self-update && rustup default beta
+      run: rustup update nightly --no-self-update && rustup default nightly
     - run: rustup target add wasm32-wasip2
     - uses: ./.github/actions/install-wasi-sdk
     - run: |
