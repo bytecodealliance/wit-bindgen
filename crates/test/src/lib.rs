@@ -999,14 +999,17 @@ status: {}",
             .context("failed to load WIT")?;
         let world = resolve.select_world(&[pkg], Some(&compile.component.bindgen.world))?;
         let mut module = fs::read(&p1).context("failed to read wasm file")?;
-        let encoded = wit_component::metadata::encode(&resolve, world, StringEncoding::UTF8, None)?;
 
-        let section = wasm_encoder::CustomSection {
-            name: Cow::Borrowed("component-type"),
-            data: Cow::Borrowed(&encoded),
-        };
-        module.push(section.id());
-        section.encode(&mut module);
+        if !has_component_type_sections(&module) {
+            let encoded =
+                wit_component::metadata::encode(&resolve, world, StringEncoding::UTF8, None)?;
+            let section = wasm_encoder::CustomSection {
+                name: Cow::Borrowed("component-type"),
+                data: Cow::Borrowed(&encoded),
+            };
+            module.push(section.id());
+            section.encode(&mut module);
+        }
 
         let wasi_adapter = match compile.component.kind {
             Kind::Runner => {
@@ -1069,6 +1072,18 @@ status: {}",
             std::process::exit(1);
         }
     }
+}
+
+fn has_component_type_sections(wasm: &[u8]) -> bool {
+    for payload in wasmparser::Parser::new(0).parse_all(wasm) {
+        match payload {
+            Ok(wasmparser::Payload::CustomSection(s)) if s.name().starts_with("component-type") => {
+                return true
+            }
+            _ => {}
+        }
+    }
+    false
 }
 
 struct StepResult<'a> {

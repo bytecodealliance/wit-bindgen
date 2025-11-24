@@ -166,11 +166,7 @@ path = 'lib.rs'
         // If this rust target doesn't natively produce a component then place
         // the compiler output in a temporary location which is componentized
         // later on.
-        let output = if runner.produces_component() {
-            compile.output.to_path_buf()
-        } else {
-            compile.output.with_extension("core.wasm")
-        };
+        let output = compile.output.with_extension("core.wasm");
 
         // Compile all extern crates, if any
         let mut externs = Vec::new();
@@ -216,13 +212,14 @@ path = 'lib.rs'
                 cmd.arg("--crate-type=cdylib");
             }
         }
+        if runner.produces_component() {
+            cmd.arg("-Clink-arg=--skip-wit-component");
+        }
         runner.run_command(&mut cmd)?;
 
-        if !runner.produces_component() {
-            runner
-                .convert_p1_to_component(&output, compile)
-                .with_context(|| format!("failed to convert {output:?}"))?;
-        }
+        runner
+            .convert_p1_to_component(&output, compile)
+            .with_context(|| format!("failed to convert {output:?}"))?;
 
         Ok(())
     }
