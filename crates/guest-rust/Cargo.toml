@@ -35,3 +35,8 @@ async-spawn = ['async', 'dep:futures']
 
 # Unstable feature to support being a libstd dependency
 rustc-dep-of-std = ["dep:core", "dep:alloc"]
+
+# Requires a newer `wasm-component-ld` and `wasm-tools`, so currently disabled
+# by default. Once the versions of tooling have propagated this will be enabled
+# by default.
+inter-task-wakeup = ["async"]
