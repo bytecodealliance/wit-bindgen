@@ -123,11 +123,7 @@ fn compile(runner: &Runner<'_>, compile: &Compile<'_>, compiler: PathBuf) -> Res
 
     // Now compile the runner's source code to with the above object and the
     // component-type object into a final component.
-    let output = if produces_component(runner) {
-        compile.output.to_path_buf()
-    } else {
-        compile.output.with_extension("core.wasm")
-    };
+    let output = compile.output.with_extension("core.wasm");
     let mut cmd = Command::new(compiler);
     cmd.arg(&compile.component.path)
         .arg(&bindings_object)
@@ -154,13 +150,14 @@ fn compile(runner: &Runner<'_>, compile: &Compile<'_>, compiler: PathBuf) -> Res
             cmd.arg("-mexec-model=reactor");
         }
     }
+    if produces_component(runner) {
+        cmd.arg("-Wl,--skip-wit-component");
+    }
     runner.run_command(&mut cmd)?;
 
-    if !produces_component(runner) {
-        runner
-            .convert_p1_to_component(&output, compile)
-            .with_context(|| format!("failed to convert {output:?}"))?;
-    }
+    runner
+        .convert_p1_to_component(&output, compile)
+        .with_context(|| format!("failed to convert {output:?}"))?;
     Ok(())
 }
 
