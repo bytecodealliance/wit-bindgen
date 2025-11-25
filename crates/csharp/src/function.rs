@@ -33,6 +33,7 @@ pub(crate) struct FunctionBindgen<'a, 'b> {
     fixed_statments: Vec<Fixed>,
     parameter_type: ParameterType,
     result_type: Option<Type>,
+    pub(crate) resource_type_name: Option<String>,
 }
 
 impl<'a, 'b> FunctionBindgen<'a, 'b> {
@@ -70,6 +71,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             fixed_statments: Vec::new(),
             parameter_type: parameter_type,
             result_type: result_type,
+            resource_type_name: None,
         }
     }
 
@@ -1070,10 +1072,18 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 if self.interface_gen.is_world && self.interface_gen.direction == Direction::Import {
                     interop_name = format!("Imports.{interop_name}");
                 }
+
+                let mut resource_type_name = String::new();
+                if let FunctionKind::Method(resource_type_id) = self.kind {
+                    resource_type_name = format!(
+                        ".{}",
+                        self.interface_gen.csharp_gen.all_resources[resource_type_id].name.to_upper_camel_case()
+                    );
+                }
                 
                 uwriteln!(
                     self.src,
-                    "{assignment} {interop_name}.{func_name}WasmInterop.wasmImport{func_name}({operands});"
+                    "{assignment} {interop_name}{resource_type_name}.{func_name}WasmInterop.wasmImport{func_name}({operands});"
                 );
 
                 if let Some(buffer) = async_return_buffer {
@@ -1373,6 +1383,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         } else {
                             uwriteln!(self.src, "var {resource} = ({export_name}) {export_name}.repTable.Get({op});");
                         }
+                        self.resource_type_name = Some(export_name);
                     }
                 }
                 results.push(resource);
@@ -1508,7 +1519,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 }
 
 /// Dereference any number `TypeDefKind::Type` aliases to retrieve the target type.
-fn dealias(resolve: &Resolve, mut id: TypeId) -> TypeId {
+pub fn dealias(resolve: &Resolve, mut id: TypeId) -> TypeId {
     loop {
         match &resolve.types[id].kind {
             TypeDefKind::Type(Type::Id(that_id)) => id = *that_id,

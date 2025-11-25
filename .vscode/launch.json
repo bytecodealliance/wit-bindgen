@@ -2,6 +2,7 @@
     "version": "0.2.0",
     "configurations": [
 
+
         {
             "name": "Run wit-bindgen test",
             "type": "cppvsdbg",
@@ -32,7 +33,132 @@
                 "--world",
                 "%the-futures",
                 "--out-dir",
-                ".\\target\\artifacts\\csharp",
+                ".\\target\\artifacts\\codegen\\csharp\\futures.wit\\bindings",
+                "--runtime=native-aot",
+                "--generate-stub"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "stopAtEntry": false,
+            "preLaunchTask": "cargo build"
+
+        },
+        {
+            "name": "Run wit-bindgen codegen csharp wasi-filesystem.wit",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/target/debug/wit-bindgen.exe",
+            "args": [
+                "csharp",
+                ".\\tests\\codegen\\wasi-filesystem\\wit",
+                "--world",
+                "%imports",
+                "--out-dir",
+                ".\\target\\artifacts\\codegen\\csharp\\wasi-filesystem\\bindings",
+                "--runtime=native-aot",
+                "--generate-stub"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "stopAtEntry": false,
+            "preLaunchTask": "cargo build"
+
+        },
+        {
+            "name": "Run wit-bindgen codegen csharp async-trait-function.wit",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/target/debug/wit-bindgen.exe",
+            "args": [
+                "csharp",
+                ".\\tests\\codegen\\async-trait-function.wit",
+                "--world",
+                "%core",
+                "--out-dir",
+                ".\\target\\artifacts\\codegen\\csharp\\async-trait-function.wit\\bindings",
+                "--runtime=native-aot",
+                "--generate-stub"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "stopAtEntry": false,
+            "preLaunchTask": "cargo build"
+
+        },
+        {
+            "name": "Run wit-bindgen codegen csharp issue573.wit",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/target/debug/wit-bindgen.exe",
+            "args": [
+                "csharp",
+                ".\\tests\\codegen\\issue573.wit",
+                "--world",
+                "%types-example",
+                "--out-dir",
+                ".\\target\\artifacts\\codegen\\csharp\\issue573.wit\\bindings",
+                "--runtime=native-aot",
+                "--generate-stub"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "stopAtEntry": false,
+            "preLaunchTask": "cargo build"
+        },
+        {
+            "name": "Run wit-bindgen codegen csharp return-resource-from-export.wit",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/target/debug/wit-bindgen.exe",
+            "args": [
+                "csharp",
+                ".\\tests\\codegen\\return-resource-from-export.wit",
+                "--world",
+                "%foo",
+                "--out-dir",
+                ".\\target\\artifacts\\codegen\\csharp\\return-resource-from-export.wit\\bindings",
+                "--runtime=native-aot",
+                "--generate-stub"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "stopAtEntry": false,
+            "preLaunchTask": "cargo build"
+
+        },
+        {
+            "name": "Run wit-bindgen codegen csharp resource-alias.wit",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/target/debug/wit-bindgen.exe",
+            "args": [
+                "csharp",
+                ".\\tests\\codegen\\resource-alias.wit",
+                "--world",
+                "%resources",
+                "--out-dir",
+                ".\\target\\artifacts\\codegen\\csharp\\resource-alias.wit\\bindings",
+                "--runtime=native-aot",
+                "--generate-stub"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "stopAtEntry": false,
+            "preLaunchTask": "cargo build"
+
+        },
+        {
+            "name": "Run wit-bindgen codegen csharp variants-unioning-types.wit",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/target/debug/wit-bindgen.exe",
+            "args": [
+                "csharp",
+                ".\\tests\\codegen\\variants-unioning-types.wit",
+                "--world",
+                "%a",
+                "--out-dir",
+                ".\\target\\artifacts\\codegen\\csharp\\variants-unioning-types.wit\\bindings",
                 "--runtime=native-aot",
                 "--generate-stub"
             ],
@@ -196,7 +322,7 @@
                 "csharp",
                 ".\\tests\\runtime-async\\async\\simple-future",
                 "--artifacts",
-                ".\\target\\artifacts",
+                ".\\target\\artifacts\\codegen\\csharp\\simple-future",
                 "--rust-wit-bindgen-path",
                 ".\\crates\\guest-rust",
                 "--runner",

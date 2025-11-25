@@ -8,11 +8,11 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 use std::ops::Deref;
 use std::{iter, mem};
-use wit_bindgen_core::{uwrite, Direction, Files, InterfaceGenerator as _, WorldGenerator};
+use wit_bindgen_core::{Direction, Files, InterfaceGenerator as _, WorldGenerator, uwrite, uwriteln};
 use wit_component::WitPrinter;
 use wit_parser::abi::WasmType;
 use wit_parser::{
-    Function, InterfaceId, Resolve, SizeAlign, Type, TypeId, TypeOwner, WorldId, WorldKey,
+    Function, InterfaceId, Resolve, SizeAlign, Type, TypeDefKind, TypeId, TypeOwner, WorldId, WorldItem, WorldKey
 };
 
 /// CSharp is the world generator for wit files. It coordinates all the generated code.
@@ -43,6 +43,9 @@ pub struct CSharp {
     pub(crate) all_resources: HashMap<TypeId, ResourceInfo>,
     pub(crate) world_resources: HashMap<TypeId, ResourceInfo>,
     pub(crate) import_funcs_called: bool,
+
+    // Top level types that are bidirectional like enums, to save code size and not duplicate whene unnecessary.
+    pub(crate) bidirectional_types_src: HashSet<String>,
 }
 
 impl CSharp {
@@ -91,6 +94,18 @@ impl CSharp {
         } else {
             (String::new(), String::new())
         }
+    }
+
+    // We can share some types to save some code size and allow a more intuitive user experience.
+    pub (crate) fn type_is_bidirectional(resolve: &Resolve, ty: &TypeId) -> bool {
+        let type_def = &resolve.types[*ty];
+        let kind = &type_def.kind;
+
+        return match kind {
+            TypeDefKind::Flags(_) => true,
+            TypeDefKind::Enum(_) => true,
+            _ => false,
+        };
     }
 
     fn write_world_fragments(&mut self, direction: Direction, direction_name: &str, src: &mut String, access: &str, name: &String) {
@@ -183,6 +198,7 @@ impl WorldGenerator for CSharp {
         let name = &format!("{name}.I{name}Imports");
         let mut gen = self.interface(resolve, name, Direction::Import, true);
 
+        //TODO: This generates resource types for imports even when not used, i.e. no imported functions.
         for (resource, funcs) in by_resource(
             funcs.iter().copied(),
             gen.csharp_gen.world_resources.keys().copied(),
@@ -253,15 +269,40 @@ impl WorldGenerator for CSharp {
     fn export_funcs(
         &mut self,
         resolve: &Resolve,
-        world: WorldId,
+        world_id: WorldId,
         funcs: &[(&str, &Function)],
         _files: &mut Files,
     ) -> anyhow::Result<()> {
-        let name = &format!("{}-world", resolve.worlds[world].name).to_upper_camel_case();
+        let name = &format!("{}-world", resolve.worlds[world_id].name).to_upper_camel_case();
         let name = &format!("{name}.I{name}Exports");
         let mut gen = self.interface(resolve, name, Direction::Export, true);
 
-        for (resource, funcs) in by_resource(funcs.iter().copied(), iter::empty()) {
+        // Write the export types used by the functions.
+        let world = &resolve.worlds[world_id];
+        let mut types = Vec::new();
+        for (name, export) in world.exports.iter() {
+                match name {
+                    WorldKey::Name(name) => {
+                        match export {
+                            WorldItem::Type(id) => {
+                                if !CSharp::type_is_bidirectional(resolve, &id) {
+                                    types.push((name.as_str(), *id))
+                                }
+                            },
+                            _ => {},
+                        }
+                    },
+                    WorldKey::Interface(_) => {},
+            }
+        }
+
+        if !types.is_empty() {
+            export_types(&mut gen, &types);
+        }
+
+        for (resource, funcs) in by_resource(funcs.iter().copied(), 
+            gen.csharp_gen.world_resources.keys().copied(),
+        ) {
             if let Some(resource) = resource {
                 gen.start_resource(resource, None);
             }
@@ -299,7 +340,7 @@ impl WorldGenerator for CSharp {
         gen.csharp_gen.all_resources = old_resources;
         gen.csharp_gen.world_resources = new_resources;
 
-        gen.add_world_fragment(None);
+        gen.add_world_fragment(Some(Direction::Import));
     }
 
     fn finish(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) -> anyhow::Result<()> {
@@ -352,6 +393,7 @@ impl WorldGenerator for CSharp {
                     .join("\n"),
             );
 
+        src.push_str(self.bidirectional_types_src.iter().cloned().collect::<Vec<_>>().join("\n").as_str());
         self.write_world_fragments(Direction::Import, "Imports", &mut src, access, &name);
         self.write_world_fragments(Direction::Export, "Exports", &mut src, access, &name);
 
@@ -811,6 +853,15 @@ impl WorldGenerator for CSharp {
 enum Stubs<'a> {
     World(&'a Vec<InterfaceFragment>),
     Interface(&'a Vec<InterfaceFragment>),
+}
+
+fn export_types(
+    gen: &mut InterfaceGenerator,
+    types: &[(&str, TypeId)],
+) {
+    for (ty_name, ty) in types {
+        gen.define_type(ty_name, *ty);
+    }
 }
 
 // We cant use "StructLayout.Pack" as dotnet will use the minimum of the type and the "Pack" field,

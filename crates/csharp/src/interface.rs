@@ -135,11 +135,12 @@ impl InterfaceGenerator<'_> {
     }
 
     pub(crate) fn qualifier(&self, when: bool, ty: &TypeId) -> String {
+        let type_def = &self.resolve.types[*ty];
+
         // anonymous types dont get an owner from wit-parser, so assume they are part of an interface here.
         let owner = if let Some(owner_type) = self.csharp_gen.anonymous_type_owners.get(ty) {
             *owner_type
         } else {
-            let type_def = &self.resolve.types[*ty];
             type_def.owner
         };
 
@@ -155,12 +156,32 @@ impl InterfaceGenerator<'_> {
 
         if when {
             let mut name = self.name;
+            let tmp_name: String;
             if self.is_world {
-                name = name.rsplitn(2, ".").nth(1).unwrap();
+                if CSharp::type_is_bidirectional(self.resolve(), ty) {
+                  name = name.rsplitn(2, ".").nth(1).unwrap();
+                }
+                // World level types, except resources are always imports.
+                else if name.ends_with("Exports") && type_def.kind != TypeDefKind::Resource {
+                    tmp_name = Self::replace_last(&name, "Exports", "Imports");
+                    name = &tmp_name;
+                }
             }
             format!("{global_prefix}{name}.")
         } else {
             String::new()
+        }
+    }
+
+    fn replace_last(haystack: &str, needle: &str, replacement: &str) -> String {
+        if let Some(pos) = haystack.rfind(needle) {
+            let mut result = String::with_capacity(haystack.len() - needle.len() + replacement.len());
+            result.push_str(&haystack[..pos]);
+            result.push_str(replacement);
+            result.push_str(&haystack[pos + needle.len()..]);
+            result
+        } else {
+            haystack.to_string()
         }
     }
 
@@ -677,6 +698,7 @@ impl InterfaceGenerator<'_> {
         );
 
         let src = bindgen.src;
+        let resource_type_name = bindgen.resource_type_name;
 
         let vars = bindgen
             .resource_drops
@@ -715,7 +737,7 @@ impl InterfaceGenerator<'_> {
                 0
             })
             .map(|(name, ty)| {
-                let ty = self.type_name(ty);
+                let ty = self.type_name_with_qualifier(ty, true);
                 let name = name.to_csharp_ident();
                 format!("{ty} {name}")
             })
@@ -787,7 +809,12 @@ impl InterfaceGenerator<'_> {
             let import_module_name = &self.resolve.name_world_key(interface_name.unwrap());
             let (_namespace, interface_name) =
                 &CSharp::get_class_name_from_qualified_name(self.name);
-            let impl_name = format!("{}Impl", interface_name.strip_prefix("I").unwrap());
+            let impl_name = if resource_type_name.is_some() {
+                    resource_type_name.unwrap()
+                }
+                else {
+                    format!("{}Impl.{export_name}", interface_name.strip_prefix("I").unwrap())
+                };
 
             uwriteln!(
                 self.csharp_interop_src,
@@ -835,12 +862,19 @@ impl InterfaceGenerator<'_> {
         }
 
         if self.csharp_gen.opts.generate_stub {
-            let sig = self.sig_string(func, true);
+            let sig: String = self.sig_string(func, true);
+            let func_name = func.item_name().to_upper_camel_case();
 
             uwrite!(
                 self.stub,
                 r#"
-                {sig} {{
+                {sig} 
+                {{
+                    throw new global::System.NotImplementedException();
+                }}
+
+                public static int {func_name}Callback(/* TODO: event arg */)
+                {{
                     throw new global::System.NotImplementedException();
                 }}
                 "#
@@ -1101,6 +1135,7 @@ impl InterfaceGenerator<'_> {
                         }}
                     "#
                 );
+
             }
             Direction::Export => {
                 let prefix = key
@@ -1179,6 +1214,7 @@ impl InterfaceGenerator<'_> {
                     {access} interface I{upper_camel} {{
                     "#
                 );
+                self.csharp_gen.needs_rep_table = true;
 
                 if self.csharp_gen.opts.generate_stub {
                     let super_ = self.type_name_with_qualifier(&Type::Id(id), true);
@@ -1202,6 +1238,14 @@ impl InterfaceGenerator<'_> {
                 }
             }
         };
+        
+        uwrite!(
+            self.csharp_interop_src,
+            r#"
+            internal static class {upper_camel}
+            {{
+            "#
+        );
     }
 
     pub(crate) fn end_resource(&mut self) {
@@ -1216,6 +1260,13 @@ impl InterfaceGenerator<'_> {
 
         uwriteln!(
             self.src,
+            "
+            }}
+            "
+        );
+
+        uwrite!(
+            self.csharp_interop_src,
             "
             }}
             "
@@ -1476,7 +1527,7 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.type_name(&Type::Id(id));
     }
 
-    fn type_enum(&mut self, _id: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
+    fn type_enum(&mut self, ty: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
         self.print_docs(docs);
 
         let name = name.to_upper_camel_case();
@@ -1489,15 +1540,29 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .join(", ");
 
         let access = self.csharp_gen.access_modifier();
-
-        uwrite!(
-            self.src,
-            "
-            {access} enum {name} {{
-                {cases}
-            }}
-            "
-        );
+        
+        // Write the top level bidirectional types to csharp_gen.  Could also create a class to gather the interface level bidrectional types.
+        match &self.resolve.types[ty].owner {
+            TypeOwner::World(_id) => {
+                self.csharp_gen.bidirectional_types_src.insert(format!(
+                    "
+                    {access} enum {name} {{
+                        {cases}
+                    }}
+                    "
+                ));
+            },
+            _ => {
+                uwrite!(
+                    self.src,
+                    "
+                    {access} enum {name} {{
+                        {cases}
+                    }}
+                    "
+                );
+            }
+        };
     }
 
     fn type_alias(&mut self, id: TypeId, _name: &str, _ty: &Type, _docs: &Docs) {
@@ -1593,8 +1658,6 @@ fn modifiers(func: &Function, name: &str, direction: Direction) -> String {
 
     let abstract_modifier = match (direction, &func.kind) {
         (Direction::Export, _) => " abstract",
-        (_, FunctionKind::AsyncFreestanding) => "static",
-        (_, FunctionKind::AsyncStatic(_)) => "static",
         _ => "",
     };
 
