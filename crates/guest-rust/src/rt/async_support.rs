@@ -21,7 +21,40 @@ macro_rules! rtdebug {
             std::eprintln!($($f)*);
         }
     }
+}
 
+/// Helper macro to deduplicate foreign definitions of wasm functions.
+///
+/// This automatically imports when on wasm targets and then defines a dummy
+/// panicking shim for native targets to support native compilation but fail at
+/// runtime.
+macro_rules! extern_wasm {
+    (
+        $(#[$extern_attr:meta])*
+        extern "C" {
+            $(
+                $(#[$func_attr:meta])*
+                $vis:vis fn $func_name:ident ( $($args:tt)* ) $(-> $ret:ty)?;
+            )*
+        }
+    ) => {
+        $(
+            #[cfg(not(target_family = "wasm"))]
+            #[allow(unused)]
+            $vis unsafe fn $func_name($($args)*) $(-> $ret)? {
+                unreachable!();
+            }
+        )*
+
+        #[cfg(target_family = "wasm")]
+        $(#[$extern_attr])*
+        extern "C" {
+            $(
+                $(#[$func_attr])*
+                $vis fn $func_name($($args)*) $(-> $ret)?;
+            )*
+        }
+    };
 }
 
 mod abi_buffer;
@@ -447,17 +480,14 @@ pub fn block_on<T: 'static>(future: impl Future<Output = T>) -> T {
 /// at this yield point. The caller should return back and exit from the task
 /// ASAP in this situation.
 pub fn yield_blocking() -> bool {
-    #[cfg(not(target_arch = "wasm32"))]
-    unsafe fn yield_() -> bool {
-        unreachable!();
+    extern_wasm! {
+        #[link(wasm_import_module = "$root")]
+        extern "C" {
+            #[link_name = "[thread-yield]"]
+            fn yield_() -> bool;
+        }
     }
 
-    #[cfg(target_arch = "wasm32")]
-    #[link(wasm_import_module = "$root")]
-    extern "C" {
-        #[link_name = "[thread-yield]"]
-        fn yield_() -> bool;
-    }
     // Note that the return value from the raw intrinsic is inverted, the
     // canonical ABI returns "did this task get cancelled" while this function
     // works as "should work continue going".
@@ -508,16 +538,12 @@ pub async fn yield_async() {
 /// called again with `enabled` set to `false`).
 #[deprecated = "use backpressure_{inc,dec} instead"]
 pub fn backpressure_set(enabled: bool) {
-    #[cfg(not(target_arch = "wasm32"))]
-    unsafe fn backpressure_set(_: i32) {
-        unreachable!();
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    #[link(wasm_import_module = "$root")]
-    extern "C" {
-        #[link_name = "[backpressure-set]"]
-        fn backpressure_set(_: i32);
+    extern_wasm! {
+        #[link(wasm_import_module = "$root")]
+        extern "C" {
+            #[link_name = "[backpressure-set]"]
+            fn backpressure_set(_: i32);
+        }
     }
 
     unsafe { backpressure_set(if enabled { 1 } else { 0 }) }
@@ -525,16 +551,12 @@ pub fn backpressure_set(enabled: bool) {
 
 /// Call the `backpressure.inc` canonical built-in function.
 pub fn backpressure_inc() {
-    #[cfg(not(target_arch = "wasm32"))]
-    unsafe fn backpressure_inc() {
-        unreachable!();
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    #[link(wasm_import_module = "$root")]
-    extern "C" {
-        #[link_name = "[backpressure-inc]"]
-        fn backpressure_inc();
+    extern_wasm! {
+        #[link(wasm_import_module = "$root")]
+        extern "C" {
+            #[link_name = "[backpressure-inc]"]
+            fn backpressure_inc();
+        }
     }
 
     unsafe { backpressure_inc() }
@@ -542,48 +564,36 @@ pub fn backpressure_inc() {
 
 /// Call the `backpressure.dec` canonical built-in function.
 pub fn backpressure_dec() {
-    #[cfg(not(target_arch = "wasm32"))]
-    unsafe fn backpressure_dec() {
-        unreachable!();
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    #[link(wasm_import_module = "$root")]
-    extern "C" {
-        #[link_name = "[backpressure-dec]"]
-        fn backpressure_dec();
+    extern_wasm! {
+        #[link(wasm_import_module = "$root")]
+        extern "C" {
+            #[link_name = "[backpressure-dec]"]
+            fn backpressure_dec();
+        }
     }
 
     unsafe { backpressure_dec() }
 }
 
 fn context_get() -> *mut u8 {
-    #[cfg(not(target_arch = "wasm32"))]
-    unsafe fn get() -> *mut u8 {
-        unreachable!()
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    #[link(wasm_import_module = "$root")]
-    extern "C" {
-        #[link_name = "[context-get-0]"]
-        fn get() -> *mut u8;
+    extern_wasm! {
+        #[link(wasm_import_module = "$root")]
+        extern "C" {
+            #[link_name = "[context-get-0]"]
+            fn get() -> *mut u8;
+        }
     }
 
     unsafe { get() }
 }
 
 unsafe fn context_set(value: *mut u8) {
-    #[cfg(not(target_arch = "wasm32"))]
-    unsafe fn set(_: *mut u8) {
-        unreachable!()
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    #[link(wasm_import_module = "$root")]
-    extern "C" {
-        #[link_name = "[context-set-0]"]
-        fn set(value: *mut u8);
+    extern_wasm! {
+        #[link(wasm_import_module = "$root")]
+        extern "C" {
+            #[link_name = "[context-set-0]"]
+            fn set(value: *mut u8);
+        }
     }
 
     unsafe { set(value) }
@@ -608,16 +618,12 @@ impl TaskCancelOnDrop {
 
 impl Drop for TaskCancelOnDrop {
     fn drop(&mut self) {
-        #[cfg(not(target_arch = "wasm32"))]
-        unsafe fn cancel() {
-            unreachable!()
-        }
-
-        #[cfg(target_arch = "wasm32")]
-        #[link(wasm_import_module = "[export]$root")]
-        extern "C" {
-            #[link_name = "[task-cancel]"]
-            fn cancel();
+        extern_wasm! {
+            #[link(wasm_import_module = "[export]$root")]
+            extern "C" {
+                #[link_name = "[task-cancel]"]
+                fn cancel();
+            }
         }
 
         unsafe { cancel() }
