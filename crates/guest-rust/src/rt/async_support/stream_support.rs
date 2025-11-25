@@ -461,7 +461,7 @@ pub struct RawStreamReader<O: StreamOps> {
     done: bool,
 }
 
-impl<O: StreamOps> fmt::Debug for StreamReader<O> {
+impl<O: StreamOps> fmt::Debug for RawStreamReader<O> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("StreamReader")
             .field("handle", &self.handle)
