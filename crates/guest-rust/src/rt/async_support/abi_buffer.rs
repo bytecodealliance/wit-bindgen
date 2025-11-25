@@ -203,6 +203,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rt::async_support::StreamVtable;
     use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
     use std::vec;
 
