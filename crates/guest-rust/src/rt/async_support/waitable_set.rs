@@ -63,38 +63,18 @@ impl Drop for WaitableSet {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-unsafe fn new() -> u32 {
-    unreachable!()
-}
-#[cfg(not(target_arch = "wasm32"))]
-unsafe fn drop(_: u32) {
-    unreachable!()
-}
-#[cfg(not(target_arch = "wasm32"))]
-unsafe fn join(_: u32, _: u32) {
-    unreachable!()
-}
-#[cfg(not(target_arch = "wasm32"))]
-unsafe fn wait(_: u32, _: *mut [u32; 2]) -> u32 {
-    unreachable!();
-}
-#[cfg(not(target_arch = "wasm32"))]
-unsafe fn poll(_: u32, _: *mut [u32; 2]) -> u32 {
-    unreachable!();
-}
-
-#[cfg(target_arch = "wasm32")]
-#[link(wasm_import_module = "$root")]
-extern "C" {
-    #[link_name = "[waitable-set-new]"]
-    fn new() -> u32;
-    #[link_name = "[waitable-set-drop]"]
-    fn drop(set: u32);
-    #[link_name = "[waitable-join]"]
-    fn join(waitable: u32, set: u32);
-    #[link_name = "[waitable-set-wait]"]
-    fn wait(_: u32, _: *mut [u32; 2]) -> u32;
-    #[link_name = "[waitable-set-poll]"]
-    fn poll(_: u32, _: *mut [u32; 2]) -> u32;
+extern_wasm! {
+    #[link(wasm_import_module = "$root")]
+    extern "C" {
+        #[link_name = "[waitable-set-new]"]
+        fn new() -> u32;
+        #[link_name = "[waitable-set-drop]"]
+        fn drop(set: u32);
+        #[link_name = "[waitable-join]"]
+        fn join(waitable: u32, set: u32);
+        #[link_name = "[waitable-set-wait]"]
+        fn wait(_: u32, _: *mut [u32; 2]) -> u32;
+        #[link_name = "[waitable-set-poll]"]
+        fn poll(_: u32, _: *mut [u32; 2]) -> u32;
+    }
 }

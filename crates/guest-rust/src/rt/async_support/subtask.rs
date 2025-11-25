@@ -273,21 +273,12 @@ impl<T: Subtask> InProgress<T> {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-unsafe fn drop(_: u32) {
-    unreachable!()
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-unsafe fn cancel(_: u32) -> u32 {
-    unreachable!()
-}
-
-#[cfg(target_arch = "wasm32")]
-#[link(wasm_import_module = "$root")]
-extern "C" {
-    #[link_name = "[subtask-cancel]"]
-    fn cancel(handle: u32) -> u32;
-    #[link_name = "[subtask-drop]"]
-    fn drop(handle: u32);
+extern_wasm! {
+    #[link(wasm_import_module = "$root")]
+    extern "C" {
+        #[link_name = "[subtask-cancel]"]
+        fn cancel(handle: u32) -> u32;
+        #[link_name = "[subtask-drop]"]
+        fn drop(handle: u32);
+    }
 }
