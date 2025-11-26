@@ -89,12 +89,3 @@ csharp = ['dep:wit-bindgen-csharp']
 csharp-mono = ['csharp']
 moonbit = ['dep:wit-bindgen-moonbit']
 async = []
-
-[patch.crates-io]
-wit-component = { git = 'https://github.com/bytecodealliance/wasm-tools', branch = 'ci/release-1.242.0' }
-wit-parser = { git = 'https://github.com/bytecodealliance/wasm-tools', branch = 'ci/release-1.242.0' }
-wasm-encoder = { git = 'https://github.com/bytecodealliance/wasm-tools', branch = 'ci/release-1.242.0' }
-wasm-metadata = { git = 'https://github.com/bytecodealliance/wasm-tools', branch = 'ci/release-1.242.0' }
-wat = { git = 'https://github.com/bytecodealliance/wasm-tools', branch = 'ci/release-1.242.0' }
-wasmparser = { git = 'https://github.com/bytecodealliance/wasm-tools', branch = 'ci/release-1.242.0' }
-wasm-compose = { git = 'https://github.com/bytecodealliance/wasm-tools', branch = 'ci/release-1.242.0' }
