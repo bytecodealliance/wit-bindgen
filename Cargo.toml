@@ -22,24 +22,24 @@ repository = "https://github.com/bytecodealliance/wit-bindgen"
 rust-version = "1.82.0"
 
 [workspace.dependencies]
-anyhow = "1.0.72"
-bitflags = "2.3.3"
+anyhow = "1.0.100"
+bitflags = "2.10.0"
 heck = { version = "0.5" }
-pulldown-cmark = { version = "0.9", default-features = false }
-serde = { version = "1.0.218", features = ["derive"] }
-clap = { version = "4.3.19", features = ["derive"] }
-indexmap = "2.0.0"
-prettyplease = "0.2.20"
-syn = { version = "2.0.89", features = ["printing"] }
+pulldown-cmark = { version = "0.13.0", default-features = false }
+serde = { version = "1.0.228", features = ["derive"] }
+clap = { version = "4.5.53", features = ["derive"] }
+indexmap = "2.12.1"
+prettyplease = "0.2.37"
+syn = { version = "2.0.111", features = ["printing"] }
 futures = "0.3.31"
 
-wat = "1.241.0"
-wasmparser = "0.241.0"
-wasm-encoder = "0.241.0"
-wasm-metadata = { version = "0.241.0", default-features = false }
-wit-parser = "0.241.0"
-wit-component = "0.241.0"
-wasm-compose = "0.241.0"
+wat = "1.241.2"
+wasmparser = "0.241.2"
+wasm-encoder = "0.241.2"
+wasm-metadata = { version = "0.241.2", default-features = false }
+wit-parser = "0.241.2"
+wit-component = "0.241.2"
+wasm-compose = "0.241.2"
 
 wit-bindgen-core = { path = 'crates/core', version = '0.48.1' }
 wit-bindgen-c = { path = 'crates/c', version = '0.48.1' }
