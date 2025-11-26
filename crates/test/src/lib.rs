@@ -837,7 +837,7 @@ impl Runner<'_> {
         // done for async tests at this time to ensure that there's a version of
         // composition that's done which is at the same version as wasmparser
         // and friends.
-        let composed = if case.config.wac.is_none() && test_components.len() == 1 {
+        let composed = if case.config.wac.is_none() {
             self.compose_wasm_with_wasm_compose(runner_wasm, test_components)?
         } else {
             self.compose_wasm_with_wac(case, runner, runner_wasm, test_components)?
@@ -865,13 +865,32 @@ impl Runner<'_> {
         runner_wasm: &Path,
         test_components: &[(&Component, &Path)],
     ) -> Result<Vec<u8>> {
-        assert!(test_components.len() == 1);
-        let test_wasm = test_components[0].1;
-        let mut config = wasm_compose::config::Config::default();
-        config.definitions = vec![test_wasm.to_path_buf()];
-        wasm_compose::composer::ComponentComposer::new(runner_wasm, &config)
-            .compose()
-            .with_context(|| format!("failed to compose {runner_wasm:?} with {test_wasm:?}"))
+        assert!(test_components.len() > 0);
+        let mut last_bytes = None;
+        let mut path: PathBuf;
+        for (i, (_component, component_path)) in test_components.iter().enumerate() {
+            let main = match last_bytes.take() {
+                Some(bytes) => {
+                    path = runner_wasm.with_extension(&format!("composition{i}.wasm"));
+                    std::fs::write(&path, &bytes)
+                        .with_context(|| format!("failed to write temporary file {path:?}"))?;
+                    path.as_path()
+                }
+                None => runner_wasm,
+            };
+
+            let mut config = wasm_compose::config::Config::default();
+            config.definitions = vec![component_path.to_path_buf()];
+            last_bytes = Some(
+                wasm_compose::composer::ComponentComposer::new(main, &config)
+                    .compose()
+                    .with_context(|| {
+                        format!("failed to compose {main:?} with {component_path:?}")
+                    })?,
+            );
+        }
+
+        Ok(last_bytes.unwrap())
     }
 
     fn compose_wasm_with_wac(

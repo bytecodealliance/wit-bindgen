@@ -1,0 +1,24 @@
+//@ dependencies = ['middle', 'leaf']
+
+package test:common;
+
+world runner {
+    import i-runner;
+}
+
+interface i-runner {
+    f: async func();
+}
+
+world middle {
+    export i-runner;
+    import i-middle;
+}
+
+interface i-middle {
+    f: async func();
+}
+
+world leaf {
+    export i-middle;
+}
