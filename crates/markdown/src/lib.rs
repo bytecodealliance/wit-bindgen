@@ -209,7 +209,12 @@ impl WorldGenerator for Markdown {
         for event in parser {
             if let Event::Code(code) = &event {
                 if let Some(dst) = self.hrefs.get(code.as_ref()) {
-                    let tag = Tag::Link { link_type: LinkType::Inline, dest_url: dst.as_str().into(), title:  "".into(), id:  "".into(), };
+                    let tag = Tag::Link {
+                        link_type: LinkType::Inline,
+                        dest_url: dst.as_str().into(),
+                        title: "".into(),
+                        id: "".into(),
+                    };
                     events.push(Event::Start(tag.clone()));
                     events.push(event.clone());
                     events.push(Event::End(tag.into()));
