@@ -1073,14 +1073,20 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     interop_name = format!("Imports.{interop_name}");
                 }
 
-                let mut resource_type_name = String::new();
-                if let FunctionKind::Method(resource_type_id) = self.kind {
-                    resource_type_name = format!(
-                        ".{}",
-                        self.interface_gen.csharp_gen.all_resources[resource_type_id].name.to_upper_camel_case()
-                    );
-                }
-                
+                let resource_type_name = match self.kind {
+                    FunctionKind::Method(resource_type_id) | 
+                    FunctionKind::Static(resource_type_id) | 
+                    FunctionKind::Constructor(resource_type_id) => {
+                        format!(
+                            ".{}",
+                            self.interface_gen.csharp_gen.all_resources[resource_type_id]
+                                .name
+                                .to_upper_camel_case()
+                        )
+                    }
+                    _ => String::new(),
+                };
+
                 uwriteln!(
                     self.src,
                     "{assignment} {interop_name}{resource_type_name}.{func_name}WasmInterop.wasmImport{func_name}({operands});"

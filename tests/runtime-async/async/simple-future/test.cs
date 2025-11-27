@@ -1,8 +1,8 @@
 using System.Diagnostics;
 
-namespace TestWorld.wit.exports.my.test
+namespace TestWorld.wit.Exports.my.test
 {
-    public class IImpl : II
+    public class IExportsImpl : IIExports
     {
         public static Task ReadFuture(FutureReader reader)
         {

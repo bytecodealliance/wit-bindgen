@@ -813,7 +813,7 @@ impl InterfaceGenerator<'_> {
                     resource_type_name.unwrap()
                 }
                 else {
-                    format!("{}Impl.{export_name}", interface_name.strip_prefix("I").unwrap())
+                    format!("{}Impl", interface_name.strip_prefix("I").unwrap())
                 };
 
             uwriteln!(

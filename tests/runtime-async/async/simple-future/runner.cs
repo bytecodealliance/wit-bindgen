@@ -1,7 +1,7 @@
 using System;
 using System.Runtime.InteropServices;
 using System.Diagnostics;
-using RunnerWorld.wit.imports.my.test;
+using RunnerWorld.wit.Imports.my.test;
 using RunnerWorld;
 
 public class Program
@@ -9,19 +9,19 @@ public class Program
     public static async Task Main(string[] args)
     {
         {
-            var (reader, writer) = II.ReadFutureVoidNew();
+            var (reader, writer) = IIImports.ReadFutureVoidNew();
 
             var writeTask = writer.Write();
             Debug.Assert(!writeTask.IsCompleted);
 
-            var task = II.ReadFuture(reader);
+            var task = IIImports.ReadFuture(reader);
             Debug.Assert(task.IsCompleted);
 
-            var set = II.WaitableSetNew();
-            II.Join(writer, set);
+            var set = IIImports.WaitableSetNew();
+            IIImports.Join(writer, set);
 
             var ev = new EventWaitable();
-            var status = II.WaitableSetWait(set);
+            var status = IIImports.WaitableSetWait(set);
             Debug.Assert(status.Event == EventCode.FutureWrite);
             Debug.Assert(status.Waitable == writer.Handle);
             Debug.Assert(status.Status.IsCompleted);
@@ -32,19 +32,19 @@ public class Program
         }   
 
         {
-            var (reader, writer) = II.DropFutureVoidNew();
+            var (reader, writer) = IIImports.DropFutureVoidNew();
 
             var writeTask = writer.Write();
             Debug.Assert(!writeTask.IsCompleted);
 
-            var task = II.DropFuture(reader);
+            var task = IIImports.DropFuture(reader);
             Debug.Assert(task.IsCompleted);
 
-            var set = II.WaitableSetNew();
-            II.Join(writer, set);
+            var set = IIImports.WaitableSetNew();
+            IIImports.Join(writer, set);
 
             var ev = new EventWaitable();
-            var status = II.WaitableSetWait(set);
+            var status = IIImports.WaitableSetWait(set);
             Debug.Assert(status.Event == EventCode.FutureWrite);
             Debug.Assert(status.Waitable == writer.Handle);
             Debug.Assert(status.Status.IsDropped);
