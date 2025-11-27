@@ -1074,8 +1074,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
 
                 let resource_type_name = match self.kind {
-                    FunctionKind::Method(resource_type_id) | 
-                    FunctionKind::Static(resource_type_id) | 
+                    FunctionKind::Method(resource_type_id) |
+                    FunctionKind::Static(resource_type_id) |
                     FunctionKind::Constructor(resource_type_id) => {
                         format!(
                             ".{}",

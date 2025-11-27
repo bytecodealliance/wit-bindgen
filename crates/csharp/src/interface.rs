@@ -20,7 +20,7 @@ pub(crate) struct InterfaceFragment {
     pub(crate) csharp_src: String,
     pub(crate) csharp_interop_src: String,
     pub(crate) stub: String,
-    pub(crate) direction: Option<Direction>,  // Types do not have a direction.
+    pub(crate) direction: Option<Direction>, // Types do not have a direction.
 }
 
 pub(crate) struct InterfaceTypeAndFragments {
@@ -159,7 +159,7 @@ impl InterfaceGenerator<'_> {
             let tmp_name: String;
             if self.is_world {
                 if CSharp::type_is_bidirectional(self.resolve(), ty) {
-                  name = name.rsplitn(2, ".").nth(1).unwrap();
+                    name = name.rsplitn(2, ".").nth(1).unwrap();
                 }
                 // World level types, except resources are always imports.
                 else if name.ends_with("Exports") && type_def.kind != TypeDefKind::Resource {
@@ -175,7 +175,8 @@ impl InterfaceGenerator<'_> {
 
     fn replace_last(haystack: &str, needle: &str, replacement: &str) -> String {
         if let Some(pos) = haystack.rfind(needle) {
-            let mut result = String::with_capacity(haystack.len() - needle.len() + replacement.len());
+            let mut result =
+                String::with_capacity(haystack.len() - needle.len() + replacement.len());
             result.push_str(&haystack[..pos]);
             result.push_str(replacement);
             result.push_str(&haystack[pos + needle.len()..]);
@@ -810,11 +811,10 @@ impl InterfaceGenerator<'_> {
             let (_namespace, interface_name) =
                 &CSharp::get_class_name_from_qualified_name(self.name);
             let impl_name = if resource_type_name.is_some() {
-                    resource_type_name.unwrap()
-                }
-                else {
-                    format!("{}Impl", interface_name.strip_prefix("I").unwrap())
-                };
+                resource_type_name.unwrap()
+            } else {
+                format!("{}Impl", interface_name.strip_prefix("I").unwrap())
+            };
 
             uwriteln!(
                 self.csharp_interop_src,
@@ -1135,7 +1135,6 @@ impl InterfaceGenerator<'_> {
                         }}
                     "#
                 );
-
             }
             Direction::Export => {
                 let prefix = key
@@ -1238,7 +1237,7 @@ impl InterfaceGenerator<'_> {
                 }
             }
         };
-        
+
         uwrite!(
             self.csharp_interop_src,
             r#"
@@ -1540,7 +1539,7 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .join(", ");
 
         let access = self.csharp_gen.access_modifier();
-        
+
         // Write the top level bidirectional types to csharp_gen.  Could also create a class to gather the interface level bidrectional types.
         match &self.resolve.types[ty].owner {
             TypeOwner::World(_id) => {
@@ -1551,7 +1550,7 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
                     }}
                     "
                 ));
-            },
+            }
             _ => {
                 uwrite!(
                     self.src,
