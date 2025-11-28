@@ -670,11 +670,15 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let val = format!("vec{}", tmp);
                 let ptr = format!("ptr{}", tmp);
                 let len = format!("len{}", tmp);
+                let vec = self.r#gen.path_to_vec();
                 if realloc.is_none() {
                     self.push_str(&format!("let {} = {};\n", val, operands[0]));
                 } else {
                     let op0 = operands.pop().unwrap();
-                    self.push_str(&format!("let {} = ({}).into_boxed_slice();\n", val, op0));
+                    self.push_str(&format!(
+                        "let {} = <_ as Into<{vec}<_>>>::into({}).into_boxed_slice();\n",
+                        val, op0
+                    ));
                 }
                 self.push_str(&format!("let {} = {}.as_ptr().cast::<u8>();\n", ptr, val));
                 self.push_str(&format!("let {} = {}.len();\n", len, val));
@@ -691,7 +695,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.push_str(&format!("let {} = {};\n", len, operands[1]));
                 let vec = self.r#gen.path_to_vec();
                 let result = format!(
-                    "{vec}::from_raw_parts({}.cast(), {1}, {1})",
+                    "<_ as From<{vec}<_>>>::from({vec}::from_raw_parts({}.cast(), {1}, {1}))",
                     operands[0], len
                 );
                 results.push(result);
