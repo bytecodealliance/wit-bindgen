@@ -17,13 +17,14 @@ impl WaitableSet {
     }
 
     pub fn remove_waitable_from_all_sets(waitable: u32) {
-        rtdebug!("waitable-set.join({waitable}, 0)");
+        rtdebug!("waitable.join({waitable}, 0)");
         unsafe { join(waitable, 0) }
     }
 
     pub fn wait(&self) -> (u32, u32, u32) {
         unsafe {
             let mut payload = [0; 2];
+            rtdebug!("waitable-set.wait({}) = ...", self.0.get());
             let event0 = wait(self.0.get(), &mut payload);
             rtdebug!(
                 "waitable-set.wait({}) = ({event0}, {:#x}, {:#x})",
@@ -38,6 +39,7 @@ impl WaitableSet {
     pub fn poll(&self) -> (u32, u32, u32) {
         unsafe {
             let mut payload = [0; 2];
+            rtdebug!("waitable-set.poll({}) = ...", self.0.get());
             let event0 = poll(self.0.get(), &mut payload);
             rtdebug!(
                 "waitable-set.poll({}) = ({event0}, {:#x}, {:#x})",

@@ -156,7 +156,7 @@ impl FutureState<'_> {
 
     /// Handles the `event{0,1,2}` event codes and returns a corresponding
     /// return code along with a flag whether this future is "done" or not.
-    fn callback(&mut self, event0: u32, event1: u32, event2: u32) -> (u32, bool) {
+    fn callback(&mut self, event0: u32, event1: u32, event2: u32) -> CallbackCode {
         match event0 {
             EVENT_NONE => rtdebug!("EVENT_NONE"),
             EVENT_SUBTASK => rtdebug!("EVENT_SUBTASK({event1:#x}, {event2:#x})"),
@@ -171,7 +171,7 @@ impl FutureState<'_> {
                 // code/bool indicating we're done. The caller will then
                 // appropriately deallocate this `FutureState` which will
                 // transitively run all destructors.
-                return (CALLBACK_CODE_EXIT, true);
+                return CallbackCode::Exit;
             }
             _ => unreachable!(),
         }
@@ -198,7 +198,7 @@ impl FutureState<'_> {
     ///
     /// Returns the code representing what happened along with a boolean as to
     /// whether this execution is done.
-    fn poll(&mut self) -> (u32, bool) {
+    fn poll(&mut self) -> CallbackCode {
         self.with_p3_task_set(|me| {
             let mut context = Context::from_waker(&me.waker_clone);
 
@@ -223,9 +223,9 @@ impl FutureState<'_> {
                         assert!(me.tasks.is_empty());
                         if me.remaining_work() {
                             let waitable = me.waitable_set.as_ref().unwrap().as_raw();
-                            break (CALLBACK_CODE_WAIT | (waitable << 4), false);
+                            break CallbackCode::Wait(waitable);
                         } else {
-                            break (CALLBACK_CODE_EXIT, true);
+                            break CallbackCode::Exit;
                         }
                     }
 
@@ -236,12 +236,18 @@ impl FutureState<'_> {
                     Poll::Pending => {
                         assert!(!me.tasks.is_empty());
                         if me.waker.0.load(Ordering::Relaxed) {
-                            break (CALLBACK_CODE_YIELD, false);
+                            let code = if me.remaining_work() {
+                                let waitable = me.waitable_set.as_ref().unwrap().as_raw();
+                                CallbackCode::Poll(waitable)
+                            } else {
+                                CallbackCode::Yield
+                            };
+                            break code;
                         }
 
                         assert!(me.remaining_work());
                         let waitable = me.waitable_set.as_ref().unwrap().as_raw();
-                        break (CALLBACK_CODE_WAIT | (waitable << 4), false);
+                        break CallbackCode::Wait(waitable);
                     }
                 }
             }
@@ -331,10 +337,24 @@ const EVENT_FUTURE_READ: u32 = 4;
 const EVENT_FUTURE_WRITE: u32 = 5;
 const EVENT_CANCEL: u32 = 6;
 
-const CALLBACK_CODE_EXIT: u32 = 0;
-const CALLBACK_CODE_YIELD: u32 = 1;
-const CALLBACK_CODE_WAIT: u32 = 2;
-const _CALLBACK_CODE_POLL: u32 = 3;
+#[derive(PartialEq, Debug)]
+enum CallbackCode {
+    Exit,
+    Yield,
+    Wait(u32),
+    Poll(u32),
+}
+
+impl CallbackCode {
+    fn encode(self) -> u32 {
+        match self {
+            CallbackCode::Exit => 0,
+            CallbackCode::Yield => 1,
+            CallbackCode::Wait(waitable) => 2 | (waitable << 4),
+            CallbackCode::Poll(waitable) => 3 | (waitable << 4),
+        }
+    }
+}
 
 const STATUS_STARTING: u32 = 0;
 const STATUS_STARTED: u32 = 1;
@@ -425,14 +445,14 @@ pub unsafe fn callback(event0: u32, event1: u32, event2: u32) -> u32 {
     // our future so deallocate it. Otherwise put our future back in
     // context-local storage and forward the code.
     unsafe {
-        let (rc, done) = (*state).callback(event0, event1, event2);
-        if done {
+        let rc = (*state).callback(event0, event1, event2);
+        if rc == CallbackCode::Exit {
             drop(Box::from_raw(state));
         } else {
             context_set(state.cast());
         }
-        rtdebug!(" => (cb) {rc:#x}");
-        rc
+        rtdebug!(" => (cb) {rc:?}");
+        rc.encode()
     }
 }
 
@@ -449,12 +469,14 @@ pub fn block_on<T: 'static>(future: impl Future<Output = T>) -> T {
     let mut event = (EVENT_NONE, 0, 0);
     loop {
         match state.callback(event.0, event.1, event.2) {
-            (_, true) => {
+            CallbackCode::Exit => {
                 drop(state);
                 break result.unwrap();
             }
-            (CALLBACK_CODE_YIELD, false) => event = state.waitable_set.as_ref().unwrap().poll(),
-            _ => event = state.waitable_set.as_ref().unwrap().wait(),
+            CallbackCode::Yield | CallbackCode::Poll(_) => {
+                event = state.waitable_set.as_ref().unwrap().poll()
+            }
+            CallbackCode::Wait(_) => event = state.waitable_set.as_ref().unwrap().wait(),
         }
     }
 }
