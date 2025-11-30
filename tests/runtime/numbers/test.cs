@@ -1,10 +1,8 @@
-using System;
-using System.Runtime.InteropServices;
-using System.Diagnostics;
+using TestWorld.wit.Exports.test.numbers;
 
-namespace TestWorld.wit.exports.test.numbers
+namespace TestWorld.wit.Exports.test.numbers
 {
-    public class NumbersImpl : ITestWorld
+    public class NumbersExportsImpl : INumbersExports
     {
         static uint SCALAR = 0;
 

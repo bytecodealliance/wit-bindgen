@@ -1,13 +1,13 @@
 using System;
 using System.Runtime.InteropServices;
 using System.Diagnostics;
-using RunnerWorld.wit.imports.test.manyArguments;
+using RunnerWorld.wit.Imports.test.manyArguments;
 
 public class Program
 {
     public static void Main(string[] args)
     {
-        ToTestInterop.ManyArguments(
+        IToTestImports.ManyArguments(
             1,
             2,
             3,
