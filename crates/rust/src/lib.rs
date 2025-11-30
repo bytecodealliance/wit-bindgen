@@ -3,9 +3,11 @@ use anyhow::{Result, bail};
 use core::panic;
 use heck::*;
 use indexmap::{IndexMap, IndexSet};
+use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::{self, Write as _};
 use std::mem;
+use std::path::Path;
 use std::str::FromStr;
 use wit_bindgen_core::abi::{Bitcast, WasmType};
 use wit_bindgen_core::{
@@ -26,7 +28,7 @@ struct InterfaceName {
 }
 
 #[derive(Default)]
-struct RustWasm {
+pub struct RustWasm {
     types: Types,
     src_preamble: Source,
     src: Source,
@@ -277,15 +279,43 @@ pub struct Opts {
 }
 
 impl Opts {
-    pub fn build(self) -> Box<dyn WorldGenerator> {
+    pub fn build(self) -> RustWasm {
         let mut r = RustWasm::new();
         r.skip = self.skip.iter().cloned().collect();
         r.opts = self;
-        Box::new(r)
+        r
     }
 }
 
+const GENERATED_FILE_NAME: &str = "wit_bindgen_generated.rs";
 impl RustWasm {
+    pub fn generate_to_out_dir(self, world: Option<&str>) -> Result<()> {
+        self.generate_to_out_dir_modify(world, |s| Cow::Borrowed(s))
+    }
+
+    pub fn generate_to_out_dir_modify(
+        mut self,
+        world: Option<&str>,
+        modify: impl FnOnce(&[u8]) -> Cow<[u8]>,
+    ) -> Result<()> {
+        let mut resolve = Resolve::default();
+        println!("cargo:rerun-if-changed=wit/");
+        let (pkg, _files) = resolve.push_path("wit")?;
+        let main_packages = vec![pkg];
+        let world = resolve.select_world(&main_packages, world)?;
+        let mut files = Files::default();
+        self.generate(&resolve, world, &mut files)?;
+        let out_dir = std::env::var("OUT_DIR").expect("cargo sets OUT_DIR");
+        let dst = Path::new(&out_dir).join(GENERATED_FILE_NAME);
+        let (_name, contents) = files
+            .iter()
+            .next()
+            .expect("exactly one file should be generated");
+        let contents = modify(contents);
+        std::fs::write(&dst, contents)?;
+        Ok(())
+    }
+
     fn new() -> RustWasm {
         RustWasm::default()
     }
