@@ -198,7 +198,7 @@ impl FutureState<'_> {
                 .sleep_state
                 .store(SLEEP_STATE_WOKEN, Ordering::Relaxed);
 
-            // With all of our context now configured, deliver the evnet
+            // With all of our context now configured, deliver the event
             // notification this callback corresponds to.
             //
             // Note that this should happen under the reset of

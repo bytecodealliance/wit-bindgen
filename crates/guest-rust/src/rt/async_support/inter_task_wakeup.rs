@@ -1,6 +1,7 @@
 use super::FutureState;
 use crate::rt::async_support::{BLOCKED, COMPLETED};
 use crate::{RawStreamReader, RawStreamWriter, StreamOps, UnitStreamOps};
+use std::ptr;
 use std::sync::Mutex;
 
 #[derive(Default)]
@@ -40,7 +41,7 @@ impl FutureState<'_> {
         if !self.inter_task_wakeup.stream_reading {
             let stream = self.inter_task_wakeup.stream.as_mut().unwrap();
             let handle = stream.handle();
-            let rc = unsafe { UnitStreamOps.start_read(handle, 1 as *mut _, 1) };
+            let rc = unsafe { UnitStreamOps.start_read(handle, ptr::null_mut(), 1) };
             assert_eq!(rc, BLOCKED);
             self.inter_task_wakeup.stream_reading = true;
             self.add_waitable(handle);
@@ -91,7 +92,7 @@ impl WakerState {
         // succeed immediately.
         let mut inter_task_stream = self.lock.lock().unwrap();
         let stream = inter_task_stream.as_mut().unwrap();
-        let rc = unsafe { UnitStreamOps.start_write(stream.handle(), 1 as *const _, 1) };
+        let rc = unsafe { UnitStreamOps.start_write(stream.handle(), ptr::null_mut(), 1) };
         assert_eq!(rc, COMPLETED | (1 << 4));
     }
 }
