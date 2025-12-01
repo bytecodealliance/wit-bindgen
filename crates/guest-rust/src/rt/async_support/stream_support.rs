@@ -206,6 +206,12 @@ where
         }
     }
 
+    /// Returns the index of the component-model handle that this stream is
+    /// using.
+    pub fn handle(&self) -> u32 {
+        self.handle
+    }
+
     /// Initiate a write of the `values` provided into this stream.
     ///
     /// This method is akin to an `async fn` except that the returned
@@ -486,7 +492,9 @@ impl<O: StreamOps> RawStreamReader<O> {
         ret
     }
 
-    fn handle(&self) -> u32 {
+    /// Returns the index of the component-model handle that this stream is
+    /// using.
+    pub fn handle(&self) -> u32 {
         self.opt_handle().unwrap()
     }
 
