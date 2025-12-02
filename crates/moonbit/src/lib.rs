@@ -2008,17 +2008,14 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 struct Block {
     body: String,
     results: Vec<String>,
-    element: String,
-    base: String,
 }
+
 struct Cleanup {
     address: String,
 }
 
 struct BlockStorage {
     body: String,
-    element: String,
-    base: String,
     cleanup: Vec<Cleanup>,
 }
 
@@ -2271,10 +2268,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             | Instruction::S32FromI32
             | Instruction::S64FromI64
             | Instruction::CoreF64FromF64
-            | Instruction::F64FromCoreF64 => results.push(operands[0].clone()),
-
-            Instruction::F32FromCoreF32 => results.push(operands[0].clone()),
-            Instruction::CoreF32FromF32 => results.push(operands[0].clone()),
+            | Instruction::F64FromCoreF64
+            | Instruction::F32FromCoreF32
+            | Instruction::CoreF32FromF32 => results.push(operands[0].clone()),
 
             Instruction::CharFromI32 => {
                 results.push(format!("Int::unsafe_to_char({})", operands[0]))
@@ -2741,8 +2737,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let Block {
                     body,
                     results: block_results,
-                    element: block_element,
-                    base,
                 } = self.blocks.pop().unwrap();
                 assert!(block_results.is_empty());
 
@@ -2758,8 +2752,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     "
                     let {address} = {}malloc(({op}).length() * {size});
                     for {index} = 0; {index} < ({op}).length(); {index} = {index} + 1 {{
-                        let {block_element} : {ty} = ({op})[({index})]
-                        let {base} = {address} + ({index} * {size});
+                        let iter_elem : {ty} = ({op})[({index})]
+                        let iter_base = {address} + ({index} * {size});
                         {body}
                     }}
                     ",
@@ -2778,8 +2772,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let Block {
                     body,
                     results: block_results,
-                    base,
-                    ..
                 } = self.blocks.pop().unwrap();
                 let address = &operands[0];
                 let length = &operands[1];
@@ -2799,7 +2791,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     "
                     let {array} : Array[{ty}] = [];
                     for {index} = 0; {index} < ({length}); {index} = {index} + 1 {{
-                        let {base} = ({address}) + ({index} * {size})
+                        let iter_base = ({address}) + ({index} * {size})
                         {body}
                         {array}.push({result})
                     }}
@@ -2811,13 +2803,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.push(array);
             }
 
-            Instruction::IterElem { .. } => {
-                results.push(self.block_storage.last().unwrap().element.clone())
-            }
+            Instruction::IterElem { .. } => results.push("iter_elem".into()),
 
-            Instruction::IterBasePointer => {
-                results.push(self.block_storage.last().unwrap().base.clone())
-            }
+            Instruction::IterBasePointer => results.push("iter_base".into()),
 
             Instruction::CallWasm { sig, .. } => {
                 let assignment = match &sig.results[..] {
@@ -3163,12 +3151,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::GuestDeallocateList { element } => {
-                let Block {
-                    body,
-                    results,
-                    base,
-                    ..
-                } = self.blocks.pop().unwrap();
+                let Block { body, results, .. } = self.blocks.pop().unwrap();
                 assert!(results.is_empty());
 
                 let address = &operands[0];
@@ -3184,7 +3167,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         self.src,
                         "
                         for {index} = 0; {index} < ({length}); {index} = {index} + 1 {{
-                            let {base} = ({address}) + ({index} * {size})
+                            let iter_base = ({address}) + ({index} * {size})
                             {body}
                         }}
                         "
@@ -3299,19 +3282,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
     fn push_block(&mut self) {
         self.block_storage.push(BlockStorage {
             body: mem::take(&mut self.src),
-            element: self.locals.tmp("element"),
-            base: self.locals.tmp("base"),
             cleanup: mem::take(&mut self.cleanup),
         });
     }
 
     fn finish_block(&mut self, operands: &mut Vec<String>) {
-        let BlockStorage {
-            body,
-            element,
-            base,
-            cleanup,
-        } = self.block_storage.pop().unwrap();
+        let BlockStorage { body, cleanup } = self.block_storage.pop().unwrap();
 
         if !self.cleanup.is_empty() {
             self.needs_cleanup_list = true;
@@ -3331,8 +3307,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
         self.blocks.push(Block {
             body: mem::replace(&mut self.src, body),
             results: mem::take(operands),
-            element,
-            base,
         });
     }
 
@@ -3502,9 +3476,10 @@ impl ToMoonBitTypeIdent for str {
     fn to_moonbit_type_ident(&self) -> String {
         // Escape MoonBit builtin types
         match self.to_upper_camel_case().as_str() {
-            type_name @ ("Bool" | "Byte" | "Int" | "Int64" | "UInt" | "UInt64" | "Float"
-            | "Double" | "Error" | "Buffer" | "Bytes" | "Array" | "FixedArray"
-            | "Map" | "String" | "Option" | "Result" | "Char" | "Json") => {
+            type_name @ ("Bool" | "Byte" | "Int16" | "UInt16" | "Int" | "Int64" | "UInt"
+            | "UInt64" | "Float" | "Double" | "Error" | "Bytes" | "ReadonlyArray"
+            | "Array" | "FixedArray" | "Map" | "String" | "StringBuilder"
+            | "Option" | "Result" | "Char" | "Json") => {
                 format!("{type_name}_")
             }
             type_name => type_name.to_owned(),
@@ -3519,13 +3494,8 @@ fn generated_preamble(src: &mut Source, version: &str) {
 fn print_docs(src: &mut String, docs: &Docs) {
     uwrite!(src, "///|");
     if let Some(docs) = &docs.contents {
-        let lines = docs
-            .trim()
-            .lines()
-            .map(|line| format!("/// {line}"))
-            .collect::<Vec<_>>()
-            .join("\n");
-
-        uwrite!(src, "\n{}", lines)
+        for line in docs.trim().lines() {
+            uwrite!(src, "\n/// {line}");
+        }
     }
 }
