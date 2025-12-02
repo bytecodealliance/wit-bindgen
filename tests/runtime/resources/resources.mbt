@@ -1,6 +1,6 @@
 //@ [lang]
 //@ path = 'gen/interface/exports/stub.mbt'
-//@ pkg_config = """{ "import": ["test/resources/ffi", "test/resources/interface/imports"] }"""
+//@ pkg_config = """{ "import": ["test/resources/interface/imports"] }"""
 
 ///|
 let x : Map[Int, Int] = {}

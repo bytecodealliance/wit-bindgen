@@ -19,6 +19,8 @@ use wit_bindgen_core::{
     },
 };
 
+mod ffi;
+
 // Assumptions:
 // - Data: u8 -> Byte, s8 | s16 | s32 -> Int, u16 | u32 -> UInt, s64 -> Int64, u64 -> UInt64, f32 | f64 -> Double, address -> Int
 // - Encoding: UTF16
@@ -118,6 +120,7 @@ struct InterfaceFragment {
     src: String,
     ffi: String,
     stub: String,
+    builtins: HashSet<&'static str>,
 }
 
 enum PayloadFor {
@@ -173,6 +176,7 @@ impl MoonBit {
             name,
             module,
             direction,
+            ffi_imports: HashSet::new(),
         }
     }
 }
@@ -342,12 +346,16 @@ impl WorldGenerator for MoonBit {
 
                 files.push(
                     &format!("{directory}/moon.pkg.json"),
-                    format!("{{ \"import\": [{}] }}", deps.join(", ")).as_bytes(),
+                    format!(
+                        "{{ \"import\": [{}], \"warn-list\": \"-44\" }}",
+                        deps.join(", ")
+                    )
+                    .as_bytes(),
                 );
             } else {
                 files.push(
                     &format!("{directory}/moon.pkg.json"),
-                    "{ }".to_string().as_bytes(),
+                    "{ \"warn-list\": \"-44\" }".to_string().as_bytes(),
                 );
             }
         };
@@ -355,13 +363,18 @@ impl WorldGenerator for MoonBit {
         // Import world fragments
         let mut src = Source::default();
         let mut ffi = Source::default();
+        let mut builtins: HashSet<&'static str> = HashSet::new();
         wit_bindgen_core::generated_preamble(&mut src, version);
         wit_bindgen_core::generated_preamble(&mut ffi, version);
         self.import_world_fragments.iter().for_each(|f| {
             uwriteln!(src, "{}", f.src);
             uwriteln!(ffi, "{}", f.ffi);
+            builtins.extend(f.builtins.iter());
             assert!(f.stub.is_empty());
         });
+        for b in builtins.iter() {
+            uwriteln!(ffi, "{}", b);
+        }
 
         let directory = name.replace('.', "/");
         files.push(&format!("{directory}/import.mbt"), indent(&src).as_bytes());
@@ -390,17 +403,19 @@ impl WorldGenerator for MoonBit {
             generate_pkg_definition(&format!("{}.{}", self.opts.gen_dir, name), files);
         }
 
-        let generate_ffi =
+        let mut builtins: HashSet<&'static str> = HashSet::new();
+        builtins.insert(ffi::MALLOC);
+        builtins.insert(ffi::FREE);
+        let mut generate_ffi =
             |directory: String, fragments: &[InterfaceFragment], files: &mut Files| {
-                let b = fragments
-                    .iter()
-                    .map(|f| f.ffi.deref())
-                    .collect::<Vec<_>>()
-                    .join("\n");
+                // For cabi_realloc
 
                 let mut body = Source::default();
                 wit_bindgen_core::generated_preamble(&mut body, version);
-                uwriteln!(&mut body, "{b}");
+                for fragment in fragments.iter() {
+                    uwriteln!(&mut body, "{}", fragment.ffi);
+                    builtins.extend(fragment.builtins.iter());
+                }
 
                 files.push(
                     &format!(
@@ -420,11 +435,16 @@ impl WorldGenerator for MoonBit {
             let mut ffi = Source::default();
             wit_bindgen_core::generated_preamble(&mut src, version);
             wit_bindgen_core::generated_preamble(&mut ffi, version);
+            let mut builtins: HashSet<&'static str> = HashSet::new();
             fragments.iter().for_each(|f| {
                 uwriteln!(src, "{}", f.src);
                 uwriteln!(ffi, "{}", f.ffi);
+                builtins.extend(f.builtins.iter());
                 assert!(f.stub.is_empty());
             });
+            for builtin in builtins {
+                uwriteln!(ffi, "{}", builtin);
+            }
 
             let directory = name.replace('.', "/");
             files.push(&format!("{directory}/top.mbt"), indent(&src).as_bytes());
@@ -453,24 +473,25 @@ impl WorldGenerator for MoonBit {
         }
 
         // Export FFI Utils
-        let mut body = Source::default();
-        wit_bindgen_core::generated_preamble(&mut body, version);
-        body.push_str(FFI);
-        files.push(&format!("{FFI_DIR}/top.mbt"), indent(&body).as_bytes());
         // Export Async utils
+
         // If async is used, export async utils
         if self.is_async || !self.futures.is_empty() {
+            let mut body = Source::default();
+            wit_bindgen_core::generated_preamble(&mut body, version);
+            body.push_str(FFI);
+            files.push(&format!("{FFI_DIR}/top.mbt"), indent(&body).as_bytes());
             ASYNC_UTILS.iter().for_each(|s| {
                 files.push(
                     &format!("{FFI_DIR}/{}.mbt", s.name),
                     indent(s.src).as_bytes(),
                 );
             });
+            files.push(
+                &format!("{FFI_DIR}/moon.pkg.json"),
+                "{ \"warn-list\": \"-44\", \"supported-targets\": [\"wasm\"] }".as_bytes(),
+            );
         }
-        files.push(
-            &format!("{FFI_DIR}/moon.pkg.json"),
-            "{ \"warn-list\": \"-44\", \"supported-targets\": [\"wasm\"] }".as_bytes(),
-        );
 
         // Export project files
         if !self.opts.ignore_stub && !self.opts.ignore_module_file {
@@ -482,42 +503,30 @@ impl WorldGenerator for MoonBit {
             files.push("moon.mod.json", body.as_bytes());
         }
 
-        let export_dir = self.opts.gen_dir.clone();
-
         // Export project entry point
-        let mut r#gen = self.interface(resolve, export_dir.as_str(), "", Direction::Export);
-        let ffi_qualifier = r#gen.qualify_package(FFI_DIR);
-
         let mut body = Source::default();
         wit_bindgen_core::generated_preamble(&mut body, version);
-        uwriteln!(
-            &mut body,
-            "
-            pub fn cabi_realloc(
-                src_offset : Int,
-                src_size : Int,
-                dst_alignment : Int,
-                dst_size : Int
-            ) -> Int {{
-                {ffi_qualifier}cabi_realloc(src_offset, src_size, dst_alignment, dst_size)
-            }}
-            "
-        );
+        uwriteln!(&mut body, "{}", ffi::CABI_REALLOC);
+
         if !self.return_area_size.is_empty() {
             uwriteln!(
                 &mut body,
                 "
-                let return_area : Int = {ffi_qualifier}malloc({})
+                let return_area : Int = mbt_ffi_malloc({})
                 ",
                 self.return_area_size.size_wasm32(),
             );
+        }
+        for builtin in builtins {
+            uwriteln!(&mut body, "{}", builtin);
         }
         files.push(
             &format!("{}/ffi.mbt", self.opts.gen_dir),
             indent(&body).as_bytes(),
         );
+
         self.export
-            .insert("cabi_realloc".into(), "cabi_realloc".into());
+            .insert("mbt_ffi_cabi_realloc".into(), "cabi_realloc".into());
 
         let mut body = Source::default();
         let mut exports = self
@@ -560,6 +569,7 @@ impl WorldGenerator for MoonBit {
         uwrite!(
             &mut body,
             "
+              , \"warn-list\": \"-44\"
             }}
             ",
         );
@@ -582,6 +592,8 @@ struct InterfaceGenerator<'a> {
     name: &'a str,
     module: &'a str,
     direction: Direction,
+    // Collect of FFI imports used in this interface
+    ffi_imports: HashSet<&'static str>,
 }
 
 impl InterfaceGenerator<'_> {
@@ -640,6 +652,7 @@ impl InterfaceGenerator<'_> {
                         src: self.src,
                         stub: self.stub,
                         ffi: self.ffi,
+                        builtins: self.ffi_imports,
                     });
             }
             Direction::Export => {
@@ -651,6 +664,7 @@ impl InterfaceGenerator<'_> {
                         src: self.src,
                         stub: self.stub,
                         ffi: self.ffi,
+                        builtins: self.ffi_imports,
                     });
             }
         }
@@ -663,6 +677,7 @@ impl InterfaceGenerator<'_> {
                     src: self.src,
                     stub: self.stub,
                     ffi: self.ffi,
+                    builtins: self.ffi_imports,
                 });
             }
             Direction::Export => {
@@ -670,6 +685,7 @@ impl InterfaceGenerator<'_> {
                     src: self.src,
                     stub: self.stub,
                     ffi: self.ffi,
+                    builtins: self.ffi_imports,
                 });
             }
         }
@@ -758,7 +774,7 @@ impl InterfaceGenerator<'_> {
             None => "$root".into(),
         };
 
-        self.generation_futures_and_streams_import("", func, interface_name);
+        self.r#generation_futures_and_streams_import("", func, interface_name);
 
         uwriteln!(
             self.ffi,
@@ -768,7 +784,7 @@ impl InterfaceGenerator<'_> {
         print_docs(&mut self.src, &func.docs);
 
         if async_ {
-            src = self.generate_async_import_function(func, mbt_sig, &wasm_sig);
+            src = self.r#generate_async_import_function(func, mbt_sig, &wasm_sig);
         }
 
         uwrite!(
@@ -943,6 +959,10 @@ impl InterfaceGenerator<'_> {
         assert!(toplevel_generator.src.is_empty());
         assert!(toplevel_generator.ffi.is_empty());
 
+        // Transfer ffi_imports from toplevel_generator to self
+        self.ffi_imports
+            .extend(toplevel_generator.ffi_imports.iter());
+
         let result_type = match &sig.results[..] {
             [] => "Unit",
             [result] => wasm_type(*result),
@@ -974,7 +994,7 @@ impl InterfaceGenerator<'_> {
 
         let export_name = func.legacy_core_export_name(interface_name.as_deref());
         let module_name = interface_name.as_deref().unwrap_or("$root");
-        self.generation_futures_and_streams_import("[export]", func, module_name);
+        self.r#generation_futures_and_streams_import("[export]", func, module_name);
 
         uwrite!(
             self.ffi,
@@ -1399,7 +1419,7 @@ impl InterfaceGenerator<'_> {
 
             match &self.resolve.types[ty].kind {
                 TypeDefKind::Future(payload_type) => {
-                    self.generate_async_future_or_stream_import(
+                    self.r#generate_async_future_or_stream_import(
                         PayloadFor::Future,
                         &module,
                         index,
@@ -1409,7 +1429,7 @@ impl InterfaceGenerator<'_> {
                     );
                 }
                 TypeDefKind::Stream(payload_type) => {
-                    self.generate_async_future_or_stream_import(
+                    self.r#generate_async_future_or_stream_import(
                         PayloadFor::Stream,
                         &module,
                         index,
@@ -2283,18 +2303,16 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
             Instruction::U8FromI32 => results.push(format!("({}).to_byte()", operands[0])),
 
-            Instruction::I32FromS8 => results.push(format!(
-                "{}extend8({})",
-                self.r#gen.qualify_package(FFI_DIR),
-                operands[0]
-            )),
+            Instruction::I32FromS8 => {
+                self.r#gen.ffi_imports.insert(ffi::EXTEND8);
+                results.push(format!("mbt_ffi_extend8({})", operands[0]))
+            }
             Instruction::S8FromI32 => results.push(format!("({} - 0x100)", operands[0])),
             Instruction::S16FromI32 => results.push(format!("({} - 0x10000)", operands[0])),
-            Instruction::I32FromS16 => results.push(format!(
-                "{}extend16({})",
-                self.r#gen.qualify_package(FFI_DIR),
-                operands[0]
-            )),
+            Instruction::I32FromS16 => {
+                self.r#gen.ffi_imports.insert(ffi::EXTEND16);
+                results.push(format!("mbt_ffi_extend16({})", operands[0]))
+            }
             Instruction::U16FromI32 => results.push(format!(
                 "({}.land(0xFFFF).reinterpret_as_uint())",
                 operands[0]
@@ -2612,12 +2630,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 Type::U8 => {
                     let op = &operands[0];
                     let ptr = self.locals.tmp("ptr");
+                    self.r#gen.ffi_imports.insert(ffi::BYTES2PTR);
                     uwriteln!(
                         self.src,
                         "
-                        let {ptr} = {}bytes2ptr({op})
+                        let {ptr} = mbt_ffi_bytes2ptr({op})
                         ",
-                        self.r#gen.qualify_package(FFI_DIR)
                     );
                     results.push(ptr.clone());
                     results.push(format!("{op}.length()"));
@@ -2629,21 +2647,38 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     let op = &operands[0];
                     let ptr = self.locals.tmp("ptr");
                     let ty = match element {
-                        Type::U32 => "uint",
-                        Type::U64 => "uint64",
-                        Type::S32 => "int",
-                        Type::S64 => "int64",
-                        Type::F32 => "float",
-                        Type::F64 => "double",
+                        Type::U32 => {
+                            self.r#gen.ffi_imports.insert(ffi::UINT_ARRAY2PTR);
+                            "uint"
+                        }
+                        Type::U64 => {
+                            self.r#gen.ffi_imports.insert(ffi::UINT64_ARRAY2PTR);
+                            "uint64"
+                        }
+                        Type::S32 => {
+                            self.r#gen.ffi_imports.insert(ffi::INT_ARRAY2PTR);
+                            "int"
+                        }
+                        Type::S64 => {
+                            self.r#gen.ffi_imports.insert(ffi::INT64_ARRAY2PTR);
+                            "int64"
+                        }
+                        Type::F32 => {
+                            self.r#gen.ffi_imports.insert(ffi::FLOAT_ARRAY2PTR);
+                            "float"
+                        }
+                        Type::F64 => {
+                            self.r#gen.ffi_imports.insert(ffi::DOUBLE_ARRAY2PTR);
+                            "double"
+                        }
                         _ => unreachable!(),
                     };
 
                     uwriteln!(
                         self.src,
                         "
-                        let {ptr} = {}{ty}_array2ptr({op})
+                        let {ptr} = mbt_ffi_{ty}_array2ptr({op})
                         ",
-                        self.r#gen.qualify_package(FFI_DIR)
                     );
                     results.push(ptr.clone());
                     results.push(format!("{op}.length()"));
@@ -2659,25 +2694,42 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     let result = self.locals.tmp("result");
                     let address = &operands[0];
                     let length = &operands[1];
-
+                    self.r#gen.ffi_imports.insert(ffi::PTR2BYTES);
                     uwrite!(
                         self.src,
                         "
-                        let {result} = {}ptr2bytes({address}, {length})
+                        let {result} = mbt_ffi_ptr2bytes({address}, {length})
                         ",
-                        self.r#gen.qualify_package(FFI_DIR)
                     );
 
                     results.push(result);
                 }
                 Type::U32 | Type::U64 | Type::S32 | Type::S64 | Type::F32 | Type::F64 => {
                     let ty = match element {
-                        Type::U32 => "uint",
-                        Type::U64 => "uint64",
-                        Type::S32 => "int",
-                        Type::S64 => "int64",
-                        Type::F32 => "float",
-                        Type::F64 => "double",
+                        Type::U32 => {
+                            self.r#gen.ffi_imports.insert(ffi::PTR2UINT_ARRAY);
+                            "uint"
+                        }
+                        Type::U64 => {
+                            self.r#gen.ffi_imports.insert(ffi::PTR2UINT64_ARRAY);
+                            "uint64"
+                        }
+                        Type::S32 => {
+                            self.r#gen.ffi_imports.insert(ffi::PTR2INT_ARRAY);
+                            "int"
+                        }
+                        Type::S64 => {
+                            self.r#gen.ffi_imports.insert(ffi::PTR2INT64_ARRAY);
+                            "int64"
+                        }
+                        Type::F32 => {
+                            self.r#gen.ffi_imports.insert(ffi::PTR2FLOAT_ARRAY);
+                            "float"
+                        }
+                        Type::F64 => {
+                            self.r#gen.ffi_imports.insert(ffi::PTR2DOUBLE_ARRAY);
+                            "double"
+                        }
                         _ => unreachable!(),
                     };
 
@@ -2688,9 +2740,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     uwrite!(
                         self.src,
                         "
-                        let {result} = {}ptr2{ty}_array({address}, {length})
+                        let {result} = mbt_ffi_ptr2{ty}_array({address}, {length})
                         ",
-                        self.r#gen.qualify_package(FFI_DIR)
                     );
 
                     results.push(result);
@@ -2702,12 +2753,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let op = &operands[0];
                 let ptr = self.locals.tmp("ptr");
 
+                self.r#gen.ffi_imports.insert(ffi::STR2PTR);
                 uwrite!(
                     self.src,
                     "
-                    let {ptr} = {}str2ptr({op})
+                    let {ptr} = mbt_ffi_str2ptr({op})
                     ",
-                    self.r#gen.qualify_package(FFI_DIR)
                 );
 
                 results.push(ptr.clone());
@@ -2722,12 +2773,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let address = &operands[0];
                 let length = &operands[1];
 
+                self.r#gen.ffi_imports.insert(ffi::PTR2STR);
                 uwrite!(
                     self.src,
                     "
-                    let {result} = {}ptr2str({address}, {length})
+                    let {result} = mbt_ffi_ptr2str({address}, {length})
                     ",
-                    self.r#gen.qualify_package(FFI_DIR)
                 );
 
                 results.push(result);
@@ -2747,17 +2798,17 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let ty = self.r#gen.type_name(element, true);
                 let index = self.locals.tmp("index");
 
+                self.r#gen.ffi_imports.insert(ffi::MALLOC);
                 uwrite!(
                     self.src,
                     "
-                    let {address} = {}malloc(({op}).length() * {size});
+                    let {address} = mbt_ffi_malloc(({op}).length() * {size});
                     for {index} = 0; {index} < ({op}).length(); {index} = {index} + 1 {{
                         let iter_elem : {ty} = ({op})[({index})]
                         let iter_base = {address} + ({index} * {size});
                         {body}
                     }}
                     ",
-                    self.r#gen.qualify_package(FFI_DIR)
                 );
 
                 results.push(address.clone());
@@ -2786,6 +2837,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     _ => todo!("result count == {}", results.len()),
                 };
 
+                self.r#gen.ffi_imports.insert(ffi::FREE);
                 uwrite!(
                     self.src,
                     "
@@ -2795,9 +2847,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         {body}
                         {array}.push({result})
                     }}
-                    {}free({address})
+                    mbt_ffi_free({address})
                     ",
-                    self.r#gen.qualify_package(FFI_DIR)
                 );
 
                 results.push(array);
@@ -2949,20 +3000,17 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::Return { amt, .. } => {
                 for clean in &self.cleanup {
                     let address = &clean.address;
-                    uwriteln!(
-                        self.src,
-                        "{}free({address})",
-                        self.r#gen.qualify_package(FFI_DIR)
-                    );
+                    self.r#gen.ffi_imports.insert(ffi::FREE);
+                    uwriteln!(self.src, "mbt_ffi_free({address})",);
                 }
 
                 if self.needs_cleanup_list {
+                    self.r#gen.ffi_imports.insert(ffi::FREE);
                     uwrite!(
                         self.src,
                         "
-                        cleanup_list.each({}free)
+                        cleanup_list.each(mbt_ffi_free)
                         ",
-                        self.r#gen.qualify_package(FFI_DIR)
                     );
                 }
 
@@ -2978,143 +3026,159 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::I32Load { offset }
             | Instruction::PointerLoad { offset }
-            | Instruction::LengthLoad { offset } => results.push(format!(
-                "{}load32(({}) + {offset})",
-                self.r#gen.qualify_package(FFI_DIR),
-                operands[0],
-                offset = offset.size_wasm32()
-            )),
+            | Instruction::LengthLoad { offset } => {
+                self.r#gen.ffi_imports.insert(ffi::LOAD32);
+                results.push(format!(
+                    "mbt_ffi_load32(({}) + {offset})",
+                    operands[0],
+                    offset = offset.size_wasm32()
+                ))
+            }
 
-            Instruction::I32Load8U { offset } => results.push(format!(
-                "{}load8_u(({}) + {offset})",
-                self.r#gen.qualify_package(FFI_DIR),
-                operands[0],
-                offset = offset.size_wasm32()
-            )),
+            Instruction::I32Load8U { offset } => {
+                self.r#gen.ffi_imports.insert(ffi::LOAD8_U);
+                results.push(format!(
+                    "mbt_ffi_load8_u(({}) + {offset})",
+                    operands[0],
+                    offset = offset.size_wasm32()
+                ))
+            }
 
-            Instruction::I32Load8S { offset } => results.push(format!(
-                "{}load8(({}) + {offset})",
-                self.r#gen.qualify_package(FFI_DIR),
-                operands[0],
-                offset = offset.size_wasm32()
-            )),
+            Instruction::I32Load8S { offset } => {
+                self.r#gen.ffi_imports.insert(ffi::LOAD8);
+                results.push(format!(
+                    "mbt_ffi_load8(({}) + {offset})",
+                    operands[0],
+                    offset = offset.size_wasm32()
+                ))
+            }
 
-            Instruction::I32Load16U { offset } => results.push(format!(
-                "{}load16_u(({}) + {offset})",
-                self.r#gen.qualify_package(FFI_DIR),
-                operands[0],
-                offset = offset.size_wasm32()
-            )),
+            Instruction::I32Load16U { offset } => {
+                self.r#gen.ffi_imports.insert(ffi::LOAD16_U);
+                results.push(format!(
+                    "mbt_ffi_load16_u(({}) + {offset})",
+                    operands[0],
+                    offset = offset.size_wasm32()
+                ))
+            }
 
-            Instruction::I32Load16S { offset } => results.push(format!(
-                "{}load16(({}) + {offset})",
-                self.r#gen.qualify_package(FFI_DIR),
-                operands[0],
-                offset = offset.size_wasm32()
-            )),
+            Instruction::I32Load16S { offset } => {
+                self.r#gen.ffi_imports.insert(ffi::LOAD16);
+                results.push(format!(
+                    "mbt_ffi_load16(({}) + {offset})",
+                    operands[0],
+                    offset = offset.size_wasm32()
+                ))
+            }
 
-            Instruction::I64Load { offset } => results.push(format!(
-                "{}load64(({}) + {offset})",
-                self.r#gen.qualify_package(FFI_DIR),
-                operands[0],
-                offset = offset.size_wasm32()
-            )),
+            Instruction::I64Load { offset } => {
+                self.r#gen.ffi_imports.insert(ffi::LOAD64);
+                results.push(format!(
+                    "mbt_ffi_load64(({}) + {offset})",
+                    operands[0],
+                    offset = offset.size_wasm32()
+                ))
+            }
 
-            Instruction::F32Load { offset } => results.push(format!(
-                "{}loadf32(({}) + {offset})",
-                self.r#gen.qualify_package(FFI_DIR),
-                operands[0],
-                offset = offset.size_wasm32()
-            )),
+            Instruction::F32Load { offset } => {
+                self.r#gen.ffi_imports.insert(ffi::LOADF32);
+                results.push(format!(
+                    "mbt_ffi_loadf32(({}) + {offset})",
+                    operands[0],
+                    offset = offset.size_wasm32()
+                ))
+            }
 
-            Instruction::F64Load { offset } => results.push(format!(
-                "{}loadf64(({}) + {offset})",
-                self.r#gen.qualify_package(FFI_DIR),
-                operands[0],
-                offset = offset.size_wasm32()
-            )),
+            Instruction::F64Load { offset } => {
+                self.r#gen.ffi_imports.insert(ffi::LOADF64);
+                results.push(format!(
+                    "mbt_ffi_loadf64(({}) + {offset})",
+                    operands[0],
+                    offset = offset.size_wasm32()
+                ))
+            }
 
             Instruction::I32Store { offset }
             | Instruction::PointerStore { offset }
-            | Instruction::LengthStore { offset } => uwriteln!(
-                self.src,
-                "{}store32(({}) + {offset}, {})",
-                self.r#gen.qualify_package(FFI_DIR),
-                operands[1],
-                operands[0],
-                offset = offset.size_wasm32()
-            ),
-
-            Instruction::I32Store8 { offset } => uwriteln!(
-                self.src,
-                "{}store8(({}) + {offset}, {})",
-                self.r#gen.qualify_package(FFI_DIR),
-                operands[1],
-                operands[0],
-                offset = offset.size_wasm32()
-            ),
-
-            Instruction::I32Store16 { offset } => uwriteln!(
-                self.src,
-                "{}store16(({}) + {offset}, {})",
-                self.r#gen.qualify_package(FFI_DIR),
-                operands[1],
-                operands[0],
-                offset = offset.size_wasm32()
-            ),
-
-            Instruction::I64Store { offset } => uwriteln!(
-                self.src,
-                "{}store64(({}) + {offset}, {})",
-                self.r#gen.qualify_package(FFI_DIR),
-                operands[1],
-                operands[0],
-                offset = offset.size_wasm32()
-            ),
-
-            Instruction::F32Store { offset } => uwriteln!(
-                self.src,
-                "{}storef32(({}) + {offset}, {})",
-                self.r#gen.qualify_package(FFI_DIR),
-                operands[1],
-                operands[0],
-                offset = offset.size_wasm32()
-            ),
-
-            Instruction::F64Store { offset } => uwriteln!(
-                self.src,
-                "{}storef64(({}) + {offset}, {})",
-                self.r#gen.qualify_package(FFI_DIR),
-                operands[1],
-                operands[0],
-                offset = offset.size_wasm32()
-            ),
-            // TODO: see what we can do with align
-            Instruction::Malloc { size, .. } => {
+            | Instruction::LengthStore { offset } => {
+                self.r#gen.ffi_imports.insert(ffi::STORE32);
                 uwriteln!(
                     self.src,
-                    "{}malloc({})",
-                    self.r#gen.qualify_package(FFI_DIR),
-                    size.size_wasm32()
+                    "mbt_ffi_store32(({}) + {offset}, {})",
+                    operands[1],
+                    operands[0],
+                    offset = offset.size_wasm32()
                 )
+            }
+
+            Instruction::I32Store8 { offset } => {
+                self.r#gen.ffi_imports.insert(ffi::STORE8);
+                uwriteln!(
+                    self.src,
+                    "mbt_ffi_store8(({}) + {offset}, {})",
+                    operands[1],
+                    operands[0],
+                    offset = offset.size_wasm32()
+                )
+            }
+
+            Instruction::I32Store16 { offset } => {
+                self.r#gen.ffi_imports.insert(ffi::STORE16);
+                uwriteln!(
+                    self.src,
+                    "mbt_ffi_store16(({}) + {offset}, {})",
+                    operands[1],
+                    operands[0],
+                    offset = offset.size_wasm32()
+                )
+            }
+
+            Instruction::I64Store { offset } => {
+                self.r#gen.ffi_imports.insert(ffi::STORE64);
+                uwriteln!(
+                    self.src,
+                    "mbt_ffi_store64(({}) + {offset}, {})",
+                    operands[1],
+                    operands[0],
+                    offset = offset.size_wasm32()
+                )
+            }
+
+            Instruction::F32Store { offset } => {
+                self.r#gen.ffi_imports.insert(ffi::STOREF32);
+                uwriteln!(
+                    self.src,
+                    "mbt_ffi_storef32(({}) + {offset}, {})",
+                    operands[1],
+                    operands[0],
+                    offset = offset.size_wasm32()
+                )
+            }
+
+            Instruction::F64Store { offset } => {
+                self.r#gen.ffi_imports.insert(ffi::STOREF64);
+                uwriteln!(
+                    self.src,
+                    "mbt_ffi_storef64(({}) + {offset}, {})",
+                    operands[1],
+                    operands[0],
+                    offset = offset.size_wasm32()
+                )
+            }
+            // TODO: see what we can do with align
+            Instruction::Malloc { size, .. } => {
+                self.r#gen.ffi_imports.insert(ffi::MALLOC);
+                uwriteln!(self.src, "mbt_ffi_malloc({})", size.size_wasm32())
             }
 
             Instruction::GuestDeallocate { .. } => {
-                uwriteln!(
-                    self.src,
-                    "{}free({})",
-                    self.r#gen.qualify_package(FFI_DIR),
-                    operands[0]
-                )
+                self.r#gen.ffi_imports.insert(ffi::FREE);
+                uwriteln!(self.src, "mbt_ffi_free({})", operands[0])
             }
 
             Instruction::GuestDeallocateString => {
-                uwriteln!(
-                    self.src,
-                    "{}free({})",
-                    self.r#gen.qualify_package(FFI_DIR),
-                    operands[0]
-                )
+                self.r#gen.ffi_imports.insert(ffi::FREE);
+                uwriteln!(self.src, "mbt_ffi_free({})", operands[0])
             }
 
             Instruction::GuestDeallocateVariant { blocks } => {
@@ -3174,11 +3238,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     );
                 }
 
-                uwriteln!(
-                    self.src,
-                    "{}free({address})",
-                    self.r#gen.qualify_package(FFI_DIR)
-                );
+                self.r#gen.ffi_imports.insert(ffi::FREE);
+                uwriteln!(self.src, "mbt_ffi_free({address})",);
             }
 
             Instruction::Flush { amt } => {
@@ -3261,11 +3322,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
     fn return_pointer(&mut self, size: ArchitectureSize, align: Alignment) -> String {
         if self.r#gen.direction == Direction::Import {
-            let ffi_qualifier = self.r#gen.qualify_package(FFI_DIR);
+            self.r#gen.ffi_imports.insert(ffi::MALLOC);
             let address = self.locals.tmp("return_area");
             uwriteln!(
                 self.src,
-                "let {address} = {ffi_qualifier}malloc({})",
+                "let {address} = mbt_ffi_malloc({})",
                 size.size_wasm32(),
             );
             self.cleanup.push(Cleanup {
@@ -3291,14 +3352,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
         if !self.cleanup.is_empty() {
             self.needs_cleanup_list = true;
+            self.r#gen.ffi_imports.insert(ffi::FREE);
 
             for cleanup in &self.cleanup {
                 let address = &cleanup.address;
-                uwriteln!(
-                    self.src,
-                    "{}free({address})",
-                    self.gen.qualify_package(FFI_DIR)
-                );
+                uwriteln!(self.src, "mbt_ffi_free({address})",);
             }
         }
 
