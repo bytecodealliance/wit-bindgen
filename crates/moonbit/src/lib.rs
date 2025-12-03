@@ -69,17 +69,8 @@ pub(crate) const ASYNC_UTILS: [&Segment; 5] = [
 #[derive(Default, Debug, Clone)]
 #[cfg_attr(feature = "clap", derive(clap::Parser))]
 pub struct Opts {
-    /// Whether or not to derive Show for all types
-    #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
-    pub derive_show: bool,
-
-    /// Whether or not to derive Eq for all types
-    #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
-    pub derive_eq: bool,
-
-    /// Whether or not to declare as Error type for types ".*error"
-    #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
-    pub derive_error: bool,
+    #[cfg_attr(feature = "clap", clap(flatten))]
+    pub derive: DeriveOpts,
 
     /// Whether or not to generate stub files ; useful for update after WIT change
     #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
@@ -99,6 +90,22 @@ pub struct Opts {
 
     #[cfg_attr(feature = "clap", clap(flatten))]
     pub async_: AsyncFilterSet,
+}
+
+#[derive(Default, Debug, Clone)]
+#[cfg_attr(feature = "clap", derive(clap::Args))]
+pub struct DeriveOpts {
+    /// Whether or not to derive Show for all types
+    #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
+    pub derive_show: bool,
+
+    /// Whether or not to derive Eq for all types
+    #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
+    pub derive_eq: bool,
+
+    /// Whether or not to declare as Error type for types ".*error"
+    #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
+    pub derive_error: bool,
 }
 
 impl Opts {
@@ -167,6 +174,7 @@ impl MoonBit {
         module: &'a str,
         direction: Direction,
     ) -> InterfaceGenerator<'a> {
+        let derive_opts = self.opts.derive.clone();
         InterfaceGenerator {
             src: String::new(),
             stub: String::new(),
@@ -177,6 +185,7 @@ impl MoonBit {
             module,
             direction,
             ffi_imports: HashSet::new(),
+            derive_opts,
         }
     }
 }
@@ -594,6 +603,8 @@ struct InterfaceGenerator<'a> {
     direction: Direction,
     // Collect of FFI imports used in this interface
     ffi_imports: HashSet<&'static str>,
+    // Options for deriving traits
+    derive_opts: DeriveOpts,
 }
 
 impl InterfaceGenerator<'_> {
@@ -1657,10 +1668,10 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .join("; ");
 
         let mut deriviation: Vec<_> = Vec::new();
-        if self.r#gen.opts.derive_show {
+        if self.derive_opts.derive_show {
             deriviation.push("Show")
         }
-        if self.r#gen.opts.derive_eq {
+        if self.derive_opts.derive_eq {
             deriviation.push("Eq")
         }
 
@@ -1681,13 +1692,13 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         let name = name.to_moonbit_type_ident();
 
         let mut deriviation: Vec<_> = Vec::new();
-        if self.r#gen.opts.derive_show {
+        if self.derive_opts.derive_show {
             deriviation.push("Show")
         }
-        if self.r#gen.opts.derive_eq {
+        if self.derive_opts.derive_eq {
             deriviation.push("Eq")
         }
-        let declaration = if self.r#gen.opts.derive_error && name.contains("Error") {
+        let declaration = if self.derive_opts.derive_error && name.contains("Error") {
             "suberror"
         } else {
             "struct"
@@ -1822,13 +1833,13 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .join("\n    ");
 
         let mut deriviation: Vec<_> = Vec::new();
-        if self.r#gen.opts.derive_show {
+        if self.derive_opts.derive_show {
             deriviation.push("Show")
         }
-        if self.r#gen.opts.derive_eq {
+        if self.derive_opts.derive_eq {
             deriviation.push("Eq")
         }
-        let declaration = if self.r#gen.opts.derive_error && name.contains("Error") {
+        let declaration = if self.derive_opts.derive_error && name.contains("Error") {
             "suberror"
         } else {
             "struct"
@@ -1897,13 +1908,13 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .join("\n  ");
 
         let mut deriviation: Vec<_> = Vec::new();
-        if self.r#gen.opts.derive_show {
+        if self.derive_opts.derive_show {
             deriviation.push("Show")
         }
-        if self.r#gen.opts.derive_eq {
+        if self.derive_opts.derive_eq {
             deriviation.push("Eq")
         }
-        let declaration = if self.r#gen.opts.derive_error && name.contains("Error") {
+        let declaration = if self.derive_opts.derive_error && name.contains("Error") {
             "suberror"
         } else {
             "enum"
@@ -1942,13 +1953,13 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .join("; ");
 
         let mut deriviation: Vec<_> = Vec::new();
-        if self.r#gen.opts.derive_show {
+        if self.derive_opts.derive_show {
             deriviation.push("Show")
         }
-        if self.r#gen.opts.derive_eq {
+        if self.derive_opts.derive_eq {
             deriviation.push("Eq")
         }
-        let declaration = if self.r#gen.opts.derive_error && name.contains("Error") {
+        let declaration = if self.derive_opts.derive_error && name.contains("Error") {
             "suberror"
         } else {
             "enum"
