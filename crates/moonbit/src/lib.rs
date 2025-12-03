@@ -271,7 +271,7 @@ impl WorldGenerator for MoonBit {
         r#gen.types(id);
 
         for (_, func) in resolve.interfaces[id].functions.iter() {
-            r#gen.export(Some(key), func, Some(name.clone()));
+            r#gen.export(Some(key), func);
         }
 
         r#gen.add_interface_fragment();
@@ -289,7 +289,7 @@ impl WorldGenerator for MoonBit {
         let mut r#gen = self.interface(resolve, &name, "$root", Direction::Export);
 
         for (_, func) in funcs {
-            r#gen.export(None, func, Some(name.clone()));
+            r#gen.export(None, func);
         }
 
         r#gen.add_world_fragment();
@@ -915,7 +915,7 @@ impl InterfaceGenerator<'_> {
         body.to_string()
     }
 
-    fn export(&mut self, interface: Option<&WorldKey>, func: &Function, _: Option<String>) {
+    fn export(&mut self, interface: Option<&WorldKey>, func: &Function) {
         let async_ = self
             .r#gen
             .opts
