@@ -814,7 +814,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwriteln!(self.src, "let e{tmp} = {body};");
                 uwriteln!(self.src, "{result}.push(e{tmp});");
                 uwriteln!(self.src, "}}");
-                results.push(result);
+                results.push(format!("<_ as From<Vec<_>>>::from({result})"));
                 let dealloc = self.r#gen.path_to_cabi_dealloc();
                 self.push_str(&format!(
                     "{dealloc}({base}, {len} * {size}, {align});\n",
