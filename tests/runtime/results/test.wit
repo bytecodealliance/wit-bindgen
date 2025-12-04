@@ -32,4 +32,6 @@ world intermediate {
 
 world runner {
   import test;
+
+  export run: func();
 }

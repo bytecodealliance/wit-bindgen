@@ -17,7 +17,7 @@ static bool equal(std::optional<wit::string> const& a, std::optional<std::string
     return true;
 }
 
-int main()
+void exports::runner::Run()
 {
     using namespace ::test::options::to_test;
 

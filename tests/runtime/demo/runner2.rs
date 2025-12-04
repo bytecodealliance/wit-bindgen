@@ -1,5 +1,11 @@
 include!(env!("BINDINGS"));
 
-fn main() {
-    a::b::the_test::x();
+struct Component;
+
+export!(Component);
+
+impl Guest for Component {
+    fn run() {
+        a::b::the_test::x();
+    }
 }

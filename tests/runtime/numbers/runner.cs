@@ -3,9 +3,11 @@ using System.Runtime.InteropServices;
 using System.Diagnostics;
 using RunnerWorld.wit.imports.test.numbers;
 
-public class Program
+namespace RunnerWorld;
+
+public class RunnerWorldImpl : IRunnerWorld
 {
-    public static void Main(string[] args)
+    public static void Run()
     {
         Debug.Assert(NumbersInterop.RoundtripU8(1) == 1);
         Debug.Assert(NumbersInterop.RoundtripU8(0) == 0);

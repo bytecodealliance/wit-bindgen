@@ -4,7 +4,13 @@ include!(env!("BINDINGS"));
 
 use crate::foo::bar::bindings::{y, z};
 
-fn main() {
-    y();
-    z();
+struct Component;
+
+export!(Component);
+
+impl Guest for Component {
+    fn run() {
+        y();
+        z();
+    }
 }

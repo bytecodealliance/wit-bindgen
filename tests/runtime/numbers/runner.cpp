@@ -2,7 +2,7 @@
 #include <limits.h>
 #include <runner_cpp.h>
 
-int main()
+void exports::runner::Run()
 {
     using namespace ::test::numbers::numbers;
 

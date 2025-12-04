@@ -3,7 +3,7 @@
 #include <math.h>
 #include <runner.h>
 
-int main() {
+void exports_runner_run() {
   assert(test_numbers_numbers_roundtrip_u8(1) == 1);
   assert(test_numbers_numbers_roundtrip_u8(0) == 0);
   assert(test_numbers_numbers_roundtrip_u8(UCHAR_MAX) == UCHAR_MAX);
@@ -54,6 +54,4 @@ int main() {
   assert(test_numbers_numbers_get_scalar() == 2);
   test_numbers_numbers_set_scalar(4);
   assert(test_numbers_numbers_get_scalar() == 4);
-
-  return 0;
 }

@@ -1,7 +1,7 @@
 #include <assert.h>
 #include "runner.h"
 
-int main() {
+void exports_runner_run() {
     test_resource_borrow_imported_test_own_thing_t thing = test_resource_borrow_imported_test_constructor_thing();
     assert(thing.__handle != 0);
 

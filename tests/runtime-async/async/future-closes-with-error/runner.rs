@@ -2,12 +2,16 @@ include!(env!("BINDINGS"));
 
 use crate::a::b::the_test::f;
 
-fn main() {
-    wit_bindgen::block_on(async {
+struct Component;
+
+export!(Component);
+
+impl Guest for Component {
+    async fn run() {
         let (tx, rx) = wit_future::new(|| ());
 
         drop(tx);
 
         f(rx).await;
-    });
+    }
 }

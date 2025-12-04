@@ -1,4 +1,4 @@
-use crate::{Compile, Kind, LanguageMethods, Runner, Verify};
+use crate::{Compile, LanguageMethods, Runner, Verify};
 use anyhow::Result;
 use heck::*;
 use std::env;
@@ -75,9 +75,6 @@ impl LanguageMethods for Csharp {
         let mut csproj =
             wit_bindgen_csharp::CSProject::new(test_dir.to_path_buf(), &assembly_name, world_name);
         csproj.aot();
-        if let Kind::Runner = compile.component.kind {
-            csproj.binary();
-        }
         csproj.generate()?;
 
         let mut cmd = dotnet();

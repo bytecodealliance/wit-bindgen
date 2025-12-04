@@ -2,8 +2,12 @@ include!(env!("BINDINGS"));
 
 use crate::my::test::i::{ping, pong};
 
-fn main() {
-    wit_bindgen::block_on(async {
+struct Component;
+
+export!(Component);
+
+impl Guest for Component {
+    async fn run() {
         let (tx, rx) = wit_future::new(|| unreachable!());
         let f1 = ping(rx, "world".into());
         let f2 = async { tx.write("hello".into()).await.unwrap() };
@@ -18,5 +22,5 @@ fn main() {
         };
         let f2 = async { tx.write(m2).await.unwrap() };
         let ((), ()) = futures::join!(f1, f2);
-    });
+    }
 }

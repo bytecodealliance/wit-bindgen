@@ -1,7 +1,7 @@
 #include <assert.h>
 #include "runner.h"
 
-int main()
+void exports_runner_run()
 {
     {
         runner_tuple2_u8_u16_t ret;

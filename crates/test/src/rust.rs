@@ -1,5 +1,5 @@
 use crate::config::StringList;
-use crate::{Compile, Kind, LanguageMethods, Runner, Verify};
+use crate::{Compile, LanguageMethods, Runner, Verify};
 use anyhow::{Context, Result};
 use clap::Parser;
 use heck::ToSnakeCase;
@@ -206,12 +206,7 @@ path = 'lib.rs'
             let arg = format!("--extern={name}={}", path.display());
             cmd.arg(arg);
         }
-        match compile.component.kind {
-            Kind::Runner => {}
-            Kind::Test => {
-                cmd.arg("--crate-type=cdylib");
-            }
-        }
+        cmd.arg("--crate-type=cdylib");
         if runner.produces_component() {
             cmd.arg("-Clink-arg=--skip-wit-component");
         }

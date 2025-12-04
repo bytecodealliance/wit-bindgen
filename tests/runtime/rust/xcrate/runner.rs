@@ -2,7 +2,13 @@ use crate::test::xcrate::b_exports::{b, X};
 
 include!(env!("BINDINGS"));
 
-fn main() {
-    b();
-    X::new().foo();
+struct Component;
+
+export!(Component);
+
+impl Guest for Component {
+    fn run() {
+        b();
+        X::new().foo();
+    }
 }

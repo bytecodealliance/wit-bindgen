@@ -1,9 +1,9 @@
-//@ args = '--rename my:test/i=test'
+//@ args = '--rename my:test/i=test --async=-run'
 
 #include <assert.h>
 #include <runner.h>
 
-int main() {
+void exports_runner_run() {
   // Call an import and cancel it.
   {
     test_future_void_writer_t writer;

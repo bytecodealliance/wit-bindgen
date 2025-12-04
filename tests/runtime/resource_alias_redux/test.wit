@@ -37,4 +37,6 @@ world runner {
     use resource-alias1.{thing};
     test: func(things: list<thing>) -> list<thing>;
   }
+
+  export run: func();
 }

@@ -4,6 +4,8 @@ wit_bindgen::generate!({
 
         world test {
             import other:test/test;
+
+            export run: func();
         }
     "#,
     path: "./other.wit",
@@ -12,6 +14,12 @@ wit_bindgen::generate!({
     }
 });
 
-fn main() {
-    other::test::test::f();
+struct Component;
+
+export!(Component);
+
+impl Guest for Component {
+    fn run() {
+        other::test::test::f();
+    }
 }

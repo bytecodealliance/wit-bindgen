@@ -1,5 +1,5 @@
 use crate::config::StringList;
-use crate::{Compile, Kind, LanguageMethods, Runner, Verify};
+use crate::{Compile, LanguageMethods, Runner, Verify};
 use anyhow::{Context, Result};
 use clap::Parser;
 use heck::ToSnakeCase;
@@ -144,12 +144,7 @@ fn compile(runner: &Runner<'_>, compile: &Compile<'_>, compiler: PathBuf) -> Res
     for flag in Vec::from(config.cflags) {
         cmd.arg(flag);
     }
-    match compile.component.kind {
-        Kind::Runner => {}
-        Kind::Test => {
-            cmd.arg("-mexec-model=reactor");
-        }
-    }
+    cmd.arg("-mexec-model=reactor");
     if produces_component(runner) {
         cmd.arg("-Wl,--skip-wit-component");
     }

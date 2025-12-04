@@ -2,8 +2,12 @@ include!(env!("BINDINGS"));
 
 use crate::my::test::i::*;
 
-fn main() {
-    wit_bindgen::block_on(async {
+struct Component;
+
+export!(Component);
+
+impl Guest for Component {
+    async fn run() {
         let (tx, rx) = wit_future::new(|| 0);
         cancel_before_read(rx).await;
         drop(tx);
@@ -18,5 +22,5 @@ fn main() {
             signal_tx.write(()).await.unwrap();
             data_tx.write(4).await.unwrap();
         });
-    });
+    }
 }

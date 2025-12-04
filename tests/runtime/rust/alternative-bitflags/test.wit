@@ -16,4 +16,6 @@ world test {
 
 world runner {
   import t;
+
+  export run: func();
 }

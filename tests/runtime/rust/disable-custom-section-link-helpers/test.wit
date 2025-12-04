@@ -4,6 +4,8 @@ world runner {
     import a: interface {
         x: func();
     }
+
+    export run: func();
 }
 world test {
     export a: interface {

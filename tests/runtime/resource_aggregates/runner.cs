@@ -4,8 +4,11 @@ using System.Diagnostics;
 using RunnerWorld.wit.imports.test.resourceAggregates;
 using RunnerWorld;
 
-public class Program {
-    public static void Main()
+namespace RunnerWorld;
+
+public class RunnerWorldImpl : IRunnerWorld
+{
+    public static void Run()
     {
         var il1 = new List<IToTest.Thing>();
         il1.Add(new IToTest.Thing(9));

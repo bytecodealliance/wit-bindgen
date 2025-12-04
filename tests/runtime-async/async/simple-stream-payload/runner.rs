@@ -3,8 +3,12 @@ include!(env!("BINDINGS"));
 use crate::my::test::i::*;
 use wit_bindgen::StreamResult;
 
-fn main() {
-    wit_bindgen::block_on(async {
+struct Component;
+
+export!(Component);
+
+impl Guest for Component {
+    async fn run() {
         let (mut tx, rx) = wit_stream::new();
         let test = async {
             // write one item
@@ -28,5 +32,5 @@ fn main() {
             assert_eq!(ret.remaining(), 1);
         };
         let ((), ()) = futures::join!(test, read_stream(rx));
-    });
+    }
 }

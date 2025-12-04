@@ -12,6 +12,8 @@ interface to-test {
 
 world runner {
   import to-test;
+
+  export run: func();
 }
 
 world test {

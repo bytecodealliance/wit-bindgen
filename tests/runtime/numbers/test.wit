@@ -23,4 +23,6 @@ world test {
 
 world runner {
   import numbers;
+
+  export run: func();
 }

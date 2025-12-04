@@ -1,9 +1,9 @@
 #include <assert.h>
 #include <runner_cpp.h>
 
-int main() {
+void exports::runner::Run() {
     using namespace ::test::common::test_types;
-    
+
     R1 res = test::common::to_test::Wrap(F1::kA);
     assert(res.b == F1::kA);
     assert(res.a == 1);
@@ -15,6 +15,4 @@ int main() {
     V1 res3 = test::common::to_test::VarF();
     assert(res3.variants.index() == 1);
     assert(std::get<1>(res3.variants).value == 42);
-
-    return 0;
 }

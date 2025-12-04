@@ -11,4 +11,6 @@ world test {
 }
 world runner {
     import foo;
+
+    export run: func();
 }

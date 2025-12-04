@@ -4,6 +4,8 @@ package test:common;
 
 world runner {
     import i-runner;
+
+    export run: async func();
 }
 
 interface i-runner {
