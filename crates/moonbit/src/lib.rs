@@ -217,7 +217,11 @@ impl WorldGenerator for MoonBit {
             r#gen.import(Some(key), func);
         }
 
-        r#gen.add_interface_fragment();
+        let result = r#gen.finish();
+        self.import_interface_fragments
+            .entry(name.to_owned())
+            .or_default()
+            .push(result);
 
         Ok(())
     }
@@ -236,7 +240,8 @@ impl WorldGenerator for MoonBit {
             r#gen.import(None, func); // None is "$root"
         }
 
-        r#gen.add_world_fragment();
+        let result = r#gen.finish();
+        self.import_world_fragments.push(result);
     }
 
     fn export_interface(
@@ -273,7 +278,12 @@ impl WorldGenerator for MoonBit {
             r#gen.export(Some(key), func);
         }
 
-        r#gen.add_interface_fragment();
+        let result = r#gen.finish();
+
+        self.export_interface_fragments
+            .entry(name.to_owned())
+            .or_default()
+            .push(result);
         Ok(())
     }
 
@@ -295,7 +305,8 @@ impl WorldGenerator for MoonBit {
             r#gen.export(None, func);
         }
 
-        r#gen.add_world_fragment();
+        let result = r#gen.finish();
+        self.export_world_fragments.push(result);
         Ok(())
     }
 
@@ -313,7 +324,8 @@ impl WorldGenerator for MoonBit {
             r#gen.define_type(ty_name, *ty);
         }
 
-        r#gen.add_world_fragment();
+        let result = r#gen.finish();
+        self.import_world_fragments.push(result);
     }
 
     fn finish(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) -> Result<()> {
@@ -611,53 +623,12 @@ struct InterfaceGenerator<'a> {
 }
 
 impl InterfaceGenerator<'_> {
-    fn add_interface_fragment(self) {
-        match self.direction {
-            Direction::Import => {
-                self.r#gen
-                    .import_interface_fragments
-                    .entry(self.name.to_owned())
-                    .or_default()
-                    .push(InterfaceFragment {
-                        src: self.src,
-                        stub: self.stub,
-                        ffi: self.ffi,
-                        builtins: self.ffi_imports,
-                    });
-            }
-            Direction::Export => {
-                self.r#gen
-                    .export_interface_fragments
-                    .entry(self.name.to_owned())
-                    .or_default()
-                    .push(InterfaceFragment {
-                        src: self.src,
-                        stub: self.stub,
-                        ffi: self.ffi,
-                        builtins: self.ffi_imports,
-                    });
-            }
-        }
-    }
-
-    fn add_world_fragment(self) {
-        match self.direction {
-            Direction::Import => {
-                self.r#gen.import_world_fragments.push(InterfaceFragment {
-                    src: self.src,
-                    stub: self.stub,
-                    ffi: self.ffi,
-                    builtins: self.ffi_imports,
-                });
-            }
-            Direction::Export => {
-                self.r#gen.export_world_fragments.push(InterfaceFragment {
-                    src: self.src,
-                    stub: self.stub,
-                    ffi: self.ffi,
-                    builtins: self.ffi_imports,
-                });
-            }
+    fn finish(self) -> InterfaceFragment {
+        InterfaceFragment {
+            src: self.src,
+            stub: self.stub,
+            ffi: self.ffi,
+            builtins: self.ffi_imports,
         }
     }
 
