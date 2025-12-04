@@ -120,11 +120,21 @@ impl Opts {
     }
 }
 
+#[derive(Default)]
 struct InterfaceFragment {
     src: String,
     ffi: String,
     stub: String,
     builtins: HashSet<&'static str>,
+}
+
+impl InterfaceFragment {
+    fn concat(&mut self, other: Self) {
+        self.src.push_str(&other.src);
+        self.ffi.push_str(&other.ffi);
+        self.stub.push_str(&other.stub);
+        self.builtins.extend(other.builtins);
+    }
 }
 
 enum PayloadFor {
@@ -137,10 +147,10 @@ pub struct MoonBit {
     opts: Opts,
     name: String,
     needs_cleanup: bool,
-    import_interface_fragments: HashMap<String, Vec<InterfaceFragment>>,
-    export_interface_fragments: HashMap<String, Vec<InterfaceFragment>>,
-    import_world_fragments: Vec<InterfaceFragment>,
-    export_world_fragments: Vec<InterfaceFragment>,
+    import_interface_fragments: HashMap<String, InterfaceFragment>,
+    export_interface_fragments: HashMap<String, InterfaceFragment>,
+    import_world_fragment: InterfaceFragment,
+    export_world_fragment: InterfaceFragment,
     sizes: SizeAlign,
 
     interface_ns: Ns,
@@ -219,9 +229,7 @@ impl WorldGenerator for MoonBit {
 
         let result = r#gen.finish();
         self.import_interface_fragments
-            .entry(name.to_owned())
-            .or_default()
-            .push(result);
+            .insert(name.to_owned(), result);
 
         Ok(())
     }
@@ -241,7 +249,7 @@ impl WorldGenerator for MoonBit {
         }
 
         let result = r#gen.finish();
-        self.import_world_fragments.push(result);
+        self.import_world_fragment.concat(result);
     }
 
     fn export_interface(
@@ -279,11 +287,9 @@ impl WorldGenerator for MoonBit {
         }
 
         let result = r#gen.finish();
-
         self.export_interface_fragments
-            .entry(name.to_owned())
-            .or_default()
-            .push(result);
+            .insert(name.to_owned(), result);
+
         Ok(())
     }
 
@@ -306,7 +312,7 @@ impl WorldGenerator for MoonBit {
         }
 
         let result = r#gen.finish();
-        self.export_world_fragments.push(result);
+        self.export_world_fragment.concat(result);
         Ok(())
     }
 
@@ -325,7 +331,7 @@ impl WorldGenerator for MoonBit {
         }
 
         let result = r#gen.finish();
-        self.import_world_fragments.push(result);
+        self.import_world_fragment.concat(result);
     }
 
     fn finish(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) -> Result<()> {
@@ -390,12 +396,10 @@ impl WorldGenerator for MoonBit {
         let mut builtins: HashSet<&'static str> = HashSet::new();
         wit_bindgen_core::generated_preamble(&mut src, version);
         wit_bindgen_core::generated_preamble(&mut ffi, version);
-        self.import_world_fragments.iter().for_each(|f| {
-            uwriteln!(src, "{}", f.src);
-            uwriteln!(ffi, "{}", f.ffi);
-            builtins.extend(f.builtins.iter());
-            assert!(f.stub.is_empty());
-        });
+        uwriteln!(src, "{}", self.import_world_fragment.src);
+        uwriteln!(ffi, "{}", self.import_world_fragment.ffi);
+        builtins.extend(self.import_world_fragment.builtins.iter());
+        assert!(self.import_world_fragment.stub.is_empty());
         for b in builtins.iter() {
             uwriteln!(ffi, "{}", b);
         }
@@ -413,10 +417,8 @@ impl WorldGenerator for MoonBit {
         let mut stub = Source::default();
         wit_bindgen_core::generated_preamble(&mut src, version);
         generated_preamble(&mut stub, version);
-        self.export_world_fragments.iter().for_each(|f| {
-            uwriteln!(src, "{}", f.src);
-            uwriteln!(stub, "{}", f.stub);
-        });
+        uwriteln!(src, "{}", self.export_world_fragment.src);
+        uwriteln!(stub, "{}", self.export_world_fragment.stub);
 
         files.push(&format!("{directory}/top.mbt"), indent(&src).as_bytes());
         if !self.opts.ignore_stub {
@@ -431,15 +433,14 @@ impl WorldGenerator for MoonBit {
         builtins.insert(ffi::MALLOC);
         builtins.insert(ffi::FREE);
         let mut generate_ffi =
-            |directory: String, fragments: &[InterfaceFragment], files: &mut Files| {
+            |directory: String, fragment: &InterfaceFragment, files: &mut Files| {
                 // For cabi_realloc
 
                 let mut body = Source::default();
                 wit_bindgen_core::generated_preamble(&mut body, version);
-                for fragment in fragments.iter() {
-                    uwriteln!(&mut body, "{}", fragment.ffi);
-                    builtins.extend(fragment.builtins.iter());
-                }
+
+                uwriteln!(&mut body, "{}", fragment.ffi);
+                builtins.extend(fragment.builtins.iter());
 
                 files.push(
                     &format!(
@@ -451,21 +452,19 @@ impl WorldGenerator for MoonBit {
                 );
             };
 
-        generate_ffi(directory, &self.export_world_fragments, files);
+        generate_ffi(directory, &self.export_world_fragment, files);
 
         // Import interface fragments
-        for (name, fragments) in &self.import_interface_fragments {
+        for (name, fragment) in &self.import_interface_fragments {
             let mut src = Source::default();
             let mut ffi = Source::default();
             wit_bindgen_core::generated_preamble(&mut src, version);
             wit_bindgen_core::generated_preamble(&mut ffi, version);
             let mut builtins: HashSet<&'static str> = HashSet::new();
-            fragments.iter().for_each(|f| {
-                uwriteln!(src, "{}", f.src);
-                uwriteln!(ffi, "{}", f.ffi);
-                builtins.extend(f.builtins.iter());
-                assert!(f.stub.is_empty());
-            });
+            uwriteln!(src, "{}", fragment.src);
+            uwriteln!(ffi, "{}", fragment.ffi);
+            builtins.extend(fragment.builtins.iter());
+            assert!(fragment.stub.is_empty());
             for builtin in builtins {
                 uwriteln!(ffi, "{}", builtin);
             }
@@ -477,15 +476,13 @@ impl WorldGenerator for MoonBit {
         }
 
         // Export interface fragments
-        for (name, fragments) in &self.export_interface_fragments {
+        for (name, fragment) in &self.export_interface_fragments {
             let mut src = Source::default();
             let mut stub = Source::default();
             wit_bindgen_core::generated_preamble(&mut src, version);
             generated_preamble(&mut stub, version);
-            fragments.iter().for_each(|f| {
-                uwriteln!(src, "{}", f.src);
-                uwriteln!(stub, "{}", f.stub);
-            });
+            uwriteln!(src, "{}", fragment.src);
+            uwriteln!(stub, "{}", fragment.stub);
 
             let directory = name.replace('.', "/");
             files.push(&format!("{directory}/top.mbt"), indent(&src).as_bytes());
@@ -493,7 +490,7 @@ impl WorldGenerator for MoonBit {
                 files.push(&format!("{directory}/stub.mbt"), indent(&stub).as_bytes());
                 generate_pkg_definition(name, files);
             }
-            generate_ffi(directory, fragments, files);
+            generate_ffi(directory, fragment, files);
         }
 
         // Export FFI Utils
@@ -610,14 +607,16 @@ struct InterfaceGenerator<'a> {
     src: String,
     stub: String,
     ffi: String,
+    // Collect of FFI imports used in this interface
+    ffi_imports: HashSet<&'static str>,
+
     r#gen: &'a mut MoonBit,
     resolve: &'a Resolve,
     // The current interface getting generated
     name: &'a str,
     module: &'a str,
     direction: Direction,
-    // Collect of FFI imports used in this interface
-    ffi_imports: HashSet<&'static str>,
+
     // Options for deriving traits
     derive_opts: DeriveOpts,
 }
