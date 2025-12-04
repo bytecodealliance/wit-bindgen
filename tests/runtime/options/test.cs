@@ -1,8 +1,8 @@
 using System.Diagnostics;
 
-namespace TestWorld.wit.exports.test.options
+namespace TestWorld.wit.Exports.test.options
 {
-    public class ToTestImpl : IToTest
+    public class ToTestExportsImpl : IToTestExports
     {
         public static void OptionNoneParam(string? a)
         {

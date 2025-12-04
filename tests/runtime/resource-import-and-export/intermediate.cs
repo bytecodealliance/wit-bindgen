@@ -1,10 +1,10 @@
-using Import = IntermediateWorld.wit.imports.test.resourceImportAndExport.ITest;
-using Host = IntermediateWorld.wit.imports.test.resourceImportAndExport.TestInterop;
+using IntermediateWorld.wit.Imports.test.resourceImportAndExport;
+using Import = IntermediateWorld.wit.Imports.test.resourceImportAndExport.ITestImports;
 
-namespace IntermediateWorld.wit.exports.test.resourceImportAndExport
+namespace IntermediateWorld.wit.Exports.test.resourceImportAndExport
 {
-    public class TestImpl : ITest {
-	public class Thing : ITest.Thing, ITest.IThing {
+    public class TestExportsImpl : ITestExports {
+	public class Thing : ITestExports.Thing, ITestExports.IThing {
 	    public Import.Thing val;
 
 	    public Thing(uint v) {
@@ -19,7 +19,7 @@ namespace IntermediateWorld.wit.exports.test.resourceImportAndExport
 		this.val.Bar(v + 3);
 	    }
 
-	    public static ITest.Thing Baz(ITest.Thing a, ITest.Thing b) {
+	    public static ITestExports.Thing Baz(ITestExports.Thing a, ITestExports.Thing b) {
 		return new Thing(Import.Thing.Baz(((Thing) a).val, ((Thing) b).val).Foo() + 4);
 	    }
 	}
@@ -27,9 +27,10 @@ namespace IntermediateWorld.wit.exports.test.resourceImportAndExport
 }
 
 namespace IntermediateWorld {
-    public class IntermediateWorldImpl : IIntermediateWorld {
+    public class IntermediateWorldExportsImpl : ITestImports
+    {
 	public static Import.Thing ToplevelExport(Import.Thing things) {
-	    return exports.IntermediateWorld.ToplevelImport(things);
+	    return IntermediateWorld.IIntermediateWorldImports.ToplevelImport(things);
 	}
     }
 }

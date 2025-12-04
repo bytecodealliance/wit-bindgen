@@ -33,6 +33,7 @@ pub(crate) struct FunctionBindgen<'a, 'b> {
     fixed_statments: Vec<Fixed>,
     parameter_type: ParameterType,
     result_type: Option<Type>,
+    pub(crate) resource_type_name: Option<String>,
 }
 
 impl<'a, 'b> FunctionBindgen<'a, 'b> {
@@ -70,6 +71,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             fixed_statments: Vec::new(),
             parameter_type: parameter_type,
             result_type: result_type,
+            resource_type_name: None,
         }
     }
 
@@ -1062,9 +1064,32 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     None => operands.join(", "),
                 };
 
+                let (_namespace, interface_name) =
+                    &CSharp::get_class_name_from_qualified_name(self.interface_gen.name);
+                let mut interop_name = format!("{}ImportsInterop", interface_name.strip_prefix("I").unwrap()
+                    .strip_suffix(if self.interface_gen.direction == Direction::Import { "Imports" } else { "Exports" }).unwrap().to_upper_camel_case());
+
+                if self.interface_gen.is_world && self.interface_gen.direction == Direction::Import {
+                    interop_name = format!("Imports.{interop_name}");
+                }
+
+                let resource_type_name = match self.kind {
+                    FunctionKind::Method(resource_type_id) |
+                    FunctionKind::Static(resource_type_id) |
+                    FunctionKind::Constructor(resource_type_id) => {
+                        format!(
+                            ".{}",
+                            self.interface_gen.csharp_gen.all_resources[resource_type_id]
+                                .name
+                                .to_upper_camel_case()
+                        )
+                    }
+                    _ => String::new(),
+                };
+
                 uwriteln!(
                     self.src,
-                    "{assignment} {func_name}WasmInterop.wasmImport{func_name}({operands});"
+                    "{assignment} {interop_name}{resource_type_name}.{func_name}WasmInterop.wasmImport{func_name}({operands});"
                 );
 
                 if let Some(buffer) = async_return_buffer {
@@ -1364,6 +1389,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         } else {
                             uwriteln!(self.src, "var {resource} = ({export_name}) {export_name}.repTable.Get({op});");
                         }
+                        self.resource_type_name = Some(export_name);
                     }
                 }
                 results.push(resource);
@@ -1375,6 +1401,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::FutureLower { .. } => {
                 let op = &operands[0];
+                self.interface_gen.add_future(self.func_name);
+
                 results.push(format!("{op}.Handle"));
             }
 
@@ -1382,8 +1410,18 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwriteln!(self.src, "// TODO_task_cancel.forget();");
             }
 
-            Instruction::FutureLift { .. }
-            | Instruction::StreamLower { .. }
+            Instruction::FutureLift { payload: _, ty: _ } => {
+                // TODO get the prefix for the type
+                let sig_type_name = "Void";
+                uwriteln!(self.src, "var reader = new {}.FutureReader{}({});", self.interface_gen.name, sig_type_name, operands[0]);
+                self.interface_gen.csharp_gen.needs_future_reader_support = true;
+                results.push("reader".to_string());
+
+                self.interface_gen.add_future(self.func_name);
+                self.interface_gen.csharp_gen.needs_future_reader_support = true;
+            }
+
+            Instruction::StreamLower { .. }
             | Instruction::StreamLift { .. }
             | Instruction::ErrorContextLower { .. }
             | Instruction::ErrorContextLift { .. }
@@ -1418,7 +1456,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwrite!(
                     self.src,
                     "
-                    var {ret_area} = stackalloc {element_type}[{array_size}+1];
+                    var {ret_area} = stackalloc {element_type}[{array_size} + 1];
                     var {ptr} = ((int){ret_area}) + ({align} - 1) & -{align};
                     ",
                     align = align.align_wasm32()
@@ -1487,7 +1525,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 }
 
 /// Dereference any number `TypeDefKind::Type` aliases to retrieve the target type.
-fn dealias(resolve: &Resolve, mut id: TypeId) -> TypeId {
+pub fn dealias(resolve: &Resolve, mut id: TypeId) -> TypeId {
     loop {
         match &resolve.types[id].kind {
             TypeDefKind::Type(Type::Id(that_id)) => id = *that_id,

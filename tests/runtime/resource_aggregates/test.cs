@@ -1,7 +1,7 @@
-namespace TestWorld.wit.exports.test.resourceAggregates
+namespace TestWorld.wit.Exports.test.resourceAggregates
 {
-    public class ToTestImpl : IToTest {
-	public class Thing : IToTest.Thing, IToTest.IThing {
+    public class ToTestExportsImpl : IToTestExports {
+	public class Thing : IToTestExports.Thing, IToTestExports.IThing {
 	    public uint val;
 
 	    public Thing(uint v) {
@@ -10,19 +10,19 @@ namespace TestWorld.wit.exports.test.resourceAggregates
 	}
 
 	public static uint Foo(
-	    IToTest.R1 r1,
-	    IToTest.R2 r2,
-	    IToTest.R3 r3,
-	    (IToTest.Thing, IToTest.R1) t1,
-	    IToTest.Thing t2,
-	    IToTest.V1 v1,
-	    IToTest.V2 v2,
-	    List<IToTest.Thing> l1,
-	    List<IToTest.Thing> l2,
-	    IToTest.Thing? o1,
-	    IToTest.Thing? o2,
-	    Result<IToTest.Thing, None> result1,
-	    Result<IToTest.Thing, None> result2
+	    IToTestExports.R1 r1,
+	    IToTestExports.R2 r2,
+	    IToTestExports.R3 r3,
+	    (IToTestExports.Thing, IToTestExports.R1) t1,
+	    IToTestExports.Thing t2,
+	    IToTestExports.V1 v1,
+	    IToTestExports.V2 v2,
+	    List<IToTestExports.Thing> l1,
+	    List<IToTestExports.Thing> l2,
+	    IToTestExports.Thing? o1,
+	    IToTestExports.Thing? o2,
+	    Result<IToTestExports.Thing, None> result1,
+	    Result<IToTestExports.Thing, None> result2
 	)
 	{
             uint sumIl1 = 0;

@@ -109,11 +109,10 @@ impl CSProjectLLVMBuilder {
             csproj.push_str(
                 &format!(
                     r#"
-                <ItemGroup>
-                    <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-*" />
-                    <PackageReference Include="runtime.{os}-x64.Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-*" />
-                </ItemGroup>
-                "#),
+        <ItemGroup>
+            <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-*" />
+            <PackageReference Include="runtime.{os}-x64.Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-*" />
+        </ItemGroup>"#),
             );
 
             fs::write(
@@ -153,8 +152,9 @@ impl CSProjectLLVMBuilder {
         }
 
         csproj.push_str(
-            r#"</Project>
-            "#,
+            r#"
+</Project>
+"#,
         );
 
         fs::write(self.dir.join(format!("{camel}.csproj")), csproj)?;
