@@ -75,7 +75,107 @@ impl PkgResolver {
         String::new()
     }
 
-    pub(crate) fn type_name(&mut self, this: &str, ty: &Type, type_variable: bool) -> String {
+    pub(crate) fn func_call(
+        &mut self,
+        this: &str,
+        func: &Function,
+        func_interface: &str,
+    ) -> String {
+        match func.kind {
+            FunctionKind::Freestanding => {
+                format!(
+                    "{}{}",
+                    self.qualify_package(this, func_interface),
+                    func.name.to_moonbit_ident()
+                )
+            }
+            FunctionKind::AsyncFreestanding => {
+                format!(
+                    "{}{}",
+                    self.qualify_package(this, func_interface),
+                    func.name.to_moonbit_ident()
+                )
+            }
+            FunctionKind::Constructor(ty) => {
+                let name = self.type_constructor(this, &Type::Id(ty));
+                format!(
+                    "{}::{}",
+                    name,
+                    func.name.replace("[constructor]", "").to_moonbit_ident()
+                )
+            }
+            FunctionKind::Method(ty)
+            | FunctionKind::Static(ty)
+            | FunctionKind::AsyncMethod(ty)
+            | FunctionKind::AsyncStatic(ty) => {
+                let name = self.type_constructor(this, &Type::Id(ty));
+                format!(
+                    "{}::{}",
+                    name,
+                    func.name.split(".").last().unwrap().to_moonbit_ident()
+                )
+            }
+        }
+    }
+
+    pub(crate) fn type_constructor(&mut self, this: &str, ty: &Type) -> String {
+        match ty {
+            Type::ErrorContext => unimplemented!("moonbit error context type name"),
+            Type::Id(id) => {
+                let ty = self.resolve.types[dealias(&self.resolve, *id)].clone();
+                match ty.kind {
+                    TypeDefKind::Type(ty) => self.type_constructor(this, &ty),
+                    TypeDefKind::Handle(handle) => {
+                        let ty = match handle {
+                            Handle::Own(ty) => ty,
+                            Handle::Borrow(ty) => ty,
+                        };
+                        let ty = self.resolve.types[dealias(&self.resolve, ty)].clone();
+                        if let Some(name) = &ty.name {
+                            format!(
+                                "{}{}",
+                                self.qualifier(this, &ty),
+                                name.to_moonbit_type_ident()
+                            )
+                        } else {
+                            unreachable!()
+                        }
+                    }
+                    TypeDefKind::Enum(_)
+                    | TypeDefKind::Resource
+                    | TypeDefKind::Flags(_)
+                    | TypeDefKind::Variant(_)
+                    | TypeDefKind::Record(_) => {
+                        if let Some(name) = &ty.name {
+                            format!(
+                                "{}{}",
+                                self.qualifier(this, &ty),
+                                name.to_moonbit_type_ident()
+                            )
+                        } else {
+                            unreachable!()
+                        }
+                    }
+                    TypeDefKind::Result(_) => "Result".into(),
+                    TypeDefKind::Option(_) => "Option".into(),
+                    _ => {
+                        unreachable!(
+                            "Should not call constructor or method for builtin type: {:?}",
+                            ty
+                        )
+                    }
+                }
+            }
+            _ => {
+                unreachable!(
+                    "Should not call constructor or method for primitive types: {:?}",
+                    ty
+                )
+            }
+        }
+    }
+
+    pub(crate) fn type_name(&mut self, this: &str, ty: &Type) -> String {
         match ty {
             Type::Bool => "Bool".into(),
             Type::U8 => "Byte".into(),
@@ -91,64 +191,43 @@ impl PkgResolver {
             Type::Id(id) => {
                 let ty = self.resolve.types[dealias(&self.resolve, *id)].clone();
                 match ty.kind {
-                    TypeDefKind::Type(ty) => self.type_name(this, &ty, type_variable),
-                    TypeDefKind::List(ty) => {
-                        if type_variable {
-                            match ty {
-                                Type::U8
-                                | Type::U32
-                                | Type::U64
-                                | Type::S32
-                                | Type::S64
-                                | Type::F32
-                                | Type::F64 => {
-                                    format!(
-                                        "FixedArray[{}]",
-                                        self.type_name(this, &ty, type_variable)
-                                    )
-                                }
-                                _ => format!("Array[{}]", self.type_name(this, &ty, type_variable)),
-                            }
-                        } else {
-                            "Array".into()
+                    TypeDefKind::Type(ty) => self.type_name(this, &ty),
+                    TypeDefKind::List(ty) => match ty {
+                        Type::U8
+                        | Type::U32
+                        | Type::U64
+                        | Type::S32
+                        | Type::S64
+                        | Type::F32
+                        | Type::F64 => {
+                            format!("FixedArray[{}]", self.type_name(this, &ty))
                         }
-                    }
+                        _ => format!("Array[{}]", self.type_name(this, &ty)),
+                    },
                     TypeDefKind::Tuple(tuple) => {
-                        if type_variable {
-                            format!(
-                                "({})",
-                                tuple
-                                    .types
-                                    .iter()
-                                    .map(|ty| self.type_name(this, ty, type_variable))
-                                    .collect::<Vec<_>>()
-                                    .join(", ")
-                            )
-                        } else {
-                            unreachable!()
-                        }
+                        format!(
+                            "({})",
+                            tuple
+                                .types
+                                .iter()
+                                .map(|ty| self.type_name(this, ty))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        )
                     }
                     TypeDefKind::Option(ty) => {
-                        if type_variable {
-                            format!("{}?", self.type_name(this, &ty, type_variable))
-                        } else {
-                            "Option".into()
-                        }
+                        format!("{}?", self.type_name(this, &ty))
                     }
                     TypeDefKind::Result(result) => {
-                        if type_variable {
-                            let mut name = |ty: &Option<Type>| {
-                                ty.as_ref()
-                                    .map(|ty| self.type_name(this, ty, true))
-                                    .unwrap_or_else(|| "Unit".into())
-                            };
-                            let ok = name(&result.ok);
-                            let err = name(&result.err);
+                        let mut name = |ty: &Option<Type>| {
+                            ty.as_ref()
+                                .map(|ty| self.type_name(this, ty))
+                                .unwrap_or_else(|| "Unit".into())
+                        };
+                        let ok = name(&result.ok);
+                        let err = name(&result.err);
 
-                            format!("Result[{ok}, {err}]")
-                        } else {
-                            "Result".into()
-                        }
+                        format!("Result[{ok}, {err}]")
                     }
                     TypeDefKind::Handle(handle) => {
                         let ty = match handle {
@@ -173,7 +252,7 @@ impl PkgResolver {
                             "{}FutureReader[{}]",
                             qualifier,
                             ty.as_ref()
-                                .map(|t| self.type_name(this, t, type_variable))
+                                .map(|t| self.type_name(this, t))
                                 .unwrap_or_else(|| "Unit".into())
                         )
                     }
@@ -184,7 +263,7 @@ impl PkgResolver {
                             "{}StreamReader[{}]",
                             qualifier,
                             ty.as_ref()
-                                .map(|t| self.type_name(this, t, type_variable))
+                                .map(|t| self.type_name(this, t))
                                 .unwrap_or_else(|| "Unit".into())
                         )
                     }
@@ -237,7 +316,7 @@ impl PkgResolver {
         };
         let type_name = match func.kind.resource() {
             Some(ty) => {
-                format!("{}::", self.type_name(this, &Type::Id(ty), true))
+                format!("{}::", self.type_constructor(this, &Type::Id(ty)))
             }
             None => "".into(),
         };
