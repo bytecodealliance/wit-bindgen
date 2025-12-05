@@ -6,36 +6,33 @@ const (
 )
 
 type Option[T any] struct {
-	value *T
+	tag   uint8
+	value T
 }
 
 func (self Option[T]) Tag() uint8 {
-	if self.value == nil {
-		return OptionNone
-	} else {
-		return OptionSome
-	}
+	return self.tag
 }
 
 func (self Option[T]) Some() T {
-	if self.value == nil {
+	if self.tag != OptionSome {
 		panic("tag mismatch")
 	}
-	return *self.value
+	return self.value
 }
 
 func (self Option[T]) SomeOr(value T) T {
-	if self.value == nil {
+	if self.tag != OptionSome {
 		return value
 	} else {
-		return *self.value
+		return self.value
 	}
 }
 
 func None[T any]() Option[T] {
-	return Option[T]{nil}
+	return Option[T]{OptionNone, make([]T, 1)[0]}
 }
 
 func Some[T any](value T) Option[T] {
-	return Option[T]{&value}
+	return Option[T]{OptionSome, value}
 }
