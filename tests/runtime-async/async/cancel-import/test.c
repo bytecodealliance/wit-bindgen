@@ -50,5 +50,9 @@ test_callback_code_t exports_test_pending_import_callback(test_event_t *event) {
 }
 
 void exports_test_backpressure_set(bool x) {
-  test_backpressure_set(x);
+  if (x) {
+    test_backpressure_inc();
+  } else {
+    test_backpressure_dec();
+  }
 }

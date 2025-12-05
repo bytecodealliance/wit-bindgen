@@ -12,7 +12,10 @@ impl crate::exports::my::test::i::Guest for Component {
     }
 
     fn backpressure_set(x: bool) {
-        #[expect(deprecated)]
-        return wit_bindgen::backpressure_set(x);
+        if x {
+            wit_bindgen::backpressure_inc();
+        } else {
+            wit_bindgen::backpressure_dec();
+        }
     }
 }
