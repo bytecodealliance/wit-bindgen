@@ -622,24 +622,6 @@ pub async fn yield_async() {
     Yield::default().await;
 }
 
-/// Call the `backpressure.set` canonical built-in function.
-///
-/// When `enabled` is `true`, this tells the host to defer any new calls to this
-/// component instance until further notice (i.e. until `backpressure.set` is
-/// called again with `enabled` set to `false`).
-#[deprecated = "use backpressure_{inc,dec} instead"]
-pub fn backpressure_set(enabled: bool) {
-    extern_wasm! {
-        #[link(wasm_import_module = "$root")]
-        extern "C" {
-            #[link_name = "[backpressure-set]"]
-            fn backpressure_set(_: i32);
-        }
-    }
-
-    unsafe { backpressure_set(if enabled { 1 } else { 0 }) }
-}
-
 /// Call the `backpressure.inc` canonical built-in function.
 pub fn backpressure_inc() {
     extern_wasm! {

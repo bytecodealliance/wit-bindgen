@@ -756,7 +756,6 @@ typedef enum {snake}_waitable_state {{
     {shouty}_WAITABLE_CANCELLED,
 }} {snake}_waitable_state_t;
 
-void {snake}_backpressure_set(bool enable);
 void {snake}_backpressure_inc(void);
 void {snake}_backpressure_dec(void);
 void* {snake}_context_get(void);
@@ -821,13 +820,6 @@ extern void __task_cancel(void);
 
 void {snake}_task_cancel() {{
     __task_cancel();
-}}
-
-__attribute__((__import_module__("$root"), __import_name__("[backpressure-set]")))
-extern void __backpressure_set(bool enable);
-
-void {snake}_backpressure_set(bool enable) {{
-    __backpressure_set(enable);
 }}
 
 __attribute__((__import_module__("$root"), __import_name__("[backpressure-inc]")))

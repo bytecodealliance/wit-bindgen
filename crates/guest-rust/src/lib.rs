@@ -873,9 +873,6 @@ pub mod examples;
 #[doc(hidden)]
 pub mod rt;
 
-#[cfg(feature = "async")]
-#[allow(deprecated)]
-pub use rt::async_support::backpressure_set;
 #[cfg(feature = "async-spawn")]
 pub use rt::async_support::spawn;
 #[cfg(feature = "inter-task-wakeup")]
