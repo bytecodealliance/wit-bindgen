@@ -1,9 +1,9 @@
-//@ args = '--rename my:test/i=test'
+//@ args = '--rename my:test/i=test --async=-run'
 
 #include <runner.h>
 #include <assert.h>
 
-int main() {
+void exports_runner_run() {
   {
     test_future_void_writer_t writer;
     test_future_void_t reader = test_future_void_new(&writer);

@@ -37,6 +37,8 @@ world runner {
     }
 
     import both-list-and-resource;
+
+    export run: func();
 }
 
 world test {

@@ -5,6 +5,8 @@ world test {
 }
 world runner {
     import component;
+
+    export run: func();
 }
 
 interface component {

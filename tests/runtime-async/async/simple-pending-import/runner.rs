@@ -1,7 +1,11 @@
 include!(env!("BINDINGS"));
 
-fn main() {
-    wit_bindgen::block_on(async {
+struct Component;
+
+export!(Component);
+
+impl Guest for Component {
+    async fn run() {
         crate::a::b::i::f().await;
-    });
+    }
 }

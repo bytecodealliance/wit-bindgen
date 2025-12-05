@@ -6,6 +6,8 @@ world runner {
     foo: func(x: my-list);
     bar: func() -> my-list;
   }
+
+  export run: func();
 }
 
 world test {

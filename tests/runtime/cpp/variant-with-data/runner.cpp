@@ -31,7 +31,7 @@ static bool equal(DataVariant const& a, DataVariant const& b) {
     return false;
 }
 
-int main() {
+void exports::runner::Run() {
   using namespace ::test::variant_with_data::to_test;
 
   // Test bytes variant
@@ -52,6 +52,4 @@ int main() {
   DataVariant expected_text_variant;
   expected_text_variant.variants = DataVariant::Text(wit::string::from_view("hello"));
   assert(equal(text_variant, expected_text_variant));
-
-  return 0;
 }

@@ -6,6 +6,8 @@ world runner {
     foo: func(x: my-string);
     bar: func() -> my-string;
   }
+
+  export run: func();
 }
 
 world test {

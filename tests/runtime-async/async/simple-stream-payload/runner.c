@@ -1,9 +1,9 @@
-//@ args = '--rename my:test/i=test'
+//@ args = '--rename my:test/i=test --async=-run'
 
 #include <runner.h>
 #include <assert.h>
 
-int main() {
+void exports_runner_run() {
   test_stream_u8_writer_t writer;
   test_stream_u8_t reader = test_stream_u8_new(&writer);
   uint8_t buf[2];

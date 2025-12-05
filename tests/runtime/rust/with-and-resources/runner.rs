@@ -20,7 +20,13 @@ mod other {
     });
 }
 
-fn main() {
-    let resource = other::my::inline::foo::bar();
-    my::inline::bar::bar(resource);
+struct Component;
+
+export!(Component);
+
+impl Guest for Component {
+    fn run() {
+        let resource = other::my::inline::foo::bar();
+        my::inline::bar::bar(resource);
+    }
 }

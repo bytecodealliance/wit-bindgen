@@ -1,10 +1,10 @@
-//@ args = '--rename my:test/i=test'
+//@ args = '--rename my:test/i=test --async=-run'
 
 #include <assert.h>
 #include <string.h>
 #include <runner.h>
 
-int main() {
+void exports_runner_run() {
   test_future_string_writer_t writer;
   test_future_string_t reader = test_future_string_new(&writer);
 

@@ -19,7 +19,7 @@ void assert_str(runner_string_t* str, const char16_t* expected) {
     assert(memcmp(str->ptr, expected, expected_len * 2) == 0);
   }
 
-int main() {
+void exports_runner_run() {
     runner_string_t str1;
     runner_string_set(&str1, u"latin utf16");
     test_strings_to_test_take_basic(&str1);

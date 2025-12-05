@@ -4,10 +4,11 @@ using System.Diagnostics;
 using RunnerWorld.wit.imports.test.lists;
 using System.Text;
 
+namespace RunnerWorld;
 
-public class Program
+public class RunnerWorldImpl : IRunnerWorld
 {
-    public static void Main(string[] args)
+    public static void Run()
     {
         ToTestInterop.EmptyListParam(new byte[0]);
         ToTestInterop.EmptyStringParam("");

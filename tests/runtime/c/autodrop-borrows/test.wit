@@ -36,4 +36,6 @@ world runner {
   import test;
   import autodrop-borrow-thing;
   import borrow-thing;
+
+  export run: func();
 }

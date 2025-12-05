@@ -3,9 +3,11 @@ using System.Runtime.InteropServices;
 using System.Diagnostics;
 using RunnerWorld.wit.imports.a.b;
 
-public class Program
+namespace RunnerWorld;
+
+public class RunnerWorldImpl : IRunnerWorld
 {
-    public static void Main(string[] args)
+    public static void Run()
     {
         TheTestInterop.X();
     }

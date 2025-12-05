@@ -3,8 +3,12 @@ include!(env!("BINDINGS"));
 use crate::my::test::i::*;
 use wit_bindgen::yield_async;
 
-fn main() {
-    wit_bindgen::block_on(async {
+struct Component;
+
+export!(Component);
+
+impl Guest for Component {
+    async fn run() {
         futures::join! {
             async {
                 pending_import().await;
@@ -18,6 +22,6 @@ fn main() {
                 }
                 resolve_pending_import();
             },
-        }
-    });
+        };
+    }
 }

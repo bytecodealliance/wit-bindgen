@@ -1,5 +1,5 @@
 #include <runner_cpp.h>
 
-int main() {
+void exports::runner::Run() {
   a::b::the_test::X();
 }

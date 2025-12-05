@@ -42,27 +42,33 @@ mod my_types {
     }
 }
 
-fn main() {
-    let a = my_types::MyA { inner: 0.0 };
-    let _ = my::inline::foo::func1(a);
+struct Component;
 
-    // can't actually succeed at runtime as this is faking a resource, so check
-    // that it compiles but dynamically skip it.
-    if false {
-        let b = my_types::MyB;
-        let _ = my::inline::foo::func2(b);
+export!(Component);
+
+impl Guest for Component {
+    fn run() {
+        let a = my_types::MyA { inner: 0.0 };
+        let _ = my::inline::foo::func1(a);
+
+        // can't actually succeed at runtime as this is faking a resource, so check
+        // that it compiles but dynamically skip it.
+        if false {
+            let b = my_types::MyB;
+            let _ = my::inline::foo::func2(b);
+        }
+
+        let c = my_types::MyC::A(a);
+        let _ = i::func7(c);
+
+        let a_list = vec![a, a];
+        let _ = my::inline::foo::func3(&a_list);
+
+        let _ = my::inline::foo::func4(Some(a));
+
+        let _ = my::inline::foo::func5();
+
+        let d = my_types::MyD { inner: 0 };
+        let _ = i::func8(d);
     }
-
-    let c = my_types::MyC::A(a);
-    let _ = i::func7(c);
-
-    let a_list = vec![a, a];
-    let _ = my::inline::foo::func3(&a_list);
-
-    let _ = my::inline::foo::func4(Some(a));
-
-    let _ = my::inline::foo::func5();
-
-    let d = my_types::MyD { inner: 0 };
-    let _ = i::func8(d);
 }

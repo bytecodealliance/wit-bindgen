@@ -2,7 +2,7 @@
 
 #include "runner.h"
 
-int main() {
+void exports_runner_run() {
   test_many_arguments_to_test_many_arguments(
       1,
       2,

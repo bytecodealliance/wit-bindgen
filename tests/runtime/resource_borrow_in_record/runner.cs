@@ -4,8 +4,12 @@ using System.Diagnostics;
 using RunnerWorld.wit.imports.test.resourceBorrowInRecord;
 using System.Text;
 
-public class Program {
-    public static void Main() {
+namespace RunnerWorld;
+
+public class RunnerWorldImpl : IRunnerWorld
+{
+    public static void Run()
+    {
         IToTest.Thing thing1 = new IToTest.Thing("Bonjour");
         IToTest.Thing thing2 = new IToTest.Thing("mon cher");
 

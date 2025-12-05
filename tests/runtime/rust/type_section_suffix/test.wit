@@ -12,6 +12,8 @@ world available-imports {
 
 world runner {
   include available-imports;
+
+  export run: func();
 }
 
 world test {

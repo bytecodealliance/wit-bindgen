@@ -56,4 +56,6 @@ world runner {
   }
 
   import add: func(a: borrow<float>, b: borrow<float>) -> own<float>;
+
+  export run: func();
 }

@@ -2,8 +2,7 @@
 
 #include <runner.h>
 
-int main() {
+void exports_runner_run() {
     rename3_f();
     rename4_f();
-    return 0;
 }

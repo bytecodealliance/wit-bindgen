@@ -10,6 +10,8 @@ world test {
 }
 world runner {
     import foo:baz/a;
+
+    export run: func();
 }
 
 package foo:baz {

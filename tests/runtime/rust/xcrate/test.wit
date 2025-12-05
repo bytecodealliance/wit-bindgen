@@ -62,6 +62,8 @@ world runner {
   import b-exports;
   import a-imports;
   import b-imports;
+
+  export run: func();
 }
 
 world intermediate {

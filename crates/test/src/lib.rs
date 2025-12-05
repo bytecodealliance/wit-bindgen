@@ -1030,14 +1030,8 @@ status: {}",
             section.encode(&mut module);
         }
 
-        let wasi_adapter = match compile.component.kind {
-            Kind::Runner => {
-                wasi_preview1_component_adapter_provider::WASI_SNAPSHOT_PREVIEW1_COMMAND_ADAPTER
-            }
-            Kind::Test => {
-                wasi_preview1_component_adapter_provider::WASI_SNAPSHOT_PREVIEW1_REACTOR_ADAPTER
-            }
-        };
+        let wasi_adapter =
+            wasi_preview1_component_adapter_provider::WASI_SNAPSHOT_PREVIEW1_REACTOR_ADAPTER;
 
         let component = ComponentEncoder::default()
             .module(module.as_slice())

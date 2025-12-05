@@ -1,8 +1,8 @@
-//@ args = '--rename a:b/i=test'
+//@ args = '--rename a:b/i=test --async=-run'
 #include <assert.h>
 #include <runner.h>
 
-int main() {
+void exports_runner_run() {
   runner_subtask_status_t status = test_f();
   assert(RUNNER_SUBTASK_STATE(status) == RUNNER_SUBTASK_STARTED);
   runner_subtask_t handle = RUNNER_SUBTASK_HANDLE(status);

@@ -4,6 +4,12 @@ include!(env!("BINDINGS"));
 
 use crate::a::x;
 
-fn main() {
-    x();
+struct Component;
+
+export!(Component);
+
+impl Guest for Component {
+    fn run() {
+        x();
+    }
 }

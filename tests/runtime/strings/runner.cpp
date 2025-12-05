@@ -10,7 +10,7 @@ void assert_str(wit::string const& str, const char* expected) {
   assert(memcmp(str.data(), expected, expected_len) == 0);
 }
 
-int main() {
+void exports::runner::Run() {
     test::strings::to_test::TakeBasic("latin utf16");
 
     auto str2 = test::strings::to_test::ReturnUnicode();
@@ -21,6 +21,4 @@ int main() {
 
     auto str5 = test::strings::to_test::Roundtrip("🚀🚀🚀 𠈄𓀀");
     assert_str(str5, "🚀🚀🚀 𠈄𓀀");
-    
-    return 0;
 }

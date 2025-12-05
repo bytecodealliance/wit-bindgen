@@ -28,4 +28,6 @@ world test {
 }
 world runner {
     import blah;
+
+    export run: func();
 }

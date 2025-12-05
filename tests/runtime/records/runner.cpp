@@ -6,7 +6,7 @@ bool equal(T const&a, T const&b) {
     return a==b;
 }
 
-int main()
+void exports::runner::Run()
 {
     using namespace ::test::records::to_test;
 

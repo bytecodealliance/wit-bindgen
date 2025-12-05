@@ -21,9 +21,15 @@ mod other {
     });
 }
 
-fn main() {
-    let msg = other::my::inline::foo::Msg {
-        field: "hello".to_string(),
-    };
-    my::inline::bar::bar(&msg);
+struct Component;
+
+export!(Component);
+
+impl Guest for Component {
+    fn run() {
+        let msg = other::my::inline::foo::Msg {
+            field: "hello".to_string(),
+        };
+        my::inline::bar::bar(&msg);
+    }
 }

@@ -1,5 +1,5 @@
 use crate::config::StringList;
-use crate::{Kind, LanguageMethods, Runner};
+use crate::{LanguageMethods, Runner};
 use anyhow::Context;
 use heck::ToSnakeCase;
 use serde::Deserialize;
@@ -174,12 +174,7 @@ impl LanguageMethods for Cpp {
         for flag in Vec::from(config.cflags) {
             cmd.arg(flag);
         }
-        match compile.component.kind {
-            Kind::Runner => {}
-            Kind::Test => {
-                cmd.arg("-mexec-model=reactor");
-            }
-        }
+        cmd.arg("-mexec-model=reactor");
         runner.run_command(&mut cmd)?;
         Ok(())
     }
