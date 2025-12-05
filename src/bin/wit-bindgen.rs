@@ -143,7 +143,7 @@ fn main() -> Result<()> {
         #[cfg(feature = "cpp")]
         Opt::Cpp { opts, args } => (opts.build(args.out_dir.as_ref()), args),
         #[cfg(feature = "rust")]
-        Opt::Rust { opts, args } => (opts.build(), args),
+        Opt::Rust { opts, args } => (Box::new(opts.build()) as Box<dyn WorldGenerator>, args),
         #[cfg(feature = "go")]
         Opt::TinyGo { args: _ } => {
             bail!("Go bindgen has been moved to a separate repository. Please visit https://github.com/bytecodealliance/go-modules for the new Go bindings generator `wit-bindgen-go`.")

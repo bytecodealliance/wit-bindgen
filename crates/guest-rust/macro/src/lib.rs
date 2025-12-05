@@ -9,6 +9,7 @@ use syn::spanned::Spanned;
 use syn::{braced, token, LitStr, Token};
 use wit_bindgen_core::wit_parser::{PackageId, Resolve, UnresolvedPackageGroup, WorldId};
 use wit_bindgen_core::AsyncFilterSet;
+use wit_bindgen_core::WorldGenerator;
 use wit_bindgen_rust::{Opts, Ownership, WithOption};
 
 #[proc_macro]
