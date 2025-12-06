@@ -37,23 +37,3 @@ public readonly struct EventWaitable
     public readonly WaitableStatus Status;
 }
 
-public partial class WaitableSet(int handle) : IDisposable
-{
-    public int Handle { get; } = handle;
-
-    void Dispose(bool _disposing)
-    {
-        {{interop_name}}.WaitableSetDrop(Handle);
-    }
-
-    public void Dispose()
-    {
-        Dispose(true);
-        GC.SuppressFinalize(this);
-    }
-
-    ~WaitableSet()
-    {
-        Dispose(false);
-    }
-}

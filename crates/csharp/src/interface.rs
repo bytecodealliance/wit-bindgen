@@ -4,6 +4,7 @@ use crate::function::ResourceInfo;
 use crate::world_generator::CSharp;
 use heck::{ToShoutySnakeCase, ToUpperCamelCase};
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::fmt::Write;
 use std::ops::Deref;
 use wit_bindgen_core::abi::LiftLower;
@@ -37,6 +38,11 @@ impl InterfaceTypeAndFragments {
     }
 }
 
+pub(crate) struct FutureInfo {
+    pub name: String,
+    pub ty: TypeId,
+}
+
 /// InterfaceGenerator generates the C# code for wit interfaces.
 /// It produces types by interface in wit and then generates the interop code
 /// by calling out to FunctionGenerator
@@ -48,7 +54,7 @@ pub(crate) struct InterfaceGenerator<'a> {
     pub(crate) resolve: &'a Resolve,
     pub(crate) name: &'a str,
     pub(crate) direction: Direction,
-    pub(crate) futures: Vec<String>,
+    pub(crate) futures: Vec<FutureInfo>,
     pub(crate) is_world: bool,
 }
 
@@ -207,103 +213,72 @@ impl InterfaceGenerator<'_> {
 
         let (_namespace, interface_name) = &CSharp::get_class_name_from_qualified_name(self.name);
         let interop_name = format!("{}Interop", interface_name.strip_prefix("I").unwrap());
+        let mut generated_future_types: HashSet<TypeId> = HashSet::new();
 
         for future in &self.futures {
-            let camel_name = future.to_upper_camel_case();
+            let future_name = &future.name;
+            if !generated_future_types.contains(&future.ty) {
+                uwrite!(
+                    self.csharp_interop_src,
+                    r#"
+                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-new-0][async]{future_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
+                    internal static extern ulong FutureNew();
+                    "#
+                );
 
-            //TODO: we need these per future type.
-            // Create a hash map..
-            uwrite!(
-                self.csharp_interop_src,
-                r#"
-                [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-new-0][async]{future}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
-                internal static extern ulong {camel_name}VoidNew();
-                "#
-            );
+                // TODO: Move this and other type dependent functions out to another function.
+                uwrite!(
+                    self.csharp_interop_src,
+                    r#"
+                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-cancel-read-0][async]{future_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
+                    internal static extern uint FutureCancelRead(int readable);
+                    "#
+                );
 
-            // TODO: Move this and other type dependent functions out to another function.
-            uwrite!(
-                self.csharp_interop_src,
-                r#"
-                [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-cancel-read-0][async]{future}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
-                internal static extern uint {camel_name}CancelRead(int readable);
-                "#
-            );
+                uwrite!(
+                    self.csharp_interop_src,
+                    r#"
+                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-cancel-write-0][async]{future_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
+                    internal static extern uint FutureCancelWrite(int writeable);
+                    "#
+                );
 
-            uwrite!(
-                self.csharp_interop_src,
-                r#"
-                [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-cancel-write-0][async]{future}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
-                internal static extern uint {camel_name}CancelWrite(int writeable);
-                "#
-            );
+                uwrite!(
+                    self.csharp_interop_src,
+                    r#"
+                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-drop-writeable-0][async]{future_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
+                    internal static extern void FutureDropWriteable(int writeable);
+                    "#
+                );
 
-            uwrite!(
-                self.csharp_interop_src,
-                r#"
-                [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-drop-writeable-0][async]{future}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
-                internal static extern void {camel_name}DropWriteable(int writeable);
-                "#
-            );
+                self.csharp_gen
+                    .interface_fragments
+                    .entry(self.name.to_string())
+                    .or_insert_with(|| InterfaceTypeAndFragments::new(false))
+                    .interface_fragments
+                    .push(InterfaceFragment {
+                        csharp_src: format!(r#"
+                        public static (FutureReader, FutureWriter) FutureNew() 
+                        {{
+                                var packed = {interop_name}.FutureNew();
+                                var readerHandle = (int)(packed & 0xFFFFFFFF);
+                                var writerHandle = (int)(packed >> 32);
 
-            self.csharp_gen
-                .interface_fragments
-                .entry(self.name.to_string())
-                .or_insert_with(|| InterfaceTypeAndFragments::new(false))
-                .interface_fragments
-                .push(InterfaceFragment {
-                    csharp_src: format!(r#"
-                    public static (FutureReader, FutureWriter) {camel_name}VoidNew() 
-                    {{
-                         var packed = {interop_name}.{camel_name}VoidNew();
-                         var readerHandle = (int)(packed & 0xFFFFFFFF);
-                         var writerHandle = (int)(packed >> 32);
-
-                         return (new FutureReaderVoid(readerHandle), new FutureWriterVoid(writerHandle));
-                    }}
-                    "#).to_string(),
-                    csharp_interop_src: "".to_string(),
-                    stub: "".to_string(),
-                    direction: Some(self.direction),
-                });
-
-            self.csharp_gen.needs_future_reader_support = true;
-            self.csharp_gen.needs_future_writer_support = true;
+                                return (new FutureReaderVoid(readerHandle), new FutureWriterVoid(writerHandle));
+                        }}
+                        "#).to_string(),
+                        csharp_interop_src: "".to_string(),
+                        stub: "".to_string(),
+                        direction: Some(self.direction),
+                    });
+                    generated_future_types.insert(future.ty);
+            }
         }
 
-        uwrite!(
-            self.csharp_interop_src,
-            r#"
-                [global::System.Runtime.InteropServices.DllImportAttribute("$root", EntryPoint = "[waitable-set-new]"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
-                internal static extern int WaitableSetNew();
-                "#
-        );
+        self.csharp_gen.needs_async_support = true;
 
-        uwrite!(
-            self.csharp_interop_src,
-            r#"
-                [global::System.Runtime.InteropServices.DllImportAttribute("$root", EntryPoint = "[waitable-join]"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
-                internal static extern void WaitableJoin(int waitable, int set);
-                "#
-        );
-
-        uwrite!(
-            self.csharp_interop_src,
-            r#"
-                [global::System.Runtime.InteropServices.DllImportAttribute("$root", EntryPoint = "[waitable-set-wait]"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
-                internal static unsafe extern int WaitableSetWait(int waitable, int* waitableHandlePtr);
-                "#
-        );
-
-        uwrite!(
-            self.csharp_interop_src,
-            r#"
-                [global::System.Runtime.InteropServices.DllImportAttribute("$root", EntryPoint = "[waitable-set-drop]"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
-                internal static unsafe extern void WaitableSetDrop(int waitable);
-                "#
-        );
-
-        // TODO: for each type:
+        // TODO: When we do the next type, switch to a generic implementation with a vtable style call
+        // for the interop functions.  This will align c# with other lanaguage implementations.
         let future_type_name = "Void";
 
         self.csharp_gen
@@ -356,40 +331,6 @@ impl InterfaceGenerator<'_> {
                     [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-drop-writable-0][async]read-future"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
                     internal static extern void FutureDropWriter{future_type_name}(int readable);
                 "#).to_string(),
-                stub: "".to_string(),
-                direction: Some(self.direction),
-            });
-
-        self.csharp_gen
-            .interface_fragments
-            .entry(self.name.to_string())
-            .or_insert_with(|| InterfaceTypeAndFragments::new(false))
-            .interface_fragments
-            .push(InterfaceFragment {
-                csharp_src: format!(
-                    r#"
-                public static WaitableSet WaitableSetNew() 
-                {{
-                        var waitable = {interop_name}.WaitableSetNew();
-                        return new WaitableSet(waitable);
-                }}
-
-                public static void Join(FutureWriter writer, WaitableSet set) 
-                {{
-                        {interop_name}.WaitableJoin(writer.Handle, set.Handle);
-                }}
-
-                public unsafe static EventWaitable WaitableSetWait(WaitableSet set) 
-                {{
-                    int* buffer = stackalloc int[2];
-                    var eventCode = (EventCode){interop_name}.WaitableSetWait(set.Handle, buffer);
-                    return new EventWaitable(eventCode, buffer[0], buffer[1]);
-                }}
-
-                "#
-                )
-                .to_string(),
-                csharp_interop_src: "".to_string(),
                 stub: "".to_string(),
                 direction: Some(self.direction),
             });
@@ -1030,7 +971,8 @@ impl InterfaceGenerator<'_> {
                         if name.is_empty() {
                             return "FutureReader".to_owned();
                         } else {
-                            return format!("FutureReader<{name}>");
+                            // TODO: When we add more future types, this will become a generic.
+                            return format!("FutureReader{name}");
                         }
                     }
                     _ => {
@@ -1310,8 +1252,8 @@ impl InterfaceGenerator<'_> {
         format!("{access} {modifiers} {result_type} {camel_name}({params})")
     }
 
-    pub(crate) fn add_future(&mut self, func_name: &str) {
-        self.futures.push(func_name.to_string());
+    pub(crate) fn add_future(&mut self, func_name: &str, ty: &TypeId) {
+        self.futures.push(FutureInfo { name: func_name.to_string(), ty: ty.clone() });
     }
 }
 

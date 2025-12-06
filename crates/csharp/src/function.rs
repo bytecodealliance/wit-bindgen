@@ -1399,9 +1399,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.extend(operands.iter().take(*amt).map(|v| v.clone()));
             }
 
-            Instruction::FutureLower { .. } => {
+            Instruction::FutureLower { payload: _, ty } => {
                 let op = &operands[0];
-                self.interface_gen.add_future(self.func_name);
+                self.interface_gen.add_future(self.func_name, ty);
 
                 results.push(format!("{op}.Handle"));
             }
@@ -1410,15 +1410,15 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwriteln!(self.src, "// TODO_task_cancel.forget();");
             }
 
-            Instruction::FutureLift { payload: _, ty: _ } => {
+            Instruction::FutureLift { payload: _, ty } => {
                 // TODO get the prefix for the type
                 let sig_type_name = "Void";
-                uwriteln!(self.src, "var reader = new {}.FutureReader{}({});", self.interface_gen.name, sig_type_name, operands[0]);
-                self.interface_gen.csharp_gen.needs_future_reader_support = true;
-                results.push("reader".to_string());
+                let reader_var = self.locals.tmp("reader");
+                uwriteln!(self.src, "var {reader_var} = new {}.FutureReader{}({});", self.interface_gen.name, sig_type_name, operands[0]);
+                results.push(reader_var);
 
-                self.interface_gen.add_future(self.func_name);
-                self.interface_gen.csharp_gen.needs_future_reader_support = true;
+                self.interface_gen.add_future(self.func_name, ty);
+                self.interface_gen.csharp_gen.needs_async_support = true;
             }
 
             Instruction::StreamLower { .. }

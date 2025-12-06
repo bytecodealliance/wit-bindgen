@@ -9,7 +9,7 @@ public class Program
     public static async Task Main(string[] args)
     {
         {
-            var (reader, writer) = IIImports.ReadFutureVoidNew();
+            var (reader, writer) = IIImports.FutureNew();
 
             var writeTask = writer.Write();
             Debug.Assert(!writeTask.IsCompleted);
@@ -17,11 +17,11 @@ public class Program
             var task = IIImports.ReadFuture(reader);
             Debug.Assert(task.IsCompleted);
 
-            var set = IIImports.WaitableSetNew();
-            IIImports.Join(writer, set);
+            var set = AsyncSupport.WaitableSetNew();
+            AsyncSupport.Join(writer, set);
 
             var ev = new EventWaitable();
-            var status = IIImports.WaitableSetWait(set);
+            var status = AsyncSupport.WaitableSetWait(set);
             Debug.Assert(status.Event == EventCode.FutureWrite);
             Debug.Assert(status.Waitable == writer.Handle);
             Debug.Assert(status.Status.IsCompleted);
@@ -32,7 +32,7 @@ public class Program
         }   
 
         {
-            var (reader, writer) = IIImports.DropFutureVoidNew();
+            var (reader, writer) = IIImports.FutureNew();
 
             var writeTask = writer.Write();
             Debug.Assert(!writeTask.IsCompleted);
@@ -40,11 +40,11 @@ public class Program
             var task = IIImports.DropFuture(reader);
             Debug.Assert(task.IsCompleted);
 
-            var set = IIImports.WaitableSetNew();
-            IIImports.Join(writer, set);
+            var set = AsyncSupport.WaitableSetNew();
+            AsyncSupport.Join(writer, set);
 
             var ev = new EventWaitable();
-            var status = IIImports.WaitableSetWait(set);
+            var status = AsyncSupport.WaitableSetWait(set);
             Debug.Assert(status.Event == EventCode.FutureWrite);
             Debug.Assert(status.Waitable == writer.Handle);
             Debug.Assert(status.Status.IsDropped);
