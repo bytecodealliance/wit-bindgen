@@ -368,6 +368,11 @@ impl WorldGenerator for C {
                    // stores it into the component model string `ret`.
                    void {snake}_string_dup({snake}_string_t *ret, const {c_string_ty} *s);
 
+                   // Creates a copy of the input string `s` with length `len` and
+                   // stores it into the component model string `ret`.
+                   // The length is specified in code units (bytes for UTF-8, 16-bit values for UTF-16).
+                   void {snake}_string_dup_n({snake}_string_t *ret, const {c_string_ty} *s, size_t len);
+
                    // Deallocates the string pointed to by `ret`, deallocating
                    // the memory behind the string.
                    void {snake}_string_free({snake}_string_t *ret);\
@@ -383,6 +388,12 @@ impl WorldGenerator for C {
 
                    void {snake}_string_dup({snake}_string_t *ret, const {c_string_ty} *s) {{
                        ret->len = {strlen};
+                       ret->ptr = ({ty}*) cabi_realloc(NULL, 0, {size}, ret->len * {size});
+                       memcpy(ret->ptr, s, ret->len * {size});
+                   }}
+
+                   void {snake}_string_dup_n({snake}_string_t *ret, const {c_string_ty} *s, size_t len) {{
+                       ret->len = len;
                        ret->ptr = ({ty}*) cabi_realloc(NULL, 0, {size}, ret->len * {size});
                        memcpy(ret->ptr, s, ret->len * {size});
                    }}
