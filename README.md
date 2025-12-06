@@ -362,7 +362,11 @@ Now you can build with:
 dotnet publish
 ```
 
-Checkout out [componentize-dotnet](https://github.com/bytecodealliance/componentize-dotnet) for a simplified experience.
+Check out [componentize-dotnet](https://github.com/bytecodealliance/componentize-dotnet) for a simplified experience.
+
+### Guest: Go
+
+See the [wit-bindgen-go README.md](crates/go/README.md) for details and generating and using Go bindings.
 
 ### Guest: Java
 

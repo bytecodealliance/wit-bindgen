@@ -2,10 +2,11 @@ using System.Diagnostics;
 using RunnerWorld.wit.Imports.test.lists;
 using System.Text;
 
+namespace RunnerWorld;
 
-public class Program
+public class RunnerWorldImpl : IRunnerWorld
 {
-    public static void Main(string[] args)
+    public static void Run()
     {
         IToTestImports.EmptyListParam(new byte[0]);
         IToTestImports.EmptyStringParam("");

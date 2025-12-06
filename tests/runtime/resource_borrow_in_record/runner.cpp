@@ -2,7 +2,8 @@
 
 namespace test_imports = ::test::resource_borrow_in_record::to_test;
 #include <iostream>
-int main() {
+
+void exports::runner::Run() {
     auto thing1 = test_imports::Thing("Bonjour");
     auto thing2 = test_imports::Thing("mon cher");
     std::cout << thing1.Get().to_string() << ' ' << thing1.get_handle() << std::endl;

@@ -9,6 +9,8 @@ world runner {
     f: func();
   }
   import b;
+
+  export run: func();
 }
 
 world test {

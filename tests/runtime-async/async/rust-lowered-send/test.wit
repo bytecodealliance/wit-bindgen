@@ -10,4 +10,6 @@ world test {
 
 world runner {
   import i;
+
+  export run: async func();
 }

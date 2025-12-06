@@ -7,12 +7,12 @@
 //! the canonical ABI are additionally leaked with it which should be memory
 //! safe.
 
+use crate::rt::Cleanup;
 use crate::rt::async_support::waitable::{WaitableOp, WaitableOperation};
 use crate::rt::async_support::{
     STATUS_RETURNED, STATUS_RETURNED_CANCELLED, STATUS_STARTED, STATUS_STARTED_CANCELLED,
     STATUS_STARTING,
 };
-use crate::rt::Cleanup;
 use std::alloc::Layout;
 use std::future::Future;
 use std::marker;
@@ -42,14 +42,14 @@ pub unsafe trait Subtask {
 
     /// The in-memory layout of both parameters and results allocated with
     /// parameters coming first.
-    fn abi_layout(&self) -> Layout;
+    fn abi_layout(&mut self) -> Layout;
 
     /// The offset, in bytes, from the start of `ABI_LAYOUT` to where the
     /// results will be stored.
-    fn results_offset(&self) -> usize;
+    fn results_offset(&mut self) -> usize;
 
     /// The raw function import using `[async-lower]` and the canonical ABI.
-    unsafe fn call_import(&self, params: Self::ParamsLower, results: *mut u8) -> u32;
+    unsafe fn call_import(&mut self, params: Self::ParamsLower, results: *mut u8) -> u32;
 
     /// Bindings-generated version of lowering `params`.
     ///
@@ -60,22 +60,22 @@ pub unsafe trait Subtask {
     /// Note that `ParamsLower` may return `dst` if there are more ABI
     /// parameters than are allowed flat params (as specified by the canonical
     /// ABI).
-    unsafe fn params_lower(&self, params: Self::Params, dst: *mut u8) -> Self::ParamsLower;
+    unsafe fn params_lower(&mut self, params: Self::Params, dst: *mut u8) -> Self::ParamsLower;
 
     /// Bindings-generated version of deallocating any lists stored within
     /// `lower`.
-    unsafe fn params_dealloc_lists(&self, lower: Self::ParamsLower);
+    unsafe fn params_dealloc_lists(&mut self, lower: Self::ParamsLower);
 
     /// Bindings-generated version of deallocating not only owned lists within
     /// `lower` but also deallocating any owned resources.
-    unsafe fn params_dealloc_lists_and_own(&self, lower: Self::ParamsLower);
+    unsafe fn params_dealloc_lists_and_own(&mut self, lower: Self::ParamsLower);
 
     /// Bindings-generated version of lifting the results stored at `src`.
-    unsafe fn results_lift(&self, src: *mut u8) -> Self::Results;
+    unsafe fn results_lift(&mut self, src: *mut u8) -> Self::Results;
 
     /// Helper function to actually perform this asynchronous call with
     /// `params`.
-    fn call(&self, params: Self::Params) -> impl Future<Output = Self::Results>
+    fn call(&mut self, params: Self::Params) -> impl Future<Output = Self::Results>
     where
         Self: Sized,
     {
@@ -93,7 +93,7 @@ pub unsafe trait Subtask {
     }
 }
 
-struct SubtaskOps<'a, T>(&'a T);
+struct SubtaskOps<'a, T>(&'a mut T);
 
 struct Start<T: Subtask> {
     params: T::Params,
@@ -105,7 +105,7 @@ unsafe impl<T: Subtask> WaitableOp for SubtaskOps<'_, T> {
     type Result = Result<T::Results, ()>;
     type Cancel = Result<T::Results, ()>;
 
-    fn start(&self, state: Self::Start) -> (u32, Self::InProgress) {
+    fn start(&mut self, state: Self::Start) -> (u32, Self::InProgress) {
         unsafe {
             let (ptr_params, cleanup) = Cleanup::new(self.0.abi_layout());
             let ptr_results = ptr_params.add(self.0.results_offset());
@@ -128,12 +128,12 @@ unsafe impl<T: Subtask> WaitableOp for SubtaskOps<'_, T> {
         }
     }
 
-    fn start_cancelled(&self, _state: Self::Start) -> Self::Cancel {
+    fn start_cancelled(&mut self, _state: Self::Start) -> Self::Cancel {
         Err(())
     }
 
     fn in_progress_update(
-        &self,
+        &mut self,
         mut state: Self::InProgress,
         code: u32,
     ) -> Result<Self::Result, Self::InProgress> {
@@ -164,7 +164,8 @@ unsafe impl<T: Subtask> WaitableOp for SubtaskOps<'_, T> {
                 // Note that by dropping `state` here we'll both deallocate the
                 // params/results storage area as well as the subtask handle
                 // itself.
-                unsafe { Ok(Ok(self.0.results_lift(state.ptr_results(self.0)))) }
+                let ptr = state.ptr_results(self.0);
+                unsafe { Ok(Ok(self.0.results_lift(ptr))) }
             }
 
             // This subtask was dropped which forced cancellation. Said
@@ -209,18 +210,18 @@ unsafe impl<T: Subtask> WaitableOp for SubtaskOps<'_, T> {
         }
     }
 
-    fn in_progress_waitable(&self, state: &Self::InProgress) -> u32 {
+    fn in_progress_waitable(&mut self, state: &Self::InProgress) -> u32 {
         // This shouldn't get called in the one case this isn't present: when
         // `STATUS_RETURNED` is returned and no waitable is created. That's the
         // `unwrap()` condition here.
         state.subtask.as_ref().unwrap().handle.get()
     }
 
-    fn in_progress_cancel(&self, state: &Self::InProgress) -> u32 {
+    fn in_progress_cancel(&mut self, state: &mut Self::InProgress) -> u32 {
         unsafe { cancel(self.in_progress_waitable(state)) }
     }
 
-    fn result_into_cancel(&self, result: Self::Result) -> Self::Cancel {
+    fn result_into_cancel(&mut self, result: Self::Result) -> Self::Cancel {
         result
     }
 }
@@ -247,7 +248,7 @@ struct InProgress<T: Subtask> {
 }
 
 impl<T: Subtask> InProgress<T> {
-    fn flag_started(&mut self, op: &T) {
+    fn flag_started(&mut self, op: &mut T) {
         assert!(!self.started);
         self.started = true;
 
@@ -259,7 +260,7 @@ impl<T: Subtask> InProgress<T> {
         }
     }
 
-    fn ptr_results(&self, op: &T) -> *mut u8 {
+    fn ptr_results(&mut self, op: &mut T) -> *mut u8 {
         // SAFETY: the `T` trait has unsafely promised us that the offset is
         // in-bounds of the allocation layout.
         unsafe {
@@ -272,21 +273,12 @@ impl<T: Subtask> InProgress<T> {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-unsafe fn drop(_: u32) {
-    unreachable!()
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-unsafe fn cancel(_: u32) -> u32 {
-    unreachable!()
-}
-
-#[cfg(target_arch = "wasm32")]
-#[link(wasm_import_module = "$root")]
-extern "C" {
-    #[link_name = "[subtask-cancel]"]
-    fn cancel(handle: u32) -> u32;
-    #[link_name = "[subtask-drop]"]
-    fn drop(handle: u32);
+extern_wasm! {
+    #[link(wasm_import_module = "$root")]
+    unsafe extern "C" {
+        #[link_name = "[subtask-cancel]"]
+        fn cancel(handle: u32) -> u32;
+        #[link_name = "[subtask-drop]"]
+        fn drop(handle: u32);
+    }
 }

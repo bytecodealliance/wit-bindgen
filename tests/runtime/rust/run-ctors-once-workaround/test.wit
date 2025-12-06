@@ -6,6 +6,8 @@ interface i {
 
 world runner {
   import i;
+
+  export run: func();
 }
 
 world test {

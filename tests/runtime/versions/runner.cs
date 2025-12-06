@@ -3,9 +3,12 @@ using v1 = RunnerWorld.wit.Imports.test.dep.v0_1_0;
 using v2 = RunnerWorld.wit.Imports.test.dep.v0_2_0;
 using System.Text;
 
-public class Program 
+namespace RunnerWorld;
+
+public class RunnerWorldImpl : IRunnerWorld
 {
-    public static void Main(string[] args){
+    public static void Run()
+    {
         Debug.Assert(v1.ITestImports.X() == 1.0f);
         Debug.Assert(v1.ITestImports.Y(1.0f) == 2.0f);
 

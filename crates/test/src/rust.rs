@@ -1,5 +1,5 @@
 use crate::config::StringList;
-use crate::{Compile, Kind, LanguageMethods, Runner, Verify};
+use crate::{Compile, LanguageMethods, Runner, Verify};
 use anyhow::{Context, Result};
 use clap::Parser;
 use heck::ToSnakeCase;
@@ -61,7 +61,11 @@ impl LanguageMethods for Rust {
         args: &[String],
     ) -> bool {
         // no_std doesn't currently work with async
-        if config.async_ && args.iter().any(|s| s == "--std-feature") {
+        if config.async_
+            && args.iter().any(|s| s == "--std-feature")
+            // Except this one actually _does_ work:
+            && name != "async-trait-function.wit-no-std"
+        {
             return true;
         }
 
@@ -121,7 +125,7 @@ name = "tmp"
 [workspace]
 
 [dependencies]
-wit-bindgen = {{ {wit_bindgen_dep}, features = ['async-spawn'] }}
+wit-bindgen = {{ {wit_bindgen_dep}, features = ['async-spawn', 'inter-task-wakeup'] }}
 futures = "0.3.31"
 
 [lib]
@@ -166,11 +170,7 @@ path = 'lib.rs'
         // If this rust target doesn't natively produce a component then place
         // the compiler output in a temporary location which is componentized
         // later on.
-        let output = if runner.produces_component() {
-            compile.output.to_path_buf()
-        } else {
-            compile.output.with_extension("core.wasm")
-        };
+        let output = compile.output.with_extension("core.wasm");
 
         // Compile all extern crates, if any
         let mut externs = Vec::new();
@@ -210,19 +210,15 @@ path = 'lib.rs'
             let arg = format!("--extern={name}={}", path.display());
             cmd.arg(arg);
         }
-        match compile.component.kind {
-            Kind::Runner => {}
-            Kind::Test => {
-                cmd.arg("--crate-type=cdylib");
-            }
+        cmd.arg("--crate-type=cdylib");
+        if runner.produces_component() {
+            cmd.arg("-Clink-arg=--skip-wit-component");
         }
         runner.run_command(&mut cmd)?;
 
-        if !runner.produces_component() {
-            runner
-                .convert_p1_to_component(&output, compile)
-                .with_context(|| format!("failed to convert {output:?}"))?;
-        }
+        runner
+            .convert_p1_to_component(&output, compile)
+            .with_context(|| format!("failed to convert {output:?}"))?;
 
         Ok(())
     }

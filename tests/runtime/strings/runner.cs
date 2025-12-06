@@ -4,9 +4,12 @@ using System.Diagnostics;
 using RunnerWorld.wit.Imports.test.strings;
 using System.Text;
 
-public class Program 
+namespace RunnerWorld;
+
+public class RunnerWorldImpl : IRunnerWorld
 {
-    public static void Main(string[] args){
+    public static void Run()
+    {
         IToTestImports.TakeBasic("latin utf16");
         Debug.Assert(IToTestImports.ReturnUnicode() == "🚀🚀🚀 𠈄𓀀");
 

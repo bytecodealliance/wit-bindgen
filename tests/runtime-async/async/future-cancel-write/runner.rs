@@ -6,8 +6,12 @@ use std::future::Future;
 use std::task::Context;
 use wit_bindgen::FutureWriteCancel;
 
-fn main() {
-    wit_bindgen::block_on(async {
+struct Component;
+
+export!(Component);
+
+impl Guest for Component {
+    async fn run() {
         // cancel from the other end
         let (tx, rx) = wit_future::new(|| unreachable!());
         let f1 = async { tx.write("hello".into()).await };
@@ -66,5 +70,5 @@ fn main() {
             FutureWriteCancel::AlreadySent => {}
             other => panic!("expected sent, got: {other:?}"),
         };
-    });
+    }
 }

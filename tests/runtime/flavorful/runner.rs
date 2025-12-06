@@ -5,10 +5,16 @@ use crate::test::flavorful::to_test::*;
 #[path = "../lists/alloc.rs"]
 mod alloc;
 
-fn main() {
-    let before = alloc::get();
-    run();
-    assert_eq!(before, alloc::get());
+struct Component;
+
+export!(Component);
+
+impl Guest for Component {
+    fn run() {
+        let before = alloc::get();
+        run();
+        assert_eq!(before, alloc::get());
+    }
 }
 
 fn run() {

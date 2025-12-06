@@ -5,9 +5,13 @@ using RunnerWorld.wit.Imports.test.resourceAliasRedux;
 using RunnerWorld.wit.Imports;
 using System.Text;
 
-public class Program {
-    public static void Main() {
-        IResourceAlias1Imports.Thing thing1 = new IResourceAlias1Imports.Thing("Ni Hao");
+namespace RunnerWorld;
+
+public class RunnerWorldImpl : IRunnerWorld
+{
+    public static void Run()
+    {
+        IResourceAlias1Importa.Thing thing1 = new IResourceAlias1Imports.Thing("Ni Hao");
         List<IResourceAlias1Imports.Thing> myList = new List<IResourceAlias1Imports.Thing>();
         myList.Add(thing1);
         List<IResourceAlias1Imports.Thing> ret = ITheTestImports.Test(myList);

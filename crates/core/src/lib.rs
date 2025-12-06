@@ -148,7 +148,7 @@ pub trait InterfaceGenerator<'a> {
     fn type_record(&mut self, id: TypeId, name: &str, record: &Record, docs: &Docs);
     fn type_resource(&mut self, id: TypeId, name: &str, docs: &Docs);
     fn type_flags(&mut self, id: TypeId, name: &str, flags: &Flags, docs: &Docs);
-    fn type_tuple(&mut self, id: TypeId, name: &str, flags: &Tuple, docs: &Docs);
+    fn type_tuple(&mut self, id: TypeId, name: &str, tuple: &Tuple, docs: &Docs);
     fn type_variant(&mut self, id: TypeId, name: &str, variant: &Variant, docs: &Docs);
     fn type_option(&mut self, id: TypeId, name: &str, payload: &Type, docs: &Docs);
     fn type_result(&mut self, id: TypeId, name: &str, result: &Result_, docs: &Docs);

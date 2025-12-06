@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-int main() {
+void exports_runner_run() {
   {
     test_list_in_record1_t a;
     runner_string_set(&a.a, "list_in_record1");

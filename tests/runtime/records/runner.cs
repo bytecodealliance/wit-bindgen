@@ -2,12 +2,14 @@ using System;
 using System.Runtime.InteropServices;
 using System.Diagnostics;
 using RunnerWorld.wit.Imports.test.records;
-using RunnerWorld;
 
-public class Program {
-    public static void Main()
+namespace RunnerWorld;
+
+public class RunnerWorldImpl : IRunnerWorld
+{
+    public static void Run()
     {
-        {
+            {
                 var results = IToTestImports.MultipleResults();
                 Debug.Assert(results.Item1 == 4);
                 Debug.Assert(results.Item2 == 5);

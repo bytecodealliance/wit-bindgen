@@ -1,14 +1,14 @@
-//@ args = '--rename my:test/i=test'
+//@ args = '--rename my:test/i=test --async=-run'
 
 #include <assert.h>
 #include <runner.h>
 
-int main() {
+void exports_runner_run() {
   {
     test_future_u32_writer_t writer;
     test_future_u32_t reader = test_future_u32_new(&writer);
 
-    runner_subtask_status_t status = test_async_cancel_before_read(reader);
+    runner_subtask_status_t status = test_cancel_before_read(reader);
     assert(status == RUNNER_SUBTASK_RETURNED);
     uint32_t value = 0;
     runner_waitable_status_t wstatus = test_future_u32_write(writer, &value);
@@ -21,7 +21,7 @@ int main() {
     test_future_u32_writer_t writer;
     test_future_u32_t reader = test_future_u32_new(&writer);
 
-    runner_subtask_status_t status = test_async_cancel_after_read(reader);
+    runner_subtask_status_t status = test_cancel_after_read(reader);
     assert(status == RUNNER_SUBTASK_RETURNED);
 
     uint32_t value = 0;
@@ -36,7 +36,7 @@ int main() {
     test_future_u32_t data_reader = test_future_u32_new(&data_writer);
     test_future_void_writer_t signal_writer;
     test_future_void_t signal_reader = test_future_void_new(&signal_writer);
-    runner_subtask_status_t status = test_async_start_read_then_cancel(data_reader, signal_reader);
+    runner_subtask_status_t status = test_start_read_then_cancel(data_reader, signal_reader);
     assert(RUNNER_SUBTASK_STATE(status) == RUNNER_SUBTASK_STARTED);
     runner_subtask_t task = RUNNER_SUBTASK_HANDLE(status);
 

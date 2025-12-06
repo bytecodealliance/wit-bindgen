@@ -1,5 +1,5 @@
 use crate::config::StringList;
-use crate::{Kind, LanguageMethods, Runner};
+use crate::{LanguageMethods, Runner};
 use anyhow::Context;
 use heck::ToSnakeCase;
 use serde::Deserialize;
@@ -49,33 +49,8 @@ impl LanguageMethods for Cpp {
             "async-trait-function.wit"
             | "error-context.wit"
             | "futures.wit"
-            | "import_export_func.wit"
-            | "import-func.wit"
-            | "issue573.wit"
-            | "issue929-no-export.wit"
-            | "keywords.wit"
-            | "lift-lower-foreign.wit"
-            | "lists.wit"
-            | "multiversion"
-            | "resource-alias.wit"
-            | "resource-borrow-in-record.wit"
-            | "resource-fallible-constructor.wit"
-            | "resources.wit"
-            | "resources-in-aggregates.wit"
             | "resources-with-futures.wit"
             | "resources-with-streams.wit"
-            | "ret-areas.wit"
-            | "return-resource-from-export.wit"
-            | "same-names1.wit"
-            | "same-names5.wit"
-            | "simple-http.wit"
-            | "variants.wit"
-            | "variants-unioning-types.wit"
-            | "wasi-cli"
-            | "wasi-filesystem"
-            | "wasi-http"
-            | "wasi-io"
-            | "worlds-with-types.wit"
             | "streams.wit" => true,
             _ => false,
         }
@@ -199,12 +174,7 @@ impl LanguageMethods for Cpp {
         for flag in Vec::from(config.cflags) {
             cmd.arg(flag);
         }
-        match compile.component.kind {
-            Kind::Runner => {}
-            Kind::Test => {
-                cmd.arg("-mexec-model=reactor");
-            }
-        }
+        cmd.arg("-mexec-model=reactor");
         runner.run_command(&mut cmd)?;
         Ok(())
     }

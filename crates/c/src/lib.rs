@@ -10,8 +10,8 @@ use wit_bindgen_core::abi::{
     self, AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmSignature, WasmType,
 };
 use wit_bindgen_core::{
-    dealias, uwrite, uwriteln, wit_parser::*, AnonymousTypeGenerator, AsyncFilterSet, Direction,
-    Files, InterfaceGenerator as _, Ns, WorldGenerator,
+    AnonymousTypeGenerator, AsyncFilterSet, Direction, Files, InterfaceGenerator as _, Ns,
+    WorldGenerator, dealias, uwrite, uwriteln, wit_parser::*,
 };
 use wit_component::StringEncoding;
 
@@ -756,7 +756,6 @@ typedef enum {snake}_waitable_state {{
     {shouty}_WAITABLE_CANCELLED,
 }} {snake}_waitable_state_t;
 
-void {snake}_backpressure_set(bool enable);
 void {snake}_backpressure_inc(void);
 void {snake}_backpressure_dec(void);
 void* {snake}_context_get(void);
@@ -809,11 +808,11 @@ __attribute__((__import_module__("$root"), __import_name__("[waitable-set-poll]"
 extern uint32_t __waitable_set_poll(uint32_t, uint32_t*);
 
 void {snake}_waitable_set_wait({snake}_waitable_set_t set, {snake}_event_t *event) {{
-    event->event = __waitable_set_wait(set, &event->waitable);
+    event->event = ({snake}_event_code_t) __waitable_set_wait(set, &event->waitable);
 }}
 
 void {snake}_waitable_set_poll({snake}_waitable_set_t set, {snake}_event_t *event) {{
-    event->event = __waitable_set_poll(set, &event->waitable);
+    event->event = ({snake}_event_code_t) __waitable_set_poll(set, &event->waitable);
 }}
 
 __attribute__((__import_module__("[export]$root"), __import_name__("[task-cancel]")))
@@ -821,13 +820,6 @@ extern void __task_cancel(void);
 
 void {snake}_task_cancel() {{
     __task_cancel();
-}}
-
-__attribute__((__import_module__("$root"), __import_name__("[backpressure-set]")))
-extern void __backpressure_set(bool enable);
-
-void {snake}_backpressure_set(bool enable) {{
-    __backpressure_set(enable);
 }}
 
 __attribute__((__import_module__("$root"), __import_name__("[backpressure-inc]")))
@@ -2212,7 +2204,7 @@ impl InterfaceGenerator<'_> {
 __attribute__((__export_name__("[callback]{prefix}{export_name}")))
 uint32_t {import_name}_callback(uint32_t event_raw, uint32_t waitable, uint32_t code) {{
     {snake}_event_t event;
-    event.event = event_raw;
+    event.event = ({snake}_event_code_t) event_raw;
     event.waitable = waitable;
     event.code = code;
     return {name}_callback(&event);
@@ -4058,6 +4050,10 @@ pub fn to_c_ident(name: &str) -> String {
         //  variable names for option and result flattening.
         "ret" => "ret_".into(),
         "err" => "err_".into(),
+        // C standard library macros that conflict when used as identifiers
+        "stdin" => "stdin_".into(),
+        "stdout" => "stdout_".into(),
+        "stderr" => "stderr_".into(),
         s => s.to_snake_case(),
     }
 }

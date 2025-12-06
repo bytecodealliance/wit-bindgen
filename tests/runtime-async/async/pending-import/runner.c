@@ -1,13 +1,13 @@
-//@ args = '--rename my:test/i=test'
+//@ args = '--rename my:test/i=test --async=-run'
 
 #include <assert.h>
 #include <runner.h>
 #include <stdio.h>
 
-int main() {
+void exports_runner_run() {
   test_future_void_writer_t writer;
   test_future_void_t reader = test_future_void_new(&writer);
-  runner_subtask_status_t status = test_async_pending_import(reader);
+  runner_subtask_status_t status = test_pending_import(reader);
   assert(RUNNER_SUBTASK_STATE(status) == RUNNER_SUBTASK_STARTED);
   runner_subtask_t subtask = RUNNER_SUBTASK_HANDLE(status);
   assert(subtask != 0);

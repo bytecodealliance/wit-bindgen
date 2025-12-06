@@ -1,9 +1,9 @@
-//@ args = '--rename my:test/i=test'
+//@ args = '--rename my:test/i=test --async=-run'
 
 #include <runner.h>
 #include <assert.h>
 
-int main() {
+void exports_runner_run() {
   test_stream_u8_writer_t writer;
   test_stream_u8_t reader = test_stream_u8_new(&writer);
   uint8_t buf[2];
@@ -14,7 +14,7 @@ int main() {
   assert(status == RUNNER_WAITABLE_STATUS_BLOCKED);
 
   // Start the subtask
-  runner_subtask_status_t subtask_status = test_async_read_stream(reader);
+  runner_subtask_status_t subtask_status = test_read_stream(reader);
   assert(RUNNER_SUBTASK_STATE(subtask_status) == RUNNER_SUBTASK_STARTED);
   runner_subtask_t subtask = RUNNER_SUBTASK_HANDLE(subtask_status);
 

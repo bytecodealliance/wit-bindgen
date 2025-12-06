@@ -747,17 +747,6 @@ extern crate std;
 ///     // more allocations than necessary.
 ///     ownership: Owning,
 ///
-///     // Specifies an alternative name for the `export!` macro generated for
-///     // any exports this world has.
-///     //
-///     // Defaults to "export"
-///     export_macro_name: "export",
-///
-///     // Indicates whether the `export!` macro is `pub` or just `pub(crate)`.
-///     //
-///     // This defaults to `false`.
-///     pub_export_macro: false,
-///
 ///     // The second mode of ownership is "Borrowing". This mode then
 ///     // additionally has a boolean flag indicating whether duplicate types
 ///     // should be generated if necessary.
@@ -777,6 +766,17 @@ extern crate std;
 ///     // `wit-bindgen` repository to help improve the default "Owning" use
 ///     // case above if possible.
 ///     ownership: Borrowing { duplicate_if_necessary: false },
+///
+///     // Specifies an alternative name for the `export!` macro generated for
+///     // any exports this world has.
+///     //
+///     // Defaults to "export"
+///     export_macro_name: "export",
+///
+///     // Indicates whether the `export!` macro is `pub` or just `pub(crate)`.
+///     //
+///     // This defaults to `false`.
+///     pub_export_macro: false,
 ///
 ///     // The generated `export!` macro, if any, will by default look for
 ///     // generated types adjacent to where the `export!` macro is invoked
@@ -873,14 +873,15 @@ pub mod examples;
 #[doc(hidden)]
 pub mod rt;
 
-#[cfg(feature = "async")]
-#[allow(deprecated)]
-pub use rt::async_support::backpressure_set;
+#[cfg(feature = "inter-task-wakeup")]
+pub use rt::async_support::UnitStreamOps;
 #[cfg(feature = "async-spawn")]
 pub use rt::async_support::spawn;
 #[cfg(feature = "async")]
 pub use rt::async_support::{
-    backpressure_dec, backpressure_inc, block_on, yield_async, yield_blocking, AbiBuffer,
-    FutureRead, FutureReader, FutureWrite, FutureWriteCancel, FutureWriteError, FutureWriter,
-    StreamRead, StreamReader, StreamResult, StreamWrite, StreamWriter,
+    AbiBuffer, FutureOps, FutureRead, FutureReader, FutureWrite, FutureWriteCancel,
+    FutureWriteError, FutureWriter, RawFutureRead, RawFutureReader, RawFutureWrite,
+    RawFutureWriter, RawStreamRead, RawStreamReader, RawStreamWrite, RawStreamWriter, StreamOps,
+    StreamRead, StreamReader, StreamResult, StreamWrite, StreamWriter, backpressure_dec,
+    backpressure_inc, block_on, yield_async, yield_blocking,
 };

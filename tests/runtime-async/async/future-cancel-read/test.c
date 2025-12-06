@@ -5,17 +5,17 @@
 #include <stdlib.h>
 
 // This is a test of a Rust-ism, nothing to do in C.
-test_callback_code_t exports_test_async_cancel_before_read(exports_test_future_u32_t x) {
+test_callback_code_t exports_test_cancel_before_read(exports_test_future_u32_t x) {
   exports_test_future_u32_drop_readable(x);
-  exports_test_async_cancel_before_read_return();
+  exports_test_cancel_before_read_return();
   return TEST_CALLBACK_CODE_EXIT;
 }
 
-test_callback_code_t exports_test_async_cancel_before_read_callback(test_event_t *event) {
+test_callback_code_t exports_test_cancel_before_read_callback(test_event_t *event) {
   assert(0);
 }
 
-test_callback_code_t exports_test_async_cancel_after_read(exports_test_future_u32_t x) {
+test_callback_code_t exports_test_cancel_after_read(exports_test_future_u32_t x) {
   uint32_t result;
   test_waitable_status_t status = exports_test_future_u32_read(x, &result);
   assert(status == TEST_WAITABLE_STATUS_BLOCKED);
@@ -25,11 +25,11 @@ test_callback_code_t exports_test_async_cancel_after_read(exports_test_future_u3
 
   exports_test_future_u32_drop_readable(x);
 
-  exports_test_async_cancel_after_read_return();
+  exports_test_cancel_after_read_return();
   return TEST_CALLBACK_CODE_EXIT;
 }
 
-test_callback_code_t exports_test_async_cancel_after_read_callback(test_event_t *event) {
+test_callback_code_t exports_test_cancel_after_read_callback(test_event_t *event) {
   assert(0);
 }
 
@@ -40,11 +40,12 @@ struct start_read_then_cancel_state {
   uint32_t result;
 };
 
-test_callback_code_t exports_test_async_start_read_then_cancel(
+test_callback_code_t exports_test_start_read_then_cancel(
   exports_test_future_u32_t data,
   exports_test_future_void_t signal
 ) {
-  struct start_read_then_cancel_state *state = malloc(sizeof(struct start_read_then_cancel_state));
+  struct start_read_then_cancel_state *state =
+    (struct start_read_then_cancel_state*) malloc(sizeof(struct start_read_then_cancel_state));
   assert(state != NULL);
   state->data = data;
   state->signal = signal;
@@ -61,8 +62,9 @@ test_callback_code_t exports_test_async_start_read_then_cancel(
   return TEST_CALLBACK_CODE_WAIT(state->set);
 }
 
-test_callback_code_t exports_test_async_start_read_then_cancel_callback(test_event_t *event) {
-  struct start_read_then_cancel_state *state = test_context_get();
+test_callback_code_t exports_test_start_read_then_cancel_callback(test_event_t *event) {
+  struct start_read_then_cancel_state *state =
+    (struct start_read_then_cancel_state*) test_context_get();
   assert(event->event == TEST_EVENT_FUTURE_READ);
   assert(event->waitable == state->signal);
   assert(TEST_WAITABLE_STATE(event->code) == TEST_WAITABLE_COMPLETED);
@@ -78,6 +80,6 @@ test_callback_code_t exports_test_async_start_read_then_cancel_callback(test_eve
   exports_test_future_void_drop_readable(state->signal);
   test_waitable_set_drop(state->set);
 
-  exports_test_async_start_read_then_cancel_return();
+  exports_test_start_read_then_cancel_return();
   return TEST_CALLBACK_CODE_EXIT;
 }

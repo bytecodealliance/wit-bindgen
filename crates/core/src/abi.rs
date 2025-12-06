@@ -3,8 +3,8 @@ use std::iter;
 
 pub use wit_parser::abi::{AbiVariant, FlatTypes, WasmSignature, WasmType};
 use wit_parser::{
-    align_to_arch, Alignment, ArchitectureSize, ElementInfo, Enum, Flags, FlagsRepr, Function,
-    Handle, Int, Record, Resolve, Result_, SizeAlign, Tuple, Type, TypeDefKind, TypeId, Variant,
+    Alignment, ArchitectureSize, ElementInfo, Enum, Flags, FlagsRepr, Function, Handle, Int,
+    Record, Resolve, Result_, SizeAlign, Tuple, Type, TypeDefKind, TypeId, Variant, align_to_arch,
 };
 
 // Helper macro for defining instructions without having to have tons of
@@ -806,6 +806,12 @@ pub fn guest_export_needs_post_return(resolve: &Resolve, func: &Function) -> boo
         .unwrap_or(false)
 }
 
+pub fn guest_export_params_have_allocations(resolve: &Resolve, func: &Function) -> bool {
+    func.params
+        .iter()
+        .any(|(_, t)| needs_deallocate(resolve, &t, Deallocate::Lists))
+}
+
 fn needs_deallocate(resolve: &Resolve, ty: &Type, what: Deallocate) -> bool {
     match ty {
         Type::String => true,
@@ -1134,7 +1140,10 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     for (param_name, ty) in func.params.iter() {
                         let Some(types) = flat_types(self.resolve, ty, Some(max_flat_params))
                         else {
-                            panic!("failed to flatten types during direct parameter lifting ('{param_name}' in func '{}')", func.name);
+                            panic!(
+                                "failed to flatten types during direct parameter lifting ('{param_name}' in func '{}')",
+                                func.name
+                            );
                         };
                         for _ in 0..types.len() {
                             self.emit(&Instruction::GetArg { nth: offset });
@@ -1271,7 +1280,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         self.emit(&Instruction::AsyncTaskReturn { name, params });
                     }
 
-                    // All async/non-async cases with results that need to be returned are present here
+                    // All async/non-async cases with results that need to be returned
                     //
                     // In practice, async imports should not end up here, as the returned result of an
                     // async import is *not* a pointer but instead a status code.
@@ -1281,14 +1290,24 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         self.emit(&Instruction::AsyncTaskReturn { name, params });
                     }
 
-                    // All async/non-async cases with no results simply return
-                    //
-                    // In practice, an async import will never get here (it always has a result, the error code)
+                    // All async/non-async cases with no results
                     (_, None) => {
-                        self.emit(&Instruction::Return {
-                            func,
-                            amt: sig.results.len(),
-                        });
+                        if async_ {
+                            let name = &format!("[task-return]{}", func.name);
+                            self.emit(&Instruction::AsyncTaskReturn {
+                                name: name,
+                                params: if sig.results.len() > MAX_FLAT_ASYNC_PARAMS {
+                                    &[WasmType::Pointer]
+                                } else {
+                                    &sig.results
+                                },
+                            });
+                        } else {
+                            self.emit(&Instruction::Return {
+                                func,
+                                amt: sig.results.len(),
+                            });
+                        }
                     }
                 }
 

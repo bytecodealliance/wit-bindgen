@@ -8,7 +8,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 use std::ops::Deref;
 use std::{iter, mem};
-use wit_bindgen_core::{uwrite, Direction, Files, InterfaceGenerator as _, WorldGenerator};
+use wit_bindgen_core::{Direction, Files, InterfaceGenerator as _, WorldGenerator, uwrite};
 use wit_component::WitPrinter;
 use wit_parser::abi::WasmType;
 use wit_parser::{
@@ -156,14 +156,13 @@ impl WorldGenerator for CSharp {
     ) -> anyhow::Result<()> {
         let name = interface_name(self, resolve, key, Direction::Import);
         self.interface_names.insert(id, name.clone());
-        let mut gen = self.interface(resolve, &name, Direction::Import, false);
+        let mut r#gen = self.interface(resolve, &name, Direction::Import, false);
 
-        let mut old_resources = mem::take(&mut gen.csharp_gen.all_resources);
-        gen.types(id);
-        let new_resources = mem::take(&mut gen.csharp_gen.all_resources);
+        let mut old_resources = mem::take(&mut r#gen.csharp_gen.all_resources);
+        r#gen.types(id);
+        let new_resources = mem::take(&mut r#gen.csharp_gen.all_resources);
         old_resources.extend(new_resources.clone());
-        gen.csharp_gen.all_resources = old_resources;
-
+        r#gen.csharp_gen.all_resources = old_resources;
         let import_module_name = &resolve.name_world_key(key);
         for (resource, funcs) in by_resource(
             resolve.interfaces[id]
@@ -173,24 +172,24 @@ impl WorldGenerator for CSharp {
             new_resources.keys().copied(),
         ) {
             if let Some(resource) = resource {
-                gen.start_resource(resource, Some(key));
+                r#gen.start_resource(resource, Some(key));
             }
 
             for func in funcs {
-                gen.import(import_module_name, func);
+                r#gen.import(import_module_name, func);
             }
 
             if resource.is_some() {
-                gen.end_resource();
+                r#gen.end_resource();
             }
         }
 
         // for anonymous types
-        gen.define_interface_types(id);
+        r#gen.define_interface_types(id);
 
-        gen.add_futures(import_module_name);
+        r#gen.add_futures(import_module_name);
 
-        gen.add_interface_fragment(false);
+        r#gen.add_interface_fragment(false);
 
         Ok(())
     }
@@ -206,27 +205,27 @@ impl WorldGenerator for CSharp {
 
         let name = &format!("{}-world", resolve.worlds[world].name).to_upper_camel_case();
         let name = &format!("{name}.I{name}Imports");
-        let mut gen = self.interface(resolve, name, Direction::Import, true);
+        let mut r#gen = self.interface(resolve, name, Direction::Import, true);
 
         //TODO: This generates resource types for imports even when not used, i.e. no imported functions.
         for (resource, funcs) in by_resource(
             funcs.iter().copied(),
-            gen.csharp_gen.world_resources.keys().copied(),
+            r#gen.csharp_gen.world_resources.keys().copied(),
         ) {
             if let Some(resource) = resource {
-                gen.start_resource(resource, None);
+                r#gen.start_resource(resource, None);
             }
 
             for func in funcs {
-                gen.import("$root", func);
+                r#gen.import("$root", func);
             }
 
             if resource.is_some() {
-                gen.end_resource();
+                r#gen.end_resource();
             }
         }
 
-        gen.add_world_fragment(Some(Direction::Import));
+        r#gen.add_world_fragment(Some(Direction::Import));
     }
 
     fn export_interface(
@@ -238,14 +237,13 @@ impl WorldGenerator for CSharp {
     ) -> anyhow::Result<()> {
         let name = interface_name(self, resolve, key, Direction::Export);
         self.interface_names.insert(id, name.clone());
-        let mut gen = self.interface(resolve, &name, Direction::Export, false);
+        let mut r#gen = self.interface(resolve, &name, Direction::Export, false);
 
-        let mut old_resources = mem::take(&mut gen.csharp_gen.all_resources);
-        gen.types(id);
-        let new_resources = mem::take(&mut gen.csharp_gen.all_resources);
+        let mut old_resources = mem::take(&mut r#gen.csharp_gen.all_resources);
+        r#gen.types(id);
+        let new_resources = mem::take(&mut r#gen.csharp_gen.all_resources);
         old_resources.extend(new_resources.clone());
-        gen.csharp_gen.all_resources = old_resources;
-
+        r#gen.csharp_gen.all_resources = old_resources;
         for (resource, funcs) in by_resource(
             resolve.interfaces[id]
                 .functions
@@ -254,25 +252,25 @@ impl WorldGenerator for CSharp {
             new_resources.keys().copied(),
         ) {
             if let Some(resource) = resource {
-                gen.start_resource(resource, Some(key));
+                r#gen.start_resource(resource, Some(key));
             }
 
             for func in funcs {
-                gen.export(func, Some(key));
+                r#gen.export(func, Some(key));
             }
 
             if resource.is_some() {
-                gen.end_resource();
+                r#gen.end_resource();
             }
         }
 
         // for anonymous types
-        gen.define_interface_types(id);
+        r#gen.define_interface_types(id);
 
         let import_module_name = &resolve.name_world_key(key);
-        gen.add_futures(&format!("[export]{import_module_name}"));
+        r#gen.add_futures(&format!("[export]{import_module_name}"));
 
-        gen.add_interface_fragment(true);
+        r#gen.add_interface_fragment(true);
         Ok(())
     }
 
@@ -285,7 +283,7 @@ impl WorldGenerator for CSharp {
     ) -> anyhow::Result<()> {
         let name = &format!("{}-world", resolve.worlds[world_id].name).to_upper_camel_case();
         let name = &format!("{name}.I{name}Exports");
-        let mut gen = self.interface(resolve, name, Direction::Export, true);
+        let mut r#gen = self.interface(resolve, name, Direction::Export, true);
 
         // Write the export types used by the functions.
         let world = &resolve.worlds[world_id];
@@ -305,27 +303,27 @@ impl WorldGenerator for CSharp {
         }
 
         if !types.is_empty() {
-            export_types(&mut gen, &types);
+            export_types(&mut r#gen, &types);
         }
 
         for (resource, funcs) in by_resource(
             funcs.iter().copied(),
-            gen.csharp_gen.world_resources.keys().copied(),
+            r#gen.csharp_gen.world_resources.keys().copied(),
         ) {
             if let Some(resource) = resource {
-                gen.start_resource(resource, None);
+                r#gen.start_resource(resource, None);
             }
 
             for func in funcs {
-                gen.export(func, None);
+                r#gen.export(func, None);
             }
 
             if resource.is_some() {
-                gen.end_resource();
+                r#gen.end_resource();
             }
         }
 
-        gen.add_world_fragment(Some(Direction::Export));
+        r#gen.add_world_fragment(Some(Direction::Export));
         Ok(())
     }
 
@@ -338,18 +336,18 @@ impl WorldGenerator for CSharp {
     ) {
         let name = &format!("{}-world", resolve.worlds[world].name).to_upper_camel_case();
         let name = &format!("{name}.I{name}Imports");
-        let mut gen = self.interface(resolve, name, Direction::Import, false);
+        let mut r#gen = self.interface(resolve, name, Direction::Import, false);
 
-        let mut old_resources = mem::take(&mut gen.csharp_gen.all_resources);
+        let mut old_resources = mem::take(&mut r#gen.csharp_gen.all_resources);
         for (ty_name, ty) in types {
-            gen.define_type(ty_name, *ty);
+            r#gen.define_type(ty_name, *ty);
         }
-        let new_resources = mem::take(&mut gen.csharp_gen.all_resources);
+        let new_resources = mem::take(&mut r#gen.csharp_gen.all_resources);
         old_resources.extend(new_resources.clone());
-        gen.csharp_gen.all_resources = old_resources;
-        gen.csharp_gen.world_resources = new_resources;
+        r#gen.csharp_gen.all_resources = old_resources;
+        r#gen.csharp_gen.world_resources = new_resources;
 
-        gen.add_world_fragment(Some(Direction::Import));
+        r#gen.add_world_fragment(Some(Direction::Import));
     }
 
     fn finish(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) -> anyhow::Result<()> {
@@ -864,9 +862,9 @@ enum Stubs<'a> {
     Interface(&'a Vec<InterfaceFragment>),
 }
 
-fn export_types(gen: &mut InterfaceGenerator, types: &[(&str, TypeId)]) {
+fn export_types(r#gen: &mut InterfaceGenerator, types: &[(&str, TypeId)]) {
     for (ty_name, ty) in types {
-        gen.define_type(ty_name, *ty);
+        r#gen.define_type(ty_name, *ty);
     }
 }
 

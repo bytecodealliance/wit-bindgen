@@ -3,6 +3,8 @@ package test:versions;
 world runner {
   import test:dep/test@0.1.0;
   import test:dep/test@0.2.0;
+
+  export run: func();
 }
 
 world test {

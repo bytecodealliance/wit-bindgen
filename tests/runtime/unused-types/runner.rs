@@ -9,6 +9,12 @@ use foo::bar::component::UnusedVariant as _;
 
 include!(env!("BINDINGS"));
 
-fn main() {
-    foo::bar::component::foo();
+struct Component;
+
+export!(Component);
+
+impl Guest for Component {
+    fn run() {
+        foo::bar::component::foo();
+    }
 }

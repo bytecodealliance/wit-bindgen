@@ -5,9 +5,11 @@ using RunnerWorld.wit.Imports.test.variants;
 using System.Text;
 using RunnerWorld;
 
-public class Program
+namespace RunnerWorld;
+
+public class RunnerWorldImpl : IRunnerWorld
 {
-    public static void Main(string[] args)
+    public static void Run()
     {
         Debug.Assert(IToTestImports.RoundtripOption(1.0f).Value == 1);
         Debug.Assert(IToTestImports.RoundtripOption(null).HasValue == false);

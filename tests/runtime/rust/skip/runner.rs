@@ -1,6 +1,12 @@
 include!(env!("BINDINGS"));
 
-fn main() {
-    exports::foo();
-    exports::bar();
+struct Component;
+
+export!(Component);
+
+impl Guest for Component {
+    fn run() {
+        exports::foo();
+        exports::bar();
+    }
 }

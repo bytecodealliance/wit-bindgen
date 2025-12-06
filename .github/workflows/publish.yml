@@ -75,11 +75,10 @@ jobs:
       env:
         GH_TOKEN: ${{ github.token }}
 
-    - uses: softprops/action-gh-release@v1
-      if: steps.tag.outputs.push_tag == 'yes'
-      with:
-        files: "dist/*"
-        tag_name: v${{ steps.tag.outputs.version }}
+    - if: steps.tag.outputs.push_tag == 'yes'
+      run: gh release create --generate-notes v${{ steps.tag.outputs.version }} dist/*
+      env:
+        GH_TOKEN: ${{ github.token }}
 
     - uses: rust-lang/crates-io-auth-action@v1
       id: auth

@@ -1,5 +1,5 @@
 use crate::config::StringList;
-use crate::{Compile, Kind, LanguageMethods, Runner, Verify};
+use crate::{Compile, LanguageMethods, Runner, Verify};
 use anyhow::{Context, Result};
 use clap::Parser;
 use heck::ToSnakeCase;
@@ -123,11 +123,7 @@ fn compile(runner: &Runner<'_>, compile: &Compile<'_>, compiler: PathBuf) -> Res
 
     // Now compile the runner's source code to with the above object and the
     // component-type object into a final component.
-    let output = if produces_component(runner) {
-        compile.output.to_path_buf()
-    } else {
-        compile.output.with_extension("core.wasm")
-    };
+    let output = compile.output.with_extension("core.wasm");
     let mut cmd = Command::new(compiler);
     cmd.arg(&compile.component.path)
         .arg(&bindings_object)
@@ -148,19 +144,15 @@ fn compile(runner: &Runner<'_>, compile: &Compile<'_>, compiler: PathBuf) -> Res
     for flag in Vec::from(config.cflags) {
         cmd.arg(flag);
     }
-    match compile.component.kind {
-        Kind::Runner => {}
-        Kind::Test => {
-            cmd.arg("-mexec-model=reactor");
-        }
+    cmd.arg("-mexec-model=reactor");
+    if produces_component(runner) {
+        cmd.arg("-Wl,--skip-wit-component");
     }
     runner.run_command(&mut cmd)?;
 
-    if !produces_component(runner) {
-        runner
-            .convert_p1_to_component(&output, compile)
-            .with_context(|| format!("failed to convert {output:?}"))?;
-    }
+    runner
+        .convert_p1_to_component(&output, compile)
+        .with_context(|| format!("failed to convert {output:?}"))?;
     Ok(())
 }
 

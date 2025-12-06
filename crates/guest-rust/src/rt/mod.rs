@@ -81,7 +81,7 @@ mod wit_bindgen_cabi_realloc;
 pub fn maybe_link_cabi_realloc() {
     #[cfg(all(target_family = "wasm", not(target_env = "p2")))]
     {
-        extern "C" {
+        unsafe extern "C" {
             fn cabi_realloc(
                 old_ptr: *mut u8,
                 old_len: usize,
@@ -117,19 +117,21 @@ pub unsafe fn cabi_realloc(
     align: usize,
     new_len: usize,
 ) -> *mut u8 {
-    use alloc::alloc::{alloc as allocate, handle_alloc_error, realloc, Layout};
+    use alloc::alloc::{Layout, alloc as allocate, handle_alloc_error, realloc};
 
     let layout;
-    let ptr = if old_len == 0 {
-        if new_len == 0 {
-            return align as *mut u8;
+    let ptr = unsafe {
+        if old_len == 0 {
+            if new_len == 0 {
+                return align as *mut u8;
+            }
+            layout = Layout::from_size_align_unchecked(new_len, align);
+            allocate(layout)
+        } else {
+            debug_assert_ne!(new_len, 0, "non-zero old_len requires non-zero new_len!");
+            layout = Layout::from_size_align_unchecked(old_len, align);
+            realloc(old_ptr, layout, new_len)
         }
-        layout = Layout::from_size_align_unchecked(new_len, align);
-        allocate(layout)
-    } else {
-        debug_assert_ne!(new_len, 0, "non-zero old_len requires non-zero new_len!");
-        layout = Layout::from_size_align_unchecked(old_len, align);
-        realloc(old_ptr, layout, new_len)
     };
     if ptr.is_null() {
         // Print a nice message in debug mode, but in release mode don't
@@ -164,7 +166,7 @@ pub fn run_ctors_once() {
             // exported function to (unconditionally) run ctors. By using
             // this function, the linked module is opting into "manually"
             // running ctors.
-            extern "C" {
+            unsafe extern "C" {
                 fn __wasm_call_ctors();
             }
             __wasm_call_ctors();

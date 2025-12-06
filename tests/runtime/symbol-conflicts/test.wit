@@ -28,4 +28,6 @@ world runner {
   import foo2;
   import bar1;
   import bar2;
+
+  export run: func();
 }

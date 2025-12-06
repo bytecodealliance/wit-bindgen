@@ -2,7 +2,7 @@
 #include <runner.h>
 #include <stddef.h>
 
-int main() {
+void exports_runner_run() {
     {
         float a = 1;
         uint8_t r;
@@ -130,6 +130,4 @@ int main() {
         assert(!ret.f1.is_err);
         assert(ret.f2 == TEST_VARIANTS_TO_TEST_MY_ERRNO_SUCCESS);
     }
-
-    return 0;
 }

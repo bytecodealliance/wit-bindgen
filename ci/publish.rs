@@ -24,6 +24,7 @@ const CRATES_TO_PUBLISH: &[&str] = &[
     "wit-bindgen-csharp",
     "wit-bindgen-markdown",
     "wit-bindgen-moonbit",
+    "wit-bindgen-go",
     "wit-bindgen-rust-macro",
     "wit-bindgen-rt",
     "wit-bindgen",
@@ -65,11 +66,13 @@ fn main() {
                 bump_version(&krate, &crates, name == "bump-patch");
             }
             // update the lock file
-            assert!(Command::new("cargo")
-                .arg("fetch")
-                .status()
-                .unwrap()
-                .success());
+            assert!(
+                Command::new("cargo")
+                    .arg("fetch")
+                    .status()
+                    .unwrap()
+                    .success()
+            );
         }
 
         "publish" => {

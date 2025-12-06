@@ -8,7 +8,7 @@
 
 #include "runner.h"
 
-int main() {
+void exports_runner_run() {
   {
     uint8_t list[] = {};
     runner_list_u8_t a;

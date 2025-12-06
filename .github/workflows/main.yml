@@ -59,7 +59,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         # moonbit removed from language matrix for now - causing CI failures
-        lang: [c, rust, csharp, cpp]
+        lang: [c, rust, csharp, cpp, go]
         exclude:
           # For now csharp doesn't work on macos, so exclude it from testing.
           - os: macos-latest
@@ -84,6 +84,12 @@ jobs:
       with:
         dotnet-version: '9.x'
       if: matrix.lang == 'csharp'
+
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: 1.25.4
+      if: matrix.lang == 'go'
 
       # Hacky work-around for https://github.com/dotnet/runtime/issues/80619
     - run: dotnet new console -o /tmp/foo
@@ -112,12 +118,8 @@ jobs:
           --artifacts target/artifacts \
           --rust-wit-bindgen-path ./crates/guest-rust
 
-  # While we're working on getting wasip3-prototyping upstream in wasmtime
-  # itself run tests here in separate async job. Note that this job is NOT
-  # required for merging but it reports its status anyway to alert folks to at
-  # least the "big red X" status. The goal here is that this is known to be a
-  # bit unstable as the async foundations are shifting over time but this at
-  # least enables testing async things in this repository more easily.
+  # While async is off-by-default and toolchains are percolating this is a
+  # separate job to get configured slightly differently.
   async:
     name: Test Async (allowed to fail)
     runs-on: ubuntu-latest
@@ -127,18 +129,13 @@ jobs:
         submodules: true
     - name: Install Rust
       run: rustup update stable --no-self-update && rustup default stable
-    - run: rustup target add wasm32-wasip1
+    - run: rustup target add wasm32-wasip2
     - uses: ./.github/actions/install-wasi-sdk
-    - run: |
-        curl -L https://github.com/bytecodealliance/wasmtime/releases/download/dev/wasmtime-dev-x86_64-linux.tar.xz | tar xJvf -
-        echo "WASMTIME=`pwd`/wasmtime-dev-x86_64-linux/wasmtime" >> $GITHUB_ENV
     - run: |
         cargo run test --languages rust,c tests/runtime-async \
           --artifacts target/artifacts \
           --rust-wit-bindgen-path ./crates/guest-rust \
-          --rust-target wasm32-wasip1 \
-          --c-target wasm32-wasip1 \
-          --runner "$WASMTIME -W component-model-async -Sp3"
+          --runner "wasmtime -W component-model-async"
 
   test_unit:
     name: Crate Unit Tests
@@ -156,10 +153,11 @@ jobs:
     - run: cargo test -p wit-bindgen --all-features
     - run: cargo test -p wit-bindgen-rust
     - run: cargo test --workspace --exclude 'wit-bindgen*'
-    - run: rustup update nightly --no-self-update
-    - run: rustup component add miri --toolchain nightly
-    - run: rustup component add rust-src --toolchain nightly
-    - run: cargo +nightly miri test -p wit-bindgen --all-features
+    - run: rustup update nightly-2025-11-10 --no-self-update
+    - run: rustup default nightly-2025-11-10
+    - run: rustup component add miri
+    - run: rustup component add rust-src
+    - run: cargo miri test -p wit-bindgen --all-features
 
   check:
     name: Check
@@ -196,6 +194,8 @@ jobs:
     - run: cargo build --target wasm32-wasip1 -p wit-bindgen --no-default-features --features macros,realloc
     - run: cargo build --target wasm32-wasip1 -p wit-bindgen --no-default-features --features async
     - run: cargo build --target wasm32-wasip1 -p wit-bindgen --no-default-features --features async-spawn
+    - run: cargo build --target wasm32-wasip1 -p wit-bindgen --no-default-features --features async,macros
+    - run: cargo build --target wasm32-wasip1 -p wit-bindgen --no-default-features --features inter-task-wakeup
 
     # Verity that documentation can be generated for the rust bindings crate.
     - run: rustup update nightly --no-self-update
@@ -238,6 +238,7 @@ jobs:
       - build
       - verify-publish
       - check
+      # - async
     if: always()
 
     steps:

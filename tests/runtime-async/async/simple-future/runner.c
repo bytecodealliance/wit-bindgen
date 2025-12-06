@@ -1,9 +1,9 @@
-//@ args = '--rename my:test/i=test'
+//@ args = '--rename my:test/i=test --async=-run'
 
 #include <runner.h>
 #include <assert.h>
 
-int main() {
+void exports_runner_run() {
   {
     test_future_void_writer_t writer;
     test_future_void_t reader = test_future_void_new(&writer);
@@ -11,7 +11,7 @@ int main() {
     runner_waitable_status_t status = test_future_void_write(writer);
     assert(status == RUNNER_WAITABLE_STATUS_BLOCKED);
 
-    runner_subtask_status_t subtask = test_async_read_future(reader);
+    runner_subtask_status_t subtask = test_read_future(reader);
     assert(RUNNER_SUBTASK_STATE(subtask) == RUNNER_SUBTASK_RETURNED);
 
     runner_waitable_set_t set = runner_waitable_set_new();
@@ -34,7 +34,7 @@ int main() {
     runner_waitable_status_t status = test_future_void_write(writer);
     assert(status == RUNNER_WAITABLE_STATUS_BLOCKED);
 
-    runner_subtask_status_t subtask = test_async_drop_future(reader);
+    runner_subtask_status_t subtask = test_drop_future(reader);
     assert(RUNNER_SUBTASK_STATE(subtask) == RUNNER_SUBTASK_RETURNED);
 
     runner_waitable_set_t set = runner_waitable_set_new();

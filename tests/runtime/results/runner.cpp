@@ -69,7 +69,7 @@ static bool equal(std::expected<std::expected<void, wit::string>, wit::string> c
     }
 }
 
-int main()
+void exports::runner::Run()
 {
     using namespace ::test::results::test;
 

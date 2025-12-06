@@ -81,4 +81,6 @@ world runner {
 
     test-imports: func() -> result<_, string>;
   }
+
+  export run: func();
 }

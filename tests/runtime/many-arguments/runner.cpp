@@ -1,7 +1,7 @@
 #include <assert.h>
 #include <runner_cpp.h>
 
-int main()
+void exports::runner::Run()
 {
     using namespace ::test::many_arguments::to_test;
 

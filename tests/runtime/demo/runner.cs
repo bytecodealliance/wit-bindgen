@@ -1,8 +1,10 @@
 using RunnerWorld.wit.Imports.a.b;
 
-public class Program
+namespace RunnerWorld;
+
+public class RunnerWorldImpl : IRunnerWorld
 {
-    public static void Main(string[] args)
+    public static void Run()
     {
         ITheTestImports.X();
     }

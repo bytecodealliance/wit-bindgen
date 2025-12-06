@@ -73,4 +73,6 @@ world runner {
     }
 
     import bar;
+
+    export run: func();
 }

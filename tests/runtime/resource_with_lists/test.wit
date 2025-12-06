@@ -23,4 +23,6 @@ world resource-with-lists {
 
 world runner {
   import test;
+
+  export run: func();
 }

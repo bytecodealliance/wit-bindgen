@@ -33,9 +33,15 @@ mod d {
     });
 }
 
-fn main() {
-    a::test::suffix::imports::foo();
-    b::test::suffix::imports::foo();
-    c::foo::f();
-    d::bar::f();
+struct Component;
+
+export!(Component);
+
+impl Guest for Component {
+    fn run() {
+        a::test::suffix::imports::foo();
+        b::test::suffix::imports::foo();
+        c::foo::f();
+        d::bar::f();
+    }
 }

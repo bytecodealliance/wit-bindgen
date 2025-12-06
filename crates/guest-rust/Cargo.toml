@@ -16,7 +16,7 @@ Used when compiling Rust programs to the component model.
 all-features = true
 
 [dependencies]
-wit-bindgen-rust-macro = { path = "./macro", optional = true, version = "0.47.0" }
+wit-bindgen-rust-macro = { path = "./macro", optional = true, version = "0.49.0" }
 bitflags = { workspace = true, optional = true }
 futures = { version = "0.3.30", optional = true }
 
@@ -29,9 +29,14 @@ default = ["macros", "realloc", "async", "std", "bitflags"]
 macros = ["dep:wit-bindgen-rust-macro"]
 realloc = []
 std = []
-async = ["macros", "std", "wit-bindgen-rust-macro/async"]
+async = ["std", "wit-bindgen-rust-macro?/async"]
 bitflags = ["dep:bitflags"]
 async-spawn = ['async', 'dep:futures']
 
 # Unstable feature to support being a libstd dependency
 rustc-dep-of-std = ["dep:core", "dep:alloc"]
+
+# Requires a newer `wasm-component-ld` and `wasm-tools`, so currently disabled
+# by default. Once the versions of tooling have propagated this will be enabled
+# by default.
+inter-task-wakeup = ["async"]

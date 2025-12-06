@@ -2,7 +2,8 @@
 
 #include "runner_cpp.h"
 #include <array>
-int main() {
+
+void exports::runner::Run() {
   std::array<std::string_view, 2> a1 = {"value1", "value2"};
   std::array<std::string_view, 2> a2 = {"value3", "value4"};
   std::array<std::span<std::string_view const>, 2> as = {

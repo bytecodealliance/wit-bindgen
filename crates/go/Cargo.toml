@@ -1,0 +1,25 @@
+[package]
+name = "wit-bindgen-go"
+authors = ["Joel Dice <joel.dice@gmail.com>"]
+version = { workspace = true }
+edition = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+rust-version = { workspace = true }
+homepage = 'https://github.com/bytecodealliance/wit-bindgen'
+description = """
+Go bindings generator for WIT and the component model, typically used through the
+`wit-bindgen-cli` crate.
+"""
+
+[dependencies]
+wit-bindgen-core = { workspace = true }
+wit-component = { workspace = true }
+wasm-encoder = { workspace = true }
+wasm-metadata = { workspace = true }
+anyhow = { workspace = true }
+heck = { workspace = true }
+clap = { workspace = true, optional = true }
+
+[features]
+clap = ['dep:clap', 'wit-bindgen-core/clap']

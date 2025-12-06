@@ -1,8 +1,8 @@
 use crate::bindgen::{FunctionBindgen, POINTER_SIZE_EXPRESSION};
 use crate::{
-    classify_constructor_return_type, full_wit_type_name, int_repr, to_rust_ident,
-    to_upper_camel_case, wasm_type, ConstructorReturnType, FnSig, Identifier, InterfaceName,
-    Ownership, RuntimeItem, RustFlagsRepr, RustWasm, TypeGeneration,
+    ConstructorReturnType, FnSig, Identifier, InterfaceName, Ownership, RuntimeItem, RustFlagsRepr,
+    RustWasm, TypeGeneration, classify_constructor_return_type, full_wit_type_name, int_repr,
+    to_rust_ident, to_upper_camel_case, wasm_type,
 };
 use anyhow::Result;
 use heck::*;
@@ -11,7 +11,7 @@ use std::fmt::Write as _;
 use std::mem;
 use wit_bindgen_core::abi::{self, AbiVariant, LiftLower};
 use wit_bindgen_core::{
-    dealias, uwrite, uwriteln, wit_parser::*, AnonymousTypeGenerator, Source, TypeInfo,
+    AnonymousTypeGenerator, Source, TypeInfo, dealias, uwrite, uwriteln, wit_parser::*,
 };
 
 pub struct InterfaceGenerator<'a> {
@@ -883,7 +883,7 @@ unsafe impl<'a> _Subtask for _MySubtask<'a> {{
         uwriteln!(
             self.src,
             r#"
-fn abi_layout(&self) -> ::core::alloc::Layout {{
+fn abi_layout(&mut self) -> ::core::alloc::Layout {{
     unsafe {{
         ::core::alloc::Layout::from_size_align_unchecked({}, {})
     }}
@@ -901,7 +901,10 @@ fn abi_layout(&self) -> ::core::alloc::Layout {{
             }
             None => "0".to_string(),
         };
-        uwriteln!(self.src, "fn results_offset(&self) -> usize {{ {offset} }}");
+        uwriteln!(
+            self.src,
+            "fn results_offset(&mut self) -> usize {{ {offset} }}"
+        );
 
         // Generate `fn call_import`
         let import_name = &func.name;
@@ -922,7 +925,7 @@ fn abi_layout(&self) -> ::core::alloc::Layout {{
         uwriteln!(
             self.src,
             r#"
-unsafe fn call_import(&self, _params: Self::ParamsLower, _results: *mut u8) -> u32 {{
+unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) -> u32 {{
     {intrinsic}
     unsafe {{ call({args}) as u32 }}
 }}
@@ -942,7 +945,7 @@ unsafe fn call_import(&self, _params: Self::ParamsLower, _results: *mut u8) -> u
         );
         uwriteln!(
             self.src,
-            "unsafe fn params_dealloc_lists(&self, _params: Self::ParamsLower) {{"
+            "unsafe fn params_dealloc_lists(&mut self, _params: Self::ParamsLower) {{"
         );
         uwriteln!(self.src, "{dealloc_lists}");
         uwriteln!(self.src, "}}");
@@ -956,7 +959,7 @@ unsafe fn call_import(&self, _params: Self::ParamsLower, _results: *mut u8) -> u
         );
         uwriteln!(
             self.src,
-            "unsafe fn params_dealloc_lists_and_own(&self, _params: Self::ParamsLower) {{"
+            "unsafe fn params_dealloc_lists_and_own(&mut self, _params: Self::ParamsLower) {{"
         );
         uwriteln!(self.src, "{dealloc_lists_and_own}");
         uwriteln!(self.src, "}}");
@@ -1000,7 +1003,7 @@ unsafe fn call_import(&self, _params: Self::ParamsLower, _results: *mut u8) -> u
         }
         uwriteln!(
             self.src,
-            "unsafe fn params_lower(&self, ({}): Self::Params, _ptr: *mut u8) -> Self::ParamsLower {{",
+            "unsafe fn params_lower(&mut self, ({}): Self::Params, _ptr: *mut u8) -> Self::ParamsLower {{",
             param_lowers.join(" "),
         );
         for lower in lowers.iter() {
@@ -1015,7 +1018,7 @@ unsafe fn call_import(&self, _params: Self::ParamsLower, _results: *mut u8) -> u
         };
         uwriteln!(
             self.src,
-            "unsafe fn results_lift(&self, _ptr: *mut u8) -> Self::Results {{"
+            "unsafe fn results_lift(&mut self, _ptr: *mut u8) -> Self::Results {{"
         );
         uwriteln!(self.src, "{lift}");
         uwriteln!(self.src, "}}");
@@ -2732,7 +2735,7 @@ impl<'a> {camel}Borrow<'a>{{
     }}
 
     /// Gets access to the underlying `T` in this resource.
-    pub fn get<T: Guest{camel}>(&self) -> &T {{
+    pub fn get<T: Guest{camel}>(&self) -> &'a T {{
        let ptr = unsafe {{ &mut *self.as_ptr::<T>() }};
        ptr.as_ref().unwrap()
     }}

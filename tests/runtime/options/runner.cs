@@ -1,12 +1,12 @@
 using System.Diagnostics;
 using RunnerWorld.wit.Imports.test.options;
 
-namespace RunnerWorld
+namespace RunnerWorld;
+
+public class RunnerWorldImpl : IRunnerWorld
 {
-    public class Program
+    public static void Run()
     {
-        public static void Main()
-        {
             IToTestImports.OptionNoneParam(null);
             IToTestImports.OptionSomeParam("foo");
             Debug.Assert(IToTestImports.OptionNoneResult() == null);
@@ -15,6 +15,5 @@ namespace RunnerWorld
             Debug.Assert(IToTestImports.DoubleOptionRoundtrip(new Option<uint?>(42)).Value == 42);
             Debug.Assert(IToTestImports.DoubleOptionRoundtrip(new Option<uint?>(null)).Value == null);
             Debug.Assert(!IToTestImports.DoubleOptionRoundtrip(Option<uint?>.None).HasValue);
-        }
     }
 }
