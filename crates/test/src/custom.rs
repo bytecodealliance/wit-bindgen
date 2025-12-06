@@ -1,5 +1,5 @@
 use crate::{Bindgen, Compile, LanguageMethods, Runner, Verify};
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::Parser;
 use std::env;
 use std::path::Path;

@@ -31,7 +31,7 @@ macro_rules! rtdebug {
 macro_rules! extern_wasm {
     (
         $(#[$extern_attr:meta])*
-        extern "C" {
+        unsafe extern "C" {
             $(
                 $(#[$func_attr:meta])*
                 $vis:vis fn $func_name:ident ( $($args:tt)* ) $(-> $ret:ty)?;
@@ -48,7 +48,7 @@ macro_rules! extern_wasm {
 
         #[cfg(target_family = "wasm")]
         $(#[$extern_attr])*
-        extern "C" {
+        unsafe extern "C" {
             $(
                 $(#[$func_attr])*
                 $vis fn $func_name($($args)*) $(-> $ret)?;
@@ -344,20 +344,24 @@ unsafe extern "C" fn waitable_register(
 ) -> *mut c_void {
     let ptr = ptr.cast::<FutureState<'static>>();
     assert!(!ptr.is_null());
-    (*ptr).add_waitable(waitable);
-    match (*ptr).waitables.insert(waitable, (callback_ptr, callback)) {
-        Some((prev, _)) => prev,
-        None => ptr::null_mut(),
+    unsafe {
+        (*ptr).add_waitable(waitable);
+        match (*ptr).waitables.insert(waitable, (callback_ptr, callback)) {
+            Some((prev, _)) => prev,
+            None => ptr::null_mut(),
+        }
     }
 }
 
 unsafe extern "C" fn waitable_unregister(ptr: *mut c_void, waitable: u32) -> *mut c_void {
     let ptr = ptr.cast::<FutureState<'static>>();
     assert!(!ptr.is_null());
-    (*ptr).remove_waitable(waitable);
-    match (*ptr).waitables.remove(&waitable) {
-        Some((prev, _)) => prev,
-        None => ptr::null_mut(),
+    unsafe {
+        (*ptr).remove_waitable(waitable);
+        match (*ptr).waitables.remove(&waitable) {
+            Some((prev, _)) => prev,
+            None => ptr::null_mut(),
+        }
     }
 }
 
@@ -573,7 +577,7 @@ pub fn block_on<T: 'static>(future: impl Future<Output = T>) -> T {
 pub fn yield_blocking() -> bool {
     extern_wasm! {
         #[link(wasm_import_module = "$root")]
-        extern "C" {
+        unsafe extern "C" {
             #[link_name = "[thread-yield]"]
             fn yield_() -> bool;
         }
@@ -626,7 +630,7 @@ pub async fn yield_async() {
 pub fn backpressure_inc() {
     extern_wasm! {
         #[link(wasm_import_module = "$root")]
-        extern "C" {
+        unsafe extern "C" {
             #[link_name = "[backpressure-inc]"]
             fn backpressure_inc();
         }
@@ -639,7 +643,7 @@ pub fn backpressure_inc() {
 pub fn backpressure_dec() {
     extern_wasm! {
         #[link(wasm_import_module = "$root")]
-        extern "C" {
+        unsafe extern "C" {
             #[link_name = "[backpressure-dec]"]
             fn backpressure_dec();
         }
@@ -651,7 +655,7 @@ pub fn backpressure_dec() {
 fn context_get() -> *mut u8 {
     extern_wasm! {
         #[link(wasm_import_module = "$root")]
-        extern "C" {
+        unsafe extern "C" {
             #[link_name = "[context-get-0]"]
             fn get() -> *mut u8;
         }
@@ -663,7 +667,7 @@ fn context_get() -> *mut u8 {
 unsafe fn context_set(value: *mut u8) {
     extern_wasm! {
         #[link(wasm_import_module = "$root")]
-        extern "C" {
+        unsafe extern "C" {
             #[link_name = "[context-set-0]"]
             fn set(value: *mut u8);
         }
@@ -693,7 +697,7 @@ impl Drop for TaskCancelOnDrop {
     fn drop(&mut self) {
         extern_wasm! {
             #[link(wasm_import_module = "[export]$root")]
-            extern "C" {
+            unsafe extern "C" {
                 #[link_name = "[task-cancel]"]
                 fn cancel();
             }

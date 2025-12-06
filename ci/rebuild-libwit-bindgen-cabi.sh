@@ -56,7 +56,7 @@ pub unsafe extern "C" fn $realloc(
     align: usize,
     new_len: usize,
 ) -> *mut u8 {
-    crate::rt::cabi_realloc(old_ptr, old_len, align, new_len)
+    unsafe { crate::rt::cabi_realloc(old_ptr, old_len, align, new_len) }
 }
 EOF
 

@@ -6,7 +6,7 @@ use std::fmt::Write;
 use std::mem;
 use std::ops::Deref;
 use wit_bindgen_core::abi::{self, Bindgen, Bitcast, Instruction};
-use wit_bindgen_core::{uwrite, uwriteln, Direction, Ns};
+use wit_bindgen_core::{Direction, Ns, uwrite, uwriteln};
 use wit_parser::abi::WasmType;
 use wit_parser::{
     Alignment, ArchitectureSize, Docs, FunctionKind, Handle, Resolve, SizeAlign, Type, TypeDefKind,
@@ -385,7 +385,10 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         let address = self.locals.tmp("address");
         let buffer_size = self.get_size_for_type(results);
         let align = self.get_align_for_type(results);
-        uwriteln!(self.src, "void* {address} = global::System.Runtime.InteropServices.NativeMemory.AlignedAlloc({buffer_size}, {align});");
+        uwriteln!(
+            self.src,
+            "void* {address} = global::System.Runtime.InteropServices.NativeMemory.AlignedAlloc({buffer_size}, {align});"
+        );
 
         // TODO: Store the address somewhere so we can free it when the task completes.
         address
