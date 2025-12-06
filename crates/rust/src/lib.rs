@@ -432,7 +432,8 @@ impl RustWasm {
             }
 
             self.src.push_str("mod _rt {\n");
-            self.src.push_str("#![allow(dead_code, clippy::all)]\n");
+            self.src
+                .push_str("#![allow(dead_code, unused_imports, clippy::all)]\n");
             let mut emitted = IndexSet::new();
             while !self.rt_module.is_empty() {
                 for item in mem::take(&mut self.rt_module) {
