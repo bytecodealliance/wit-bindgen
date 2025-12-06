@@ -1,6 +1,6 @@
 //@ args = '--string-encoding utf16'
 //@ [lang]
-//@ cflags = '-Wno-c++-keyword'
+//@ cflags = '-Wno-c++-compat'
 
 #include <assert.h>
 #include <stdlib.h>

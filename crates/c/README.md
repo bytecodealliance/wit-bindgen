@@ -195,9 +195,28 @@ void my_world_string_set(my_world_string_t *ret, const char8_t*s);
 // stores it into the component model string `ret`.
 void my_world_string_dup(my_world_string_t *ret, const char8_t*s);
 
+// Creates a copy of the input string `s` with explicit length `len` and
+// stores it into the component model string `ret`.
+// The length is specified in code units (bytes for UTF-8, 16-bit values for UTF-16).
+void my_world_string_dup_n(my_world_string_t *ret, const char8_t*s, size_t len);
+
 // Deallocates the string pointed to by `ret`, deallocating
 // the memory behind the string.
 void my_world_string_free(my_world_string_t *ret);
+```
+
+The `string_dup_n` function is useful when working with strings that include embedded null characters or when handling substrings without first copying them into a null terminated buffer. It’s also helpful for length prefixed data or binary formats, and in general anytime the string length is already known, avoiding the cost of scanning for a terminator
+
+```c
+// Extract a substring from a larger string
+const char *full_string = "Hello, World!";
+my_world_string_t substring;
+my_world_string_dup_n(&substring, full_string, 5);  // Creates "Hello"
+
+// Work with strings containing embedded nulls
+const char data_with_nulls[] = {'H', 'i', '\0', '!'};
+my_world_string_t binary_string;
+my_world_string_dup_n(&binary_string, data_with_nulls, 4);  // Copies all 4 bytes
 ```
 
 For UTF-16 strings, those `char8_t*`s become `char16_t*`s and the following function is also supplied:
