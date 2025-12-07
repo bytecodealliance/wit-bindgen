@@ -31,7 +31,7 @@ between bindings definitions.
 
 The `wit-bindgen` repository is currently focused on **guest** programs which
 are those compiled to WebAssembly. Languages developed in this repository are
-Rust, C, C++, and C#. For other languages see the [documentation
+Rust, C, C++, C#, and Go. For other languages see the [documentation
 below](#guest-other-languages).
 
 Executing a component in a host is not
@@ -368,6 +368,11 @@ Check out [componentize-dotnet](https://github.com/bytecodealliance/componentize
 
 See the [wit-bindgen-go README.md](crates/go/README.md) for details and generating and using Go bindings.
 
+### Guest: TinyGo
+
+>[!WARNING]
+>The TinyGo WIT bindings generator found at the [go.bytecodealliance.org](https://github.com/bytecodealliance/go-modules) is no longer being maintained. It is recommended to migrate to [Guest: Go](#guest-go).
+
 ### Guest: Java
 
 This project historically had some support for
@@ -375,24 +380,6 @@ This project historically had some support for
 a long time and never was at feature parity with other generators, so it was
 removed. The last commit with support for TeaVM-WASI was
 https://github.com/bytecodealliance/wit-bindgen/commit/86e8ae2b8b97f11b73b273345b0e00340f017270.
-
-### Guest: TinyGo
-
-The **new** TinyGo WIT bindings generator is currently in development at the
-[go.bytecodealliance.org](https://github.com/bytecodealliance/go-modules) repository.
-
-To install the `wit-bindgen-go` CLI, run:
-
-```sh
-go install go.bytecodealliance.org/cmd/wit-bindgen-go@latest
-```
-> Note: it requires `wasm-tools` to be installed.
-
-Then, you can generate the bindings for your project:
-
-```sh
-wit-bindgen-go generate <path-to-wit-pkg>
-```
 
 ### Guest: C++-17+
 
@@ -434,7 +421,6 @@ A (non-exhaustive) list of other languages known to support components are:
 
 * JavaScript through [componentize-js](https://github.com/bytecodealliance/ComponentizeJS)
 * Python through [componentize-py](https://github.com/bytecodealliance/componentize-py)
-* Go through [wit-bindgen-go](https://github.com/bytecodealliance/go-modules).
 
 See also
 [The WebAssembly Component Model developer's guide](https://component-model.bytecodealliance.org/language-support.html)
