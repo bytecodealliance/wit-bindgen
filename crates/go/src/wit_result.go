@@ -28,6 +28,14 @@ func (self Result[T, U]) Err() U {
 	return self.value.(U)
 }
 
+func (self Result[T, U]) IsErr() bool {
+	return self.tag == ResultErr
+}
+
+func (self Result[T, U]) IsOk() bool {
+	return self.tag == ResultOk
+}
+
 func Ok[T any, U any](value T) Result[T, U] {
 	return Result[T, U]{ResultOk, value}
 }
