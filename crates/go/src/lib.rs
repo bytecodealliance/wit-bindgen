@@ -1,9 +1,13 @@
 use anyhow::Result;
 use heck::{ToLowerCamelCase as _, ToSnakeCase as _, ToUpperCamelCase as _};
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, hash_map};
 use std::fmt::Write as _;
+use std::io::{self, Write as _};
 use std::iter;
 use std::mem;
+use std::process::Command;
+use std::thread;
 use wit_bindgen_core::abi::{
     self, AbiVariant, Bindgen, Bitcast, FlatTypes, Instruction, LiftLower, WasmType,
 };
@@ -717,8 +721,9 @@ impl WorldGenerator for Go {
 
         files.push(
             "wit_bindings.go",
-            format!(
-                r#"package main
+            &gofmt(
+                format!(
+                    r#"package main
 
 import (
         "runtime"
@@ -734,8 +739,9 @@ var {SYNC_EXPORT_PINNER} = runtime.Pinner{{}}
 // Unused, but present to make the compiler happy
 func main() {{}}
 "#
-            )
-            .as_bytes(),
+                )
+                .as_bytes(),
+            ),
         );
         files.push("go.mod", b"module wit_component\n\ngo 1.25");
         files.push(
@@ -750,16 +756,18 @@ func main() {{}}
 
                 files.push(
                     &format!("{prefix}{name}/wit_bindings.go"),
-                    format!(
-                        "package {prefix}{name}
+                    &gofmt(
+                        format!(
+                            "package {prefix}{name}
 
 import (
         {imports}
 )
 
 {code}"
-                    )
-                    .as_bytes(),
+                        )
+                        .as_bytes(),
+                    ),
                 );
             }
         }
@@ -788,13 +796,15 @@ import (
 
             files.push(
                 "wit_types/wit_tuples.go",
-                format!(
-                    r#"package wit_types
+                &gofmt(
+                    format!(
+                        r#"package wit_types
 
 {tuples}
 "#
-                )
-                .as_bytes(),
+                    )
+                    .as_bytes(),
+                ),
             );
         }
 
@@ -2947,4 +2957,22 @@ fn func_declaration(resolve: &Resolve, func: &Function) -> (String, bool) {
             (format!("{ty}{camel}"), false)
         }
     }
+}
+
+fn gofmt<'a>(code: &'a [u8]) -> Cow<'a, [u8]> {
+    return thread::scope(|s| {
+        if let Ok((reader, mut writer)) = io::pipe() {
+            s.spawn(move || {
+                _ = writer.write_all(&code);
+            });
+
+            if let Ok(output) = Command::new("gofmt").stdin(reader).output() {
+                if output.status.success() {
+                    return Cow::Owned(output.stdout);
+                }
+            }
+        }
+
+        Cow::Borrowed(code)
+    });
 }
