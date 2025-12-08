@@ -29,6 +29,14 @@ func (self Option[T]) SomeOr(value T) T {
 	}
 }
 
+func (self Option[T]) IsSome() bool {
+	return self.tag == OptionSome
+}
+
+func (self Option[T]) IsNone() bool {
+	return self.tag == OptionNone
+}
+
 func None[T any]() Option[T] {
 	return Option[T]{OptionNone, make([]T, 1)[0]}
 }
