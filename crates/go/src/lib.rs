@@ -2,11 +2,13 @@ use anyhow::Result;
 use heck::{ToLowerCamelCase as _, ToSnakeCase as _, ToUpperCamelCase as _};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, hash_map};
+use std::fmt;
 use std::fmt::Write as _;
 use std::io::{self, Write as _};
 use std::iter;
 use std::mem;
 use std::process::Command;
+use std::str::FromStr;
 use std::thread;
 use wit_bindgen_core::abi::{
     self, AbiVariant, Bindgen, Bitcast, FlatTypes, Instruction, LiftLower, WasmType,
@@ -31,9 +33,55 @@ const EXPORT_RETURN_AREA: &str = "exportReturnArea";
 const SYNC_EXPORT_PINNER: &str = "syncExportPinner";
 const PINNER: &str = "pinner";
 
+#[derive(Default, Debug, Copy, Clone)]
+pub enum Format {
+    #[default]
+    True,
+    False,
+}
+
+impl fmt::Display for Format {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::True => "true",
+                Self::False => "false",
+            }
+        )
+    }
+}
+
+impl FromStr for Format {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Format, String> {
+        match s {
+            "true" => Ok(Format::True),
+            "false" => Ok(Format::False),
+            _ => Err(format!("expected `true` or `false`; got `{s}`")),
+        }
+    }
+}
+
 #[derive(Default, Debug, Clone)]
 #[cfg_attr(feature = "clap", derive(clap::Parser))]
 pub struct Opts {
+    /// Whether or not `gofmt` should be used (if present) to format generated
+    /// code.
+    #[cfg_attr(
+        feature = "clap",
+        arg(
+            long,
+            default_value = "true",
+            default_missing_value = "true",
+            num_args = 0..=1,
+            require_equals = true,
+        )
+    )]
+    pub format: Format,
+
     #[cfg_attr(feature = "clap", clap(flatten))]
     pub async_: AsyncFilterSet,
 
@@ -721,7 +769,8 @@ impl WorldGenerator for Go {
 
         files.push(
             "wit_bindings.go",
-            &gofmt(
+            &maybe_gofmt(
+                self.opts.format,
                 format!(
                     r#"package main
 
@@ -756,7 +805,8 @@ func main() {{}}
 
                 files.push(
                     &format!("{prefix}{name}/wit_bindings.go"),
-                    &gofmt(
+                    &maybe_gofmt(
+                        self.opts.format,
                         format!(
                             "package {prefix}{name}
 
@@ -796,7 +846,8 @@ import (
 
             files.push(
                 "wit_types/wit_tuples.go",
-                &gofmt(
+                &maybe_gofmt(
+                    self.opts.format,
                     format!(
                         r#"package wit_types
 
@@ -2959,17 +3010,19 @@ fn func_declaration(resolve: &Resolve, func: &Function) -> (String, bool) {
     }
 }
 
-fn gofmt<'a>(code: &'a [u8]) -> Cow<'a, [u8]> {
+fn maybe_gofmt<'a>(format: Format, code: &'a [u8]) -> Cow<'a, [u8]> {
     return thread::scope(|s| {
-        if let Ok((reader, mut writer)) = io::pipe() {
+        if let Format::True = format
+            && let Ok((reader, mut writer)) = io::pipe()
+        {
             s.spawn(move || {
                 _ = writer.write_all(&code);
             });
 
-            if let Ok(output) = Command::new("gofmt").stdin(reader).output() {
-                if output.status.success() {
-                    return Cow::Owned(output.stdout);
-                }
+            if let Ok(output) = Command::new("gofmt").stdin(reader).output()
+                && output.status.success()
+            {
+                return Cow::Owned(output.stdout);
             }
         }
 
