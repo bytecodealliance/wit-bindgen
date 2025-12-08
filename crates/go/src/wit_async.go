@@ -64,6 +64,9 @@ func Callback(event0, event1, event2 uint32) uint32 {
 	return callback(event0, event1, event2)
 }
 
+//go:linkname wasiOnIdle runtime.wasiOnIdle
+func wasiOnIdle(callback func() bool)
+
 func callback(event0, event1, event2 uint32) uint32 {
 	yielding := state.yielding
 	if state.yielding != nil {
@@ -109,12 +112,12 @@ func callback(event0, event1, event2 uint32) uint32 {
 	//
 	// Note that this function is _not_ currently part of upstream Go; it
 	// requires [this
-	// patch](https://github.com/dicej/go/commit/a1c83220fc9576cdb810e9624366cb998e69b22b)
-	runtime.WasiOnIdle(func() bool {
+	// patch](https://github.com/dicej/go/commit/40fc123d5bce6448fc4e4601fd33bad4250b36a5)
+	wasiOnIdle(func() bool {
 		state.channel <- unit{}
 		return true
 	})
-	defer runtime.WasiOnIdle(func() bool {
+	defer wasiOnIdle(func() bool {
 		return false
 	})
 

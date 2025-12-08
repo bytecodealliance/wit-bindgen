@@ -18,16 +18,16 @@ impl LanguageMethods for Go {
 
     fn should_fail_verify(
         &self,
-        _name: &str,
+        name: &str,
         config: &crate::config::WitConfig,
         _args: &[String],
     ) -> bool {
         // TODO: We _do_ support async, but only with a build of Go that has
         // [this
-        // patch](https://github.com/dicej/go/commit/a1c83220fc9576cdb810e9624366cb998e69b22b).
-        // Once we either publish builds containing that patch or upstream
-        // something equivalent, we can remove the ` || config.async_` here.
-        config.error_context || config.async_
+        // patch](https://github.com/dicej/go/commit/40fc123d5bce6448fc4e4601fd33bad4250b36a5).
+        // Once we upstream something equivalent, we can remove the ` || name ==
+        // "async-trait-function.wit"` here.
+        config.error_context || name == "async-trait-function.wit"
     }
 
     fn default_bindgen_args_for_codegen(&self) -> &[&str] {
