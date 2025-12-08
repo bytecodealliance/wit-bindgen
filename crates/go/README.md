@@ -33,6 +33,11 @@ world provided:
 - (if needed) `wit_types/wit_stream.go`: defines a `StreamReader` and `StreamWriter` types if required by the WIT world
 - (if needed) `wit_types/wit_future.go`: defines a `FutureReader` and `FutureWriter` types if required by the WIT world
 
+Note that async support currently requires [a patched version of
+Go](https://github.com/dicej/go/releases/tag/go1.25.5-wasi-on-idle).  Code
+generated for worlds that don't use any async features can be compiled using a
+stock release of Go.
+
 ## Example
 
 ### Prerequisites

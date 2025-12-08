@@ -127,12 +127,23 @@ jobs:
     - uses: actions/checkout@v4
       with:
         submodules: true
+
     - name: Install Rust
       run: rustup update stable --no-self-update && rustup default stable
     - run: rustup target add wasm32-wasip2
+
+    # As of this writing, we need [a patched build of
+    # Go](https://github.com/dicej/go/releases/tag/go1.25.5-wasi-on-idle) to
+    # support async.
+    - name: Install Patched Go
+      run: |
+        curl -OL https://github.com/dicej/go/releases/download/go1.25.5-wasi-on-idle/go-linux-amd64-bootstrap.tbz
+        tar xf go-linux-amd64-bootstrap.tbz
+        echo "$(pwd)/go-linux-amd64-bootstrap/bin" >> $GITHUB_PATH
+
     - uses: ./.github/actions/install-wasi-sdk
     - run: |
-        cargo run test --languages rust,c tests/runtime-async \
+        cargo run test --languages rust,c,go tests/runtime-async \
           --artifacts target/artifacts \
           --rust-wit-bindgen-path ./crates/guest-rust \
           --runner "wasmtime -W component-model-async"
