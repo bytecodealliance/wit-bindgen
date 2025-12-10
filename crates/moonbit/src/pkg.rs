@@ -2,12 +2,11 @@ use std::collections::HashMap;
 
 use heck::{ToLowerCamelCase, ToSnakeCase, ToUpperCamelCase};
 use wit_bindgen_core::{
-    dealias,
+    Ns, dealias,
     wit_parser::{
         Function, FunctionKind, Handle, InterfaceId, Resolve, Type, TypeDef, TypeDefKind,
         TypeOwner, WorldId, WorldKey,
     },
-    Ns,
 };
 
 pub(crate) const FFI_DIR: &str = "ffi";
