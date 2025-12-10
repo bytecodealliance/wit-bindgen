@@ -5,9 +5,7 @@ pub(open) trait Waitable {
 
   // when the waitable is dropped, this function is called to free resources
   drop(Self) -> Bool
-
   done(Self) -> Bool
-
   handle(Self) -> Int
 }
 
@@ -145,6 +143,7 @@ pub fn CallbackCode::decode(int : Int) -> CallbackCode {
 ///|
 /// This function is empty, If you want to print debug info, you can hook it in your environment.
 pub fn _async_debug(_msg : String) -> Unit {
+
 }
 
 // Component async primitives

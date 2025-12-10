@@ -6,7 +6,6 @@ async fn[T, E : Error] async_suspend(
 ///|
 fn run_async(f : async () -> Unit noraise) = "%async.run"
 
-
 ///|
 priv enum State {
   Done
@@ -93,7 +92,7 @@ pub async fn pause() -> Unit {
 }
 
 ///|
-pub async fn suspend() -> Unit raise {
+pub async fn suspend() -> Unit {
   guard scheduler.curr_coro is Some(coro)
   if coro.cancelled && not(coro.shielded) {
     raise Cancelled::Cancelled
@@ -109,7 +108,7 @@ pub async fn suspend() -> Unit raise {
 }
 
 ///|
-pub fn spawn(f : async () -> Unit raise) -> Coroutine {
+pub fn spawn(f : async () -> Unit) -> Coroutine {
   scheduler.coro_id += 1
   let coro = {
     state: Running,
@@ -149,7 +148,7 @@ pub fn Coroutine::unwrap(self : Coroutine) -> Unit raise {
 }
 
 ///|
-pub async fn Coroutine::wait(target : Coroutine) -> Unit raise {
+pub async fn Coroutine::wait(target : Coroutine) -> Unit {
   guard scheduler.curr_coro is Some(coro)
   guard not(physical_equal(coro, target))
   match target.state {
@@ -169,7 +168,7 @@ pub async fn Coroutine::wait(target : Coroutine) -> Unit raise {
 }
 
 ///|
-pub async fn protect_from_cancel(f : async () -> Unit raise) -> Unit raise {
+pub async fn protect_from_cancel(f : async () -> Unit) -> Unit {
   guard scheduler.curr_coro is Some(coro)
   if coro.shielded {
     // already in a shield, do nothing
@@ -185,7 +184,6 @@ pub async fn protect_from_cancel(f : async () -> Unit raise) -> Unit raise {
     }
   }
 }
-
 
 ///|
 priv struct Scheduler {
