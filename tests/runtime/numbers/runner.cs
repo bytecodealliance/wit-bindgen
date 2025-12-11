@@ -5,7 +5,7 @@ using RunnerWorld.wit.Imports.test.numbers;
 
 namespace RunnerWorld;
 
-public class RunnerWorldImpl : IRunnerWorld
+public class RunnerWorldExportsImpl : IRunnerWorldExports
 {
     public static void Run()
     {

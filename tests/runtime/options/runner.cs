@@ -3,7 +3,7 @@ using RunnerWorld.wit.Imports.test.options;
 
 namespace RunnerWorld;
 
-public class RunnerWorldImpl : IRunnerWorld
+public class RunnerWorldExportsImpl : IRunnerWorldExports
 {
     public static void Run()
     {

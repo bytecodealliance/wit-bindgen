@@ -1,12 +1,9 @@
-using System;
-using System.Runtime.InteropServices;
 using System.Diagnostics;
 using RunnerWorld.wit.Imports.test.resourceBorrowInRecord;
-using System.Text;
 
 namespace RunnerWorld;
 
-public class RunnerWorldImpl : IRunnerWorld
+public class RunnerWorldExportsImpl : IRunnerWorldExports
 {
     public static void Run()
     {

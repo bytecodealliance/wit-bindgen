@@ -3,11 +3,11 @@ using System.Diagnostics;
 
 namespace RunnerWorld;
 
-public class RunnerWorldImpl : IRunnerWorld
+public class RunnerWorldExportsImpl : IRunnerWorldExports
 {
     public static void Run()
     {
-        uint ret = ToTestImports.Foo(new IToTestImports.Thing(42));
+        uint ret = IToTestImports.Foo(new IToTestImports.Thing(42));
         Debug.Assert(ret == 42 + 1 + 2);
     }
 }
