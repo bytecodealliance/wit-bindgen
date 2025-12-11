@@ -271,7 +271,7 @@ impl InterfaceGenerator<'_> {
                         stub: "".to_string(),
                         direction: Some(self.direction),
                     });
-                    generated_future_types.insert(future.ty);
+                generated_future_types.insert(future.ty);
             }
         }
 
@@ -760,9 +760,9 @@ impl InterfaceGenerator<'_> {
                 Some(world_key) => {
                     let interface_world = self.resolve.name_world_key(world_key);
                     (format!("{interface_world}#"), interface_world)
-                } ,
+                }
                 None => (String::new(), "$root".to_string()),
-            }; 
+            };
             uwriteln!(
                 self.csharp_interop_src,
                 r#"
@@ -1259,7 +1259,10 @@ impl InterfaceGenerator<'_> {
     }
 
     pub(crate) fn add_future(&mut self, func_name: &str, ty: &TypeId) {
-        self.futures.push(FutureInfo { name: func_name.to_string(), ty: ty.clone() });
+        self.futures.push(FutureInfo {
+            name: func_name.to_string(),
+            ty: ty.clone(),
+        });
     }
 }
 
