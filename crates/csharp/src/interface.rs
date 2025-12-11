@@ -221,7 +221,7 @@ impl InterfaceGenerator<'_> {
                 uwrite!(
                     self.csharp_interop_src,
                     r#"
-                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-new-0][async]{future_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
+                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-new-0]{future_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
                     internal static extern ulong FutureNew();
                     "#
                 );
@@ -230,7 +230,7 @@ impl InterfaceGenerator<'_> {
                 uwrite!(
                     self.csharp_interop_src,
                     r#"
-                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-cancel-read-0][async]{future_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
+                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-cancel-read-0]{future_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
                     internal static extern uint FutureCancelRead(int readable);
                     "#
                 );
@@ -238,7 +238,7 @@ impl InterfaceGenerator<'_> {
                 uwrite!(
                     self.csharp_interop_src,
                     r#"
-                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-cancel-write-0][async]{future_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
+                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-cancel-write-0]{future_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
                     internal static extern uint FutureCancelWrite(int writeable);
                     "#
                 );
@@ -246,7 +246,7 @@ impl InterfaceGenerator<'_> {
                 uwrite!(
                     self.csharp_interop_src,
                     r#"
-                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-drop-writeable-0][async]{future_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
+                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-drop-writeable-0]{future_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
                     internal static extern void FutureDropWriteable(int writeable);
                     "#
                 );
@@ -319,16 +319,16 @@ impl InterfaceGenerator<'_> {
                     }}  
                     "#).to_string(),
                 csharp_interop_src: format!(r#"
-                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[async-lower][future-read-0][async]read-future"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
+                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[async-lower][future-read-0]read-future"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
                     internal static unsafe extern int FutureRead{future_type_name}(int readable, IntPtr ptr);
 
-                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[async-lower][future-write-0][async]read-future"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
+                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[async-lower][future-write-0]read-future"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
                     internal static unsafe extern int FutureWrite{future_type_name}(int writeable, IntPtr buffer);
             
-                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-drop-readable-0][async]read-future"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
+                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-drop-readable-0]read-future"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
                     internal static extern void FutureDropReader{future_type_name}(int readable);
 
-                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-drop-writable-0][async]read-future"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
+                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-drop-writable-0]read-future"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
                     internal static extern void FutureDropWriter{future_type_name}(int readable);
                 "#).to_string(),
                 stub: "".to_string(),
@@ -448,10 +448,10 @@ impl InterfaceGenerator<'_> {
         uwrite!(
             self.csharp_interop_src,
             r#"
-            internal static class {interop_camel_name}WasmInterop
+            public static class {interop_camel_name}WasmInterop
             {{
                 [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "{import_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
-                internal static extern {sig_unsafe}{wasm_result_type} wasmImport{interop_camel_name}({wasm_params});
+                public static extern {sig_unsafe}{wasm_result_type} wasmImport{interop_camel_name}({wasm_params});
             }}
             "#
         );
@@ -593,7 +593,7 @@ impl InterfaceGenerator<'_> {
         (src, params)
     }
 
-    pub(crate) fn export(&mut self, func: &Function, interface_name: Option<&WorldKey>) {
+    pub(crate) fn export(&mut self, func: &Function, interface_key: Option<&WorldKey>) {
         let camel_name = match &func.kind {
             FunctionKind::Freestanding
             | FunctionKind::Static(_)
@@ -688,7 +688,7 @@ impl InterfaceGenerator<'_> {
 
         let wasm_func_name = func.name.clone();
         let interop_name = format!("wasmExport{}", wasm_func_name.to_upper_camel_case());
-        let core_module_name = interface_name.map(|s| self.resolve.name_world_key(s));
+        let core_module_name = interface_key.map(|s| self.resolve.name_world_key(s));
         let export_name = func.legacy_core_export_name(core_module_name.as_deref());
 
         let export_name = if async_ {
@@ -748,7 +748,6 @@ impl InterfaceGenerator<'_> {
         }
 
         if async_ {
-            let import_module_name = &self.resolve.name_world_key(interface_name.unwrap());
             let (_namespace, interface_name) =
                 &CSharp::get_class_name_from_qualified_name(self.name);
             let impl_name = if resource_type_name.is_some() {
@@ -757,10 +756,17 @@ impl InterfaceGenerator<'_> {
                 format!("{}Impl", interface_name.strip_prefix("I").unwrap())
             };
 
+            let (import_module_prefix, import_module) = match interface_key {
+                Some(world_key) => {
+                    let interface_world = self.resolve.name_world_key(world_key);
+                    (format!("{interface_world}#"), interface_world)
+                } ,
+                None => (String::new(), "$root".to_string()),
+            }; 
             uwriteln!(
                 self.csharp_interop_src,
                 r#"
-            [global::System.Runtime.InteropServices.UnmanagedCallersOnlyAttribute(EntryPoint = "[callback][async-lift]{import_module_name}#{wasm_func_name}")]
+            [global::System.Runtime.InteropServices.UnmanagedCallersOnlyAttribute(EntryPoint = "[callback][async-lift]{import_module_prefix}{wasm_func_name}")]
             public static int {camel_name}Callback(uint eventRaw, uint waitable, uint code)
             {{
                 // TODO: decode the parameters
@@ -787,8 +793,8 @@ impl InterfaceGenerator<'_> {
                 self.csharp_interop_src,
                 r#"
             // TODO: The task return function can take up to 16 core parameters.
-            [global::System.Runtime.InteropServices.DllImportAttribute("[export]{import_module_name}", EntryPoint = "[task-return]{wasm_func_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
-            internal static extern void {camel_name}TaskReturn({task_return_param});
+            [global::System.Runtime.InteropServices.DllImportAttribute("[export]{import_module}", EntryPoint = "[task-return]{wasm_func_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
+            public static extern void {camel_name}TaskReturn({task_return_param});
             "#
             );
         }

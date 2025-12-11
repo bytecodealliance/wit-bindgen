@@ -4,9 +4,9 @@ using System.Diagnostics;
 using RunnerWorld.wit.Imports.a.b;
 using System.Text;
 
-public class Program
+public class RunnerWorldExportsImpl
 {
-    public static async Task Main(string[] args)
+    public static Task Run()
     {
         var t = IIImports.OneArgument(1);
         Debug.Assert(t.IsCompletedSuccessfully);
@@ -25,5 +25,12 @@ public class Program
         var tTwoArgumentsAndResult = IIImports.TwoArgumentsAndResult(7, 8);
         Debug.Assert(tTwoArgumentsAndResult.IsCompletedSuccessfully);
         Debug.Assert(tTwoArgumentsAndResult.Result == 9);
+
+        return Task.CompletedTask;
+    }
+
+    public static int RunCallback()
+    {
+        throw new NotImplementedException();
     }
 }

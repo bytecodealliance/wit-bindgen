@@ -4,9 +4,9 @@ using System.Diagnostics;
 using RunnerWorld.wit.Imports.my.test;
 using RunnerWorld;
 
-public class Program
+public class RunnerWorldExportsImpl
 {
-    public static async Task Main(string[] args)
+    public static Task Run()
     {
         {
             var (reader, writer) = IIImports.FutureNew();
@@ -52,6 +52,13 @@ public class Program
 
             writer.Dispose();
             set.Dispose();
+
+            return Task.CompletedTask;
         }
+    }
+
+    public static int RunCallback()
+    {
+        throw new NotImplementedException();
     }
 }
