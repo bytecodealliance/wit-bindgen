@@ -5,6 +5,7 @@ use wit_parser::*;
 #[derive(Default)]
 pub struct Types {
     type_info: HashMap<TypeId, TypeInfo>,
+    equal_types: UnionFind,
 }
 
 #[derive(Default, Clone, Copy, Debug)]
@@ -87,6 +88,21 @@ impl Types {
                         }
                     }
                     WorldItem::Type(_) => {}
+                }
+            }
+        }
+    }
+    pub fn collect_equal_types(&mut self, resolve: &Resolve) {
+        let type_ids: Vec<_> = resolve.types.iter().map(|(id, _)| id).collect();
+        for (i, &ty) in type_ids.iter().enumerate() {
+            // TODO: we could define a hash function for TypeDefKind to prevent the inner loop.
+            for &earlier in &type_ids[..i] {
+                if self.equal_types.find(ty) == self.equal_types.find(earlier) {
+                    continue;
+                }
+                if self.is_structurally_equal(resolve, ty, earlier) {
+                    self.equal_types.union(ty, earlier);
+                    break;
                 }
             }
         }
@@ -226,6 +242,142 @@ impl Types {
         match ty {
             Some(ty) => self.type_info(resolve, ty),
             None => TypeInfo::default(),
+        }
+    }
+    fn is_structurally_equal(&mut self, resolve: &Resolve, a: TypeId, b: TypeId) -> bool {
+        let a_def = &resolve.types[a].kind;
+        let b_def = &resolve.types[b].kind;
+        if self.is_resource_like_type(a_def) || self.is_resource_like_type(b_def) {
+            return false;
+        }
+        if a == b {
+            return true;
+        }
+        match (a_def, b_def) {
+            (TypeDefKind::Type(ta), TypeDefKind::Type(tb)) => {
+                // This function is called in topological order, so the equivalence
+                // classes of ta and tb have already been computed. We can use the representative
+                // TypeId to check equality, instead of recursing down.
+                self.types_equal(resolve, ta, tb)
+            }
+            (TypeDefKind::Record(ra), TypeDefKind::Record(rb)) => {
+                ra.fields.len() == rb.fields.len()
+                  // TODO: make sure the fields are sorted
+                  && ra.fields.iter().zip(rb.fields.iter()).all(|(fa, fb)| {
+                      fa.name == fb.name && self.types_equal(resolve, &fa.ty, &fb.ty)
+                  })
+            }
+            (TypeDefKind::Variant(va), TypeDefKind::Variant(vb)) => {
+                va.cases.len() == vb.cases.len()
+                    && va.cases.iter().zip(vb.cases.iter()).all(|(ca, cb)| {
+                        ca.name == cb.name && self.optional_types_equal(resolve, &ca.ty, &cb.ty)
+                    })
+            }
+            (TypeDefKind::Enum(ea), TypeDefKind::Enum(eb)) => {
+                ea.cases.len() == eb.cases.len()
+                    && ea
+                        .cases
+                        .iter()
+                        .zip(eb.cases.iter())
+                        .all(|(ca, cb)| ca.name == cb.name)
+            }
+            (TypeDefKind::Flags(fa), TypeDefKind::Flags(fb)) => {
+                fa.flags.len() == fb.flags.len()
+                    && fa
+                        .flags
+                        .iter()
+                        .zip(fb.flags.iter())
+                        .all(|(fa, fb)| fa.name == fb.name)
+            }
+            (TypeDefKind::Tuple(ta), TypeDefKind::Tuple(tb)) => {
+                ta.types.len() == tb.types.len()
+                    && ta
+                        .types
+                        .iter()
+                        .zip(tb.types.iter())
+                        .all(|(a, b)| self.types_equal(resolve, a, b))
+            }
+            (TypeDefKind::List(la), TypeDefKind::List(lb)) => self.types_equal(resolve, la, lb),
+            (TypeDefKind::FixedSizeList(ta, sa), TypeDefKind::FixedSizeList(tb, sb)) => {
+                sa == sb && self.types_equal(resolve, ta, tb)
+            }
+            (TypeDefKind::Option(oa), TypeDefKind::Option(ob)) => self.types_equal(resolve, oa, ob),
+            (TypeDefKind::Result(ra), TypeDefKind::Result(rb)) => {
+                self.optional_types_equal(resolve, &ra.ok, &rb.ok)
+                    && self.optional_types_equal(resolve, &ra.err, &rb.err)
+            }
+            // Potentially we can say handle are equal if the Handle value are equal and
+            // they have the same owner. But in the future, when we allow importing the same
+            // interface twice, they will not be equal. To be conservative, we say they are not equal.
+            (TypeDefKind::Handle(_), TypeDefKind::Handle(_)) => false,
+            _ => false,
+        }
+    }
+    fn types_equal(&mut self, resolve: &Resolve, a: &Type, b: &Type) -> bool {
+        match (a, b) {
+            (Type::Id(a), Type::Id(b)) => {
+                let a_def = &resolve.types[*a].kind;
+                let b_def = &resolve.types[*b].kind;
+                if self.is_resource_like_type(a_def) || self.is_resource_like_type(b_def) {
+                    return false;
+                }
+                self.equal_types.find(*a) == self.equal_types.find(*b)
+            }
+            (Type::ErrorContext, Type::ErrorContext) => todo!(),
+            _ => a == b,
+        }
+    }
+    fn optional_types_equal(
+        &mut self,
+        resolve: &Resolve,
+        a: &Option<Type>,
+        b: &Option<Type>,
+    ) -> bool {
+        match (a, b) {
+            (Some(a), Some(b)) => self.types_equal(resolve, a, b),
+            (None, None) => true,
+            _ => false,
+        }
+    }
+    fn is_resource_like_type(&self, ty: &TypeDefKind) -> bool {
+        match ty {
+            TypeDefKind::Resource | TypeDefKind::Handle(_) => true,
+            TypeDefKind::Future(_) | TypeDefKind::Stream(_) => true,
+            _ => false,
+        }
+    }
+    pub fn get_representative_type(&mut self, id: TypeId) -> Option<TypeId> {
+        let root = self.equal_types.find(id);
+        if root != id { Some(root) } else { None }
+    }
+}
+
+#[derive(Default)]
+pub struct UnionFind {
+    parent: HashMap<TypeId, TypeId>,
+}
+impl UnionFind {
+    fn find(&mut self, id: TypeId) -> TypeId {
+        // Path compression
+        let parent = self.parent.get(&id).copied().unwrap_or(id);
+        if parent != id {
+            let root = self.find(parent);
+            self.parent.insert(id, root);
+            root
+        } else {
+            id
+        }
+    }
+    fn union(&mut self, a: TypeId, b: TypeId) {
+        let ra = self.find(a);
+        let rb = self.find(b);
+        if ra != rb {
+            // Use smaller id as root for determinism
+            if ra < rb {
+                self.parent.insert(rb, ra);
+            } else {
+                self.parent.insert(ra, rb);
+            }
         }
     }
 }
