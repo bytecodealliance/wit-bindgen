@@ -1,22 +1,19 @@
-using System;
-using System.Runtime.InteropServices;
 using System.Diagnostics;
-using RunnerWorld.wit.imports.test.resourceBorrowInRecord;
-using System.Text;
+using RunnerWorld.wit.Imports.test.resourceBorrowInRecord;
 
 namespace RunnerWorld;
 
-public class RunnerWorldImpl : IRunnerWorld
+public class RunnerWorldExportsImpl : IRunnerWorldExports
 {
     public static void Run()
     {
-        IToTest.Thing thing1 = new IToTest.Thing("Bonjour");
-        IToTest.Thing thing2 = new IToTest.Thing("mon cher");
+        IToTestImports.Thing thing1 = new IToTestImports.Thing("Bonjour");
+        IToTestImports.Thing thing2 = new IToTestImports.Thing("mon cher");
 
-        List<IToTest.Foo> myList = new List<IToTest.Foo>();
-        myList.Add(new IToTest.Foo(thing1));
-        myList.Add(new IToTest.Foo(thing2));
-        List<IToTest.Thing> ret = ToTestInterop.Test(myList);
+        List<IToTestImports.Foo> myList = new List<IToTestImports.Foo>();
+        myList.Add(new IToTestImports.Foo(thing1));
+        myList.Add(new IToTestImports.Foo(thing2));
+        List<IToTestImports.Thing> ret = IToTestImports.Test(myList);
 
         Debug.Assert(ret[0].Get() == "Bonjour new test get");
         Debug.Assert(ret[1].Get() == "mon cher new test get");

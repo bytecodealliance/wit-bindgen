@@ -1,10 +1,6 @@
-using System;
-using System.Diagnostics;
-using TestWorld;
+namespace TestWorld.wit.Exports.a.b;
 
-namespace TestWorld;
-
-public class TheTestImpl : ITestWorld
+public class TheTestExportsImpl : ITheTestExports
 {
     public static void X()
     {

@@ -1,7 +1,7 @@
-namespace TestWorld.wit.exports.test.resourceBorrow
+namespace TestWorld.wit.Exports.test.resourceBorrow
 {
-    public class ToTestImpl : IToTest {
-	public class Thing : IToTest.Thing, IToTest.IThing {
+    public class ToTestExportsImpl : IToTestExports {
+	public class Thing : IToTestExports.Thing, IToTestExports.IThing {
 	    public uint val;
 
 	    public Thing(uint v) {
@@ -9,7 +9,7 @@ namespace TestWorld.wit.exports.test.resourceBorrow
 	    }
 	}
 
-	public static uint Foo(IToTest.Thing v) {
+	public static uint Foo(IToTestExports.Thing v) {
 	    return ((Thing) v).val + 2;
 	}
     }

@@ -1,7 +1,7 @@
 using System.Diagnostics;
 
-namespace TestWorld.wit.exports.test.dep.v0_1_0 {
-    public class TestImpl : TestWorld.wit.exports.test.dep.v0_1_0.ITest
+namespace TestWorld.wit.Exports.test.dep.v0_1_0 {
+    public class TestExportsImpl : TestWorld.wit.Exports.test.dep.v0_1_0.ITestExports
     {
         public static float X() {
             return 1.0f;
@@ -13,9 +13,9 @@ namespace TestWorld.wit.exports.test.dep.v0_1_0 {
     }
 }
 
-namespace TestWorld.wit.exports.test.dep.v0_2_0
+namespace TestWorld.wit.Exports.test.dep.v0_2_0
 {
-    public class TestImpl : TestWorld.wit.exports.test.dep.v0_2_0.ITest
+    public class TestExportsImpl : TestWorld.wit.Exports.test.dep.v0_2_0.ITestExports
     {
         public static float X() {
             return 2.0f;

@@ -1,36 +1,36 @@
 using System;
 using System.Runtime.InteropServices;
 using System.Diagnostics;
-using RunnerWorld.wit.imports.test.resourceAggregates;
+using RunnerWorld.wit.Imports.test.resourceAggregates;
 using RunnerWorld;
 
 namespace RunnerWorld;
 
-public class RunnerWorldImpl : IRunnerWorld
+public class RunnerWorldExportsImpl : IRunnerWorldExports
 {
     public static void Run()
     {
-        var il1 = new List<IToTest.Thing>();
-        il1.Add(new IToTest.Thing(9));
-        il1.Add(new IToTest.Thing(10));
-        var il2 = new List<IToTest.Thing>();
-        il2.Add(new IToTest.Thing(11));
-        il2.Add(new IToTest.Thing(12));
+        var il1 = new List<IToTestImports.Thing>();
+        il1.Add(new IToTestImports.Thing(9));
+        il1.Add(new IToTestImports.Thing(10));
+        var il2 = new List<IToTestImports.Thing>();
+        il2.Add(new IToTestImports.Thing(11));
+        il2.Add(new IToTestImports.Thing(12));
 
-        uint res = ToTestInterop.Foo(
-          new IToTest.R1(new IToTest.Thing(0)),
-          new IToTest.R2(new IToTest.Thing(1)),
-          new IToTest.R3(new IToTest.Thing(2), new IToTest.Thing(3)),
-          (new IToTest.Thing(4), new IToTest.R1(new IToTest.Thing(5))),
-          new IToTest.Thing(6),
-          IToTest.V1.Thing(new IToTest.Thing(7)),
-          IToTest.V2.Thing(new IToTest.Thing(8)),
+        uint res = IToTestImports.Foo(
+          new IToTestImports.R1(new IToTestImports.Thing(0)),
+          new IToTestImports.R2(new IToTestImports.Thing(1)),
+          new IToTestImports.R3(new IToTestImports.Thing(2), new IToTestImports.Thing(3)),
+          (new IToTestImports.Thing(4), new IToTestImports.R1(new IToTestImports.Thing(5))),
+          new IToTestImports.Thing(6),
+          IToTestImports.V1.Thing(new IToTestImports.Thing(7)),
+          IToTestImports.V2.Thing(new IToTestImports.Thing(8)),
           il1,
           il2,
-          new IToTest.Thing(13),
-          new IToTest.Thing(14),
-    	  Result<IToTest.Thing, None>.Ok(new IToTest.Thing(15)),
-    	  Result<IToTest.Thing, None>.Ok(new IToTest.Thing(16))
+          new IToTestImports.Thing(13),
+          new IToTestImports.Thing(14),
+    	  Result<IToTestImports.Thing, None>.Ok(new IToTestImports  .Thing(15)),
+    	  Result<IToTestImports.Thing, None>.Ok(new IToTestImports.Thing(16))
         );
         Debug.Assert(res == 156);
     }

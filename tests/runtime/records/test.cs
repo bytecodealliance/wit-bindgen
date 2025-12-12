@@ -1,6 +1,6 @@
-namespace TestWorld.wit.exports.test.records
+namespace TestWorld.wit.Exports.test.records
 {
-    public class ToTestImpl : ITestWorld
+    public class ToTestExportsImpl : IToTestExports
     {
         public static (byte, ushort) MultipleResults()
         {
@@ -12,30 +12,30 @@ namespace TestWorld.wit.exports.test.records
             return (a.Item2, a.Item1);
         }
 
-        public static IToTest.F1 RoundtripFlags1(
-            IToTest.F1 a)
+        public static IToTestExports.F1 RoundtripFlags1(
+            IToTestExports.F1 a)
         {
             return a;
         }
 
-        public static IToTest.F2 RoundtripFlags2(
-            IToTest.F2 a)
+        public static IToTestExports.F2 RoundtripFlags2(
+            IToTestExports.F2 a)
         {
             return a;
         }
 
-        public static (IToTest.Flag8,
-            IToTest.Flag16,
-            IToTest.Flag32) RoundtripFlags3(
-                IToTest.Flag8 a,
-                IToTest.Flag16 b,
-                IToTest.Flag32 c)
+        public static (IToTestExports.Flag8,
+            IToTestExports.Flag16,
+            IToTestExports.Flag32) RoundtripFlags3(
+                IToTestExports.Flag8 a,
+                IToTestExports.Flag16 b,
+                IToTestExports.Flag32 c)
         {
             return (a, b, c);
         }
 
-        public static IToTest.R1 RoundtripRecord1(
-            IToTest.R1 a)
+        public static IToTestExports.R1 RoundtripRecord1(
+            IToTestExports.R1 a)
         {
             return a;
         }

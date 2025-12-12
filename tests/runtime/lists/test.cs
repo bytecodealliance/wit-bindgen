@@ -3,9 +3,9 @@ using System.Runtime.InteropServices;
 using System.Diagnostics;
 using System.Text;
 
-namespace TestWorld.wit.exports.test.lists
+namespace TestWorld.wit.Exports.test.lists
 {
-    public class ToTestImpl : ITestWorld
+    public class ToTestExportsImpl : IToTestExports
     {
 
         public static uint AllocatedBytes()

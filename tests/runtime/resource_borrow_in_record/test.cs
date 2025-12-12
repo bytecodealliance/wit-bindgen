@@ -1,7 +1,7 @@
-using TestWorld.wit.exports.test.resourceBorrowInRecord;
+using TestWorld.wit.Exports.test.resourceBorrowInRecord;
 
-public class ToTestImpl : IToTest {
-    public class Thing : IToTest.Thing, IToTest.IThing {
+public class ToTestExportsImpl : IToTestExports {
+    public class Thing : IToTestExports.Thing, IToTestExports.IThing {
         public string val;
 
         public Thing(string v) {
@@ -17,8 +17,8 @@ public class ToTestImpl : IToTest {
         }
     }
 
-    public static List<IToTest.Thing> Test(List<IToTest.Foo> v) {
-        var myResult = new List<IToTest.Thing>();
+    public static List<IToTestExports.Thing> Test(List<IToTestExports.Foo> v) {
+        var myResult = new List<IToTestExports.Thing>();
         foreach (var foo in v)
         {
             myResult.Add(new Thing((Thing) foo.thing));

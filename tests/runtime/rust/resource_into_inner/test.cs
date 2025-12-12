@@ -1,16 +1,17 @@
 using System.Diagnostics;
+using TestWorld.wit.Exports.test.resourceIntoInner;
 
-namespace TestWorld.wit.exports.test.resourceIntoInner
+namespace TestWorld.wit.Exports.test.resourceIntoInner
 {
-    public class ToTestImpl : IToTest {
-	public class Thing : IToTest.Thing, IToTest.IThing {
+    public class ToTestExportsImpl : IToTestExports {
+	public class Thing : IToTestExports.Thing, IToTestExports.IThing {
 	    public string val;
 
 	    public Thing(string v) {
 		this.val = v;
 	    }
 	}
-
+			
 	public static void Test() {
 	    // Unlike wasm.rs, this doesn't test anything interesting
 	    // due there being no ownership semantics in C# (and also
