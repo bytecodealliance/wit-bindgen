@@ -6,6 +6,7 @@ use indexmap::{IndexMap, IndexSet};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::{self, Write as _};
 use std::mem;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use wit_bindgen_core::abi::{Bitcast, WasmType};
 use wit_bindgen_core::{
@@ -26,7 +27,7 @@ struct InterfaceName {
 }
 
 #[derive(Default)]
-struct RustWasm {
+pub struct RustWasm {
     types: Types,
     src_preamble: Source,
     src: Source,
@@ -277,15 +278,41 @@ pub struct Opts {
 }
 
 impl Opts {
-    pub fn build(self) -> Box<dyn WorldGenerator> {
+    pub fn build(self) -> RustWasm {
         let mut r = RustWasm::new();
         r.skip = self.skip.iter().cloned().collect();
         r.opts = self;
-        Box::new(r)
+        r
     }
 }
 
 impl RustWasm {
+    /// Generates Rust bindings from the `wit/` directory and writes
+    /// the result into Cargo’s `OUT_DIR`. Intended for use in `build.rs`.
+    ///
+    /// The `world` parameter specifies the world name to select.
+    /// It must be provided unless the main package contains exactly one world.
+    ///
+    /// Returns the full path to the generated bindings file.
+    pub fn generate_to_out_dir(mut self, world: Option<&str>) -> Result<PathBuf> {
+        let mut resolve = Resolve::default();
+        println!("cargo:rerun-if-changed=wit/");
+        let (pkg, _files) = resolve.push_path("wit")?;
+        let main_packages = vec![pkg];
+        let world = resolve.select_world(&main_packages, world)?;
+
+        let mut files = Files::default();
+        self.generate(&resolve, world, &mut files)?;
+        let out_dir = std::env::var("OUT_DIR").expect("cargo sets OUT_DIR");
+        let (name, contents) = files
+            .iter()
+            .next()
+            .expect("exactly one file should be generated");
+        let dst = Path::new(&out_dir).join(name);
+        std::fs::write(&dst, contents)?;
+        Ok(dst)
+    }
+
     fn new() -> RustWasm {
         RustWasm::default()
     }
