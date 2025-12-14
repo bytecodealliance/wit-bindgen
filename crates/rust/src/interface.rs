@@ -2326,6 +2326,38 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
         }
     }
 
+    pub fn type_alias_to_eqaul_type(
+        &mut self,
+        id: TypeId,
+        eq_ty: TypeId,
+        from_import: Option<&WorldKey>,
+    ) {
+        assert!(self.r#gen.opts.merge_structurally_equal_types);
+        if let Some(name) = from_import {
+            let docs = Docs {
+                contents: Some("wit-bindgen: alias to import equal type".to_string()),
+            };
+            let mut path = self.path_to_root();
+            let import_path = crate::compute_module_path(name, self.resolve, false).join("::");
+            path.push_str(&import_path);
+            path.push_str("::");
+            for (name, mode) in self.modes_of(id) {
+                self.rustdoc(&docs);
+                self.push_str(&format!("pub type {name}"));
+                self.print_generics(mode.lifetime);
+                self.push_str(" = ");
+                self.push_str(&path);
+                self.print_tyid(eq_ty, mode);
+                self.push_str(";\n");
+            }
+        } else {
+            let docs = Docs {
+                contents: Some("wit-bindgen: alias to equal type".to_string()),
+            };
+            self.print_typedef_alias(id, &Type::Id(eq_ty), &docs);
+        }
+    }
+
     fn print_typedef_alias(&mut self, id: TypeId, ty: &Type, docs: &Docs) {
         for (name, mode) in self.modes_of(id) {
             self.rustdoc(docs);

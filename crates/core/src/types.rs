@@ -100,6 +100,8 @@ impl Types {
                 if self.equal_types.find(ty) == self.equal_types.find(earlier) {
                     continue;
                 }
+                // The correctness of is_structurally_equal relies on the fact that
+                // resolve.types.iter() is in topological order.
                 if self.is_structurally_equal(resolve, ty, earlier) {
                     self.equal_types.union(ty, earlier);
                     break;
@@ -250,9 +252,6 @@ impl Types {
         if self.is_resource_like_type(a_def) || self.is_resource_like_type(b_def) {
             return false;
         }
-        if a == b {
-            return true;
-        }
         match (a_def, b_def) {
             (TypeDefKind::Type(ta), TypeDefKind::Type(tb)) => {
                 // This function is called in topological order, so the equivalence
@@ -262,7 +261,7 @@ impl Types {
             }
             (TypeDefKind::Record(ra), TypeDefKind::Record(rb)) => {
                 ra.fields.len() == rb.fields.len()
-                  // TODO: make sure the fields are sorted
+                  // Fields are ordered in WIT, so record {a: T, b: U} is different from {b: U, a: T}
                   && ra.fields.iter().zip(rb.fields.iter()).all(|(fa, fb)| {
                       fa.name == fb.name && self.types_equal(resolve, &fa.ty, &fb.ty)
                   })
@@ -306,10 +305,6 @@ impl Types {
                 self.optional_types_equal(resolve, &ra.ok, &rb.ok)
                     && self.optional_types_equal(resolve, &ra.err, &rb.err)
             }
-            // Potentially we can say handle are equal if the Handle value are equal and
-            // they have the same owner. But in the future, when we allow importing the same
-            // interface twice, they will not be equal. To be conservative, we say they are not equal.
-            (TypeDefKind::Handle(_), TypeDefKind::Handle(_)) => false,
             _ => false,
         }
     }
@@ -346,9 +341,8 @@ impl Types {
             _ => false,
         }
     }
-    pub fn get_representative_type(&mut self, id: TypeId) -> Option<TypeId> {
-        let root = self.equal_types.find(id);
-        if root != id { Some(root) } else { None }
+    pub fn get_representative_type(&mut self, id: TypeId) -> TypeId {
+        self.equal_types.find(id)
     }
 }
 
