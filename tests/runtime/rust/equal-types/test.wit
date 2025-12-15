@@ -1,0 +1,54 @@
+//@ dependencies = ["host", "proxy"]
+//@ wac = "./compose.wac"
+
+package test:equal-types;
+
+interface blag {
+  variant kind1 { a, b(u64), c }
+  variant kind2 { a, b(u64), c }
+  record kind3 { a: input-stream }
+  record kind4 { a: input-stream }
+  record tree { l: t1, r: t1  }
+  record t1 { l: t2, r: t2 }
+  record t2 { l: t3, r: t3 }
+  record t3 { l: kind1, r: kind2 }
+  record t-stream  { tree: tree, %stream: option<borrow<input-stream>> }
+  resource input-stream {
+    read: func(len: u64) -> list<u8>;
+  }
+  f: func(x: kind1) -> kind2;
+  g: func(x: kind3) -> kind4;
+  h: func(x: t-stream) -> tree;
+}
+
+interface blah {
+    use blag.{input-stream, kind4, t-stream};
+    variant kind5 { a, b(u64), c }
+    variant kind6 { a, c, b(u64) }
+    record kind7 { a: borrow<input-stream> }
+    record tt { l: t2, r: t2  }
+    record t1 { l: t3, r: t3 }
+    record t2 { l: t1, r: t1 }
+    record t3 { l: kind5, r: kind5 }
+    variant custom-result { ok(tt), err }
+    f: func(x: kind6) -> kind5;
+    g: func(x: kind7) -> kind4;
+    h: func(x: t-stream) -> custom-result;
+}
+
+world host {
+    export blah;
+    export blag;
+}
+world proxy {
+    import blag;
+    export blag;
+    import blah;
+    export blah;
+}
+world runner {
+    import blag;
+    import blah;
+    export run: func();
+}
+
