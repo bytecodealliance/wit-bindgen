@@ -30,4 +30,6 @@ world test {
 
 world runner {
   import to-test;
+
+  export run: func();
 }

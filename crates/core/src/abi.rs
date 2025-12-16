@@ -1785,7 +1785,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
                 TypeDefKind::Unknown => unreachable!(),
                 TypeDefKind::FixedSizeList(ty, size) => {
-                    let temp = flat_types(self.resolve, ty).unwrap();
+                    let temp = flat_types(self.resolve, ty, None).unwrap();
                     let flat_per_elem = temp.to_vec().len();
                     let flatsize = flat_per_elem * (*size as usize);
                     let mut lowered_args = self
