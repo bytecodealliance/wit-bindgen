@@ -783,7 +783,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.push(len);
             }
 
-            Instruction::FixedSizeListLowerMemory {
+            Instruction::FixedSizeListLowerToMemory {
                 element,
                 size: _,
                 id: _,
@@ -1251,6 +1251,29 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 for i in 0..(*size as usize) {
                     results.push(format!("{}[{i}]", operands[0]));
                 }
+            }
+            Instruction::FixedSizeListLiftFromMemory {
+                element,
+                size,
+                id: _,
+            } => {
+                let body = self.blocks.pop().unwrap();
+                let elemsize = self
+                    .r#gen
+                    .sizes
+                    .size(element)
+                    .format(POINTER_SIZE_EXPRESSION);
+                let base = operands[0].clone();
+                let tmp = self.tmp();
+                let index_var = format!("idx{tmp}");
+                self.push_str(&format!(
+                    " let array{tmp}: [_; {size}] = core::array::from_fn(|{index_var}| {{
+                            let base = {base}.add({index_var} * {elemsize});
+                            {body} 
+                        }});"
+                ));
+                let result = format!("array{tmp}");
+                results.push(result);
             }
         }
     }
