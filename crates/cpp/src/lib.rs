@@ -109,6 +109,14 @@ struct Cpp {
     import_prefix: Option<String>,
 }
 
+#[cfg(feature = "clap")]
+fn parse_with(s: &str) -> Result<(String, String), String> {
+    let (k, v) = s.split_once('=').ok_or_else(|| {
+        format!("expected string of form `<key>=<value>[,<key>=<value>...]`; got `{s}`")
+    })?;
+    Ok((k.to_string(), v.to_string()))
+}
+
 #[derive(Default, Debug, Clone)]
 #[cfg_attr(feature = "clap", derive(clap::Args))]
 pub struct Opts {
@@ -165,6 +173,14 @@ pub struct Opts {
     /// Where to place output files
     #[cfg_attr(feature = "clap", arg(skip))]
     out_dir: Option<PathBuf>,
+
+    /// Importing wit interface from custom include
+    ///
+    /// Argument must be of the form `k=v` and this option can be passed
+    /// multiple times or one option can be comma separated, for example
+    /// `k1=v1,k2=v2`.
+    #[cfg_attr(feature = "clap", arg(long, value_parser = parse_with, value_delimiter = ','))]
+    pub with: Vec<(String, String)>,
 }
 
 /// Supported API styles for the generated bindings.
@@ -498,29 +514,46 @@ impl WorldGenerator for Cpp {
         id: InterfaceId,
         _files: &mut Files,
     ) -> anyhow::Result<()> {
-        if let Some(prefix) = self
-            .interface_prefixes
-            .get(&(Direction::Import, name.clone()))
-        {
-            self.import_prefix = Some(prefix.clone());
-        }
-
-        let store = self.start_new_file(None);
         self.imported_interfaces.insert(id);
-        let wasm_import_module = resolve.name_world_key(name);
-        let binding = Some(name);
-        let mut r#gen = self.interface(resolve, binding, true, Some(wasm_import_module));
-        r#gen.interface = Some(id);
-        r#gen.types(id);
-        let namespace = namespace(resolve, &TypeOwner::Interface(id), false, &r#gen.r#gen.opts);
 
-        for (_name, func) in resolve.interfaces[id].functions.iter() {
-            if matches!(func.kind, FunctionKind::Freestanding) {
-                r#gen.r#gen.h_src.change_namespace(&namespace);
-                r#gen.generate_function(func, &TypeOwner::Interface(id), AbiVariant::GuestImport);
+        let full_name = resolve.name_world_key(name);
+        match self.opts.with.iter().find(|e| e.0 == full_name) {
+            None => {
+                if let Some(prefix) = self
+                    .interface_prefixes
+                    .get(&(Direction::Import, name.clone()))
+                {
+                    self.import_prefix = Some(prefix.clone());
+                }
+
+                let store = self.start_new_file(None);
+                let wasm_import_module = resolve.name_world_key(name);
+                let binding = Some(name);
+                let mut r#gen = self.interface(resolve, binding, true, Some(wasm_import_module));
+                r#gen.interface = Some(id);
+                r#gen.types(id);
+                let namespace =
+                    namespace(resolve, &TypeOwner::Interface(id), false, &r#gen.r#gen.opts);
+
+                for (_name, func) in resolve.interfaces[id].functions.iter() {
+                    if matches!(func.kind, FunctionKind::Freestanding) {
+                        r#gen.r#gen.h_src.change_namespace(&namespace);
+                        r#gen.generate_function(
+                            func,
+                            &TypeOwner::Interface(id),
+                            AbiVariant::GuestImport,
+                        );
+                    }
+                }
+                self.finish_file(&namespace, store);
+            }
+            Some((_, val)) => {
+                let with_quotes = format!("\"{val}\"");
+                if !self.includes.contains(&with_quotes) {
+                    self.includes.push(with_quotes);
+                }
             }
         }
-        self.finish_file(&namespace, store);
         let _ = self.import_prefix.take();
         Ok(())
     }
