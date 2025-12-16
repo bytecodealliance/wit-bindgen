@@ -2698,7 +2698,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             | Instruction::DropHandle { .. } => todo!(),
             Instruction::FixedSizeListLift { .. } => todo!(),
             Instruction::FixedSizeListLower { .. } => todo!(),
-            Instruction::FixedSizeListLowerMemory { .. } => todo!(),
+            Instruction::FixedSizeListLowerToMemory { .. } => todo!(),
+            Instruction::FixedSizeListLiftFromMemory { .. } => todo!(),
         }
     }
 
