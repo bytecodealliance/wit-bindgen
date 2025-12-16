@@ -325,11 +325,22 @@ def_instruction! {
         } : [1] => [*size as usize],
 
         /// Pops an array and an address off the stack, passes each element to a block storing it
-        FixedSizeListLowerMemory {
+        FixedSizeListLowerToMemory {
             element: &'a Type,
             size: u32,
             id: TypeId,
         } : [2] => [0],
+
+        /// Pops base address, pushes an array
+        ///
+        /// This will also pop a block from the block stack which is how to
+        /// read each individual element from the list.
+        FixedSizeListLiftFromMemory {
+            element: &'a Type,
+            size: u32,
+            id: TypeId,
+        } : [1] => [1],
+
 
         /// Pushes an operand onto the stack representing the list item from
         /// each iteration of the list.
@@ -1993,7 +2004,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     self.write_to_memory(element, elem_addr, offset);
                     self.finish_block(0);
                     self.stack.push(addr);
-                    self.emit(&FixedSizeListLowerMemory {
+                    self.emit(&FixedSizeListLowerToMemory {
                         element,
                         size: *size,
                         id,
@@ -2187,13 +2198,13 @@ impl<'a, B: Bindgen> Generator<'a, B> {
 
                 TypeDefKind::Unknown => unreachable!(),
                 TypeDefKind::FixedSizeList(ty, size) => {
-                    let increment = self.bindgen.sizes().size(ty);
-                    let mut position = offset;
-                    for _ in 0..*size {
-                        self.read_from_memory(ty, addr.clone(), position);
-                        position = position + increment;
-                    }
-                    self.emit(&FixedSizeListLift {
+                    self.push_block();
+                    self.emit(&IterBasePointer);
+                    let elemaddr = self.stack.pop().unwrap();
+                    self.read_from_memory(ty, elemaddr, Default::default());
+                    self.finish_block(1);
+                    self.stack.push(addr.clone());
+                    self.emit(&FixedSizeListLiftFromMemory {
                         element: ty,
                         size: *size,
                         id,

@@ -2676,8 +2676,37 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 self.push_str("};\n");
                 results.push(result);
             }
+            abi::Instruction::FixedSizeListLiftFromMemory {
+                element,
+                size: elemsize,
+                id: _,
+            } => {
+                let body = self.blocks.pop().unwrap();
+                let tmp = self.tmp();
+                let vec = format!("array{tmp}");
+                let source = operands[0].clone();
+                let size = self.r#gen.sizes.size(element);
+                let size_str = size.format(POINTER_SIZE_EXPRESSION);
+                let typename = self
+                    .r#gen
+                    .type_name(element, &self.namespace, Flavor::InStruct);
+                let ptr_type = self.r#gen.r#gen.opts.ptr_type();
+                self.push_str(&format!("std::array<{typename}, {elemsize}> {vec};\n"));
+                self.push_str(&format!(
+                    "{{
+                    {ptr_type} outer_base = {source};\n"
+                ));
+                let source: String = "outer_base".into();
+                // let vec: String = "outer_vec".into();
+                self.push_str(&format!("for (unsigned i = 0; i<{elemsize}; ++i) {{\n",));
+                self.push_str(&format!("{ptr_type} base = {source} + i * {size_str};\n"));
+                self.push_str(&body.0);
+                self.push_str(&format!("{vec}[i] = {};", body.1[0]));
+                self.push_str("\n}\n}\n");
+                results.push(vec);
+            }
             abi::Instruction::FixedSizeListLower { .. } => todo!(),
-            abi::Instruction::FixedSizeListLowerMemory {
+            abi::Instruction::FixedSizeListLowerToMemory {
                 element,
                 size: elemsize,
                 id: _,
