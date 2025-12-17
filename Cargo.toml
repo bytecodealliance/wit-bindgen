@@ -19,7 +19,7 @@ edition = "2024"
 version = "0.49.0"
 license = "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT"
 repository = "https://github.com/bytecodealliance/wit-bindgen"
-rust-version = "1.85.0"
+rust-version = "1.87.0"
 
 [workspace.dependencies]
 anyhow = "1.0.72"

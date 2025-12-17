@@ -17,7 +17,7 @@ type StreamVtable[T any] struct {
 	DropReadable func(handle int32)
 	DropWritable func(handle int32)
 	Lift         func(src unsafe.Pointer) T
-	Lower        func(pinner *runtime.Pinner, value T, dst unsafe.Pointer)
+	Lower        func(pinner *runtime.Pinner, value T, dst unsafe.Pointer) func()
 }
 
 type StreamReader[T any] struct {
@@ -78,6 +78,10 @@ func (self *StreamReader[T]) TakeHandle() int32 {
 	return self.handle.Take()
 }
 
+func (self *StreamReader[T]) SetHandle(handle int32) {
+	self.handle.Set(handle)
+}
+
 func MakeStreamReader[T any](vtable *StreamVtable[T], handleValue int32) *StreamReader[T] {
 	handle := wit_runtime.MakeHandle(handleValue)
 	value := &StreamReader[T]{vtable, handle, false}
@@ -112,24 +116,33 @@ func (self *StreamWriter[T]) Write(items []T) uint32 {
 
 	writeCount := uint32(len(items))
 
+	var lifters []func()
 	var buffer unsafe.Pointer
 	if self.vtable.Lower == nil {
 		buffer = unsafe.Pointer(unsafe.SliceData(items))
 		pinner.Pin(buffer)
 	} else {
+		lifters = make([]func(), 0, writeCount)
 		buffer = wit_runtime.Allocate(
 			&pinner,
 			uintptr(self.vtable.Size*writeCount),
 			uintptr(self.vtable.Align),
 		)
 		for index, item := range items {
-			self.vtable.Lower(&pinner, item, unsafe.Add(buffer, index*int(self.vtable.Size)))
+			lifters = append(
+				lifters,
+				self.vtable.Lower(&pinner, item, unsafe.Add(buffer, index*int(self.vtable.Size))),
+			)
 		}
 	}
 
 	code, count := wit_async.FutureOrStreamWait(self.vtable.Write(handle, buffer, writeCount), handle)
 
-	// TODO: restore handles to any unwritten resources, streams, or futures
+	if lifters != nil && count < writeCount {
+		for _, lifter := range lifters[count:] {
+			lifter()
+		}
+	}
 
 	if code == wit_async.RETURN_CODE_DROPPED {
 		self.readerDropped = true

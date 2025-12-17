@@ -17,7 +17,7 @@ type FutureVtable[T any] struct {
 	DropReadable func(handle int32)
 	DropWritable func(handle int32)
 	Lift         func(src unsafe.Pointer) T
-	Lower        func(pinner *runtime.Pinner, value T, dst unsafe.Pointer)
+	Lower        func(pinner *runtime.Pinner, value T, dst unsafe.Pointer) func()
 }
 
 type FutureReader[T any] struct {
@@ -63,6 +63,10 @@ func (self *FutureReader[T]) TakeHandle() int32 {
 	return self.handle.Take()
 }
 
+func (self *FutureReader[T]) SetHandle(handle int32) {
+	self.handle.Set(handle)
+}
+
 func MakeFutureReader[T any](vtable *FutureVtable[T], handleValue int32) *FutureReader[T] {
 	handle := wit_runtime.MakeHandle(handleValue)
 	value := &FutureReader[T]{vtable, handle}
@@ -87,24 +91,26 @@ func (self *FutureWriter[T]) Write(item T) bool {
 	pinner := runtime.Pinner{}
 	defer pinner.Unpin()
 
+	var lifter func()
 	var buffer unsafe.Pointer
 	if self.vtable.Lower == nil {
 		buffer = unsafe.Pointer(unsafe.SliceData([]T{item}))
 		pinner.Pin(buffer)
 	} else {
 		buffer = wit_runtime.Allocate(&pinner, uintptr(self.vtable.Size), uintptr(self.vtable.Align))
-		self.vtable.Lower(&pinner, item, buffer)
+		lifter = self.vtable.Lower(&pinner, item, buffer)
 	}
 
 	code, _ := wit_async.FutureOrStreamWait(self.vtable.Write(handle, buffer), handle)
-
-	// TODO: restore handles to any unwritten resources, streams, or futures
 
 	switch code {
 	case wit_async.RETURN_CODE_COMPLETED:
 		return true
 
 	case wit_async.RETURN_CODE_DROPPED:
+		if lifter != nil {
+			lifter()
+		}
 		return false
 
 	default:

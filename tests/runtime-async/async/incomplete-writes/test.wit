@@ -1,0 +1,38 @@
+//@ dependencies = ['test', 'leaf']
+
+package my:test;
+
+interface leaf-interface {
+  resource leaf-thing {
+    constructor(s: string);
+    get: func() -> string;
+  }
+}
+
+interface test-interface {
+  use leaf-interface.{leaf-thing};
+
+  resource test-thing {
+    constructor(s: string);
+    get: func() -> string;
+  }
+
+  short-reads-test: async func(s: stream<test-thing>) -> stream<test-thing>;
+  short-reads-leaf: async func(s: stream<leaf-thing>) -> stream<leaf-thing>;  
+
+  dropped-reader-test: async func(f1: future<test-thing>, f2: future<test-thing>) -> tuple<future<test-thing>, future<test-thing>>;
+  dropped-reader-leaf: async func(f1: future<leaf-thing>, f2: future<leaf-thing>) -> tuple<future<leaf-thing>, future<leaf-thing>>;
+}
+
+world leaf {
+  export leaf-interface;
+}
+
+world test {
+  export test-interface;
+}
+
+world runner {
+  import test-interface;
+  export run: async func();
+}
