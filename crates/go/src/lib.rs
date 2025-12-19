@@ -420,6 +420,7 @@ impl Go {
                     false,
                     imported_type,
                 );
+                generator.collect_lifters = true;
 
                 let lift_result =
                     abi::lift_from_memory(resolve, &mut generator, "src".to_string(), &ty);
@@ -432,6 +433,21 @@ impl Go {
                     "value".to_string(),
                     &ty,
                 );
+
+                let lifter_count = generator.lifter_count;
+                let (prefix, suffix) = if lifter_count > 0 {
+                    (
+                        format!("lifters := make([]func(), 0, {lifter_count})\n"),
+                        "\nreturn func() {
+        for _, lifter := range lifters {
+                lifter()
+        }
+}",
+                    )
+                } else {
+                    (String::new(), "\nreturn func() {}")
+                };
+
                 let lower = mem::take(&mut generator.src);
                 data.extend(InterfaceData::from_generator_and_code(
                     generator,
@@ -448,8 +464,12 @@ impl Go {
                     ),
                     format!("wasm_{kind}_lift_{snake}"),
                     format!(
-                        "func wasm_{kind}_lower_{snake}(pinner *runtime.Pinner, value {payload}, dst unsafe.Pointer) {{
-        {lower}
+                        "func wasm_{kind}_lower_{snake}(
+        pinner *runtime.Pinner,
+        value {payload},
+        dst unsafe.Pointer,
+) func() {{
+        {prefix}{lower}{suffix}
 }}
 "
                     ),
@@ -1014,15 +1034,33 @@ impl Go {
                 .collect::<Vec<_>>()
                 .join(", ");
 
-            let lift = if let Some(result) = func.result {
+            let lift = if let Some(ty) = func.result {
                 let result = abi::lift_from_memory(
                     resolve,
                     &mut generator,
                     IMPORT_RETURN_AREA.to_string(),
-                    &result,
+                    &ty,
                 );
                 let code = mem::take(&mut generator.src);
-                format!("{code}\nreturn {result}")
+                if let Type::Id(ty) = ty
+                    && let TypeDefKind::Tuple(tuple) = &resolve.types[ty].kind
+                {
+                    let count = tuple.types.len();
+                    let tuple = generator.locals.tmp("tuple");
+
+                    let results = (0..count)
+                        .map(|index| format!("{tuple}.F{index}"))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+
+                    format!(
+                        "{code}
+{tuple} := {result}
+return {results}"
+                    )
+                } else {
+                    format!("{code}\nreturn {result}")
+                }
             } else {
                 String::new()
             };
@@ -1403,6 +1441,8 @@ struct FunctionGenerator<'a> {
     need_unsafe: bool,
     need_pinner: bool,
     need_math: bool,
+    collect_lifters: bool,
+    lifter_count: u32,
     return_area_size: ArchitectureSize,
     return_area_align: Alignment,
     imports: BTreeSet<String>,
@@ -1441,6 +1481,8 @@ impl<'a> FunctionGenerator<'a> {
             need_unsafe: false,
             need_pinner: false,
             need_math: false,
+            collect_lifters: false,
+            lifter_count: 0,
             return_area_size: ArchitectureSize::default(),
             return_area_align: Alignment::default(),
             imports: BTreeSet::new(),
@@ -1744,13 +1786,18 @@ for index := 0; index < int({length}); index++ {{
                         && let TypeDefKind::Tuple(tuple) = &resolve.types[ty].kind
                     {
                         let count = tuple.types.len();
+                        let tuple = self.locals.tmp("tuple");
 
                         let results = (0..count)
-                            .map(|index| format!("({result}).F{index}"))
+                            .map(|index| format!("{tuple}.F{index}"))
                             .collect::<Vec<_>>()
                             .join(", ");
 
-                        uwriteln!(self.src, "return {results}");
+                        uwriteln!(
+                            self.src,
+                            "{tuple} := {result}
+return {results}"
+                        );
                     } else {
                         uwriteln!(self.src, "return {result}");
                     }
@@ -2275,7 +2322,25 @@ default:
             | Instruction::HandleLower {
                 handle: Handle::Own(_),
                 ..
-            } => results.push(format!("({}).TakeHandle()", operands[0])),
+            } => {
+                let op = &operands[0];
+                if self.collect_lifters {
+                    self.lifter_count += 1;
+                    let resource = self.locals.tmp("resource");
+                    let handle = self.locals.tmp("handle");
+                    uwriteln!(
+                        self.src,
+                        "{resource} := {op}
+{handle} := {resource}.TakeHandle()
+lifters = append(lifters, func() {{
+        {resource}.SetHandle({handle})
+}})"
+                    );
+                    results.push(handle)
+                } else {
+                    results.push(format!("({op}).TakeHandle()"))
+                }
+            }
             Instruction::HandleLower {
                 handle: Handle::Borrow(_),
                 ..
@@ -2469,6 +2534,10 @@ func (self *{camel}) TakeHandle() int32 {{
         return self.handle.Take()
 }}
 
+func (self *{camel}) SetHandle(handle int32) {{
+        self.handle.Set(handle)
+}}
+
 func (self *{camel}) Handle() int32 {{
         return self.handle.Use()
 }}
@@ -2523,6 +2592,12 @@ func (self *{camel}) TakeHandle() int32 {{
 	self.pinner.Pin(self)
 	self.handle = resourceNew{camel}(unsafe.Pointer(self))
 	return self.handle
+}}
+
+func (self *{camel}) SetHandle(handle int32) {{
+        if self.handle != handle {{
+                panic("invalid handle")
+        }}
 }}
 
 func (self *{camel}) Drop() {{
@@ -3011,12 +3086,12 @@ fn func_declaration(resolve: &Resolve, func: &Function) -> (String, bool) {
 }
 
 fn maybe_gofmt<'a>(format: Format, code: &'a [u8]) -> Cow<'a, [u8]> {
-    return thread::scope(|s| {
+    thread::scope(|s| {
         if let Format::True = format
             && let Ok((reader, mut writer)) = io::pipe()
         {
             s.spawn(move || {
-                _ = writer.write_all(&code);
+                _ = writer.write_all(code);
             });
 
             if let Ok(output) = Command::new("gofmt").stdin(reader).output()
@@ -3027,5 +3102,5 @@ fn maybe_gofmt<'a>(format: Format, code: &'a [u8]) -> Cow<'a, [u8]> {
         }
 
         Cow::Borrowed(code)
-    });
+    })
 }

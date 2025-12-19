@@ -26,6 +26,16 @@ func (self *Handle) Take() int32 {
 	return value
 }
 
+func (self *Handle) Set(value int32) {
+	if value == 0 {
+		panic("nil handle")
+	}
+	if self.value != 0 {
+		panic("handle already set")
+	}
+	self.value = value
+}
+
 func (self *Handle) TakeOrNil() int32 {
 	value := self.value
 	self.value = 0
