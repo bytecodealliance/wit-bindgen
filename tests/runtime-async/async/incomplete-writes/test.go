@@ -91,7 +91,7 @@ func DroppedReaderTest(f1, f2 *FutureReader[*TestThing]) (*FutureReader[*TestThi
 		thing := f2.Read()
 
 		// Write the thing to the first future, the read end of which
-		// the calle4 will drop without reading from, forcing us to
+		// the callee will drop without reading from, forcing us to
 		// re-take ownership.
 		assert(!tx1.Write(thing))
 
@@ -116,7 +116,7 @@ func DroppedReaderLeaf(f1, f2 *FutureReader[*LeafThing]) (*FutureReader[*LeafThi
 		thing := f2.Read()
 
 		// Write the thing to the first future, the read end of which
-		// the calle4 will drop without reading from, forcing us to
+		// the callee will drop without reading from, forcing us to
 		// re-take ownership.
 		assert(!tx1.Write(thing))
 
