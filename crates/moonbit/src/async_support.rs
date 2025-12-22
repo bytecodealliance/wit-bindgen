@@ -24,6 +24,17 @@ const ASYNC_WASM_PRIMITIVE: &str = include_str!("./ffi/wasm_primitive.mbt");
 const ASYNC_WAITABLE_SET: &str = include_str!("./ffi/waitable_task.mbt");
 const ASYNC_SUBTASK: &str = include_str!("./ffi/subtask.mbt");
 
+// NEW Async Impl
+const ASYNC_ABI: &str = include_str!("./async/async_abi.mbt");
+const ASYNC_CORO: &str = include_str!("./async/coroutine.mbt");
+const ASYNC_EV: &str = include_str!("./async/ev.mbt");
+const ASYNC_SCHEDULER: &str = include_str!("./async/scheduler.mbt");
+const ASYNC_TASK: &str = include_str!("./async/task.mbt");
+const ASYNC_TASK_GROUP: &str = include_str!("./async/task_group.mbt");
+const ASYNC_TRAIT: &str = include_str!("./async/trait.mbt");
+const ASYNC_PKG_JSON: &str = include_str!("./async/moon.pkg.json");
+const ASYNC_PRIM: &str = include_str!("./async/async_primitive.mbt");
+
 struct Segment<'a> {
     name: &'a str,
     src: &'a str,
@@ -51,6 +62,43 @@ const ASYNC_UTILS: [&Segment; 5] = [
         src: ASYNC_SUBTASK,
     },
 ];
+
+const ASYNC_IMPL: [&Segment; 8] = [
+    &Segment {
+        name: "async_abi",
+        src: ASYNC_ABI,
+    },
+    &Segment {
+        name: "async_coro",
+        src: ASYNC_CORO,
+    },
+    &Segment {
+        name: "async_ev",
+        src: ASYNC_EV,
+    },
+    &Segment {
+        name: "async_scheduler",
+        src: ASYNC_SCHEDULER,
+    },
+    &Segment {
+        name: "async_task",
+        src: ASYNC_TASK,
+    },
+    &Segment {
+        name: "async_task_group",
+        src: ASYNC_TASK_GROUP,
+    },
+    &Segment {
+        name: "async_trait",
+        src: ASYNC_TRAIT,
+    },
+    &Segment {
+        name: "async_primitive",
+        src: ASYNC_PRIM,
+    },
+];
+
+pub(crate) const ASYNC_DIR: &str = "async";
 
 #[derive(Default)]
 pub(crate) struct AsyncSupport {
@@ -85,6 +133,16 @@ impl AsyncSupport {
                 indent(s.src).as_bytes(),
             );
         });
+        ASYNC_IMPL.iter().for_each(|s| {
+            files.push(
+                &format!("{ASYNC_DIR}/{}.mbt", s.name),
+                indent(s.src).as_bytes(),
+            );
+        });
+        files.push(
+            &format!("{ASYNC_DIR}/moon.pkg.json"),
+            indent(ASYNC_PKG_JSON).as_bytes(),
+        );
         files.push(
             &format!("{FFI_DIR}/moon.pkg.json"),
             "{ \"warn-list\": \"-44\", \"supported-targets\": [\"wasm\"] }".as_bytes(),
