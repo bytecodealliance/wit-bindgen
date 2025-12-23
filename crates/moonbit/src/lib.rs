@@ -206,6 +206,31 @@ impl MoonBit {
     }
 }
 
+/// World generator implementation for MoonBit.
+///
+/// This implementation connects the generic `wit-bindgen` world generation
+/// workflow with MoonBit-specific codegen details. It consumes the parsed
+/// WIT `Resolve` structure and emits MoonBit source (`*.mbt`) and package
+/// metadata files into the provided `Files` collection.
+///
+/// Responsibilities and behavior:
+/// - `preprocess`: Initialize generator-wide state (package resolver,
+///   project name, and size/align information) for the current world.
+/// - `import_interface` / `export_interface`: Generate per-interface
+///   sources, FFI glue, README documentation and `moon.pkg.json` metadata.
+/// - `import_funcs` / `export_funcs` / `import_types`: Collect and accumulate
+///   world-level functions and types (the `$root` module) into fragments
+///   that are later written out by `finish_imports` or `finish`.
+/// - `finish_imports` / `finish`: Emit aggregated import artifacts and the
+///   final project entrypoints such as the combined FFI module and package
+///   descriptor files.
+///
+/// Implementation notes:
+/// - Namespacing and collision avoidance are handled using `PkgResolver` and
+///   an internal `Ns` to make import/export package names stable even when
+///   multiple package versions are present.
+/// - Inline FFI helpers and builtins are collected and written once into the
+///   final export FFI module. Async helpers are emitted when required.
 impl WorldGenerator for MoonBit {
     fn preprocess(&mut self, resolve: &Resolve, world: WorldId) {
         self.pkg_resolver.resolve = resolve.clone();
