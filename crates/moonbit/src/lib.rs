@@ -1091,12 +1091,6 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
             let func_name = self.r#gen.export_ns.tmp(&format!("wasmExport{name}Dtor"));
 
-            let export_dir = self.r#gen.opts.r#gen_dir.clone();
-
-            let r#gen =
-                self.r#gen
-                    .interface(self.resolve, export_dir.as_str(), "", Direction::Export);
-
             uwrite!(
                 self.ffi,
                 r#"
@@ -1104,10 +1098,9 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                     {}{name}::dtor(handle)
                 }}
                 "#,
-                r#gen
-                    .r#gen
+                self.r#gen
                     .pkg_resolver
-                    .qualify_package(r#gen.name, self.name)
+                    .qualify_package(self.r#gen.opts.r#gen_dir.as_str(), self.name)
             );
 
             self.r#gen
