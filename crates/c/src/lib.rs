@@ -729,7 +729,6 @@ typedef uint32_t {snake}_callback_code_t;
 #define {shouty}_CALLBACK_CODE_EXIT 0
 #define {shouty}_CALLBACK_CODE_YIELD 1
 #define {shouty}_CALLBACK_CODE_WAIT(set) (2 | (set << 4))
-#define {shouty}_CALLBACK_CODE_POLL(set) (3 | (set << 4))
 
 typedef enum {snake}_event_code {{
     {shouty}_EVENT_NONE,
