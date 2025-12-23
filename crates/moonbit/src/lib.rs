@@ -633,6 +633,7 @@ impl InterfaceGenerator<'_> {
     }
 
     fn import(&mut self, func: &Function) {
+        // Determine if the function is async
         let async_ = self
             .world_gen
             .opts
@@ -642,104 +643,105 @@ impl InterfaceGenerator<'_> {
             self.world_gen.async_support.mark_async();
         }
 
-        let mut bindgen = FunctionBindgen::new(
-            self,
-            &func.name,
-            self.name,
-            func.params
-                .iter()
-                .map(|Param { name, .. }| name.to_moonbit_ident())
-                .collect(),
-        );
+        let ffi_import_name = format!("wasmImport{}", func.name.to_upper_camel_case());
 
-        abi::call(
-            bindgen.interface_gen.resolve,
-            AbiVariant::GuestImport,
-            LiftLower::LowerArgsLiftResults,
-            func,
-            &mut bindgen,
-            false,
-        );
-
-        let mut src = bindgen.src.clone();
-
-        let cleanup_list = if bindgen.needs_cleanup_list {
-            "
-            let cleanup_list : Array[Int] = []
-            "
-            .into()
-        } else {
-            String::new()
-        };
-
-        let wasm_sig = self.resolve.wasm_signature(
-            if async_ {
-                AbiVariant::GuestImportAsync
-            } else {
-                AbiVariant::GuestImport
-            },
-            func,
-        );
-
-        let result_type = match &wasm_sig.results[..] {
-            [] => "".into(),
-            [result] => format!("-> {}", wasm_type(*result)),
-            _ => unreachable!(),
-        };
-
-        let camel_name = func.name.to_upper_camel_case();
-
-        let params = wasm_sig
-            .params
-            .iter()
-            .enumerate()
-            .map(|(i, param)| {
-                let ty = wasm_type(*param);
-                format!("p{i} : {ty}")
-            })
-            .collect::<Vec<_>>()
-            .join(", ");
-
-        let mbt_sig = self.world_gen.pkg_resolver.mbt_sig(self.name, func, false);
-        let sig = self.sig_string(&mbt_sig, async_);
-
-        let (import_module, import_name) = self.resolve.wasm_import_name(
-            ManglingAndAbi::Legacy(if async_ {
-                LiftLowerAbi::AsyncStackful
-            } else {
-                LiftLowerAbi::Sync
-            }),
-            WasmImport::Func {
-                interface: self.interface,
+        // Generate the core wasm abi
+        {
+            let wasm_sig = self.resolve.wasm_signature(
+                if async_ {
+                    AbiVariant::GuestImportAsync
+                } else {
+                    AbiVariant::GuestImport
+                },
                 func,
-            },
-        );
+            );
 
-        self.r#generation_futures_and_streams_import("", func, &import_module);
+            let result_type = match &wasm_sig.results[..] {
+                [] => "".into(),
+                [result] => format!("-> {}", wasm_type(*result)),
+                _ => unimplemented!("multi-value results are not supported yet"),
+            };
 
-        uwriteln!(
-            self.ffi,
-            r#"fn wasmImport{camel_name}({params}) {result_type} = "{import_module}" "{import_name}""#
-        );
+            let params = wasm_sig
+                .params
+                .iter()
+                .enumerate()
+                .map(|(i, param)| format!("p{i} : {}", wasm_type(*param)))
+                .collect::<Vec<_>>()
+                .join(", ");
 
-        print_docs(&mut self.src, &func.docs);
+            let (import_module, import_name) = self.resolve.wasm_import_name(
+                ManglingAndAbi::Legacy(if async_ {
+                    LiftLowerAbi::AsyncStackful
+                } else {
+                    LiftLowerAbi::Sync
+                }),
+                WasmImport::Func {
+                    interface: self.interface,
+                    func,
+                },
+            );
 
-        if async_ {
-            src = self.r#generate_async_import_function(func, mbt_sig, &wasm_sig);
+            uwriteln!(
+                self.ffi,
+                r#"fn {ffi_import_name}({params}) {result_type} = "{import_module}" "{import_name}""#
+            );
         }
 
-        uwrite!(
-            self.src,
-            r#"
-            {sig} {{
+        // Generate the MoonBit wrapper
+        if async_ {
+            // self.r#generation_futures_and_streams_import("", func, &import_module);
+            // if async_ {
+            //     src = self.r#generate_async_import_function(func, mbt_sig, &wasm_sig);
+            // }
+            todo!("async import not supported yet");
+        } else {
+            let mut bindgen = FunctionBindgen::new(
+                self,
+                &func.name,
+                self.name,
+                func.params
+                    .iter()
+                    .map(|Param { name, .. }| name.to_moonbit_ident())
+                    .collect(),
+            );
+
+            abi::call(
+                bindgen.interface_gen.resolve,
+                AbiVariant::GuestImport,
+                LiftLower::LowerArgsLiftResults,
+                func,
+                &mut bindgen,
+                false,
+            );
+
+            let src = bindgen.src.clone();
+
+            let cleanup_list = if bindgen.needs_cleanup_list {
+                "let cleanup_list : Array[Int] = []"
+            } else {
+                ""
+            };
+
+            let mbt_sig = self.world_gen.pkg_resolver.mbt_sig(self.name, func, false);
+            let sig = self.sig_string(&mbt_sig, async_);
+
+            print_docs(&mut self.src, &func.docs);
+
+            uwrite!(
+                self.src,
+                r#"
+                {sig} {{
                 {cleanup_list}
                 {src}
             }}
             "#
-        );
+            );
+        }
     }
 
     fn export(&mut self, func: &Function) {
+        // Determine if is async
         let async_ = self
             .world_gen
             .opts
@@ -748,6 +750,25 @@ impl InterfaceGenerator<'_> {
         if async_ {
             self.world_gen.async_support.mark_async();
         }
+
+        // Generate stub for user
+        {
+            let mbt_sig = self.world_gen.pkg_resolver.mbt_sig(self.name, func, false);
+            let func_sig = self.sig_string(&mbt_sig, async_);
+
+            print_docs(&mut self.stub, &func.docs);
+            uwrite!(
+                self.stub,
+                r#"
+                {func_sig} {{
+                    ...
+                }}
+                "#
+            );
+        }
+
+        // Generate the caller function
+        // But it is located in the export module (GEN_DIR)
 
         let variant = if async_ {
             AbiVariant::GuestExportAsync
@@ -756,9 +777,7 @@ impl InterfaceGenerator<'_> {
         };
 
         let sig = self.resolve.wasm_signature(variant, func);
-        let mbt_sig = self.world_gen.pkg_resolver.mbt_sig(self.name, func, false);
 
-        let func_sig = self.sig_string(&mbt_sig, async_);
         let export_dir = self.world_gen.opts.r#gen_dir.clone();
 
         let mut toplevel_generator = self.world_gen.interface(
@@ -855,6 +874,7 @@ impl InterfaceGenerator<'_> {
 
         self.world_gen.export.insert(func_name, export_name);
 
+        // If async, we also need a callback function and a task_return intrinsic
         if async_ {
             let export_func_name = self
                 .world_gen
@@ -937,6 +957,8 @@ impl InterfaceGenerator<'_> {
                 "#
             );
         }
+
+        // If post return is needed, generate it
         if abi::guest_export_needs_post_return(self.resolve, func) {
             let params = sig
                 .results
@@ -983,16 +1005,6 @@ impl InterfaceGenerator<'_> {
             );
             self.world_gen.export.insert(func_name, export_name);
         }
-
-        print_docs(&mut self.stub, &func.docs);
-        uwrite!(
-            self.stub,
-            r#"
-            {func_sig} {{
-                ...
-            }}
-            "#
-        );
     }
 
     fn sig_string(&mut self, sig: &MoonbitSignature, async_: bool) -> String {
@@ -1006,14 +1018,15 @@ impl InterfaceGenerator<'_> {
             .collect::<Vec<_>>();
 
         let params = params.join(", ");
-        let (async_prefix, async_suffix) = if async_ { ("async ", "") } else { ("", "") };
         let result_type = match &sig.result_type {
             None => "Unit".into(),
             Some(ty) => self.world_gen.pkg_resolver.type_name(self.name, ty),
         };
         format!(
-            "pub {async_prefix}fn {}({params}) -> {}{async_suffix}",
-            sig.name, result_type
+            "pub {}fn {}({params}) -> {}",
+            if async_ { "async " } else { "" },
+            sig.name,
+            result_type
         )
     }
 }
