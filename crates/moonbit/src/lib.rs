@@ -118,7 +118,6 @@ pub struct MoonBit {
     opts: Opts,
     project_name: String,
     import_world_fragment: InterfaceFragment,
-    export_world_fragment: InterfaceFragment,
     sizes: SizeAlign,
 
     // Collision may happen when a package is imported with multiple versions.
@@ -302,6 +301,64 @@ impl WorldGenerator for MoonBit {
         self.import_world_fragment.concat(result);
     }
 
+    fn import_types(
+        &mut self,
+        resolve: &Resolve,
+        world: WorldId,
+        types: &[(&str, TypeId)],
+        _files: &mut Files,
+    ) {
+        let name = PkgResolver::world_name(resolve, world);
+        let mut r#gen = self.interface(resolve, &name, "$root", Direction::Import);
+
+        for (ty_name, ty) in types {
+            r#gen.define_type(ty_name, *ty);
+        }
+
+        let result = r#gen.finish();
+        self.import_world_fragment.concat(result);
+    }
+
+    fn finish_imports(&mut self, resolve: &Resolve, world: WorldId, files: &mut Files) {
+        let name = PkgResolver::world_name(resolve, world);
+        let directory = name.replace('.', "/");
+
+        assert!(self.import_world_fragment.stub.is_empty());
+
+        // README
+        if let Some(content) = &resolve.worlds[world].docs.contents
+            && !content.is_empty()
+        {
+            files.push(&format!("{}/README.md", directory), content.as_bytes());
+        }
+        // Source
+        let mut src = Source::default();
+        wit_bindgen_core::generated_preamble(&mut src, VERSION);
+        uwriteln!(src, "{}", self.import_world_fragment.src);
+        files.push(&format!("{directory}/import.mbt"), indent(&src).as_bytes());
+        // FFI
+        let mut ffi = Source::default();
+        let mut builtins: HashSet<&'static str> = HashSet::new();
+        wit_bindgen_core::generated_preamble(&mut ffi, VERSION);
+        uwriteln!(ffi, "{}", self.import_world_fragment.ffi);
+        builtins.extend(self.import_world_fragment.builtins.iter());
+        for b in builtins.iter() {
+            uwriteln!(ffi, "{}", b);
+        }
+        files.push(
+            &format!("{directory}/ffi_import.mbt"),
+            indent(&ffi).as_bytes(),
+        );
+        // moon.pkg.json
+        let mut moon_pkg = Source::default();
+        self.write_moon_pkg(
+            &mut moon_pkg,
+            self.pkg_resolver.package_import.get(&name),
+            false,
+        );
+        files.push(&format!("{directory}/moon.pkg.json"), moon_pkg.as_bytes());
+    }
+
     fn export_interface(
         &mut self,
         resolve: &Resolve,
@@ -389,7 +446,7 @@ impl WorldGenerator for MoonBit {
         resolve: &Resolve,
         world: WorldId,
         funcs: &[(&str, &Function)],
-        _files: &mut Files,
+        files: &mut Files,
     ) -> Result<()> {
         let name = format!(
             "{}.{}",
@@ -402,88 +459,24 @@ impl WorldGenerator for MoonBit {
             r#gen.export(None, func);
         }
 
-        let result = r#gen.finish();
-        self.export_world_fragment.concat(result);
-        Ok(())
-    }
+        let fragment = r#gen.finish();
 
-    fn import_types(
-        &mut self,
-        resolve: &Resolve,
-        world: WorldId,
-        types: &[(&str, TypeId)],
-        _files: &mut Files,
-    ) {
-        let name = PkgResolver::world_name(resolve, world);
-        let mut r#gen = self.interface(resolve, &name, "$root", Direction::Import);
-
-        for (ty_name, ty) in types {
-            r#gen.define_type(ty_name, *ty);
-        }
-
-        let result = r#gen.finish();
-        self.import_world_fragment.concat(result);
-    }
-
-    fn finish(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) -> Result<()> {
-        let name = PkgResolver::world_name(resolve, id);
-
-        let version = env!("CARGO_PKG_VERSION");
-
-        // Import world fragments
+        // Write files
         {
             let directory = name.replace('.', "/");
-
-            if let Some(content) = &resolve.worlds[id].docs.contents
-                && !content.is_empty()
-            {
-                files.push(&format!("{}/README.md", directory), content.as_bytes());
-            }
+            // Source
             let mut src = Source::default();
-            let mut ffi = Source::default();
-            let mut builtins: HashSet<&'static str> = HashSet::new();
-            wit_bindgen_core::generated_preamble(&mut src, version);
-            wit_bindgen_core::generated_preamble(&mut ffi, version);
-            uwriteln!(src, "{}", self.import_world_fragment.src);
-            uwriteln!(ffi, "{}", self.import_world_fragment.ffi);
-            builtins.extend(self.import_world_fragment.builtins.iter());
-            assert!(self.import_world_fragment.stub.is_empty());
-            for b in builtins.iter() {
-                uwriteln!(ffi, "{}", b);
-            }
-
-            files.push(&format!("{directory}/import.mbt"), indent(&src).as_bytes());
-            files.push(
-                &format!("{directory}/ffi_import.mbt"),
-                indent(&ffi).as_bytes(),
-            );
-            let mut moon_pkg = Source::default();
-            self.write_moon_pkg(
-                &mut moon_pkg,
-                self.pkg_resolver.package_import.get(&name),
-                false,
-            );
-            files.push(&format!("{directory}/moon.pkg.json"), moon_pkg.as_bytes());
-        }
-
-        // Export world fragments
-        {
-            let name = format!(
-                "{}.{}",
-                self.opts.r#gen_dir,
-                PkgResolver::world_name(resolve, id)
-            );
-            let directory = name.replace('.', "/");
-            let mut src = Source::default();
-            let mut stub = Source::default();
-            wit_bindgen_core::generated_preamble(&mut src, version);
-            generated_preamble(&mut stub, version);
-            uwriteln!(src, "{}", self.export_world_fragment.src);
-            uwriteln!(stub, "{}", self.export_world_fragment.stub);
-
+            wit_bindgen_core::generated_preamble(&mut src, VERSION);
+            uwriteln!(src, "{}", fragment.src);
             files.push(&format!("{directory}/top.mbt"), indent(&src).as_bytes());
+
             if !self.opts.ignore_stub {
+                // Stub
+                let mut stub = Source::default();
+                generated_preamble(&mut stub, VERSION);
+                uwriteln!(stub, "{}", fragment.stub);
                 files.push(&format!("{directory}/stub.mbt"), indent(&stub).as_bytes());
+                // moon.pkg.json
                 let mut moon_pkg = Source::default();
                 self.write_moon_pkg(
                     &mut moon_pkg,
@@ -492,39 +485,28 @@ impl WorldGenerator for MoonBit {
                 );
                 files.push(&format!("{directory}/moon.pkg.json"), moon_pkg.as_bytes());
             }
+
+            // FFI
+            let mut export = Source::default();
+            wit_bindgen_core::generated_preamble(&mut export, VERSION);
+            uwriteln!(&mut export, "{}", fragment.ffi);
+            self.builtins.extend(fragment.builtins.iter());
+            files.push(
+                &format!(
+                    "{}/{}_export.mbt",
+                    self.opts.r#gen_dir,
+                    directory.to_snake_case()
+                ),
+                indent(&export).as_bytes(),
+            );
         }
 
-        let mut generate_ffi =
-            |directory: String, fragment: &InterfaceFragment, files: &mut Files| {
-                // For cabi_realloc
+        Ok(())
+    }
 
-                let mut body = Source::default();
-                wit_bindgen_core::generated_preamble(&mut body, version);
-
-                uwriteln!(&mut body, "{}", fragment.ffi);
-                self.builtins.extend(fragment.builtins.iter());
-
-                files.push(
-                    &format!(
-                        "{}/{}_export.mbt",
-                        self.opts.r#gen_dir,
-                        directory.to_snake_case()
-                    ),
-                    indent(&body).as_bytes(),
-                );
-            };
-
-        generate_ffi(
-            self.opts.r#gen_dir.clone(),
-            &self.export_world_fragment,
-            files,
-        );
-
-        // Export FFI Utils
-        // Export Async utils
-
+    fn finish(&mut self, _resolve: &Resolve, _id: WorldId, files: &mut Files) -> Result<()> {
         // If async is used, export async utils
-        self.async_support.emit_utils(files, version);
+        self.async_support.emit_utils(files, VERSION);
 
         // Export project files
         if !self.opts.ignore_stub && !self.opts.ignore_module_file {
@@ -539,7 +521,7 @@ impl WorldGenerator for MoonBit {
 
         // Export project entry point
         let mut body = Source::default();
-        wit_bindgen_core::generated_preamble(&mut body, version);
+        wit_bindgen_core::generated_preamble(&mut body, VERSION);
         uwriteln!(&mut body, "{}", ffi::CABI_REALLOC);
         self.builtins.insert(ffi::MALLOC);
         self.builtins.insert(ffi::FREE);
