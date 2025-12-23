@@ -14,7 +14,8 @@ use wit_bindgen_core::{
     uwrite, uwriteln,
     wit_parser::{
         Alignment, ArchitectureSize, Docs, Enum, Flags, FlagsRepr, Function, Int, InterfaceId,
-        Param, Record, Resolve, Result_, SizeAlign, Tuple, Type, TypeId, Variant, WorldId,
+        LiftLowerAbi, ManglingAndAbi, Param, Record, Resolve, ResourceIntrinsic, Result_,
+        SizeAlign, Tuple, Type, TypeId, Variant, WasmExport, WasmExportKind, WasmImport, WorldId,
         WorldKey,
     },
 };
@@ -33,6 +34,10 @@ mod pkg;
 // Organization:
 // - one package per interface (export and import are treated as different interfaces)
 // - ffi utils are under `./ffi`, and the project entrance (package as link target) is under `./gen`
+
+// We use Legacy mangling for MoonBit (no specific reason, just because we haven't switched yet)
+// We use AsyncCallback ABI for async functions
+
 // TODO: Export will share the type signatures with the import by using a newtype alias
 pub(crate) const FFI_DIR: &str = "ffi";
 
@@ -145,6 +150,7 @@ impl MoonBit {
         name: &'a str,
         module: &'a str,
         direction: Direction,
+        interface: Option<&'a WorldKey>,
     ) -> InterfaceGenerator<'a> {
         let derive_opts = self.opts.derive.clone();
         InterfaceGenerator {
@@ -158,6 +164,7 @@ impl MoonBit {
             direction,
             ffi_imports: HashSet::new(),
             derive_opts,
+            interface,
         }
     }
 
@@ -187,8 +194,12 @@ impl MoonBit {
         }
         // Link target
         if link {
+            let memory_name = self.pkg_resolver.resolve.wasm_export_name(
+                ManglingAndAbi::Legacy(LiftLowerAbi::Sync),
+                WasmExport::Memory,
+            );
             moon_pkg.push_str(",\n\"link\": {\n\"wasm\": {\n");
-            moon_pkg.push_str("\"export-memory-name\": \"memory\",\n");
+            moon_pkg.push_str(&format!("\"export-memory-name\": \"{memory_name}\",\n"));
             moon_pkg.push_str("\"heap-start-address\": 16,\n");
             moon_pkg.push_str("\"exports\": [\n");
             moon_pkg.indent(1);
@@ -260,11 +271,11 @@ impl WorldGenerator for MoonBit {
             .insert(id, name.clone());
 
         let module = &resolve.name_world_key(key);
-        let mut r#gen = self.interface(resolve, &name, module, Direction::Import);
+        let mut r#gen = self.interface(resolve, &name, module, Direction::Import, Some(key));
         r#gen.types(id);
 
         for (_, func) in resolve.interfaces[id].functions.iter() {
-            r#gen.import(Some(key), func);
+            r#gen.import(func);
         }
 
         let fragment = r#gen.finish();
@@ -316,10 +327,10 @@ impl WorldGenerator for MoonBit {
         _files: &mut Files,
     ) {
         let name = PkgResolver::world_name(resolve, world);
-        let mut r#gen = self.interface(resolve, &name, "$root", Direction::Import);
+        let mut r#gen = self.interface(resolve, &name, "$root", Direction::Import, None);
 
         for (_, func) in funcs {
-            r#gen.import(None, func); // None is "$root"
+            r#gen.import(func);
         }
 
         let result = r#gen.finish();
@@ -334,7 +345,7 @@ impl WorldGenerator for MoonBit {
         _files: &mut Files,
     ) {
         let name = PkgResolver::world_name(resolve, world);
-        let mut r#gen = self.interface(resolve, &name, "$root", Direction::Import);
+        let mut r#gen = self.interface(resolve, &name, "$root", Direction::Import, None);
 
         for (ty_name, ty) in types {
             r#gen.define_type(ty_name, *ty);
@@ -402,11 +413,11 @@ impl WorldGenerator for MoonBit {
             .insert(id, name.clone());
 
         let module = &resolve.name_world_key(key);
-        let mut r#gen = self.interface(resolve, &name, module, Direction::Export);
+        let mut r#gen = self.interface(resolve, &name, module, Direction::Export, Some(key));
         r#gen.types(id);
 
         for (_, func) in resolve.interfaces[id].functions.iter() {
-            r#gen.export(Some(key), func);
+            r#gen.export(func);
         }
 
         let fragment = r#gen.finish();
@@ -478,10 +489,10 @@ impl WorldGenerator for MoonBit {
             self.opts.r#gen_dir,
             PkgResolver::world_name(resolve, world)
         );
-        let mut r#gen = self.interface(resolve, &name, "$root", Direction::Export);
+        let mut r#gen = self.interface(resolve, &name, "$root", Direction::Export, None);
 
         for (_, func) in funcs {
-            r#gen.export(None, func);
+            r#gen.export(func);
         }
 
         let fragment = r#gen.finish();
@@ -569,8 +580,13 @@ impl WorldGenerator for MoonBit {
             indent(&body).as_bytes(),
         );
 
-        self.export
-            .insert("mbt_ffi_cabi_realloc".into(), "cabi_realloc".into());
+        self.export.insert(
+            "mbt_ffi_cabi_realloc".into(),
+            self.pkg_resolver.resolve.wasm_export_name(
+                ManglingAndAbi::Legacy(LiftLowerAbi::Sync),
+                WasmExport::Realloc,
+            ),
+        );
 
         let mut moon_pkg = Source::default();
         self.write_moon_pkg(
@@ -600,6 +616,7 @@ struct InterfaceGenerator<'a> {
     name: &'a str,
     module: &'a str,
     direction: Direction,
+    interface: Option<&'a WorldKey>,
 
     // Options for deriving traits
     derive_opts: DeriveOpts,
@@ -615,20 +632,16 @@ impl InterfaceGenerator<'_> {
         }
     }
 
-    fn import(&mut self, module: Option<&WorldKey>, func: &Function) {
+    fn import(&mut self, func: &Function) {
         let async_ = self
             .world_gen
             .opts
             .async_
-            .is_async(self.resolve, module, func, false);
+            .is_async(self.resolve, self.interface, func, false);
         if async_ {
             self.world_gen.async_support.mark_async();
         }
 
-        let interface_name = match module {
-            Some(key) => &self.resolve.name_world_key(key),
-            None => "$root",
-        };
         let mut bindgen = FunctionBindgen::new(
             self,
             &func.name,
@@ -638,12 +651,6 @@ impl InterfaceGenerator<'_> {
                 .map(|Param { name, .. }| name.to_moonbit_ident())
                 .collect(),
         );
-
-        let (variant, async_prefix) = if async_ {
-            (AbiVariant::GuestImportAsync, "[async-lower]")
-        } else {
-            (AbiVariant::GuestImport, "")
-        };
 
         abi::call(
             bindgen.interface_gen.resolve,
@@ -665,9 +672,14 @@ impl InterfaceGenerator<'_> {
             String::new()
         };
 
-        let name = &func.name;
-
-        let wasm_sig = self.resolve.wasm_signature(variant, func);
+        let wasm_sig = self.resolve.wasm_signature(
+            if async_ {
+                AbiVariant::GuestImportAsync
+            } else {
+                AbiVariant::GuestImport
+            },
+            func,
+        );
 
         let result_type = match &wasm_sig.results[..] {
             [] => "".into(),
@@ -691,16 +703,23 @@ impl InterfaceGenerator<'_> {
         let mbt_sig = self.world_gen.pkg_resolver.mbt_sig(self.name, func, false);
         let sig = self.sig_string(&mbt_sig, async_);
 
-        let module = match module {
-            Some(key) => self.resolve.name_world_key(key),
-            None => "$root".into(),
-        };
+        let (import_module, import_name) = self.resolve.wasm_import_name(
+            ManglingAndAbi::Legacy(if async_ {
+                LiftLowerAbi::AsyncStackful
+            } else {
+                LiftLowerAbi::Sync
+            }),
+            WasmImport::Func {
+                interface: self.interface,
+                func,
+            },
+        );
 
-        self.r#generation_futures_and_streams_import("", func, interface_name);
+        self.r#generation_futures_and_streams_import("", func, &import_module);
 
         uwriteln!(
             self.ffi,
-            r#"fn wasmImport{camel_name}({params}) {result_type} = "{module}" "{async_prefix}{name}""#
+            r#"fn wasmImport{camel_name}({params}) {result_type} = "{import_module}" "{import_name}""#
         );
 
         print_docs(&mut self.src, &func.docs);
@@ -720,12 +739,12 @@ impl InterfaceGenerator<'_> {
         );
     }
 
-    fn export(&mut self, interface: Option<&WorldKey>, func: &Function) {
+    fn export(&mut self, func: &Function) {
         let async_ = self
             .world_gen
             .opts
             .async_
-            .is_async(self.resolve, interface, func, false);
+            .is_async(self.resolve, self.interface, func, false);
         if async_ {
             self.world_gen.async_support.mark_async();
         }
@@ -747,6 +766,7 @@ impl InterfaceGenerator<'_> {
             export_dir.as_str(),
             self.module,
             Direction::Export,
+            None,
         );
 
         let mut bindgen = FunctionBindgen::new(
@@ -803,15 +823,12 @@ impl InterfaceGenerator<'_> {
             .collect::<Vec<_>>()
             .join(", ");
 
-        // Async export prefix for FFI
-        let async_export_prefix = if async_ { "[async-lift]" } else { "" };
         // Async functions return type
-        let interface_name = match interface {
+        let interface_name = match self.interface {
             Some(key) => Some(self.resolve.name_world_key(key)),
             None => None,
         };
 
-        let export_name = func.legacy_core_export_name(interface_name.as_deref());
         let module_name = interface_name.as_deref().unwrap_or("$root");
         self.r#generation_futures_and_streams_import("[export]", func, module_name);
 
@@ -823,10 +840,20 @@ impl InterfaceGenerator<'_> {
             }}
             "#,
         );
+        let export_name = self.resolve.wasm_export_name(
+            ManglingAndAbi::Legacy(if async_ {
+                LiftLowerAbi::AsyncCallback
+            } else {
+                LiftLowerAbi::Sync
+            }),
+            WasmExport::Func {
+                interface: self.interface,
+                func,
+                kind: WasmExportKind::Normal,
+            },
+        );
 
-        self.world_gen
-            .export
-            .insert(func_name, format!("{async_export_prefix}{export_name}"));
+        self.world_gen.export.insert(func_name, export_name);
 
         if async_ {
             let export_func_name = self
@@ -841,12 +868,17 @@ impl InterfaceGenerator<'_> {
             else {
                 unreachable!()
             };
-            let func_name = func.name.clone();
-            let import_module = self.resolve.name_world_key(interface.unwrap());
-            self.world_gen.export.insert(
-                export_func_name.clone(),
-                format!("[callback]{async_export_prefix}{export_name}"),
+            let export_name = self.resolve.wasm_export_name(
+                ManglingAndAbi::Legacy(LiftLowerAbi::AsyncCallback),
+                WasmExport::Func {
+                    interface: self.interface,
+                    func,
+                    kind: WasmExportKind::Callback,
+                },
             );
+            self.world_gen
+                .export
+                .insert(export_func_name.clone(), export_name);
             let task_return_param_tys = task_return_params
                 .iter()
                 .enumerate()
@@ -876,10 +908,18 @@ impl InterfaceGenerator<'_> {
                 .pkg_resolver
                 .qualify_package(self.name, FFI_DIR);
 
+            let (task_return_module, task_return_name) = self.resolve.wasm_import_name(
+                ManglingAndAbi::Legacy(LiftLowerAbi::AsyncStackful),
+                WasmImport::Func {
+                    interface: self.interface,
+                    func,
+                },
+            );
+
             uwriteln!(
                 self.src,
                 r#"
-                fn {export_func_name}TaskReturn({task_return_param_tys}) = "[export]{import_module}" "[task-return]{func_name}"
+                fn {export_func_name}TaskReturn({task_return_param_tys}) = "{task_return_module}" "{task_return_name}"
                 
                 pub fn {snake_func_name}_task_return({return_expr}) -> Unit {{ 
                     {task_return_body}
@@ -896,7 +936,8 @@ impl InterfaceGenerator<'_> {
                 }}
                 "#
             );
-        } else if abi::guest_export_needs_post_return(self.resolve, func) {
+        }
+        if abi::guest_export_needs_post_return(self.resolve, func) {
             let params = sig
                 .results
                 .iter()
@@ -932,9 +973,15 @@ impl InterfaceGenerator<'_> {
                 }}
                 "#
             );
-            self.world_gen
-                .export
-                .insert(func_name, format!("cabi_post_{export_name}"));
+            let export_name = self.resolve.wasm_export_name(
+                ManglingAndAbi::Legacy(LiftLowerAbi::Sync),
+                WasmExport::Func {
+                    interface: self.interface,
+                    func,
+                    kind: WasmExportKind::PostReturn,
+                },
+            );
+            self.world_gen.export.insert(func_name, export_name);
         }
 
         print_docs(&mut self.stub, &func.docs);
@@ -1013,9 +1060,8 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         );
     }
 
-    fn type_resource(&mut self, _id: TypeId, name: &str, docs: &Docs) {
+    fn type_resource(&mut self, id: TypeId, name: &str, docs: &Docs) {
         print_docs(&mut self.src, docs);
-        let type_name = name;
         let name = name.to_moonbit_type_ident();
 
         let mut deriviation: Vec<_> = Vec::new();
@@ -1039,9 +1085,15 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             deriviation.join(", "),
         );
 
-        let module = self.module;
-
         if self.direction == Direction::Import {
+            let (drop_module, drop_name) = self.resolve.wasm_import_name(
+                ManglingAndAbi::Legacy(LiftLowerAbi::Sync),
+                WasmImport::ResourceIntrinsic {
+                    resource: id,
+                    interface: self.interface,
+                    intrinsic: ResourceIntrinsic::ImportedDrop,
+                },
+            );
             uwrite!(
                 &mut self.src,
                 r#"
@@ -1056,10 +1108,34 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             uwrite!(
                 &mut self.ffi,
                 r#"
-                fn wasmImportResourceDrop{name}(resource : Int) = "{module}" "[resource-drop]{type_name}"
+                fn wasmImportResourceDrop{name}(resource : Int) = "{drop_module}" "{drop_name}"
                 "#,
             )
         } else {
+            let (drop_module, drop_name) = self.resolve.wasm_import_name(
+                ManglingAndAbi::Legacy(LiftLowerAbi::Sync),
+                WasmImport::ResourceIntrinsic {
+                    resource: id,
+                    interface: self.interface,
+                    intrinsic: ResourceIntrinsic::ExportedDrop,
+                },
+            );
+            let (new_module, new_name) = self.resolve.wasm_import_name(
+                ManglingAndAbi::Legacy(LiftLowerAbi::Sync),
+                WasmImport::ResourceIntrinsic {
+                    resource: id,
+                    interface: self.interface,
+                    intrinsic: ResourceIntrinsic::ExportedNew,
+                },
+            );
+            let (rep_module, rep_name) = self.resolve.wasm_import_name(
+                ManglingAndAbi::Legacy(LiftLowerAbi::Sync),
+                WasmImport::ResourceIntrinsic {
+                    resource: id,
+                    interface: self.interface,
+                    intrinsic: ResourceIntrinsic::ExportedRep,
+                },
+            );
             uwrite!(
                 &mut self.src,
                 r#"
@@ -1067,21 +1143,21 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 pub fn {name}::new(rep : Int) -> {name} {{
                     {name}::{name}(wasmExportResourceNew{name}(rep))
                 }}
-                fn wasmExportResourceNew{name}(rep : Int) -> Int = "[export]{module}" "[resource-new]{type_name}"
+                fn wasmExportResourceNew{name}(rep : Int) -> Int = "{new_module}" "{new_name}"
 
                 /// Drops a resource handle.
                 pub fn {name}::drop(self : Self) -> Unit {{
                     let {name}(resource) = self
                     wasmExportResourceDrop{name}(resource)
                 }}
-                fn wasmExportResourceDrop{name}(resource : Int) = "[export]{module}" "[resource-drop]{type_name}"
+                fn wasmExportResourceDrop{name}(resource : Int) = "{drop_module}" "{drop_name}"
 
                 /// Gets the `Int` representation of the resource pointed to the given handle.
                 pub fn {name}::rep(self : Self) -> Int {{
                     let {name}(resource) = self
                     wasmExportResourceRep{name}(resource)
                 }}
-                fn wasmExportResourceRep{name}(resource : Int) -> Int = "[export]{module}" "[resource-rep]{type_name}"
+                fn wasmExportResourceRep{name}(resource : Int) -> Int = "{rep_module}" "{rep_name}"
                 "#,
             );
 
@@ -1112,9 +1188,15 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                     .qualify_package(self.world_gen.opts.r#gen_dir.as_str(), self.name)
             );
 
-            self.world_gen
-                .export
-                .insert(func_name, format!("{module}#[dtor]{type_name}"));
+            let export_name = self.resolve.wasm_export_name(
+                ManglingAndAbi::Legacy(LiftLowerAbi::Sync),
+                WasmExport::ResourceDtor {
+                    interface: self.interface.unwrap(),
+                    resource: id,
+                },
+            );
+
+            self.world_gen.export.insert(func_name, export_name);
         }
     }
 
