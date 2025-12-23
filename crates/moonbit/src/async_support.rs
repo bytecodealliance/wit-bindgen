@@ -115,14 +115,14 @@ impl<'a> InterfaceGenerator<'a> {
                 }
                 multiple_params => {
                     let params = multiple_params.iter().map(|Param { ty, .. }| ty);
-                    let offsets = self.r#gen.sizes.field_offsets(params.clone());
-                    let elem_info = self.r#gen.sizes.params(params);
+                    let offsets = self.world_gen.sizes.field_offsets(params.clone());
+                    let elem_info = self.world_gen.sizes.params(params);
                     body.push_str(&format!(
                         r#"
                         let _lower_ptr : Int = {ffi}malloc({})
                         "#,
                         elem_info.size.size_wasm32(),
-                        ffi = self.r#gen.pkg_resolver.qualify_package(self.name, FFI_DIR)
+                        ffi = self.world_gen.pkg_resolver.qualify_package(self.name, FFI_DIR)
                     ));
 
                     for ((offset, ty), name) in offsets.iter().zip(
@@ -145,14 +145,14 @@ impl<'a> InterfaceGenerator<'a> {
         } else {
             let mut f = FunctionBindgen::new(self, "INVALID", self.name, Box::new([]));
             for (name, ty) in mbt_sig.params.iter() {
-                lower_params.extend(abi::lower_flat(f.r#gen.resolve, &mut f, name.clone(), ty));
+                lower_params.extend(abi::lower_flat(f.interface_gen.resolve, &mut f, name.clone(), ty));
             }
             lower_results.push(f.src.clone());
         }
 
         let func_name = func.name.to_upper_camel_case();
 
-        let ffi = self.r#gen.pkg_resolver.qualify_package(self.name, FFI_DIR);
+        let ffi = self.world_gen.pkg_resolver.qualify_package(self.name, FFI_DIR);
 
         let call_import = |params: &Vec<String>| {
             format!(
@@ -255,18 +255,18 @@ impl<'a> InterfaceGenerator<'a> {
         result_type: Option<&Type>,
     ) {
         if !self
-            .r#gen
+            .world_gen
             .async_support
             .register_future_or_stream(module, ty)
         {
             return;
         }
         let result = match result_type {
-            Some(ty) => self.r#gen.pkg_resolver.type_name(self.name, ty),
+            Some(ty) => self.world_gen.pkg_resolver.type_name(self.name, ty),
             None => "Unit".into(),
         };
 
-        let type_name = self.r#gen.pkg_resolver.type_name(self.name, &Type::Id(ty));
+        let type_name = self.world_gen.pkg_resolver.type_name(self.name, &Type::Id(ty));
         let name = result.to_upper_camel_case();
         let kind = match payload_for {
             PayloadFor::Future => "future",
@@ -283,7 +283,7 @@ impl<'a> InterfaceGenerator<'a> {
             PayloadFor::Future => "",
             PayloadFor::Stream => "List",
         };
-        let ffi = self.r#gen.pkg_resolver.qualify_package(self.name, FFI_DIR);
+        let ffi = self.world_gen.pkg_resolver.qualify_package(self.name, FFI_DIR);
 
         let mut dealloc_list;
         let malloc;
@@ -415,26 +415,26 @@ fn {table_name}() -> {ffi}{camel_kind}VTable[{result}] {{
         module: &str,
     ) -> String {
         let mut f = FunctionBindgen::new(self, "INVALID", module, Box::new([]));
-        abi::deallocate_lists_in_types(f.r#gen.resolve, types, operands, indirect, &mut f);
+        abi::deallocate_lists_in_types(f.interface_gen.resolve, types, operands, indirect, &mut f);
         f.src
     }
 
     fn lift_from_memory(&mut self, address: &str, ty: &Type, module: &str) -> (String, String) {
         let mut f = FunctionBindgen::new(self, "INVALID", module, Box::new([]));
 
-        let result = abi::lift_from_memory(f.r#gen.resolve, &mut f, address.into(), ty);
+        let result = abi::lift_from_memory(f.interface_gen.resolve, &mut f, address.into(), ty);
         (f.src, result)
     }
 
     fn lower_to_memory(&mut self, address: &str, value: &str, ty: &Type, module: &str) -> String {
         let mut f = FunctionBindgen::new(self, "INVALID", module, Box::new([]));
-        abi::lower_to_memory(f.r#gen.resolve, &mut f, address.into(), value.into(), ty);
+        abi::lower_to_memory(f.interface_gen.resolve, &mut f, address.into(), value.into(), ty);
         f.src
     }
 
     fn malloc_memory(&mut self, address: &str, length: &str, ty: &Type) -> String {
-        let size = self.r#gen.sizes.size(ty).size_wasm32();
-        let ffi = self.r#gen.pkg_resolver.qualify_package(self.name, FFI_DIR);
+        let size = self.world_gen.sizes.size(ty).size_wasm32();
+        let ffi = self.world_gen.pkg_resolver.qualify_package(self.name, FFI_DIR);
         format!("let {address} = {ffi}malloc({size} * {length});")
     }
 
@@ -452,7 +452,7 @@ fn {table_name}() -> {ffi}{camel_kind}VTable[{result}] {{
         lift_func: &str,
         ty: &Type,
     ) -> String {
-        let ffi = self.r#gen.pkg_resolver.qualify_package(self.name, FFI_DIR);
+        let ffi = self.world_gen.pkg_resolver.qualify_package(self.name, FFI_DIR);
         if self.is_list_canonical(self.resolve, ty) {
             if ty == &Type::U8 {
                 return format!("{ffi}ptr2bytes({address}, {length})");
@@ -469,7 +469,7 @@ fn {table_name}() -> {ffi}{camel_kind}VTable[{result}] {{
 
             return format!("{ffi}ptr2{ty}_array({address}, {length})");
         }
-        let size = self.r#gen.sizes.size(ty).size_wasm32();
+        let size = self.world_gen.sizes.size(ty).size_wasm32();
         format!(
             r#"
             FixedArray::makei(
@@ -485,7 +485,7 @@ fn {table_name}() -> {ffi}{camel_kind}VTable[{result}] {{
 
     fn list_lower_to_memory(&mut self, lower_func: &str, value: &str, ty: &Type) -> String {
         // Align the address, moonbit only supports wasm32 for now
-        let ffi = self.r#gen.pkg_resolver.qualify_package(self.name, FFI_DIR);
+        let ffi = self.world_gen.pkg_resolver.qualify_package(self.name, FFI_DIR);
         if self.is_list_canonical(self.resolve, ty) {
             if ty == &Type::U8 {
                 return format!("{ffi}bytes2ptr({value})");
@@ -502,7 +502,7 @@ fn {table_name}() -> {ffi}{camel_kind}VTable[{result}] {{
             };
             return format!("{ffi}{ty}_array2ptr({value})");
         }
-        let size = self.r#gen.sizes.size(ty).size_wasm32();
+        let size = self.world_gen.sizes.size(ty).size_wasm32();
         format!(
             r#"
             let address = {ffi}malloc(({value}).length() * {size});
