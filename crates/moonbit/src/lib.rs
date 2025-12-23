@@ -117,7 +117,6 @@ enum PayloadFor {
 pub struct MoonBit {
     opts: Opts,
     project_name: String,
-    needs_cleanup: bool,
     import_world_fragment: InterfaceFragment,
     export_world_fragment: InterfaceFragment,
     sizes: SizeAlign,
@@ -651,8 +650,6 @@ impl InterfaceGenerator<'_> {
         let mut src = bindgen.src.clone();
 
         let cleanup_list = if bindgen.needs_cleanup_list {
-            self.r#gen.needs_cleanup = true;
-
             "
             let cleanup_list : Array[Int] = []
             "
