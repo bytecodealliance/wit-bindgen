@@ -14,13 +14,14 @@ use wit_bindgen_core::{
     uwrite, uwriteln,
     wit_parser::{
         Alignment, ArchitectureSize, Docs, Enum, Flags, FlagsRepr, Function, Int, InterfaceId,
-        LiftLowerAbi, ManglingAndAbi, Param, Record, Resolve, ResourceIntrinsic, Result_,
+        LiftLowerAbi, Mangling, ManglingAndAbi, Param, Record, Resolve, ResourceIntrinsic,
+        Result_,
         SizeAlign, Tuple, Type, TypeId, Variant, WasmExport, WasmExportKind, WasmImport, WorldId,
         WorldKey,
     },
 };
 
-use crate::async_support::AsyncSupport;
+use crate::async_support::{ASYNC_DIR, AsyncSupport};
 use crate::pkg::{Imports, MoonbitSignature, PkgResolver, ToMoonBitIdent, ToMoonBitTypeIdent};
 
 mod async_support;
@@ -662,53 +663,49 @@ impl InterfaceGenerator<'_> {
         }
 
         // Generate the MoonBit wrapper
-        if async_ {
-            // self.r#generation_futures_and_streams_import("", func, &import_module);
-            // if async_ {
-            //     src = self.r#generate_async_import_function(func, mbt_sig, &wasm_sig);
-            // }
-            todo!("async import not supported yet");
-        } else {
-            let mut bindgen = FunctionBindgen::new(
-                self,
-                func.params
-                    .iter()
-                    .map(|Param { name, .. }| name.to_moonbit_ident())
-                    .collect(),
-            );
+        let mut bindgen = FunctionBindgen::new(
+            self,
+            func.params
+                .iter()
+                .map(|Param { name, .. }| name.to_moonbit_ident())
+                .collect(),
+        );
 
-            abi::call(
-                bindgen.interface_gen.resolve,
-                AbiVariant::GuestImport,
-                LiftLower::LowerArgsLiftResults,
-                func,
-                &mut bindgen,
-                false,
-            );
-
-            let src = bindgen.src.clone();
-
-            let cleanup_list = if bindgen.needs_cleanup_list {
-                "let cleanup_list : Array[Int] = []"
+        abi::call(
+            bindgen.interface_gen.resolve,
+            if async_ {
+                AbiVariant::GuestImportAsync
             } else {
-                ""
-            };
+                AbiVariant::GuestImport
+            },
+            LiftLower::LowerArgsLiftResults,
+            func,
+            &mut bindgen,
+            false,
+        );
 
-            let mbt_sig = self.world_gen.pkg_resolver.mbt_sig(self.name, func, false);
-            let sig = self.sig_string(&mbt_sig, async_);
+        let src = bindgen.src.clone();
 
-            print_docs(&mut self.src, &func.docs);
+        let cleanup_list = if bindgen.needs_cleanup_list {
+            "let cleanup_list : Array[Int] = []"
+        } else {
+            ""
+        };
 
-            uwrite!(
-                self.src,
-                r#"
+        let mbt_sig = self.world_gen.pkg_resolver.mbt_sig(self.name, func, false);
+        let sig = self.sig_string(&mbt_sig, async_);
+
+        print_docs(&mut self.src, &func.docs);
+
+        uwrite!(
+            self.src,
+            r#"
                 {sig} {{
                 {cleanup_list}
                 {src}
             }}
             "#
-            );
-        }
+        );
     }
 
     fn export(&mut self, func: &Function) {
@@ -764,9 +761,6 @@ impl InterfaceGenerator<'_> {
         // TODO: adapt async cleanup
         assert!(!bindgen.needs_cleanup_list);
 
-        // Async functions deferred task return
-        let deferred_task_return = bindgen.deferred_task_return.clone();
-
         let src = bindgen.src;
 
         let result_type = match &sig.results[..] {
@@ -793,24 +787,33 @@ impl InterfaceGenerator<'_> {
             .collect::<Vec<_>>()
             .join(", ");
 
-        // Async functions return type
-        let interface_name = match self.interface {
-            Some(key) => Some(self.resolve.name_world_key(key)),
-            None => None,
-        };
-
-        let module_name = interface_name.as_deref().unwrap_or("$root");
-        self.r#generation_futures_and_streams_import("[export]", func, module_name);
-
-        uwrite!(
-            self.ffi,
-            r#"
+        if async_ {
+            let async_pkg = self
+                .world_gen
+                .pkg_resolver
+                .qualify_package(self.name, ASYNC_DIR);
+            uwrite!(
+                self.ffi,
+                r#"
+            #doc(hidden)
+            pub fn {func_name}({params}) -> {result_type} {{
+                {async_pkg}with_waitableset(() => {async_pkg}with_task_group(task_group => task_group.spawn_bg(() => {{
+                    {src}
+            }})))
+            }}
+            "#,
+            );
+        } else {
+            uwrite!(
+                self.ffi,
+                r#"
             #doc(hidden)
             pub fn {func_name}({params}) -> {result_type} {{
                 {src}
             }}
             "#,
-        );
+            );
+        }
         let export_name = self.resolve.wasm_export_name(
             ManglingAndAbi::Legacy(if async_ {
                 LiftLowerAbi::AsyncCallback
@@ -846,18 +849,6 @@ impl InterfaceGenerator<'_> {
 
         // If async, we also need a callback function and a task_return intrinsic
         if async_ {
-            let export_func_name = self
-                .world_gen
-                .export_ns
-                .tmp(&format!("wasmExportAsync{camel_name}"));
-            let DeferredTaskReturn::Emitted {
-                body: task_return_body,
-                params: task_return_params,
-                return_param,
-            } = deferred_task_return
-            else {
-                unreachable!()
-            };
             let export_name = self.resolve.wasm_export_name(
                 ManglingAndAbi::Legacy(LiftLowerAbi::AsyncCallback),
                 WasmExport::Func {
@@ -866,78 +857,61 @@ impl InterfaceGenerator<'_> {
                     kind: WasmExportKind::Callback,
                 },
             );
+            let export_dir = self.world_gen.opts.r#gen_dir.clone();
 
-            let task_return_param_tys = task_return_params
+            let (task_return_module, task_return_name, signature) =
+                func.task_return_import(self.resolve, self.interface, Mangling::Legacy);
+
+            let params = signature
+                .results
                 .iter()
                 .enumerate()
-                .map(|(idx, (ty, _expr))| format!("p{}: {}", idx, wasm_type(*ty)))
+                .map(|(i, param)| {
+                    let ty = wasm_type(*param);
+                    format!("p{i} : {ty}")
+                })
                 .collect::<Vec<_>>()
                 .join(", ");
-            let task_return_param_exprs = task_return_params
-                .iter()
-                .map(|(_ty, expr)| expr.as_str())
-                .collect::<Vec<_>>()
-                .join(", ");
-            let return_ty = match &func.result {
-                Some(result) => self
-                    .world_gen
-                    .pkg_resolver
-                    .type_name(self.name, result)
-                    .to_string(),
-                None => "Unit".into(),
-            };
-            let return_expr = match return_ty.as_str() {
-                "Unit" => "".into(),
-                _ => format!("{return_param}: {return_ty}",),
-            };
-            let snake_func_name = func.name.to_moonbit_ident().to_string();
-            let ffi = self
+
+            let async_pkg = self
                 .world_gen
                 .pkg_resolver
-                .qualify_package(self.name, FFI_DIR);
-
-            let (task_return_module, task_return_name) = self.resolve.wasm_import_name(
-                ManglingAndAbi::Legacy(LiftLowerAbi::AsyncCallback),
-                WasmImport::Func {
-                    interface: self.interface,
-                    func,
-                },
-            );
-
+                .qualify_package(&export_dir, ASYNC_DIR);
             uwriteln!(
-                self.src,
+                self.ffi,
                 r#"
-                fn {export_func_name}TaskReturn({task_return_param_tys}) = "{task_return_module}" "{task_return_name}"
-                
-                pub fn {snake_func_name}_task_return({return_expr}) -> Unit {{ 
-                    {task_return_body}
-                    {export_func_name}TaskReturn({task_return_param_exprs})
-                }}
-                "#
+                fn wasmExportTaskReturn{}({params}) = "{task_return_module}" "{task_return_name}"
+                "#,
+                func.name.to_upper_camel_case()
             );
+
+            let func_name = self
+                .world_gen
+                .export_ns
+                .tmp(&format!("wasmExport{}CB", func.name.to_upper_camel_case()));
 
             uwriteln!(
                 self.ffi,
                 r#"
-                pub fn {export_func_name}(event_raw: Int, waitable: Int, code: Int) -> Int {{
-                    {ffi}callback(event_raw, waitable, code)
+                pub fn {func_name}(event_raw: Int, waitable: Int, code: Int) -> Int {{
+                    {async_pkg}cb(event_raw, waitable, code)
                 }}
-                "#
+                "#,
             );
             let export = format!(
                 r#"
-                pub fn {export_func_name}(event_raw: Int, waitable: Int, code: Int) -> Int {{
-                    {}{snake_func_name}_callback(event_raw, waitable, code)
+                pub fn {func_name}(event_raw: Int, waitable: Int, code: Int) -> Int {{
+                    {}{func_name}(event_raw, waitable, code)
                 }}
                 "#,
                 self.world_gen
                     .pkg_resolver
-                    .qualify_package(self.world_gen.opts.gen_dir.as_str(), self.name),
+                    .qualify_package(&self.world_gen.opts.gen_dir, self.name),
             );
 
             self.world_gen
                 .export
-                .insert(export_name, (export_func_name.clone(), export));
+                .insert(export_name, (func_name.clone(), export));
         }
 
         // If post return is needed, generate it
@@ -1491,20 +1465,6 @@ struct BlockStorage {
     cleanup: Vec<Cleanup>,
 }
 
-#[derive(Clone, Debug)]
-enum DeferredTaskReturn {
-    None,
-    Generating {
-        prev_src: String,
-        return_param: String,
-    },
-    Emitted {
-        params: Vec<(WasmType, String)>,
-        body: String,
-        return_param: String,
-    },
-}
-
 struct FunctionBindgen<'a, 'b> {
     interface_gen: &'b mut InterfaceGenerator<'a>,
     params: Box<[String]>,
@@ -1515,7 +1475,6 @@ struct FunctionBindgen<'a, 'b> {
     payloads: Vec<String>,
     cleanup: Vec<Cleanup>,
     needs_cleanup_list: bool,
-    deferred_task_return: DeferredTaskReturn,
 }
 
 impl<'a, 'b> FunctionBindgen<'a, 'b> {
@@ -1537,7 +1496,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             payloads: Vec::new(),
             cleanup: Vec::new(),
             needs_cleanup_list: false,
-            deferred_task_return: DeferredTaskReturn::None,
         }
     }
 
@@ -2352,6 +2310,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::IterBasePointer => results.push("iter_base".into()),
 
+            Instruction::AsyncTaskReturn { name, .. } => {
+                let func_name = name.to_upper_camel_case();
+                let operands = operands.join(", ");
+                uwriteln!(self.src, "wasmExport{func_name}({operands});");
+            }
+
             Instruction::CallWasm { sig, name } => {
                 let assignment = match &sig.results[..] {
                     [result] => {
@@ -2374,7 +2338,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwriteln!(self.src, "{assignment} wasmImport{func_name}({operands});");
             }
 
-            Instruction::CallInterface { func, async_ } => {
+            Instruction::CallInterface { func, .. } => {
                 let name = self.interface_gen.world_gen.pkg_resolver.func_call(
                     self.interface_gen.name,
                     func,
@@ -2382,63 +2346,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 );
 
                 let args = operands.join(", ");
-
-                if *async_ {
-                    let (async_func_result, task_return_result, task_return_type) =
-                        match func.result {
-                            Some(ty) => {
-                                let res = self.locals.tmp("return_result");
-                                (res.clone(), res, self.resolve_type_name(&ty))
-                            }
-                            None => ("_ignore".into(), "".into(), "Unit".into()),
-                        };
-
-                    if func.result.is_some() {
-                        results.push(async_func_result.clone());
-                    }
-                    let ffi = self.resolve_pkg(FFI_DIR);
-                    uwrite!(
-                        self.src,
-                        r#"
-                        let task = {ffi}current_task();
-                        let _ = task.with_waitable_set(fn(task) {{
-                            let {async_func_result}: Ref[{task_return_type}?] = Ref::new(None)
-                            task.wait(fn() {{
-                                {async_func_result}.val = Some({name}({args}));
-                            }})
-                            for {{
-                                if task.no_wait() && {async_func_result}.val is Some({async_func_result}){{
-                                   {name}_task_return({task_return_result});
-                                   break;
-                                }} else {{
-                                   {ffi}suspend() catch {{ 
-                                        _ => {{
-                                            {ffi}task_cancel();
-                                        }}
-                                   }}
-                                }}
-                            }}
-                        }})
-                        if task.is_fail() is Some({ffi}Cancelled::Cancelled) {{
-                                {ffi}task_cancel();
-                                return {ffi}CallbackCode::Exit.encode()
-                        }}
-                        if task.is_done() {{
-                            return {ffi}CallbackCode::Exit.encode()
-                        }}
-                        return {ffi}CallbackCode::Wait(task.handle()).encode()
-                        "#,
-                    );
-                    assert!(matches!(
-                        self.deferred_task_return,
-                        DeferredTaskReturn::None
-                    ));
-                    self.deferred_task_return = DeferredTaskReturn::Generating {
-                        prev_src: mem::take(&mut self.src),
-                        return_param: async_func_result.to_string(),
-                    };
-                    return;
-                }
 
                 let assignment = match func.result {
                     None => "let _ = ".into(),
@@ -2755,29 +2662,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::FutureLower { .. } => {
                 let op = &operands[0];
                 results.push(format!("{op}.handle"));
-            }
-
-            Instruction::AsyncTaskReturn { params, .. } => {
-                let (body, return_param) = match &mut self.deferred_task_return {
-                    DeferredTaskReturn::Generating {
-                        prev_src,
-                        return_param,
-                    } => {
-                        mem::swap(&mut self.src, prev_src);
-                        (mem::take(prev_src), return_param.clone())
-                    }
-                    _ => unreachable!(),
-                };
-                assert_eq!(params.len(), operands.len());
-                self.deferred_task_return = DeferredTaskReturn::Emitted {
-                    body,
-                    params: params
-                        .iter()
-                        .zip(operands)
-                        .map(|(a, b)| (*a, b.clone()))
-                        .collect(),
-                    return_param,
-                };
             }
 
             Instruction::StreamLower { .. } => {
