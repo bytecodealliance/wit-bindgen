@@ -1,9 +1,9 @@
 using System.Diagnostics;
-using TestWorld.wit.exports.test.manyArguments;
+using TestWorld.wit.Exports.test.manyArguments;
 
 namespace TestWorld;
 
-public class ToTestImpl : ITestWorld
+public class ToTestExportsImpl : IToTestExports
 {
     public static void ManyArguments(
         ulong a1,

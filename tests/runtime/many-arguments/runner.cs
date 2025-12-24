@@ -1,15 +1,14 @@
 using System;
-using System.Runtime.InteropServices;
 using System.Diagnostics;
-using RunnerWorld.wit.imports.test.manyArguments;
+using RunnerWorld.wit.Imports.test.manyArguments;
 
 namespace RunnerWorld;
 
-public class RunnerWorldImpl : IRunnerWorld
+public class RunnerWorldExportsImpl : IRunnerWorldExports
 {
     public static void Run()
     {
-        ToTestInterop.ManyArguments(
+        IToTestImports.ManyArguments(
             1,
             2,
             3,

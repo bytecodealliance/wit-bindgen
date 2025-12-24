@@ -1,61 +1,62 @@
 //@ args = '--with-wit-results'
+using IntermediateWorld.wit.Imports.test.results;
 
-namespace IntermediateWorld.wit.exports.test.results
+namespace IntermediateWorld.wit.Exports.test.results
 {
-    public class TestImpl : ITest
+    public class TestExportsImpl : ITestExports
     {
         public static Result<float, string> StringError(float a)
         {
-            return imports.test.results.TestInterop.StringError(a);
+            return ITestImports.StringError(a);
         }
 
-        public static Result<float, ITest.E> EnumError(float a)
+        public static Result<float, ITestExports.E> EnumError(float a)
         {
-            var result = imports.test.results.TestInterop.EnumError(a);
+            var result = ITestImports.EnumError(a);
             if (result.IsOk) {
-                return Result<float, ITest.E>.Ok(result.AsOk);
+                return Result<float, ITestExports.E>.Ok(result.AsOk);
             } else {
                 switch (result.AsErr){
-                    case imports.test.results.ITest.E.A:
-                        return Result<float, ITest.E>.Err(ITest.E.A);
-                    case imports.test.results.ITest.E.B:
-                        return Result<float, ITest.E>.Err(ITest.E.B);
-                    case imports.test.results.ITest.E.C:
-                        return Result<float, ITest.E>.Err(ITest.E.C);
+                    case ITestImports.E.A:
+                        return Result<float, ITestExports.E>.Err(ITestExports.E.A);
+                    case ITestImports.E.B:
+                        return Result<float, ITestExports.E>.Err(ITestExports.E.B);
+                    case ITestImports.E.C:
+                        return Result<float, ITestExports.E>.Err(ITestExports.E.C);
                     default:
                         throw new Exception("unreachable");
                 }
             }
         }
 
-        public static Result<float, ITest.E2> RecordError(float a)
+        public static Result<float, ITestExports.E2> RecordError(float a)
         {
-            var result = imports.test.results.TestInterop.RecordError(a);
+            var result = ITestImports.RecordError(a);
             if (result.IsOk) {
-                return Result<float, ITest.E2>.Ok(result.AsOk);
+                return Result<float, ITestExports.E2>.Ok(result.AsOk);
             } else {
                 switch (result.AsErr) {
-                    case imports.test.results.ITest.E2:
-                        return Result<float, ITest.E2>.Err(new ITest.E2(result.AsErr.line, result.AsErr.column));
+                    case ITestImports.E2:
+                        return Result<float, ITestExports.E2>.Err(new ITestExports.E2(result.AsErr.line, result.AsErr.column));
                     default:
                         throw new Exception("unreachable");
                 }
             }
         }
 
-        public static Result<float, ITest.E3> VariantError(float a)
+        public static Result<float, ITestExports.E3> VariantError(float a)
         {
-            var result = imports.test.results.TestInterop.VariantError(a);
+            var result = ITestImports.VariantError(a);
             if (result.IsOk) {
-                return Result<float, ITest.E3>.Ok(result.AsOk);
+                return Result<float, ITestExports.E3>.Ok(result.AsOk);
             } else {
                 switch (result.AsErr) {
-                    case imports.test.results.ITest.E3:
+                    case ITestImports.E3:
                         switch (result.AsErr.Tag){
-                            case imports.test.results.ITest.E3.Tags.E1:
-                                return Result<float, ITest.E3>.Err(ITest.E3.E1((ITest.E)Enum.Parse(typeof(ITest.E), result.AsErr.AsE1.ToString())));
-                            case imports.test.results.ITest.E3.Tags.E2:
-                                return  Result<float, ITest.E3>.Err(ITest.E3.E2(new ITest.E2(result.AsErr.AsE2.line, result.AsErr.AsE2.column)));
+                            case ITestImports.E3.Tags.E1:
+                                return Result<float, ITestExports.E3>.Err(ITestExports.E3.E1((ITestExports.E)Enum.Parse(typeof(ITestExports.E), result.AsErr.AsE1.ToString())));
+                            case ITestImports.E3.Tags.E2:
+                                return  Result<float, ITestExports.E3>.Err(ITestExports.E3.E2(new ITestExports.E2(result.AsErr.AsE2.line, result.AsErr.AsE2.column)));
                             default:
                                 throw new Exception("unreachable");
                         }
@@ -67,12 +68,12 @@ namespace IntermediateWorld.wit.exports.test.results
 
         public static Result<uint, None> EmptyError(uint a)
         {
-            return imports.test.results.TestInterop.EmptyError(a);
+            return ITestImports.EmptyError(a);
         }
 
         public static Result<Result<None, string>, string> DoubleError(uint a)
         {
-            return imports.test.results.TestInterop.DoubleError(a);
+            return ITestImports.DoubleError(a);
         }
     }
 }

@@ -73,7 +73,7 @@ impl CSProjectLLVMBuilder {
             "<Project Sdk=\"Microsoft.NET.Sdk\">
 
         <PropertyGroup>
-            <TargetFramework>net9.0</TargetFramework>
+            <TargetFramework>net10.0</TargetFramework>
             <LangVersion>preview</LangVersion>
             <RootNamespace>{name}</RootNamespace>
             <ImplicitUsings>enable</ImplicitUsings>
@@ -109,11 +109,10 @@ impl CSProjectLLVMBuilder {
             csproj.push_str(
                 &format!(
                     r#"
-                <ItemGroup>
-                    <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-*" />
-                    <PackageReference Include="runtime.{os}-x64.Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-*" />
-                </ItemGroup>
-                "#),
+        <ItemGroup>
+            <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-*" />
+            <PackageReference Include="runtime.{os}-x64.Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-*" />
+        </ItemGroup>"#),
             );
 
             fs::write(
@@ -153,8 +152,9 @@ impl CSProjectLLVMBuilder {
         }
 
         csproj.push_str(
-            r#"</Project>
-            "#,
+            r#"
+</Project>
+"#,
         );
 
         fs::write(self.dir.join(format!("{camel}.csproj")), csproj)?;
@@ -194,7 +194,7 @@ impl CSProjectMonoBuilder {
             "<Project Sdk=\"Microsoft.NET.Sdk\">
 
         <PropertyGroup>
-            <TargetFramework>net9.0</TargetFramework>
+            <TargetFramework>net10.0</TargetFramework>
             <RuntimeIdentifier>wasi-wasm</RuntimeIdentifier>
             <OutputType>Library</OutputType>
             {maybe_aot}

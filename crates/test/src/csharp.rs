@@ -40,12 +40,10 @@ impl LanguageMethods for Csharp {
         _config: &crate::config::WitConfig,
         _args: &[String],
     ) -> bool {
-        // TODO: remove this exclusions as support is created
+        // TODO: remove these exclusions as support is created
         matches!(
             name,
             "resources-with-streams.wit"
-                | "resources-with-futures.wit"
-                | "futures.wit"
                 | "streams.wit"
                 | "error-context.wit"
                 | "resource-fallible-constructor.wit"

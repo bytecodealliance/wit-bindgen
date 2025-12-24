@@ -1,19 +1,19 @@
 using System.Diagnostics;
-using RunnerWorld.wit.imports.test.options;
+using RunnerWorld.wit.Imports.test.options;
 
 namespace RunnerWorld;
 
-public class RunnerWorldImpl : IRunnerWorld
+public class RunnerWorldExportsImpl : IRunnerWorldExports
 {
     public static void Run()
     {
-            ToTestInterop.OptionNoneParam(null);
-            ToTestInterop.OptionSomeParam("foo");
-            Debug.Assert(ToTestInterop.OptionNoneResult() == null);
-            Debug.Assert(ToTestInterop.OptionSomeResult() == "foo");
-            Debug.Assert(ToTestInterop.OptionRoundtrip("foo") == "foo");
-            Debug.Assert(ToTestInterop.DoubleOptionRoundtrip(new Option<uint?>(42)).Value == 42);
-            Debug.Assert(ToTestInterop.DoubleOptionRoundtrip(new Option<uint?>(null)).Value == null);
-            Debug.Assert(!ToTestInterop.DoubleOptionRoundtrip(Option<uint?>.None).HasValue);
+            IToTestImports.OptionNoneParam(null);
+            IToTestImports.OptionSomeParam("foo");
+            Debug.Assert(IToTestImports.OptionNoneResult() == null);
+            Debug.Assert(IToTestImports.OptionSomeResult() == "foo");
+            Debug.Assert(IToTestImports.OptionRoundtrip("foo") == "foo");
+            Debug.Assert(IToTestImports.DoubleOptionRoundtrip(new Option<uint?>(42)).Value == 42);
+            Debug.Assert(IToTestImports.DoubleOptionRoundtrip(new Option<uint?>(null)).Value == null);
+            Debug.Assert(!IToTestImports.DoubleOptionRoundtrip(Option<uint?>.None).HasValue);
     }
 }

@@ -1,14 +1,11 @@
-using System;
-using System.Runtime.InteropServices;
-using System.Diagnostics;
-using RunnerWorld.wit.imports.a.b;
+using RunnerWorld.wit.Imports.a.b;
 
 namespace RunnerWorld;
 
-public class RunnerWorldImpl : IRunnerWorld
+public class RunnerWorldExportsImpl : IRunnerWorldExports
 {
     public static void Run()
     {
-        TheTestInterop.X();
+        ITheTestImports.X();
     }
 }

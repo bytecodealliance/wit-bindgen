@@ -1,17 +1,17 @@
-namespace IntermediateWorld.wit.exports.test.results
+namespace IntermediateWorld.wit.Exports.test.results
 {
-    public class TestImpl : ITest
+    public class TestExportsImpl : ITestExports
     {
         public static float StringError(float a)
         {
-            return imports.test.results.TestInterop.StringError(a);
+            return Imports.test.results.ITestImports.StringError(a);
         }
 
         public static float EnumError(float a)
         {
             try {
-                return imports.test.results.TestInterop.EnumError(a);
-            } catch (WitException<imports.test.results.ITest.E> e) {
+                return Imports.test.results.ITestImports.EnumError(a);
+            } catch (WitException<Imports.test.results.ITestImports.E> e) {
                 throw new WitException(e.TypedValue, 0);
             }
         }
@@ -19,22 +19,22 @@ namespace IntermediateWorld.wit.exports.test.results
         public static float RecordError(float a)
         {
             try {
-                return imports.test.results.TestInterop.RecordError(a);
-            } catch (WitException<imports.test.results.ITest.E2> e) {
-                throw new WitException(new ITest.E2(e.TypedValue.line, e.TypedValue.column), 0);
+                return Imports.test.results.ITestImports.RecordError(a);
+            } catch (WitException<Imports.test.results.ITestImports.E2> e) {
+                throw new WitException(new ITestExports.E2(e.TypedValue.line, e.TypedValue.column), 0);
             }
         }
 
         public static float VariantError(float a)
         {
             try {
-                return imports.test.results.TestInterop.VariantError(a);
-            } catch (WitException<imports.test.results.ITest.E3> e)
-                when (e.TypedValue.Tag == imports.test.results.ITest.E3.Tags.E1) {
-                    throw new WitException(ITest.E3.E1((ITest.E)Enum.Parse(typeof(ITest.E), e.TypedValue.AsE1.ToString())), 0);
-            } catch (WitException<imports.test.results.ITest.E3> e)
-                when (e.TypedValue.Tag == imports.test.results.ITest.E3.Tags.E2) {
-                    throw new WitException(ITest.E3.E2(new ITest.E2(e.TypedValue.AsE2.line, e.TypedValue.AsE2.column)), 0);
+                return Imports.test.results.ITestImports.VariantError(a);
+            } catch (WitException<Imports.test.results.ITestImports.E3> e)
+                when (e.TypedValue.Tag == Imports.test.results.ITestImports.E3.Tags.E1) {
+                    throw new WitException(ITestExports.E3.E1((ITestExports.E)Enum.Parse(typeof(ITestExports.E), e.TypedValue.AsE1.ToString())), 0);
+            } catch (WitException<Imports.test.results.ITestImports.E3> e)
+                when (e.TypedValue.Tag == Imports.test.results.ITestImports.E3.Tags.E2) {
+                    throw new WitException(ITestExports.E3.E2(new ITestExports.E2(e.TypedValue.AsE2.line, e.TypedValue.AsE2.column)), 0);
             }
             catch {
                 throw new Exception("unreachable");
@@ -43,12 +43,12 @@ namespace IntermediateWorld.wit.exports.test.results
 
         public static uint EmptyError(uint a)
         {
-            return imports.test.results.TestInterop.EmptyError(a);
+            return Imports.test.results.ITestImports.EmptyError(a);
         }
 
         public static void DoubleError(uint a)
         {
-            imports.test.results.TestInterop.DoubleError(a);
+            Imports.test.results.ITestImports.DoubleError(a);
         }
     }
 }
