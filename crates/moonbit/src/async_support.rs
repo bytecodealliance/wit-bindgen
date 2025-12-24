@@ -146,7 +146,7 @@ impl<'a> InterfaceGenerator<'a> {
                 }
             }
         } else {
-            let mut f = FunctionBindgen::new(self, self.name, Box::new([]));
+            let mut f = FunctionBindgen::new(self, Box::new([]));
             for (name, ty) in mbt_sig.params.iter() {
                 lower_params.extend(abi::lower_flat(
                     f.interface_gen.resolve,
@@ -431,20 +431,20 @@ fn {table_name}() -> {ffi}{camel_kind}VTable[{result}] {{
         indirect: bool,
         module: &str,
     ) -> String {
-        let mut f = FunctionBindgen::new(self, module, Box::new([]));
+        let mut f = FunctionBindgen::new(self, Box::new([]));
         abi::deallocate_lists_in_types(f.interface_gen.resolve, types, operands, indirect, &mut f);
         f.src
     }
 
     fn lift_from_memory(&mut self, address: &str, ty: &Type, module: &str) -> (String, String) {
-        let mut f = FunctionBindgen::new(self, module, Box::new([]));
+        let mut f = FunctionBindgen::new(self, Box::new([]));
 
         let result = abi::lift_from_memory(f.interface_gen.resolve, &mut f, address.into(), ty);
         (f.src, result)
     }
 
     fn lower_to_memory(&mut self, address: &str, value: &str, ty: &Type, module: &str) -> String {
-        let mut f = FunctionBindgen::new(self, module, Box::new([]));
+        let mut f = FunctionBindgen::new(self, Box::new([]));
         abi::lower_to_memory(
             f.interface_gen.resolve,
             &mut f,
