@@ -42,7 +42,7 @@ pub struct CSharp {
     pub(crate) all_resources: HashMap<TypeId, ResourceInfo>,
     pub(crate) world_resources: HashMap<TypeId, ResourceInfo>,
     pub(crate) import_funcs_called: bool,
-
+    pub(crate) generated_future_types: HashSet<TypeId>,
     // Top level types that are bidirectional like enums, to save code size and not duplicate whene unnecessary.
     pub(crate) bidirectional_types_src: HashSet<String>,
 }
@@ -187,7 +187,7 @@ impl WorldGenerator for CSharp {
         // for anonymous types
         r#gen.define_interface_types(id);
 
-        r#gen.add_futures(import_module_name);
+        r#gen.add_futures(import_module_name, false);
 
         r#gen.add_interface_fragment(false);
 
@@ -268,7 +268,7 @@ impl WorldGenerator for CSharp {
         r#gen.define_interface_types(id);
 
         let import_module_name = &resolve.name_world_key(key);
-        r#gen.add_futures(&format!("[export]{import_module_name}"));
+        r#gen.add_futures(&format!("[export]{import_module_name}"), true);
 
         r#gen.add_interface_fragment(true);
         Ok(())
@@ -633,6 +633,20 @@ impl WorldGenerator for CSharp {
                 src.push_str("}\n");
                 src.push_str("}\n");
             }
+        }
+
+        if !self.generated_future_types.is_empty() {
+            src.push_str("\n");
+            src.push_str(
+                r#"public static class WitFuture
+            {
+                public static (FutureReader, FutureWriter) FutureNew(FutureVTable table)
+                {
+                    return FutureHelpers.RawFutureNew(table);
+                }
+            }
+            "#,
+            );
         }
 
         if self.needs_async_support {

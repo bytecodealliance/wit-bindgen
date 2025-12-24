@@ -40,6 +40,7 @@ impl InterfaceTypeAndFragments {
 
 pub(crate) struct FutureInfo {
     pub name: String,
+    pub generic_type_name: String,
     pub ty: TypeId,
 }
 
@@ -206,23 +207,58 @@ impl InterfaceGenerator<'_> {
             });
     }
 
-    pub(crate) fn add_futures(&mut self, import_module_name: &str) {
+    pub(crate) fn add_futures(&mut self, import_module_name: &str, is_export: bool) {
         if self.futures.is_empty() {
             return;
         }
 
+        let mut bool_non_generic_new_added = false;
+        let mut bool_generic_new_added = false;
+        let mut generated_future_types: HashSet<TypeId> = HashSet::new();
         let (_namespace, interface_name) = &CSharp::get_class_name_from_qualified_name(self.name);
         let interop_name = format!("{}Interop", interface_name.strip_prefix("I").unwrap());
-        let mut generated_future_types: HashSet<TypeId> = HashSet::new();
 
         for future in &self.futures {
             let future_name = &future.name;
             if !generated_future_types.contains(&future.ty) {
+                let generic_type_name = &future.generic_type_name;
+                let upper_camel_future_type = generic_type_name.to_upper_camel_case();
+                uwrite!(
+                    self.csharp_interop_src,
+                    r#"
+                    internal static FutureVTable FutureVTable{upper_camel_future_type} = new FutureVTable()
+                    {{
+                        New = FutureNew{upper_camel_future_type},
+                        StartRead = FutureRead{upper_camel_future_type},
+                        Write = FutureWrite{upper_camel_future_type},
+                        DropReader = FutureDropReader{upper_camel_future_type},
+                        DropWriter = FutureDropWriter{upper_camel_future_type},
+                    }};
+                    "#
+                );
+
+                uwrite!(
+                    self.csharp_interop_src,
+                    r#"
+                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[async-lower][future-read-0]read-future"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
+                    internal static unsafe extern int FutureRead{upper_camel_future_type}(int readable, IntPtr ptr);
+
+                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[async-lower][future-write-0]read-future"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
+                    internal static unsafe extern int FutureWrite{upper_camel_future_type}(int writeable, IntPtr buffer);
+            
+                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-drop-readable-0]read-future"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
+                    internal static extern void FutureDropReader{upper_camel_future_type}(int readable);
+
+                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-drop-writable-0]read-future"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
+                    internal static extern void FutureDropWriter{upper_camel_future_type}(int readable);
+                "#
+                );
+
                 uwrite!(
                     self.csharp_interop_src,
                     r#"
                     [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-new-0]{future_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
-                    internal static extern ulong FutureNew();
+                    internal static extern ulong FutureNew{upper_camel_future_type}();
                     "#
                 );
 
@@ -231,7 +267,7 @@ impl InterfaceGenerator<'_> {
                     self.csharp_interop_src,
                     r#"
                     [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-cancel-read-0]{future_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
-                    internal static extern uint FutureCancelRead(int readable);
+                    internal static extern uint FutureCancelRead{upper_camel_future_type}(int readable);
                     "#
                 );
 
@@ -239,7 +275,7 @@ impl InterfaceGenerator<'_> {
                     self.csharp_interop_src,
                     r#"
                     [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-cancel-write-0]{future_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
-                    internal static extern uint FutureCancelWrite(int writeable);
+                    internal static extern uint FutureCancelWrite{upper_camel_future_type}(int writeable);
                     "#
                 );
 
@@ -247,93 +283,83 @@ impl InterfaceGenerator<'_> {
                     self.csharp_interop_src,
                     r#"
                     [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-drop-writeable-0]{future_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
-                    internal static extern void FutureDropWriteable(int writeable);
+                    internal static extern void FutureDropWriteable{upper_camel_future_type}(int writeable);
                     "#
                 );
 
-                self.csharp_gen
-                    .interface_fragments
-                    .entry(self.name.to_string())
-                    .or_insert_with(|| InterfaceTypeAndFragments::new(false))
-                    .interface_fragments
-                    .push(InterfaceFragment {
-                        csharp_src: format!(r#"
-                        public static (FutureReader, FutureWriter) FutureNew() 
-                        {{
-                                var packed = {interop_name}.FutureNew();
-                                var readerHandle = (int)(packed & 0xFFFFFFFF);
-                                var writerHandle = (int)(packed >> 32);
+                match future.generic_type_name.as_str() {
+                    "" => {
+                        if !bool_non_generic_new_added {
+                            self.csharp_gen
+                                .interface_fragments
+                                .entry(self.name.to_string())
+                                .or_insert_with(|| InterfaceTypeAndFragments::new(is_export))
+                                .interface_fragments
+                                .push(InterfaceFragment {
+                                    csharp_src: format!(r#"
+                                    // FutureReader/Writer will be generic
+                                    public static (FutureReader, FutureWriter) FutureNew() 
+                                    {{
+                                            return FutureHelpers.RawFutureNew({interop_name}.FutureVTable);
+                                    }}
+                                    "#).to_string(),
+                                    csharp_interop_src: "".to_string(),
+                                    stub: "".to_string(),
+                                    direction: Some(self.direction),
+                                });
+                            bool_non_generic_new_added = true;
+                        }
+                    }
+                    _ => {
+                        self.csharp_gen
+                            .interface_fragments
+                            .entry(self.name.to_string())
+                            .or_insert_with(|| InterfaceTypeAndFragments::new(is_export))
+                            .interface_fragments
+                            .push(InterfaceFragment {
+                                csharp_src: format!(r#"
+                                public static (FutureReader<{generic_type_name}>, FutureWriter<{generic_type_name}>) FutureNew{upper_camel_future_type}() 
+                                {{
+                                        return FutureHelpers.RawFutureNew<{generic_type_name}>({interop_name}.FutureVTable{upper_camel_future_type});
+                                }}
+                                "#).to_string(),
+                                csharp_interop_src: "".to_string(),
+                                stub: "".to_string(),
+                                direction: Some(self.direction),
+                            });
 
-                                return (new FutureReaderVoid(readerHandle), new FutureWriterVoid(writerHandle));
-                        }}
-                        "#).to_string(),
-                        csharp_interop_src: "".to_string(),
-                        stub: "".to_string(),
-                        direction: Some(self.direction),
-                    });
+                        if !bool_generic_new_added {
+                            self.csharp_gen
+                                .interface_fragments
+                                .entry(self.name.to_string())
+                                .or_insert_with(|| InterfaceTypeAndFragments::new(is_export))
+                                .interface_fragments
+                                .push(InterfaceFragment {
+                                    csharp_src: format!(r#"
+                                    // FutureReader/Writer will be generic
+                                    public static (FutureReader<T>, FutureWriter<T>) FutureNew<T>(FutureVTable vtable) 
+                                    {{
+                                            return FutureHelpers.RawFutureNew<T>(vtable);
+                                    }}
+                                    "#).to_string(),
+                                    csharp_interop_src: "".to_string(),
+                                    stub: "".to_string(),
+                                    direction: Some(self.direction),
+                                });
+                            bool_generic_new_added = true;
+                        }
+                    }
+                }
+
                 generated_future_types.insert(future.ty);
             }
         }
 
         self.csharp_gen.needs_async_support = true;
 
-        // TODO: When we do the next type, switch to a generic implementation with a vtable style call
-        // for the interop functions.  This will align c# with other lanaguage implementations.
-        let future_type_name = "Void";
-
         self.csharp_gen
-            .interface_fragments
-            .entry(self.name.to_string())
-            .or_insert_with(|| InterfaceTypeAndFragments::new(false))
-            .interface_fragments
-            .push(InterfaceFragment {
-                csharp_src: format!(r#"
-                    public class FutureReader{future_type_name} : FutureReader
-                    {{
-                        public FutureReader{future_type_name}(int handle) : base(handle) {{ }}
-
-                        protected override int ReadInternal()
-                        {{
-                            return {interop_name}.FutureRead{future_type_name}(Handle, IntPtr.Zero);
-                        }}
-
-                        protected override void Drop()
-                        {{
-                            {interop_name}.FutureDropReader{future_type_name}(Handle);
-                        }}
-                    }}
-
-                    public class FutureWriter{future_type_name} : FutureWriter
-                    {{
-                        public FutureWriter{future_type_name}(int handle) : base(handle) {{ }}
-
-                        protected override int Write(int handle, IntPtr buffer)
-                        {{
-                            return {interop_name}.FutureWrite{future_type_name}(handle, buffer);
-                        }}
-
-                        protected override void Drop()
-                        {{
-                            {interop_name}.FutureDropWriter{future_type_name}(Handle);
-                        }}
-                    }}  
-                    "#).to_string(),
-                csharp_interop_src: format!(r#"
-                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[async-lower][future-read-0]read-future"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
-                    internal static unsafe extern int FutureRead{future_type_name}(int readable, IntPtr ptr);
-
-                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[async-lower][future-write-0]read-future"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
-                    internal static unsafe extern int FutureWrite{future_type_name}(int writeable, IntPtr buffer);
-            
-                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-drop-readable-0]read-future"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
-                    internal static extern void FutureDropReader{future_type_name}(int readable);
-
-                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-drop-writable-0]read-future"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
-                    internal static extern void FutureDropWriter{future_type_name}(int readable);
-                "#).to_string(),
-                stub: "".to_string(),
-                direction: Some(self.direction),
-            });
+            .generated_future_types
+            .extend(generated_future_types.iter());
     }
 
     pub(crate) fn add_world_fragment(self, direction: Option<Direction>) {
@@ -470,7 +496,7 @@ impl InterfaceGenerator<'_> {
     }
 
     fn func_payload_and_return_type(&mut self, func: &Function) -> (String, Vec<TypeId>) {
-        let return_type = self.func_return_type(func);
+        let return_type = self.func_return_type(func, true);
         let results = if let FunctionKind::Constructor(_) = &func.kind {
             Vec::new()
         } else {
@@ -492,7 +518,7 @@ impl InterfaceGenerator<'_> {
         (return_type, results)
     }
 
-    fn func_return_type(&mut self, func: &Function) -> String {
+    fn func_return_type(&mut self, func: &Function, qualifier: bool) -> String {
         let result_type = if let FunctionKind::Constructor(_) = &func.kind {
             String::new()
         } else {
@@ -509,7 +535,7 @@ impl InterfaceGenerator<'_> {
                             );
                             if let Some(ty) = payload {
                                 self.csharp_gen.needs_result = true;
-                                self.type_name_with_qualifier(&ty, true)
+                                self.type_name_with_qualifier(&ty, qualifier)
                             } else {
                                 "void".to_string()
                             }
@@ -969,17 +995,8 @@ impl InterfaceGenerator<'_> {
                         let (Handle::Own(id) | Handle::Borrow(id)) = handle;
                         self.type_name_with_qualifier(&Type::Id(*id), qualifier)
                     }
-                    TypeDefKind::Future(ty) => {
-                        let name = ty
-                            .as_ref()
-                            .map(|ty| self.type_name_with_qualifier(ty, qualifier))
-                            .unwrap_or_else(|| "".to_owned());
-                        if name.is_empty() {
-                            return "FutureReader".to_owned();
-                        } else {
-                            // TODO: When we add more future types, this will become a generic.
-                            return format!("FutureReader{name}");
-                        }
+                    TypeDefKind::Future(_ty) => {
+                        return format!("FutureReader").to_owned();
                     }
                     _ => {
                         if let Some(name) = &ty.name {
@@ -1221,7 +1238,7 @@ impl InterfaceGenerator<'_> {
     }
 
     fn sig_string(&mut self, func: &Function, qualifier: bool) -> String {
-        let result_type = self.func_return_type(&func);
+        let result_type = self.func_return_type(&func, qualifier);
 
         let params = func
             .params
@@ -1244,6 +1261,7 @@ impl InterfaceGenerator<'_> {
             | FunctionKind::AsyncFreestanding
             | FunctionKind::Static(_)
             | FunctionKind::AsyncStatic(_) => (func.item_name().to_upper_camel_case(), "static"),
+
             FunctionKind::Method(_) | FunctionKind::AsyncMethod(_) => {
                 (func.item_name().to_upper_camel_case(), "")
             }
@@ -1258,9 +1276,10 @@ impl InterfaceGenerator<'_> {
         format!("{access} {modifiers} {result_type} {camel_name}({params})")
     }
 
-    pub(crate) fn add_future(&mut self, func_name: &str, ty: &TypeId) {
+    pub(crate) fn add_future(&mut self, func_name: &str, generic_type_name: &str, ty: &TypeId) {
         self.futures.push(FutureInfo {
             name: func_name.to_string(),
+            generic_type_name: generic_type_name.to_string(),
             ty: ty.clone(),
         });
     }

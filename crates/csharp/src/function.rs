@@ -1402,9 +1402,15 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.extend(operands.iter().take(*amt).map(|v| v.clone()));
             }
 
-            Instruction::FutureLower { payload: _, ty } => {
+            Instruction::FutureLower { payload, ty } => {
                 let op = &operands[0];
-                self.interface_gen.add_future(self.func_name, ty);
+                let generic_type_name = match payload {
+                    Some(generic_type) => {
+                        &self.interface_gen.type_name_with_qualifier(generic_type, false)
+                    }
+                    None => ""
+                };
+                self.interface_gen.add_future(self.func_name, &generic_type_name, ty);
 
                 results.push(format!("{op}.Handle"));
             }
@@ -1413,14 +1419,28 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwriteln!(self.src, "// TODO_task_cancel.forget();");
             }
 
-            Instruction::FutureLift { payload: _, ty } => {
-                // TODO get the prefix for the type
-                let sig_type_name = "Void";
+            Instruction::FutureLift { payload, ty } => {
+                 let generic_type_name = match payload {
+                    Some(generic_type) => {
+                        &self.interface_gen.type_name_with_qualifier(generic_type, false)
+                    }
+                    None => ""
+                };
+                let upper_camel = generic_type_name.to_upper_camel_case();
+            //    let sig_type_name = "Void";
                 let reader_var = self.locals.tmp("reader");
-                uwriteln!(self.src, "var {reader_var} = new {}.FutureReader{}({});", self.interface_gen.name, sig_type_name, operands[0]);
+                let module = self.interface_gen.name;
+                let (import_name, interface_name) = CSharp::get_class_name_from_qualified_name(module);
+                let export_name = import_name
+                    .replace(".Imports.", ".Exports.");
+                let base_interface_name = interface_name
+                    .strip_prefix("I").unwrap()
+                    .replace("Imports", "Exports"); // TODO: This is fragile and depends on the interface name.
+
+                uwriteln!(self.src, "var {reader_var} = new FutureReader({}, {export_name}.{base_interface_name}Interop.FutureVTable{});", operands[0], upper_camel);
                 results.push(reader_var);
 
-                self.interface_gen.add_future(self.func_name, ty);
+                self.interface_gen.add_future(self.func_name, &generic_type_name, ty);
                 self.interface_gen.csharp_gen.needs_async_support = true;
             }
 

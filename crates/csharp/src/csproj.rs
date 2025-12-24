@@ -73,7 +73,7 @@ impl CSProjectLLVMBuilder {
             "<Project Sdk=\"Microsoft.NET.Sdk\">
 
         <PropertyGroup>
-            <TargetFramework>net9.0</TargetFramework>
+            <TargetFramework>net10.0</TargetFramework>
             <LangVersion>preview</LangVersion>
             <RootNamespace>{name}</RootNamespace>
             <ImplicitUsings>enable</ImplicitUsings>
@@ -194,7 +194,7 @@ impl CSProjectMonoBuilder {
             "<Project Sdk=\"Microsoft.NET.Sdk\">
 
         <PropertyGroup>
-            <TargetFramework>net9.0</TargetFramework>
+            <TargetFramework>net10.0</TargetFramework>
             <RuntimeIdentifier>wasi-wasm</RuntimeIdentifier>
             <OutputType>Library</OutputType>
             {maybe_aot}
