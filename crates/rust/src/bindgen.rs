@@ -1,6 +1,6 @@
 use crate::{
-    ConstructorReturnType, Identifier, InterfaceGenerator, RustFlagsRepr,
-    classify_constructor_return_type, int_repr, to_rust_ident,
+    ConstructorReturnType, InterfaceGenerator, RustFlagsRepr, classify_constructor_return_type,
+    int_repr, to_rust_ident,
 };
 use heck::*;
 use std::fmt::Write as _;
@@ -427,19 +427,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::FutureLift { payload, .. } => {
                 let async_support = self.r#gen.r#gen.async_support_path();
                 let op = &operands[0];
-                let name = payload
-                    .as_ref()
-                    .map(|ty| {
-                        self.r#gen
-                            .type_name_owned_with_id(ty, Identifier::StreamOrFuturePayload)
-                    })
-                    .unwrap_or_else(|| "()".into());
-                let ordinal = self
-                    .r#gen
-                    .r#gen
-                    .future_payloads
-                    .get_index_of(&name)
-                    .unwrap();
+                let key = payload.as_ref().map(|ty| self.r#gen.canonical_type_key(ty));
+                let ordinal = self.r#gen.r#gen.future_payloads.get_index_of(&key).unwrap();
                 let path = self.r#gen.path_to_root();
                 results.push(format!(
                     "{async_support}::FutureReader::new\
@@ -455,19 +444,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::StreamLift { payload, .. } => {
                 let async_support = self.r#gen.r#gen.async_support_path();
                 let op = &operands[0];
-                let name = payload
-                    .as_ref()
-                    .map(|ty| {
-                        self.r#gen
-                            .type_name_owned_with_id(ty, Identifier::StreamOrFuturePayload)
-                    })
-                    .unwrap_or_else(|| "()".into());
-                let ordinal = self
-                    .r#gen
-                    .r#gen
-                    .stream_payloads
-                    .get_index_of(&name)
-                    .unwrap();
+                let key = payload.as_ref().map(|ty| self.r#gen.canonical_type_key(ty));
+                let ordinal = self.r#gen.r#gen.stream_payloads.get_index_of(&key).unwrap();
                 let path = self.r#gen.path_to_root();
                 results.push(format!(
                     "{async_support}::StreamReader::new\

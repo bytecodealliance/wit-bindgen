@@ -528,12 +528,13 @@ macro_rules! {macro_name} {{
         } else {
             "()".into()
         };
+        let key = payload_type.map(|ty| self.canonical_type_key(ty));
         let map = match payload_for {
             PayloadFor::Future => &mut self.r#gen.future_payloads,
             PayloadFor::Stream => &mut self.r#gen.stream_payloads,
         };
 
-        if map.contains_key(&name) {
+        if map.contains_key(&key) {
             return;
         }
         let ordinal = map.len();
@@ -682,7 +683,7 @@ pub mod vtable{ordinal} {{
             PayloadFor::Future => &mut self.r#gen.future_payloads,
             PayloadFor::Stream => &mut self.r#gen.stream_payloads,
         };
-        map.insert(name, code);
+        map.insert(key, code);
     }
 
     fn generate_guest_import(&mut self, func: &Function, interface: Option<&WorldKey>) {
@@ -1700,11 +1701,16 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
         }
     }
 
-    pub(crate) fn type_name_owned_with_id(&mut self, ty: &Type, id: Identifier<'i>) -> String {
-        let old_identifier = mem::replace(&mut self.identifier, id);
-        let name = self.type_name_owned(ty);
-        self.identifier = old_identifier;
-        name
+    /// Returns the canonical representation of the given Type for the purposes
+    /// of deduplicating StreamPayload and FuturePayload implementations.
+    ///
+    /// If the given Type is a TypeId, then dealias it. Otherwise, return the
+    /// primitive type passed in.
+    pub(crate) fn canonical_type_key(&self, t: &Type) -> Type {
+        match t {
+            Type::Id(id) => Type::Id(dealias(self.resolve, *id)),
+            _ => *t,
+        }
     }
 
     fn type_name_owned(&mut self, ty: &Type) -> String {

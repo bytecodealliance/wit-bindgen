@@ -51,8 +51,8 @@ pub struct RustWasm {
     /// Maps wit interface and type names to their Rust identifiers
     with: GenerationConfiguration,
 
-    future_payloads: IndexMap<String, String>,
-    stream_payloads: IndexMap<String, String>,
+    future_payloads: IndexMap<Option<Type>, String>,
+    stream_payloads: IndexMap<Option<Type>, String>,
 }
 
 #[derive(Default)]
