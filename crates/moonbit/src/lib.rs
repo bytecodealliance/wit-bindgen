@@ -614,7 +614,8 @@ impl InterfaceGenerator<'_> {
             .world_gen
             .opts
             .async_
-            .is_async(self.resolve, self.interface, func, false);
+            .is_async(self.resolve, self.interface, func, false)
+            || !func.find_futures_and_streams(self.resolve).is_empty();
         if async_ {
             self.world_gen.async_support.mark_async();
             self.bindings = self.generate_async_binding(func);
@@ -719,7 +720,8 @@ impl InterfaceGenerator<'_> {
             .world_gen
             .opts
             .async_
-            .is_async(self.resolve, self.interface, func, false);
+            .is_async(self.resolve, self.interface, func, false)
+            || !func.find_futures_and_streams(self.resolve).is_empty();
         if async_ {
             self.world_gen.async_support.mark_async();
             self.bindings = self.generate_async_binding(func);
