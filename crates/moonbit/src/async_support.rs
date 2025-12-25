@@ -221,6 +221,7 @@ fn wasmLift{camel_name}{index}(future_handle : Int) -> {lifted} {{
           wasmLift{camel_name}{index}Read(future_handle, ptr),
         )
       }}
+      result = {{
       "#
         );
         let operand = if let TypeDefKind::Future(Some(ty)) = self.resolve.types[ty].kind {
@@ -238,7 +239,8 @@ fn wasmLift{camel_name}{index}(future_handle : Int) -> {lifted} {{
         uwriteln!(
             lift,
             r#"
-      result = Some({operand})
+        Some({operand})
+      }}
       drop()
       result.unwrap()
     }},
