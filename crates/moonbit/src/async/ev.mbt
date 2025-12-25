@@ -22,7 +22,7 @@ priv struct EventLoop {
 ///|
 priv struct Subscriber {
   mut event : Events?
-  coro : Coroutine
+  coro : @set.Set[Coroutine]
 }
 
 ///|
@@ -56,6 +56,17 @@ pub fn cb(event : Int, waitable_id : Int, code : Int) -> Int {
   let waitable_set = current_waitableset()
   let events = Events::new(EventCode::from(event), waitable_id, code)
   match events {
+    None => {
+      reschedule()
+      if ev.finished.get(waitable_set) is Some(true) {
+        ev.tasks.remove(waitable_set)
+        ev.finished.remove(waitable_set)
+        waitable_set.drop()
+        return CallbackCode::Completed.encode()
+      } else {
+        return CallbackCode::Wait(waitable_set.0).encode()
+      }
+    }
     TaskCancelled => {
       guard ev.tasks.get(waitable_set) is Some(coro)
       coro.cancel()
@@ -75,7 +86,10 @@ pub fn cb(event : Int, waitable_id : Int, code : Int) -> Int {
       let sub = ev.subscribes.get(waitable_id)
       guard sub is Some(subscriber)
       subscriber.event = Some(events)
-      subscriber.coro.wake()
+      subscriber.coro.each(Coroutine::wake)
+      subscriber.coro.clear()
+      ev.subscribes.remove(waitable_id)
+      waitable_join(waitable_id, 0)
       reschedule()
       if ev.finished.get(waitable_set) is Some(true) {
         ev.tasks.remove(waitable_set)
@@ -119,12 +133,15 @@ pub async fn suspend_for_subtask(
   }
 
   // Create subscriber to wait for events
-  let subscriber = { event: None, coro: current_coroutine() }
+  // The task has unique subscriber
+  guard ev.subscribes.get(task.handle) is None
+  let set = @set.Set::new()
+  let subscriber = { event: None, coro: set }
   ev.subscribes.set(task.handle, subscriber)
-  defer ev.subscribes.remove(task.handle)
-  waitable_join(task.handle, current_waitableset().0)
-  defer waitable_join(task.handle, 0)
   for {
+    set.add(current_coroutine())
+    waitable_join(task.handle, current_waitableset().0)
+    defer subscriber.coro.remove(current_coroutine())
     suspend() catch {
       Cancelled::Cancelled =>
         // Cancel the subtask
@@ -166,16 +183,30 @@ pub async fn suspend_for_subtask(
 ///|
 pub async fn suspend_for_future_read(idx : Int, val : Int) -> Unit {
   let result = if val == -1 {
-    let subscriber = { event: None, coro: current_coroutine() }
-    ev.subscribes.set(idx, subscriber)
-    defer ev.subscribes.remove(idx)
+    let subscriber = if ev.subscribes.get(idx) is Some(subscriber) {
+      subscriber
+    } else {
+      let set = @set.Set::new()
+      let subscriber = { event: None, coro: set }
+      ev.subscribes.set(idx, subscriber)
+      subscriber
+    }
     waitable_join(idx, current_waitableset().0)
-    defer waitable_join(idx, 0)
+    subscriber.coro.add(current_coroutine())
+    defer subscriber.coro.remove(current_coroutine())
     suspend()
     guard subscriber.event is Some(FutureRead(i, result)) && i == idx
     result
   } else {
-    FutureReadResult::from(val)
+    let result = FutureReadResult::from(val)
+    if ev.subscribes.get(idx) is Some(subscriber) {
+      subscriber.event = Some(FutureRead(idx, result))
+      subscriber.coro.each(Coroutine::wake)
+      subscriber.coro.clear()
+      ev.subscribes.remove(idx)
+      waitable_join(idx, 0)
+    }
+    result
   }
   match result {
     Completed => return
@@ -184,14 +215,33 @@ pub async fn suspend_for_future_read(idx : Int, val : Int) -> Unit {
 }
 
 ///|
-pub async fn suspend_for_future_write(idx : Int) -> Bool {
-  let subscriber = { event: None, coro: current_coroutine() }
-  ev.subscribes.set(idx, subscriber)
-  defer ev.subscribes.remove(idx)
-  waitable_join(idx, current_waitableset().0)
-  defer waitable_join(idx, 0)
-  suspend()
-  guard subscriber.event is Some(FutureWrite(i, result)) && i == idx
+pub async fn suspend_for_future_write(idx : Int, val : Int) -> Bool {
+  let result = if val == -1 {
+    let subscriber = if ev.subscribes.get(idx) is Some(subscriber) {
+      subscriber
+    } else {
+      let set = @set.Set::new()
+      let subscriber = { event: None, coro: set }
+      ev.subscribes.set(idx, subscriber)
+      subscriber
+    }
+    waitable_join(idx, current_waitableset().0)
+    subscriber.coro.add(current_coroutine())
+    defer subscriber.coro.remove(current_coroutine())
+    suspend()
+    guard subscriber.event is Some(FutureWrite(i, result)) && i == idx
+    result
+  } else {
+    let result = FutureWriteResult::from(val)
+    if ev.subscribes.get(idx) is Some(subscriber) {
+      subscriber.event = Some(FutureWrite(idx, result))
+      subscriber.coro.each(Coroutine::wake)
+      subscriber.coro.clear()
+      ev.subscribes.remove(idx)
+      waitable_join(idx, 0)
+    }
+    result
+  }
   match result {
     Completed => true
     Dropped => false
@@ -203,16 +253,31 @@ pub async fn suspend_for_future_write(idx : Int) -> Bool {
 pub async fn suspend_for_stream_read(idx : Int, val : Int) -> (Int, Bool) {
   let { progress, copy_result } = if val == -1 {
     // Blocked, wait for event
-    let subscriber = { event: None, coro: current_coroutine() }
-    ev.subscribes.set(idx, subscriber)
-    defer ev.subscribes.remove(idx)
-    waitable_join(idx, current_waitableset().0)
-    defer waitable_join(idx, 0)
+    let subscriber = if ev.subscribes.get(idx) is Some(subscriber) {
+      subscriber.coro.add(current_coroutine())
+      subscriber
+    } else {
+      waitable_join(idx, current_waitableset().0)
+      let set = @set.Set::new()
+      set.add(current_coroutine())
+      let subscriber = { event: None, coro: set }
+      ev.subscribes.set(idx, subscriber)
+      subscriber
+    }
+    defer subscriber.coro.remove(current_coroutine())
     suspend()
     guard subscriber.event is Some(StreamRead(i, result)) && i == idx
     result
   } else {
-    StreamResult::from(val)
+    let result = StreamResult::from(val)
+    if ev.subscribes.get(idx) is Some(subscriber) {
+      subscriber.event = Some(StreamRead(idx, result))
+      subscriber.coro.each(Coroutine::wake)
+      subscriber.coro.clear()
+      ev.subscribes.remove(idx)
+      waitable_join(idx, 0)
+    }
+    result
   }
   match copy_result {
     Completed => return (progress, false)
@@ -228,18 +293,32 @@ pub async fn suspend_for_stream_read(idx : Int, val : Int) -> (Int, Bool) {
 
 ///|
 pub async fn suspend_for_stream_write(idx : Int, val : Int) -> (Int, Bool) {
-  let { progress, copy_result } = if val != -1 {
-    // Not blocked
-    StreamResult::from(val)
-  } else {
+  let { progress, copy_result } = if val == -1 {
     // Blocked, wait for event
-    let subscriber = { event: None, coro: current_coroutine() }
-    ev.subscribes.set(idx, subscriber)
-    defer ev.subscribes.remove(idx)
-    waitable_join(idx, current_waitableset().0)
-    defer waitable_join(idx, 0)
+    let subscriber = if ev.subscribes.get(idx) is Some(subscriber) {
+      subscriber.coro.add(current_coroutine())
+      subscriber
+    } else {
+      waitable_join(idx, current_waitableset().0)
+      let set = @set.Set::new()
+      set.add(current_coroutine())
+      let subscriber = { event: None, coro: set }
+      ev.subscribes.set(idx, subscriber)
+      subscriber
+    }
+    defer subscriber.coro.remove(current_coroutine())
     suspend()
     guard subscriber.event is Some(StreamWrite(i, result)) && i == idx
+    result
+  } else {
+    let result = StreamResult::from(val)
+    if ev.subscribes.get(idx) is Some(subscriber) {
+      subscriber.event = Some(StreamWrite(idx, result))
+      subscriber.coro.each(Coroutine::wake)
+      subscriber.coro.clear()
+      ev.subscribes.remove(idx)
+      waitable_join(idx, 0)
+    }
     result
   }
   match copy_result {
@@ -262,6 +341,7 @@ pub suberror OpCancelled {
   FutureWriteCancelled
 }
 
+///|
 pub(all) suberror FutureReadError {
   Cancelled
   Dropped

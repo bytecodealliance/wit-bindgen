@@ -6,14 +6,14 @@ use std::{
 use heck::{ToSnakeCase, ToUpperCamelCase};
 use wit_bindgen_core::{
     Files, Source,
-    abi::{self, WasmSignature, deallocate_lists_and_own_in_types},
+    abi::{self, WasmSignature, deallocate_lists_and_own_in_types, lift_from_memory},
     dealias, uwriteln,
     wit_parser::{
         Function, LiftLowerAbi, ManglingAndAbi, Resolve, Type, TypeDefKind, TypeId, WasmImport,
     },
 };
 
-use crate::indent;
+use crate::{FunctionBindgen, indent};
 
 use super::InterfaceGenerator;
 
@@ -160,46 +160,47 @@ impl<'a> InterfaceGenerator<'a> {
             .type_name(self.name, &Type::Id(ty));
         let lowered = lifted.replace("FutureR", "OutFuture");
 
-        // The unit case is specially handled and serves as an example
-        if let TypeDefKind::Future(Option::None) = self.resolve.types[ty].kind {
-            // write intrinsics
-            uwriteln!(
-                lift,
-                r#"
+        // write intrinsics
+        uwriteln!(
+            lift,
+            r#"
 fn wasmLift{camel_name}{index}Read(handle : Int, ptr : Int) -> Int = "[export]{module}" "[async-lower][future-read-{index}]{func_name}"
 fn wasmLift{camel_name}{index}CancelRead(_ : Int) -> Int = "[export]{module}" "[future-cancel-read-{index}]{func_name}"
 fn wasmLift{camel_name}{index}DropReadable(_ : Int) = "[export]{module}" "[future-drop-readable-{index}]{func_name}"
     "#,
-            );
-            uwriteln!(
-                lower,
-                r#"
+        );
+        uwriteln!(
+            lower,
+            r#"
 fn wasmLower{camel_name}{index}New -> UInt64 = "{module}" "[future-new-{index}]{func_name}"
 fn wasmLower{camel_name}{index}Write(handle : Int, ptr : Int) -> Int = "{module}" "[future-write-{index}]{func_name}"
 fn wasmLower{camel_name}{index}CancelWrite(_ : Int) -> Int = "{module}" "[future-cancel-write-{index}]{func_name}"
 fn wasmLower{camel_name}{index}DropWritable(_ : Int) = "{module}" "[future-drop-writable-{index}]{func_name}"
     "#
-            );
+        );
 
-            // generate function
-            let size = self.world_gen.sizes.size(&Type::Id(ty)).size_wasm32();
-            uwriteln!(
-                lift,
-                r#"
+        // generate function
+        let size = self.world_gen.sizes.size(&Type::Id(ty)).size_wasm32();
+        uwriteln!(
+            lift,
+            r#"
 fn wasmLift{camel_name}{index}(future_handle : Int) -> {lifted} {{
   let mut result = None
   let mut dropped = false
   let mut reading = 0
   async fn drop() {{
-    if reading > 0 {{
+    if !dropped && reading > 0 {{
       {async_qualifier}suspend_for_future_read(
         future_handle,
         wasmLift{camel_name}{index}CancelRead(future_handle)
-      ) catch {{ _ => () }}
+      ) catch {{ 
+       {async_qualifier}FutureReadError::Cancelled => ()
+       _ => panic() 
+      }}
     }}
     if !dropped {{
-    dropped = true
-    wasmLift{camel_name}{index}DropReadable(future_handle)
+      dropped = true
+      wasmLift{camel_name}{index}DropReadable(future_handle)
     }}
   }}
   {async_qualifier}FutureR::{{
@@ -221,12 +222,23 @@ fn wasmLift{camel_name}{index}(future_handle : Int) -> {lifted} {{
         )
       }}
       "#
-            );
-            // lift from memory if it were actual data
-            uwriteln!(
-                lift,
-                r#"
-      result = Some(())
+        );
+        let operand = if let TypeDefKind::Future(Some(ty)) = self.resolve.types[ty].kind {
+            // TODO : solve ownership
+            let resolve = self.resolve.clone();
+            let mut bindgen = FunctionBindgen::new(self, Box::new([]));
+            let operand = lift_from_memory(&resolve, &mut bindgen, "ptr".to_string(), &ty);
+            uwriteln!(lift, "{}", bindgen.src);
+            operand
+        } else {
+            "()".into()
+        };
+
+        // lift from memory if it were actual data
+        uwriteln!(
+            lift,
+            r#"
+      result = Some({operand})
       drop()
       result.unwrap()
     }},
@@ -234,68 +246,8 @@ fn wasmLift{camel_name}{index}(future_handle : Int) -> {lifted} {{
   }}
 }}
 "#
-            );
-
-            uwriteln!(
-                lower,
-                r#"
-fn wasmLower{camel_name}{index}(future : {lowered}) -> Int {{
-  ...
-}}
-            "#
-            );
-            return (
-                lifted_func_name,
-                lift.to_string(),
-                lowered_func_name,
-                lower.to_string(),
-            );
-        }
-
-        // write intrinsics
-        uwriteln!(
-            lift,
-            r#"
-fn wasmLift{camel_name}{index}Read(handle : Int, ptr : Int) -> Int = "{module}" "[future-read-{index}]{func_name}"
-fn wasmLift{camel_name}{index}CancelRead(_ : Int) -> Int = "{module}" "[future-cancel-read-{index}]{func_name}"
-fn wasmLift{camel_name}{index}DropReadable(_ : Int) = "{module}" "[future-drop-readable-{index}]{func_name}"
-    "#,
-        );
-        uwriteln!(
-            lower,
-            r#"
-fn wasmLower{camel_name}{index}New -> UInt64 = "{module}" "[future-new-{index}]{func_name}"
-fn wasmLower{camel_name}{index}Write(handle : Int, ptr : Int) -> Int = "{module}" "[future-write-{index}]{func_name}"
-fn wasmLower{camel_name}{index}CancelWrite(_ : Int) -> Int = "{module}" "[future-cancel-write-{index}]{func_name}"
-fn wasmLower{camel_name}{index}DropWritable(_ : Int) = "{module}" "[future-drop-writable-{index}]{func_name}"
-    "#
         );
 
-        // Generate function
-        uwriteln!(
-            lift,
-            r#"
-fn wasmLift{camel_name}{index}(future_handle : Int) -> {lifted} {{
-  let mut result = None
-  (() => {{
-    if result is Some(r) {{
-      return r
-    }}
-    let ptr = wasmResultUnitTypesErrorCodefutureMalloc(1)
-    defer mbt_ffi_free(ptr)
-    {async_qualifier}suspend_for_future_read(
-      future_handle,
-      wasmLift{camel_name}{index}Read(future_handle, ptr),
-    )
-    // lift
-    let lifted = wasmResultUnitTypesErrorCodefutureLift(ptr)
-    result = Some(lifted)
-    wasmLift{camel_name}{index}DropReadable(future_handle)
-    result.unwrap()
-  }})
-}}
-            "#
-        );
         uwriteln!(
             lower,
             r#"
@@ -304,7 +256,6 @@ fn wasmLower{camel_name}{index}(future : {lowered}) -> Int {{
 }}
             "#
         );
-
         (
             lifted_func_name,
             lift.to_string(),
