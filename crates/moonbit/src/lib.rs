@@ -893,6 +893,7 @@ impl InterfaceGenerator<'_> {
             uwriteln!(
                 self.ffi,
                 r#"
+                #doc(hidden)
                 pub fn {func_name}(event_raw: Int, waitable: Int, code: Int) -> Int {{
                     {async_pkg}cb(event_raw, waitable, code)
                 }}
@@ -900,6 +901,7 @@ impl InterfaceGenerator<'_> {
             );
             let export = format!(
                 r#"
+                #doc(hidden)
                 pub fn {func_name}(event_raw: Int, waitable: Int, code: Int) -> Int {{
                     {}{func_name}(event_raw, waitable, code)
                 }}
