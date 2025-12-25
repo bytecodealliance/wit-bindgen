@@ -1,5 +1,18 @@
 ///|
-pub(all) struct FutureR[X](async () -> X)
+pub(all) struct FutureR[X] {
+  get : async () -> X
+  drop : async () -> Unit
+}
+
+///|
+pub async fn[X] FutureR::get(self : FutureR[X]) -> X {
+  (self.get)()
+}
+
+///|
+pub async fn[X] FutureR::drop(self : FutureR[X]) -> Unit {
+  (self.drop)()
+}
 
 ///|
 pub(all) struct StreamR[X] {

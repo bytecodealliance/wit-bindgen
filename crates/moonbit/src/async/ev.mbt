@@ -179,7 +179,7 @@ pub async fn suspend_for_future_read(idx : Int, val : Int) -> Unit {
   }
   match result {
     Completed => return
-    Cancelled => raise FutureReadCancelled
+    Cancelled => raise FutureReadError::Cancelled
   }
 }
 
@@ -260,5 +260,9 @@ pub suberror OpCancelled {
   StreamWriteCancelled
   StreamReadCancelled
   FutureWriteCancelled
-  FutureReadCancelled
+}
+
+pub(all) suberror FutureReadError {
+  Cancelled
+  Dropped
 }

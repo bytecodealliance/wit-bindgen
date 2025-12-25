@@ -9,6 +9,8 @@ use wit_bindgen_core::{
     },
 };
 
+use crate::async_support::ASYNC_DIR;
+
 pub(crate) const FFI_DIR: &str = "ffi";
 
 #[derive(Default)]
@@ -249,9 +251,9 @@ impl PkgResolver {
                     }
 
                     TypeDefKind::Future(ty) => {
-                        let qualifier = self.qualify_package(this, FFI_DIR);
+                        let qualifier = self.qualify_package(this, ASYNC_DIR);
                         format!(
-                            "{}FutureReader[{}]",
+                            "{}FutureR[{}]",
                             qualifier,
                             ty.as_ref()
                                 .map(|t| self.type_name(this, t))
@@ -260,9 +262,9 @@ impl PkgResolver {
                     }
 
                     TypeDefKind::Stream(ty) => {
-                        let qualifier = self.qualify_package(this, FFI_DIR);
+                        let qualifier = self.qualify_package(this, ASYNC_DIR);
                         format!(
-                            "{}StreamReader[{}]",
+                            "{}StreamR[{}]",
                             qualifier,
                             ty.as_ref()
                                 .map(|t| self.type_name(this, t))

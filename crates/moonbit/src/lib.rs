@@ -21,7 +21,7 @@ use wit_bindgen_core::{
     },
 };
 
-use crate::async_support::{ASYNC_DIR, AsyncSupport};
+use crate::async_support::{ASYNC_DIR, AsyncBinding, AsyncSupport};
 use crate::pkg::{Imports, MoonbitSignature, PkgResolver, ToMoonBitIdent, ToMoonBitTypeIdent};
 
 mod async_support;
@@ -159,6 +159,7 @@ impl MoonBit {
             ffi_imports: HashSet::new(),
             derive_opts,
             interface,
+            bindings: AsyncBinding(HashMap::new()),
         }
     }
 
@@ -531,7 +532,7 @@ impl WorldGenerator for MoonBit {
 
     fn finish(&mut self, _resolve: &Resolve, _id: WorldId, files: &mut Files) -> Result<()> {
         // If async is used, export async utils
-        self.async_support.emit_utils(files, VERSION);
+        self.async_support.emit_utils(files);
 
         // Export project files
         if !self.opts.ignore_stub && !self.opts.ignore_module_file {
@@ -592,6 +593,9 @@ struct InterfaceGenerator<'a> {
 
     // Options for deriving traits
     derive_opts: DeriveOpts,
+
+    // Generated lift and lower
+    bindings: AsyncBinding,
 }
 
 impl InterfaceGenerator<'_> {
@@ -613,6 +617,7 @@ impl InterfaceGenerator<'_> {
             .is_async(self.resolve, self.interface, func, false);
         if async_ {
             self.world_gen.async_support.mark_async();
+            self.bindings = self.generate_async_binding(func);
         }
 
         let ffi_import_name = format!("wasmImport{}", func.name.to_upper_camel_case());
@@ -717,6 +722,7 @@ impl InterfaceGenerator<'_> {
             .is_async(self.resolve, self.interface, func, false);
         if async_ {
             self.world_gen.async_support.mark_async();
+            self.bindings = self.generate_async_binding(func);
         }
 
         // Generate stub for user
@@ -2641,53 +2647,35 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::FutureLift { ty, .. } => {
-                let result = self.locals.tmp("result");
+                self.use_ffi(ffi::MALLOC);
+                self.use_ffi(ffi::FREE);
+                let (lifted_func_name, lift, _, _) = self.interface_gen.bindings.0.get(ty).unwrap();
                 let op = &operands[0];
-                // let qualifier = self.r#gen.qualify_package(self.func_interface);
-                let ty = self.resolve_type_name(&Type::Id(*ty));
-                let ffi = self
-                    .interface_gen
-                    .world_gen
-                    .pkg_resolver
-                    .qualify_package(self.interface_gen.name, FFI_DIR);
-
-                let snake_name = format!("static_{}_future_table", ty.to_snake_case(),);
-
-                uwriteln!(
-                    self.src,
-                    r#"let {result} = {ffi}FutureReader::new({op}, {snake_name});"#,
-                );
-
-                results.push(result);
+                results.push(format!("{lifted_func_name}({op})"));
+                uwriteln!(self.interface_gen.ffi, "{}", lift);
             }
 
-            Instruction::FutureLower { .. } => {
+            Instruction::FutureLower { ty, .. } => {
+                let (_, _, lowered_func_name, lower) =
+                    self.interface_gen.bindings.0.get(ty).unwrap();
                 let op = &operands[0];
-                results.push(format!("{op}.handle"));
+                results.push(format!("{lowered_func_name}({op})"));
+                uwriteln!(self.interface_gen.ffi, "{}", lower);
             }
 
-            Instruction::StreamLower { .. } => {
+            Instruction::StreamLower { ty, .. } => {
+                let (_, _, lowered_func_name, lower) =
+                    self.interface_gen.bindings.0.get(ty).unwrap();
                 let op = &operands[0];
-                results.push(format!("{op}.handle"));
+                results.push(format!("{lowered_func_name}({op})"));
+                uwriteln!(self.interface_gen.ffi, "{}", lower);
             }
 
             Instruction::StreamLift { ty, .. } => {
-                let result = self.locals.tmp("result");
+                let (lifted_func_name, lift, _, _) = self.interface_gen.bindings.0.get(ty).unwrap();
                 let op = &operands[0];
-                let qualifier = self.resolve_pkg(self.interface_gen.name);
-                let ty = self.resolve_type_name(&Type::Id(*ty));
-                let ffi = self.resolve_pkg(FFI_DIR);
-                let snake_name = format!(
-                    "static_{}_stream_table",
-                    ty.replace(&qualifier, "").to_snake_case(),
-                );
-
-                uwriteln!(
-                    self.src,
-                    r#"let {result} = {ffi}StreamReader::new({op}, {snake_name});"#,
-                );
-
-                results.push(result);
+                results.push(format!("{lifted_func_name}({op})"));
+                uwriteln!(self.interface_gen.ffi, "{}", lift);
             }
             Instruction::ErrorContextLower { .. }
             | Instruction::ErrorContextLift { .. }
