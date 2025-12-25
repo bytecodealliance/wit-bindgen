@@ -120,14 +120,14 @@ fn WaitableSet::drop(self : Self) -> Unit {
 ///|
 priv enum FutureReadResult {
   Completed = 0
-  Cancelled = 1
+  Cancelled = 2
 }
 
 ///|
 fn FutureReadResult::from(int : Int) -> FutureReadResult {
   match int {
     0 => Completed
-    1 => Cancelled
+    2 => Cancelled
     _ => panic()
   }
 }
