@@ -523,10 +523,13 @@ macro_rules! {macro_name} {{
         func_name: &str,
         payload_type: Option<&Type>,
     ) {
-        let name = if let Some(payload_type) = payload_type {
-            self.type_name_owned(payload_type)
-        } else {
-            "()".into()
+        let name = match payload_type {
+            Some(Type::Id(type_id)) => {
+                let dealiased_id = dealias(self.resolve, *type_id);
+                self.type_name_owned(&Type::Id(dealiased_id))
+            }
+            Some(payload_type) => self.type_name_owned(payload_type),
+            None => "()".into(),
         };
         let map = match payload_for {
             PayloadFor::Future => &mut self.r#gen.future_payloads,
