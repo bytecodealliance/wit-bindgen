@@ -53,6 +53,13 @@ pub struct RustWasm {
 
     future_payloads: IndexMap<String, String>,
     stream_payloads: IndexMap<String, String>,
+
+    // Stores the canonical type names with module paths for WIT types which generate Rust type aliases
+    // (and should therefore only generate a single StreamPayload or FuturePayload implementation)
+    //
+    // The values of these maps are used as keys to the future_payloads, and stream_payloads maps
+    aliased_future_payloads: IndexMap<TypeId, String>,
+    aliased_stream_payloads: IndexMap<TypeId, String>,
 }
 
 #[derive(Default)]

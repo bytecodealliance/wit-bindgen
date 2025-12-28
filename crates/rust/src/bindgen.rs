@@ -427,13 +427,31 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::FutureLift { payload, .. } => {
                 let async_support = self.r#gen.r#gen.async_support_path();
                 let op = &operands[0];
-                let name = payload
+                let mut name = payload
                     .as_ref()
                     .map(|ty| {
                         self.r#gen
                             .type_name_owned_with_id(ty, Identifier::StreamOrFuturePayload)
                     })
                     .unwrap_or_else(|| "()".into());
+
+                // If the payload type corresponds to a Rust type alias,
+                // use the path to the canonical type alias for which the
+                // single FuturePayload implementation was generated, as the
+                // key to future_payloads
+                if let Some(Type::Id(id)) = payload {
+                    let dealiased_id = dealias(resolve, *id);
+                    if dealiased_id != *id {
+                        name = self
+                            .r#gen
+                            .r#gen
+                            .aliased_future_payloads
+                            .get(&dealiased_id)
+                            .unwrap()
+                            .clone();
+                    }
+                };
+
                 let ordinal = self
                     .r#gen
                     .r#gen
@@ -455,13 +473,31 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::StreamLift { payload, .. } => {
                 let async_support = self.r#gen.r#gen.async_support_path();
                 let op = &operands[0];
-                let name = payload
+                let mut name = payload
                     .as_ref()
                     .map(|ty| {
                         self.r#gen
                             .type_name_owned_with_id(ty, Identifier::StreamOrFuturePayload)
                     })
                     .unwrap_or_else(|| "()".into());
+
+                // If the payload type corresponds to a Rust type alias,
+                // use the path to the canonical type alias for which the
+                // single StreamPayload implementation was generated, as the
+                // key to stream_payloads
+                if let Some(Type::Id(id)) = payload {
+                    let dealiased_id = dealias(resolve, *id);
+                    if dealiased_id != *id {
+                        name = self
+                            .r#gen
+                            .r#gen
+                            .aliased_stream_payloads
+                            .get(&dealiased_id)
+                            .unwrap()
+                            .clone();
+                    }
+                };
+
                 let ordinal = self
                     .r#gen
                     .r#gen
