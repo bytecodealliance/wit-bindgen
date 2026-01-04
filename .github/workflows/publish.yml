@@ -59,6 +59,20 @@ jobs:
         EOF
       if: steps.tag.outputs.push_tag == 'yes'
 
+    - name: Push Go package tag
+      run: |
+        git_refs_url=$(jq .repository.git_refs_url $GITHUB_EVENT_PATH | tr -d '"' | sed 's/{\/sha}//g')
+        curl -iX POST $git_refs_url \
+          -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          -d @- << EOF
+        {
+          "ref": "refs/tags/crates/go/src/package/v${{ steps.tag.outputs.version }}",
+          "sha": "${{ steps.tag.outputs.sha }}"
+        }
+        EOF
+      if: steps.tag.outputs.push_tag == 'yes'
+
+
     - run: |
         sha=${{ github.sha }}
         run_id=$(

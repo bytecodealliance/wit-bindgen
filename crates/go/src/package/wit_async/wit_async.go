@@ -4,7 +4,8 @@ import (
 	"fmt"
 	"runtime"
 	"unsafe"
-	"wit_component/wit_runtime"
+
+	"github.com/bytecodealliance/wit-bindgen/wit_runtime"
 )
 
 const EVENT_NONE uint32 = 0

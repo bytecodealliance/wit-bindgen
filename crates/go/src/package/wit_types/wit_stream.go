@@ -3,8 +3,9 @@ package wit_types
 import (
 	"runtime"
 	"unsafe"
-	"wit_component/wit_async"
-	"wit_component/wit_runtime"
+
+	"github.com/bytecodealliance/wit-bindgen/wit_async"
+	"github.com/bytecodealliance/wit-bindgen/wit_runtime"
 )
 
 type StreamVtable[T any] struct {
