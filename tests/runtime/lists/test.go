@@ -2,7 +2,8 @@ package export_test_lists_to_test
 
 import (
 	"slices"
-	. "wit_component/wit_types"
+
+	. "github.com/bytecodealliance/wit-bindgen/wit_types"
 )
 
 func AllocatedBytes() uint32 {
