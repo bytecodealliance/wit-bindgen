@@ -2,7 +2,8 @@ package export_test_records_to_test
 
 import (
 	. "wit_component/test_records_to_test"
-	"wit_component/wit_types"
+
+	"github.com/bytecodealliance/wit-bindgen/wit_types"
 )
 
 func MultipleResults() (uint8, uint16) {

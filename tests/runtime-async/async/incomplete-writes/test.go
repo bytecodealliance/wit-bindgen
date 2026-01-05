@@ -3,7 +3,8 @@ package export_my_test_test_interface
 import (
 	"runtime"
 	. "wit_component/my_test_test_interface"
-	. "wit_component/wit_types"
+
+	. "github.com/bytecodealliance/wit-bindgen/wit_types"
 )
 
 type TestThing struct {

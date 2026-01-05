@@ -1,6 +1,6 @@
 package export_my_test_i
 
-import . "wit_component/wit_types"
+import . "github.com/bytecodealliance/wit-bindgen/wit_types"
 
 func ReadFuture(x *FutureReader[Unit]) {
 	defer x.Drop()
