@@ -183,7 +183,6 @@ struct Go {
     need_unit: bool,
     need_future: bool,
     need_stream: bool,
-    need_async: bool,
     need_unsafe: bool,
     interface_names: HashMap<InterfaceId, WorldKey>,
     interfaces: BTreeMap<String, InterfaceData>,
@@ -973,7 +972,6 @@ impl Go {
         generator.imports = imports;
 
         let code = if async_ {
-            generator.generator.need_async = true;
             generator.imports.insert(remote_pkg("wit_async"));
 
             let (lower, wasm_params) = if sig.indirect_params {
@@ -1192,7 +1190,6 @@ func {camel}({go_params}) {go_results} {{
         self.imports.extend(imports);
 
         let (pinner, other, start, end) = if async_ {
-            self.need_async = true;
             self.imports.insert(remote_pkg("wit_async"));
 
             let module = match interface {
@@ -1362,8 +1359,6 @@ func wasm_export_{name}({params}) {results} {{
             .into_iter()
             .enumerate()
         {
-            self.need_async = true;
-
             let payload_type = match &resolve.types[ty].kind {
                 TypeDefKind::Future(ty) => {
                     self.need_future = true;
