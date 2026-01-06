@@ -247,7 +247,7 @@ impl InterfaceGenerator<'_> {
                 if param_list.is_empty() {
                     "void *taskResultBuffer".to_string()
                 } else {
-                    format!("{}, void *taskResultBuffer", param_list)
+                    format!("{param_list}, void *taskResultBuffer")
                 }
             } else {
                 param_list
@@ -365,7 +365,7 @@ impl InterfaceGenerator<'_> {
                 | FunctionKind::AsyncStatic(_)
                 | FunctionKind::AsyncMethod(_) => match func.result {
                     None => "Task".to_string(),
-                    Some(_ty) => format!("Task<{}>", base_type),
+                    Some(_ty) => format!("Task<{base_type}>"),
                 },
                 _ => base_type,
             };
@@ -604,7 +604,7 @@ impl InterfaceGenerator<'_> {
             // TODO: The task return function can take up to 16 core parameters.
             let task_return_param = match &sig.results[..] {
                 [] => "",
-                [_result] => &format!("{} result", wasm_result_type),
+                [_result] => &format!("{wasm_result_type} result"),
                 _ => unreachable!(),
             };
 

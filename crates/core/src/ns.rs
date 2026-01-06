@@ -11,7 +11,7 @@ impl Ns {
         if self.defined.insert(name.to_string()) {
             Ok(())
         } else {
-            Err(format!("name `{}` already defined", name))
+            Err(format!("name `{name}` already defined"))
         }
     }
 

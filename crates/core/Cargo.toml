@@ -12,6 +12,9 @@ Low-level support for bindings generation based on WIT files for use with
 `wit-bindgen-cli` and other languages.
 """
 
+[lints]
+workspace = true
+
 [lib]
 doctest = false
 

@@ -37,7 +37,7 @@ macro_rules! def_instruction {
 
         impl $name<'_> {
             /// How many operands does this instruction pop from the stack?
-            #[allow(unused_variables)]
+            #[allow(unused_variables, reason = "match arms bind fields for exhaustiveness, not usage")]
             pub fn operands_len(&self) -> usize {
                 match self {
                     $(
@@ -51,7 +51,7 @@ macro_rules! def_instruction {
             }
 
             /// How many results does this instruction push onto the stack?
-            #[allow(unused_variables)]
+            #[allow(unused_variables, reason = "match arms bind fields for exhaustiveness, not usage")]
             pub fn results_len(&self) -> usize {
                 match self {
                     $(

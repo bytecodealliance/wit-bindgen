@@ -262,3 +262,11 @@ jobs:
     - name: Report failure on cancellation
       if: ${{ contains(needs.*.result, 'cancelled') || cancelled() }}
       run: exit 1
+
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - run: rustup update stable --no-self-update && rustup default stable
+      - run: rustup component add clippy
+      - run: cargo clippy --workspace --all-targets -- -D warnings

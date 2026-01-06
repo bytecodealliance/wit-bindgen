@@ -40,7 +40,7 @@ macro_rules! extern_wasm {
     ) => {
         $(
             #[cfg(not(target_family = "wasm"))]
-            #[allow(unused)]
+            #[allow(unused, reason = "dummy shim for non-wasm compilation, never invoked")]
             $vis unsafe fn $func_name($($args)*) $(-> $ret)? {
                 unreachable!();
             }

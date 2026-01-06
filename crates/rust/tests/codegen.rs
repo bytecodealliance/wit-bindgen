@@ -1,7 +1,11 @@
-#![allow(unused_macros)]
-#![allow(dead_code, unused_variables)]
+#![allow(unused_macros, reason = "testing codegen, not functionality")]
+#![allow(
+    dead_code,
+    unused_variables,
+    reason = "testing codegen, not functionality"
+)]
 
-#[allow(unused)]
+#[allow(unused, reason = "testing codegen, not functionality")]
 mod multiple_paths {
     wit_bindgen::generate!({
         inline: r#"
@@ -17,7 +21,7 @@ mod multiple_paths {
     });
 }
 
-#[allow(unused)]
+#[allow(unused, reason = "testing codegen, not functionality")]
 mod inline_and_path {
     wit_bindgen::generate!({
         inline: r#"
@@ -32,7 +36,7 @@ mod inline_and_path {
     });
 }
 
-#[allow(unused)]
+#[allow(unused, reason = "testing codegen, not functionality")]
 mod newtyped_list {
     use std::ops::Deref;
 
@@ -138,7 +142,7 @@ mod newtyped_list {
         }
     }
 }
-#[allow(unused)]
+#[allow(unused, reason = "testing codegen, not functionality")]
 mod retyped_list {
     use std::ops::Deref;
 

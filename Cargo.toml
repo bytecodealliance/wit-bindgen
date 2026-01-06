@@ -11,6 +11,9 @@ description = """
 CLI tool to generate bindings for WIT documents and the component model.
 """
 
+[lints]
+workspace = true
+
 [workspace]
 resolver = "2"
 
@@ -51,6 +54,21 @@ wit-bindgen-moonbit = { path = 'crates/moonbit', version = '0.50.0' }
 wit-bindgen-go = { path = 'crates/go', version = '0.50.0' }
 wit-bindgen = { path = 'crates/guest-rust', version = '0.50.0', default-features = false }
 wit-bindgen-test = { path = 'crates/test', version = '0.50.0' }
+
+[workspace.lints.clippy]
+# The default set of lints in Clippy is viewed as "too noisy" right now so
+# they're all turned off by default. Selective lints are then enabled below as
+# necessary.
+all = { level = 'allow', priority = -1 }
+clone_on_copy = 'warn'
+map_clone = 'warn'
+unnecessary_to_owned = 'warn'
+manual_strip = 'warn'
+uninlined_format_args = 'warn'
+unnecessary_mut_passed = 'warn'
+unnecessary_fallible_conversions = 'warn'
+unnecessary_cast = 'warn'
+allow_attributes_without_reason = 'warn'
 
 [[bin]]
 name = "wit-bindgen"

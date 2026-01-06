@@ -585,7 +585,7 @@ impl WorldGenerator for CSharp {
             //TODO: This is currently needed for mono even if it's built as a library.
             if self.opts.runtime == CSharpRuntime::Mono {
                 files.push(
-                    &"MonoEntrypoint.cs".to_string(),
+                    "MonoEntrypoint.cs",
                     indent(&format!(
                         r#"
                         {access} class MonoEntrypoint() {{

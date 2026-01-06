@@ -35,12 +35,12 @@ const PINNER: &str = "pinner";
 
 /// Adds the wit-bindgen GitHub repository prefix to a package name.
 fn remote_pkg(name: &str) -> String {
-    format!(r#""github.com/bytecodealliance/wit-bindgen/{}""#, name)
+    format!(r#""github.com/bytecodealliance/wit-bindgen/{name}""#)
 }
 
 /// Adds the bindings module prefix to a package name.
 fn mod_pkg(name: &str) -> String {
-    format!(r#""wit_component/{}""#, name)
+    format!(r#""wit_component/{name}""#)
 }
 
 /// This is the literal location of the Go package.
@@ -358,7 +358,7 @@ impl Go {
         }
     }
 
-    #[expect(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments, reason = "required context codegen")]
     fn future_or_stream(
         &mut self,
         resolve: &Resolve,
@@ -1297,7 +1297,7 @@ func wasm_export_{name}({params}) {results} {{
         )
     }
 
-    #[expect(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments, reason = "required context for codegen")]
     fn func_params(
         &mut self,
         resolve: &Resolve,
@@ -1438,7 +1438,7 @@ struct FunctionGenerator<'a> {
 }
 
 impl<'a> FunctionGenerator<'a> {
-    #[expect(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments, reason = "required context for codegen")]
     fn new(
         generator: &'a mut Go,
         name: Option<&'a str>,

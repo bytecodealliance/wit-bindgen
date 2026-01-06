@@ -209,10 +209,7 @@ impl FromStr for APIStyle {
         match s {
             "asymmetric" => Ok(APIStyle::Asymmetric),
             "symmetric" => Ok(APIStyle::Symmetric),
-            _ => bail!(
-                "unrecognized API style: `{}`; expected `asymmetric` or `symmetric`",
-                s
-            ),
+            _ => bail!("unrecognized API style: `{s}`; expected `asymmetric` or `symmetric`"),
         }
     }
 }
@@ -357,32 +354,32 @@ impl Cpp {
         match cast {
             Bitcast::I32ToF32 | Bitcast::I64ToF32 => {
                 self.dependencies.needs_bit = true;
-                format!("std::bit_cast<float, int32_t>({})", op)
+                format!("std::bit_cast<float, int32_t>({op})")
             }
             Bitcast::F32ToI32 | Bitcast::F32ToI64 => {
                 self.dependencies.needs_bit = true;
-                format!("std::bit_cast<int32_t, float>({})", op)
+                format!("std::bit_cast<int32_t, float>({op})")
             }
             Bitcast::I64ToF64 => {
                 self.dependencies.needs_bit = true;
-                format!("std::bit_cast<double, int64_t>({})", op)
+                format!("std::bit_cast<double, int64_t>({op})")
             }
             Bitcast::F64ToI64 => {
                 self.dependencies.needs_bit = true;
-                format!("std::bit_cast<int64_t, double>({})", op)
+                format!("std::bit_cast<int64_t, double>({op})")
             }
             Bitcast::I32ToI64 | Bitcast::LToI64 | Bitcast::PToP64 => {
-                format!("(int64_t) {}", op)
+                format!("(int64_t) {op}")
             }
             Bitcast::I64ToI32 | Bitcast::PToI32 | Bitcast::LToI32 => {
-                format!("(int32_t) {}", op)
+                format!("(int32_t) {op}")
             }
             Bitcast::P64ToI64 | Bitcast::None | Bitcast::I64ToP64 => op.to_string(),
             Bitcast::P64ToP | Bitcast::I32ToP | Bitcast::LToP => {
-                format!("(uint8_t*) {}", op)
+                format!("(uint8_t*) {op}")
             }
             Bitcast::PToL | Bitcast::I32ToL | Bitcast::I64ToL => {
-                format!("(size_t) {}", op)
+                format!("(size_t) {op}")
             }
             Bitcast::Sequence(sequence) => {
                 let [first, second] = &**sequence;
@@ -1191,7 +1188,7 @@ impl CppInterfaceGenerator<'_> {
                     cpp_sig
                         .arguments
                         .iter()
-                        .map(|(arg, _)| format!("std::move({})", arg))
+                        .map(|(arg, _)| format!("std::move({arg})"))
                         .collect::<Vec<_>>()
                         .join(", ")
                 );
@@ -1485,11 +1482,11 @@ impl CppInterfaceGenerator<'_> {
                     if self.r#gen.types.get(id).has_own_handle {
                         name.to_string()
                     } else {
-                        format!("{}Param", name)
+                        format!("{name}Param")
                     }
                 }
                 Ownership::FineBorrowing => {
-                    format!("{}Param", name)
+                    format!("{name}Param")
                 }
             }
         } else {
@@ -2266,7 +2263,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
     fn let_results(&mut self, amt: usize, results: &mut Vec<String>) {
         if amt > 0 {
             let tmp = self.tmp();
-            let res = format!("result{}", tmp);
+            let res = format!("result{tmp}");
             self.push_str("auto ");
             self.push_str(&res);
             self.push_str(" = ");
@@ -2304,7 +2301,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
     ) {
         self.load(ty, offset, operands, results);
         let result = results.pop().unwrap();
-        results.push(format!("(int32_t) ({})", result));
+        results.push(format!("(int32_t) ({result})"));
     }
 
     fn store(&mut self, ty: &str, offset: ArchitectureSize, operands: &[String]) {
@@ -2395,7 +2392,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     results.push(self.params[*nth].clone());
                 }
             }
-            abi::Instruction::I32Const { val } => results.push(format!("(int32_t({}))", val)),
+            abi::Instruction::I32Const { val } => results.push(format!("(int32_t({val}))")),
             abi::Instruction::Bitcasts { casts } => {
                 for (cast, op) in casts.iter().zip(operands) {
                     // let op = op;
@@ -2473,9 +2470,9 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             abi::Instruction::BoolFromI32 => top_as("bool"),
             abi::Instruction::ListCanonLower { realloc, .. } => {
                 let tmp = self.tmp();
-                let val = format!("vec{}", tmp);
-                let ptr = format!("ptr{}", tmp);
-                let len = format!("len{}", tmp);
+                let val = format!("vec{tmp}");
+                let ptr = format!("ptr{tmp}");
+                let len = format!("len{tmp}");
                 self.push_str(&format!("auto&& {} = {};\n", val, operands[0]));
                 self.push_str(&format!(
                     "auto {} = ({})({}.data());\n",
@@ -2483,7 +2480,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     self.r#gen.r#gen.opts.ptr_type(),
                     val
                 ));
-                self.push_str(&format!("auto {} = (size_t)({}.size());\n", len, val));
+                self.push_str(&format!("auto {len} = (size_t)({val}.size());\n"));
                 if realloc.is_none() {
                     results.push(ptr);
                 } else {
@@ -2494,9 +2491,9 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             }
             abi::Instruction::StringLower { realloc } => {
                 let tmp = self.tmp();
-                let val = format!("vec{}", tmp);
-                let ptr = format!("ptr{}", tmp);
-                let len = format!("len{}", tmp);
+                let val = format!("vec{tmp}");
+                let ptr = format!("ptr{tmp}");
+                let len = format!("len{tmp}");
                 self.push_str(&format!("auto&& {} = {};\n", val, operands[0]));
                 self.push_str(&format!(
                     "auto {} = ({})({}.data());\n",
@@ -2504,7 +2501,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     self.r#gen.r#gen.opts.ptr_type(),
                     val
                 ));
-                self.push_str(&format!("auto {} = (size_t)({}.size());\n", len, val));
+                self.push_str(&format!("auto {len} = (size_t)({val}.size());\n"));
                 if realloc.is_none() {
                     results.push(ptr);
                 } else {
@@ -2516,9 +2513,9 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             abi::Instruction::ListLower { element, realloc } => {
                 let tmp = self.tmp();
                 let body = self.blocks.pop().unwrap();
-                let val = format!("vec{}", tmp);
-                let ptr = format!("ptr{}", tmp);
-                let len = format!("len{}", tmp);
+                let val = format!("vec{tmp}");
+                let ptr = format!("ptr{tmp}");
+                let len = format!("len{tmp}");
                 let size = self.r#gen.sizes.size(element);
                 self.push_str(&format!("auto&& {} = {};\n", val, operands[0]));
                 self.push_str(&format!(
@@ -2527,7 +2524,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     self.r#gen.r#gen.opts.ptr_type(),
                     val
                 ));
-                self.push_str(&format!("auto {} = (size_t)({}.size());\n", len, val));
+                self.push_str(&format!("auto {len} = (size_t)({val}.size());\n"));
                 self.push_str(&format!("for (size_t i = 0; i < {len}; ++i) {{\n"));
                 self.push_str(&format!(
                     "auto base = {ptr} + i * {size};\n",
@@ -2546,7 +2543,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             }
             abi::Instruction::ListCanonLift { element, .. } => {
                 let tmp = self.tmp();
-                let len = format!("len{}", tmp);
+                let len = format!("len{tmp}");
                 let inner = self
                     .r#gen
                     .type_name(element, &self.namespace, Flavor::InStruct);
@@ -2565,7 +2562,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             }
             abi::Instruction::StringLift => {
                 let tmp = self.tmp();
-                let len = format!("len{}", tmp);
+                let len = format!("len{tmp}");
                 uwriteln!(self.src, "auto {} = {};\n", len, operands[1]);
                 let result = if self.r#gen.r#gen.opts.api_style == APIStyle::Symmetric
                     && matches!(self.variant, AbiVariant::GuestExport)
@@ -3276,7 +3273,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                                 &[WasmType::Pointer],
                                 &[],
                             );
-                            self.src.push_str(&format!(", ret, {})", cabi_post_name));
+                            self.src.push_str(&format!(", ret, {cabi_post_name})"));
                         }
                         if matches!(func.kind, FunctionKind::Constructor(_))
                             && self.r#gen.r#gen.opts.is_only_handle(self.variant)
@@ -3362,7 +3359,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             abi::Instruction::Flush { amt } => {
                 for i in operands.iter().take(*amt) {
                     let tmp = self.tmp();
-                    let result = format!("result{}", tmp);
+                    let result = format!("result{tmp}");
                     uwriteln!(self.src, "auto {result} = {};", move_if_necessary(i));
                     results.push(result);
                 }
@@ -3385,7 +3382,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             self.r#gen.r#gen.opts.ptr_type(),
         );
 
-        format!("ptr{}", tmp)
+        format!("ptr{tmp}")
     }
 
     fn push_block(&mut self) {
