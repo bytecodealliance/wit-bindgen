@@ -12,6 +12,9 @@ Go bindings generator for WIT and the component model, typically used through th
 `wit-bindgen-cli` crate.
 """
 
+[lints]
+workspace = true
+
 [dependencies]
 wit-bindgen-core = { workspace = true }
 wit-component = { workspace = true }

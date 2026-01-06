@@ -27,3 +27,8 @@ echo "export PATH=$DOTNET_PATH:\$PATH" >> ~/.bashrc
 # Moonbit
 curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
 echo 'export PATH="$HOME/.moon/bin:$PATH"' >> ~/.bashrc
+
+# Go
+curl -OL https://go.dev/dl/go1.25.5.linux-amd64.tar.gz
+tar xf go1.25.5.linux-amd64.tar.gz
+echo "export PATH=$HOME/go1.25.5.linux-amd64/bin:\$PATH" >> ~/.bashrc

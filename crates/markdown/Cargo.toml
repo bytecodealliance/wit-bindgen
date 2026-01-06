@@ -11,6 +11,9 @@ Markdown generator for WIT and the component model, typically used
 through the `wit-bindgen-cli` crate.
 """
 
+[lints]
+workspace = true
+
 [lib]
 doctest = false
 test = false

@@ -274,7 +274,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             self.interface_gen.csharp_gen.needs_wit_exception = true;
             let (var_name, exception_name) = var;
             let exception_name = match exception_name {
-                Some(type_name) => &format!("WitException<{}>", type_name),
+                Some(type_name) => &format!("WitException<{type_name}>"),
                 None => "WitException",
             };
             uwrite!(
@@ -549,7 +549,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.interface_gen.qualifier(true, ty),
                     name.to_string().to_upper_camel_case()
                 );
-                let mut result = format!("new {} (\n", qualified_type_name);
+                let mut result = format!("new {qualified_type_name} (\n");
 
                 result.push_str(&operands.join(", "));
                 result.push_str(")");
@@ -563,7 +563,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::TupleLower { tuple, ty: _ } => {
                 let op = &operands[0];
                 match tuple.types.len() {
-                    1 => results.push(format!("({})", op)),
+                    1 => results.push(format!("({op})")),
                     _ => {
                         for i in 0..tuple.types.len() {
                             results.push(format!("{}.Item{}", op, i + 1));
@@ -761,7 +761,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::EnumLift { ty, .. } => {
                 let t = self.interface_gen.type_name_with_qualifier(&Type::Id(*ty), true);
                 let op = &operands[0];
-                results.push(format!("({}){}", t, op));
+                results.push(format!("({t}){op}"));
 
                 // uwriteln!(
                 //    self.src,
@@ -896,10 +896,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let op0 = &operands[0];
                 let op1 = &operands[1];
 
-                let get_str = format!(
-                    "global::System.Text.Encoding.UTF8.GetString((byte*){}, {})",
-                    op0, op1
-                );
+                let get_str = format!("global::System.Text.Encoding.UTF8.GetString((byte*){op0}, {op1})");
 
                 uwriteln!(
                     self.src,
@@ -1373,7 +1370,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::Flush { amt } => {
-                results.extend(operands.iter().take(*amt).map(|v| v.clone()));
+                results.extend(operands.iter().take(*amt).cloned());
             }
 
             Instruction::FutureLower { .. } => {

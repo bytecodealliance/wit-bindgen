@@ -662,36 +662,36 @@ impl C {
         match cast {
             Bitcast::I32ToF32 | Bitcast::I64ToF32 => {
                 self.needs_union_int32_float = true;
-                format!("((union int32_float){{ (int32_t) {} }}).b", op)
+                format!("((union int32_float){{ (int32_t) {op} }}).b")
             }
             Bitcast::F32ToI32 | Bitcast::F32ToI64 => {
                 self.needs_union_float_int32 = true;
-                format!("((union float_int32){{ {} }}).b", op)
+                format!("((union float_int32){{ {op} }}).b")
             }
             Bitcast::I64ToF64 => {
                 self.needs_union_int64_double = true;
-                format!("((union int64_double){{ (int64_t) {} }}).b", op)
+                format!("((union int64_double){{ (int64_t) {op} }}).b")
             }
             Bitcast::F64ToI64 => {
                 self.needs_union_double_int64 = true;
-                format!("((union double_int64){{ {} }}).b", op)
+                format!("((union double_int64){{ {op} }}).b")
             }
             Bitcast::I32ToI64 | Bitcast::LToI64 | Bitcast::PToP64 => {
-                format!("(int64_t) {}", op)
+                format!("(int64_t) {op}")
             }
             Bitcast::I64ToI32 | Bitcast::I64ToL => {
-                format!("(int32_t) {}", op)
+                format!("(int32_t) {op}")
             }
             // P64 is currently represented as int64_t, so no conversion is needed.
             Bitcast::I64ToP64 | Bitcast::P64ToI64 => {
-                format!("{}", op)
+                format!("{op}")
             }
             Bitcast::P64ToP | Bitcast::I32ToP | Bitcast::LToP => {
-                format!("(uint8_t *) {}", op)
+                format!("(uint8_t *) {op}")
             }
 
             // Cast to uintptr_t to avoid implicit pointer-to-int conversions.
-            Bitcast::PToI32 | Bitcast::PToL => format!("(uintptr_t) {}", op),
+            Bitcast::PToI32 | Bitcast::PToL => format!("(uintptr_t) {op}"),
 
             Bitcast::I32ToL | Bitcast::LToI32 | Bitcast::None => op.to_string(),
 
@@ -2034,7 +2034,7 @@ impl InterfaceGenerator<'_> {
         let mut f = FunctionBindgen::new(self, c_sig, &import_name);
         for (pointer, param) in f.sig.params.iter() {
             if *pointer {
-                f.params.push(format!("*{}", param));
+                f.params.push(format!("*{param}"));
             } else {
                 f.params.push(param.clone());
             }
@@ -2332,7 +2332,7 @@ void {name}_return({return_ty}) {{
                 } else if single_ret {
                     "ret".into()
                 } else {
-                    format!("ret{}", i)
+                    format!("ret{i}")
                 };
                 self.src.h_fns(&name);
                 retptrs.push(name);
@@ -2897,7 +2897,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
     ) {
         self.load(ty, offset, operands, results);
         let result = results.pop().unwrap();
-        results.push(format!("(int32_t) {}", result));
+        results.push(format!("(int32_t) {result}"));
     }
 
     fn store(&mut self, ty: &str, offset: ArchitectureSize, operands: &[String]) {
@@ -2930,10 +2930,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             && self.r#gen.autodrop_enabled()
             && self.r#gen.contains_droppable_borrow(ty)
         {
-            panic!(
-                "Unable to autodrop borrows in `{}` values, please disable autodrop",
-                context
-            )
+            panic!("Unable to autodrop borrows in `{context}` values, please disable autodrop")
         }
     }
 }
@@ -3055,7 +3052,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
             Instruction::RecordLift { ty, record, .. } => {
                 let name = self.r#gen.r#gen.type_name(&Type::Id(*ty));
-                let mut result = format!("({}) {{\n", name);
+                let mut result = format!("({name}) {{\n");
                 for (field, op) in record.fields.iter().zip(operands.iter()) {
                     let field_ty = self.r#gen.r#gen.type_name(&field.ty);
                     uwriteln!(result, "({}) {},", field_ty, op);
@@ -3067,12 +3064,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::TupleLower { tuple, .. } => {
                 let op = &operands[0];
                 for i in 0..tuple.types.len() {
-                    results.push(format!("({}).f{}", op, i));
+                    results.push(format!("({op}).f{i}"));
                 }
             }
             Instruction::TupleLift { ty, tuple, .. } => {
                 let name = self.r#gen.r#gen.type_name(&Type::Id(*ty));
-                let mut result = format!("({}) {{\n", name);
+                let mut result = format!("({name}) {{\n");
                 for (ty, op) in tuple.types.iter().zip(operands.iter()) {
                     let ty = self.r#gen.r#gen.type_name(&ty);
                     uwriteln!(result, "({}) {},", ty, op);
@@ -3151,7 +3148,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::VariantPayloadName => {
                 let name = self.locals.tmp("payload");
-                results.push(format!("*{}", name));
+                results.push(format!("*{name}"));
                 self.payloads.push(name);
             }
 
@@ -3229,7 +3226,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     assert!(block_results.len() == (case.ty.is_some() as usize));
 
                     if let Some(_) = case.ty.as_ref() {
-                        let mut dst = format!("{}.val", result);
+                        let mut dst = format!("{result}.val");
                         dst.push_str(".");
                         dst.push_str(&to_c_ident(&case.name));
                         self.store_op(&block_results[0], &dst);
@@ -3665,7 +3662,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 Some(Scalar::OptionBool(_)) => {
                     assert_eq!(operands.len(), 1);
                     let variant = &operands[0];
-                    self.store_in_retptr(&format!("{}.val", variant));
+                    self.store_in_retptr(&format!("{variant}.val"));
                     self.src.push_str("return ");
                     self.src.push_str(&variant);
                     self.src.push_str(".is_some;\n");
@@ -3677,7 +3674,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     uwriteln!(self.src, "if (!{}.is_err) {{", variant);
                     if ok.is_some() {
                         if ok.is_some() {
-                            self.store_in_retptr(&format!("{}.val.ok", variant));
+                            self.store_in_retptr(&format!("{variant}.val.ok"));
                         } else {
                             self.empty_return_value();
                         }
@@ -3689,7 +3686,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     );
                     if err.is_some() {
                         if err.is_some() {
-                            self.store_in_retptr(&format!("{}.val.err", variant));
+                            self.store_in_retptr(&format!("{variant}.val.err"));
                         } else {
                             self.empty_return_value();
                         }
@@ -3797,7 +3794,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::Flush { amt } => {
-                results.extend(operands.iter().take(*amt).map(|v| v.clone()));
+                results.extend(operands.iter().take(*amt).cloned());
             }
 
             Instruction::AsyncTaskReturn { name, params } => {
@@ -3815,7 +3812,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     params: params
                         .iter()
                         .zip(operands)
-                        .map(|(a, b)| (a.clone(), b.clone()))
+                        .map(|(a, b)| (*a, b.clone()))
                         .collect(),
                 };
             }
@@ -3928,7 +3925,7 @@ pub fn flags_repr(f: &Flags) -> Int {
         FlagsRepr::U16 => Int::U16,
         FlagsRepr::U32(1) => Int::U32,
         FlagsRepr::U32(2) => Int::U64,
-        repr => panic!("unimplemented flags {:?}", repr),
+        repr => panic!("unimplemented flags {repr:?}"),
     }
 }
 

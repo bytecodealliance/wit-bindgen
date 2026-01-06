@@ -12,6 +12,9 @@ Rust bindings generator for WIT and the component model, typically used through
 the `wit-bindgen` crate's `generate!` macro.
 """
 
+[lints]
+workspace = true
+
 [lib]
 test = false
 doctest = false

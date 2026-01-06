@@ -10,6 +10,9 @@ description = """
 C++ guest and host binding generator for WIT and the component model.
 """
 
+[lints]
+workspace = true
+
 [lib]
 doctest = false
 test = false

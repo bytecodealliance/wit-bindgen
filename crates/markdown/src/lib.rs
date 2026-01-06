@@ -506,7 +506,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 name = i,
             ));
             self.r#gen.hrefs.insert(
-                format!("{}::{}", name, i),
+                format!("{name}::{i}"),
                 format!("#{}.{}", name.to_snake_case(), i),
             );
             self.print_ty(ty);
