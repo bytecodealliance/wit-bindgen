@@ -41,6 +41,7 @@ pub struct CSharp {
     pub(crate) all_resources: HashMap<TypeId, ResourceInfo>,
     pub(crate) world_resources: HashMap<TypeId, ResourceInfo>,
     pub(crate) import_funcs_called: bool,
+    pub(crate) has_exports: bool,
 }
 
 impl CSharp {
@@ -182,6 +183,7 @@ impl WorldGenerator for CSharp {
         id: InterfaceId,
         _files: &mut Files,
     ) -> anyhow::Result<()> {
+        self.has_exports = true;
         let name = interface_name(self, resolve, key, Direction::Export);
         self.interface_names.insert(id, name.clone());
         let mut r#gen = self.interface(resolve, &name, Direction::Export);
@@ -226,6 +228,7 @@ impl WorldGenerator for CSharp {
         funcs: &[(&str, &Function)],
         _files: &mut Files,
     ) -> anyhow::Result<()> {
+        self.has_exports = true;
         let name = &format!("{}-world", resolve.worlds[world].name).to_upper_camel_case();
         let name = &format!("{name}.I{name}");
         let mut r#gen = self.interface(resolve, name, Direction::Export);
@@ -489,6 +492,39 @@ impl WorldGenerator for CSharp {
         if self.needs_rep_table {
             src.push_str("\n");
             src.push_str(include_str!("RepTable.cs"));
+        }
+
+        // Add initialization guard for reactor (library) components.
+        // In reactor mode, there's no _start entry point, so exports may be called
+        // before the .NET runtime is fully initialized. This guard ensures that
+        // the runtime initialization (via __wasm_call_ctors) runs before any
+        // exported function executes.
+        // See: https://github.com/bytecodealliance/componentize-dotnet/issues/103
+        if self.has_exports {
+            uwrite!(
+                src,
+                r#"
+                internal static class WasmInteropInitializer
+                {{
+                    private static volatile bool _initialized;
+                    private static readonly object _lock = new object();
+
+                    [global::System.Runtime.InteropServices.DllImportAttribute("*", EntryPoint = "__wasm_call_ctors")]
+                    private static extern void WasmCallCtors();
+
+                    internal static void EnsureInitialized()
+                    {{
+                        if (_initialized) return;
+                        lock (_lock)
+                        {{
+                            if (_initialized) return;
+                            WasmCallCtors();
+                            _initialized = true;
+                        }}
+                    }}
+                }}
+                "#
+            );
         }
 
         if !&self.world_fragments.is_empty() {

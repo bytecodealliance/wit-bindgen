@@ -537,12 +537,14 @@ impl InterfaceGenerator<'_> {
         };
 
         let access = self.csharp_gen.access_modifier();
+        let qualifier = self.csharp_gen.qualifier();
 
         uwrite!(
             self.csharp_interop_src,
             r#"
             [global::System.Runtime.InteropServices.UnmanagedCallersOnlyAttribute(EntryPoint = "{export_name}")]
             {access} static unsafe {wasm_result_type} {interop_name}({wasm_params}) {{
+                {qualifier}WasmInteropInitializer.EnsureInitialized();
                 {vars}
                 {src}
             }}
