@@ -687,7 +687,7 @@ impl InterfaceGenerator<'_> {
             LiftLower::LowerArgsLiftResults,
             func,
             &mut bindgen,
-            false,
+            async_,
         );
 
         let src = bindgen.src.clone();
@@ -1688,13 +1688,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             .world_gen
             .pkg_resolver
             .type_name(self.interface_gen.name, ty)
-    }
-
-    fn resolve_pkg(&mut self, pkg: &str) -> String {
-        self.interface_gen
-            .world_gen
-            .pkg_resolver
-            .qualify_package(self.interface_gen.name, pkg)
     }
 
     fn use_ffi(&mut self, str: &'static str) {
