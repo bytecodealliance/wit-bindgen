@@ -26,6 +26,11 @@ type FutureReader[T any] struct {
 	handle *wit_runtime.Handle
 }
 
+// Blocks until the future completes and returns its value.
+//
+// # Panic
+//
+// Read will panic if multiple concurrent or sequential reads are attempted on the same future.
 func (self *FutureReader[T]) Read() T {
 	handle := self.handle.Take()
 	defer self.vtable.DropReadable(handle)
@@ -53,6 +58,7 @@ func (self *FutureReader[T]) Read() T {
 	}
 }
 
+// Notify the host that the FutureReader is no longer being used.
 func (self *FutureReader[T]) Drop() {
 	handle := self.handle.TakeOrNil()
 	if handle != 0 {
@@ -85,6 +91,11 @@ type FutureWriter[T any] struct {
 	handle *wit_runtime.Handle
 }
 
+// Writes data to a future.
+//
+// # Panic
+//
+// Write will panic if multiple concurrent or sequential writes are attempted on the same future.
 func (self *FutureWriter[T]) Write(item T) bool {
 	handle := self.handle.Take()
 	defer self.vtable.DropWritable(handle)
@@ -119,6 +130,7 @@ func (self *FutureWriter[T]) Write(item T) bool {
 	}
 }
 
+// Notify the host that the FutureWriter is no longer being used.
 func (self *FutureWriter[T]) Drop() {
 	handle := self.handle.TakeOrNil()
 	if handle != 0 {

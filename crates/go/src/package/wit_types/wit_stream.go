@@ -31,8 +31,22 @@ func (self *StreamReader[T]) WriterDropped() bool {
 	return self.writerDropped
 }
 
+// Reads data from a stream into a destination slice.
+//
+// Blocks until the read completes or the destination slice is full.
+//
+// # Panic
+//
+// Read will panic if:
+//   - dst is empty (length 0)
+//   - multiple concurrent reads are attempted on the same stream
 func (self *StreamReader[T]) Read(dst []T) uint32 {
-	handle := self.handle.Use()
+	if len(dst) == 0 {
+		panic("StreamReader.Read: destination slice cannot be empty")
+	}
+
+	handle := self.handle.Take()
+	defer self.handle.Set(handle)
 
 	if self.writerDropped {
 		return 0
@@ -68,6 +82,7 @@ func (self *StreamReader[T]) Read(dst []T) uint32 {
 	return count
 }
 
+// Notify the host that the StreamReader is no longer being used.
 func (self *StreamReader[T]) Drop() {
 	handle := self.handle.TakeOrNil()
 	if handle != 0 {
@@ -105,8 +120,14 @@ func (self *StreamWriter[T]) ReaderDropped() bool {
 	return self.readerDropped
 }
 
+// Writes items to a stream, returning the count written (may be partial).
+//
+// # Panic
+//
+// Write will panic if multiple concurrent writes are attempted on the same stream.
 func (self *StreamWriter[T]) Write(items []T) uint32 {
-	handle := self.handle.Use()
+	handle := self.handle.Take()
+	defer self.handle.Set(handle)
 
 	if self.readerDropped {
 		return 0
@@ -152,6 +173,11 @@ func (self *StreamWriter[T]) Write(items []T) uint32 {
 	return count
 }
 
+// Writes all items to the stream, looping until complete or reader drops.
+//
+// # Panic
+//
+// WriteAll will panic if multiple concurrent writes are attempted on the same stream.
 func (self *StreamWriter[T]) WriteAll(items []T) uint32 {
 	offset := uint32(0)
 	count := uint32(len(items))
@@ -161,6 +187,7 @@ func (self *StreamWriter[T]) WriteAll(items []T) uint32 {
 	return offset
 }
 
+// Notify the host that the StreamReader is no longer being used.
 func (self *StreamWriter[T]) Drop() {
 	handle := self.handle.TakeOrNil()
 	if handle != 0 {
