@@ -1280,7 +1280,7 @@ impl InterfaceGenerator<'_> {
         self.futures.push(FutureInfo {
             name: func_name.to_string(),
             generic_type_name: generic_type_name.to_string(),
-            ty: ty.clone(),
+            ty: *ty,
         });
     }
 }
