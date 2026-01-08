@@ -139,6 +139,7 @@ fn compile(runner: &Runner<'_>, compile: &Compile<'_>, compiler: PathBuf) -> Res
         .arg("-Wc++-compat")
         .arg("-Wno-unused-parameter")
         .arg("-g")
+        .arg("-Wl,--export-table")
         .arg("-o")
         .arg(&output);
     for flag in Vec::from(config.cflags) {

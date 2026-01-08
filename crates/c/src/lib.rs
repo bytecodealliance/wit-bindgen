@@ -768,10 +768,19 @@ typedef enum {snake}_waitable_state {{
 
 void {snake}_backpressure_inc(void);
 void {snake}_backpressure_dec(void);
-void* {snake}_context_get(void);
-void {snake}_context_set(void*);
-void {snake}_yield(void);
-uint32_t {snake}_yield_cancellable(void);
+void* {snake}_context_get(size_t index);
+void {snake}_context_set(size_t index, void* value);
+void {snake}_thread_yield(void);
+uint32_t {snake}_thread_yield_cancellable(void);
+uint32_t {snake}_thread_index(void);
+uint32_t {snake}_thread_new_indirect(void (*start_function)(void*), void* arg);
+void {snake}_thread_switch_to(uint32_t thread);
+uint32_t {snake}_thread_switch_to_cancellable(uint32_t thread);
+void {snake}_thread_resume_later(uint32_t thread);
+void {snake}_thread_yield_to(uint32_t thread);
+uint32_t {snake}_thread_yield_to_cancellable(uint32_t thread);
+void {snake}_thread_suspend(void);
+uint32_t {snake}_thread_suspend_cancellable(void);
             "
         );
         uwriteln!(
@@ -847,31 +856,103 @@ void {snake}_backpressure_dec(void) {{
 }}
 
 __attribute__((__import_module__("$root"), __import_name__("[context-get-0]")))
-extern void* __context_get(void);
+extern void* __context_get_0(void);
 
-void* {snake}_context_get() {{
-    return __context_get();
+__attribute__((__import_module__("$root"), __import_name__("[context-get-1]")))
+extern void* __context_get_1(void);
+
+void* {snake}_context_get(size_t index) {{
+    if (index == 0) return __context_get_0();
+    if (index == 1) return __context_get_1();
+    return NULL;
 }}
 
 __attribute__((__import_module__("$root"), __import_name__("[context-set-0]")))
-extern void __context_set(void*);
+extern void __context_set_0(void*);
 
-void {snake}_context_set(void *val) {{
-    return __context_set(val);
+__attribute__((__import_module__("$root"), __import_name__("[context-set-1]")))
+extern void __context_set_1(void*);
+
+void {snake}_context_set(size_t index, void *value) {{
+    if (index == 0) __context_set_0(value);
+    else if (index == 1) __context_set_1(value);
 }}
 
 __attribute__((__import_module__("$root"), __import_name__("[thread-yield]")))
 extern uint32_t __thread_yield(void);
 
-void {snake}_yield(void) {{
+void {snake}_thread_yield(void) {{
     __thread_yield();
 }}
 
 __attribute__((__import_module__("$root"), __import_name__("[cancellable][thread-yield]")))
 extern uint32_t __thread_yield_cancellable(void);
 
-uint32_t {snake}_yield_cancellable(void) {{
+uint32_t {snake}_thread_yield_cancellable(void) {{
     return __thread_yield_cancellable();
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[thread-index]")))
+extern uint32_t __thread_index(void);
+
+uint32_t {snake}_thread_index(void) {{
+    return __thread_index();
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[thread-new-indirect-v0]")))
+extern uint32_t __thread_new_indirect(uint32_t, void*);
+
+uint32_t {snake}_thread_new_indirect(void (*start_function)(void*), void* arg) {{
+    return __thread_new_indirect((uint32_t)(uintptr_t)start_function, arg
+);
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[thread-switch-to]")))
+extern uint32_t __thread_switch_to(uint32_t);
+
+void {snake}_thread_switch_to(uint32_t thread) {{
+    __thread_switch_to(thread);
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[cancellable][thread-switch-to]")))
+extern uint32_t __thread_switch_to_cancellable(uint32_t);
+
+uint32_t {snake}_thread_switch_to_cancellable(uint32_t thread) {{
+    return __thread_switch_to_cancellable(thread);
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[thread-resume-later]")))
+extern void __thread_resume_later(uint32_t);
+
+void {snake}_thread_resume_later(uint32_t thread) {{
+    __thread_resume_later(thread);
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[thread-yield-to]")))
+extern uint32_t __thread_yield_to(uint32_t);
+
+void {snake}_thread_yield_to(uint32_t thread) {{
+    __thread_yield_to(thread);
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[cancellable][thread-yield-to]")))
+extern uint32_t __thread_yield_to_cancellable(uint32_t);
+
+uint32_t {snake}_thread_yield_to_cancellable(uint32_t thread) {{
+    return __thread_yield_to_cancellable(thread);
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[thread-suspend]")))
+extern uint32_t __thread_suspend(void);
+
+void {snake}_thread_suspend(void) {{
+    __thread_suspend();
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[cancellable][thread-suspend]")))
+extern uint32_t __thread_suspend_cancellable(void);
+uint32_t {snake}_thread_suspend_cancellable(void) {{
+    return __thread_suspend_cancellable();
 }}
             "#
         );
