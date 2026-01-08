@@ -48,8 +48,8 @@ public static class AsyncSupport
 
     public static WaitableSet WaitableSetNew() 
     {{
-        var waitable = Interop.WaitableSetNew();
-        return new WaitableSet(waitable);
+        var waitableSet  = Interop.WaitableSetNew();
+        return new WaitableSet(waitableSet );
     }}
 
     public static void Join(FutureWriter writer, WaitableSet set) 
@@ -118,7 +118,7 @@ public class FutureReader(int handle, FutureVTable vTable) : IDisposable // : TO
 
     public int TakeHandle()
     {
-        if(Handle == 0)
+        if (Handle == 0)
         {
             throw new InvalidOperationException("Handle already taken");
         }
@@ -131,6 +131,10 @@ public class FutureReader(int handle, FutureVTable vTable) : IDisposable // : TO
     public Task Read()
     {
         // TODO: Generate for the interop name and the namespace.
+        if (Handle == 0)
+        {
+            throw new InvalidOperationException("Handle already taken");
+        }
 
         var status = new WaitableStatus(vTable.StartRead(Handle, IntPtr.Zero));
         if (status.IsBlocked)
@@ -151,7 +155,10 @@ public class FutureReader(int handle, FutureVTable vTable) : IDisposable // : TO
     void Dispose(bool _disposing)
     {
         // Free unmanaged resources if any.
-        vTable.DropReader(Handle);
+        if (Handle != 0)
+        {
+            vTable.DropReader(Handle);
+        }
     }
 
     public void Dispose()
@@ -173,7 +180,7 @@ public class FutureReader<T>(int handle, FutureVTable vTable) : IDisposable // :
 
     public int TakeHandle()
     {
-        if(Handle == 0)
+        if (Handle == 0)
         {
             throw new InvalidOperationException("Handle already taken");
         }
@@ -186,6 +193,10 @@ public class FutureReader<T>(int handle, FutureVTable vTable) : IDisposable // :
     public Task Read()
     {
         // TODO: Generate for the interop name and the namespace.
+        if (Handle == 0)
+        {
+            throw new InvalidOperationException("Handle already taken");
+        }
 
         var status = new WaitableStatus(vTable.StartRead(Handle, IntPtr.Zero));
         if (status.IsBlocked)
@@ -206,7 +217,10 @@ public class FutureReader<T>(int handle, FutureVTable vTable) : IDisposable // :
     void Dispose(bool _disposing)
     {
         // Free unmanaged resources if any.
-        vTable.DropReader(Handle);
+        if (Handle != 0)
+        {
+            vTable.DropReader(Handle);
+        }
     }
 
     public void Dispose()
@@ -233,6 +247,11 @@ public class FutureWriter(int handle, FutureVTable vTable) // : TODO Waitable
     public Task Write()
     {
         // TODO: Generate for the interop name.
+        if (Handle == 0)
+        {
+            throw new InvalidOperationException("Handle already taken");
+        }
+
         var status = new WaitableStatus(VTable.Write(Handle, IntPtr.Zero));
         if (status.IsBlocked)
         {
@@ -247,7 +266,10 @@ public class FutureWriter(int handle, FutureVTable vTable) // : TODO Waitable
     void Dispose(bool _disposing)
     {
         // Free unmanaged resources if any.
-        VTable.DropWriter(Handle);
+        if (Handle != 0)
+        {
+            VTable.DropWriter(Handle);
+        }
     }
 
     public void Dispose()
@@ -285,7 +307,10 @@ public class FutureWriter<T>(int handle, FutureVTable vTable) // : TODO Waitable
     void Dispose(bool _disposing)
     {
         // Free unmanaged resources if any.
-        VTable.DropWriter(Handle);
+        if (Handle != 0)
+        {
+            VTable.DropWriter(Handle);
+        }
     }
 
     public void Dispose()

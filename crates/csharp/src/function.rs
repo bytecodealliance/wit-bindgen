@@ -168,7 +168,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             .drain(self.blocks.len() - cases.len()..)
             .collect::<Vec<_>>();
         let ty = self.interface_gen.type_name_with_qualifier(ty, true);
-        //let ty = self.r#gentype_name(ty);
         let generics_position = ty.find('<');
         let lifted = self.locals.tmp("lifted");
 
@@ -1412,7 +1411,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 };
                 self.interface_gen.add_future(self.func_name, &generic_type_name, ty);
 
-                results.push(format!("{op}.Handle"));
+                results.push(format!("{op}.TakeHandle()"));
             }
 
             Instruction::AsyncTaskReturn { name: _, params: _ } => {
