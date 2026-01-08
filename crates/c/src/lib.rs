@@ -103,7 +103,7 @@ pub struct Opts {
     #[cfg_attr(feature = "clap", arg(long, value_name = "NAME"))]
     pub rename_world: Option<String>,
 
-    /// Add the specified suffix to the name of the custome section containing
+    /// Add the specified suffix to the name of the custom section containing
     /// the component type.
     #[cfg_attr(feature = "clap", arg(long, value_name = "STRING"))]
     pub type_section_suffix: Option<String>,
@@ -121,6 +121,10 @@ pub struct Opts {
 
     #[cfg_attr(feature = "clap", clap(flatten))]
     pub async_: AsyncFilterSet,
+
+    /// Force generation of async helpers even if no async functions/futures are present.
+    #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
+    pub generate_async_helpers: bool,
 }
 
 #[cfg(feature = "clap")]
@@ -432,7 +436,7 @@ impl WorldGenerator for C {
                 "\nunion double_int64 {{ double a; int64_t b; }};"
             );
         }
-        if self.needs_async || self.futures.len() > 0 {
+        if self.needs_async || self.futures.len() > 0 || self.opts.generate_async_helpers {
             self.generate_async_helpers();
         }
         let version = env!("CARGO_PKG_VERSION");
