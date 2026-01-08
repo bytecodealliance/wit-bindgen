@@ -18,12 +18,12 @@ test_callback_code_t exports_test_pending_import(exports_test_future_void_t x) {
   task->set = test_waitable_set_new();
   test_waitable_join(task->future, task->set);
 
-  test_context_set(task);
+  test_context_set(0, task);
   return TEST_CALLBACK_CODE_WAIT(task->set);
 }
 
 test_callback_code_t exports_test_pending_import_callback(test_event_t *event) {
-  struct my_task *task = (struct my_task*) test_context_get();
+  struct my_task *task = (struct my_task*) test_context_get(0);
   assert(event->event == TEST_EVENT_FUTURE_READ);
   assert(event->waitable == task->future);
   assert(TEST_WAITABLE_STATE(event->code) == TEST_WAITABLE_COMPLETED);

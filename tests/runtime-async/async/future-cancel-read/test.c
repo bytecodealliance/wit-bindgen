@@ -58,13 +58,13 @@ test_callback_code_t exports_test_start_read_then_cancel(
 
   test_waitable_join(signal, state->set);
 
-  test_context_set(state);
+  test_context_set(0, state);
   return TEST_CALLBACK_CODE_WAIT(state->set);
 }
 
 test_callback_code_t exports_test_start_read_then_cancel_callback(test_event_t *event) {
   struct start_read_then_cancel_state *state =
-    (struct start_read_then_cancel_state*) test_context_get();
+    (struct start_read_then_cancel_state*) test_context_get(0);
   assert(event->event == TEST_EVENT_FUTURE_READ);
   assert(event->waitable == state->signal);
   assert(TEST_WAITABLE_STATE(event->code) == TEST_WAITABLE_COMPLETED);
