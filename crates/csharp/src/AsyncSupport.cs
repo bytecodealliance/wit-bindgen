@@ -293,6 +293,11 @@ public class FutureWriter<T>(int handle, FutureVTable vTable) // : TODO Waitable
     public Task Write()
     {
         // TODO: Generate for the interop name.
+        if (Handle == 0)
+        {
+            throw new InvalidOperationException("Handle already taken");
+        }
+
         var status = new WaitableStatus(VTable.Write(Handle, IntPtr.Zero));
         if (status.IsBlocked)
         {
