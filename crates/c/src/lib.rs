@@ -440,7 +440,11 @@ impl WorldGenerator for C {
                 "\nunion double_int64 {{ double a; int64_t b; }};"
             );
         }
-        if self.needs_async || self.futures.len() > 0 || self.opts.generate_async_helpers || self.opts.generate_threading_helpers {
+        if self.needs_async
+            || self.futures.len() > 0
+            || self.opts.generate_async_helpers
+            || self.opts.generate_threading_helpers
+        {
             self.generate_async_helpers();
         }
         if self.opts.generate_threading_helpers {
@@ -821,7 +825,7 @@ uint32_t {snake}_thread_suspend_cancellable(void) {{
 }}
             "#
         );
-        }
+    }
 
     fn generate_async_helpers(&mut self) {
         let snake = self.world.to_snake_case();
