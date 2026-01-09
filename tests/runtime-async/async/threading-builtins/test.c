@@ -1,4 +1,4 @@
-//@ args = '--rename a:b/i=test'
+//@ args = '--rename a:b/i=test --generate-threading-helpers'
 //@ [lang]
 //@ ldflags = "-Wl,--export-table"
 
