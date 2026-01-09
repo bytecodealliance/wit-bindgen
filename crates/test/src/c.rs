@@ -28,6 +28,9 @@ struct LangConfig {
     /// Space-separated list or array of compiler flags to pass.
     #[serde(default)]
     cflags: StringList,
+    /// Space-separated list or array of linker flags to pass.
+    #[serde(default)]
+    ldflags: StringList,
 }
 
 fn clang(runner: &Runner<'_>) -> PathBuf {
@@ -139,10 +142,12 @@ fn compile(runner: &Runner<'_>, compile: &Compile<'_>, compiler: PathBuf) -> Res
         .arg("-Wc++-compat")
         .arg("-Wno-unused-parameter")
         .arg("-g")
-        .arg("-Wl,--export-table")
         .arg("-o")
         .arg(&output);
     for flag in Vec::from(config.cflags) {
+        cmd.arg(flag);
+    }
+    for flag in Vec::from(config.ldflags) {
         cmd.arg(flag);
     }
     cmd.arg("-mexec-model=reactor");

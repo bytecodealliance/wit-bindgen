@@ -1,4 +1,6 @@
 //@ args = '--rename a:b/i=test'
+//@ [lang]
+//@ ldflags = "-Wl,--export-table"
 
 #include <assert.h>
 #include <test.h>
