@@ -1,5 +1,6 @@
 //@ args = '--rename a:b/i=test --generate-threading-helpers'
 //@ [lang]
+//@ cflags = "-O2"
 //@ ldflags = "-Wl,--export-table"
 
 #include <assert.h>
