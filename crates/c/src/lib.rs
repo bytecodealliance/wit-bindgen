@@ -772,8 +772,10 @@ typedef enum {snake}_waitable_state {{
 
 void {snake}_backpressure_inc(void);
 void {snake}_backpressure_dec(void);
-void* {snake}_context_get(size_t index);
-void {snake}_context_set(size_t index, void* value);
+void* {snake}_context_get_0(void);
+void {snake}_context_set_0(void* value);
+void* {snake}_context_get_1(void);
+void {snake}_context_set_1(void* value);
 void {snake}_thread_yield(void);
 uint32_t {snake}_thread_yield_cancellable(void);
 uint32_t {snake}_thread_index(void);
@@ -865,10 +867,12 @@ extern void* __context_get_0(void);
 __attribute__((__import_module__("$root"), __import_name__("[context-get-1]")))
 extern void* __context_get_1(void);
 
-void* {snake}_context_get(size_t index) {{
-    if (index == 0) return __context_get_0();
-    if (index == 1) return __context_get_1();
-    return NULL;
+void* {snake}_context_get_0(void) {{
+    return __context_get_0();
+}}
+
+void* {snake}_context_get_1(void) {{
+    return __context_get_1();
 }}
 
 __attribute__((__import_module__("$root"), __import_name__("[context-set-0]")))
@@ -877,9 +881,12 @@ extern void __context_set_0(void*);
 __attribute__((__import_module__("$root"), __import_name__("[context-set-1]")))
 extern void __context_set_1(void*);
 
-void {snake}_context_set(size_t index, void *value) {{
-    if (index == 0) __context_set_0(value);
-    else if (index == 1) __context_set_1(value);
+void {snake}_context_set_0(void *value) {{
+    __context_set_0(value);
+}}
+
+void {snake}_context_set_1(void *value) {{
+    __context_set_1(value);
 }}
 
 __attribute__((__import_module__("$root"), __import_name__("[thread-yield]")))
