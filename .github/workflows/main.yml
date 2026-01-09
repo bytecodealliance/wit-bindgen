@@ -161,7 +161,7 @@ jobs:
         cargo run test --languages rust,c,go tests/runtime-async \
           --artifacts target/artifacts \
           --rust-wit-bindgen-path ./crates/guest-rust \
-          --runner "wasmtime -W component-model-async"
+          --runner "wasmtime -W component-model-async -W component-model-threading -W component-model-async-stackful"
 
   test_unit:
     name: Crate Unit Tests
