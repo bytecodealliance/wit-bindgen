@@ -1,11 +1,10 @@
 using System.Text;
-using Import = ResourceWithListsWorld.wit.imports.test.resourceWithLists.ITest;
-using Host = ResourceWithListsWorld.wit.imports.test.resourceWithLists.TestInterop;
+using Import = ResourceWithListsWorld.wit.Imports.test.resourceWithLists.ITestImports;
 
-namespace ResourceWithListsWorld.wit.exports.test.resourceWithLists
+namespace ResourceWithListsWorld.wit.Exports.test.resourceWithLists
 {
-    public class TestImpl : ITest {
-	public class Thing : ITest.Thing, ITest.IThing {
+    public class TestExportsImpl : ITestExports {
+	public class Thing : ITestExports.Thing, ITestExports.IThing {
 	    public Import.Thing val;
 
 	    public Thing(byte[] v) {

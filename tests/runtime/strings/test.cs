@@ -1,10 +1,8 @@
-using System;
-using System.Runtime.InteropServices;
 using System.Diagnostics;
 
-namespace TestWorld.wit.exports.test.strings
+namespace TestWorld.wit.Exports.test.strings
 {
-    public class ToTestImpl : ITestWorld
+    public class ToTestExportsImpl : IToTestExports
     {
         public static void TakeBasic(string s)
         {

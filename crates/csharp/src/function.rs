@@ -33,6 +33,7 @@ pub(crate) struct FunctionBindgen<'a, 'b> {
     fixed_statments: Vec<Fixed>,
     parameter_type: ParameterType,
     result_type: Option<Type>,
+    pub(crate) resource_type_name: Option<String>,
 }
 
 impl<'a, 'b> FunctionBindgen<'a, 'b> {
@@ -70,6 +71,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             fixed_statments: Vec::new(),
             parameter_type: parameter_type,
             result_type: result_type,
+            resource_type_name: None,
         }
     }
 
@@ -166,7 +168,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             .drain(self.blocks.len() - cases.len()..)
             .collect::<Vec<_>>();
         let ty = self.interface_gen.type_name_with_qualifier(ty, true);
-        //let ty = self.gen.type_name(ty);
         let generics_position = ty.find('<');
         let lifted = self.locals.tmp("lifted");
 
@@ -1062,9 +1063,32 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     None => operands.join(", "),
                 };
 
+                let (_namespace, interface_name) =
+                    &CSharp::get_class_name_from_qualified_name(self.interface_gen.name);
+                let mut interop_name = format!("{}ImportsInterop", interface_name.strip_prefix("I").unwrap()
+                    .strip_suffix(if self.interface_gen.direction == Direction::Import { "Imports" } else { "Exports" }).unwrap().to_upper_camel_case());
+
+                if self.interface_gen.is_world && self.interface_gen.direction == Direction::Import {
+                    interop_name = format!("Imports.{interop_name}");
+                }
+
+                let resource_type_name = match self.kind {
+                    FunctionKind::Method(resource_type_id) |
+                    FunctionKind::Static(resource_type_id) |
+                    FunctionKind::Constructor(resource_type_id) => {
+                        format!(
+                            ".{}",
+                            self.interface_gen.csharp_gen.all_resources[resource_type_id]
+                                .name
+                                .to_upper_camel_case()
+                        )
+                    }
+                    _ => String::new(),
+                };
+
                 uwriteln!(
                     self.src,
-                    "{assignment} {func_name}WasmInterop.wasmImport{func_name}({operands});"
+                    "{assignment} {interop_name}{resource_type_name}.{func_name}WasmInterop.wasmImport{func_name}({operands});"
                 );
 
                 if let Some(buffer) = async_return_buffer {
@@ -1364,6 +1388,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         } else {
                             uwriteln!(self.src, "var {resource} = ({export_name}) {export_name}.repTable.Get({op});");
                         }
+                        self.resource_type_name = Some(export_name);
                     }
                 }
                 results.push(resource);
@@ -1373,17 +1398,49 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.extend(operands.iter().take(*amt).cloned());
             }
 
-            Instruction::FutureLower { .. } => {
+            Instruction::FutureLower { payload, ty } => {
                 let op = &operands[0];
-                results.push(format!("{op}.Handle"));
+                let generic_type_name = match payload {
+                    Some(generic_type) => {
+                        &self.interface_gen.type_name_with_qualifier(generic_type, false)
+                    }
+                    None => ""
+                };
+                self.interface_gen.add_future(self.func_name, &generic_type_name, ty);
+
+                results.push(format!("{op}.TakeHandle()"));
             }
 
             Instruction::AsyncTaskReturn { name: _, params: _ } => {
                 uwriteln!(self.src, "// TODO_task_cancel.forget();");
             }
 
-            Instruction::FutureLift { .. }
-            | Instruction::StreamLower { .. }
+            Instruction::FutureLift { payload, ty } => {
+                 let generic_type_name = match payload {
+                    Some(generic_type) => {
+                        &self.interface_gen.type_name_with_qualifier(generic_type, false)
+                    }
+                    None => ""
+                };
+                let upper_camel = generic_type_name.to_upper_camel_case();
+            //    let sig_type_name = "Void";
+                let reader_var = self.locals.tmp("reader");
+                let module = self.interface_gen.name;
+                let (import_name, interface_name) = CSharp::get_class_name_from_qualified_name(module);
+                let export_name = import_name
+                    .replace(".Imports.", ".Exports.");
+                let base_interface_name = interface_name
+                    .strip_prefix("I").unwrap()
+                    .replace("Imports", "Exports"); // TODO: This is fragile and depends on the interface name.
+
+                uwriteln!(self.src, "var {reader_var} = new FutureReader({}, {export_name}.{base_interface_name}Interop.FutureVTable{});", operands[0], upper_camel);
+                results.push(reader_var);
+
+                self.interface_gen.add_future(self.func_name, &generic_type_name, ty);
+                self.interface_gen.csharp_gen.needs_async_support = true;
+            }
+
+            Instruction::StreamLower { .. }
             | Instruction::StreamLift { .. }
             | Instruction::ErrorContextLower { .. }
             | Instruction::ErrorContextLift { .. }
@@ -1418,7 +1475,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwrite!(
                     self.src,
                     "
-                    var {ret_area} = stackalloc {element_type}[{array_size}+1];
+                    var {ret_area} = stackalloc {element_type}[{array_size} + 1];
                     var {ptr} = ((int){ret_area}) + ({align} - 1) & -{align};
                     ",
                     align = align.align_wasm32()
@@ -1487,7 +1544,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 }
 
 /// Dereference any number `TypeDefKind::Type` aliases to retrieve the target type.
-fn dealias(resolve: &Resolve, mut id: TypeId) -> TypeId {
+pub fn dealias(resolve: &Resolve, mut id: TypeId) -> TypeId {
     loop {
         match &resolve.types[id].kind {
             TypeDefKind::Type(Type::Id(that_id)) => id = *that_id,
