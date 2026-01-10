@@ -2696,6 +2696,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::ErrorContextLower { .. }
             | Instruction::ErrorContextLift { .. }
             | Instruction::DropHandle { .. } => todo!(),
+            Instruction::FixedSizeListLift { .. } => todo!(),
+            Instruction::FixedSizeListLower { .. } => todo!(),
+            Instruction::FixedSizeListLowerToMemory { .. } => todo!(),
+            Instruction::FixedSizeListLiftFromMemory { .. } => todo!(),
         }
     }
 
