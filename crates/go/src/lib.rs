@@ -1006,7 +1006,7 @@ impl Go {
                     format!(
                         "{params_pointer} := wit_runtime.Allocate({PINNER}, {size}, {align})\n{code}"
                     ),
-                    vec![params_pointer],
+                    vec![format!("uintptr({params_pointer})")],
                 )
             } else {
                 let wasm_params = go_param_names
