@@ -45,7 +45,8 @@ impl TestRunner {
         for arg in self.args.iter() {
             ret.arg(arg);
         }
-        ret.arg("--invoke=run()");
+        ret.arg("--invoke=run()")
+            .arg("-Wcomponent-model-fixed-size-list");
         ret
     }
 }

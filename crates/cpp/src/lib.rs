@@ -2705,7 +2705,15 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 self.push_str("\n}\n}\n");
                 results.push(vec);
             }
-            abi::Instruction::FixedSizeListLower { .. } => todo!(),
+            abi::Instruction::FixedSizeListLower {
+                element: _,
+                size,
+                id: _,
+            } => {
+                for i in 0..(*size as usize) {
+                    results.push(format!("{}[{i}]", operands[0]));
+                }
+            }
             abi::Instruction::FixedSizeListLowerToMemory {
                 element,
                 size: elemsize,

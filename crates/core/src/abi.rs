@@ -2201,7 +2201,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     self.push_block();
                     self.emit(&IterBasePointer);
                     let elemaddr = self.stack.pop().unwrap();
-                    self.read_from_memory(ty, elemaddr, Default::default());
+                    self.read_from_memory(ty, elemaddr, offset);
                     self.finish_block(1);
                     self.stack.push(addr.clone());
                     self.emit(&FixedSizeListLiftFromMemory {
