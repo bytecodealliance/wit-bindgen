@@ -1,0 +1,14 @@
+package foo:bar;
+
+world bindings {
+    import types;
+}
+
+interface types {
+    resource descriptor {
+        test: async func(
+            arg1: string,
+            arg2: list<s32>,
+        );
+    }
+}

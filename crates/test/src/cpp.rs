@@ -51,7 +51,8 @@ impl LanguageMethods for Cpp {
             | "futures.wit"
             | "resources-with-futures.wit"
             | "resources-with-streams.wit"
-            | "streams.wit" => true,
+            | "streams.wit"
+            | "async-resource-func.wit" => true,
             _ => false,
         }
     }
