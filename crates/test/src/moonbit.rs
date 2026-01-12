@@ -1,4 +1,4 @@
-use crate::LanguageMethods;
+use crate::{LanguageMethods, Runner};
 use anyhow::bail;
 use serde::Deserialize;
 use std::process::Command;
@@ -28,7 +28,7 @@ impl LanguageMethods for MoonBit {
         &["--derive-show", "--derive-eq", "--derive-error"]
     }
 
-    fn prepare(&self, runner: &mut crate::Runner<'_>) -> anyhow::Result<()> {
+    fn prepare(&self, runner: &mut Runner) -> anyhow::Result<()> {
         println!("Testing if MoonBit toolchain exists...");
         if runner
             .run_command(Command::new("moon").arg("version"))
@@ -39,7 +39,7 @@ impl LanguageMethods for MoonBit {
         Ok(())
     }
 
-    fn compile(&self, runner: &crate::Runner<'_>, compile: &crate::Compile) -> anyhow::Result<()> {
+    fn compile(&self, runner: &Runner, compile: &crate::Compile) -> anyhow::Result<()> {
         let config = compile.component.deserialize_lang_config::<LangConfig>()?;
         // Copy the file to the bindings directory
         if !config.path.is_empty() {
@@ -100,7 +100,7 @@ impl LanguageMethods for MoonBit {
         config.async_
     }
 
-    fn verify(&self, runner: &crate::Runner<'_>, verify: &crate::Verify) -> anyhow::Result<()> {
+    fn verify(&self, runner: &Runner, verify: &crate::Verify) -> anyhow::Result<()> {
         let mut cmd = Command::new("moon");
         cmd.arg("check")
             .arg("--warn-list")

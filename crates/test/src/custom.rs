@@ -1,5 +1,5 @@
 use crate::{Bindgen, Compile, LanguageMethods, Runner, Verify};
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use clap::Parser;
 use std::env;
 use std::path::Path;
@@ -73,7 +73,7 @@ pub struct Language {
 }
 
 impl Language {
-    pub fn lookup(runner: &Runner<'_>, language: &str) -> Result<Language> {
+    pub fn lookup(runner: &Runner, language: &str) -> Result<Language> {
         for (ext, script) in runner.opts.custom.custom.iter() {
             if ext == language {
                 return Ok(Language {
@@ -108,7 +108,7 @@ impl LanguageMethods for Language {
         false
     }
 
-    fn generate_bindings(&self, runner: &Runner<'_>, bindgen: &Bindgen, dir: &Path) -> Result<()> {
+    fn generate_bindings(&self, runner: &Runner, bindgen: &Bindgen, dir: &Path) -> Result<()> {
         runner.run_command(
             Command::new(&self.script)
                 .arg("bindgen")
@@ -117,7 +117,7 @@ impl LanguageMethods for Language {
         )
     }
 
-    fn prepare(&self, runner: &mut Runner<'_>) -> Result<()> {
+    fn prepare(&self, runner: &mut Runner) -> Result<()> {
         let dir = env::current_dir()?
             .join(&runner.opts.artifacts)
             .join(&self.extension);
@@ -128,7 +128,7 @@ impl LanguageMethods for Language {
         )
     }
 
-    fn compile(&self, runner: &Runner<'_>, compile: &Compile<'_>) -> Result<()> {
+    fn compile(&self, runner: &Runner, compile: &Compile<'_>) -> Result<()> {
         let dir = env::current_dir()?
             .join(&runner.opts.artifacts)
             .join(&self.extension);
@@ -144,7 +144,7 @@ impl LanguageMethods for Language {
         )
     }
 
-    fn verify(&self, runner: &Runner<'_>, verify: &Verify<'_>) -> Result<()> {
+    fn verify(&self, runner: &Runner, verify: &Verify<'_>) -> Result<()> {
         runner.run_command(
             Command::new(&self.script)
                 .arg("verify")

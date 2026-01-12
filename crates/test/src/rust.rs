@@ -98,7 +98,7 @@ impl LanguageMethods for Rust {
         &["--stubs"]
     }
 
-    fn prepare(&self, runner: &mut Runner<'_>) -> Result<()> {
+    fn prepare(&self, runner: &mut Runner) -> Result<()> {
         let cwd = env::current_dir()?;
         let opts = &runner.opts.rust;
         let dir = cwd.join(&runner.opts.artifacts).join("rust");
@@ -164,7 +164,7 @@ path = 'lib.rs'
         Ok(())
     }
 
-    fn compile(&self, runner: &Runner<'_>, compile: &Compile) -> Result<()> {
+    fn compile(&self, runner: &Runner, compile: &Compile) -> Result<()> {
         let config = compile.component.deserialize_lang_config::<RustConfig>()?;
 
         // If this rust target doesn't natively produce a component then place
@@ -223,7 +223,7 @@ path = 'lib.rs'
         Ok(())
     }
 
-    fn verify(&self, runner: &Runner<'_>, verify: &Verify<'_>) -> Result<()> {
+    fn verify(&self, runner: &Runner, verify: &Verify<'_>) -> Result<()> {
         let bindings = verify
             .bindings_dir
             .join(format!("{}.rs", verify.world.to_snake_case()));
@@ -274,7 +274,7 @@ enum Edition {
     E2024,
 }
 
-impl Runner<'_> {
+impl Runner {
     fn rustc(&self, edition: Edition) -> Command {
         let state = self.rust_state.as_ref().unwrap();
         let opts = &self.opts.rust;
