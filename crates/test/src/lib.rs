@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::Parser;
 use libtest_mimic::Trial;
 use std::borrow::Cow;
@@ -601,11 +601,11 @@ impl Runner {
     fn run_tests(&self, trials: Vec<Trial>) {
         let args = libtest_mimic::Arguments {
             skip: self.opts.skip.clone(),
-            quiet: self.opts.quiet.clone(),
-            format: self.opts.format.clone(),
-            color: self.opts.color.clone(),
-            test_threads: self.opts.test_threads.clone(),
-            exact: self.opts.exact.clone(),
+            quiet: self.opts.quiet,
+            format: self.opts.format,
+            color: self.opts.color,
+            test_threads: self.opts.test_threads,
+            exact: self.opts.exact,
             ..Default::default()
         };
         libtest_mimic::run(&args, trials).exit_if_failed();
