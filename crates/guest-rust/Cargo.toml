@@ -19,7 +19,7 @@ workspace = true
 all-features = true
 
 [dependencies]
-wit-bindgen-rust-macro = { path = "./macro", optional = true, version = "0.50.0" }
+wit-bindgen-rust-macro = { path = "./macro", optional = true, version = "0.51.0" }
 bitflags = { workspace = true, optional = true }
 futures = { version = "0.3.30", optional = true }
 
