@@ -528,6 +528,27 @@ macro_rules! {macro_name} {{
         } else {
             "()".into()
         };
+
+        let dealiased_id = match payload_type {
+            Some(Type::Id(id)) => Some(dealias(self.resolve, *id)),
+            _ => None,
+        };
+
+        // If the payload type corresponds to a Rust type alias,
+        // only one StreamPayload/FuturePayload implementation should be
+        // generated, therefore if one already exists, return
+        if let Some(dealiased_id) = dealiased_id
+            && payload_type != Some(&Type::Id(dealiased_id))
+        {
+            let alias_map = match payload_for {
+                PayloadFor::Future => &mut self.r#gen.aliased_future_payloads,
+                PayloadFor::Stream => &mut self.r#gen.aliased_stream_payloads,
+            };
+            if alias_map.contains_key(&dealiased_id) {
+                return;
+            }
+        }
+
         let map = match payload_for {
             PayloadFor::Future => &mut self.r#gen.future_payloads,
             PayloadFor::Stream => &mut self.r#gen.stream_payloads,
@@ -682,7 +703,21 @@ pub mod vtable{ordinal} {{
             PayloadFor::Future => &mut self.r#gen.future_payloads,
             PayloadFor::Stream => &mut self.r#gen.stream_payloads,
         };
-        map.insert(name, code);
+        map.insert(name.clone(), code);
+
+        // If the payload type corresponds to a Rust type alias,
+        // record the module path/type name under which the
+        // StreamPayload/FuturePayload implementation was generated,
+        // so equivalent types can reuse the implementation
+        if let Some(dealiased_id) = dealiased_id
+            && payload_type != Some(&Type::Id(dealiased_id))
+        {
+            let alias_map = match payload_for {
+                PayloadFor::Future => &mut self.r#gen.aliased_future_payloads,
+                PayloadFor::Stream => &mut self.r#gen.aliased_stream_payloads,
+            };
+            alias_map.insert(dealiased_id, name);
+        }
     }
 
     fn generate_guest_import(&mut self, func: &Function, interface: Option<&WorldKey>) {
