@@ -918,7 +918,7 @@ impl Runner {
         let mut cmd = self.test_runner.command();
         for component in [runner]
             .into_iter()
-            .chain(test_components.iter().map(|(c, _)| *c))
+            .chain(test_components.iter().map(|(c, _)| c))
         {
             for flag in Vec::from(component.wasmtime_flags.clone()) {
                 cmd.arg(flag);
