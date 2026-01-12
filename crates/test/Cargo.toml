@@ -23,7 +23,6 @@ anyhow = { workspace = true }
 clap = { workspace = true, features = ['env'] }
 heck = { workspace = true }
 log = "0.4.26"
-rayon = "1.10.0"
 regex = "1.11.1"
 serde = { workspace = true }
 toml = "0.8.20"
@@ -39,3 +38,4 @@ wat = { workspace = true }
 wit-component = { workspace = true }
 wit-parser = { workspace = true }
 wit-bindgen-csharp = { workspace = true }
+libtest-mimic = "0.8.1"

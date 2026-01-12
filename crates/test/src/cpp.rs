@@ -19,7 +19,7 @@ struct LangConfig {
     cflags: StringList,
 }
 
-fn clangpp(runner: &Runner<'_>) -> PathBuf {
+fn clangpp(runner: &Runner) -> PathBuf {
     match &runner.opts.c.wasi_sdk_path {
         Some(path) => path.join("bin/wasm32-wasip2-clang++"),
         None => "wasm32-wasip2-clang++".into(),
@@ -57,7 +57,7 @@ impl LanguageMethods for Cpp {
         }
     }
 
-    fn prepare(&self, runner: &mut crate::Runner<'_>) -> anyhow::Result<()> {
+    fn prepare(&self, runner: &mut Runner) -> anyhow::Result<()> {
         let compiler = clangpp(runner);
         let cwd = std::env::current_dir()?;
         let dir = cwd.join(&runner.opts.artifacts).join("cpp");
@@ -79,7 +79,7 @@ impl LanguageMethods for Cpp {
 
     fn generate_bindings_prepare(
         &self,
-        _runner: &Runner<'_>,
+        _runner: &Runner,
         bindgen: &crate::Bindgen,
         dir: &std::path::Path,
     ) -> anyhow::Result<()> {
@@ -106,7 +106,7 @@ impl LanguageMethods for Cpp {
         Ok(())
     }
 
-    fn compile(&self, runner: &crate::Runner<'_>, compile: &crate::Compile) -> anyhow::Result<()> {
+    fn compile(&self, runner: &Runner, compile: &crate::Compile) -> anyhow::Result<()> {
         let compiler = clangpp(runner);
         let config = compile.component.deserialize_lang_config::<LangConfig>()?;
 
@@ -180,7 +180,7 @@ impl LanguageMethods for Cpp {
         Ok(())
     }
 
-    fn verify(&self, runner: &crate::Runner<'_>, verify: &crate::Verify) -> anyhow::Result<()> {
+    fn verify(&self, runner: &Runner, verify: &crate::Verify) -> anyhow::Result<()> {
         // for expected
         let cwd = std::env::current_dir()?;
         let mut helper_dir2 = cwd;

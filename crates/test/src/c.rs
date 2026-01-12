@@ -33,7 +33,7 @@ struct LangConfig {
     ldflags: StringList,
 }
 
-fn clang(runner: &Runner<'_>) -> PathBuf {
+fn clang(runner: &Runner) -> PathBuf {
     let target = &runner.opts.c.c_target;
     match &runner.opts.c.wasi_sdk_path {
         Some(path) => path.join(format!("bin/{target}-clang")),
@@ -67,20 +67,20 @@ impl LanguageMethods for C {
         ]
     }
 
-    fn prepare(&self, runner: &mut Runner<'_>) -> Result<()> {
+    fn prepare(&self, runner: &mut Runner) -> Result<()> {
         prepare(runner, clang(runner))
     }
 
-    fn compile(&self, runner: &Runner<'_>, c: &Compile<'_>) -> Result<()> {
+    fn compile(&self, runner: &Runner, c: &Compile<'_>) -> Result<()> {
         compile(runner, c, clang(runner))
     }
 
-    fn verify(&self, runner: &Runner<'_>, v: &Verify<'_>) -> Result<()> {
+    fn verify(&self, runner: &Runner, v: &Verify<'_>) -> Result<()> {
         verify(runner, v, clang(runner))
     }
 }
 
-fn prepare(runner: &mut Runner<'_>, compiler: PathBuf) -> Result<()> {
+fn prepare(runner: &mut Runner, compiler: PathBuf) -> Result<()> {
     let cwd = env::current_dir()?;
     let dir = cwd.join(&runner.opts.artifacts).join("c");
 
@@ -99,7 +99,7 @@ fn prepare(runner: &mut Runner<'_>, compiler: PathBuf) -> Result<()> {
     Ok(())
 }
 
-fn compile(runner: &Runner<'_>, compile: &Compile<'_>, compiler: PathBuf) -> Result<()> {
+fn compile(runner: &Runner, compile: &Compile<'_>, compiler: PathBuf) -> Result<()> {
     let config = compile.component.deserialize_lang_config::<LangConfig>()?;
 
     // Compile the C-based bindings to an object file.
@@ -162,14 +162,14 @@ fn compile(runner: &Runner<'_>, compile: &Compile<'_>, compiler: PathBuf) -> Res
     Ok(())
 }
 
-fn produces_component(runner: &Runner<'_>) -> bool {
+fn produces_component(runner: &Runner) -> bool {
     match runner.opts.c.c_target.as_str() {
         "wasm32-wasip1" => false,
         _ => true,
     }
 }
 
-fn verify(runner: &Runner<'_>, verify: &Verify<'_>, compiler: PathBuf) -> Result<()> {
+fn verify(runner: &Runner, verify: &Verify<'_>, compiler: PathBuf) -> Result<()> {
     let mut cmd = Command::new(compiler);
     cmd.arg(
         verify

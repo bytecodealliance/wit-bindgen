@@ -34,7 +34,7 @@ impl LanguageMethods for Go {
         &["--generate-stubs"]
     }
 
-    fn prepare(&self, runner: &mut Runner<'_>) -> Result<()> {
+    fn prepare(&self, runner: &mut Runner) -> Result<()> {
         let cwd = env::current_dir()?;
         let dir = cwd.join(&runner.opts.artifacts).join("go");
         let bindings_dir = cwd.join("wit_component");
@@ -56,7 +56,7 @@ impl LanguageMethods for Go {
         )
     }
 
-    fn compile(&self, runner: &Runner<'_>, compile: &Compile<'_>) -> Result<()> {
+    fn compile(&self, runner: &Runner, compile: &Compile<'_>) -> Result<()> {
         let output = compile.output.with_extension("core.wasm");
 
         // Tests which involve importing and/or exporting more than one
@@ -96,7 +96,7 @@ impl LanguageMethods for Go {
         Ok(())
     }
 
-    fn verify(&self, runner: &Runner<'_>, verify: &Verify<'_>) -> Result<()> {
+    fn verify(&self, runner: &Runner, verify: &Verify<'_>) -> Result<()> {
         replace_bindings_go_mod(runner, verify.bindings_dir)?;
 
         runner.run_command(
@@ -152,7 +152,7 @@ fn all_paths(path: &Path) -> Result<Vec<PathBuf>> {
     Ok(paths)
 }
 
-fn replace_bindings_go_mod(runner: &Runner<'_>, bindings_dir: &Path) -> Result<()> {
+fn replace_bindings_go_mod(runner: &Runner, bindings_dir: &Path) -> Result<()> {
     let test_crate = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let wit_bindgen_root = test_crate.parent().unwrap().parent().unwrap();
     let go_package_path = wit_bindgen_root.join("crates/go/src/package");
