@@ -858,6 +858,15 @@ impl WorldGenerator for Go {
             "main"
         };
 
+        // If the package name isn't "main", a main function isn't required.
+        let main_func = if self.opts.mod_name.is_some() {
+            ""
+        } else {
+            r#"// Unused, but present to make the compiler happy
+func main() {}
+"#
+        };
+
         files.push(
             "wit_bindings.go",
             &maybe_gofmt(
@@ -877,8 +886,7 @@ var {SYNC_EXPORT_PINNER} = runtime.Pinner{{}}
 
 {src}
 
-// Unused, but present to make the compiler happy
-func main() {{}}
+{main_func}
 "#
                 )
                 .as_bytes(),
