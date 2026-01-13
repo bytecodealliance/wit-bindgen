@@ -38,11 +38,6 @@ fn remote_pkg(name: &str) -> String {
     format!(r#""github.com/bytecodealliance/wit-bindgen/{name}""#)
 }
 
-/// Adds the bindings module prefix to a package name.
-fn mod_pkg(name: &str) -> String {
-    format!(r#""wit_component/{name}""#)
-}
-
 /// This is the literal location of the Go package.
 const REPLACEMENT_PKG: &str = concat!(
     "github.com/bytecodealliance/wit-bindgen/crates/go/src/package v",
@@ -105,6 +100,11 @@ pub struct Opts {
     /// resources.
     #[cfg_attr(feature = "clap", clap(long))]
     pub generate_stubs: bool,
+
+    /// The name of the Go module housing the generated bindings
+    /// (or "wit_component" if `None`).
+    #[cfg_attr(feature = "clap", clap(long))]
+    pub mod_name: Option<String>,
 }
 
 impl Opts {
@@ -193,6 +193,12 @@ struct Go {
 }
 
 impl Go {
+    /// Adds the bindings module prefix to a package name.
+    fn mod_pkg(&self, name: &str) -> String {
+        let prefix = self.opts.mod_name.as_deref().unwrap_or("wit_component");
+        format!(r#""{prefix}/{name}""#)
+    }
+
     fn package_for_owner(
         &mut self,
         resolve: &Resolve,
@@ -214,7 +220,7 @@ impl Go {
                 package
             };
             let prefix = format!("{package}.");
-            imports.insert(mod_pkg(&package));
+            imports.insert(self.mod_pkg(&package));
             prefix
         }
     }
@@ -843,13 +849,31 @@ impl WorldGenerator for Go {
             .collect::<Vec<_>>()
             .join("\n");
 
+        // When a custom module name is provided, the generated bindings use package name
+        // "wit_component" so they can be imported into another package. Without a custom
+        // module name, the bindings use package "main" for standalone execution.
+        let package_name = if self.opts.mod_name.is_some() {
+            "wit_component"
+        } else {
+            "main"
+        };
+
+        // If the package name isn't "main", a main function isn't required.
+        let main_func = if self.opts.mod_name.is_some() {
+            ""
+        } else {
+            r#"// Unused, but present to make the compiler happy
+func main() {}
+"#
+        };
+
         files.push(
             "wit_bindings.go",
             &maybe_gofmt(
                 self.opts.format,
                 format!(
                     r#"{header}
-package main
+package {package_name}
 
 import (
         "runtime"
@@ -862,14 +886,21 @@ var {SYNC_EXPORT_PINNER} = runtime.Pinner{{}}
 
 {src}
 
-// Unused, but present to make the compiler happy
-func main() {{}}
+{main_func}
 "#
                 )
                 .as_bytes(),
             ),
         );
-        files.push("go.mod", format!("module wit_component\n\ngo 1.25\n\nreplace github.com/bytecodealliance/wit-bindgen => {REPLACEMENT_PKG}").as_bytes());
+        files.push(
+            "go.mod",
+            format!(
+                "module {}\n\ngo 1.25\n\nreplace github.com/bytecodealliance/wit-bindgen => {}",
+                self.opts.mod_name.as_deref().unwrap_or("wit_component"),
+                REPLACEMENT_PKG
+            )
+            .as_bytes(),
+        );
 
         for (prefix, interfaces) in [("export_", &self.export_interfaces), ("", &self.interfaces)] {
             for (name, data) in interfaces {
@@ -1707,7 +1738,7 @@ for index := 0; index < int({length}); index++ {{
                     FunctionKind::Freestanding | FunctionKind::AsyncFreestanding => {
                         let args = operands.join(", ");
                         let call = format!("{package}.{name}({args})");
-                        self.imports.insert(mod_pkg(&package));
+                        self.imports.insert(self.generator.mod_pkg(&package));
                         call
                     }
                     FunctionKind::Constructor(ty) => {
@@ -1718,7 +1749,7 @@ for index := 0; index < int({length}); index++ {{
                             .unwrap()
                             .to_upper_camel_case();
                         let call = format!("{package}.Make{ty}({args})");
-                        self.imports.insert(mod_pkg(&package));
+                        self.imports.insert(self.generator.mod_pkg(&package));
                         call
                     }
                     FunctionKind::Method(_) | FunctionKind::AsyncMethod(_) => {
