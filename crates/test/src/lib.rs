@@ -193,6 +193,9 @@ struct Component {
 
     /// The contents of the test file itself.
     lang_config: Option<HashMap<String, toml::Value>>,
+
+    /// Runtime flags to wasmtime.
+    wasmtime_flags: config::StringList,
 }
 
 #[derive(Clone)]
@@ -467,6 +470,7 @@ impl Runner {
             kind,
             contents,
             lang_config: config.lang,
+            wasmtime_flags: config.wasmtime_flags,
         })
     }
 
@@ -911,7 +915,17 @@ impl Runner {
         let composed_wasm = dst.join(filename);
         write_if_different(&composed_wasm, &composed)?;
 
-        self.run_command(self.test_runner.command().arg(&composed_wasm))?;
+        let mut cmd = self.test_runner.command();
+        for component in [runner]
+            .into_iter()
+            .chain(test_components.iter().map(|(c, _)| c))
+        {
+            for flag in Vec::from(component.wasmtime_flags.clone()) {
+                cmd.arg(flag);
+            }
+        }
+        cmd.arg(&composed_wasm);
+        self.run_command(&mut cmd)?;
         Ok(())
     }
 

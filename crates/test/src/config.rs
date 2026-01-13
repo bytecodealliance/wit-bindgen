@@ -64,6 +64,11 @@ pub struct RuntimeTestConfig<T = HashMap<String, toml::Value>> {
     #[serde(default)]
     pub args: StringList,
 
+    /// Extra command line arguments to to pass to Wasmtime, such as enabling
+    /// extra wasm features.
+    #[serde(default)]
+    pub wasmtime_flags: StringList,
+
     /// Language-specific configuration
     //
     // Note that this is an `Option<T>` where `T` defaults to a catch-all hash

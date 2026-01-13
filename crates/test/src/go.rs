@@ -115,10 +115,9 @@ impl LanguageMethods for Go {
 
 fn package_name(package: &str) -> &str {
     package
-        .split_once('\n')
-        .unwrap()
-        .0
-        .strip_prefix("package ")
+        .lines()
+        .filter_map(|l| l.strip_prefix("package "))
+        .next()
         .unwrap()
         .trim()
 }
