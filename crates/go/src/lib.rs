@@ -105,6 +105,10 @@ pub struct Opts {
     /// (or "wit_component" if `None`).
     #[cfg_attr(feature = "clap", clap(long))]
     pub mod_name: Option<String>,
+
+    /// The package name used in the top-level Wasm exports file (or "main" if `None`).
+    #[cfg_attr(feature = "clap", clap(long))]
+    pub pkg_name: Option<String>,
 }
 
 impl Opts {
@@ -849,26 +853,18 @@ impl WorldGenerator for Go {
             .collect::<Vec<_>>()
             .join("\n");
 
-        // When a custom module name is provided, the generated bindings use package name
-        // "wit_component" so they can be imported into another package. Without a custom
-        // module name, the bindings use package "main" for standalone execution.
-        let package_name = if self.opts.mod_name.is_some() {
-            "wit_component"
+        // If a package name isn't "main", there isn't a need for a main function.
+        let (package_name, main_func) = if let Some(pkg) = self.opts.pkg_name.as_deref() {
+            (pkg, "")
         } else {
-            "main"
-        };
-
-        // If the package name isn't "main", a main function isn't required.
-        let main_func = if self.opts.mod_name.is_some() {
-            ""
-        } else {
-            r#"// Unused, but present to make the compiler happy
+            let func = r#"// Unused, but present to make the compiler happy
 func main() {}
-"#
+"#;
+            ("main", func)
         };
 
         files.push(
-            "wit_bindings.go",
+            "wit_exports.go",
             &maybe_gofmt(
                 self.opts.format,
                 format!(
