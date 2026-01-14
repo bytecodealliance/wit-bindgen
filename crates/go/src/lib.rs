@@ -105,10 +105,6 @@ pub struct Opts {
     /// (or "wit_component" if `None`).
     #[cfg_attr(feature = "clap", clap(long))]
     pub mod_name: Option<String>,
-
-    /// The package name used in the top-level Wasm exports file (or "main" if `None`).
-    #[cfg_attr(feature = "clap", clap(long))]
-    pub pkg_name: Option<String>,
 }
 
 impl Opts {
@@ -853,18 +849,33 @@ impl WorldGenerator for Go {
             .collect::<Vec<_>>()
             .join("\n");
 
-        // If a package name isn't "main", there isn't a need for a main function.
-        let (package_name, main_func) = if let Some(pkg) = self.opts.pkg_name.as_deref() {
-            (pkg, "")
+        let (exports_file_path, package_name, main_func) = if self.opts.mod_name.is_some() {
+            // If a module name is specified, the generated files will be used as a library.
+            ("wit_exports/wit_exports.go", "wit_exports", "")
         } else {
-            let func = r#"// Unused, but present to make the compiler happy
+            // If a module name is NOT specified, the generated files will be used as a
+            // standalone executable.
+            files.push(
+                "go.mod",
+                format!(
+                    "module {}\n\ngo 1.25\n\nreplace github.com/bytecodealliance/wit-bindgen => {}",
+                    self.opts.mod_name.as_deref().unwrap_or("wit_component"),
+                    REPLACEMENT_PKG
+                )
+                .as_bytes(),
+            );
+
+            (
+                "wit_exports.go",
+                "main",
+                r#"// Unused, but present to make the compiler happy
 func main() {}
-"#;
-            ("main", func)
+"#,
+            )
         };
 
         files.push(
-            "wit_exports.go",
+            exports_file_path,
             &maybe_gofmt(
                 self.opts.format,
                 format!(
@@ -887,15 +898,6 @@ var {SYNC_EXPORT_PINNER} = runtime.Pinner{{}}
                 )
                 .as_bytes(),
             ),
-        );
-        files.push(
-            "go.mod",
-            format!(
-                "module {}\n\ngo 1.25\n\nreplace github.com/bytecodealliance/wit-bindgen => {}",
-                self.opts.mod_name.as_deref().unwrap_or("wit_component"),
-                REPLACEMENT_PKG
-            )
-            .as_bytes(),
         );
 
         for (prefix, interfaces) in [("export_", &self.export_interfaces), ("", &self.interfaces)] {
