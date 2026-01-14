@@ -38,12 +38,6 @@ fn remote_pkg(name: &str) -> String {
     format!(r#""github.com/bytecodealliance/wit-bindgen/{name}""#)
 }
 
-/// This is the literal location of the Go package.
-const REPLACEMENT_PKG: &str = concat!(
-    "github.com/bytecodealliance/wit-bindgen/crates/go/src/package v",
-    env!("CARGO_PKG_VERSION")
-);
-
 #[derive(Default, Debug, Copy, Clone)]
 pub enum Format {
     #[default]
@@ -853,18 +847,24 @@ impl WorldGenerator for Go {
             // If a module name is specified, the generated files will be used as a library.
             ("wit_exports/wit_exports.go", "wit_exports", "")
         } else {
-            // If a module name is NOT specified, the generated files will be used as a
-            // standalone executable.
+            // This is the literal location of the Go package.
+            let replacement_pkg = concat!(
+                "github.com/bytecodealliance/wit-bindgen/crates/go/src/package v",
+                env!("CARGO_PKG_VERSION")
+            );
+
             files.push(
                 "go.mod",
                 format!(
                     "module {}\n\ngo 1.25\n\nreplace github.com/bytecodealliance/wit-bindgen => {}",
                     self.opts.mod_name.as_deref().unwrap_or("wit_component"),
-                    REPLACEMENT_PKG
+                    replacement_pkg
                 )
                 .as_bytes(),
             );
 
+            // If a module name is NOT specified, the generated files will be used as a
+            // standalone executable.
             (
                 "wit_exports.go",
                 "main",
