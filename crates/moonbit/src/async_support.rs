@@ -3,17 +3,16 @@ use std::{
     fmt::Write,
 };
 
-use heck::{ToSnakeCase, ToUpperCamelCase};
+use heck::ToUpperCamelCase;
 use wit_bindgen_core::{
     Files, Source,
-    abi::{self, WasmSignature, deallocate_lists_and_own_in_types, lift_from_memory},
+    abi::{self, WasmSignature, deallocate_lists_in_types, lift_from_memory},
     dealias, uwriteln,
-    wit_parser::{
-        Function, LiftLowerAbi, ManglingAndAbi, Resolve, Type, TypeDefKind, TypeId, WasmImport,
-    },
+    wit_parser::{Function, LiftLowerAbi, ManglingAndAbi, Type, TypeDefKind, TypeId, WasmImport},
 };
 
-use crate::{FunctionBindgen, indent};
+use crate::pkg::ToMoonBitIdent;
+use crate::{FunctionBindgen, ffi, indent};
 
 use super::InterfaceGenerator;
 
@@ -105,6 +104,143 @@ pub(crate) struct AsyncBinding(pub HashMap<TypeId, (String, String, String, Stri
 /// Async-specific helpers used by `InterfaceGenerator` to keep the main
 /// visitor implementation focused on shared lowering/lifting logic.
 impl<'a> InterfaceGenerator<'a> {
+    pub(crate) fn generate_async_import(
+        &mut self,
+        func: &Function,
+        ffi_import_name: &str,
+        wasm_sig: &WasmSignature,
+    ) -> String {
+        let async_pkg = self
+            .world_gen
+            .pkg_resolver
+            .qualify_package(self.name, ASYNC_DIR);
+        let param_names = func
+            .params
+            .iter()
+            .map(|(name, _)| name.to_moonbit_ident())
+            .collect::<Vec<_>>();
+        let param_types = func.params.iter().map(|(_, ty)| *ty).collect::<Vec<_>>();
+        let mut bindgen = FunctionBindgen::new(self, param_names.into_boxed_slice());
+        let mut lowered_params = Vec::new();
+
+        let params_ptr = if wasm_sig.indirect_params {
+            let params_info = bindgen
+                .interface_gen
+                .world_gen
+                .sizes
+                .record(param_types.iter());
+            let params_ptr = bindgen.locals.tmp("params_ptr");
+            bindgen.use_ffi(ffi::MALLOC);
+            uwriteln!(
+                bindgen.src,
+                "let {params_ptr} = mbt_ffi_malloc({});",
+                params_info.size.size_wasm32()
+            );
+            let offsets = bindgen
+                .interface_gen
+                .world_gen
+                .sizes
+                .field_offsets(param_types.iter());
+            for (i, (offset, ty)) in offsets.into_iter().enumerate() {
+                let param_ptr = bindgen.locals.tmp("param_ptr");
+                let arg = bindgen.params[i].clone();
+                uwriteln!(
+                    bindgen.src,
+                    "let {param_ptr} = {params_ptr} + {};",
+                    offset.size_wasm32()
+                );
+                abi::lower_to_memory(
+                    bindgen.interface_gen.resolve,
+                    &mut bindgen,
+                    param_ptr,
+                    arg,
+                    ty,
+                );
+            }
+            lowered_params.push(params_ptr.clone());
+            Some(params_ptr)
+        } else {
+            for (i, ty) in param_types.iter().enumerate() {
+                let arg = bindgen.params[i].clone();
+                lowered_params.extend(abi::lower_flat(
+                    bindgen.interface_gen.resolve,
+                    &mut bindgen,
+                    arg,
+                    ty,
+                ));
+            }
+            None
+        };
+        let cleaned = bindgen.locals.tmp("cleaned");
+        uwriteln!(bindgen.src, "let {cleaned} : Ref[Bool] = {{ val: false }}");
+
+        let results_ptr = if func.result.is_some() {
+            let result_info = bindgen.interface_gen.world_gen.sizes.params(&func.result);
+            let results_ptr = bindgen.locals.tmp("results_ptr");
+            bindgen.use_ffi(ffi::MALLOC);
+            bindgen.use_ffi(ffi::FREE);
+            uwriteln!(
+                bindgen.src,
+                "let {results_ptr} = mbt_ffi_malloc({});\n\
+defer mbt_ffi_free({results_ptr})",
+                result_info.size.size_wasm32()
+            );
+            Some(results_ptr)
+        } else {
+            None
+        };
+
+        let mut call_args = lowered_params.clone();
+        if let Some(results_ptr) = &results_ptr {
+            call_args.push(results_ptr.clone());
+        }
+        let subtask = bindgen.locals.tmp("subtask");
+        uwriteln!(
+            bindgen.src,
+            "let {subtask} = {ffi_import_name}({});",
+            call_args.join(", ")
+        );
+
+        let cleanup_params = bindgen.locals.tmp("cleanup_params");
+        uwriteln!(
+            bindgen.src,
+            "fn {cleanup_params}() -> Unit {{\n  if {cleaned}.val {{ return }}\n  {cleaned}.val = true"
+        );
+        let dealloc_operands = if wasm_sig.indirect_params {
+            vec![params_ptr.clone().unwrap()]
+        } else {
+            lowered_params.clone()
+        };
+        deallocate_lists_in_types(
+            bindgen.interface_gen.resolve,
+            &param_types,
+            &dealloc_operands,
+            wasm_sig.indirect_params,
+            &mut bindgen,
+        );
+        if let Some(params_ptr) = &params_ptr {
+            bindgen.use_ffi(ffi::FREE);
+            uwriteln!(bindgen.src, "  mbt_ffi_free({params_ptr})");
+        }
+        uwriteln!(
+            bindgen.src,
+            "}}\nfn cleanup_after_started() -> Unit {{ {cleanup_params}() }}\n\
+defer {cleanup_params}()\n{async_pkg}suspend_for_subtask({subtask}, cleanup_after_started)",
+        );
+
+        if let Some(result) = func.result {
+            let lifted = lift_from_memory(
+                bindgen.interface_gen.resolve,
+                &mut bindgen,
+                results_ptr.clone().unwrap(),
+                &result,
+            );
+            uwriteln!(bindgen.src, "return {lifted}");
+        }
+
+        bindgen.src
+    }
+
     /// Generate the async bindings for this function
     pub(crate) fn generate_async_binding(&mut self, func: &Function) -> AsyncBinding {
         let mut map = HashMap::new();

@@ -4,5 +4,9 @@
 
 ///|
 pub async fn run() -> Unit {
-  @i.f()
+  @i.one_argument(1)
+  assert_eq(@i.one_result(), 2)
+  assert_eq(@i.one_argument_and_result(3), 4)
+  @i.two_arguments(5, 6)
+  assert_eq(@i.two_arguments_and_result(7, 8), 9)
 }
