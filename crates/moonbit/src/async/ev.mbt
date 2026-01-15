@@ -112,7 +112,6 @@ pub async fn suspend_for_subtask(
   cleanup_after_started : () -> Unit,
 ) -> Unit {
   let task = SubTask::from(val)
-  defer subtask_drop(task.handle)
   let mut cleaned = false
 
   // Helper: ensure cleanup is called once we've moved past Starting state
@@ -122,6 +121,19 @@ pub async fn suspend_for_subtask(
       cleaned = true
     }
   }
+
+  // Immediate completion without a handle.
+  if task.handle == 0 {
+    ensure_cleanup(task.state)
+    match task.state {
+      Returned => return
+      Cancelled_before_started => raise SubTaskCancelled(before_started=true)
+      Cancelled_before_returned => raise SubTaskCancelled(before_started=false)
+      _ => panic()
+    }
+  }
+
+  defer subtask_drop(task.handle)
 
   // Initial state, return if finished
   ensure_cleanup(task.state)

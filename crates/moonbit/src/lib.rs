@@ -624,16 +624,15 @@ impl InterfaceGenerator<'_> {
         let ffi_import_name = format!("wasmImport{}", func.name.to_upper_camel_case());
 
         // Generate the core wasm abi
+        let wasm_sig = self.resolve.wasm_signature(
+            if async_ {
+                AbiVariant::GuestImportAsync
+            } else {
+                AbiVariant::GuestImport
+            },
+            func,
+        );
         {
-            let wasm_sig = self.resolve.wasm_signature(
-                if async_ {
-                    AbiVariant::GuestImportAsync
-                } else {
-                    AbiVariant::GuestImport
-                },
-                func,
-            );
-
             let result_type = match &wasm_sig.results[..] {
                 [] => "".into(),
                 [result] => format!("-> {}", wasm_type(*result)),
@@ -668,6 +667,23 @@ impl InterfaceGenerator<'_> {
             );
         }
 
+        if async_ {
+            let src = self.generate_async_import(func, &ffi_import_name, &wasm_sig);
+            let mbt_sig = self.world_gen.pkg_resolver.mbt_sig(self.name, func, false);
+            let sig = self.sig_string(&mbt_sig, async_);
+
+            print_docs(&mut self.src, &func.docs);
+            uwrite!(
+                self.src,
+                r#"
+                {sig} {{
+                {src}
+            }}
+            "#
+            );
+            return;
+        }
+
         // Generate the MoonBit wrapper
         let mut bindgen = FunctionBindgen::new(
             self,
@@ -679,15 +695,11 @@ impl InterfaceGenerator<'_> {
 
         abi::call(
             bindgen.interface_gen.resolve,
-            if async_ {
-                AbiVariant::GuestImportAsync
-            } else {
-                AbiVariant::GuestImport
-            },
+            AbiVariant::GuestImport,
             LiftLower::LowerArgsLiftResults,
             func,
             &mut bindgen,
-            async_,
+            false,
         );
 
         let src = bindgen.src.clone();
@@ -871,7 +883,7 @@ impl InterfaceGenerator<'_> {
                 func.task_return_import(self.resolve, self.interface, Mangling::Legacy);
 
             let params = signature
-                .results
+                .params
                 .iter()
                 .enumerate()
                 .map(|(i, param)| {
