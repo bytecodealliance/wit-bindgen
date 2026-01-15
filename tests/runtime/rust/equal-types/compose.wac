@@ -1,0 +1,6 @@
+package example:composition;
+
+let host = new test:host { ... };
+let proxy = new test:proxy { ...host, ... };
+let runner = new test:runner { ...proxy, ... };
+export runner...;
