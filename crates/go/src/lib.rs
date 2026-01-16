@@ -95,10 +95,11 @@ pub struct Opts {
     #[cfg_attr(feature = "clap", clap(long))]
     pub generate_stubs: bool,
 
-    /// The name of the Go module housing the generated bindings
-    /// (or "wit_component" if `None`).
+    /// If specified, organize the bindings into a package for use as a library;
+    /// otherwise (if `None`), the bindings will be organized for use as a
+    /// standalone executable.
     #[cfg_attr(feature = "clap", clap(long))]
-    pub mod_name: Option<String>,
+    pub pkg_name: Option<String>,
 }
 
 impl Opts {
@@ -189,7 +190,7 @@ struct Go {
 impl Go {
     /// Adds the bindings module prefix to a package name.
     fn mod_pkg(&self, name: &str) -> String {
-        let prefix = self.opts.mod_name.as_deref().unwrap_or("wit_component");
+        let prefix = self.opts.pkg_name.as_deref().unwrap_or("wit_component");
         format!(r#""{prefix}/{name}""#)
     }
 
@@ -843,7 +844,7 @@ impl WorldGenerator for Go {
             .collect::<Vec<_>>()
             .join("\n");
 
-        let (exports_file_path, package_name, main_func) = if self.opts.mod_name.is_some() {
+        let (exports_file_path, package_name, main_func) = if self.opts.pkg_name.is_some() {
             // If a module name is specified, the generated files will be used as a library.
             ("wit_exports/wit_exports.go", "wit_exports", "")
         } else {
@@ -857,7 +858,7 @@ impl WorldGenerator for Go {
                 "go.mod",
                 format!(
                     "module {}\n\ngo 1.25\n\nreplace github.com/bytecodealliance/wit-bindgen => {}",
-                    self.opts.mod_name.as_deref().unwrap_or("wit_component"),
+                    self.opts.pkg_name.as_deref().unwrap_or("wit_component"),
                     replacement_pkg
                 )
                 .as_bytes(),
