@@ -382,6 +382,27 @@ impl WorldGenerator for CSharp {
 
         let access = self.access_modifier();
 
+        if !self.generated_future_types.is_empty() {
+            uwrite!(
+                src,
+                "
+                    using System.Runtime.InteropServices;
+                    using System.Collections.Concurrent;
+
+                "
+            );
+        }
+
+        if self.needs_async_support {
+            uwrite!(
+                src,
+                "
+                    using System.Runtime.CompilerServices;
+
+                "
+            );
+        }
+
         uwrite!(
             src,
             "
@@ -644,9 +665,29 @@ impl WorldGenerator for CSharp {
                 {
                     return FutureHelpers.RawFutureNew(table);
                 }
+
+            "#,
+            );
+            // for ty in &self.generated_future_types {
+            //     let type_def = &resolve.types[*ty];
+            //     let type_name = type_def.name.as_ref().unwrap();
+
+            //     uwrite!(
+            //         src,
+            //         r#"
+            //     public static Future<{type_name}> FutureNew({type_name} value)
+            //     {{
+            //         return FutureHelpers.FutureNew<{type_name}>(value);
+            //     }}
+            //     "#
+            //     );
+            // }
+            src.push_str(
+                r#"
             }
             "#,
             );
+
         }
 
         if self.needs_async_support {
