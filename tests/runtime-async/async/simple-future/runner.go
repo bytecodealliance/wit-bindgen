@@ -1,3 +1,5 @@
+//@ wasmtime-flags = '-Wcomponent-model-async'
+
 package export_wit_world
 
 import (
@@ -54,9 +56,9 @@ func Run() {
 		close(syncBarrier)
 
 		go func() {
-			// If this is omitted, the host will see that the "rx.Read" operations aren't paired with 
-			// a "tx.Write" and will result in a "wasm trap: deadlock detected" error. Additionally, 
-			// this is placed after "close(syncBarrier)" to ensure that the panics are resulting from 
+			// If this is omitted, the host will see that the "rx.Read" operations aren't paired with
+			// a "tx.Write" and will result in a "wasm trap: deadlock detected" error. Additionally,
+			// this is placed after "close(syncBarrier)" to ensure that the panics are resulting from
 			// concurrent reads, and not from other scenarios that result in a nil handle.
 			tx.Write(wit_types.Unit{})
 		}()
@@ -85,9 +87,9 @@ func Run() {
 		close(syncBarrier)
 
 		go func() {
-			// If this is omitted, the host will see that the "tx.Write" operations aren't paired with 
-			// an "rx.Read" and will result in a "wasm trap: deadlock detected" error. Additionally, 
-			// this is placed after "close(syncBarrier)" to ensure that the panics are resulting from 
+			// If this is omitted, the host will see that the "tx.Write" operations aren't paired with
+			// an "rx.Read" and will result in a "wasm trap: deadlock detected" error. Additionally,
+			// this is placed after "close(syncBarrier)" to ensure that the panics are resulting from
 			// concurrent writes, and not from other scenarios that result in a nil handle.
 			rx.Read()
 		}()

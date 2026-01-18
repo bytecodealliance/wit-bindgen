@@ -143,7 +143,7 @@ pub struct Opts {
 
     /// Set API style to symmetric or asymmetric
     #[cfg_attr(
-        feature = "clap", 
+        feature = "clap",
         arg(
             long,
             default_value_t = APIStyle::default(),
@@ -888,6 +888,7 @@ impl CppInterfaceGenerator<'_> {
             TypeDefKind::Stream(_) => todo!("generate for stream"),
             TypeDefKind::Handle(_) => todo!("generate for handle"),
             TypeDefKind::FixedSizeList(_, _) => todo!(),
+            TypeDefKind::Map(_, _) => todo!(),
             TypeDefKind::Unknown => unreachable!(),
         }
     }
@@ -1698,6 +1699,7 @@ impl CppInterfaceGenerator<'_> {
                 TypeDefKind::Stream(_) => todo!(),
                 TypeDefKind::Type(ty) => self.type_name(ty, from_namespace, flavor),
                 TypeDefKind::FixedSizeList(_, _) => todo!(),
+                TypeDefKind::Map(_, _) => todo!(),
                 TypeDefKind::Unknown => todo!(),
             },
             Type::ErrorContext => todo!(),

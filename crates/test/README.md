@@ -314,9 +314,10 @@ separate crate and passed as `--extern`
 
 #### Configuration: C
 
-C/C++ configuration supports configuring compilation flags at this time:
+C/C++ configuration supports configuring compilation and linker flags at this time:
 
 ```rust
 //@ [lang]
 //@ cflags = '-O'
+//@ ldflags = "-Wl,--export-table"
 ```

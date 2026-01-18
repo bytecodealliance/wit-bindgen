@@ -1,3 +1,5 @@
+//@ wasmtime-flags = '-Wcomponent-model-async'
+
 package export_wit_world
 
 import (

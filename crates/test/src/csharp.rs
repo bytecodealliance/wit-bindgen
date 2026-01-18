@@ -47,16 +47,17 @@ impl LanguageMethods for Csharp {
                 | "streams.wit"
                 | "error-context.wit"
                 | "resource-fallible-constructor.wit"
+                | "async-resource-func.wit"
         )
     }
 
-    fn prepare(&self, runner: &mut Runner<'_>) -> Result<()> {
+    fn prepare(&self, runner: &mut Runner) -> Result<()> {
         runner.run_command(dotnet().arg("--version"))?;
 
         Ok(())
     }
 
-    fn compile(&self, runner: &Runner<'_>, compile: &Compile<'_>) -> Result<()> {
+    fn compile(&self, runner: &Runner, compile: &Compile<'_>) -> Result<()> {
         let world_name = &compile.component.bindgen.world;
         let path = &compile.component.path;
         let test_dir = &compile.bindings_dir;
@@ -112,7 +113,7 @@ impl LanguageMethods for Csharp {
         Ok(())
     }
 
-    fn verify(&self, runner: &Runner<'_>, verify: &Verify<'_>) -> Result<()> {
+    fn verify(&self, runner: &Runner, verify: &Verify<'_>) -> Result<()> {
         let dir = verify.bindings_dir;
         let name = verify.world;
         let mut project = wit_bindgen_csharp::CSProject::new(dir.to_path_buf(), &name, "the_world");

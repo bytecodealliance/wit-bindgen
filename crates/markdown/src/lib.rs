@@ -420,6 +420,7 @@ impl InterfaceGenerator<'_> {
                     }
                     TypeDefKind::Unknown => unreachable!(),
                     TypeDefKind::FixedSizeList(..) => todo!(),
+                    TypeDefKind::Map(..) => todo!(),
                 }
             }
         }

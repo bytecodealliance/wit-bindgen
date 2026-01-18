@@ -12,7 +12,7 @@ test_subtask_status_t exports_test_f_callback(test_event_t *event) {
   assert(event->event == TEST_EVENT_NONE);
   assert(event->waitable == 0);
   assert(event->code == 0);
-  test_yield();
+  test_thread_yield();
   exports_test_f_return();
   return TEST_CALLBACK_CODE_EXIT;
 }

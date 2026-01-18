@@ -1,3 +1,5 @@
+//@ wasmtime-flags = '-Wcomponent-model-async'
+
 using System;
 using System.Runtime.InteropServices;
 using System.Diagnostics;
@@ -29,7 +31,7 @@ public class RunnerWorldExportsImpl
 
             writer.Dispose();
             set.Dispose();
-        }   
+        }
 
         {
             var (reader, writer) = IIImports.FutureNew();

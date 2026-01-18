@@ -38,17 +38,6 @@ fn remote_pkg(name: &str) -> String {
     format!(r#""github.com/bytecodealliance/wit-bindgen/{name}""#)
 }
 
-/// Adds the bindings module prefix to a package name.
-fn mod_pkg(name: &str) -> String {
-    format!(r#""wit_component/{name}""#)
-}
-
-/// This is the literal location of the Go package.
-const REPLACEMENT_PKG: &str = concat!(
-    "github.com/bytecodealliance/wit-bindgen/crates/go/src/package v",
-    env!("CARGO_PKG_VERSION")
-);
-
 #[derive(Default, Debug, Copy, Clone)]
 pub enum Format {
     #[default]
@@ -105,6 +94,12 @@ pub struct Opts {
     /// resources.
     #[cfg_attr(feature = "clap", clap(long))]
     pub generate_stubs: bool,
+
+    /// If specified, organize the bindings into a package for use as a library;
+    /// otherwise (if `None`), the bindings will be organized for use as a
+    /// standalone executable.
+    #[cfg_attr(feature = "clap", clap(long))]
+    pub pkg_name: Option<String>,
 }
 
 impl Opts {
@@ -193,6 +188,12 @@ struct Go {
 }
 
 impl Go {
+    /// Adds the bindings module prefix to a package name.
+    fn mod_pkg(&self, name: &str) -> String {
+        let prefix = self.opts.pkg_name.as_deref().unwrap_or("wit_component");
+        format!(r#""{prefix}/{name}""#)
+    }
+
     fn package_for_owner(
         &mut self,
         resolve: &Resolve,
@@ -214,7 +215,7 @@ impl Go {
                 package
             };
             let prefix = format!("{package}.");
-            imports.insert(mod_pkg(&package));
+            imports.insert(self.mod_pkg(&package));
             prefix
         }
     }
@@ -843,13 +844,44 @@ impl WorldGenerator for Go {
             .collect::<Vec<_>>()
             .join("\n");
 
+        let (exports_file_path, package_name, main_func) = if self.opts.pkg_name.is_some() {
+            // If a module name is specified, the generated files will be used as a library.
+            ("wit_exports/wit_exports.go", "wit_exports", "")
+        } else {
+            // This is the literal location of the Go package.
+            let replacement_pkg = concat!(
+                "github.com/bytecodealliance/wit-bindgen/crates/go/src/package v",
+                env!("CARGO_PKG_VERSION")
+            );
+
+            files.push(
+                "go.mod",
+                format!(
+                    "module {}\n\ngo 1.25\n\nreplace github.com/bytecodealliance/wit-bindgen => {}",
+                    self.opts.pkg_name.as_deref().unwrap_or("wit_component"),
+                    replacement_pkg
+                )
+                .as_bytes(),
+            );
+
+            // If a module name is NOT specified, the generated files will be used as a
+            // standalone executable.
+            (
+                "wit_exports.go",
+                "main",
+                r#"// Unused, but present to make the compiler happy
+func main() {}
+"#,
+            )
+        };
+
         files.push(
-            "wit_bindings.go",
+            exports_file_path,
             &maybe_gofmt(
                 self.opts.format,
                 format!(
                     r#"{header}
-package main
+package {package_name}
 
 import (
         "runtime"
@@ -862,14 +894,12 @@ var {SYNC_EXPORT_PINNER} = runtime.Pinner{{}}
 
 {src}
 
-// Unused, but present to make the compiler happy
-func main() {{}}
+{main_func}
 "#
                 )
                 .as_bytes(),
             ),
         );
-        files.push("go.mod", format!("module wit_component\n\ngo 1.25\n\nreplace github.com/bytecodealliance/wit-bindgen => {REPLACEMENT_PKG}").as_bytes());
 
         for (prefix, interfaces) in [("export_", &self.export_interfaces), ("", &self.interfaces)] {
             for (name, data) in interfaces {
@@ -1006,7 +1036,7 @@ impl Go {
                     format!(
                         "{params_pointer} := wit_runtime.Allocate({PINNER}, {size}, {align})\n{code}"
                     ),
-                    vec![params_pointer],
+                    vec![format!("uintptr({params_pointer})")],
                 )
             } else {
                 let wasm_params = go_param_names
@@ -1707,7 +1737,7 @@ for index := 0; index < int({length}); index++ {{
                     FunctionKind::Freestanding | FunctionKind::AsyncFreestanding => {
                         let args = operands.join(", ");
                         let call = format!("{package}.{name}({args})");
-                        self.imports.insert(mod_pkg(&package));
+                        self.imports.insert(self.generator.mod_pkg(&package));
                         call
                     }
                     FunctionKind::Constructor(ty) => {
@@ -1718,7 +1748,7 @@ for index := 0; index < int({length}); index++ {{
                             .unwrap()
                             .to_upper_camel_case();
                         let call = format!("{package}.Make{ty}({args})");
-                        self.imports.insert(mod_pkg(&package));
+                        self.imports.insert(self.generator.mod_pkg(&package));
                         call
                     }
                     FunctionKind::Method(_) | FunctionKind::AsyncMethod(_) => {

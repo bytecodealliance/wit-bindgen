@@ -29,6 +29,8 @@ curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
 echo 'export PATH="$HOME/.moon/bin:$PATH"' >> ~/.bashrc
 
 # Go
-curl -OL https://go.dev/dl/go1.25.5.linux-amd64.tar.gz
-tar xf go1.25.5.linux-amd64.tar.gz
-echo "export PATH=$HOME/go1.25.5.linux-amd64/bin:\$PATH" >> ~/.bashrc
+GO="go-$(uname -s | tr 'A-Z' 'a-z')-$(uname -m | sed -e 's/aarch64/arm64/' -e 's/x86_64/amd64/')-bootstrap"
+curl -OL https://github.com/dicej/go/releases/download/go1.25.5-wasi-on-idle/$GO.tbz
+tar xf $GO.tbz
+rm $GO.tbz
+echo "export PATH=$HOME/$GO/bin:\$PATH" >> ~/.bashrc
