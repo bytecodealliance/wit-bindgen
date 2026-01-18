@@ -1029,6 +1029,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::CallWasm { sig, .. } => {
                 let is_async = InterfaceGenerator::is_async(self.kind);
+                let mut async_status_var = String::new();
 
                 let requires_async_return_buffer_param = is_async && sig.results.len() >= 1;
                 let async_return_buffer = if requires_async_return_buffer_param {
@@ -1049,7 +1050,15 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         assignment
                     }
 
-                    [] => String::new(),
+                    [] => {
+                        if is_async {
+                            async_status_var = self.locals.tmp("result");
+    
+                            format!("uint {async_status_var} = ")
+                        } else {
+                            String::new()
+                        }
+                    }
 
                     _ => unreachable!(),
                 };
@@ -1091,6 +1100,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     "{assignment} {interop_name}{resource_type_name}.{func_name}WasmInterop.wasmImport{func_name}({operands});"
                 );
 
+
                 if let Some(buffer) = async_return_buffer {
                     let result = abi::lift_from_memory(
                         self.interface_gen.resolve,
@@ -1105,6 +1115,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     );
                     results.push(result);
                 }
+
+                if is_async {
+                    uwriteln!(
+                        self.src,
+                        "return FutureHelpers.TaskFromStatus({async_status_var});");
+                }
+
             }
 
             Instruction::CallInterface { func, .. } => {
@@ -1175,8 +1192,29 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         {name}TaskReturn({ret_param});
                         return (uint)CallbackCode.Exit;
                     }}
+
+                    ret.ContinueWith(t => 
+                    {{
+                        if (t.IsFaulted)
+                        {{
+                            System.Console.WriteLine("Async function {name} IsFaulted.  This scenario is not yet implemented.");
+                            return;
+                        }}
+
+                        System.Console.WriteLine("Async function {name} task completed, calling task-return.");
+                        {name}TaskReturn({ret_param});
+                    }});
                     
+                    AsyncSupport.ContextTask* contextTaskPtr = (AsyncSupport.ContextTask*)System.Runtime.InteropServices.Marshal.AllocHGlobal(sizeof(AsyncSupport.ContextTask));
+                    System.Console.WriteLine("{name} setting context");
+                    AsyncSupport.ContextSet(contextTaskPtr);
+
+                    // This TaskCompletionSource does nothing, but the callback code expects one.
+                    var tcs = new System.Threading.Tasks.TaskCompletionSource();
+                    AsyncSupport.PendingCallbacks.TryAdd((IntPtr)contextTaskPtr, tcs);
+
                     // TODO: Defer dropping borrowed resources until a result is returned.
+                    System.Console.WriteLine("Async function {name} did not complete successfully immediately. Returning Yield.");
                     return (uint)CallbackCode.Yield;
                     "#);
                 }
@@ -1412,7 +1450,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::AsyncTaskReturn { name: _, params: _ } => {
-                uwriteln!(self.src, "// TODO_task_cancel.forget();");
+                uwriteln!(self.src, "// TODO: task_cancel.forget();");
             }
 
             Instruction::FutureLift { payload, ty } => {
