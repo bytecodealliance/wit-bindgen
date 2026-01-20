@@ -61,3 +61,29 @@ pub fn[X] OutStream::put_stream(
     coro.wake()
   }
 }
+
+///|
+pub(all) struct OutFuture[X] {
+  mut value : X?
+  mut coroutine : Coroutine?
+} derive(Default)
+
+///|
+pub async fn[X] OutFuture::get(self : OutFuture[X]) -> X {
+  if self.value is Some(v) {
+    return v
+  } else {
+    guard self.coroutine is None
+    self.coroutine = Some(current_coroutine())
+    suspend()
+    self.value.unwrap()
+  }
+}
+
+///|
+pub fn[X] OutFuture::put(self : OutFuture[X], value : X) -> Unit {
+  self.value = Some(value)
+  if self.coroutine is Some(coro) {
+    coro.wake()
+  }
+}

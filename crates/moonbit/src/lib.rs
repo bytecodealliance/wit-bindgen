@@ -778,10 +778,14 @@ impl InterfaceGenerator<'_> {
             async_,
         );
 
-        // TODO: adapt async cleanup
-        assert!(!bindgen.needs_cleanup_list);
-
         let src = bindgen.src;
+
+        // Handle cleanup for both sync and async exports
+        let cleanup_list = if bindgen.needs_cleanup_list {
+            "let cleanup_list : Array[Int] = []"
+        } else {
+            ""
+        };
 
         let result_type = match &sig.results[..] {
             [] => "Unit",
@@ -818,6 +822,7 @@ impl InterfaceGenerator<'_> {
             #doc(hidden)
             pub fn {func_name}({params}) -> {result_type} {{
                 {async_pkg}with_waitableset(() => {async_pkg}with_task_group(task_group => task_group.spawn_bg(() => {{
+                    {cleanup_list}
                     {src}
             }})))
             }}
@@ -829,6 +834,7 @@ impl InterfaceGenerator<'_> {
                 r#"
             #doc(hidden)
             pub fn {func_name}({params}) -> {result_type} {{
+                {cleanup_list}
                 {src}
             }}
             "#,
