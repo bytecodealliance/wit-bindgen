@@ -386,13 +386,59 @@ fn wasmLift{camel_name}{index}(future_handle : Int) -> {lifted} {{
 "#
         );
 
+        // Generate the lower function body
+        let inner_type = if let TypeDefKind::Future(Some(inner_ty)) = self.resolve.types[ty].kind {
+            Some(inner_ty)
+        } else {
+            None
+        };
+
         uwriteln!(
             lower,
             r#"
-fn wasmLower{camel_name}{index}(future : {lowered}) -> Int {{
-  ...
-}}
-            "#
+fn wasmLower{camel_name}{index}(out_future : {lowered}) -> Int {{
+  let handles = wasmLower{camel_name}{index}New()
+  let readable = (handles & 0xFFFFFFFF).reinterpret_as_int()
+  let writable = (handles >> 32).reinterpret_as_int()
+  {async_qualifier}spawn(async fn() {{
+    defer wasmLower{camel_name}{index}DropWritable(writable)"#
+        );
+
+        if let Some(inner_ty) = inner_type {
+            let resolve = self.resolve.clone();
+            let mut bindgen = FunctionBindgen::new(self, Box::new([]));
+            bindgen.use_ffi(ffi::MALLOC);
+            bindgen.use_ffi(ffi::FREE);
+            uwriteln!(
+                lower,
+                r#"
+    let value = out_future.get()
+    let ptr = mbt_ffi_malloc({size})
+    defer mbt_ffi_free(ptr)"#
+            );
+            abi::lower_to_memory(&resolve, &mut bindgen, "ptr".to_string(), "value".to_string(), &inner_ty);
+            uwriteln!(lower, "{}", bindgen.src);
+            uwriteln!(
+                lower,
+                r#"
+    let _ = {async_qualifier}suspend_for_future_write(writable, wasmLower{camel_name}{index}Write(writable, ptr))"#
+            );
+        } else {
+            // Unit type - no value to write, just complete the future
+            uwriteln!(
+                lower,
+                r#"
+    let _ = out_future.get()
+    let _ = {async_qualifier}suspend_for_future_write(writable, wasmLower{camel_name}{index}Write(writable, 0))"#
+            );
+        }
+
+        uwriteln!(
+            lower,
+            r#"
+  }})
+  readable
+}}"#
         );
         (
             lifted_func_name,
@@ -415,6 +461,15 @@ fn wasmLower{camel_name}{index}(future : {lowered}) -> Int {{
         let camel_name = func_name.to_upper_camel_case();
         let lifted_func_name = format!("wasmLift{camel_name}{index}");
         let lowered_func_name = format!("wasmLower{camel_name}{index}");
+        let async_qualifier = self
+            .world_gen
+            .pkg_resolver
+            .qualify_package(self.name, ASYNC_DIR);
+        let lifted = self
+            .world_gen
+            .pkg_resolver
+            .type_name(self.name, &Type::Id(ty));
+        let lowered = lifted.replace("StreamR", "OutStream");
 
         // write intrinsics
         uwriteln!(
@@ -433,6 +488,189 @@ fn wasmLower{camel_name}{index}Write(handle : Int, ptr : Int, len : Int) -> Int 
 fn wasmLower{camel_name}{index}CancelWrite(_ : Int) -> Int = "{module}" "[stream-cancel-write-{index}]{func_name}"
 fn wasmLower{camel_name}{index}DropWritable(_ : Int) = "{module}" "[stream-drop-writable-{index}]{func_name}"
     "#
+        );
+
+        // Get element type and size
+        let inner_type = if let TypeDefKind::Stream(Some(inner_ty)) = self.resolve.types[ty].kind {
+            Some(inner_ty)
+        } else {
+            None
+        };
+        let elem_size = inner_type
+            .map(|t| self.world_gen.sizes.size(&t).size_wasm32())
+            .unwrap_or(0);
+
+        // Generate lift function (StreamR from handle)
+        uwriteln!(
+            lift,
+            r#"
+fn wasmLift{camel_name}{index}(stream_handle : Int) -> {lifted} {{
+  let mut closed = false
+  let mut reading = 0
+  async fn close() {{
+    if !closed && reading > 0 {{
+      {async_qualifier}suspend_for_stream_read(
+        stream_handle,
+        wasmLift{camel_name}{index}CancelRead(stream_handle)
+      ) catch {{ _ => () }}
+    }}
+    if !closed {{
+      closed = true
+      wasmLift{camel_name}{index}DropReadable(stream_handle)
+    }}
+  }}
+  {async_qualifier}StreamR::{{
+    read: fn (count : Int) {{
+      if closed {{
+        return None
+      }}"#
+        );
+
+        if let Some(inner_ty) = inner_type {
+            let resolve = self.resolve.clone();
+            let mut lift_bindgen = FunctionBindgen::new(self, Box::new([]));
+            lift_bindgen.use_ffi(ffi::MALLOC);
+            lift_bindgen.use_ffi(ffi::FREE);
+
+            uwriteln!(
+                lift,
+                r#"
+      let ptr = mbt_ffi_malloc(count * {elem_size})
+      reading += 1
+      let (progress, end) = {{
+        defer {{ reading -= 1 }}
+        {async_qualifier}suspend_for_stream_read(
+          stream_handle,
+          wasmLift{camel_name}{index}Read(stream_handle, ptr, count),
+        )
+      }}
+      if progress == 0 {{
+        mbt_ffi_free(ptr)
+        if end {{ close(); return None }}
+        return Some([])
+      }}
+      let result = []"#
+            );
+
+            // Generate code to lift each element from memory
+            uwriteln!(lift, "      for i = 0; i < progress; i = i + 1 {{");
+            uwriteln!(lift, "        let elem_ptr = ptr + i * {elem_size}");
+            let operand =
+                lift_from_memory(&resolve, &mut lift_bindgen, "elem_ptr".to_string(), &inner_ty);
+            uwriteln!(lift, "{}", lift_bindgen.src);
+            uwriteln!(lift, "        result.push({operand})");
+            uwriteln!(lift, "      }}");
+
+            uwriteln!(
+                lift,
+                r#"
+      mbt_ffi_free(ptr)
+      if end {{ close() }}
+      Some(result[:])"#
+            );
+        } else {
+            // Unit type stream
+            uwriteln!(
+                lift,
+                r#"
+      reading += 1
+      let (progress, end) = {{
+        defer {{ reading -= 1 }}
+        {async_qualifier}suspend_for_stream_read(
+          stream_handle,
+          wasmLift{camel_name}{index}Read(stream_handle, 0, count),
+        )
+      }}
+      if progress == 0 && end {{ close(); return None }}
+      let result = FixedArray::make(progress, ())
+      if end {{ close() }}
+      Some(result[:])"#
+            );
+        }
+
+        uwriteln!(
+            lift,
+            r#"
+    }},
+    close
+  }}
+}}"#
+        );
+
+        // Generate lower function (OutStream to handle)
+        uwriteln!(
+            lower,
+            r#"
+fn wasmLower{camel_name}{index}(out_stream : {lowered}) -> Int {{
+  let handles = wasmLower{camel_name}{index}New()
+  let readable = (handles & 0xFFFFFFFF).reinterpret_as_int()
+  let writable = (handles >> 32).reinterpret_as_int()
+  let stream_w = {async_qualifier}StreamW::{{
+    write: fn (data : ArrayView[_]) {{
+      if data.length() == 0 {{
+        return 0
+      }}"#
+        );
+
+        if let Some(inner_ty) = inner_type {
+            let resolve = self.resolve.clone();
+            let mut lower_bindgen = FunctionBindgen::new(self, Box::new([]));
+            lower_bindgen.use_ffi(ffi::MALLOC);
+            lower_bindgen.use_ffi(ffi::FREE);
+
+            uwriteln!(
+                lower,
+                r#"
+      let ptr = mbt_ffi_malloc(data.length() * {elem_size})
+      for i = 0; i < data.length(); i = i + 1 {{
+        let elem_ptr = ptr + i * {elem_size}
+        let elem = data[i]"#
+            );
+
+            abi::lower_to_memory(
+                &resolve,
+                &mut lower_bindgen,
+                "elem_ptr".to_string(),
+                "elem".to_string(),
+                &inner_ty,
+            );
+            uwriteln!(lower, "{}", lower_bindgen.src);
+            uwriteln!(lower, "      }}");
+
+            uwriteln!(
+                lower,
+                r#"
+      let (progress, _) = {async_qualifier}suspend_for_stream_write(
+        writable,
+        wasmLower{camel_name}{index}Write(writable, ptr, data.length()),
+      )
+      mbt_ffi_free(ptr)
+      progress"#
+            );
+        } else {
+            // Unit type stream
+            uwriteln!(
+                lower,
+                r#"
+      let (progress, _) = {async_qualifier}suspend_for_stream_write(
+        writable,
+        wasmLower{camel_name}{index}Write(writable, 0, data.length()),
+      )
+      progress"#
+            );
+        }
+
+        uwriteln!(
+            lower,
+            r#"
+    }},
+    close: fn () {{
+      wasmLower{camel_name}{index}DropWritable(writable)
+    }}
+  }}
+  out_stream.put_stream(stream_w)
+  readable
+}}"#
         );
 
         (
