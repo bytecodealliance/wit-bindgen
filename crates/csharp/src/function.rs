@@ -1445,6 +1445,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             | Instruction::ErrorContextLower { .. }
             | Instruction::ErrorContextLift { .. }
             | Instruction::DropHandle { .. }
+            | Instruction::FixedLengthListLift { .. }
+            | Instruction::FixedLengthListLower { .. }
+            | Instruction::FixedLengthListLowerToMemory { .. }
+            | Instruction::FixedLengthListLiftFromMemory { .. }
             => {
                 dbg!(inst);
                 todo!()

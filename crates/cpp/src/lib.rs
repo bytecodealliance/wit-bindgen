@@ -74,6 +74,7 @@ struct Includes {
     // needs wit types
     needs_wit: bool,
     needs_memory: bool,
+    needs_array: bool,
 }
 
 #[derive(Default)]
@@ -427,6 +428,9 @@ impl Cpp {
         }
         if self.dependencies.needs_memory {
             self.include("<memory>");
+        }
+        if self.dependencies.needs_array {
+            self.include("<array>");
         }
         if self.dependencies.needs_bit {
             self.include("<bit>");
@@ -1698,7 +1702,13 @@ impl CppInterfaceGenerator<'_> {
                 TypeDefKind::Future(_) => todo!(),
                 TypeDefKind::Stream(_) => todo!(),
                 TypeDefKind::Type(ty) => self.type_name(ty, from_namespace, flavor),
-                TypeDefKind::FixedSizeList(_, _) => todo!(),
+                TypeDefKind::FixedSizeList(ty, size) => {
+                    self.r#gen.dependencies.needs_array = true;
+                    format!(
+                        "std::array<{}, {size}>",
+                        self.type_name(ty, from_namespace, flavor)
+                    )
+                }
                 TypeDefKind::Map(_, _) => todo!(),
                 TypeDefKind::Unknown => todo!(),
             },
@@ -2532,7 +2542,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     "auto base = {ptr} + i * {size};\n",
                     size = size.format(POINTER_SIZE_EXPRESSION)
                 ));
-                self.push_str(&format!("auto&& IterElem = {val}[i];\n"));
+                self.push_str(&format!("auto&& iter_elem = {val}[i];\n"));
                 self.push_str(&format!("{}\n", body.0));
                 self.push_str("}\n");
                 if realloc.is_none() {
@@ -2648,7 +2658,94 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     results.push(move_if_necessary(&result));
                 }
             }
-            abi::Instruction::IterElem { .. } => results.push("IterElem".to_string()),
+            abi::Instruction::FixedLengthListLift {
+                element,
+                size,
+                id: _,
+            } => {
+                let tmp = self.tmp();
+                let result = format!("result{tmp}");
+                let typename = self
+                    .r#gen
+                    .type_name(element, &self.namespace, Flavor::InStruct);
+                self.push_str(&format!("std::array<{typename}, {size}> {result} = {{",));
+                for a in operands.drain(0..(*size as usize)) {
+                    self.push_str(&a);
+                    self.push_str(", ");
+                }
+                self.push_str("};\n");
+                results.push(result);
+            }
+            abi::Instruction::FixedLengthListLiftFromMemory {
+                element,
+                size: elemsize,
+                id: _,
+            } => {
+                let body = self.blocks.pop().unwrap();
+                let tmp = self.tmp();
+                let vec = format!("array{tmp}");
+                let source = operands[0].clone();
+                let size = self.r#gen.sizes.size(element);
+                let size_str = size.format(POINTER_SIZE_EXPRESSION);
+                let typename = self
+                    .r#gen
+                    .type_name(element, &self.namespace, Flavor::InStruct);
+                let ptr_type = self.r#gen.r#gen.opts.ptr_type();
+                self.push_str(&format!("std::array<{typename}, {elemsize}> {vec};\n"));
+                self.push_str(&format!(
+                    "{{
+                    {ptr_type} outer_base = {source};\n"
+                ));
+                let source: String = "outer_base".into();
+                // let vec: String = "outer_vec".into();
+                self.push_str(&format!("for (unsigned i = 0; i<{elemsize}; ++i) {{\n",));
+                self.push_str(&format!("{ptr_type} base = {source} + i * {size_str};\n"));
+                self.push_str(&body.0);
+                self.push_str(&format!("{vec}[i] = {};", body.1[0]));
+                self.push_str("\n}\n}\n");
+                results.push(vec);
+            }
+            abi::Instruction::FixedLengthListLower {
+                element: _,
+                size,
+                id: _,
+            } => {
+                for i in 0..(*size as usize) {
+                    results.push(format!("{}[{i}]", operands[0]));
+                }
+            }
+            abi::Instruction::FixedLengthListLowerToMemory {
+                element,
+                size: elemsize,
+                id: _,
+            } => {
+                let body = self.blocks.pop().unwrap();
+                let vec = operands[0].clone();
+                let target = operands[1].clone();
+                let size = self.r#gen.sizes.size(element);
+                let size_str = size.format(POINTER_SIZE_EXPRESSION);
+                let typename = self
+                    .r#gen
+                    .type_name(element, &self.namespace, Flavor::InStruct);
+                let ptr_type = self.r#gen.r#gen.opts.ptr_type();
+                self.push_str(&format!(
+                    "{{
+                    {ptr_type} outer_base = {target};\n"
+                ));
+                let target: String = "outer_base".into();
+                self.push_str(&format!(
+                    "std::array<{typename}, {elemsize}>& outer_vec = {vec};\n"
+                ));
+                let vec: String = "outer_vec".into();
+                self.push_str(&format!("for (unsigned i = 0; i<{vec}.size(); ++i) {{\n",));
+                self.push_str(&format!(
+                    "{ptr_type} base = {target} + i * {size_str};
+                     {typename}& iter_elem = {vec}[i];\n"
+                ));
+                self.push_str(&body.0);
+                self.push_str("\n}\n}\n");
+            }
+            abi::Instruction::IterElem { .. } => results.push("iter_elem".to_string()),
             abi::Instruction::IterBasePointer => results.push("base".to_string()),
             abi::Instruction::RecordLower { record, .. } => {
                 let op = &operands[0];
@@ -3254,7 +3351,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                             self.src.push_str(">(");
                         }
                         if *amt == 1 {
-                            if operands[0].starts_with("std::move(") {
+                            if operands[0].starts_with("std::move(") && !operands[0].contains('.') {
                                 // remove the std::move due to return value optimization (and complex rules about when std::move harms)
                                 self.src.push_str(&operands[0][9..]);
                             } else {
