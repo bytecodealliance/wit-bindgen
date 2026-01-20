@@ -1833,7 +1833,7 @@ impl<'a> wit_bindgen_core::AnonymousTypeGenerator<'a> for InterfaceGenerator<'a>
         _size: u32,
         _docs: &Docs,
     ) {
-        todo!("print_anonymous_type for fixed size list");
+        todo!("print_anonymous_type for fixed length list");
     }
 }
 
