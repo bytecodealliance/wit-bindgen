@@ -783,7 +783,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.push(len);
             }
 
-            Instruction::FixedSizeListLowerToMemory {
+            Instruction::FixedLengthListLowerToMemory {
                 element,
                 size: _,
                 id: _,
@@ -1228,7 +1228,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::DropHandle { .. } => {
                 uwriteln!(self.src, "let _ = {};", operands[0]);
             }
-            Instruction::FixedSizeListLift {
+            Instruction::FixedLengthListLift {
                 element: _,
                 size,
                 id: _,
@@ -1243,7 +1243,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.push_str("];\n");
                 results.push(result);
             }
-            Instruction::FixedSizeListLower {
+            Instruction::FixedLengthListLower {
                 element: _,
                 size,
                 id: _,
@@ -1252,7 +1252,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     results.push(format!("{}[{i}]", operands[0]));
                 }
             }
-            Instruction::FixedSizeListLiftFromMemory {
+            Instruction::FixedLengthListLiftFromMemory {
                 element,
                 size,
                 id: _,
