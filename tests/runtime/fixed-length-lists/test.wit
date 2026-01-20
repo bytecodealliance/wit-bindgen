@@ -1,6 +1,4 @@
-// run with "--runner wasmtime -W component-model-fixed-size-list"
-
-package test:fixed-size-lists;
+package test:fixed-length-lists;
 
 interface to-test {
   list-param: func(a: list<u32, 4>);

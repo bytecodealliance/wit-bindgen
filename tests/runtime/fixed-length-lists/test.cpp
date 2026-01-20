@@ -1,7 +1,7 @@
 #include <assert.h>
 #include <test_cpp.h>
 
-using namespace exports::test::fixed_size_lists;
+using namespace exports::test::fixed_length_lists;
 
 void to_test::ListParam(std::array<uint32_t, 4> a) {
     std::array<uint32_t, 4> b = std::array<uint32_t, 4>{1, 2, 3, 4};

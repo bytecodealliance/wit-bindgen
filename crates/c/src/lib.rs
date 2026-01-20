@@ -1826,7 +1826,7 @@ impl<'a> wit_bindgen_core::AnonymousTypeGenerator<'a> for InterfaceGenerator<'a>
         todo!("print_anonymous_type for type");
     }
 
-    fn anonymous_type_fixed_size_list(
+    fn anonymous_type_fixed_length_list(
         &mut self,
         _id: TypeId,
         _ty: &Type,

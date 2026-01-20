@@ -3018,7 +3018,13 @@ impl<'a, 'b> wit_bindgen_core::AnonymousTypeGenerator<'a> for AnonTypeGenerator<
         self.interface.push_str(">");
     }
 
-    fn anonymous_type_fixed_size_list(&mut self, _id: TypeId, ty: &Type, size: u32, _docs: &Docs) {
+    fn anonymous_type_fixed_length_list(
+        &mut self,
+        _id: TypeId,
+        ty: &Type,
+        size: u32,
+        _docs: &Docs,
+    ) {
         self.interface.push_str("[");
         self.interface.print_ty(
             ty,

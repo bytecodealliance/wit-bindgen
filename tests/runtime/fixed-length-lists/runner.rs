@@ -2,7 +2,7 @@
 
 include!(env!("BINDINGS"));
 
-use test::fixed_size_lists::to_test::*;
+use test::fixed_length_lists::to_test::*;
 
 struct Component;
 

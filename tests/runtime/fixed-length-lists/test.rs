@@ -4,9 +4,9 @@ struct Component;
 
 export!(Component);
 
-use crate::exports::test::fixed_size_lists::to_test::Nested;
+use crate::exports::test::fixed_length_lists::to_test::Nested;
 
-impl exports::test::fixed_size_lists::to_test::Guest for Component {
+impl exports::test::fixed_length_lists::to_test::Guest for Component {
     fn list_param(a: [u32; 4]) {
         assert_eq!(a, [1, 2, 3, 4]);
     }
