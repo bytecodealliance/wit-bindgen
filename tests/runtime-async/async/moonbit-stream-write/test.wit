@@ -1,0 +1,18 @@
+package my:test;
+
+interface i {
+  // MoonBit creates a stream, writes values, and returns it
+  create-stream-with-values: async func(count: u32) -> stream<u32>;
+  // MoonBit creates a unit stream
+  create-unit-stream: async func(count: u32) -> stream;
+}
+
+world test {
+  export i;
+}
+
+world runner {
+  import i;
+
+  export run: async func();
+}

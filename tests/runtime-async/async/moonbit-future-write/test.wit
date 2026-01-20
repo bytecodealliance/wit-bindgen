@@ -1,0 +1,18 @@
+package my:test;
+
+interface i {
+  // MoonBit creates a future, writes a value, and returns it
+  create-future-with-value: async func(value: u32) -> future<u32>;
+  // MoonBit creates a future without a payload
+  create-unit-future: async func() -> future;
+}
+
+world test {
+  export i;
+}
+
+world runner {
+  import i;
+
+  export run: async func();
+}
