@@ -1,3 +1,5 @@
+//@ wasmtime-flags = '-Wcomponent-model-fixed-length-lists'
+
 include!(env!("BINDINGS"));
 
 use test::fixed_size_lists::to_test::*;
