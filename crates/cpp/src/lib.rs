@@ -2542,7 +2542,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     "auto base = {ptr} + i * {size};\n",
                     size = size.format(POINTER_SIZE_EXPRESSION)
                 ));
-                self.push_str(&format!("auto&& IterElem = {val}[i];\n"));
+                self.push_str(&format!("auto&& iter_elem = {val}[i];\n"));
                 self.push_str(&format!("{}\n", body.0));
                 self.push_str("}\n");
                 if realloc.is_none() {
