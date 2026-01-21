@@ -260,6 +260,33 @@ public static class FutureHelpers
             throw new Exception($"unexpected subtask status: {status}");
         }
     }
+
+    public static Task<T> TaskFromStatus<T>(uint status, Func<T> liftFunc)
+    {
+        var subTaskStatus = new SubtaskStatus(status);
+        status = status & 0xF;
+
+        // TODO join and complete the task somwhere.
+        var tcs = new TaskCompletionSource<T>();
+        if(subTaskStatus.IsSubtaskStarting || subTaskStatus.IsSubtaskStarted)
+        {
+            if(state.WaitableSet == null) {
+                state.WaitableSet = AsyncSupport.WaitableSetNew();
+            }
+
+            return tcs.Task;
+        }
+        else if (subTaskStatus.IsSubtaskReturned)
+        {
+            tcs.SetResult(liftFunc());
+            return tcs.Task;
+        }
+        else 
+        {
+            throw new Exception($"unexpected subtask status: {status}");
+        }
+    }
+
 }
 
 public class FutureAwaiter : INotifyCompletion {

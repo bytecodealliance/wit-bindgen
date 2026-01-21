@@ -382,17 +382,6 @@ impl WorldGenerator for CSharp {
 
         let access = self.access_modifier();
 
-        if !self.generated_future_types.is_empty() {
-            uwrite!(
-                src,
-                "
-                    using System.Runtime.InteropServices;
-                    using System.Collections.Concurrent;
-
-                "
-            );
-        }
-
         if self.needs_async_support {
             uwrite!(
                 src,
@@ -403,6 +392,13 @@ impl WorldGenerator for CSharp {
             );
         }
 
+        uwrite!(
+            src,
+            "
+                using System.Runtime.InteropServices;
+                using System.Collections.Concurrent;
+            "
+        );
         uwrite!(
             src,
             "
