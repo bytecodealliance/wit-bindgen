@@ -27,7 +27,7 @@ pub(all) struct StreamW[X] {
 }
 
 ///|
-struct OutStream[X] {
+pub(all) struct OutStream[X] {
   mut stream : StreamW[X]?
   mut coroutine : Coroutine?
 } derive(Default)

@@ -94,7 +94,7 @@ pub async fn suspend() -> Unit raise Cancelled {
 }
 
 ///|
-fn spawn(f : async () -> Unit) -> Coroutine {
+pub fn spawn(f : async () -> Unit) -> Coroutine {
   scheduler.coro_id += 1
   let coro = {
     state: Running,

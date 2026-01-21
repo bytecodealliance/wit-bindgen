@@ -606,7 +606,7 @@ fn wasmLower{camel_name}{index}(out_stream : {lowered}) -> Int {{
   let readable = (handles & 0xFFFFFFFF).to_int()
   let writable = (handles >> 32).to_int()
   let stream_w = {async_qualifier}StreamW::{{
-    write: fn (data : ArrayView[_]) {{
+    write: async fn (data : ArrayView[_]) {{
       if data.length() == 0 {{
         return 0
       }}"#
@@ -668,7 +668,7 @@ fn wasmLower{camel_name}{index}(out_stream : {lowered}) -> Int {{
             lower,
             r#"
     }},
-    close: fn () {{
+    close: async fn () {{
       wasmLower{camel_name}{index}DropWritable(writable)
     }}
   }}
