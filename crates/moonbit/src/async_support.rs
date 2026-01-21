@@ -120,7 +120,8 @@ impl<'a> InterfaceGenerator<'a> {
             .map(|(name, _)| name.to_moonbit_ident())
             .collect::<Vec<_>>();
         let param_types = func.params.iter().map(|(_, ty)| *ty).collect::<Vec<_>>();
-        let mut bindgen = FunctionBindgen::new(self, param_names.into_boxed_slice(), Direction::Import);
+        let mut bindgen =
+            FunctionBindgen::new(self, param_names.into_boxed_slice(), Direction::Import, true);
         let mut lowered_params = Vec::new();
 
         let params_ptr = if wasm_sig.indirect_params {
@@ -363,7 +364,7 @@ fn wasmLift{camel_name}{index}(future_handle : Int) -> {lifted} {{
         let operand = if let TypeDefKind::Future(Some(ty)) = self.resolve.types[ty].kind {
             // TODO : solve ownership
             let resolve = self.resolve.clone();
-            let mut bindgen = FunctionBindgen::new(self, Box::new([]), Direction::Import);
+            let mut bindgen = FunctionBindgen::new(self, Box::new([]), Direction::Import, true);
             let operand = lift_from_memory(&resolve, &mut bindgen, "ptr".to_string(), &ty);
             uwriteln!(lift, "{}", bindgen.src);
             operand
@@ -406,7 +407,7 @@ fn wasmLower{camel_name}{index}(out_future : {lowered}) -> Int {{
 
         if let Some(inner_ty) = inner_type {
             let resolve = self.resolve.clone();
-            let mut bindgen = FunctionBindgen::new(self, Box::new([]), Direction::Export);
+            let mut bindgen = FunctionBindgen::new(self, Box::new([]), Direction::Export, true);
             bindgen.use_ffi(ffi::MALLOC);
             bindgen.use_ffi(ffi::FREE);
             uwriteln!(
@@ -416,7 +417,13 @@ fn wasmLower{camel_name}{index}(out_future : {lowered}) -> Int {{
     let ptr = mbt_ffi_malloc({size})
     defer mbt_ffi_free(ptr)"#
             );
-            abi::lower_to_memory(&resolve, &mut bindgen, "ptr".to_string(), "value".to_string(), &inner_ty);
+            abi::lower_to_memory(
+                &resolve,
+                &mut bindgen,
+                "ptr".to_string(),
+                "value".to_string(),
+                &inner_ty,
+            );
             uwriteln!(lower, "{}", bindgen.src);
             uwriteln!(
                 lower,
@@ -528,7 +535,7 @@ fn wasmLift{camel_name}{index}(stream_handle : Int) -> {lifted} {{
 
         if let Some(inner_ty) = inner_type {
             let resolve = self.resolve.clone();
-            let mut lift_bindgen = FunctionBindgen::new(self, Box::new([]), Direction::Import);
+            let mut lift_bindgen = FunctionBindgen::new(self, Box::new([]), Direction::Import, true);
             lift_bindgen.use_ffi(ffi::MALLOC);
             lift_bindgen.use_ffi(ffi::FREE);
 
@@ -555,8 +562,12 @@ fn wasmLift{camel_name}{index}(stream_handle : Int) -> {lifted} {{
             // Generate code to lift each element from memory
             uwriteln!(lift, "      for i = 0; i < progress; i = i + 1 {{");
             uwriteln!(lift, "        let elem_ptr = ptr + i * {elem_size}");
-            let operand =
-                lift_from_memory(&resolve, &mut lift_bindgen, "elem_ptr".to_string(), &inner_ty);
+            let operand = lift_from_memory(
+                &resolve,
+                &mut lift_bindgen,
+                "elem_ptr".to_string(),
+                &inner_ty,
+            );
             uwriteln!(lift, "{}", lift_bindgen.src);
             uwriteln!(lift, "        result.push({operand})");
             uwriteln!(lift, "      }}");
@@ -614,11 +625,8 @@ fn wasmLower{camel_name}{index}(out_stream : {lowered}) -> Int {{
 
         if let Some(inner_ty) = inner_type {
             let resolve = self.resolve.clone();
-            let elem_type = self
-                .world_gen
-                .pkg_resolver
-                .type_name(self.name, &inner_ty);
-            let mut lower_bindgen = FunctionBindgen::new(self, Box::new([]), Direction::Export);
+            let elem_type = self.world_gen.pkg_resolver.type_name(self.name, &inner_ty);
+            let mut lower_bindgen = FunctionBindgen::new(self, Box::new([]), Direction::Export, true);
             lower_bindgen.use_ffi(ffi::MALLOC);
             lower_bindgen.use_ffi(ffi::FREE);
 
