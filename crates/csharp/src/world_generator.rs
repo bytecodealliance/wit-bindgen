@@ -683,7 +683,6 @@ impl WorldGenerator for CSharp {
             }
             "#,
             );
-
         }
 
         if self.needs_async_support {

@@ -5,7 +5,7 @@ use heck::ToUpperCamelCase;
 use std::fmt::Write;
 use std::mem;
 use std::ops::Deref;
-use wit_bindgen_core::abi::{self, Bindgen, Bitcast, Instruction};
+use wit_bindgen_core::abi::{Bindgen, Bitcast, Instruction};
 use wit_bindgen_core::{Direction, Ns, uwrite, uwriteln};
 use wit_parser::abi::WasmType;
 use wit_parser::{
@@ -1076,7 +1076,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     "{assignment} {interop_name}{resource_type_name}.{func_name}WasmInterop.wasmImport{func_name}({operands});"
                 );
 
-                if results.len() >= 1 {
+                if sig.results.len() >= 1 {
                     results.push(result);
                 }
             }

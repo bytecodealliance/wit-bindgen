@@ -2,13 +2,13 @@ use crate::csharp_ident::ToCSharpIdent;
 use crate::function::FunctionBindgen;
 use crate::function::ResourceInfo;
 use crate::world_generator::CSharp;
+use heck::ToLowerCamelCase;
 use heck::{ToShoutySnakeCase, ToUpperCamelCase};
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt::Write;
 use std::mem;
 use std::ops::Deref;
-use heck::ToLowerCamelCase;
 use wit_bindgen_core::abi::LiftLower;
 use wit_bindgen_core::{
     Direction, InterfaceGenerator as CoreInterfaceGenerator, abi, uwrite, uwriteln,
@@ -591,11 +591,12 @@ impl InterfaceGenerator<'_> {
         );
 
         let async_ = InterfaceGenerator::is_async(&func.kind);
-        let mut src = String::new();
+        let mut src: String;
 
         if async_ {
             // TODO: Use lower_to_memory as per Go ?
-            let sig = bindgen.interface_gen
+            let sig = bindgen
+                .interface_gen
                 .resolve
                 .wasm_signature(AbiVariant::GuestImportAsync, func);
 
@@ -604,7 +605,10 @@ impl InterfaceGenerator<'_> {
             let requires_async_return_buffer_param = func.result.is_some();
             let async_return_buffer = if requires_async_return_buffer_param {
                 let buffer = bindgen.emit_allocation_for_type(&sig.results);
-                uwriteln!(bindgen.src, "//TODO: store somewhere with the TaskCompletionSource, possibly in the state, using Task.AsyncState to retrieve it later.");
+                uwriteln!(
+                    bindgen.src,
+                    "//TODO: store somewhere with the TaskCompletionSource, possibly in the state, using Task.AsyncState to retrieve it later."
+                );
                 Some(buffer)
             } else {
                 None
@@ -616,20 +620,25 @@ impl InterfaceGenerator<'_> {
             //     None => operands.join(", "),
             // };
 
-            let csharp_param_names = 
-                func.params
-                    .iter()
-                    .map(|(name, _)| name.to_lower_camel_case())
+            let csharp_param_names = func
+                .params
+                .iter()
+                .map(|(name, _)| name.to_lower_camel_case())
                 .collect::<Vec<_>>();
 
             let (lower, wasm_params) = if sig.indirect_params {
                 todo!("indirect params not supported for async imports yet");
             } else {
-                let wasm_params : Vec<String> = csharp_param_names
+                let wasm_params: Vec<String> = csharp_param_names
                     .iter()
                     .zip(&func.params)
                     .flat_map(|(name, (_, ty))| {
-                        abi::lower_flat(bindgen.interface_gen.resolve, &mut bindgen, name.clone(), ty)
+                        abi::lower_flat(
+                            bindgen.interface_gen.resolve,
+                            &mut bindgen,
+                            name.clone(),
+                            ty,
+                        )
                     })
                     .collect();
                 (mem::take(&mut bindgen.src), wasm_params)
@@ -648,7 +657,8 @@ impl InterfaceGenerator<'_> {
             let code = format!(
                 "{lower}
 var {async_status_var} = {raw_name}({wasm_params});
-");
+"
+            );
             src = format!("{code}{}", bindgen.src);
 
             if let Some(buffer) = async_return_buffer {
@@ -660,28 +670,26 @@ var {async_status_var} = {raw_name}({wasm_params});
                     &ty,
                 );
                 let return_type = self.type_name_with_qualifier(&ty, true);
-            
+
                 let lift_func = format!("() => {lift_expr}");
                 uwriteln!(
                     src,
-                    "var task = FutureHelpers.TaskFromStatus<{return_type}>({async_status_var}, {});", 
-                    lift_func);
-                uwriteln!(
-                    src,
-                    "global::System.Runtime.InteropServices.NativeMemory.Free({});", 
-                    buffer
+                    "var task = FutureHelpers.TaskFromStatus<{return_type}>({async_status_var}, {});",
+                    lift_func
                 );
                 uwriteln!(
                     src,
-                    "return task;");
-            } 
-            else {
+                    "global::System.Runtime.InteropServices.NativeMemory.Free({});",
+                    buffer
+                );
+                uwriteln!(src, "return task;");
+            } else {
                 uwriteln!(
                     src,
-                    "return FutureHelpers.TaskFromStatus({async_status_var});");
+                    "return FutureHelpers.TaskFromStatus({async_status_var});"
+                );
             }
-        }
-        else {
+        } else {
             abi::call(
                 bindgen.interface_gen.resolve,
                 AbiVariant::GuestImport,
@@ -790,8 +798,7 @@ var {async_status_var} = {raw_name}({wasm_params});
             .collect::<Vec<_>>()
             .join(", ");
 
-        let (_namespace, interface_name) =
-            &CSharp::get_class_name_from_qualified_name(self.name);
+        let (_namespace, _interface_name) = &CSharp::get_class_name_from_qualified_name(self.name);
 
         let params = func
             .params
@@ -852,7 +859,7 @@ var {async_status_var} = {raw_name}({wasm_params});
             if sig.results.len() > 0 {
                 uwriteln!(
                     self.csharp_interop_src,
-                        r#"
+                    r#"
                         throw new NotImplementedException("callbacks with parameters are not yet implemented.");
                     }}
                     "#
@@ -1762,10 +1769,7 @@ fn modifiers(func: &Function, name: &str, direction: Direction) -> String {
     };
 
     let async_modifier = match &func.kind {
-        FunctionKind::AsyncMethod(_)
-        | FunctionKind::AsyncStatic(_)
-            if abstract_modifier == "" =>
-        {
+        FunctionKind::AsyncMethod(_) | FunctionKind::AsyncStatic(_) if abstract_modifier == "" => {
             " async"
         }
         _ => "",
