@@ -691,6 +691,7 @@ impl InterfaceGenerator<'_> {
                 .iter()
                 .map(|Param { name, .. }| name.to_moonbit_ident())
                 .collect(),
+            Direction::Import,
         );
 
         abi::call(
@@ -742,7 +743,7 @@ impl InterfaceGenerator<'_> {
         // Generate stub for user
         {
             let mbt_sig = self.world_gen.pkg_resolver.mbt_sig(self.name, func, false);
-            let func_sig = self.sig_string(&mbt_sig, async_);
+            let func_sig = self.sig_string_with_direction(&mbt_sig, async_, Direction::Export);
 
             print_docs(&mut self.stub, &func.docs);
             uwrite!(
@@ -767,6 +768,7 @@ impl InterfaceGenerator<'_> {
         let mut bindgen = FunctionBindgen::new(
             self,
             (0..sig.params.len()).map(|i| format!("p{i}")).collect(),
+            Direction::Export,
         );
 
         abi::call(
@@ -958,6 +960,7 @@ impl InterfaceGenerator<'_> {
             let mut bindgen = FunctionBindgen::new(
                 self,
                 (0..sig.results.len()).map(|i| format!("p{i}")).collect(),
+                Direction::Export,
             );
 
             abi::post_return(bindgen.interface_gen.resolve, func, &mut bindgen);
@@ -1008,6 +1011,15 @@ impl InterfaceGenerator<'_> {
     }
 
     fn sig_string(&mut self, sig: &MoonbitSignature, async_: bool) -> String {
+        self.sig_string_with_direction(sig, async_, Direction::Import)
+    }
+
+    fn sig_string_with_direction(
+        &mut self,
+        sig: &MoonbitSignature,
+        async_: bool,
+        direction: Direction,
+    ) -> String {
         let params = sig
             .params
             .iter()
@@ -1020,7 +1032,12 @@ impl InterfaceGenerator<'_> {
         let params = params.join(", ");
         let result_type = match &sig.result_type {
             None => "Unit".into(),
-            Some(ty) => self.world_gen.pkg_resolver.type_name(self.name, ty),
+            Some(ty) => match direction {
+                Direction::Export => {
+                    self.world_gen.pkg_resolver.type_name_for_lowering(self.name, ty)
+                }
+                Direction::Import => self.world_gen.pkg_resolver.type_name(self.name, ty),
+            },
         };
         format!(
             "pub {}fn {}({params}) -> {}",
@@ -1503,12 +1520,14 @@ struct FunctionBindgen<'a, 'b> {
     payloads: Vec<String>,
     cleanup: Vec<Cleanup>,
     needs_cleanup_list: bool,
+    direction: Direction,
 }
 
 impl<'a, 'b> FunctionBindgen<'a, 'b> {
     fn new(
         r#gen: &'b mut InterfaceGenerator<'a>,
         params: Box<[String]>,
+        direction: Direction,
     ) -> FunctionBindgen<'a, 'b> {
         let mut locals = Ns::default();
         params.iter().for_each(|str| {
@@ -1524,6 +1543,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             payloads: Vec::new(),
             cleanup: Vec::new(),
             needs_cleanup_list: false,
+            direction,
         }
     }
 
@@ -1706,6 +1726,13 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             .world_gen
             .pkg_resolver
             .type_name(self.interface_gen.name, ty)
+    }
+
+    fn resolve_type_name_for_lowering(&mut self, ty: &Type) -> String {
+        self.interface_gen
+            .world_gen
+            .pkg_resolver
+            .type_name_for_lowering(self.interface_gen.name, ty)
     }
 
     fn use_ffi(&mut self, str: &'static str) {
@@ -2371,7 +2398,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let assignment = match func.result {
                     None => "let _ = ".into(),
                     Some(ty) => {
-                        let ty = format!("({})", self.resolve_type_name(&ty));
+                        // For exports, use lowering type names (OutFuture/OutStream)
+                        // For imports, use lifting type names (FutureR/StreamR)
+                        let ty = match self.direction {
+                            Direction::Export => {
+                                format!("({})", self.resolve_type_name_for_lowering(&ty))
+                            }
+                            Direction::Import => format!("({})", self.resolve_type_name(&ty)),
+                        };
                         let result = self.locals.tmp("result");
                         if func.result.is_some() {
                             results.push(result.clone());
