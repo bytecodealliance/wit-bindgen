@@ -113,7 +113,7 @@ public static class AsyncSupport
         Interop.WaitableSetDrop(handle);
     }
 
-    // The context that will will create in unmanaged memory and pass to context_set.
+    // The context that we will create in unmanaged memory and pass to context_set.
     // TODO: C has world specific types for these pointers, perhaps C# would benefit from those also.
     [StructLayout(LayoutKind.Sequential)]
     public struct ContextTask
@@ -161,16 +161,10 @@ public static class AsyncSupport
         // TODO: Looks complicated....
         if(PendingCallbacks.TryRemove((IntPtr)(contextPtr), out var tcs))
         {
-            Console.WriteLine("Pending callback found, freeing context.");
             Marshal.FreeHGlobal((IntPtr)contextPtr);
             taskReturn();
 
-            Console.WriteLine("Pending callback found, completing task.");
             tcs.SetResult();
-        }
-        else
-        {
-            Console.WriteLine("No pending callback found for context.  TODO: Not implemented.");
         }
         return CallbackCode.Exit;
     }
@@ -286,7 +280,6 @@ public static class FutureHelpers
             throw new Exception($"unexpected subtask status: {status}");
         }
     }
-
 }
 
 public class FutureAwaiter : INotifyCompletion {
@@ -300,13 +293,10 @@ public class FutureAwaiter : INotifyCompletion {
 
     public void OnCompleted(Action continuation) 
     {
-        Console.WriteLine("FutureAwaiter OnCompleted called, start Read");
         var readTask = futureReader.Read();
-        Console.WriteLine("FutureAwaiter readTask IsCompleted " + readTask.IsCompleted);
         
         if(readTask.IsCompleted && !readTask.IsFaulted)
         {
-            Console.WriteLine("FutureAwaiter Read already completed, invoking continuation");
             continuation();
         }
         else
@@ -315,19 +305,15 @@ public class FutureAwaiter : INotifyCompletion {
             {
                 if(task.IsFaulted)
                 {
-                    Console.WriteLine("FutureAwaiter Read failed - TODO: " + task.Exception);
                     throw task.Exception!;
                 }
-                Console.WriteLine("FutureAwaiter Read completed, invoking continuation");
                 continuation();
             });
         }
-        Console.WriteLine("FutureAwaiter OnCompleted exit.");
     }
 
     public string GetResult()
     {
-        Console.WriteLine("FutureAwaiter GetResult called");
         return null;
     }
 }
@@ -362,7 +348,6 @@ public class FutureReader : IDisposable // : TODO Waitable
     // TODO: Generate per type for this instrinsic.
     public unsafe Task Read()
     {
-        Console.WriteLine("FutureReader Read called");
         // TODO: Generate for the interop name and the namespace.
         if (Handle == 0)
         {
@@ -372,20 +357,17 @@ public class FutureReader : IDisposable // : TODO Waitable
         var status = new WaitableStatus(VTable.StartRead(Handle, IntPtr.Zero));
         if (status.IsBlocked)
         {
-            Console.WriteLine("FutureReader Read is blocked, creating TaskCompletionSource");
             var tcs = new TaskCompletionSource();
 
 
             AsyncSupport.ContextTask* contextTaskPtr = (AsyncSupport.ContextTask*)Marshal.AllocHGlobal(sizeof(AsyncSupport.ContextTask));
 
-            System.Console.WriteLine("FutureReader<T> Read is blocked, setting context");
             AsyncSupport.ContextSet(contextTaskPtr);
             AsyncSupport.PendingCallbacks.TryAdd((IntPtr)contextTaskPtr, tcs);
             return tcs.Task;
         }
         if (status.IsCompleted)
         {
-            Console.WriteLine("FutureReader Read is completed");
             return Task.CompletedTask;
         }
 
@@ -446,7 +428,6 @@ public class FutureReader<T>(int handle, FutureVTable vTable) : IDisposable // :
             //TODO: Free in callback?
             AsyncSupport.ContextTask* contextTaskPtr = (AsyncSupport.ContextTask*)Marshal.AllocHGlobal(sizeof(AsyncSupport.ContextTask));
 
-            System.Console.WriteLine("FutureReader<T> Read is blocked, setting context");
             AsyncSupport.ContextSet(contextTaskPtr);
             AsyncSupport.PendingCallbacks.TryAdd((IntPtr)contextTaskPtr, tcs);
             return tcs.Task;

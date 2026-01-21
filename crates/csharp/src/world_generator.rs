@@ -664,20 +664,7 @@ impl WorldGenerator for CSharp {
 
             "#,
             );
-            // for ty in &self.generated_future_types {
-            //     let type_def = &resolve.types[*ty];
-            //     let type_name = type_def.name.as_ref().unwrap();
 
-            //     uwrite!(
-            //         src,
-            //         r#"
-            //     public static Future<{type_name}> FutureNew({type_name} value)
-            //     {{
-            //         return FutureHelpers.FutureNew<{type_name}>(value);
-            //     }}
-            //     "#
-            //     );
-            // }
             src.push_str(
                 r#"
             }

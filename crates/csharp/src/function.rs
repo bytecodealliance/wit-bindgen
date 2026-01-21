@@ -1028,8 +1028,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::CallWasm { sig, .. } => {
-                // TODO : most of this code belongs elsewhere in lifts/lowers.
-
                 let mut result = String::new();
                 let assignment = match &sig.results[..] {
                     [_] => {
