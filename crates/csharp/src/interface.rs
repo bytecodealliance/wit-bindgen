@@ -925,7 +925,7 @@ var {async_status_var} = {raw_name}({wasm_params});
             let mut interop_class_name = impl_name.replace("Impl", "Interop");
             if self.is_world {
                 interop_class_name = interop_class_name.replace("ExportsInterop", "Interop");
-                interop_class_name = format!("Exports.{}", interop_class_name);
+                interop_class_name = format!("Exports.{interop_class_name}");
             }
 
             // TODO: The task return function can take up to 16 core parameters.
