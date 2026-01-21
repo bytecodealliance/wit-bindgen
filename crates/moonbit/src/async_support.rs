@@ -308,10 +308,10 @@ fn wasmLift{camel_name}{index}DropReadable(_ : Int) = "[export]{module}" "[futur
         uwriteln!(
             lower,
             r#"
-fn wasmLower{camel_name}{index}New -> UInt64 = "{module}" "[future-new-{index}]{func_name}"
-fn wasmLower{camel_name}{index}Write(handle : Int, ptr : Int) -> Int = "{module}" "[future-write-{index}]{func_name}"
-fn wasmLower{camel_name}{index}CancelWrite(_ : Int) -> Int = "{module}" "[future-cancel-write-{index}]{func_name}"
-fn wasmLower{camel_name}{index}DropWritable(_ : Int) = "{module}" "[future-drop-writable-{index}]{func_name}"
+fn wasmLower{camel_name}{index}New() -> UInt64 = "[export]{module}" "[future-new-{index}]{func_name}"
+fn wasmLower{camel_name}{index}Write(handle : Int, ptr : Int) -> Int = "[export]{module}" "[future-write-{index}]{func_name}"
+fn wasmLower{camel_name}{index}CancelWrite(_ : Int) -> Int = "[export]{module}" "[future-cancel-write-{index}]{func_name}"
+fn wasmLower{camel_name}{index}DropWritable(_ : Int) = "[export]{module}" "[future-drop-writable-{index}]{func_name}"
     "#
         );
 
@@ -398,9 +398,9 @@ fn wasmLift{camel_name}{index}(future_handle : Int) -> {lifted} {{
             r#"
 fn wasmLower{camel_name}{index}(out_future : {lowered}) -> Int {{
   let handles = wasmLower{camel_name}{index}New()
-  let readable = (handles & 0xFFFFFFFF).reinterpret_as_int()
-  let writable = (handles >> 32).reinterpret_as_int()
-  {async_qualifier}spawn(async fn() {{
+  let readable = (handles & 0xFFFFFFFF).to_int()
+  let writable = (handles >> 32).to_int()
+  let _ = {async_qualifier}spawn(async fn() {{
     defer wasmLower{camel_name}{index}DropWritable(writable)"#
         );
 
@@ -483,10 +483,10 @@ fn wasmLift{camel_name}{index}DropReadable(_ : Int) = "{module}" "[stream-drop-r
         uwriteln!(
             lower,
             r#"
-fn wasmLower{camel_name}{index}New -> UInt64 = "{module}" "[stream-new-{index}]{func_name}"
-fn wasmLower{camel_name}{index}Write(handle : Int, ptr : Int, len : Int) -> Int = "{module}" "[stream-write-{index}]{func_name}"
-fn wasmLower{camel_name}{index}CancelWrite(_ : Int) -> Int = "{module}" "[stream-cancel-write-{index}]{func_name}"
-fn wasmLower{camel_name}{index}DropWritable(_ : Int) = "{module}" "[stream-drop-writable-{index}]{func_name}"
+fn wasmLower{camel_name}{index}New() -> UInt64 = "[export]{module}" "[stream-new-{index}]{func_name}"
+fn wasmLower{camel_name}{index}Write(handle : Int, ptr : Int, len : Int) -> Int = "[export]{module}" "[stream-write-{index}]{func_name}"
+fn wasmLower{camel_name}{index}CancelWrite(_ : Int) -> Int = "[export]{module}" "[stream-cancel-write-{index}]{func_name}"
+fn wasmLower{camel_name}{index}DropWritable(_ : Int) = "[export]{module}" "[stream-drop-writable-{index}]{func_name}"
     "#
         );
 
@@ -603,8 +603,8 @@ fn wasmLift{camel_name}{index}(stream_handle : Int) -> {lifted} {{
             r#"
 fn wasmLower{camel_name}{index}(out_stream : {lowered}) -> Int {{
   let handles = wasmLower{camel_name}{index}New()
-  let readable = (handles & 0xFFFFFFFF).reinterpret_as_int()
-  let writable = (handles >> 32).reinterpret_as_int()
+  let readable = (handles & 0xFFFFFFFF).to_int()
+  let writable = (handles >> 32).to_int()
   let stream_w = {async_qualifier}StreamW::{{
     write: fn (data : ArrayView[_]) {{
       if data.length() == 0 {{
