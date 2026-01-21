@@ -5,7 +5,7 @@ use std::{
 
 use heck::ToUpperCamelCase;
 use wit_bindgen_core::{
-    Files, Source,
+    Direction, Files, Source,
     abi::{self, WasmSignature, deallocate_lists_in_types, lift_from_memory},
     dealias, uwriteln,
     wit_parser::{Function, LiftLowerAbi, ManglingAndAbi, Type, TypeDefKind, TypeId, WasmImport},
@@ -120,7 +120,7 @@ impl<'a> InterfaceGenerator<'a> {
             .map(|(name, _)| name.to_moonbit_ident())
             .collect::<Vec<_>>();
         let param_types = func.params.iter().map(|(_, ty)| *ty).collect::<Vec<_>>();
-        let mut bindgen = FunctionBindgen::new(self, param_names.into_boxed_slice());
+        let mut bindgen = FunctionBindgen::new(self, param_names.into_boxed_slice(), Direction::Import);
         let mut lowered_params = Vec::new();
 
         let params_ptr = if wasm_sig.indirect_params {
@@ -363,7 +363,7 @@ fn wasmLift{camel_name}{index}(future_handle : Int) -> {lifted} {{
         let operand = if let TypeDefKind::Future(Some(ty)) = self.resolve.types[ty].kind {
             // TODO : solve ownership
             let resolve = self.resolve.clone();
-            let mut bindgen = FunctionBindgen::new(self, Box::new([]));
+            let mut bindgen = FunctionBindgen::new(self, Box::new([]), Direction::Import);
             let operand = lift_from_memory(&resolve, &mut bindgen, "ptr".to_string(), &ty);
             uwriteln!(lift, "{}", bindgen.src);
             operand
@@ -406,7 +406,7 @@ fn wasmLower{camel_name}{index}(out_future : {lowered}) -> Int {{
 
         if let Some(inner_ty) = inner_type {
             let resolve = self.resolve.clone();
-            let mut bindgen = FunctionBindgen::new(self, Box::new([]));
+            let mut bindgen = FunctionBindgen::new(self, Box::new([]), Direction::Export);
             bindgen.use_ffi(ffi::MALLOC);
             bindgen.use_ffi(ffi::FREE);
             uwriteln!(
@@ -528,7 +528,7 @@ fn wasmLift{camel_name}{index}(stream_handle : Int) -> {lifted} {{
 
         if let Some(inner_ty) = inner_type {
             let resolve = self.resolve.clone();
-            let mut lift_bindgen = FunctionBindgen::new(self, Box::new([]));
+            let mut lift_bindgen = FunctionBindgen::new(self, Box::new([]), Direction::Import);
             lift_bindgen.use_ffi(ffi::MALLOC);
             lift_bindgen.use_ffi(ffi::FREE);
 
@@ -614,7 +614,11 @@ fn wasmLower{camel_name}{index}(out_stream : {lowered}) -> Int {{
 
         if let Some(inner_ty) = inner_type {
             let resolve = self.resolve.clone();
-            let mut lower_bindgen = FunctionBindgen::new(self, Box::new([]));
+            let elem_type = self
+                .world_gen
+                .pkg_resolver
+                .type_name(self.name, &inner_ty);
+            let mut lower_bindgen = FunctionBindgen::new(self, Box::new([]), Direction::Export);
             lower_bindgen.use_ffi(ffi::MALLOC);
             lower_bindgen.use_ffi(ffi::FREE);
 
@@ -624,7 +628,7 @@ fn wasmLower{camel_name}{index}(out_stream : {lowered}) -> Int {{
       let ptr = mbt_ffi_malloc(data.length() * {elem_size})
       for i = 0; i < data.length(); i = i + 1 {{
         let elem_ptr = ptr + i * {elem_size}
-        let elem = data[i]"#
+        let elem : {elem_type} = data[i]"#
             );
 
             abi::lower_to_memory(
