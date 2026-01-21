@@ -1023,6 +1023,18 @@ impl InterfaceGenerator<'_> {
         async_: bool,
         direction: Direction,
     ) -> String {
+        // Compute result type first (needed for taskgroup parameter type)
+        let result_type = match &sig.result_type {
+            None => "Unit".into(),
+            Some(ty) => match direction {
+                Direction::Export => self
+                    .world_gen
+                    .pkg_resolver
+                    .type_name_for_lowering(self.name, ty),
+                Direction::Import => self.world_gen.pkg_resolver.type_name(self.name, ty),
+            },
+        };
+
         let mut params = sig
             .params
             .iter()
@@ -1032,21 +1044,12 @@ impl InterfaceGenerator<'_> {
             })
             .collect::<Vec<_>>();
 
-        // For async exports, add taskgroup parameter
+        // For async exports, add taskgroup parameter with result type
         if async_ && matches!(direction, Direction::Export) {
-            params.push("task_group : @async.TaskGroup[Unit]".to_string());
+            params.push(format!("task_group : @async.TaskGroup[{result_type}]"));
         }
 
         let params = params.join(", ");
-        let result_type = match &sig.result_type {
-            None => "Unit".into(),
-            Some(ty) => match direction {
-                Direction::Export => {
-                    self.world_gen.pkg_resolver.type_name_for_lowering(self.name, ty)
-                }
-                Direction::Import => self.world_gen.pkg_resolver.type_name(self.name, ty),
-            },
-        };
         format!(
             "pub {}fn {}({params}) -> {}",
             if async_ { "async " } else { "" },
