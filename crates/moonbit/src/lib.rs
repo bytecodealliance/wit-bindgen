@@ -692,6 +692,7 @@ impl InterfaceGenerator<'_> {
                 .map(|Param { name, .. }| name.to_moonbit_ident())
                 .collect(),
             Direction::Import,
+            false, // sync import
         );
 
         abi::call(
@@ -769,6 +770,7 @@ impl InterfaceGenerator<'_> {
             self,
             (0..sig.params.len()).map(|i| format!("p{i}")).collect(),
             Direction::Export,
+            async_,
         );
 
         abi::call(
@@ -961,6 +963,7 @@ impl InterfaceGenerator<'_> {
                 self,
                 (0..sig.results.len()).map(|i| format!("p{i}")).collect(),
                 Direction::Export,
+                false, // post-return is not async
             );
 
             abi::post_return(bindgen.interface_gen.resolve, func, &mut bindgen);
@@ -1020,7 +1023,7 @@ impl InterfaceGenerator<'_> {
         async_: bool,
         direction: Direction,
     ) -> String {
-        let params = sig
+        let mut params = sig
             .params
             .iter()
             .map(|(name, ty)| {
@@ -1028,6 +1031,11 @@ impl InterfaceGenerator<'_> {
                 format!("{name} : {ty}")
             })
             .collect::<Vec<_>>();
+
+        // For async exports, add taskgroup parameter
+        if async_ && matches!(direction, Direction::Export) {
+            params.push("task_group : @async.TaskGroup[Unit]".to_string());
+        }
 
         let params = params.join(", ");
         let result_type = match &sig.result_type {
@@ -1521,6 +1529,7 @@ struct FunctionBindgen<'a, 'b> {
     cleanup: Vec<Cleanup>,
     needs_cleanup_list: bool,
     direction: Direction,
+    async_: bool,
 }
 
 impl<'a, 'b> FunctionBindgen<'a, 'b> {
@@ -1528,6 +1537,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         r#gen: &'b mut InterfaceGenerator<'a>,
         params: Box<[String]>,
         direction: Direction,
+        async_: bool,
     ) -> FunctionBindgen<'a, 'b> {
         let mut locals = Ns::default();
         params.iter().for_each(|str| {
@@ -1544,6 +1554,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             cleanup: Vec::new(),
             needs_cleanup_list: false,
             direction,
+            async_,
         }
     }
 
@@ -2415,12 +2426,27 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     }
                 };
 
-                uwrite!(
-                    self.src,
-                    "
-                    {assignment}{name}({args});
-                    ",
-                );
+                // For async exports, wrap with with_task_group
+                if self.async_ && matches!(self.direction, Direction::Export) {
+                    let args_with_tg = if args.is_empty() {
+                        "task_group".to_string()
+                    } else {
+                        format!("{args}, task_group")
+                    };
+                    uwrite!(
+                        self.src,
+                        "
+                        {assignment}@async.with_task_group(fn(task_group) {{ {name}({args_with_tg}) }});
+                        ",
+                    );
+                } else {
+                    uwrite!(
+                        self.src,
+                        "
+                        {assignment}{name}({args});
+                        ",
+                    );
+                }
             }
 
             Instruction::Return { amt, .. } => {
