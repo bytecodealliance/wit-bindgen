@@ -1154,16 +1154,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     {{
                         if (t.IsFaulted)
                         {{
-                            System.Console.WriteLine("Async function {name} IsFaulted.  This scenario is not yet implemented.");
-                            return;
+                            throw new NotImplementedException("Async function {name} IsFaulted.  This scenario is not yet implemented.");
                         }}
 
-                        System.Console.WriteLine("Async function {name} task completed, calling task-return.");
                         {name}TaskReturn({ret_param});
                     }});
                     
                     AsyncSupport.ContextTask* contextTaskPtr = (AsyncSupport.ContextTask*)System.Runtime.InteropServices.Marshal.AllocHGlobal(sizeof(AsyncSupport.ContextTask));
-                    System.Console.WriteLine("{name} setting context");
                     AsyncSupport.ContextSet(contextTaskPtr);
 
                     // This TaskCompletionSource does nothing, but the callback code expects one.
@@ -1171,7 +1168,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     AsyncSupport.PendingCallbacks.TryAdd((IntPtr)contextTaskPtr, tcs);
 
                     // TODO: Defer dropping borrowed resources until a result is returned.
-                    System.Console.WriteLine("Async function {name} did not complete successfully immediately. Returning Yield.");
                     return (uint)CallbackCode.Yield;
                     "#);
                 }

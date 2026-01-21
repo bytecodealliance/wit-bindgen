@@ -613,12 +613,6 @@ impl InterfaceGenerator<'_> {
             } else {
                 None
             };
-            // let assignment = format!("uint {async_status_var} = ");
-            // let operands = match async_return_buffer {
-            //     Some(ref buffer) if operands.is_empty() => buffer.clone(),
-            //     Some(ref buffer) => format!("{}, {}", operands.join(", "), buffer),
-            //     None => operands.join(", "),
-            // };
 
             let csharp_param_names = func
                 .params
@@ -849,7 +843,6 @@ var {async_status_var} = {raw_name}({wasm_params});
             {{
                 AsyncSupport.Event e = new AsyncSupport.Event(eventRaw, waitable, code);
                 var context = AsyncSupport.ContextGet();
-                System.Console.WriteLine("PendingImportCallback context retrieved.");
                 AsyncSupport.ContextSet(null);
 
             "#
@@ -868,7 +861,6 @@ var {async_status_var} = {raw_name}({wasm_params});
                 uwriteln!(
                     self.csharp_interop_src,
                     r#"
-                    System.Console.WriteLine("{camel_name}Callback returning");
                     return (uint)AsyncSupport.Callback(e, context, () => {camel_name}TaskReturn());
                 }}
                 "#
