@@ -159,7 +159,7 @@ fn replace_bindings_go_mod(runner: &Runner, bindings_dir: &Path) -> Result<()> {
     super::write_if_different(
         &bindings_dir.join("go.mod"),
         format!(
-            "module wit_component\n\ngo 1.25\n\nreplace github.com/bytecodealliance/wit-bindgen => {}",
+            "module wit_component\n\ngo 1.25\n\nreplace go.bytecodealliance.org/wit-bindgen => {}",
             go_package_path.display()
         ),
     )?;

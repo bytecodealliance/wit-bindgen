@@ -3,7 +3,7 @@ package export_test_records_to_test
 import (
 	. "wit_component/test_records_to_test"
 
-	"github.com/bytecodealliance/wit-bindgen/wit_types"
+	"go.bytecodealliance.org/wit-bindgen/wit_types"
 )
 
 func MultipleResults() (uint8, uint16) {

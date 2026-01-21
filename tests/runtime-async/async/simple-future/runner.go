@@ -5,7 +5,7 @@ package export_wit_world
 import (
 	test "wit_component/my_test_i"
 
-	"github.com/bytecodealliance/wit-bindgen/wit_types"
+	"go.bytecodealliance.org/wit-bindgen/wit_types"
 )
 
 func Run() {

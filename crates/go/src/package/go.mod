@@ -1,3 +1,3 @@
-module github.com/bytecodealliance/wit-bindgen
+module go.bytecodealliance.org/wit-bindgen
 
 go 1.25.5
