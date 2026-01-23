@@ -7,12 +7,12 @@ pub async fn one_argument(x : UInt, task_group : @async.TaskGroup[Unit]) -> Unit
 }
 
 ///|
-pub async fn one_result(task_group : @async.TaskGroup[UInt]) -> UInt {
+pub async fn one_result(task_group : @async.TaskGroup[Unit]) -> UInt {
   2
 }
 
 ///|
-pub async fn one_argument_and_result(x : UInt, task_group : @async.TaskGroup[UInt]) -> UInt {
+pub async fn one_argument_and_result(x : UInt, task_group : @async.TaskGroup[Unit]) -> UInt {
   assert_eq(x, 3)
   4
 }
@@ -24,7 +24,7 @@ pub async fn two_arguments(x : UInt, y : UInt, task_group : @async.TaskGroup[Uni
 }
 
 ///|
-pub async fn two_arguments_and_result(x : UInt, y : UInt, task_group : @async.TaskGroup[UInt]) -> UInt {
+pub async fn two_arguments_and_result(x : UInt, y : UInt, task_group : @async.TaskGroup[Unit]) -> UInt {
   assert_eq(x, 7)
   assert_eq(y, 8)
   9

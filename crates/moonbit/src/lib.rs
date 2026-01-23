@@ -825,10 +825,12 @@ impl InterfaceGenerator<'_> {
                 r#"
             #doc(hidden)
             pub fn {func_name}({params}) -> {result_type} {{
-                {async_pkg}with_waitableset(() => {async_pkg}with_task_group(task_group => task_group.spawn_bg(() => {{
-                    {cleanup_list}
-                    {src}
-            }})))
+                {async_pkg}with_waitableset(fn() {{
+                    {async_pkg}with_task_group(fn(task_group) {{
+                        {cleanup_list}
+                        {src}
+                    }})
+                }})
             }}
             "#,
             );
@@ -1044,9 +1046,9 @@ impl InterfaceGenerator<'_> {
             })
             .collect::<Vec<_>>();
 
-        // For async exports, add taskgroup parameter with result type
+        // For async exports, add taskgroup parameter (always Unit type)
         if async_ && matches!(direction, Direction::Export) {
-            params.push(format!("task_group : @async.TaskGroup[{result_type}]"));
+            params.push("task_group : @async.TaskGroup[Unit]".to_string());
         }
 
         let params = params.join(", ");
@@ -2429,7 +2431,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     }
                 };
 
-                // For async exports, wrap with with_task_group
+                // For async exports, pass the task_group that was already created
                 if self.async_ && matches!(self.direction, Direction::Export) {
                     let args_with_tg = if args.is_empty() {
                         "task_group".to_string()
@@ -2439,7 +2441,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     uwrite!(
                         self.src,
                         "
-                        {assignment}@async.with_task_group(fn(task_group) {{ {name}({args_with_tg}) }});
+                        {assignment}{name}({args_with_tg});
                         ",
                     );
                 } else {

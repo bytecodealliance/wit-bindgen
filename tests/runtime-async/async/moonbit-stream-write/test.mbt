@@ -2,7 +2,7 @@
 //@ path = 'gen/interface/my/test_/i/stub.mbt'
 
 ///|
-pub async fn create_stream_with_values(count : UInt, task_group : @async.TaskGroup[@async.OutStream[UInt]]) -> @async.OutStream[UInt] {
+pub async fn create_stream_with_values(count : UInt, task_group : @async.TaskGroup[Unit]) -> @async.OutStream[UInt] {
   let out : @async.OutStream[UInt] = { stream: None, coroutine: None }
   // The stream writing will happen when get_stream is called
   // Spawn a background task to write values using the task group
@@ -18,7 +18,7 @@ pub async fn create_stream_with_values(count : UInt, task_group : @async.TaskGro
 }
 
 ///|
-pub async fn create_unit_stream(count : UInt, task_group : @async.TaskGroup[@async.OutStream[Unit]]) -> @async.OutStream[Unit] {
+pub async fn create_unit_stream(count : UInt, task_group : @async.TaskGroup[Unit]) -> @async.OutStream[Unit] {
   let out : @async.OutStream[Unit] = { stream: None, coroutine: None }
   task_group.spawn_bg(async fn() {
     let stream = out.get_stream()
