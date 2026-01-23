@@ -5,7 +5,7 @@ import (
 	"slices"
 	test "wit_component/test_flavorful_to_test"
 
-	. "github.com/bytecodealliance/wit-bindgen/wit_types"
+	. "go.bytecodealliance.org/wit-bindgen/wit_types"
 )
 
 func Run() {

@@ -35,7 +35,7 @@ const PINNER: &str = "pinner";
 
 /// Adds the wit-bindgen GitHub repository prefix to a package name.
 fn remote_pkg(name: &str) -> String {
-    format!(r#""github.com/bytecodealliance/wit-bindgen/{name}""#)
+    format!(r#""go.bytecodealliance.org/wit-bindgen/{name}""#)
 }
 
 #[derive(Default, Debug, Copy, Clone)]
@@ -848,18 +848,11 @@ impl WorldGenerator for Go {
             // If a module name is specified, the generated files will be used as a library.
             ("wit_exports/wit_exports.go", "wit_exports", "")
         } else {
-            // This is the literal location of the Go package.
-            let replacement_pkg = concat!(
-                "github.com/bytecodealliance/wit-bindgen/crates/go/src/package v",
-                env!("CARGO_PKG_VERSION")
-            );
-
             files.push(
                 "go.mod",
                 format!(
-                    "module {}\n\ngo 1.25\n\nreplace github.com/bytecodealliance/wit-bindgen => {}",
-                    self.opts.pkg_name.as_deref().unwrap_or("wit_component"),
-                    replacement_pkg
+                    "module {}\n\ngo 1.25",
+                    self.opts.pkg_name.as_deref().unwrap_or("wit_component")
                 )
                 .as_bytes(),
             );

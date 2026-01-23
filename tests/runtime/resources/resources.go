@@ -5,7 +5,7 @@ import (
 	"runtime"
 	"wit_component/imports"
 
-	. "github.com/bytecodealliance/wit-bindgen/wit_types"
+	. "go.bytecodealliance.org/wit-bindgen/wit_types"
 )
 
 func Add(a *Z, b *Z) *Z {
