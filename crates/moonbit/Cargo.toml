@@ -11,6 +11,7 @@ description = """
 MoonBit bindings generator for WIT and the component model, typically used
 through the `wit-bindgen-cli` crate.
 """
+readme = "README.md"
 
 [lints]
 workspace = true
