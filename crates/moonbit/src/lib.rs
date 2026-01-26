@@ -13,11 +13,10 @@ use wit_bindgen_core::{
     abi::{self, AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType},
     uwrite, uwriteln,
     wit_parser::{
-        Alignment, ArchitectureSize, Docs, Enum, Flags, FlagsRepr, Function, Int, InterfaceId,
-        LiftLowerAbi, Mangling, ManglingAndAbi, Param, Record, Resolve, ResourceIntrinsic,
-        Result_,
-        SizeAlign, Tuple, Type, TypeId, Variant, WasmExport, WasmExportKind, WasmImport, WorldId,
-        WorldKey,
+        Alignment, ArchitectureSize, Docs, Enum, Flags, FlagsRepr, Function, Handle, Int,
+        InterfaceId, LiftLowerAbi, Mangling, ManglingAndAbi, Param, Record, Resolve,
+        ResourceIntrinsic, Result_, SizeAlign, Tuple, Type, TypeDefKind, TypeId, Variant,
+        WasmExport, WasmExportKind, WasmImport, WorldId, WorldKey,
     },
 };
 
@@ -1497,15 +1496,15 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     }
 
     fn type_future(&mut self, _id: TypeId, _name: &str, _ty: &Option<Type>, _docs: &Docs) {
-        unimplemented!() // Not needed
+        // Not needed. They will become `FutureR[T]` in MoonBit.
     }
 
     fn type_stream(&mut self, _id: TypeId, _name: &str, _ty: &Option<Type>, _docs: &Docs) {
-        unimplemented!() // Not needed
+        // Not needed. They will become `StreamR[T]` in MoonBit.
     }
 
     fn type_builtin(&mut self, _id: TypeId, _name: &str, _ty: &Type, _docs: &Docs) {
-        unimplemented!();
+        // Not needed.
     }
 }
 
@@ -2382,6 +2381,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::CallWasm { sig, name } => {
                 let assignment = match &sig.results[..] {
+                    [] => String::new(),
                     [result] => {
                         let ty = wasm_type(*result);
                         let result = self.locals.tmp("result");
@@ -2389,9 +2389,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         results.push(result);
                         assignment
                     }
-
-                    [] => String::new(),
-
                     _ => unreachable!(),
                 };
 
@@ -2755,35 +2752,59 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.push(format!("{lifted_func_name}({op})"));
                 uwriteln!(self.interface_gen.ffi, "{}", lift);
             }
-            Instruction::ErrorContextLower { .. }
-            | Instruction::ErrorContextLift { .. }
-            | Instruction::DropHandle { .. } => todo!(),
+            Instruction::ErrorContextLower { .. } | Instruction::ErrorContextLift { .. } => todo!(),
+
+            Instruction::DropHandle { ty } => {
+                let op = &operands[0];
+                match ty {
+                    Type::Id(id) => match &self.interface_gen.resolve.types[*id].kind {
+                        TypeDefKind::Handle(Handle::Own(_)) => {
+                            let constructor = self
+                                .interface_gen
+                                .world_gen
+                                .pkg_resolver
+                                .type_constructor(self.interface_gen.name, ty);
+                            uwriteln!(self.src, "let _ = {constructor}::drop({op});");
+                        }
+                        TypeDefKind::Future(_) | TypeDefKind::Stream(_) => {
+                            uwriteln!(self.src, "let _ = {op};");
+                        }
+                        _ => unreachable!(),
+                    },
+                    _ => unreachable!(),
+                }
+            }
             Instruction::FixedLengthListLift {
-                element: _,
+                element,
                 size,
                 id: _,
             } => {
-                let array = self.locals.tmp("array");
-                let mut elements = String::new();
-                for a in operands.drain(0..(*size as usize)) {
-                    elements.push_str(&a);
-                    elements.push_str(", ");
+                let mut lifted = Vec::with_capacity(*size as usize);
+                for operand in operands.drain(0..(*size as usize)) {
+                    lifted.push(operand);
                 }
-                uwriteln!(self.src, "let {array} : FixedArray[_] = [{elements}]");
-                results.push(array);
+                if lifted.is_empty() {
+                    let ty = self.resolve_type_name(element);
+                    results.push(format!("([] : FixedArray[{ty}])"));
+                } else {
+                    results.push(format!("[{}]", lifted.join(", ")));
+                }
             }
+
             Instruction::FixedLengthListLower {
                 element: _,
                 size,
                 id: _,
             } => {
+                let op = &operands[0];
                 for i in 0..(*size as usize) {
-                    results.push(format!("({})[{i}]", operands[0]));
+                    results.push(format!("({op})[{i}]"));
                 }
             }
+
             Instruction::FixedLengthListLowerToMemory {
                 element,
-                size: _,
+                size,
                 id: _,
             } => {
                 let Block {
@@ -2792,25 +2813,33 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 } = self.blocks.pop().unwrap();
                 assert!(block_results.is_empty());
 
-                let vec = operands[0].clone();
-                let target = operands[1].clone();
-                let size = self.r#gen.r#gen.sizes.size(element).size_wasm32();
-                let index = self.locals.tmp("index");
+                let op = &operands[0];
+                let target = &operands[1];
+                let ty = self.resolve_type_name(element);
+                let elem_size = self
+                    .interface_gen
+                    .world_gen
+                    .sizes
+                    .size(element)
+                    .size_wasm32();
 
-                uwrite!(
-                    self.src,
-                    "
-                    for {index} = 0; {index} < ({vec}).length(); {index} = {index} + 1 {{
-                        let iter_elem = ({vec})[{index}]
-                        let iter_base = ({target}) + ({index} * {size})
-                        {body}
-                    }}
-                    ",
-                );
+                for i in 0..(*size as usize) {
+                    uwrite!(
+                        self.src,
+                        "
+                        {{
+                            let iter_elem : {ty} = ({op})[{i}]
+                            let iter_base = ({target}) + ({i} * {elem_size})
+                            {body}
+                        }}
+                        ",
+                    );
+                }
             }
+
             Instruction::FixedLengthListLiftFromMemory {
                 element,
-                size: fll_size,
+                size,
                 id: _,
             } => {
                 let Block {
@@ -2818,33 +2847,40 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     results: block_results,
                 } = self.blocks.pop().unwrap();
                 let address = &operands[0];
-                let array = self.locals.tmp("array");
-                let ty = self
-                    .r#gen
-                    .r#gen
-                    .pkg_resolver
-                    .type_name(self.r#gen.name, element);
-                let elem_size = self.r#gen.r#gen.sizes.size(element).size_wasm32();
-                let index = self.locals.tmp("index");
+                let ty = self.resolve_type_name(element);
+                let elem_size = self
+                    .interface_gen
+                    .world_gen
+                    .sizes
+                    .size(element)
+                    .size_wasm32();
 
-                let result = match &block_results[..] {
+                let element_result = match &block_results[..] {
                     [result] => result,
                     _ => todo!("result count == {}", block_results.len()),
                 };
 
-                uwrite!(
-                    self.src,
-                    "
-                    let {array} : Array[{ty}] = []
-                    for {index} = 0; {index} < {fll_size}; {index} = {index} + 1 {{
-                        let iter_base = ({address}) + ({index} * {elem_size})
-                        {body}
-                        {array}.push({result})
-                    }}
-                    ",
-                );
+                let mut lifted = Vec::with_capacity(*size as usize);
+                for i in 0..(*size as usize) {
+                    let value = self.locals.tmp("fixed_elem");
+                    uwrite!(
+                        self.src,
+                        "
+                        let {value} : {ty} = {{
+                            let iter_base = ({address}) + ({i} * {elem_size})
+                            {body}
+                            {element_result}
+                        }}
+                        ",
+                    );
+                    lifted.push(value);
+                }
 
-                results.push(format!("FixedArray::from_array({array}[:])"));
+                if lifted.is_empty() {
+                    results.push(format!("([] : FixedArray[{ty}])"));
+                } else {
+                    results.push(format!("[{}]", lifted.join(", ")));
+                }
             }
         }
     }
