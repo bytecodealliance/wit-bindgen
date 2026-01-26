@@ -94,13 +94,11 @@ impl LanguageMethods for MoonBit {
 
     fn should_fail_verify(
         &self,
-        name: &str,
+        _name: &str,
         config: &crate::config::WitConfig,
         _args: &[String],
     ) -> bool {
-        // async-resource-func actually works, but most other async tests
-        // fail during codegen or verification
-        config.async_ && name != "async-resource-func.wit"
+        config.error_context
     }
 
     fn verify(&self, runner: &Runner, verify: &crate::Verify) -> anyhow::Result<()> {
