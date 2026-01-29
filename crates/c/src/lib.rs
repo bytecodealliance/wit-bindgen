@@ -728,11 +728,13 @@ void {snake}_context_set_1(void* value);
 uint32_t {snake}_thread_yield_cancellable(void);
 uint32_t {snake}_thread_index(void);
 uint32_t {snake}_thread_new_indirect(void (*start_function)(void*), void* arg);
-void {snake}_thread_switch_to(uint32_t thread);
-uint32_t {snake}_thread_switch_to_cancellable(uint32_t thread);
-void {snake}_thread_resume_later(uint32_t thread);
-void {snake}_thread_yield_to(uint32_t thread);
-uint32_t {snake}_thread_yield_to_cancellable(uint32_t thread);
+void {snake}_thread_suspend_to(uint32_t thread);
+uint32_t {snake}_thread_suspend_to_cancellable(uint32_t thread);
+void {snake}_thread_suspend_to_suspended(uint32_t thread);
+uint32_t {snake}_thread_suspend_to_suspended_cancellable(uint32_t thread);
+void {snake}_thread_unsuspend(uint32_t thread);
+void {snake}_thread_yield_to_suspended(uint32_t thread);
+uint32_t {snake}_thread_yield_to_suspended_cancellable(uint32_t thread);
 void {snake}_thread_suspend(void);
 uint32_t {snake}_thread_suspend_cancellable(void);
             "
@@ -776,39 +778,53 @@ uint32_t {snake}_thread_new_indirect(void (*start_function)(void*), void* arg) {
 );
 }}
 
-__attribute__((__import_module__("$root"), __import_name__("[thread-switch-to]")))
-extern uint32_t __thread_switch_to(uint32_t);
+__attribute__((__import_module__("$root"), __import_name__("[thread-suspend-to-suspended]")))
+extern uint32_t __thread_suspend_to_suspended(uint32_t);
 
-void {snake}_thread_switch_to(uint32_t thread) {{
-    __thread_switch_to(thread);
+void {snake}_thread_suspend_to_suspended(uint32_t thread) {{
+    __thread_suspend_to_suspended(thread);
 }}
 
-__attribute__((__import_module__("$root"), __import_name__("[cancellable][thread-switch-to]")))
-extern uint32_t __thread_switch_to_cancellable(uint32_t);
+__attribute__((__import_module__("$root"), __import_name__("[cancellable][thread-suspend-to-suspended]")))
+extern uint32_t __thread_suspend_to_suspended_cancellable(uint32_t);
 
-uint32_t {snake}_thread_switch_to_cancellable(uint32_t thread) {{
-    return __thread_switch_to_cancellable(thread);
+uint32_t {snake}_thread_suspend_to_suspended_cancellable(uint32_t thread) {{
+    return __thread_suspend_to_suspended_cancellable(thread);
 }}
 
-__attribute__((__import_module__("$root"), __import_name__("[thread-resume-later]")))
-extern void __thread_resume_later(uint32_t);
+__attribute__((__import_module__("$root"), __import_name__("[thread-suspend-to]")))
+extern uint32_t __thread_suspend_to(uint32_t);
 
-void {snake}_thread_resume_later(uint32_t thread) {{
-    __thread_resume_later(thread);
+void {snake}_thread_suspend_to(uint32_t thread) {{
+    __thread_suspend_to(thread);
 }}
 
-__attribute__((__import_module__("$root"), __import_name__("[thread-yield-to]")))
-extern uint32_t __thread_yield_to(uint32_t);
+__attribute__((__import_module__("$root"), __import_name__("[cancellable][thread-suspend-to]")))
+extern uint32_t __thread_suspend_to_cancellable(uint32_t);
 
-void {snake}_thread_yield_to(uint32_t thread) {{
-    __thread_yield_to(thread);
+uint32_t {snake}_thread_suspend_to_cancellable(uint32_t thread) {{
+    return __thread_suspend_to_cancellable(thread);
 }}
 
-__attribute__((__import_module__("$root"), __import_name__("[cancellable][thread-yield-to]")))
-extern uint32_t __thread_yield_to_cancellable(uint32_t);
+__attribute__((__import_module__("$root"), __import_name__("[thread-unsuspend]")))
+extern void __thread_unsuspend(uint32_t);
 
-uint32_t {snake}_thread_yield_to_cancellable(uint32_t thread) {{
-    return __thread_yield_to_cancellable(thread);
+void {snake}_thread_unsuspend(uint32_t thread) {{
+    __thread_unsuspend(thread);
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[thread-yield-to-suspended]")))
+extern uint32_t __thread_yield_to_suspended(uint32_t);
+
+void {snake}_thread_yield_to_suspended(uint32_t thread) {{
+    __thread_yield_to_suspended(thread);
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[cancellable][thread-yield-to-suspended]")))
+extern uint32_t __thread_yield_to_suspended_cancellable(uint32_t);
+
+uint32_t {snake}_thread_yield_to_suspended_cancellable(uint32_t thread) {{
+    return __thread_yield_to_suspended_cancellable(thread);
 }}
 
 __attribute__((__import_module__("$root"), __import_name__("[thread-suspend]")))
@@ -1066,7 +1082,7 @@ fn is_prim_type_id(resolve: &Resolve, id: TypeId) -> bool {
         | TypeDefKind::Future(_)
         | TypeDefKind::Stream(_)
         | TypeDefKind::Unknown => false,
-        TypeDefKind::FixedSizeList(..) => todo!(),
+        TypeDefKind::FixedLengthList(..) => todo!(),
         TypeDefKind::Map(..) => todo!(),
     }
 }
@@ -1152,7 +1168,7 @@ pub fn push_ty_name(resolve: &Resolve, ty: &Type, src: &mut String) {
                     push_ty_name(resolve, &Type::Id(*resource), src);
                 }
                 TypeDefKind::Unknown => unreachable!(),
-                TypeDefKind::FixedSizeList(..) => todo!(),
+                TypeDefKind::FixedLengthList(..) => todo!(),
                 TypeDefKind::Map(..) => todo!(),
             }
         }
@@ -1366,7 +1382,7 @@ impl Return {
 
             TypeDefKind::Resource => todo!("return_single for resource"),
             TypeDefKind::Unknown => unreachable!(),
-            TypeDefKind::FixedSizeList(..) => todo!(),
+            TypeDefKind::FixedLengthList(..) => todo!(),
             TypeDefKind::Map(..) => todo!(),
         }
 
@@ -2012,7 +2028,7 @@ impl InterfaceGenerator<'_> {
                 self.free(&Type::Id(*id), "*ptr");
             }
             TypeDefKind::Unknown => unreachable!(),
-            TypeDefKind::FixedSizeList(..) => todo!(),
+            TypeDefKind::FixedLengthList(..) => todo!(),
             TypeDefKind::Map(..) => todo!(),
         }
         if c_helpers_body_start == self.src.c_helpers.len() {
@@ -2706,7 +2722,7 @@ void {name}_return({return_ty}) {{
                 TypeDefKind::Type(ty) => self.contains_droppable_borrow(ty),
 
                 TypeDefKind::Unknown => false,
-                TypeDefKind::FixedSizeList(..) => todo!(),
+                TypeDefKind::FixedLengthList(..) => todo!(),
                 TypeDefKind::Map(..) => todo!(),
             }
         } else {
@@ -4076,7 +4092,7 @@ pub fn is_arg_by_pointer(resolve: &Resolve, ty: &Type) -> bool {
             TypeDefKind::Stream(_) => false,
             TypeDefKind::Resource => todo!("is_arg_by_pointer for resource"),
             TypeDefKind::Unknown => unreachable!(),
-            TypeDefKind::FixedSizeList(..) => todo!(),
+            TypeDefKind::FixedLengthList(..) => todo!(),
             TypeDefKind::Map(..) => todo!(),
         },
         Type::String => true,
