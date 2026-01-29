@@ -226,6 +226,26 @@ public static class FutureHelpers
         return (new FutureReader<T>(readerHandle, vtable), new FutureWriter<T>(writerHandle, vtable));
     }
 
+    /// Helper function to create a new read/write pair for a component model
+    /// stream.
+    public static (StreamReader, StreamWriter) RawStreamNew(FutureVTable vtable)
+    {
+        var packed = vtable.New();
+        var readerHandle = (int)(packed & 0xFFFFFFFF);
+        var writerHandle = (int)(packed >> 32);
+
+        return (new StreamReader(readerHandle, vtable), new StreamWriter(writerHandle, vtable));
+    }
+
+    public static (StreamReader<T>, StreamWriter<T>) RawStreamNew<T>(FutureVTable vtable)
+    {
+        var packed = vtable.New();
+        var readerHandle = (int)(packed & 0xFFFFFFFF);
+        var writerHandle = (int)(packed >> 32);
+
+        return (new StreamReader<T>(readerHandle, vtable), new StreamWriter<T>(writerHandle, vtable));
+    }
+
     public static Task TaskFromStatus(uint status)
     {
         var subTaskStatus = new SubtaskStatus(status);
@@ -551,6 +571,280 @@ public class FutureWriter<T>(int handle, FutureVTable vTable) // : TODO Waitable
     }
 
     ~FutureWriter()
+    {
+        Dispose(false);
+    }
+}
+
+public class StreamAwaiter : INotifyCompletion {
+    public bool IsCompleted => false;
+    private StreamReader streamReader;
+
+    public StreamAwaiter(StreamReader streamReader)
+    {
+        this.streamReader = streamReader;
+    }
+
+    public void OnCompleted(Action continuation) 
+    {
+        var readTask = streamReader.Read();
+        
+        if(readTask.IsCompleted && !readTask.IsFaulted)
+        {
+            continuation();
+        }
+        else
+        {
+            readTask.ContinueWith(task => 
+            {
+                if(task.IsFaulted)
+                {
+                    throw task.Exception!;
+                }
+                continuation();
+            });
+        }
+    }
+
+    public string GetResult()
+    {
+        return null;
+    }
+}
+
+public class StreamReader : IDisposable
+{
+    StreamAwaiter streamAwaiter;
+
+    public StreamReader(int handle, FutureVTable vTable)
+    {
+        Handle = handle;
+        VTable = vTable;
+        streamAwaiter = new StreamAwaiter(this);
+    }
+
+    public int Handle { get; private set; }
+    public FutureVTable VTable { get; private set; }
+
+    public StreamAwaiter GetAwaiter() => streamAwaiter;
+
+    public int TakeHandle()
+    {
+        if (Handle == 0)
+        {
+            throw new InvalidOperationException("Handle already taken");
+        }
+        var handle = Handle;
+        Handle = 0;
+        return handle;
+    }
+
+    // TODO: Generate per type for this instrinsic.
+    public unsafe Task Read()
+    {
+        // TODO: Generate for the interop name and the namespace.
+        if (Handle == 0)
+        {
+            throw new InvalidOperationException("Handle already taken");
+        }
+
+        var status = new WaitableStatus(VTable.StartRead(Handle, IntPtr.Zero));
+        if (status.IsBlocked)
+        {
+            var tcs = new TaskCompletionSource();
+
+
+            AsyncSupport.ContextTask* contextTaskPtr = (AsyncSupport.ContextTask*)Marshal.AllocHGlobal(sizeof(AsyncSupport.ContextTask));
+
+            AsyncSupport.ContextSet(contextTaskPtr);
+            AsyncSupport.PendingCallbacks.TryAdd((IntPtr)contextTaskPtr, tcs);
+            return tcs.Task;
+        }
+        if (status.IsCompleted)
+        {
+            return Task.CompletedTask;
+        }
+
+        throw new NotImplementedException(status.State.ToString());
+    }
+
+    void Dispose(bool _disposing)
+    {
+        // Free unmanaged resources if any.
+        if (Handle != 0)
+        {
+            VTable.DropReader(Handle);
+        }
+    }
+
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    ~StreamReader()
+    {
+        Dispose(false);
+    }
+}
+
+public class StreamReader<T>(int handle, FutureVTable vTable) : IDisposable // : TODO Waitable
+{
+    public int Handle { get; private set; } = handle;
+    public FutureVTable VTable { get; private set; } = vTable;
+
+    public int TakeHandle()
+    {
+        if (Handle == 0)
+        {
+            throw new InvalidOperationException("Handle already taken");
+        }
+        var handle = Handle;
+        Handle = 0;
+        return handle;
+    }
+
+    // TODO: Generate per type for this instrinsic.
+    public unsafe Task Read()
+    {
+        // TODO: Generate for the interop name and the namespace.
+        if (Handle == 0)
+        {
+            throw new InvalidOperationException("Handle already taken");
+        }
+
+        var status = new WaitableStatus(vTable.StartRead(Handle, IntPtr.Zero));
+        if (status.IsBlocked)
+        {
+            //TODO: store somewhere so we can complete it later.
+            var tcs = new TaskCompletionSource();
+            //TODO: Free in callback?
+            AsyncSupport.ContextTask* contextTaskPtr = (AsyncSupport.ContextTask*)Marshal.AllocHGlobal(sizeof(AsyncSupport.ContextTask));
+
+            AsyncSupport.ContextSet(contextTaskPtr);
+            AsyncSupport.PendingCallbacks.TryAdd((IntPtr)contextTaskPtr, tcs);
+            return tcs.Task;
+        }
+        if (status.IsCompleted)
+        {
+            return Task.CompletedTask;
+        }
+
+        throw new NotImplementedException();
+    }
+
+    void Dispose(bool _disposing)
+    {
+        // Free unmanaged resources if any.
+        if (Handle != 0)
+        {
+            vTable.DropReader(Handle);
+        }
+    }
+
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    ~StreamReader()
+    {
+        Dispose(false);
+    }
+}
+
+/**
+ * Helpers for stream writer support.
+ */
+public class StreamWriter(int handle, FutureVTable vTable) // : TODO Waitable
+{
+    public int Handle { get; } = handle;
+    public FutureVTable VTable { get; private set; } = vTable;
+
+    // TODO: Generate per type for this instrinsic.
+    public Task Write()
+    {
+        // TODO: Generate for the interop name.
+        if (Handle == 0)
+        {
+            throw new InvalidOperationException("Handle already taken");
+        }
+
+        var status = new WaitableStatus(VTable.Write(Handle, IntPtr.Zero));
+        if (status.IsBlocked)
+        {
+            //TODO: store somewhere so we can complete it later.
+            var tcs = new TaskCompletionSource();
+            return tcs.Task;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    void Dispose(bool _disposing)
+    {
+        // Free unmanaged resources if any.
+        if (Handle != 0)
+        {
+            VTable.DropWriter(Handle);
+        }
+    }
+
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    ~StreamWriter()
+    {
+        Dispose(false);
+    }
+}
+
+public class StreamWriter<T>(int handle, FutureVTable vTable)
+{
+    public int Handle { get; } = handle;
+    public FutureVTable VTable { get; private set; } = vTable;
+
+    // TODO: Generate per type for this instrinsic.
+    public Task Write()
+    {
+        // TODO: Generate for the interop name.
+        if (Handle == 0)
+        {
+            throw new InvalidOperationException("Handle already taken");
+        }
+
+        var status = new WaitableStatus(VTable.Write(Handle, IntPtr.Zero));
+        if (status.IsBlocked)
+        {
+            //TODO: store somewhere so we can complete it later.
+            var tcs = new TaskCompletionSource();
+            return tcs.Task;
+        }
+
+        throw new NotImplementedException();
+    }
+
+    void Dispose(bool _disposing)
+    {
+        // Free unmanaged resources if any.
+        if (Handle != 0)
+        {
+            VTable.DropWriter(Handle);
+        }
+    }
+
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    ~StreamWriter()
     {
         Dispose(false);
     }

@@ -325,9 +325,9 @@ impl InterfaceGenerator<'_> {
                             .interface_fragments
                             .push(InterfaceFragment {
                                 csharp_src: format!(r#"
-                                public static (FutureReader<{generic_type_name}>, FutureWriter<{generic_type_name}>) {future_stream_name}New{upper_camel_future_type}() 
+                                public static ({future_stream_name}Reader<{generic_type_name}>, {future_stream_name}Writer<{generic_type_name}>) {future_stream_name}New{upper_camel_future_type}() 
                                 {{
-                                        return FutureHelpers.RawFutureNew<{generic_type_name}>({interop_name}.{future_stream_name}VTable{upper_camel_future_type});
+                                        return FutureHelpers.Raw{future_stream_name}New<{generic_type_name}>({interop_name}.{future_stream_name}VTable{upper_camel_future_type});
                                 }}
                                 "#).to_string(),
                                 csharp_interop_src: "".to_string(),
@@ -343,9 +343,9 @@ impl InterfaceGenerator<'_> {
                                 .interface_fragments
                                 .push(InterfaceFragment {
                                     csharp_src: format!(r#"
-                                    public static (FutureReader<T>, FutureWriter<T>) {future_stream_name}New<T>(FutureVTable vtable) 
+                                    public static ({future_stream_name}Reader<T>, {future_stream_name}Writer<T>) {future_stream_name}New<T>(FutureVTable vtable) 
                                     {{
-                                            return FutureHelpers.RawFutureNew<T>(vtable);
+                                            return FutureHelpers.Raw{future_stream_name}New<T>(vtable);
                                     }}
                                     "#).to_string(),
                                     csharp_interop_src: "".to_string(),
