@@ -1387,7 +1387,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.extend(operands.iter().take(*amt).cloned());
             }
 
-            Instruction::FutureLower { payload, ty } => {
+            Instruction::FutureLower { payload, ty } 
+            | Instruction::StreamLower { payload, ty }=> {
                 let op = &operands[0];
                 let generic_type_name = match payload {
                     Some(generic_type) => {
@@ -1395,7 +1396,15 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     }
                     None => ""
                 };
-                self.interface_gen.add_future(self.func_name, &generic_type_name, ty);
+
+                match inst {
+                    Instruction::FutureLower { .. } => {
+                        self.interface_gen.add_future(self.func_name, &generic_type_name, ty);
+                    }
+                    _ => {
+                        self.interface_gen.add_stream(self.func_name, &generic_type_name, ty);
+                    }
+                }
 
                 results.push(format!("{op}.TakeHandle()"));
             }
@@ -1404,7 +1413,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwriteln!(self.src, "// TODO: task_cancel.forget();");
             }
 
-            Instruction::FutureLift { payload, ty } => {
+            Instruction::FutureLift { payload, ty } 
+            | Instruction:: StreamLift { payload, ty } => {
                  let generic_type_name = match payload {
                     Some(generic_type) => {
                         &self.interface_gen.type_name_with_qualifier(generic_type, false)
@@ -1422,16 +1432,30 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     .strip_prefix("I").unwrap()
                     .replace("Imports", "Exports"); // TODO: This is fragile and depends on the interface name.
 
-                uwriteln!(self.src, "var {reader_var} = new FutureReader({}, {export_name}.{base_interface_name}Interop.FutureVTable{});", operands[0], upper_camel);
+                // TODO: For now we will keet future and stream readers/writers as seperate classes and look to refactor.
+                let future_stream_name = match inst {
+                    Instruction::FutureLift{payload: _, ty: _} => "Future",
+                    Instruction::StreamLift{payload: _, ty: _} => "Stream",
+                    _ => {
+                        panic!("Unexpected instruction for lift");
+                    }
+                };
+                uwriteln!(self.src, "var {reader_var} = new FutureReader({}, {export_name}.{base_interface_name}Interop.{future_stream_name}VTable{});", operands[0], upper_camel);
                 results.push(reader_var);
 
-                self.interface_gen.add_future(self.func_name, &generic_type_name, ty);
+                match inst {
+                    Instruction::FutureLift { .. } => {
+                        self.interface_gen.add_future(self.func_name, &generic_type_name, ty);
+                    }
+                    _ => {
+                        self.interface_gen.add_stream(self.func_name, &generic_type_name, ty);
+                    }
+                }
+
                 self.interface_gen.csharp_gen.needs_async_support = true;
             }
 
-            Instruction::StreamLower { .. }
-            | Instruction::StreamLift { .. }
-            | Instruction::ErrorContextLower { .. }
+            Instruction::ErrorContextLower { .. }
             | Instruction::ErrorContextLift { .. }
             | Instruction::DropHandle { .. }
             => {

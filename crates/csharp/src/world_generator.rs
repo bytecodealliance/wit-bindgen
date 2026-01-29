@@ -77,6 +77,7 @@ impl CSharp {
             name,
             direction,
             futures: Vec::new(),
+            streams: Vec::new(),
             is_world,
         }
     }
@@ -187,7 +188,9 @@ impl WorldGenerator for CSharp {
         // for anonymous types
         r#gen.define_interface_types(id);
 
-        r#gen.add_futures(import_module_name, false);
+        r#gen.add_futures_or_streams(import_module_name, false, true);
+
+        r#gen.add_futures_or_streams(import_module_name, false, false);
 
         r#gen.add_interface_fragment(false);
 
@@ -268,7 +271,9 @@ impl WorldGenerator for CSharp {
         r#gen.define_interface_types(id);
 
         let import_module_name = &resolve.name_world_key(key);
-        r#gen.add_futures(&format!("[export]{import_module_name}"), true);
+        r#gen.add_futures_or_streams(&format!("[export]{import_module_name}"), true, true);
+
+        r#gen.add_futures_or_streams(&format!("[export]{import_module_name}"), true, false);
 
         r#gen.add_interface_fragment(true);
         Ok(())

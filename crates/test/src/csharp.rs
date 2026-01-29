@@ -44,7 +44,6 @@ impl LanguageMethods for Csharp {
         matches!(
             name,
             "resources-with-streams.wit"
-                | "streams.wit"
                 | "error-context.wit"
                 | "resource-fallible-constructor.wit"
                 | "async-resource-func.wit"
