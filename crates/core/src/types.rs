@@ -203,7 +203,7 @@ impl Types {
                 // should use the same ownership semantics as `own<T>`
                 info.has_own_handle = true;
             }
-            TypeDefKind::FixedSizeList(ty, _) => {
+            TypeDefKind::FixedLengthList(ty, _) => {
                 info = self.type_info(resolve, ty);
             }
             TypeDefKind::Map(..) => todo!(),
