@@ -1066,7 +1066,7 @@ fn is_prim_type_id(resolve: &Resolve, id: TypeId) -> bool {
         | TypeDefKind::Future(_)
         | TypeDefKind::Stream(_)
         | TypeDefKind::Unknown => false,
-        TypeDefKind::FixedSizeList(..) => todo!(),
+        TypeDefKind::FixedLengthList(..) => todo!(),
         TypeDefKind::Map(..) => todo!(),
     }
 }
@@ -1152,7 +1152,7 @@ pub fn push_ty_name(resolve: &Resolve, ty: &Type, src: &mut String) {
                     push_ty_name(resolve, &Type::Id(*resource), src);
                 }
                 TypeDefKind::Unknown => unreachable!(),
-                TypeDefKind::FixedSizeList(..) => todo!(),
+                TypeDefKind::FixedLengthList(..) => todo!(),
                 TypeDefKind::Map(..) => todo!(),
             }
         }
@@ -1366,7 +1366,7 @@ impl Return {
 
             TypeDefKind::Resource => todo!("return_single for resource"),
             TypeDefKind::Unknown => unreachable!(),
-            TypeDefKind::FixedSizeList(..) => todo!(),
+            TypeDefKind::FixedLengthList(..) => todo!(),
             TypeDefKind::Map(..) => todo!(),
         }
 
@@ -2012,7 +2012,7 @@ impl InterfaceGenerator<'_> {
                 self.free(&Type::Id(*id), "*ptr");
             }
             TypeDefKind::Unknown => unreachable!(),
-            TypeDefKind::FixedSizeList(..) => todo!(),
+            TypeDefKind::FixedLengthList(..) => todo!(),
             TypeDefKind::Map(..) => todo!(),
         }
         if c_helpers_body_start == self.src.c_helpers.len() {
@@ -2706,7 +2706,7 @@ void {name}_return({return_ty}) {{
                 TypeDefKind::Type(ty) => self.contains_droppable_borrow(ty),
 
                 TypeDefKind::Unknown => false,
-                TypeDefKind::FixedSizeList(..) => todo!(),
+                TypeDefKind::FixedLengthList(..) => todo!(),
                 TypeDefKind::Map(..) => todo!(),
             }
         } else {
@@ -4076,7 +4076,7 @@ pub fn is_arg_by_pointer(resolve: &Resolve, ty: &Type) -> bool {
             TypeDefKind::Stream(_) => false,
             TypeDefKind::Resource => todo!("is_arg_by_pointer for resource"),
             TypeDefKind::Unknown => unreachable!(),
-            TypeDefKind::FixedSizeList(..) => todo!(),
+            TypeDefKind::FixedLengthList(..) => todo!(),
             TypeDefKind::Map(..) => todo!(),
         },
         Type::String => true,
