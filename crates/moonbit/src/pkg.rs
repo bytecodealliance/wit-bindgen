@@ -288,15 +288,6 @@ impl PkgResolver {
         }
     }
 
-    /// Generate type name for export result types (lowering context).
-    /// Uses OutFuture/OutStream instead of FutureR/StreamR.
-    pub(crate) fn type_name_for_lowering(&mut self, this: &str, ty: &Type) -> String {
-        let name = self.type_name(this, ty);
-        // Convert FutureR to OutFuture and StreamR to OutStream for export result types
-        name.replace("FutureR[", "OutFuture[")
-            .replace("StreamR[", "OutStream[")
-    }
-
     pub(crate) fn non_empty_type<'a>(&self, ty: Option<&'a Type>) -> Option<&'a Type> {
         if let Some(ty) = ty {
             let id = match ty {

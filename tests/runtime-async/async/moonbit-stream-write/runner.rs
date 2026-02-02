@@ -14,7 +14,7 @@ impl Guest for Component {
         let mut total = 0u32;
         let mut count = 0u32;
         loop {
-            let buf = vec![0u32; 10];
+            let buf = Vec::<u32>::with_capacity(10);
             let (result, values) = rx.read(buf).await;
             match result {
                 StreamResult::Complete(n) if n > 0 => {
@@ -35,7 +35,7 @@ impl Guest for Component {
         let mut rx = create_unit_stream(5).await;
         let mut count = 0u32;
         loop {
-            let buf = vec![(); 10];
+            let buf = Vec::<()>::with_capacity(10);
             let (result, _values) = rx.read(buf).await;
             match result {
                 StreamResult::Complete(n) if n > 0 => {
