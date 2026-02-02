@@ -41,7 +41,7 @@ pub fn with_waitableset(f : async () -> Unit) -> Int {
   ev.tasks.set(waitable_set, coro)
   ev.finished.set(waitable_set, false)
   reschedule()
-  if ev.finished.get(waitable_set) is Some(true) {
+  if ev.finished.get(waitable_set) is Some(true) && no_more_work() {
     ev.tasks.remove(waitable_set)
     ev.finished.remove(waitable_set)
     waitable_set.drop()
@@ -58,7 +58,7 @@ pub fn cb(event : Int, waitable_id : Int, code : Int) -> Int {
   match events {
     None => {
       reschedule()
-      if ev.finished.get(waitable_set) is Some(true) {
+      if ev.finished.get(waitable_set) is Some(true) && no_more_work() {
         ev.tasks.remove(waitable_set)
         ev.finished.remove(waitable_set)
         waitable_set.drop()
@@ -71,7 +71,7 @@ pub fn cb(event : Int, waitable_id : Int, code : Int) -> Int {
       guard ev.tasks.get(waitable_set) is Some(coro)
       coro.cancel()
       reschedule()
-      if ev.finished.get(waitable_set) is Some(true) {
+      if ev.finished.get(waitable_set) is Some(true) && no_more_work() {
         ev.tasks.remove(waitable_set)
         ev.finished.remove(waitable_set)
         waitable_set.drop()
@@ -91,7 +91,7 @@ pub fn cb(event : Int, waitable_id : Int, code : Int) -> Int {
       ev.subscribes.remove(waitable_id)
       waitable_join(waitable_id, 0)
       reschedule()
-      if ev.finished.get(waitable_set) is Some(true) {
+      if ev.finished.get(waitable_set) is Some(true) && no_more_work() {
         ev.tasks.remove(waitable_set)
         ev.finished.remove(waitable_set)
         waitable_set.drop()
@@ -336,12 +336,10 @@ pub async fn suspend_for_stream_write(idx : Int, val : Int) -> (Int, Bool) {
   match copy_result {
     Completed => return (progress, false)
     Dropped => return (progress, true)
-    Cancelled =>
-      if progress > 0 {
-        return (progress, false)
-      } else {
-        raise StreamWriteCancelled
-      }
+    // FIXME(WebAssembly/component-model#490): cancellation may be observed in
+    // cases that should otherwise block. Treat this as no-progress so callers
+    // can retry.
+    Cancelled => return (progress, false)
   }
 }
 
