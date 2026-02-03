@@ -26,7 +26,7 @@ void thread_start(void *arg) {
   test_thread_suspend_to(main_tid);
   test_thread_suspend_to_cancellable(main_tid);
   test_thread_unsuspend(main_tid);
-  test_thread_exit(main_tid);
+  test_thread_exit();
 }
 
 test_subtask_status_t exports_test_f_callback(test_event_t *event) {
