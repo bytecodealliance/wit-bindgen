@@ -891,7 +891,7 @@ impl CppInterfaceGenerator<'_> {
             TypeDefKind::Future(_) => todo!("generate for future"),
             TypeDefKind::Stream(_) => todo!("generate for stream"),
             TypeDefKind::Handle(_) => todo!("generate for handle"),
-            TypeDefKind::FixedSizeList(_, _) => todo!(),
+            TypeDefKind::FixedLengthList(_, _) => todo!(),
             TypeDefKind::Map(_, _) => todo!(),
             TypeDefKind::Unknown => unreachable!(),
         }
@@ -1702,7 +1702,7 @@ impl CppInterfaceGenerator<'_> {
                 TypeDefKind::Future(_) => todo!(),
                 TypeDefKind::Stream(_) => todo!(),
                 TypeDefKind::Type(ty) => self.type_name(ty, from_namespace, flavor),
-                TypeDefKind::FixedSizeList(ty, size) => {
+                TypeDefKind::FixedLengthList(ty, size) => {
                     self.r#gen.dependencies.needs_array = true;
                     format!(
                         "std::array<{}, {size}>",
