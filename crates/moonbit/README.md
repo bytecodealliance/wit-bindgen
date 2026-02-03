@@ -1,15 +1,22 @@
-# `wit-bindgen` MoonBit Bindings Generator
+# `wit-bindgen-moonbit`
 
-This crate implements the MoonBit guest bindings generator for `wit-bindgen`.
+MoonBit language bindings generator for WIT and the Component Model.
+
+## Usage
+
+Generate bindings via the `moonbit` subcommand:
+
+```bash
+wit-bindgen moonbit [OPTIONS] <WIT>
+```
+
+See `wit-bindgen help moonbit` for available options.
 
 ## Testing
 
-The repository’s `wit-bindgen test` subcommand is the preferred way to run MoonBit
-codegen/runtime tests. See `tests/README.md` for full details.
+From the repo root, run the MoonBit codegen tests:
 
-### Codegen
-
-```sh
+```bash
 cargo run test \
   --languages rust,moonbit \
   --artifacts target/artifacts \
@@ -17,12 +24,11 @@ cargo run test \
   tests/codegen
 ```
 
-### Runtime (async)
+And the async runtime tests (requires an async component-model runner):
 
-```sh
+```bash
 cargo run test --languages rust,moonbit tests/runtime-async \
   --artifacts target/artifacts \
   --rust-wit-bindgen-path ./crates/guest-rust \
   --runner "wasmtime -W component-model-async"
 ```
-
