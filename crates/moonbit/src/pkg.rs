@@ -253,7 +253,7 @@ impl PkgResolver {
                     TypeDefKind::Future(ty) => {
                         let qualifier = self.qualify_package(this, ASYNC_DIR);
                         format!(
-                            "{}FutureR[{}]",
+                            "{}Future[{}]",
                             qualifier,
                             ty.as_ref()
                                 .map(|t| self.type_name(this, t))
@@ -264,7 +264,7 @@ impl PkgResolver {
                     TypeDefKind::Stream(ty) => {
                         let qualifier = self.qualify_package(this, ASYNC_DIR);
                         format!(
-                            "{}StreamR[{}]",
+                            "{}Stream[{}]",
                             qualifier,
                             ty.as_ref()
                                 .map(|t| self.type_name(this, t))
@@ -286,6 +286,11 @@ impl PkgResolver {
                 }
             }
         }
+    }
+
+    /// Generate type name for export result types (lowering context).
+    pub(crate) fn type_name_for_lowering(&mut self, this: &str, ty: &Type) -> String {
+        self.type_name(this, ty)
     }
 
     pub(crate) fn non_empty_type<'a>(&self, ty: Option<&'a Type>) -> Option<&'a Type> {

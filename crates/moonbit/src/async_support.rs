@@ -8,7 +8,9 @@ use wit_bindgen_core::{
     abi::{self, deallocate_lists_in_types, lift_from_memory, WasmSignature},
     dealias, uwriteln,
     Direction, Files, Source,
-    wit_parser::{Function, Param, Type, TypeDefKind, TypeId},
+    wit_parser::{
+        Function, LiftLowerAbi, ManglingAndAbi, Param, Type, TypeDefKind, TypeId, WasmImport,
+    },
 };
 
 use crate::pkg::ToMoonBitIdent;
@@ -250,57 +252,35 @@ defer {cleanup_params}()\n{async_pkg}suspend_for_subtask({subtask}, cleanup_afte
         bindgen.src
     }
 
-    /// Generate the async bindings for this function
-    pub(crate) fn generate_async_binding(&mut self, func: &Function) -> AsyncBinding {
-        let mut map = HashMap::new();
+    /// Generate the async bindings for this function.
+    ///
+    /// Note that these bindings may be referenced while generating other async
+    /// bindings (e.g. `future<record { field: future<T> }>`), so this method
+    /// populates `self.bindings` incrementally.
+    pub(crate) fn generate_async_binding(&mut self, func: &Function) {
+        self.bindings.0.clear();
         let futures_and_streams = func.find_futures_and_streams(self.resolve);
-
-        let module_prefix = match self.direction {
-            Direction::Import => "",
-            Direction::Export => "[export]",
-        };
-        let base_module = self
-            .interface
-            .map(|name| self.resolve.name_world_key(name))
-            .unwrap_or_else(|| "$root".to_string());
-        let module = format!("{module_prefix}{base_module}");
-
-        // Select a single index per (dealiased) type to avoid emitting
-        // multiple bindings for the same future/stream helper.
-        let mut selected = Vec::<(TypeId, usize)>::new();
-        let camel_name = func.name.to_upper_camel_case();
-        for (idx, ty) in futures_and_streams.iter().enumerate() {
-            let ty = dealias(self.resolve, *ty);
-            if map.contains_key(&ty) {
-                continue;
-            }
-            map.insert(
-                ty,
-                (
-                    format!("wasmLift{camel_name}{idx}"),
-                    String::new(),
-                    format!("wasmLower{camel_name}{idx}"),
-                    String::new(),
-                ),
-            );
-            selected.push((ty, idx));
-        }
-
-        // Make helper names available while generating bodies so nested
-        // payloads can reference them.
-        self.bindings = AsyncBinding(map.clone());
-
-        for (ty, idx) in selected {
-            let binding = match self.resolve.types[ty].kind {
-                TypeDefKind::Future(_) => self.generate_future_binding(ty, idx, &module, &func.name),
-                TypeDefKind::Stream(_) => self.generate_stream_binding(ty, idx, &module, &func.name),
+        let (module, func_name) = self.resolve.wasm_import_name(
+            ManglingAndAbi::Legacy(LiftLowerAbi::Sync),
+            WasmImport::Func {
+                interface: self.interface,
+                func,
+            },
+        );
+        for (idx, type_) in futures_and_streams.iter().enumerate() {
+            let ty = dealias(self.resolve, *type_);
+            match self.resolve.types[ty].kind {
+                TypeDefKind::Future(_) => {
+                    let binding = self.generate_future_binding(ty, idx, &module, &func_name);
+                    self.bindings.0.insert(ty, binding);
+                }
+                TypeDefKind::Stream(_) => {
+                    let binding = self.generate_stream_binding(ty, idx, &module, &func_name);
+                    self.bindings.0.insert(ty, binding);
+                }
                 _ => unreachable!("Expected future and stream"),
-            };
-            map.insert(ty, binding);
+            }
         }
-
-        self.bindings = AsyncBinding(map.clone());
-        AsyncBinding(map)
     }
 
     pub(crate) fn generate_future_binding(
@@ -310,9 +290,6 @@ defer {cleanup_params}()\n{async_pkg}suspend_for_subtask({subtask}, cleanup_afte
         module: &str,
         func_name: &str,
     ) -> (String, String, String, String) {
-        self.ffi_imports.insert(ffi::MALLOC);
-        self.ffi_imports.insert(ffi::FREE);
-
         let mut lift = Source::default();
         let mut lower = Source::default();
 
@@ -327,29 +304,32 @@ defer {cleanup_params}()\n{async_pkg}suspend_for_subtask({subtask}, cleanup_afte
             .world_gen
             .pkg_resolver
             .type_name(self.name, &Type::Id(ty));
-        let lowered = lifted.replace("FutureR", "OutFuture");
 
         // write intrinsics
         uwriteln!(
             lift,
             r#"
-fn wasmLift{camel_name}{index}Read(handle : Int, ptr : Int) -> Int = "{module}" "[async-lower][future-read-{index}]{func_name}"
-fn wasmLift{camel_name}{index}CancelRead(_ : Int) -> Int = "{module}" "[future-cancel-read-{index}]{func_name}"
-fn wasmLift{camel_name}{index}DropReadable(_ : Int) = "{module}" "[future-drop-readable-{index}]{func_name}"
+fn wasmLift{camel_name}{index}Read(handle : Int, ptr : Int) -> Int = "[export]{module}" "[async-lower][future-read-{index}]{func_name}"
+fn wasmLift{camel_name}{index}CancelRead(_ : Int) -> Int = "[export]{module}" "[future-cancel-read-{index}]{func_name}"
+fn wasmLift{camel_name}{index}DropReadable(_ : Int) = "[export]{module}" "[future-drop-readable-{index}]{func_name}"
     "#,
         );
         uwriteln!(
             lower,
             r#"
-fn wasmLower{camel_name}{index}New() -> UInt64 = "{module}" "[future-new-{index}]{func_name}"
-fn wasmLower{camel_name}{index}Write(handle : Int, ptr : Int) -> Int = "{module}" "[async-lower][future-write-{index}]{func_name}"
-fn wasmLower{camel_name}{index}CancelWrite(_ : Int) -> Int = "{module}" "[future-cancel-write-{index}]{func_name}"
-fn wasmLower{camel_name}{index}DropWritable(_ : Int) = "{module}" "[future-drop-writable-{index}]{func_name}"
+fn wasmLower{camel_name}{index}New() -> UInt64 = "[export]{module}" "[future-new-{index}]{func_name}"
+fn wasmLower{camel_name}{index}Write(handle : Int, ptr : Int) -> Int = "[export]{module}" "[future-write-{index}]{func_name}"
+fn wasmLower{camel_name}{index}CancelWrite(_ : Int) -> Int = "[export]{module}" "[future-cancel-write-{index}]{func_name}"
+fn wasmLower{camel_name}{index}DropWritable(_ : Int) = "[export]{module}" "[future-drop-writable-{index}]{func_name}"
     "#
         );
 
         // generate function
-        let size = self.world_gen.sizes.size(&Type::Id(ty)).size_wasm32();
+        let size = if let TypeDefKind::Future(Some(inner_ty)) = self.resolve.types[ty].kind {
+            self.world_gen.sizes.size(&inner_ty).size_wasm32()
+        } else {
+            0
+        };
         uwriteln!(
             lift,
             r#"
@@ -372,7 +352,8 @@ fn wasmLift{camel_name}{index}(future_handle : Int) -> {lifted} {{
       wasmLift{camel_name}{index}DropReadable(future_handle)
     }}
   }}
-  {async_qualifier}FutureR::{{
+  {async_qualifier}Future::Incoming({async_qualifier}FutureR::{{
+    handle: future_handle,
     get: fn () {{
       if result is Some(r) {{
         return r
@@ -415,13 +396,13 @@ fn wasmLift{camel_name}{index}(future_handle : Int) -> {lifted} {{
     }},
     drop,
     take_handle: fn () {{
-      if dropped {{
+      if dropped || reading > 0 {{
         panic()
       }}
       dropped = true
       future_handle
     }}
-  }}
+  }})
 }}
 "#
         );
@@ -436,12 +417,18 @@ fn wasmLift{camel_name}{index}(future_handle : Int) -> {lifted} {{
         uwriteln!(
             lower,
             r#"
-fn wasmLower{camel_name}{index}(out_future : {lowered}) -> Int {{
-  let handles = wasmLower{camel_name}{index}New()
-  let readable = (handles & 0xFFFFFFFF).to_int()
-  let writable = (handles >> 32).to_int()
-  let _ = {async_qualifier}spawn(async fn() {{
-    defer wasmLower{camel_name}{index}DropWritable(writable)"#
+fn wasmLower{camel_name}{index}(future : {lifted}) -> Int {{
+  match future {{
+    {async_qualifier}Future::Incoming(f) => f.take_handle()
+    {async_qualifier}Future::Outgoing(f) => {{
+      let handles = wasmLower{camel_name}{index}New()
+      let readable = (handles & 0xFFFFFFFF).to_int()
+      let writable = (handles >> 32).to_int()
+      let producer = f.take_producer()
+      {async_qualifier}backpressure_inc()
+      {async_qualifier}spawn_bg_current(async fn() {{
+        defer {async_qualifier}backpressure_dec()
+        defer wasmLower{camel_name}{index}DropWritable(writable)"#
         );
 
         if let Some(inner_ty) = inner_type {
@@ -452,7 +439,7 @@ fn wasmLower{camel_name}{index}(out_future : {lowered}) -> Int {{
             uwriteln!(
                 lower,
                 r#"
-    let value = out_future.get()
+        let value = producer()
     let ptr = mbt_ffi_malloc({size})
     defer mbt_ffi_free(ptr)"#
             );
@@ -467,23 +454,25 @@ fn wasmLower{camel_name}{index}(out_future : {lowered}) -> Int {{
             uwriteln!(
                 lower,
                 r#"
-    let _ = {async_qualifier}suspend_for_future_write(writable, wasmLower{camel_name}{index}Write(writable, ptr))"#
+        let _ = {async_qualifier}suspend_for_future_write(writable, wasmLower{camel_name}{index}Write(writable, ptr)) catch {{ _ => false }}"#
             );
         } else {
             // Unit type - no value to write, just complete the future
             uwriteln!(
                 lower,
                 r#"
-    let _ = out_future.get()
-    let _ = {async_qualifier}suspend_for_future_write(writable, wasmLower{camel_name}{index}Write(writable, 0))"#
+        let _ = producer()
+        let _ = {async_qualifier}suspend_for_future_write(writable, wasmLower{camel_name}{index}Write(writable, 0)) catch {{ _ => false }}"#
             );
         }
 
         uwriteln!(
             lower,
             r#"
-  }})
-  readable
+      }})
+      readable
+    }}
+  }}
 }}"#
         );
         (
@@ -515,24 +504,23 @@ fn wasmLower{camel_name}{index}(out_future : {lowered}) -> Int {{
             .world_gen
             .pkg_resolver
             .type_name(self.name, &Type::Id(ty));
-        let lowered = lifted.replace("StreamR", "OutStream");
 
         // write intrinsics
         uwriteln!(
             lift,
             r#"
-fn wasmLift{camel_name}{index}Read(handle : Int, ptr : Int, len : Int) -> Int = "{module}" "[async-lower][stream-read-{index}]{func_name}"
-fn wasmLift{camel_name}{index}CancelRead(_ : Int) -> Int = "{module}" "[stream-cancel-read-{index}]{func_name}"
-fn wasmLift{camel_name}{index}DropReadable(_ : Int) = "{module}" "[stream-drop-readable-{index}]{func_name}"
+fn wasmLift{camel_name}{index}Read(handle : Int, ptr : Int, len : Int) -> Int = "[export]{module}" "[async-lower][stream-read-{index}]{func_name}"
+fn wasmLift{camel_name}{index}CancelRead(_ : Int) -> Int = "[export]{module}" "[stream-cancel-read-{index}]{func_name}"
+fn wasmLift{camel_name}{index}DropReadable(_ : Int) = "[export]{module}" "[stream-drop-readable-{index}]{func_name}"
     "#,
         );
         uwriteln!(
             lower,
             r#"
-fn wasmLower{camel_name}{index}New() -> UInt64 = "{module}" "[stream-new-{index}]{func_name}"
-fn wasmLower{camel_name}{index}Write(handle : Int, ptr : Int, len : Int) -> Int = "{module}" "[async-lower][stream-write-{index}]{func_name}"
-fn wasmLower{camel_name}{index}CancelWrite(_ : Int) -> Int = "{module}" "[stream-cancel-write-{index}]{func_name}"
-fn wasmLower{camel_name}{index}DropWritable(_ : Int) = "{module}" "[stream-drop-writable-{index}]{func_name}"
+fn wasmLower{camel_name}{index}New() -> UInt64 = "[export]{module}" "[stream-new-{index}]{func_name}"
+fn wasmLower{camel_name}{index}Write(handle : Int, ptr : Int, len : Int) -> Int = "[export]{module}" "[stream-write-{index}]{func_name}"
+fn wasmLower{camel_name}{index}CancelWrite(_ : Int) -> Int = "[export]{module}" "[stream-cancel-write-{index}]{func_name}"
+fn wasmLower{camel_name}{index}DropWritable(_ : Int) = "[export]{module}" "[stream-drop-writable-{index}]{func_name}"
     "#
         );
 
@@ -551,26 +539,26 @@ fn wasmLower{camel_name}{index}DropWritable(_ : Int) = "{module}" "[stream-drop-
             lift,
             r#"
 fn wasmLift{camel_name}{index}(stream_handle : Int) -> {lifted} {{
-  let mut user_closed = false
-  let mut handle_dropped = false
-  let mut ended = false
+  let mut closed = false
   let mut reading = 0
   async fn close() {{
-    if user_closed {{
-      return
-    }}
-    user_closed = true
-    if !handle_dropped && reading > 0 {{
+    if !closed && reading > 0 {{
       let _ = {async_qualifier}suspend_for_stream_read(
         stream_handle,
         wasmLift{camel_name}{index}CancelRead(stream_handle)
       ) catch {{ _ => (0, false) }}
     }}
-    if !handle_dropped {{
-      handle_dropped = true
+    if !closed {{
+      closed = true
       wasmLift{camel_name}{index}DropReadable(stream_handle)
     }}
-  }}"#
+  }}
+  {async_qualifier}Stream::Incoming({async_qualifier}StreamR::{{
+    handle: stream_handle,
+    read: fn (count : Int) {{
+      if closed {{
+        return None
+      }}"#
         );
 
         if let Some(inner_ty) = inner_type {
@@ -582,14 +570,6 @@ fn wasmLift{camel_name}{index}(stream_handle : Int) -> {lifted} {{
             uwriteln!(
                 lift,
                 r#"
-  {async_qualifier}StreamR::{{
-    read: fn (count : Int) {{
-      if user_closed || ended {{
-        return None
-      }}
-      if count <= 0 {{
-        return Some([])
-      }}
       let ptr = mbt_ffi_malloc(count * {elem_size})
       reading += 1
       let (progress, end) = {{
@@ -601,12 +581,8 @@ fn wasmLift{camel_name}{index}(stream_handle : Int) -> {lifted} {{
       }}
       if progress == 0 {{
         mbt_ffi_free(ptr)
-        ended = true
-        if !handle_dropped {{
-          handle_dropped = true
-          wasmLift{camel_name}{index}DropReadable(stream_handle)
-        }}
-        return None
+        if end {{ close(); return None }}
+        return Some([])
       }}
       let items = []"#
             );
@@ -628,13 +604,7 @@ fn wasmLift{camel_name}{index}(stream_handle : Int) -> {lifted} {{
                 lift,
                 r#"
       mbt_ffi_free(ptr)
-      if end {{
-        ended = true
-        if !handle_dropped {{
-          handle_dropped = true
-          wasmLift{camel_name}{index}DropReadable(stream_handle)
-        }}
-      }}
+      if end {{ close() }}
       Some(items[:])"#
             );
         } else {
@@ -642,14 +612,6 @@ fn wasmLift{camel_name}{index}(stream_handle : Int) -> {lifted} {{
             uwriteln!(
                 lift,
                 r#"
-  {async_qualifier}StreamR::{{
-    read: fn (count : Int) {{
-      if user_closed || ended {{
-        return None
-      }}
-      if count <= 0 {{
-        return Some(FixedArray::make(0, ())[:])
-      }}
       reading += 1
       let (progress, end) = {{
         defer {{ reading -= 1 }}
@@ -658,22 +620,9 @@ fn wasmLift{camel_name}{index}(stream_handle : Int) -> {lifted} {{
           wasmLift{camel_name}{index}Read(stream_handle, 0, count),
         )
       }}
-      if progress == 0 {{
-        ended = true
-        if !handle_dropped {{
-          handle_dropped = true
-          wasmLift{camel_name}{index}DropReadable(stream_handle)
-        }}
-        return None
-      }}
+      if progress == 0 && end {{ close(); return None }}
       let result = FixedArray::make(progress, ())
-      if end {{
-        ended = true
-        if !handle_dropped {{
-          handle_dropped = true
-          wasmLift{camel_name}{index}DropReadable(stream_handle)
-        }}
-      }}
+      if end {{ close() }}
       Some(result[:])"#
             );
         }
@@ -684,32 +633,42 @@ fn wasmLift{camel_name}{index}(stream_handle : Int) -> {lifted} {{
     }},
     close,
     take_handle: fn () {{
-      if user_closed || handle_dropped || reading > 0 {{
+      if closed || reading > 0 {{
         panic()
       }}
-      user_closed = true
-      handle_dropped = true
+      closed = true
       stream_handle
     }}
-  }}
+  }})
 }}"#
         );
 
-        // Generate lower function (OutStream to handle)
+        // Generate lower function (Stream to handle)
         uwriteln!(
             lower,
             r#"
-fn wasmLower{camel_name}{index}(out_stream : {lowered}) -> Int {{
-  let handles = wasmLower{camel_name}{index}New()
-  let readable = (handles & 0xFFFFFFFF).to_int()
-  let writable = (handles >> 32).to_int()
-  let mut closed = false
-  let stream_w = {async_qualifier}StreamW::{{
-    write: async fn (data : ArrayView[_]) {{
-      if data.length() == 0 {{
-        return 0
-      }}
-    "#
+fn wasmLower{camel_name}{index}(stream : {lifted}) -> Int {{
+  match stream {{
+    {async_qualifier}Stream::Incoming(s) => s.take_handle()
+    {async_qualifier}Stream::Outgoing(s) => {{
+      let handles = wasmLower{camel_name}{index}New()
+      let readable = (handles & 0xFFFFFFFF).to_int()
+      let writable = (handles >> 32).to_int()
+      let producer = s.take_producer()
+      {async_qualifier}backpressure_inc()
+      let _ = {async_qualifier}spawn_bg_current(async fn() {{
+        defer {async_qualifier}backpressure_dec()
+        let mut closed = false
+        defer {{
+          if !closed {{
+            wasmLower{camel_name}{index}DropWritable(writable)
+          }}
+        }}
+        let sink = {async_qualifier}Sink::{{
+          write: async fn (data : ArrayView[_]) {{
+            if closed || data.length() == 0 {{
+              return 0
+            }}"#
         );
 
         if let Some(inner_ty) = inner_type {
@@ -722,10 +681,11 @@ fn wasmLower{camel_name}{index}(out_stream : {lowered}) -> Int {{
             uwriteln!(
                 lower,
                 r#"
-      let ptr = mbt_ffi_malloc(data.length() * {elem_size})
-      for i = 0; i < data.length(); i = i + 1 {{
-        let elem_ptr = ptr + i * {elem_size}
-        let elem : {elem_type} = data[i]"#
+            let ptr = mbt_ffi_malloc(data.length() * {elem_size})
+            defer mbt_ffi_free(ptr)
+            for i = 0; i < data.length(); i = i + 1 {{
+              let elem_ptr = ptr + i * {elem_size}
+              let elem : {elem_type} = data[i]"#
             );
 
             abi::lower_to_memory(
@@ -736,62 +696,55 @@ fn wasmLower{camel_name}{index}(out_stream : {lowered}) -> Int {{
                 &inner_ty,
             );
             uwriteln!(lower, "{}", lower_bindgen.src);
-            uwriteln!(lower, "      }}");
+            uwriteln!(lower, "            }}");
 
             uwriteln!(
                 lower,
                 r#"
-      let mut progress = 0
-      let mut dropped = false
-      while progress == 0 && !dropped {{
-        let (p, d) = {async_qualifier}suspend_for_stream_write(
-          writable,
-          wasmLower{camel_name}{index}Write(writable, ptr, data.length()),
-        )
-        progress = p
-        dropped = d
-      }}
-      if dropped {{
-        panic()
-      }}
-      progress"#
+            let (progress, dropped) = {async_qualifier}suspend_for_stream_write(
+              writable,
+              wasmLower{camel_name}{index}Write(writable, ptr, data.length()),
+            ) catch {{ _ => (0, true) }}
+            if dropped {{
+              closed = true
+              wasmLower{camel_name}{index}DropWritable(writable)
+            }}
+            progress"#
             );
         } else {
             // Unit type stream
             uwriteln!(
                 lower,
                 r#"
-      let mut progress = 0
-      let mut dropped = false
-      while progress == 0 && !dropped {{
-        let (p, d) = {async_qualifier}suspend_for_stream_write(
-          writable,
-          wasmLower{camel_name}{index}Write(writable, 0, data.length()),
-        )
-        progress = p
-        dropped = d
-      }}
-      if dropped {{
-        panic()
-      }}
-      progress"#
+            let (progress, dropped) = {async_qualifier}suspend_for_stream_write(
+              writable,
+              wasmLower{camel_name}{index}Write(writable, 0, data.length()),
+            ) catch {{ _ => (0, true) }}
+            if dropped {{
+              closed = true
+              wasmLower{camel_name}{index}DropWritable(writable)
+            }}
+            progress"#
             );
         }
 
         uwriteln!(
             lower,
             r#"
-    }},
-    close: async fn () {{
-      if closed {{
-        return
-      }}
-      closed = true
-      wasmLower{camel_name}{index}DropWritable(writable)
+          }},
+          close: async fn () {{
+            if !closed {{
+              closed = true
+              wasmLower{camel_name}{index}DropWritable(writable)
+            }}
+          }}
+        }}
+        producer(sink)
+        sink.close()
+      }})
+      readable
     }}
   }}
-  out_stream.put_stream(stream_w)
-  readable
 }}"#
         );
 

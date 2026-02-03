@@ -41,6 +41,21 @@ struct TaskGroup[X] {
 }
 
 ///|
+/// Spawner for the current task group (if any).
+/// This is set by `with_task_group` so that generated bindings can spawn
+/// background tasks without explicitly threading `TaskGroup` everywhere.
+let current_spawner : Ref[((async () -> Unit) -> Unit)?] = { val: None }
+
+///|
+/// Spawn a background task into the current task group.
+///
+/// This will fail if called outside `with_task_group`.
+pub fn spawn_bg_current(f : async () -> Unit) -> Unit {
+  guard current_spawner.val is Some(spawn)
+  spawn(f)
+}
+
+///|
 #deprecated("this error is no longer emitted")
 pub suberror AlreadyTerminated derive(Show)
 
@@ -189,6 +204,11 @@ pub async fn[X] with_task_group(f : async (TaskGroup[X]) -> X) -> X {
     state: Running,
     result: None,
     group_defer: [],
+  }
+  let prev = current_spawner.val
+  current_spawner.val = Some(fn(child) { tg.spawn_bg(child) })
+  defer {
+    current_spawner.val = prev
   }
   tg.spawn_bg(fn() {
     let value = f(tg)

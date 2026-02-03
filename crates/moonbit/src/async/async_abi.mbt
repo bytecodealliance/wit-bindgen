@@ -228,10 +228,10 @@ fn CallbackCode::decode(int : Int) -> CallbackCode {
 fn _yield() -> Bool = "$root" "[cancellable][yield]"
 
 ///|
-fn _backpressure_inc() = "$root" "[backpressure-inc]"
+pub fn backpressure_inc() = "$root" "[backpressure-inc]"
 
 ///|
-fn _backpressure_dec() = "$root" "[backpressure-dec]"
+pub fn backpressure_dec() = "$root" "[backpressure-dec]"
 
 ///|
 fn subtask_cancel(id : Int) -> Int = "$root" "[subtask-cancel]"

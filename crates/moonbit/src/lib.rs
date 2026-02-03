@@ -114,6 +114,11 @@ impl InterfaceFragment {
     }
 }
 
+enum PayloadFor {
+    Future,
+    Stream,
+}
+
 #[derive(Default)]
 pub struct MoonBit {
     opts: Opts,
@@ -155,6 +160,7 @@ impl MoonBit {
             derive_opts,
             interface,
             bindings: AsyncBinding(HashMap::new()),
+            async_bindings_emitted: HashSet::new(),
         }
     }
 
@@ -591,25 +597,13 @@ struct InterfaceGenerator<'a> {
 
     // Generated lift and lower
     bindings: AsyncBinding,
+
+    // Avoid re-emitting the same async helper functions multiple times in the
+    // same `ffi.mbt`.
+    async_bindings_emitted: HashSet<String>,
 }
 
 impl InterfaceGenerator<'_> {
-    fn emit_async_bindings(&mut self) {
-        if self.bindings.0.is_empty() {
-            return;
-        }
-
-        let mut emitted = HashSet::<String>::new();
-        for (_, (lifted_name, lift, lowered_name, lower)) in self.bindings.0.iter() {
-            if emitted.insert(lifted_name.clone()) {
-                uwriteln!(&mut self.ffi, "{}", lift);
-            }
-            if emitted.insert(lowered_name.clone()) {
-                uwriteln!(&mut self.ffi, "{}", lower);
-            }
-        }
-    }
-
     fn finish(self) -> InterfaceFragment {
         InterfaceFragment {
             src: self.src,
@@ -629,7 +623,7 @@ impl InterfaceGenerator<'_> {
             || !func.find_futures_and_streams(self.resolve).is_empty();
         if async_ {
             self.world_gen.async_support.mark_async();
-            self.bindings = self.generate_async_binding(func);
+            self.generate_async_binding(func);
         }
 
         let ffi_import_name = format!("wasmImport{}", func.name.to_upper_camel_case());
@@ -692,7 +686,6 @@ impl InterfaceGenerator<'_> {
             }}
             "#
             );
-            self.emit_async_bindings();
             return;
         }
 
@@ -750,7 +743,7 @@ impl InterfaceGenerator<'_> {
             || !func.find_futures_and_streams(self.resolve).is_empty();
         if async_ {
             self.world_gen.async_support.mark_async();
-            self.bindings = self.generate_async_binding(func);
+            self.generate_async_binding(func);
         }
 
         // Generate stub for user
@@ -960,10 +953,6 @@ impl InterfaceGenerator<'_> {
                 .insert(export_name, (func_name.clone(), export));
         }
 
-        if async_ {
-            self.emit_async_bindings();
-        }
-
         // If post return is needed, generate it
         if abi::guest_export_needs_post_return(self.resolve, func) {
             let params = sig
@@ -1044,7 +1033,13 @@ impl InterfaceGenerator<'_> {
         // Compute result type first (needed for taskgroup parameter type)
         let result_type = match &sig.result_type {
             None => "Unit".into(),
-            Some(ty) => self.world_gen.pkg_resolver.type_name(self.name, ty),
+            Some(ty) => match direction {
+                Direction::Export => self
+                    .world_gen
+                    .pkg_resolver
+                    .type_name_for_lowering(self.name, ty),
+                Direction::Import => self.world_gen.pkg_resolver.type_name(self.name, ty),
+            },
         };
 
         let mut params = sig
@@ -1068,43 +1063,6 @@ impl InterfaceGenerator<'_> {
             sig.name,
             result_type
         )
-    }
-
-    fn contains_future_or_stream(&self, ty: &Type) -> bool {
-        match ty {
-            Type::Id(id) => match &self.resolve.types[*id].kind {
-                TypeDefKind::Type(inner) => self.contains_future_or_stream(inner),
-                TypeDefKind::Future(_) | TypeDefKind::Stream(_) => true,
-                TypeDefKind::List(inner) | TypeDefKind::Option(inner) => {
-                    self.contains_future_or_stream(inner)
-                }
-                TypeDefKind::Result(result) => {
-                    result
-                        .ok
-                        .as_ref()
-                        .is_some_and(|t| self.contains_future_or_stream(t))
-                        || result
-                            .err
-                            .as_ref()
-                            .is_some_and(|t| self.contains_future_or_stream(t))
-                }
-                TypeDefKind::Tuple(tuple) => tuple
-                    .types
-                    .iter()
-                    .any(|t| self.contains_future_or_stream(t)),
-                TypeDefKind::Record(record) => record
-                    .fields
-                    .iter()
-                    .any(|f| self.contains_future_or_stream(&f.ty)),
-                TypeDefKind::Variant(variant) => variant
-                    .cases
-                    .iter()
-                    .filter_map(|c| c.ty.as_ref())
-                    .any(|t| self.contains_future_or_stream(t)),
-                _ => false,
-            },
-            _ => false,
-        }
     }
 }
 
@@ -1131,15 +1089,11 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .collect::<Vec<_>>()
             .join("; ");
 
-        let has_future_or_stream = record
-            .fields
-            .iter()
-            .any(|f| self.contains_future_or_stream(&f.ty));
         let mut deriviation: Vec<_> = Vec::new();
-        if self.derive_opts.derive_show && !has_future_or_stream {
+        if self.derive_opts.derive_show {
             deriviation.push("Show")
         }
-        if self.derive_opts.derive_eq && !has_future_or_stream {
+        if self.derive_opts.derive_eq {
             deriviation.push("Eq")
         }
 
@@ -1420,16 +1374,11 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .collect::<Vec<_>>()
             .join("\n  ");
 
-        let has_future_or_stream = variant
-            .cases
-            .iter()
-            .filter_map(|c| c.ty.as_ref())
-            .any(|ty| self.contains_future_or_stream(ty));
         let mut deriviation: Vec<_> = Vec::new();
-        if self.derive_opts.derive_show && !has_future_or_stream {
+        if self.derive_opts.derive_show {
             deriviation.push("Show")
         }
-        if self.derive_opts.derive_eq && !has_future_or_stream {
+        if self.derive_opts.derive_eq {
             deriviation.push("Eq")
         }
         let declaration = if self.derive_opts.derive_error && name.contains("Error") {
@@ -1798,6 +1747,13 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             .world_gen
             .pkg_resolver
             .type_name(self.interface_gen.name, ty)
+    }
+
+    fn resolve_type_name_for_lowering(&mut self, ty: &Type) -> String {
+        self.interface_gen
+            .world_gen
+            .pkg_resolver
+            .type_name_for_lowering(self.interface_gen.name, ty)
     }
 
     fn use_ffi(&mut self, str: &'static str) {
@@ -2461,7 +2417,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let assignment = match func.result {
                     None => "let _ = ".into(),
                     Some(ty) => {
-                        let ty = format!("({})", self.resolve_type_name(&ty));
+                        // For exports, use lowering type names (OutFuture/OutStream)
+                        // For imports, use lifting type names (FutureR/StreamR)
+                        let ty = match self.direction {
+                            Direction::Export => {
+                                format!("({})", self.resolve_type_name_for_lowering(&ty))
+                            }
+                            Direction::Import => format!("({})", self.resolve_type_name(&ty)),
+                        };
                         let result = self.locals.tmp("result");
                         if func.result.is_some() {
                             results.push(result.clone());
@@ -2765,32 +2728,67 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::FutureLift { ty, .. } => {
+                self.use_ffi(ffi::MALLOC);
+                self.use_ffi(ffi::FREE);
                 let ty = dealias(self.interface_gen.resolve, *ty);
-                let (lifted_func_name, _lift, _, _) =
+                let (lifted_func_name, lift, _, _) =
                     self.interface_gen.bindings.0.get(&ty).unwrap();
                 let op = &operands[0];
                 results.push(format!("{lifted_func_name}({op})"));
+                if self
+                    .interface_gen
+                    .async_bindings_emitted
+                    .insert(lifted_func_name.clone())
+                {
+                    uwriteln!(self.interface_gen.ffi, "{}", lift);
+                }
             }
 
             Instruction::FutureLower { ty, .. } => {
+                let ty = dealias(self.interface_gen.resolve, *ty);
+                let (_, _, lowered_func_name, lower) =
+                    self.interface_gen.bindings.0.get(&ty).unwrap();
                 let op = &operands[0];
-                let _ = ty;
-                results.push(format!("({op}).take_handle()"));
+                results.push(format!("{lowered_func_name}({op})"));
+                if self
+                    .interface_gen
+                    .async_bindings_emitted
+                    .insert(lowered_func_name.clone())
+                {
+                    uwriteln!(self.interface_gen.ffi, "{}", lower);
+                }
             }
 
             Instruction::StreamLower { ty, .. } => {
+                let ty = dealias(self.interface_gen.resolve, *ty);
+                let (_, _, lowered_func_name, lower) =
+                    self.interface_gen.bindings.0.get(&ty).unwrap();
                 let op = &operands[0];
-                let _ = ty;
-                results.push(format!("({op}).take_handle()"));
+                results.push(format!("{lowered_func_name}({op})"));
+                if self
+                    .interface_gen
+                    .async_bindings_emitted
+                    .insert(lowered_func_name.clone())
+                {
+                    uwriteln!(self.interface_gen.ffi, "{}", lower);
+                }
             }
 
             Instruction::StreamLift { ty, .. } => {
                 let ty = dealias(self.interface_gen.resolve, *ty);
-                let (lifted_func_name, _lift, _, _) =
+                let (lifted_func_name, lift, _, _) =
                     self.interface_gen.bindings.0.get(&ty).unwrap();
                 let op = &operands[0];
                 results.push(format!("{lifted_func_name}({op})"));
+                if self
+                    .interface_gen
+                    .async_bindings_emitted
+                    .insert(lifted_func_name.clone())
+                {
+                    uwriteln!(self.interface_gen.ffi, "{}", lift);
+                }
             }
+
             Instruction::ErrorContextLower { .. } | Instruction::ErrorContextLift { .. } => todo!(),
 
             Instruction::DropHandle { ty } => {
@@ -2798,11 +2796,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 match ty {
                     Type::Id(id) => match &self.interface_gen.resolve.types[*id].kind {
                         TypeDefKind::Handle(Handle::Own(_)) => {
-                            let constructor = self
-                                .interface_gen
-                                .world_gen
-                                .pkg_resolver
-                                .type_constructor(self.interface_gen.name, ty);
+                            let constructor =
+                                self.interface_gen.world_gen.pkg_resolver.type_constructor(
+                                    self.interface_gen.name,
+                                    ty,
+                                );
                             uwriteln!(self.src, "let _ = {constructor}::drop({op});");
                         }
                         TypeDefKind::Future(_) | TypeDefKind::Stream(_) => {
