@@ -733,7 +733,7 @@ uint32_t {snake}_thread_suspend_to_cancellable(uint32_t thread);
 void {snake}_thread_suspend_to_suspended(uint32_t thread);
 uint32_t {snake}_thread_suspend_to_suspended_cancellable(uint32_t thread);
 void {snake}_thread_unsuspend(uint32_t thread);
-void {snake}_thread_exit();
+_Noreturn void {snake}_thread_exit();
 void {snake}_thread_yield_to_suspended(uint32_t thread);
 uint32_t {snake}_thread_yield_to_suspended_cancellable(uint32_t thread);
 void {snake}_thread_suspend(void);
@@ -815,9 +815,9 @@ void {snake}_thread_unsuspend(uint32_t thread) {{
 }}
 
 __attribute__((__import_module__("$root"), __import_name__("[thread-exit]")))
-extern void __thread_exit();
+_Noreturn extern void __thread_exit();
 
-void {snake}_thread_exit() {{
+_Noreturn void {snake}_thread_exit() {{
     __thread_exit();
 }}
 
