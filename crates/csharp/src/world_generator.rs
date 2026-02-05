@@ -382,6 +382,23 @@ impl WorldGenerator for CSharp {
 
         let access = self.access_modifier();
 
+        if self.needs_async_support {
+            uwrite!(
+                src,
+                "
+                    using System.Runtime.CompilerServices;
+
+                "
+            );
+        }
+
+        uwrite!(
+            src,
+            "
+                using System.Runtime.InteropServices;
+                using System.Collections.Concurrent;
+            "
+        );
         uwrite!(
             src,
             "
@@ -644,6 +661,12 @@ impl WorldGenerator for CSharp {
                 {
                     return FutureHelpers.RawFutureNew(table);
                 }
+
+            "#,
+            );
+
+            src.push_str(
+                r#"
             }
             "#,
             );

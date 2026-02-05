@@ -5,7 +5,7 @@ use heck::ToUpperCamelCase;
 use std::fmt::Write;
 use std::mem;
 use std::ops::Deref;
-use wit_bindgen_core::abi::{self, Bindgen, Bitcast, Instruction};
+use wit_bindgen_core::abi::{Bindgen, Bitcast, Instruction};
 use wit_bindgen_core::{Direction, Ns, uwrite, uwriteln};
 use wit_parser::abi::WasmType;
 use wit_parser::{
@@ -32,7 +32,7 @@ pub(crate) struct FunctionBindgen<'a, 'b> {
     is_block: bool,
     fixed_statments: Vec<Fixed>,
     parameter_type: ParameterType,
-    result_type: Option<Type>,
+    pub(crate) result_type: Option<Type>,
     pub(crate) resource_type_name: Option<String>,
 }
 
@@ -382,7 +382,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         ret
     }
 
-    fn emit_allocation_for_type(&mut self, results: &[WasmType]) -> String {
+    pub fn emit_allocation_for_type(&mut self, results: &[WasmType]) -> String {
         let address = self.locals.tmp("address");
         let buffer_size = self.get_size_for_type(results);
         let align = self.get_align_for_type(results);
@@ -1028,40 +1028,23 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::CallWasm { sig, .. } => {
-                let is_async = InterfaceGenerator::is_async(self.kind);
-
-                let requires_async_return_buffer_param = is_async && sig.results.len() >= 1;
-                let async_return_buffer = if requires_async_return_buffer_param {
-                    let buffer = self.emit_allocation_for_type(&sig.results);
-                    uwriteln!(self.src, "//TODO: store somewhere with the TaskCompletionSource, possibly in the state, using Task.AsyncState to retrieve it later.");
-                    Some(buffer)
-                } else {
-                    None
-                };
-
+                let mut result = String::new();
                 let assignment = match &sig.results[..] {
                     [_] => {
-                        let result = self.locals.tmp("result");
+                        result = self.locals.tmp("result");
                         let assignment = format!("var {result} = ");
-                        if !requires_async_return_buffer_param {
-                            results.push(result);
-                        }
                         assignment
                     }
 
-                    [] => String::new(),
+                    [] => {
+                        String::new()
+                    }
 
                     _ => unreachable!(),
                 };
 
                 let func_name = self.func_name.to_upper_camel_case();
-
-                // Async functions that return a result need to pass a buffer where the result will later be written.
-                let operands = match async_return_buffer {
-                    Some(ref buffer) if operands.is_empty() => buffer.clone(),
-                    Some(ref buffer) => format!("{}, {}", operands.join(", "), buffer),
-                    None => operands.join(", "),
-                };
+                let operands = operands.join(", ");
 
                 let (_namespace, interface_name) =
                     &CSharp::get_class_name_from_qualified_name(self.interface_gen.name);
@@ -1091,18 +1074,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     "{assignment} {interop_name}{resource_type_name}.{func_name}WasmInterop.wasmImport{func_name}({operands});"
                 );
 
-                if let Some(buffer) = async_return_buffer {
-                    let result = abi::lift_from_memory(
-                        self.interface_gen.resolve,
-                        self,
-                        buffer.clone(),
-                        &self.result_type.unwrap(),
-                    );
-                    uwriteln!(
-                        self.src,
-                        "global::System.Runtime.InteropServices.NativeMemory.Free({});", 
-                        buffer
-                    );
+                if sig.results.len() >= 1 {
                     results.push(result);
                 }
             }
@@ -1175,7 +1147,24 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         {name}TaskReturn({ret_param});
                         return (uint)CallbackCode.Exit;
                     }}
+
+                    ret.ContinueWith(t => 
+                    {{
+                        if (t.IsFaulted)
+                        {{
+                            throw new NotImplementedException("Async function {name} IsFaulted.  This scenario is not yet implemented.");
+                        }}
+
+                        {name}TaskReturn({ret_param});
+                    }});
                     
+                    AsyncSupport.ContextTask* contextTaskPtr = (AsyncSupport.ContextTask*)System.Runtime.InteropServices.Marshal.AllocHGlobal(sizeof(AsyncSupport.ContextTask));
+                    AsyncSupport.ContextSet(contextTaskPtr);
+
+                    // This TaskCompletionSource does nothing, but the callback code expects one.
+                    var tcs = new System.Threading.Tasks.TaskCompletionSource();
+                    AsyncSupport.PendingCallbacks.TryAdd((IntPtr)contextTaskPtr, tcs);
+
                     // TODO: Defer dropping borrowed resources until a result is returned.
                     return (uint)CallbackCode.Yield;
                     "#);
@@ -1412,7 +1401,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::AsyncTaskReturn { name: _, params: _ } => {
-                uwriteln!(self.src, "// TODO_task_cancel.forget();");
+                uwriteln!(self.src, "// TODO: task_cancel.forget();");
             }
 
             Instruction::FutureLift { payload, ty } => {
