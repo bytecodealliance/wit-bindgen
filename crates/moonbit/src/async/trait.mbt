@@ -87,8 +87,6 @@ fn fresh_id() -> Int {
 }
 
 ///|
-pub suberror FutureCancelled derive(Show)
-
 ///|
 struct Waiter {
   mut coro : Coroutine?
@@ -164,7 +162,7 @@ async fn[X] local_future_get(state : Ref[LocalFutureState[X]]) -> X {
       Some(value) => return value
       None =>
         if state.val.closed {
-          raise FutureCancelled::FutureCancelled
+          raise Cancelled::Cancelled
         } else {
           wait_on(state.val.waiters)
         }
