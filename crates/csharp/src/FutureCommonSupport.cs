@@ -15,7 +15,7 @@ public readonly struct WaitableStatus (uint status)
 public readonly struct SubtaskStatus (uint status)
 {
     public uint State => status & 0xf;
-    public uint Handle => status >> 4;
+    public int Handle => (int)(status >> 4);
     public bool IsSubtaskStarting => State == 0;
     public bool IsSubtaskStarted => State == 1;
     public bool IsSubtaskReturned => State == 2;
@@ -27,24 +27,31 @@ public readonly struct EventWaitable
 {
     public EventWaitable(EventCode eventCode, uint waitable, uint code)
     {
-        Event = eventCode;
-        Waitable = waitable;
-        // TODO: create distinguished waitables depending on the code?
+        Console.WriteLine($"EventWaitable with code {code}");
+        EventCode = eventCode;
+        Waitable = (int)waitable;
+        Code = code;
+        
         if(eventCode == EventCode.Subtask)
         {
-            SubTaskStatus = new SubtaskStatus(code);
+            IsSubtask = true;
+            SubtaskStatus = new SubtaskStatus(code);
         }
         else
         {
-            Status = new WaitableStatus(code);
+            WaitableStatus = new WaitableStatus(code);
         }
     }
 
-    public readonly EventCode Event;
-    public readonly uint Waitable;
+    public readonly EventCode EventCode;
+    public readonly int Waitable;
     public readonly uint Code;
 
-    public readonly WaitableStatus Status;
-    public readonly SubtaskStatus SubTaskStatus;
+    public bool IsSubtask { get; }
+    public readonly WaitableStatus WaitableStatus;
+    public readonly SubtaskStatus SubtaskStatus;
+    public readonly int WaitableCount => (int)Code >> 4;
+    public bool IsDropped => !IsSubtask && WaitableStatus.IsDropped;
+    public bool IsCompleted => IsSubtask && SubtaskStatus.IsSubtaskReturned || !IsSubtask && WaitableStatus.IsCompleted;
 }
 

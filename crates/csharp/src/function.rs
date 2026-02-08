@@ -1152,21 +1152,16 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     {{
                         if (t.IsFaulted)
                         {{
+                            // TODO
+                            Console.Error.WriteLine("Async function {name} IsFaulted.  This scenario is not yet implemented.");
                             throw new NotImplementedException("Async function {name} IsFaulted.  This scenario is not yet implemented.");
                         }}
 
                         {name}TaskReturn({ret_param});
                     }});
                     
-                    AsyncSupport.ContextTask* contextTaskPtr = (AsyncSupport.ContextTask*)System.Runtime.InteropServices.Marshal.AllocHGlobal(sizeof(AsyncSupport.ContextTask));
-                    AsyncSupport.ContextSet(contextTaskPtr);
-
-                    // This TaskCompletionSource does nothing, but the callback code expects one.
-                    var tcs = new System.Threading.Tasks.TaskCompletionSource();
-                    AsyncSupport.PendingCallbacks.TryAdd((IntPtr)contextTaskPtr, tcs);
-
                     // TODO: Defer dropping borrowed resources until a result is returned.
-                    return (uint)CallbackCode.Yield;
+                    return (uint)CallbackCode.Wait | (uint)(AsyncSupport.WaitableSet.Handle << 4);
                     "#);
                 }
 
@@ -1422,6 +1417,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     None => ""
                 };
                 let upper_camel = generic_type_name.to_upper_camel_case();
+                let bracketed_generic = match payload {
+                    Some(_) => {
+                        format!("<{generic_type_name}>")
+                    }
+                    None => String::new()
+                };
             //    let sig_type_name = "Void";
                 let reader_var = self.locals.tmp("reader");
                 let module = self.interface_gen.name;
@@ -1432,7 +1433,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     .strip_prefix("I").unwrap()
                     .replace("Imports", "Exports"); // TODO: This is fragile and depends on the interface name.
 
-                // TODO: For now we will keet future and stream readers/writers as seperate classes and look to refactor.
                 let future_stream_name = match inst {
                     Instruction::FutureLift{payload: _, ty: _} => "Future",
                     Instruction::StreamLift{payload: _, ty: _} => "Stream",
@@ -1440,7 +1440,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         panic!("Unexpected instruction for lift");
                     }
                 };
-                uwriteln!(self.src, "var {reader_var} = new FutureReader({}, {export_name}.{base_interface_name}Interop.{future_stream_name}VTable{});", operands[0], upper_camel);
+                uwriteln!(self.src, "var {reader_var} = new {future_stream_name}Reader{bracketed_generic}({}, {export_name}.{base_interface_name}Interop.{future_stream_name}VTable{});", operands[0], upper_camel);
                 results.push(reader_var);
 
                 match inst {

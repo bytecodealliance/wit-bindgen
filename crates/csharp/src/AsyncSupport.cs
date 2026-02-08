@@ -1,5 +1,3 @@
-
-
 /**
  * Helpers for the async support.
  */
@@ -18,6 +16,7 @@ public enum CallbackCode : uint
 {
     Exit = 0,
     Yield = 1,
+    Wait = 2,
     // TODO:
     //#define TEST_CALLBACK_CODE_WAIT(set) (2 | (set << 4))
 }
@@ -45,6 +44,16 @@ public partial class WaitableSet(int handle) : IDisposable
 
 public static class AsyncSupport
 {
+    private static ConcurrentDictionary<int, ConcurrentDictionary<int, WaitableInfoState>> pendingTasks = new ();
+    internal static class PollWasmInterop
+    {
+        [DllImport("wasi:io/poll@0.2.0", EntryPoint = "poll"), WasmImportLinkage]
+        internal static extern void wasmImportPoll(nint p0, int p1, nint p2);
+    }
+
+    // TODO: How do we allow multiple waitable sets?
+    internal static WaitableSet WaitableSet;
+
     private static class Interop
     {
         [global::System.Runtime.InteropServices.DllImport("$root", EntryPoint = "[waitable-set-new]"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
@@ -72,7 +81,8 @@ public static class AsyncSupport
     public static WaitableSet WaitableSetNew() 
     {
         var waitableSet  = Interop.WaitableSetNew();
-        return new WaitableSet(waitableSet );
+        Console.WriteLine($"WaitableSet created with number {waitableSet}");
+        return new WaitableSet(waitableSet);
     }
 
     public static unsafe void WaitableSetPoll(int waitableHandle) 
@@ -84,14 +94,85 @@ public static class AsyncSupport
         }
     }
 
-    public static void Join(FutureWriter writer, WaitableSet set) 
+    public static unsafe Task Join(Task task1, Task task2)
     {
+        // [UnsafeAccessor(UnsafeAccessorKind.StaticMethod, Name = "PollWasiEventLoopUntilResolvedVoid")]
+        // static extern void PollWasiEventLoopUntilResolvedVoid(Thread t, Task mainTask);
+
+        Console.WriteLine("Join");
+        var mainTask = Task.WhenAll(task1, task2);
+
+        // byte[] buffer = new byte[4 * 1 /*@in.Count */];
+        // var gcHandle = GCHandle.Alloc(buffer, GCHandleType.Pinned);
+        // var address = gcHandle.AddrOfPinnedObject();
+
+        // TODO: for each pollable
+        // global::WasiPollWorld.wit.imports.wasi.io.v0_2_0.IPoll.Pollable element = @in[index];
+        // int basePtr = (int)address + (0 /* index */ * 4);
+        // var handle = 6; //WaitableSet.Handle;
+        // BitConverter.TryWriteBytes(new Span<byte>((void*)(basePtr + 0), 4), unchecked((int)handle));
+        return mainTask;
+        // int giveupafter = 20;
+        // int iteration = 0;
+        // while (!mainTask.IsCompleted && iteration++ < giveupafter)
+        // {
+        //     var retArea = new uint[2];
+        //     fixed (uint* retAreaByte0 = &retArea[0])
+        //     {
+        //         var ptr = (nint)retAreaByte0;
+        //         Console.WriteLine("WaitableSetPoll");
+        //         Interop.WaitableSetPoll(handle, retAreaByte0);
+        //         // PollWasmInterop.wasmImportPoll((int)address, 1 /* @in.Count */, ptr);
+
+        //         var array = new uint[BitConverter.ToInt32(new Span<byte>((void*)(ptr + 4), 4))];
+        //         new Span<uint>((void*)(BitConverter.ToInt32(new Span<byte>((void*)(ptr + 0), 4))), BitConverter.ToInt32(new Span<byte>((void*)(ptr + 4), 4))).CopyTo(new Span<uint>(array));
+        //         // gcHandle.Free();
+        //         // return array;
+        //     }
+        // }
+        // // PollWasiEventLoopUntilResolvedVoid(Thread.CurrentThread, mainTask);
+        // Console.WriteLine("Join end");
+    }
+
+    internal static void Join(SubtaskStatus subtask, WaitableSet set, WaitableInfoState waitableInfoState) 
+    {
+        AddTaskToWaitables(set.Handle, subtask.Handle, waitableInfoState);
+        Interop.WaitableJoin(subtask.Handle, set.Handle);
+    }
+
+    internal static void Join(FutureWriter writer, WaitableSet set, WaitableInfoState waitableInfoState) 
+    {
+        // Store the task completion source so we can complete it later
+        AddTaskToWaitables(set.Handle, writer.Handle, waitableInfoState);
         Interop.WaitableJoin(writer.Handle, set.Handle);
     }
 
-    public static void Join(FutureReader reader, WaitableSet set) 
+    internal static void Join(FutureReader reader, WaitableSet set, WaitableInfoState waitableInfoState) 
     {
+        // Store the task completion source so we can complete it later
+        AddTaskToWaitables(set.Handle, reader.Handle, waitableInfoState);
         Interop.WaitableJoin(reader.Handle, set.Handle);
+    }
+
+    internal static void Join<T>(FutureReader<T> reader, WaitableSet set, WaitableInfoState waitableInfoState) 
+    {
+        // Store the task completion source so we can complete it later
+        AddTaskToWaitables(set.Handle, reader.Handle, waitableInfoState);
+        Interop.WaitableJoin(reader.Handle, set.Handle);
+    }
+
+    internal static void Join<T>(StreamReader<T> reader, WaitableSet set, WaitableInfoState waitableInfoState) 
+    {
+        // Store the task completion source so we can complete it later
+        AddTaskToWaitables(set.Handle, reader.Handle, waitableInfoState);
+        Interop.WaitableJoin(reader.Handle, set.Handle);
+    }
+
+    internal static void Join<T>(StreamWriter<T> writer, WaitableSet set, WaitableInfoState waitableInfoState) 
+    {
+        // Store the task completion source so we can complete it later
+        AddTaskToWaitables(set.Handle, writer.Handle, waitableInfoState);
+        Interop.WaitableJoin(writer.Handle, set.Handle);
     }
 
     // TODO: Revisit this to see if we can remove it.
@@ -99,6 +180,13 @@ public static class AsyncSupport
     public static void Join(int handle) 
     {
         Interop.WaitableJoin(handle, 0);
+    }
+
+    private static void AddTaskToWaitables(int waitableSetHandle, int waitableHandle, WaitableInfoState waitableInfoState)
+    {
+        Console.WriteLine($"Adding waitable {waitableHandle} to set {waitableSetHandle}");
+        var waitableSetOfTasks = pendingTasks.GetOrAdd(waitableSetHandle, _ => new ConcurrentDictionary<int, WaitableInfoState>());
+        waitableSetOfTasks[waitableHandle] = waitableInfoState;
     }
 
     public unsafe static EventWaitable WaitableSetWait(WaitableSet set) 
@@ -122,25 +210,6 @@ public static class AsyncSupport
         public int FutureHandle;
     }
 
-    public readonly struct Event
-    {
-        public Event(int raw, int waitable, uint code)
-        {
-            Raw = raw;
-            Waitable = waitable;
-            Code = code;
-            WaitableStatus = new WaitableStatus(code & 0xf);
-        }
-
-        public readonly int Raw;
-        public readonly int Waitable;
-        public readonly uint Code;
-
-        public readonly EventCode EventCode => (EventCode)Raw;
-        public readonly WaitableStatus WaitableStatus;
-        public readonly uint WaitableCount => Code >> 4;
-    }
-
     public static unsafe void ContextSet(ContextTask* contextTask)
     {
         Interop.ContextSet(contextTask);
@@ -156,56 +225,206 @@ public static class AsyncSupport
         return contextTaskPtr;
     }
 
-    public static unsafe CallbackCode Callback(Event e, ContextTask* contextPtr, Action taskReturn)
+    public static unsafe uint Callback(EventWaitable e, ContextTask* contextPtr, Action taskReturn)
     {
-        // TODO: Looks complicated....
-        if(PendingCallbacks.TryRemove((IntPtr)(contextPtr), out var tcs))
-        {
-            Marshal.FreeHGlobal((IntPtr)contextPtr);
-            taskReturn();
+        Console.WriteLine($"Callback Event code {e.EventCode} Code {e.Code} Waitable {e.Waitable} Waitable Status {e.WaitableStatus.State}, Count {e.WaitableCount}");
+        var waitables = pendingTasks[WaitableSet.Handle];
+        var waitableInfoState = waitables[e.Waitable];
 
-            tcs.SetResult();
+        if (e.IsDropped)
+        {
+            Console.WriteLine("Dropped.");
+            waitableInfoState.FutureStream.OtherSideDropped();
         }
-        return CallbackCode.Exit;
+
+        if (e.IsCompleted || e.IsDropped)
+        {
+            // The operation is complete so we can free the buffer and remove the waitable from our dicitonary
+            Console.WriteLine("Setting the result");
+            waitables.Remove(e.Waitable, out _);
+            if (e.IsSubtask)
+            {
+                // TODO: Handle/lift async function return values. 
+                waitableInfoState.SetResult(0 /* not used */);
+            }
+            else
+            {
+                waitableInfoState.FutureStream.FreeBuffer();
+
+                if (e.IsDropped)
+                {
+                    waitableInfoState.SetException(new StreamDroppedException());
+                }
+                else
+                {
+                    // This may add a new waitable to the set.
+                    waitableInfoState.SetResult(e.WaitableCount);
+                }
+            }
+
+            if (waitables.Count == 0)
+            {
+                Console.WriteLine($"No more waitables for waitable {e.Waitable} in set {WaitableSet.Handle}");
+                taskReturn();
+                return (uint)CallbackCode.Exit;
+            }
+
+            Console.WriteLine("More waitables in the set.");
+            return (uint)CallbackCode.Wait | (uint)(WaitableSet.Handle << 4);
+        }
+
+        throw new NotImplementedException($"WaitableStatus not implemented {e.WaitableStatus.State} in set {WaitableSet.Handle}");
+    }
+
+    public static Task TaskFromStatus(uint status)
+    {
+        var subtaskStatus = new SubtaskStatus(status);
+        status = status & 0xF;
+
+        if (subtaskStatus.IsSubtaskStarting || subtaskStatus.IsSubtaskStarted)
+        {
+            if (WaitableSet == null) {
+                WaitableSet = WaitableSetNew();
+                Console.WriteLine($"TaskFromStatus creating WaitableSet {WaitableSet.Handle}");
+            }
+
+            TaskCompletionSource tcs = new TaskCompletionSource();
+            AsyncSupport.Join(subtaskStatus, WaitableSet, new WaitableInfoState(tcs));
+            return tcs.Task;
+        }
+        else if (subtaskStatus.IsSubtaskReturned)
+        {
+            return Task.CompletedTask;
+        }
+        else 
+        {
+            throw new Exception($"unexpected subtask status: {status}");
+        }
+    }
+
+    public static Task<T> TaskFromStatus<T>(uint status, Func<T> liftFunc)
+    {
+        var subtaskStatus = new SubtaskStatus(status);
+        status = status & 0xF;
+
+        // TODO join and complete the task somwhere.
+        var tcs = new TaskCompletionSource<T>();
+        if (subtaskStatus.IsSubtaskStarting || subtaskStatus.IsSubtaskStarted)
+        {
+            if (WaitableSet == null) {
+                Console.WriteLine("TaskFromStatus<T> creating WaitableSet");
+                WaitableSet = AsyncSupport.WaitableSetNew();
+            }
+
+            return tcs.Task;
+        }
+        else if (subtaskStatus.IsSubtaskReturned)
+        {
+            tcs.SetResult(liftFunc());
+            return tcs.Task;
+        }
+        else 
+        {
+            throw new Exception($"unexpected subtask status: {status}");
+        }
     }
 
     // From the context pointer to the task.
-    public static ConcurrentDictionary<IntPtr, TaskCompletionSource> PendingCallbacks = new ConcurrentDictionary<IntPtr, TaskCompletionSource>();
+    internal static ConcurrentDictionary<IntPtr, TaskCompletionSource> FutureCallbacks = new ConcurrentDictionary<IntPtr, TaskCompletionSource>();
+    internal static ConcurrentDictionary<IntPtr, TaskCompletionSource<int>> StreamCallbacks = new ConcurrentDictionary<IntPtr, TaskCompletionSource<int>>();
 }
 
 /**
  * Helpers for future support.
  */
 public delegate ulong New();
-public delegate uint StartRead(int handle, IntPtr buffer);
+public delegate uint FutureRead(int handle, IntPtr buffer);
 public delegate void DropReader(int handle);
 public delegate void DropWriter(int handle);
-public delegate uint Write(int handle, IntPtr buffer);
+public delegate uint FutureWrite(int handle, IntPtr buffer);
+
+public delegate uint StreamWrite(int handle, IntPtr buffer, uint length);
+public delegate uint StreamRead(int handle, IntPtr buffer, uint length);
+public delegate void Lower(object payload, nint size);
 
 public struct FutureVTable
 {
     public New New;
-    public StartRead StartRead;
-    public Write Write;
+    public FutureRead Read;
+    public FutureWrite Write;
     public DropReader DropReader;
     public DropWriter DropWriter;
 }
 
-public struct TaskState
+public struct StreamVTable
 {
-    //TODO: A copy of the go taskState, what else do we need?
-    // channel     chan unit
-    internal WaitableSet? WaitableSet;
-    // pending     map[uint32]chan uint32
-    // yielding    chan unit
-    // pinner      runtime.Pinner
+    public New New;
+    public StreamRead Read;
+    public StreamWrite Write;
+    public DropReader DropReader;
+    public DropWriter DropWriter;
+    public Lower? Lower;
 }
 
+internal interface IFutureStream : IDisposable
+{
+    void FreeBuffer();
+    // Called when notified the other side is dropped.
+    void OtherSideDropped();
+}
+
+internal struct WaitableInfoState
+{
+    internal WaitableInfoState(TaskCompletionSource<int> taskCompletionSource, IFutureStream futureStream)
+    {
+        taskCompletionSourceInt = taskCompletionSource;
+        FutureStream = futureStream;        
+    }
+
+    internal WaitableInfoState(TaskCompletionSource taskCompletionSource, IFutureStream futureStream)
+    {
+        this.taskCompletionSource = taskCompletionSource;
+        FutureStream = futureStream;        
+    }
+
+    internal WaitableInfoState(TaskCompletionSource taskCompletionSource)
+    {
+        this.taskCompletionSource = taskCompletionSource;
+    }
+
+    internal void SetResult(int count)
+    {
+        if (taskCompletionSource != null)
+        {
+            Console.WriteLine("Setting result for void waitable completion source");
+            taskCompletionSource.SetResult();
+        }
+        else
+        {
+            taskCompletionSourceInt.SetResult(count);
+        }
+    }
+
+    internal void SetException(Exception e)
+    {
+        if (taskCompletionSource != null)
+        {
+            Console.WriteLine("Setting exception waitable completion source");
+            taskCompletionSource.SetException(e);
+        }
+        else
+        {
+            taskCompletionSourceInt.SetException(e);
+        }
+    }
+
+    private TaskCompletionSource taskCompletionSource;
+    private TaskCompletionSource<int> taskCompletionSourceInt;
+    internal IFutureStream FutureStream;
+}
 
 public static class FutureHelpers
 {
-    static TaskState state = new TaskState();
-
     /// Helper function to create a new read/write pair for a component model
     /// future.
     public static (FutureReader, FutureWriter) RawFutureNew(FutureVTable vtable)
@@ -228,7 +447,7 @@ public static class FutureHelpers
 
     /// Helper function to create a new read/write pair for a component model
     /// stream.
-    public static (StreamReader, StreamWriter) RawStreamNew(FutureVTable vtable)
+    public static (StreamReader, StreamWriter) RawStreamNew(StreamVTable vtable)
     {
         var packed = vtable.New();
         var readerHandle = (int)(packed & 0xFFFFFFFF);
@@ -237,69 +456,17 @@ public static class FutureHelpers
         return (new StreamReader(readerHandle, vtable), new StreamWriter(writerHandle, vtable));
     }
 
-    public static (StreamReader<T>, StreamWriter<T>) RawStreamNew<T>(FutureVTable vtable)
+    public static (StreamReader<T>, StreamWriter<T>) RawStreamNew<T>(StreamVTable vtable)
     {
         var packed = vtable.New();
         var readerHandle = (int)(packed & 0xFFFFFFFF);
         var writerHandle = (int)(packed >> 32);
 
+        Console.WriteLine($"Createing reader<T> with handle {readerHandle}");
+        Console.WriteLine($"Createing writer<T> with handle {writerHandle}");
         return (new StreamReader<T>(readerHandle, vtable), new StreamWriter<T>(writerHandle, vtable));
     }
 
-    public static Task TaskFromStatus(uint status)
-    {
-        var subTaskStatus = new SubtaskStatus(status);
-        status = status & 0xF;
-
-        if(subTaskStatus.IsSubtaskStarting || subTaskStatus.IsSubtaskStarted)
-        {
-            if(state.WaitableSet == null) {
-                state.WaitableSet = AsyncSupport.WaitableSetNew();
-            }
-
-            // TODO join and complete the task somwhere.
-            TaskCompletionSource tcs = new TaskCompletionSource();
-            return tcs.Task;
-            // waitableJoin(subtask, state.waitableSet)
-            // channel := make(chan uint32)
-            // state.pending[subtask] = channel
-            // (<-channel)
-        }
-        else if (subTaskStatus.IsSubtaskReturned)
-        {
-            return Task.CompletedTask;
-        }
-        else 
-        {
-            throw new Exception($"unexpected subtask status: {status}");
-        }
-    }
-
-    public static Task<T> TaskFromStatus<T>(uint status, Func<T> liftFunc)
-    {
-        var subTaskStatus = new SubtaskStatus(status);
-        status = status & 0xF;
-
-        // TODO join and complete the task somwhere.
-        var tcs = new TaskCompletionSource<T>();
-        if(subTaskStatus.IsSubtaskStarting || subTaskStatus.IsSubtaskStarted)
-        {
-            if(state.WaitableSet == null) {
-                state.WaitableSet = AsyncSupport.WaitableSetNew();
-            }
-
-            return tcs.Task;
-        }
-        else if (subTaskStatus.IsSubtaskReturned)
-        {
-            tcs.SetResult(liftFunc());
-            return tcs.Task;
-        }
-        else 
-        {
-            throw new Exception($"unexpected subtask status: {status}");
-        }
-    }
 }
 
 public class FutureAwaiter : INotifyCompletion {
@@ -338,7 +505,7 @@ public class FutureAwaiter : INotifyCompletion {
     }
 }
 
-public class FutureReader : IDisposable // : TODO Waitable
+public class FutureReader : IFutureStream // : TODO Waitable
 {
     FutureAwaiter futureAwaiter;
 
@@ -374,16 +541,19 @@ public class FutureReader : IDisposable // : TODO Waitable
             throw new InvalidOperationException("Handle already taken");
         }
 
-        var status = new WaitableStatus(VTable.StartRead(Handle, IntPtr.Zero));
+        var status = new WaitableStatus(VTable.Read(Handle, IntPtr.Zero));
         if (status.IsBlocked)
         {
-            var tcs = new TaskCompletionSource();
-
-
-            AsyncSupport.ContextTask* contextTaskPtr = (AsyncSupport.ContextTask*)Marshal.AllocHGlobal(sizeof(AsyncSupport.ContextTask));
-
-            AsyncSupport.ContextSet(contextTaskPtr);
-            AsyncSupport.PendingCallbacks.TryAdd((IntPtr)contextTaskPtr, tcs);
+            Console.WriteLine("Read Blocked");
+            var tcs = new TaskCompletionSource<int>();
+            if(AsyncSupport.WaitableSet == null)
+            {
+            Console.WriteLine("FutureReader Read Blocked creating WaitableSet");
+                AsyncSupport.WaitableSet = AsyncSupport.WaitableSetNew();
+            }
+            Console.WriteLine("blocked read before join");
+            AsyncSupport.Join(this, AsyncSupport.WaitableSet, new WaitableInfoState(tcs, this));
+            Console.WriteLine("blocked read after join");
             return tcs.Task;
         }
         if (status.IsCompleted)
@@ -392,6 +562,14 @@ public class FutureReader : IDisposable // : TODO Waitable
         }
 
         throw new NotImplementedException(status.State.ToString());
+    }
+
+    void IFutureStream.FreeBuffer()
+    {
+    }
+
+    void IFutureStream.OtherSideDropped()
+    {
     }
 
     void Dispose(bool _disposing)
@@ -415,7 +593,7 @@ public class FutureReader : IDisposable // : TODO Waitable
     }
 }
 
-public class FutureReader<T>(int handle, FutureVTable vTable) : IDisposable // : TODO Waitable
+public class FutureReader<T>(int handle, FutureVTable vTable) : IFutureStream // : TODO Waitable
 {
     public int Handle { get; private set; } = handle;
     public FutureVTable VTable { get; private set; } = vTable;
@@ -440,17 +618,26 @@ public class FutureReader<T>(int handle, FutureVTable vTable) : IDisposable // :
             throw new InvalidOperationException("Handle already taken");
         }
 
-        var status = new WaitableStatus(vTable.StartRead(Handle, IntPtr.Zero));
+        var status = new WaitableStatus(vTable.Read(Handle, IntPtr.Zero));
         if (status.IsBlocked)
         {
-            //TODO: store somewhere so we can complete it later.
-            var tcs = new TaskCompletionSource();
-            //TODO: Free in callback?
-            AsyncSupport.ContextTask* contextTaskPtr = (AsyncSupport.ContextTask*)Marshal.AllocHGlobal(sizeof(AsyncSupport.ContextTask));
-
-            AsyncSupport.ContextSet(contextTaskPtr);
-            AsyncSupport.PendingCallbacks.TryAdd((IntPtr)contextTaskPtr, tcs);
+            Console.WriteLine("Read Blocked");
+            var tcs = new TaskCompletionSource<int>();
+            if(AsyncSupport.WaitableSet == null)
+            {
+                Console.WriteLine("FutureReader<T> Read Blocked creating WaitableSet");
+                AsyncSupport.WaitableSet = AsyncSupport.WaitableSetNew();
+            }
+            Console.WriteLine("blocked read before join");
+            AsyncSupport.Join(this, AsyncSupport.WaitableSet, new WaitableInfoState(tcs, this));
+            Console.WriteLine("blocked read after join");
             return tcs.Task;
+
+            // AsyncSupport.ContextTask* contextTaskPtr = (AsyncSupport.ContextTask*)Marshal.AllocHGlobal(sizeof(AsyncSupport.ContextTask));
+
+            // AsyncSupport.ContextSet(contextTaskPtr);
+            // AsyncSupport.FutureCallbacks.TryAdd((IntPtr)contextTaskPtr, tcs);
+            // return tcs.Task;
         }
         if (status.IsCompleted)
         {
@@ -458,6 +645,14 @@ public class FutureReader<T>(int handle, FutureVTable vTable) : IDisposable // :
         }
 
         throw new NotImplementedException();
+    }
+
+    void IFutureStream.FreeBuffer()
+    {
+    }
+
+    void IFutureStream.OtherSideDropped()
+    {
     }
 
     void Dispose(bool _disposing)
@@ -484,29 +679,56 @@ public class FutureReader<T>(int handle, FutureVTable vTable) : IDisposable // :
 /**
  * Helpers for future writer support.
  */
-public class FutureWriter(int handle, FutureVTable vTable) // : TODO Waitable
+public class FutureWriter(int handle, FutureVTable vTable) : IFutureStream
 {
     public int Handle { get; } = handle;
     public FutureVTable VTable { get; private set; } = vTable;
+    private bool readerDropped;
 
     // TODO: Generate per type for this instrinsic.
     public Task Write()
     {
-        // TODO: Generate for the interop name.
         if (Handle == 0)
         {
             throw new InvalidOperationException("Handle already taken");
         }
 
+        if (readerDropped)
+        {
+            throw new StreamDroppedException();    
+        }
+
         var status = new WaitableStatus(VTable.Write(Handle, IntPtr.Zero));
         if (status.IsBlocked)
         {
+            Console.WriteLine("blocked write");
             //TODO: store somewhere so we can complete it later.
             var tcs = new TaskCompletionSource();
+            if(AsyncSupport.WaitableSet == null)
+            {
+                AsyncSupport.WaitableSet = AsyncSupport.WaitableSetNew();
+            }
+            Console.WriteLine("blocked write before join");
+            AsyncSupport.Join(this, AsyncSupport.WaitableSet, new WaitableInfoState(tcs, this));
+            Console.WriteLine("blocked write after join");
             return tcs.Task;
         }
 
-        return Task.CompletedTask;
+        if (status.IsCompleted)
+        {
+            return Task.CompletedTask;
+        }
+
+        throw new NotImplementedException($"Unsupported write status {status.State}");
+    }
+
+    void IFutureStream.FreeBuffer()
+    {
+    }
+
+    void IFutureStream.OtherSideDropped()
+    {
+        readerDropped = true;
     }
 
     void Dispose(bool _disposing)
@@ -530,7 +752,7 @@ public class FutureWriter(int handle, FutureVTable vTable) // : TODO Waitable
     }
 }
 
-public class FutureWriter<T>(int handle, FutureVTable vTable) // : TODO Waitable
+public class FutureWriter<T>(int handle, FutureVTable vTable) : IFutureStream
 {
     public int Handle { get; } = handle;
     public FutureVTable VTable { get; private set; } = vTable;
@@ -552,7 +774,15 @@ public class FutureWriter<T>(int handle, FutureVTable vTable) // : TODO Waitable
             return tcs.Task;
         }
 
-        throw new NotImplementedException();
+        throw new NotImplementedException($"Unsupported write status {status.State}");
+    }
+
+    void IFutureStream.FreeBuffer()
+    {
+    }
+
+    void IFutureStream.OtherSideDropped()
+    {
     }
 
     void Dispose(bool _disposing)
@@ -612,11 +842,11 @@ public class StreamAwaiter : INotifyCompletion {
     }
 }
 
-public class StreamReader : IDisposable
+public class StreamReader : IFutureStream
 {
     StreamAwaiter streamAwaiter;
 
-    public StreamReader(int handle, FutureVTable vTable)
+    public StreamReader(int handle, StreamVTable vTable)
     {
         Handle = handle;
         VTable = vTable;
@@ -624,7 +854,7 @@ public class StreamReader : IDisposable
     }
 
     public int Handle { get; private set; }
-    public FutureVTable VTable { get; private set; }
+    public StreamVTable VTable { get; private set; }
 
     public StreamAwaiter GetAwaiter() => streamAwaiter;
 
@@ -648,16 +878,17 @@ public class StreamReader : IDisposable
             throw new InvalidOperationException("Handle already taken");
         }
 
-        var status = new WaitableStatus(VTable.StartRead(Handle, IntPtr.Zero));
+        //TODO: Create or use a the buffer to read into.
+        var status = new WaitableStatus(VTable.Read(Handle, IntPtr.Zero, 0));
         if (status.IsBlocked)
         {
-            var tcs = new TaskCompletionSource();
+            var tcs = new TaskCompletionSource<int>();
 
 
             AsyncSupport.ContextTask* contextTaskPtr = (AsyncSupport.ContextTask*)Marshal.AllocHGlobal(sizeof(AsyncSupport.ContextTask));
 
             AsyncSupport.ContextSet(contextTaskPtr);
-            AsyncSupport.PendingCallbacks.TryAdd((IntPtr)contextTaskPtr, tcs);
+            AsyncSupport.StreamCallbacks.TryAdd((IntPtr)contextTaskPtr, tcs);
             return tcs.Task;
         }
         if (status.IsCompleted)
@@ -666,6 +897,14 @@ public class StreamReader : IDisposable
         }
 
         throw new NotImplementedException(status.State.ToString());
+    }
+
+    void IFutureStream.FreeBuffer()
+    {
+    }
+
+    void IFutureStream.OtherSideDropped()
+    {
     }
 
     void Dispose(bool _disposing)
@@ -689,10 +928,13 @@ public class StreamReader : IDisposable
     }
 }
 
-public class StreamReader<T>(int handle, FutureVTable vTable) : IDisposable // : TODO Waitable
+public class StreamReader<T>(int handle, StreamVTable vTable) : IFutureStream // : TODO Waitable
 {
+    private GCHandle bufferHandle;
+    private bool writerDropped;
+
     public int Handle { get; private set; } = handle;
-    public FutureVTable VTable { get; private set; } = vTable;
+    public StreamVTable VTable { get; private set; } = vTable;
 
     public int TakeHandle()
     {
@@ -705,8 +947,7 @@ public class StreamReader<T>(int handle, FutureVTable vTable) : IDisposable // :
         return handle;
     }
 
-    // TODO: Generate per type for this instrinsic.
-    public unsafe Task Read()
+    public unsafe Task<int> Read<T>(T[] buffer)
     {
         // TODO: Generate for the interop name and the namespace.
         if (Handle == 0)
@@ -714,24 +955,50 @@ public class StreamReader<T>(int handle, FutureVTable vTable) : IDisposable // :
             throw new InvalidOperationException("Handle already taken");
         }
 
-        var status = new WaitableStatus(vTable.StartRead(Handle, IntPtr.Zero));
-        if (status.IsBlocked)
+        if(typeof(T) == typeof(byte))
         {
-            //TODO: store somewhere so we can complete it later.
-            var tcs = new TaskCompletionSource();
-            //TODO: Free in callback?
-            AsyncSupport.ContextTask* contextTaskPtr = (AsyncSupport.ContextTask*)Marshal.AllocHGlobal(sizeof(AsyncSupport.ContextTask));
+            bufferHandle = GCHandle.Alloc(buffer, GCHandleType.Pinned);
 
-            AsyncSupport.ContextSet(contextTaskPtr);
-            AsyncSupport.PendingCallbacks.TryAdd((IntPtr)contextTaskPtr, tcs);
-            return tcs.Task;
+            // TODO create or use the buffer of the read.
+            var status = new WaitableStatus(vTable.Read(Handle, bufferHandle.AddrOfPinnedObject(), (uint)buffer.Length));
+            if (status.IsBlocked)
+            {
+                Console.WriteLine("Read Blocked");
+                var tcs = new TaskCompletionSource<int>();
+                if(AsyncSupport.WaitableSet == null)
+                {
+                    Console.WriteLine("StreamReader Read Blocked creating waitable set");
+                    AsyncSupport.WaitableSet = AsyncSupport.WaitableSetNew();
+                }
+                Console.WriteLine("blocked read before join");
+                AsyncSupport.Join(this, AsyncSupport.WaitableSet, new WaitableInfoState(tcs, this));
+                Console.WriteLine("blocked read after join");
+                return tcs.Task;
+            }
+            if (status.IsCompleted)
+            {
+                Console.WriteLine("Read Complete");
+
+                return Task.FromResult((int)status.Count);
+            }
         }
-        if (status.IsCompleted)
+        else
         {
-            return Task.CompletedTask;
+            // TODO: crete buffers for lowered stream types and then lift
+            throw new NotImplementedException("reading from stream types that require lifting");
         }
 
         throw new NotImplementedException();
+    }
+
+    void IFutureStream.FreeBuffer()
+    {
+        bufferHandle.Free();
+    }
+
+    void IFutureStream.OtherSideDropped()
+    {
+        writerDropped = true;
     }
 
     void Dispose(bool _disposing)
@@ -758,10 +1025,13 @@ public class StreamReader<T>(int handle, FutureVTable vTable) : IDisposable // :
 /**
  * Helpers for stream writer support.
  */
-public class StreamWriter(int handle, FutureVTable vTable) // : TODO Waitable
+public class StreamWriter(int handle, StreamVTable vTable) : IFutureStream
 {
+    private GCHandle bufferHandle;
+    private bool readerDropped;
+
     public int Handle { get; } = handle;
-    public FutureVTable VTable { get; private set; } = vTable;
+    public StreamVTable VTable { get; private set; } = vTable;
 
     // TODO: Generate per type for this instrinsic.
     public Task Write()
@@ -772,7 +1042,8 @@ public class StreamWriter(int handle, FutureVTable vTable) // : TODO Waitable
             throw new InvalidOperationException("Handle already taken");
         }
 
-        var status = new WaitableStatus(VTable.Write(Handle, IntPtr.Zero));
+        // TODO: for void streams, what should this do?
+        var status = new WaitableStatus(VTable.Write(Handle, IntPtr.Zero, 0));
         if (status.IsBlocked)
         {
             //TODO: store somewhere so we can complete it later.
@@ -781,6 +1052,16 @@ public class StreamWriter(int handle, FutureVTable vTable) // : TODO Waitable
         }
 
         return Task.CompletedTask;
+    }
+
+    void IFutureStream.FreeBuffer()
+    {
+        bufferHandle.Free();
+    }
+
+    void IFutureStream.OtherSideDropped()
+    {
+        readerDropped = true;
     }
 
     void Dispose(bool _disposing)
@@ -804,13 +1085,15 @@ public class StreamWriter(int handle, FutureVTable vTable) // : TODO Waitable
     }
 }
 
-public class StreamWriter<T>(int handle, FutureVTable vTable)
+public class StreamWriter<T>(int handle, StreamVTable vTable) : IFutureStream
 {
+    private GCHandle bufferHandle;
+    private bool readerDropped;
     public int Handle { get; } = handle;
-    public FutureVTable VTable { get; private set; } = vTable;
+    public StreamVTable VTable { get; private set; } = vTable;
 
     // TODO: Generate per type for this instrinsic.
-    public Task Write()
+    public Task<int> Write(T[] payload)
     {
         // TODO: Generate for the interop name.
         if (Handle == 0)
@@ -818,15 +1101,53 @@ public class StreamWriter<T>(int handle, FutureVTable vTable)
             throw new InvalidOperationException("Handle already taken");
         }
 
-        var status = new WaitableStatus(VTable.Write(Handle, IntPtr.Zero));
+        if (readerDropped)
+        {
+            throw new StreamDroppedException();    
+        }
+
+        if (VTable.Lower == null)
+        {
+            bufferHandle = GCHandle.Alloc(payload, GCHandleType.Pinned);
+        }
+        else
+        {
+            // Lower the payload
+            throw new NotSupportedException("StreamWriter Write where the payload must be lowered.");
+            // var loweredPayload = VTable.Lower(payload);
+        }
+        var status = new WaitableStatus(VTable.Write(Handle, bufferHandle.AddrOfPinnedObject(), (uint)payload.Length));
         if (status.IsBlocked)
         {
-            //TODO: store somewhere so we can complete it later.
-            var tcs = new TaskCompletionSource();
+            var tcs = new TaskCompletionSource<int>();
+            Console.WriteLine("blocked write");
+            if(AsyncSupport.WaitableSet == null)
+            {
+                AsyncSupport.WaitableSet = AsyncSupport.WaitableSetNew();
+            }
+            Console.WriteLine("blocked write before join");
+            AsyncSupport.Join(this, AsyncSupport.WaitableSet, new WaitableInfoState(tcs, this));
+            Console.WriteLine("blocked write after join");
             return tcs.Task;
         }
 
-        throw new NotImplementedException();
+        if (status.IsCompleted)
+        {
+            bufferHandle.Free();
+            return Task.FromResult((int)status.Count);
+        }
+
+        throw new NotImplementedException($"Unsupported write status {status.State}");
+    }
+
+    void IFutureStream.FreeBuffer()
+    {
+        bufferHandle.Free();
+    }
+
+    void IFutureStream.OtherSideDropped()
+    {
+        readerDropped = true;
     }
 
     void Dispose(bool _disposing)
@@ -847,5 +1168,16 @@ public class StreamWriter<T>(int handle, FutureVTable vTable)
     ~StreamWriter()
     {
         Dispose(false);
+    }
+}
+
+public class StreamDroppedException : Exception
+{
+    public StreamDroppedException() : base()
+    {
+    }
+
+    public StreamDroppedException(string message) : base(message)
+    {
     }
 }

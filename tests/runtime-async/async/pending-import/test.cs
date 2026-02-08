@@ -8,7 +8,7 @@ namespace TestWorld.wit.Exports.my.test
         public static async Task PendingImport(FutureReader future)
         {
             Console.WriteLine("Test: Waiting on pending import future...");
-            await future;
+            await future.Read();
             Console.WriteLine("Test: Pending import future completed.");
         }
     }

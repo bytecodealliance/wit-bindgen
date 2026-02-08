@@ -225,7 +225,11 @@ impl InterfaceGenerator<'_> {
         let (_namespace, interface_name) = &CSharp::get_class_name_from_qualified_name(self.name);
         let interop_name = format!("{}Interop", interface_name.strip_prefix("I").unwrap());
 
-        let futures_or_streams = if is_future { &self.futures } else { &self.streams };
+        let (futures_or_streams, stream_length_param) = if is_future { 
+                (&self.futures, "") 
+            } else {
+                 (&self.streams, ", uint length")
+            };
         for future in futures_or_streams {
             let future_name = &future.name;
             if !generated_future_types.contains(&future.ty) {
@@ -234,10 +238,10 @@ impl InterfaceGenerator<'_> {
                 uwrite!(
                     self.csharp_interop_src,
                     r#"
-                    internal static FutureVTable {future_stream_name}VTable{upper_camel_future_type} = new FutureVTable()
+                    internal static {future_stream_name}VTable {future_stream_name}VTable{upper_camel_future_type} = new {future_stream_name}VTable()
                     {{
                         New = {future_stream_name}New{upper_camel_future_type},
-                        StartRead = {future_stream_name}Read{upper_camel_future_type},
+                        Read = {future_stream_name}Read{upper_camel_future_type},
                         Write = {future_stream_name}Write{upper_camel_future_type},
                         DropReader = {future_stream_name}DropReader{upper_camel_future_type},
                         DropWriter = {future_stream_name}DropWriter{upper_camel_future_type},
@@ -249,10 +253,10 @@ impl InterfaceGenerator<'_> {
                     self.csharp_interop_src,
                     r#"
                     [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[async-lower][{future_stream_name_lower}-read-0]{future_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
-                    internal static unsafe extern uint {future_stream_name}Read{upper_camel_future_type}(int readable, IntPtr ptr);
+                    internal static unsafe extern uint {future_stream_name}Read{upper_camel_future_type}(int readable, IntPtr ptr{stream_length_param});
 
                     [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[async-lower][{future_stream_name_lower}-write-0]{future_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
-                    internal static unsafe extern uint {future_stream_name}Write{upper_camel_future_type}(int writeable, IntPtr buffer);
+                    internal static unsafe extern uint {future_stream_name}Write{upper_camel_future_type}(int writeable, IntPtr buffer{stream_length_param});
             
                     [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[{future_stream_name_lower}-drop-readable-0]{future_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
                     internal static extern void {future_stream_name}DropReader{upper_camel_future_type}(int readable);
@@ -305,9 +309,9 @@ impl InterfaceGenerator<'_> {
                                 .interface_fragments
                                 .push(InterfaceFragment {
                                     csharp_src: format!(r#"
-                                    public static (FutureReader, FutureWriter) StreamNew() 
+                                    public static ({future_stream_name}Reader, {future_stream_name}Writer) {future_stream_name}New() 
                                     {{
-                                            return FutureHelpers.RawFutureNew({interop_name}.{future_stream_name}VTable);
+                                            return FutureHelpers.Raw{future_stream_name}New({interop_name}.{future_stream_name}VTable);
                                     }}
                                     "#).to_string(),
                                     csharp_interop_src: "".to_string(),
@@ -343,7 +347,7 @@ impl InterfaceGenerator<'_> {
                                 .interface_fragments
                                 .push(InterfaceFragment {
                                     csharp_src: format!(r#"
-                                    public static ({future_stream_name}Reader<T>, {future_stream_name}Writer<T>) {future_stream_name}New<T>(FutureVTable vtable) 
+                                    public static ({future_stream_name}Reader<T>, {future_stream_name}Writer<T>) {future_stream_name}New<T>({future_stream_name}VTable vtable) 
                                     {{
                                             return FutureHelpers.Raw{future_stream_name}New<T>(vtable);
                                     }}
@@ -672,7 +676,10 @@ var {async_status_var} = {raw_name}({wasm_params});
                 let lift_func = format!("() => {lift_expr}");
                 uwriteln!(
                     src,
-                    "var task = FutureHelpers.TaskFromStatus<{return_type}>({async_status_var}, {});",
+                    "
+                    Console.WriteLine(\"calling TaskFromStatus from func {}\");
+                    var task = AsyncSupport.TaskFromStatus<{return_type}>({async_status_var}, {});",
+                    func.name,
                     lift_func
                 );
                 uwriteln!(
@@ -684,7 +691,9 @@ var {async_status_var} = {raw_name}({wasm_params});
             } else {
                 uwriteln!(
                     src,
-                    "return FutureHelpers.TaskFromStatus({async_status_var});"
+                    "
+                    Console.WriteLine(\"calling TaskFromStatus from func {}\");
+                    return AsyncSupport.TaskFromStatus({async_status_var});", func.name
                 );
             }
         } else {
@@ -843,11 +852,10 @@ var {async_status_var} = {raw_name}({wasm_params});
                 self.csharp_interop_src,
                 r#"
             [global::System.Runtime.InteropServices.UnmanagedCallersOnlyAttribute(EntryPoint = "[callback]{export_name}")]
-            public static unsafe uint {camel_name}Callback(int eventRaw, int waitable, uint code)
+            public static unsafe uint {camel_name}Callback(int eventRaw, uint waitable, uint code)
             {{
-                AsyncSupport.Event e = new AsyncSupport.Event(eventRaw, waitable, code);
-                var context = AsyncSupport.ContextGet();
-                AsyncSupport.ContextSet(null);
+                Console.WriteLine($"Callback with code {{code}}");
+                EventWaitable e = new EventWaitable((EventCode)eventRaw, waitable, code);
 
             "#
             );
@@ -865,7 +873,7 @@ var {async_status_var} = {raw_name}({wasm_params});
                 uwriteln!(
                     self.csharp_interop_src,
                     r#"
-                    return (uint)AsyncSupport.Callback(e, context, () => {camel_name}TaskReturn());
+                    return (uint)AsyncSupport.Callback(e, (AsyncSupport.ContextTask *)IntPtr.Zero, () => {camel_name}TaskReturn());
                 }}
                 "#
                 );
@@ -1132,8 +1140,13 @@ var {async_status_var} = {raw_name}({wasm_params});
                     TypeDefKind::Future(_ty) => {
                         return format!("FutureReader").to_owned();
                     }
-                    TypeDefKind::Stream(_ty) => {
-                        return format!("FutureReader").to_owned();
+                    TypeDefKind::Stream(ty) => {
+                        let generic_type = if let Some(typ) = ty {
+                            format!("<{}>", self.type_name_with_qualifier(typ, qualifier))
+                        } else {
+                            String::new()
+                        };
+                        return format!("StreamReader{generic_type}").to_owned();
                     }
                     _ => {
                         if let Some(name) = &ty.name {
