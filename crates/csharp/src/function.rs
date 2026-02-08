@@ -1382,7 +1382,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.extend(operands.iter().take(*amt).cloned());
             }
 
-            Instruction::FutureLower { payload, ty } 
+            Instruction::FutureLower { payload, ty }
             | Instruction::StreamLower { payload, ty }=> {
                 let op = &operands[0];
                 let generic_type_name = match payload {
@@ -1408,7 +1408,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwriteln!(self.src, "// TODO: task_cancel.forget();");
             }
 
-            Instruction::FutureLift { payload, ty } 
+            Instruction::FutureLift { payload, ty }
             | Instruction:: StreamLift { payload, ty } => {
                  let generic_type_name = match payload {
                     Some(generic_type) => {

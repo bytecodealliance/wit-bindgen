@@ -211,25 +211,30 @@ impl InterfaceGenerator<'_> {
             });
     }
 
-    pub(crate) fn add_futures_or_streams(&mut self, import_module_name: &str, is_export: bool, is_future: bool) {
+    pub(crate) fn add_futures_or_streams(
+        &mut self,
+        import_module_name: &str,
+        is_export: bool,
+        is_future: bool,
+    ) {
         // Anything for this future/stream list?
         if (is_future && self.futures.is_empty()) || (!is_future && self.streams.is_empty()) {
             return;
         }
 
         let future_stream_name = if is_future { "Future" } else { "Stream" };
-        let future_stream_name_lower = future_stream_name.to_lowercase();;
+        let future_stream_name_lower = future_stream_name.to_lowercase();
         let mut bool_non_generic_new_added = false;
         let mut bool_generic_new_added = false;
         let mut generated_future_types: HashSet<TypeId> = HashSet::new();
         let (_namespace, interface_name) = &CSharp::get_class_name_from_qualified_name(self.name);
         let interop_name = format!("{}Interop", interface_name.strip_prefix("I").unwrap());
 
-        let (futures_or_streams, stream_length_param) = if is_future { 
-                (&self.futures, "") 
-            } else {
-                 (&self.streams, ", uint length")
-            };
+        let (futures_or_streams, stream_length_param) = if is_future {
+            (&self.futures, "")
+        } else {
+            (&self.streams, ", uint length")
+        };
         for future in futures_or_streams {
             let future_name = &future.name;
             if !generated_future_types.contains(&future.ty) {
@@ -693,7 +698,8 @@ var {async_status_var} = {raw_name}({wasm_params});
                     src,
                     "
                     Console.WriteLine(\"calling TaskFromStatus from func {}\");
-                    return AsyncSupport.TaskFromStatus({async_status_var});", func.name
+                    return AsyncSupport.TaskFromStatus({async_status_var});",
+                    func.name
                 );
             }
         } else {
@@ -1441,7 +1447,6 @@ var {async_status_var} = {raw_name}({wasm_params});
             ty: *ty,
         });
     }
-
 }
 
 impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
