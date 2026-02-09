@@ -427,13 +427,19 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::FutureLift { payload, .. } => {
                 let async_support = self.r#gen.r#gen.async_support_path();
                 let op = &operands[0];
-                let name = payload
-                    .as_ref()
-                    .map(|ty| {
-                        self.r#gen
-                            .type_name_owned_with_id(ty, Identifier::StreamOrFuturePayload)
-                    })
-                    .unwrap_or_else(|| "()".into());
+                let name = match payload {
+                    Some(Type::Id(type_id)) => {
+                        let dealiased_id = dealias(resolve, *type_id);
+                        self.r#gen.type_name_owned_with_id(
+                            &Type::Id(dealiased_id),
+                            Identifier::StreamOrFuturePayload,
+                        )
+                    }
+                    Some(ty) => self
+                        .r#gen
+                        .type_name_owned_with_id(ty, Identifier::StreamOrFuturePayload),
+                    None => "()".into(),
+                };
                 let ordinal = self
                     .r#gen
                     .r#gen
@@ -455,13 +461,19 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::StreamLift { payload, .. } => {
                 let async_support = self.r#gen.r#gen.async_support_path();
                 let op = &operands[0];
-                let name = payload
-                    .as_ref()
-                    .map(|ty| {
-                        self.r#gen
-                            .type_name_owned_with_id(ty, Identifier::StreamOrFuturePayload)
-                    })
-                    .unwrap_or_else(|| "()".into());
+                let name = match payload {
+                    Some(Type::Id(type_id)) => {
+                        let dealiased_id = dealias(resolve, *type_id);
+                        self.r#gen.type_name_owned_with_id(
+                            &Type::Id(dealiased_id),
+                            Identifier::StreamOrFuturePayload,
+                        )
+                    }
+                    Some(ty) => self
+                        .r#gen
+                        .type_name_owned_with_id(ty, Identifier::StreamOrFuturePayload),
+                    None => "()".into(),
+                };
                 let ordinal = self
                     .r#gen
                     .r#gen
