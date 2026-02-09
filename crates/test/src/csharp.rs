@@ -43,8 +43,7 @@ impl LanguageMethods for Csharp {
         // TODO: remove these exclusions as support is created
         matches!(
             name,
-            "resources-with-streams.wit"
-                | "error-context.wit"
+                "error-context.wit"
                 | "resource-fallible-constructor.wit"
                 | "async-resource-func.wit"
         )
