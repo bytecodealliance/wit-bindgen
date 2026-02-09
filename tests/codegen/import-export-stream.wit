@@ -5,11 +5,26 @@ package a:b;
 world w {
     import i;
     export i;
+    import j;
+    import k;
 }
 
 interface i {
     use t.{r};
     f: func(p: stream<r>);
+}
+
+// Multiple interfaces `use`-ing the same type from a shared interface
+// and wrapping it in an anonymous type (result<_, r>) ensures that
+// dealiasing resolves inner types, not just top-level payload types.
+interface j {
+    use t.{r};
+    f: func() -> stream<result<_, r>>;
+}
+
+interface k {
+    use t.{r};
+    f: func() -> stream<result<_, r>>;
 }
 
 interface t {

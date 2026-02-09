@@ -1753,7 +1753,16 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
         }
 
         match ty {
-            Type::Id(t) => self.print_tyid(*t, mode),
+            Type::Id(t) => {
+                // When generating names for stream/future payload types, dealias
+                // all inner type references so that `use`d type aliases from
+                // different interfaces resolve to the same canonical type
+                let t = match self.identifier {
+                    Identifier::StreamOrFuturePayload => dealias(self.resolve, *t),
+                    _ => *t,
+                };
+                self.print_tyid(t, mode)
+            }
             Type::Bool => self.push_str("bool"),
             Type::U8 => self.push_str("u8"),
             Type::U16 => self.push_str("u16"),
