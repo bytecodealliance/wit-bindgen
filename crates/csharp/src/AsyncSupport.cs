@@ -328,10 +328,6 @@ public static class AsyncSupport
             throw new Exception($"unexpected subtask status: {status}");
         }
     }
-
-    // From the context pointer to the task.
-    internal static ConcurrentDictionary<IntPtr, TaskCompletionSource> FutureCallbacks = new ConcurrentDictionary<IntPtr, TaskCompletionSource>();
-    internal static ConcurrentDictionary<IntPtr, TaskCompletionSource<int>> StreamCallbacks = new ConcurrentDictionary<IntPtr, TaskCompletionSource<int>>();
 }
 
 /**
@@ -632,12 +628,6 @@ public class FutureReader<T>(int handle, FutureVTable vTable) : IFutureStream //
             AsyncSupport.Join(this, AsyncSupport.WaitableSet, new WaitableInfoState(tcs, this));
             Console.WriteLine("blocked read after join");
             return tcs.Task;
-
-            // AsyncSupport.ContextTask* contextTaskPtr = (AsyncSupport.ContextTask*)Marshal.AllocHGlobal(sizeof(AsyncSupport.ContextTask));
-
-            // AsyncSupport.ContextSet(contextTaskPtr);
-            // AsyncSupport.FutureCallbacks.TryAdd((IntPtr)contextTaskPtr, tcs);
-            // return tcs.Task;
         }
         if (status.IsCompleted)
         {
@@ -856,8 +846,6 @@ public class StreamReader : IFutureStream
     public int Handle { get; private set; }
     public StreamVTable VTable { get; private set; }
 
-    public StreamAwaiter GetAwaiter() => streamAwaiter;
-
     public int TakeHandle()
     {
         if (Handle == 0)
@@ -888,7 +876,6 @@ public class StreamReader : IFutureStream
             AsyncSupport.ContextTask* contextTaskPtr = (AsyncSupport.ContextTask*)Marshal.AllocHGlobal(sizeof(AsyncSupport.ContextTask));
 
             AsyncSupport.ContextSet(contextTaskPtr);
-            AsyncSupport.StreamCallbacks.TryAdd((IntPtr)contextTaskPtr, tcs);
             return tcs.Task;
         }
         if (status.IsCompleted)

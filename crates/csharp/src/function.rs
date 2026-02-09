@@ -1410,6 +1410,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::FutureLift { payload, ty }
             | Instruction:: StreamLift { payload, ty } => {
+                 let generic_type_name_with_qualifier = match payload {
+                    Some(generic_type) => {
+                        &self.interface_gen.type_name_with_qualifier(generic_type, true)
+                    }
+                    None => ""
+                };
                  let generic_type_name = match payload {
                     Some(generic_type) => {
                         &self.interface_gen.type_name_with_qualifier(generic_type, false)
@@ -1419,7 +1425,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let upper_camel = generic_type_name.to_upper_camel_case();
                 let bracketed_generic = match payload {
                     Some(_) => {
-                        format!("<{generic_type_name}>")
+                        format!("<{generic_type_name_with_qualifier}>")
                     }
                     None => String::new()
                 };

@@ -1143,8 +1143,13 @@ var {async_status_var} = {raw_name}({wasm_params});
                         let (Handle::Own(id) | Handle::Borrow(id)) = handle;
                         self.type_name_with_qualifier(&Type::Id(*id), qualifier)
                     }
-                    TypeDefKind::Future(_ty) => {
-                        return format!("FutureReader").to_owned();
+                    TypeDefKind::Future(ty) => {
+                        let generic_type = if let Some(typ) = ty {
+                            format!("<{}>", self.type_name_with_qualifier(typ, qualifier))
+                        } else {
+                            String::new()
+                        };
+                        return format!("FutureReader{generic_type}").to_owned();
                     }
                     TypeDefKind::Stream(ty) => {
                         let generic_type = if let Some(typ) = ty {
