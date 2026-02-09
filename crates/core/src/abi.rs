@@ -1,6 +1,7 @@
 use std::fmt;
 use std::iter;
 
+use wit_parser::Param;
 pub use wit_parser::abi::{AbiVariant, FlatTypes, WasmSignature, WasmType};
 use wit_parser::{
     Alignment, ArchitectureSize, ElementInfo, Enum, Flags, FlagsRepr, Function, Handle, Int,
@@ -842,7 +843,7 @@ pub fn guest_export_needs_post_return(resolve: &Resolve, func: &Function) -> boo
 pub fn guest_export_params_have_allocations(resolve: &Resolve, func: &Function) -> bool {
     func.params
         .iter()
-        .any(|(_, t)| needs_deallocate(resolve, &t, Deallocate::Lists))
+        .any(|param| needs_deallocate(resolve, &param.ty, Deallocate::Lists))
 }
 
 fn needs_deallocate(resolve: &Resolve, ty: &Type, what: Deallocate) -> bool {
@@ -1003,7 +1004,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 // Create a function that performs individual lowering of operands
                 let lower_to_memory = |self_: &mut Self, ptr: B::Operand| {
                     let mut offset = ArchitectureSize::default();
-                    for (nth, (_, ty)) in func.params.iter().enumerate() {
+                    for (nth, Param { ty, .. }) in func.params.iter().enumerate() {
                         self_.emit(&Instruction::GetArg { nth });
                         offset = align_to_arch(offset, self_.bindgen.sizes().align(ty));
                         self_.write_to_memory(ty, ptr.clone(), offset);
@@ -1021,7 +1022,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     let ElementInfo { size, align } = self
                         .bindgen
                         .sizes()
-                        .record(func.params.iter().map(|t| &t.1));
+                        .record(func.params.iter().map(|param| &param.ty));
 
                     // Resolve the pointer to the indirectly stored parameters
                     let ptr = match variant {
@@ -1055,7 +1056,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     // ... otherwise arguments are direct,
                     // (there aren't too many) then we simply do a normal lower
                     // operation for them all.
-                    for (nth, (_, ty)) in func.params.iter().enumerate() {
+                    for (nth, Param { ty, .. }) in func.params.iter().enumerate() {
                         self.emit(&Instruction::GetArg { nth });
                         self.lower(ty);
                     }
@@ -1163,7 +1164,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         .stack
                         .pop()
                         .expect("empty stack during read param from memory");
-                    for (_, ty) in func.params.iter() {
+                    for Param { ty, .. } in func.params.iter() {
                         offset = align_to_arch(offset, self_.bindgen.sizes().align(ty));
                         self_.read_from_memory(ty, ptr.clone(), offset);
                         offset += self_.bindgen.sizes().size(ty);
@@ -1182,7 +1183,12 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     // argument in succession from the component wasm types that
                     // make-up the type.
                     let mut offset = 0;
-                    for (param_name, ty) in func.params.iter() {
+                    for Param {
+                        name: param_name,
+                        ty,
+                        ..
+                    } in func.params.iter()
+                    {
                         let Some(types) = flat_types(self.resolve, ty, Some(max_flat_params))
                         else {
                             panic!(
@@ -1236,7 +1242,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         let ElementInfo { size, align } = self
                             .bindgen
                             .sizes()
-                            .record(func.params.iter().map(|t| &t.1));
+                            .record(func.params.iter().map(|param| &param.ty));
                         self.emit(&Instruction::GetArg { nth: 0 });
                         self.emit(&Instruction::GuestDeallocate { size, align });
                     }

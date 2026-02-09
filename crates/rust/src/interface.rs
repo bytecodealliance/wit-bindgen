@@ -807,7 +807,11 @@ pub mod vtable{ordinal} {{
         func: &Function,
         mut params: Vec<String>,
     ) {
-        let param_tys = func.params.iter().map(|(_, ty)| *ty).collect::<Vec<_>>();
+        let param_tys = func
+            .params
+            .iter()
+            .map(|Param { ty, .. }| *ty)
+            .collect::<Vec<_>>();
         let async_support = self.r#gen.async_support_path();
         let sig = self
             .resolve
@@ -850,7 +854,7 @@ unsafe impl<'a> _Subtask for _MySubtask<'a> {{
 
         // Generate `type Params`
         uwrite!(self.src, "type Params = (");
-        for (_, ty) in func.params.iter() {
+        for Param { ty, .. } in func.params.iter() {
             let mode = self.type_mode_for(ty, TypeOwnershipStyle::Owned, "'a");
             self.print_ty(ty, mode);
             self.src.push_str(", ");
@@ -970,7 +974,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
         if sig.indirect_params {
             let offsets = self
                 .sizes
-                .field_offsets(func.params.iter().map(|(_, ty)| ty));
+                .field_offsets(func.params.iter().map(|Param { ty, .. }| ty));
             for (i, (offset, ty)) in offsets.into_iter().enumerate() {
                 let name = format!("_lower{i}");
                 let mut start = format!(
@@ -986,7 +990,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
         } else {
             let mut f = FunctionBindgen::new(self, Vec::new(), module, true);
             let mut results = Vec::new();
-            for (i, (_, ty)) in func.params.iter().enumerate() {
+            for (i, Param { ty, .. }) in func.params.iter().enumerate() {
                 let name = format!("_lower{i}");
                 results.extend(abi::lower_flat(f.r#gen.resolve, &mut f, name.clone(), ty));
                 param_lowers.push(name);
@@ -1352,7 +1356,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
         }
     }
 
-    fn rustdoc_params(&mut self, docs: &[(String, Type)], header: &str) {
+    fn rustdoc_params(&mut self, docs: &Vec<Param>, header: &str) {
         let _ = (docs, header);
         // let docs = docs
         //     .iter()
@@ -1452,7 +1456,13 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
             self.push_str(",");
         }
         let mut params = Vec::new();
-        for (i, (name, param)) in func.params.iter().enumerate() {
+        for (
+            i,
+            Param {
+                name, ty: param, ..
+            },
+        ) in func.params.iter().enumerate()
+        {
             if i == 0 && sig.self_is_first_param {
                 params.push("self".to_string());
                 continue;

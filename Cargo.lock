@@ -1230,7 +1230,7 @@ checksum = "6545ca20bba2f220430c4a97f6b60c48ef14eaa432b04e6b31be547037b4c9ab"
 [[package]]
 name = "wasm-compose"
 version = "0.244.0"
-source = "git+https://github.com/bytecodealliance/wasm-tools.git#39cd181edac6f8f9a951f1c7f0f6bfb744e81283"
+source = "git+https://github.com/bytecodealliance/wasm-tools.git#1ed898a8242456d943f1d6f83667b5c7220e4021"
 dependencies = [
  "anyhow",
  "heck",
@@ -1250,7 +1250,7 @@ dependencies = [
 [[package]]
 name = "wasm-encoder"
 version = "0.244.0"
-source = "git+https://github.com/bytecodealliance/wasm-tools.git#39cd181edac6f8f9a951f1c7f0f6bfb744e81283"
+source = "git+https://github.com/bytecodealliance/wasm-tools.git#1ed898a8242456d943f1d6f83667b5c7220e4021"
 dependencies = [
  "leb128fmt",
  "wasmparser",
@@ -1259,7 +1259,7 @@ dependencies = [
 [[package]]
 name = "wasm-metadata"
 version = "0.244.0"
-source = "git+https://github.com/bytecodealliance/wasm-tools.git#39cd181edac6f8f9a951f1c7f0f6bfb744e81283"
+source = "git+https://github.com/bytecodealliance/wasm-tools.git#1ed898a8242456d943f1d6f83667b5c7220e4021"
 dependencies = [
  "anyhow",
  "auditable-serde",
@@ -1277,7 +1277,7 @@ dependencies = [
 [[package]]
 name = "wasmparser"
 version = "0.244.0"
-source = "git+https://github.com/bytecodealliance/wasm-tools.git#39cd181edac6f8f9a951f1c7f0f6bfb744e81283"
+source = "git+https://github.com/bytecodealliance/wasm-tools.git#1ed898a8242456d943f1d6f83667b5c7220e4021"
 dependencies = [
  "bitflags",
  "hashbrown 0.15.5",
@@ -1289,7 +1289,7 @@ dependencies = [
 [[package]]
 name = "wast"
 version = "244.0.0"
-source = "git+https://github.com/bytecodealliance/wasm-tools.git#39cd181edac6f8f9a951f1c7f0f6bfb744e81283"
+source = "git+https://github.com/bytecodealliance/wasm-tools.git#1ed898a8242456d943f1d6f83667b5c7220e4021"
 dependencies = [
  "bumpalo",
  "leb128fmt",
@@ -1301,7 +1301,7 @@ dependencies = [
 [[package]]
 name = "wat"
 version = "1.244.0"
-source = "git+https://github.com/bytecodealliance/wasm-tools.git#39cd181edac6f8f9a951f1c7f0f6bfb744e81283"
+source = "git+https://github.com/bytecodealliance/wasm-tools.git#1ed898a8242456d943f1d6f83667b5c7220e4021"
 dependencies = [
  "wast",
 ]
@@ -1586,7 +1586,7 @@ dependencies = [
 [[package]]
 name = "wit-component"
 version = "0.244.0"
-source = "git+https://github.com/bytecodealliance/wasm-tools.git#39cd181edac6f8f9a951f1c7f0f6bfb744e81283"
+source = "git+https://github.com/bytecodealliance/wasm-tools.git#1ed898a8242456d943f1d6f83667b5c7220e4021"
 dependencies = [
  "anyhow",
  "bitflags",
@@ -1605,7 +1605,7 @@ dependencies = [
 [[package]]
 name = "wit-parser"
 version = "0.244.0"
-source = "git+https://github.com/bytecodealliance/wasm-tools.git#39cd181edac6f8f9a951f1c7f0f6bfb744e81283"
+source = "git+https://github.com/bytecodealliance/wasm-tools.git#1ed898a8242456d943f1d6f83667b5c7220e4021"
 dependencies = [
  "anyhow",
  "hashbrown 0.15.5",

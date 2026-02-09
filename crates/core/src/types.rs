@@ -96,7 +96,7 @@ impl Types {
 
     fn type_info_func(&mut self, resolve: &Resolve, func: &Function, import: bool) {
         let mut live = LiveTypes::default();
-        for (_, ty) in func.params.iter() {
+        for Param { ty, .. } in func.params.iter() {
             self.type_info(resolve, ty);
             live.add_type(resolve, ty);
         }

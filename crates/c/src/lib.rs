@@ -2142,7 +2142,7 @@ impl InterfaceGenerator<'_> {
         let mut optional_adapters = String::from("");
         if !self.r#gen.opts.no_sig_flattening {
             for (i, (_, param)) in c_sig.params.iter().enumerate() {
-                let ty = &func.params[i].1;
+                let ty = &func.params[i].ty;
                 if let Type::Id(id) = ty {
                     if let TypeDefKind::Option(_) = &self.resolve.types[*id].kind {
                         let ty = self.r#gen.type_name(ty);
@@ -2216,7 +2216,7 @@ impl InterfaceGenerator<'_> {
             params.push(format!("(uint8_t*) {}", c_sig.params[0].1));
         } else {
             let mut f = FunctionBindgen::new(self, c_sig.clone(), "INVALID");
-            for (i, (_, ty)) in func.params.iter().enumerate() {
+            for (i, Param { ty, .. }) in func.params.iter().enumerate() {
                 let param = &c_sig.params[i].1;
                 params.extend(abi::lower_flat(f.r#gen.resolve, &mut f, param.clone(), ty));
             }
@@ -2488,7 +2488,7 @@ void {name}_return({return_ty}) {{
 
     fn print_sig_params(&mut self, func: &Function) -> Vec<(bool, String)> {
         let mut params = Vec::new();
-        for (i, (name, ty)) in func.params.iter().enumerate() {
+        for (i, Param { name, ty, .. }) in func.params.iter().enumerate() {
             if i > 0 {
                 self.src.h_fns(", ");
             }
@@ -2538,7 +2538,7 @@ void {name}_return({return_ty}) {{
         if sig.indirect_params {
             match &func.params[..] {
                 [] => {}
-                [(_name, ty)] => {
+                [Param { name: _, ty, .. }] => {
                     printed = true;
                     let name = "arg".to_string();
                     self.print_ty(SourceType::HFns, ty);
@@ -2550,7 +2550,7 @@ void {name}_return({return_ty}) {{
                     printed = true;
                     let names = multiple
                         .iter()
-                        .map(|(name, ty)| (to_c_ident(name), self.r#gen.type_name(ty)))
+                        .map(|Param { name, ty, .. }| (to_c_ident(name), self.r#gen.type_name(ty)))
                         .collect::<Vec<_>>();
                     uwriteln!(self.src.h_defs, "typedef struct {c_func_name}_args {{");
                     for (name, ty) in names {
@@ -2562,7 +2562,7 @@ void {name}_return({return_ty}) {{
                 }
             }
         } else {
-            for (name, ty) in func.params.iter() {
+            for Param { name, ty, .. } in func.params.iter() {
                 let name = to_c_ident(name);
                 if printed {
                     self.src.h_fns(", ");
@@ -3621,7 +3621,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     if i > 0 {
                         args.push_str(", ");
                     }
-                    let ty = &func.params[i].1;
+                    let ty = &func.params[i].ty;
                     if *byref {
                         let name = self.locals.tmp("arg");
                         let ty = self.r#gen.r#gen.type_name(ty);

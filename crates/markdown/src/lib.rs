@@ -279,7 +279,7 @@ impl InterfaceGenerator<'_> {
         if func.params.len() > 0 {
             self.push_str("\n");
             self.push_str("##### Params\n\n");
-            for (name, ty) in func.params.iter() {
+            for Param { name, ty, .. } in func.params.iter() {
                 self.push_str(&format!(
                     "- <a id=\"{f}.{p}\"></a>`{}`: ",
                     name,
