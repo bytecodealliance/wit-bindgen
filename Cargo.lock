@@ -1173,7 +1173,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 [[package]]
 name = "wac-graph"
 version = "0.9.0-dev"
-source = "git+https://github.com/cpetig/wac.git?branch=new_wasm_tools#9d50a16a18d4f2d7dfa497388bd0f0d26df31817"
+source = "git+https://github.com/cpetig/wac.git?branch=new_wasm_tools#5d4485d03a2bedd75398bf2ebb2a02e18198c13b"
 dependencies = [
  "anyhow",
  "id-arena",
@@ -1191,7 +1191,7 @@ dependencies = [
 [[package]]
 name = "wac-parser"
 version = "0.9.0-dev"
-source = "git+https://github.com/cpetig/wac.git?branch=new_wasm_tools#9d50a16a18d4f2d7dfa497388bd0f0d26df31817"
+source = "git+https://github.com/cpetig/wac.git?branch=new_wasm_tools#5d4485d03a2bedd75398bf2ebb2a02e18198c13b"
 dependencies = [
  "anyhow",
  "id-arena",
@@ -1211,7 +1211,7 @@ dependencies = [
 [[package]]
 name = "wac-types"
 version = "0.9.0-dev"
-source = "git+https://github.com/cpetig/wac.git?branch=new_wasm_tools#9d50a16a18d4f2d7dfa497388bd0f0d26df31817"
+source = "git+https://github.com/cpetig/wac.git?branch=new_wasm_tools#5d4485d03a2bedd75398bf2ebb2a02e18198c13b"
 dependencies = [
  "anyhow",
  "id-arena",
@@ -1230,7 +1230,7 @@ checksum = "6545ca20bba2f220430c4a97f6b60c48ef14eaa432b04e6b31be547037b4c9ab"
 [[package]]
 name = "wasm-compose"
 version = "0.244.0"
-source = "git+https://github.com/bytecodealliance/wasm-tools.git#037cce497699bdc178906a3eedd6c63a31a44523"
+source = "git+https://github.com/bytecodealliance/wasm-tools.git#39cd181edac6f8f9a951f1c7f0f6bfb744e81283"
 dependencies = [
  "anyhow",
  "heck",
@@ -1250,7 +1250,7 @@ dependencies = [
 [[package]]
 name = "wasm-encoder"
 version = "0.244.0"
-source = "git+https://github.com/bytecodealliance/wasm-tools.git#037cce497699bdc178906a3eedd6c63a31a44523"
+source = "git+https://github.com/bytecodealliance/wasm-tools.git#39cd181edac6f8f9a951f1c7f0f6bfb744e81283"
 dependencies = [
  "leb128fmt",
  "wasmparser",
@@ -1259,7 +1259,7 @@ dependencies = [
 [[package]]
 name = "wasm-metadata"
 version = "0.244.0"
-source = "git+https://github.com/bytecodealliance/wasm-tools.git#037cce497699bdc178906a3eedd6c63a31a44523"
+source = "git+https://github.com/bytecodealliance/wasm-tools.git#39cd181edac6f8f9a951f1c7f0f6bfb744e81283"
 dependencies = [
  "anyhow",
  "auditable-serde",
@@ -1277,7 +1277,7 @@ dependencies = [
 [[package]]
 name = "wasmparser"
 version = "0.244.0"
-source = "git+https://github.com/bytecodealliance/wasm-tools.git#037cce497699bdc178906a3eedd6c63a31a44523"
+source = "git+https://github.com/bytecodealliance/wasm-tools.git#39cd181edac6f8f9a951f1c7f0f6bfb744e81283"
 dependencies = [
  "bitflags",
  "hashbrown 0.15.5",
@@ -1289,7 +1289,7 @@ dependencies = [
 [[package]]
 name = "wast"
 version = "244.0.0"
-source = "git+https://github.com/bytecodealliance/wasm-tools.git#037cce497699bdc178906a3eedd6c63a31a44523"
+source = "git+https://github.com/bytecodealliance/wasm-tools.git#39cd181edac6f8f9a951f1c7f0f6bfb744e81283"
 dependencies = [
  "bumpalo",
  "leb128fmt",
@@ -1301,7 +1301,7 @@ dependencies = [
 [[package]]
 name = "wat"
 version = "1.244.0"
-source = "git+https://github.com/bytecodealliance/wasm-tools.git#037cce497699bdc178906a3eedd6c63a31a44523"
+source = "git+https://github.com/bytecodealliance/wasm-tools.git#39cd181edac6f8f9a951f1c7f0f6bfb744e81283"
 dependencies = [
  "wast",
 ]
@@ -1586,7 +1586,7 @@ dependencies = [
 [[package]]
 name = "wit-component"
 version = "0.244.0"
-source = "git+https://github.com/bytecodealliance/wasm-tools.git#037cce497699bdc178906a3eedd6c63a31a44523"
+source = "git+https://github.com/bytecodealliance/wasm-tools.git#39cd181edac6f8f9a951f1c7f0f6bfb744e81283"
 dependencies = [
  "anyhow",
  "bitflags",
@@ -1605,7 +1605,7 @@ dependencies = [
 [[package]]
 name = "wit-parser"
 version = "0.244.0"
-source = "git+https://github.com/bytecodealliance/wasm-tools.git#037cce497699bdc178906a3eedd6c63a31a44523"
+source = "git+https://github.com/bytecodealliance/wasm-tools.git#39cd181edac6f8f9a951f1c7f0f6bfb744e81283"
 dependencies = [
  "anyhow",
  "hashbrown 0.15.5",

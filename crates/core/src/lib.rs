@@ -42,7 +42,7 @@ pub trait WorldGenerator {
                 WorldItem::Interface { id, .. } => {
                     self.import_interface(resolve, name, *id, files)?
                 }
-                WorldItem::Type(id) => types.push((unwrap_name(name), *id)),
+                WorldItem::Type { id, .. } => types.push((unwrap_name(name), *id)),
             }
         }
         if !types.is_empty() {
@@ -66,7 +66,7 @@ pub trait WorldGenerator {
             match export {
                 WorldItem::Function(f) => funcs.push((unwrap_name(name), f)),
                 WorldItem::Interface { id, .. } => interfaces.push((name, id)),
-                WorldItem::Type(_) => unreachable!(),
+                WorldItem::Type { .. } => unreachable!(),
             }
         }
         if !funcs.is_empty() {

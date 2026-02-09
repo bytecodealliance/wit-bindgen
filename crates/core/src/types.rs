@@ -81,12 +81,14 @@ impl Types {
                     WorldItem::Function(f) => {
                         self.type_info_func(resolve, f, import);
                     }
-                    WorldItem::Interface { id, stability: _ } => {
+                    WorldItem::Interface {
+                        id, stability: _, ..
+                    } => {
                         for (_, f) in resolve.interfaces[*id].functions.iter() {
                             self.type_info_func(resolve, f, import);
                         }
                     }
-                    WorldItem::Type(_) => {}
+                    WorldItem::Type { .. } => {}
                 }
             }
         }

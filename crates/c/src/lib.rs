@@ -1010,7 +1010,7 @@ pub fn imported_types_used_by_exported_interfaces(
                 exported_interfaces.insert(*id);
                 live_export_types.add_interface(resolve, *id)
             }
-            WorldItem::Type(_) => unreachable!(),
+            WorldItem::Type { .. } => unreachable!(),
         }
     }
 
