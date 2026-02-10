@@ -2345,7 +2345,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
         eq_ty: TypeId,
         from_import: Option<&WorldKey>,
     ) {
-        assert!(self.r#gen.opts.merge_structurally_equal_types);
+        assert!(self.r#gen.opts.merge_structurally_equal_types());
         if let Some(name) = from_import {
             let docs = Docs {
                 contents: Some("wit-bindgen: alias to import equal type".to_string()),

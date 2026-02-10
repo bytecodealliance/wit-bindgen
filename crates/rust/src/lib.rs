@@ -281,8 +281,11 @@ pub struct Opts {
     /// structurally equal, which is useful when import and export the same interface.
     ///
     /// Types containing resource, future, or stream are never considered equal.
-    #[cfg_attr(feature = "clap", arg(long))]
-    pub merge_structurally_equal_types: bool,
+    #[cfg_attr(
+        feature = "clap",
+        arg(long, require_equals = true, value_name = "true|false")
+    )]
+    pub merge_structurally_equal_types: Option<Option<bool>>,
 }
 
 impl Opts {
@@ -291,6 +294,18 @@ impl Opts {
         r.skip = self.skip.iter().cloned().collect();
         r.opts = self;
         r
+    }
+
+    fn merge_structurally_equal_types(&self) -> bool {
+        const DEFAULT: bool = false;
+        match self.merge_structurally_equal_types {
+            // no option passed, use the default
+            None => DEFAULT,
+            // --merge-structurally-equal-types
+            Some(None) => true,
+            // --merge-structurally-equal-types=val
+            Some(Some(val)) => val,
+        }
     }
 }
 
@@ -1020,7 +1035,7 @@ macro_rules! __export_{world_name}_impl {{
         iface_key: Option<&'a WorldKey>,
         ty_id: TypeId,
     ) -> Option<(TypeId, Option<&'a WorldKey>)> {
-        if !self.opts.merge_structurally_equal_types {
+        if !self.opts.merge_structurally_equal_types() {
             return None;
         }
         let ty = &resolve.types[ty_id].kind;
@@ -1127,7 +1142,7 @@ impl WorldGenerator for RustWasm {
                 "//   * disable-run-ctors-once-workaround"
             );
         }
-        if self.opts.merge_structurally_equal_types {
+        if self.opts.merge_structurally_equal_types() {
             uwriteln!(self.src_preamble, "//   * merge_structurally_equal_types");
         }
         if let Some(s) = &self.opts.export_macro_name {
@@ -1149,7 +1164,7 @@ impl WorldGenerator for RustWasm {
             uwriteln!(self.src_preamble, "//   * async: {opt}");
         }
         self.types.analyze(resolve);
-        if self.opts.merge_structurally_equal_types {
+        if self.opts.merge_structurally_equal_types() {
             self.types.collect_equal_types(resolve);
         }
         self.world = Some(world);
