@@ -19,7 +19,7 @@ resolver = "2"
 
 [workspace.package]
 edition = "2024"
-version = "0.51.0"
+version = "0.52.0"
 license = "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT"
 repository = "https://github.com/bytecodealliance/wit-bindgen"
 rust-version = "1.87.0"
@@ -36,24 +36,24 @@ prettyplease = "0.2.20"
 syn = { version = "2.0.89", features = ["printing"] }
 futures = "0.3.31"
 
-wat = "1.244.0"
-wasmparser = "0.244.0"
-wasm-encoder = "0.244.0"
-wasm-metadata = { version = "0.244.0", default-features = false }
-wit-parser = "0.244.0"
-wit-component = "0.244.0"
-wasm-compose = "0.244.0"
+wat = "1.245.0"
+wasmparser = "0.245.0"
+wasm-encoder = "0.245.0"
+wasm-metadata = { version = "0.245.0", default-features = false }
+wit-parser = "0.245.0"
+wit-component = "0.245.0"
+wasm-compose = "0.245.0"
 
-wit-bindgen-core = { path = 'crates/core', version = '0.51.0' }
-wit-bindgen-c = { path = 'crates/c', version = '0.51.0' }
-wit-bindgen-cpp = { path = 'crates/cpp', version = '0.51.0' }
-wit-bindgen-rust = { path = "crates/rust", version = "0.51.0" }
-wit-bindgen-csharp = { path = 'crates/csharp', version = '0.51.0' }
-wit-bindgen-markdown = { path = 'crates/markdown', version = '0.51.0' }
-wit-bindgen-moonbit = { path = 'crates/moonbit', version = '0.51.0' }
-wit-bindgen-go = { path = 'crates/go', version = '0.51.0' }
-wit-bindgen = { path = 'crates/guest-rust', version = '0.51.0', default-features = false }
-wit-bindgen-test = { path = 'crates/test', version = '0.51.0' }
+wit-bindgen-core = { path = 'crates/core', version = '0.52.0' }
+wit-bindgen-c = { path = 'crates/c', version = '0.52.0' }
+wit-bindgen-cpp = { path = 'crates/cpp', version = '0.52.0' }
+wit-bindgen-rust = { path = "crates/rust", version = "0.52.0" }
+wit-bindgen-csharp = { path = 'crates/csharp', version = '0.52.0' }
+wit-bindgen-markdown = { path = 'crates/markdown', version = '0.52.0' }
+wit-bindgen-moonbit = { path = 'crates/moonbit', version = '0.52.0' }
+wit-bindgen-go = { path = 'crates/go', version = '0.52.0' }
+wit-bindgen = { path = 'crates/guest-rust', version = '0.52.0', default-features = false }
+wit-bindgen-test = { path = 'crates/test', version = '0.52.0' }
 
 [workspace.lints.clippy]
 # The default set of lints in Clippy is viewed as "too noisy" right now so

@@ -8,7 +8,7 @@ use wit_bindgen_core::{
     Files, Source,
     abi::{self, WasmSignature},
     uwriteln,
-    wit_parser::{Function, Resolve, Type, TypeDefKind, TypeId},
+    wit_parser::{Function, Param, Resolve, Type, TypeDefKind, TypeId},
 };
 
 use crate::{
@@ -110,11 +110,11 @@ impl<'a> InterfaceGenerator<'a> {
         if sig.indirect_params {
             match &func.params[..] {
                 [] => {}
-                [(_, _)] => {
+                [_] => {
                     lower_params.push("_lower_ptr".into());
                 }
                 multiple_params => {
-                    let params = multiple_params.iter().map(|(_, ty)| ty);
+                    let params = multiple_params.iter().map(|Param { ty, .. }| ty);
                     let offsets = self.r#gen.sizes.field_offsets(params.clone());
                     let elem_info = self.r#gen.sizes.params(params);
                     body.push_str(&format!(
@@ -128,7 +128,7 @@ impl<'a> InterfaceGenerator<'a> {
                     for ((offset, ty), name) in offsets.iter().zip(
                         multiple_params
                             .iter()
-                            .map(|(name, _)| name.to_moonbit_ident()),
+                            .map(|Param { name, .. }| name.to_moonbit_ident()),
                     ) {
                         let result = self.lower_to_memory(
                             &format!("_lower_ptr + {}", offset.size_wasm32()),

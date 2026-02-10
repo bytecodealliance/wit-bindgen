@@ -291,7 +291,7 @@ impl WorldGenerator for CSharp {
         for (name, export) in world.exports.iter() {
             match name {
                 WorldKey::Name(name) => match export {
-                    WorldItem::Type(id) => {
+                    WorldItem::Type { id, .. } => {
                         if !CSharp::type_is_bidirectional(resolve, &id) {
                             types.push((name.as_str(), *id))
                         }

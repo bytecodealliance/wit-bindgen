@@ -15,7 +15,7 @@ use wit_bindgen_core::abi::{
 };
 use wit_bindgen_core::wit_parser::{
     Alignment, ArchitectureSize, Docs, Enum, Flags, FlagsRepr, Function, FunctionKind, Handle, Int,
-    InterfaceId, Package, PackageName, Record, Resolve, Result_, SizeAlign, Tuple, Type,
+    InterfaceId, Package, PackageName, Param, Record, Resolve, Result_, SizeAlign, Tuple, Type,
     TypeDefKind, TypeId, TypeOwner, Variant, WorldId, WorldKey,
 };
 use wit_bindgen_core::{
@@ -985,7 +985,7 @@ impl Go {
                 func.params
                     .iter()
                     .skip(if has_self { 1 } else { 0 })
-                    .map(|(name, _)| name.to_lower_camel_case()),
+                    .map(|Param { name, .. }| name.to_lower_camel_case()),
             )
             .collect::<Vec<_>>();
 
@@ -1011,13 +1011,13 @@ impl Go {
                 let abi = generator
                     .generator
                     .sizes
-                    .record(func.params.iter().map(|(_, ty)| ty));
+                    .record(func.params.iter().map(|Param { ty, .. }| ty));
                 let size = abi.size.format(POINTER_SIZE_EXPRESSION);
                 let align = abi.align.format(POINTER_SIZE_EXPRESSION);
                 let offsets = generator
                     .generator
                     .sizes
-                    .field_offsets(func.params.iter().map(|(_, ty)| ty));
+                    .field_offsets(func.params.iter().map(|Param { ty, .. }| ty));
 
                 for (name, (offset, ty)) in go_param_names.iter().zip(offsets) {
                     let offset = offset.format(POINTER_SIZE_EXPRESSION);
@@ -1042,7 +1042,7 @@ impl Go {
                 let wasm_params = go_param_names
                     .iter()
                     .zip(&func.params)
-                    .flat_map(|(name, (_, ty))| {
+                    .flat_map(|(name, Param { ty, .. })| {
                         abi::lower_flat(resolve, &mut generator, name.clone(), ty)
                     })
                     .collect();
@@ -1341,7 +1341,7 @@ func wasm_export_{name}({params}) {results} {{
         func.params
             .iter()
             .skip(if has_self { 1 } else { 0 })
-            .map(|(name, ty)| {
+            .map(|Param { name, ty, .. }| {
                 let name = name.to_lower_camel_case();
                 let ty = self.type_name(resolve, *ty, interface, in_import, imports);
                 format!("{prefix}{name} {ty}")
