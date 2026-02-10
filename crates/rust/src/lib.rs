@@ -1137,7 +1137,7 @@ impl WorldGenerator for RustWasm {
 
             match resolve.types[a].kind {
                 // These types are all defined with `type Foo = ...` in Rust
-                // since Rust either has native representstions or they live in
+                // since Rust either has native representations or they live in
                 // libraries or similar.
                 TypeDefKind::Type(_)
                 | TypeDefKind::Handle(_)
