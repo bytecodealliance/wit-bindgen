@@ -34,6 +34,11 @@ interface blah {
     f: func(x: kind6) -> kind5;
     g: func(x: kind7) -> kind4;
     h: func(x: t-stream) -> custom-result;
+
+    record r1 { a: u8 }
+    type a1 = u8;
+    record r2 { a: a1 }
+    alias-type: func(x: r1) -> r2;
 }
 
 world host {
