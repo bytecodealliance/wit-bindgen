@@ -4,7 +4,7 @@ use heck::{ToLowerCamelCase, ToSnakeCase, ToUpperCamelCase};
 use wit_bindgen_core::{
     Ns, dealias,
     wit_parser::{
-        Function, FunctionKind, Handle, InterfaceId, Resolve, Type, TypeDef, TypeDefKind,
+        Function, FunctionKind, Handle, InterfaceId, Param, Resolve, Type, TypeDef, TypeDefKind,
         TypeOwner, WorldId, WorldKey,
     },
 };
@@ -323,7 +323,7 @@ impl PkgResolver {
         let params = func
             .params
             .iter()
-            .map(|(name, ty)| {
+            .map(|Param { name, ty, .. }| {
                 let name = if ignore_param {
                     format!("_{}", name.to_moonbit_ident())
                 } else {
