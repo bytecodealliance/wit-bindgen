@@ -49,6 +49,9 @@ impl LanguageMethods for Csharp {
                 | "resource-fallible-constructor.wit"
                 | "async-resource-func.wit"
                 | "import-export-stream.wit"
+                | "issue-1432.wit"
+                | "issue-1433.wit"
+                | "future-same-type-different-names.wit"
         )
     }
 
