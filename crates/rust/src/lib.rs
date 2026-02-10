@@ -50,8 +50,8 @@ pub struct RustWasm {
     /// Maps wit interface and type names to their Rust identifiers
     with: GenerationConfiguration,
 
-    future_payloads: IndexMap<String, String>,
-    stream_payloads: IndexMap<String, String>,
+    future_payloads: IndexMap<Option<Type>, String>,
+    stream_payloads: IndexMap<Option<Type>, String>,
 }
 
 #[derive(Default)]
@@ -1128,9 +1128,39 @@ impl WorldGenerator for RustWasm {
             uwriteln!(self.src_preamble, "//   * async: {opt}");
         }
         self.types.analyze(resolve);
-        if self.opts.merge_structurally_equal_types() {
-            self.types.collect_equal_types(resolve);
-        }
+        self.types.collect_equal_types(resolve, &|a| {
+            // If `--merge-structurally-equal-types` is enabled then any type
+            // anywhere can be generated as a type alias to anything else.
+            if self.opts.merge_structurally_equal_types() {
+                return true;
+            }
+
+            match resolve.types[a].kind {
+                // These types are all defined with `type Foo = ...` in Rust
+                // since Rust either has native representstions or they live in
+                // libraries or similar.
+                TypeDefKind::Type(_)
+                | TypeDefKind::Handle(_)
+                | TypeDefKind::List(_)
+                | TypeDefKind::Tuple(_)
+                | TypeDefKind::Option(_)
+                | TypeDefKind::Result(_)
+                | TypeDefKind::Future(_)
+                | TypeDefKind::Stream(_)
+                | TypeDefKind::Map(..)
+                | TypeDefKind::FixedLengthList(..) => true,
+
+                // These types are all defined with fresh new types defined
+                // in generated bindings and thus can't alias some other
+                // existing type.
+                TypeDefKind::Record(_)
+                | TypeDefKind::Variant(_)
+                | TypeDefKind::Enum(_)
+                | TypeDefKind::Flags(_)
+                | TypeDefKind::Resource
+                | TypeDefKind::Unknown => false,
+            }
+        });
         self.world = Some(world);
 
         let world = &resolve.worlds[world];

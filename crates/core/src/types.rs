@@ -94,8 +94,27 @@ impl Types {
             }
         }
     }
-    pub fn collect_equal_types(&mut self, resolve: &Resolve) {
+
+    /// Populates the return value of [`Types::get_representative_type`] with
+    /// the `resolve` passed in.
+    ///
+    /// The `may_alias_another_type` closure is used to determine whether the
+    /// language's definition of the provided `TypeId` might possibly alias
+    /// some other type in a language. This is a language-specific deduction
+    /// which can also be affected by options to a binding generator. If a type
+    /// can't be aliased by anything else then it can't be considered equal to
+    /// anything else. Note that in this situations other types may still
+    /// be equal to it, such as aliased types at the WIT level (e.g. `type foo
+    /// = some-record`).
+    pub fn collect_equal_types(
+        &mut self,
+        resolve: &Resolve,
+        may_alias_another_type: &dyn Fn(TypeId) -> bool,
+    ) {
         for (i, (ty, _)) in resolve.types.iter().enumerate() {
+            if !may_alias_another_type(ty) {
+                continue;
+            }
             // TODO: we could define a hash function for TypeDefKind to prevent the inner loop.
             for (earlier, _) in resolve.types.iter().take(i) {
                 if self.equal_types.find(ty) == self.equal_types.find(earlier) {

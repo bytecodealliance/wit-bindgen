@@ -523,11 +523,30 @@ macro_rules! {macro_name} {{
         func_name: &str,
         payload_type: Option<&Type>,
     ) {
-        let name = match payload_type {
-            Some(Type::Id(type_id)) => {
-                let dealiased_id = dealias(self.resolve, *type_id);
-                self.type_name_owned(&Type::Id(dealiased_id))
+        let payload_type = match payload_type {
+            // Rust requires one-impl-per-type, so any `id` here is transformed
+            // into its canonical representation using
+            // `get_representative_type`. This ensures that type aliases, uses,
+            // etc, all get canonicalized to the exact same ID regardless of
+            // type structure.
+            //
+            // Note that `get_representative_type` maps ids-to-ids which is 95%
+            // of what we want, but this additionally goes one layer further to
+            // see if the final id is actually itself a typedef, which would
+            // always be to a primitive, and then uses the primitive type
+            // instead of the typedef to canonicalize with other streams/futures
+            // using the primitive type.
+            Some(Type::Id(id)) => {
+                let id = self.r#gen.types.get_representative_type(*id);
+                match self.resolve.types[id].kind {
+                    TypeDefKind::Type(t) => Some(t),
+                    _ => Some(Type::Id(id)),
+                }
             }
+            other => other.copied(),
+        };
+        let payload_type = payload_type.as_ref();
+        let name = match payload_type {
             Some(payload_type) => self.type_name_owned(payload_type),
             None => "()".into(),
         };
@@ -536,7 +555,7 @@ macro_rules! {macro_name} {{
             PayloadFor::Stream => &mut self.r#gen.stream_payloads,
         };
 
-        if map.contains_key(&name) {
+        if map.contains_key(&payload_type.copied()) {
             return;
         }
         let ordinal = map.len();
@@ -685,7 +704,7 @@ pub mod vtable{ordinal} {{
             PayloadFor::Future => &mut self.r#gen.future_payloads,
             PayloadFor::Stream => &mut self.r#gen.stream_payloads,
         };
-        map.insert(name, code);
+        map.insert(payload_type.copied(), code);
     }
 
     fn generate_guest_import(&mut self, func: &Function, interface: Option<&WorldKey>) {
@@ -1713,14 +1732,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
         }
     }
 
-    pub(crate) fn type_name_owned_with_id(&mut self, ty: &Type, id: Identifier<'i>) -> String {
-        let old_identifier = mem::replace(&mut self.identifier, id);
-        let name = self.type_name_owned(ty);
-        self.identifier = old_identifier;
-        name
-    }
-
-    fn type_name_owned(&mut self, ty: &Type) -> String {
+    pub fn type_name_owned(&mut self, ty: &Type) -> String {
         self.type_name(
             ty,
             TypeMode {
@@ -2579,7 +2591,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
     fn define_type(&mut self, name: &str, id: TypeId) {
         let equal = self.r#gen.types.get_representative_type(id);
-        if equal == id {
+        if !self.r#gen.opts.merge_structurally_equal_types() || equal == id {
             wit_bindgen_core::define_type(self, name, id)
         } else {
             let docs = &self.resolve.types[id].docs;
