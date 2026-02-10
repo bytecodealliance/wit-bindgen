@@ -314,7 +314,7 @@ impl InterfaceGenerator<'_> {
                                 .interface_fragments
                                 .push(InterfaceFragment {
                                     csharp_src: format!(r#"
-                                    public static ({future_stream_name}Reader, {future_stream_name}Writer) {future_stream_name}New() 
+                                    internal static ({future_stream_name}Reader, {future_stream_name}Writer) {future_stream_name}New() 
                                     {{
                                             return FutureHelpers.Raw{future_stream_name}New({interop_name}.{future_stream_name}VTable);
                                     }}

@@ -46,7 +46,7 @@ public class RunnerWorldExportsImpl
         
         try
         {
-            await AsyncSupport.Join(Test(), IIImports.ReadStream(rx));
+            await Task.WhenAll(Test(), IIImports.ReadStream(rx));
         }
         catch(Exception e)
         {

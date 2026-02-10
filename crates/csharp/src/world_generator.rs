@@ -662,7 +662,7 @@ impl WorldGenerator for CSharp {
             src.push_str(
                 r#"public static class WitFuture
             {
-                public static (FutureReader, FutureWriter) FutureNew(FutureVTable table)
+                internal static (FutureReader, FutureWriter) FutureNew(FutureVTable table)
                 {
                     return FutureHelpers.RawFutureNew(table);
                 }
