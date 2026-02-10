@@ -661,6 +661,14 @@ func Lift{upper_kind}{camel}(handle int32) *wit_types.{upper_kind}Reader[{payloa
 }
 
 impl WorldGenerator for Go {
+    // FIXME(#1527): this caused failures in CI at
+    // https://github.com/bytecodealliance/wit-bindgen/actions/runs/21880247244/job/63160400774?pr=1526
+    // and should be fixed at some point by deleting this method and getting
+    // tests passing again.
+    fn uses_nominal_type_ids(&self) -> bool {
+        false
+    }
+
     fn preprocess(&mut self, resolve: &Resolve, world: WorldId) {
         _ = world;
         self.sizes.fill(resolve);
@@ -1718,7 +1726,7 @@ for index, {ITER_ELEMENT} := range {slice} {{
 for index := 0; index < int({length}); index++ {{
         {ITER_BASE_POINTER} := unsafe.Add(unsafe.Pointer({value}), index * {size})
         {body}
-        {result} = append({result}, {body_result})        
+        {result} = append({result}, {body_result})
 }}
 "
                 );
@@ -2514,7 +2522,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             self.src,
             "
 {docs}type {name} struct {{
-        {fields} 
+        {fields}
 }}"
         )
     }
