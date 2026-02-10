@@ -23,7 +23,10 @@ pub enum Direction {
 }
 
 pub trait WorldGenerator {
-    fn generate(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) -> Result<()> {
+    fn generate(&mut self, resolve: &mut Resolve, id: WorldId, files: &mut Files) -> Result<()> {
+        if self.uses_nominal_type_ids() {
+            resolve.generate_nominal_type_ids(id);
+        }
         let world = &resolve.worlds[id];
         self.preprocess(resolve, id);
 
@@ -79,6 +82,13 @@ pub trait WorldGenerator {
             self.export_interface(resolve, name, *id, files)?;
         }
         self.finish(resolve, id, files)
+    }
+
+    /// Whether or not this bindings generator expects
+    /// [`Resolve::generate_nominal_type_ids`] to be used before generating
+    /// bindings.
+    fn uses_nominal_type_ids(&self) -> bool {
+        true
     }
 
     fn finish_imports(&mut self, resolve: &Resolve, world: WorldId, files: &mut Files) {

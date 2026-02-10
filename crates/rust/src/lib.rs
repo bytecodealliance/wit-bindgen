@@ -36,8 +36,7 @@ pub struct RustWasm {
     export_modules: Vec<(String, Vec<String>)>,
     skip: HashSet<String>,
     interface_names: HashMap<InterfaceId, InterfaceName>,
-    /// Each imported and exported interface is stored in this map. Value indicates if last use was import.
-    interface_last_seen_as_import: HashMap<InterfaceId, bool>,
+    exported_resources: HashSet<TypeId>,
     import_funcs_called: bool,
     with_name_counter: usize,
     // Track which interfaces and types are generated. Remapped interfaces and types provided via `with`
@@ -302,7 +301,7 @@ impl RustWasm {
         let world = resolve.select_world(&main_packages, world)?;
 
         let mut files = Files::default();
-        self.generate(&resolve, world, &mut files)?;
+        self.generate(&mut resolve, world, &mut files)?;
         let out_dir = std::env::var("OUT_DIR").expect("cargo sets OUT_DIR");
         let (name, contents) = files
             .iter()
@@ -446,7 +445,8 @@ impl RustWasm {
         };
 
         let remapped = entry.remapped;
-        self.interface_names.insert(id, entry);
+        let prev = self.interface_names.insert(id, entry);
+        assert!(prev.is_none());
 
         Ok(remapped)
     }
@@ -1117,6 +1117,18 @@ impl WorldGenerator for RustWasm {
             }
         }
 
+        for item in world.exports.values() {
+            let WorldItem::Interface { id, .. } = item else {
+                continue;
+            };
+            for id in resolve.interfaces[*id].types.values().copied() {
+                let TypeDefKind::Resource = &resolve.types[id].kind else {
+                    continue;
+                };
+                assert!(self.exported_resources.insert(id));
+            }
+        }
+
         for (k, v) in self.opts.with.iter() {
             self.with.insert(k.clone(), v.clone().into());
         }
@@ -1144,7 +1156,6 @@ impl WorldGenerator for RustWasm {
             self.generated_types.insert(full_name);
         }
 
-        self.interface_last_seen_as_import.insert(id, true);
         let wasm_import_module = resolve.name_world_key(name);
         let mut r#gen = self.interface(
             Identifier::Interface(id, name),
@@ -1201,7 +1212,6 @@ impl WorldGenerator for RustWasm {
             self.generated_types.insert(full_name);
         }
 
-        self.interface_last_seen_as_import.insert(id, false);
         let wasm_import_module = format!("[export]{}", resolve.name_world_key(name));
         let mut r#gen = self.interface(
             Identifier::Interface(id, name),

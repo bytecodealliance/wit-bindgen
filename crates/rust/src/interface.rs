@@ -2441,23 +2441,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
 
     pub fn is_exported_resource(&self, ty: TypeId) -> bool {
         let ty = dealias(self.resolve, ty);
-        let ty = &self.resolve.types[ty];
-        match &ty.kind {
-            TypeDefKind::Resource => {}
-            _ => return false,
-        }
-
-        match ty.owner {
-            // Worlds cannot export types of any kind as of this writing.
-            TypeOwner::World(_) => false,
-
-            // Interfaces are "stateful" currently where whatever we last saw
-            // them as dictates whether it's exported or not.
-            TypeOwner::Interface(i) => !self.r#gen.interface_last_seen_as_import[&i],
-
-            // Shouldn't be the case for resources
-            TypeOwner::None => unreachable!(),
-        }
+        self.r#gen.exported_resources.contains(&ty)
     }
 
     fn push_string_name(&mut self) {

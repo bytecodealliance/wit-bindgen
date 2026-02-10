@@ -186,13 +186,18 @@ impl WorldGenerator for C {
         let world = &resolve.worlds[world];
         for (key, _item) in world.imports.iter().chain(world.exports.iter()) {
             let name = resolve.name_world_key(key);
-            interfaces.insert(name, key.clone());
+            interfaces
+                .entry(name)
+                .or_insert(Vec::new())
+                .push(key.clone());
         }
 
         for (from, to) in self.opts.rename.iter() {
             match interfaces.get(from) {
-                Some(key) => {
-                    self.renamed_interfaces.insert(key.clone(), to.clone());
+                Some(keys) => {
+                    for key in keys {
+                        self.renamed_interfaces.insert(key.clone(), to.clone());
+                    }
                 }
                 None => {
                     eprintln!("warning: rename of `{from}` did not match any interfaces");

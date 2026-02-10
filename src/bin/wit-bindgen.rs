@@ -232,7 +232,7 @@ fn gen_world(
         main_packages.push(pkg);
     }
     let world = resolve.select_world(&main_packages, opts.world.as_deref())?;
-    generator.generate(&resolve, world, files)?;
+    generator.generate(&mut resolve, world, files)?;
 
     Ok(())
 }
