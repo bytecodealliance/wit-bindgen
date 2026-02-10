@@ -11,6 +11,7 @@ use wit_bindgen_core::abi::LiftLower;
 use wit_bindgen_core::{
     Direction, InterfaceGenerator as CoreInterfaceGenerator, abi, uwrite, uwriteln,
 };
+use wit_parser::Param;
 use wit_parser::abi::AbiVariant;
 use wit_parser::{
     Docs, Enum, Flags, FlagsRepr, Function, FunctionKind, Handle, Int, InterfaceId, LiveTypes,
@@ -457,7 +458,7 @@ impl InterfaceGenerator<'_> {
             } else {
                 0
             })
-            .any(|param| self.is_primative_list(&param.1));
+            .any(|param| self.is_primative_list(&param.ty));
 
         if include_additional_functions {
             funcs.push(self.gen_import_src(func, &results, ParameterType::Span));
@@ -575,7 +576,7 @@ impl InterfaceGenerator<'_> {
             func.params
                 .iter()
                 .enumerate()
-                .map(|(i, (name, _))| {
+                .map(|(i, Param { name, .. })| {
                     if i == 0 && matches!(&func.kind, FunctionKind::Method(_)) {
                         "this".to_owned()
                     } else {
@@ -608,8 +609,8 @@ impl InterfaceGenerator<'_> {
                 0
             })
             .map(|param| {
-                let ty = self.name_with_qualifier(&param.1, true, parameter_type);
-                let param_name = &param.0;
+                let ty = self.name_with_qualifier(&param.ty, true, parameter_type);
+                let param_name = &param.name;
                 let param_name = param_name.to_csharp_ident();
                 format!("{ty} {param_name}")
             })
@@ -704,7 +705,7 @@ impl InterfaceGenerator<'_> {
             } else {
                 0
             })
-            .map(|(name, ty)| {
+            .map(|Param { name, ty, .. }| {
                 let ty = self.type_name_with_qualifier(ty, true);
                 let name = name.to_csharp_ident();
                 format!("{ty} {name}")
@@ -1248,7 +1249,7 @@ impl InterfaceGenerator<'_> {
             } else {
                 0
             })
-            .map(|(name, ty)| {
+            .map(|Param { name, ty, .. }| {
                 let ty = self.type_name_with_qualifier(ty, qualifier);
                 let name = name.to_csharp_ident();
                 format!("{ty} {name}")
