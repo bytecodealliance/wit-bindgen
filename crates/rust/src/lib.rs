@@ -302,7 +302,7 @@ impl RustWasm {
         let world = resolve.select_world(&main_packages, world)?;
 
         let mut files = Files::default();
-        self.generate(&resolve, world, &mut files)?;
+        self.generate(&mut resolve, world, &mut files)?;
         let out_dir = std::env::var("OUT_DIR").expect("cargo sets OUT_DIR");
         let (name, contents) = files
             .iter()

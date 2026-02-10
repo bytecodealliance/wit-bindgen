@@ -242,11 +242,11 @@ fn parse_source(
 }
 
 impl Config {
-    fn expand(self) -> Result<TokenStream> {
+    fn expand(mut self) -> Result<TokenStream> {
         let mut files = Default::default();
         let mut generator = self.opts.build();
         generator
-            .generate(&self.resolve, self.world, &mut files)
+            .generate(&mut self.resolve, self.world, &mut files)
             .map_err(|e| anyhow_to_syn(Span::call_site(), e))?;
         let (_, src) = files.iter().next().unwrap();
         let mut src = std::str::from_utf8(src).unwrap().to_string();

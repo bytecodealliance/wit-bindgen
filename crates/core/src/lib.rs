@@ -23,7 +23,8 @@ pub enum Direction {
 }
 
 pub trait WorldGenerator {
-    fn generate(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) -> Result<()> {
+    fn generate(&mut self, resolve: &mut Resolve, id: WorldId, files: &mut Files) -> Result<()> {
+        resolve.generate_nominal_type_ids(id);
         let world = &resolve.worlds[id];
         self.preprocess(resolve, id);
 
