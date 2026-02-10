@@ -6,6 +6,7 @@ use indexmap::{IndexMap, IndexSet};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::{self, Write as _};
 use std::mem;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use wit_bindgen_core::abi::{Bitcast, WasmType};
 use wit_bindgen_core::{
@@ -26,7 +27,7 @@ struct InterfaceName {
 }
 
 #[derive(Default)]
-struct RustWasm {
+pub struct RustWasm {
     types: Types,
     src_preamble: Source,
     src: Source,
@@ -35,8 +36,7 @@ struct RustWasm {
     export_modules: Vec<(String, Vec<String>)>,
     skip: HashSet<String>,
     interface_names: HashMap<InterfaceId, InterfaceName>,
-    /// Each imported and exported interface is stored in this map. Value indicates if last use was import.
-    interface_last_seen_as_import: HashMap<InterfaceId, bool>,
+    exported_resources: HashSet<TypeId>,
     import_funcs_called: bool,
     with_name_counter: usize,
     // Track which interfaces and types are generated. Remapped interfaces and types provided via `with`
@@ -286,15 +286,41 @@ pub struct Opts {
 }
 
 impl Opts {
-    pub fn build(self) -> Box<dyn WorldGenerator> {
+    pub fn build(self) -> RustWasm {
         let mut r = RustWasm::new();
         r.skip = self.skip.iter().cloned().collect();
         r.opts = self;
-        Box::new(r)
+        r
     }
 }
 
 impl RustWasm {
+    /// Generates Rust bindings from the `wit/` directory and writes
+    /// the result into Cargo’s `OUT_DIR`. Intended for use in `build.rs`.
+    ///
+    /// The `world` parameter specifies the world name to select.
+    /// It must be provided unless the main package contains exactly one world.
+    ///
+    /// Returns the full path to the generated bindings file.
+    pub fn generate_to_out_dir(mut self, world: Option<&str>) -> Result<PathBuf> {
+        let mut resolve = Resolve::default();
+        println!("cargo:rerun-if-changed=wit/");
+        let (pkg, _files) = resolve.push_path("wit")?;
+        let main_packages = vec![pkg];
+        let world = resolve.select_world(&main_packages, world)?;
+
+        let mut files = Files::default();
+        self.generate(&mut resolve, world, &mut files)?;
+        let out_dir = std::env::var("OUT_DIR").expect("cargo sets OUT_DIR");
+        let (name, contents) = files
+            .iter()
+            .next()
+            .expect("exactly one file should be generated");
+        let dst = Path::new(&out_dir).join(name);
+        std::fs::write(&dst, contents)?;
+        Ok(dst)
+    }
+
     fn new() -> RustWasm {
         RustWasm::default()
     }
@@ -428,7 +454,8 @@ impl RustWasm {
         };
 
         let remapped = entry.remapped;
-        self.interface_names.insert(id, entry);
+        let prev = self.interface_names.insert(id, entry);
+        assert!(prev.is_none());
 
         Ok(remapped)
     }
@@ -441,7 +468,8 @@ impl RustWasm {
             }
 
             self.src.push_str("mod _rt {\n");
-            self.src.push_str("#![allow(dead_code, clippy::all)]\n");
+            self.src
+                .push_str("#![allow(dead_code, unused_imports, clippy::all)]\n");
             let mut emitted = IndexSet::new();
             while !self.rt_module.is_empty() {
                 for item in mem::take(&mut self.rt_module) {
@@ -1140,6 +1168,18 @@ impl WorldGenerator for RustWasm {
             }
         }
 
+        for item in world.exports.values() {
+            let WorldItem::Interface { id, .. } = item else {
+                continue;
+            };
+            for id in resolve.interfaces[*id].types.values().copied() {
+                let TypeDefKind::Resource = &resolve.types[id].kind else {
+                    continue;
+                };
+                assert!(self.exported_resources.insert(id));
+            }
+        }
+
         for (k, v) in self.opts.with.iter() {
             self.with.insert(k.clone(), v.clone().into());
         }
@@ -1168,7 +1208,6 @@ impl WorldGenerator for RustWasm {
             self.generated_types.insert(full_name);
         }
 
-        self.interface_last_seen_as_import.insert(id, true);
         let wasm_import_module = resolve.name_world_key(name);
         let mut r#gen = self.interface(
             Identifier::Interface(id, name),
@@ -1230,7 +1269,6 @@ impl WorldGenerator for RustWasm {
             self.generated_types.insert(full_name);
         }
 
-        self.interface_last_seen_as_import.insert(id, false);
         let wasm_import_module = format!("[export]{}", resolve.name_world_key(name));
         let mut r#gen = self.interface(
             Identifier::Interface(id, name),
@@ -1744,52 +1782,51 @@ fn bitcast(casts: &[Bitcast], operands: &[String], results: &mut Vec<String>) {
 fn perform_cast(operand: &str, cast: &Bitcast) -> String {
     match cast {
         Bitcast::None => operand.to_owned(),
-        Bitcast::I32ToI64 => format!("i64::from({})", operand),
-        Bitcast::F32ToI32 => format!("({}).to_bits() as i32", operand),
-        Bitcast::F64ToI64 => format!("({}).to_bits() as i64", operand),
-        Bitcast::I64ToI32 => format!("{} as i32", operand),
-        Bitcast::I32ToF32 => format!("f32::from_bits({} as u32)", operand),
-        Bitcast::I64ToF64 => format!("f64::from_bits({} as u64)", operand),
-        Bitcast::F32ToI64 => format!("i64::from(({}).to_bits())", operand),
-        Bitcast::I64ToF32 => format!("f32::from_bits({} as u32)", operand),
+        Bitcast::I32ToI64 => format!("i64::from({operand})"),
+        Bitcast::F32ToI32 => format!("({operand}).to_bits() as i32"),
+        Bitcast::F64ToI64 => format!("({operand}).to_bits() as i64"),
+        Bitcast::I64ToI32 => format!("{operand} as i32"),
+        Bitcast::I32ToF32 => format!("f32::from_bits({operand} as u32)"),
+        Bitcast::I64ToF64 => format!("f64::from_bits({operand} as u64)"),
+        Bitcast::F32ToI64 => format!("i64::from(({operand}).to_bits())"),
+        Bitcast::I64ToF32 => format!("f32::from_bits({operand} as u32)"),
 
         // Convert an `i64` into a `MaybeUninit<u64>`.
-        Bitcast::I64ToP64 => format!("::core::mem::MaybeUninit::new({} as u64)", operand),
+        Bitcast::I64ToP64 => format!("::core::mem::MaybeUninit::new({operand} as u64)"),
         // Convert a `MaybeUninit<u64>` holding an `i64` value back into
         // the `i64` value.
-        Bitcast::P64ToI64 => format!("{}.assume_init() as i64", operand),
+        Bitcast::P64ToI64 => format!("{operand}.assume_init() as i64"),
 
         // Convert a pointer value into a `MaybeUninit<u64>`.
         Bitcast::PToP64 => {
             format!(
                 "{{
                         let mut t = ::core::mem::MaybeUninit::<u64>::uninit();
-                        t.as_mut_ptr().cast::<*mut u8>().write({});
+                        t.as_mut_ptr().cast::<*mut u8>().write({operand});
                         t
-                    }}",
-                operand
+                    }}"
             )
         }
         // Convert a `MaybeUninit<u64>` holding a pointer value back into
         // the pointer value.
         Bitcast::P64ToP => {
-            format!("{}.as_ptr().cast::<*mut u8>().read()", operand)
+            format!("{operand}.as_ptr().cast::<*mut u8>().read()")
         }
         // Convert an `i32` or a `usize` into a pointer.
         Bitcast::I32ToP | Bitcast::LToP => {
-            format!("{} as *mut u8", operand)
+            format!("{operand} as *mut u8")
         }
         // Convert a pointer or length holding an `i32` value back into the `i32`.
         Bitcast::PToI32 | Bitcast::LToI32 => {
-            format!("{} as i32", operand)
+            format!("{operand} as i32")
         }
         // Convert an `i32`, `i64`, or pointer holding a `usize` value back into the `usize`.
         Bitcast::I32ToL | Bitcast::I64ToL | Bitcast::PToL => {
-            format!("{} as usize", operand)
+            format!("{operand} as usize")
         }
         // Convert a `usize` into an `i64`.
         Bitcast::LToI64 => {
-            format!("{} as i64", operand)
+            format!("{operand} as i64")
         }
         Bitcast::Sequence(sequence) => {
             let [first, second] = &**sequence;

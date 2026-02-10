@@ -82,12 +82,14 @@ impl Types {
                     WorldItem::Function(f) => {
                         self.type_info_func(resolve, f, import);
                     }
-                    WorldItem::Interface { id, stability: _ } => {
+                    WorldItem::Interface {
+                        id, stability: _, ..
+                    } => {
                         for (_, f) in resolve.interfaces[*id].functions.iter() {
                             self.type_info_func(resolve, f, import);
                         }
                     }
-                    WorldItem::Type(_) => {}
+                    WorldItem::Type { .. } => {}
                 }
             }
         }
@@ -112,7 +114,7 @@ impl Types {
 
     fn type_info_func(&mut self, resolve: &Resolve, func: &Function, import: bool) {
         let mut live = LiveTypes::default();
-        for (_, ty) in func.params.iter() {
+        for Param { ty, .. } in func.params.iter() {
             self.type_info(resolve, ty);
             live.add_type(resolve, ty);
         }
@@ -221,7 +223,10 @@ impl Types {
                 // should use the same ownership semantics as `own<T>`
                 info.has_own_handle = true;
             }
-            TypeDefKind::FixedSizeList(..) => todo!(),
+            TypeDefKind::FixedLengthList(ty, _) => {
+                info = self.type_info(resolve, ty);
+            }
+            TypeDefKind::Map(..) => todo!(),
             TypeDefKind::Unknown => unreachable!(),
         }
         let prev = self.type_info.insert(ty, info);

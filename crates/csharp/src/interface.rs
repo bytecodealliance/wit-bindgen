@@ -4,12 +4,14 @@ use crate::function::ResourceInfo;
 use crate::world_generator::CSharp;
 use heck::{ToShoutySnakeCase, ToUpperCamelCase};
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::fmt::Write;
 use std::ops::Deref;
 use wit_bindgen_core::abi::LiftLower;
 use wit_bindgen_core::{
     Direction, InterfaceGenerator as CoreInterfaceGenerator, abi, uwrite, uwriteln,
 };
+use wit_parser::Param;
 use wit_parser::abi::AbiVariant;
 use wit_parser::{
     Docs, Enum, Flags, FlagsRepr, Function, FunctionKind, Handle, Int, InterfaceId, LiveTypes,
@@ -20,6 +22,7 @@ pub(crate) struct InterfaceFragment {
     pub(crate) csharp_src: String,
     pub(crate) csharp_interop_src: String,
     pub(crate) stub: String,
+    pub(crate) direction: Option<Direction>, // Types do not have a direction.
 }
 
 pub(crate) struct InterfaceTypeAndFragments {
@@ -36,6 +39,12 @@ impl InterfaceTypeAndFragments {
     }
 }
 
+pub(crate) struct FutureInfo {
+    pub name: String,
+    pub generic_type_name: String,
+    pub ty: TypeId,
+}
+
 /// InterfaceGenerator generates the C# code for wit interfaces.
 /// It produces types by interface in wit and then generates the interop code
 /// by calling out to FunctionGenerator
@@ -47,6 +56,8 @@ pub(crate) struct InterfaceGenerator<'a> {
     pub(crate) resolve: &'a Resolve,
     pub(crate) name: &'a str,
     pub(crate) direction: Direction,
+    pub(crate) futures: Vec<FutureInfo>,
+    pub(crate) is_world: bool,
 }
 
 impl InterfaceGenerator<'_> {
@@ -132,11 +143,12 @@ impl InterfaceGenerator<'_> {
     }
 
     pub(crate) fn qualifier(&self, when: bool, ty: &TypeId) -> String {
+        let type_def = &self.resolve.types[*ty];
+
         // anonymous types dont get an owner from wit-parser, so assume they are part of an interface here.
         let owner = if let Some(owner_type) = self.csharp_gen.anonymous_type_owners.get(ty) {
             *owner_type
         } else {
-            let type_def = &self.resolve.types[*ty];
             type_def.owner
         };
 
@@ -151,10 +163,34 @@ impl InterfaceGenerator<'_> {
         }
 
         if when {
-            let name = self.name;
+            let mut name = self.name;
+            let tmp_name: String;
+            if self.is_world {
+                if CSharp::type_is_bidirectional(self.resolve(), ty) {
+                    name = name.rsplitn(2, ".").nth(1).unwrap();
+                }
+                // World level types, except resources are always imports.
+                else if name.ends_with("Exports") && type_def.kind != TypeDefKind::Resource {
+                    tmp_name = Self::replace_last(&name, "Exports", "Imports");
+                    name = &tmp_name;
+                }
+            }
             format!("{global_prefix}{name}.")
         } else {
             String::new()
+        }
+    }
+
+    fn replace_last(haystack: &str, needle: &str, replacement: &str) -> String {
+        if let Some(pos) = haystack.rfind(needle) {
+            let mut result =
+                String::with_capacity(haystack.len() - needle.len() + replacement.len());
+            result.push_str(&haystack[..pos]);
+            result.push_str(replacement);
+            result.push_str(&haystack[pos + needle.len()..]);
+            result
+        } else {
+            haystack.to_string()
         }
     }
 
@@ -168,14 +204,171 @@ impl InterfaceGenerator<'_> {
                 csharp_src: self.src,
                 csharp_interop_src: self.csharp_interop_src,
                 stub: self.stub,
+                direction: Some(self.direction),
             });
     }
 
-    pub(crate) fn add_world_fragment(self) {
+    pub(crate) fn add_futures(&mut self, import_module_name: &str, is_export: bool) {
+        if self.futures.is_empty() {
+            return;
+        }
+
+        let mut bool_non_generic_new_added = false;
+        let mut bool_generic_new_added = false;
+        let mut generated_future_types: HashSet<TypeId> = HashSet::new();
+        let (_namespace, interface_name) = &CSharp::get_class_name_from_qualified_name(self.name);
+        let interop_name = format!("{}Interop", interface_name.strip_prefix("I").unwrap());
+
+        for future in &self.futures {
+            let future_name = &future.name;
+            if !generated_future_types.contains(&future.ty) {
+                let generic_type_name = &future.generic_type_name;
+                let upper_camel_future_type = generic_type_name.to_upper_camel_case();
+                uwrite!(
+                    self.csharp_interop_src,
+                    r#"
+                    internal static FutureVTable FutureVTable{upper_camel_future_type} = new FutureVTable()
+                    {{
+                        New = FutureNew{upper_camel_future_type},
+                        StartRead = FutureRead{upper_camel_future_type},
+                        Write = FutureWrite{upper_camel_future_type},
+                        DropReader = FutureDropReader{upper_camel_future_type},
+                        DropWriter = FutureDropWriter{upper_camel_future_type},
+                    }};
+                    "#
+                );
+
+                uwrite!(
+                    self.csharp_interop_src,
+                    r#"
+                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[async-lower][future-read-0]read-future"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
+                    internal static unsafe extern int FutureRead{upper_camel_future_type}(int readable, IntPtr ptr);
+
+                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[async-lower][future-write-0]read-future"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
+                    internal static unsafe extern int FutureWrite{upper_camel_future_type}(int writeable, IntPtr buffer);
+            
+                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-drop-readable-0]read-future"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
+                    internal static extern void FutureDropReader{upper_camel_future_type}(int readable);
+
+                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-drop-writable-0]read-future"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
+                    internal static extern void FutureDropWriter{upper_camel_future_type}(int readable);
+                "#
+                );
+
+                uwrite!(
+                    self.csharp_interop_src,
+                    r#"
+                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-new-0]{future_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
+                    internal static extern ulong FutureNew{upper_camel_future_type}();
+                    "#
+                );
+
+                // TODO: Move this and other type dependent functions out to another function.
+                uwrite!(
+                    self.csharp_interop_src,
+                    r#"
+                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-cancel-read-0]{future_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
+                    internal static extern uint FutureCancelRead{upper_camel_future_type}(int readable);
+                    "#
+                );
+
+                uwrite!(
+                    self.csharp_interop_src,
+                    r#"
+                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-cancel-write-0]{future_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
+                    internal static extern uint FutureCancelWrite{upper_camel_future_type}(int writeable);
+                    "#
+                );
+
+                uwrite!(
+                    self.csharp_interop_src,
+                    r#"
+                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-drop-writeable-0]{future_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
+                    internal static extern void FutureDropWriteable{upper_camel_future_type}(int writeable);
+                    "#
+                );
+
+                match future.generic_type_name.as_str() {
+                    "" => {
+                        if !bool_non_generic_new_added {
+                            self.csharp_gen
+                                .interface_fragments
+                                .entry(self.name.to_string())
+                                .or_insert_with(|| InterfaceTypeAndFragments::new(is_export))
+                                .interface_fragments
+                                .push(InterfaceFragment {
+                                    csharp_src: format!(r#"
+                                    // FutureReader/Writer will be generic
+                                    public static (FutureReader, FutureWriter) FutureNew() 
+                                    {{
+                                            return FutureHelpers.RawFutureNew({interop_name}.FutureVTable);
+                                    }}
+                                    "#).to_string(),
+                                    csharp_interop_src: "".to_string(),
+                                    stub: "".to_string(),
+                                    direction: Some(self.direction),
+                                });
+                            bool_non_generic_new_added = true;
+                        }
+                    }
+                    _ => {
+                        self.csharp_gen
+                            .interface_fragments
+                            .entry(self.name.to_string())
+                            .or_insert_with(|| InterfaceTypeAndFragments::new(is_export))
+                            .interface_fragments
+                            .push(InterfaceFragment {
+                                csharp_src: format!(r#"
+                                public static (FutureReader<{generic_type_name}>, FutureWriter<{generic_type_name}>) FutureNew{upper_camel_future_type}() 
+                                {{
+                                        return FutureHelpers.RawFutureNew<{generic_type_name}>({interop_name}.FutureVTable{upper_camel_future_type});
+                                }}
+                                "#).to_string(),
+                                csharp_interop_src: "".to_string(),
+                                stub: "".to_string(),
+                                direction: Some(self.direction),
+                            });
+
+                        if !bool_generic_new_added {
+                            self.csharp_gen
+                                .interface_fragments
+                                .entry(self.name.to_string())
+                                .or_insert_with(|| InterfaceTypeAndFragments::new(is_export))
+                                .interface_fragments
+                                .push(InterfaceFragment {
+                                    csharp_src: format!(r#"
+                                    // FutureReader/Writer will be generic
+                                    public static (FutureReader<T>, FutureWriter<T>) FutureNew<T>(FutureVTable vtable) 
+                                    {{
+                                            return FutureHelpers.RawFutureNew<T>(vtable);
+                                    }}
+                                    "#).to_string(),
+                                    csharp_interop_src: "".to_string(),
+                                    stub: "".to_string(),
+                                    direction: Some(self.direction),
+                                });
+                            bool_generic_new_added = true;
+                        }
+                    }
+                }
+
+                generated_future_types.insert(future.ty);
+            }
+        }
+
+        self.csharp_gen.needs_async_support = true;
+
+        self.csharp_gen
+            .generated_future_types
+            .extend(generated_future_types.iter());
+    }
+
+    pub(crate) fn add_world_fragment(self, direction: Option<Direction>) {
         self.csharp_gen.world_fragments.push(InterfaceFragment {
             csharp_src: self.src,
             csharp_interop_src: self.csharp_interop_src,
             stub: self.stub,
+            direction,
         });
     }
 
@@ -247,7 +440,7 @@ impl InterfaceGenerator<'_> {
                 if param_list.is_empty() {
                     "void *taskResultBuffer".to_string()
                 } else {
-                    format!("{}, void *taskResultBuffer", param_list)
+                    format!("{param_list}, void *taskResultBuffer")
                 }
             } else {
                 param_list
@@ -265,7 +458,7 @@ impl InterfaceGenerator<'_> {
             } else {
                 0
             })
-            .any(|param| self.is_primative_list(&param.1));
+            .any(|param| self.is_primative_list(&param.ty));
 
         if include_additional_functions {
             funcs.push(self.gen_import_src(func, &results, ParameterType::Span));
@@ -279,26 +472,20 @@ impl InterfaceGenerator<'_> {
             func.name.to_string()
         };
 
-        let target = if let FunctionKind::Freestanding = &func.kind {
-            &mut self.csharp_interop_src
-        } else {
-            &mut self.src
-        };
-
         uwrite!(
-            target,
+            self.csharp_interop_src,
             r#"
-            internal static class {interop_camel_name}WasmInterop
+            public static class {interop_camel_name}WasmInterop
             {{
                 [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "{import_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
-                internal static extern {sig_unsafe}{wasm_result_type} wasmImport{interop_camel_name}({wasm_params});
+                public static extern {sig_unsafe}{wasm_result_type} wasmImport{interop_camel_name}({wasm_params});
             }}
             "#
         );
 
         for (src, params) in funcs {
             uwrite!(
-                target,
+                self.src,
                 r#"
                     {access} {modifiers} unsafe {result_type} {camel_name}({params})
                     {{
@@ -310,7 +497,7 @@ impl InterfaceGenerator<'_> {
     }
 
     fn func_payload_and_return_type(&mut self, func: &Function) -> (String, Vec<TypeId>) {
-        let return_type = self.func_return_type(func);
+        let return_type = self.func_return_type(func, true);
         let results = if let FunctionKind::Constructor(_) = &func.kind {
             Vec::new()
         } else {
@@ -332,7 +519,7 @@ impl InterfaceGenerator<'_> {
         (return_type, results)
     }
 
-    fn func_return_type(&mut self, func: &Function) -> String {
+    fn func_return_type(&mut self, func: &Function, qualifier: bool) -> String {
         let result_type = if let FunctionKind::Constructor(_) = &func.kind {
             String::new()
         } else {
@@ -349,7 +536,7 @@ impl InterfaceGenerator<'_> {
                             );
                             if let Some(ty) = payload {
                                 self.csharp_gen.needs_result = true;
-                                self.type_name_with_qualifier(&ty, true)
+                                self.type_name_with_qualifier(&ty, qualifier)
                             } else {
                                 "void".to_string()
                             }
@@ -365,7 +552,7 @@ impl InterfaceGenerator<'_> {
                 | FunctionKind::AsyncStatic(_)
                 | FunctionKind::AsyncMethod(_) => match func.result {
                     None => "Task".to_string(),
-                    Some(_ty) => format!("Task<{}>", base_type),
+                    Some(_ty) => format!("Task<{base_type}>"),
                 },
                 _ => base_type,
             };
@@ -389,7 +576,7 @@ impl InterfaceGenerator<'_> {
             func.params
                 .iter()
                 .enumerate()
-                .map(|(i, (name, _))| {
+                .map(|(i, Param { name, .. })| {
                     if i == 0 && matches!(&func.kind, FunctionKind::Method(_)) {
                         "this".to_owned()
                     } else {
@@ -422,8 +609,8 @@ impl InterfaceGenerator<'_> {
                 0
             })
             .map(|param| {
-                let ty = self.name_with_qualifier(&param.1, true, parameter_type);
-                let param_name = &param.0;
+                let ty = self.name_with_qualifier(&param.ty, true, parameter_type);
+                let param_name = &param.name;
                 let param_name = param_name.to_csharp_ident();
                 format!("{ty} {param_name}")
             })
@@ -433,7 +620,7 @@ impl InterfaceGenerator<'_> {
         (src, params)
     }
 
-    pub(crate) fn export(&mut self, func: &Function, interface_name: Option<&WorldKey>) {
+    pub(crate) fn export(&mut self, func: &Function, interface_key: Option<&WorldKey>) {
         let camel_name = match &func.kind {
             FunctionKind::Freestanding
             | FunctionKind::Static(_)
@@ -480,6 +667,7 @@ impl InterfaceGenerator<'_> {
         );
 
         let src = bindgen.src;
+        let resource_type_name = bindgen.resource_type_name;
 
         let vars = bindgen
             .resource_drops
@@ -517,8 +705,8 @@ impl InterfaceGenerator<'_> {
             } else {
                 0
             })
-            .map(|(name, ty)| {
-                let ty = self.type_name(ty);
+            .map(|Param { name, ty, .. }| {
+                let ty = self.type_name_with_qualifier(ty, true);
                 let name = name.to_csharp_ident();
                 format!("{ty} {name}")
             })
@@ -527,7 +715,7 @@ impl InterfaceGenerator<'_> {
 
         let wasm_func_name = func.name.clone();
         let interop_name = format!("wasmExport{}", wasm_func_name.to_upper_camel_case());
-        let core_module_name = interface_name.map(|s| self.resolve.name_world_key(s));
+        let core_module_name = interface_key.map(|s| self.resolve.name_world_key(s));
         let export_name = func.legacy_core_export_name(core_module_name.as_deref());
 
         let export_name = if async_ {
@@ -587,24 +775,44 @@ impl InterfaceGenerator<'_> {
         }
 
         if async_ {
-            let import_module_name = &self.resolve.name_world_key(interface_name.unwrap());
+            let (_namespace, interface_name) =
+                &CSharp::get_class_name_from_qualified_name(self.name);
+            let impl_name = if resource_type_name.is_some() {
+                resource_type_name.unwrap()
+            } else {
+                format!("{}Impl", interface_name.strip_prefix("I").unwrap())
+            };
 
+            let (import_module_prefix, import_module) = match interface_key {
+                Some(world_key) => {
+                    let interface_world = self.resolve.name_world_key(world_key);
+                    (format!("{interface_world}#"), interface_world)
+                }
+                None => (String::new(), "$root".to_string()),
+            };
             uwriteln!(
                 self.csharp_interop_src,
                 r#"
-            [global::System.Runtime.InteropServices.UnmanagedCallersOnlyAttribute(EntryPoint = "[callback][async-lift]{import_module_name}#{wasm_func_name}")]
-            public static uint {camel_name}Callback(uint eventRaw, uint waitable, uint code)
+            [global::System.Runtime.InteropServices.UnmanagedCallersOnlyAttribute(EntryPoint = "[callback][async-lift]{import_module_prefix}{wasm_func_name}")]
+            public static int {camel_name}Callback(uint eventRaw, uint waitable, uint code)
             {{
                 // TODO: decode the parameters
-                return (uint)CallbackCode.Exit;
+                return {impl_name}.{camel_name}Callback();
             }}
+            "#
+            );
+
+            uwriteln!(
+                self.src,
+                r#"
+            public static abstract int {camel_name}Callback();
             "#
             );
 
             // TODO: The task return function can take up to 16 core parameters.
             let task_return_param = match &sig.results[..] {
                 [] => "",
-                [_result] => &format!("{} result", wasm_result_type),
+                [_result] => &format!("{wasm_result_type} result"),
                 _ => unreachable!(),
             };
 
@@ -612,8 +820,8 @@ impl InterfaceGenerator<'_> {
                 self.csharp_interop_src,
                 r#"
             // TODO: The task return function can take up to 16 core parameters.
-            [global::System.Runtime.InteropServices.DllImportAttribute("[export]{import_module_name}", EntryPoint = "[task-return]{wasm_func_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
-            internal static extern void {camel_name}TaskReturn({task_return_param});
+            [global::System.Runtime.InteropServices.DllImportAttribute("[export]{import_module}", EntryPoint = "[task-return]{wasm_func_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
+            public static extern void {camel_name}TaskReturn({task_return_param});
             "#
             );
         }
@@ -628,12 +836,19 @@ impl InterfaceGenerator<'_> {
         }
 
         if self.csharp_gen.opts.generate_stub {
-            let sig = self.sig_string(func, true);
+            let sig: String = self.sig_string(func, true);
+            let func_name = func.item_name().to_upper_camel_case();
 
             uwrite!(
                 self.stub,
                 r#"
-                {sig} {{
+                {sig} 
+                {{
+                    throw new global::System.NotImplementedException();
+                }}
+
+                public static int {func_name}Callback(/* TODO: event arg */)
+                {{
                     throw new global::System.NotImplementedException();
                 }}
                 "#
@@ -781,16 +996,8 @@ impl InterfaceGenerator<'_> {
                         let (Handle::Own(id) | Handle::Borrow(id)) = handle;
                         self.type_name_with_qualifier(&Type::Id(*id), qualifier)
                     }
-                    TypeDefKind::Future(ty) => {
-                        let name = ty
-                            .as_ref()
-                            .map(|ty| self.type_name_with_qualifier(ty, qualifier))
-                            .unwrap_or_else(|| "".to_owned());
-                        if name.is_empty() {
-                            return "Task".to_owned();
-                        } else {
-                            return format!("Task<{name}>");
-                        }
+                    TypeDefKind::Future(_ty) => {
+                        return format!("FutureReader").to_owned();
                     }
                     _ => {
                         if let Some(name) = &ty.name {
@@ -972,6 +1179,7 @@ impl InterfaceGenerator<'_> {
                     {access} interface I{upper_camel} {{
                     "#
                 );
+                self.csharp_gen.needs_rep_table = true;
 
                 if self.csharp_gen.opts.generate_stub {
                     let super_ = self.type_name_with_qualifier(&Type::Id(id), true);
@@ -995,6 +1203,14 @@ impl InterfaceGenerator<'_> {
                 }
             }
         };
+
+        uwrite!(
+            self.csharp_interop_src,
+            r#"
+            internal static class {upper_camel}
+            {{
+            "#
+        );
     }
 
     pub(crate) fn end_resource(&mut self) {
@@ -1013,10 +1229,17 @@ impl InterfaceGenerator<'_> {
             }}
             "
         );
+
+        uwrite!(
+            self.csharp_interop_src,
+            "
+            }}
+            "
+        );
     }
 
     fn sig_string(&mut self, func: &Function, qualifier: bool) -> String {
-        let result_type = self.func_return_type(&func);
+        let result_type = self.func_return_type(&func, qualifier);
 
         let params = func
             .params
@@ -1026,7 +1249,7 @@ impl InterfaceGenerator<'_> {
             } else {
                 0
             })
-            .map(|(name, ty)| {
+            .map(|Param { name, ty, .. }| {
                 let ty = self.type_name_with_qualifier(ty, qualifier);
                 let name = name.to_csharp_ident();
                 format!("{ty} {name}")
@@ -1039,6 +1262,7 @@ impl InterfaceGenerator<'_> {
             | FunctionKind::AsyncFreestanding
             | FunctionKind::Static(_)
             | FunctionKind::AsyncStatic(_) => (func.item_name().to_upper_camel_case(), "static"),
+
             FunctionKind::Method(_) | FunctionKind::AsyncMethod(_) => {
                 (func.item_name().to_upper_camel_case(), "")
             }
@@ -1051,6 +1275,14 @@ impl InterfaceGenerator<'_> {
         let access = self.csharp_gen.access_modifier();
 
         format!("{access} {modifiers} {result_type} {camel_name}({params})")
+    }
+
+    pub(crate) fn add_future(&mut self, func_name: &str, generic_type_name: &str, ty: &TypeId) {
+        self.futures.push(FutureInfo {
+            name: func_name.to_string(),
+            generic_type_name: generic_type_name.to_string(),
+            ty: *ty,
+        });
     }
 }
 
@@ -1265,7 +1497,7 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.type_name(&Type::Id(id));
     }
 
-    fn type_enum(&mut self, _id: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
+    fn type_enum(&mut self, ty: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
         self.print_docs(docs);
 
         let name = name.to_upper_camel_case();
@@ -1279,14 +1511,28 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
         let access = self.csharp_gen.access_modifier();
 
-        uwrite!(
-            self.src,
-            "
-            {access} enum {name} {{
-                {cases}
-            }}
-            "
-        );
+        // Write the top level bidirectional types to csharp_gen.  Could also create a class to gather the interface level bidrectional types.
+        match &self.resolve.types[ty].owner {
+            TypeOwner::World(_id) => {
+                self.csharp_gen.bidirectional_types_src.insert(format!(
+                    "
+                    {access} enum {name} {{
+                        {cases}
+                    }}
+                    "
+                ));
+            }
+            _ => {
+                uwrite!(
+                    self.src,
+                    "
+                    {access} enum {name} {{
+                        {cases}
+                    }}
+                    "
+                );
+            }
+        };
     }
 
     fn type_alias(&mut self, id: TypeId, _name: &str, _ty: &Type, _docs: &Docs) {
@@ -1380,10 +1626,9 @@ fn modifiers(func: &Function, name: &str, direction: Direction) -> String {
         _ => "",
     };
 
-    let abstract_modifier = if direction == Direction::Export {
-        " abstract"
-    } else {
-        ""
+    let abstract_modifier = match (direction, &func.kind) {
+        (Direction::Export, _) => " abstract",
+        _ => "",
     };
 
     let async_modifier = match &func.kind {

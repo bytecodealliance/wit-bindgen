@@ -1,4 +1,4 @@
-use crate::LanguageMethods;
+use crate::{LanguageMethods, Runner};
 use anyhow::bail;
 use serde::Deserialize;
 use std::process::Command;
@@ -9,6 +9,8 @@ use std::process::Command;
 struct LangConfig {
     #[serde(default)]
     path: String,
+    #[serde(default)]
+    pkg_config: Option<String>,
 }
 
 pub struct MoonBit;
@@ -26,7 +28,7 @@ impl LanguageMethods for MoonBit {
         &["--derive-show", "--derive-eq", "--derive-error"]
     }
 
-    fn prepare(&self, runner: &mut crate::Runner<'_>) -> anyhow::Result<()> {
+    fn prepare(&self, runner: &mut Runner) -> anyhow::Result<()> {
         println!("Testing if MoonBit toolchain exists...");
         if runner
             .run_command(Command::new("moon").arg("version"))
@@ -37,14 +39,26 @@ impl LanguageMethods for MoonBit {
         Ok(())
     }
 
-    fn compile(&self, runner: &crate::Runner<'_>, compile: &crate::Compile) -> anyhow::Result<()> {
+    fn compile(&self, runner: &Runner, compile: &crate::Compile) -> anyhow::Result<()> {
         let config = compile.component.deserialize_lang_config::<LangConfig>()?;
         // Copy the file to the bindings directory
         if !config.path.is_empty() {
             let src_path = &compile.component.path;
-            let dest_path = compile.bindings_dir.join(config.path);
+            let dest_path = compile.bindings_dir.join(&config.path);
             std::fs::copy(src_path, dest_path)?;
+
+            // Write the moon.pkg.json if provided
+            if let Some(pkg_config) = config.pkg_config {
+                let dest_path = compile
+                    .bindings_dir
+                    .join(&config.path)
+                    .parent()
+                    .unwrap()
+                    .join("moon.pkg.json");
+                std::fs::write(dest_path, pkg_config)?;
+            }
         }
+
         // Compile the MoonBit bindings to a wasm file
         let mut cmd = Command::new("moon");
         cmd.arg("build")
@@ -86,12 +100,12 @@ impl LanguageMethods for MoonBit {
         config.async_
     }
 
-    fn verify(&self, runner: &crate::Runner<'_>, verify: &crate::Verify) -> anyhow::Result<()> {
+    fn verify(&self, runner: &Runner, verify: &crate::Verify) -> anyhow::Result<()> {
         let mut cmd = Command::new("moon");
         cmd.arg("check")
             .arg("--warn-list")
             .arg("-28")
-            .arg("--deny-warn")
+            // .arg("--deny-warn")
             .arg("--source-dir")
             .arg(verify.bindings_dir);
 

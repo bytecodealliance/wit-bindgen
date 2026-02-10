@@ -1,19 +1,19 @@
 using System;
 using System.Runtime.InteropServices;
 using System.Diagnostics;
-using RunnerWorld.wit.imports.test.strings;
+using RunnerWorld.wit.Imports.test.strings;
 using System.Text;
 
 namespace RunnerWorld;
 
-public class RunnerWorldImpl : IRunnerWorld
+public class RunnerWorldExportsImpl : IRunnerWorldExports
 {
     public static void Run()
     {
-        ToTestInterop.TakeBasic("latin utf16");
-        Debug.Assert(ToTestInterop.ReturnUnicode() == "🚀🚀🚀 𠈄𓀀");
+        IToTestImports.TakeBasic("latin utf16");
+        Debug.Assert(IToTestImports.ReturnUnicode() == "🚀🚀🚀 𠈄𓀀");
 
-        Debug.Assert(ToTestInterop.ReturnEmpty() == string.Empty);
-        Debug.Assert(ToTestInterop.Roundtrip("🚀🚀🚀 𠈄𓀀") == "🚀🚀🚀 𠈄𓀀");
+        Debug.Assert(IToTestImports.ReturnEmpty() == string.Empty);
+        Debug.Assert(IToTestImports.Roundtrip("🚀🚀🚀 𠈄𓀀") == "🚀🚀🚀 𠈄𓀀");
     }
 }

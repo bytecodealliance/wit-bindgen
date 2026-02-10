@@ -3,7 +3,8 @@ package export_test_flavorful_to_test
 import (
 	"slices"
 	. "wit_component/test_flavorful_to_test"
-	. "wit_component/wit_types"
+
+	. "github.com/bytecodealliance/wit-bindgen/wit_types"
 )
 
 func FListInRecord1(x ListInRecord1) {

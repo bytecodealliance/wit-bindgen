@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"runtime"
 	"unsafe"
+
+	"github.com/bytecodealliance/wit-bindgen/wit_runtime"
 )
 
 const EVENT_NONE uint32 = 0
@@ -20,7 +22,6 @@ const STATUS_RETURNED uint32 = 2
 const CALLBACK_CODE_EXIT uint32 = 0
 const CALLBACK_CODE_YIELD uint32 = 1
 const CALLBACK_CODE_WAIT uint32 = 2
-const CALLBACK_CODE_POLL uint32 = 3
 
 const RETURN_CODE_BLOCKED uint32 = 0xFFFFFFFF
 const RETURN_CODE_COMPLETED uint32 = 0
@@ -74,37 +75,6 @@ func callback(event0, event1, event2 uint32) uint32 {
 		yielding <- unit{}
 	}
 
-	switch event0 {
-	case EVENT_NONE:
-
-	case EVENT_SUBTASK:
-		switch event2 {
-		case STATUS_STARTING:
-			panic(fmt.Sprintf("unexpected subtask status: %v", event2))
-
-		case STATUS_STARTED:
-
-		case STATUS_RETURNED:
-			waitableJoin(event1, 0)
-			subtaskDrop(event1)
-			channel := state.pending[event1]
-			delete(state.pending, event1)
-			channel <- event2
-
-		default:
-			panic("todo")
-		}
-
-	case EVENT_STREAM_READ, EVENT_STREAM_WRITE, EVENT_FUTURE_READ, EVENT_FUTURE_WRITE:
-		waitableJoin(event1, 0)
-		channel := state.pending[event1]
-		delete(state.pending, event1)
-		channel <- event2
-
-	default:
-		panic("todo")
-	}
-
 	// Tell the Go scheduler to write to `state.channel` only after all
 	// goroutines have either blocked or exited.  This allows us to reliably
 	// delay returning control to the host until there's truly nothing more
@@ -121,31 +91,75 @@ func callback(event0, event1, event2 uint32) uint32 {
 		return false
 	})
 
-	// Block this goroutine until the scheduler wakes us up.
-	(<-state.channel)
+	for {
+		switch event0 {
+		case EVENT_NONE:
 
-	if state.yielding != nil {
-		contextSet(unsafe.Pointer(state))
-		if len(state.pending) == 0 {
-			return CALLBACK_CODE_YIELD
+		case EVENT_SUBTASK:
+			switch event2 {
+			case STATUS_STARTING:
+				panic(fmt.Sprintf("unexpected subtask status: %v", event2))
+
+			case STATUS_STARTED:
+
+			case STATUS_RETURNED:
+				waitableJoin(event1, 0)
+				subtaskDrop(event1)
+				channel := state.pending[event1]
+				delete(state.pending, event1)
+				channel <- event2
+
+			default:
+				panic("todo")
+			}
+
+		case EVENT_STREAM_READ, EVENT_STREAM_WRITE, EVENT_FUTURE_READ, EVENT_FUTURE_WRITE:
+			waitableJoin(event1, 0)
+			channel := state.pending[event1]
+			delete(state.pending, event1)
+			channel <- event2
+
+		default:
+			panic("todo")
+		}
+
+		// Block this goroutine until the scheduler wakes us up.
+		(<-state.channel)
+
+		if state.yielding != nil {
+			contextSet(unsafe.Pointer(state))
+			if len(state.pending) == 0 {
+				return CALLBACK_CODE_YIELD
+			} else {
+				if state.waitableSet == 0 {
+					panic("unreachable")
+				}
+				event0, event1, event2 = func() (uint32, uint32, uint32) {
+					pinner := runtime.Pinner{}
+					defer pinner.Unpin()
+					buffer := wit_runtime.Allocate(&pinner, 8, 4)
+					event0 := waitableSetPoll(state.waitableSet, buffer)
+					return event0,
+						unsafe.Slice((*uint32)(buffer), 2)[0],
+						unsafe.Slice((*uint32)(buffer), 2)[1]
+				}()
+				if event0 == EVENT_NONE {
+					return CALLBACK_CODE_YIELD
+				}
+			}
+		} else if len(state.pending) == 0 {
+			state.pinner.Unpin()
+			if state.waitableSet != 0 {
+				waitableSetDrop(state.waitableSet)
+			}
+			return CALLBACK_CODE_EXIT
 		} else {
 			if state.waitableSet == 0 {
 				panic("unreachable")
 			}
-			return CALLBACK_CODE_POLL | (state.waitableSet << 4)
+			contextSet(unsafe.Pointer(state))
+			return CALLBACK_CODE_WAIT | (state.waitableSet << 4)
 		}
-	} else if len(state.pending) == 0 {
-		state.pinner.Unpin()
-		if state.waitableSet != 0 {
-			waitableSetDrop(state.waitableSet)
-		}
-		return CALLBACK_CODE_EXIT
-	} else {
-		if state.waitableSet == 0 {
-			panic("unreachable")
-		}
-		contextSet(unsafe.Pointer(state))
-		return CALLBACK_CODE_WAIT | (state.waitableSet << 4)
 	}
 }
 
@@ -195,6 +209,9 @@ func Yield() {
 
 //go:wasmimport $root [waitable-set-new]
 func waitableSetNew() uint32
+
+//go:wasmimport $root [waitable-set-poll]
+func waitableSetPoll(waitableSet uint32, eventPayload unsafe.Pointer) uint32
 
 //go:wasmimport $root [waitable-set-drop]
 func waitableSetDrop(waitableSet uint32)

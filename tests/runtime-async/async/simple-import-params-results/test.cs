@@ -1,9 +1,9 @@
 using System.Diagnostics;
-using TestWorld.wit.exports.a.b;
+using TestWorld.wit.Exports.a.b;
 
-namespace TestWorld.wit.exports.a.b
+namespace TestWorld.wit.Exports.a.b
 {
-    public class IImpl : II
+    public class IExportsImpl : IIExports
     {
         public static async Task OneArgument(uint x)
         {
@@ -32,6 +32,31 @@ namespace TestWorld.wit.exports.a.b
             Debug.Assert(x == 7);
             Debug.Assert(y == 8);
             return 9;
+        }
+
+        public static int OneArgumentCallback()
+        {
+            throw new NotImplementedException();
+        }
+
+        public static int OneResultCallback()
+        {
+            throw new NotImplementedException();
+        }
+
+        public static int OneArgumentAndResultCallback()
+        {
+            throw new NotImplementedException();
+        }
+
+        public static int TwoArgumentsCallback()
+        {
+            throw new NotImplementedException();
+        }
+
+        public static int TwoArgumentsAndResultCallback()
+        {
+            throw new NotImplementedException();
         }
     }
 }

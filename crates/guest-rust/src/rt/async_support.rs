@@ -40,7 +40,7 @@ macro_rules! extern_wasm {
     ) => {
         $(
             #[cfg(not(target_family = "wasm"))]
-            #[allow(unused)]
+            #[allow(unused, reason = "dummy shim for non-wasm compilation, never invoked")]
             $vis unsafe fn $func_name($($args)*) $(-> $ret)? {
                 unreachable!();
             }
@@ -214,9 +214,9 @@ impl FutureState<'_> {
             // processing the future here anyway.
             me.cancel_inter_task_stream_read();
 
-            let mut context = Context::from_waker(&me.waker_clone);
-
             loop {
+                let mut context = Context::from_waker(&me.waker_clone);
+
                 // On each turn of this loop reset the state to "polling"
                 // which clears out any pending wakeup if one was sent. This
                 // in theory helps minimize wakeups from previous iterations
@@ -255,8 +255,12 @@ impl FutureState<'_> {
                         assert!(!me.tasks.is_empty());
                         if me.waker.sleep_state.load(Ordering::Relaxed) == SLEEP_STATE_WOKEN {
                             if me.remaining_work() {
-                                let waitable = me.waitable_set.as_ref().unwrap().as_raw();
-                                break CallbackCode::Poll(waitable);
+                                let (event0, event1, event2) =
+                                    me.waitable_set.as_ref().unwrap().poll();
+                                if event0 != EVENT_NONE {
+                                    me.deliver_waitable_event(event1, event2);
+                                    continue;
+                                }
                             }
                             break CallbackCode::Yield;
                         }
@@ -415,7 +419,6 @@ enum CallbackCode {
     Exit,
     Yield,
     Wait(u32),
-    Poll(u32),
 }
 
 impl CallbackCode {
@@ -424,7 +427,6 @@ impl CallbackCode {
             CallbackCode::Exit => 0,
             CallbackCode::Yield => 1,
             CallbackCode::Wait(waitable) => 2 | (waitable << 4),
-            CallbackCode::Poll(waitable) => 3 | (waitable << 4),
         }
     }
 }
@@ -546,9 +548,7 @@ pub fn block_on<T: 'static>(future: impl Future<Output = T>) -> T {
                 drop(state);
                 break result.unwrap();
             }
-            CallbackCode::Yield | CallbackCode::Poll(_) => {
-                event = state.waitable_set.as_ref().unwrap().poll()
-            }
+            CallbackCode::Yield => event = state.waitable_set.as_ref().unwrap().poll(),
             CallbackCode::Wait(_) => event = state.waitable_set.as_ref().unwrap().wait(),
         }
     }

@@ -2,7 +2,8 @@ package export_my_test_i
 
 import (
 	"fmt"
-	. "wit_component/wit_types"
+
+	. "github.com/bytecodealliance/wit-bindgen/wit_types"
 )
 
 func ReadStream(x *StreamReader[Unit]) {

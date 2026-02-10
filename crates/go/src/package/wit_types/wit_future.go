@@ -3,8 +3,9 @@ package wit_types
 import (
 	"runtime"
 	"unsafe"
-	"wit_component/wit_async"
-	"wit_component/wit_runtime"
+
+	"github.com/bytecodealliance/wit-bindgen/wit_async"
+	"github.com/bytecodealliance/wit-bindgen/wit_runtime"
 )
 
 type FutureVtable[T any] struct {
@@ -17,7 +18,7 @@ type FutureVtable[T any] struct {
 	DropReadable func(handle int32)
 	DropWritable func(handle int32)
 	Lift         func(src unsafe.Pointer) T
-	Lower        func(pinner *runtime.Pinner, value T, dst unsafe.Pointer)
+	Lower        func(pinner *runtime.Pinner, value T, dst unsafe.Pointer) func()
 }
 
 type FutureReader[T any] struct {
@@ -25,6 +26,11 @@ type FutureReader[T any] struct {
 	handle *wit_runtime.Handle
 }
 
+// Blocks until the future completes and returns its value.
+//
+// # Panic
+//
+// Read will panic if multiple concurrent or sequential reads are attempted on the same future.
 func (self *FutureReader[T]) Read() T {
 	handle := self.handle.Take()
 	defer self.vtable.DropReadable(handle)
@@ -52,6 +58,7 @@ func (self *FutureReader[T]) Read() T {
 	}
 }
 
+// Notify the host that the FutureReader is no longer being used.
 func (self *FutureReader[T]) Drop() {
 	handle := self.handle.TakeOrNil()
 	if handle != 0 {
@@ -61,6 +68,10 @@ func (self *FutureReader[T]) Drop() {
 
 func (self *FutureReader[T]) TakeHandle() int32 {
 	return self.handle.Take()
+}
+
+func (self *FutureReader[T]) SetHandle(handle int32) {
+	self.handle.Set(handle)
 }
 
 func MakeFutureReader[T any](vtable *FutureVtable[T], handleValue int32) *FutureReader[T] {
@@ -80,6 +91,11 @@ type FutureWriter[T any] struct {
 	handle *wit_runtime.Handle
 }
 
+// Writes data to a future.
+//
+// # Panic
+//
+// Write will panic if multiple concurrent or sequential writes are attempted on the same future.
 func (self *FutureWriter[T]) Write(item T) bool {
 	handle := self.handle.Take()
 	defer self.vtable.DropWritable(handle)
@@ -87,24 +103,26 @@ func (self *FutureWriter[T]) Write(item T) bool {
 	pinner := runtime.Pinner{}
 	defer pinner.Unpin()
 
+	var lifter func()
 	var buffer unsafe.Pointer
 	if self.vtable.Lower == nil {
 		buffer = unsafe.Pointer(unsafe.SliceData([]T{item}))
 		pinner.Pin(buffer)
 	} else {
 		buffer = wit_runtime.Allocate(&pinner, uintptr(self.vtable.Size), uintptr(self.vtable.Align))
-		self.vtable.Lower(&pinner, item, buffer)
+		lifter = self.vtable.Lower(&pinner, item, buffer)
 	}
 
 	code, _ := wit_async.FutureOrStreamWait(self.vtable.Write(handle, buffer), handle)
-
-	// TODO: restore handles to any unwritten resources, streams, or futures
 
 	switch code {
 	case wit_async.RETURN_CODE_COMPLETED:
 		return true
 
 	case wit_async.RETURN_CODE_DROPPED:
+		if lifter != nil {
+			lifter()
+		}
 		return false
 
 	default:
@@ -112,6 +130,7 @@ func (self *FutureWriter[T]) Write(item T) bool {
 	}
 }
 
+// Notify the host that the FutureWriter is no longer being used.
 func (self *FutureWriter[T]) Drop() {
 	handle := self.handle.TakeOrNil()
 	if handle != 0 {

@@ -12,6 +12,9 @@ Rust bindings generator for WIT and the component model, typically used through
 the `wit-bindgen` crate's `generate!` macro.
 """
 
+[lints]
+workspace = true
+
 [lib]
 test = false
 doctest = false
@@ -34,6 +37,7 @@ wit-bindgen = { path = '../guest-rust', features = ['async'] }
 test-helpers = { path = '../test-helpers' }
 # For use with the custom attributes test
 serde_json = "1"
+bytes = "1"
 
 [features]
 serde = ['dep:serde', 'wit-bindgen-core/serde']

@@ -3,7 +3,8 @@ package export_wit_world
 import (
 	"fmt"
 	test "wit_component/test_variants_to_test"
-	. "wit_component/wit_types"
+
+	. "github.com/bytecodealliance/wit-bindgen/wit_types"
 )
 
 func Run() {

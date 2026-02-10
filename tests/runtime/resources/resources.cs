@@ -1,45 +1,45 @@
 using System.Diagnostics;
 using ResourcesWorld;
-using ResourcesWorld.wit.imports;
+using ResourcesWorld.wit.Imports;
 
-namespace ResourcesWorld.wit.exports
+namespace ResourcesWorld.wit.Exports
 {
-    public class ExportsImpl : IExports
+    public class ExportsExportsImpl : IExportsExports
     {
-        public static IExports.Z Add(IExports.Z a, IExports.Z b)
+        public static IExportsExports.Z Add(IExportsExports.Z a, IExportsExports.Z b)
         {
             return new Z(((Z) a).val + ((Z) b).val);
         }
 
-        public static void Consume(IExports.X x)
+        public static void Consume(IExportsExports.X x)
         {
             x.Dispose();
         }
         
         public static void TestImports()
         {
-            var y1 = new IImports.Y(10);
+            var y1 = new IImportsImports.Y(10);
             Debug.Assert(y1.GetA() == 10);
 	    y1.SetA(20);
             Debug.Assert(y1.GetA() == 20);	    
-	    var y2 = IImports.Y.Add(y1, 20);
+	    var y2 = IImportsImports.Y.Add(y1, 20);
             Debug.Assert(y2.GetA() == 40);
 
-	    var y3 = new IImports.Y(1);
-	    var y4 = new IImports.Y(2);
+	    var y3 = new IImportsImports.Y(1);
+	    var y4 = new IImportsImports.Y(2);
             Debug.Assert(y3.GetA() == 1);
             Debug.Assert(y4.GetA() == 2);
 	    y3.SetA(10);
 	    y4.SetA(20);	    
             Debug.Assert(y3.GetA() == 10);
             Debug.Assert(y4.GetA() == 20);	    	    
-	    var y5 = IImports.Y.Add(y3, 20);
-	    var y6 = IImports.Y.Add(y4, 30);	    
+	    var y5 = IImportsImports.Y.Add(y3, 20);
+	    var y6 = IImportsImports.Y.Add(y4, 30);	    
             Debug.Assert(y5.GetA() == 30);
             Debug.Assert(y6.GetA() == 50);
         }
 
-        public class X : IExports.X, IExports.IX {
+        public class X : IExportsExports.X, IExportsExports.IX {
             public int val;
 
             public X(int val) {
@@ -54,14 +54,14 @@ namespace ResourcesWorld.wit.exports
                 return val;
             }
 
-            public static IExports.X Add(IExports.X a, int b) {
+            public static IExportsExports.X Add(IExportsExports.X a, int b) {
                 var myA = (X) a;
                 myA.SetA(myA.GetA() + b);
                 return myA;
             }
         }
     
-        public class Z : IExports.Z, IExports.IZ {
+        public class Z : IExportsExports.Z, IExportsExports.IZ {
             private static uint numDropped = 0;
             
             public int val;
@@ -85,7 +85,7 @@ namespace ResourcesWorld.wit.exports
             }
         }
 
-        public class KebabCase : IExports.KebabCase, IExports.IKebabCase {
+        public class KebabCase : IExportsExports.KebabCase, IExportsExports.IKebabCase {
             public uint val;
             
             public KebabCase(uint val) {
@@ -96,7 +96,7 @@ namespace ResourcesWorld.wit.exports
                 return val;
             }
 
-            public static uint TakeOwned(IExports.KebabCase a) {
+            public static uint TakeOwned(IExportsExports.KebabCase a) {
                 return ((KebabCase) a).val;
             }
         }

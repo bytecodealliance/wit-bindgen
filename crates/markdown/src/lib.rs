@@ -76,7 +76,7 @@ impl WorldGenerator for Markdown {
                     r#gen.push_str(name);
                     r#gen.push_str("`\n");
                 }
-                WorldItem::Type(_) => {
+                WorldItem::Type { .. } => {
                     r#gen.push_str("    - type `");
                     r#gen.push_str(name);
                     r#gen.push_str("`\n");
@@ -101,7 +101,7 @@ impl WorldGenerator for Markdown {
                     r#gen.push_str(name);
                     r#gen.push_str("`\n");
                 }
-                WorldItem::Type(_) => {
+                WorldItem::Type { .. } => {
                     r#gen.push_str("    - type `");
                     r#gen.push_str(name);
                     r#gen.push_str("`\n");
@@ -279,7 +279,7 @@ impl InterfaceGenerator<'_> {
         if func.params.len() > 0 {
             self.push_str("\n");
             self.push_str("##### Params\n\n");
-            for (name, ty) in func.params.iter() {
+            for Param { name, ty, .. } in func.params.iter() {
                 self.push_str(&format!(
                     "- <a id=\"{f}.{p}\"></a>`{}`: ",
                     name,
@@ -419,7 +419,8 @@ impl InterfaceGenerator<'_> {
                         self.push_str(">");
                     }
                     TypeDefKind::Unknown => unreachable!(),
-                    TypeDefKind::FixedSizeList(..) => todo!(),
+                    TypeDefKind::FixedLengthList(..) => todo!(),
+                    TypeDefKind::Map(..) => todo!(),
                 }
             }
         }
@@ -506,7 +507,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 name = i,
             ));
             self.r#gen.hrefs.insert(
-                format!("{}::{}", name, i),
+                format!("{name}::{i}"),
                 format!("#{}.{}", name.to_snake_case(), i),
             );
             self.print_ty(ty);

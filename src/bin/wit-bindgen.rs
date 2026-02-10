@@ -145,7 +145,7 @@ fn main() -> Result<()> {
         #[cfg(feature = "cpp")]
         Opt::Cpp { opts, args } => (opts.build(args.out_dir.as_ref()), args),
         #[cfg(feature = "rust")]
-        Opt::Rust { opts, args } => (opts.build(), args),
+        Opt::Rust { opts, args } => (Box::new(opts.build()) as Box<dyn WorldGenerator>, args),
         #[cfg(feature = "go")]
         Opt::Go { opts, args } => (opts.build(), args),
         #[cfg(feature = "csharp")]
@@ -160,10 +160,10 @@ fn main() -> Result<()> {
             Some(path) => path.join(name),
             None => name.into(),
         };
-        eprintln!("Generating {:?}", dst);
+        eprintln!("Generating {dst:?}");
 
         if opt.check {
-            let prev = std::fs::read(&dst).with_context(|| format!("failed to read {:?}", dst))?;
+            let prev = std::fs::read(&dst).with_context(|| format!("failed to read {dst:?}"))?;
             if prev != contents {
                 // The contents differ. If it looks like textual contents, do a
                 // line-by-line comparison so that we can tell users what the
@@ -191,9 +191,9 @@ fn main() -> Result<()> {
 
         if let Some(parent) = dst.parent() {
             std::fs::create_dir_all(parent)
-                .with_context(|| format!("failed to create {:?}", parent))?;
+                .with_context(|| format!("failed to create {parent:?}"))?;
         }
-        std::fs::write(&dst, contents).with_context(|| format!("failed to write {:?}", dst))?;
+        std::fs::write(&dst, contents).with_context(|| format!("failed to write {dst:?}"))?;
     }
 
     Ok(())
@@ -232,7 +232,7 @@ fn gen_world(
         main_packages.push(pkg);
     }
     let world = resolve.select_world(&main_packages, opts.world.as_deref())?;
-    generator.generate(&resolve, world, files)?;
+    generator.generate(&mut resolve, world, files)?;
 
     Ok(())
 }

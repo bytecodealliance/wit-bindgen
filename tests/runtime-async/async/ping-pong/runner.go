@@ -1,9 +1,12 @@
+//@ wasmtime-flags = '-Wcomponent-model-async'
+
 package export_wit_world
 
 import (
 	"fmt"
 	test "wit_component/my_test_i"
-	"wit_component/wit_types"
+
+	"github.com/bytecodealliance/wit-bindgen/wit_types"
 )
 
 type Unit struct{}

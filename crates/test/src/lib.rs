@@ -1,14 +1,14 @@
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, Result, bail};
 use clap::Parser;
-use rayon::prelude::*;
+use libtest_mimic::Trial;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::fs;
-use std::io::Write;
+use std::mem;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use wasm_encoder::{Encode, Section};
 use wit_component::{ComponentEncoder, StringEncoding};
 
@@ -105,14 +105,39 @@ pub struct Opts {
     /// Passing `--lang rust` will only test Rust for example.
     #[clap(short, long, required = true, value_delimiter = ',')]
     languages: Vec<String>,
+
+    /// Less output per test
+    #[clap(short, long, conflicts_with = "format")]
+    quiet: bool,
+
+    /// Number of threads used for parallel testing.
+    #[clap(long, value_name = "N")]
+    test_threads: Option<usize>,
+
+    /// Only run tests with this exact name.
+    #[clap(long)]
+    exact: bool,
+
+    /// A list of filters. Tests whose names contain parts of any of these
+    /// filters are skipped.
+    #[clap(long, value_name = "FILTER")]
+    skip: Vec<String>,
+
+    /// Specifies whether or not to color the output.
+    #[clap(long, value_name = "auto|always|never")]
+    color: Option<libtest_mimic::ColorSetting>,
+
+    /// Specifies the format of the output.
+    #[clap(long, value_name = "pretty|terse")]
+    format: Option<libtest_mimic::FormatSetting>,
 }
 
 impl Opts {
     pub fn run(&self, wit_bindgen: &Path) -> Result<()> {
         Runner {
-            opts: self,
+            opts: self.clone(),
             rust_state: None,
-            wit_bindgen,
+            wit_bindgen: wit_bindgen.to_path_buf(),
             test_runner: runner::TestRunner::new(&self.runner)?,
         }
         .run()
@@ -120,6 +145,7 @@ impl Opts {
 }
 
 /// Helper structure representing a discovered `test.wit` file.
+#[derive(Clone)]
 struct Test {
     /// The name of this test, unique amongst all tests.
     ///
@@ -135,12 +161,14 @@ struct Test {
     kind: TestKind,
 }
 
+#[derive(Clone)]
 enum TestKind {
     Runtime(Vec<Component>),
     Codegen(PathBuf),
 }
 
 /// Helper structure representing a single component found in a test directory.
+#[derive(Clone)]
 struct Component {
     /// The name of this component, inferred from the file stem.
     ///
@@ -165,6 +193,9 @@ struct Component {
 
     /// The contents of the test file itself.
     lang_config: Option<HashMap<String, toml::Value>>,
+
+    /// Runtime flags to wasmtime.
+    wasmtime_flags: config::StringList,
 }
 
 #[derive(Clone)]
@@ -220,16 +251,16 @@ struct Verify<'a> {
 }
 
 /// Helper structure to package up runtime state associated with executing tests.
-struct Runner<'a> {
-    opts: &'a Opts,
+struct Runner {
+    opts: Opts,
     rust_state: Option<rust::State>,
-    wit_bindgen: &'a Path,
+    wit_bindgen: PathBuf,
     test_runner: runner::TestRunner,
 }
 
-impl Runner<'_> {
+impl Runner {
     /// Executes all tests.
-    fn run(&mut self) -> Result<()> {
+    fn run(mut self) -> Result<()> {
         // First step, discover all tests in the specified test directory.
         let mut tests = HashMap::new();
         for test in self.opts.test.iter() {
@@ -244,10 +275,9 @@ impl Runner<'_> {
         }
 
         self.prepare_languages(&tests)?;
-        self.run_codegen_tests(&tests)?;
-        self.run_runtime_tests(&tests)?;
-
-        println!("PASSED");
+        let me = Arc::new(self);
+        me.run_codegen_tests(&tests)?;
+        me.run_runtime_tests(&tests)?;
 
         Ok(())
     }
@@ -440,6 +470,7 @@ impl Runner<'_> {
             kind,
             contents,
             lang_config: config.lang,
+            wasmtime_flags: config.wasmtime_flags,
         })
     }
 
@@ -487,7 +518,7 @@ impl Runner<'_> {
     }
 
     /// Executes all tests that are `TestKind::Codegen`.
-    fn run_codegen_tests(&mut self, tests: &HashMap<String, Test>) -> Result<()> {
+    fn run_codegen_tests(self: &Arc<Self>, tests: &HashMap<String, Test>) -> Result<()> {
         let mut codegen_tests = Vec::new();
         let languages = self.all_languages();
         for (name, config, test) in tests.iter().filter_map(|(name, t)| match &t.kind {
@@ -513,7 +544,7 @@ impl Runner<'_> {
 
                 codegen_tests.push((
                     language.clone(),
-                    test,
+                    test.to_owned(),
                     name.to_string(),
                     args.clone(),
                     config.clone(),
@@ -526,7 +557,7 @@ impl Runner<'_> {
                     }
                     codegen_tests.push((
                         language.clone(),
-                        test,
+                        test.clone(),
                         format!("{name}-{args_kind}"),
                         args,
                         config.clone(),
@@ -539,34 +570,49 @@ impl Runner<'_> {
             return Ok(());
         }
 
-        println!("Running {} codegen tests:", codegen_tests.len());
+        println!("=== Running codegen tests ===");
+        self.run_tests(
+            codegen_tests
+                .into_iter()
+                .map(|(language, test, args_kind, args, config)| {
+                    let me = self.clone();
+                    let should_fail = language
+                        .obj()
+                        .should_fail_verify(&args_kind, &config, &args);
 
-        let results = codegen_tests
-            .par_iter()
-            .map(|(language, test, args_kind, args, config)| {
-                let should_fail = language.obj().should_fail_verify(args_kind, config, args);
-                let result = self
-                    .codegen_test(language, test, &args_kind, args, config)
-                    .with_context(|| {
-                        format!("failed to codegen test for `{language}` over {test:?}")
-                    });
-                self.update_status(&result, should_fail);
-                (result, should_fail, language, test, args_kind)
-            })
-            .collect::<Vec<_>>();
+                    let name = format!("{language} {args_kind} {test:?}");
+                    Trial::test(&name, move || {
+                        let result = me
+                            .codegen_test(&language, &test, &args_kind, &args, &config)
+                            .with_context(|| {
+                                format!("failed to codegen test for `{language}` over {test:?}")
+                            });
 
-        println!("");
-
-        self.render_errors(results.into_iter().map(
-            |(result, should_fail, language, test, args_kind)| {
-                StepResult::new(test.to_str().unwrap(), result)
-                    .should_fail(should_fail)
-                    .metadata("language", language)
-                    .metadata("variant", args_kind)
-            },
-        ));
+                        me.render_error(
+                            StepResult::new(result)
+                                .should_fail(should_fail)
+                                .metadata("language", language)
+                                .metadata("variant", args_kind),
+                        )
+                    })
+                })
+                .collect::<Vec<_>>(),
+        );
 
         Ok(())
+    }
+
+    fn run_tests(&self, trials: Vec<Trial>) {
+        let args = libtest_mimic::Arguments {
+            skip: self.opts.skip.clone(),
+            quiet: self.opts.quiet,
+            format: self.opts.format,
+            color: self.opts.color,
+            test_threads: self.opts.test_threads,
+            exact: self.opts.exact,
+            ..Default::default()
+        };
+        libtest_mimic::run(&args, trials).exit_if_failed();
     }
 
     /// Runs a single codegen test.
@@ -630,7 +676,7 @@ impl Runner<'_> {
     }
 
     /// Execute all `TestKind::Runtime` tests
-    fn run_runtime_tests(&mut self, tests: &HashMap<String, Test>) -> Result<()> {
+    fn run_runtime_tests(self: &Arc<Self>, tests: &HashMap<String, Test>) -> Result<()> {
         let components = tests
             .values()
             .filter(|t| match &self.opts.filter {
@@ -647,36 +693,36 @@ impl Runner<'_> {
             .filter(|(_test, component)| self.include_language(&component.language))
             .collect::<Vec<_>>();
 
-        println!("Compiling {} components:", components.len());
-
-        // In parallel compile all sources to their binary component
-        // form.
-        let compile_results = components
-            .par_iter()
-            .map(|(test, component)| {
-                let path = self
-                    .compile_component(test, component)
-                    .with_context(|| format!("failed to compile component {:?}", component.path));
-                self.update_status(&path, false);
-                (test, component, path)
-            })
-            .collect::<Vec<_>>();
-        println!("");
-
-        let mut compilations = Vec::new();
-        self.render_errors(
-            compile_results
+        println!("=== Compiling components ===");
+        let compilations = Arc::new(Mutex::new(Vec::new()));
+        self.run_tests(
+            components
                 .into_iter()
-                .map(|(test, component, result)| match result {
-                    Ok(path) => {
-                        compilations.push((test, component, path));
-                        StepResult::new("", Ok(()))
-                    }
-                    Err(e) => StepResult::new(&test.name, Err(e))
-                        .metadata("component", &component.name)
-                        .metadata("path", component.path.display()),
-                }),
+                .map(|(test, component)| {
+                    let me = self.clone();
+                    let compilations = compilations.clone();
+                    let test = test.clone();
+                    let component = component.clone();
+                    Trial::test(&component.path.display().to_string(), move || {
+                        let result = me.compile_component(&test, &component).with_context(|| {
+                            format!("failed to compile component {:?}", component.path)
+                        });
+                        match result {
+                            Ok(path) => {
+                                compilations.lock().unwrap().push((test, component, path));
+                                Ok(())
+                            }
+                            Err(e) => me.render_error(
+                                StepResult::new(Err(e))
+                                    .metadata("component", &component.name)
+                                    .metadata("path", component.path.display()),
+                            ),
+                        }
+                    })
+                })
+                .collect(),
         );
+        let compilations = mem::take(&mut *compilations.lock().unwrap());
 
         // Next, massage the data a bit. Create a map of all tests to where
         // their components are located. Then perform a product of runners/tests
@@ -684,8 +730,8 @@ impl Runner<'_> {
         // cases.
         let mut compiled_components = HashMap::new();
         for (test, component, path) in compilations {
-            let list = compiled_components.entry(&test.name).or_insert(Vec::new());
-            list.push((*component, path));
+            let list = compiled_components.entry(test.name).or_insert(Vec::new());
+            list.push((component, path));
         }
 
         let mut to_run = Vec::new();
@@ -696,51 +742,52 @@ impl Runner<'_> {
             }
         }
 
-        println!("Running {} runtime tests:", to_run.len());
+        println!("=== Running runtime tests ===");
 
-        let results = to_run
-            .par_iter()
-            .map(|(case_name, (runner, runner_path), test_components)| {
-                let case = &tests[*case_name];
-                let result = self
-                    .runtime_test(case, runner, runner_path, test_components)
-                    .with_context(|| format!("failed to run `{}`", case.name));
-                self.update_status(&result, false);
-                (result, case_name, runner, runner_path, test_components)
-            })
-            .collect::<Vec<_>>();
-
-        println!("");
-
-        self.render_errors(results.into_iter().map(
-            |(result, case_name, runner, runner_path, test_components)| {
-                let mut result = StepResult::new(case_name, result)
-                    .metadata("runner", runner.path.display())
-                    .metadata("compiled runner", runner_path.display());
-                for (test, path) in test_components {
-                    result = result
-                        .metadata("test", test.path.display())
-                        .metadata("compiled test", path.display());
-                }
-                result
-            },
-        ));
+        self.run_tests(
+            to_run
+                .into_iter()
+                .map(|(case_name, (runner, runner_path), test_components)| {
+                    let me = self.clone();
+                    let mut name = format!("{case_name}");
+                    for component in [&runner]
+                        .into_iter()
+                        .chain(test_components.iter().map(|p| &p.0))
+                    {
+                        name.push_str(&format!(
+                            " | {}",
+                            component.path.file_name().unwrap().to_str().unwrap()
+                        ));
+                    }
+                    let case_name = case_name.to_string();
+                    let runner = runner.clone();
+                    let runner_path = runner_path.to_path_buf();
+                    let case = tests[case_name.as_str()].clone();
+                    Trial::test(&name, move || {
+                        let result = me
+                            .runtime_test(&case, &runner, &runner_path, &test_components)
+                            .with_context(|| format!("failed to run `{}`", case.name));
+                        me.render_error(
+                            StepResult::new(result)
+                                .metadata("runner", runner.path.display())
+                                .metadata("compiled runner", runner_path.display()),
+                        )
+                    })
+                })
+                .collect(),
+        );
 
         Ok(())
     }
 
     /// For the `test` provided, and the selected `runner`, determines all
     /// permutations of tests from `components` and pushes them on to `to_run`.
-    fn push_tests<'a>(
+    fn push_tests(
         &self,
-        test: &'a Test,
-        components: &'a [(&'a Component, PathBuf)],
-        runner: &'a (&'a Component, PathBuf),
-        to_run: &mut Vec<(
-            &'a str,
-            (&'a Component, &'a Path),
-            Vec<(&'a Component, &'a Path)>,
-        )>,
+        test: &Test,
+        components: &[(Component, PathBuf)],
+        runner: &(Component, PathBuf),
+        to_run: &mut Vec<(String, (Component, PathBuf), Vec<(Component, PathBuf)>)>,
     ) -> Result<()> {
         /// Recursive function which walks over `worlds`, the list of worlds
         /// that `test` expects, one by one. For each world it finds a matching
@@ -749,11 +796,11 @@ impl Runner<'_> {
         ///
         /// Once `worlds` is empty the `test` list, a temporary vector, is
         /// cloned and pushed into `commit`.
-        fn push<'a>(
+        fn push(
             worlds: &[String],
-            components: &'a [(&'a Component, PathBuf)],
-            test: &mut Vec<(&'a Component, &'a Path)>,
-            commit: &mut dyn FnMut(Vec<(&'a Component, &'a Path)>),
+            components: &[(Component, PathBuf)],
+            test: &mut Vec<(Component, PathBuf)>,
+            commit: &mut dyn FnMut(Vec<(Component, PathBuf)>),
         ) -> Result<()> {
             match worlds.split_first() {
                 Some((world, rest)) => {
@@ -761,7 +808,7 @@ impl Runner<'_> {
                     for (component, path) in components {
                         if component.bindgen.world == *world {
                             any = true;
-                            test.push((component, path));
+                            test.push((component.clone(), path.clone()));
                             push(rest, components, test, commit)?;
                             test.pop();
                         }
@@ -782,7 +829,11 @@ impl Runner<'_> {
             components,
             &mut Vec::new(),
             &mut |test_components| {
-                to_run.push((&test.name, (runner.0, &runner.1), test_components));
+                to_run.push((
+                    test.name.clone(),
+                    (runner.0.clone(), runner.1.clone()),
+                    test_components,
+                ));
             },
         )
     }
@@ -819,7 +870,12 @@ impl Runner<'_> {
         }
         wasmparser::Validator::new_with_features(wasmparser::WasmFeatures::all())
             .validate_all(&wasm)
-            .with_context(|| format!("compiler produced invalid wasm file {output:?}"))?;
+            .with_context(|| {
+                format!(
+                    "compiler produced invalid wasm file {output:?} for component {}",
+                    component.name
+                )
+            })?;
 
         Ok(output)
     }
@@ -833,7 +889,7 @@ impl Runner<'_> {
         case: &Test,
         runner: &Component,
         runner_wasm: &Path,
-        test_components: &[(&Component, &Path)],
+        test_components: &[(Component, PathBuf)],
     ) -> Result<()> {
         // If possible use `wasm-compose` to compose the test together. This is
         // only possible when customization isn't used though. This is also only
@@ -859,14 +915,24 @@ impl Runner<'_> {
         let composed_wasm = dst.join(filename);
         write_if_different(&composed_wasm, &composed)?;
 
-        self.run_command(self.test_runner.command().arg(&composed_wasm))?;
+        let mut cmd = self.test_runner.command();
+        for component in [runner]
+            .into_iter()
+            .chain(test_components.iter().map(|(c, _)| c))
+        {
+            for flag in Vec::from(component.wasmtime_flags.clone()) {
+                cmd.arg(flag);
+            }
+        }
+        cmd.arg(&composed_wasm);
+        self.run_command(&mut cmd)?;
         Ok(())
     }
 
     fn compose_wasm_with_wasm_compose(
         &self,
         runner_wasm: &Path,
-        test_components: &[(&Component, &Path)],
+        test_components: &[(Component, PathBuf)],
     ) -> Result<Vec<u8>> {
         assert!(test_components.len() > 0);
         let mut last_bytes = None;
@@ -901,7 +967,7 @@ impl Runner<'_> {
         case: &Test,
         runner: &Component,
         runner_wasm: &Path,
-        test_components: &[(&Component, &Path)],
+        test_components: &[(Component, PathBuf)],
     ) -> Result<Vec<u8>> {
         let document = match &case.config.wac {
             Some(path) => {
@@ -1048,16 +1114,6 @@ status: {}",
         Ok(())
     }
 
-    /// "poor man's test output progress"
-    fn update_status<T>(&self, result: &Result<T>, should_fail: bool) {
-        if result.is_ok() == !should_fail {
-            print!(".");
-        } else {
-            print!("F");
-        }
-        let _ = std::io::stdout().flush();
-    }
-
     /// Returns whether `languages` is included in this testing session.
     fn include_language(&self, language: &Language) -> bool {
         self.opts
@@ -1066,27 +1122,22 @@ status: {}",
             .any(|l| l == language.obj().display())
     }
 
-    fn render_errors<'a>(&self, results: impl Iterator<Item = StepResult<'a>>) {
-        let mut failures = 0;
-        for result in results {
-            let err = match (result.result, result.should_fail) {
-                (Ok(()), false) | (Err(_), true) => continue,
-                (Err(e), false) => e,
-                (Ok(()), true) => anyhow!("test should have failed, but passed"),
-            };
-            failures += 1;
+    fn render_error(&self, result: StepResult<'_>) -> Result<(), libtest_mimic::Failed> {
+        let err = match (result.result, result.should_fail) {
+            (Ok(()), false) | (Err(_), true) => return Ok(()),
+            (Err(e), false) => e,
+            (Ok(()), true) => return Err("test should have failed, but passed".into()),
+        };
 
-            println!("------ Failure: {} --------", result.name);
-            for (k, v) in result.metadata {
-                println!("  {k}: {v}");
-            }
-            println!("  error: {}", format!("{err:?}").replace("\n", "\n  "));
+        let mut s = String::new();
+        for (k, v) in result.metadata {
+            s.push_str(&format!("  {k}: {v}\n"));
         }
-
-        if failures > 0 {
-            println!("{failures} tests FAILED");
-            std::process::exit(1);
-        }
+        s.push_str(&format!(
+            "  error: {}",
+            format!("{err:?}").replace("\n", "\n  ")
+        ));
+        Err(s.into())
     }
 }
 
@@ -1105,14 +1156,12 @@ fn has_component_type_sections(wasm: &[u8]) -> bool {
 struct StepResult<'a> {
     result: Result<()>,
     should_fail: bool,
-    name: &'a str,
     metadata: Vec<(&'a str, String)>,
 }
 
 impl<'a> StepResult<'a> {
-    fn new(name: &'a str, result: Result<()>) -> StepResult<'a> {
+    fn new(result: Result<()>) -> StepResult<'a> {
         StepResult {
-            name,
             result,
             should_fail: false,
             metadata: Vec::new(),
@@ -1157,12 +1206,12 @@ trait LanguageMethods {
 
     /// Performs any one-time preparation necessary for this language, such as
     /// downloading or caching dependencies.
-    fn prepare(&self, runner: &mut Runner<'_>) -> Result<()>;
+    fn prepare(&self, runner: &mut Runner) -> Result<()>;
 
     /// Add some files to the generated directory _before_ calling bindgen
     fn generate_bindings_prepare(
         &self,
-        _runner: &Runner<'_>,
+        _runner: &Runner,
         _bindgen: &Bindgen,
         _dir: &Path,
     ) -> Result<()> {
@@ -1172,13 +1221,13 @@ trait LanguageMethods {
     /// Generates bindings for `component` into `dir`.
     ///
     /// Runs `wit-bindgen` in aa subprocess to catch failures such as panics.
-    fn generate_bindings(&self, runner: &Runner<'_>, bindgen: &Bindgen, dir: &Path) -> Result<()> {
+    fn generate_bindings(&self, runner: &Runner, bindgen: &Bindgen, dir: &Path) -> Result<()> {
         let name = match self.bindgen_name() {
             Some(name) => name,
             None => return Ok(()),
         };
         self.generate_bindings_prepare(runner, bindgen, dir)?;
-        let mut cmd = Command::new(runner.wit_bindgen);
+        let mut cmd = Command::new(&runner.wit_bindgen);
         cmd.arg(name)
             .arg(&bindgen.wit_path)
             .arg("--world")
@@ -1227,7 +1276,7 @@ trait LanguageMethods {
     }
 
     /// Performs compilation as specified by `compile`.
-    fn compile(&self, runner: &Runner<'_>, compile: &Compile) -> Result<()>;
+    fn compile(&self, runner: &Runner, compile: &Compile) -> Result<()>;
 
     /// Returns whether this language is supposed to fail this codegen tests
     /// given the `config` and `args` for the test.
@@ -1235,7 +1284,7 @@ trait LanguageMethods {
 
     /// Performs a "check" or a verify that the generated bindings described by
     /// `Verify` are indeed valid.
-    fn verify(&self, runner: &Runner<'_>, verify: &Verify) -> Result<()>;
+    fn verify(&self, runner: &Runner, verify: &Verify) -> Result<()>;
 }
 
 impl Language {

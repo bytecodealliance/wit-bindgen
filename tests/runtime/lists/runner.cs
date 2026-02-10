@@ -1,39 +1,37 @@
-using System;
-using System.Runtime.InteropServices;
 using System.Diagnostics;
-using RunnerWorld.wit.imports.test.lists;
+using RunnerWorld.wit.Imports.test.lists;
 using System.Text;
 
 namespace RunnerWorld;
 
-public class RunnerWorldImpl : IRunnerWorld
+public class RunnerWorldExportsImpl : IRunnerWorldExports
 {
     public static void Run()
     {
-        ToTestInterop.EmptyListParam(new byte[0]);
-        ToTestInterop.EmptyStringParam("");
+        IToTestImports.EmptyListParam(new byte[0]);
+        IToTestImports.EmptyStringParam("");
 
         {
-            byte[] result = ToTestInterop.EmptyListResult();
+            byte[] result = IToTestImports.EmptyListResult();
             Debug.Assert(result.Length == 0);
         }
 
         {
-            string result = ToTestInterop.EmptyStringResult();
+            string result = IToTestImports.EmptyStringResult();
             Debug.Assert(result.Length == 0);
         }
 
-        ToTestInterop.ListParam(new byte[] { (byte)1, (byte)2, (byte)3, (byte)4 });
-        ToTestInterop.ListParam((new byte[] { (byte)1, (byte)2, (byte)3, (byte)4 }).AsSpan());
-        ToTestInterop.ListParam((new byte[] { (byte)1, (byte)2, (byte)3, (byte)4 }).AsMemory());
-        ToTestInterop.ListParam2("foo");
-        ToTestInterop.ListParam3(new List<String>() {
+        IToTestImports.ListParam(new byte[] { (byte)1, (byte)2, (byte)3, (byte)4 });
+        IToTestImports.ListParam((new byte[] { (byte)1, (byte)2, (byte)3, (byte)4 }).AsSpan());
+        IToTestImports.ListParam((new byte[] { (byte)1, (byte)2, (byte)3, (byte)4 }).AsMemory());
+        IToTestImports.ListParam2("foo");
+        IToTestImports.ListParam3(new List<String>() {
                 "foo",
                 "bar",
                 "baz"
             });
 
-        ToTestInterop.ListParam4(new List<List<String>>() {
+        IToTestImports.ListParam4(new List<List<String>>() {
                 new List<String>() {
                     "foo",
                     "bar"
@@ -48,10 +46,10 @@ public class RunnerWorldImpl : IRunnerWorld
         {
             randomStrings.Add(Guid.NewGuid().ToString());
         }
-        ToTestInterop.ListParamLarge(randomStrings);
+        IToTestImports.ListParamLarge(randomStrings);
 
         {
-            byte[] result = ToTestInterop.ListResult();
+            byte[] result = IToTestImports.ListResult();
             Debug.Assert(result.Length == 5);
             Debug.Assert(result[0] == (byte)1);
             Debug.Assert(result[1] == (byte)2);
@@ -61,13 +59,13 @@ public class RunnerWorldImpl : IRunnerWorld
         }
 
         {
-            string result = ToTestInterop.ListResult2();
+            string result = IToTestImports.ListResult2();
             Console.WriteLine(result);
             Debug.Assert(result == "hello!");
         }
 
         {
-            List<String> result = ToTestInterop.ListResult3();
+            List<String> result = IToTestImports.ListResult3();
             Debug.Assert(result.Count() == 2);
             Console.WriteLine(result[0]);
             Console.WriteLine(result[1]);
@@ -78,15 +76,15 @@ public class RunnerWorldImpl : IRunnerWorld
         string[] strings = { "x", "", "hello", "hello ⚑ world" };
         foreach (string s in strings)
         {
-            string result = ToTestInterop.StringRoundtrip(s);
+            string result = IToTestImports.StringRoundtrip(s);
             Debug.Assert(result == s);
 
             byte[] bytes = Encoding.UTF8.GetBytes(s);
-            Debug.Assert(bytes.SequenceEqual(ToTestInterop.ListRoundtrip(bytes)));
+            Debug.Assert(bytes.SequenceEqual(IToTestImports.ListRoundtrip(bytes)));
         }
 
         {
-            var (u, s) = ToTestInterop.ListMinmax8(
+            var (u, s) = IToTestImports.ListMinmax8(
                 new byte[] { byte.MinValue, byte.MaxValue },
                 new sbyte[] { sbyte.MinValue, sbyte.MaxValue }
             );
@@ -96,7 +94,7 @@ public class RunnerWorldImpl : IRunnerWorld
         }
 
         {
-            var (u, s) = ToTestInterop.ListMinmax16(
+            var (u, s) = IToTestImports.ListMinmax16(
                 new ushort[] { ushort.MinValue, ushort.MaxValue },
                 new short[] { short.MinValue, short.MaxValue }
             );
@@ -114,7 +112,7 @@ public class RunnerWorldImpl : IRunnerWorld
         }
 
         {
-            var (u, s) = ToTestInterop.ListMinmax32(
+            var (u, s) = IToTestImports.ListMinmax32(
                 new uint[] { uint.MinValue, uint.MaxValue },
                 new int[] { int.MinValue, int.MaxValue }
             );
@@ -124,7 +122,7 @@ public class RunnerWorldImpl : IRunnerWorld
         }
 
         {
-            var (u, s) = ToTestInterop.ListMinmax64(
+            var (u, s) = IToTestImports.ListMinmax64(
                 new ulong[] { ulong.MinValue, ulong.MaxValue },
                 new long[] { long.MinValue, long.MaxValue }
             );
@@ -135,7 +133,7 @@ public class RunnerWorldImpl : IRunnerWorld
         }
 
         {
-            var (u, s) = ToTestInterop.ListMinmaxFloat(
+            var (u, s) = IToTestImports.ListMinmaxFloat(
                 new float[] {
                         float.MinValue,
                         float.MaxValue,

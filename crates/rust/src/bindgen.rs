@@ -73,7 +73,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             0 => {}
             1 => {
                 let tmp = self.tmp();
-                let res = format!("result{}", tmp);
+                let res = format!("result{tmp}");
                 self.push_str("let ");
                 self.push_str(&res);
                 results.push(res);
@@ -83,7 +83,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                 let tmp = self.tmp();
                 self.push_str("let (");
                 for i in 0..n {
-                    let arg = format!("result{}_{}", tmp, i);
+                    let arg = format!("result{tmp}_{i}");
                     self.push_str(&arg);
                     self.push_str(",");
                     results.push(arg);
@@ -107,7 +107,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         self.push_str("{ ");
         for field in record.fields.iter() {
             let name = to_rust_ident(&field.name);
-            let arg = format!("{}{}", name, tmp);
+            let arg = format!("{name}{tmp}");
             self.push_str(&name);
             self.push_str(":");
             self.push_str(&arg);
@@ -142,7 +142,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         let tmp = self.tmp();
         self.push_str("let (");
         for i in 0..tuple.types.len() {
-            let arg = format!("t{}_{}", tmp, i);
+            let arg = format!("t{tmp}_{i}");
             self.push_str(&arg);
             self.push_str(", ");
             results.push(arg);
@@ -249,7 +249,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 "let ptr{tmp} = (&raw mut _RET_AREA.0).cast::<u8>();"
             );
         }
-        format!("ptr{}", tmp)
+        format!("ptr{tmp}")
     }
 
     fn sizes(&self) -> &SizeAlign {
@@ -276,7 +276,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
         match inst {
             Instruction::GetArg { nth } => results.push(self.params[*nth].clone()),
-            Instruction::I32Const { val } => results.push(format!("{}i32", val)),
+            Instruction::I32Const { val } => results.push(format!("{val}i32")),
             Instruction::ConstZero { tys } => {
                 for ty in tys.iter() {
                     match ty {
@@ -427,13 +427,19 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::FutureLift { payload, .. } => {
                 let async_support = self.r#gen.r#gen.async_support_path();
                 let op = &operands[0];
-                let name = payload
-                    .as_ref()
-                    .map(|ty| {
-                        self.r#gen
-                            .type_name_owned_with_id(ty, Identifier::StreamOrFuturePayload)
-                    })
-                    .unwrap_or_else(|| "()".into());
+                let name = match payload {
+                    Some(Type::Id(type_id)) => {
+                        let dealiased_id = dealias(resolve, *type_id);
+                        self.r#gen.type_name_owned_with_id(
+                            &Type::Id(dealiased_id),
+                            Identifier::StreamOrFuturePayload,
+                        )
+                    }
+                    Some(ty) => self
+                        .r#gen
+                        .type_name_owned_with_id(ty, Identifier::StreamOrFuturePayload),
+                    None => "()".into(),
+                };
                 let ordinal = self
                     .r#gen
                     .r#gen
@@ -455,13 +461,19 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::StreamLift { payload, .. } => {
                 let async_support = self.r#gen.r#gen.async_support_path();
                 let op = &operands[0];
-                let name = payload
-                    .as_ref()
-                    .map(|ty| {
-                        self.r#gen
-                            .type_name_owned_with_id(ty, Identifier::StreamOrFuturePayload)
-                    })
-                    .unwrap_or_else(|| "()".into());
+                let name = match payload {
+                    Some(Type::Id(type_id)) => {
+                        let dealiased_id = dealias(resolve, *type_id);
+                        self.r#gen.type_name_owned_with_id(
+                            &Type::Id(dealiased_id),
+                            Identifier::StreamOrFuturePayload,
+                        )
+                    }
+                    Some(ty) => self
+                        .r#gen
+                        .type_name_owned_with_id(ty, Identifier::StreamOrFuturePayload),
+                    None => "()".into(),
+                };
                 let ordinal = self
                     .r#gen
                     .r#gen
@@ -667,19 +679,22 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::ListCanonLower { realloc, .. } => {
                 let tmp = self.tmp();
-                let val = format!("vec{}", tmp);
-                let ptr = format!("ptr{}", tmp);
-                let len = format!("len{}", tmp);
+                let val = format!("vec{tmp}");
+                let ptr = format!("ptr{tmp}");
+                let len = format!("len{tmp}");
+                let vec = self.r#gen.path_to_vec();
                 if realloc.is_none() {
                     self.push_str(&format!("let {} = {};\n", val, operands[0]));
                 } else {
                     let op0 = operands.pop().unwrap();
-                    self.push_str(&format!("let {} = ({}).into_boxed_slice();\n", val, op0));
+                    self.push_str(&format!(
+                        "let {val} = <_ as Into<{vec}<_>>>::into({op0}).into_boxed_slice();\n"
+                    ));
                 }
-                self.push_str(&format!("let {} = {}.as_ptr().cast::<u8>();\n", ptr, val));
-                self.push_str(&format!("let {} = {}.len();\n", len, val));
+                self.push_str(&format!("let {ptr} = {val}.as_ptr().cast::<u8>();\n"));
+                self.push_str(&format!("let {len} = {val}.len();\n"));
                 if realloc.is_some() {
-                    self.push_str(&format!("::core::mem::forget({});\n", val));
+                    self.push_str(&format!("::core::mem::forget({val});\n"));
                 }
                 results.push(format!("{ptr}.cast_mut()"));
                 results.push(len);
@@ -687,11 +702,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::ListCanonLift { .. } => {
                 let tmp = self.tmp();
-                let len = format!("len{}", tmp);
+                let len = format!("len{tmp}");
                 self.push_str(&format!("let {} = {};\n", len, operands[1]));
                 let vec = self.r#gen.path_to_vec();
                 let result = format!(
-                    "{vec}::from_raw_parts({}.cast(), {1}, {1})",
+                    "<_ as From<{vec}<_>>>::from({vec}::from_raw_parts({}.cast(), {1}, {1}))",
                     operands[0], len
                 );
                 results.push(result);
@@ -699,19 +714,19 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::StringLower { realloc } => {
                 let tmp = self.tmp();
-                let val = format!("vec{}", tmp);
-                let ptr = format!("ptr{}", tmp);
-                let len = format!("len{}", tmp);
+                let val = format!("vec{tmp}");
+                let ptr = format!("ptr{tmp}");
+                let len = format!("len{tmp}");
                 if realloc.is_none() {
                     self.push_str(&format!("let {} = {};\n", val, operands[0]));
                 } else {
                     let op0 = format!("{}.into_bytes()", operands[0]);
-                    self.push_str(&format!("let {} = ({}).into_boxed_slice();\n", val, op0));
+                    self.push_str(&format!("let {val} = ({op0}).into_boxed_slice();\n"));
                 }
-                self.push_str(&format!("let {} = {}.as_ptr().cast::<u8>();\n", ptr, val));
-                self.push_str(&format!("let {} = {}.len();\n", len, val));
+                self.push_str(&format!("let {ptr} = {val}.as_ptr().cast::<u8>();\n"));
+                self.push_str(&format!("let {len} = {val}.len();\n"));
                 if realloc.is_some() {
-                    self.push_str(&format!("::core::mem::forget({});\n", val));
+                    self.push_str(&format!("::core::mem::forget({val});\n"));
                 }
                 results.push(format!("{ptr}.cast_mut()"));
                 results.push(len);
@@ -720,7 +735,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::StringLift => {
                 let vec = self.r#gen.path_to_vec();
                 let tmp = self.tmp();
-                let len = format!("len{}", tmp);
+                let len = format!("len{tmp}");
                 uwriteln!(self.src, "let {len} = {};", operands[1]);
                 uwriteln!(
                     self.src,
@@ -778,6 +793,24 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.push_str("\n}\n");
                 results.push(format!("{result}"));
                 results.push(len);
+            }
+
+            Instruction::FixedLengthListLowerToMemory {
+                element,
+                size: _,
+                id: _,
+            } => {
+                let body = self.blocks.pop().unwrap();
+                let vec = operands[0].clone();
+                let target = operands[1].clone();
+                let size = self.r#gen.sizes.size(element);
+                self.push_str(&format!("for (i, e) in {vec}.into_iter().enumerate() {{\n",));
+                self.push_str(&format!(
+                    "let base = {target}.add(i * {});\n",
+                    size.format(POINTER_SIZE_EXPRESSION)
+                ));
+                self.push_str(&body);
+                self.push_str("\n}\n");
             }
 
             Instruction::ListLift { element, .. } => {
@@ -941,7 +974,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::Flush { amt } => {
                 for i in 0..*amt {
                     let tmp = self.tmp();
-                    let result = format!("result{}", tmp);
+                    let result = format!("result{tmp}");
                     uwriteln!(self.src, "let {result} = {};", operands[i]);
                     results.push(result);
                 }
@@ -1206,6 +1239,53 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::DropHandle { .. } => {
                 uwriteln!(self.src, "let _ = {};", operands[0]);
+            }
+            Instruction::FixedLengthListLift {
+                element: _,
+                size,
+                id: _,
+            } => {
+                let tmp = self.tmp();
+                let result = format!("result{tmp}");
+                self.push_str(&format!("let {result} = [",));
+                for a in operands.drain(0..(*size as usize)) {
+                    self.push_str(&a);
+                    self.push_str(", ");
+                }
+                self.push_str("];\n");
+                results.push(result);
+            }
+            Instruction::FixedLengthListLower {
+                element: _,
+                size,
+                id: _,
+            } => {
+                for i in 0..(*size as usize) {
+                    results.push(format!("{}[{i}]", operands[0]));
+                }
+            }
+            Instruction::FixedLengthListLiftFromMemory {
+                element,
+                size,
+                id: _,
+            } => {
+                let body = self.blocks.pop().unwrap();
+                let elemsize = self
+                    .r#gen
+                    .sizes
+                    .size(element)
+                    .format(POINTER_SIZE_EXPRESSION);
+                let base = operands[0].clone();
+                let tmp = self.tmp();
+                let index_var = format!("idx{tmp}");
+                self.push_str(&format!(
+                    " let array{tmp}: [_; {size}] = core::array::from_fn(|{index_var}| {{
+                            let base = {base}.add({index_var} * {elemsize});
+                            {body} 
+                        }});"
+                ));
+                let result = format!("array{tmp}");
+                results.push(result);
             }
         }
     }

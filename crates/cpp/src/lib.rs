@@ -15,7 +15,7 @@ use wit_bindgen_core::{
     abi::{self, AbiVariant, Bindgen, Bitcast, LiftLower, WasmSignature, WasmType},
     name_package_module, uwrite, uwriteln,
     wit_parser::{
-        Alignment, ArchitectureSize, Docs, Function, FunctionKind, Handle, Int, InterfaceId,
+        Alignment, ArchitectureSize, Docs, Function, FunctionKind, Handle, Int, InterfaceId, Param,
         Resolve, SizeAlign, Stability, Type, TypeDef, TypeDefKind, TypeId, TypeOwner, WorldId,
         WorldKey,
     },
@@ -74,6 +74,7 @@ struct Includes {
     // needs wit types
     needs_wit: bool,
     needs_memory: bool,
+    needs_array: bool,
 }
 
 #[derive(Default)]
@@ -109,6 +110,14 @@ struct Cpp {
     import_prefix: Option<String>,
 }
 
+#[cfg(feature = "clap")]
+fn parse_with(s: &str) -> Result<(String, String), String> {
+    let (k, v) = s.split_once('=').ok_or_else(|| {
+        format!("expected string of form `<key>=<value>[,<key>=<value>...]`; got `{s}`")
+    })?;
+    Ok((k.to_string(), v.to_string()))
+}
+
 #[derive(Default, Debug, Clone)]
 #[cfg_attr(feature = "clap", derive(clap::Args))]
 pub struct Opts {
@@ -135,7 +144,7 @@ pub struct Opts {
 
     /// Set API style to symmetric or asymmetric
     #[cfg_attr(
-        feature = "clap", 
+        feature = "clap",
         arg(
             long,
             default_value_t = APIStyle::default(),
@@ -165,6 +174,14 @@ pub struct Opts {
     /// Where to place output files
     #[cfg_attr(feature = "clap", arg(skip))]
     out_dir: Option<PathBuf>,
+
+    /// Importing wit interface from custom include
+    ///
+    /// Argument must be of the form `k=v` and this option can be passed
+    /// multiple times or one option can be comma separated, for example
+    /// `k1=v1,k2=v2`.
+    #[cfg_attr(feature = "clap", arg(long, value_parser = parse_with, value_delimiter = ','))]
+    pub with: Vec<(String, String)>,
 }
 
 /// Supported API styles for the generated bindings.
@@ -193,10 +210,7 @@ impl FromStr for APIStyle {
         match s {
             "asymmetric" => Ok(APIStyle::Asymmetric),
             "symmetric" => Ok(APIStyle::Symmetric),
-            _ => bail!(
-                "unrecognized API style: `{}`; expected `asymmetric` or `symmetric`",
-                s
-            ),
+            _ => bail!("unrecognized API style: `{s}`; expected `asymmetric` or `symmetric`"),
         }
     }
 }
@@ -341,32 +355,32 @@ impl Cpp {
         match cast {
             Bitcast::I32ToF32 | Bitcast::I64ToF32 => {
                 self.dependencies.needs_bit = true;
-                format!("std::bit_cast<float, int32_t>({})", op)
+                format!("std::bit_cast<float, int32_t>({op})")
             }
             Bitcast::F32ToI32 | Bitcast::F32ToI64 => {
                 self.dependencies.needs_bit = true;
-                format!("std::bit_cast<int32_t, float>({})", op)
+                format!("std::bit_cast<int32_t, float>({op})")
             }
             Bitcast::I64ToF64 => {
                 self.dependencies.needs_bit = true;
-                format!("std::bit_cast<double, int64_t>({})", op)
+                format!("std::bit_cast<double, int64_t>({op})")
             }
             Bitcast::F64ToI64 => {
                 self.dependencies.needs_bit = true;
-                format!("std::bit_cast<int64_t, double>({})", op)
+                format!("std::bit_cast<int64_t, double>({op})")
             }
             Bitcast::I32ToI64 | Bitcast::LToI64 | Bitcast::PToP64 => {
-                format!("(int64_t) {}", op)
+                format!("(int64_t) {op}")
             }
             Bitcast::I64ToI32 | Bitcast::PToI32 | Bitcast::LToI32 => {
-                format!("(int32_t) {}", op)
+                format!("(int32_t) {op}")
             }
             Bitcast::P64ToI64 | Bitcast::None | Bitcast::I64ToP64 => op.to_string(),
             Bitcast::P64ToP | Bitcast::I32ToP | Bitcast::LToP => {
-                format!("(uint8_t*) {}", op)
+                format!("(uint8_t*) {op}")
             }
             Bitcast::PToL | Bitcast::I32ToL | Bitcast::I64ToL => {
-                format!("(size_t) {}", op)
+                format!("(size_t) {op}")
             }
             Bitcast::Sequence(sequence) => {
                 let [first, second] = &**sequence;
@@ -414,6 +428,9 @@ impl Cpp {
         }
         if self.dependencies.needs_memory {
             self.include("<memory>");
+        }
+        if self.dependencies.needs_array {
+            self.include("<array>");
         }
         if self.dependencies.needs_bit {
             self.include("<bit>");
@@ -498,29 +515,46 @@ impl WorldGenerator for Cpp {
         id: InterfaceId,
         _files: &mut Files,
     ) -> anyhow::Result<()> {
-        if let Some(prefix) = self
-            .interface_prefixes
-            .get(&(Direction::Import, name.clone()))
-        {
-            self.import_prefix = Some(prefix.clone());
-        }
-
-        let store = self.start_new_file(None);
         self.imported_interfaces.insert(id);
-        let wasm_import_module = resolve.name_world_key(name);
-        let binding = Some(name);
-        let mut r#gen = self.interface(resolve, binding, true, Some(wasm_import_module));
-        r#gen.interface = Some(id);
-        r#gen.types(id);
-        let namespace = namespace(resolve, &TypeOwner::Interface(id), false, &r#gen.r#gen.opts);
 
-        for (_name, func) in resolve.interfaces[id].functions.iter() {
-            if matches!(func.kind, FunctionKind::Freestanding) {
-                r#gen.r#gen.h_src.change_namespace(&namespace);
-                r#gen.generate_function(func, &TypeOwner::Interface(id), AbiVariant::GuestImport);
+        let full_name = resolve.name_world_key(name);
+        match self.opts.with.iter().find(|e| e.0 == full_name) {
+            None => {
+                if let Some(prefix) = self
+                    .interface_prefixes
+                    .get(&(Direction::Import, name.clone()))
+                {
+                    self.import_prefix = Some(prefix.clone());
+                }
+
+                let store = self.start_new_file(None);
+                let wasm_import_module = resolve.name_world_key(name);
+                let binding = Some(name);
+                let mut r#gen = self.interface(resolve, binding, true, Some(wasm_import_module));
+                r#gen.interface = Some(id);
+                r#gen.types(id);
+                let namespace =
+                    namespace(resolve, &TypeOwner::Interface(id), false, &r#gen.r#gen.opts);
+
+                for (_name, func) in resolve.interfaces[id].functions.iter() {
+                    if matches!(func.kind, FunctionKind::Freestanding) {
+                        r#gen.r#gen.h_src.change_namespace(&namespace);
+                        r#gen.generate_function(
+                            func,
+                            &TypeOwner::Interface(id),
+                            AbiVariant::GuestImport,
+                        );
+                    }
+                }
+                self.finish_file(&namespace, store);
+            }
+            Some((_, val)) => {
+                let with_quotes = format!("\"{val}\"");
+                if !self.includes.contains(&with_quotes) {
+                    self.includes.push(with_quotes);
+                }
             }
         }
-        self.finish_file(&namespace, store);
         let _ = self.import_prefix.take();
         Ok(())
     }
@@ -857,7 +891,8 @@ impl CppInterfaceGenerator<'_> {
             TypeDefKind::Future(_) => todo!("generate for future"),
             TypeDefKind::Stream(_) => todo!("generate for stream"),
             TypeDefKind::Handle(_) => todo!("generate for handle"),
-            TypeDefKind::FixedSizeList(_, _) => todo!(),
+            TypeDefKind::FixedLengthList(_, _) => todo!(),
+            TypeDefKind::Map(_, _) => todo!(),
             TypeDefKind::Unknown => unreachable!(),
         }
     }
@@ -1085,7 +1120,13 @@ impl CppInterfaceGenerator<'_> {
         {
             res.static_member = true;
         }
-        for (i, (name, param)) in func.params.iter().enumerate() {
+        for (
+            i,
+            Param {
+                name, ty: param, ..
+            },
+        ) in func.params.iter().enumerate()
+        {
             if i == 0
                 && name == "self"
                 && (matches!(&func.kind, FunctionKind::Method(_))
@@ -1158,7 +1199,7 @@ impl CppInterfaceGenerator<'_> {
                     cpp_sig
                         .arguments
                         .iter()
-                        .map(|(arg, _)| format!("std::move({})", arg))
+                        .map(|(arg, _)| format!("std::move({arg})"))
                         .collect::<Vec<_>>()
                         .join(", ")
                 );
@@ -1279,7 +1320,7 @@ impl CppInterfaceGenerator<'_> {
                         uwriteln!(
                             self.r#gen.c_src.src,
                             "{wasm_sig}({});",
-                            func.params.first().unwrap().0
+                            func.params.first().unwrap().name
                         );
                     }
                     LiftLower::LowerArgsLiftResults => {
@@ -1312,7 +1353,7 @@ impl CppInterfaceGenerator<'_> {
                         self.r#gen.c_src.src,
                         "return {wasm_sig}(({}){});",
                         self.r#gen.opts.ptr_type(),
-                        func.params.first().unwrap().0
+                        func.params.first().unwrap().name
                     );
                 }
                 SpecialMethod::ResourceRep => {
@@ -1329,7 +1370,7 @@ impl CppInterfaceGenerator<'_> {
                         self.r#gen.c_src.src,
                         "return ({}*){wasm_sig}({});",
                         classname,
-                        func.params.first().unwrap().0
+                        func.params.first().unwrap().name
                     );
                 }
                 SpecialMethod::Allocate => unreachable!(),
@@ -1452,11 +1493,11 @@ impl CppInterfaceGenerator<'_> {
                     if self.r#gen.types.get(id).has_own_handle {
                         name.to_string()
                     } else {
-                        format!("{}Param", name)
+                        format!("{name}Param")
                     }
                 }
                 Ownership::FineBorrowing => {
-                    format!("{}Param", name)
+                    format!("{name}Param")
                 }
             }
         } else {
@@ -1667,7 +1708,14 @@ impl CppInterfaceGenerator<'_> {
                 TypeDefKind::Future(_) => todo!(),
                 TypeDefKind::Stream(_) => todo!(),
                 TypeDefKind::Type(ty) => self.type_name(ty, from_namespace, flavor),
-                TypeDefKind::FixedSizeList(_, _) => todo!(),
+                TypeDefKind::FixedLengthList(ty, size) => {
+                    self.r#gen.dependencies.needs_array = true;
+                    format!(
+                        "std::array<{}, {size}>",
+                        self.type_name(ty, from_namespace, flavor)
+                    )
+                }
+                TypeDefKind::Map(_, _) => todo!(),
                 TypeDefKind::Unknown => todo!(),
             },
             Type::ErrorContext => todo!(),
@@ -1874,10 +1922,15 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                 let func = Function {
                     name,
                     kind: FunctionKind::Static(id),
-                    params: vec![("self".into(), Type::Id(id))],
+                    params: vec![Param {
+                        name: "self".into(),
+                        ty: Type::Id(id),
+                        span: Default::default(),
+                    }],
                     result: None,
                     docs: Docs::default(),
                     stability: Stability::Unknown,
+                    span: Default::default(),
                 };
                 self.generate_function(&func, &TypeOwner::Interface(intf), variant);
             }
@@ -1911,6 +1964,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                             result: Some(Type::Id(id)),
                             docs: Docs::default(),
                             stability: Stability::Unknown,
+                            span: Default::default(),
                         };
                         self.generate_function(&func2, &TypeOwner::Interface(intf), variant);
                     }
@@ -1936,30 +1990,45 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                 let func = Function {
                     name: "[resource-new]".to_string() + name,
                     kind: FunctionKind::Static(id),
-                    params: vec![("self".into(), Type::Id(id))],
+                    params: vec![Param {
+                        name: "self".into(),
+                        ty: Type::Id(id),
+                        span: Default::default(),
+                    }],
                     result: Some(id_type),
                     docs: Docs::default(),
                     stability: Stability::Unknown,
+                    span: Default::default(),
                 };
                 self.generate_function(&func, &TypeOwner::Interface(intf), variant);
 
                 let func1 = Function {
                     name: "[resource-rep]".to_string() + name,
                     kind: FunctionKind::Static(id),
-                    params: vec![("id".into(), id_type)],
+                    params: vec![Param {
+                        name: "id".into(),
+                        ty: id_type,
+                        span: Default::default(),
+                    }],
                     result: Some(Type::Id(id)),
                     docs: Docs::default(),
                     stability: Stability::Unknown,
+                    span: Default::default(),
                 };
                 self.generate_function(&func1, &TypeOwner::Interface(intf), variant);
 
                 let func2 = Function {
                     name: "[resource-drop]".to_string() + name,
                     kind: FunctionKind::Static(id),
-                    params: vec![("id".into(), id_type)],
+                    params: vec![Param {
+                        name: "id".into(),
+                        ty: id_type,
+                        span: Default::default(),
+                    }],
                     result: None,
                     docs: Docs::default(),
                     stability: Stability::Unknown,
+                    span: Default::default(),
                 };
                 self.generate_function(&func2, &TypeOwner::Interface(intf), variant);
             }
@@ -2233,7 +2302,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
     fn let_results(&mut self, amt: usize, results: &mut Vec<String>) {
         if amt > 0 {
             let tmp = self.tmp();
-            let res = format!("result{}", tmp);
+            let res = format!("result{tmp}");
             self.push_str("auto ");
             self.push_str(&res);
             self.push_str(" = ");
@@ -2271,7 +2340,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
     ) {
         self.load(ty, offset, operands, results);
         let result = results.pop().unwrap();
-        results.push(format!("(int32_t) ({})", result));
+        results.push(format!("(int32_t) ({result})"));
     }
 
     fn store(&mut self, ty: &str, offset: ArchitectureSize, operands: &[String]) {
@@ -2362,7 +2431,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     results.push(self.params[*nth].clone());
                 }
             }
-            abi::Instruction::I32Const { val } => results.push(format!("(int32_t({}))", val)),
+            abi::Instruction::I32Const { val } => results.push(format!("(int32_t({val}))")),
             abi::Instruction::Bitcasts { casts } => {
                 for (cast, op) in casts.iter().zip(operands) {
                     // let op = op;
@@ -2440,9 +2509,9 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             abi::Instruction::BoolFromI32 => top_as("bool"),
             abi::Instruction::ListCanonLower { realloc, .. } => {
                 let tmp = self.tmp();
-                let val = format!("vec{}", tmp);
-                let ptr = format!("ptr{}", tmp);
-                let len = format!("len{}", tmp);
+                let val = format!("vec{tmp}");
+                let ptr = format!("ptr{tmp}");
+                let len = format!("len{tmp}");
                 self.push_str(&format!("auto&& {} = {};\n", val, operands[0]));
                 self.push_str(&format!(
                     "auto {} = ({})({}.data());\n",
@@ -2450,7 +2519,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     self.r#gen.r#gen.opts.ptr_type(),
                     val
                 ));
-                self.push_str(&format!("auto {} = (size_t)({}.size());\n", len, val));
+                self.push_str(&format!("auto {len} = (size_t)({val}.size());\n"));
                 if realloc.is_none() {
                     results.push(ptr);
                 } else {
@@ -2461,9 +2530,9 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             }
             abi::Instruction::StringLower { realloc } => {
                 let tmp = self.tmp();
-                let val = format!("vec{}", tmp);
-                let ptr = format!("ptr{}", tmp);
-                let len = format!("len{}", tmp);
+                let val = format!("vec{tmp}");
+                let ptr = format!("ptr{tmp}");
+                let len = format!("len{tmp}");
                 self.push_str(&format!("auto&& {} = {};\n", val, operands[0]));
                 self.push_str(&format!(
                     "auto {} = ({})({}.data());\n",
@@ -2471,7 +2540,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     self.r#gen.r#gen.opts.ptr_type(),
                     val
                 ));
-                self.push_str(&format!("auto {} = (size_t)({}.size());\n", len, val));
+                self.push_str(&format!("auto {len} = (size_t)({val}.size());\n"));
                 if realloc.is_none() {
                     results.push(ptr);
                 } else {
@@ -2483,9 +2552,9 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             abi::Instruction::ListLower { element, realloc } => {
                 let tmp = self.tmp();
                 let body = self.blocks.pop().unwrap();
-                let val = format!("vec{}", tmp);
-                let ptr = format!("ptr{}", tmp);
-                let len = format!("len{}", tmp);
+                let val = format!("vec{tmp}");
+                let ptr = format!("ptr{tmp}");
+                let len = format!("len{tmp}");
                 let size = self.r#gen.sizes.size(element);
                 self.push_str(&format!("auto&& {} = {};\n", val, operands[0]));
                 self.push_str(&format!(
@@ -2494,13 +2563,13 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     self.r#gen.r#gen.opts.ptr_type(),
                     val
                 ));
-                self.push_str(&format!("auto {} = (size_t)({}.size());\n", len, val));
+                self.push_str(&format!("auto {len} = (size_t)({val}.size());\n"));
                 self.push_str(&format!("for (size_t i = 0; i < {len}; ++i) {{\n"));
                 self.push_str(&format!(
                     "auto base = {ptr} + i * {size};\n",
                     size = size.format(POINTER_SIZE_EXPRESSION)
                 ));
-                self.push_str(&format!("auto&& IterElem = {val}[i];\n"));
+                self.push_str(&format!("auto&& iter_elem = {val}[i];\n"));
                 self.push_str(&format!("{}\n", body.0));
                 self.push_str("}\n");
                 if realloc.is_none() {
@@ -2513,7 +2582,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             }
             abi::Instruction::ListCanonLift { element, .. } => {
                 let tmp = self.tmp();
-                let len = format!("len{}", tmp);
+                let len = format!("len{tmp}");
                 let inner = self
                     .r#gen
                     .type_name(element, &self.namespace, Flavor::InStruct);
@@ -2532,7 +2601,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             }
             abi::Instruction::StringLift => {
                 let tmp = self.tmp();
-                let len = format!("len{}", tmp);
+                let len = format!("len{tmp}");
                 uwriteln!(self.src, "auto {} = {};\n", len, operands[1]);
                 let result = if self.r#gen.r#gen.opts.api_style == APIStyle::Symmetric
                     && matches!(self.variant, AbiVariant::GuestExport)
@@ -2616,7 +2685,94 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     results.push(move_if_necessary(&result));
                 }
             }
-            abi::Instruction::IterElem { .. } => results.push("IterElem".to_string()),
+            abi::Instruction::FixedLengthListLift {
+                element,
+                size,
+                id: _,
+            } => {
+                let tmp = self.tmp();
+                let result = format!("result{tmp}");
+                let typename = self
+                    .r#gen
+                    .type_name(element, &self.namespace, Flavor::InStruct);
+                self.push_str(&format!("std::array<{typename}, {size}> {result} = {{",));
+                for a in operands.drain(0..(*size as usize)) {
+                    self.push_str(&a);
+                    self.push_str(", ");
+                }
+                self.push_str("};\n");
+                results.push(result);
+            }
+            abi::Instruction::FixedLengthListLiftFromMemory {
+                element,
+                size: elemsize,
+                id: _,
+            } => {
+                let body = self.blocks.pop().unwrap();
+                let tmp = self.tmp();
+                let vec = format!("array{tmp}");
+                let source = operands[0].clone();
+                let size = self.r#gen.sizes.size(element);
+                let size_str = size.format(POINTER_SIZE_EXPRESSION);
+                let typename = self
+                    .r#gen
+                    .type_name(element, &self.namespace, Flavor::InStruct);
+                let ptr_type = self.r#gen.r#gen.opts.ptr_type();
+                self.push_str(&format!("std::array<{typename}, {elemsize}> {vec};\n"));
+                self.push_str(&format!(
+                    "{{
+                    {ptr_type} outer_base = {source};\n"
+                ));
+                let source: String = "outer_base".into();
+                // let vec: String = "outer_vec".into();
+                self.push_str(&format!("for (unsigned i = 0; i<{elemsize}; ++i) {{\n",));
+                self.push_str(&format!("{ptr_type} base = {source} + i * {size_str};\n"));
+                self.push_str(&body.0);
+                self.push_str(&format!("{vec}[i] = {};", body.1[0]));
+                self.push_str("\n}\n}\n");
+                results.push(vec);
+            }
+            abi::Instruction::FixedLengthListLower {
+                element: _,
+                size,
+                id: _,
+            } => {
+                for i in 0..(*size as usize) {
+                    results.push(format!("{}[{i}]", operands[0]));
+                }
+            }
+            abi::Instruction::FixedLengthListLowerToMemory {
+                element,
+                size: elemsize,
+                id: _,
+            } => {
+                let body = self.blocks.pop().unwrap();
+                let vec = operands[0].clone();
+                let target = operands[1].clone();
+                let size = self.r#gen.sizes.size(element);
+                let size_str = size.format(POINTER_SIZE_EXPRESSION);
+                let typename = self
+                    .r#gen
+                    .type_name(element, &self.namespace, Flavor::InStruct);
+                let ptr_type = self.r#gen.r#gen.opts.ptr_type();
+                self.push_str(&format!(
+                    "{{
+                    {ptr_type} outer_base = {target};\n"
+                ));
+                let target: String = "outer_base".into();
+                self.push_str(&format!(
+                    "std::array<{typename}, {elemsize}>& outer_vec = {vec};\n"
+                ));
+                let vec: String = "outer_vec".into();
+                self.push_str(&format!("for (unsigned i = 0; i<{vec}.size(); ++i) {{\n",));
+                self.push_str(&format!(
+                    "{ptr_type} base = {target} + i * {size_str};
+                     {typename}& iter_elem = {vec}[i];\n"
+                ));
+                self.push_str(&body.0);
+                self.push_str("\n}\n}\n");
+            }
+            abi::Instruction::IterElem { .. } => results.push("iter_elem".to_string()),
             abi::Instruction::IterBasePointer => results.push("base".to_string()),
             abi::Instruction::RecordLower { record, .. } => {
                 let op = &operands[0];
@@ -3222,7 +3378,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                             self.src.push_str(">(");
                         }
                         if *amt == 1 {
-                            if operands[0].starts_with("std::move(") {
+                            if operands[0].starts_with("std::move(") && !operands[0].contains('.') {
                                 // remove the std::move due to return value optimization (and complex rules about when std::move harms)
                                 self.src.push_str(&operands[0][9..]);
                             } else {
@@ -3243,7 +3399,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                                 &[WasmType::Pointer],
                                 &[],
                             );
-                            self.src.push_str(&format!(", ret, {})", cabi_post_name));
+                            self.src.push_str(&format!(", ret, {cabi_post_name})"));
                         }
                         if matches!(func.kind, FunctionKind::Constructor(_))
                             && self.r#gen.r#gen.opts.is_only_handle(self.variant)
@@ -3329,7 +3485,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             abi::Instruction::Flush { amt } => {
                 for i in operands.iter().take(*amt) {
                     let tmp = self.tmp();
-                    let result = format!("result{}", tmp);
+                    let result = format!("result{tmp}");
                     uwriteln!(self.src, "auto {result} = {};", move_if_necessary(i));
                     results.push(result);
                 }
@@ -3352,7 +3508,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             self.r#gen.r#gen.opts.ptr_type(),
         );
 
-        format!("ptr{}", tmp)
+        format!("ptr{tmp}")
     }
 
     fn push_block(&mut self) {

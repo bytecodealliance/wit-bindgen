@@ -1,3 +1,5 @@
+//@ wasmtime-flags = '-Wcomponent-model-async'
+
 include!(env!("BINDINGS"));
 
 use crate::my::test::i::*;

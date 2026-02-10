@@ -523,10 +523,13 @@ macro_rules! {macro_name} {{
         func_name: &str,
         payload_type: Option<&Type>,
     ) {
-        let name = if let Some(payload_type) = payload_type {
-            self.type_name_owned(payload_type)
-        } else {
-            "()".into()
+        let name = match payload_type {
+            Some(Type::Id(type_id)) => {
+                let dealiased_id = dealias(self.resolve, *type_id);
+                self.type_name_owned(&Type::Id(dealiased_id))
+            }
+            Some(payload_type) => self.type_name_owned(payload_type),
+            None => "()".into(),
         };
         let map = match payload_for {
             PayloadFor::Future => &mut self.r#gen.future_payloads,
@@ -807,7 +810,11 @@ pub mod vtable{ordinal} {{
         func: &Function,
         mut params: Vec<String>,
     ) {
-        let param_tys = func.params.iter().map(|(_, ty)| *ty).collect::<Vec<_>>();
+        let param_tys = func
+            .params
+            .iter()
+            .map(|Param { ty, .. }| *ty)
+            .collect::<Vec<_>>();
         let async_support = self.r#gen.async_support_path();
         let sig = self
             .resolve
@@ -850,7 +857,7 @@ unsafe impl<'a> _Subtask for _MySubtask<'a> {{
 
         // Generate `type Params`
         uwrite!(self.src, "type Params = (");
-        for (_, ty) in func.params.iter() {
+        for Param { ty, .. } in func.params.iter() {
             let mode = self.type_mode_for(ty, TypeOwnershipStyle::Owned, "'a");
             self.print_ty(ty, mode);
             self.src.push_str(", ");
@@ -970,7 +977,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
         if sig.indirect_params {
             let offsets = self
                 .sizes
-                .field_offsets(func.params.iter().map(|(_, ty)| ty));
+                .field_offsets(func.params.iter().map(|Param { ty, .. }| ty));
             for (i, (offset, ty)) in offsets.into_iter().enumerate() {
                 let name = format!("_lower{i}");
                 let mut start = format!(
@@ -986,7 +993,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
         } else {
             let mut f = FunctionBindgen::new(self, Vec::new(), module, true);
             let mut results = Vec::new();
-            for (i, (_, ty)) in func.params.iter().enumerate() {
+            for (i, Param { ty, .. }) in func.params.iter().enumerate() {
                 let name = format!("_lower{i}");
                 results.extend(abi::lower_flat(f.r#gen.resolve, &mut f, name.clone(), ty));
                 param_lowers.push(name);
@@ -1237,7 +1244,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
         let sig = self.resolve.wasm_signature(variant, func);
         let mut params = Vec::new();
         for (i, param) in sig.params.iter().enumerate() {
-            let name = format!("arg{}", i);
+            let name = format!("arg{i}");
             uwrite!(self.src, "{name}: {},", wasm_type(*param));
             params.push(name);
         }
@@ -1259,7 +1266,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
         let mut params = Vec::new();
         let sig = self.resolve.wasm_signature(AbiVariant::GuestExport, func);
         for (i, result) in sig.results.iter().enumerate() {
-            let name = format!("arg{}", i);
+            let name = format!("arg{i}");
             uwrite!(self.src, "{name}: {},", wasm_type(*result));
             params.push(name);
         }
@@ -1352,7 +1359,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
         }
     }
 
-    fn rustdoc_params(&mut self, docs: &[(String, Type)], header: &str) {
+    fn rustdoc_params(&mut self, docs: &Vec<Param>, header: &str) {
         let _ = (docs, header);
         // let docs = docs
         //     .iter()
@@ -1452,7 +1459,13 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
             self.push_str(",");
         }
         let mut params = Vec::new();
-        for (i, (name, param)) in func.params.iter().enumerate() {
+        for (
+            i,
+            Param {
+                name, ty: param, ..
+            },
+        ) in func.params.iter().enumerate()
+        {
             if i == 0 && sig.self_is_first_param {
                 params.push("self".to_string());
                 continue;
@@ -1974,7 +1987,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
                 self.push_str(&derives.into_iter().collect::<Vec<_>>().join(", "));
                 self.push_str(")]\n")
             }
-            self.push_str(&format!("pub struct {}", name));
+            self.push_str(&format!("pub struct {name}"));
             self.print_generics(mode.lifetime);
             self.push_str(" {\n");
             for field in record.fields.iter() {
@@ -1997,7 +2010,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
             self.push_str(
                 "fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {\n",
             );
-            self.push_str(&format!("f.debug_struct(\"{}\")", name));
+            self.push_str(&format!("f.debug_struct(\"{name}\")"));
             for field in record.fields.iter() {
                 self.push_str(&format!(
                     ".field(\"{}\", &self.{})",
@@ -2163,7 +2176,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
                 self.push_str("(e)");
             }
             self.push_str(" => {\n");
-            self.push_str(&format!("f.debug_tuple(\"{}::{}\")", name, case_name));
+            self.push_str(&format!("f.debug_tuple(\"{name}::{case_name}\")"));
             if payload.is_some() {
                 self.push_str(".field(e)");
             }
@@ -2178,7 +2191,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
     fn print_typedef_option(&mut self, id: TypeId, payload: &Type, docs: &Docs) {
         for (name, mode) in self.modes_of(id) {
             self.rustdoc(docs);
-            self.push_str(&format!("pub type {}", name));
+            self.push_str(&format!("pub type {name}"));
             self.print_generics(mode.lifetime);
             self.push_str("= Option<");
             self.print_ty(payload, mode);
@@ -2189,7 +2202,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
     fn print_typedef_result(&mut self, id: TypeId, result: &Result_, docs: &Docs) {
         for (name, mode) in self.modes_of(id) {
             self.rustdoc(docs);
-            self.push_str(&format!("pub type {}", name));
+            self.push_str(&format!("pub type {name}"));
             self.print_generics(mode.lifetime);
             self.push_str("= Result<");
             self.print_optional_ty(result.ok.as_ref(), mode);
@@ -2215,7 +2228,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
         let name = to_upper_camel_case(name);
         self.rustdoc(docs);
         for attr in attrs {
-            self.push_str(&format!("{}\n", attr));
+            self.push_str(&format!("{attr}\n"));
         }
         self.push_str("#[repr(");
         self.int_repr(enum_.tag());
@@ -2384,7 +2397,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
         let info = self.info(ty);
         let name = to_upper_camel_case(self.resolve.types[ty].name.as_ref().unwrap());
         if self.uses_two_names(&info) {
-            format!("{}Param", name)
+            format!("{name}Param")
         } else {
             name
         }
@@ -2394,7 +2407,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
         let info = self.info(ty);
         let name = to_upper_camel_case(self.resolve.types[ty].name.as_ref().unwrap());
         if self.uses_two_names(&info) {
-            format!("{}Result", name)
+            format!("{name}Result")
         } else {
             name
         }
@@ -2460,23 +2473,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
 
     pub fn is_exported_resource(&self, ty: TypeId) -> bool {
         let ty = dealias(self.resolve, ty);
-        let ty = &self.resolve.types[ty];
-        match &ty.kind {
-            TypeDefKind::Resource => {}
-            _ => return false,
-        }
-
-        match ty.owner {
-            // Worlds cannot export types of any kind as of this writing.
-            TypeOwner::World(_) => false,
-
-            // Interfaces are "stateful" currently where whatever we last saw
-            // them as dictates whether it's exported or not.
-            TypeOwner::Interface(i) => !self.r#gen.interface_last_seen_as_import[&i],
-
-            // Shouldn't be the case for resources
-            TypeOwner::None => unreachable!(),
-        }
+        self.r#gen.exported_resources.contains(&ty)
     }
 
     fn push_string_name(&mut self) {
@@ -2810,7 +2807,7 @@ impl<'a> {camel}Borrow<'a>{{
     fn type_tuple(&mut self, id: TypeId, _name: &str, tuple: &Tuple, docs: &Docs) {
         for (name, mode) in self.modes_of(id) {
             self.rustdoc(docs);
-            self.push_str(&format!("pub type {}", name));
+            self.push_str(&format!("pub type {name}"));
             self.print_generics(mode.lifetime);
             self.push_str(" = (");
             for ty in tuple.types.iter() {
@@ -2894,7 +2891,7 @@ impl<'a> {camel}Borrow<'a>{{
     fn type_list(&mut self, id: TypeId, _name: &str, ty: &Type, docs: &Docs) {
         for (name, mode) in self.modes_of(id) {
             self.rustdoc(docs);
-            self.push_str(&format!("pub type {}", name));
+            self.push_str(&format!("pub type {name}"));
             self.print_generics(mode.lifetime);
             self.push_str(" = ");
             self.print_list(ty, mode);
@@ -3048,5 +3045,24 @@ impl<'a, 'b> wit_bindgen_core::AnonymousTypeGenerator<'a> for AnonTypeGenerator<
             .push_str(&format!("{async_support}::StreamReader<"));
         self.interface.print_optional_ty(ty.as_ref(), mode);
         self.interface.push_str(">");
+    }
+
+    fn anonymous_type_fixed_length_list(
+        &mut self,
+        _id: TypeId,
+        ty: &Type,
+        size: u32,
+        _docs: &Docs,
+    ) {
+        self.interface.push_str("[");
+        self.interface.print_ty(
+            ty,
+            TypeMode {
+                lifetime: None,
+                lists_borrowed: false,
+                style: TypeOwnershipStyle::Owned,
+            },
+        );
+        self.interface.push_str(&format!("; {size}]"));
     }
 }

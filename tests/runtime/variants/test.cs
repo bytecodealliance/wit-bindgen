@@ -1,6 +1,6 @@
-namespace TestWorld.wit.exports.test.variants
+namespace TestWorld.wit.Exports.test.variants
 {
-    public class ToTestImpl : ITestWorld
+    public class ToTestExportsImpl : ITestWorldImports
     {
         public static byte? RoundtripOption(float? a)
         {
@@ -17,7 +17,7 @@ namespace TestWorld.wit.exports.test.variants
             }
         }
 
-        public static IToTest.E1 RoundtripEnum(IToTest.E1 a)
+        public static IToTestExports.E1 RoundtripEnum(IToTestExports.E1 a)
         {
             return a;
         }
@@ -27,21 +27,21 @@ namespace TestWorld.wit.exports.test.variants
             return !a;
         }
 
-        public static (IToTest.C1, IToTest.C2, IToTest.C3, IToTest.C4, IToTest.C5, IToTest.C6)
-            VariantCasts((IToTest.C1, IToTest.C2, IToTest.C3, IToTest.C4, IToTest.C5, IToTest.C6) a)
+        public static (IToTestExports.C1, IToTestExports.C2, IToTestExports.C3, IToTestExports.C4, IToTestExports.C5, IToTestExports.C6)
+            VariantCasts((IToTestExports.C1, IToTestExports.C2, IToTestExports.C3, IToTestExports.C4, IToTestExports.C5, IToTestExports.C6) a)
         {
             return a;
         }
 
-        public static (bool, Result<None, None>, IToTest.MyErrno)
-            VariantEnums(bool a, Result<None, None> b, IToTest.MyErrno c)
+        public static (bool, Result<None, None>, IToTestExports.MyErrno)
+            VariantEnums(bool a, Result<None, None> b, IToTestExports.MyErrno c)
         {
             return new(a, b, c);
         }
 
         public static void VariantTypedefs(uint? a, bool b, Result<uint, None> c) { }
 
-        public static (IToTest.Z1, IToTest.Z2, IToTest.Z3, IToTest.Z4) VariantZeros((IToTest.Z1, IToTest.Z2, IToTest.Z3, IToTest.Z4) a)
+        public static (IToTestExports.Z1, IToTestExports.Z2, IToTestExports.Z3, IToTestExports.Z4) VariantZeros((IToTestExports.Z1, IToTestExports.Z2, IToTestExports.Z3, IToTestExports.Z4) a)
         {
             return a;
         }

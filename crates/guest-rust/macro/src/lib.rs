@@ -8,6 +8,7 @@ use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::{LitStr, Token, braced, token};
 use wit_bindgen_core::AsyncFilterSet;
+use wit_bindgen_core::WorldGenerator;
 use wit_bindgen_core::wit_parser::{PackageId, Resolve, UnresolvedPackageGroup, WorldId};
 use wit_bindgen_rust::{Opts, Ownership, WithOption};
 
@@ -241,11 +242,11 @@ fn parse_source(
 }
 
 impl Config {
-    fn expand(self) -> Result<TokenStream> {
+    fn expand(mut self) -> Result<TokenStream> {
         let mut files = Default::default();
         let mut generator = self.opts.build();
         generator
-            .generate(&self.resolve, self.world, &mut files)
+            .generate(&mut self.resolve, self.world, &mut files)
             .map_err(|e| anyhow_to_syn(Span::call_site(), e))?;
         let (_, src) = files.iter().next().unwrap();
         let mut src = std::str::from_utf8(src).unwrap().to_string();
@@ -487,7 +488,7 @@ impl Parse for Opt {
             let _lbrace = braced!(contents in input);
             let fields: Punctuated<_, Token![,]> =
                 contents.parse_terminated(with_field_parse, Token![,])?;
-            Ok(Opt::With(HashMap::from_iter(fields.into_iter())))
+            Ok(Opt::With(HashMap::from_iter(fields)))
         } else if l.peek(kw::generate_all) {
             input.parse::<kw::generate_all>()?;
             Ok(Opt::GenerateAll)
@@ -600,6 +601,6 @@ fn with_field_parse(input: ParseStream<'_>) -> Result<(String, WithOption)> {
 
 /// Format a valid Rust string
 fn fmt(input: &str) -> Result<String> {
-    let syntax_tree = syn::parse_file(&input)?;
+    let syntax_tree = syn::parse_file(input)?;
     Ok(prettyplease::unparse(&syntax_tree))
 }

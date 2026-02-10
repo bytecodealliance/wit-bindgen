@@ -3,7 +3,7 @@
 set -ex
 
 platform=$1
-target=$2
+target=$CARGO_BUILD_TARGET
 
 rm -rf tmp
 mkdir tmp
@@ -15,16 +15,16 @@ bin_pkgname=wit-bindgen-$tag-$platform
 mkdir tmp/$bin_pkgname
 cp LICENSE-* README.md tmp/$bin_pkgname
 
-fmt=tar
-if [ "$platform" = "x86_64-windows" ]; then
-  cp target/release/wit-bindgen.exe tmp/$bin_pkgname
-  fmt=zip
-elif [ "$target" = "" ]; then
-  cp target/release/wit-bindgen tmp/$bin_pkgname
-else
-  cp target/$target/release/wit-bindgen tmp/$bin_pkgname
-fi
-
+case $platform in
+  *-windows)
+    fmt=zip
+    cp target/$target/release/wit-bindgen.exe tmp/$bin_pkgname
+    ;;
+  *)
+    fmt=tar
+    cp target/$target/release/wit-bindgen tmp/$bin_pkgname
+    ;;
+esac
 
 mktarball() {
   dir=$1

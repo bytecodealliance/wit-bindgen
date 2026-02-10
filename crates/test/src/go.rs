@@ -34,12 +34,15 @@ impl LanguageMethods for Go {
         &["--generate-stubs"]
     }
 
-    fn prepare(&self, runner: &mut Runner<'_>) -> Result<()> {
+    fn prepare(&self, runner: &mut Runner) -> Result<()> {
         let cwd = env::current_dir()?;
         let dir = cwd.join(&runner.opts.artifacts).join("go");
+        let bindings_dir = cwd.join("wit_component");
 
         super::write_if_different(&dir.join("test.go"), "package main\n\nfunc main() {}")?;
         super::write_if_different(&dir.join("go.mod"), "module test\n\ngo 1.25")?;
+
+        replace_bindings_go_mod(runner, &bindings_dir)?;
 
         println!("Testing if `go build` works...");
         runner.run_command(
@@ -53,7 +56,7 @@ impl LanguageMethods for Go {
         )
     }
 
-    fn compile(&self, runner: &Runner<'_>, compile: &Compile<'_>) -> Result<()> {
+    fn compile(&self, runner: &Runner, compile: &Compile<'_>) -> Result<()> {
         let output = compile.output.with_extension("core.wasm");
 
         // Tests which involve importing and/or exporting more than one
@@ -74,9 +77,11 @@ impl LanguageMethods for Go {
                 .with_context(|| format!("unable to write `{}`", output.display()))?;
         }
 
+        replace_bindings_go_mod(runner, compile.bindings_dir)?;
+
         runner.run_command(
             Command::new("go")
-                .current_dir(&compile.bindings_dir)
+                .current_dir(compile.bindings_dir)
                 .env("GOOS", "wasip1")
                 .env("GOARCH", "wasm")
                 .arg("build")
@@ -91,10 +96,12 @@ impl LanguageMethods for Go {
         Ok(())
     }
 
-    fn verify(&self, runner: &Runner<'_>, verify: &Verify<'_>) -> Result<()> {
+    fn verify(&self, runner: &Runner, verify: &Verify<'_>) -> Result<()> {
+        replace_bindings_go_mod(runner, verify.bindings_dir)?;
+
         runner.run_command(
             Command::new("go")
-                .current_dir(&verify.bindings_dir)
+                .current_dir(verify.bindings_dir)
                 .env("GOOS", "wasip1")
                 .env("GOARCH", "wasm")
                 .arg("build")
@@ -108,10 +115,9 @@ impl LanguageMethods for Go {
 
 fn package_name(package: &str) -> &str {
     package
-        .split_once('\n')
-        .unwrap()
-        .0
-        .strip_prefix("package ")
+        .lines()
+        .filter_map(|l| l.strip_prefix("package "))
+        .next()
         .unwrap()
         .trim()
 }
@@ -143,4 +149,27 @@ fn all_paths(path: &Path) -> Result<Vec<PathBuf>> {
         }
     }
     Ok(paths)
+}
+
+fn replace_bindings_go_mod(runner: &Runner, bindings_dir: &Path) -> Result<()> {
+    let test_crate = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let wit_bindgen_root = test_crate.parent().unwrap().parent().unwrap();
+    let go_package_path = wit_bindgen_root.join("crates/go/src/package");
+
+    super::write_if_different(
+        &bindings_dir.join("go.mod"),
+        format!(
+            "module wit_component\n\ngo 1.25\n\nreplace github.com/bytecodealliance/wit-bindgen => {}",
+            go_package_path.display()
+        ),
+    )?;
+
+    runner.run_command(
+        Command::new("go")
+            .current_dir(bindings_dir)
+            .arg("mod")
+            .arg("tidy"),
+    )?;
+
+    Ok(())
 }

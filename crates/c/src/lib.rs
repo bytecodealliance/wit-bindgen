@@ -103,7 +103,7 @@ pub struct Opts {
     #[cfg_attr(feature = "clap", arg(long, value_name = "NAME"))]
     pub rename_world: Option<String>,
 
-    /// Add the specified suffix to the name of the custome section containing
+    /// Add the specified suffix to the name of the custom section containing
     /// the component type.
     #[cfg_attr(feature = "clap", arg(long, value_name = "STRING"))]
     pub type_section_suffix: Option<String>,
@@ -121,6 +121,14 @@ pub struct Opts {
 
     #[cfg_attr(feature = "clap", clap(flatten))]
     pub async_: AsyncFilterSet,
+
+    /// Force generation of async helpers even if no async functions/futures are present.
+    #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
+    pub generate_async_helpers: bool,
+
+    /// Generate helpers for threading builtins. Implies `--generate-async-helpers`.
+    #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
+    pub generate_threading_helpers: bool,
 }
 
 #[cfg(feature = "clap")]
@@ -178,13 +186,18 @@ impl WorldGenerator for C {
         let world = &resolve.worlds[world];
         for (key, _item) in world.imports.iter().chain(world.exports.iter()) {
             let name = resolve.name_world_key(key);
-            interfaces.insert(name, key.clone());
+            interfaces
+                .entry(name)
+                .or_insert(Vec::new())
+                .push(key.clone());
         }
 
         for (from, to) in self.opts.rename.iter() {
             match interfaces.get(from) {
-                Some(key) => {
-                    self.renamed_interfaces.insert(key.clone(), to.clone());
+                Some(keys) => {
+                    for key in keys {
+                        self.renamed_interfaces.insert(key.clone(), to.clone());
+                    }
                 }
                 None => {
                     eprintln!("warning: rename of `{from}` did not match any interfaces");
@@ -432,8 +445,15 @@ impl WorldGenerator for C {
                 "\nunion double_int64 {{ double a; int64_t b; }};"
             );
         }
-        if self.needs_async || self.futures.len() > 0 {
+        if self.needs_async
+            || self.futures.len() > 0
+            || self.opts.generate_async_helpers
+            || self.opts.generate_threading_helpers
+        {
             self.generate_async_helpers();
+        }
+        if self.opts.generate_threading_helpers {
+            self.generate_threading_helpers();
         }
         let version = env!("CARGO_PKG_VERSION");
         let mut h_str = wit_bindgen_core::Source::default();
@@ -662,36 +682,36 @@ impl C {
         match cast {
             Bitcast::I32ToF32 | Bitcast::I64ToF32 => {
                 self.needs_union_int32_float = true;
-                format!("((union int32_float){{ (int32_t) {} }}).b", op)
+                format!("((union int32_float){{ (int32_t) {op} }}).b")
             }
             Bitcast::F32ToI32 | Bitcast::F32ToI64 => {
                 self.needs_union_float_int32 = true;
-                format!("((union float_int32){{ {} }}).b", op)
+                format!("((union float_int32){{ {op} }}).b")
             }
             Bitcast::I64ToF64 => {
                 self.needs_union_int64_double = true;
-                format!("((union int64_double){{ (int64_t) {} }}).b", op)
+                format!("((union int64_double){{ (int64_t) {op} }}).b")
             }
             Bitcast::F64ToI64 => {
                 self.needs_union_double_int64 = true;
-                format!("((union double_int64){{ {} }}).b", op)
+                format!("((union double_int64){{ {op} }}).b")
             }
             Bitcast::I32ToI64 | Bitcast::LToI64 | Bitcast::PToP64 => {
-                format!("(int64_t) {}", op)
+                format!("(int64_t) {op}")
             }
             Bitcast::I64ToI32 | Bitcast::I64ToL => {
-                format!("(int32_t) {}", op)
+                format!("(int32_t) {op}")
             }
             // P64 is currently represented as int64_t, so no conversion is needed.
             Bitcast::I64ToP64 | Bitcast::P64ToI64 => {
-                format!("{}", op)
+                format!("{op}")
             }
             Bitcast::P64ToP | Bitcast::I32ToP | Bitcast::LToP => {
-                format!("(uint8_t *) {}", op)
+                format!("(uint8_t *) {op}")
             }
 
             // Cast to uintptr_t to avoid implicit pointer-to-int conversions.
-            Bitcast::PToI32 | Bitcast::PToL => format!("(uintptr_t) {}", op),
+            Bitcast::PToI32 | Bitcast::PToL => format!("(uintptr_t) {op}"),
 
             Bitcast::I32ToL | Bitcast::LToI32 | Bitcast::None => op.to_string(),
 
@@ -701,6 +721,131 @@ impl C {
                 self.perform_cast(&inner, second)
             }
         }
+    }
+
+    fn generate_threading_helpers(&mut self) {
+        let snake = self.world.to_snake_case();
+        uwriteln!(
+            self.src.h_async,
+            "
+void* {snake}_context_get_1(void);
+void {snake}_context_set_1(void* value);
+uint32_t {snake}_thread_yield_cancellable(void);
+uint32_t {snake}_thread_index(void);
+uint32_t {snake}_thread_new_indirect(void (*start_function)(void*), void* arg);
+void {snake}_thread_suspend_to(uint32_t thread);
+uint32_t {snake}_thread_suspend_to_cancellable(uint32_t thread);
+void {snake}_thread_suspend_to_suspended(uint32_t thread);
+uint32_t {snake}_thread_suspend_to_suspended_cancellable(uint32_t thread);
+void {snake}_thread_unsuspend(uint32_t thread);
+void {snake}_thread_yield_to_suspended(uint32_t thread);
+uint32_t {snake}_thread_yield_to_suspended_cancellable(uint32_t thread);
+void {snake}_thread_suspend(void);
+uint32_t {snake}_thread_suspend_cancellable(void);
+            "
+        );
+        uwriteln!(
+            self.src.c_async,
+            r#"
+__attribute__((__import_module__("$root"), __import_name__("[context-get-1]")))
+extern void* __context_get_1(void);
+
+void* {snake}_context_get_1(void) {{
+    return __context_get_1();
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[context-set-1]")))
+extern void __context_set_1(void*);
+
+void {snake}_context_set_1(void* value) {{
+    __context_set_1(value);
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[cancellable][thread-yield]")))
+extern uint32_t __thread_yield_cancellable(void);
+
+uint32_t {snake}_thread_yield_cancellable(void) {{
+    return __thread_yield_cancellable();
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[thread-index]")))
+extern uint32_t __thread_index(void);
+
+uint32_t {snake}_thread_index(void) {{
+    return __thread_index();
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[thread-new-indirect-v0]")))
+extern uint32_t __thread_new_indirect(uint32_t, void*);
+
+uint32_t {snake}_thread_new_indirect(void (*start_function)(void*), void* arg) {{
+    return __thread_new_indirect((uint32_t)(uintptr_t)start_function, arg
+);
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[thread-suspend-to-suspended]")))
+extern uint32_t __thread_suspend_to_suspended(uint32_t);
+
+void {snake}_thread_suspend_to_suspended(uint32_t thread) {{
+    __thread_suspend_to_suspended(thread);
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[cancellable][thread-suspend-to-suspended]")))
+extern uint32_t __thread_suspend_to_suspended_cancellable(uint32_t);
+
+uint32_t {snake}_thread_suspend_to_suspended_cancellable(uint32_t thread) {{
+    return __thread_suspend_to_suspended_cancellable(thread);
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[thread-suspend-to]")))
+extern uint32_t __thread_suspend_to(uint32_t);
+
+void {snake}_thread_suspend_to(uint32_t thread) {{
+    __thread_suspend_to(thread);
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[cancellable][thread-suspend-to]")))
+extern uint32_t __thread_suspend_to_cancellable(uint32_t);
+
+uint32_t {snake}_thread_suspend_to_cancellable(uint32_t thread) {{
+    return __thread_suspend_to_cancellable(thread);
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[thread-unsuspend]")))
+extern void __thread_unsuspend(uint32_t);
+
+void {snake}_thread_unsuspend(uint32_t thread) {{
+    __thread_unsuspend(thread);
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[thread-yield-to-suspended]")))
+extern uint32_t __thread_yield_to_suspended(uint32_t);
+
+void {snake}_thread_yield_to_suspended(uint32_t thread) {{
+    __thread_yield_to_suspended(thread);
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[cancellable][thread-yield-to-suspended]")))
+extern uint32_t __thread_yield_to_suspended_cancellable(uint32_t);
+
+uint32_t {snake}_thread_yield_to_suspended_cancellable(uint32_t thread) {{
+    return __thread_yield_to_suspended_cancellable(thread);
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[thread-suspend]")))
+extern uint32_t __thread_suspend(void);
+
+void {snake}_thread_suspend(void) {{
+    __thread_suspend();
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[cancellable][thread-suspend]")))
+extern uint32_t __thread_suspend_cancellable(void);
+uint32_t {snake}_thread_suspend_cancellable(void) {{
+    return __thread_suspend_cancellable();
+}}
+            "#
+        );
     }
 
     fn generate_async_helpers(&mut self) {
@@ -729,7 +874,6 @@ typedef uint32_t {snake}_callback_code_t;
 #define {shouty}_CALLBACK_CODE_EXIT 0
 #define {shouty}_CALLBACK_CODE_YIELD 1
 #define {shouty}_CALLBACK_CODE_WAIT(set) (2 | (set << 4))
-#define {shouty}_CALLBACK_CODE_POLL(set) (3 | (set << 4))
 
 typedef enum {snake}_event_code {{
     {shouty}_EVENT_NONE,
@@ -769,10 +913,9 @@ typedef enum {snake}_waitable_state {{
 
 void {snake}_backpressure_inc(void);
 void {snake}_backpressure_dec(void);
-void* {snake}_context_get(void);
-void {snake}_context_set(void*);
-void {snake}_yield(void);
-uint32_t {snake}_yield_cancellable(void);
+void* {snake}_context_get_0(void);
+void {snake}_context_set_0(void* value);
+void {snake}_thread_yield(void);
             "
         );
         uwriteln!(
@@ -848,31 +991,25 @@ void {snake}_backpressure_dec(void) {{
 }}
 
 __attribute__((__import_module__("$root"), __import_name__("[context-get-0]")))
-extern void* __context_get(void);
+extern void* __context_get_0(void);
 
-void* {snake}_context_get() {{
-    return __context_get();
+void* {snake}_context_get_0(void) {{
+    return __context_get_0();
 }}
 
 __attribute__((__import_module__("$root"), __import_name__("[context-set-0]")))
-extern void __context_set(void*);
+extern void __context_set_0(void*);
 
-void {snake}_context_set(void *val) {{
-    return __context_set(val);
+
+void {snake}_context_set_0(void *value) {{
+    __context_set_0(value);
 }}
 
 __attribute__((__import_module__("$root"), __import_name__("[thread-yield]")))
 extern uint32_t __thread_yield(void);
 
-void {snake}_yield(void) {{
+void {snake}_thread_yield(void) {{
     __thread_yield();
-}}
-
-__attribute__((__import_module__("$root"), __import_name__("[cancellable][thread-yield]")))
-extern uint32_t __thread_yield_cancellable(void);
-
-uint32_t {snake}_yield_cancellable(void) {{
-    return __thread_yield_cancellable();
 }}
             "#
         );
@@ -894,7 +1031,7 @@ pub fn imported_types_used_by_exported_interfaces(
                 exported_interfaces.insert(*id);
                 live_export_types.add_interface(resolve, *id)
             }
-            WorldItem::Type(_) => unreachable!(),
+            WorldItem::Type { .. } => unreachable!(),
         }
     }
 
@@ -950,7 +1087,8 @@ fn is_prim_type_id(resolve: &Resolve, id: TypeId) -> bool {
         | TypeDefKind::Future(_)
         | TypeDefKind::Stream(_)
         | TypeDefKind::Unknown => false,
-        TypeDefKind::FixedSizeList(..) => todo!(),
+        TypeDefKind::FixedLengthList(..) => todo!(),
+        TypeDefKind::Map(..) => todo!(),
     }
 }
 
@@ -1035,7 +1173,8 @@ pub fn push_ty_name(resolve: &Resolve, ty: &Type, src: &mut String) {
                     push_ty_name(resolve, &Type::Id(*resource), src);
                 }
                 TypeDefKind::Unknown => unreachable!(),
-                TypeDefKind::FixedSizeList(..) => todo!(),
+                TypeDefKind::FixedLengthList(..) => todo!(),
+                TypeDefKind::Map(..) => todo!(),
             }
         }
     }
@@ -1248,7 +1387,8 @@ impl Return {
 
             TypeDefKind::Resource => todo!("return_single for resource"),
             TypeDefKind::Unknown => unreachable!(),
-            TypeDefKind::FixedSizeList(..) => todo!(),
+            TypeDefKind::FixedLengthList(..) => todo!(),
+            TypeDefKind::Map(..) => todo!(),
         }
 
         self.retptrs.push(*orig_ty);
@@ -1706,6 +1846,16 @@ impl<'a> wit_bindgen_core::AnonymousTypeGenerator<'a> for InterfaceGenerator<'a>
     fn anonymous_type_type(&mut self, _id: TypeId, _ty: &Type, _docs: &Docs) {
         todo!("print_anonymous_type for type");
     }
+
+    fn anonymous_type_fixed_length_list(
+        &mut self,
+        _id: TypeId,
+        _ty: &Type,
+        _size: u32,
+        _docs: &Docs,
+    ) {
+        todo!("print_anonymous_type for fixed length list");
+    }
 }
 
 pub enum CTypeNameInfo<'a> {
@@ -1883,7 +2033,8 @@ impl InterfaceGenerator<'_> {
                 self.free(&Type::Id(*id), "*ptr");
             }
             TypeDefKind::Unknown => unreachable!(),
-            TypeDefKind::FixedSizeList(..) => todo!(),
+            TypeDefKind::FixedLengthList(..) => todo!(),
+            TypeDefKind::Map(..) => todo!(),
         }
         if c_helpers_body_start == self.src.c_helpers.len() {
             self.src.c_helpers.as_mut_string().truncate(c_helpers_start);
@@ -2012,7 +2163,7 @@ impl InterfaceGenerator<'_> {
         let mut optional_adapters = String::from("");
         if !self.r#gen.opts.no_sig_flattening {
             for (i, (_, param)) in c_sig.params.iter().enumerate() {
-                let ty = &func.params[i].1;
+                let ty = &func.params[i].ty;
                 if let Type::Id(id) = ty {
                     if let TypeDefKind::Option(_) = &self.resolve.types[*id].kind {
                         let ty = self.r#gen.type_name(ty);
@@ -2035,7 +2186,7 @@ impl InterfaceGenerator<'_> {
         let mut f = FunctionBindgen::new(self, c_sig, &import_name);
         for (pointer, param) in f.sig.params.iter() {
             if *pointer {
-                f.params.push(format!("*{}", param));
+                f.params.push(format!("*{param}"));
             } else {
                 f.params.push(param.clone());
             }
@@ -2086,7 +2237,7 @@ impl InterfaceGenerator<'_> {
             params.push(format!("(uint8_t*) {}", c_sig.params[0].1));
         } else {
             let mut f = FunctionBindgen::new(self, c_sig.clone(), "INVALID");
-            for (i, (_, ty)) in func.params.iter().enumerate() {
+            for (i, Param { ty, .. }) in func.params.iter().enumerate() {
                 let param = &c_sig.params[i].1;
                 params.extend(abi::lower_flat(f.r#gen.resolve, &mut f, param.clone(), ty));
             }
@@ -2333,7 +2484,7 @@ void {name}_return({return_ty}) {{
                 } else if single_ret {
                     "ret".into()
                 } else {
-                    format!("ret{}", i)
+                    format!("ret{i}")
                 };
                 self.src.h_fns(&name);
                 retptrs.push(name);
@@ -2358,7 +2509,7 @@ void {name}_return({return_ty}) {{
 
     fn print_sig_params(&mut self, func: &Function) -> Vec<(bool, String)> {
         let mut params = Vec::new();
-        for (i, (name, ty)) in func.params.iter().enumerate() {
+        for (i, Param { name, ty, .. }) in func.params.iter().enumerate() {
             if i > 0 {
                 self.src.h_fns(", ");
             }
@@ -2408,7 +2559,7 @@ void {name}_return({return_ty}) {{
         if sig.indirect_params {
             match &func.params[..] {
                 [] => {}
-                [(_name, ty)] => {
+                [Param { name: _, ty, .. }] => {
                     printed = true;
                     let name = "arg".to_string();
                     self.print_ty(SourceType::HFns, ty);
@@ -2420,7 +2571,7 @@ void {name}_return({return_ty}) {{
                     printed = true;
                     let names = multiple
                         .iter()
-                        .map(|(name, ty)| (to_c_ident(name), self.r#gen.type_name(ty)))
+                        .map(|Param { name, ty, .. }| (to_c_ident(name), self.r#gen.type_name(ty)))
                         .collect::<Vec<_>>();
                     uwriteln!(self.src.h_defs, "typedef struct {c_func_name}_args {{");
                     for (name, ty) in names {
@@ -2432,7 +2583,7 @@ void {name}_return({return_ty}) {{
                 }
             }
         } else {
-            for (name, ty) in func.params.iter() {
+            for Param { name, ty, .. } in func.params.iter() {
                 let name = to_c_ident(name);
                 if printed {
                     self.src.h_fns(", ");
@@ -2576,7 +2727,8 @@ void {name}_return({return_ty}) {{
                 TypeDefKind::Type(ty) => self.contains_droppable_borrow(ty),
 
                 TypeDefKind::Unknown => false,
-                TypeDefKind::FixedSizeList(..) => todo!(),
+                TypeDefKind::FixedLengthList(..) => todo!(),
+                TypeDefKind::Map(..) => todo!(),
             }
         } else {
             false
@@ -2898,7 +3050,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
     ) {
         self.load(ty, offset, operands, results);
         let result = results.pop().unwrap();
-        results.push(format!("(int32_t) {}", result));
+        results.push(format!("(int32_t) {result}"));
     }
 
     fn store(&mut self, ty: &str, offset: ArchitectureSize, operands: &[String]) {
@@ -2931,10 +3083,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             && self.r#gen.autodrop_enabled()
             && self.r#gen.contains_droppable_borrow(ty)
         {
-            panic!(
-                "Unable to autodrop borrows in `{}` values, please disable autodrop",
-                context
-            )
+            panic!("Unable to autodrop borrows in `{context}` values, please disable autodrop")
         }
     }
 }
@@ -3056,7 +3205,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
             Instruction::RecordLift { ty, record, .. } => {
                 let name = self.r#gen.r#gen.type_name(&Type::Id(*ty));
-                let mut result = format!("({}) {{\n", name);
+                let mut result = format!("({name}) {{\n");
                 for (field, op) in record.fields.iter().zip(operands.iter()) {
                     let field_ty = self.r#gen.r#gen.type_name(&field.ty);
                     uwriteln!(result, "({}) {},", field_ty, op);
@@ -3068,12 +3217,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::TupleLower { tuple, .. } => {
                 let op = &operands[0];
                 for i in 0..tuple.types.len() {
-                    results.push(format!("({}).f{}", op, i));
+                    results.push(format!("({op}).f{i}"));
                 }
             }
             Instruction::TupleLift { ty, tuple, .. } => {
                 let name = self.r#gen.r#gen.type_name(&Type::Id(*ty));
-                let mut result = format!("({}) {{\n", name);
+                let mut result = format!("({name}) {{\n");
                 for (ty, op) in tuple.types.iter().zip(operands.iter()) {
                     let ty = self.r#gen.r#gen.type_name(&ty);
                     uwriteln!(result, "({}) {},", ty, op);
@@ -3152,7 +3301,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::VariantPayloadName => {
                 let name = self.locals.tmp("payload");
-                results.push(format!("*{}", name));
+                results.push(format!("*{name}"));
                 self.payloads.push(name);
             }
 
@@ -3230,7 +3379,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     assert!(block_results.len() == (case.ty.is_some() as usize));
 
                     if let Some(_) = case.ty.as_ref() {
-                        let mut dst = format!("{}.val", result);
+                        let mut dst = format!("{result}.val");
                         dst.push_str(".");
                         dst.push_str(&to_c_ident(&case.name));
                         self.store_op(&block_results[0], &dst);
@@ -3493,7 +3642,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     if i > 0 {
                         args.push_str(", ");
                     }
-                    let ty = &func.params[i].1;
+                    let ty = &func.params[i].ty;
                     if *byref {
                         let name = self.locals.tmp("arg");
                         let ty = self.r#gen.r#gen.type_name(ty);
@@ -3666,7 +3815,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 Some(Scalar::OptionBool(_)) => {
                     assert_eq!(operands.len(), 1);
                     let variant = &operands[0];
-                    self.store_in_retptr(&format!("{}.val", variant));
+                    self.store_in_retptr(&format!("{variant}.val"));
                     self.src.push_str("return ");
                     self.src.push_str(&variant);
                     self.src.push_str(".is_some;\n");
@@ -3678,7 +3827,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     uwriteln!(self.src, "if (!{}.is_err) {{", variant);
                     if ok.is_some() {
                         if ok.is_some() {
-                            self.store_in_retptr(&format!("{}.val.ok", variant));
+                            self.store_in_retptr(&format!("{variant}.val.ok"));
                         } else {
                             self.empty_return_value();
                         }
@@ -3690,7 +3839,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     );
                     if err.is_some() {
                         if err.is_some() {
-                            self.store_in_retptr(&format!("{}.val.err", variant));
+                            self.store_in_retptr(&format!("{variant}.val.err"));
                         } else {
                             self.empty_return_value();
                         }
@@ -3798,7 +3947,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::Flush { amt } => {
-                results.extend(operands.iter().take(*amt).map(|v| v.clone()));
+                results.extend(operands.iter().take(*amt).cloned());
             }
 
             Instruction::AsyncTaskReturn { name, params } => {
@@ -3816,7 +3965,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     params: params
                         .iter()
                         .zip(operands)
-                        .map(|(a, b)| (a.clone(), b.clone()))
+                        .map(|(a, b)| (*a, b.clone()))
                         .collect(),
                 };
             }
@@ -3929,7 +4078,7 @@ pub fn flags_repr(f: &Flags) -> Int {
         FlagsRepr::U16 => Int::U16,
         FlagsRepr::U32(1) => Int::U32,
         FlagsRepr::U32(2) => Int::U64,
-        repr => panic!("unimplemented flags {:?}", repr),
+        repr => panic!("unimplemented flags {repr:?}"),
     }
 }
 
@@ -3948,7 +4097,8 @@ pub fn is_arg_by_pointer(resolve: &Resolve, ty: &Type) -> bool {
             TypeDefKind::Stream(_) => false,
             TypeDefKind::Resource => todo!("is_arg_by_pointer for resource"),
             TypeDefKind::Unknown => unreachable!(),
-            TypeDefKind::FixedSizeList(..) => todo!(),
+            TypeDefKind::FixedLengthList(..) => todo!(),
+            TypeDefKind::Map(..) => todo!(),
         },
         Type::String => true,
         _ => false,
