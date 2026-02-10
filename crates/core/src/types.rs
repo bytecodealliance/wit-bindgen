@@ -306,10 +306,10 @@ impl Types {
             (TypeDefKind::Tuple(_), _) => false,
             (TypeDefKind::List(la), TypeDefKind::List(lb)) => self.types_equal(resolve, la, lb),
             (TypeDefKind::List(_), _) => false,
-            (TypeDefKind::FixedSizeList(ta, sa), TypeDefKind::FixedSizeList(tb, sb)) => {
+            (TypeDefKind::FixedLengthList(ta, sa), TypeDefKind::FixedLengthList(tb, sb)) => {
                 sa == sb && self.types_equal(resolve, ta, tb)
             }
-            (TypeDefKind::FixedSizeList(..), _) => false,
+            (TypeDefKind::FixedLengthList(..), _) => false,
             (TypeDefKind::Option(oa), TypeDefKind::Option(ob)) => self.types_equal(resolve, oa, ob),
             (TypeDefKind::Option(_), _) => false,
             (TypeDefKind::Result(ra), TypeDefKind::Result(rb)) => {

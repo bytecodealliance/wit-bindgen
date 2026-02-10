@@ -1025,42 +1025,6 @@ macro_rules! __export_{world_name}_impl {{
             .async_
             .is_async(resolve, interface, func, is_import)
     }
-
-    // Returns the structurally equal type id if exists. If the equal type comes from the
-    // import of the same interface, also returns the interface key, so that we can generate
-    // a type alias to the import type.
-    fn get_equal_type_alias<'a>(
-        &mut self,
-        resolve: &Resolve,
-        iface_key: Option<&'a WorldKey>,
-        ty_id: TypeId,
-    ) -> Option<(TypeId, Option<&'a WorldKey>)> {
-        if !self.opts.merge_structurally_equal_types() {
-            return None;
-        }
-        let ty = &resolve.types[ty_id].kind;
-        if matches!(ty, TypeDefKind::Type(_)) {
-            // preserve all primitive type and type alias definitions
-            return None;
-        }
-        let root = self.types.get_representative_type(ty_id);
-        if root != ty_id {
-            Some((root, None))
-        } else {
-            let TypeOwner::Interface(iface_id) = resolve.types[ty_id].owner else {
-                unreachable!()
-            };
-            // When we allow importing/exporting the same interface multiple times, we need to update this code
-            if !self.types.get(ty_id).has_resource
-                && iface_key.is_some()
-                && let Some(true) = self.interface_last_seen_as_import.get(&iface_id)
-            {
-                Some((root, iface_key))
-            } else {
-                None
-            }
-        }
-    }
 }
 
 impl WorldGenerator for RustWasm {
@@ -1211,14 +1175,13 @@ impl WorldGenerator for RustWasm {
         let mut to_define = Vec::new();
         for (name, ty_id) in resolve.interfaces[id].types.iter() {
             let full_name = full_wit_type_name(resolve, *ty_id);
-            let eq_alias = self.get_equal_type_alias(resolve, None, *ty_id);
             if let Some(type_gen) = self.with.get(&full_name) {
                 // skip type definition generation for remapped types
                 if type_gen.generated() {
-                    to_define.push((name, ty_id, eq_alias));
+                    to_define.push((name, ty_id));
                 }
             } else {
-                to_define.push((name, ty_id, eq_alias));
+                to_define.push((name, ty_id));
             }
             self.generated_types.insert(full_name);
         }
@@ -1235,12 +1198,8 @@ impl WorldGenerator for RustWasm {
             return Ok(());
         }
 
-        for (name, ty_id, eq_alias) in to_define {
-            if let Some((alias, _)) = eq_alias {
-                r#gen.type_alias_to_eqaul_type(*ty_id, alias, None);
-            } else {
-                r#gen.define_type(&name, *ty_id);
-            }
+        for (name, ty_id) in to_define {
+            r#gen.define_type(&name, *ty_id);
         }
 
         r#gen.generate_imports(resolve.interfaces[id].functions.values(), Some(name));
@@ -1279,8 +1238,7 @@ impl WorldGenerator for RustWasm {
         let mut to_define = Vec::new();
         for (ty_name, ty_id) in resolve.interfaces[id].types.iter() {
             let full_name = full_wit_type_name(resolve, *ty_id);
-            let eq_alias = self.get_equal_type_alias(resolve, Some(name), *ty_id);
-            to_define.push((ty_name, ty_id, eq_alias));
+            to_define.push((ty_name, ty_id));
             self.generated_types.insert(full_name);
         }
 
@@ -1296,12 +1254,8 @@ impl WorldGenerator for RustWasm {
             return Ok(());
         }
 
-        for (ty_name, ty_id, eq_alias) in to_define {
-            if let Some((alias, from_import)) = eq_alias {
-                r#gen.type_alias_to_eqaul_type(*ty_id, alias, from_import);
-            } else {
-                r#gen.define_type(&ty_name, *ty_id);
-            }
+        for (ty_name, ty_id) in to_define {
+            r#gen.define_type(&ty_name, *ty_id);
         }
 
         let macro_name =
@@ -1361,24 +1315,19 @@ impl WorldGenerator for RustWasm {
         let mut to_define = Vec::new();
         for (name, ty_id) in types {
             let full_name = full_wit_type_name(resolve, *ty_id);
-            let eq_alias = self.get_equal_type_alias(resolve, None, *ty_id);
             if let Some(type_gen) = self.with.get(&full_name) {
                 // skip type definition generation for remapped types
                 if type_gen.generated() {
-                    to_define.push((name, ty_id, eq_alias));
+                    to_define.push((name, ty_id));
                 }
             } else {
-                to_define.push((name, ty_id, eq_alias));
+                to_define.push((name, ty_id));
             }
             self.generated_types.insert(full_name);
         }
         let mut r#gen = self.interface(Identifier::World(world), "$root", resolve, true);
-        for (name, ty, eq_alias) in to_define {
-            if let Some((alias, _)) = eq_alias {
-                r#gen.type_alias_to_eqaul_type(*ty, alias, None);
-            } else {
-                r#gen.define_type(name, *ty);
-            }
+        for (name, ty) in to_define {
+            r#gen.define_type(name, *ty);
         }
         let src = r#gen.finish();
         self.src.push_str(&src);
