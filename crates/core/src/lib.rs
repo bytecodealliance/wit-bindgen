@@ -176,25 +176,32 @@ pub trait InterfaceGenerator<'a> {
     }
 
     fn define_type(&mut self, name: &str, id: TypeId) {
-        let ty = &self.resolve().types[id];
-        match &ty.kind {
-            TypeDefKind::Record(record) => self.type_record(id, name, record, &ty.docs),
-            TypeDefKind::Resource => self.type_resource(id, name, &ty.docs),
-            TypeDefKind::Flags(flags) => self.type_flags(id, name, flags, &ty.docs),
-            TypeDefKind::Tuple(tuple) => self.type_tuple(id, name, tuple, &ty.docs),
-            TypeDefKind::Enum(enum_) => self.type_enum(id, name, enum_, &ty.docs),
-            TypeDefKind::Variant(variant) => self.type_variant(id, name, variant, &ty.docs),
-            TypeDefKind::Option(t) => self.type_option(id, name, t, &ty.docs),
-            TypeDefKind::Result(r) => self.type_result(id, name, r, &ty.docs),
-            TypeDefKind::List(t) => self.type_list(id, name, t, &ty.docs),
-            TypeDefKind::Type(t) => self.type_alias(id, name, t, &ty.docs),
-            TypeDefKind::Future(t) => self.type_future(id, name, t, &ty.docs),
-            TypeDefKind::Stream(t) => self.type_stream(id, name, t, &ty.docs),
-            TypeDefKind::Handle(_) => panic!("handle types do not require definition"),
-            TypeDefKind::FixedLengthList(..) => todo!(),
-            TypeDefKind::Map(..) => todo!(),
-            TypeDefKind::Unknown => unreachable!(),
-        }
+        define_type(self, name, id)
+    }
+}
+
+pub fn define_type<'a, T>(generator: &mut T, name: &str, id: TypeId)
+where
+    T: InterfaceGenerator<'a> + ?Sized,
+{
+    let ty = &generator.resolve().types[id];
+    match &ty.kind {
+        TypeDefKind::Record(record) => generator.type_record(id, name, record, &ty.docs),
+        TypeDefKind::Resource => generator.type_resource(id, name, &ty.docs),
+        TypeDefKind::Flags(flags) => generator.type_flags(id, name, flags, &ty.docs),
+        TypeDefKind::Tuple(tuple) => generator.type_tuple(id, name, tuple, &ty.docs),
+        TypeDefKind::Enum(enum_) => generator.type_enum(id, name, enum_, &ty.docs),
+        TypeDefKind::Variant(variant) => generator.type_variant(id, name, variant, &ty.docs),
+        TypeDefKind::Option(t) => generator.type_option(id, name, t, &ty.docs),
+        TypeDefKind::Result(r) => generator.type_result(id, name, r, &ty.docs),
+        TypeDefKind::List(t) => generator.type_list(id, name, t, &ty.docs),
+        TypeDefKind::Type(t) => generator.type_alias(id, name, t, &ty.docs),
+        TypeDefKind::Future(t) => generator.type_future(id, name, t, &ty.docs),
+        TypeDefKind::Stream(t) => generator.type_stream(id, name, t, &ty.docs),
+        TypeDefKind::Handle(_) => panic!("handle types do not require definition"),
+        TypeDefKind::FixedLengthList(..) => todo!(),
+        TypeDefKind::Map(..) => todo!(),
+        TypeDefKind::Unknown => unreachable!(),
     }
 }
 

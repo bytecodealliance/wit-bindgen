@@ -5,6 +5,7 @@ use wit_parser::*;
 #[derive(Default)]
 pub struct Types {
     type_info: HashMap<TypeId, TypeInfo>,
+    equal_types: UnionFind,
 }
 
 #[derive(Default, Clone, Copy, Debug)]
@@ -89,6 +90,22 @@ impl Types {
                         }
                     }
                     WorldItem::Type { .. } => {}
+                }
+            }
+        }
+    }
+    pub fn collect_equal_types(&mut self, resolve: &Resolve) {
+        for (i, (ty, _)) in resolve.types.iter().enumerate() {
+            // TODO: we could define a hash function for TypeDefKind to prevent the inner loop.
+            for (earlier, _) in resolve.types.iter().take(i) {
+                if self.equal_types.find(ty) == self.equal_types.find(earlier) {
+                    continue;
+                }
+                // The correctness of is_structurally_equal relies on the fact
+                // that resolve.types.iter() is in topological order.
+                if self.is_structurally_equal(resolve, ty, earlier) {
+                    self.equal_types.union(ty, earlier);
+                    break;
                 }
             }
         }
@@ -231,6 +248,187 @@ impl Types {
         match ty {
             Some(ty) => self.type_info(resolve, ty),
             None => TypeInfo::default(),
+        }
+    }
+
+    fn is_structurally_equal(&mut self, resolve: &Resolve, a: TypeId, b: TypeId) -> bool {
+        let a_def = &resolve.types[a].kind;
+        let b_def = &resolve.types[b].kind;
+        if self.equal_types.find(a) == self.equal_types.find(b) {
+            return true;
+        }
+        match (a_def, b_def) {
+            // Peel off typedef layers and continue recursing.
+            (TypeDefKind::Type(a), _) => self.type_id_equal_to_type(resolve, b, a),
+            (_, TypeDefKind::Type(b)) => self.type_id_equal_to_type(resolve, a, b),
+
+            (TypeDefKind::Record(ra), TypeDefKind::Record(rb)) => {
+                ra.fields.len() == rb.fields.len()
+                  // Fields are ordered in WIT, so record {a: T, b: U} is different from {b: U, a: T}
+                  && ra.fields.iter().zip(rb.fields.iter()).all(|(fa, fb)| {
+                      fa.name == fb.name && self.types_equal(resolve, &fa.ty, &fb.ty)
+                  })
+            }
+            (TypeDefKind::Record(_), _) => false,
+            (TypeDefKind::Variant(va), TypeDefKind::Variant(vb)) => {
+                va.cases.len() == vb.cases.len()
+                    && va.cases.iter().zip(vb.cases.iter()).all(|(ca, cb)| {
+                        ca.name == cb.name && self.optional_types_equal(resolve, &ca.ty, &cb.ty)
+                    })
+            }
+            (TypeDefKind::Variant(_), _) => false,
+            (TypeDefKind::Enum(ea), TypeDefKind::Enum(eb)) => {
+                ea.cases.len() == eb.cases.len()
+                    && ea
+                        .cases
+                        .iter()
+                        .zip(eb.cases.iter())
+                        .all(|(ca, cb)| ca.name == cb.name)
+            }
+            (TypeDefKind::Enum(_), _) => false,
+            (TypeDefKind::Flags(fa), TypeDefKind::Flags(fb)) => {
+                fa.flags.len() == fb.flags.len()
+                    && fa
+                        .flags
+                        .iter()
+                        .zip(fb.flags.iter())
+                        .all(|(fa, fb)| fa.name == fb.name)
+            }
+            (TypeDefKind::Flags(_), _) => false,
+            (TypeDefKind::Tuple(ta), TypeDefKind::Tuple(tb)) => {
+                ta.types.len() == tb.types.len()
+                    && ta
+                        .types
+                        .iter()
+                        .zip(tb.types.iter())
+                        .all(|(a, b)| self.types_equal(resolve, a, b))
+            }
+            (TypeDefKind::Tuple(_), _) => false,
+            (TypeDefKind::List(la), TypeDefKind::List(lb)) => self.types_equal(resolve, la, lb),
+            (TypeDefKind::List(_), _) => false,
+            (TypeDefKind::FixedLengthList(ta, sa), TypeDefKind::FixedLengthList(tb, sb)) => {
+                sa == sb && self.types_equal(resolve, ta, tb)
+            }
+            (TypeDefKind::FixedLengthList(..), _) => false,
+            (TypeDefKind::Option(oa), TypeDefKind::Option(ob)) => self.types_equal(resolve, oa, ob),
+            (TypeDefKind::Option(_), _) => false,
+            (TypeDefKind::Result(ra), TypeDefKind::Result(rb)) => {
+                self.optional_types_equal(resolve, &ra.ok, &rb.ok)
+                    && self.optional_types_equal(resolve, &ra.err, &rb.err)
+            }
+            (TypeDefKind::Result(_), _) => false,
+            (TypeDefKind::Map(ak, av), TypeDefKind::Map(bk, bv)) => {
+                self.types_equal(resolve, ak, bk) && self.types_equal(resolve, av, bv)
+            }
+            (TypeDefKind::Map(..), _) => false,
+            (TypeDefKind::Future(a), TypeDefKind::Future(b)) => {
+                self.optional_types_equal(resolve, a, b)
+            }
+            (TypeDefKind::Future(..), _) => false,
+            (TypeDefKind::Stream(a), TypeDefKind::Stream(b)) => {
+                self.optional_types_equal(resolve, a, b)
+            }
+            (TypeDefKind::Stream(..), _) => false,
+            (TypeDefKind::Handle(a), TypeDefKind::Handle(b)) => match (a, b) {
+                (Handle::Own(a), Handle::Own(b)) | (Handle::Borrow(a), Handle::Borrow(b)) => {
+                    self.is_structurally_equal(resolve, *a, *b)
+                }
+                (Handle::Own(_) | Handle::Borrow(_), _) => false,
+            },
+            (TypeDefKind::Handle(_), _) => false,
+            (TypeDefKind::Unknown, _) => unreachable!(),
+
+            // TODO: for now consider all resources not-equal to each other.
+            // This is because the same type id can be used for both an imported
+            // and exported resource where those should be distinct types.
+            (TypeDefKind::Resource, _) => false,
+        }
+    }
+
+    fn types_equal(&mut self, resolve: &Resolve, a: &Type, b: &Type) -> bool {
+        match (a, b) {
+            // Peel off typedef layers and continue recursing.
+            (Type::Id(a), b) => self.type_id_equal_to_type(resolve, *a, b),
+            (a, Type::Id(b)) => self.type_id_equal_to_type(resolve, *b, a),
+
+            // When both a and b are primitives, they're only equal of
+            // the primitives are the same.
+            (
+                Type::Bool
+                | Type::U8
+                | Type::S8
+                | Type::U16
+                | Type::S16
+                | Type::U32
+                | Type::S32
+                | Type::U64
+                | Type::S64
+                | Type::F32
+                | Type::F64
+                | Type::Char
+                | Type::String
+                | Type::ErrorContext,
+                _,
+            ) => a == b,
+        }
+    }
+
+    fn type_id_equal_to_type(&mut self, resolve: &Resolve, a: TypeId, b: &Type) -> bool {
+        let ak = &resolve.types[a].kind;
+        match (ak, b) {
+            (TypeDefKind::Type(a), b) => self.types_equal(resolve, a, b),
+            (_, Type::Id(b)) => self.is_structurally_equal(resolve, a, *b),
+
+            // Type `a` isn't a typedef, and type `b` is a primitive, so it's no
+            // longer possible for them to be equal.
+            _ => false,
+        }
+    }
+
+    fn optional_types_equal(
+        &mut self,
+        resolve: &Resolve,
+        a: &Option<Type>,
+        b: &Option<Type>,
+    ) -> bool {
+        match (a, b) {
+            (Some(a), Some(b)) => self.types_equal(resolve, a, b),
+            (Some(_), None) | (None, Some(_)) => false,
+            (None, None) => true,
+        }
+    }
+
+    pub fn get_representative_type(&mut self, id: TypeId) -> TypeId {
+        self.equal_types.find(id)
+    }
+}
+
+#[derive(Default)]
+pub struct UnionFind {
+    parent: HashMap<TypeId, TypeId>,
+}
+impl UnionFind {
+    fn find(&mut self, id: TypeId) -> TypeId {
+        // Path compression
+        let parent = self.parent.get(&id).copied().unwrap_or(id);
+        if parent != id {
+            let root = self.find(parent);
+            self.parent.insert(id, root);
+            root
+        } else {
+            id
+        }
+    }
+    fn union(&mut self, a: TypeId, b: TypeId) {
+        let ra = self.find(a);
+        let rb = self.find(b);
+        if ra != rb {
+            // Use smaller id as root for determinism
+            if ra < rb {
+                self.parent.insert(rb, ra);
+            } else {
+                self.parent.insert(ra, rb);
+            }
         }
     }
 }

@@ -2577,6 +2577,16 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.print_typedef_record(id, record, docs);
     }
 
+    fn define_type(&mut self, name: &str, id: TypeId) {
+        let equal = self.r#gen.types.get_representative_type(id);
+        if equal == id {
+            wit_bindgen_core::define_type(self, name, id)
+        } else {
+            let docs = &self.resolve.types[id].docs;
+            self.print_typedef_alias(id, &Type::Id(equal), &docs);
+        }
+    }
+
     fn type_resource(&mut self, _id: TypeId, name: &str, docs: &Docs) {
         self.rustdoc(docs);
         let camel = to_upper_camel_case(name);
