@@ -631,7 +631,7 @@ impl InterfaceGenerator<'_> {
             let csharp_param_names = func
                 .params
                 .iter()
-                .map(|(name, _)| name.to_lower_camel_case())
+                .map(|(param)| param.name.to_lower_camel_case())
                 .collect::<Vec<_>>();
 
             let (lower, wasm_params) = if sig.indirect_params {
@@ -640,12 +640,12 @@ impl InterfaceGenerator<'_> {
                 let wasm_params: Vec<String> = csharp_param_names
                     .iter()
                     .zip(&func.params)
-                    .flat_map(|(name, (_, ty))| {
+                    .flat_map(|(name, param)| {
                         abi::lower_flat(
                             bindgen.interface_gen.resolve,
                             &mut bindgen,
                             name.clone(),
-                            ty,
+                            &param.ty,
                         )
                     })
                     .collect();
