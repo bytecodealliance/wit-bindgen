@@ -63,8 +63,9 @@ impl LanguageMethods for Rust {
         // no_std doesn't currently work with async
         if config.async_
             && args.iter().any(|s| s == "--std-feature")
-            // Except this one actually _does_ work:
+            // Except these actually do work:
             && name != "async-trait-function.wit-no-std"
+            && name != "async-resource-func.wit-no-std"
         {
             return true;
         }
