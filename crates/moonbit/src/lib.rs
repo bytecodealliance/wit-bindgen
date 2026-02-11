@@ -830,8 +830,8 @@ impl InterfaceGenerator<'_> {
                 r#"
             #doc(hidden)
             pub fn {func_name}({params}) -> {result_type} {{
-                {async_pkg}with_waitableset(fn() {{
-                    {async_pkg}with_task_group(fn(task_group) {{
+                {async_pkg}with_waitableset(async fn() {{
+                    {async_pkg}with_task_group(async fn(task_group) {{
                         {cleanup_list}
                         {src}
                     }})
@@ -954,7 +954,7 @@ impl InterfaceGenerator<'_> {
         }
 
         // If post return is needed, generate it
-        if abi::guest_export_needs_post_return(self.resolve, func) {
+        if !async_ && abi::guest_export_needs_post_return(self.resolve, func) {
             let params = sig
                 .results
                 .iter()
@@ -2373,6 +2373,115 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 );
 
                 results.push(array);
+            }
+
+            Instruction::FixedLengthListLift {
+                element,
+                size,
+                id: _,
+            } => {
+                let mut lifted = Vec::with_capacity(*size as usize);
+                for operand in operands.drain(0..(*size as usize)) {
+                    lifted.push(operand);
+                }
+                if lifted.is_empty() {
+                    let ty = self.resolve_type_name(element);
+                    results.push(format!("([] : FixedArray[{ty}])"));
+                } else {
+                    results.push(format!("[{}]", lifted.join(", ")));
+                }
+            }
+
+            Instruction::FixedLengthListLower {
+                element: _,
+                size,
+                id: _,
+            } => {
+                let op = &operands[0];
+                for i in 0..(*size as usize) {
+                    results.push(format!("({op})[{i}]"));
+                }
+            }
+
+            Instruction::FixedLengthListLowerToMemory {
+                element,
+                size,
+                id: _,
+            } => {
+                let Block {
+                    body,
+                    results: block_results,
+                } = self.blocks.pop().unwrap();
+                assert!(block_results.is_empty());
+
+                let op = &operands[0];
+                let target = &operands[1];
+                let ty = self.resolve_type_name(element);
+                let elem_size = self
+                    .interface_gen
+                    .world_gen
+                    .sizes
+                    .size(element)
+                    .size_wasm32();
+
+                for i in 0..(*size as usize) {
+                    uwrite!(
+                        self.src,
+                        "
+                        {{
+                            let iter_elem : {ty} = ({op})[{i}]
+                            let iter_base = ({target}) + ({i} * {elem_size})
+                            {body}
+                        }}
+                        ",
+                    );
+                }
+            }
+
+            Instruction::FixedLengthListLiftFromMemory {
+                element,
+                size,
+                id: _,
+            } => {
+                let Block {
+                    body,
+                    results: block_results,
+                } = self.blocks.pop().unwrap();
+                let address = &operands[0];
+                let ty = self.resolve_type_name(element);
+                let elem_size = self
+                    .interface_gen
+                    .world_gen
+                    .sizes
+                    .size(element)
+                    .size_wasm32();
+
+                let element_result = match &block_results[..] {
+                    [result] => result,
+                    _ => todo!("result count == {}", block_results.len()),
+                };
+
+                let mut lifted = Vec::with_capacity(*size as usize);
+                for i in 0..(*size as usize) {
+                    let value = self.locals.tmp("fixed_elem");
+                    uwrite!(
+                        self.src,
+                        "
+                        let {value} : {ty} = {{
+                            let iter_base = ({address}) + ({i} * {elem_size})
+                            {body}
+                            {element_result}
+                        }}
+                        ",
+                    );
+                    lifted.push(value);
+                }
+
+                if lifted.is_empty() {
+                    results.push(format!("([] : FixedArray[{ty}])"));
+                } else {
+                    results.push(format!("[{}]", lifted.join(", ")));
+                }
             }
 
             Instruction::IterElem { .. } => results.push("iter_elem".into()),
