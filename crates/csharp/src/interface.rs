@@ -631,7 +631,7 @@ impl InterfaceGenerator<'_> {
             let csharp_param_names = func
                 .params
                 .iter()
-                .map(|(param)| param.name.to_lower_camel_case())
+                .map(|param| param.name.to_lower_camel_case())
                 .collect::<Vec<_>>();
 
             let (lower, wasm_params) = if sig.indirect_params {

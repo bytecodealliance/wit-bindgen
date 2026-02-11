@@ -346,56 +346,6 @@ public static class FutureHelpers
     }
 }
 
-internal struct WaitableInfoState
-{
-    internal WaitableInfoState(TaskCompletionSource<int> taskCompletionSource, IFutureStream futureStream)
-    {
-        taskCompletionSourceInt = taskCompletionSource;
-        FutureStream = futureStream;        
-    }
-
-    internal WaitableInfoState(TaskCompletionSource taskCompletionSource, IFutureStream futureStream)
-    {
-        this.taskCompletionSource = taskCompletionSource;
-        FutureStream = futureStream;        
-    }
-
-    internal WaitableInfoState(TaskCompletionSource taskCompletionSource)
-    {
-        this.taskCompletionSource = taskCompletionSource;
-    }
-
-    internal void SetResult(int count)
-    {
-        if (taskCompletionSource != null)
-        {
-            Console.WriteLine("Setting result for void waitable completion source");
-            taskCompletionSource.SetResult();
-        }
-        else
-        {
-            taskCompletionSourceInt.SetResult(count);
-        }
-    }
-
-    internal void SetException(Exception e)
-    {
-        if (taskCompletionSource != null)
-        {
-            Console.WriteLine("Setting exception waitable completion source");
-            taskCompletionSource.SetException(e);
-        }
-        else
-        {
-            taskCompletionSourceInt.SetException(e);
-        }
-    }
-
-    private TaskCompletionSource taskCompletionSource;
-    private TaskCompletionSource<int> taskCompletionSourceInt;
-    internal IFutureStream FutureStream;
-}
-
 public abstract class ReaderBase : IFutureStream
 {
     private GCHandle? bufferHandle;
@@ -797,6 +747,56 @@ public class StreamWriter<T>(int handle, StreamVTable vTable) : WriterBase(handl
     {
         VTable.DropWriter(Handle);
     }
+}
+
+internal struct WaitableInfoState
+{
+    internal WaitableInfoState(TaskCompletionSource<int> taskCompletionSource, IFutureStream futureStream)
+    {
+        taskCompletionSourceInt = taskCompletionSource;
+        FutureStream = futureStream;        
+    }
+
+    internal WaitableInfoState(TaskCompletionSource taskCompletionSource, IFutureStream futureStream)
+    {
+        this.taskCompletionSource = taskCompletionSource;
+        FutureStream = futureStream;        
+    }
+
+    internal WaitableInfoState(TaskCompletionSource taskCompletionSource)
+    {
+        this.taskCompletionSource = taskCompletionSource;
+    }
+
+    internal void SetResult(int count)
+    {
+        if (taskCompletionSource != null)
+        {
+            Console.WriteLine("Setting result for void waitable completion source");
+            taskCompletionSource.SetResult();
+        }
+        else
+        {
+            taskCompletionSourceInt.SetResult(count);
+        }
+    }
+
+    internal void SetException(Exception e)
+    {
+        if (taskCompletionSource != null)
+        {
+            Console.WriteLine("Setting exception waitable completion source");
+            taskCompletionSource.SetException(e);
+        }
+        else
+        {
+            taskCompletionSourceInt.SetException(e);
+        }
+    }
+
+    private TaskCompletionSource taskCompletionSource;
+    private TaskCompletionSource<int> taskCompletionSourceInt;
+    internal IFutureStream FutureStream;
 }
 
 public class StreamDroppedException : Exception
