@@ -21,7 +21,7 @@ public enum CallbackCode : uint
     //#define TEST_CALLBACK_CODE_WAIT(set) (2 | (set << 4))
 }
 
-public partial class WaitableSet(int handle) : IDisposable
+public class WaitableSet(int handle) : IDisposable
 {
     public int Handle { get; } = handle;
 
