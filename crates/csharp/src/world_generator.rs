@@ -77,6 +77,7 @@ impl CSharp {
             name,
             direction,
             futures: Vec::new(),
+            streams: Vec::new(),
             is_world,
         }
     }
@@ -187,7 +188,9 @@ impl WorldGenerator for CSharp {
         // for anonymous types
         r#gen.define_interface_types(id);
 
-        r#gen.add_futures(import_module_name, false);
+        r#gen.add_futures_or_streams(import_module_name, false, true);
+
+        r#gen.add_futures_or_streams(import_module_name, false, false);
 
         r#gen.add_interface_fragment(false);
 
@@ -268,7 +271,9 @@ impl WorldGenerator for CSharp {
         r#gen.define_interface_types(id);
 
         let import_module_name = &resolve.name_world_key(key);
-        r#gen.add_futures(&format!("[export]{import_module_name}"), true);
+        r#gen.add_futures_or_streams(&format!("[export]{import_module_name}"), true, true);
+
+        r#gen.add_futures_or_streams(&format!("[export]{import_module_name}"), true, false);
 
         r#gen.add_interface_fragment(true);
         Ok(())
@@ -382,6 +387,23 @@ impl WorldGenerator for CSharp {
 
         let access = self.access_modifier();
 
+        if self.needs_async_support {
+            uwrite!(
+                src,
+                "
+                    using System.Runtime.CompilerServices;
+
+                "
+            );
+        }
+
+        uwrite!(
+            src,
+            "
+                using System.Runtime.InteropServices;
+                using System.Collections.Concurrent;
+            "
+        );
         uwrite!(
             src,
             "
@@ -640,10 +662,16 @@ impl WorldGenerator for CSharp {
             src.push_str(
                 r#"public static class WitFuture
             {
-                public static (FutureReader, FutureWriter) FutureNew(FutureVTable table)
+                internal static (FutureReader, FutureWriter) FutureNew(FutureVTable table)
                 {
                     return FutureHelpers.RawFutureNew(table);
                 }
+
+            "#,
+            );
+
+            src.push_str(
+                r#"
             }
             "#,
             );

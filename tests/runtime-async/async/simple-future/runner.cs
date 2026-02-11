@@ -8,7 +8,7 @@ using RunnerWorld;
 
 public class RunnerWorldExportsImpl
 {
-    public static Task Run()
+    public static async Task Run()
     {
         {
             var (reader, writer) = IIImports.FutureNew();
@@ -18,19 +18,9 @@ public class RunnerWorldExportsImpl
 
             var task = IIImports.ReadFuture(reader);
             Debug.Assert(task.IsCompleted);
-
-            var set = AsyncSupport.WaitableSetNew();
-            AsyncSupport.Join(writer, set);
-
-            var ev = new EventWaitable();
-            var status = AsyncSupport.WaitableSetWait(set);
-            Debug.Assert(status.Event == EventCode.FutureWrite);
-            Debug.Assert(status.Waitable == writer.Handle);
-            Debug.Assert(status.Status.IsCompleted);
-            Debug.Assert(status.Status.Count == 0);
+            await writeTask;
 
             writer.Dispose();
-            set.Dispose();
         }
 
         {
@@ -42,20 +32,18 @@ public class RunnerWorldExportsImpl
             var task = IIImports.DropFuture(reader);
             Debug.Assert(task.IsCompleted);
 
-            var set = AsyncSupport.WaitableSetNew();
-            AsyncSupport.Join(writer, set);
-
-            var ev = new EventWaitable();
-            var status = AsyncSupport.WaitableSetWait(set);
-            Debug.Assert(status.Event == EventCode.FutureWrite);
-            Debug.Assert(status.Waitable == writer.Handle);
-            Debug.Assert(status.Status.IsDropped);
-            Debug.Assert(status.Status.Count == 0);
+            bool exceptionThrown = false;
+            try
+            {
+                await writeTask;
+            }
+            catch(Exception)
+            {
+                exceptionThrown = true;
+            }
+            Debug.Assert(exceptionThrown);
 
             writer.Dispose();
-            set.Dispose();
-
-            return Task.CompletedTask;
         }
     }
 
