@@ -11,6 +11,16 @@ description = """
 CLI tool to generate bindings for WIT documents and the component model.
 """
 
+[package.metadata.binstall]
+pkg-url = "{repo}/releases/download/v{version}/wit-bindgen-{version}-{target-arch}-{target-family}{archive-suffix}"
+bin-dir = "wit-bindgen-{version}-{target-arch}-{target-family}/{bin}{binary-ext}"
+pkg-fmt = "tgz"
+[package.metadata.binstall.overrides.'cfg(target_os = "macos")']
+pkg-url = "{repo}/releases/download/v{version}/wit-bindgen-{version}-{target-arch}-macos{archive-suffix}"
+bin-dir = "wit-bindgen-{version}-{target-arch}-macos/{bin}{binary-ext}"
+[package.metadata.binstall.overrides.'cfg(target_os = "windows")']
+pkg-fmt = "zip"
+
 [lints]
 workspace = true
 
