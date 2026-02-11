@@ -100,29 +100,10 @@ public static class AsyncSupport
         Interop.WaitableJoin(subtask.Handle, set.Handle);
     }
 
-    internal static void Join(ReaderBase reader, WaitableSet set, WaitableInfoState waitableInfoState) 
+    internal static void Join(int readerWriterHandle, WaitableSet set, WaitableInfoState waitableInfoState) 
     {
-        AddTaskToWaitables(set.Handle, reader.Handle, waitableInfoState);
-        Interop.WaitableJoin(reader.Handle, set.Handle);
-    }
-    internal static void Join<T>(FutureReader<T> reader, WaitableSet set, WaitableInfoState waitableInfoState) 
-    {
-        AddTaskToWaitables(set.Handle, reader.Handle, waitableInfoState);
-        Interop.WaitableJoin(reader.Handle, set.Handle);
-    }
-
-    internal static void Join(FutureWriter writer, WaitableSet set, WaitableInfoState waitableInfoState) 
-    {
-        // Store the task completion source so we can complete it later
-        AddTaskToWaitables(set.Handle, writer.Handle, waitableInfoState);
-        Interop.WaitableJoin(writer.Handle, set.Handle);
-    }
-
-    internal static void Join<T>(StreamWriter<T> writer, WaitableSet set, WaitableInfoState waitableInfoState) 
-    {
-        // Store the task completion source so we can complete it later
-        AddTaskToWaitables(set.Handle, writer.Handle, waitableInfoState);
-        Interop.WaitableJoin(writer.Handle, set.Handle);
+        AddTaskToWaitables(set.Handle, readerWriterHandle, waitableInfoState);
+        Interop.WaitableJoin(readerWriterHandle, set.Handle);
     }
 
     // TODO: Revisit this to see if we can remove it.
@@ -292,7 +273,7 @@ public delegate uint FutureWrite(int handle, IntPtr buffer);
 
 public delegate uint StreamWrite(int handle, IntPtr buffer, uint length);
 public delegate uint StreamRead(int handle, IntPtr buffer, uint length);
-public delegate void Lower(object payload, nint size);
+public delegate void Lower(object payload, uint size);
 
 public struct FutureVTable
 {
@@ -460,12 +441,12 @@ public abstract class ReaderBase : IFutureStream
             var tcs = new TaskCompletionSource<int>();
             if(AsyncSupport.WaitableSet == null)
             {
-            Console.WriteLine("FutureReader Read Blocked creating WaitableSet");
+                Console.WriteLine("FutureReader Read Blocked creating WaitableSet");
                 AsyncSupport.WaitableSet = AsyncSupport.WaitableSetNew();
             }
             Console.WriteLine("blocked read before join");
 
-            Join(AsyncSupport.WaitableSet, tcs);
+            AsyncSupport.Join(Handle, AsyncSupport.WaitableSet, new WaitableInfoState(tcs, this));
             Console.WriteLine("blocked read after join");
             return tcs.Task;
         }
@@ -476,8 +457,6 @@ public abstract class ReaderBase : IFutureStream
 
         throw new NotImplementedException(status.State.ToString());
     }
-
-    internal abstract void Join(WaitableSet waitableSet, TaskCompletionSource<int> tcs);
 
     void IFutureStream.FreeBuffer()
     {
@@ -535,11 +514,6 @@ public class FutureReader : ReaderBase
     {
         VTable.DropReader(Handle);
     }
-
-    internal override void Join(WaitableSet waitableSet, TaskCompletionSource<int> tcs)
-    {
-        AsyncSupport.Join(this, waitableSet, new WaitableInfoState(tcs, this));
-    }
 }
 
 public class FutureReader<T>(int handle, FutureVTable vTable) : ReaderBase(handle)
@@ -562,11 +536,6 @@ public class FutureReader<T>(int handle, FutureVTable vTable) : ReaderBase(handl
     public unsafe Task Read<T>(T buffer)
     {
         return ReadInternal(() => LiftBuffer(buffer), 1);
-    }
-
-    internal override void Join(WaitableSet waitableSet, TaskCompletionSource<int> tcs)
-    {
-        AsyncSupport.Join(this, waitableSet, new WaitableInfoState(tcs, this));
     }
 
     internal override uint VTableRead(IntPtr ptr, int length)
@@ -603,11 +572,6 @@ public class StreamReader : ReaderBase
     {
         VTable.DropReader(Handle);
     }
-
-    internal override void Join(WaitableSet waitableSet, TaskCompletionSource<int> tcs)
-    {
-        AsyncSupport.Join(this, waitableSet, new WaitableInfoState(tcs, this));
-    }
 }
 
 public class StreamReader<T>(int handle, StreamVTable vTable) :  ReaderBase(handle)
@@ -637,24 +601,38 @@ public class StreamReader<T>(int handle, StreamVTable vTable) :  ReaderBase(hand
         return VTable.Read(Handle, ptr, (uint)length);
     }
 
-    internal override void Join(WaitableSet waitableSet, TaskCompletionSource<int> tcs)
-    {
-        AsyncSupport.Join(this, waitableSet, new WaitableInfoState(tcs, this));
-    }
-
     internal override void VTableDrop()
     {
         VTable.DropReader(Handle);
     }
 }
 
-public class FutureWriter(int handle, FutureVTable vTable) : IFutureStream
+public abstract class WriterBase : IFutureStream
 {
-    public int Handle { get; } = handle;
-    public FutureVTable VTable { get; private set; } = vTable;
+    private GCHandle? bufferHandle;
     private bool readerDropped;
 
-    public Task Write()
+    internal WriterBase(int handle)
+    {
+        Handle = handle;
+    }
+
+    internal int Handle { get; private set; }
+
+    internal int TakeHandle()
+    {
+        if (Handle == 0)
+        {
+            throw new InvalidOperationException("Handle already taken");
+        }
+        var handle = Handle;
+        Handle = 0;
+        return handle;
+    }
+
+    internal abstract uint VTableWrite(IntPtr bufferPtr, int length);
+
+    internal unsafe Task<int> WriteInternal(Func<GCHandle?> lowerPayload, int length)
     {
         if (Handle == 0)
         {
@@ -665,226 +643,26 @@ public class FutureWriter(int handle, FutureVTable vTable) : IFutureStream
         {
             throw new StreamDroppedException();    
         }
+        bufferHandle = lowerPayload();
 
-        var status = new WaitableStatus(VTable.Write(Handle, IntPtr.Zero));
+        var status = new WaitableStatus(VTableWrite(bufferHandle == null ? IntPtr.Zero : bufferHandle.Value.AddrOfPinnedObject(), length));
         if (status.IsBlocked)
         {
             Console.WriteLine("blocked write");
-            var tcs = new TaskCompletionSource();
-            if(AsyncSupport.WaitableSet == null)
-            {
-                AsyncSupport.WaitableSet = AsyncSupport.WaitableSetNew();
-            }
-            Console.WriteLine("blocked write before join");
-            AsyncSupport.Join(this, AsyncSupport.WaitableSet, new WaitableInfoState(tcs, this));
-            Console.WriteLine("blocked write after join");
-            return tcs.Task;
-        }
-
-        if (status.IsCompleted)
-        {
-            return Task.CompletedTask;
-        }
-
-        throw new NotImplementedException($"Unsupported write status {status.State}");
-    }
-
-    void IFutureStream.FreeBuffer()
-    {
-    }
-
-    void IFutureStream.OtherSideDropped()
-    {
-        readerDropped = true;
-    }
-
-    void Dispose(bool _disposing)
-    {
-        // Free unmanaged resources if any.
-        if (Handle != 0)
-        {
-            VTable.DropWriter(Handle);
-        }
-    }
-
-    public void Dispose()
-    {
-        Dispose(true);
-        GC.SuppressFinalize(this);
-    }
-
-    ~FutureWriter()
-    {
-        Dispose(false);
-    }
-}
-
-public class FutureWriter<T>(int handle, FutureVTable vTable) : IFutureStream
-{
-    public int Handle { get; } = handle;
-    public FutureVTable VTable { get; private set; } = vTable;
-
-    // TODO: Generate per type for this instrinsic.
-    public Task Write()
-    {
-        // TODO: Generate for the interop name.
-        if (Handle == 0)
-        {
-            throw new InvalidOperationException("Handle already taken");
-        }
-
-        var status = new WaitableStatus(VTable.Write(Handle, IntPtr.Zero));
-        if (status.IsBlocked)
-        {
-            //TODO: store somewhere so we can complete it later.
-            var tcs = new TaskCompletionSource();
-            return tcs.Task;
-        }
-
-        throw new NotImplementedException($"Unsupported write status {status.State}");
-    }
-
-    void IFutureStream.FreeBuffer()
-    {
-    }
-
-    void IFutureStream.OtherSideDropped()
-    {
-    }
-
-    void Dispose(bool _disposing)
-    {
-        // Free unmanaged resources if any.
-        if (Handle != 0)
-        {
-            VTable.DropWriter(Handle);
-        }
-    }
-
-    public void Dispose()
-    {
-        Dispose(true);
-        GC.SuppressFinalize(this);
-    }
-
-    ~FutureWriter()
-    {
-        Dispose(false);
-    }
-}
-
-/**
- * Helpers for stream writer support.
- */
-public class StreamWriter(int handle, StreamVTable vTable) : IFutureStream
-{
-    private GCHandle bufferHandle;
-    private bool readerDropped;
-
-    public int Handle { get; } = handle;
-    public StreamVTable VTable { get; private set; } = vTable;
-
-    // TODO: Generate per type for this instrinsic.
-    public Task Write()
-    {
-        // TODO: Generate for the interop name.
-        if (Handle == 0)
-        {
-            throw new InvalidOperationException("Handle already taken");
-        }
-
-        // TODO: for void streams, what should this do?
-        var status = new WaitableStatus(VTable.Write(Handle, IntPtr.Zero, 0));
-        if (status.IsBlocked)
-        {
-            //TODO: store somewhere so we can complete it later.
-            var tcs = new TaskCompletionSource();
-            return tcs.Task;
-        }
-
-        return Task.CompletedTask;
-    }
-
-    void IFutureStream.FreeBuffer()
-    {
-        bufferHandle.Free();
-    }
-
-    void IFutureStream.OtherSideDropped()
-    {
-        readerDropped = true;
-    }
-
-    void Dispose(bool _disposing)
-    {
-        // Free unmanaged resources if any.
-        if (Handle != 0)
-        {
-            VTable.DropWriter(Handle);
-        }
-    }
-
-    public void Dispose()
-    {
-        Dispose(true);
-        GC.SuppressFinalize(this);
-    }
-
-    ~StreamWriter()
-    {
-        Dispose(false);
-    }
-}
-
-public class StreamWriter<T>(int handle, StreamVTable vTable) : IFutureStream
-{
-    private GCHandle bufferHandle;
-    private bool readerDropped;
-    public int Handle { get; } = handle;
-    public StreamVTable VTable { get; private set; } = vTable;
-
-    // TODO: Generate per type for this instrinsic.
-    public Task<int> Write(T[] payload)
-    {
-        // TODO: Generate for the interop name.
-        if (Handle == 0)
-        {
-            throw new InvalidOperationException("Handle already taken");
-        }
-
-        if (readerDropped)
-        {
-            throw new StreamDroppedException();    
-        }
-
-        if (VTable.Lower == null)
-        {
-            bufferHandle = GCHandle.Alloc(payload, GCHandleType.Pinned);
-        }
-        else
-        {
-            // Lower the payload
-            throw new NotSupportedException("StreamWriter Write where the payload must be lowered.");
-            // var loweredPayload = VTable.Lower(payload);
-        }
-        var status = new WaitableStatus(VTable.Write(Handle, bufferHandle.AddrOfPinnedObject(), (uint)payload.Length));
-        if (status.IsBlocked)
-        {
             var tcs = new TaskCompletionSource<int>();
-            Console.WriteLine("blocked write");
             if(AsyncSupport.WaitableSet == null)
             {
                 AsyncSupport.WaitableSet = AsyncSupport.WaitableSetNew();
             }
             Console.WriteLine("blocked write before join");
-            AsyncSupport.Join(this, AsyncSupport.WaitableSet, new WaitableInfoState(tcs, this));
+            AsyncSupport.Join(Handle, AsyncSupport.WaitableSet, new WaitableInfoState(tcs, this));
             Console.WriteLine("blocked write after join");
             return tcs.Task;
         }
 
         if (status.IsCompleted)
         {
-            bufferHandle.Free();
+            bufferHandle?.Free();
             return Task.FromResult((int)status.Count);
         }
 
@@ -893,7 +671,7 @@ public class StreamWriter<T>(int handle, StreamVTable vTable) : IFutureStream
 
     void IFutureStream.FreeBuffer()
     {
-        bufferHandle.Free();
+        bufferHandle?.Free();
     }
 
     void IFutureStream.OtherSideDropped()
@@ -901,12 +679,14 @@ public class StreamWriter<T>(int handle, StreamVTable vTable) : IFutureStream
         readerDropped = true;
     }
 
+    internal abstract void VTableDrop();
+
     void Dispose(bool _disposing)
     {
         // Free unmanaged resources if any.
         if (Handle != 0)
         {
-            VTable.DropWriter(Handle);
+            VTableDrop();
         }
     }
 
@@ -916,9 +696,106 @@ public class StreamWriter<T>(int handle, StreamVTable vTable) : IFutureStream
         GC.SuppressFinalize(this);
     }
 
-    ~StreamWriter()
+    ~WriterBase()
     {
         Dispose(false);
+    }
+}
+
+public class FutureWriter(int handle, FutureVTable vTable) : WriterBase(handle)
+{
+    public FutureVTable VTable { get; private set; } = vTable;
+
+    public Task<int> Write()
+    {
+        return WriteInternal(() => null, 0);
+    }
+
+    internal override uint VTableWrite(IntPtr bufferPtr, int length)
+    {
+        return VTable.Write(Handle, bufferPtr);
+    }
+
+    internal override void VTableDrop()
+    {
+        VTable.DropWriter(Handle);
+    }
+}
+
+public class FutureWriter<T>(int handle, FutureVTable vTable) : WriterBase(handle)
+{
+    public FutureVTable VTable { get; private set; } = vTable;
+
+    // TODO: Generate per type for this instrinsic.
+    public Task Write()
+    {
+        // TODO: Lower T
+        return WriteInternal(() => null, 1);
+    }
+
+    internal override uint VTableWrite(IntPtr bufferPtr, int length)
+    {
+        return VTable.Write(Handle, bufferPtr);
+    }
+
+    internal override void VTableDrop()
+    {
+        VTable.DropWriter(Handle);
+    }
+}
+
+public class StreamWriter(int handle, StreamVTable vTable) : WriterBase(handle)
+{
+    public StreamVTable VTable { get; private set; } = vTable;
+
+    public Task Write()
+    {
+        return WriteInternal(() => null, 0);
+    }
+
+    internal override uint VTableWrite(IntPtr bufferPtr, int length)
+    {
+        return VTable.Write(Handle, bufferPtr, (uint)length);
+    }
+
+    internal override void VTableDrop()
+    {
+        VTable.DropWriter(Handle);
+    }
+}
+
+public class StreamWriter<T>(int handle, StreamVTable vTable) : WriterBase(handle)
+{
+    private GCHandle bufferHandle;
+    public StreamVTable VTable { get; private set; } = vTable;
+
+    private GCHandle LowerPayload<T>(T[] payload)
+    {
+        if (VTable.Lower == null)
+        {
+            return GCHandle.Alloc(payload, GCHandleType.Pinned);
+        }
+        else
+        {
+            // Lower the payload
+            throw new NotSupportedException("StreamWriter Write where the payload must be lowered.");
+            // var loweredPayload = VTable.Lower(payload);
+        }
+    }
+
+    public Task<int> Write(T[] payload)
+    {
+        return WriteInternal(() => LowerPayload(payload), payload.Length);
+    }
+
+    internal override uint VTableWrite(IntPtr bufferPtr, int length)
+    {
+        return VTable.Write(Handle, bufferPtr, (uint)length);
+    }
+
+    internal override void VTableDrop()
+    {
+        VTable.DropWriter(Handle);
     }
 }
 
