@@ -427,13 +427,19 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::FutureLift { payload, .. } => {
                 let async_support = self.r#gen.r#gen.async_support_path();
                 let op = &operands[0];
-                let name = payload
-                    .as_ref()
-                    .map(|ty| {
-                        self.r#gen
-                            .type_name_owned_with_id(ty, Identifier::StreamOrFuturePayload)
-                    })
-                    .unwrap_or_else(|| "()".into());
+                let name = match payload {
+                    Some(Type::Id(type_id)) => {
+                        let dealiased_id = dealias(resolve, *type_id);
+                        self.r#gen.type_name_owned_with_id(
+                            &Type::Id(dealiased_id),
+                            Identifier::StreamOrFuturePayload,
+                        )
+                    }
+                    Some(ty) => self
+                        .r#gen
+                        .type_name_owned_with_id(ty, Identifier::StreamOrFuturePayload),
+                    None => "()".into(),
+                };
                 let ordinal = self
                     .r#gen
                     .r#gen
@@ -455,13 +461,19 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::StreamLift { payload, .. } => {
                 let async_support = self.r#gen.r#gen.async_support_path();
                 let op = &operands[0];
-                let name = payload
-                    .as_ref()
-                    .map(|ty| {
-                        self.r#gen
-                            .type_name_owned_with_id(ty, Identifier::StreamOrFuturePayload)
-                    })
-                    .unwrap_or_else(|| "()".into());
+                let name = match payload {
+                    Some(Type::Id(type_id)) => {
+                        let dealiased_id = dealias(resolve, *type_id);
+                        self.r#gen.type_name_owned_with_id(
+                            &Type::Id(dealiased_id),
+                            Identifier::StreamOrFuturePayload,
+                        )
+                    }
+                    Some(ty) => self
+                        .r#gen
+                        .type_name_owned_with_id(ty, Identifier::StreamOrFuturePayload),
+                    None => "()".into(),
+                };
                 let ordinal = self
                     .r#gen
                     .r#gen
@@ -781,6 +793,24 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.push_str("\n}\n");
                 results.push(format!("{result}"));
                 results.push(len);
+            }
+
+            Instruction::FixedLengthListLowerToMemory {
+                element,
+                size: _,
+                id: _,
+            } => {
+                let body = self.blocks.pop().unwrap();
+                let vec = operands[0].clone();
+                let target = operands[1].clone();
+                let size = self.r#gen.sizes.size(element);
+                self.push_str(&format!("for (i, e) in {vec}.into_iter().enumerate() {{\n",));
+                self.push_str(&format!(
+                    "let base = {target}.add(i * {});\n",
+                    size.format(POINTER_SIZE_EXPRESSION)
+                ));
+                self.push_str(&body);
+                self.push_str("\n}\n");
             }
 
             Instruction::ListLift { element, .. } => {
@@ -1209,6 +1239,53 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::DropHandle { .. } => {
                 uwriteln!(self.src, "let _ = {};", operands[0]);
+            }
+            Instruction::FixedLengthListLift {
+                element: _,
+                size,
+                id: _,
+            } => {
+                let tmp = self.tmp();
+                let result = format!("result{tmp}");
+                self.push_str(&format!("let {result} = [",));
+                for a in operands.drain(0..(*size as usize)) {
+                    self.push_str(&a);
+                    self.push_str(", ");
+                }
+                self.push_str("];\n");
+                results.push(result);
+            }
+            Instruction::FixedLengthListLower {
+                element: _,
+                size,
+                id: _,
+            } => {
+                for i in 0..(*size as usize) {
+                    results.push(format!("{}[{i}]", operands[0]));
+                }
+            }
+            Instruction::FixedLengthListLiftFromMemory {
+                element,
+                size,
+                id: _,
+            } => {
+                let body = self.blocks.pop().unwrap();
+                let elemsize = self
+                    .r#gen
+                    .sizes
+                    .size(element)
+                    .format(POINTER_SIZE_EXPRESSION);
+                let base = operands[0].clone();
+                let tmp = self.tmp();
+                let index_var = format!("idx{tmp}");
+                self.push_str(&format!(
+                    " let array{tmp}: [_; {size}] = core::array::from_fn(|{index_var}| {{
+                            let base = {base}.add({index_var} * {elemsize});
+                            {body} 
+                        }});"
+                ));
+                let result = format!("array{tmp}");
+                results.push(result);
             }
         }
     }

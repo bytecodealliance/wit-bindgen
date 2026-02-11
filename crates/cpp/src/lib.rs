@@ -15,7 +15,7 @@ use wit_bindgen_core::{
     abi::{self, AbiVariant, Bindgen, Bitcast, LiftLower, WasmSignature, WasmType},
     name_package_module, uwrite, uwriteln,
     wit_parser::{
-        Alignment, ArchitectureSize, Docs, Function, FunctionKind, Handle, Int, InterfaceId,
+        Alignment, ArchitectureSize, Docs, Function, FunctionKind, Handle, Int, InterfaceId, Param,
         Resolve, SizeAlign, Stability, Type, TypeDef, TypeDefKind, TypeId, TypeOwner, WorldId,
         WorldKey,
     },
@@ -74,6 +74,7 @@ struct Includes {
     // needs wit types
     needs_wit: bool,
     needs_memory: bool,
+    needs_array: bool,
 }
 
 #[derive(Default)]
@@ -427,6 +428,9 @@ impl Cpp {
         }
         if self.dependencies.needs_memory {
             self.include("<memory>");
+        }
+        if self.dependencies.needs_array {
+            self.include("<array>");
         }
         if self.dependencies.needs_bit {
             self.include("<bit>");
@@ -887,7 +891,7 @@ impl CppInterfaceGenerator<'_> {
             TypeDefKind::Future(_) => todo!("generate for future"),
             TypeDefKind::Stream(_) => todo!("generate for stream"),
             TypeDefKind::Handle(_) => todo!("generate for handle"),
-            TypeDefKind::FixedSizeList(_, _) => todo!(),
+            TypeDefKind::FixedLengthList(_, _) => todo!(),
             TypeDefKind::Map(_, _) => todo!(),
             TypeDefKind::Unknown => unreachable!(),
         }
@@ -1116,7 +1120,13 @@ impl CppInterfaceGenerator<'_> {
         {
             res.static_member = true;
         }
-        for (i, (name, param)) in func.params.iter().enumerate() {
+        for (
+            i,
+            Param {
+                name, ty: param, ..
+            },
+        ) in func.params.iter().enumerate()
+        {
             if i == 0
                 && name == "self"
                 && (matches!(&func.kind, FunctionKind::Method(_))
@@ -1310,7 +1320,7 @@ impl CppInterfaceGenerator<'_> {
                         uwriteln!(
                             self.r#gen.c_src.src,
                             "{wasm_sig}({});",
-                            func.params.first().unwrap().0
+                            func.params.first().unwrap().name
                         );
                     }
                     LiftLower::LowerArgsLiftResults => {
@@ -1343,7 +1353,7 @@ impl CppInterfaceGenerator<'_> {
                         self.r#gen.c_src.src,
                         "return {wasm_sig}(({}){});",
                         self.r#gen.opts.ptr_type(),
-                        func.params.first().unwrap().0
+                        func.params.first().unwrap().name
                     );
                 }
                 SpecialMethod::ResourceRep => {
@@ -1360,7 +1370,7 @@ impl CppInterfaceGenerator<'_> {
                         self.r#gen.c_src.src,
                         "return ({}*){wasm_sig}({});",
                         classname,
-                        func.params.first().unwrap().0
+                        func.params.first().unwrap().name
                     );
                 }
                 SpecialMethod::Allocate => unreachable!(),
@@ -1698,7 +1708,13 @@ impl CppInterfaceGenerator<'_> {
                 TypeDefKind::Future(_) => todo!(),
                 TypeDefKind::Stream(_) => todo!(),
                 TypeDefKind::Type(ty) => self.type_name(ty, from_namespace, flavor),
-                TypeDefKind::FixedSizeList(_, _) => todo!(),
+                TypeDefKind::FixedLengthList(ty, size) => {
+                    self.r#gen.dependencies.needs_array = true;
+                    format!(
+                        "std::array<{}, {size}>",
+                        self.type_name(ty, from_namespace, flavor)
+                    )
+                }
                 TypeDefKind::Map(_, _) => todo!(),
                 TypeDefKind::Unknown => todo!(),
             },
@@ -1906,10 +1922,15 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                 let func = Function {
                     name,
                     kind: FunctionKind::Static(id),
-                    params: vec![("self".into(), Type::Id(id))],
+                    params: vec![Param {
+                        name: "self".into(),
+                        ty: Type::Id(id),
+                        span: Default::default(),
+                    }],
                     result: None,
                     docs: Docs::default(),
                     stability: Stability::Unknown,
+                    span: Default::default(),
                 };
                 self.generate_function(&func, &TypeOwner::Interface(intf), variant);
             }
@@ -1943,6 +1964,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                             result: Some(Type::Id(id)),
                             docs: Docs::default(),
                             stability: Stability::Unknown,
+                            span: Default::default(),
                         };
                         self.generate_function(&func2, &TypeOwner::Interface(intf), variant);
                     }
@@ -1968,30 +1990,45 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                 let func = Function {
                     name: "[resource-new]".to_string() + name,
                     kind: FunctionKind::Static(id),
-                    params: vec![("self".into(), Type::Id(id))],
+                    params: vec![Param {
+                        name: "self".into(),
+                        ty: Type::Id(id),
+                        span: Default::default(),
+                    }],
                     result: Some(id_type),
                     docs: Docs::default(),
                     stability: Stability::Unknown,
+                    span: Default::default(),
                 };
                 self.generate_function(&func, &TypeOwner::Interface(intf), variant);
 
                 let func1 = Function {
                     name: "[resource-rep]".to_string() + name,
                     kind: FunctionKind::Static(id),
-                    params: vec![("id".into(), id_type)],
+                    params: vec![Param {
+                        name: "id".into(),
+                        ty: id_type,
+                        span: Default::default(),
+                    }],
                     result: Some(Type::Id(id)),
                     docs: Docs::default(),
                     stability: Stability::Unknown,
+                    span: Default::default(),
                 };
                 self.generate_function(&func1, &TypeOwner::Interface(intf), variant);
 
                 let func2 = Function {
                     name: "[resource-drop]".to_string() + name,
                     kind: FunctionKind::Static(id),
-                    params: vec![("id".into(), id_type)],
+                    params: vec![Param {
+                        name: "id".into(),
+                        ty: id_type,
+                        span: Default::default(),
+                    }],
                     result: None,
                     docs: Docs::default(),
                     stability: Stability::Unknown,
+                    span: Default::default(),
                 };
                 self.generate_function(&func2, &TypeOwner::Interface(intf), variant);
             }
@@ -2532,7 +2569,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     "auto base = {ptr} + i * {size};\n",
                     size = size.format(POINTER_SIZE_EXPRESSION)
                 ));
-                self.push_str(&format!("auto&& IterElem = {val}[i];\n"));
+                self.push_str(&format!("auto&& iter_elem = {val}[i];\n"));
                 self.push_str(&format!("{}\n", body.0));
                 self.push_str("}\n");
                 if realloc.is_none() {
@@ -2648,7 +2685,94 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     results.push(move_if_necessary(&result));
                 }
             }
-            abi::Instruction::IterElem { .. } => results.push("IterElem".to_string()),
+            abi::Instruction::FixedLengthListLift {
+                element,
+                size,
+                id: _,
+            } => {
+                let tmp = self.tmp();
+                let result = format!("result{tmp}");
+                let typename = self
+                    .r#gen
+                    .type_name(element, &self.namespace, Flavor::InStruct);
+                self.push_str(&format!("std::array<{typename}, {size}> {result} = {{",));
+                for a in operands.drain(0..(*size as usize)) {
+                    self.push_str(&a);
+                    self.push_str(", ");
+                }
+                self.push_str("};\n");
+                results.push(result);
+            }
+            abi::Instruction::FixedLengthListLiftFromMemory {
+                element,
+                size: elemsize,
+                id: _,
+            } => {
+                let body = self.blocks.pop().unwrap();
+                let tmp = self.tmp();
+                let vec = format!("array{tmp}");
+                let source = operands[0].clone();
+                let size = self.r#gen.sizes.size(element);
+                let size_str = size.format(POINTER_SIZE_EXPRESSION);
+                let typename = self
+                    .r#gen
+                    .type_name(element, &self.namespace, Flavor::InStruct);
+                let ptr_type = self.r#gen.r#gen.opts.ptr_type();
+                self.push_str(&format!("std::array<{typename}, {elemsize}> {vec};\n"));
+                self.push_str(&format!(
+                    "{{
+                    {ptr_type} outer_base = {source};\n"
+                ));
+                let source: String = "outer_base".into();
+                // let vec: String = "outer_vec".into();
+                self.push_str(&format!("for (unsigned i = 0; i<{elemsize}; ++i) {{\n",));
+                self.push_str(&format!("{ptr_type} base = {source} + i * {size_str};\n"));
+                self.push_str(&body.0);
+                self.push_str(&format!("{vec}[i] = {};", body.1[0]));
+                self.push_str("\n}\n}\n");
+                results.push(vec);
+            }
+            abi::Instruction::FixedLengthListLower {
+                element: _,
+                size,
+                id: _,
+            } => {
+                for i in 0..(*size as usize) {
+                    results.push(format!("{}[{i}]", operands[0]));
+                }
+            }
+            abi::Instruction::FixedLengthListLowerToMemory {
+                element,
+                size: elemsize,
+                id: _,
+            } => {
+                let body = self.blocks.pop().unwrap();
+                let vec = operands[0].clone();
+                let target = operands[1].clone();
+                let size = self.r#gen.sizes.size(element);
+                let size_str = size.format(POINTER_SIZE_EXPRESSION);
+                let typename = self
+                    .r#gen
+                    .type_name(element, &self.namespace, Flavor::InStruct);
+                let ptr_type = self.r#gen.r#gen.opts.ptr_type();
+                self.push_str(&format!(
+                    "{{
+                    {ptr_type} outer_base = {target};\n"
+                ));
+                let target: String = "outer_base".into();
+                self.push_str(&format!(
+                    "std::array<{typename}, {elemsize}>& outer_vec = {vec};\n"
+                ));
+                let vec: String = "outer_vec".into();
+                self.push_str(&format!("for (unsigned i = 0; i<{vec}.size(); ++i) {{\n",));
+                self.push_str(&format!(
+                    "{ptr_type} base = {target} + i * {size_str};
+                     {typename}& iter_elem = {vec}[i];\n"
+                ));
+                self.push_str(&body.0);
+                self.push_str("\n}\n}\n");
+            }
+            abi::Instruction::IterElem { .. } => results.push("iter_elem".to_string()),
             abi::Instruction::IterBasePointer => results.push("base".to_string()),
             abi::Instruction::RecordLower { record, .. } => {
                 let op = &operands[0];
@@ -3254,7 +3378,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                             self.src.push_str(">(");
                         }
                         if *amt == 1 {
-                            if operands[0].starts_with("std::move(") {
+                            if operands[0].starts_with("std::move(") && !operands[0].contains('.') {
                                 // remove the std::move due to return value optimization (and complex rules about when std::move harms)
                                 self.src.push_str(&operands[0][9..]);
                             } else {

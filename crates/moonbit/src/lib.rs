@@ -14,7 +14,8 @@ use wit_bindgen_core::{
     uwrite, uwriteln,
     wit_parser::{
         Alignment, ArchitectureSize, Docs, Enum, Flags, FlagsRepr, Function, Int, InterfaceId,
-        Record, Resolve, Result_, SizeAlign, Tuple, Type, TypeId, Variant, WorldId, WorldKey,
+        Param, Record, Resolve, Result_, SizeAlign, Tuple, Type, TypeId, Variant, WorldId,
+        WorldKey,
     },
 };
 
@@ -603,7 +604,7 @@ impl InterfaceGenerator<'_> {
             self.name,
             func.params
                 .iter()
-                .map(|(name, _)| name.to_moonbit_ident())
+                .map(|Param { name, .. }| name.to_moonbit_ident())
                 .collect(),
         );
 
@@ -2696,6 +2697,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::ErrorContextLower { .. }
             | Instruction::ErrorContextLift { .. }
             | Instruction::DropHandle { .. } => todo!(),
+            Instruction::FixedLengthListLift { .. } => todo!(),
+            Instruction::FixedLengthListLower { .. } => todo!(),
+            Instruction::FixedLengthListLowerToMemory { .. } => todo!(),
+            Instruction::FixedLengthListLiftFromMemory { .. } => todo!(),
         }
     }
 

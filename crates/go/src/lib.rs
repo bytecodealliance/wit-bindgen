@@ -15,7 +15,7 @@ use wit_bindgen_core::abi::{
 };
 use wit_bindgen_core::wit_parser::{
     Alignment, ArchitectureSize, Docs, Enum, Flags, FlagsRepr, Function, FunctionKind, Handle, Int,
-    InterfaceId, Package, PackageName, Record, Resolve, Result_, SizeAlign, Tuple, Type,
+    InterfaceId, Package, PackageName, Param, Record, Resolve, Result_, SizeAlign, Tuple, Type,
     TypeDefKind, TypeId, TypeOwner, Variant, WorldId, WorldKey,
 };
 use wit_bindgen_core::{
@@ -661,6 +661,14 @@ func Lift{upper_kind}{camel}(handle int32) *wit_types.{upper_kind}Reader[{payloa
 }
 
 impl WorldGenerator for Go {
+    // FIXME(#1527): this caused failures in CI at
+    // https://github.com/bytecodealliance/wit-bindgen/actions/runs/21880247244/job/63160400774?pr=1526
+    // and should be fixed at some point by deleting this method and getting
+    // tests passing again.
+    fn uses_nominal_type_ids(&self) -> bool {
+        false
+    }
+
     fn preprocess(&mut self, resolve: &Resolve, world: WorldId) {
         _ = world;
         self.sizes.fill(resolve);
@@ -985,7 +993,7 @@ impl Go {
                 func.params
                     .iter()
                     .skip(if has_self { 1 } else { 0 })
-                    .map(|(name, _)| name.to_lower_camel_case()),
+                    .map(|Param { name, .. }| name.to_lower_camel_case()),
             )
             .collect::<Vec<_>>();
 
@@ -1011,13 +1019,13 @@ impl Go {
                 let abi = generator
                     .generator
                     .sizes
-                    .record(func.params.iter().map(|(_, ty)| ty));
+                    .record(func.params.iter().map(|Param { ty, .. }| ty));
                 let size = abi.size.format(POINTER_SIZE_EXPRESSION);
                 let align = abi.align.format(POINTER_SIZE_EXPRESSION);
                 let offsets = generator
                     .generator
                     .sizes
-                    .field_offsets(func.params.iter().map(|(_, ty)| ty));
+                    .field_offsets(func.params.iter().map(|Param { ty, .. }| ty));
 
                 for (name, (offset, ty)) in go_param_names.iter().zip(offsets) {
                     let offset = offset.format(POINTER_SIZE_EXPRESSION);
@@ -1042,7 +1050,7 @@ impl Go {
                 let wasm_params = go_param_names
                     .iter()
                     .zip(&func.params)
-                    .flat_map(|(name, (_, ty))| {
+                    .flat_map(|(name, Param { ty, .. })| {
                         abi::lower_flat(resolve, &mut generator, name.clone(), ty)
                     })
                     .collect();
@@ -1341,7 +1349,7 @@ func wasm_export_{name}({params}) {results} {{
         func.params
             .iter()
             .skip(if has_self { 1 } else { 0 })
-            .map(|(name, ty)| {
+            .map(|Param { name, ty, .. }| {
                 let name = name.to_lower_camel_case();
                 let ty = self.type_name(resolve, *ty, interface, in_import, imports);
                 format!("{prefix}{name} {ty}")
@@ -1718,7 +1726,7 @@ for index, {ITER_ELEMENT} := range {slice} {{
 for index := 0; index < int({length}); index++ {{
         {ITER_BASE_POINTER} := unsafe.Add(unsafe.Pointer({value}), index * {size})
         {body}
-        {result} = append({result}, {body_result})        
+        {result} = append({result}, {body_result})
 }}
 "
                 );
@@ -2514,7 +2522,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             self.src,
             "
 {docs}type {name} struct {{
-        {fields} 
+        {fields}
 }}"
         )
     }

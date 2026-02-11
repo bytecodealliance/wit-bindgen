@@ -36,8 +36,7 @@ pub struct RustWasm {
     export_modules: Vec<(String, Vec<String>)>,
     skip: HashSet<String>,
     interface_names: HashMap<InterfaceId, InterfaceName>,
-    /// Each imported and exported interface is stored in this map. Value indicates if last use was import.
-    interface_last_seen_as_import: HashMap<InterfaceId, bool>,
+    exported_resources: HashSet<TypeId>,
     import_funcs_called: bool,
     with_name_counter: usize,
     // Track which interfaces and types are generated. Remapped interfaces and types provided via `with`
@@ -275,6 +274,18 @@ pub struct Opts {
     #[cfg_attr(feature = "clap", clap(flatten))]
     #[cfg_attr(feature = "serde", serde(flatten))]
     pub async_: AsyncFilterSet,
+
+    /// Find all structurally equal types and only generate one type definition for
+    /// each equivalence class. Other types in the same class will be type aliases to the
+    /// generated type. This avoids clone when converting between types that are
+    /// structurally equal, which is useful when import and export the same interface.
+    ///
+    /// Types containing resource, future, or stream are never considered equal.
+    #[cfg_attr(
+        feature = "clap",
+        arg(long, require_equals = true, value_name = "true|false")
+    )]
+    pub merge_structurally_equal_types: Option<Option<bool>>,
 }
 
 impl Opts {
@@ -283,6 +294,18 @@ impl Opts {
         r.skip = self.skip.iter().cloned().collect();
         r.opts = self;
         r
+    }
+
+    fn merge_structurally_equal_types(&self) -> bool {
+        const DEFAULT: bool = false;
+        match self.merge_structurally_equal_types {
+            // no option passed, use the default
+            None => DEFAULT,
+            // --merge-structurally-equal-types
+            Some(None) => true,
+            // --merge-structurally-equal-types=val
+            Some(Some(val)) => val,
+        }
     }
 }
 
@@ -302,7 +325,7 @@ impl RustWasm {
         let world = resolve.select_world(&main_packages, world)?;
 
         let mut files = Files::default();
-        self.generate(&resolve, world, &mut files)?;
+        self.generate(&mut resolve, world, &mut files)?;
         let out_dir = std::env::var("OUT_DIR").expect("cargo sets OUT_DIR");
         let (name, contents) = files
             .iter()
@@ -446,7 +469,8 @@ impl RustWasm {
         };
 
         let remapped = entry.remapped;
-        self.interface_names.insert(id, entry);
+        let prev = self.interface_names.insert(id, entry);
+        assert!(prev.is_none());
 
         Ok(remapped)
     }
@@ -1082,6 +1106,9 @@ impl WorldGenerator for RustWasm {
                 "//   * disable-run-ctors-once-workaround"
             );
         }
+        if self.opts.merge_structurally_equal_types() {
+            uwriteln!(self.src_preamble, "//   * merge_structurally_equal_types");
+        }
         if let Some(s) = &self.opts.export_macro_name {
             uwriteln!(self.src_preamble, "//   * export-macro-name: {s}");
         }
@@ -1101,6 +1128,9 @@ impl WorldGenerator for RustWasm {
             uwriteln!(self.src_preamble, "//   * async: {opt}");
         }
         self.types.analyze(resolve);
+        if self.opts.merge_structurally_equal_types() {
+            self.types.collect_equal_types(resolve);
+        }
         self.world = Some(world);
 
         let world = &resolve.worlds[world];
@@ -1114,6 +1144,18 @@ impl WorldGenerator for RustWasm {
                         self.with.insert(name, TypeGeneration::Generate);
                     }
                 }
+            }
+        }
+
+        for item in world.exports.values() {
+            let WorldItem::Interface { id, .. } = item else {
+                continue;
+            };
+            for id in resolve.interfaces[*id].types.values().copied() {
+                let TypeDefKind::Resource = &resolve.types[id].kind else {
+                    continue;
+                };
+                assert!(self.exported_resources.insert(id));
             }
         }
 
@@ -1144,7 +1186,6 @@ impl WorldGenerator for RustWasm {
             self.generated_types.insert(full_name);
         }
 
-        self.interface_last_seen_as_import.insert(id, true);
         let wasm_import_module = resolve.name_world_key(name);
         let mut r#gen = self.interface(
             Identifier::Interface(id, name),
@@ -1195,13 +1236,12 @@ impl WorldGenerator for RustWasm {
         _files: &mut Files,
     ) -> Result<()> {
         let mut to_define = Vec::new();
-        for (name, ty_id) in resolve.interfaces[id].types.iter() {
+        for (ty_name, ty_id) in resolve.interfaces[id].types.iter() {
             let full_name = full_wit_type_name(resolve, *ty_id);
-            to_define.push((name, ty_id));
+            to_define.push((ty_name, ty_id));
             self.generated_types.insert(full_name);
         }
 
-        self.interface_last_seen_as_import.insert(id, false);
         let wasm_import_module = format!("[export]{}", resolve.name_world_key(name));
         let mut r#gen = self.interface(
             Identifier::Interface(id, name),
@@ -1214,8 +1254,8 @@ impl WorldGenerator for RustWasm {
             return Ok(());
         }
 
-        for (name, ty_id) in to_define {
-            r#gen.define_type(&name, *ty_id);
+        for (ty_name, ty_id) in to_define {
+            r#gen.define_type(&ty_name, *ty_id);
         }
 
         let macro_name =
@@ -1417,7 +1457,11 @@ impl WorldGenerator for RustWasm {
     }
 }
 
-fn compute_module_path(name: &WorldKey, resolve: &Resolve, is_export: bool) -> Vec<String> {
+pub(crate) fn compute_module_path(
+    name: &WorldKey,
+    resolve: &Resolve,
+    is_export: bool,
+) -> Vec<String> {
     let mut path = Vec::new();
     if is_export {
         path.push("exports".to_string());

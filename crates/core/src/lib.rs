@@ -23,7 +23,10 @@ pub enum Direction {
 }
 
 pub trait WorldGenerator {
-    fn generate(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) -> Result<()> {
+    fn generate(&mut self, resolve: &mut Resolve, id: WorldId, files: &mut Files) -> Result<()> {
+        if self.uses_nominal_type_ids() {
+            resolve.generate_nominal_type_ids(id);
+        }
         let world = &resolve.worlds[id];
         self.preprocess(resolve, id);
 
@@ -42,7 +45,7 @@ pub trait WorldGenerator {
                 WorldItem::Interface { id, .. } => {
                     self.import_interface(resolve, name, *id, files)?
                 }
-                WorldItem::Type(id) => types.push((unwrap_name(name), *id)),
+                WorldItem::Type { id, .. } => types.push((unwrap_name(name), *id)),
             }
         }
         if !types.is_empty() {
@@ -66,7 +69,7 @@ pub trait WorldGenerator {
             match export {
                 WorldItem::Function(f) => funcs.push((unwrap_name(name), f)),
                 WorldItem::Interface { id, .. } => interfaces.push((name, id)),
-                WorldItem::Type(_) => unreachable!(),
+                WorldItem::Type { .. } => unreachable!(),
             }
         }
         if !funcs.is_empty() {
@@ -79,6 +82,13 @@ pub trait WorldGenerator {
             self.export_interface(resolve, name, *id, files)?;
         }
         self.finish(resolve, id, files)
+    }
+
+    /// Whether or not this bindings generator expects
+    /// [`Resolve::generate_nominal_type_ids`] to be used before generating
+    /// bindings.
+    fn uses_nominal_type_ids(&self) -> bool {
+        true
     }
 
     fn finish_imports(&mut self, resolve: &Resolve, world: WorldId, files: &mut Files) {
@@ -166,25 +176,32 @@ pub trait InterfaceGenerator<'a> {
     }
 
     fn define_type(&mut self, name: &str, id: TypeId) {
-        let ty = &self.resolve().types[id];
-        match &ty.kind {
-            TypeDefKind::Record(record) => self.type_record(id, name, record, &ty.docs),
-            TypeDefKind::Resource => self.type_resource(id, name, &ty.docs),
-            TypeDefKind::Flags(flags) => self.type_flags(id, name, flags, &ty.docs),
-            TypeDefKind::Tuple(tuple) => self.type_tuple(id, name, tuple, &ty.docs),
-            TypeDefKind::Enum(enum_) => self.type_enum(id, name, enum_, &ty.docs),
-            TypeDefKind::Variant(variant) => self.type_variant(id, name, variant, &ty.docs),
-            TypeDefKind::Option(t) => self.type_option(id, name, t, &ty.docs),
-            TypeDefKind::Result(r) => self.type_result(id, name, r, &ty.docs),
-            TypeDefKind::List(t) => self.type_list(id, name, t, &ty.docs),
-            TypeDefKind::Type(t) => self.type_alias(id, name, t, &ty.docs),
-            TypeDefKind::Future(t) => self.type_future(id, name, t, &ty.docs),
-            TypeDefKind::Stream(t) => self.type_stream(id, name, t, &ty.docs),
-            TypeDefKind::Handle(_) => panic!("handle types do not require definition"),
-            TypeDefKind::FixedSizeList(..) => todo!(),
-            TypeDefKind::Map(..) => todo!(),
-            TypeDefKind::Unknown => unreachable!(),
-        }
+        define_type(self, name, id)
+    }
+}
+
+pub fn define_type<'a, T>(generator: &mut T, name: &str, id: TypeId)
+where
+    T: InterfaceGenerator<'a> + ?Sized,
+{
+    let ty = &generator.resolve().types[id];
+    match &ty.kind {
+        TypeDefKind::Record(record) => generator.type_record(id, name, record, &ty.docs),
+        TypeDefKind::Resource => generator.type_resource(id, name, &ty.docs),
+        TypeDefKind::Flags(flags) => generator.type_flags(id, name, flags, &ty.docs),
+        TypeDefKind::Tuple(tuple) => generator.type_tuple(id, name, tuple, &ty.docs),
+        TypeDefKind::Enum(enum_) => generator.type_enum(id, name, enum_, &ty.docs),
+        TypeDefKind::Variant(variant) => generator.type_variant(id, name, variant, &ty.docs),
+        TypeDefKind::Option(t) => generator.type_option(id, name, t, &ty.docs),
+        TypeDefKind::Result(r) => generator.type_result(id, name, r, &ty.docs),
+        TypeDefKind::List(t) => generator.type_list(id, name, t, &ty.docs),
+        TypeDefKind::Type(t) => generator.type_alias(id, name, t, &ty.docs),
+        TypeDefKind::Future(t) => generator.type_future(id, name, t, &ty.docs),
+        TypeDefKind::Stream(t) => generator.type_stream(id, name, t, &ty.docs),
+        TypeDefKind::Handle(_) => panic!("handle types do not require definition"),
+        TypeDefKind::FixedLengthList(..) => todo!(),
+        TypeDefKind::Map(..) => todo!(),
+        TypeDefKind::Unknown => unreachable!(),
     }
 }
 
@@ -196,6 +213,7 @@ pub trait AnonymousTypeGenerator<'a> {
     fn anonymous_type_option(&mut self, id: TypeId, ty: &Type, docs: &Docs);
     fn anonymous_type_result(&mut self, id: TypeId, ty: &Result_, docs: &Docs);
     fn anonymous_type_list(&mut self, id: TypeId, ty: &Type, docs: &Docs);
+    fn anonymous_type_fixed_length_list(&mut self, id: TypeId, ty: &Type, size: u32, docs: &Docs);
     fn anonymous_type_future(&mut self, id: TypeId, ty: &Option<Type>, docs: &Docs);
     fn anonymous_type_stream(&mut self, id: TypeId, ty: &Option<Type>, docs: &Docs);
     fn anonymous_type_type(&mut self, id: TypeId, ty: &Type, docs: &Docs);
@@ -218,7 +236,9 @@ pub trait AnonymousTypeGenerator<'a> {
             TypeDefKind::Future(f) => self.anonymous_type_future(id, f, &ty.docs),
             TypeDefKind::Stream(s) => self.anonymous_type_stream(id, s, &ty.docs),
             TypeDefKind::Handle(handle) => self.anonymous_type_handle(id, handle, &ty.docs),
-            TypeDefKind::FixedSizeList(..) => todo!(),
+            TypeDefKind::FixedLengthList(t, size) => {
+                self.anonymous_type_fixed_length_list(id, t, *size, &ty.docs)
+            }
             TypeDefKind::Map(..) => todo!(),
             TypeDefKind::Unknown => unreachable!(),
         }
