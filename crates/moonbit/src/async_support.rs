@@ -309,18 +309,18 @@ defer {cleanup_params}()\n{async_pkg}suspend_for_subtask({subtask}, cleanup_afte
         uwriteln!(
             lift,
             r#"
-fn wasmLift{camel_name}{index}Read(handle : Int, ptr : Int) -> Int = "[export]{module}" "[async-lower][future-read-{index}]{func_name}"
-fn wasmLift{camel_name}{index}CancelRead(_ : Int) -> Int = "[export]{module}" "[future-cancel-read-{index}]{func_name}"
-fn wasmLift{camel_name}{index}DropReadable(_ : Int) = "[export]{module}" "[future-drop-readable-{index}]{func_name}"
+fn wasmLift{camel_name}{index}Read(handle : Int, ptr : Int) -> Int = "{module}" "[async-lower][future-read-{index}]{func_name}"
+fn wasmLift{camel_name}{index}CancelRead(_ : Int) -> Int = "{module}" "[future-cancel-read-{index}]{func_name}"
+fn wasmLift{camel_name}{index}DropReadable(_ : Int) = "{module}" "[future-drop-readable-{index}]{func_name}"
     "#,
         );
         uwriteln!(
             lower,
             r#"
-fn wasmLower{camel_name}{index}New() -> UInt64 = "[export]{module}" "[future-new-{index}]{func_name}"
-fn wasmLower{camel_name}{index}Write(handle : Int, ptr : Int) -> Int = "[export]{module}" "[future-write-{index}]{func_name}"
-fn wasmLower{camel_name}{index}CancelWrite(_ : Int) -> Int = "[export]{module}" "[future-cancel-write-{index}]{func_name}"
-fn wasmLower{camel_name}{index}DropWritable(_ : Int) = "[export]{module}" "[future-drop-writable-{index}]{func_name}"
+fn wasmLower{camel_name}{index}New() -> UInt64 = "{module}" "[future-new-{index}]{func_name}"
+fn wasmLower{camel_name}{index}Write(handle : Int, ptr : Int) -> Int = "{module}" "[future-write-{index}]{func_name}"
+fn wasmLower{camel_name}{index}CancelWrite(_ : Int) -> Int = "{module}" "[future-cancel-write-{index}]{func_name}"
+fn wasmLower{camel_name}{index}DropWritable(_ : Int) = "{module}" "[future-drop-writable-{index}]{func_name}"
     "#
         );
 
@@ -509,18 +509,18 @@ fn wasmLower{camel_name}{index}(future : {lifted}) -> Int {{
         uwriteln!(
             lift,
             r#"
-fn wasmLift{camel_name}{index}Read(handle : Int, ptr : Int, len : Int) -> Int = "[export]{module}" "[async-lower][stream-read-{index}]{func_name}"
-fn wasmLift{camel_name}{index}CancelRead(_ : Int) -> Int = "[export]{module}" "[stream-cancel-read-{index}]{func_name}"
-fn wasmLift{camel_name}{index}DropReadable(_ : Int) = "[export]{module}" "[stream-drop-readable-{index}]{func_name}"
+fn wasmLift{camel_name}{index}Read(handle : Int, ptr : Int, len : Int) -> Int = "{module}" "[async-lower][stream-read-{index}]{func_name}"
+fn wasmLift{camel_name}{index}CancelRead(_ : Int) -> Int = "{module}" "[stream-cancel-read-{index}]{func_name}"
+fn wasmLift{camel_name}{index}DropReadable(_ : Int) = "{module}" "[stream-drop-readable-{index}]{func_name}"
     "#,
         );
         uwriteln!(
             lower,
             r#"
-fn wasmLower{camel_name}{index}New() -> UInt64 = "[export]{module}" "[stream-new-{index}]{func_name}"
-fn wasmLower{camel_name}{index}Write(handle : Int, ptr : Int, len : Int) -> Int = "[export]{module}" "[stream-write-{index}]{func_name}"
-fn wasmLower{camel_name}{index}CancelWrite(_ : Int) -> Int = "[export]{module}" "[stream-cancel-write-{index}]{func_name}"
-fn wasmLower{camel_name}{index}DropWritable(_ : Int) = "[export]{module}" "[stream-drop-writable-{index}]{func_name}"
+fn wasmLower{camel_name}{index}New() -> UInt64 = "{module}" "[stream-new-{index}]{func_name}"
+fn wasmLower{camel_name}{index}Write(handle : Int, ptr : Int, len : Int) -> Int = "{module}" "[stream-write-{index}]{func_name}"
+fn wasmLower{camel_name}{index}CancelWrite(_ : Int) -> Int = "{module}" "[stream-cancel-write-{index}]{func_name}"
+fn wasmLower{camel_name}{index}DropWritable(_ : Int) = "{module}" "[stream-drop-writable-{index}]{func_name}"
     "#
         );
 
