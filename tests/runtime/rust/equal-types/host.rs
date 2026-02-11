@@ -56,3 +56,24 @@ impl HGuest for Component {
         x
     }
 }
+
+const _: () = {
+    use crate::exports::test::equal_types::resources::*;
+
+    struct GuestResource;
+
+    impl Guest for Component {
+        type R1 = GuestResource;
+
+        // Intentionally swap the 1/2 relative to WIT to ensure that the types
+        // are equivalent.
+        fn alias_own(x: T2) -> T1 {
+            x
+        }
+        fn alias_aggregate(x: Option<T2>) -> Option<T1> {
+            x
+        }
+    }
+
+    impl GuestR1 for GuestResource {}
+};

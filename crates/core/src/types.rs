@@ -338,9 +338,9 @@ impl Types {
             (TypeDefKind::Handle(_), _) => false,
             (TypeDefKind::Unknown, _) => unreachable!(),
 
-            // TODO: for now consider all resources not-equal to each other.
-            // This is because the same type id can be used for both an imported
-            // and exported resource where those should be distinct types.
+            // Resources are only equal if their original ids are equal,
+            // otherwise all resources are un-equal to each other.
+            (TypeDefKind::Resource, TypeDefKind::Resource) => a == b,
             (TypeDefKind::Resource, _) => false,
         }
     }
