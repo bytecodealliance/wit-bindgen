@@ -275,12 +275,13 @@ pub struct Opts {
     #[cfg_attr(feature = "serde", serde(flatten))]
     pub async_: AsyncFilterSet,
 
-    /// Find all structurally equal types and only generate one type definition for
-    /// each equivalence class. Other types in the same class will be type aliases to the
-    /// generated type. This avoids clone when converting between types that are
-    /// structurally equal, which is useful when import and export the same interface.
+    /// Find all structurally equal types and only generate one type definition
+    /// for each equivalence class.
     ///
-    /// Types containing resource, future, or stream are never considered equal.
+    /// Other types in the same class will be type aliases to the generated
+    /// type. This avoids clone when converting between types that are
+    /// structurally equal, which is useful when import and export the same
+    /// interface.
     #[cfg_attr(
         feature = "clap",
         arg(long, require_equals = true, value_name = "true|false")
