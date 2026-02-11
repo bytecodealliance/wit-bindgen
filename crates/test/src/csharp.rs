@@ -42,11 +42,11 @@ impl LanguageMethods for Csharp {
     ) -> bool {
         // TODO: remove these exclusions as support is created
         matches!(
-            name,
+            name, 
             "error-context.wit"
                 | "resource-fallible-constructor.wit"
                 | "async-resource-func.wit"
-                | "import-export-stream.wit"
+                | "import-export-resource.wit"
         )
     }
 
