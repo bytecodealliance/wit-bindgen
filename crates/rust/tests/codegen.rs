@@ -142,6 +142,7 @@ mod newtyped_list {
         }
     }
 }
+
 #[allow(unused, reason = "testing codegen, not functionality")]
 mod retyped_list {
     use std::ops::Deref;
