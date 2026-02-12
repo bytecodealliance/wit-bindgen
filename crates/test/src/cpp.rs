@@ -42,22 +42,13 @@ impl LanguageMethods for Cpp {
     fn should_fail_verify(
         &self,
         name: &str,
-        _config: &crate::config::WitConfig,
+        config: &crate::config::WitConfig,
         _args: &[String],
     ) -> bool {
-        match name {
-            "async-trait-function.wit"
-            | "error-context.wit"
-            | "futures.wit"
-            | "import-export-future.wit"
-            | "import-export-stream.wit"
-            | "resources-with-futures.wit"
-            | "resources-with-streams.wit"
-            | "streams.wit"
-            | "async-resource-func.wit"
-            | "issue1514-6.wit" => true,
+        return match name {
+            "issue1514-6.wit" => true,
             _ => false,
-        }
+        } || config.async_;
     }
 
     fn prepare(&self, runner: &mut Runner) -> anyhow::Result<()> {

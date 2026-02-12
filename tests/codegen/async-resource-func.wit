@@ -1,3 +1,5 @@
+//@ async = true
+
 package foo:bar;
 
 world bindings {
