@@ -119,3 +119,9 @@ csharp = ['dep:wit-bindgen-csharp']
 csharp-mono = ['csharp']
 moonbit = ['dep:wit-bindgen-moonbit']
 async = []
+
+[dev-dependencies]
+wit-bindgen-core = { workspace = true }
+wit-bindgen-rust = { workspace = true }
+wit-bindgen-go = { workspace = true }
+wit-parser = { workspace = true }
