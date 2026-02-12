@@ -9,7 +9,8 @@ interface original {
 
 interface adapter {
   use original.{options};
-  f: func(x: options);
+  variant t { t }
+  f: func(x: options, t: t);
 }
 
 world root {

@@ -895,14 +895,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.push_str(&prev_src);
                 let constructor_type = match &func.kind {
                     FunctionKind::Freestanding | FunctionKind::AsyncFreestanding => {
-                        self.push_str(&format!("T::{}", to_rust_ident(func.item_name())));
+                        self.push_str(&format!("T_::{}", to_rust_ident(func.item_name())));
                         None
                     }
                     FunctionKind::Method(_)
                     | FunctionKind::Static(_)
                     | FunctionKind::AsyncMethod(_)
                     | FunctionKind::AsyncStatic(_) => {
-                        self.push_str(&format!("T::{}", to_rust_ident(func.item_name())));
+                        self.push_str(&format!("T_::{}", to_rust_ident(func.item_name())));
                         None
                     }
                     FunctionKind::Constructor(ty) => {
@@ -916,10 +916,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                         match return_type {
                             ConstructorReturnType::Self_ => {
-                                self.push_str(&format!("{ty}::new(T::new"));
+                                self.push_str(&format!("{ty}::new(T_::new"));
                             }
                             ConstructorReturnType::Result { .. } => {
-                                self.push_str(&format!("T::new"));
+                                self.push_str(&format!("T_::new"));
                             }
                         }
 
