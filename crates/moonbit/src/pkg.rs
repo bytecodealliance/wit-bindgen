@@ -11,8 +11,6 @@ use wit_bindgen_core::{
 
 use crate::async_support::ASYNC_DIR;
 
-pub(crate) const FFI_DIR: &str = "ffi";
-
 #[derive(Default)]
 pub(crate) struct Imports {
     pub packages: HashMap<String, String>,
