@@ -1502,7 +1502,6 @@ dependencies = [
  "wit-bindgen-rust",
  "wit-bindgen-test",
  "wit-component",
- "wit-parser",
 ]
 
 [[package]]

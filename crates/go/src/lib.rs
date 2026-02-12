@@ -2589,7 +2589,8 @@ func {camel}FromOwnHandle(handleValue int32) *{camel} {{
 }}
 
 func {camel}FromBorrowHandle(handleValue int32) *{camel} {{
-	return {camel}FromOwnHandle(handleValue)
+	handle := wit_runtime.MakeHandle(handleValue)
+	return &{camel}{{handle}}
 }}
 "#
             );
