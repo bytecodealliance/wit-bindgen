@@ -1,5 +1,5 @@
 use crate::csharp_ident::ToCSharpIdent;
-use crate::interface::{InterfaceGenerator, ParameterType};
+use crate::interface::{InterfaceGenerator, ParameterType, variant_new_func_name};
 use crate::world_generator::CSharp;
 use heck::ToUpperCamelCase;
 use std::fmt::Write;
@@ -167,6 +167,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             .blocks
             .drain(self.blocks.len() - cases.len()..)
             .collect::<Vec<_>>();
+        let variant_name = self.interface_gen.type_name_with_qualifier(ty, false);
         let ty = self.interface_gen.type_name_with_qualifier(ty, true);
         let generics_position = ty.find('<');
         let lifted = self.locals.tmp("lifted");
@@ -198,7 +199,8 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                     String::new()
                 };
 
-                let method = case_name.to_csharp_ident_upper();
+                let method =
+                    variant_new_func_name(&variant_name, &case_name.to_csharp_ident_upper());
 
                 let call = if let Some(position) = generics_position {
                     let (ty, generics) = ty.split_at(position);

@@ -1409,6 +1409,7 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .map(|case| {
                 let case_name = case.name.to_csharp_ident();
                 let tag = case.name.to_csharp_ident_upper();
+                let method_name = variant_new_func_name(&name, &tag);
                 let (parameter, argument) = if let Some(ty) = self.non_empty_type(case.ty.as_ref())
                 {
                     (
@@ -1420,7 +1421,7 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 };
 
                 format!(
-                    "{access} static {name} {tag}({parameter}) {{
+                    "{access} static {name} {method_name}({parameter}) {{
                          return new {name}(Tags.{tag}, {argument});
                      }}
                     "
@@ -1568,6 +1569,15 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
     fn type_stream(&mut self, id: TypeId, _name: &str, _ty: &Option<Type>, _docs: &Docs) {
         self.type_name(&Type::Id(id));
+    }
+}
+
+// Handles the tag being the same name as the variant, which would cause a method with the same name as the type in C# which is not valid.
+pub fn variant_new_func_name(variant_name: &String, tag: &String) -> String {
+    if *tag == *variant_name {
+        format!("{tag}_") // Underscores are not valid in wit identifiers so this should be safe.
+    } else {
+        tag.clone()
     }
 }
 
