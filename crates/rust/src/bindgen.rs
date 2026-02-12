@@ -395,20 +395,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 let dealiased_resource = dealias(resolve, *resource);
 
+                let name = self.r#gen.type_path(dealiased_resource, true);
                 let result = if is_own {
-                    let name = self.r#gen.type_path(dealiased_resource, true);
                     format!("{name}::from_handle({op} as u32)")
                 } else if self.r#gen.is_exported_resource(*resource) {
-                    let name = resolve.types[*resource]
-                        .name
-                        .as_deref()
-                        .unwrap()
-                        .to_upper_camel_case();
                     format!("{name}Borrow::lift({op} as u32 as usize)")
                 } else {
                     let tmp = format!("handle{}", self.tmp());
                     self.handle_decls.push(format!("let {tmp};"));
-                    let name = self.r#gen.type_path(dealiased_resource, true);
                     format!(
                         "{{\n
                             {tmp} = {name}::from_handle({op} as u32);
@@ -871,14 +865,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.push_str(&prev_src);
                 let constructor_type = match &func.kind {
                     FunctionKind::Freestanding | FunctionKind::AsyncFreestanding => {
-                        self.push_str(&format!("T::{}", to_rust_ident(func.item_name())));
+                        self.push_str(&format!("T_::{}", to_rust_ident(func.item_name())));
                         None
                     }
                     FunctionKind::Method(_)
                     | FunctionKind::Static(_)
                     | FunctionKind::AsyncMethod(_)
                     | FunctionKind::AsyncStatic(_) => {
-                        self.push_str(&format!("T::{}", to_rust_ident(func.item_name())));
+                        self.push_str(&format!("T_::{}", to_rust_ident(func.item_name())));
                         None
                     }
                     FunctionKind::Constructor(ty) => {
@@ -892,10 +886,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                         match return_type {
                             ConstructorReturnType::Self_ => {
-                                self.push_str(&format!("{ty}::new(T::new"));
+                                self.push_str(&format!("{ty}::new(T_::new"));
                             }
                             ConstructorReturnType::Result { .. } => {
-                                self.push_str(&format!("T::new"));
+                                self.push_str(&format!("T_::new"));
                             }
                         }
 

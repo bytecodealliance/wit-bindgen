@@ -1077,7 +1077,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
             "\
                 #[doc(hidden)]
                 #[allow(non_snake_case, unused_unsafe)]
-                pub unsafe fn _export_{name_snake}_cabi<T: {trait_name}>\
+                pub unsafe fn _export_{name_snake}_cabi<T_: {trait_name}>\
             ",
         );
         let params = self.print_export_sig(func, async_);
@@ -1163,7 +1163,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
                 "\
                     #[doc(hidden)]
                     #[allow(non_snake_case)]
-                    pub unsafe fn __post_return_{name_snake}<T: {trait_name}>\
+                    pub unsafe fn __post_return_{name_snake}<T_: {trait_name}>\
                 "
             );
             let params = self.print_post_return_sig(func);
