@@ -40,9 +40,6 @@ mod pkg;
 // We use AsyncCallback ABI for async functions
 
 // TODO: Export will share the type signatures with the import by using a newtype alias
-pub(crate) const FFI_DIR: &str = "ffi";
-
-pub(crate) const FFI: &str = include_str!("./ffi/ffi.mbt");
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -112,11 +109,6 @@ impl InterfaceFragment {
         self.stub.push_str(&other.stub);
         self.builtins.extend(other.builtins);
     }
-}
-
-enum PayloadFor {
-    Future,
-    Stream,
 }
 
 #[derive(Default)]
