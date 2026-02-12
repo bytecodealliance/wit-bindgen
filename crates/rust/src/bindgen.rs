@@ -1,6 +1,6 @@
 use crate::{
-    ConstructorReturnType, Identifier, InterfaceGenerator, RustFlagsRepr,
-    classify_constructor_return_type, int_repr, to_rust_ident,
+    ConstructorReturnType, InterfaceGenerator, RustFlagsRepr, classify_constructor_return_type,
+    int_repr, to_rust_ident,
 };
 use heck::*;
 use std::fmt::Write as _;
@@ -428,28 +428,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let async_support = self.r#gen.r#gen.async_support_path();
                 let op = &operands[0];
                 let name = match payload {
-                    Some(Type::Id(type_id)) => {
-                        let dealiased_id = dealias(resolve, *type_id);
-                        self.r#gen.type_name_owned_with_id(
-                            &Type::Id(dealiased_id),
-                            Identifier::StreamOrFuturePayload,
-                        )
-                    }
-                    Some(ty) => self
-                        .r#gen
-                        .type_name_owned_with_id(ty, Identifier::StreamOrFuturePayload),
-                    None => "()".into(),
+                    Some(ty) => self.r#gen.type_name_owned(ty),
+                    None => "()".to_string(),
                 };
-                let ordinal = self
-                    .r#gen
-                    .r#gen
-                    .future_payloads
-                    .get_index_of(&name)
-                    .unwrap();
                 let path = self.r#gen.path_to_root();
                 results.push(format!(
                     "{async_support}::FutureReader::new\
-                     ({op} as u32, &{path}wit_future::vtable{ordinal}::VTABLE)"
+                     ({op} as u32, &<{name} as {path}wit_future::FuturePayload>::VTABLE)"
                 ))
             }
 
@@ -462,28 +447,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let async_support = self.r#gen.r#gen.async_support_path();
                 let op = &operands[0];
                 let name = match payload {
-                    Some(Type::Id(type_id)) => {
-                        let dealiased_id = dealias(resolve, *type_id);
-                        self.r#gen.type_name_owned_with_id(
-                            &Type::Id(dealiased_id),
-                            Identifier::StreamOrFuturePayload,
-                        )
-                    }
-                    Some(ty) => self
-                        .r#gen
-                        .type_name_owned_with_id(ty, Identifier::StreamOrFuturePayload),
-                    None => "()".into(),
+                    Some(ty) => self.r#gen.type_name_owned(ty),
+                    None => "()".to_string(),
                 };
-                let ordinal = self
-                    .r#gen
-                    .r#gen
-                    .stream_payloads
-                    .get_index_of(&name)
-                    .unwrap();
                 let path = self.r#gen.path_to_root();
                 results.push(format!(
                     "{async_support}::StreamReader::new\
-                     ({op} as u32, &{path}wit_stream::vtable{ordinal}::VTABLE)"
+                     ({op} as u32, &<{name} as {path}wit_stream::StreamPayload>::VTABLE)"
                 ))
             }
 
@@ -1281,7 +1251,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.push_str(&format!(
                     " let array{tmp}: [_; {size}] = core::array::from_fn(|{index_var}| {{
                             let base = {base}.add({index_var} * {elemsize});
-                            {body} 
+                            {body}
                         }});"
                 ));
                 let result = format!("array{tmp}");

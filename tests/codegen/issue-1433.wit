@@ -1,0 +1,14 @@
+//@ async = true
+
+package a:b;
+
+world w {
+    use t.{r};
+    export f: func(p: stream<r>);
+}
+
+interface t {
+    record r {
+        x: u32,
+    }
+}
