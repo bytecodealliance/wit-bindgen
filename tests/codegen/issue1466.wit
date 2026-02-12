@@ -1,0 +1,18 @@
+package foo:foo;
+
+interface original {
+  resource extra-options;
+  record options {
+    extra: option<borrow<extra-options>>,
+  }
+}
+
+interface adapter {
+  use original.{options};
+  f: func(x: options);
+}
+
+world root {
+  export original;
+  export adapter;
+}

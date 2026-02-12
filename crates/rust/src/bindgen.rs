@@ -395,20 +395,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 let dealiased_resource = dealias(resolve, *resource);
 
+                let name = self.r#gen.type_path(dealiased_resource, true);
                 let result = if is_own {
-                    let name = self.r#gen.type_path(dealiased_resource, true);
                     format!("{name}::from_handle({op} as u32)")
                 } else if self.r#gen.is_exported_resource(*resource) {
-                    let name = resolve.types[*resource]
-                        .name
-                        .as_deref()
-                        .unwrap()
-                        .to_upper_camel_case();
                     format!("{name}Borrow::lift({op} as u32 as usize)")
                 } else {
                     let tmp = format!("handle{}", self.tmp());
                     self.handle_decls.push(format!("let {tmp};"));
-                    let name = self.r#gen.type_path(dealiased_resource, true);
                     format!(
                         "{{\n
                             {tmp} = {name}::from_handle({op} as u32);
