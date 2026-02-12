@@ -1319,6 +1319,17 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         // Not needed. They will become `Array[T]` or `FixedArray[T]` in Moonbit
     }
 
+    fn type_fixed_length_list(
+        &mut self,
+        _id: TypeId,
+        _name: &str,
+        _ty: &Type,
+        _size: u32,
+        _docs: &Docs,
+    ) {
+        // Not needed. They will become `FixedArray[T]` in Moonbit
+    }
+
     fn type_future(&mut self, _id: TypeId, _name: &str, _ty: &Option<Type>, _docs: &Docs) {
         unimplemented!() // Not needed
     }

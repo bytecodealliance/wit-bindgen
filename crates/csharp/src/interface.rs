@@ -1544,6 +1544,17 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.type_name(&Type::Id(id));
     }
 
+    fn type_fixed_length_list(
+        &mut self,
+        _id: TypeId,
+        _name: &str,
+        _ty: &Type,
+        _size: u32,
+        _docs: &Docs,
+    ) {
+        todo!("named fixed-length list types are not yet supported in the C# backend")
+    }
+
     fn type_builtin(&mut self, _id: TypeId, _name: &str, _ty: &Type, _docs: &Docs) {
         unimplemented!();
     }

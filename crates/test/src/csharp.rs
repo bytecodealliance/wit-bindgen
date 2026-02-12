@@ -52,6 +52,7 @@ impl LanguageMethods for Csharp {
                 | "issue-1432.wit"
                 | "issue-1433.wit"
                 | "future-same-type-different-names.wit"
+                | "named-fixed-length-list.wit"
         )
     }
 

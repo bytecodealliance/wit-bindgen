@@ -2889,6 +2889,24 @@ impl<'a> {camel}Borrow<'a>{{
         }
     }
 
+    fn type_fixed_length_list(
+        &mut self,
+        id: TypeId,
+        _name: &str,
+        ty: &Type,
+        size: u32,
+        docs: &Docs,
+    ) {
+        for (name, mode) in self.modes_of(id) {
+            self.rustdoc(docs);
+            self.push_str(&format!("pub type {name}"));
+            self.print_generics(mode.lifetime);
+            self.push_str(" = [");
+            self.print_ty(ty, mode);
+            self.push_str(&format!("; {size}];\n"));
+        }
+    }
+
     fn type_future(&mut self, _id: TypeId, name: &str, ty: &Option<Type>, docs: &Docs) {
         let async_support = self.r#gen.async_support_path();
         let mode = TypeMode {

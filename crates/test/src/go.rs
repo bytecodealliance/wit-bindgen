@@ -27,7 +27,9 @@ impl LanguageMethods for Go {
         // patch](https://github.com/dicej/go/commit/40fc123d5bce6448fc4e4601fd33bad4250b36a5).
         // Once we upstream something equivalent, we can remove the ` || name ==
         // "async-trait-function.wit"` here.
-        config.error_context || name == "async-trait-function.wit"
+        config.error_context
+            || name == "async-trait-function.wit"
+            || name == "named-fixed-length-list.wit"
     }
 
     fn default_bindgen_args_for_codegen(&self) -> &[&str] {

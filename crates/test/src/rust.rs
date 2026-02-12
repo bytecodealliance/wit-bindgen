@@ -82,6 +82,11 @@ impl LanguageMethods for Rust {
             return true;
         }
 
+        // Named fixed-length lists don't work with async yet.
+        if name == "named-fixed-length-list.wit-async" {
+            return true;
+        }
+
         false
     }
 
