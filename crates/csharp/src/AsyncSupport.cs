@@ -450,7 +450,7 @@ public class FutureReader : ReaderBase
 
     internal FutureVTable VTable { get; private set; }
 
-    public unsafe Task Read()
+    public Task Read()
     {
         return ReadInternal(() => null, 0);
     }
