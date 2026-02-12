@@ -9,7 +9,7 @@ interface original {
 
 interface adapter {
   use original.{options};
-  variant t { t }
+  variant t { a }
   f: func(x: options, t: t);
 }
 
