@@ -14,7 +14,7 @@ use wit_bindgen_core::{
 };
 
 use crate::pkg::ToMoonBitIdent;
-use crate::{FunctionBindgen, ffi, indent};
+use crate::{ffi, indent, FunctionBindgen};
 
 use super::InterfaceGenerator;
 
@@ -300,6 +300,11 @@ defer {cleanup_params}()\n{async_pkg}suspend_for_subtask({subtask}, cleanup_afte
             .world_gen
             .pkg_resolver
             .qualify_package(self.name, ASYNC_DIR);
+        let module = if self.direction == Direction::Export && !module.starts_with("[export]") {
+            format!("[export]{module}")
+        } else {
+            module.to_string()
+        };
         let lifted = self
             .world_gen
             .pkg_resolver
@@ -500,6 +505,11 @@ fn wasmLower{camel_name}{index}(future : {lifted}) -> Int {{
             .world_gen
             .pkg_resolver
             .qualify_package(self.name, ASYNC_DIR);
+        let module = if self.direction == Direction::Export && !module.starts_with("[export]") {
+            format!("[export]{module}")
+        } else {
+            module.to_string()
+        };
         let lifted = self
             .world_gen
             .pkg_resolver
@@ -563,7 +573,8 @@ fn wasmLift{camel_name}{index}(stream_handle : Int) -> {lifted} {{
 
         if let Some(inner_ty) = inner_type {
             let resolve = self.resolve.clone();
-            let mut lift_bindgen = FunctionBindgen::new(self, Box::new([]), Direction::Import, true);
+            let mut lift_bindgen =
+                FunctionBindgen::new(self, Box::new([]), Direction::Import, true);
             lift_bindgen.use_ffi(ffi::MALLOC);
             lift_bindgen.use_ffi(ffi::FREE);
 
@@ -674,7 +685,8 @@ fn wasmLower{camel_name}{index}(stream : {lifted}) -> Int {{
         if let Some(inner_ty) = inner_type {
             let resolve = self.resolve.clone();
             let elem_type = self.world_gen.pkg_resolver.type_name(self.name, &inner_ty);
-            let mut lower_bindgen = FunctionBindgen::new(self, Box::new([]), Direction::Export, true);
+            let mut lower_bindgen =
+                FunctionBindgen::new(self, Box::new([]), Direction::Export, true);
             lower_bindgen.use_ffi(ffi::MALLOC);
             lower_bindgen.use_ffi(ffi::FREE);
 
