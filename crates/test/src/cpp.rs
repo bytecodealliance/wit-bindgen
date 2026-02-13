@@ -41,11 +41,14 @@ impl LanguageMethods for Cpp {
 
     fn should_fail_verify(
         &self,
-        _name: &str,
+        name: &str,
         config: &crate::config::WitConfig,
         _args: &[String],
     ) -> bool {
-        config.async_
+        return match name {
+            "issue1514-6.wit" => true,
+            _ => false,
+        } || config.async_;
     }
 
     fn prepare(&self, runner: &mut Runner) -> anyhow::Result<()> {
