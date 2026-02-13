@@ -128,6 +128,21 @@ impl Types {
                 }
             }
         }
+
+        // Merge TypeInfo for structurally equal types so that all members
+        // of an equivalence class carry the union of all usage flags
+        // (borrowed, owned, etc.).
+        let mut merged: HashMap<TypeId, TypeInfo> = HashMap::new();
+        for (&id, &info) in &self.type_info {
+            let rep = self.equal_types.find(id);
+            *merged.entry(rep).or_default() |= info;
+        }
+        for (&id, info) in &mut self.type_info {
+            let rep = self.equal_types.find(id);
+            if let Some(&merged_info) = merged.get(&rep) {
+                *info = merged_info;
+            }
+        }
     }
 
     fn type_info_func(&mut self, resolve: &Resolve, func: &Function, import: bool) {

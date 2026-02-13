@@ -1,0 +1,22 @@
+package test:merge-equal;
+
+interface importer {
+    record payload {
+        data: list<u8>,
+        tag: string,
+    }
+    consume: func(p: payload);
+}
+
+interface exporter {
+    record payload {
+        data: list<u8>,
+        tag: string,
+    }
+    produce: func() -> payload;
+}
+
+world test {
+    import importer;
+    export exporter;
+}
