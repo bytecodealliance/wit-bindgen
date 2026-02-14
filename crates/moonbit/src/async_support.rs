@@ -445,13 +445,13 @@ fn wasmLower{camel_name}{index}(future : {lifted}) -> Int {{
                 lower,
                 r#"
         let value = producer()
-    let ptr = mbt_ffi_malloc({size})
-    defer mbt_ffi_free(ptr)"#
+    let ret_area = mbt_ffi_malloc({size})
+    defer mbt_ffi_free(ret_area)"#
             );
             abi::lower_to_memory(
                 &resolve,
                 &mut bindgen,
-                "ptr".to_string(),
+                "ret_area".to_string(),
                 "value".to_string(),
                 &inner_ty,
             );
@@ -459,7 +459,7 @@ fn wasmLower{camel_name}{index}(future : {lifted}) -> Int {{
             uwriteln!(
                 lower,
                 r#"
-        let _ = {async_qualifier}suspend_for_future_write(writable, wasmLower{camel_name}{index}Write(writable, ptr)) catch {{ _ => false }}"#
+        let _ = {async_qualifier}suspend_for_future_write(writable, wasmLower{camel_name}{index}Write(writable, ret_area)) catch {{ _ => false }}"#
             );
         } else {
             // Unit type - no value to write, just complete the future
