@@ -2404,7 +2404,13 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 TypeDefKind::Resource => unreachable!(),
                 TypeDefKind::Unknown => unreachable!(),
 
-                TypeDefKind::FixedLengthList(..) => todo!(),
+                TypeDefKind::FixedLengthList(element, size) => {
+                    self.flat_for_each_record_type(
+                        ty,
+                        iter::repeat_n(element, *size as usize),
+                        |me, ty| me.deallocate(ty, what),
+                    );
+                }
                 TypeDefKind::Map(..) => todo!(),
             },
         }
@@ -2526,7 +2532,10 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 TypeDefKind::Future(_) => unreachable!(),
                 TypeDefKind::Stream(_) => unreachable!(),
                 TypeDefKind::Unknown => unreachable!(),
-                TypeDefKind::FixedLengthList(_, _) => {}
+                TypeDefKind::FixedLengthList(element, size) => {
+                    let tys: Vec<Type> = iter::repeat_n(*element, *size as usize).collect();
+                    self.deallocate_indirect_fields(&tys, addr, offset, what);
+                }
                 TypeDefKind::Map(..) => todo!(),
             },
         }
