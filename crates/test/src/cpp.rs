@@ -46,7 +46,7 @@ impl LanguageMethods for Cpp {
         _args: &[String],
     ) -> bool {
         return match name {
-            "issue1514-6.wit" => true,
+            "issue1514-6.wit" | "named-fixed-length-list.wit" => true,
             _ => false,
         } || config.async_;
     }

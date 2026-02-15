@@ -1735,6 +1735,17 @@ void __wasm_export_{ns}_{snake}_dtor({ns}_{snake}_t* arg) {{
         self.finish_typedef_struct(id);
     }
 
+    fn type_fixed_length_list(
+        &mut self,
+        _id: TypeId,
+        _name: &str,
+        _ty: &Type,
+        _size: u32,
+        _docs: &Docs,
+    ) {
+        todo!("named fixed-length list types are not yet supported in the C backend")
+    }
+
     fn type_future(&mut self, id: TypeId, _name: &str, _ty: &Option<Type>, docs: &Docs) {
         self.src.h_defs("\n");
         self.docs(docs, SourceType::HDefs);

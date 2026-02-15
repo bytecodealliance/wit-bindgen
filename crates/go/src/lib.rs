@@ -2874,6 +2874,13 @@ const (
         uwriteln!(self.src, "{docs}type {name} = []{ty}");
     }
 
+    fn type_fixed_length_list(&mut self, _: TypeId, name: &str, ty: &Type, size: u32, docs: &Docs) {
+        let name = name.to_upper_camel_case();
+        let ty = self.type_name(self.resolve, *ty);
+        let docs = format_docs(docs);
+        uwriteln!(self.src, "{docs}type {name} = [{size}]{ty}");
+    }
+
     fn type_builtin(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
         _ = (id, name, ty, docs);
         todo!()
