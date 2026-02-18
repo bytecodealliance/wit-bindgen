@@ -1329,7 +1329,7 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 .iter()
                 .map(|field| {
                     format!(
-                        "{access} readonly {} {};",
+                        "{access} {} {};",
                         self.type_name(&field.ty),
                         field.name.to_csharp_ident()
                     )
@@ -1341,7 +1341,7 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
         uwrite!(
             self.src,
             "
-            {access} readonly struct {name} {{
+            {access} struct {name} {{
                 {fields}
 
                 {access} {name}({parameters}) {{
