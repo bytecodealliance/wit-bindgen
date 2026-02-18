@@ -13,3 +13,6 @@
 [submodule "tests/codegen/wasi-clocks"]
 	path = tests/codegen/wasi-clocks
 	url = https://github.com/WebAssembly/wasi-clocks
+[submodule "crates/go/src/pkg"]
+	path = crates/go/src/pkg
+	url = https://github.com/bytecodealliance/go-pkg

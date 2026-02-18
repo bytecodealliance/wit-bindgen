@@ -5,21 +5,21 @@ package export_wit_world
 import (
 	test "wit_component/my_test_i"
 
-	"github.com/bytecodealliance/wit-bindgen/wit_types"
+	witTypes "go.bytecodealliance.org/pkg/wit/types"
 )
 
 func Run() {
 	write := make(chan bool)
-	read := make(chan wit_types.Unit)
+	read := make(chan witTypes.Unit)
 
 	{
 		tx, rx := test.MakeFutureUnit()
 		go func() {
-			write <- tx.Write(wit_types.Unit{})
+			write <- tx.Write(witTypes.Unit{})
 		}()
 		go func() {
 			test.ReadFuture(rx)
-			read <- wit_types.Unit{}
+			read <- witTypes.Unit{}
 		}()
 		(<-read)
 		assert(<-write)
@@ -28,11 +28,11 @@ func Run() {
 	{
 		tx, rx := test.MakeFutureUnit()
 		go func() {
-			write <- tx.Write(wit_types.Unit{})
+			write <- tx.Write(witTypes.Unit{})
 		}()
 		go func() {
 			test.DropFuture(rx)
-			read <- wit_types.Unit{}
+			read <- witTypes.Unit{}
 		}()
 		(<-read)
 		assert(!(<-write))
@@ -60,7 +60,7 @@ func Run() {
 			// a "tx.Write" and will result in a "wasm trap: deadlock detected" error. Additionally,
 			// this is placed after "close(syncBarrier)" to ensure that the panics are resulting from
 			// concurrent reads, and not from other scenarios that result in a nil handle.
-			tx.Write(wit_types.Unit{})
+			tx.Write(witTypes.Unit{})
 		}()
 
 		p1, p2 := <-panicCh, <-panicCh
@@ -80,7 +80,7 @@ func Run() {
 				// point all Goroutines will attempt to simultaneously write to the future.
 				<-syncBarrier
 				panicCh <- checkPanicValue(func() {
-					tx.Write(wit_types.Unit{})
+					tx.Write(witTypes.Unit{})
 				})
 			}()
 		}

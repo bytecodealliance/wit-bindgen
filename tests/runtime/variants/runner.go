@@ -4,7 +4,7 @@ import (
 	"fmt"
 	test "wit_component/test_variants_to_test"
 
-	. "github.com/bytecodealliance/wit-bindgen/wit_types"
+	. "go.bytecodealliance.org/pkg/wit/types"
 )
 
 func Run() {

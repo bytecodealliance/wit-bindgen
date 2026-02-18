@@ -3,7 +3,7 @@ package export_my_test_i
 import (
 	"wit_component/my_test_i"
 
-	. "github.com/bytecodealliance/wit-bindgen/wit_types"
+	. "go.bytecodealliance.org/pkg/wit/types"
 )
 
 func Ping(x *FutureReader[string], y string) *FutureReader[string] {
