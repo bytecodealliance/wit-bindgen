@@ -154,14 +154,15 @@ fn all_paths(path: &Path) -> Result<Vec<PathBuf>> {
 }
 
 fn replace_bindings_go_mod(runner: &Runner, bindings_dir: &Path) -> Result<()> {
+    // TODO: Update this to be a submodule
     let test_crate = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let wit_bindgen_root = test_crate.parent().unwrap().parent().unwrap();
-    let go_package_path = wit_bindgen_root.join("crates/go/src/package");
+    let go_package_path = wit_bindgen_root.join("crates/go/src/pkg");
 
     super::write_if_different(
         &bindings_dir.join("go.mod"),
         format!(
-            "module wit_component\n\ngo 1.25\n\nreplace github.com/bytecodealliance/wit-bindgen => {}",
+            "module wit_component\n\ngo 1.25\n\nreplace go.bytecodealliance.org => {}",
             go_package_path.display()
         ),
     )?;
