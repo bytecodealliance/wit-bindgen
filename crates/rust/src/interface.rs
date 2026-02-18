@@ -523,19 +523,19 @@ macro_rules! {macro_name} {{
         func_name: &str,
         payload_type: Option<&Type>,
     ) {
-        let payload_type = match payload_type {
-            // Rust requires one-impl-per-type, so any `id` here is transformed
-            // into its canonical representation using
-            // `get_representative_type`. This ensures that type aliases, uses,
-            // etc, all get canonicalized to the exact same ID regardless of
-            // type structure.
-            //
-            // Note that `get_representative_type` maps ids-to-ids which is 95%
-            // of what we want, but this additionally goes one layer further to
-            // see if the final id is actually itself a typedef, which would
-            // always be to a primitive, and then uses the primitive type
-            // instead of the typedef to canonicalize with other streams/futures
-            // using the primitive type.
+        // Rust requires one-impl-per-type, so any `id` here is transformed
+        // into its canonical representation using
+        // `get_representative_type`. This ensures that type aliases, uses,
+        // etc, all get canonicalized to the exact same ID regardless of
+        // type structure. This canonical key is used for deduplication only.
+        //
+        // Note that `get_representative_type` maps ids-to-ids which is 95%
+        // of what we want, but this additionally goes one layer further to
+        // see if the final id is actually itself a typedef, which would
+        // always be to a primitive, and then uses the primitive type
+        // instead of the typedef to canonicalize with other streams/futures
+        // using the primitive type.
+        let canonical_payload = match payload_type {
             Some(Type::Id(id)) => {
                 let id = self.r#gen.types.get_representative_type(*id);
                 match self.resolve.types[id].kind {
@@ -545,20 +545,39 @@ macro_rules! {macro_name} {{
             }
             other => other.copied(),
         };
+        {
+            let map = match payload_for {
+                PayloadFor::Future => &self.r#gen.future_payloads,
+                PayloadFor::Stream => &self.r#gen.stream_payloads,
+            };
+            if map.contains_key(&canonical_payload) {
+                return;
+            }
+        }
+
+        // Use the original (non-canonicalized) type for generating the
+        // type name and code. The canonical representative may belong to
+        // an interface that hasn't been processed yet (when world import
+        // order differs from WIT definition order), which would cause
+        // `path_to_interface` to panic. Since structurally equal types
+        // resolve to the same Rust type, it doesn't matter which alias
+        // path we use in the generated `impl`.
+        let payload_type = match payload_type {
+            Some(Type::Id(id)) => match self.resolve.types[*id].kind {
+                TypeDefKind::Type(t) => Some(t),
+                _ => Some(Type::Id(*id)),
+            },
+            other => other.copied(),
+        };
         let payload_type = payload_type.as_ref();
         let name = match payload_type {
             Some(payload_type) => self.type_name_owned(payload_type),
             None => "()".into(),
         };
-        let map = match payload_for {
-            PayloadFor::Future => &mut self.r#gen.future_payloads,
-            PayloadFor::Stream => &mut self.r#gen.stream_payloads,
+        let ordinal = match payload_for {
+            PayloadFor::Future => self.r#gen.future_payloads.len(),
+            PayloadFor::Stream => self.r#gen.stream_payloads.len(),
         };
-
-        if map.contains_key(&payload_type.copied()) {
-            return;
-        }
-        let ordinal = map.len();
         let async_support = self.r#gen.async_support_path();
         let (size, align) = if let Some(payload_type) = payload_type {
             (
@@ -704,7 +723,7 @@ pub mod vtable{ordinal} {{
             PayloadFor::Future => &mut self.r#gen.future_payloads,
             PayloadFor::Stream => &mut self.r#gen.stream_payloads,
         };
-        map.insert(payload_type.copied(), code);
+        map.insert(canonical_payload, code);
     }
 
     fn generate_guest_import(&mut self, func: &Function, interface: Option<&WorldKey>) {

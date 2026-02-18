@@ -51,6 +51,7 @@ impl LanguageMethods for Csharp {
                 | "import-export-stream.wit"
                 | "issue-1432.wit"
                 | "issue-1433.wit"
+                | "issue-1544.wit"
                 | "future-same-type-different-names.wit"
                 | "named-fixed-length-list.wit"
         )
