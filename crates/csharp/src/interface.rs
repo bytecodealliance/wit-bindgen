@@ -1021,6 +1021,7 @@ impl InterfaceGenerator<'_> {
                 .trim()
                 .replace("<", "&lt;")
                 .replace(">", "&gt;")
+                .replace("*/", "*") // We can't close the comment, so if the user comment has */ we just remove the /
                 .lines()
                 .map(|line| format!("* {line}"))
                 .collect::<Vec<_>>()
