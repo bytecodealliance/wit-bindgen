@@ -3,7 +3,7 @@ package export_test_lists_to_test
 import (
 	"slices"
 
-	. "github.com/bytecodealliance/wit-bindgen/wit_types"
+	. "go.bytecodealliance.org/pkg/wit/types"
 )
 
 func AllocatedBytes() uint32 {

@@ -650,6 +650,17 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.type_alias(id, name, &Type::Id(id), docs);
     }
 
+    fn type_fixed_length_list(
+        &mut self,
+        id: TypeId,
+        name: &str,
+        _ty: &Type,
+        _size: u32,
+        docs: &Docs,
+    ) {
+        self.type_alias(id, name, &Type::Id(id), docs);
+    }
+
     fn type_future(&mut self, id: TypeId, name: &str, ty: &Option<Type>, docs: &Docs) {
         _ = (id, name, ty, docs);
         todo!()

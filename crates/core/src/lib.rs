@@ -165,6 +165,7 @@ pub trait InterfaceGenerator<'a> {
     fn type_enum(&mut self, id: TypeId, name: &str, enum_: &Enum, docs: &Docs);
     fn type_alias(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs);
     fn type_list(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs);
+    fn type_fixed_length_list(&mut self, id: TypeId, name: &str, ty: &Type, size: u32, docs: &Docs);
     fn type_builtin(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs);
     fn type_future(&mut self, id: TypeId, name: &str, ty: &Option<Type>, docs: &Docs);
     fn type_stream(&mut self, id: TypeId, name: &str, ty: &Option<Type>, docs: &Docs);
@@ -199,7 +200,9 @@ where
         TypeDefKind::Future(t) => generator.type_future(id, name, t, &ty.docs),
         TypeDefKind::Stream(t) => generator.type_stream(id, name, t, &ty.docs),
         TypeDefKind::Handle(_) => panic!("handle types do not require definition"),
-        TypeDefKind::FixedLengthList(..) => todo!(),
+        TypeDefKind::FixedLengthList(t, size) => {
+            generator.type_fixed_length_list(id, name, t, *size, &ty.docs)
+        }
         TypeDefKind::Map(..) => todo!(),
         TypeDefKind::Unknown => unreachable!(),
     }

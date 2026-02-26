@@ -3,14 +3,14 @@ package export_test_records_to_test
 import (
 	. "wit_component/test_records_to_test"
 
-	"github.com/bytecodealliance/wit-bindgen/wit_types"
+	witTypes "go.bytecodealliance.org/pkg/wit/types"
 )
 
 func MultipleResults() (uint8, uint16) {
 	return 4, 5
 }
 
-func SwapTuple(x wit_types.Tuple2[uint8, uint32]) (uint32, uint8) {
+func SwapTuple(x witTypes.Tuple2[uint8, uint32]) (uint32, uint8) {
 	return x.F1, x.F0
 }
 
@@ -30,6 +30,6 @@ func RoundtripRecord1(x R1) R1 {
 	return x
 }
 
-func Tuple1(x wit_types.Tuple1[uint8]) uint8 {
+func Tuple1(x witTypes.Tuple1[uint8]) uint8 {
 	return x.F0
 }

@@ -41,9 +41,20 @@ interface blah {
     alias-type: func(x: r1) -> r2;
 }
 
+interface resources {
+    resource r1;
+    type r2 = r1;
+
+    record t1 { a: r1 }
+    record t2 { a: r2 }
+    alias-own: func(x: t1) -> t2;
+    alias-aggregate: func(x: option<t1>) -> option<t2>;
+}
+
 world host {
     export blah;
     export blag;
+    export resources;
 }
 world proxy {
     import blag;

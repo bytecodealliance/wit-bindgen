@@ -523,23 +523,61 @@ macro_rules! {macro_name} {{
         func_name: &str,
         payload_type: Option<&Type>,
     ) {
-        let name = match payload_type {
-            Some(Type::Id(type_id)) => {
-                let dealiased_id = dealias(self.resolve, *type_id);
-                self.type_name_owned(&Type::Id(dealiased_id))
+        // Rust requires one-impl-per-type, so any `id` here is transformed
+        // into its canonical representation using
+        // `get_representative_type`. This ensures that type aliases, uses,
+        // etc, all get canonicalized to the exact same ID regardless of
+        // type structure. This canonical key is used for deduplication only.
+        //
+        // Note that `get_representative_type` maps ids-to-ids which is 95%
+        // of what we want, but this additionally goes one layer further to
+        // see if the final id is actually itself a typedef, which would
+        // always be to a primitive, and then uses the primitive type
+        // instead of the typedef to canonicalize with other streams/futures
+        // using the primitive type.
+        let canonical_payload = match payload_type {
+            Some(Type::Id(id)) => {
+                let id = self.r#gen.types.get_representative_type(*id);
+                match self.resolve.types[id].kind {
+                    TypeDefKind::Type(t) => Some(t),
+                    _ => Some(Type::Id(id)),
+                }
             }
+            other => other.copied(),
+        };
+        {
+            let map = match payload_for {
+                PayloadFor::Future => &self.r#gen.future_payloads,
+                PayloadFor::Stream => &self.r#gen.stream_payloads,
+            };
+            if map.contains_key(&canonical_payload) {
+                return;
+            }
+        }
+
+        // Use the original (non-canonicalized) type for generating the
+        // type name and code. The canonical representative may belong to
+        // an interface that hasn't been processed yet (when world import
+        // order differs from WIT definition order), which would cause
+        // `path_to_interface` to panic. Since structurally equal types
+        // resolve to the same Rust type, it doesn't matter which alias
+        // path we use in the generated `impl`.
+        let payload_type = match payload_type {
+            Some(Type::Id(id)) => match self.resolve.types[*id].kind {
+                TypeDefKind::Type(t) => Some(t),
+                _ => Some(Type::Id(*id)),
+            },
+            other => other.copied(),
+        };
+        let payload_type = payload_type.as_ref();
+        let name = match payload_type {
             Some(payload_type) => self.type_name_owned(payload_type),
             None => "()".into(),
         };
-        let map = match payload_for {
-            PayloadFor::Future => &mut self.r#gen.future_payloads,
-            PayloadFor::Stream => &mut self.r#gen.stream_payloads,
+        let ordinal = match payload_for {
+            PayloadFor::Future => self.r#gen.future_payloads.len(),
+            PayloadFor::Stream => self.r#gen.stream_payloads.len(),
         };
-
-        if map.contains_key(&name) {
-            return;
-        }
-        let ordinal = map.len();
         let async_support = self.r#gen.async_support_path();
         let (size, align) = if let Some(payload_type) = payload_type {
             (
@@ -685,7 +723,7 @@ pub mod vtable{ordinal} {{
             PayloadFor::Future => &mut self.r#gen.future_payloads,
             PayloadFor::Stream => &mut self.r#gen.stream_payloads,
         };
-        map.insert(name, code);
+        map.insert(canonical_payload, code);
     }
 
     fn generate_guest_import(&mut self, func: &Function, interface: Option<&WorldKey>) {
@@ -1058,7 +1096,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
             "\
                 #[doc(hidden)]
                 #[allow(non_snake_case, unused_unsafe)]
-                pub unsafe fn _export_{name_snake}_cabi<T: {trait_name}>\
+                pub unsafe fn _export_{name_snake}_cabi<T_: {trait_name}>\
             ",
         );
         let params = self.print_export_sig(func, async_);
@@ -1144,7 +1182,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
                 "\
                     #[doc(hidden)]
                     #[allow(non_snake_case)]
-                    pub unsafe fn __post_return_{name_snake}<T: {trait_name}>\
+                    pub unsafe fn __post_return_{name_snake}<T_: {trait_name}>\
                 "
             );
             let params = self.print_post_return_sig(func);
@@ -1713,14 +1751,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
         }
     }
 
-    pub(crate) fn type_name_owned_with_id(&mut self, ty: &Type, id: Identifier<'i>) -> String {
-        let old_identifier = mem::replace(&mut self.identifier, id);
-        let name = self.type_name_owned(ty);
-        self.identifier = old_identifier;
-        name
-    }
-
-    fn type_name_owned(&mut self, ty: &Type) -> String {
+    pub fn type_name_owned(&mut self, ty: &Type) -> String {
         self.type_name(
             ty,
             TypeMode {
@@ -2579,7 +2610,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
     fn define_type(&mut self, name: &str, id: TypeId) {
         let equal = self.r#gen.types.get_representative_type(id);
-        if equal == id {
+        if !self.r#gen.opts.merge_structurally_equal_types() || equal == id {
             wit_bindgen_core::define_type(self, name, id)
         } else {
             let docs = &self.resolve.types[id].docs;
@@ -2874,6 +2905,24 @@ impl<'a> {camel}Borrow<'a>{{
             self.push_str(" = ");
             self.print_list(ty, mode);
             self.push_str(";\n");
+        }
+    }
+
+    fn type_fixed_length_list(
+        &mut self,
+        id: TypeId,
+        _name: &str,
+        ty: &Type,
+        size: u32,
+        docs: &Docs,
+    ) {
+        for (name, mode) in self.modes_of(id) {
+            self.rustdoc(docs);
+            self.push_str(&format!("pub type {name}"));
+            self.print_generics(mode.lifetime);
+            self.push_str(" = [");
+            self.print_ty(ty, mode);
+            self.push_str(&format!("; {size}];\n"));
         }
     }
 

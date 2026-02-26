@@ -63,8 +63,9 @@ impl LanguageMethods for Rust {
         // no_std doesn't currently work with async
         if config.async_
             && args.iter().any(|s| s == "--std-feature")
-            // Except this one actually _does_ work:
+            // Except these actually do work:
             && name != "async-trait-function.wit-no-std"
+            && name != "async-resource-func.wit-no-std"
         {
             return true;
         }
@@ -72,6 +73,17 @@ impl LanguageMethods for Rust {
         // Currently there's a bug with this borrowing mode which means that
         // this variant does not pass.
         if name == "wasi-http-borrowed-duplicate" {
+            return true;
+        }
+
+        // The merge-structurally-equal-types flag panics on wasi-filesystem
+        // due to missing interface_names entries after type merging.
+        if name == "wasi-filesystem-merge-equal" {
+            return true;
+        }
+
+        // Named fixed-length lists don't work with async yet.
+        if name == "named-fixed-length-list.wit-async" {
             return true;
         }
 
@@ -87,6 +99,7 @@ impl LanguageMethods for Rust {
             ),
             ("async", &["--async=all"]),
             ("no-std", &["--std-feature"]),
+            ("merge-equal", &["--merge-structurally-equal-types"]),
         ]
     }
 

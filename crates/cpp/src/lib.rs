@@ -2221,6 +2221,17 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
         // nothing to do here
     }
 
+    fn type_fixed_length_list(
+        &mut self,
+        _id: TypeId,
+        _name: &str,
+        _ty: &wit_bindgen_core::wit_parser::Type,
+        _size: u32,
+        _docs: &wit_bindgen_core::wit_parser::Docs,
+    ) {
+        todo!("named fixed-length list types are not yet supported in the C++ backend")
+    }
+
     fn type_builtin(
         &mut self,
         _id: TypeId,

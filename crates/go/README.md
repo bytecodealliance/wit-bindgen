@@ -2,7 +2,17 @@
 
 This tool generates Go bindings for a chosen WIT world.
 
+## Contributing
+
+If changes need to be made to the `go.bytecodealliance.org/pkg` files referenced by the generated bindings, here are the steps that need to be taken:
+- Make the required changes to the [bytecodealliance/go-pkg](https://github.com/bytecodealliance/go-pkg) Go files and tag a release.
+- Update the `crates/go/src/pkg` git submodule to reflect the most-recent release of `go-pkg`.
+- Update the `REMOTE_PKG_VERSION` constant in [lib.rs](./src/lib.rs) to reflect the most-recent release of `go-pkg`.
+- Make the required changes to `wit-bindgen-go`.
+
 ## Usage
+
+The easiest way to use `wit-bindgen-go` is through the [componentize-go](https://github.com/bytecodealliance/componentize-go) tool. See below for using `wit-bindgen-go` directly.
 
 To generate bindings with this crate, issue the `go` subcommand to `wit-bindgen`:
 
@@ -19,19 +29,24 @@ world provided:
     - You can replace this with your own version (e.g. referencing third party dependencies) if desired
 - `wit_bindings.go`: defines the `main` package for the module, including low-level, `//go:export`-annotated entrypoint functions corresponding to exported functions
     - These entrypoint functions in turn call high-level functions which must be provided by the application developer
-- `wit_runtime/wit_runtime.go`: defines low-level functions for supporting the component model ABI
 - `<name>/wit_bindings.go`: defines any types generated for the interface named `<name>` (or `wit_world` for WIT types defined at the world level), plus any imported functions
     - Note that the types placed in these files include all types for both imported and exported interfaces, except for exported resource types and any types which depend on exported resource types
 - `export_<name>/wit_bindings.go`: defines intrinsics for use with any exported resource types generated for the interface named `<name>` (or `wit_world` for WIT types defined at the world level), plus any types which depend on those exported resource types, plus any exported functions
     - The exported resource type definitions must be provided by the application developer
     - The `export_<name>` package is also the place to define any exported functions
-- (if needed) `wit_types/wit_tuples.go`: defines `Tuple<N>` types as required by the WIT world
-- (if needed) `wit_types/wit_async.go`: defines low-level functions for integrating the Go scheduler with the component model async ABI
-- (if needed) `wit_types/wit_option.go`: defines an `Option` type if required by the WIT world
-- (if needed) `wit_types/wit_result.go`: defines an `Result` type if required by the WIT world
-- (if needed) `wit_types/wit_unit.go`: defines an `Unit` type if required by the WIT world
-- (if needed) `wit_types/wit_stream.go`: defines a `StreamReader` and `StreamWriter` types if required by the WIT world
-- (if needed) `wit_types/wit_future.go`: defines a `FutureReader` and `FutureWriter` types if required by the WIT world
+
+The generated files will reference the following files in the [bytecodealliance/go-pkg](https://github.com/bytecodealliance/go-pkg) repository:
+
+- `go.bytecodealliance.org/pkg/wit/runtime`: defines low-level functions for supporting the component model ABI
+- `go.bytecodealliance.org/pkg/wit/types` (if needed):
+  - defines `Tuple<N>` types as required by the WIT world
+  - defines an `Option` type as required by the WIT world
+  - defines a `Result` type as required by the WIT world
+  - defines a `Unit` type as required by the WIT world
+  - defines a `StreamReader` and `StreamWriter` types as required by the WIT world
+  - defines a `FutureReader` and `FutureWriter` types as required by the WIT world
+- `go.bytecodealliance.org/pkg/wit/async` (if needed): defines low-level functions for integrating the Go scheduler with the component model async ABI
+
 
 Note that async support currently requires [a patched version of
 Go](https://github.com/dicej/go/releases/tag/go1.25.5-wasi-on-idle).  Code
@@ -60,7 +75,7 @@ interface foo {
     a: s32,
     b: string,
   }
-  
+
   echo: func(x: thing) -> tuple<s32, string>;
 }
 
@@ -89,6 +104,7 @@ func Echo(x Thing) (int32, string) {
     return x.A, x.B
 }
 EOF
+go mod tidy
 GOARCH="wasm" GOOS="wasip1" go build -o core.wasm -buildmode=c-shared -ldflags=-checklinkname=0
 wasm-tools component embed -w test ../world.wit core.wasm -o core-with-wit.wasm
 wasm-tools component new --adapt ../wasi_snapshot_preview1.reactor.wasm core-with-wit.wasm -o component.wasm
@@ -106,6 +122,7 @@ func Run() (int32, string) {
     return Echo(Thing{42, "hello, world!"})
 }
 EOF
+go mod tidy
 GOARCH="wasm" GOOS="wasip1" go build -o core.wasm -buildmode=c-shared -ldflags=-checklinkname=0
 wasm-tools component embed -w runner ../world.wit core.wasm -o core-with-wit.wasm
 wasm-tools component new --adapt ../wasi_snapshot_preview1.reactor.wasm core-with-wit.wasm -o component.wasm
