@@ -4,7 +4,7 @@ import (
 	"runtime"
 	. "wit_component/my_test_test_interface"
 
-	. "github.com/bytecodealliance/wit-bindgen/wit_types"
+	. "go.bytecodealliance.org/pkg/wit/types"
 )
 
 type TestThing struct {

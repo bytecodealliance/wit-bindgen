@@ -6,14 +6,14 @@ import (
 	"fmt"
 	test "wit_component/my_test_i"
 
-	"github.com/bytecodealliance/wit-bindgen/wit_types"
+	witTypes "go.bytecodealliance.org/pkg/wit/types"
 )
 
 type Unit struct{}
 
 func Run() {
 	{
-		f1 := make(chan *wit_types.FutureReader[string])
+		f1 := make(chan *witTypes.FutureReader[string])
 		f2 := make(chan Unit)
 
 		tx, rx := test.MakeFutureString()

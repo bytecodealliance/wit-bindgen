@@ -6,30 +6,30 @@ import (
 	"fmt"
 	test "wit_component/my_test_i"
 
-	"github.com/bytecodealliance/wit-bindgen/wit_types"
+	witTypes "go.bytecodealliance.org/pkg/wit/types"
 )
 
 func Run() {
-	write := make(chan wit_types.Unit)
-	read := make(chan wit_types.Unit)
+	write := make(chan witTypes.Unit)
+	read := make(chan witTypes.Unit)
 
 	{
 		tx, rx := test.MakeStreamUnit()
 		go func() {
-			assertEqual(tx.Write([]wit_types.Unit{wit_types.Unit{}}), 1)
+			assertEqual(tx.Write([]witTypes.Unit{witTypes.Unit{}}), 1)
 			assert(!tx.ReaderDropped())
 
-			assertEqual(tx.Write([]wit_types.Unit{wit_types.Unit{}, wit_types.Unit{}}), 2)
+			assertEqual(tx.Write([]witTypes.Unit{witTypes.Unit{}, witTypes.Unit{}}), 2)
 
-			assertEqual(tx.Write([]wit_types.Unit{wit_types.Unit{}, wit_types.Unit{}}), 0)
+			assertEqual(tx.Write([]witTypes.Unit{witTypes.Unit{}, witTypes.Unit{}}), 0)
 			assert(tx.ReaderDropped())
 
-			write <- wit_types.Unit{}
+			write <- witTypes.Unit{}
 		}()
 
 		go func() {
 			test.ReadStream(rx)
-			read <- wit_types.Unit{}
+			read <- witTypes.Unit{}
 		}()
 
 		(<-read)
@@ -47,7 +47,7 @@ func Run() {
 				// point all Goroutines will attempt to simultaneously read from the stream.
 				<-syncBarrier
 				panicCh <- checkPanicValue(func() {
-					result := make([]wit_types.Unit, 1)
+					result := make([]witTypes.Unit, 1)
 					rx.Read(result)
 				})
 			}()
@@ -59,7 +59,7 @@ func Run() {
 			// a "tx.WriteAll" and will result in a "wasm trap: deadlock detected" error. Additionally,
 			// this is placed after "close(syncBarrier)" to ensure that the panics are resulting from
 			// concurrent reads, and not from other scenarios that result in a nil handle.
-			tx.WriteAll([]wit_types.Unit{wit_types.Unit{}})
+			tx.WriteAll([]witTypes.Unit{witTypes.Unit{}})
 		}()
 
 		p1, p2 := <-panicCh, <-panicCh
@@ -79,7 +79,7 @@ func Run() {
 				// point all Goroutines will attempt to simultaneously write to the stream.
 				<-syncBarrier
 				panicCh <- checkPanicValue(func() {
-					tx.WriteAll([]wit_types.Unit{wit_types.Unit{}})
+					tx.WriteAll([]witTypes.Unit{witTypes.Unit{}})
 				})
 			}()
 		}
@@ -90,7 +90,7 @@ func Run() {
 			// an "rx.Read" and will result in a "wasm trap: deadlock detected" error. Additionally,
 			// this is placed after "close(syncBarrier)" to ensure that the panics are resulting from
 			// concurrent writes, and not from other scenarios that result in a nil handle.
-			result := make([]wit_types.Unit, 1)
+			result := make([]witTypes.Unit, 1)
 			rx.Read(result)
 		}()
 
