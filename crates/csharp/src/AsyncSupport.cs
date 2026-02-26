@@ -340,8 +340,8 @@ public static class FutureHelpers
         var readerHandle = (int)(packed & 0xFFFFFFFF);
         var writerHandle = (int)(packed >> 32);
 
-        Console.WriteLine($"Createing reader<T> with handle {readerHandle}");
-        Console.WriteLine($"Createing writer<T> with handle {writerHandle}");
+        Console.WriteLine($"Creating reader<T> with handle {readerHandle}");
+        Console.WriteLine($"Creating writer<T> with handle {writerHandle}");
         return (new StreamReader<T>(readerHandle, vtable), new StreamWriter<T>(writerHandle, vtable));
     }
 }
