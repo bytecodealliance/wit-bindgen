@@ -2594,25 +2594,6 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     }
 
     fn define_type(&mut self, name: &str, id: TypeId) {
-        /*
-        // An alternative fix to disallow aliasing primitive types.
-        // But this is covered by the no type owner case from collect_equal_types.
-        let mut use_alias = false;
-        let equal = self.r#gen.types.get_representative_type(id);
-        if self.r#gen.opts.merge_structurally_equal_types() {
-            if equal != id {
-                if !matches!(&self.resolve.types[equal].kind, TypeDefKind::Type(_)) {
-                    use_alias = true;
-                }
-             }
-        }
-        if use_alias {
-            let docs = &self.resolve.types[id].docs;
-            self.print_typedef_alias(id, &Type::Id(equal), &docs);
-        } else {
-            wit_bindgen_core::define_type(self, name, id)
-        }
-        */
         let equal = self.r#gen.types.get_representative_type(id);
         if !self.r#gen.opts.merge_structurally_equal_types() || equal == id {
             wit_bindgen_core::define_type(self, name, id)

@@ -119,7 +119,7 @@ impl Types {
             .chain(world.exports.iter())
             .filter_map(|(_, item)| match item {
                 WorldItem::Interface { id, .. } => Some(*id),
-                _ => None,
+                WorldItem::Function(_) | WorldItem::Type { .. } => None,
             })
             .collect();
         let types: Vec<_> = resolve
@@ -128,6 +128,7 @@ impl Types {
             .filter(|(t, _)| match resolve.types[*t].owner {
                 TypeOwner::Interface(id) => interfaces.contains(&id),
                 TypeOwner::World(id) => world_id == id,
+                // Don't alias primitive types for better readability
                 TypeOwner::None => false,
             })
             .collect();

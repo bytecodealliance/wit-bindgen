@@ -1,4 +1,15 @@
+//@ merge_structurally_equal_types = true
+
 package test:merge-equal;
+
+// This interface is not reachable from the test world,
+// so it cannot be used as a representative type
+interface unreachable {
+    record payload {
+        data: list<u8>,
+        tag: string,
+    }
+}
 
 interface importer {
     record payload {
