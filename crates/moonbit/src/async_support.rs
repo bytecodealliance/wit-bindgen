@@ -5,10 +5,10 @@ use std::{
 
 use heck::ToUpperCamelCase;
 use wit_bindgen_core::{
-    Direction, Files, Source,
-    abi::{self, WasmSignature, deallocate_lists_in_types, lift_from_memory},
+    abi::{self, deallocate_lists_in_types, lift_from_memory, WasmSignature},
     dealias, uwriteln,
-    wit_parser::{Function, Type, TypeDefKind, TypeId},
+    Direction, Files, Source,
+    wit_parser::{Function, Param, Type, TypeDefKind, TypeId},
 };
 
 use crate::pkg::ToMoonBitIdent;
@@ -117,11 +117,19 @@ impl<'a> InterfaceGenerator<'a> {
         let param_names = func
             .params
             .iter()
-            .map(|(name, _)| name.to_moonbit_ident())
+            .map(|Param { name, .. }| name.to_moonbit_ident())
             .collect::<Vec<_>>();
-        let param_types = func.params.iter().map(|(_, ty)| *ty).collect::<Vec<_>>();
-        let mut bindgen =
-            FunctionBindgen::new(self, param_names.into_boxed_slice(), Direction::Import, true);
+        let param_types = func
+            .params
+            .iter()
+            .map(|Param { ty, .. }| *ty)
+            .collect::<Vec<_>>();
+        let mut bindgen = FunctionBindgen::new(
+            self,
+            param_names.into_boxed_slice(),
+            Direction::Import,
+            true,
+        );
         let mut lowered_params = Vec::new();
 
         let params_ptr = if wasm_sig.indirect_params {
