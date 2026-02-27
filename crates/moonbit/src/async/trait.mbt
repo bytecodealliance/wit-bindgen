@@ -88,7 +88,7 @@ fn fresh_id() -> Int {
 
 ///|
 ///|
-struct Waiter {
+priv struct Waiter {
   mut coro : Coroutine?
 }
 
@@ -312,8 +312,8 @@ pub fn[X] Future::new() -> (Future[X], Promise[X]) {
   }
   let future = Future::{ id: fresh_id(), state }
   let promise = Promise::{
-    write: async fn(value : X) { local_future_write(state, value) },
-    close: async fn() { local_future_close(state) },
+    write: (value : X) => { local_future_write(state, value) },
+    close: () => { local_future_close(state) },
   }
   (future, promise)
 }
@@ -336,7 +336,7 @@ pub async fn[X] Future::get(self : Future[X]) -> X {
 }
 
 ///|
-pub async fn[X] Future::drop(self : Future[X]) -> Unit {
+pub fn[X] Future::drop(self : Future[X]) -> Unit {
   local_future_close(self.state)
 }
 
@@ -414,12 +414,12 @@ pub fn[X] CMFuture::new() -> (CMFuture[X], Promise[X]) {
 
 ///|
 pub fn[X] CMFuture::ready(value : X) -> CMFuture[X] {
-  CMFuture::Outgoing(CMFutureOut::new(async fn() { value }))
+  CMFuture::Outgoing(CMFutureOut::new(() => value))
 }
 
 ///|
 pub fn[X] CMFuture::from_local(future : Future[X]) -> CMFuture[X] {
-  CMFuture::Outgoing(CMFutureOut::new(async fn() { future.get() }))
+  CMFuture::Outgoing(CMFutureOut::new(() => future.get()))
 }
 
 ///|
@@ -478,8 +478,8 @@ pub fn[X] Stream::new(capacity? : Int = 0) -> (Stream[X], Sink[X]) {
   }
   let stream = Stream::{ id: fresh_id(), state }
   let sink = Sink::{
-    write: async fn(data : ArrayView[X]) { local_stream_write(state, data) },
-    close: async fn() { local_stream_close(state) },
+    write: (data : ArrayView[X]) => { local_stream_write(state, data) },
+    close: () => { local_stream_close(state) },
   }
   (stream, sink)
 }
@@ -490,7 +490,7 @@ pub async fn[X] Stream::read(self : Stream[X], count : Int) -> ArrayView[X]? {
 }
 
 ///|
-pub async fn[X] Stream::close(self : Stream[X]) -> Unit {
+pub fn[X] Stream::close(self : Stream[X]) -> Unit {
   local_stream_close(self.state)
 }
 

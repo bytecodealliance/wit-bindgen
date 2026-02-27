@@ -355,7 +355,6 @@ pub async fn suspend_for_stream_write(idx : Int, val : Int) -> (Int, Bool) {
 ///|
 pub suberror OpCancelled {
   SubTaskCancelled(before_started~ : Bool)
-  StreamWriteCancelled
   StreamReadCancelled
   FutureWriteCancelled
 }

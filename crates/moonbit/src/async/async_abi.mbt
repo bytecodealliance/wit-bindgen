@@ -207,7 +207,7 @@ fn CallbackCode::encode(self : Self) -> Int {
 }
 
 ///|
-fn CallbackCode::decode(int : Int) -> CallbackCode {
+fn CallbackCode::_decode(int : Int) -> CallbackCode {
   let id = int >> 4
   match int & 0xf {
     0 => Completed
