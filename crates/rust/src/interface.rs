@@ -556,10 +556,7 @@ macro_rules! {macro_name} {{
         }
 
         // Use the original (non-canonicalized) type for generating the
-        // type name and code. The canonical representative may belong to
-        // an interface that hasn't been processed yet (when world import
-        // order differs from WIT definition order), which would cause
-        // `path_to_interface` to panic. Since structurally equal types
+        // type name and code. Since structurally equal types
         // resolve to the same Rust type, it doesn't matter which alias
         // path we use in the generated `impl`.
         let payload_type = match payload_type {
@@ -2431,7 +2428,11 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
     }
 
     fn path_to_interface(&self, interface: InterfaceId) -> Option<String> {
-        let InterfaceName { path, remapped } = &self.r#gen.interface_names[&interface];
+        let Some(InterfaceName { path, remapped }) = &self.r#gen.interface_names.get(&interface)
+        else {
+            let name = self.resolve.interfaces[interface].name.as_ref().unwrap();
+            panic!("Cannot find interface {interface:?}: {name}");
+        };
         if *remapped {
             let mut path_to_root = self.path_to_root();
             path_to_root.push_str(path);

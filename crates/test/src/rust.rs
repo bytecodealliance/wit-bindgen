@@ -76,12 +76,6 @@ impl LanguageMethods for Rust {
             return true;
         }
 
-        // The merge-structurally-equal-types flag panics on wasi-filesystem
-        // due to missing interface_names entries after type merging.
-        if name == "wasi-filesystem-merge-equal" {
-            return true;
-        }
-
         // Named fixed-length lists don't work with async yet.
         if name == "named-fixed-length-list.wit-async" {
             return true;

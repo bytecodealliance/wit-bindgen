@@ -95,8 +95,7 @@ impl Types {
         }
     }
 
-    /// Populates the return value of [`Types::get_representative_type`] with
-    /// the `resolve` passed in.
+    /// Identify all the structurally equal types reachable from the `world_id`.
     ///
     /// The `may_alias_another_type` closure is used to determine whether the
     /// language's definition of the provided `TypeId` might possibly alias
@@ -109,19 +108,22 @@ impl Types {
     pub fn collect_equal_types(
         &mut self,
         resolve: &Resolve,
+        world_id: WorldId,
         may_alias_another_type: &dyn Fn(TypeId) -> bool,
     ) {
-        for (i, (ty, _)) in resolve.types.iter().enumerate() {
+        let mut live_types = wit_parser::LiveTypes::default();
+        live_types.add_world(resolve, world_id);
+        for (i, ty) in live_types.iter().enumerate() {
             if !may_alias_another_type(ty) {
                 continue;
             }
             // TODO: we could define a hash function for TypeDefKind to prevent the inner loop.
-            for (earlier, _) in resolve.types.iter().take(i) {
+            for earlier in live_types.iter().take(i) {
                 if self.equal_types.find(ty) == self.equal_types.find(earlier) {
                     continue;
                 }
                 // The correctness of is_structurally_equal relies on the fact
-                // that resolve.types.iter() is in topological order.
+                // that live_types.iter() is in topological order.
                 if self.is_structurally_equal(resolve, ty, earlier) {
                     self.equal_types.union(ty, earlier);
                     break;

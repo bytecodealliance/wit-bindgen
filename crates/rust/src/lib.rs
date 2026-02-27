@@ -1129,7 +1129,7 @@ impl WorldGenerator for RustWasm {
             uwriteln!(self.src_preamble, "//   * async: {opt}");
         }
         self.types.analyze(resolve);
-        self.types.collect_equal_types(resolve, &|a| {
+        self.types.collect_equal_types(resolve, world, &|a| {
             // If `--merge-structurally-equal-types` is enabled then any type
             // anywhere can be generated as a type alias to anything else.
             if self.opts.merge_structurally_equal_types() {
@@ -1194,6 +1194,16 @@ impl WorldGenerator for RustWasm {
             self.with.insert(k.clone(), v.clone().into());
         }
         self.with.generate_by_default = self.opts.generate_all;
+        for (key, item) in world.imports.iter() {
+            if let WorldItem::Interface { id, .. } = item {
+                self.name_interface(resolve, *id, &key, false).unwrap();
+            }
+        }
+        for (key, item) in world.exports.iter() {
+            if let WorldItem::Interface { id, .. } = item {
+                self.name_interface(resolve, *id, &key, true).unwrap();
+            }
+        }
     }
 
     fn import_interface(
@@ -1225,7 +1235,7 @@ impl WorldGenerator for RustWasm {
             true,
         );
         let (snake, module_path) = r#gen.start_append_submodule(name);
-        if r#gen.r#gen.name_interface(resolve, id, name, false)? {
+        if r#gen.r#gen.interface_names[&id].remapped {
             return Ok(());
         }
 
@@ -1281,7 +1291,7 @@ impl WorldGenerator for RustWasm {
             false,
         );
         let (snake, module_path) = r#gen.start_append_submodule(name);
-        if r#gen.r#gen.name_interface(resolve, id, name, true)? {
+        if r#gen.r#gen.interface_names[&id].remapped {
             return Ok(());
         }
 
