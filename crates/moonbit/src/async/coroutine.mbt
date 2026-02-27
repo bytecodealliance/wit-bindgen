@@ -112,7 +112,7 @@ pub fn spawn(f : async () -> Unit) -> Coroutine {
     spawner: inherited_spawner,
   }
   fn run(_) {
-    run_async(fn() {
+    run_async(() => {
       coro.shielded = false
       if coro.cancelled {
         coro.state = Fail(Cancelled::Cancelled)

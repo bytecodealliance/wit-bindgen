@@ -132,6 +132,33 @@ pub struct MoonBit {
 }
 
 impl MoonBit {
+    fn builtin_symbol(builtin: &str) -> Option<&str> {
+        builtin.lines().find_map(|line| {
+            let trimmed = line.trim();
+            let rest = trimmed
+                .strip_prefix("extern \"wasm\" fn ")
+                .or_else(|| trimmed.strip_prefix("pub fn "))?;
+            rest.split('(').next().map(str::trim)
+        })
+    }
+
+    fn emit_used_builtins<'a>(
+        ffi: &mut Source,
+        ffi_body: &str,
+        builtins: impl IntoIterator<Item = &'a &'static str>,
+    ) {
+        let mut used = builtins.into_iter().copied().collect::<Vec<_>>();
+        used.sort_unstable();
+        for builtin in used {
+            let should_emit = MoonBit::builtin_symbol(builtin)
+                .map(|symbol| ffi_body.contains(&format!("{symbol}(")))
+                .unwrap_or(true);
+            if should_emit {
+                uwriteln!(ffi, "{builtin}");
+            }
+        }
+    }
+
     fn interface<'a>(
         &'a mut self,
         resolve: &'a Resolve,
@@ -281,7 +308,7 @@ impl WorldGenerator for MoonBit {
             if let Some(content) = &resolve.interfaces[id].docs.contents
                 && !content.is_empty()
             {
-                files.push(&format!("{}/README.md", directory), content.as_bytes());
+                files.push(&format!("{directory}/README.md"), content.as_bytes());
             }
 
             assert!(fragment.stub.is_empty());
@@ -295,9 +322,8 @@ impl WorldGenerator for MoonBit {
             let mut ffi = Source::default();
             wit_bindgen_core::generated_preamble(&mut ffi, VERSION);
             uwriteln!(ffi, "{}", fragment.ffi);
-            for builtin in fragment.builtins {
-                uwriteln!(ffi, "{}", builtin);
-            }
+            let builtin_refs = format!("{}\n{}", fragment.src, fragment.ffi);
+            MoonBit::emit_used_builtins(&mut ffi, &builtin_refs, fragment.builtins.iter());
             files.push(&format!("{directory}/ffi.mbt"), indent(&ffi).as_bytes());
 
             // moon.pkg.json
@@ -359,7 +385,7 @@ impl WorldGenerator for MoonBit {
         if let Some(content) = &resolve.worlds[world].docs.contents
             && !content.is_empty()
         {
-            files.push(&format!("{}/README.md", directory), content.as_bytes());
+            files.push(&format!("{directory}/README.md"), content.as_bytes());
         }
         // Source
         let mut src = Source::default();
@@ -372,9 +398,11 @@ impl WorldGenerator for MoonBit {
         wit_bindgen_core::generated_preamble(&mut ffi, VERSION);
         uwriteln!(ffi, "{}", self.import_world_fragment.ffi);
         builtins.extend(self.import_world_fragment.builtins.iter());
-        for b in builtins.iter() {
-            uwriteln!(ffi, "{}", b);
-        }
+        let builtin_refs = format!(
+            "{}\n{}",
+            self.import_world_fragment.src, self.import_world_fragment.ffi
+        );
+        MoonBit::emit_used_builtins(&mut ffi, &builtin_refs, builtins.iter());
         files.push(
             &format!("{directory}/ffi_import.mbt"),
             indent(&ffi).as_bytes(),
@@ -456,9 +484,8 @@ impl WorldGenerator for MoonBit {
             wit_bindgen_core::generated_preamble(&mut ffi, VERSION);
 
             uwriteln!(&mut ffi, "{}", fragment.ffi);
-            for b in fragment.builtins.iter() {
-                uwriteln!(ffi, "{}", b);
-            }
+            let builtin_refs = format!("{}\n{}", fragment.src, fragment.ffi);
+            MoonBit::emit_used_builtins(&mut ffi, &builtin_refs, fragment.builtins.iter());
             files.push(&format!("{directory}/ffi.mbt",), indent(&ffi).as_bytes());
         }
 
@@ -514,9 +541,8 @@ impl WorldGenerator for MoonBit {
             let mut export = Source::default();
             wit_bindgen_core::generated_preamble(&mut export, VERSION);
             uwriteln!(&mut export, "{}", fragment.ffi);
-            for b in fragment.builtins.iter() {
-                uwriteln!(&mut export, "{}", b);
-            }
+            let builtin_refs = format!("{}\n{}", fragment.src, fragment.ffi);
+            MoonBit::emit_used_builtins(&mut export, &builtin_refs, fragment.builtins.iter());
             files.push(&format!("{directory}/ffi.mbt",), indent(&export).as_bytes());
         }
 
@@ -556,11 +582,25 @@ impl WorldGenerator for MoonBit {
         );
 
         let mut moon_pkg = Source::default();
-        self.write_moon_pkg(
-            &mut moon_pkg,
-            self.pkg_resolver.package_import.get(&self.opts.r#gen_dir),
-            true,
-        );
+        let mut filtered_imports = Imports::default();
+        if let Some(imports) = self.pkg_resolver.package_import.get(&self.opts.r#gen_dir) {
+            for (path, alias) in imports.packages.iter() {
+                // The root `gen` package doesn't reference async helpers directly;
+                // interface subpackages import async on their own.
+                if alias == "async" || path.ends_with("/async") {
+                    continue;
+                }
+                filtered_imports
+                    .packages
+                    .insert(path.to_string(), alias.to_string());
+            }
+        }
+        let imports = if filtered_imports.packages.is_empty() {
+            None
+        } else {
+            Some(&filtered_imports)
+        };
+        self.write_moon_pkg(&mut moon_pkg, imports, true);
         files.push(
             &format!("{}/moon.pkg.json", self.opts.r#gen_dir),
             indent(&moon_pkg).as_bytes(),
@@ -704,7 +744,7 @@ impl InterfaceGenerator<'_> {
         let src = bindgen.src.clone();
 
         let cleanup_list = if bindgen.needs_cleanup_list {
-            "let cleanup_list : Array[Int] = []"
+            "let _cleanup_list : Array[Int] = []"
         } else {
             ""
         };
@@ -742,13 +782,31 @@ impl InterfaceGenerator<'_> {
         {
             let mbt_sig = self.world_gen.pkg_resolver.mbt_sig(self.name, func, false);
             let func_sig = self.sig_string_with_direction(&mbt_sig, async_, Direction::Export);
+            let mut ignored_params = mbt_sig
+                .params
+                .iter()
+                .map(|(name, _)| format!("ignore({name})"))
+                .collect::<Vec<_>>();
+            if async_ {
+                ignored_params.push("ignore(task_group)".to_string());
+            }
+            let ignored_params = if ignored_params.is_empty() {
+                String::new()
+            } else {
+                format!("{}\n", ignored_params.join("\n"))
+            };
+            let async_marker = if async_ {
+                "@async.protect_from_cancel(() => ())\n"
+            } else {
+                ""
+            };
 
             print_docs(&mut self.stub, &func.docs);
             uwrite!(
                 self.stub,
                 r#"
                 {func_sig} {{
-                    ...
+                    {ignored_params}{async_marker}abort("not implemented")
                 }}
                 "#
             );
@@ -783,7 +841,7 @@ impl InterfaceGenerator<'_> {
 
         // Handle cleanup for both sync and async exports
         let cleanup_list = if bindgen.needs_cleanup_list {
-            "let cleanup_list : Array[Int] = []"
+            "let _cleanup_list : Array[Int] = []"
         } else {
             ""
         };
@@ -1206,7 +1264,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 r#"
                 /// Destructor of the resource.
                 pub fn {name}::dtor(_self : {name}) -> Unit {{
-                  ...
+                  abort("not implemented")
                 }}
                 "#
             );
@@ -2586,7 +2644,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     uwrite!(
                         self.src,
                         "
-                        cleanup_list.each(mbt_ffi_free)
+                        _cleanup_list.each(mbt_ffi_free)
                         ",
                     );
                 }

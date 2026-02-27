@@ -324,7 +324,7 @@ fn wasmLift{camel_name}{index}DropReadable(_ : Int) = "{module}" "[future-drop-r
             r#"
 fn wasmLower{camel_name}{index}New() -> UInt64 = "{module}" "[future-new-{index}]{func_name}"
 fn wasmLower{camel_name}{index}Write(handle : Int, ptr : Int) -> Int = "{module}" "[future-write-{index}]{func_name}"
-fn wasmLower{camel_name}{index}CancelWrite(_ : Int) -> Int = "{module}" "[future-cancel-write-{index}]{func_name}"
+fn _wasmLower{camel_name}{index}CancelWrite(_ : Int) -> Int = "{module}" "[future-cancel-write-{index}]{func_name}"
 fn wasmLower{camel_name}{index}DropWritable(_ : Int) = "{module}" "[future-drop-writable-{index}]{func_name}"
     "#
         );
@@ -364,7 +364,7 @@ fn wasmLift{camel_name}{index}(future_handle : Int) -> {lifted} {{
   }}
   {async_qualifier}CMFuture::Incoming({async_qualifier}FutureR::{{
     handle: future_handle,
-    get: fn () {{
+    get: () => {{
       if result is Some(r) {{
         return r
       }}
@@ -549,7 +549,7 @@ fn wasmLift{camel_name}{index}DropReadable(_ : Int) = "{module}" "[stream-drop-r
             r#"
 fn wasmLower{camel_name}{index}New() -> UInt64 = "{module}" "[stream-new-{index}]{func_name}"
 fn wasmLower{camel_name}{index}Write(handle : Int, ptr : Int, len : Int) -> Int = "{module}" "[stream-write-{index}]{func_name}"
-fn wasmLower{camel_name}{index}CancelWrite(_ : Int) -> Int = "{module}" "[stream-cancel-write-{index}]{func_name}"
+fn _wasmLower{camel_name}{index}CancelWrite(_ : Int) -> Int = "{module}" "[stream-cancel-write-{index}]{func_name}"
 fn wasmLower{camel_name}{index}DropWritable(_ : Int) = "{module}" "[stream-drop-writable-{index}]{func_name}"
     "#
         );
@@ -585,7 +585,7 @@ fn wasmLift{camel_name}{index}(stream_handle : Int) -> {lifted} {{
   }}
   {async_qualifier}CMStream::Incoming({async_qualifier}StreamR::{{
     handle: stream_handle,
-    read: fn (count : Int) {{
+    read: (count : Int) => {{
       if closed {{
         return None
       }}"#
@@ -764,7 +764,7 @@ fn wasmLower{camel_name}{index}(stream : {lifted}) -> Int {{
             lower,
             r#"
           }},
-          close: async fn () {{
+          close: () => {{
             if !closed {{
               closed = true
               wasmLower{camel_name}{index}DropWritable(writable)
