@@ -36,6 +36,20 @@ fn should_complete(waitable_set : WaitableSet) -> Bool {
 }
 
 ///|
+fn next_callback(waitable_set : WaitableSet) -> Int {
+  if should_complete(waitable_set) {
+    ev.tasks.remove(waitable_set)
+    ev.finished.remove(waitable_set)
+    waitable_set.drop()
+    return CallbackCode::Completed.encode()
+  }
+  if has_immediately_ready_task() && ev.subscribes.is_empty() {
+    return CallbackCode::Yield.encode()
+  }
+  CallbackCode::Wait(waitable_set.0).encode()
+}
+
+///|
 pub fn with_waitableset(f : async () -> Unit) -> Int {
   let waitable_set = WaitableSet::new()
   tls_set(waitable_set.0)
@@ -46,14 +60,7 @@ pub fn with_waitableset(f : async () -> Unit) -> Int {
   ev.tasks.set(waitable_set, coro)
   ev.finished.set(waitable_set, false)
   reschedule()
-  if should_complete(waitable_set) {
-    ev.tasks.remove(waitable_set)
-    ev.finished.remove(waitable_set)
-    waitable_set.drop()
-    return CallbackCode::Completed.encode()
-  } else {
-    return CallbackCode::Wait(waitable_set.0).encode()
-  }
+  next_callback(waitable_set)
 }
 
 ///|
@@ -63,19 +70,17 @@ pub fn cb(event : Int, waitable_id : Int, code : Int) -> Int {
   match events {
     None => {
       reschedule()
-      if should_complete(waitable_set) {
-        ev.tasks.remove(waitable_set)
-        ev.finished.remove(waitable_set)
-        waitable_set.drop()
-        return CallbackCode::Completed.encode()
-      } else {
-        return CallbackCode::Wait(waitable_set.0).encode()
-      }
+      next_callback(waitable_set)
     }
     TaskCancelled => {
       guard ev.tasks.get(waitable_set) is Some(coro)
       coro.cancel()
-      reschedule()
+      for {
+        reschedule()
+        if !has_immediately_ready_task() {
+          break
+        }
+      }
       ev.tasks.remove(waitable_set)
       ev.finished.remove(waitable_set)
       if ev.subscribes.is_empty() {
@@ -93,14 +98,7 @@ pub fn cb(event : Int, waitable_id : Int, code : Int) -> Int {
       ev.subscribes.remove(waitable_id)
       waitable_join(waitable_id, 0)
       reschedule()
-      if should_complete(waitable_set) {
-        ev.tasks.remove(waitable_set)
-        ev.finished.remove(waitable_set)
-        waitable_set.drop()
-        return CallbackCode::Completed.encode()
-      } else {
-        return CallbackCode::Wait(waitable_set.0).encode()
-      }
+      next_callback(waitable_set)
     }
   }
 }
