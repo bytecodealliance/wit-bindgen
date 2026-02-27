@@ -128,8 +128,8 @@ impl Types {
             .filter(|(t, _)| match resolve.types[*t].owner {
                 TypeOwner::Interface(id) => interfaces.contains(&id),
                 TypeOwner::World(id) => world_id == id,
-                // Don't alias primitive types for better readability
-                TypeOwner::None => false,
+                // primitive types are always reachable
+                TypeOwner::None => true,
             })
             .collect();
         for (i, (ty, _)) in types.iter().enumerate() {
