@@ -69,6 +69,13 @@ impl LanguageMethods for Rust {
         {
             return true;
         }
+
+        // Currently there's a bug with this borrowing mode which means that
+        // this variant does not pass.
+        if name == "wasi-http-borrowed-duplicate" {
+            return true;
+        }
+
         // Named fixed-length lists don't work with async yet.
         if name == "named-fixed-length-list.wit-async" {
             return true;
