@@ -5,6 +5,6 @@
 
 ///|
 pub async fn run(task_group : @async.TaskGroup[Unit]) -> Unit {
-  let returned = @theTest.f(@async.Future::ready(()))
+  let returned = @theTest.f(@async.CMFuture::ready(()))
   returned.drop()
 }

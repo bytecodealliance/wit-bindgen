@@ -10,4 +10,12 @@ pub async fn run(task_group : @async.TaskGroup[Unit]) -> Unit {
 
   let done = @i.create_unit_future()
   done.get()
+
+  let nested = @i.create_nested_future(7U)
+  let inner = nested.get()
+  assert_eq(inner.get(), 7U)
+
+  let nested_record = @i.create_nested_future_record(9U)
+  let nested_inner = nested_record.nested.get()
+  assert_eq(nested_inner.get(), 9U)
 }

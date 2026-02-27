@@ -18,5 +18,17 @@ impl Guest for Component {
         // Test creating a unit future
         let rx = create_unit_future().await;
         rx.await;
+
+        // Test future<future<u32>>
+        let outer = create_nested_future(7).await;
+        let inner = outer.await;
+        let nested_value = inner.await;
+        assert_eq!(nested_value, 7);
+
+        // Test record containing future<future<u32>>
+        let record = create_nested_future_record(9).await;
+        let record_inner = record.nested.await;
+        let record_value = record_inner.await;
+        assert_eq!(record_value, 9);
     }
 }

@@ -1494,7 +1494,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     }
 
     fn type_future(&mut self, _id: TypeId, _name: &str, _ty: &Option<Type>, _docs: &Docs) {
-        // Not needed. They will become `FutureR[T]` in MoonBit.
+        // Not needed. They will become `CMFuture[T]` in MoonBit.
     }
 
     fn type_stream(&mut self, _id: TypeId, _name: &str, _ty: &Option<Type>, _docs: &Docs) {
@@ -2518,8 +2518,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let assignment = match func.result {
                     None => "let _ = ".into(),
                     Some(ty) => {
-                        // For exports, use lowering type names (OutFuture/OutStream)
-                        // For imports, use lifting type names (FutureR/StreamR)
+                        // For exports, use lowering type names.
+                        // For imports, use lifting type names.
                         let ty = match self.direction {
                             Direction::Export => {
                                 format!("({})", self.resolve_type_name_for_lowering(&ty))
