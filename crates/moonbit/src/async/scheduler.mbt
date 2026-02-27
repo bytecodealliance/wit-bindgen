@@ -45,7 +45,10 @@ pub fn no_more_work() -> Bool {
 
 ///|
 pub fn reschedule() -> Unit {
-  while scheduler.run_later.pop_front() is Some(coro) {
+  let mut budget = 1024
+  while budget > 0 {
+    budget -= 1
+    guard scheduler.run_later.pop_front() is Some(coro) else { break }
     coro.ready = false
     guard coro.state is Suspend(ok_cont~, err_cont~) else {  }
     coro.state = Running
