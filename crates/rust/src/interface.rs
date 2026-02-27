@@ -556,10 +556,7 @@ macro_rules! {macro_name} {{
         }
 
         // Use the original (non-canonicalized) type for generating the
-        // type name and code. The canonical representative may belong to
-        // an interface that hasn't been processed yet (when world import
-        // order differs from WIT definition order), which would cause
-        // `path_to_interface` to panic. Since structurally equal types
+        // type name and code. Since structurally equal types
         // resolve to the same Rust type, it doesn't matter which alias
         // path we use in the generated `impl`.
         let payload_type = match payload_type {
