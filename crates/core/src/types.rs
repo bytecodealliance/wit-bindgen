@@ -113,24 +113,19 @@ impl Types {
     ) {
         let mut live_types = wit_parser::LiveTypes::default();
         live_types.add_world(resolve, world_id);
-        let types: Vec<_> = resolve
-            .types
-            .iter()
-            .filter(|(t, _)| live_types.contains(*t))
-            .collect();
-        for (i, (ty, _)) in types.iter().enumerate() {
-            if !may_alias_another_type(*ty) {
+        for (i, ty) in live_types.iter().enumerate() {
+            if !may_alias_another_type(ty) {
                 continue;
             }
             // TODO: we could define a hash function for TypeDefKind to prevent the inner loop.
-            for (earlier, _) in types.iter().take(i) {
-                if self.equal_types.find(*ty) == self.equal_types.find(*earlier) {
+            for earlier in live_types.iter().take(i) {
+                if self.equal_types.find(ty) == self.equal_types.find(earlier) {
                     continue;
                 }
                 // The correctness of is_structurally_equal relies on the fact
-                // that resolve.types.iter() is in topological order.
-                if self.is_structurally_equal(resolve, *ty, *earlier) {
-                    self.equal_types.union(*ty, *earlier);
+                // that live_types.iter() is in topological order.
+                if self.is_structurally_equal(resolve, ty, earlier) {
+                    self.equal_types.union(ty, earlier);
                     break;
                 }
             }
