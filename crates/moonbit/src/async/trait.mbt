@@ -444,69 +444,21 @@ pub async fn[X] CMFuture::drop(self : CMFuture[X]) -> Unit {
 }
 
 ///|
-pub(all) struct StreamOutInner[X] {
-  mut producer : (async (Sink[X]) -> Unit)?
-}
-
-///|
-pub(all) struct StreamOut[X] {
+pub struct Stream[X] {
   id : Int
-  inner : Ref[StreamOutInner[X]]
-}
-
-///|
-pub fn[X] StreamOut::new(producer : async (Sink[X]) -> Unit) -> StreamOut[X] {
-  { id: fresh_id(), inner: { val: { producer: Some(producer) } } }
-}
-
-///|
-pub fn[X] StreamOut::take_producer(self : StreamOut[X]) -> (async (Sink[X]) -> Unit) {
-  guard self.inner.val.producer is Some(p)
-  self.inner.val.producer = None
-  p
-}
-
-///|
-pub(all) enum Stream[X] {
-  Incoming(StreamR[X])
-  Outgoing(StreamOut[X])
+  state : Ref[LocalStreamState[X]]
 }
 
 ///|
 pub impl[X] Eq for Stream[X] with equal(self, other) -> Bool {
-  match self {
-    Incoming(s) =>
-      match other {
-        Incoming(t) => s.handle == t.handle
-        Outgoing(_) => false
-      }
-    Outgoing(s) =>
-      match other {
-        Incoming(_) => false
-        Outgoing(t) => s.id == t.id
-      }
-  }
+  self.id == other.id
 }
 
 ///|
 pub impl[X] Show for Stream[X] with output(self, logger) {
-  match self {
-    Incoming(s) => {
-      logger.write_string("Stream::Incoming(")
-      logger.write_string(s.handle.to_string())
-      logger.write_string(")")
-    }
-    Outgoing(s) => {
-      logger.write_string("Stream::Outgoing(")
-      logger.write_string(s.id.to_string())
-      logger.write_string(")")
-    }
-  }
-}
-
-///|
-pub fn[X] Stream::from(producer : async (Sink[X]) -> Unit) -> Stream[X] {
-  Stream::Outgoing(StreamOut::new(producer))
+  logger.write_string("Stream(")
+  logger.write_string(self.id.to_string())
+  logger.write_string(")")
 }
 
 ///|
@@ -524,13 +476,7 @@ pub fn[X] Stream::new(capacity? : Int = 0) -> (Stream[X], Sink[X]) {
       writers: @deque.new(),
     },
   }
-  let handle = fresh_id()
-  let stream = Stream::Incoming(StreamR::{
-    handle,
-    read: async fn(count : Int) { local_stream_read(state, count) },
-    close: async fn() { local_stream_close(state) },
-    take_handle: fn() { panic() },
-  })
+  let stream = Stream::{ id: fresh_id(), state }
   let sink = Sink::{
     write: async fn(data : ArrayView[X]) { local_stream_write(state, data) },
     close: async fn() { local_stream_close(state) },
@@ -540,6 +486,130 @@ pub fn[X] Stream::new(capacity? : Int = 0) -> (Stream[X], Sink[X]) {
 
 ///|
 pub async fn[X] Stream::read(self : Stream[X], count : Int) -> ArrayView[X]? {
+  local_stream_read(self.state, count)
+}
+
+///|
+pub async fn[X] Stream::close(self : Stream[X]) -> Unit {
+  local_stream_close(self.state)
+}
+
+///|
+pub fn[X] Stream::to_cm(self : Stream[X]) -> CMStream[X] {
+  CMStream::from_local(self)
+}
+
+///|
+pub(all) struct CMStreamOutInner[X] {
+  mut producer : (async (Sink[X]) -> Unit)?
+}
+
+///|
+pub(all) struct CMStreamOut[X] {
+  id : Int
+  inner : Ref[CMStreamOutInner[X]]
+}
+
+///|
+pub fn[X] CMStreamOut::new(producer : async (Sink[X]) -> Unit) -> CMStreamOut[X] {
+  { id: fresh_id(), inner: { val: { producer: Some(producer) } } }
+}
+
+///|
+pub fn[X] CMStreamOut::take_producer(self : CMStreamOut[X]) -> (async (Sink[X]) -> Unit) {
+  guard self.inner.val.producer is Some(p)
+  self.inner.val.producer = None
+  p
+}
+
+///|
+pub(all) enum CMStream[X] {
+  Incoming(StreamR[X])
+  Outgoing(CMStreamOut[X])
+}
+
+///|
+pub impl[X] Eq for CMStream[X] with equal(self, other) -> Bool {
+  match self {
+    Incoming(s) =>
+      match other {
+        Incoming(t) => s.handle == t.handle
+        Outgoing(_) => false
+      }
+    Outgoing(s) =>
+      match other {
+        Incoming(_) => false
+        Outgoing(t) => s.id == t.id
+      }
+  }
+}
+
+///|
+pub impl[X] Show for CMStream[X] with output(self, logger) {
+  match self {
+    Incoming(s) => {
+      logger.write_string("CMStream::Incoming(")
+      logger.write_string(s.handle.to_string())
+      logger.write_string(")")
+    }
+    Outgoing(s) => {
+      logger.write_string("CMStream::Outgoing(")
+      logger.write_string(s.id.to_string())
+      logger.write_string(")")
+    }
+  }
+}
+
+///|
+pub fn[X] CMStream::from(producer : async (Sink[X]) -> Unit) -> CMStream[X] {
+  CMStream::Outgoing(CMStreamOut::new(producer))
+}
+
+///|
+async fn[X] cm_stream_write_all(sink : Sink[X], data : ArrayView[X]) -> Bool {
+  if data.length() == 0 {
+    return true
+  }
+  let pending : Array[X] = []
+  for i = 0; i < data.length(); i = i + 1 {
+    pending.push(data[i])
+  }
+  let mut offset = 0
+  for {
+    if offset >= pending.length() {
+      return true
+    }
+    let written = sink.write(pending[offset:])
+    if written <= 0 {
+      return false
+    }
+    offset = offset + written
+  }
+}
+
+///|
+pub fn[X] CMStream::from_local(stream : Stream[X], chunk_size? : Int = 64) -> CMStream[X] {
+  let read_size = if chunk_size <= 0 { 64 } else { chunk_size }
+  CMStream::Outgoing(CMStreamOut::new(async fn(sink : Sink[X]) {
+    for {
+      match stream.read(read_size) {
+        Some(data) => {
+          if not(cm_stream_write_all(sink, data)) {
+            stream.close()
+            return
+          }
+        }
+        None => {
+          sink.close()
+          return
+        }
+      }
+    }
+  }))
+}
+
+///|
+pub async fn[X] CMStream::read(self : CMStream[X], count : Int) -> ArrayView[X]? {
   match self {
     Incoming(s) => s.read(count)
     Outgoing(_) => panic()
@@ -547,7 +617,7 @@ pub async fn[X] Stream::read(self : Stream[X], count : Int) -> ArrayView[X]? {
 }
 
 ///|
-pub async fn[X] Stream::close(self : Stream[X]) -> Unit {
+pub async fn[X] CMStream::close(self : CMStream[X]) -> Unit {
   match self {
     Incoming(s) => s.close()
     Outgoing(_) => ()

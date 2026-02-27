@@ -27,10 +27,10 @@ pub fn TestThing::get(self : TestThing) -> String {
 
 ///|
 pub async fn short_reads_test(
-  s : @async.Stream[TestThing],
+  s : @async.CMStream[TestThing],
   task_group : @async.TaskGroup[Unit],
-) -> @async.Stream[TestThing] {
-  @async.Stream::from(async fn(sink : @async.Sink[TestThing]) {
+) -> @async.CMStream[TestThing] {
+  @async.CMStream::from(async fn(sink : @async.Sink[TestThing]) {
     let things : Array[TestThing] = []
     for {
       match s.read(1) {
@@ -52,10 +52,10 @@ pub async fn short_reads_test(
 
 ///|
 pub async fn short_reads_leaf(
-  s : @async.Stream[@leafInterface.LeafThing],
+  s : @async.CMStream[@leafInterface.LeafThing],
   task_group : @async.TaskGroup[Unit],
-) -> @async.Stream[@leafInterface.LeafThing] {
-  @async.Stream::from(async fn(sink : @async.Sink[@leafInterface.LeafThing]) {
+) -> @async.CMStream[@leafInterface.LeafThing] {
+  @async.CMStream::from(async fn(sink : @async.Sink[@leafInterface.LeafThing]) {
     let things : Array[@leafInterface.LeafThing] = []
     for {
       match s.read(1) {
