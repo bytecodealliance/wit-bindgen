@@ -27,6 +27,7 @@ struct Coroutine {
   mut shielded : Bool
   mut cancelled : Bool
   mut ready : Bool
+  mut spawner : ((async () -> Unit) -> Unit)?
   downstream : Set[Coroutine]
 }
 
@@ -96,6 +97,11 @@ pub async fn suspend() -> Unit raise Cancelled {
 ///|
 pub fn spawn(f : async () -> Unit) -> Coroutine {
   scheduler.coro_id += 1
+  let inherited_spawner = if scheduler.curr_coro is Some(parent) {
+    parent.spawner
+  } else {
+    None
+  }
   let coro = {
     state: Running,
     ready: true,
@@ -103,6 +109,7 @@ pub fn spawn(f : async () -> Unit) -> Coroutine {
     downstream: Set::new(),
     coro_id: scheduler.coro_id,
     cancelled: false,
+    spawner: inherited_spawner,
   }
   fn run(_) {
     run_async(fn() {
