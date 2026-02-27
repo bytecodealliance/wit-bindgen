@@ -107,10 +107,14 @@ pub fn spawn(f : async () -> Unit) -> Coroutine {
   fn run(_) {
     run_async(fn() {
       coro.shielded = false
-      try f() catch {
-        err => coro.state = Fail(err)
-      } noraise {
-        _ => coro.state = Done
+      if coro.cancelled {
+        coro.state = Fail(Cancelled::Cancelled)
+      } else {
+        try f() catch {
+          err => coro.state = Fail(err)
+        } noraise {
+          _ => coro.state = Done
+        }
       }
       for coro in coro.downstream {
         coro.wake()

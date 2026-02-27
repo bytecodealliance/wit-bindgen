@@ -31,6 +31,11 @@ fn current_waitableset() -> WaitableSet {
 }
 
 ///|
+fn should_complete(waitable_set : WaitableSet) -> Bool {
+  ev.finished.get(waitable_set) is Some(true) && no_more_work()
+}
+
+///|
 pub fn with_waitableset(f : async () -> Unit) -> Int {
   let waitable_set = WaitableSet::new()
   tls_set(waitable_set.0)
@@ -41,7 +46,7 @@ pub fn with_waitableset(f : async () -> Unit) -> Int {
   ev.tasks.set(waitable_set, coro)
   ev.finished.set(waitable_set, false)
   reschedule()
-  if ev.finished.get(waitable_set) is Some(true) && no_more_work() {
+  if should_complete(waitable_set) {
     ev.tasks.remove(waitable_set)
     ev.finished.remove(waitable_set)
     waitable_set.drop()
@@ -58,7 +63,7 @@ pub fn cb(event : Int, waitable_id : Int, code : Int) -> Int {
   match events {
     None => {
       reschedule()
-      if ev.finished.get(waitable_set) is Some(true) && no_more_work() {
+      if should_complete(waitable_set) {
         ev.tasks.remove(waitable_set)
         ev.finished.remove(waitable_set)
         waitable_set.drop()
@@ -71,16 +76,13 @@ pub fn cb(event : Int, waitable_id : Int, code : Int) -> Int {
       guard ev.tasks.get(waitable_set) is Some(coro)
       coro.cancel()
       reschedule()
-      if ev.finished.get(waitable_set) is Some(true) && no_more_work() {
-        ev.tasks.remove(waitable_set)
-        ev.finished.remove(waitable_set)
+      ev.tasks.remove(waitable_set)
+      ev.finished.remove(waitable_set)
+      if ev.subscribes.is_empty() {
         waitable_set.drop()
-        task_cancel()
-        return CallbackCode::Completed.encode()
-      } else {
-        // Unlikely to reach here
-        return CallbackCode::Wait(waitable_set.0).encode()
       }
+      task_cancel()
+      return CallbackCode::Completed.encode()
     }
     _ => {
       let sub = ev.subscribes.get(waitable_id)
@@ -91,7 +93,7 @@ pub fn cb(event : Int, waitable_id : Int, code : Int) -> Int {
       ev.subscribes.remove(waitable_id)
       waitable_join(waitable_id, 0)
       reschedule()
-      if ev.finished.get(waitable_set) is Some(true) && no_more_work() {
+      if should_complete(waitable_set) {
         ev.tasks.remove(waitable_set)
         ev.finished.remove(waitable_set)
         waitable_set.drop()
@@ -105,6 +107,15 @@ pub fn cb(event : Int, waitable_id : Int, code : Int) -> Int {
 
 ///|
 let ev : EventLoop = { subscribes: {}, tasks: {}, finished: {} }
+
+///|
+pub fn detach_waitable(waitable_id : Int) -> Unit {
+  if ev.subscribes.get(waitable_id) is Some(subscriber) {
+    subscriber.coro.clear()
+    ev.subscribes.remove(waitable_id)
+  }
+  waitable_join(waitable_id, 0)
+}
 
 ///|
 pub async fn suspend_for_subtask(
