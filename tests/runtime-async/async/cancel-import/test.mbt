@@ -3,17 +3,7 @@
 
 ///|
 pub async fn pending_import(x : @async.Future[Unit], task_group : @async.TaskGroup[Unit]) -> Unit {
-  let _ = @async.protect_from_cancel(async fn() {
-    x.get()
-  }) catch {
-    @async.FutureReadError::Cancelled => {
-      return
-    }
-    @async.Cancelled::Cancelled => {
-      return
-    }
-    _ => panic()
-  }
+  x.get()
 }
 
 ///|

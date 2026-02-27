@@ -344,12 +344,17 @@ fn wasmLift{camel_name}{index}(future_handle : Int) -> {lifted} {{
   let mut reading = 0
   async fn drop() {{
     if !dropped && reading > 0 {{
-      {async_qualifier}suspend_for_future_read(
-        future_handle,
-        wasmLift{camel_name}{index}CancelRead(future_handle)
-      ) catch {{ 
-       {async_qualifier}FutureReadError::Cancelled => ()
-       _ => panic() 
+      let cancel = wasmLift{camel_name}{index}CancelRead(future_handle)
+      if cancel == -1 {{
+        {async_qualifier}detach_waitable(future_handle)
+      }} else {{
+        {async_qualifier}suspend_for_future_read(
+          future_handle,
+          cancel
+        ) catch {{ 
+         {async_qualifier}FutureReadError::Cancelled => ()
+         _ => panic() 
+        }}
       }}
     }}
     if !dropped {{
@@ -369,12 +374,27 @@ fn wasmLift{camel_name}{index}(future_handle : Int) -> {lifted} {{
       let ptr = mbt_ffi_malloc({size})
       defer mbt_ffi_free(ptr)
       {{
+        let mut read_cancelled = false
         reading += 1
-        defer {{ reading -= 1 }}
+        defer {{
+          if !read_cancelled {{
+            reading -= 1
+          }}
+        }}
         {async_qualifier}suspend_for_future_read(
           future_handle,
           wasmLift{camel_name}{index}Read(future_handle, ptr),
-        )
+        ) catch {{
+          err => {{
+            if err is {async_qualifier}Cancelled::Cancelled {{
+              read_cancelled = true
+            }}
+            drop() catch {{
+              _ => ()
+            }}
+            raise err
+          }}
+        }}
       }}
       result = {{
       "#
