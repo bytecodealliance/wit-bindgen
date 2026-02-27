@@ -362,7 +362,7 @@ fn wasmLift{camel_name}{index}(future_handle : Int) -> {lifted} {{
       wasmLift{camel_name}{index}DropReadable(future_handle)
     }}
   }}
-  {async_qualifier}Future::Incoming({async_qualifier}FutureR::{{
+  {async_qualifier}CMFuture::Incoming({async_qualifier}FutureR::{{
     handle: future_handle,
     get: fn () {{
       if result is Some(r) {{
@@ -444,8 +444,8 @@ fn wasmLift{camel_name}{index}(future_handle : Int) -> {lifted} {{
             r#"
 fn wasmLower{camel_name}{index}(future : {lifted}) -> Int {{
   match future {{
-    {async_qualifier}Future::Incoming(f) => f.take_handle()
-    {async_qualifier}Future::Outgoing(f) => {{
+    {async_qualifier}CMFuture::Incoming(f) => f.take_handle()
+    {async_qualifier}CMFuture::Outgoing(f) => {{
       let handles = wasmLower{camel_name}{index}New()
       let readable = (handles & 0xFFFFFFFF).to_int()
       let writable = (handles >> 32).to_int()

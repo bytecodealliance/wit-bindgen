@@ -5,6 +5,6 @@
 
 ///|
 pub async fn run(task_group : @async.TaskGroup[Unit]) -> Unit {
-  @i.take_then_drop(@async.Future::ready("hello"))
-  @i.read_and_drop(@async.Future::ready("hello2"))
+  @i.take_then_drop(@async.CMFuture::ready("hello"))
+  @i.read_and_drop(@async.CMFuture::ready("hello2"))
 }

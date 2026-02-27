@@ -284,36 +284,98 @@ async fn[X] local_stream_read(
 }
 
 ///|
-pub(all) struct FutureOutInner[X] {
+pub struct Future[X] {
+  id : Int
+  state : Ref[LocalFutureState[X]]
+}
+
+///|
+pub impl[X] Eq for Future[X] with equal(self, other) -> Bool {
+  self.id == other.id
+}
+
+///|
+pub impl[X] Show for Future[X] with output(self, logger) {
+  logger.write_string("Future(")
+  logger.write_string(self.id.to_string())
+  logger.write_string(")")
+}
+
+///|
+pub fn[X] Future::new() -> (Future[X], Promise[X]) {
+  let state : Ref[LocalFutureState[X]] = {
+    val: {
+      value: None,
+      closed: false,
+      waiters: @deque.new(),
+    },
+  }
+  let future = Future::{ id: fresh_id(), state }
+  let promise = Promise::{
+    write: async fn(value : X) { local_future_write(state, value) },
+    close: async fn() { local_future_close(state) },
+  }
+  (future, promise)
+}
+
+///|
+pub fn[X] Future::ready(value : X) -> Future[X] {
+  let state : Ref[LocalFutureState[X]] = {
+    val: {
+      value: Some(value),
+      closed: false,
+      waiters: @deque.new(),
+    },
+  }
+  Future::{ id: fresh_id(), state }
+}
+
+///|
+pub async fn[X] Future::get(self : Future[X]) -> X {
+  local_future_get(self.state)
+}
+
+///|
+pub async fn[X] Future::drop(self : Future[X]) -> Unit {
+  local_future_close(self.state)
+}
+
+///|
+pub fn[X] Future::to_cm(self : Future[X]) -> CMFuture[X] {
+  CMFuture::from_local(self)
+}
+
+///|
+pub(all) struct CMFutureOutInner[X] {
   mut producer : (async () -> X)?
 }
 
 ///|
-pub(all) struct FutureOut[X] {
+pub(all) struct CMFutureOut[X] {
   id : Int
-  inner : Ref[FutureOutInner[X]]
+  inner : Ref[CMFutureOutInner[X]]
 }
 
 ///|
-pub fn[X] FutureOut::new(producer : async () -> X) -> FutureOut[X] {
+pub fn[X] CMFutureOut::new(producer : async () -> X) -> CMFutureOut[X] {
   { id: fresh_id(), inner: { val: { producer: Some(producer) } } }
 }
 
 ///|
-pub fn[X] FutureOut::take_producer(self : FutureOut[X]) -> (async () -> X) {
+pub fn[X] CMFutureOut::take_producer(self : CMFutureOut[X]) -> (async () -> X) {
   guard self.inner.val.producer is Some(p)
   self.inner.val.producer = None
   p
 }
 
 ///|
-pub(all) enum Future[X] {
+pub(all) enum CMFuture[X] {
   Incoming(FutureR[X])
-  Outgoing(FutureOut[X])
+  Outgoing(CMFutureOut[X])
 }
 
 ///|
-pub impl[X] Eq for Future[X] with equal(self, other) -> Bool {
+pub impl[X] Eq for CMFuture[X] with equal(self, other) -> Bool {
   match self {
     Incoming(f) =>
       match other {
@@ -329,15 +391,15 @@ pub impl[X] Eq for Future[X] with equal(self, other) -> Bool {
 }
 
 ///|
-pub impl[X] Show for Future[X] with output(self, logger) {
+pub impl[X] Show for CMFuture[X] with output(self, logger) {
   match self {
     Incoming(f) => {
-      logger.write_string("Future::Incoming(")
+      logger.write_string("CMFuture::Incoming(")
       logger.write_string(f.handle.to_string())
       logger.write_string(")")
     }
     Outgoing(f) => {
-      logger.write_string("Future::Outgoing(")
+      logger.write_string("CMFuture::Outgoing(")
       logger.write_string(f.id.to_string())
       logger.write_string(")")
     }
@@ -345,40 +407,28 @@ pub impl[X] Show for Future[X] with output(self, logger) {
 }
 
 ///|
-pub fn[X] Future::ready(value : X) -> Future[X] {
-  Future::Outgoing(FutureOut::new(async fn() { value }))
+pub fn[X] CMFuture::new() -> (CMFuture[X], Promise[X]) {
+  let (future, promise) = Future::new()
+  (CMFuture::from_local(future), promise)
 }
 
 ///|
-pub fn[X] Future::new() -> (Future[X], Promise[X]) {
-  let state : Ref[LocalFutureState[X]] = {
-    val: {
-      value: None,
-      closed: false,
-      waiters: @deque.new(),
-    },
-  }
-  let handle = fresh_id()
-  let future = Future::Incoming(FutureR::{
-    handle,
-    get: async fn() { local_future_get(state) },
-    drop: async fn() { local_future_close(state) },
-    take_handle: fn() { panic() },
-  })
-  let promise = Promise::{
-    write: async fn(value : X) { local_future_write(state, value) },
-    close: async fn() { local_future_close(state) },
-  }
-  (future, promise)
+pub fn[X] CMFuture::ready(value : X) -> CMFuture[X] {
+  CMFuture::Outgoing(CMFutureOut::new(async fn() { value }))
 }
 
 ///|
-pub fn[X] Future::from(producer : async () -> X) -> Future[X] {
-  Future::Outgoing(FutureOut::new(producer))
+pub fn[X] CMFuture::from_local(future : Future[X]) -> CMFuture[X] {
+  CMFuture::Outgoing(CMFutureOut::new(async fn() { future.get() }))
 }
 
 ///|
-pub async fn[X] Future::get(self : Future[X]) -> X {
+pub fn[X] CMFuture::from(producer : async () -> X) -> CMFuture[X] {
+  CMFuture::Outgoing(CMFutureOut::new(producer))
+}
+
+///|
+pub async fn[X] CMFuture::get(self : CMFuture[X]) -> X {
   match self {
     Incoming(f) => f.get()
     Outgoing(f) => (f.take_producer())()
@@ -386,7 +436,7 @@ pub async fn[X] Future::get(self : Future[X]) -> X {
 }
 
 ///|
-pub async fn[X] Future::drop(self : Future[X]) -> Unit {
+pub async fn[X] CMFuture::drop(self : CMFuture[X]) -> Unit {
   match self {
     Incoming(f) => f.drop()
     Outgoing(_) => ()

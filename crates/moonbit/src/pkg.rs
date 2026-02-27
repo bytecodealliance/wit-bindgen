@@ -251,7 +251,7 @@ impl PkgResolver {
                     TypeDefKind::Future(ty) => {
                         let qualifier = self.qualify_package(this, ASYNC_DIR);
                         format!(
-                            "{}Future[{}]",
+                            "{}CMFuture[{}]",
                             qualifier,
                             ty.as_ref()
                                 .map(|t| self.type_name(this, t))
