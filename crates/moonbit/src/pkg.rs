@@ -262,7 +262,7 @@ impl PkgResolver {
                     TypeDefKind::Stream(ty) => {
                         let qualifier = self.qualify_package(this, ASYNC_DIR);
                         format!(
-                            "{}Stream[{}]",
+                            "{}CMStream[{}]",
                             qualifier,
                             ty.as_ref()
                                 .map(|t| self.type_name(this, t))

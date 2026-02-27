@@ -5,7 +5,7 @@
 
 ///|
 pub async fn run(task_group : @async.TaskGroup[Unit]) -> Unit {
-  let stream = @async.Stream::from(async fn(sink : @async.Sink[Unit]) {
+  let stream = @async.CMStream::from(async fn(sink : @async.Sink[Unit]) {
     let first : Array[Unit] = [()]
     let second : Array[Unit] = [(), ()]
     assert_eq(sink.write(first[:]), 1)

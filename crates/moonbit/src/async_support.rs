@@ -583,7 +583,7 @@ fn wasmLift{camel_name}{index}(stream_handle : Int) -> {lifted} {{
       wasmLift{camel_name}{index}DropReadable(stream_handle)
     }}
   }}
-  {async_qualifier}Stream::Incoming({async_qualifier}StreamR::{{
+  {async_qualifier}CMStream::Incoming({async_qualifier}StreamR::{{
     handle: stream_handle,
     read: fn (count : Int) {{
       if closed {{
@@ -680,8 +680,8 @@ fn wasmLift{camel_name}{index}(stream_handle : Int) -> {lifted} {{
             r#"
 fn wasmLower{camel_name}{index}(stream : {lifted}) -> Int {{
   match stream {{
-    {async_qualifier}Stream::Incoming(s) => s.take_handle()
-    {async_qualifier}Stream::Outgoing(s) => {{
+    {async_qualifier}CMStream::Incoming(s) => s.take_handle()
+    {async_qualifier}CMStream::Outgoing(s) => {{
       let handles = wasmLower{camel_name}{index}New()
       let readable = (handles & 0xFFFFFFFF).to_int()
       let writable = (handles >> 32).to_int()
