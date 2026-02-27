@@ -2415,7 +2415,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
         let Some(InterfaceName { path, remapped }) = &self.r#gen.interface_names.get(&interface)
         else {
             let name = self.resolve.interfaces[interface].name.as_ref().unwrap();
-            panic!("Cannot find interface {:?}: {}", interface, name);
+            panic!("Cannot find interface {interface:?}: {name}");
         };
         if *remapped {
             let mut path_to_root = self.path_to_root();

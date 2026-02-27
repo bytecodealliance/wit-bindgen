@@ -1,5 +1,3 @@
-//@ merge_structurally_equal_types = true
-
 package test:merge-equal;
 
 // This interface is not reachable from the test world,

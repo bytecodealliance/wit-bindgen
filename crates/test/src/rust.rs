@@ -69,19 +69,6 @@ impl LanguageMethods for Rust {
         {
             return true;
         }
-
-        // Currently there's a bug with this borrowing mode which means that
-        // this variant does not pass.
-        if name == "wasi-http-borrowed-duplicate" {
-            return true;
-        }
-
-        // The merge-structurally-equal-types flag panics on wasi-filesystem
-        // due to missing interface_names entries after type merging.
-        if name == "wasi-filesystem-merge-equal" {
-            return true;
-        }
-
         false
     }
 
