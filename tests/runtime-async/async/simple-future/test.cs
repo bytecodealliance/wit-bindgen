@@ -1,3 +1,4 @@
+using System;
 using System.Diagnostics;
 
 namespace TestWorld.wit.Exports.my.test
@@ -13,6 +14,7 @@ namespace TestWorld.wit.Exports.my.test
 
             reader.Dispose();
 
+            Console.WriteLine("ReadFuture finished");
             return Task.CompletedTask;
         }
 

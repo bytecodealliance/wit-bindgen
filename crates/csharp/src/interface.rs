@@ -2,10 +2,12 @@ use crate::csharp_ident::ToCSharpIdent;
 use crate::function::FunctionBindgen;
 use crate::function::ResourceInfo;
 use crate::world_generator::CSharp;
+use heck::ToLowerCamelCase;
 use heck::{ToShoutySnakeCase, ToUpperCamelCase};
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt::Write;
+use std::mem;
 use std::ops::Deref;
 use wit_bindgen_core::abi::LiftLower;
 use wit_bindgen_core::{
@@ -57,6 +59,7 @@ pub(crate) struct InterfaceGenerator<'a> {
     pub(crate) name: &'a str,
     pub(crate) direction: Direction,
     pub(crate) futures: Vec<FutureInfo>,
+    pub(crate) streams: Vec<FutureInfo>,
     pub(crate) is_world: bool,
 }
 
@@ -138,6 +141,7 @@ impl InterfaceGenerator<'_> {
                 // resource types.
             }
             TypeDefKind::Future(t) => self.type_future(type_id, typedef_name, t, &type_def.docs),
+            TypeDefKind::Stream(t) => self.type_stream(type_id, typedef_name, t, &type_def.docs),
             _ => unreachable!(),
         }
     }
@@ -208,18 +212,31 @@ impl InterfaceGenerator<'_> {
             });
     }
 
-    pub(crate) fn add_futures(&mut self, import_module_name: &str, is_export: bool) {
-        if self.futures.is_empty() {
+    pub(crate) fn add_futures_or_streams(
+        &mut self,
+        import_module_name: &str,
+        is_export: bool,
+        is_future: bool,
+    ) {
+        // Anything for this future/stream list?
+        if (is_future && self.futures.is_empty()) || (!is_future && self.streams.is_empty()) {
             return;
         }
 
+        let future_stream_name = if is_future { "Future" } else { "Stream" };
+        let future_stream_name_lower = future_stream_name.to_lowercase();
         let mut bool_non_generic_new_added = false;
         let mut bool_generic_new_added = false;
         let mut generated_future_types: HashSet<TypeId> = HashSet::new();
         let (_namespace, interface_name) = &CSharp::get_class_name_from_qualified_name(self.name);
         let interop_name = format!("{}Interop", interface_name.strip_prefix("I").unwrap());
 
-        for future in &self.futures {
+        let (futures_or_streams, stream_length_param) = if is_future {
+            (&self.futures, "")
+        } else {
+            (&self.streams, ", uint length")
+        };
+        for future in futures_or_streams {
             let future_name = &future.name;
             if !generated_future_types.contains(&future.ty) {
                 let generic_type_name = &future.generic_type_name;
@@ -227,13 +244,13 @@ impl InterfaceGenerator<'_> {
                 uwrite!(
                     self.csharp_interop_src,
                     r#"
-                    internal static FutureVTable FutureVTable{upper_camel_future_type} = new FutureVTable()
+                    internal static {future_stream_name}VTable {future_stream_name}VTable{upper_camel_future_type} = new {future_stream_name}VTable()
                     {{
-                        New = FutureNew{upper_camel_future_type},
-                        StartRead = FutureRead{upper_camel_future_type},
-                        Write = FutureWrite{upper_camel_future_type},
-                        DropReader = FutureDropReader{upper_camel_future_type},
-                        DropWriter = FutureDropWriter{upper_camel_future_type},
+                        New = {future_stream_name}New{upper_camel_future_type},
+                        Read = {future_stream_name}Read{upper_camel_future_type},
+                        Write = {future_stream_name}Write{upper_camel_future_type},
+                        DropReader = {future_stream_name}DropReader{upper_camel_future_type},
+                        DropWriter = {future_stream_name}DropWriter{upper_camel_future_type},
                     }};
                     "#
                 );
@@ -241,25 +258,25 @@ impl InterfaceGenerator<'_> {
                 uwrite!(
                     self.csharp_interop_src,
                     r#"
-                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[async-lower][future-read-0]read-future"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
-                    internal static unsafe extern int FutureRead{upper_camel_future_type}(int readable, IntPtr ptr);
+                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[async-lower][{future_stream_name_lower}-read-0]{future_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
+                    internal static unsafe extern uint {future_stream_name}Read{upper_camel_future_type}(int readable, IntPtr ptr{stream_length_param});
 
-                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[async-lower][future-write-0]read-future"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
-                    internal static unsafe extern int FutureWrite{upper_camel_future_type}(int writeable, IntPtr buffer);
+                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[async-lower][{future_stream_name_lower}-write-0]{future_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
+                    internal static unsafe extern uint {future_stream_name}Write{upper_camel_future_type}(int writeable, IntPtr buffer{stream_length_param});
             
-                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-drop-readable-0]read-future"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
-                    internal static extern void FutureDropReader{upper_camel_future_type}(int readable);
+                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[{future_stream_name_lower}-drop-readable-0]{future_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
+                    internal static extern void {future_stream_name}DropReader{upper_camel_future_type}(int readable);
 
-                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-drop-writable-0]read-future"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
-                    internal static extern void FutureDropWriter{upper_camel_future_type}(int readable);
+                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[{future_stream_name_lower}-drop-writable-0]{future_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
+                    internal static extern void {future_stream_name}DropWriter{upper_camel_future_type}(int readable);
                 "#
                 );
 
                 uwrite!(
                     self.csharp_interop_src,
                     r#"
-                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-new-0]{future_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
-                    internal static extern ulong FutureNew{upper_camel_future_type}();
+                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[{future_stream_name_lower}-new-0]{future_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
+                    internal static extern ulong {future_stream_name}New{upper_camel_future_type}();
                     "#
                 );
 
@@ -267,24 +284,24 @@ impl InterfaceGenerator<'_> {
                 uwrite!(
                     self.csharp_interop_src,
                     r#"
-                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-cancel-read-0]{future_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
-                    internal static extern uint FutureCancelRead{upper_camel_future_type}(int readable);
+                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[{future_stream_name_lower}-cancel-read-0]{future_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
+                    internal static extern uint {future_stream_name}CancelRead{upper_camel_future_type}(int readable);
                     "#
                 );
 
                 uwrite!(
                     self.csharp_interop_src,
                     r#"
-                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-cancel-write-0]{future_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
-                    internal static extern uint FutureCancelWrite{upper_camel_future_type}(int writeable);
+                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[{future_stream_name_lower}-cancel-write-0]{future_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
+                    internal static extern uint {future_stream_name}CancelWrite{upper_camel_future_type}(int writeable);
                     "#
                 );
 
                 uwrite!(
                     self.csharp_interop_src,
                     r#"
-                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[future-drop-writeable-0]{future_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
-                    internal static extern void FutureDropWriteable{upper_camel_future_type}(int writeable);
+                    [global::System.Runtime.InteropServices.DllImportAttribute("{import_module_name}", EntryPoint = "[{future_stream_name_lower}-drop-writeable-0]{future_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
+                    internal static extern void {future_stream_name}DropWriteable{upper_camel_future_type}(int writeable);
                     "#
                 );
 
@@ -298,10 +315,9 @@ impl InterfaceGenerator<'_> {
                                 .interface_fragments
                                 .push(InterfaceFragment {
                                     csharp_src: format!(r#"
-                                    // FutureReader/Writer will be generic
-                                    public static (FutureReader, FutureWriter) FutureNew() 
+                                    internal static ({future_stream_name}Reader, {future_stream_name}Writer) {future_stream_name}New() 
                                     {{
-                                            return FutureHelpers.RawFutureNew({interop_name}.FutureVTable);
+                                            return FutureHelpers.Raw{future_stream_name}New({interop_name}.{future_stream_name}VTable);
                                     }}
                                     "#).to_string(),
                                     csharp_interop_src: "".to_string(),
@@ -319,9 +335,9 @@ impl InterfaceGenerator<'_> {
                             .interface_fragments
                             .push(InterfaceFragment {
                                 csharp_src: format!(r#"
-                                public static (FutureReader<{generic_type_name}>, FutureWriter<{generic_type_name}>) FutureNew{upper_camel_future_type}() 
+                                public static ({future_stream_name}Reader<{generic_type_name}>, {future_stream_name}Writer<{generic_type_name}>) {future_stream_name}New{upper_camel_future_type}() 
                                 {{
-                                        return FutureHelpers.RawFutureNew<{generic_type_name}>({interop_name}.FutureVTable{upper_camel_future_type});
+                                        return FutureHelpers.Raw{future_stream_name}New<{generic_type_name}>({interop_name}.{future_stream_name}VTable{upper_camel_future_type});
                                 }}
                                 "#).to_string(),
                                 csharp_interop_src: "".to_string(),
@@ -337,10 +353,9 @@ impl InterfaceGenerator<'_> {
                                 .interface_fragments
                                 .push(InterfaceFragment {
                                     csharp_src: format!(r#"
-                                    // FutureReader/Writer will be generic
-                                    public static (FutureReader<T>, FutureWriter<T>) FutureNew<T>(FutureVTable vtable) 
+                                    public static ({future_stream_name}Reader<T>, {future_stream_name}Writer<T>) {future_stream_name}New<T>({future_stream_name}VTable vtable) 
                                     {{
-                                            return FutureHelpers.RawFutureNew<T>(vtable);
+                                            return FutureHelpers.Raw{future_stream_name}New<T>(vtable);
                                     }}
                                     "#).to_string(),
                                     csharp_interop_src: "".to_string(),
@@ -589,16 +604,116 @@ impl InterfaceGenerator<'_> {
             func.result,
         );
 
-        abi::call(
-            bindgen.interface_gen.resolve,
-            AbiVariant::GuestImport,
-            LiftLower::LowerArgsLiftResults,
-            func,
-            &mut bindgen,
-            false,
-        );
+        let async_ = InterfaceGenerator::is_async(&func.kind);
+        let mut src: String;
 
-        let src = bindgen.src;
+        if async_ {
+            // TODO: Use lower_to_memory as per Go ?
+            let sig = bindgen
+                .interface_gen
+                .resolve
+                .wasm_signature(AbiVariant::GuestImportAsync, func);
+
+            // TODO: the result is a tmp so could be result/1/2/..  Maybe this will fallout if we use lower_to_memory.
+            let async_status_var = "result"; // String::new();
+            let requires_async_return_buffer_param = func.result.is_some();
+            let async_return_buffer = if requires_async_return_buffer_param {
+                let buffer = bindgen.emit_allocation_for_type(&sig.results);
+                uwriteln!(
+                    bindgen.src,
+                    "//TODO: store somewhere with the TaskCompletionSource, possibly in the state, using Task.AsyncState to retrieve it later."
+                );
+                Some(buffer)
+            } else {
+                None
+            };
+
+            let csharp_param_names = func
+                .params
+                .iter()
+                .map(|param| param.name.to_lower_camel_case())
+                .collect::<Vec<_>>();
+
+            let (lower, wasm_params) = if sig.indirect_params {
+                todo!("indirect params not supported for async imports yet");
+            } else {
+                let wasm_params: Vec<String> = csharp_param_names
+                    .iter()
+                    .zip(&func.params)
+                    .flat_map(|(name, param)| {
+                        abi::lower_flat(
+                            bindgen.interface_gen.resolve,
+                            &mut bindgen,
+                            name.clone(),
+                            &param.ty,
+                        )
+                    })
+                    .collect();
+                (mem::take(&mut bindgen.src), wasm_params)
+            };
+            let name = func.name.to_upper_camel_case();
+            let raw_name = format!("IImportsInterop.{name}WasmInterop.wasmImport{name}");
+
+            let wasm_params = wasm_params
+                .iter()
+                .map(|v| v.as_str())
+                .chain(func.result.map(|_| "address"))
+                .collect::<Vec<_>>()
+                .join(", ");
+
+            // TODO: lift expr
+            let code = format!(
+                "{lower}
+var {async_status_var} = {raw_name}({wasm_params});
+"
+            );
+            src = format!("{code}{}", bindgen.src);
+
+            if let Some(buffer) = async_return_buffer {
+                let ty = bindgen.result_type.expect("expected a result type");
+                let lift_expr = abi::lift_from_memory(
+                    bindgen.interface_gen.resolve,
+                    &mut bindgen,
+                    buffer.clone(),
+                    &ty,
+                );
+                let return_type = self.type_name_with_qualifier(&ty, true);
+
+                let lift_func = format!("() => {lift_expr}");
+                uwriteln!(
+                    src,
+                    "
+                    Console.WriteLine(\"calling TaskFromStatus from func {}\");
+                    var task = AsyncSupport.TaskFromStatus<{return_type}>({async_status_var}, {});",
+                    func.name,
+                    lift_func
+                );
+                uwriteln!(
+                    src,
+                    "global::System.Runtime.InteropServices.NativeMemory.Free({});",
+                    buffer
+                );
+                uwriteln!(src, "return task;");
+            } else {
+                uwriteln!(
+                    src,
+                    "
+                    Console.WriteLine(\"calling TaskFromStatus from func {}\");
+                    return AsyncSupport.TaskFromStatus({async_status_var});",
+                    func.name
+                );
+            }
+        } else {
+            abi::call(
+                bindgen.interface_gen.resolve,
+                AbiVariant::GuestImport,
+                LiftLower::LowerArgsLiftResults,
+                func,
+                &mut bindgen,
+                false,
+            );
+            src = bindgen.src;
+        }
 
         let params = func
             .params
@@ -697,6 +812,8 @@ impl InterfaceGenerator<'_> {
             .collect::<Vec<_>>()
             .join(", ");
 
+        let (_namespace, _interface_name) = &CSharp::get_class_name_from_qualified_name(self.name);
+
         let params = func
             .params
             .iter()
@@ -736,6 +853,39 @@ impl InterfaceGenerator<'_> {
             }}
             "#
         );
+
+        if async_ {
+            uwriteln!(
+                self.csharp_interop_src,
+                r#"
+            [global::System.Runtime.InteropServices.UnmanagedCallersOnlyAttribute(EntryPoint = "[callback]{export_name}")]
+            public static unsafe uint {camel_name}Callback(int eventRaw, uint waitable, uint code)
+            {{
+                Console.WriteLine($"Callback with code {{code}}");
+                EventWaitable e = new EventWaitable((EventCode)eventRaw, waitable, code);
+
+            "#
+            );
+
+            // TODO: Get the results from a static dictionary?
+            if sig.results.len() > 0 {
+                uwriteln!(
+                    self.csharp_interop_src,
+                    r#"
+                        throw new NotImplementedException("callbacks with parameters are not yet implemented.");
+                    }}
+                    "#
+                );
+            } else {
+                uwriteln!(
+                    self.csharp_interop_src,
+                    r#"
+                    return (uint)AsyncSupport.Callback(e, (AsyncSupport.ContextTask *)IntPtr.Zero, () => {camel_name}TaskReturn());
+                }}
+                "#
+                );
+            }
+        }
 
         if abi::guest_export_needs_post_return(self.resolve, func) {
             let params = sig
@@ -783,45 +933,43 @@ impl InterfaceGenerator<'_> {
                 format!("{}Impl", interface_name.strip_prefix("I").unwrap())
             };
 
-            let (import_module_prefix, import_module) = match interface_key {
+            let (_import_module_prefix, import_module) = match interface_key {
                 Some(world_key) => {
                     let interface_world = self.resolve.name_world_key(world_key);
                     (format!("{interface_world}#"), interface_world)
                 }
                 None => (String::new(), "$root".to_string()),
             };
-            uwriteln!(
-                self.csharp_interop_src,
-                r#"
-            [global::System.Runtime.InteropServices.UnmanagedCallersOnlyAttribute(EntryPoint = "[callback][async-lift]{import_module_prefix}{wasm_func_name}")]
-            public static int {camel_name}Callback(uint eventRaw, uint waitable, uint code)
-            {{
-                // TODO: decode the parameters
-                return {impl_name}.{camel_name}Callback();
-            }}
-            "#
-            );
+
+            let mut interop_class_name = impl_name.replace("Impl", "Interop");
+            if self.is_world {
+                interop_class_name = interop_class_name.replace("ExportsInterop", "Interop");
+                interop_class_name = format!("Exports.{interop_class_name}");
+            }
+
+            // TODO: The task return function can take up to 16 core parameters.
+            let (task_return_param_sig, task_return_param) = match &sig.results[..] {
+                [] => (String::new(), String::new()),
+                [_result] => (format!("{wasm_result_type} result"), "result".to_string()),
+                _ => unreachable!(),
+            };
 
             uwriteln!(
                 self.src,
                 r#"
-            public static abstract int {camel_name}Callback();
+            public static void {camel_name}TaskReturn({task_return_param_sig} )
+            {{
+                {interop_class_name}.{camel_name}TaskReturn({task_return_param});
+            }}
             "#
             );
-
-            // TODO: The task return function can take up to 16 core parameters.
-            let task_return_param = match &sig.results[..] {
-                [] => "",
-                [_result] => &format!("{wasm_result_type} result"),
-                _ => unreachable!(),
-            };
 
             uwriteln!(
                 self.csharp_interop_src,
                 r#"
             // TODO: The task return function can take up to 16 core parameters.
             [global::System.Runtime.InteropServices.DllImportAttribute("[export]{import_module}", EntryPoint = "[task-return]{wasm_func_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
-            public static extern void {camel_name}TaskReturn({task_return_param});
+            public static extern void {camel_name}TaskReturn({task_return_param_sig});
             "#
             );
         }
@@ -996,8 +1144,21 @@ impl InterfaceGenerator<'_> {
                         let (Handle::Own(id) | Handle::Borrow(id)) = handle;
                         self.type_name_with_qualifier(&Type::Id(*id), qualifier)
                     }
-                    TypeDefKind::Future(_ty) => {
-                        return format!("FutureReader").to_owned();
+                    TypeDefKind::Future(ty) => {
+                        let generic_type = if let Some(typ) = ty {
+                            format!("<{}>", self.type_name_with_qualifier(typ, qualifier))
+                        } else {
+                            String::new()
+                        };
+                        return format!("FutureReader{generic_type}").to_owned();
+                    }
+                    TypeDefKind::Stream(ty) => {
+                        let generic_type = if let Some(typ) = ty {
+                            format!("<{}>", self.type_name_with_qualifier(typ, qualifier))
+                        } else {
+                            String::new()
+                        };
+                        return format!("StreamReader{generic_type}").to_owned();
                     }
                     _ => {
                         if let Some(name) = &ty.name {
@@ -1280,6 +1441,14 @@ impl InterfaceGenerator<'_> {
 
     pub(crate) fn add_future(&mut self, func_name: &str, generic_type_name: &str, ty: &TypeId) {
         self.futures.push(FutureInfo {
+            name: func_name.to_string(),
+            generic_type_name: generic_type_name.to_string(),
+            ty: *ty,
+        });
+    }
+
+    pub(crate) fn add_stream(&mut self, func_name: &str, generic_type_name: &str, ty: &TypeId) {
+        self.streams.push(FutureInfo {
             name: func_name.to_string(),
             generic_type_name: generic_type_name.to_string(),
             ty: *ty,
@@ -1654,11 +1823,7 @@ fn modifiers(func: &Function, name: &str, direction: Direction) -> String {
     };
 
     let async_modifier = match &func.kind {
-        FunctionKind::AsyncMethod(_)
-        | FunctionKind::AsyncFreestanding
-        | FunctionKind::AsyncStatic(_)
-            if abstract_modifier == "" =>
-        {
+        FunctionKind::AsyncMethod(_) | FunctionKind::AsyncStatic(_) if abstract_modifier == "" => {
             " async"
         }
         _ => "",

@@ -5,7 +5,7 @@ use heck::ToUpperCamelCase;
 use std::fmt::Write;
 use std::mem;
 use std::ops::Deref;
-use wit_bindgen_core::abi::{self, Bindgen, Bitcast, Instruction};
+use wit_bindgen_core::abi::{Bindgen, Bitcast, Instruction};
 use wit_bindgen_core::{Direction, Ns, uwrite, uwriteln};
 use wit_parser::abi::WasmType;
 use wit_parser::{
@@ -32,7 +32,7 @@ pub(crate) struct FunctionBindgen<'a, 'b> {
     is_block: bool,
     fixed_statments: Vec<Fixed>,
     parameter_type: ParameterType,
-    result_type: Option<Type>,
+    pub(crate) result_type: Option<Type>,
     pub(crate) resource_type_name: Option<String>,
 }
 
@@ -384,7 +384,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         ret
     }
 
-    fn emit_allocation_for_type(&mut self, results: &[WasmType]) -> String {
+    pub fn emit_allocation_for_type(&mut self, results: &[WasmType]) -> String {
         let address = self.locals.tmp("address");
         let buffer_size = self.get_size_for_type(results);
         let align = self.get_align_for_type(results);
@@ -1030,40 +1030,23 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::CallWasm { sig, .. } => {
-                let is_async = InterfaceGenerator::is_async(self.kind);
-
-                let requires_async_return_buffer_param = is_async && sig.results.len() >= 1;
-                let async_return_buffer = if requires_async_return_buffer_param {
-                    let buffer = self.emit_allocation_for_type(&sig.results);
-                    uwriteln!(self.src, "//TODO: store somewhere with the TaskCompletionSource, possibly in the state, using Task.AsyncState to retrieve it later.");
-                    Some(buffer)
-                } else {
-                    None
-                };
-
+                let mut result = String::new();
                 let assignment = match &sig.results[..] {
                     [_] => {
-                        let result = self.locals.tmp("result");
+                        result = self.locals.tmp("result");
                         let assignment = format!("var {result} = ");
-                        if !requires_async_return_buffer_param {
-                            results.push(result);
-                        }
                         assignment
                     }
 
-                    [] => String::new(),
+                    [] => {
+                        String::new()
+                    }
 
                     _ => unreachable!(),
                 };
 
                 let func_name = self.func_name.to_upper_camel_case();
-
-                // Async functions that return a result need to pass a buffer where the result will later be written.
-                let operands = match async_return_buffer {
-                    Some(ref buffer) if operands.is_empty() => buffer.clone(),
-                    Some(ref buffer) => format!("{}, {}", operands.join(", "), buffer),
-                    None => operands.join(", "),
-                };
+                let operands = operands.join(", ");
 
                 let (_namespace, interface_name) =
                     &CSharp::get_class_name_from_qualified_name(self.interface_gen.name);
@@ -1093,18 +1076,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     "{assignment} {interop_name}{resource_type_name}.{func_name}WasmInterop.wasmImport{func_name}({operands});"
                 );
 
-                if let Some(buffer) = async_return_buffer {
-                    let result = abi::lift_from_memory(
-                        self.interface_gen.resolve,
-                        self,
-                        buffer.clone(),
-                        &self.result_type.unwrap(),
-                    );
-                    uwriteln!(
-                        self.src,
-                        "global::System.Runtime.InteropServices.NativeMemory.Free({});", 
-                        buffer
-                    );
+                if sig.results.len() >= 1 {
                     results.push(result);
                 }
             }
@@ -1177,9 +1149,21 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         {name}TaskReturn({ret_param});
                         return (uint)CallbackCode.Exit;
                     }}
+
+                    ret.ContinueWith(t => 
+                    {{
+                        if (t.IsFaulted)
+                        {{
+                            // TODO
+                            Console.Error.WriteLine("Async function {name} IsFaulted.  This scenario is not yet implemented.");
+                            throw new NotImplementedException("Async function {name} IsFaulted.  This scenario is not yet implemented.");
+                        }}
+
+                        {name}TaskReturn({ret_param});
+                    }});
                     
                     // TODO: Defer dropping borrowed resources until a result is returned.
-                    return (uint)CallbackCode.Yield;
+                    return (uint)CallbackCode.Wait | (uint)(AsyncSupport.WaitableSet.Handle << 4);
                     "#);
                 }
 
@@ -1400,7 +1384,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.extend(operands.iter().take(*amt).cloned());
             }
 
-            Instruction::FutureLower { payload, ty } => {
+            Instruction::FutureLower { payload, ty }
+            | Instruction::StreamLower { payload, ty }=> {
                 let op = &operands[0];
                 let generic_type_name = match payload {
                     Some(generic_type) => {
@@ -1408,16 +1393,31 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     }
                     None => ""
                 };
-                self.interface_gen.add_future(self.func_name, &generic_type_name, ty);
+
+                match inst {
+                    Instruction::FutureLower { .. } => {
+                        self.interface_gen.add_future(self.func_name, &generic_type_name, ty);
+                    }
+                    _ => {
+                        self.interface_gen.add_stream(self.func_name, &generic_type_name, ty);
+                    }
+                }
 
                 results.push(format!("{op}.TakeHandle()"));
             }
 
             Instruction::AsyncTaskReturn { name: _, params: _ } => {
-                uwriteln!(self.src, "// TODO_task_cancel.forget();");
+                uwriteln!(self.src, "// TODO: task_cancel.forget();");
             }
 
-            Instruction::FutureLift { payload, ty } => {
+            Instruction::FutureLift { payload, ty }
+            | Instruction:: StreamLift { payload, ty } => {
+                 let generic_type_name_with_qualifier = match payload {
+                    Some(generic_type) => {
+                        &self.interface_gen.type_name_with_qualifier(generic_type, true)
+                    }
+                    None => ""
+                };
                  let generic_type_name = match payload {
                     Some(generic_type) => {
                         &self.interface_gen.type_name_with_qualifier(generic_type, false)
@@ -1425,6 +1425,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     None => ""
                 };
                 let upper_camel = generic_type_name.to_upper_camel_case();
+                let bracketed_generic = match payload {
+                    Some(_) => {
+                        format!("<{generic_type_name_with_qualifier}>")
+                    }
+                    None => String::new()
+                };
             //    let sig_type_name = "Void";
                 let reader_var = self.locals.tmp("reader");
                 let module = self.interface_gen.name;
@@ -1435,16 +1441,29 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     .strip_prefix("I").unwrap()
                     .replace("Imports", "Exports"); // TODO: This is fragile and depends on the interface name.
 
-                uwriteln!(self.src, "var {reader_var} = new FutureReader({}, {export_name}.{base_interface_name}Interop.FutureVTable{});", operands[0], upper_camel);
+                let future_stream_name = match inst {
+                    Instruction::FutureLift{payload: _, ty: _} => "Future",
+                    Instruction::StreamLift{payload: _, ty: _} => "Stream",
+                    _ => {
+                        panic!("Unexpected instruction for lift");
+                    }
+                };
+                uwriteln!(self.src, "var {reader_var} = new {future_stream_name}Reader{bracketed_generic}({}, {export_name}.{base_interface_name}Interop.{future_stream_name}VTable{});", operands[0], upper_camel);
                 results.push(reader_var);
 
-                self.interface_gen.add_future(self.func_name, &generic_type_name, ty);
+                match inst {
+                    Instruction::FutureLift { .. } => {
+                        self.interface_gen.add_future(self.func_name, &generic_type_name, ty);
+                    }
+                    _ => {
+                        self.interface_gen.add_stream(self.func_name, &generic_type_name, ty);
+                    }
+                }
+
                 self.interface_gen.csharp_gen.needs_async_support = true;
             }
 
-            Instruction::StreamLower { .. }
-            | Instruction::StreamLift { .. }
-            | Instruction::ErrorContextLower { .. }
+            Instruction::ErrorContextLower { .. }
             | Instruction::ErrorContextLift { .. }
             | Instruction::DropHandle { .. }
             | Instruction::FixedLengthListLift { .. }
