@@ -3,7 +3,7 @@ package export_test_results_test
 import (
 	. "wit_component/test_results_test"
 
-	. "github.com/bytecodealliance/wit-bindgen/wit_types"
+	. "go.bytecodealliance.org/pkg/wit/types"
 )
 
 func StringError(x float32) Result[float32, string] {

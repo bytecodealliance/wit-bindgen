@@ -1,0 +1,13 @@
+package local:demo;
+
+world w {
+  export i;
+}
+
+/// Test we can handle "comment injection - attempting to close the comment we generate around wit comments
+interface i {
+  /// */
+  record r {
+    x: u32,
+  }
+}

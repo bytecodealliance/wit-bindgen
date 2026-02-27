@@ -1021,6 +1021,7 @@ impl InterfaceGenerator<'_> {
                 .trim()
                 .replace("<", "&lt;")
                 .replace(">", "&gt;")
+                .replace("*/", "*") // We can't close the comment, so if the user comment has */ we just remove the /
                 .lines()
                 .map(|line| format!("* {line}"))
                 .collect::<Vec<_>>()
@@ -1329,7 +1330,7 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 .iter()
                 .map(|field| {
                     format!(
-                        "{access} readonly {} {};",
+                        "{access} {} {};",
                         self.type_name(&field.ty),
                         field.name.to_csharp_ident()
                     )
@@ -1341,7 +1342,7 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
         uwrite!(
             self.src,
             "
-            {access} readonly struct {name} {{
+            {access} struct {name} {{
                 {fields}
 
                 {access} {name}({parameters}) {{
@@ -1542,6 +1543,17 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
     fn type_list(&mut self, id: TypeId, _name: &str, _ty: &Type, _docs: &Docs) {
         self.type_name(&Type::Id(id));
+    }
+
+    fn type_fixed_length_list(
+        &mut self,
+        _id: TypeId,
+        _name: &str,
+        _ty: &Type,
+        _size: u32,
+        _docs: &Docs,
+    ) {
+        todo!("named fixed-length list types are not yet supported in the C# backend")
     }
 
     fn type_builtin(&mut self, _id: TypeId, _name: &str, _ty: &Type, _docs: &Docs) {

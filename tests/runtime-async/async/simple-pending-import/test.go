@@ -1,9 +1,11 @@
 package export_a_b_i
 
-import "github.com/bytecodealliance/wit-bindgen/wit_async"
+import (
+	witAsync "go.bytecodealliance.org/pkg/wit/async"
+)
 
 func F() {
 	for i := 0; i < 10; i++ {
-		wit_async.Yield()
+		witAsync.Yield()
 	}
 }

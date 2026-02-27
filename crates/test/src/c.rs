@@ -52,11 +52,11 @@ impl LanguageMethods for C {
 
     fn should_fail_verify(
         &self,
-        _name: &str,
+        name: &str,
         config: &crate::config::WitConfig,
         _args: &[String],
     ) -> bool {
-        config.error_context
+        config.error_context || name.starts_with("named-fixed-length-list.wit")
     }
 
     fn codegen_test_variants(&self) -> &[(&str, &[&str])] {
