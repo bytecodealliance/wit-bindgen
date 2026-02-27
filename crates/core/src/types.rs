@@ -111,26 +111,12 @@ impl Types {
         world_id: WorldId,
         may_alias_another_type: &dyn Fn(TypeId) -> bool,
     ) {
-        use std::collections::BTreeSet;
-        let world = &resolve.worlds[world_id];
-        let interfaces: BTreeSet<_> = world
-            .imports
-            .iter()
-            .chain(world.exports.iter())
-            .filter_map(|(_, item)| match item {
-                WorldItem::Interface { id, .. } => Some(*id),
-                WorldItem::Function(_) | WorldItem::Type { .. } => None,
-            })
-            .collect();
+        let mut live_types = wit_parser::LiveTypes::default();
+        live_types.add_world(resolve, world_id);
         let types: Vec<_> = resolve
             .types
             .iter()
-            .filter(|(t, _)| match resolve.types[*t].owner {
-                TypeOwner::Interface(id) => interfaces.contains(&id),
-                TypeOwner::World(id) => world_id == id,
-                // primitive types are always reachable
-                TypeOwner::None => true,
-            })
+            .filter(|(t, _)| live_types.contains(*t))
             .collect();
         for (i, (ty, _)) in types.iter().enumerate() {
             if !may_alias_another_type(*ty) {
