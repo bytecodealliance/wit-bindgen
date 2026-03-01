@@ -2393,10 +2393,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 if self.needs_cleanup_list {
                     self.r#gen.ffi_imports.insert(ffi::FREE);
-                    uwriteln!(
-                        self.src,
-                        "cleanup_list.each(mbt_ffi_free)",
-                    );
+                    uwriteln!(self.src, "cleanup_list.each(mbt_ffi_free)",);
                 }
 
                 match *amt {
@@ -2733,10 +2730,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     elements.push_str(&a);
                     elements.push_str(", ");
                 }
-                uwriteln!(
-                    self.src,
-                    "let {array} : FixedArray[_] = [{elements}]"
-                );
+                uwriteln!(self.src, "let {array} : FixedArray[_] = [{elements}]");
                 results.push(array);
             }
             Instruction::FixedLengthListLower {
