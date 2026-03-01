@@ -25,6 +25,9 @@ pub struct InterfaceGenerator<'a> {
     pub return_pointer_area_size: ArchitectureSize,
     pub return_pointer_area_align: Alignment,
     pub(super) needs_runtime_module: bool,
+    /// When `Some`, this interface is an `implements` item. The `InterfaceId`
+    /// identifies the interface being implemented.
+    pub implements: Option<InterfaceId>,
 }
 
 /// A description of the "mode" in which a type is printed.
@@ -134,6 +137,12 @@ enum PayloadFor {
 }
 
 impl<'i> InterfaceGenerator<'i> {
+    /// Compute the wasm-level module name for a world key, accounting for
+    /// `implements` items.
+    fn wasm_name_world_key(&self, key: &WorldKey) -> String {
+        wit_bindgen_core::wasm_import_module_name(self.resolve, key, self.implements)
+    }
+
     pub(super) fn generate_exports<'a>(
         &mut self,
         interface: Option<(InterfaceId, &WorldKey)>,
@@ -201,7 +210,7 @@ impl<'i> InterfaceGenerator<'i> {
             let resource = resource.unwrap();
             let resource_name = self.resolve.types[resource].name.as_ref().unwrap();
             let (_, interface_name) = interface.unwrap();
-            let module = self.resolve.name_world_key(interface_name);
+            let module = self.wasm_name_world_key(interface_name);
             let wasm_import_module = format!("[export]{module}");
             let import_new = crate::declare_import(
                 &wasm_import_module,
@@ -298,7 +307,7 @@ macro_rules! {macro_name} {{
         let export_prefix = self.r#gen.opts.export_prefix.as_deref().unwrap_or("");
         for name in resources_to_drop {
             let module = match self.identifier {
-                Identifier::Interface(_, key) => self.resolve.name_world_key(key),
+                Identifier::Interface(_, key) => self.wasm_name_world_key(key),
                 Identifier::World(_) | Identifier::StreamOrFuturePayload => {
                     unreachable!()
                 }
@@ -484,7 +493,7 @@ macro_rules! {macro_name} {{
             let module = format!(
                 "{prefix}{}",
                 interface
-                    .map(|name| self.resolve.name_world_key(name))
+                    .map(|name| self.wasm_name_world_key(name))
                     .unwrap_or_else(|| "$root".into())
             );
             let func_name = &func.name;
@@ -1209,7 +1218,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
     ) {
         let name_snake = func.name.to_snake_case().replace('.', "_");
         let wasm_module_export_name = match self.identifier {
-            Identifier::Interface(_, key) => Some(self.resolve.name_world_key(key)),
+            Identifier::Interface(_, key) => Some(self.wasm_name_world_key(key)),
             Identifier::World(_) => None,
             Identifier::StreamOrFuturePayload => unreachable!(),
         };
@@ -1313,6 +1322,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
         &mut self,
         interface: Option<(InterfaceId, &WorldKey)>,
         funcs: impl Iterator<Item = &'a Function> + Clone,
+        path_override: Option<&str>,
     ) {
         let mut funcs = super::group_by_resource(funcs.clone());
 
@@ -1321,7 +1331,10 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
         let mut extra_trait_items = String::new();
         let guest_trait = match interface {
             Some((id, _)) => {
-                let path = self.path_to_interface(id).unwrap();
+                let path = match path_override {
+                    Some(p) => p.to_string(),
+                    None => self.path_to_interface(id).unwrap(),
+                };
                 for (name, id) in self.resolve.interfaces[id].types.iter() {
                     match self.resolve.types[*id].kind {
                         TypeDefKind::Resource => {}
@@ -2659,7 +2672,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             self.wasm_import_module.to_string()
         } else {
             let module = match self.identifier {
-                Identifier::Interface(_, key) => self.resolve.name_world_key(key),
+                Identifier::Interface(_, key) => self.wasm_name_world_key(key),
                 Identifier::World(_) => unimplemented!("resource exports from worlds"),
                 Identifier::StreamOrFuturePayload => unreachable!(),
             };

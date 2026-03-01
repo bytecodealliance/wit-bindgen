@@ -1,0 +1,15 @@
+package foo:foo;
+
+interface store {
+  record item {
+    key: string,
+    value: string,
+  }
+  get: func(key: string) -> option<string>;
+  set: func(key: string, value: string);
+}
+
+world implements-export {
+  export primary: store;
+  export backup: store;
+}
