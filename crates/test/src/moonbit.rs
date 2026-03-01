@@ -60,11 +60,12 @@ impl LanguageMethods for MoonBit {
         }
 
         // Compile the MoonBit bindings to a wasm file
+        let manifest = compile.bindings_dir.join("moon.mod.json");
         let mut cmd = Command::new("moon");
         cmd.arg("build")
             .arg("--no-strip") // for debugging
-            .arg("-C")
-            .arg(compile.bindings_dir);
+            .arg("--manifest-path")
+            .arg(&manifest);
         runner.run_command(&mut cmd)?;
         // Build the component
         let artifact = compile
@@ -101,19 +102,18 @@ impl LanguageMethods for MoonBit {
     }
 
     fn verify(&self, runner: &Runner, verify: &crate::Verify) -> anyhow::Result<()> {
+        let manifest = verify.bindings_dir.join("moon.mod.json");
         let mut cmd = Command::new("moon");
         cmd.arg("check")
             .arg("--warn-list")
             .arg("-28")
             // .arg("--deny-warn")
-            .arg("--source-dir")
-            .arg(verify.bindings_dir);
+            .arg("--manifest-path")
+            .arg(&manifest);
 
         runner.run_command(&mut cmd)?;
         let mut cmd = Command::new("moon");
-        cmd.arg("build")
-            .arg("--source-dir")
-            .arg(verify.bindings_dir);
+        cmd.arg("build").arg("--manifest-path").arg(&manifest);
 
         runner.run_command(&mut cmd)?;
         Ok(())
