@@ -2722,10 +2722,97 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::ErrorContextLower { .. }
             | Instruction::ErrorContextLift { .. }
             | Instruction::DropHandle { .. } => todo!(),
-            Instruction::FixedLengthListLift { .. } => todo!(),
-            Instruction::FixedLengthListLower { .. } => todo!(),
-            Instruction::FixedLengthListLowerToMemory { .. } => todo!(),
-            Instruction::FixedLengthListLiftFromMemory { .. } => todo!(),
+            Instruction::FixedLengthListLift {
+                element: _,
+                size,
+                id: _,
+            } => {
+                let array = self.locals.tmp("array");
+                let mut elements = String::new();
+                for a in operands.drain(0..(*size as usize)) {
+                    elements.push_str(&a);
+                    elements.push_str(", ");
+                }
+                uwriteln!(
+                    self.src,
+                    "let {array} : FixedArray[_] = [{elements}]"
+                );
+                results.push(array);
+            }
+            Instruction::FixedLengthListLower {
+                element: _,
+                size,
+                id: _,
+            } => {
+                for i in 0..(*size as usize) {
+                    results.push(format!("({})[{i}]", operands[0]));
+                }
+            }
+            Instruction::FixedLengthListLowerToMemory {
+                element,
+                size: _,
+                id: _,
+            } => {
+                let Block {
+                    body,
+                    results: block_results,
+                } = self.blocks.pop().unwrap();
+                assert!(block_results.is_empty());
+
+                let vec = operands[0].clone();
+                let target = operands[1].clone();
+                let size = self.r#gen.r#gen.sizes.size(element).size_wasm32();
+                let index = self.locals.tmp("index");
+
+                uwrite!(
+                    self.src,
+                    "
+                    for {index} = 0; {index} < ({vec}).length(); {index} = {index} + 1 {{
+                        let iter_elem = ({vec})[{index}]
+                        let iter_base = ({target}) + ({index} * {size})
+                        {body}
+                    }}
+                    ",
+                );
+            }
+            Instruction::FixedLengthListLiftFromMemory {
+                element,
+                size: fll_size,
+                id: _,
+            } => {
+                let Block {
+                    body,
+                    results: block_results,
+                } = self.blocks.pop().unwrap();
+                let address = &operands[0];
+                let array = self.locals.tmp("array");
+                let ty = self
+                    .r#gen
+                    .r#gen
+                    .pkg_resolver
+                    .type_name(self.r#gen.name, element);
+                let elem_size = self.r#gen.r#gen.sizes.size(element).size_wasm32();
+                let index = self.locals.tmp("index");
+
+                let result = match &block_results[..] {
+                    [result] => result,
+                    _ => todo!("result count == {}", block_results.len()),
+                };
+
+                uwrite!(
+                    self.src,
+                    "
+                    let {array} : Array[{ty}] = []
+                    for {index} = 0; {index} < {fll_size}; {index} = {index} + 1 {{
+                        let iter_base = ({address}) + ({index} * {elem_size})
+                        {body}
+                        {array}.push({result})
+                    }}
+                    ",
+                );
+
+                results.push(format!("FixedArray::from_array({array}[:])"));
+            }
         }
     }
 
