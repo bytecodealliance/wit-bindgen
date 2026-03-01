@@ -2369,6 +2369,22 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::Return { amt, .. } => {
+                // Bind return operands to locals BEFORE cleanup to avoid
+                // use-after-free when operands contain inline loads from
+                // return_area or other freed memory.
+                let return_locals: Vec<String> = if *amt > 0 {
+                    operands
+                        .iter()
+                        .map(|op| {
+                            let local = self.locals.tmp("ret");
+                            uwriteln!(self.src, "let {local} = {op}");
+                            local
+                        })
+                        .collect()
+                } else {
+                    Vec::new()
+                };
+
                 for clean in &self.cleanup {
                     let address = &clean.address;
                     self.r#gen.ffi_imports.insert(ffi::FREE);
@@ -2377,19 +2393,17 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 if self.needs_cleanup_list {
                     self.r#gen.ffi_imports.insert(ffi::FREE);
-                    uwrite!(
+                    uwriteln!(
                         self.src,
-                        "
-                        cleanup_list.each(mbt_ffi_free)
-                        ",
+                        "cleanup_list.each(mbt_ffi_free)",
                     );
                 }
 
                 match *amt {
                     0 => (),
-                    1 => uwriteln!(self.src, "return {}", operands[0]),
+                    1 => uwriteln!(self.src, "return {}", return_locals[0]),
                     _ => {
-                        let results = operands.join(", ");
+                        let results = return_locals.join(", ");
                         uwriteln!(self.src, "return ({results})");
                     }
                 }
@@ -2747,11 +2761,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
         if !self.cleanup.is_empty() {
             self.needs_cleanup_list = true;
-            self.r#gen.ffi_imports.insert(ffi::FREE);
 
             for cleanup in &self.cleanup {
                 let address = &cleanup.address;
-                uwriteln!(self.src, "mbt_ffi_free({address})",);
+                uwriteln!(self.src, "cleanup_list.push({address})",);
             }
         }
 
