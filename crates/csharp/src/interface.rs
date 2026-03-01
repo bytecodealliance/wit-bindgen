@@ -880,7 +880,7 @@ var {async_status_var} = {raw_name}({wasm_params});
                 uwriteln!(
                     self.csharp_interop_src,
                     r#"
-                    return (uint)AsyncSupport.Callback(e, (AsyncSupport.ContextTask *)IntPtr.Zero, () => {camel_name}TaskReturn());
+                    return (uint)AsyncSupport.Callback(e, (ContextTask *)IntPtr.Zero, () => {camel_name}TaskReturn());
                 }}
                 "#
                 );
