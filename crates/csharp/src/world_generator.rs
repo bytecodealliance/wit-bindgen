@@ -45,9 +45,14 @@ pub struct CSharp {
     pub(crate) generated_future_types: HashSet<TypeId>,
     // Top level types that are bidirectional like enums, to save code size and not duplicate whene unnecessary.
     pub(crate) bidirectional_types_src: HashSet<String>,
+    pub(crate) current_implements: Option<InterfaceId>,
 }
 
 impl CSharp {
+    pub(crate) fn wasm_name_world_key(&self, resolve: &Resolve, key: &WorldKey) -> String {
+        wit_bindgen_core::wasm_import_module_name(resolve, key, self.current_implements)
+    }
+
     pub(crate) fn access_modifier(&self) -> &'static str {
         if self.opts.internal {
             "internal"
@@ -153,10 +158,13 @@ impl WorldGenerator for CSharp {
         resolve: &Resolve,
         key: &WorldKey,
         id: InterfaceId,
+        implements: Option<InterfaceId>,
         _files: &mut Files,
     ) -> anyhow::Result<()> {
+        self.current_implements = implements;
         let name = interface_name(self, resolve, key, Direction::Import);
         self.interface_names.insert(id, name.clone());
+        let import_module_name = self.wasm_name_world_key(resolve, key);
         let mut r#gen = self.interface(resolve, &name, Direction::Import, false);
 
         let mut old_resources = mem::take(&mut r#gen.csharp_gen.all_resources);
@@ -164,7 +172,6 @@ impl WorldGenerator for CSharp {
         let new_resources = mem::take(&mut r#gen.csharp_gen.all_resources);
         old_resources.extend(new_resources.clone());
         r#gen.csharp_gen.all_resources = old_resources;
-        let import_module_name = &resolve.name_world_key(key);
         for (resource, funcs) in by_resource(
             resolve.interfaces[id]
                 .functions
@@ -177,7 +184,7 @@ impl WorldGenerator for CSharp {
             }
 
             for func in funcs {
-                r#gen.import(import_module_name, func);
+                r#gen.import(&import_module_name, func);
             }
 
             if resource.is_some() {
@@ -188,12 +195,13 @@ impl WorldGenerator for CSharp {
         // for anonymous types
         r#gen.define_interface_types(id);
 
-        r#gen.add_futures_or_streams(import_module_name, false, true);
+        r#gen.add_futures_or_streams(&import_module_name, false, true);
 
-        r#gen.add_futures_or_streams(import_module_name, false, false);
+        r#gen.add_futures_or_streams(&import_module_name, false, false);
 
         r#gen.add_interface_fragment(false);
 
+        self.current_implements = None;
         Ok(())
     }
 
@@ -236,10 +244,13 @@ impl WorldGenerator for CSharp {
         resolve: &Resolve,
         key: &WorldKey,
         id: InterfaceId,
+        implements: Option<InterfaceId>,
         _files: &mut Files,
     ) -> anyhow::Result<()> {
+        self.current_implements = implements;
         let name = interface_name(self, resolve, key, Direction::Export);
         self.interface_names.insert(id, name.clone());
+        let import_module_name = self.wasm_name_world_key(resolve, key);
         let mut r#gen = self.interface(resolve, &name, Direction::Export, false);
 
         let mut old_resources = mem::take(&mut r#gen.csharp_gen.all_resources);
@@ -270,12 +281,12 @@ impl WorldGenerator for CSharp {
         // for anonymous types
         r#gen.define_interface_types(id);
 
-        let import_module_name = &resolve.name_world_key(key);
         r#gen.add_futures_or_streams(&format!("[export]{import_module_name}"), true, true);
 
         r#gen.add_futures_or_streams(&format!("[export]{import_module_name}"), true, false);
 
         r#gen.add_interface_fragment(true);
+        self.current_implements = None;
         Ok(())
     }
 

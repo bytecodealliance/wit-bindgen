@@ -22,6 +22,28 @@ pub enum Direction {
     Export,
 }
 
+/// Compute the wasm-level import/export module name for an interface,
+/// accounting for `implements` items.
+///
+/// For `implements` items, this produces the `[implements=<I>]label` encoding
+/// required by the component model binary format. Otherwise delegates to
+/// `resolve.name_world_key(name)`.
+pub fn wasm_import_module_name(
+    resolve: &Resolve,
+    name: &WorldKey,
+    implements: Option<InterfaceId>,
+) -> String {
+    match (name, implements) {
+        (WorldKey::Name(label), Some(impl_id)) => {
+            let iface_name = resolve
+                .id_of(impl_id)
+                .expect("unexpected anonymous interface");
+            format!("[implements=<{iface_name}>]{label}")
+        }
+        _ => resolve.name_world_key(name),
+    }
+}
+
 pub trait WorldGenerator {
     fn generate(&mut self, resolve: &mut Resolve, id: WorldId, files: &mut Files) -> Result<()> {
         if self.uses_nominal_type_ids() {
@@ -42,8 +64,8 @@ pub trait WorldGenerator {
         for (name, import) in world.imports.iter() {
             match import {
                 WorldItem::Function(f) => funcs.push((unwrap_name(name), f)),
-                WorldItem::Interface { id, .. } => {
-                    self.import_interface(resolve, name, *id, files)?
+                WorldItem::Interface { id, implements, .. } => {
+                    self.import_interface(resolve, name, *id, *implements, files)?
                 }
                 WorldItem::Type { id, .. } => types.push((unwrap_name(name), *id)),
             }
@@ -68,7 +90,9 @@ pub trait WorldGenerator {
         for (name, export) in world.exports.iter() {
             match export {
                 WorldItem::Function(f) => funcs.push((unwrap_name(name), f)),
-                WorldItem::Interface { id, .. } => interfaces.push((name, id)),
+                WorldItem::Interface { id, implements, .. } => {
+                    interfaces.push((name, id, implements))
+                }
                 WorldItem::Type { .. } => unreachable!(),
             }
         }
@@ -78,8 +102,8 @@ pub trait WorldGenerator {
 
         self.pre_export_interface(resolve, files)?;
 
-        for (name, id) in interfaces {
-            self.export_interface(resolve, name, *id, files)?;
+        for (name, id, implements) in interfaces {
+            self.export_interface(resolve, name, *id, *implements, files)?;
         }
         self.finish(resolve, id, files)
     }
@@ -104,6 +128,7 @@ pub trait WorldGenerator {
         resolve: &Resolve,
         name: &WorldKey,
         iface: InterfaceId,
+        implements: Option<InterfaceId>,
         files: &mut Files,
     ) -> Result<()>;
 
@@ -118,6 +143,7 @@ pub trait WorldGenerator {
         resolve: &Resolve,
         name: &WorldKey,
         iface: InterfaceId,
+        implements: Option<InterfaceId>,
         files: &mut Files,
     ) -> Result<()>;
     fn import_funcs(
