@@ -60,11 +60,12 @@ impl LanguageMethods for MoonBit {
         }
 
         // Compile the MoonBit bindings to a wasm file
+        let manifest = compile.bindings_dir.join("moon.mod.json");
         let mut cmd = Command::new("moon");
         cmd.arg("build")
             .arg("--no-strip") // for debugging
-            .arg("-C")
-            .arg(compile.bindings_dir);
+            .arg("--manifest-path")
+            .arg(&manifest);
         runner.run_command(&mut cmd)?;
         // Build the component
         let artifact = compile
@@ -93,27 +94,28 @@ impl LanguageMethods for MoonBit {
 
     fn should_fail_verify(
         &self,
-        _name: &str,
+        name: &str,
         config: &crate::config::WitConfig,
         _args: &[String],
     ) -> bool {
-        config.async_
+        // async-resource-func actually works, but most other async tests
+        // fail during codegen or verification
+        config.async_ && name != "async-resource-func.wit"
     }
 
     fn verify(&self, runner: &Runner, verify: &crate::Verify) -> anyhow::Result<()> {
+        let manifest = verify.bindings_dir.join("moon.mod.json");
         let mut cmd = Command::new("moon");
         cmd.arg("check")
             .arg("--warn-list")
             .arg("-28")
             // .arg("--deny-warn")
-            .arg("--source-dir")
-            .arg(verify.bindings_dir);
+            .arg("--manifest-path")
+            .arg(&manifest);
 
         runner.run_command(&mut cmd)?;
         let mut cmd = Command::new("moon");
-        cmd.arg("build")
-            .arg("--source-dir")
-            .arg(verify.bindings_dir);
+        cmd.arg("build").arg("--manifest-path").arg(&manifest);
 
         runner.run_command(&mut cmd)?;
         Ok(())
