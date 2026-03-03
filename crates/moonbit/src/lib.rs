@@ -730,6 +730,7 @@ impl InterfaceGenerator<'_> {
                 .collect(),
             Direction::Import,
             false, // sync import
+            true,
         );
 
         abi::call(
@@ -744,7 +745,7 @@ impl InterfaceGenerator<'_> {
         let src = bindgen.src.clone();
 
         let cleanup_list = if bindgen.needs_cleanup_list {
-            "let _cleanup_list : Array[Int] = []"
+            "let cleanup_list : Array[Int] = []"
         } else {
             ""
         };
@@ -826,6 +827,7 @@ impl InterfaceGenerator<'_> {
             (0..sig.params.len()).map(|i| format!("p{i}")).collect(),
             Direction::Export,
             async_,
+            true,
         );
 
         abi::call(
@@ -841,7 +843,7 @@ impl InterfaceGenerator<'_> {
 
         // Handle cleanup for both sync and async exports
         let cleanup_list = if bindgen.needs_cleanup_list {
-            "let _cleanup_list : Array[Int] = []"
+            "let cleanup_list : Array[Int] = []"
         } else {
             ""
         };
@@ -1021,6 +1023,7 @@ impl InterfaceGenerator<'_> {
                 (0..sig.results.len()).map(|i| format!("p{i}")).collect(),
                 Direction::Export,
                 false, // post-return is not async
+                true,
             );
 
             abi::post_return(bindgen.interface_gen.resolve, func, &mut bindgen);
@@ -1588,6 +1591,7 @@ struct FunctionBindgen<'a, 'b> {
     payloads: Vec<String>,
     cleanup: Vec<Cleanup>,
     needs_cleanup_list: bool,
+    defer_cleanup: bool,
     direction: Direction,
     async_: bool,
 }
@@ -1598,6 +1602,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         params: Box<[String]>,
         direction: Direction,
         async_: bool,
+        defer_cleanup: bool,
     ) -> FunctionBindgen<'a, 'b> {
         let mut locals = Ns::default();
         params.iter().for_each(|str| {
@@ -1613,6 +1618,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             payloads: Vec::new(),
             cleanup: Vec::new(),
             needs_cleanup_list: false,
+            defer_cleanup,
             direction,
             async_,
         }
@@ -2644,7 +2650,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     uwrite!(
                         self.src,
                         "
-                        _cleanup_list.each(mbt_ffi_free)
+                        cleanup_list.each(mbt_ffi_free)
                         ",
                     );
                 }
@@ -3002,12 +3008,18 @@ impl Bindgen for FunctionBindgen<'_, '_> {
         let BlockStorage { body, cleanup } = self.block_storage.pop().unwrap();
 
         if !self.cleanup.is_empty() {
-            self.needs_cleanup_list = true;
-            self.use_ffi(ffi::FREE);
-
-            for cleanup in &self.cleanup {
-                let address = &cleanup.address;
-                uwriteln!(self.src, "cleanup_list.push({address})",);
+            if self.defer_cleanup {
+                self.needs_cleanup_list = true;
+                for cleanup in &self.cleanup {
+                    let address = &cleanup.address;
+                    uwriteln!(self.src, "cleanup_list.push({address})",);
+                }
+            } else {
+                self.use_ffi(ffi::FREE);
+                for cleanup in &self.cleanup {
+                    let address = &cleanup.address;
+                    uwriteln!(self.src, "mbt_ffi_free({address})",);
+                }
             }
         }
 

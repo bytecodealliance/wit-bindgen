@@ -131,6 +131,7 @@ impl<'a> InterfaceGenerator<'a> {
             param_names.into_boxed_slice(),
             Direction::Import,
             true,
+            false,
         );
         let mut lowered_params = Vec::new();
 
@@ -402,7 +403,8 @@ fn wasmLift{camel_name}{index}(future_handle : Int) -> {lifted} {{
         let operand = if let TypeDefKind::Future(Some(ty)) = self.resolve.types[ty].kind {
             // TODO : solve ownership
             let resolve = self.resolve.clone();
-            let mut bindgen = FunctionBindgen::new(self, Box::new([]), Direction::Import, true);
+            let mut bindgen =
+                FunctionBindgen::new(self, Box::new([]), Direction::Import, true, false);
             let operand = lift_from_memory(&resolve, &mut bindgen, "ptr".to_string(), &ty);
             uwriteln!(lift, "{}", bindgen.src);
             operand
@@ -458,7 +460,8 @@ fn wasmLower{camel_name}{index}(future : {lifted}) -> Int {{
 
         if let Some(inner_ty) = inner_type {
             let resolve = self.resolve.clone();
-            let mut bindgen = FunctionBindgen::new(self, Box::new([]), Direction::Export, true);
+            let mut bindgen =
+                FunctionBindgen::new(self, Box::new([]), Direction::Export, true, false);
             bindgen.use_ffi(ffi::MALLOC);
             bindgen.use_ffi(ffi::FREE);
             uwriteln!(
@@ -594,7 +597,7 @@ fn wasmLift{camel_name}{index}(stream_handle : Int) -> {lifted} {{
         if let Some(inner_ty) = inner_type {
             let resolve = self.resolve.clone();
             let mut lift_bindgen =
-                FunctionBindgen::new(self, Box::new([]), Direction::Import, true);
+                FunctionBindgen::new(self, Box::new([]), Direction::Import, true, false);
             lift_bindgen.use_ffi(ffi::MALLOC);
             lift_bindgen.use_ffi(ffi::FREE);
 
@@ -706,7 +709,7 @@ fn wasmLower{camel_name}{index}(stream : {lifted}) -> Int {{
             let resolve = self.resolve.clone();
             let elem_type = self.world_gen.pkg_resolver.type_name(self.name, &inner_ty);
             let mut lower_bindgen =
-                FunctionBindgen::new(self, Box::new([]), Direction::Export, true);
+                FunctionBindgen::new(self, Box::new([]), Direction::Export, true, false);
             lower_bindgen.use_ffi(ffi::MALLOC);
             lower_bindgen.use_ffi(ffi::FREE);
 
