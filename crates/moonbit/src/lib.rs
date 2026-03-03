@@ -151,7 +151,18 @@ impl MoonBit {
         used.sort_unstable();
         for builtin in used {
             let should_emit = MoonBit::builtin_symbol(builtin)
-                .map(|symbol| ffi_body.contains(&format!("{symbol}(")))
+                .map(|symbol| {
+                    let needles = [
+                        format!("{symbol}("),
+                        format!("{symbol})"),
+                        format!("{symbol},"),
+                        format!("{symbol} "),
+                        format!("{symbol}\n"),
+                        format!("{symbol};"),
+                        format!("{symbol}]"),
+                    ];
+                    needles.iter().any(|needle| ffi_body.contains(needle))
+                })
                 .unwrap_or(true);
             if should_emit {
                 uwriteln!(ffi, "{builtin}");
@@ -2440,11 +2451,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 for operand in operands.drain(0..(*size as usize)) {
                     lifted.push(operand);
                 }
+                let ty = self.resolve_type_name(element);
                 if lifted.is_empty() {
-                    let ty = self.resolve_type_name(element);
                     results.push(format!("([] : FixedArray[{ty}])"));
                 } else {
-                    results.push(format!("[{}]", lifted.join(", ")));
+                    results.push(format!("([{}] : FixedArray[{ty}])", lifted.join(", ")));
                 }
             }
 
@@ -2536,7 +2547,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 if lifted.is_empty() {
                     results.push(format!("([] : FixedArray[{ty}])"));
                 } else {
-                    results.push(format!("[{}]", lifted.join(", ")));
+                    results.push(format!("([{}] : FixedArray[{ty}])", lifted.join(", ")));
                 }
             }
 
