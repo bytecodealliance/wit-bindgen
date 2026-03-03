@@ -132,16 +132,6 @@ pub struct MoonBit {
 }
 
 impl MoonBit {
-    fn builtin_symbol(builtin: &str) -> Option<&str> {
-        builtin.lines().find_map(|line| {
-            let trimmed = line.trim();
-            let rest = trimmed
-                .strip_prefix("extern \"wasm\" fn ")
-                .or_else(|| trimmed.strip_prefix("pub fn "))?;
-            rest.split('(').next().map(str::trim)
-        })
-    }
-
     fn emit_used_builtins<'a>(
         ffi: &mut Source,
         ffi_body: &str,
@@ -150,23 +140,8 @@ impl MoonBit {
         let mut used = builtins.into_iter().copied().collect::<Vec<_>>();
         used.sort_unstable();
         for builtin in used {
-            let should_emit = MoonBit::builtin_symbol(builtin)
-                .map(|symbol| {
-                    let needles = [
-                        format!("{symbol}("),
-                        format!("{symbol})"),
-                        format!("{symbol},"),
-                        format!("{symbol} "),
-                        format!("{symbol}\n"),
-                        format!("{symbol};"),
-                        format!("{symbol}]"),
-                    ];
-                    needles.iter().any(|needle| ffi_body.contains(needle))
-                })
-                .unwrap_or(true);
-            if should_emit {
-                uwriteln!(ffi, "{builtin}");
-            }
+            let _ = ffi_body; // builtins are tracked explicitly via use_ffi
+            uwriteln!(ffi, "{builtin}");
         }
     }
 
