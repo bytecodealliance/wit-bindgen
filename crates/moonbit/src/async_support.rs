@@ -100,8 +100,16 @@ impl AsyncSupport {
     }
 }
 
-/// lift func name, lift, lower func name, lower
-pub(crate) struct AsyncBinding(pub HashMap<TypeId, (String, String, String, String)>);
+pub(crate) struct AsyncBindingEntry {
+    pub lift_name: String,
+    pub lift_src: String,
+    pub lift_builtins: HashSet<&'static str>,
+    pub lower_name: String,
+    pub lower_src: String,
+    pub lower_builtins: HashSet<&'static str>,
+}
+
+pub(crate) struct AsyncBinding(pub HashMap<TypeId, AsyncBindingEntry>);
 
 /// Async-specific helpers used by `InterfaceGenerator` to keep the main
 /// visitor implementation focused on shared lowering/lifting logic.
@@ -250,7 +258,10 @@ defer {cleanup_params}()\n{async_pkg}suspend_for_subtask({subtask}, cleanup_afte
             uwriteln!(bindgen.src, "return {lifted}");
         }
 
-        bindgen.src
+        let builtins = bindgen.take_local_ffi_imports();
+        let src = bindgen.src;
+        self.ffi_imports.extend(builtins);
+        src
     }
 
     /// Generate the async bindings for this function.
@@ -290,7 +301,7 @@ defer {cleanup_params}()\n{async_pkg}suspend_for_subtask({subtask}, cleanup_afte
         index: usize,
         module: &str,
         func_name: &str,
-    ) -> (String, String, String, String) {
+    ) -> AsyncBindingEntry {
         let mut lift = Source::default();
         let mut lower = Source::default();
 
@@ -400,17 +411,23 @@ fn wasmLift{camel_name}{index}(future_handle : Int) -> {lifted} {{
       result = {{
       "#
         );
-        let operand = if let TypeDefKind::Future(Some(ty)) = self.resolve.types[ty].kind {
-            // TODO : solve ownership
-            let resolve = self.resolve.clone();
-            let mut bindgen =
-                FunctionBindgen::new(self, Box::new([]), Direction::Import, true, false);
-            let operand = lift_from_memory(&resolve, &mut bindgen, "ptr".to_string(), &ty);
-            uwriteln!(lift, "{}", bindgen.src);
-            operand
-        } else {
-            "()".into()
-        };
+        let (operand, lift_builtins) =
+            if let TypeDefKind::Future(Some(ty)) = self.resolve.types[ty].kind {
+                // TODO : solve ownership
+                let resolve = self.resolve.clone();
+                let mut bindgen =
+                    FunctionBindgen::new(self, Box::new([]), Direction::Import, true, false);
+                bindgen.use_ffi(ffi::MALLOC);
+                bindgen.use_ffi(ffi::FREE);
+                let operand = lift_from_memory(&resolve, &mut bindgen, "ptr".to_string(), &ty);
+                uwriteln!(lift, "{}", bindgen.src);
+                (operand, bindgen.take_local_ffi_imports())
+            } else {
+                let mut builtins = HashSet::new();
+                builtins.insert(ffi::MALLOC);
+                builtins.insert(ffi::FREE);
+                ("()".into(), builtins)
+            };
 
         // lift from memory if it were actual data
         uwriteln!(
@@ -458,7 +475,7 @@ fn wasmLower{camel_name}{index}(future : {lifted}) -> Int {{
         defer wasmLower{camel_name}{index}DropWritable(writable)"#
         );
 
-        if let Some(inner_ty) = inner_type {
+        let lower_builtins = if let Some(inner_ty) = inner_type {
             let resolve = self.resolve.clone();
             let mut bindgen =
                 FunctionBindgen::new(self, Box::new([]), Direction::Export, true, false);
@@ -484,6 +501,7 @@ fn wasmLower{camel_name}{index}(future : {lifted}) -> Int {{
                 r#"
         let _ = {async_qualifier}suspend_for_future_write(writable, wasmLower{camel_name}{index}Write(writable, ret_area)) catch {{ _ => false }}"#
             );
+            bindgen.take_local_ffi_imports()
         } else {
             // Unit type - no value to write, just complete the future
             uwriteln!(
@@ -492,7 +510,8 @@ fn wasmLower{camel_name}{index}(future : {lifted}) -> Int {{
         let _ = producer()
         let _ = {async_qualifier}suspend_for_future_write(writable, wasmLower{camel_name}{index}Write(writable, 0)) catch {{ _ => false }}"#
             );
-        }
+            HashSet::new()
+        };
 
         uwriteln!(
             lower,
@@ -503,12 +522,15 @@ fn wasmLower{camel_name}{index}(future : {lifted}) -> Int {{
   }}
 }}"#
         );
-        (
-            lifted_func_name,
-            lift.to_string(),
-            lowered_func_name,
-            lower.to_string(),
-        )
+        let lower_src = lower.to_string();
+        AsyncBindingEntry {
+            lift_name: lifted_func_name,
+            lift_src: lift.to_string(),
+            lift_builtins,
+            lower_name: lowered_func_name,
+            lower_src,
+            lower_builtins,
+        }
     }
 
     pub(crate) fn generate_stream_binding(
@@ -517,7 +539,7 @@ fn wasmLower{camel_name}{index}(future : {lifted}) -> Int {{
         index: usize,
         module: &str,
         func_name: &str,
-    ) -> (String, String, String, String) {
+    ) -> AsyncBindingEntry {
         let mut lift = Source::default();
         let mut lower = Source::default();
 
@@ -594,10 +616,15 @@ fn wasmLift{camel_name}{index}(stream_handle : Int) -> {lifted} {{
       }}"#
         );
 
-        if let Some(inner_ty) = inner_type {
+        let lift_builtins = if let Some(inner_ty) = inner_type {
             let resolve = self.resolve.clone();
-            let mut lift_bindgen =
-                FunctionBindgen::new(self, Box::new([]), Direction::Import, true, false);
+            let mut lift_bindgen = FunctionBindgen::new(
+                self,
+                Box::new([]),
+                Direction::Import,
+                true,
+                false,
+            );
             lift_bindgen.use_ffi(ffi::MALLOC);
             lift_bindgen.use_ffi(ffi::FREE);
 
@@ -641,6 +668,7 @@ fn wasmLift{camel_name}{index}(stream_handle : Int) -> {lifted} {{
       if end {{ close() }}
       Some(items[:])"#
             );
+            lift_bindgen.take_local_ffi_imports()
         } else {
             // Unit type stream
             uwriteln!(
@@ -659,7 +687,8 @@ fn wasmLift{camel_name}{index}(stream_handle : Int) -> {lifted} {{
       if end {{ close() }}
       Some(result[:])"#
             );
-        }
+            HashSet::new()
+        };
 
         uwriteln!(
             lift,
@@ -705,11 +734,16 @@ fn wasmLower{camel_name}{index}(stream : {lifted}) -> Int {{
             }}"#
         );
 
-        if let Some(inner_ty) = inner_type {
+        let lower_builtins = if let Some(inner_ty) = inner_type {
             let resolve = self.resolve.clone();
             let elem_type = self.world_gen.pkg_resolver.type_name(self.name, &inner_ty);
-            let mut lower_bindgen =
-                FunctionBindgen::new(self, Box::new([]), Direction::Export, true, false);
+            let mut lower_bindgen = FunctionBindgen::new(
+                self,
+                Box::new([]),
+                Direction::Export,
+                true,
+                false,
+            );
             lower_bindgen.use_ffi(ffi::MALLOC);
             lower_bindgen.use_ffi(ffi::FREE);
 
@@ -746,6 +780,7 @@ fn wasmLower{camel_name}{index}(stream : {lifted}) -> Int {{
             }}
             progress"#
             );
+            lower_bindgen.take_local_ffi_imports()
         } else {
             // Unit type stream
             uwriteln!(
@@ -761,7 +796,8 @@ fn wasmLower{camel_name}{index}(stream : {lifted}) -> Int {{
             }}
             progress"#
             );
-        }
+            HashSet::new()
+        };
 
         uwriteln!(
             lower,
@@ -783,11 +819,13 @@ fn wasmLower{camel_name}{index}(stream : {lifted}) -> Int {{
 }}"#
         );
 
-        (
-            lifted_func_name,
-            lift.to_string(),
-            lowered_func_name,
-            lower.to_string(),
-        )
+        AsyncBindingEntry {
+            lift_name: lifted_func_name,
+            lift_src: lift.to_string(),
+            lift_builtins,
+            lower_name: lowered_func_name,
+            lower_src: lower.to_string(),
+            lower_builtins,
+        }
     }
 }
