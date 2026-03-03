@@ -132,19 +132,6 @@ pub struct MoonBit {
 }
 
 impl MoonBit {
-    fn emit_used_builtins<'a>(
-        ffi: &mut Source,
-        ffi_body: &str,
-        builtins: impl IntoIterator<Item = &'a &'static str>,
-    ) {
-        let mut used = builtins.into_iter().copied().collect::<Vec<_>>();
-        used.sort_unstable();
-        for builtin in used {
-            let _ = ffi_body; // builtins are tracked explicitly via use_ffi
-            uwriteln!(ffi, "{builtin}");
-        }
-    }
-
     fn interface<'a>(
         &'a mut self,
         resolve: &'a Resolve,
@@ -308,8 +295,9 @@ impl WorldGenerator for MoonBit {
             let mut ffi = Source::default();
             wit_bindgen_core::generated_preamble(&mut ffi, VERSION);
             uwriteln!(ffi, "{}", fragment.ffi);
-            let builtin_refs = format!("{}\n{}", fragment.src, fragment.ffi);
-            MoonBit::emit_used_builtins(&mut ffi, &builtin_refs, fragment.builtins.iter());
+            for builtin in fragment.builtins {
+                uwriteln!(ffi, "{builtin}");
+            }
             files.push(&format!("{directory}/ffi.mbt"), indent(&ffi).as_bytes());
 
             // moon.pkg.json
@@ -384,11 +372,9 @@ impl WorldGenerator for MoonBit {
         wit_bindgen_core::generated_preamble(&mut ffi, VERSION);
         uwriteln!(ffi, "{}", self.import_world_fragment.ffi);
         builtins.extend(self.import_world_fragment.builtins.iter());
-        let builtin_refs = format!(
-            "{}\n{}",
-            self.import_world_fragment.src, self.import_world_fragment.ffi
-        );
-        MoonBit::emit_used_builtins(&mut ffi, &builtin_refs, builtins.iter());
+        for builtin in builtins {
+            uwriteln!(ffi, "{builtin}");
+        }
         files.push(
             &format!("{directory}/ffi_import.mbt"),
             indent(&ffi).as_bytes(),
@@ -470,8 +456,9 @@ impl WorldGenerator for MoonBit {
             wit_bindgen_core::generated_preamble(&mut ffi, VERSION);
 
             uwriteln!(&mut ffi, "{}", fragment.ffi);
-            let builtin_refs = format!("{}\n{}", fragment.src, fragment.ffi);
-            MoonBit::emit_used_builtins(&mut ffi, &builtin_refs, fragment.builtins.iter());
+            for builtin in fragment.builtins.iter() {
+                uwriteln!(ffi, "{builtin}");
+            }
             files.push(&format!("{directory}/ffi.mbt",), indent(&ffi).as_bytes());
         }
 
@@ -527,8 +514,9 @@ impl WorldGenerator for MoonBit {
             let mut export = Source::default();
             wit_bindgen_core::generated_preamble(&mut export, VERSION);
             uwriteln!(&mut export, "{}", fragment.ffi);
-            let builtin_refs = format!("{}\n{}", fragment.src, fragment.ffi);
-            MoonBit::emit_used_builtins(&mut export, &builtin_refs, fragment.builtins.iter());
+            for builtin in fragment.builtins.iter() {
+                uwriteln!(export, "{builtin}");
+            }
             files.push(&format!("{directory}/ffi.mbt",), indent(&export).as_bytes());
         }
 
@@ -693,7 +681,7 @@ impl InterfaceGenerator<'_> {
         if async_ {
             let src = self.generate_async_import(func, &ffi_import_name, &wasm_sig);
             let mbt_sig = self.world_gen.pkg_resolver.mbt_sig(self.name, func, false);
-            let sig = self.sig_string(&mbt_sig, async_);
+            let sig = self.sig_string_with_direction(&mbt_sig, async_, Direction::Import);
 
             print_docs(&mut self.src, &func.docs);
             uwrite!(
@@ -727,17 +715,18 @@ impl InterfaceGenerator<'_> {
             &mut bindgen,
             false,
         );
-
         let src = bindgen.src.clone();
-
         let cleanup_list = if bindgen.needs_cleanup_list {
             "let cleanup_list : Array[Int] = []"
         } else {
             ""
         };
+        let builtins = bindgen.take_local_ffi_imports();
+        drop(bindgen);
+        self.ffi_imports.extend(builtins);
 
         let mbt_sig = self.world_gen.pkg_resolver.mbt_sig(self.name, func, false);
-        let sig = self.sig_string(&mbt_sig, async_);
+        let sig = self.sig_string_with_direction(&mbt_sig, async_, Direction::Import);
 
         print_docs(&mut self.src, &func.docs);
 
@@ -824,15 +813,15 @@ impl InterfaceGenerator<'_> {
             &mut bindgen,
             async_,
         );
-
-        let src = bindgen.src;
-
         // Handle cleanup for both sync and async exports
         let cleanup_list = if bindgen.needs_cleanup_list {
             "let cleanup_list : Array[Int] = []"
         } else {
             ""
         };
+        let builtins = bindgen.take_local_ffi_imports();
+        let src = bindgen.src;
+        self.ffi_imports.extend(builtins);
 
         let result_type = match &sig.results[..] {
             [] => "Unit",
@@ -1013,8 +1002,9 @@ impl InterfaceGenerator<'_> {
             );
 
             abi::post_return(bindgen.interface_gen.resolve, func, &mut bindgen);
-
+            let builtins = bindgen.take_local_ffi_imports();
             let src = bindgen.src;
+            self.ffi_imports.extend(builtins);
 
             let func_name = self
                 .world_gen
@@ -1057,10 +1047,6 @@ impl InterfaceGenerator<'_> {
                 .export
                 .insert(export_name, (func_name, export));
         }
-    }
-
-    fn sig_string(&mut self, sig: &MoonbitSignature, async_: bool) -> String {
-        self.sig_string_with_direction(sig, async_, Direction::Import)
     }
 
     fn sig_string_with_direction(
@@ -1580,6 +1566,7 @@ struct FunctionBindgen<'a, 'b> {
     defer_cleanup: bool,
     direction: Direction,
     async_: bool,
+    local_ffi_imports: HashSet<&'static str>,
 }
 
 impl<'a, 'b> FunctionBindgen<'a, 'b> {
@@ -1607,7 +1594,12 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             defer_cleanup,
             direction,
             async_,
+            local_ffi_imports: HashSet::new(),
         }
+    }
+
+    fn take_local_ffi_imports(&mut self) -> HashSet<&'static str> {
+        std::mem::take(&mut self.local_ffi_imports)
     }
 
     fn lower_variant(
@@ -1799,7 +1791,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
     }
 
     fn use_ffi(&mut self, str: &'static str) {
-        self.interface_gen.ffi_imports.insert(str);
+        self.local_ffi_imports.insert(str);
     }
 }
 
@@ -2879,64 +2871,70 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::FutureLift { ty, .. } => {
-                self.use_ffi(ffi::MALLOC);
-                self.use_ffi(ffi::FREE);
                 let ty = dealias(self.interface_gen.resolve, *ty);
-                let (lifted_func_name, lift, _, _) =
-                    self.interface_gen.bindings.0.get(&ty).unwrap();
+                let binding = self.interface_gen.bindings.0.get(&ty).unwrap();
                 let op = &operands[0];
-                results.push(format!("{lifted_func_name}({op})"));
+                results.push(format!("{}({op})", binding.lift_name));
                 if self
                     .interface_gen
                     .async_bindings_emitted
-                    .insert(lifted_func_name.clone())
+                    .insert(binding.lift_name.clone())
                 {
-                    uwriteln!(self.interface_gen.ffi, "{}", lift);
+                    self.interface_gen
+                        .ffi_imports
+                        .extend(binding.lift_builtins.iter().copied());
+                    uwriteln!(self.interface_gen.ffi, "{}", binding.lift_src);
                 }
             }
 
             Instruction::FutureLower { ty, .. } => {
                 let ty = dealias(self.interface_gen.resolve, *ty);
-                let (_, _, lowered_func_name, lower) =
-                    self.interface_gen.bindings.0.get(&ty).unwrap();
+                let binding = self.interface_gen.bindings.0.get(&ty).unwrap();
                 let op = &operands[0];
-                results.push(format!("{lowered_func_name}({op})"));
+                results.push(format!("{}({op})", binding.lower_name));
                 if self
                     .interface_gen
                     .async_bindings_emitted
-                    .insert(lowered_func_name.clone())
+                    .insert(binding.lower_name.clone())
                 {
-                    uwriteln!(self.interface_gen.ffi, "{}", lower);
+                    self.interface_gen
+                        .ffi_imports
+                        .extend(binding.lower_builtins.iter().copied());
+                    uwriteln!(self.interface_gen.ffi, "{}", binding.lower_src);
                 }
             }
 
             Instruction::StreamLower { ty, .. } => {
                 let ty = dealias(self.interface_gen.resolve, *ty);
-                let (_, _, lowered_func_name, lower) =
-                    self.interface_gen.bindings.0.get(&ty).unwrap();
+                let binding = self.interface_gen.bindings.0.get(&ty).unwrap();
                 let op = &operands[0];
-                results.push(format!("{lowered_func_name}({op})"));
+                results.push(format!("{}({op})", binding.lower_name));
                 if self
                     .interface_gen
                     .async_bindings_emitted
-                    .insert(lowered_func_name.clone())
+                    .insert(binding.lower_name.clone())
                 {
-                    uwriteln!(self.interface_gen.ffi, "{}", lower);
+                    self.interface_gen
+                        .ffi_imports
+                        .extend(binding.lower_builtins.iter().copied());
+                    uwriteln!(self.interface_gen.ffi, "{}", binding.lower_src);
                 }
             }
 
             Instruction::StreamLift { ty, .. } => {
                 let ty = dealias(self.interface_gen.resolve, *ty);
-                let (lifted_func_name, lift, _, _) =
-                    self.interface_gen.bindings.0.get(&ty).unwrap();
+                let binding = self.interface_gen.bindings.0.get(&ty).unwrap();
                 let op = &operands[0];
-                results.push(format!("{lifted_func_name}({op})"));
+                results.push(format!("{}({op})", binding.lift_name));
                 if self
                     .interface_gen
                     .async_bindings_emitted
-                    .insert(lifted_func_name.clone())
+                    .insert(binding.lift_name.clone())
                 {
-                    uwriteln!(self.interface_gen.ffi, "{}", lift);
+                    self.interface_gen
+                        .ffi_imports
+                        .extend(binding.lift_builtins.iter().copied());
+                    uwriteln!(self.interface_gen.ffi, "{}", binding.lift_src);
                 }
             }
 
