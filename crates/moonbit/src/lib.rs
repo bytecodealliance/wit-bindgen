@@ -11,8 +11,7 @@ use wit_bindgen_core::{
     AsyncFilterSet, Direction, Files, InterfaceGenerator as CoreInterfaceGenerator, Ns, Source,
     WorldGenerator,
     abi::{self, AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType},
-    dealias,
-    uwrite, uwriteln,
+    dealias, uwrite, uwriteln,
     wit_parser::{
         Alignment, ArchitectureSize, Docs, Enum, Flags, FlagsRepr, Function, Handle, Int,
         InterfaceId, LiftLowerAbi, Mangling, ManglingAndAbi, Param, Record, Resolve,
@@ -858,6 +857,9 @@ impl InterfaceGenerator<'_> {
             #doc(hidden)
             pub fn {func_name}({params}) -> {result_type} {{
                 {async_pkg}with_waitableset(async fn() {{
+                    // Intentionally run export body in a task-group child task.
+                    // MoonBit's structured concurrency model uses the task group
+                    // as an umbrella for async work started by the export.
                     {async_pkg}with_task_group(async fn(task_group) {{
                         {cleanup_list}
                         {src}
@@ -1076,7 +1078,12 @@ impl InterfaceGenerator<'_> {
             })
             .collect::<Vec<_>>();
 
-        // For async exports, add taskgroup parameter (always Unit type)
+        // For async exports, add a task-group parameter.
+        //
+        // This is intentionally `TaskGroup[Unit]` even when the function result
+        // type is not `Unit`: this task group models the umbrella lifetime for
+        // export-side structured concurrency and cancellation, rather than the
+        // direct return payload type of the exported function.
         if async_ && matches!(direction, Direction::Export) {
             params.push("task_group : @async.TaskGroup[Unit]".to_string());
         }
@@ -2945,11 +2952,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 match ty {
                     Type::Id(id) => match &self.interface_gen.resolve.types[*id].kind {
                         TypeDefKind::Handle(Handle::Own(_)) => {
-                            let constructor =
-                                self.interface_gen.world_gen.pkg_resolver.type_constructor(
-                                    self.interface_gen.name,
-                                    ty,
-                                );
+                            let constructor = self
+                                .interface_gen
+                                .world_gen
+                                .pkg_resolver
+                                .type_constructor(self.interface_gen.name, ty);
                             uwriteln!(self.src, "let _ = {constructor}::drop({op});");
                         }
                         TypeDefKind::Future(_) | TypeDefKind::Stream(_) => {

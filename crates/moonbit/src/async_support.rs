@@ -5,16 +5,16 @@ use std::{
 
 use heck::ToUpperCamelCase;
 use wit_bindgen_core::{
-    abi::{self, deallocate_lists_in_types, lift_from_memory, WasmSignature},
-    dealias, uwriteln,
     Direction, Files, Source,
+    abi::{self, WasmSignature, deallocate_lists_in_types, lift_from_memory},
+    dealias, uwriteln,
     wit_parser::{
         Function, LiftLowerAbi, ManglingAndAbi, Param, Type, TypeDefKind, TypeId, WasmImport,
     },
 };
 
 use crate::pkg::ToMoonBitIdent;
-use crate::{ffi, indent, FunctionBindgen};
+use crate::{FunctionBindgen, ffi, indent};
 
 use super::InterfaceGenerator;
 
@@ -618,13 +618,8 @@ fn wasmLift{camel_name}{index}(stream_handle : Int) -> {lifted} {{
 
         let lift_builtins = if let Some(inner_ty) = inner_type {
             let resolve = self.resolve.clone();
-            let mut lift_bindgen = FunctionBindgen::new(
-                self,
-                Box::new([]),
-                Direction::Import,
-                true,
-                false,
-            );
+            let mut lift_bindgen =
+                FunctionBindgen::new(self, Box::new([]), Direction::Import, true, false);
             lift_bindgen.use_ffi(ffi::MALLOC);
             lift_bindgen.use_ffi(ffi::FREE);
 
@@ -737,13 +732,8 @@ fn wasmLower{camel_name}{index}(stream : {lifted}) -> Int {{
         let lower_builtins = if let Some(inner_ty) = inner_type {
             let resolve = self.resolve.clone();
             let elem_type = self.world_gen.pkg_resolver.type_name(self.name, &inner_ty);
-            let mut lower_bindgen = FunctionBindgen::new(
-                self,
-                Box::new([]),
-                Direction::Export,
-                true,
-                false,
-            );
+            let mut lower_bindgen =
+                FunctionBindgen::new(self, Box::new([]), Direction::Export, true, false);
             lower_bindgen.use_ffi(ffi::MALLOC);
             lower_bindgen.use_ffi(ffi::FREE);
 
