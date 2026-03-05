@@ -1,5 +1,5 @@
 use crate::{LanguageMethods, Runner};
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use serde::Deserialize;
 use std::process::Command;
 
@@ -103,10 +103,7 @@ impl LanguageMethods for MoonBit {
             .find(|path| path.exists())
             .cloned()
             .with_context(|| {
-                format!(
-                    "failed to locate MoonBit output wasm, looked in: {:?}",
-                    artifact_candidates
-                )
+                format!("failed to locate MoonBit output wasm, looked in: {artifact_candidates:?}",)
             })?;
         // Embed WIT files
         let manifest_dir = compile.component.path.parent().unwrap();
