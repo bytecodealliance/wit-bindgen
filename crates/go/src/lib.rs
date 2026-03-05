@@ -45,7 +45,7 @@ fn remote_pkg(name: &str) -> String {
 }
 
 /// The version of github.com/bytecodealliance/go-pkg that's being used
-const REMOTE_PKG_VERSION: &str = "v0.2.0";
+const REMOTE_PKG_VERSION: &str = "v0.2.1";
 
 /// If a user specifies the `pkg_name` flag, the required version for the
 /// shared remote package isn't recorded. This enables downstream users to retrieve the version programmatically.
