@@ -11,12 +11,6 @@ struct LangConfig {
     path: String,
     #[serde(default)]
     pkg_config: Option<String>,
-    #[serde(default = "default_encoding")]
-    encoding: String,
-}
-
-fn default_encoding() -> String {
-    "utf16".to_string()
 }
 
 pub struct MoonBit;
@@ -47,14 +41,6 @@ impl LanguageMethods for MoonBit {
 
     fn compile(&self, runner: &Runner, compile: &crate::Compile) -> anyhow::Result<()> {
         let config = compile.component.deserialize_lang_config::<LangConfig>()?;
-        let encoding = match config.encoding.as_str() {
-            "utf8" | "utf16" | "compact-utf16" => config.encoding.as_str(),
-            other => {
-                bail!(
-                    "unsupported MoonBit component encoding `{other}`; expected one of: utf8, utf16, compact-utf16"
-                )
-            }
-        };
         // Copy the file to the bindings directory
         if !config.path.is_empty() {
             let src_path = &compile.component.path;
@@ -111,7 +97,7 @@ impl LanguageMethods for MoonBit {
         let mut cmd = Command::new("wasm-tools");
         cmd.arg("component")
             .arg("embed")
-            .args(["--encoding", encoding])
+            .args(["--encoding", "utf16"])
             .args(["-o", embedded.to_str().unwrap()])
             .args(["-w", &compile.component.bindgen.world])
             .arg(manifest_dir)
