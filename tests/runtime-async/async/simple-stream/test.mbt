@@ -1,15 +1,10 @@
 //@ [lang]
 //@ path = 'gen/interface/my/test_/i/stub.mbt'
 
-pub async fn read_stream(x : @ffi.StreamReader[Unit]) -> Unit noraise {
-      let task = @ffi.current_task()
-      let buffer = FixedArray::make(10, Unit::default());
-
-      task.spawn(fn(){
-            let _ = x.read(buffer, 1) catch { _ => raise @ffi.Cancelled::Cancelled }
-      })
-      task.spawn(fn(){
-            let _ = x.read(buffer, 2) catch { _ => raise @ffi.Cancelled::Cancelled }
-      })
+pub async fn read_stream(x : @async.CMStream[Unit], task_group : @async.TaskGroup[Unit]) -> Unit {
+  guard x.read(1) is Some(a)
+  guard a.length() == 1
+  guard x.read(2) is Some(b)
+  guard b.length() == 2
+  x.close()
 }
-

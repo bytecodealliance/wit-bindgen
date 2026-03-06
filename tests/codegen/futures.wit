@@ -54,8 +54,13 @@ interface futures {
     b: string,
     c: future<u8>,
   }
+  record nested-future-record {
+    inner: future<future<u8>>,
+  }
   record-future: func(x: future<some-record>) -> future<other-record>;
   record-future-reverse: func(x: future<other-record>) -> future<some-record>;
+  nested-future: func(x: future<future<u8>>) -> future<future<u8>>;
+  nested-future-record-roundtrip: func(x: nested-future-record) -> nested-future-record;
 
   variant some-variant {
     a(string),

@@ -1,17 +1,23 @@
-///|
-async fn[T, E : Error] async_suspend(
-  cb : ((T) -> Unit, (E) -> Unit) -> Unit,
-) -> T raise E = "%async.suspend"
-
-///|
-fn run_async(f : async () -> Unit noraise) = "%async.run"
+// Copyright 2025 International Digital Economy Academy
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 ///|
 priv enum State {
   Done
   Fail(Error)
   Running
-  Suspend(ok_cont~ : (Unit) -> Unit, err_cont~ : (Error) -> Unit)
+  Suspend(ok_cont~ : (Unit) -> Unit, err_cont~ : (Cancelled) -> Unit)
 }
 
 ///|
@@ -21,56 +27,37 @@ struct Coroutine {
   mut shielded : Bool
   mut cancelled : Bool
   mut ready : Bool
-  downstream : Map[Int, Coroutine]
+  mut spawner : ((async () -> Unit) -> Unit)?
+  downstream : Set[Coroutine]
 }
 
 ///|
-pub impl Eq for Coroutine with equal(c1, c2) {
+impl Eq for Coroutine with equal(c1, c2) {
   c1.coro_id == c2.coro_id
 }
 
 ///|
-pub impl Hash for Coroutine with hash_combine(self, hasher) {
+impl Hash for Coroutine with hash_combine(self, hasher) {
   self.coro_id.hash_combine(hasher)
 }
 
 ///|
-pub fn Coroutine::wake(self : Coroutine) -> Unit {
+fn Coroutine::wake(self : Coroutine) -> Unit {
   self.ready = true
   scheduler.run_later.push_back(self)
 }
 
 ///|
-pub fn Coroutine::run(self : Coroutine) -> Unit {
-  self.ready = true
-  scheduler.run_later.push_front(self)
-}
-
-///|
-pub fn Coroutine::is_done(self : Coroutine) -> Bool {
-  match self.state {
-    Done => true
-    Fail(_) => true
-    Running | Suspend(_) => false
-  }
-}
-
-///|
 pub fn is_being_cancelled() -> Bool {
-  current_coroutine().cancelled
-}
-
-///|
-pub fn current_coroutine_done() -> Bool {
-  guard scheduler.curr_coro is Some(coro) else { return true }
-  coro.is_done()
+  let coro = current_coroutine()
+  coro.cancelled && not(coro.shielded)
 }
 
 ///|
 pub(all) suberror Cancelled derive(Show)
 
 ///|
-pub fn Coroutine::cancel(self : Coroutine) -> Unit {
+fn Coroutine::cancel(self : Coroutine) -> Unit {
   self.cancelled = true
   if not(self.shielded || self.ready) {
     self.wake()
@@ -78,7 +65,7 @@ pub fn Coroutine::cancel(self : Coroutine) -> Unit {
 }
 
 ///|
-pub async fn pause() -> Unit {
+pub async fn pause() -> Unit raise Cancelled {
   guard scheduler.curr_coro is Some(coro)
   if coro.cancelled && not(coro.shielded) {
     raise Cancelled::Cancelled
@@ -92,7 +79,7 @@ pub async fn pause() -> Unit {
 }
 
 ///|
-pub async fn suspend() -> Unit {
+pub async fn suspend() -> Unit raise Cancelled {
   guard scheduler.curr_coro is Some(coro)
   if coro.cancelled && not(coro.shielded) {
     raise Cancelled::Cancelled
@@ -110,23 +97,33 @@ pub async fn suspend() -> Unit {
 ///|
 pub fn spawn(f : async () -> Unit) -> Coroutine {
   scheduler.coro_id += 1
+  let inherited_spawner = if scheduler.curr_coro is Some(parent) {
+    parent.spawner
+  } else {
+    None
+  }
   let coro = {
     state: Running,
     ready: true,
-    shielded: false,
-    downstream: {},
+    shielded: true,
+    downstream: Set::new(),
     coro_id: scheduler.coro_id,
     cancelled: false,
+    spawner: inherited_spawner,
   }
   fn run(_) {
-    run_async(fn() {
+    run_async(() => {
       coro.shielded = false
-      try f() catch {
-        err => coro.state = Fail(err)
-      } noraise {
-        _ => coro.state = Done
+      if coro.cancelled {
+        coro.state = Fail(Cancelled::Cancelled)
+      } else {
+        try f() catch {
+          err => coro.state = Fail(err)
+        } noraise {
+          _ => coro.state = Done
+        }
       }
-      for _, coro in coro.downstream {
+      for coro in coro.downstream {
         coro.wake()
       }
       coro.downstream.clear()
@@ -139,7 +136,7 @@ pub fn spawn(f : async () -> Unit) -> Coroutine {
 }
 
 ///|
-pub fn Coroutine::unwrap(self : Coroutine) -> Unit raise {
+fn Coroutine::unwrap(self : Coroutine) -> Unit raise {
   match self.state {
     Done => ()
     Fail(err) => raise err
@@ -148,7 +145,7 @@ pub fn Coroutine::unwrap(self : Coroutine) -> Unit raise {
 }
 
 ///|
-pub async fn Coroutine::wait(target : Coroutine) -> Unit {
+async fn Coroutine::wait(target : Coroutine) -> Unit {
   guard scheduler.curr_coro is Some(coro)
   guard not(physical_equal(coro, target))
   match target.state {
@@ -156,14 +153,22 @@ pub async fn Coroutine::wait(target : Coroutine) -> Unit {
     Fail(err) => raise err
     Running | Suspend(_) => ()
   }
-  target.downstream[coro.coro_id] = coro
+  target.downstream.add(coro)
   try suspend() catch {
     err => {
-      target.downstream.remove(coro.coro_id)
+      target.downstream.remove(coro)
       raise err
     }
   } noraise {
     _ => target.unwrap()
+  }
+}
+
+///|
+fn Coroutine::check_error(coro : Coroutine) -> Unit raise {
+  match coro.state {
+    Fail(err) => raise err
+    Done | Running | Suspend(_) => ()
   }
 }
 
@@ -182,48 +187,5 @@ pub async fn protect_from_cancel(f : async () -> Unit) -> Unit {
     if coro.cancelled {
       raise Cancelled::Cancelled
     }
-  }
-}
-
-///|
-priv struct Scheduler {
-  mut coro_id : Int
-  mut curr_coro : Coroutine?
-  mut blocking : Int
-  run_later : @deque.Deque[Coroutine]
-}
-
-///|
-let scheduler : Scheduler = {
-  coro_id: 0,
-  curr_coro: None,
-  blocking: 0,
-  run_later: @deque.new(),
-}
-
-///|
-pub fn current_coroutine() -> Coroutine {
-  scheduler.curr_coro.unwrap()
-}
-
-///|
-pub fn no_more_work() -> Bool {
-  scheduler.blocking == 0 && scheduler.run_later.is_empty()
-}
-
-///|
-pub fn rschedule() -> Unit {
-  while scheduler.run_later.pop_front() is Some(coro) {
-    coro.ready = false
-    guard coro.state is Suspend(ok_cont~, err_cont~) else {  }
-    coro.state = Running
-    let last_coro = scheduler.curr_coro
-    scheduler.curr_coro = Some(coro)
-    if coro.cancelled && !coro.shielded {
-      err_cont(Cancelled::Cancelled)
-    } else {
-      ok_cont(())
-    }
-    scheduler.curr_coro = last_coro
   }
 }
