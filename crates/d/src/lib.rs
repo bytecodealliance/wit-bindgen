@@ -850,6 +850,8 @@ impl WorldGenerator for D {
             self.world_src.as_str().as_bytes(),
         );
 
+        files.push("wit/common.d", include_bytes!("wit_common.d"));
+
         for (_, interface_src) in &self.interfaces {
             let mut interface_filepath = PathBuf::from_iter(interface_src.fqn.split("."));
             interface_filepath.add_extension("d");
