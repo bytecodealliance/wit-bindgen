@@ -832,7 +832,8 @@ var {async_status_var} = {raw_name}({wasm_params});
 
         let wasm_func_name = func.name.clone();
         let interop_name = format!("wasmExport{}", wasm_func_name.to_upper_camel_case());
-        let core_module_name = interface_key.map(|s| self.resolve.name_world_key(s));
+        let core_module_name =
+            interface_key.map(|s| self.csharp_gen.wasm_name_world_key(self.resolve, s));
         let export_name = func.legacy_core_export_name(core_module_name.as_deref());
 
         let export_name = if async_ {
@@ -935,7 +936,8 @@ var {async_status_var} = {raw_name}({wasm_params});
 
             let (_import_module_prefix, import_module) = match interface_key {
                 Some(world_key) => {
-                    let interface_world = self.resolve.name_world_key(world_key);
+                    let interface_world =
+                        self.csharp_gen.wasm_name_world_key(self.resolve, world_key);
                     (format!("{interface_world}#"), interface_world)
                 }
                 None => (String::new(), "$root".to_string()),
@@ -1228,7 +1230,7 @@ var {async_status_var} = {raw_name}({wasm_params});
         match self.direction {
             Direction::Import => {
                 let module_name = key
-                    .map(|key| self.resolve.name_world_key(key))
+                    .map(|key| self.csharp_gen.wasm_name_world_key(self.resolve, key))
                     .unwrap_or_else(|| "$root".into());
 
                 // As of this writing, we cannot safely drop a handle to an imported resource from a .NET finalizer
@@ -1266,7 +1268,7 @@ var {async_status_var} = {raw_name}({wasm_params});
             }
             Direction::Export => {
                 let prefix = key
-                    .map(|s| format!("{}#", self.resolve.name_world_key(s)))
+                    .map(|s| format!("{}#", self.csharp_gen.wasm_name_world_key(self.resolve, s)))
                     .unwrap_or_else(String::new);
 
                 uwrite!(
@@ -1284,7 +1286,12 @@ var {async_status_var} = {raw_name}({wasm_params});
                 );
 
                 let module_name = key
-                    .map(|key| format!("[export]{}", self.resolve.name_world_key(key)))
+                    .map(|key| {
+                        format!(
+                            "[export]{}",
+                            self.csharp_gen.wasm_name_world_key(self.resolve, key)
+                        )
+                    })
                     .unwrap_or_else(|| "[export]$root".into());
 
                 // The ergonomics of exported resources are not ideal, currently. Implementing such a resource
