@@ -54,7 +54,7 @@ public static class AsyncSupport
         internal static unsafe extern uint WaitableSetPoll(int waitable, uint* waitableHandlePtr);
 
         [global::System.Runtime.InteropServices.DllImport("$root", EntryPoint = "[waitable-set-drop]"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
-        internal static unsafe extern void WaitableSetDrop(int waitable);
+        internal static extern void WaitableSetDrop(int waitable);
 
         [global::System.Runtime.InteropServices.DllImport("$root", EntryPoint = "[context-set-0]"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
         internal static unsafe extern void ContextSet(ContextTask* waitable);
@@ -70,6 +70,7 @@ public static class AsyncSupport
         return waitableSet;
     }
 
+    // unsafe because we are using pointers.
     public static unsafe void WaitableSetPoll(int waitableHandle) 
     {
         var error  = Interop.WaitableSetPoll(waitableHandle, null);
@@ -105,7 +106,8 @@ public static class AsyncSupport
         waitableSetOfTasks[waitableHandle] = waitableInfoState;
     }
 
-    public unsafe static EventWaitable WaitableSetWait(int waitableSetHandle) 
+    // unsafe because we use a fixed size buffer.
+    public static unsafe EventWaitable WaitableSetWait(int waitableSetHandle) 
     {
         uint* buffer = stackalloc uint[2];
         var eventCode = (EventCode)Interop.WaitableSetWait(waitableSetHandle, buffer);
@@ -117,16 +119,19 @@ public static class AsyncSupport
         Interop.WaitableSetDrop(handle);
     }
 
+    // unsafe because we are using pointers.
     public static unsafe void ContextSet(ContextTask* contextTask)
     {
         Interop.ContextSet(contextTask);
     }
 
+    // unsafe because we are using pointers.
     public static unsafe ContextTask* ContextGet()
     {
         return Interop.ContextGet();
     }
 
+    // unsafe because we are using pointers.
     public static unsafe uint Callback(EventWaitable e, ContextTask* contextPtr, Action taskReturn)
     {
         Console.WriteLine($"Callback Event code {e.EventCode} Code {e.Code} Waitable {e.Waitable} Waitable Status {e.WaitableStatus.State}, Count {e.WaitableCount}");
@@ -182,7 +187,8 @@ public static class AsyncSupport
         throw new NotImplementedException($"WaitableStatus not implemented {e.WaitableStatus.State} in set {contextTaskPtr->WaitableSetHandle}");
     }
 
-    public static unsafe Task TaskFromStatus(uint status)
+    // This method is unsafe because we are using unmanaged memory to store the context.
+    internal static unsafe Task TaskFromStatus(uint status)
     {
         var subtaskStatus = new SubtaskStatus(status);
         status = status & 0xF;
@@ -191,10 +197,7 @@ public static class AsyncSupport
         {
             ContextTask* contextTaskPtr = ContextGet();
             if (contextTaskPtr == null) {
-                contextTaskPtr = (ContextTask *)Marshal.AllocHGlobal(Marshal.SizeOf<ContextTask>());
-
-                contextTaskPtr->WaitableSetHandle = WaitableSetNew();
-                ContextSet(contextTaskPtr);
+                contextTaskPtr = AllocateAndSetNewContext();
                 Console.WriteLine($"TaskFromStatus creating WaitableSet {contextTaskPtr->WaitableSetHandle}");
             }
 
@@ -212,6 +215,7 @@ public static class AsyncSupport
         }
     }
 
+    // unsafe because we are using pointers.
     public static unsafe Task<T> TaskFromStatus<T>(uint status, Func<T> liftFunc)
     {
         var subtaskStatus = new SubtaskStatus(status);
@@ -240,6 +244,15 @@ public static class AsyncSupport
         {
             throw new Exception($"unexpected subtask status: {status}");
         }
+    }
+
+    // unsafe because we are working with native memory.
+    internal static unsafe ContextTask* AllocateAndSetNewContext()
+    {
+        var contextTaskPtr = (ContextTask *)Marshal.AllocHGlobal(Marshal.SizeOf<ContextTask>());
+        contextTaskPtr->WaitableSetHandle = AsyncSupport.WaitableSetNew();
+        AsyncSupport.ContextSet(contextTaskPtr);
+        return contextTaskPtr;
     }
 }
 
@@ -353,6 +366,7 @@ public abstract class ReaderBase : IFutureStream
 
     internal abstract uint VTableRead(IntPtr bufferPtr, int length);
 
+    // unsafe as we are working with pointers.
     internal unsafe Task<int> ReadInternal(Func<GCHandle?> liftBuffer, int length)
     {
         if (Handle == 0)
@@ -375,9 +389,7 @@ public abstract class ReaderBase : IFutureStream
             if(contextTaskPtr == null)
             {
                 Console.WriteLine("FutureReader Read Blocked creating WaitableSet");
-                contextTaskPtr = (ContextTask *)Marshal.AllocHGlobal(Marshal.SizeOf<ContextTask>());
-                contextTaskPtr->WaitableSetHandle = AsyncSupport.WaitableSetNew();
-                AsyncSupport.ContextSet(contextTaskPtr);
+                contextTaskPtr = AsyncSupport.AllocateAndSetNewContext();
             }
             Console.WriteLine("blocked read before join");
 
@@ -468,7 +480,7 @@ public class FutureReader<T>(int handle, FutureVTable vTable) : ReaderBase(handl
         }
     }
 
-    public unsafe Task Read(T buffer)
+    public Task Read(T buffer)
     {
         return ReadInternal(() => LiftBuffer(buffer), 1);
     }
@@ -493,7 +505,7 @@ public class StreamReader : ReaderBase
 
     public StreamVTable VTable { get; private set; }
 
-    public unsafe Task Read(int length)
+    public Task Read(int length)
     {
         return ReadInternal(() => null, length);
     }
@@ -526,7 +538,7 @@ public class StreamReader<T>(int handle, StreamVTable vTable) :  ReaderBase(hand
         }
     }
 
-    public unsafe Task<int> Read(T[] buffer)
+    public Task<int> Read(T[] buffer)
     {
         return ReadInternal(() => LiftBuffer(buffer), buffer.Length);
     }
@@ -567,6 +579,7 @@ public abstract class WriterBase : IFutureStream
 
     internal abstract uint VTableWrite(IntPtr bufferPtr, int length);
 
+    // unsafe as we are working with pointers.
     internal unsafe Task<int> WriteInternal(Func<GCHandle?> lowerPayload, int length)
     {
         if (Handle == 0)
@@ -588,9 +601,7 @@ public abstract class WriterBase : IFutureStream
             ContextTask* contextTaskPtr = AsyncSupport.ContextGet();
             if(contextTaskPtr == null)
             {
-                contextTaskPtr = (ContextTask *)Marshal.AllocHGlobal(Marshal.SizeOf<ContextTask>());
-                contextTaskPtr->WaitableSetHandle = AsyncSupport.WaitableSetNew();
-                AsyncSupport.ContextSet(contextTaskPtr);
+                contextTaskPtr = AsyncSupport.AllocateAndSetNewContext();
             }
             Console.WriteLine("blocked write before join");
             AsyncSupport.Join(Handle, contextTaskPtr->WaitableSetHandle, new WaitableInfoState(tcs, this));
