@@ -1224,9 +1224,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 size,
                 id: _,
             } => {
-                for i in 0..(*size as usize) {
-                    results.push(format!("{}[{i}]", operands[0]));
-                }
+                let tmp = self.tmp();
+                let names: Vec<String> = (0..(*size as usize))
+                    .map(|i| format!("e{tmp}_{i}"))
+                    .collect();
+                self.push_str(&format!("let [{}] = {};\n", names.join(", "), operands[0]));
+                results.extend(names);
             }
             Instruction::FixedLengthListLiftFromMemory {
                 element,
