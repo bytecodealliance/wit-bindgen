@@ -1163,7 +1163,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     }});
                     
                     // TODO: Defer dropping borrowed resources until a result is returned.
-                    return (uint)CallbackCode.Wait | (uint)(AsyncSupport.WaitableSet.Handle << 4);
+                    ContextTask* contextTaskPtr = AsyncSupport.ContextGet();
+                    return (uint)CallbackCode.Wait | (uint)(contextTaskPtr->WaitableSetHandle << 4);
                     "#);
                 }
 
