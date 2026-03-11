@@ -892,7 +892,7 @@ impl CppInterfaceGenerator<'_> {
             TypeDefKind::Stream(_) => todo!("generate for stream"),
             TypeDefKind::Handle(_) => todo!("generate for handle"),
             TypeDefKind::FixedLengthList(_, _) => todo!(),
-            TypeDefKind::Map(_, _) => todo!(),
+            TypeDefKind::Map(key, value) => self.type_map(id, name, key, value, &ty.docs),
             TypeDefKind::Unknown => unreachable!(),
         }
     }
@@ -1715,7 +1715,46 @@ impl CppInterfaceGenerator<'_> {
                         self.type_name(ty, from_namespace, flavor)
                     )
                 }
-                TypeDefKind::Map(_, _) => todo!(),
+                TypeDefKind::Map(key, value) => {
+                    let entry_flavor = match flavor {
+                        Flavor::BorrowedArgument | Flavor::Argument(AbiVariant::GuestImport) => {
+                            Flavor::BorrowedArgument
+                        }
+                        _ => Flavor::InStruct,
+                    };
+                    self.r#gen.dependencies.needs_tuple = true;
+                    let inner = format!(
+                        "std::tuple<{}, {}>",
+                        self.type_name(key, from_namespace, entry_flavor),
+                        self.type_name(value, from_namespace, entry_flavor)
+                    );
+                    match flavor {
+                        Flavor::BorrowedArgument => {
+                            self.r#gen.dependencies.needs_span = true;
+                            format!("std::span<{inner} const>")
+                        }
+                        Flavor::Argument(var)
+                            if matches!(var, AbiVariant::GuestImport)
+                                || self.r#gen.opts.api_style == APIStyle::Symmetric =>
+                        {
+                            self.r#gen.dependencies.needs_span = true;
+                            let constness = if self.r#gen.types.get(*id).has_own_handle {
+                                ""
+                            } else {
+                                " const"
+                            };
+                            format!("std::span<{inner}{constness}>")
+                        }
+                        Flavor::Argument(AbiVariant::GuestExport) => {
+                            self.r#gen.dependencies.needs_wit = true;
+                            format!("wit::vector<{inner}>")
+                        }
+                        _ => {
+                            self.r#gen.dependencies.needs_wit = true;
+                            format!("wit::vector<{inner}>")
+                        }
+                    }
+                }
                 TypeDefKind::Unknown => todo!(),
             },
             Type::ErrorContext => todo!(),
@@ -2221,6 +2260,10 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
         // nothing to do here
     }
 
+    fn type_map(&mut self, _id: TypeId, _name: &str, _key: &Type, _value: &Type, _docs: &Docs) {
+        // nothing to do here
+    }
+
     fn type_fixed_length_list(
         &mut self,
         _id: TypeId,
@@ -2591,6 +2634,43 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 }
                 results.push(len);
             }
+            abi::Instruction::MapLower {
+                key,
+                value,
+                realloc,
+            } => {
+                let tmp = self.tmp();
+                let body = self.blocks.pop().unwrap();
+                let map = format!("map{tmp}");
+                let ptr = format!("ptr{tmp}");
+                let len = format!("len{tmp}");
+                let size = self.r#gen.sizes.record([*key, *value]).size;
+                self.push_str(&format!("auto&& {} = {};\n", map, operands[0]));
+                self.push_str(&format!(
+                    "auto {} = ({})({}.data());\n",
+                    ptr,
+                    self.r#gen.r#gen.opts.ptr_type(),
+                    map
+                ));
+                self.push_str(&format!("auto {len} = (size_t)({map}.size());\n"));
+                self.push_str(&format!("for (size_t i = 0; i < {len}; ++i) {{\n"));
+                self.push_str(&format!(
+                    "auto base = {ptr} + i * {size};\n",
+                    size = size.format(POINTER_SIZE_EXPRESSION)
+                ));
+                self.push_str(&format!("auto&& map_entry = {map}[i];\n"));
+                self.push_str("auto&& map_key = std::get<0>(map_entry);\n");
+                self.push_str("auto&& map_value = std::get<1>(map_entry);\n");
+                self.push_str(&format!("{}\n", body.0));
+                self.push_str("}\n");
+                if realloc.is_none() {
+                    results.push(ptr);
+                } else {
+                    uwriteln!(self.src, "{}.leak();\n", operands[0]);
+                    results.push(ptr);
+                }
+                results.push(len);
+            }
             abi::Instruction::ListCanonLift { element, .. } => {
                 let tmp = self.tmp();
                 let len = format!("len{tmp}");
@@ -2696,6 +2776,77 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     results.push(move_if_necessary(&result));
                 }
             }
+            abi::Instruction::MapLift { key, value, .. } => {
+                let body = self.blocks.pop().unwrap();
+                let tmp = self.tmp();
+                let size = self.r#gen.sizes.record([*key, *value]).size;
+                let flavor = if self.r#gen.r#gen.opts.api_style == APIStyle::Symmetric
+                    && matches!(self.variant, AbiVariant::GuestExport)
+                {
+                    Flavor::BorrowedArgument
+                } else {
+                    Flavor::InStruct
+                };
+                self.r#gen.r#gen.dependencies.needs_tuple = true;
+                let entry_type = format!(
+                    "std::tuple<{}, {}>",
+                    self.r#gen.type_name(key, &self.namespace, flavor),
+                    self.r#gen.type_name(value, &self.namespace, flavor)
+                );
+                let len = format!("len{tmp}");
+                let base = format!("base{tmp}");
+                let result = format!("result{tmp}");
+                self.push_str(&format!(
+                    "auto {base} = {operand0};\n",
+                    operand0 = operands[0]
+                ));
+                self.push_str(&format!(
+                    "auto {len} = {operand1};\n",
+                    operand1 = operands[1]
+                ));
+                self.push_str(&format!(
+                    r#"auto {result} = wit::vector<{entry_type}>::allocate({len});
+                    "#,
+                ));
+
+                if self.r#gen.r#gen.opts.api_style == APIStyle::Symmetric
+                    && matches!(self.variant, AbiVariant::GuestExport)
+                {
+                    assert!(self.needs_dealloc);
+                    self.push_str(&format!("if ({len}>0) _deallocate.push_back({base});\n"));
+                }
+
+                uwriteln!(self.src, "for (unsigned i=0; i<{len}; ++i) {{");
+                uwriteln!(
+                    self.src,
+                    "auto base = {base} + i * {size};",
+                    size = size.format(POINTER_SIZE_EXPRESSION)
+                );
+                uwrite!(self.src, "{}", body.0);
+                let key_result = move_if_necessary(&body.1[0]);
+                let value_result = move_if_necessary(&body.1[1]);
+                uwriteln!(
+                    self.src,
+                    "auto e{tmp} = std::make_tuple({key_result}, {value_result});"
+                );
+                if let Some(code) = self.leak_on_insertion.take() {
+                    assert!(self.needs_dealloc);
+                    uwriteln!(self.src, "{code}");
+                }
+                uwriteln!(self.src, "{result}.initialize(i, std::move(e{tmp}));");
+                uwriteln!(self.src, "}}");
+
+                if self.r#gen.r#gen.opts.api_style == APIStyle::Symmetric
+                    && matches!(self.variant, AbiVariant::GuestExport)
+                {
+                    results.push(format!("{result}.get_const_view()"));
+                    self.leak_on_insertion.replace(format!(
+                        "if ({len}>0) _deallocate.push_back((void*){result}.leak());\n"
+                    ));
+                } else {
+                    results.push(move_if_necessary(&result));
+                }
+            }
             abi::Instruction::FixedLengthListLift {
                 element,
                 size,
@@ -2784,6 +2935,8 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 self.push_str("\n}\n}\n");
             }
             abi::Instruction::IterElem { .. } => results.push("iter_elem".to_string()),
+            abi::Instruction::IterMapKey { .. } => results.push("map_key".to_string()),
+            abi::Instruction::IterMapValue { .. } => results.push("map_value".to_string()),
             abi::Instruction::IterBasePointer => results.push("base".to_string()),
             abi::Instruction::RecordLower { record, .. } => {
                 let op = &operands[0];
@@ -3448,6 +3601,29 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let i = self.tempname("i", tmp);
                 uwriteln!(self.src, "for (size_t {i} = 0; {i} < {len}; {i}++) {{");
                 let size = self.r#gen.sizes.size(element);
+                uwriteln!(
+                    self.src,
+                    "uint8_t* base = {ptr} + {i} * {size};",
+                    size = size.format(POINTER_SIZE_EXPRESSION)
+                );
+                uwriteln!(self.src, "(void) base;");
+                uwrite!(self.src, "{body}");
+                uwriteln!(self.src, "}}");
+                uwriteln!(self.src, "if ({len} > 0) {{");
+                uwriteln!(self.src, "free((void*) ({ptr}));");
+                uwriteln!(self.src, "}}");
+            }
+            abi::Instruction::GuestDeallocateMap { key, value } => {
+                let (body, results) = self.blocks.pop().unwrap();
+                assert!(results.is_empty());
+                let tmp = self.tmp();
+                let ptr = self.tempname("ptr", tmp);
+                let len = self.tempname("len", tmp);
+                uwriteln!(self.src, "uint8_t* {ptr} = {};", operands[0]);
+                uwriteln!(self.src, "size_t {len} = {};", operands[1]);
+                let i = self.tempname("i", tmp);
+                uwriteln!(self.src, "for (size_t {i} = 0; {i} < {len}; {i}++) {{");
+                let size = self.r#gen.sizes.record([*key, *value]).size;
                 uwriteln!(
                     self.src,
                     "uint8_t* base = {ptr} + {i} * {size};",

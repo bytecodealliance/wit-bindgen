@@ -1786,6 +1786,12 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
                         return;
                     }
                 }
+                TypeDefKind::Map(key, value) => {
+                    if mode.lifetime.is_some() {
+                        self.print_map(key, value, mode);
+                        return;
+                    }
+                }
                 _ => {}
             }
         }
@@ -1927,6 +1933,32 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
             self.push_vec_name();
             self.push_str("::<");
             self.print_ty(ty, next_mode);
+            self.push_str(">");
+        }
+    }
+
+    fn print_map(&mut self, key: &Type, value: &Type, mode: TypeMode) {
+        let key_mode = self.filter_mode(key, mode);
+        let value_mode = self.filter_mode(value, mode);
+        if mode.lists_borrowed {
+            let lifetime = mode.lifetime.unwrap();
+            self.push_str("&");
+            if lifetime != "'_" {
+                self.push_str(lifetime);
+                self.push_str(" ");
+            }
+            self.push_str("[(");
+            self.print_ty(key, key_mode);
+            self.push_str(", ");
+            self.print_ty(value, value_mode);
+            self.push_str(")]");
+        } else {
+            let path = self.path_to_map();
+            self.push_str(&path);
+            self.push_str("::<");
+            self.print_ty(key, key_mode);
+            self.push_str(", ");
+            self.print_ty(value, value_mode);
             self.push_str(">");
         }
     }
@@ -2557,6 +2589,10 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
         self.path_from_runtime_module(RuntimeItem::VecType, "Vec")
     }
 
+    pub fn path_to_map(&mut self) -> String {
+        self.path_from_runtime_module(RuntimeItem::MapType, "Map")
+    }
+
     pub fn path_to_string(&mut self) -> String {
         self.path_from_runtime_module(RuntimeItem::StringType, "String")
     }
@@ -2909,6 +2945,17 @@ impl<'a> {camel}Borrow<'a>{{
         }
     }
 
+    fn type_map(&mut self, id: TypeId, _name: &str, key: &Type, value: &Type, docs: &Docs) {
+        for (name, mode) in self.modes_of(id) {
+            self.rustdoc(docs);
+            self.push_str(&format!("pub type {name}"));
+            self.print_generics(mode.lifetime);
+            self.push_str(" = ");
+            self.print_map(key, value, mode);
+            self.push_str(";\n");
+        }
+    }
+
     fn type_fixed_length_list(
         &mut self,
         id: TypeId,
@@ -3047,6 +3094,10 @@ impl<'a, 'b> wit_bindgen_core::AnonymousTypeGenerator<'a> for AnonTypeGenerator<
 
     fn anonymous_type_list(&mut self, _id: TypeId, ty: &Type, _docs: &Docs) {
         self.interface.print_list(ty, self.mode)
+    }
+
+    fn anonymous_type_map(&mut self, _id: TypeId, key: &Type, value: &Type, _docs: &Docs) {
+        self.interface.print_map(key, value, self.mode);
     }
 
     fn anonymous_type_future(&mut self, _id: TypeId, ty: &Option<Type>, _docs: &Docs) {

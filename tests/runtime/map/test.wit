@@ -1,0 +1,20 @@
+package test:maps;
+
+interface to-test {
+  type names-by-id = map<u32, string>;
+  type ids-by-name = map<string, u32>;
+  type bytes-by-name = map<string, list<u8>>;
+
+  named-roundtrip: func(a: names-by-id) -> ids-by-name;
+  bytes-roundtrip: func(a: bytes-by-name) -> bytes-by-name;
+}
+
+world test {
+  export to-test;
+}
+
+world runner {
+  import to-test;
+
+  export run: func();
+}
