@@ -150,7 +150,7 @@ public static class AsyncSupport
         {
             // The operation is complete so we can free the buffer and remove the waitable from our dicitonary
             Console.WriteLine("Setting the result");
-            waitables.Remove(e.Waitable, out _);
+            waitables.TryRemove(e.Waitable, out _);
             if (e.IsSubtask)
             {
                 // TODO: Handle/lift async function return values. 

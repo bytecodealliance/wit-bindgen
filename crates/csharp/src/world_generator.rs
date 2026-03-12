@@ -8,7 +8,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 use std::ops::Deref;
 use std::{iter, mem};
-use wit_bindgen_core::{Direction, Files, InterfaceGenerator as _, WorldGenerator, uwrite};
+use wit_bindgen_core::{Direction, Files, InterfaceGenerator as _, Types, WorldGenerator, uwrite};
 use wit_component::WitPrinter;
 use wit_parser::abi::WasmType;
 use wit_parser::{
@@ -24,6 +24,7 @@ use wit_parser::{
 #[derive(Default)]
 pub struct CSharp {
     pub(crate) opts: Opts,
+    pub(crate) types: Types,
     pub(crate) name: String,
     pub(crate) return_area_size: usize,
     pub(crate) return_area_align: usize,
@@ -42,7 +43,7 @@ pub struct CSharp {
     pub(crate) all_resources: HashMap<TypeId, ResourceInfo>,
     pub(crate) world_resources: HashMap<TypeId, ResourceInfo>,
     pub(crate) import_funcs_called: bool,
-    pub(crate) generated_future_types: HashSet<TypeId>,
+    pub(crate) generated_future_types: HashSet<Option<Type>>,
     // Top level types that are bidirectional like enums, to save code size and not duplicate whene unnecessary.
     pub(crate) bidirectional_types_src: HashSet<String>,
 }
@@ -144,6 +145,29 @@ impl CSharp {
 impl WorldGenerator for CSharp {
     fn preprocess(&mut self, resolve: &Resolve, world: WorldId) {
         let name = &resolve.worlds[world].name;
+        self.types.analyze(resolve);
+        self.types.collect_equal_types(resolve, world, &|a| {
+            match resolve.types[a].kind {
+                // We'll start with the same split as Rust and change as required.
+                TypeDefKind::Type(_)
+                | TypeDefKind::Handle(_)
+                | TypeDefKind::List(_)
+                | TypeDefKind::Tuple(_)
+                | TypeDefKind::Option(_)
+                | TypeDefKind::Result(_)
+                | TypeDefKind::Future(_)
+                | TypeDefKind::Stream(_)
+                | TypeDefKind::Map(..)
+                | TypeDefKind::FixedLengthList(..) => true,
+
+                TypeDefKind::Record(_)
+                | TypeDefKind::Variant(_)
+                | TypeDefKind::Enum(_)
+                | TypeDefKind::Flags(_)
+                | TypeDefKind::Resource
+                | TypeDefKind::Unknown => false,
+            }
+        });
         self.name = name.to_string();
         self.sizes.fill(resolve);
     }
@@ -400,8 +424,11 @@ impl WorldGenerator for CSharp {
         uwrite!(
             src,
             "
+                using System;
                 using System.Runtime.InteropServices;
                 using System.Collections.Concurrent;
+                using System.Threading;
+                using System.Threading.Tasks;
             "
         );
         uwrite!(
@@ -734,6 +761,7 @@ impl WorldGenerator for CSharp {
 
             let body = format!(
                 "{header}
+
                  namespace {fully_qualified_namespace};
 
                  {access} partial class {stub_class_name} : {interface_or_class_name} {{
@@ -875,6 +903,8 @@ impl WorldGenerator for CSharp {
             let class_name = interface_name.strip_prefix("I").unwrap();
             let body = format!(
                 "{header}
+
+                using System;
 
                 namespace {namespace}
                 {{
