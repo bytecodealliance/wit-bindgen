@@ -1,7 +1,7 @@
 module wit.common;
 
 /// Thin CABI compliant wrapper over `T[]`
-struct List(T) {
+struct WitList(T) {
 @safe @nogc pure nothrow:
     T* ptr;
     size_t length;
@@ -25,7 +25,7 @@ struct List(T) {
 // except list<char> in WIT is actually List!(dchar)
 //
 // We assume UTF-8 data (as D native strings are UTF-8)
-alias String = List!(immutable char);
+alias WitString = List!(char);
 
 // TODO: split this file up and give Tuple a full port of the Phobos version?
 /// adapted from Phobos std.typecons.Tuple
@@ -35,141 +35,31 @@ struct Tuple(Types...) if (is(Types)) {
     alias expand this;
 }
 
-/// adapted from Phobos std.bitmanip.BitFlags
-struct Flags(Enum) if (is(Enum == enum)) {
-@safe @nogc pure nothrow:
-    public alias E = Enum;
+mixin template WitFlags(T) if (__traits(isUnsigned, T)) {
+    private alias F = typeof(this);
 
-private:
-    template allAreBaseEnum(T...)
+    T bits;
+
+    @safe nothrow @nogc pure:
+
+    static typeof(this) opIndex(size_t i)
+    in(i < T.sizeof*8) => F(cast(T)(1 << i));
+
+    auto opUnary(string op : "~")() const => F(~bits);
+
+    auto ref opOpAssign(string op)(F rhs)
+    if (op == "|" || op == "&" || op == "^")
     {
-        static foreach (Ti; T)
-        {
-            static if (!is(typeof(allAreBaseEnum) == bool) && // not yet defined
-                    !is(Ti : E))
-            {
-                enum allAreBaseEnum = false;
-            }
-        }
-        static if (!is(typeof(allAreBaseEnum) == bool)) // if not yet defined
-        {
-            enum allAreBaseEnum = true;
-        }
-    }
-
-    static if (is(E U == enum)) {
-        alias Base = U;
-    } else static assert(0);
-
-    Base mValue;
-
-public:
-    this(E flag)
-    {
-        this = flag;
-    }
-
-    this(T...)(T flags)
-    if (allAreBaseEnum!(T))
-    {
-        this = flags;
-    }
-
-    bool opCast(B: bool)() const
-    {
-        return mValue != 0;
-    }
-
-    Base opCast(B)() const
-    if (is(Base : B))
-    {
-        return mValue;
-    }
-
-    auto opUnary(string op)() const
-    if (op == "~")
-    {
-        return WitFlags(cast(E) cast(Base) ~mValue);
-    }
-
-    auto ref opAssign(T...)(T flags)
-    if (allAreBaseEnum!(T))
-    {
-        mValue = 0;
-        foreach (E flag; flags)
-        {
-            mValue |= flag;
-        }
+        mixin("bits "~op~"= rhs.bits;");
         return this;
     }
 
-    auto ref opAssign(E flag)
+    auto opBinary(string op)(F flags) const
+    if (op == "|" || op == "&" || op == "^")
     {
-        mValue = flag;
-        return this;
-    }
-
-    auto ref opOpAssign(string op: "|")(WitFlags flags)
-    {
-        mValue |= flags.mValue;
-        return this;
-    }
-
-    auto ref opOpAssign(string op: "&")(WitFlags  flags)
-    {
-        mValue &= flags.mValue;
-        return this;
-    }
-
-    auto ref opOpAssign(string op: "|")(E flag)
-    {
-        mValue |= flag;
-        return this;
-    }
-
-    auto ref opOpAssign(string op: "&")(E flag)
-    {
-        mValue &= flag;
-        return this;
-    }
-
-    auto opBinary(string op)(WitFlags flags) const
-    if (op == "|" || op == "&")
-    {
-        WitFlags result = this;
+        F result = this;
         result.opOpAssign!op(flags);
         return result;
-    }
-
-    auto opBinary(string op)(E flag) const
-    if (op == "|" || op == "&")
-    {
-        WitFlags result = this;
-        result.opOpAssign!op(flag);
-        return result;
-    }
-
-    auto opBinaryRight(string op)(E flag) const
-    if (op == "|" || op == "&")
-    {
-        return opBinary!op(flag);
-    }
-
-    bool opDispatch(string name)() const
-    if (__traits(hasMember, E, name))
-    {
-        enum e = __traits(getMember, E, name);
-        return (mValue & e) == e;
-    }
-
-    void opDispatch(string name)(bool set)
-    if (__traits(hasMember, E, name))
-    {
-        enum e = __traits(getMember, E, name);
-        if (set)
-            mValue |= e;
-        else
-            mValue &= ~e;
     }
 }
 
