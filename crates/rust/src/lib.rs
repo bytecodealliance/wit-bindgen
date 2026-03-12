@@ -304,6 +304,10 @@ pub struct Opts {
     /// If true, methods normally returning `()` instead return `&Self`. This applies to both imported and exported methods.
     #[cfg_attr(feature = "clap", arg(long))]
     pub enable_method_chaining: bool,
+
+    /// Enables macros to be stubbed by a user provided macro instead of the
+    /// default unwrap for native implementations.
+    pub native_macro_stub: Option<String>,
 }
 
 impl Opts {
@@ -1784,6 +1788,7 @@ fn declare_import(
     rust_name: &str,
     params: &[WasmType],
     results: &[WasmType],
+    native_stub_macro: &Option<String>,
 ) -> String {
     let mut sig = "(".to_owned();
     for param in params.iter() {
@@ -1797,6 +1802,15 @@ fn declare_import(
         sig.push_str(" -> ");
         sig.push_str(wasm_type(*result));
     }
+
+    let native_stub = if let Some(macro_path) = native_stub_macro {
+        format!(
+            "unsafe extern \"C\" fn {rust_name}{sig} {{ {macro_path}!(\"{wasm_import_module}\", \"{wasm_import_name}\", fn {rust_name}{sig}) }}"
+        )
+    } else {
+        format!("unsafe extern \"C\" fn {rust_name}{sig} {{ unreachable!() }}")
+    };
+
     format!(
         "
             #[cfg(target_arch = \"wasm32\")]
@@ -1807,7 +1821,7 @@ fn declare_import(
             }}
 
             #[cfg(not(target_arch = \"wasm32\"))]
-            unsafe extern \"C\" fn {rust_name}{sig} {{ unreachable!() }}
+            {native_stub}
         "
     )
 }

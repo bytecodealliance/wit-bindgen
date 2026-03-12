@@ -167,6 +167,8 @@ impl Parse for Config {
                     }
                     Opt::EnableMethodChaining(enable) => {
                         opts.enable_method_chaining = enable.value();
+                    Opt::NativeStubMacro(macro_str) => {
+                        opts.native_macro_stub = Some(macro_str.to_token_stream().to_string());
                     }
                 }
             }
@@ -322,6 +324,7 @@ mod kw {
     syn::custom_keyword!(imports);
     syn::custom_keyword!(debug);
     syn::custom_keyword!(enable_method_chaining);
+    syn::custom_keyword!(native_stub_macro);
 }
 
 #[derive(Clone)]
@@ -403,6 +406,7 @@ enum Opt {
     Async(AsyncFilterSet, Span),
     Debug(syn::LitBool),
     EnableMethodChaining(syn::LitBool),
+    NativeStubMacro(syn::Path),
 }
 
 impl Parse for Opt {
@@ -586,6 +590,10 @@ impl Parse for Opt {
                 }
                 Ok(Opt::Async(set, span))
             }
+        } else if l.peek(kw::native_stub_macro) {
+            input.parse::<kw::native_stub_macro>()?;
+            input.parse::<Token![:]>()?;
+            Ok(Opt::NativeStubMacro(input.parse()?))
         } else {
             Err(l.error())
         }
