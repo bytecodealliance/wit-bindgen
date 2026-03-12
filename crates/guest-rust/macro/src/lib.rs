@@ -165,6 +165,9 @@ impl Parse for Config {
                         }
                         opts.async_ = val;
                     }
+                    Opt::NativeStubMacro(macro_str) => {
+                        opts.native_macro_stub = Some(macro_str.to_token_stream().to_string());
+                    }
                 }
             }
         } else {
@@ -317,6 +320,7 @@ mod kw {
     syn::custom_keyword!(disable_custom_section_link_helpers);
     syn::custom_keyword!(imports);
     syn::custom_keyword!(debug);
+    syn::custom_keyword!(native_stub_macro);
 }
 
 #[derive(Clone)]
@@ -373,6 +377,7 @@ enum Opt {
     DisableCustomSectionLinkHelpers(syn::LitBool),
     Async(AsyncFilterSet, Span),
     Debug(syn::LitBool),
+    NativeStubMacro(syn::Path),
 }
 
 impl Parse for Opt {
@@ -546,6 +551,10 @@ impl Parse for Opt {
                 }
                 Ok(Opt::Async(set, span))
             }
+        } else if l.peek(kw::native_stub_macro) {
+            input.parse::<kw::native_stub_macro>()?;
+            input.parse::<Token![:]>()?;
+            Ok(Opt::NativeStubMacro(input.parse()?))
         } else {
             Err(l.error())
         }
