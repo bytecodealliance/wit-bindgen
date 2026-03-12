@@ -1397,10 +1397,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 match inst {
                     Instruction::FutureLower { .. } => {
-                        self.interface_gen.add_future(self.func_name, &generic_type_name, payload);
+                        self.interface_gen.add_future(self.func_name, &generic_type_name, **payload);
                     }
                     _ => {
-                        self.interface_gen.add_stream(self.func_name, &generic_type_name, payload);
+                        self.interface_gen.add_stream(self.func_name, &generic_type_name, **payload);
                     }
                 }
 
@@ -1451,10 +1451,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 match inst {
                     Instruction::FutureLift { .. } => {
-                        self.interface_gen.add_future(self.func_name, &generic_type_name, payload);
+                        self.interface_gen.add_future(self.func_name, &generic_type_name, **payload);
                     }
                     _ => {
-                        self.interface_gen.add_stream(self.func_name, &generic_type_name, payload);
+                        self.interface_gen.add_stream(self.func_name, &generic_type_name, **payload);
                     }
                 }
 

@@ -1459,12 +1459,12 @@ var {async_status_var} = {raw_name}({wasm_params});
         &mut self,
         func_name: &str,
         generic_type_name: &str,
-        ty: &&Option<Type>,
+        ty: Option<Type>,
     ) {
         self.futures.push(FutureInfo {
             name: func_name.to_string(),
             generic_type_name: generic_type_name.to_string(),
-            ty: **ty,
+            ty: ty,
         });
     }
 
@@ -1472,12 +1472,12 @@ var {async_status_var} = {raw_name}({wasm_params});
         &mut self,
         func_name: &str,
         generic_type_name: &str,
-        ty: &&Option<Type>,
+        ty: Option<Type>,
     ) {
         self.streams.push(FutureInfo {
             name: func_name.to_string(),
             generic_type_name: generic_type_name.to_string(),
-            ty: **ty,
+            ty: ty,
         });
     }
 }
