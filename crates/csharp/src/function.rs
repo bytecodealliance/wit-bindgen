@@ -1385,8 +1385,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.extend(operands.iter().take(*amt).cloned());
             }
 
-            Instruction::FutureLower { payload, ty }
-            | Instruction::StreamLower { payload, ty }=> {
+            Instruction::FutureLower { payload, ty: _ }
+            | Instruction::StreamLower { payload, ty: _ }=> {
                 let op = &operands[0];
                 let generic_type_name = match payload {
                     Some(generic_type) => {
@@ -1397,10 +1397,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 match inst {
                     Instruction::FutureLower { .. } => {
-                        self.interface_gen.add_future(self.func_name, &generic_type_name, ty);
+                        self.interface_gen.add_future(self.func_name, &generic_type_name, **payload);
                     }
                     _ => {
-                        self.interface_gen.add_stream(self.func_name, &generic_type_name, ty);
+                        self.interface_gen.add_stream(self.func_name, &generic_type_name, **payload);
                     }
                 }
 
@@ -1411,8 +1411,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwriteln!(self.src, "// TODO: task_cancel.forget();");
             }
 
-            Instruction::FutureLift { payload, ty }
-            | Instruction:: StreamLift { payload, ty } => {
+            Instruction::FutureLift { payload, ty: _ }
+            | Instruction:: StreamLift { payload, ty: _ } => {
                  let generic_type_name_with_qualifier = match payload {
                     Some(generic_type) => {
                         &self.interface_gen.type_name_with_qualifier(generic_type, true)
@@ -1436,11 +1436,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let reader_var = self.locals.tmp("reader");
                 let module = self.interface_gen.name;
                 let (import_name, interface_name) = CSharp::get_class_name_from_qualified_name(module);
-                let export_name = import_name
-                    .replace(".Imports.", ".Exports.");
                 let base_interface_name = interface_name
-                    .strip_prefix("I").unwrap()
-                    .replace("Imports", "Exports"); // TODO: This is fragile and depends on the interface name.
+                    .strip_prefix("I").unwrap();
 
                 let future_stream_name = match inst {
                     Instruction::FutureLift{payload: _, ty: _} => "Future",
@@ -1449,15 +1446,15 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         panic!("Unexpected instruction for lift");
                     }
                 };
-                uwriteln!(self.src, "var {reader_var} = new {future_stream_name}Reader{bracketed_generic}({}, {export_name}.{base_interface_name}Interop.{future_stream_name}VTable{});", operands[0], upper_camel);
+                uwriteln!(self.src, "var {reader_var} = new {future_stream_name}Reader{bracketed_generic}({}, {import_name}.{base_interface_name}Interop.{future_stream_name}VTable{});", operands[0], upper_camel);
                 results.push(reader_var);
 
                 match inst {
                     Instruction::FutureLift { .. } => {
-                        self.interface_gen.add_future(self.func_name, &generic_type_name, ty);
+                        self.interface_gen.add_future(self.func_name, &generic_type_name, **payload);
                     }
                     _ => {
-                        self.interface_gen.add_stream(self.func_name, &generic_type_name, ty);
+                        self.interface_gen.add_stream(self.func_name, &generic_type_name, **payload);
                     }
                 }
 
