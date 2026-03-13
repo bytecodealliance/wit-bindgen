@@ -5,8 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 use syn::parse::{Error, Parse, ParseStream, Result};
 use syn::punctuated::Punctuated;
-use syn::spanned::Spanned;
-use syn::{LitStr, Token, braced, token};
+use syn::{Token, braced, token};
 use wit_bindgen_core::AsyncFilterSet;
 use wit_bindgen_core::WorldGenerator;
 use wit_bindgen_core::wit_parser::{PackageId, Resolve, UnresolvedPackageGroup, WorldId};
@@ -76,7 +75,13 @@ impl Parse for Config {
             for field in fields.into_pairs() {
                 match field.into_value() {
                     Opt::Path(span, p) => {
-                        let paths = p.into_iter().map(|f| PathBuf::from(f.value())).collect();
+                        let paths = p
+                            .into_iter()
+                            .map(|f| f.eval())
+                            .collect::<Result<Vec<_>>>()?
+                            .into_iter()
+                            .map(PathBuf::from)
+                            .collect();
 
                         source = Some(match source {
                             Some(Source::Paths(_)) | Some(Source::Inline(_, Some(_))) => {
@@ -348,7 +353,7 @@ impl From<ExportKey> for wit_bindgen_rust::ExportKey {
 
 enum Opt {
     World(syn::LitStr),
-    Path(Span, Vec<syn::LitStr>),
+    Path(Span, Vec<macro_string::MacroString>),
     Inline(syn::LitStr),
     UseStdFeature,
     RawStrings,
@@ -387,11 +392,13 @@ impl Parse for Opt {
             if input.peek(token::Bracket) {
                 let contents;
                 syn::bracketed!(contents in input);
+                let span = input.span();
                 let list = Punctuated::<_, Token![,]>::parse_terminated(&contents)?;
-                Ok(Opt::Path(list.span(), list.into_iter().collect()))
+                Ok(Opt::Path(span, list.into_iter().collect()))
             } else {
-                let path: LitStr = input.parse()?;
-                Ok(Opt::Path(path.span(), vec![path]))
+                let span = input.span();
+                let path: macro_string::MacroString = input.parse()?;
+                Ok(Opt::Path(span, vec![path]))
             }
         } else if l.peek(kw::inline) {
             input.parse::<kw::inline>()?;
