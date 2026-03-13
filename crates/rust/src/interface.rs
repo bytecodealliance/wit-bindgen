@@ -209,7 +209,8 @@ impl<'i> InterfaceGenerator<'i> {
                 "new",
                 &[abi::WasmType::Pointer],
                 &[abi::WasmType::I32],
-                &self.r#gen.opts.native_macro_stub,
+                &self.r#gen.native_stub_macro,
+                &mut self.r#gen.native_stub_methods,
             );
             let import_rep = crate::declare_import(
                 &wasm_import_module,
@@ -217,7 +218,8 @@ impl<'i> InterfaceGenerator<'i> {
                 "rep",
                 &[abi::WasmType::I32],
                 &[abi::WasmType::Pointer],
-                &self.r#gen.opts.native_macro_stub,
+                &self.r#gen.native_stub_macro,
+                &mut self.r#gen.native_stub_methods,
             );
             uwriteln!(
                 self.src,
@@ -958,7 +960,8 @@ fn abi_layout(&mut self) -> ::core::alloc::Layout {{
             "call",
             &sig.params,
             &sig.results,
-            &self.r#gen.opts.native_macro_stub,
+            &self.r#gen.native_stub_macro,
+            &mut self.r#gen.native_stub_methods,
         );
         let mut args = String::new();
         for i in 0..params_lower.len() {
@@ -2802,7 +2805,8 @@ impl<'a> {camel}Borrow<'a>{{
             "drop",
             &[abi::WasmType::I32],
             &[],
-            &self.r#gen.opts.native_macro_stub,
+            &self.r#gen.native_stub_macro,
+            &mut self.r#gen.native_stub_methods,
         );
         uwriteln!(
             self.src,

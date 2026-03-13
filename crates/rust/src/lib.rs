@@ -52,6 +52,23 @@ pub struct RustWasm {
 
     future_payloads: IndexMap<Option<Type>, String>,
     stream_payloads: IndexMap<Option<Type>, String>,
+
+    pub native_stub_macro: Option<NativeStubMacro>,
+    pub native_stub_methods: Vec<NativeStubMethod>,
+}
+
+pub struct NativeStubMacro {
+    pub macro_path: String,
+    pub extra_args: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct NativeStubMethod {
+    pub wasm_import_module: String,
+    pub wasm_import_name: String,
+    pub rust_name: String,
+    pub params: Vec<WasmType>,
+    pub results: Vec<WasmType>,
 }
 
 #[derive(Default)]
@@ -287,10 +304,6 @@ pub struct Opts {
         arg(long, require_equals = true, value_name = "true|false")
     )]
     pub merge_structurally_equal_types: Option<Option<bool>>,
-
-    /// Enables macros to be stubbed by a user provided macro instead of the
-    /// default unwrap for native implementations.
-    pub native_macro_stub: Option<String>,
 }
 
 impl Opts {
@@ -826,6 +839,50 @@ impl As{upcase} for {to_convert} {{
                 "#
             ));
         }
+    }
+
+    fn finish_native_stubs(&mut self) {
+        let Some(stub) = &self.native_stub_macro else {
+            return;
+        };
+        if self.native_stub_methods.is_empty() {
+            return;
+        }
+
+        let macro_path = &stub.macro_path;
+        let extra = match &stub.extra_args {
+            Some(args) => format!("{args}, "),
+            None => String::new(),
+        };
+
+        let mut entries = String::new();
+        for method in self.native_stub_methods.iter() {
+            let NativeStubMethod {
+                wasm_import_module,
+                wasm_import_name,
+                rust_name,
+                params,
+                results,
+            } = &method;
+
+            entries.push_str(&format!(
+                "    \"{wasm_import_module}\", \"{wasm_import_name}\", fn {rust_name}("
+            ));
+
+            for (i, param) in params.iter().enumerate() {
+                if i > 0 {
+                    entries.push_str(", ");
+                }
+                entries.push_str(&format!("p{i}: {}", wasm_type(*param)));
+            }
+            entries.push(')');
+            if !method.results.is_empty() {
+                entries.push_str(&format!(" -> {}", wasm_type(results[0])));
+            }
+            entries.push_str(";\n");
+        }
+
+        uwriteln!(self.src, "{macro_path}!(@definitions {extra}{entries});");
     }
 
     /// Generates an `export!` macro for the `world_id` specified.
@@ -1396,6 +1453,7 @@ impl WorldGenerator for RustWasm {
         self.emit_modules(exports);
 
         self.finish_runtime_module();
+        self.finish_native_stubs();
         self.finish_export_macro(resolve, world);
 
         // This is a bit tricky, but we sometimes want to "split" the `world` in
@@ -1745,11 +1803,12 @@ fn declare_import(
     rust_name: &str,
     params: &[WasmType],
     results: &[WasmType],
-    native_stub_macro: &Option<String>,
+    native_stub_macro: &Option<NativeStubMacro>,
+    native_stub_methods: &mut Vec<NativeStubMethod>,
 ) -> String {
     let mut sig = "(".to_owned();
-    for param in params.iter() {
-        sig.push_str("_: ");
+    for (i, param) in params.iter().enumerate() {
+        sig.push_str(&format!("p{i}: "));
         sig.push_str(wasm_type(*param));
         sig.push_str(", ");
     }
@@ -1760,9 +1819,25 @@ fn declare_import(
         sig.push_str(wasm_type(*result));
     }
 
-    let native_stub = if let Some(macro_path) = native_stub_macro {
+    let native_stub = if let Some(stub) = native_stub_macro {
+        native_stub_methods.push(NativeStubMethod {
+            wasm_import_module: wasm_import_module.to_string(),
+            wasm_import_name: wasm_import_name.to_string(),
+            rust_name: rust_name.to_string(),
+            params: params.to_vec(),
+            results: results.to_vec(),
+        });
+
+        let macro_path = &stub.macro_path;
+        let extra = match &stub.extra_args {
+            Some(args) => format!("{args}, "),
+            None => String::new(),
+        };
         format!(
-            "unsafe extern \"C\" fn {rust_name}{sig} {{ {macro_path}!(\"{wasm_import_module}\", \"{wasm_import_name}\", fn {rust_name}{sig}) }}"
+            "unsafe extern \"C\" fn {rust_name}{sig} {{ \
+                {macro_path}!({extra} \"{wasm_import_module}\", \
+                \"{wasm_import_name}\", fn {rust_name}{sig}) \
+            }}"
         )
     } else {
         format!("unsafe extern \"C\" fn {rust_name}{sig} {{ unreachable!() }}")
