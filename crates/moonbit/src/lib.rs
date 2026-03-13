@@ -97,7 +97,6 @@ impl Opts {
 struct InterfaceFragment {
     src: String,
     ffi: String,
-    stub: String,
     builtins: HashSet<&'static str>,
 }
 
@@ -105,7 +104,6 @@ impl InterfaceFragment {
     fn concat(&mut self, other: Self) {
         self.src.push_str(&other.src);
         self.ffi.push_str(&other.ffi);
-        self.stub.push_str(&other.stub);
         self.builtins.extend(other.builtins);
     }
 }
@@ -141,7 +139,6 @@ impl MoonBit {
         let derive_opts = self.opts.derive.clone();
         InterfaceGenerator {
             src: String::new(),
-            stub: String::new(),
             ffi: String::new(),
             world_gen: self,
             resolve,
@@ -283,7 +280,6 @@ impl WorldGenerator for MoonBit {
                 files.push(&format!("{directory}/README.md"), content.as_bytes());
             }
 
-            assert!(fragment.stub.is_empty());
             // Source
             let mut src = Source::default();
             wit_bindgen_core::generated_preamble(&mut src, VERSION);
@@ -351,8 +347,6 @@ impl WorldGenerator for MoonBit {
     fn finish_imports(&mut self, resolve: &Resolve, world: WorldId, files: &mut Files) {
         let name = PkgResolver::world_name(resolve, world);
         let directory = name.replace('.', "/");
-
-        assert!(self.import_world_fragment.stub.is_empty());
 
         // README
         if let Some(content) = &resolve.worlds[world].docs.contents
@@ -434,12 +428,6 @@ impl WorldGenerator for MoonBit {
             files.push(&format!("{directory}/top.mbt"), indent(&src).as_bytes());
 
             if !self.opts.ignore_stub {
-                // Stub
-                let mut stub = Source::default();
-                generated_preamble(&mut stub, VERSION);
-                uwriteln!(stub, "{}", fragment.stub);
-                files.push(&format!("{directory}/stub.mbt"), indent(&stub).as_bytes());
-
                 // moon.pkg.json
                 let mut moon_pkg = Source::default();
                 self.write_moon_pkg(
@@ -494,11 +482,6 @@ impl WorldGenerator for MoonBit {
             files.push(&format!("{directory}/top.mbt"), indent(&src).as_bytes());
 
             if !self.opts.ignore_stub {
-                // Stub
-                let mut stub = Source::default();
-                generated_preamble(&mut stub, VERSION);
-                uwriteln!(stub, "{}", fragment.stub);
-                files.push(&format!("{directory}/stub.mbt"), indent(&stub).as_bytes());
                 // moon.pkg.json
                 let mut moon_pkg = Source::default();
                 self.write_moon_pkg(
@@ -585,7 +568,6 @@ impl WorldGenerator for MoonBit {
 
 struct InterfaceGenerator<'a> {
     src: String,
-    stub: String,
     ffi: String,
     // Collect of FFI imports used in this interface
     ffi_imports: HashSet<&'static str>,
@@ -612,7 +594,6 @@ impl InterfaceGenerator<'_> {
     fn finish(self) -> InterfaceFragment {
         InterfaceFragment {
             src: self.src,
-            stub: self.stub,
             ffi: self.ffi,
             builtins: self.ffi_imports,
         }
@@ -757,32 +738,12 @@ impl InterfaceGenerator<'_> {
         {
             let mbt_sig = self.world_gen.pkg_resolver.mbt_sig(self.name, func, false);
             let func_sig = self.sig_string_with_direction(&mbt_sig, async_, Direction::Export);
-            let mut ignored_params = mbt_sig
-                .params
-                .iter()
-                .map(|(name, _)| format!("ignore({name})"))
-                .collect::<Vec<_>>();
-            if async_ {
-                ignored_params.push("ignore(task_group)".to_string());
-            }
-            let ignored_params = if ignored_params.is_empty() {
-                String::new()
-            } else {
-                format!("{}\n", ignored_params.join("\n"))
-            };
-            let async_marker = if async_ {
-                "@async.protect_from_cancel(() => ())\n"
-            } else {
-                ""
-            };
 
-            print_docs(&mut self.stub, &func.docs);
+            print_docs(&mut self.src, &func.docs);
             uwrite!(
-                self.stub,
+                self.src,
                 r#"
-                {func_sig} {{
-                    {ignored_params}{async_marker}abort("not implemented")
-                }}
+                declare {func_sig}
                 "#
             );
         }
@@ -1242,12 +1203,10 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             );
 
             uwrite!(
-                &mut self.stub,
+                &mut self.src,
                 r#"
                 /// Destructor of the resource.
-                pub fn {name}::dtor(_self : {name}) -> Unit {{
-                  abort("not implemented")
-                }}
+                declare pub fn {name}::dtor(_self : {name}) -> Unit
                 "#
             );
 
