@@ -875,7 +875,7 @@ impl As{upcase} for {to_convert} {{
 #[doc(hidden)]
 {macro_export}
 macro_rules! __export_{world_name}_impl {{
-    ($ty:path) => ({default_bindings_module}::{export_macro_name}!($ty => {default_bindings_module}););
+    ($ty:path) => ({default_bindings_module}::{export_macro_name}!($ty, with_types_in {default_bindings_module}););
     ($ty:path, with_types_in $($path_to_types_root:tt)*) => ("#
         );
         for (name, path_to_types) in self.export_macros.iter() {
