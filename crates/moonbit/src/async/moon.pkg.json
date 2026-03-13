@@ -1,0 +1,9 @@
+{
+  "warn-list": "-44",
+  "import": [
+    { "path": "moonbitlang/core/deque", "alias": "deque" },
+    { "path": "moonbitlang/core/ref", "alias": "ref" },
+    { "path": "moonbitlang/core/set", "alias": "set" }
+  ],
+  "supported-targets": ["wasm"]
+}

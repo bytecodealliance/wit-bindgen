@@ -3,54 +3,73 @@ use std::{
     fmt::Write,
 };
 
-use heck::{ToSnakeCase, ToUpperCamelCase};
+use heck::ToUpperCamelCase;
 use wit_bindgen_core::{
-    Files, Source,
-    abi::{self, WasmSignature},
-    uwriteln,
-    wit_parser::{Function, Param, Resolve, Type, TypeDefKind, TypeId},
+    Direction, Files, Source,
+    abi::{self, WasmSignature, deallocate_lists_in_types, lift_from_memory},
+    dealias, uwriteln,
+    wit_parser::{
+        Function, LiftLowerAbi, ManglingAndAbi, Param, Type, TypeDefKind, TypeId, WasmImport,
+    },
 };
 
-use crate::{
-    FFI, FFI_DIR, indent,
-    pkg::{MoonbitSignature, ToMoonBitIdent},
-};
+use crate::pkg::ToMoonBitIdent;
+use crate::{FunctionBindgen, ffi, indent};
 
-use super::{FunctionBindgen, InterfaceGenerator, PayloadFor};
+use super::InterfaceGenerator;
 
-const ASYNC_PRIMITIVE: &str = include_str!("./ffi/async_primitive.mbt");
-const ASYNC_FUTURE: &str = include_str!("./ffi/future.mbt");
-const ASYNC_WASM_PRIMITIVE: &str = include_str!("./ffi/wasm_primitive.mbt");
-const ASYNC_WAITABLE_SET: &str = include_str!("./ffi/waitable_task.mbt");
-const ASYNC_SUBTASK: &str = include_str!("./ffi/subtask.mbt");
+// NEW Async Impl
+const ASYNC_ABI: &str = include_str!("./async/async_abi.mbt");
+const ASYNC_CORO: &str = include_str!("./async/coroutine.mbt");
+const ASYNC_EV: &str = include_str!("./async/ev.mbt");
+const ASYNC_SCHEDULER: &str = include_str!("./async/scheduler.mbt");
+const ASYNC_TASK: &str = include_str!("./async/task.mbt");
+const ASYNC_TASK_GROUP: &str = include_str!("./async/task_group.mbt");
+const ASYNC_TRAIT: &str = include_str!("./async/trait.mbt");
+const ASYNC_PKG_JSON: &str = include_str!("./async/moon.pkg.json");
+const ASYNC_PRIM: &str = include_str!("./async/async_primitive.mbt");
 
 struct Segment<'a> {
     name: &'a str,
     src: &'a str,
 }
 
-const ASYNC_UTILS: [&Segment; 5] = [
+const ASYNC_IMPL: [&Segment; 8] = [
+    &Segment {
+        name: "async_abi",
+        src: ASYNC_ABI,
+    },
+    &Segment {
+        name: "async_coro",
+        src: ASYNC_CORO,
+    },
+    &Segment {
+        name: "async_ev",
+        src: ASYNC_EV,
+    },
+    &Segment {
+        name: "async_scheduler",
+        src: ASYNC_SCHEDULER,
+    },
+    &Segment {
+        name: "async_task",
+        src: ASYNC_TASK,
+    },
+    &Segment {
+        name: "async_task_group",
+        src: ASYNC_TASK_GROUP,
+    },
+    &Segment {
+        name: "async_trait",
+        src: ASYNC_TRAIT,
+    },
     &Segment {
         name: "async_primitive",
-        src: ASYNC_PRIMITIVE,
-    },
-    &Segment {
-        name: "async_future",
-        src: ASYNC_FUTURE,
-    },
-    &Segment {
-        name: "async_wasm_primitive",
-        src: ASYNC_WASM_PRIMITIVE,
-    },
-    &Segment {
-        name: "async_waitable_set",
-        src: ASYNC_WAITABLE_SET,
-    },
-    &Segment {
-        name: "async_subtask",
-        src: ASYNC_SUBTASK,
+        src: ASYNC_PRIM,
     },
 ];
+
+pub(crate) const ASYNC_DIR: &str = "async";
 
 #[derive(Default)]
 pub(crate) struct AsyncSupport {
@@ -63,456 +82,740 @@ impl AsyncSupport {
         self.is_async = true;
     }
 
-    pub(crate) fn register_future_or_stream(&mut self, module: &str, ty: TypeId) -> bool {
-        self.futures
-            .entry(module.to_string())
-            .or_default()
-            .insert(ty)
-    }
-
-    pub(crate) fn emit_utils(&self, files: &mut Files, version: &str) {
+    pub(crate) fn emit_utils(&self, files: &mut Files) {
         if !self.is_async && self.futures.is_empty() {
             return;
         }
 
-        let mut body = Source::default();
-        wit_bindgen_core::generated_preamble(&mut body, version);
-        body.push_str(FFI);
-        files.push(&format!("{FFI_DIR}/top.mbt"), indent(&body).as_bytes());
-        ASYNC_UTILS.iter().for_each(|s| {
+        ASYNC_IMPL.iter().for_each(|s| {
             files.push(
-                &format!("{FFI_DIR}/{}.mbt", s.name),
+                &format!("{ASYNC_DIR}/{}.mbt", s.name),
                 indent(s.src).as_bytes(),
             );
         });
         files.push(
-            &format!("{FFI_DIR}/moon.pkg.json"),
-            "{ \"warn-list\": \"-44\", \"supported-targets\": [\"wasm\"] }".as_bytes(),
+            &format!("{ASYNC_DIR}/moon.pkg.json"),
+            indent(ASYNC_PKG_JSON).as_bytes(),
         );
     }
 }
 
+pub(crate) struct AsyncBindingEntry {
+    pub lift_name: String,
+    pub lift_src: String,
+    pub lift_builtins: HashSet<&'static str>,
+    pub lower_name: String,
+    pub lower_src: String,
+    pub lower_builtins: HashSet<&'static str>,
+}
+
+pub(crate) struct AsyncBinding(pub HashMap<TypeId, AsyncBindingEntry>);
+
 /// Async-specific helpers used by `InterfaceGenerator` to keep the main
 /// visitor implementation focused on shared lowering/lifting logic.
 impl<'a> InterfaceGenerator<'a> {
-    /// Builds the MoonBit body for async imports, wiring wasm subtasks into the
-    /// runtime and lowering/lifting payloads as needed.
-    pub(super) fn generate_async_import_function(
+    pub(crate) fn generate_async_import(
         &mut self,
         func: &Function,
-        mbt_sig: MoonbitSignature,
-        sig: &WasmSignature,
+        ffi_import_name: &str,
+        wasm_sig: &WasmSignature,
     ) -> String {
-        let mut body = String::default();
-        let mut lower_params = Vec::new();
-        let mut lower_results = Vec::new();
+        let async_pkg = self
+            .world_gen
+            .pkg_resolver
+            .qualify_package(self.name, ASYNC_DIR);
+        let param_names = func
+            .params
+            .iter()
+            .map(|Param { name, .. }| name.to_moonbit_ident())
+            .collect::<Vec<_>>();
+        let param_types = func
+            .params
+            .iter()
+            .map(|Param { ty, .. }| *ty)
+            .collect::<Vec<_>>();
+        let mut bindgen = FunctionBindgen::new(
+            self,
+            param_names.into_boxed_slice(),
+            Direction::Import,
+            true,
+            false,
+        );
+        let mut lowered_params = Vec::new();
 
-        if sig.indirect_params {
-            match &func.params[..] {
-                [] => {}
-                [_] => {
-                    lower_params.push("_lower_ptr".into());
-                }
-                multiple_params => {
-                    let params = multiple_params.iter().map(|Param { ty, .. }| ty);
-                    let offsets = self.r#gen.sizes.field_offsets(params.clone());
-                    let elem_info = self.r#gen.sizes.params(params);
-                    body.push_str(&format!(
-                        r#"
-                        let _lower_ptr : Int = {ffi}malloc({})
-                        "#,
-                        elem_info.size.size_wasm32(),
-                        ffi = self.r#gen.pkg_resolver.qualify_package(self.name, FFI_DIR)
-                    ));
-
-                    for ((offset, ty), name) in offsets.iter().zip(
-                        multiple_params
-                            .iter()
-                            .map(|Param { name, .. }| name.to_moonbit_ident()),
-                    ) {
-                        let result = self.lower_to_memory(
-                            &format!("_lower_ptr + {}", offset.size_wasm32()),
-                            &name,
-                            ty,
-                            self.name,
-                        );
-                        body.push_str(&result);
-                    }
-
-                    lower_params.push("_lower_ptr".into());
-                }
+        let params_ptr = if wasm_sig.indirect_params {
+            let params_info = bindgen
+                .interface_gen
+                .world_gen
+                .sizes
+                .record(param_types.iter());
+            let params_ptr = bindgen.locals.tmp("params_ptr");
+            bindgen.use_ffi(ffi::MALLOC);
+            uwriteln!(
+                bindgen.src,
+                "let {params_ptr} = mbt_ffi_malloc({});",
+                params_info.size.size_wasm32()
+            );
+            let offsets = bindgen
+                .interface_gen
+                .world_gen
+                .sizes
+                .field_offsets(param_types.iter());
+            for (i, (offset, ty)) in offsets.into_iter().enumerate() {
+                let param_ptr = bindgen.locals.tmp("param_ptr");
+                let arg = bindgen.params[i].clone();
+                uwriteln!(
+                    bindgen.src,
+                    "let {param_ptr} = {params_ptr} + {};",
+                    offset.size_wasm32()
+                );
+                abi::lower_to_memory(
+                    bindgen.interface_gen.resolve,
+                    &mut bindgen,
+                    param_ptr,
+                    arg,
+                    ty,
+                );
             }
+            lowered_params.push(params_ptr.clone());
+            Some(params_ptr)
         } else {
-            let mut f = FunctionBindgen::new(self, "INVALID", self.name, Box::new([]));
-            for (name, ty) in mbt_sig.params.iter() {
-                lower_params.extend(abi::lower_flat(f.r#gen.resolve, &mut f, name.clone(), ty));
-            }
-            lower_results.push(f.src.clone());
-        }
-
-        let func_name = func.name.to_upper_camel_case();
-
-        let ffi = self.r#gen.pkg_resolver.qualify_package(self.name, FFI_DIR);
-
-        let call_import = |params: &Vec<String>| {
-            format!(
-                r#"
-                let _subtask_code = wasmImport{func_name}({})
-                let _subtask_status = {ffi}SubtaskStatus::decode(_subtask_code)
-                let _subtask = @ffi.Subtask::from_handle(_subtask_status.handle(), code=_subtask_code)
-
-                let task = @ffi.current_task()
-                task.add_waitable(_subtask, @ffi.current_coroutine())
-                defer task.remove_waitable(_subtask)
-
-                for {{
-                        if _subtask.done() || _subtask_status is Returned(_) {{
-                            break
-                        }} else {{
-                            @ffi.suspend()
-                        }}
-                    }}
-
-                "#,
-                params.join(", ")
-            )
-        };
-        match &func.result {
-            Some(ty) => {
-                lower_params.push("_result_ptr".into());
-                let call_import = call_import(&lower_params);
-                let (lift, lift_result) = &self.lift_from_memory("_result_ptr", ty, self.name);
-                body.push_str(&format!(
-                    r#"
-                    {}
-                    {}
-                    {call_import}
-                    {lift}
-                    {lift_result}
-                    "#,
-                    lower_results.join("\n"),
-                    &self.malloc_memory("_result_ptr", "1", ty)
+            for (i, ty) in param_types.iter().enumerate() {
+                let arg = bindgen.params[i].clone();
+                lowered_params.extend(abi::lower_flat(
+                    bindgen.interface_gen.resolve,
+                    &mut bindgen,
+                    arg,
+                    ty,
                 ));
             }
-            None => {
-                let call_import = call_import(&lower_params);
-                body.push_str(&call_import);
-            }
+            None
+        };
+        let cleaned = bindgen.locals.tmp("cleaned");
+        uwriteln!(bindgen.src, "let {cleaned} : Ref[Bool] = {{ val: false }}");
+
+        let results_ptr = if func.result.is_some() {
+            let result_info = bindgen.interface_gen.world_gen.sizes.params(&func.result);
+            let results_ptr = bindgen.locals.tmp("results_ptr");
+            bindgen.use_ffi(ffi::MALLOC);
+            bindgen.use_ffi(ffi::FREE);
+            uwriteln!(
+                bindgen.src,
+                "let {results_ptr} = mbt_ffi_malloc({});\n\
+defer mbt_ffi_free({results_ptr})",
+                result_info.size.size_wasm32()
+            );
+            Some(results_ptr)
+        } else {
+            None
+        };
+
+        let mut call_args = lowered_params.clone();
+        if let Some(results_ptr) = &results_ptr {
+            call_args.push(results_ptr.clone());
+        }
+        let subtask = bindgen.locals.tmp("subtask");
+        uwriteln!(
+            bindgen.src,
+            "let {subtask} = {ffi_import_name}({});",
+            call_args.join(", ")
+        );
+
+        let cleanup_params = bindgen.locals.tmp("cleanup_params");
+        uwriteln!(
+            bindgen.src,
+            "fn {cleanup_params}() -> Unit {{\n  if {cleaned}.val {{ return }}\n  {cleaned}.val = true"
+        );
+        let dealloc_operands = if wasm_sig.indirect_params {
+            vec![params_ptr.clone().unwrap()]
+        } else {
+            lowered_params.clone()
+        };
+        deallocate_lists_in_types(
+            bindgen.interface_gen.resolve,
+            &param_types,
+            &dealloc_operands,
+            wasm_sig.indirect_params,
+            &mut bindgen,
+        );
+        if let Some(params_ptr) = &params_ptr {
+            bindgen.use_ffi(ffi::FREE);
+            uwriteln!(bindgen.src, "  mbt_ffi_free({params_ptr})");
+        }
+        uwriteln!(
+            bindgen.src,
+            "}}\nfn cleanup_after_started() -> Unit {{ {cleanup_params}() }}\n\
+defer {cleanup_params}()\n{async_pkg}suspend_for_subtask({subtask}, cleanup_after_started)",
+        );
+
+        if let Some(result) = func.result {
+            let lifted = lift_from_memory(
+                bindgen.interface_gen.resolve,
+                &mut bindgen,
+                results_ptr.clone().unwrap(),
+                &result,
+            );
+            uwriteln!(bindgen.src, "return {lifted}");
         }
 
-        body.to_string()
+        let builtins = bindgen.take_local_ffi_imports();
+        let src = bindgen.src;
+        self.ffi_imports.extend(builtins);
+        src
     }
 
-    /// Ensures async futures and streams referenced by `func` have their helper
-    /// import tables generated for the given module prefix.
-    pub(super) fn generation_futures_and_streams_import(
-        &mut self,
-        prefix: &str,
-        func: &Function,
-        module: &str,
-    ) {
-        let module = format!("{prefix}{module}");
-        for (index, ty) in func
-            .find_futures_and_streams(self.resolve)
-            .into_iter()
-            .enumerate()
-        {
-            let func_name = &func.name;
-
-            match &self.resolve.types[ty].kind {
-                TypeDefKind::Future(payload_type) => {
-                    self.r#generate_async_future_or_stream_import(
-                        PayloadFor::Future,
-                        &module,
-                        index,
-                        func_name,
-                        ty,
-                        payload_type.as_ref(),
-                    );
+    /// Generate the async bindings for this function.
+    ///
+    /// Note that these bindings may be referenced while generating other async
+    /// bindings (e.g. `future<record { field: future<T> }>`), so this method
+    /// populates `self.bindings` incrementally.
+    pub(crate) fn generate_async_binding(&mut self, func: &Function) {
+        self.bindings.0.clear();
+        let futures_and_streams = func.find_futures_and_streams(self.resolve);
+        let (module, func_name) = self.resolve.wasm_import_name(
+            ManglingAndAbi::Legacy(LiftLowerAbi::Sync),
+            WasmImport::Func {
+                interface: self.interface,
+                func,
+            },
+        );
+        for (idx, type_) in futures_and_streams.iter().enumerate() {
+            let ty = dealias(self.resolve, *type_);
+            match self.resolve.types[ty].kind {
+                TypeDefKind::Future(_) => {
+                    let binding = self.generate_future_binding(ty, idx, &module, &func_name);
+                    self.bindings.0.insert(ty, binding);
                 }
-                TypeDefKind::Stream(payload_type) => {
-                    self.r#generate_async_future_or_stream_import(
-                        PayloadFor::Stream,
-                        &module,
-                        index,
-                        func_name,
-                        ty,
-                        payload_type.as_ref(),
-                    );
+                TypeDefKind::Stream(_) => {
+                    let binding = self.generate_stream_binding(ty, idx, &module, &func_name);
+                    self.bindings.0.insert(ty, binding);
                 }
-                _ => unreachable!(),
+                _ => unreachable!("Expected future and stream"),
             }
         }
     }
 
-    fn generate_async_future_or_stream_import(
+    pub(crate) fn generate_future_binding(
         &mut self,
-        payload_for: PayloadFor,
-        module: &str,
-        index: usize,
-        func_name: &str,
         ty: TypeId,
-        result_type: Option<&Type>,
-    ) {
-        if !self
-            .r#gen
-            .async_support
-            .register_future_or_stream(module, ty)
-        {
-            return;
-        }
-        let result = match result_type {
-            Some(ty) => self.r#gen.pkg_resolver.type_name(self.name, ty),
-            None => "Unit".into(),
-        };
+        index: usize,
+        module: &str,
+        func_name: &str,
+    ) -> AsyncBindingEntry {
+        let mut lift = Source::default();
+        let mut lower = Source::default();
 
-        let type_name = self.r#gen.pkg_resolver.type_name(self.name, &Type::Id(ty));
-        let name = result.to_upper_camel_case();
-        let kind = match payload_for {
-            PayloadFor::Future => "future",
-            PayloadFor::Stream => "stream",
-        };
-        let table_name = format!("{}_{}_table", type_name.to_snake_case(), kind);
-        let camel_kind = kind.to_upper_camel_case();
-        let payload_len_arg = match payload_for {
-            PayloadFor::Future => "",
-            PayloadFor::Stream => " ,length : Int",
-        };
-
-        let payload_lift_func = match payload_for {
-            PayloadFor::Future => "",
-            PayloadFor::Stream => "List",
-        };
-        let ffi = self.r#gen.pkg_resolver.qualify_package(self.name, FFI_DIR);
-
-        let mut dealloc_list;
-        let malloc;
-        let lift;
-        let lower;
-        let lift_result;
-        let lift_list: String;
-        let lower_list: String;
-        if let Some(result_type) = result_type {
-            (lift, lift_result) = self.lift_from_memory("ptr", result_type, module);
-            lower = self.lower_to_memory("ptr", "value", result_type, module);
-            dealloc_list = self.deallocate_lists(
-                std::slice::from_ref(result_type),
-                &[String::from("ptr")],
-                true,
-                module,
-            );
-            lift_list = self.list_lift_from_memory(
-                "ptr",
-                "length",
-                &format!("wasm{name}{kind}Lift"),
-                result_type,
-            );
-            lower_list =
-                self.list_lower_to_memory(&format!("wasm{name}{kind}Lower"), "value", result_type);
-
-            malloc = self.malloc_memory("ptr", "length", result_type);
-
-            if dealloc_list.is_empty() {
-                dealloc_list = "let _ = ptr".to_string();
-            }
+        let camel_name = func_name.to_upper_camel_case();
+        let lifted_func_name = format!("wasmLift{camel_name}{index}");
+        let lowered_func_name = format!("wasmLower{camel_name}{index}");
+        let async_qualifier = self
+            .world_gen
+            .pkg_resolver
+            .qualify_package(self.name, ASYNC_DIR);
+        let module = if self.direction == Direction::Export && !module.starts_with("[export]") {
+            format!("[export]{module}")
         } else {
-            lift = "let _ = ptr".to_string();
-            lower = "let _ = (ptr, value)".to_string();
-            dealloc_list = "let _ = ptr".to_string();
-            malloc = "let ptr = 0;".into();
-            lift_result = "".into();
-            lift_list = "FixedArray::make(length, Unit::default())".into();
-            lower_list = "0".into();
-        }
-
-        let (mut lift_func, mut lower_func) = if result_type
-            .is_some_and(|ty| self.is_list_canonical(self.resolve, ty))
-            && matches!(payload_for, PayloadFor::Stream)
-        {
-            ("".into(), "".into())
-        } else {
-            (
-                format!(
-                    r#"
-                fn wasm{name}{kind}Lift(ptr: Int) -> {result} {{
-                    {lift}
-                    {lift_result}
-                }}
-                "#
-                ),
-                format!(
-                    r#"
-                fn wasm{name}{kind}Lower(value: {result}, ptr: Int) -> Unit {{
-                    {lower}
-                }}
-                "#
-                ),
-            )
+            module.to_string()
         };
+        let lifted = self
+            .world_gen
+            .pkg_resolver
+            .type_name(self.name, &Type::Id(ty));
 
-        if matches!(payload_for, PayloadFor::Stream) {
-            lift_func.push_str(&format!(
-                r#"
-                fn wasm{name}{kind}ListLift(ptr: Int, length: Int) -> FixedArray[{result}] {{ 
-                    {lift_list}
-                }}
-                "#
-            ));
+        // write intrinsics
+        uwriteln!(
+            lift,
+            r#"
+fn wasmLift{camel_name}{index}Read(handle : Int, ptr : Int) -> Int = "{module}" "[async-lower][future-read-{index}]{func_name}"
+fn wasmLift{camel_name}{index}CancelRead(_ : Int) -> Int = "{module}" "[future-cancel-read-{index}]{func_name}"
+fn wasmLift{camel_name}{index}DropReadable(_ : Int) = "{module}" "[future-drop-readable-{index}]{func_name}"
+    "#,
+        );
+        uwriteln!(
+            lower,
+            r#"
+fn wasmLower{camel_name}{index}New() -> UInt64 = "{module}" "[future-new-{index}]{func_name}"
+fn wasmLower{camel_name}{index}Write(handle : Int, ptr : Int) -> Int = "{module}" "[future-write-{index}]{func_name}"
+fn _wasmLower{camel_name}{index}CancelWrite(_ : Int) -> Int = "{module}" "[future-cancel-write-{index}]{func_name}"
+fn wasmLower{camel_name}{index}DropWritable(_ : Int) = "{module}" "[future-drop-writable-{index}]{func_name}"
+    "#
+        );
 
-            lower_func.push_str(&format!(
-                r#"
-                fn wasm{name}{kind}ListLower(value: FixedArray[{result}]) -> Int {{ 
-                    {lower_list}
-                }}
-                "#
-            ));
+        // generate function
+        let size = if let TypeDefKind::Future(Some(inner_ty)) = self.resolve.types[ty].kind {
+            self.world_gen.sizes.size(&inner_ty).size_wasm32()
+        } else {
+            0
+        };
+        uwriteln!(
+            lift,
+            r#"
+fn wasmLift{camel_name}{index}(future_handle : Int) -> {lifted} {{
+  let mut result = None
+  let mut dropped = false
+  let mut reading = 0
+  async fn drop() {{
+    if !dropped && reading > 0 {{
+      let cancel = wasmLift{camel_name}{index}CancelRead(future_handle)
+      if cancel == -1 {{
+        {async_qualifier}detach_waitable(future_handle)
+      }} else {{
+        {async_qualifier}suspend_for_future_read(
+          future_handle,
+          cancel
+        ) catch {{ 
+         {async_qualifier}FutureReadError::Cancelled => ()
+         _ => panic() 
+        }}
+      }}
+    }}
+    if !dropped {{
+      dropped = true
+      wasmLift{camel_name}{index}DropReadable(future_handle)
+    }}
+  }}
+  {async_qualifier}CMFuture::Incoming({async_qualifier}FutureR::{{
+    handle: future_handle,
+    get: () => {{
+      if result is Some(r) {{
+        return r
+      }}
+      if dropped {{
+        raise {async_qualifier}FutureReadError::Dropped
+      }}
+      let ptr = mbt_ffi_malloc({size})
+      defer mbt_ffi_free(ptr)
+      {{
+        let mut read_cancelled = false
+        reading += 1
+        defer {{
+          if !read_cancelled {{
+            reading -= 1
+          }}
+        }}
+        {async_qualifier}suspend_for_future_read(
+          future_handle,
+          wasmLift{camel_name}{index}Read(future_handle, ptr),
+        ) catch {{
+          err => {{
+            if err is {async_qualifier}Cancelled::Cancelled {{
+              read_cancelled = true
+            }}
+            drop() catch {{
+              _ => ()
+            }}
+            raise err
+          }}
+        }}
+      }}
+      result = {{
+      "#
+        );
+        let (operand, lift_builtins) =
+            if let TypeDefKind::Future(Some(ty)) = self.resolve.types[ty].kind {
+                // TODO : solve ownership
+                let resolve = self.resolve.clone();
+                let mut bindgen =
+                    FunctionBindgen::new(self, Box::new([]), Direction::Import, true, false);
+                bindgen.use_ffi(ffi::MALLOC);
+                bindgen.use_ffi(ffi::FREE);
+                let operand = lift_from_memory(&resolve, &mut bindgen, "ptr".to_string(), &ty);
+                uwriteln!(lift, "{}", bindgen.src);
+                (operand, bindgen.take_local_ffi_imports())
+            } else {
+                let mut builtins = HashSet::new();
+                builtins.insert(ffi::MALLOC);
+                builtins.insert(ffi::FREE);
+                ("()".into(), builtins)
+            };
+
+        // lift from memory if it were actual data
+        uwriteln!(
+            lift,
+            r#"
+        Some({operand})
+      }}
+      drop()
+      result.unwrap()
+    }},
+    drop,
+    take_handle: fn () {{
+      if dropped || reading > 0 {{
+        panic()
+      }}
+      dropped = true
+      future_handle
+    }}
+  }})
+}}
+"#
+        );
+
+        // Generate the lower function body
+        let inner_type = if let TypeDefKind::Future(Some(inner_ty)) = self.resolve.types[ty].kind {
+            Some(inner_ty)
+        } else {
+            None
         };
 
         uwriteln!(
-            self.ffi,
+            lower,
             r#"
-fn wasmImport{name}{kind}New() -> UInt64 = "{module}" "[{kind}-new-{index}]{func_name}"
-fn wasmImport{name}{kind}Read(handle : Int, buffer_ptr : Int{payload_len_arg}) -> Int = "{module}" "[async-lower][{kind}-read-{index}]{func_name}"
-fn wasmImport{name}{kind}Write(handle : Int, buffer_ptr : Int{payload_len_arg}) -> Int = "{module}" "[async-lower][{kind}-write-{index}]{func_name}"
-fn wasmImport{name}{kind}CancelRead(handle : Int) -> Int = "{module}" "[{kind}-cancel-read-{index}]{func_name}"
-fn wasmImport{name}{kind}CancelWrite(handle : Int) -> Int = "{module}" "[{kind}-cancel-write-{index}]{func_name}"
-fn wasmImport{name}{kind}DropReadable(handle : Int) = "{module}" "[{kind}-drop-readable-{index}]{func_name}"
-fn wasmImport{name}{kind}DropWritable(handle : Int) = "{module}" "[{kind}-drop-writable-{index}]{func_name}"
-fn wasm{name}{kind}Deallocate(ptr: Int) -> Unit {{
-    {dealloc_list}
-}}
-fn wasm{name}{kind}Malloc(length: Int) -> Int {{
-    {malloc}
-    ptr
-}}
-
-fn {table_name}() -> {ffi}{camel_kind}VTable[{result}] {{
-    {ffi}{camel_kind}VTable::new(
-        wasmImport{name}{kind}New,
-        wasmImport{name}{kind}Read,
-        wasmImport{name}{kind}Write,
-        wasmImport{name}{kind}CancelRead,
-        wasmImport{name}{kind}CancelWrite,
-        wasmImport{name}{kind}DropReadable,
-        wasmImport{name}{kind}DropWritable,
-        wasm{name}{kind}Malloc,
-        wasm{name}{kind}Deallocate,
-        wasm{name}{kind}{payload_lift_func}Lift,
-        wasm{name}{kind}{payload_lift_func}Lower,
-    )
-}}
-{lift_func}
-{lower_func}
-"#
+fn wasmLower{camel_name}{index}(future : {lifted}) -> Int {{
+  match future {{
+    {async_qualifier}CMFuture::Incoming(f) => f.take_handle()
+    {async_qualifier}CMFuture::Outgoing(f) => {{
+      let handles = wasmLower{camel_name}{index}New()
+      let readable = (handles & 0xFFFFFFFF).to_int()
+      let writable = (handles >> 32).to_int()
+      let producer = f.take_producer()
+      {async_qualifier}backpressure_inc()
+      {async_qualifier}spawn_bg_current(async fn() {{
+        defer {async_qualifier}backpressure_dec()
+        defer wasmLower{camel_name}{index}DropWritable(writable)"#
         );
+
+        let lower_builtins = if let Some(inner_ty) = inner_type {
+            let resolve = self.resolve.clone();
+            let mut bindgen =
+                FunctionBindgen::new(self, Box::new([]), Direction::Export, true, false);
+            bindgen.use_ffi(ffi::MALLOC);
+            bindgen.use_ffi(ffi::FREE);
+            uwriteln!(
+                lower,
+                r#"
+        let value = producer()
+    let ret_area = mbt_ffi_malloc({size})
+    defer mbt_ffi_free(ret_area)"#
+            );
+            abi::lower_to_memory(
+                &resolve,
+                &mut bindgen,
+                "ret_area".to_string(),
+                "value".to_string(),
+                &inner_ty,
+            );
+            uwriteln!(lower, "{}", bindgen.src);
+            uwriteln!(
+                lower,
+                r#"
+        let _ = {async_qualifier}suspend_for_future_write(writable, wasmLower{camel_name}{index}Write(writable, ret_area)) catch {{ _ => false }}"#
+            );
+            bindgen.take_local_ffi_imports()
+        } else {
+            // Unit type - no value to write, just complete the future
+            uwriteln!(
+                lower,
+                r#"
+        let _ = producer()
+        let _ = {async_qualifier}suspend_for_future_write(writable, wasmLower{camel_name}{index}Write(writable, 0)) catch {{ _ => false }}"#
+            );
+            HashSet::new()
+        };
+
+        uwriteln!(
+            lower,
+            r#"
+      }})
+      readable
+    }}
+  }}
+}}"#
+        );
+        let lower_src = lower.to_string();
+        AsyncBindingEntry {
+            lift_name: lifted_func_name,
+            lift_src: lift.to_string(),
+            lift_builtins,
+            lower_name: lowered_func_name,
+            lower_src,
+            lower_builtins,
+        }
     }
 
-    fn deallocate_lists(
+    pub(crate) fn generate_stream_binding(
         &mut self,
-        types: &[Type],
-        operands: &[String],
-        indirect: bool,
+        ty: TypeId,
+        index: usize,
         module: &str,
-    ) -> String {
-        let mut f = FunctionBindgen::new(self, "INVALID", module, Box::new([]));
-        abi::deallocate_lists_in_types(f.r#gen.resolve, types, operands, indirect, &mut f);
-        f.src
-    }
+        func_name: &str,
+    ) -> AsyncBindingEntry {
+        let mut lift = Source::default();
+        let mut lower = Source::default();
 
-    fn lift_from_memory(&mut self, address: &str, ty: &Type, module: &str) -> (String, String) {
-        let mut f = FunctionBindgen::new(self, "INVALID", module, Box::new([]));
+        let camel_name = func_name.to_upper_camel_case();
+        let lifted_func_name = format!("wasmLift{camel_name}{index}");
+        let lowered_func_name = format!("wasmLower{camel_name}{index}");
+        let async_qualifier = self
+            .world_gen
+            .pkg_resolver
+            .qualify_package(self.name, ASYNC_DIR);
+        let module = if self.direction == Direction::Export && !module.starts_with("[export]") {
+            format!("[export]{module}")
+        } else {
+            module.to_string()
+        };
+        let lifted = self
+            .world_gen
+            .pkg_resolver
+            .type_name(self.name, &Type::Id(ty));
 
-        let result = abi::lift_from_memory(f.r#gen.resolve, &mut f, address.into(), ty);
-        (f.src, result)
-    }
-
-    fn lower_to_memory(&mut self, address: &str, value: &str, ty: &Type, module: &str) -> String {
-        let mut f = FunctionBindgen::new(self, "INVALID", module, Box::new([]));
-        abi::lower_to_memory(f.r#gen.resolve, &mut f, address.into(), value.into(), ty);
-        f.src
-    }
-
-    fn malloc_memory(&mut self, address: &str, length: &str, ty: &Type) -> String {
-        let size = self.r#gen.sizes.size(ty).size_wasm32();
-        let ffi = self.r#gen.pkg_resolver.qualify_package(self.name, FFI_DIR);
-        format!("let {address} = {ffi}malloc({size} * {length});")
-    }
-
-    fn is_list_canonical(&self, _resolve: &Resolve, element: &Type) -> bool {
-        matches!(
-            element,
-            Type::U8 | Type::U32 | Type::U64 | Type::S32 | Type::S64 | Type::F32 | Type::F64
-        )
-    }
-
-    fn list_lift_from_memory(
-        &mut self,
-        address: &str,
-        length: &str,
-        lift_func: &str,
-        ty: &Type,
-    ) -> String {
-        let ffi = self.r#gen.pkg_resolver.qualify_package(self.name, FFI_DIR);
-        if self.is_list_canonical(self.resolve, ty) {
-            if ty == &Type::U8 {
-                return format!("{ffi}ptr2bytes({address}, {length})");
-            }
-            let ty = match ty {
-                Type::U32 => "uint",
-                Type::U64 => "uint64",
-                Type::S32 => "int",
-                Type::S64 => "int64",
-                Type::F32 => "float",
-                Type::F64 => "double",
-                _ => unreachable!(),
-            };
-
-            return format!("{ffi}ptr2{ty}_array({address}, {length})");
-        }
-        let size = self.r#gen.sizes.size(ty).size_wasm32();
-        format!(
+        // write intrinsics
+        uwriteln!(
+            lift,
             r#"
-            FixedArray::makei(
-                {length},
-                (index) => {{ 
-                    let ptr = ({address}) + (index * {size});
-                    {lift_func}(ptr)
-                }}
-            )
-            "#
-        )
-    }
-
-    fn list_lower_to_memory(&mut self, lower_func: &str, value: &str, ty: &Type) -> String {
-        // Align the address, moonbit only supports wasm32 for now
-        let ffi = self.r#gen.pkg_resolver.qualify_package(self.name, FFI_DIR);
-        if self.is_list_canonical(self.resolve, ty) {
-            if ty == &Type::U8 {
-                return format!("{ffi}bytes2ptr({value})");
-            }
-
-            let ty = match ty {
-                Type::U32 => "uint",
-                Type::U64 => "uint64",
-                Type::S32 => "int",
-                Type::S64 => "int64",
-                Type::F32 => "float",
-                Type::F64 => "double",
-                _ => unreachable!(),
-            };
-            return format!("{ffi}{ty}_array2ptr({value})");
-        }
-        let size = self.r#gen.sizes.size(ty).size_wasm32();
-        format!(
+fn wasmLift{camel_name}{index}Read(handle : Int, ptr : Int, len : Int) -> Int = "{module}" "[async-lower][stream-read-{index}]{func_name}"
+fn wasmLift{camel_name}{index}CancelRead(_ : Int) -> Int = "{module}" "[stream-cancel-read-{index}]{func_name}"
+fn wasmLift{camel_name}{index}DropReadable(_ : Int) = "{module}" "[stream-drop-readable-{index}]{func_name}"
+    "#,
+        );
+        uwriteln!(
+            lower,
             r#"
-            let address = {ffi}malloc(({value}).length() * {size});
-            for index = 0; index < ({value}).length(); index = index + 1 {{
-                let ptr = (address) + (index * {size});
-                let value = {value}[index];
-                {lower_func}(value, ptr);
+fn wasmLower{camel_name}{index}New() -> UInt64 = "{module}" "[stream-new-{index}]{func_name}"
+fn wasmLower{camel_name}{index}Write(handle : Int, ptr : Int, len : Int) -> Int = "{module}" "[stream-write-{index}]{func_name}"
+fn _wasmLower{camel_name}{index}CancelWrite(_ : Int) -> Int = "{module}" "[stream-cancel-write-{index}]{func_name}"
+fn wasmLower{camel_name}{index}DropWritable(_ : Int) = "{module}" "[stream-drop-writable-{index}]{func_name}"
+    "#
+        );
+
+        // Get element type and size
+        let inner_type = if let TypeDefKind::Stream(Some(inner_ty)) = self.resolve.types[ty].kind {
+            Some(inner_ty)
+        } else {
+            None
+        };
+        let elem_size = inner_type
+            .map(|t| self.world_gen.sizes.size(&t).size_wasm32())
+            .unwrap_or(0);
+
+        // Generate lift function (StreamR from handle)
+        uwriteln!(
+            lift,
+            r#"
+fn wasmLift{camel_name}{index}(stream_handle : Int) -> {lifted} {{
+  let mut closed = false
+  let mut reading = 0
+  async fn close() {{
+    if !closed && reading > 0 {{
+      let _ = {async_qualifier}suspend_for_stream_read(
+        stream_handle,
+        wasmLift{camel_name}{index}CancelRead(stream_handle)
+      ) catch {{ _ => (0, false) }}
+    }}
+    if !closed {{
+      closed = true
+      wasmLift{camel_name}{index}DropReadable(stream_handle)
+    }}
+  }}
+  {async_qualifier}CMStream::Incoming({async_qualifier}StreamR::{{
+    handle: stream_handle,
+    read: (count : Int) => {{
+      if closed {{
+        return None
+      }}"#
+        );
+
+        let lift_builtins = if let Some(inner_ty) = inner_type {
+            let resolve = self.resolve.clone();
+            let mut lift_bindgen =
+                FunctionBindgen::new(self, Box::new([]), Direction::Import, true, false);
+            lift_bindgen.use_ffi(ffi::MALLOC);
+            lift_bindgen.use_ffi(ffi::FREE);
+
+            uwriteln!(
+                lift,
+                r#"
+      let ptr = mbt_ffi_malloc(count * {elem_size})
+      reading += 1
+      let (progress, end) = {{
+        defer {{ reading -= 1 }}
+        {async_qualifier}suspend_for_stream_read(
+          stream_handle,
+          wasmLift{camel_name}{index}Read(stream_handle, ptr, count),
+        )
+      }}
+      if progress == 0 {{
+        mbt_ffi_free(ptr)
+        if end {{ close(); return None }}
+        return Some([])
+      }}
+      let items = []"#
+            );
+
+            // Generate code to lift each element from memory
+            uwriteln!(lift, "      for i = 0; i < progress; i = i + 1 {{");
+            uwriteln!(lift, "        let elem_ptr = ptr + i * {elem_size}");
+            let operand = lift_from_memory(
+                &resolve,
+                &mut lift_bindgen,
+                "elem_ptr".to_string(),
+                &inner_ty,
+            );
+            uwriteln!(lift, "{}", lift_bindgen.src);
+            uwriteln!(lift, "        items.push({operand})");
+            uwriteln!(lift, "      }}");
+
+            uwriteln!(
+                lift,
+                r#"
+      mbt_ffi_free(ptr)
+      if end {{ close() }}
+      Some(items[:])"#
+            );
+            lift_bindgen.take_local_ffi_imports()
+        } else {
+            // Unit type stream
+            uwriteln!(
+                lift,
+                r#"
+      reading += 1
+      let (progress, end) = {{
+        defer {{ reading -= 1 }}
+        {async_qualifier}suspend_for_stream_read(
+          stream_handle,
+          wasmLift{camel_name}{index}Read(stream_handle, 0, count),
+        )
+      }}
+      if progress == 0 && end {{ close(); return None }}
+      let result = FixedArray::make(progress, ())
+      if end {{ close() }}
+      Some(result[:])"#
+            );
+            HashSet::new()
+        };
+
+        uwriteln!(
+            lift,
+            r#"
+    }},
+    close,
+    take_handle: fn () {{
+      if closed || reading > 0 {{
+        panic()
+      }}
+      closed = true
+      stream_handle
+    }}
+  }})
+}}"#
+        );
+
+        // Generate lower function (Stream to handle)
+        uwriteln!(
+            lower,
+            r#"
+fn wasmLower{camel_name}{index}(stream : {lifted}) -> Int {{
+  match stream {{
+    {async_qualifier}CMStream::Incoming(s) => s.take_handle()
+    {async_qualifier}CMStream::Outgoing(s) => {{
+      let handles = wasmLower{camel_name}{index}New()
+      let readable = (handles & 0xFFFFFFFF).to_int()
+      let writable = (handles >> 32).to_int()
+      let producer = s.take_producer()
+      {async_qualifier}backpressure_inc()
+      let _ = {async_qualifier}spawn_bg_current(async fn() {{
+        defer {async_qualifier}backpressure_dec()
+        let mut closed = false
+        defer {{
+          if !closed {{
+            wasmLower{camel_name}{index}DropWritable(writable)
+          }}
+        }}
+        let sink = {async_qualifier}Sink::{{
+          write: async fn (data : ArrayView[_]) {{
+            if closed || data.length() == 0 {{
+              return 0
+            }}"#
+        );
+
+        let lower_builtins = if let Some(inner_ty) = inner_type {
+            let resolve = self.resolve.clone();
+            let elem_type = self.world_gen.pkg_resolver.type_name(self.name, &inner_ty);
+            let mut lower_bindgen =
+                FunctionBindgen::new(self, Box::new([]), Direction::Export, true, false);
+            lower_bindgen.use_ffi(ffi::MALLOC);
+            lower_bindgen.use_ffi(ffi::FREE);
+
+            uwriteln!(
+                lower,
+                r#"
+            let ptr = mbt_ffi_malloc(data.length() * {elem_size})
+            defer mbt_ffi_free(ptr)
+            for i = 0; i < data.length(); i = i + 1 {{
+              let elem_ptr = ptr + i * {elem_size}
+              let elem : {elem_type} = data[i]"#
+            );
+
+            abi::lower_to_memory(
+                &resolve,
+                &mut lower_bindgen,
+                "elem_ptr".to_string(),
+                "elem".to_string(),
+                &inner_ty,
+            );
+            uwriteln!(lower, "{}", lower_bindgen.src);
+            uwriteln!(lower, "            }}");
+
+            uwriteln!(
+                lower,
+                r#"
+            let (progress, dropped) = {async_qualifier}suspend_for_stream_write(
+              writable,
+              wasmLower{camel_name}{index}Write(writable, ptr, data.length()),
+            ) catch {{ _ => (0, true) }}
+            if dropped {{
+              closed = true
+              wasmLower{camel_name}{index}DropWritable(writable)
             }}
-            address 
-            "#
-        )
+            progress"#
+            );
+            lower_bindgen.take_local_ffi_imports()
+        } else {
+            // Unit type stream
+            uwriteln!(
+                lower,
+                r#"
+            let (progress, dropped) = {async_qualifier}suspend_for_stream_write(
+              writable,
+              wasmLower{camel_name}{index}Write(writable, 0, data.length()),
+            ) catch {{ _ => (0, true) }}
+            if dropped {{
+              closed = true
+              wasmLower{camel_name}{index}DropWritable(writable)
+            }}
+            progress"#
+            );
+            HashSet::new()
+        };
+
+        uwriteln!(
+            lower,
+            r#"
+          }},
+          close: () => {{
+            if !closed {{
+              closed = true
+              wasmLower{camel_name}{index}DropWritable(writable)
+            }}
+          }}
+        }}
+        producer(sink)
+        sink.close()
+      }})
+      readable
+    }}
+  }}
+}}"#
+        );
+
+        AsyncBindingEntry {
+            lift_name: lifted_func_name,
+            lift_src: lift.to_string(),
+            lift_builtins,
+            lower_name: lowered_func_name,
+            lower_src: lower.to_string(),
+            lower_builtins,
+        }
     }
 }
