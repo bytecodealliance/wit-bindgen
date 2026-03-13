@@ -39,7 +39,7 @@ fn SubTask::cancel(self : SubTask) -> SubTaskState? {
   if result == -1 {
     None
   } else {
-    Some(SubTaskState::from(subtask_cancel(self.handle)))
+    Some(SubTaskState::from(result))
   }
 }
 
