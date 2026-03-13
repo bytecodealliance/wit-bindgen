@@ -875,8 +875,8 @@ impl As{upcase} for {to_convert} {{
 #[doc(hidden)]
 {macro_export}
 macro_rules! __export_{world_name}_impl {{
-    ($ty:ident) => ({default_bindings_module}::{export_macro_name}!($ty with_types_in {default_bindings_module}););
-    ($ty:ident with_types_in $($path_to_types_root:tt)*) => ("#
+    ($ty:path) => ({default_bindings_module}::{export_macro_name}!($ty => {default_bindings_module}););
+    ($ty:path, with_types_in $($path_to_types_root:tt)*) => ("#
         );
         for (name, path_to_types) in self.export_macros.iter() {
             let mut path = "$($path_to_types_root)*".to_string();
@@ -884,7 +884,7 @@ macro_rules! __export_{world_name}_impl {{
                 path.push_str("::");
                 path.push_str(path_to_types)
             }
-            uwriteln!(self.src, "{path}::{name}!($ty with_types_in {path});");
+            uwriteln!(self.src, "{path}::{name}!($ty, with_types_in {path});");
         }
 
         // See comments in `finish` for why this conditionally happens here.
