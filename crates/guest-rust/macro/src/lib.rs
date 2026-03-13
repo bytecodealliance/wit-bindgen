@@ -9,7 +9,7 @@ use syn::{Token, braced, token};
 use wit_bindgen_core::AsyncFilterSet;
 use wit_bindgen_core::WorldGenerator;
 use wit_bindgen_core::wit_parser::{PackageId, Resolve, UnresolvedPackageGroup, WorldId};
-use wit_bindgen_rust::{Opts, Ownership, WithOption};
+use wit_bindgen_rust::{NativeStubMacro, Opts, Ownership, WithOption};
 
 #[proc_macro]
 pub fn generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
@@ -48,6 +48,7 @@ struct Config {
     world: WorldId,
     files: Vec<PathBuf>,
     debug: bool,
+    native_stub_macro: Option<NativeStubMacro>,
 }
 
 /// The source of the wit package definition
@@ -67,6 +68,7 @@ impl Parse for Config {
         let mut features = Vec::new();
         let mut async_configured = false;
         let mut debug = false;
+        let mut native_stub_macro = None;
 
         if input.peek(token::Brace) {
             let content;
@@ -167,8 +169,12 @@ impl Parse for Config {
                     }
                     Opt::EnableMethodChaining(enable) => {
                         opts.enable_method_chaining = enable.value();
-                    Opt::NativeStubMacro(macro_str) => {
-                        opts.native_macro_stub = Some(macro_str.to_token_stream().to_string());
+                    }
+                    Opt::NativeStubMacro(path, extra) => {
+                        native_stub_macro = Some(NativeStubMacro {
+                            macro_path: path.to_token_stream().to_string(),
+                            extra_args: extra.map(|t| t.to_string()),
+                        });
                     }
                 }
             }
@@ -191,6 +197,7 @@ impl Parse for Config {
             world,
             files,
             debug,
+            native_stub_macro,
         })
     }
 }
@@ -250,6 +257,7 @@ impl Config {
     fn expand(mut self) -> Result<TokenStream> {
         let mut files = Default::default();
         let mut generator = self.opts.build();
+        generator.native_stub_macro = self.native_stub_macro;
         generator
             .generate(&mut self.resolve, self.world, &mut files)
             .map_err(|e| anyhow_to_syn(Span::call_site(), e))?;
@@ -406,7 +414,7 @@ enum Opt {
     Async(AsyncFilterSet, Span),
     Debug(syn::LitBool),
     EnableMethodChaining(syn::LitBool),
-    NativeStubMacro(syn::Path),
+    NativeStubMacro(syn::Path, Option<proc_macro2::TokenStream>),
 }
 
 impl Parse for Opt {
@@ -593,7 +601,16 @@ impl Parse for Opt {
         } else if l.peek(kw::native_stub_macro) {
             input.parse::<kw::native_stub_macro>()?;
             input.parse::<Token![:]>()?;
-            Ok(Opt::NativeStubMacro(input.parse()?))
+            let macro_path: syn::Path = input.parse()?;
+            let extra = if input.peek(Token![!]) {
+                input.parse::<Token![!]>()?;
+                let content;
+                syn::parenthesized!(content in input);
+                Some(content.parse::<proc_macro2::TokenStream>()?)
+            } else {
+                None
+            };
+            Ok(Opt::NativeStubMacro(macro_path, extra))
         } else {
             Err(l.error())
         }
