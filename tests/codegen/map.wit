@@ -1,0 +1,21 @@
+package foo:foo;
+
+interface map-types {
+  type names-by-id = map<u32, string>;
+  type ids-by-name = map<string, u32>;
+  type bytes-by-name = map<string, list<u8>>;
+
+  record wrapped-map {
+    values: names-by-id,
+  }
+
+  named-roundtrip: func(a: names-by-id) -> ids-by-name;
+  inline-roundtrip: func(a: map<u32, string>, b: map<string, list<u8>>) -> tuple<map<string, u32>, map<string, list<u8>>>;
+  nested-roundtrip: func(a: bytes-by-name) -> bytes-by-name;
+  wrapped-roundtrip: func(a: wrapped-map) -> wrapped-map;
+}
+
+world map-world {
+  import map-types;
+  export map-types;
+}

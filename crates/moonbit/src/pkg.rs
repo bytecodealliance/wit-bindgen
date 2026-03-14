@@ -217,6 +217,11 @@ impl PkgResolver {
                                 .join(", ")
                         )
                     }
+                    TypeDefKind::Map(key, value) => {
+                        let key = self.type_name(this, &key);
+                        let value = self.type_name(this, &value);
+                        format!("Array[({key}, {value})]")
+                    }
                     TypeDefKind::Option(ty) => {
                         format!("{}?", self.type_name(this, &ty))
                     }

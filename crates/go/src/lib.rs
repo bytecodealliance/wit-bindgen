@@ -28,6 +28,8 @@ const POINTER_SIZE_EXPRESSION: &str = "4";
 const VARIANT_PAYLOAD_NAME: &str = "payload";
 const ITER_BASE_POINTER: &str = "base";
 const ITER_ELEMENT: &str = "element";
+const ITER_MAP_KEY: &str = "mapKey";
+const ITER_MAP_VALUE: &str = "mapValue";
 const IMPORT_RETURN_AREA: &str = "returnArea";
 const EXPORT_RETURN_AREA: &str = "exportReturnArea";
 const SYNC_EXPORT_PINNER: &str = "syncExportPinner";
@@ -347,6 +349,13 @@ impl Go {
                             .collect::<Vec<_>>()
                             .join(", ");
                         format!("witTypes.Tuple{count}[{types}]")
+                    }
+                    TypeDefKind::Map(key, value) => {
+                        imports.insert(remote_pkg("types"));
+                        self.tuples.insert(2);
+                        let key = self.type_name(resolve, *key, local, in_import, imports);
+                        let value = self.type_name(resolve, *value, local, in_import, imports);
+                        format!("[]witTypes.Tuple2[{key}, {value}]")
                     }
                     TypeDefKind::Future(ty) => {
                         self.need_future = true;
@@ -1740,6 +1749,35 @@ for index, {ITER_ELEMENT} := range {slice} {{
                 results.push(format!("uintptr({result})"));
                 results.push(length);
             }
+            Instruction::MapLower { key, value, .. } => {
+                self.need_unsafe = true;
+                self.need_pinner = true;
+                self.imports.insert(remote_pkg("runtime"));
+                let (body, body_results) = self.blocks.pop().unwrap();
+                assert!(body_results.is_empty());
+                let map = &operands[0];
+                let slice = self.locals.tmp("slice");
+                let result = self.locals.tmp("result");
+                let length = self.locals.tmp("length");
+                let layout = self.generator.sizes.record([*key, *value]);
+                let size = layout.size.format(POINTER_SIZE_EXPRESSION);
+                let align = layout.align.format(POINTER_SIZE_EXPRESSION);
+                uwriteln!(
+                    self.src,
+                    "{slice} := {map}
+{length} := uint32(len({slice}))
+{result} := witRuntime.Allocate({PINNER}, uintptr({length} * {size}), {align})
+for index, {ITER_ELEMENT} := range {slice} {{
+        {ITER_MAP_KEY} := {ITER_ELEMENT}.F0
+        {ITER_MAP_VALUE} := {ITER_ELEMENT}.F1
+        {ITER_BASE_POINTER} := unsafe.Add({result}, index * {size})
+        {body}
+}}
+"
+                );
+                results.push(format!("uintptr({result})"));
+                results.push(length);
+            }
             Instruction::ListLift { element, .. } => {
                 self.need_unsafe = true;
                 let (body, body_results) = self.blocks.pop().unwrap();
@@ -1760,6 +1798,33 @@ for index := 0; index < int({length}); index++ {{
         {ITER_BASE_POINTER} := unsafe.Add(unsafe.Pointer({value}), index * {size})
         {body}
         {result} = append({result}, {body_result})
+}}
+"
+                );
+                results.push(result);
+            }
+            Instruction::MapLift { key, value, .. } => {
+                self.need_unsafe = true;
+                self.imports.insert(remote_pkg("types"));
+                self.generator.tuples.insert(2);
+                let (body, body_results) = self.blocks.pop().unwrap();
+                let [map_key, map_value] = &body_results[..] else {
+                    panic!("expected two map block results");
+                };
+                let pointer = &operands[0];
+                let length = &operands[1];
+                let result = self.locals.tmp("result");
+                let layout = self.generator.sizes.record([*key, *value]);
+                let size = layout.size.format(POINTER_SIZE_EXPRESSION);
+                let key_type = self.type_name(resolve, **key);
+                let value_type = self.type_name(resolve, **value);
+                uwriteln!(
+                    self.src,
+                    "{result} := make([]witTypes.Tuple2[{key_type}, {value_type}], 0, {length})
+for index := 0; index < int({length}); index++ {{
+        {ITER_BASE_POINTER} := unsafe.Add(unsafe.Pointer({pointer}), index * {size})
+        {body}
+        {result} = append({result}, witTypes.Tuple2[{key_type}, {value_type}]{{{map_key}, {map_value}}})
 }}
 "
                 );
@@ -2364,6 +2429,8 @@ default:
             }
             Instruction::VariantPayloadName => results.push(VARIANT_PAYLOAD_NAME.into()),
             Instruction::IterElem { .. } => results.push(ITER_ELEMENT.into()),
+            Instruction::IterMapKey { .. } => results.push(ITER_MAP_KEY.into()),
+            Instruction::IterMapValue { .. } => results.push(ITER_MAP_VALUE.into()),
             Instruction::IterBasePointer => results.push(ITER_BASE_POINTER.into()),
             Instruction::I32Const { val } => results.push(format!("int32({val})")),
             Instruction::ConstZero { tys } => {
@@ -2482,6 +2549,10 @@ lifters = append(lifters, func() {{
             }
             Instruction::GuestDeallocate { .. } => {
                 // Nothing to do here; should be handled when calling `pinner.Unpin()`
+            }
+            Instruction::GuestDeallocateMap { .. } => {
+                let _ = self.blocks.pop().unwrap();
+                // Nothing to do here; deallocation is managed by pinner cleanup.
             }
             _ => unimplemented!("{instruction:?}"),
         }
@@ -2907,6 +2978,13 @@ const (
         uwriteln!(self.src, "{docs}type {name} = []{ty}");
     }
 
+    fn type_map(&mut self, id: TypeId, name: &str, _key: &Type, _value: &Type, docs: &Docs) {
+        let name = name.to_upper_camel_case();
+        let ty = self.type_name(self.resolve, Type::Id(id));
+        let docs = format_docs(docs);
+        uwriteln!(self.src, "{docs}type {name} = {ty}");
+    }
+
     fn type_fixed_length_list(&mut self, _: TypeId, name: &str, ty: &Type, size: u32, docs: &Docs) {
         let name = name.to_upper_camel_case();
         let ty = self.type_name(self.resolve, *ty);
@@ -3109,6 +3187,9 @@ fn any(resolve: &Resolve, ty: Type, fun: &dyn Fn(Type) -> bool) -> bool {
                     .or_else(|| result.err.map(|ty| any(resolve, ty, fun)))
                     .unwrap_or(false),
                 TypeDefKind::Tuple(tuple) => tuple.types.iter().any(|ty| any(resolve, *ty, fun)),
+                TypeDefKind::Map(key, value) => {
+                    any(resolve, *key, fun) || any(resolve, *value, fun)
+                }
                 TypeDefKind::Future(ty) | TypeDefKind::Stream(ty) => {
                     ty.map(|ty| any(resolve, ty, fun)).unwrap_or(false)
                 }
