@@ -4,8 +4,10 @@ use std::borrow::Cow;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::mem::take;
 use std::path::PathBuf;
-use wit_bindgen_core::{Direction, Types};
-use wit_bindgen_core::{Files, InterfaceGenerator, Source, WorldGenerator, wit_parser::*};
+use wit_bindgen_core::{
+    Direction, Files, InterfaceGenerator, Source, Types, WorldGenerator, abi::WasmType,
+    wit_parser::*,
+};
 
 #[derive(Default)]
 struct D {
@@ -181,9 +183,23 @@ fn escape_d_identifier(name: &str) -> &str {
         "WitFlags" => "WitFlags_",
         "Option" => "Option_",
         "Result" => "Result_",
-        "bits" => "bits_", // part of WitFlags
+        "bits" => "bits_",     // part of WitFlags
+        "borrow" => "borrow_", // part of the expansion of `resource`
+        "drop" => "drop_",     // part of the expansion of `resource`
 
         s => s,
+    }
+}
+
+pub fn wasm_type(ty: WasmType) -> &'static str {
+    match ty {
+        WasmType::I32 => "uint",
+        WasmType::I64 => "ulong",
+        WasmType::F32 => "float",
+        WasmType::F64 => "double",
+        WasmType::Pointer => "void*",
+        WasmType::PointerOrI64 => "ulong",
+        WasmType::Length => "size_t",
     }
 }
 
@@ -407,6 +423,7 @@ impl WorldGenerator for D {
         r#gen.interface = Some(id);
         r#gen.prologue();
 
+        r#gen.src.push_str("// Types");
         if let WorldKey::Name(_) = name {
             // We have an inline interface imported in a world.
             // Emit the "common" types as well
@@ -417,6 +434,16 @@ impl WorldGenerator for D {
         }
 
         r#gen.types(id);
+
+        r#gen.src.push_str("\n// Functions\n");
+        for (_name, func) in &resolve.interfaces[id].functions {
+            match func.kind {
+                FunctionKind::Freestanding | FunctionKind::AsyncFreestanding => {
+                    r#gen.import_func(func);
+                }
+                _ => {}
+            }
+        }
 
         let mut interface_filepath = PathBuf::from_iter(fqn.split("."));
         interface_filepath.add_extension("d");
@@ -663,11 +690,11 @@ impl<'a> DInterfaceGenerator<'a> {
                         TypeDefKind::Resource => {
                             Cow::Owned(self.scoped_type_name(*id, from_module_fqn))
                         }
-                        TypeDefKind::Handle(Handle::Own(_id)) => {
-                            Cow::Borrowed("/* todo - type_name of `own` */")
+                        TypeDefKind::Handle(Handle::Own(id)) => {
+                            Cow::Owned(self.scoped_type_name(*id, from_module_fqn))
                         }
                         TypeDefKind::Handle(Handle::Borrow(_id)) => {
-                            Cow::Borrowed("/* todo - type_name of `borrow` */")
+                            Cow::Owned(self.scoped_type_name(*id, from_module_fqn) + ".Borrow")
                         }
                         TypeDefKind::Tuple(t) => Cow::Owned(format!(
                             "Tuple!({})",
@@ -798,6 +825,76 @@ impl<'a> DInterfaceGenerator<'a> {
 
         type_info.has_resource
     }
+
+    fn import_func(&mut self, func: &Function) {
+        match &func.kind {
+            FunctionKind::Freestanding => {}
+            FunctionKind::Method(_) => {}
+            kind => {
+                self.src
+                    .push_str(&format!("// TODO: Import {kind:?} - {}\n", func.name));
+                return;
+            }
+        }
+
+        let sig = self
+            .resolve
+            .wasm_signature(abi::AbiVariant::GuestImport, func);
+
+        self.src.push_str(&format!(
+            "\n/++\n{}\n+/\n",
+            func.docs.contents.as_deref().unwrap_or_default()
+        ));
+        self.src.push_str(&format!(
+            "@wasmImport!(\"{}\", \"{}\")\n",
+            self.wasm_import_module.unwrap(),
+            func.name
+        ));
+        // The mangle is not important, as long as it won't conflict with other symbols
+        // WebAssembly symbol identifiers are much more permissive than C (can be any UTF-8).
+        // Yet, LDC before 1.42 don't allow full use of this fact. We make some substitutions.
+        self.src.push_str(&format!(
+            "pragma(mangle, \"__wit_import_{}__{}\")\n",
+            self.wasm_import_module
+                .unwrap()
+                .replace("/", "__")
+                .replace("-", "_"),
+            func.name
+                .replace("-", "_")
+                .replace("[", ":")
+                .replace("]", ":")
+        ));
+
+        let split_name = match &func.kind {
+            FunctionKind::Freestanding | FunctionKind::AsyncFreestanding => &func.name,
+            FunctionKind::Method(_)
+            | FunctionKind::Static(_)
+            | FunctionKind::Constructor(_)
+            | FunctionKind::AsyncMethod(_)
+            | FunctionKind::AsyncStatic(_) => {
+                self.src.push_str("static ");
+
+                func.name.split(".").skip(1).next().unwrap()
+            }
+        };
+
+        let lower_name = split_name.to_lower_camel_case();
+        let escaped_name = escape_d_identifier(&lower_name);
+
+        self.src.push_str(&format!(
+            "/*private*/ extern(C) {} __import_{escaped_name}({});\n",
+            match sig.results.len() {
+                0 => "void",
+                1 => wasm_type(sig.results[0]),
+                _ => unimplemented!("multi-value return not supported"),
+            },
+            sig.params
+                .iter()
+                .map(|param| wasm_type(*param))
+                .collect::<Vec<&str>>()
+                .join(", ")
+        ));
+    }
 }
 
 impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
@@ -852,9 +949,99 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
         self.src.push_str("}\n");
     }
 
-    fn type_resource(&mut self, _id: TypeId, name: &str, _docs: &Docs) {
-        self.src
-            .push_str(&format!("// TODO: def of `resource` - {name}\n"))
+    fn type_resource(&mut self, id: TypeId, name: &str, docs: &Docs) {
+        let upper_name = name.to_upper_camel_case();
+        let escaped_name = escape_d_identifier(&upper_name);
+
+        let ty = &self.resolve.types[id];
+
+        match self.direction {
+            None => panic!("Resources can only be generated for imports, or exports. Not common."),
+            Some(Direction::Import) => match ty.owner {
+                TypeOwner::Interface(owner_id) => {
+                    if let Some(cur_interface) = self.interface
+                        && cur_interface == owner_id
+                    {
+                    } else {
+                        panic!("Emitting resource from `interface` outside that interface?");
+                    }
+
+                    self.src.push_str(&format!(
+                        "\n/++\n{}\n+/\n",
+                        docs.contents.as_deref().unwrap_or_default()
+                    ));
+
+                    self.src.push_str(&format!(
+                        "struct {escaped_name} {{
+        package(wit) int __handle = 0;
+
+        package(wit) this(int handle) {{
+            __handle = handle;
+        }}
+
+        @disable this();
+
+        // TODO: make RAII? disable copy for the own
+
+
+        auto borrow() => Borrow(__handle);
+        alias borrow this;
+
+        "
+                    ));
+
+                    for (_, func) in &self.resolve.interfaces[owner_id].functions {
+                        if match &func.kind {
+                            FunctionKind::Freestanding => false,
+                            FunctionKind::Method(_) => false,
+                            FunctionKind::Static(mid) => *mid == id,
+                            FunctionKind::Constructor(mid) => *mid == id,
+                            FunctionKind::AsyncFreestanding => false,
+                            FunctionKind::AsyncMethod(_) => false,
+                            FunctionKind::AsyncStatic(_) => todo!(),
+                        } {
+                            self.import_func(func);
+                        }
+                    }
+
+                    self.src.push_str(&format!(
+                        "struct Borrow {{
+            package(wit) int __handle = 0;
+
+            package(wit) this(int handle) {{
+                __handle = handle;
+            }}
+
+            @disable this();
+
+                        "
+                    ));
+
+                    for (_, func) in &self.resolve.interfaces[owner_id].functions {
+                        if match &func.kind {
+                            FunctionKind::Freestanding => false,
+                            FunctionKind::Method(mid) => *mid == id,
+                            FunctionKind::Static(_) => false,
+                            FunctionKind::Constructor(_) => false,
+                            FunctionKind::AsyncFreestanding => false,
+                            FunctionKind::AsyncMethod(_) => todo!(),
+                            FunctionKind::AsyncStatic(_) => false,
+                        } {
+                            self.import_func(func);
+                        }
+                    }
+
+                    self.src.push_str("}\n");
+
+                    self.src.push_str("}\n");
+                }
+                TypeOwner::World(_) => todo!("resources in worlds"),
+                TypeOwner::None => {
+                    panic!("Resource definition without owner?");
+                }
+            },
+            Some(Direction::Export) => todo!("export of resource"),
+        }
         //todo!("def of `resource`")
     }
 
@@ -937,8 +1124,30 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
             docs.contents.as_deref().unwrap_or_default()
         ));
         self.src.push_str(&format!("struct {escaped_name} {{\n"));
+
+        self.src.push_str("mixin WitVariant!(\n");
+        self.src.indent(1);
+
+        for case in &variant.cases {
+            self.src.push_str(&format!(
+                "{}, // {}\n",
+                match &case.ty {
+                    None => Cow::Borrowed("void"),
+                    Some(ty) => self.type_name(ty, &owner_fqn),
+                },
+                escape_d_identifier(&case.name.to_lower_camel_case())
+            ));
+        }
+
         self.src.deindent(1);
-        self.src.push_str("@safe @nogc nothrow:\n");
+        self.src.push_str(");\n");
+
+        self.src.deindent(1);
+        //self.src.push_str("@safe @nogc nothrow:\n");
+        self.src.indent(1);
+
+        self.src.deindent(1);
+        self.src.push_str("\npublic:\n");
         self.src.indent(1);
 
         self.src
@@ -963,42 +1172,6 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
 
         self.src.push_str("}\n");
 
-        self.src.deindent(1);
-        self.src.push_str("\nprivate:\n");
-        self.src.indent(1);
-
-        if variant.cases.iter().any(|case| case.ty.is_some()) {
-            self.src.push_str("union Storage {\n");
-            self.src.push_str("ubyte __zeroinit = 0;\n");
-            for case in &variant.cases {
-                if let Some(ty) = &case.ty {
-                    self.src.push_str(&format!(
-                        "{} {};\n",
-                        self.type_name(ty, &owner_fqn),
-                        escape_d_identifier(&case.name.to_lower_camel_case())
-                    ));
-                }
-            }
-
-            self.src.push_str("}\n\n");
-
-            self.src.push_str("Tag _tag;\n");
-            self.src.push_str("Storage _storage;\n\n");
-        } else {
-            self.src.push_str("Tag _tag;\n\n");
-        }
-
-        self.src.push_str("@disable this();\n");
-        self.src
-            .push_str("this(Tag tag, Storage storage = Storage.init) {\n");
-        self.src.push_str("_tag = tag;\n");
-        self.src.push_str("_storage = storage;\n");
-        self.src.push_str("}\n");
-
-        self.src.deindent(1);
-        self.src.push_str("\npublic:\n");
-        self.src.indent(1);
-
         self.src.push_str("Tag tag() => _tag;\n");
 
         for case in &variant.cases {
@@ -1012,39 +1185,19 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
             let lower_case_name = case.name.to_lower_camel_case();
             let escaped_lower_case_name = escape_d_identifier(&lower_case_name);
 
-            if let Some(ty) = &case.ty {
-                self.src.push_str(&format!(
-                    "static {escaped_name} {escaped_lower_case_name}({} val) {{\n",
-                    self.type_name(ty, &owner_fqn)
-                ));
-                self.src.push_str("Storage storage;\n");
-                self.src
-                    .push_str(&format!("storage.{escaped_lower_case_name} = val;\n"));
-                self.src.push_str(&format!(
-                    "return {escaped_name}(Tag.{escaped_lower_case_name}, storage);\n"
-                ));
-                self.src.push_str("}\n");
-
-                self.src.push_str(&format!(
-                    "/// ditto\n ref inout({}) get{escaped_upper_case_name}() inout return\n",
-                    self.type_name(ty, &owner_fqn)
-                ));
-
-                self.src
-                    .push_str(&format!("in (is{escaped_upper_case_name}) "));
-                self.src.push_str(&format!(
-                    "do {{ return _storage.{escaped_lower_case_name}; }}\n"
-                ));
-            } else {
-                self.src.push_str(&format!(
-                    "static {escaped_name} {escaped_lower_case_name}() => {escaped_name}(Tag.{escaped_lower_case_name});\n",
-                ));
-            }
+            self.src.push_str(&format!(
+                "alias {escaped_lower_case_name} = _create!(Tag.{escaped_lower_case_name});\n",
+            ));
             self.src.push_str(&format!(
                 "/// ditto\nbool is{escaped_upper_case_name}() const => _tag == Tag.{escaped_lower_case_name};\n",
             ));
-        }
 
+            if let Some(ty) = &case.ty {
+                self.src.push_str(&format!(
+                    "///ditto\nalias get{escaped_upper_case_name} = _get!(Tag.{escaped_lower_case_name});\n",
+                ));
+            }
+        }
         self.src.push_str("}\n");
     }
 
