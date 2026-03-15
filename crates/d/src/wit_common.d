@@ -1,5 +1,16 @@
 module wit.common;
 
+import core.attribute : mustuse;
+import ldc.attributes : llvmAttr;
+
+// from std.meta
+package(wit) alias AliasSeq(T...) = T;
+
+alias wasmImport(string mod, string name) = AliasSeq!(
+    llvmAttr("wasm-import-module", mod),
+    llvmAttr("wasm-import-name", name)
+);
+
 /// Thin CABI compliant wrapper over `T[]`
 struct WitList(T) {
 @safe @nogc pure nothrow:
@@ -20,12 +31,14 @@ struct WitList(T) {
         return (ptr && length) ? ptr[0..length] : null;
     }
 }
+auto witList(T : U[], U)(T slice) => WitList!U(slice);
+
 
 // WIT ABI for string matches List,
 // except list<char> in WIT is actually List!(dchar)
 //
 // We assume UTF-8 data (as D native strings are UTF-8)
-alias WitString = List!(char);
+alias WitString = WitList!(char);
 
 // TODO: split this file up and give Tuple a full port of the Phobos version?
 /// adapted from Phobos std.typecons.Tuple
@@ -63,16 +76,67 @@ mixin template WitFlags(T) if (__traits(isUnsigned, T)) {
     }
 }
 
+
+mixin template WitVariant(Types...) {
+private:
+    static assert(is(typeof(this).Tag));
+    static assert(is(Tag U == enum) && __traits(isIntegral, U));
+
+    static assert(__traits(allMembers, Tag).length == Types.length);
+    static foreach (i, M; __traits(allMembers, Tag)) {
+        static assert(i == __traits(getMember, Tag, M));
+    }
+
+    union Storage {
+        template ReplacedTypes() {
+            alias ReplacedTypes = AliasSeq!();
+
+            static foreach (T; Types) {
+                static if (is(T == void))
+                    ReplacedTypes = AliasSeq!(ReplacedTypes, void[0]);
+                else
+                    ReplacedTypes = AliasSeq!(ReplacedTypes, T);
+            }
+        }
+
+        ubyte __zeroinit = 0;
+        ReplacedTypes!() members;
+    }
+
+    Tag _tag;
+    Storage _storage;
+
+
+    @disable this();
+
+    this(Tag tag, Storage storage = Storage.init) {
+      _tag = tag;
+      _storage = storage;
+    }
+
+
+    static auto _create(Tag tag)() if (is(Types[tag] == void)) {
+        return typeof(this)(tag);
+    }
+    static auto _create(Tag tag)(Types[tag] val) if (!is(Types[tag] == void)) {
+        Storage storage = Storage.init;
+        storage.tupleof[tag+1] = val;
+        return typeof(this)(tag, storage);
+    }
+
+    ref auto _get(Tag tag)() inout return if (!is(Types[tag] == void))
+    in (_tag == tag) do { return cast(inout)_storage.tupleof[tag+1]; }
+}
+
 /// Based on Rust's Option
 struct Option(T) {
 private:
-    bool present = false;
-    T value;
+    bool _present = false;
+    T _value;
 
-    @disable this();
     this(bool present, T value = T.init) @safe @nogc nothrow {
-        this.present = present;
-        this.value = value;
+        _present = present;
+        _value = value;
     }
 public:
     static Option some(T value) @safe @nogc nothrow {
@@ -83,25 +147,26 @@ public:
         return Option(false);
     }
 
-    bool isSome() const @safe @nogc nothrow => present;
+    bool isSome() const @safe @nogc nothrow => _present;
     alias isSome this; // implicit conversion to bool
 
-    bool isNone() const @safe @nogc nothrow => !present;
+    bool isNone() const @safe @nogc nothrow => !_present;
 
     ref inout(T) unwrap() inout @safe @nogc nothrow return
-    in (present) do { return value; }
+    in (_present) do { return _value; }
 
-    T unwrapOr(T fallback) @safe @nogc nothrow => present ? value : fallback;
+    T unwrapOr(T fallback) @safe @nogc nothrow => _present ? _value : fallback;
 
     T unwrapOrElse(D)(scope D fallback)
     if (is(D R == return) && is(R : T) && is(D == __parameters))
-    { return present ? value : fallback(); }
+    { return _present ? _value : fallback(); }
 }
 
 /// Based on Rust's Result
+@mustuse
 struct Result(T, E) {
 private:
-    bool hasError;
+    bool _hasError;
     union Storage {
         ubyte __zeroinit = 0;
         static if (!is(T == void)) {
@@ -111,20 +176,19 @@ private:
             E error;
         }
     }
-    Storage storage;
+    Storage _storage;
 
-    @disable this();
     this(bool hasError, Storage storage) @safe @nogc nothrow {
-        this.hasError = hasError;
-        this.storage = storage;
+        _hasError = hasError;
+        _storage = storage;
     }
 
 public:
     static if (is(T == void)) {
-        static Result ok() @safe @nogc nothrow => Result(false, Storage());
+        static Result ok() @safe @nogc nothrow => Result(false, Storage.init);
     } else {
-        static Result ok(T value) @safe @nogc nothrow {
-            Storage newStorage;
+        static Result ok(T value) @trusted @nogc nothrow {
+            Storage newStorage = Storage.init;
             newStorage.value = value;
 
             return Result(false, newStorage);
@@ -132,34 +196,34 @@ public:
     }
 
     static if (is(E == void)) {
-        static Result err() @safe @nogc nothrow => Result(true, Storage());
+        static Result err() @safe @nogc nothrow => Result(true, Storage.init);
     } else {
-        static Result err(E error) @safe @nogc nothrow {
-            Storage newStorage;
+        static Result err(E error) @trusted @nogc nothrow {
+            Storage newStorage = Storage.init;
             newStorage.error = error;
 
             return Result(true, newStorage);
         }
     }
 
-    bool isOk() const @safe @nogc nothrow => !hasError;
+    bool isOk() const @safe @nogc nothrow => !_hasError;
 
-    bool isErr() const @safe @nogc nothrow => hasError;
+    bool isErr() const @safe @nogc nothrow => _hasError;
     alias isErr this; // implicit conversion to bool
 
     static if (!is(T == void)) {
-        ref inout(T) unwrap() inout @safe @nogc nothrow return
-        in (isOk) do { return storage.value; }
+        ref inout(T) unwrap() inout @trusted @nogc nothrow return
+        in (isOk) do { return _storage.value; }
 
-        T unwrapOr(T fallback) @safe @nogc nothrow => isOk ? storage.value : fallback;
+        T unwrapOr(T fallback) @safe @nogc nothrow => isOk ? _storage.value : fallback;
 
         T unwrapOrElse(D)(scope D fallback)
         if (is(D R == return) && is(R : T) && is(D == __parameters))
-        { return isOk ? storage.value : fallback(); }
+        { return isOk ? _storage.value : fallback(); }
     }
 
     static if (!is(E == void)) {
-        ref inout(E) unwrapErr() inout @safe @nogc nothrow return
-        in (isErr) do { return storage.error; }
+        ref inout(E) unwrapErr() inout @trusted @nogc nothrow return
+        in (isErr) do { return _storage.error; }
     }
 }
