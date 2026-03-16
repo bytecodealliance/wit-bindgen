@@ -77,7 +77,7 @@ impl Parse for Config {
                     Opt::Path(span, p) => {
                         let paths = p
                             .into_iter()
-                            .map(|f| f.eval())
+                            .map(|f| f.evaluate_string())
                             .collect::<Result<Vec<_>>>()?
                             .into_iter()
                             .map(PathBuf::from)
@@ -351,9 +351,32 @@ impl From<ExportKey> for wit_bindgen_rust::ExportKey {
     }
 }
 
+#[cfg(feature = "macro-string")]
+type PathType = macro_string::MacroString;
+#[cfg(not(feature = "macro-string"))]
+type PathType = syn::LitStr;
+
+trait EvaluateString {
+    fn evaluate_string(&self) -> Result<String>;
+}
+
+#[cfg(feature = "macro-string")]
+impl EvaluateString for macro_string::MacroString {
+    fn evaluate_string(&self) -> Result<String> {
+        self.eval()
+    }
+}
+
+#[cfg(not(feature = "macro-string"))]
+impl EvaluateString for syn::LitStr {
+    fn evaluate_string(&self) -> Result<String> {
+        Ok(self.value())
+    }
+}
+
 enum Opt {
     World(syn::LitStr),
-    Path(Span, Vec<macro_string::MacroString>),
+    Path(Span, Vec<PathType>),
     Inline(syn::LitStr),
     UseStdFeature,
     RawStrings,
@@ -393,11 +416,11 @@ impl Parse for Opt {
                 let contents;
                 syn::bracketed!(contents in input);
                 let span = input.span();
-                let list = Punctuated::<_, Token![,]>::parse_terminated(&contents)?;
+                let list = Punctuated::<PathType, Token![,]>::parse_terminated(&contents)?;
                 Ok(Opt::Path(span, list.into_iter().collect()))
             } else {
                 let span = input.span();
-                let path: macro_string::MacroString = input.parse()?;
+                let path: PathType = input.parse()?;
                 Ok(Opt::Path(span, vec![path]))
             }
         } else if l.peek(kw::inline) {
