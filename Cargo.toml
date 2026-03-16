@@ -45,6 +45,7 @@ indexmap = "2.0.0"
 prettyplease = "0.2.20"
 syn = { version = "2.0.89", features = ["printing"] }
 futures = "0.3.31"
+macro-string = "0.2.0"
 
 wat = "1.245.1"
 wasmparser = "0.245.1"
