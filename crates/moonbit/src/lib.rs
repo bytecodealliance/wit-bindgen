@@ -132,9 +132,14 @@ pub struct MoonBit {
     return_area_align: Alignment,
 
     async_support: AsyncSupport,
+    current_implements: Option<InterfaceId>,
 }
 
 impl MoonBit {
+    fn wasm_name_world_key(&self, resolve: &Resolve, key: &WorldKey) -> String {
+        wit_bindgen_core::wasm_import_module_name(resolve, key, self.current_implements)
+    }
+
     fn interface<'a>(
         &'a mut self,
         resolve: &'a Resolve,
@@ -170,8 +175,10 @@ impl WorldGenerator for MoonBit {
         resolve: &Resolve,
         key: &WorldKey,
         id: InterfaceId,
+        implements: Option<InterfaceId>,
         files: &mut Files,
     ) -> Result<()> {
+        self.current_implements = implements;
         let name = PkgResolver::interface_name(resolve, key);
         let name = self.interface_ns.tmp(&name);
         self.pkg_resolver
@@ -187,7 +194,7 @@ impl WorldGenerator for MoonBit {
             }
         }
 
-        let module = &resolve.name_world_key(key);
+        let module = &self.wasm_name_world_key(resolve, key);
         let mut r#gen = self.interface(resolve, &name, module, Direction::Import);
         r#gen.types(id);
 
@@ -199,6 +206,7 @@ impl WorldGenerator for MoonBit {
         self.import_interface_fragments
             .insert(name.to_owned(), result);
 
+        self.current_implements = None;
         Ok(())
     }
 
@@ -225,8 +233,10 @@ impl WorldGenerator for MoonBit {
         resolve: &Resolve,
         key: &WorldKey,
         id: InterfaceId,
+        implements: Option<InterfaceId>,
         files: &mut Files,
     ) -> Result<()> {
+        self.current_implements = implements;
         let name = format!(
             "{}.{}",
             self.opts.r#gen_dir,
@@ -246,7 +256,7 @@ impl WorldGenerator for MoonBit {
             }
         }
 
-        let module = &resolve.name_world_key(key);
+        let module = &self.wasm_name_world_key(resolve, key);
         let mut r#gen = self.interface(resolve, &name, module, Direction::Export);
         r#gen.types(id);
 
@@ -258,6 +268,7 @@ impl WorldGenerator for MoonBit {
         self.export_interface_fragments
             .insert(name.to_owned(), result);
 
+        self.current_implements = None;
         Ok(())
     }
 
@@ -594,8 +605,12 @@ impl InterfaceGenerator<'_> {
             self.r#gen.async_support.mark_async();
         }
 
+        let interface_name_owned;
         let interface_name = match module {
-            Some(key) => &self.resolve.name_world_key(key),
+            Some(key) => {
+                interface_name_owned = self.r#gen.wasm_name_world_key(self.resolve, key);
+                &interface_name_owned
+            }
             None => "$root",
         };
         let mut bindgen = FunctionBindgen::new(
@@ -663,7 +678,7 @@ impl InterfaceGenerator<'_> {
         let sig = self.sig_string(&mbt_sig, async_);
 
         let module = match module {
-            Some(key) => self.resolve.name_world_key(key),
+            Some(key) => self.r#gen.wasm_name_world_key(self.resolve, key),
             None => "$root".into(),
         };
 
@@ -775,7 +790,7 @@ impl InterfaceGenerator<'_> {
         let async_export_prefix = if async_ { "[async-lift]" } else { "" };
         // Async functions return type
         let interface_name = match interface {
-            Some(key) => Some(self.resolve.name_world_key(key)),
+            Some(key) => Some(self.r#gen.wasm_name_world_key(self.resolve, key)),
             None => None,
         };
 
@@ -811,7 +826,9 @@ impl InterfaceGenerator<'_> {
                 unreachable!()
             };
             let func_name = func.name.clone();
-            let import_module = self.resolve.name_world_key(interface.unwrap());
+            let import_module = self
+                .r#gen
+                .wasm_name_world_key(self.resolve, interface.unwrap());
             self.r#gen.export.insert(
                 export_func_name.clone(),
                 format!("[callback]{async_export_prefix}{export_name}"),

@@ -52,6 +52,12 @@ pub struct RustWasm {
 
     future_payloads: IndexMap<Option<Type>, String>,
     stream_payloads: IndexMap<Option<Type>, String>,
+
+    /// Tracks InterfaceIds already seen as imports via `implements`.
+    /// Maps InterfaceId -> snake_case module name of first import.
+    implements_import_first_seen: HashMap<InterfaceId, String>,
+    /// Tracks InterfaceIds already seen as exports via `implements`.
+    implements_export_first_seen: HashSet<InterfaceId>,
 }
 
 #[derive(Default)]
@@ -362,6 +368,7 @@ impl RustWasm {
             return_pointer_area_size: Default::default(),
             return_pointer_area_align: Default::default(),
             needs_runtime_module: false,
+            implements: None,
         }
     }
 
@@ -470,8 +477,11 @@ impl RustWasm {
         };
 
         let remapped = entry.remapped;
-        let prev = self.interface_names.insert(id, entry);
-        assert!(prev.is_none());
+        // Allow duplicate InterfaceId entries for `implements` items —
+        // the first entry wins for type lookups.
+        if !self.interface_names.contains_key(&id) {
+            self.interface_names.insert(id, entry);
+        }
 
         Ok(remapped)
     }
@@ -1186,7 +1196,8 @@ impl WorldGenerator for RustWasm {
                 let TypeDefKind::Resource = &resolve.types[id].kind else {
                     continue;
                 };
-                assert!(self.exported_resources.insert(id));
+                // Allow duplicate resource IDs from `implements` items
+                self.exported_resources.insert(id);
             }
         }
 
@@ -1211,43 +1222,80 @@ impl WorldGenerator for RustWasm {
         resolve: &Resolve,
         name: &WorldKey,
         id: InterfaceId,
+        implements: Option<InterfaceId>,
         _files: &mut Files,
     ) -> Result<()> {
+        // Check if this is a duplicate implements import (same InterfaceId
+        // seen before).
+        let is_duplicate_implements =
+            implements.is_some() && self.implements_import_first_seen.contains_key(&id);
+
         let mut to_define = Vec::new();
-        for (name, ty_id) in resolve.interfaces[id].types.iter() {
-            let full_name = full_wit_type_name(resolve, *ty_id);
-            if let Some(type_gen) = self.with.get(&full_name) {
-                // skip type definition generation for remapped types
-                if type_gen.generated() {
+        if !is_duplicate_implements {
+            for (name, ty_id) in resolve.interfaces[id].types.iter() {
+                let full_name = full_wit_type_name(resolve, *ty_id);
+                if let Some(type_gen) = self.with.get(&full_name) {
+                    // skip type definition generation for remapped types
+                    if type_gen.generated() {
+                        to_define.push((name, ty_id));
+                    }
+                } else {
                     to_define.push((name, ty_id));
                 }
-            } else {
-                to_define.push((name, ty_id));
+                self.generated_types.insert(full_name);
             }
-            self.generated_types.insert(full_name);
         }
 
-        let wasm_import_module = resolve.name_world_key(name);
+        let wasm_import_module =
+            wit_bindgen_core::wasm_import_module_name(resolve, name, implements);
         let mut r#gen = self.interface(
             Identifier::Interface(id, name),
             &wasm_import_module,
             resolve,
             true,
         );
+        r#gen.implements = implements;
         let (snake, module_path) = r#gen.start_append_submodule(name);
         if r#gen.r#gen.interface_names[&id].remapped {
             return Ok(());
         }
 
-        for (name, ty_id) in to_define {
-            r#gen.define_type(&name, *ty_id);
+        if is_duplicate_implements {
+            // For duplicate implements imports, re-export types from the
+            // first module and only generate function imports.
+            let first_snake = self.implements_import_first_seen[&id].clone();
+            let mut r#gen = self.interface(
+                Identifier::Interface(id, name),
+                &wasm_import_module,
+                resolve,
+                true,
+            );
+            r#gen.implements = implements;
+
+            // Re-export all types from the first module
+            uwriteln!(r#gen.src, "pub use super::{first_snake}::*;");
+
+            // Generate function imports with the new wasm import module
+            r#gen.generate_imports(resolve.interfaces[id].functions.values(), Some(name));
+
+            let docs = &resolve.interfaces[id].docs;
+            r#gen.finish_append_submodule(&snake, module_path, docs);
+        } else {
+            for (name, ty_id) in to_define {
+                r#gen.define_type(&name, *ty_id);
+            }
+
+            r#gen.generate_imports(resolve.interfaces[id].functions.values(), Some(name));
+
+            let docs = &resolve.interfaces[id].docs;
+
+            r#gen.finish_append_submodule(&snake, module_path, docs);
+
+            // Record this as the first seen for implements dedup
+            if implements.is_some() {
+                self.implements_import_first_seen.insert(id, snake.clone());
+            }
         }
-
-        r#gen.generate_imports(resolve.interfaces[id].functions.values(), Some(name));
-
-        let docs = &resolve.interfaces[id].docs;
-
-        r#gen.finish_append_submodule(&snake, module_path, docs);
 
         Ok(())
     }
@@ -1274,39 +1322,84 @@ impl WorldGenerator for RustWasm {
         resolve: &Resolve,
         name: &WorldKey,
         id: InterfaceId,
+        implements: Option<InterfaceId>,
         _files: &mut Files,
     ) -> Result<()> {
+        let is_duplicate_implements =
+            implements.is_some() && self.implements_export_first_seen.contains(&id);
+
         let mut to_define = Vec::new();
-        for (ty_name, ty_id) in resolve.interfaces[id].types.iter() {
-            let full_name = full_wit_type_name(resolve, *ty_id);
-            to_define.push((ty_name, ty_id));
-            self.generated_types.insert(full_name);
+        if !is_duplicate_implements {
+            for (ty_name, ty_id) in resolve.interfaces[id].types.iter() {
+                let full_name = full_wit_type_name(resolve, *ty_id);
+                to_define.push((ty_name, ty_id));
+                self.generated_types.insert(full_name);
+            }
         }
 
-        let wasm_import_module = format!("[export]{}", resolve.name_world_key(name));
+        let wasm_import_module = format!(
+            "[export]{}",
+            wit_bindgen_core::wasm_import_module_name(resolve, name, implements)
+        );
         let mut r#gen = self.interface(
             Identifier::Interface(id, name),
             &wasm_import_module,
             resolve,
             false,
         );
+        r#gen.implements = implements;
         let (snake, module_path) = r#gen.start_append_submodule(name);
         if r#gen.r#gen.interface_names[&id].remapped {
             return Ok(());
         }
 
-        for (ty_name, ty_id) in to_define {
-            r#gen.define_type(&ty_name, *ty_id);
+        if is_duplicate_implements {
+            // For duplicate implements exports, generate fresh exports.
+            // Types are referenced via path_to_interface() automatically.
+
+            let mut r#gen = self.interface(
+                Identifier::Interface(id, name),
+                &wasm_import_module,
+                resolve,
+                false,
+            );
+            r#gen.implements = implements;
+
+            // Don't re-export types from the first module — generate_exports
+            // references types via path_to_interface() which handles
+            // cross-module type resolution automatically.
+
+            let macro_name = r#gen
+                .generate_exports(Some((id, name)), resolve.interfaces[id].functions.values())?;
+
+            let docs = &resolve.interfaces[id].docs;
+            r#gen.finish_append_submodule(&snake, module_path, docs);
+
+            let export_path = compute_module_path(name, resolve, true).join("::");
+            self.export_macros.push((macro_name, export_path));
+        } else {
+            for (ty_name, ty_id) in to_define {
+                r#gen.define_type(&ty_name, *ty_id);
+            }
+
+            let macro_name = r#gen
+                .generate_exports(Some((id, name)), resolve.interfaces[id].functions.values())?;
+
+            let docs = &resolve.interfaces[id].docs;
+
+            r#gen.finish_append_submodule(&snake, module_path, docs);
+
+            let export_path = if implements.is_some() {
+                compute_module_path(name, resolve, true).join("::")
+            } else {
+                self.interface_names[&id].path.clone()
+            };
+            self.export_macros.push((macro_name, export_path));
+
+            if implements.is_some() {
+                self.implements_export_first_seen.insert(id);
+            }
         }
-
-        let macro_name =
-            r#gen.generate_exports(Some((id, name)), resolve.interfaces[id].functions.values())?;
-
-        let docs = &resolve.interfaces[id].docs;
-
-        r#gen.finish_append_submodule(&snake, module_path, docs);
-        self.export_macros
-            .push((macro_name, self.interface_names[&id].path.clone()));
 
         if self.opts.stubs {
             let world_id = self.world.unwrap();
@@ -1316,7 +1409,17 @@ impl WorldGenerator for RustWasm {
                 resolve,
                 false,
             );
-            r#gen.generate_stub(Some((id, name)), resolve.interfaces[id].functions.values());
+            r#gen.implements = implements;
+            // For implements items, interface_names may point to a different
+            // path (e.g. an import path for this InterfaceId), so compute
+            // the correct export path from the label.
+            let path_override =
+                implements.map(|_| compute_module_path(name, resolve, true).join("::"));
+            r#gen.generate_stub(
+                Some((id, name)),
+                resolve.interfaces[id].functions.values(),
+                path_override.as_deref(),
+            );
             let stub = r#gen.finish();
             self.src.push_str(&stub);
         }
@@ -1339,7 +1442,7 @@ impl WorldGenerator for RustWasm {
         if self.opts.stubs {
             let mut r#gen =
                 self.interface(Identifier::World(world), "[export]$root", resolve, false);
-            r#gen.generate_stub(None, funcs.iter().map(|f| f.1));
+            r#gen.generate_stub(None, funcs.iter().map(|f| f.1), None);
             let stub = r#gen.finish();
             self.src.push_str(&stub);
         }

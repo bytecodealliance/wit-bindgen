@@ -108,6 +108,8 @@ struct Cpp {
     // needed for symmetric disambiguation
     interface_prefixes: HashMap<(Direction, WorldKey), String>,
     import_prefix: Option<String>,
+    /// Tracks InterfaceIds whose types have already been generated (for implements dedup).
+    implements_types_generated: HashSet<InterfaceId>,
 }
 
 #[cfg(feature = "clap")]
@@ -330,6 +332,7 @@ impl Cpp {
             sizes,
             in_guest_import,
             wasm_import_module,
+            implements_label: None,
         }
     }
 
@@ -513,6 +516,7 @@ impl WorldGenerator for Cpp {
         resolve: &Resolve,
         name: &WorldKey,
         id: InterfaceId,
+        implements: Option<InterfaceId>,
         _files: &mut Files,
     ) -> anyhow::Result<()> {
         self.imported_interfaces.insert(id);
@@ -528,13 +532,19 @@ impl WorldGenerator for Cpp {
                 }
 
                 let store = self.start_new_file(None);
-                let wasm_import_module = resolve.name_world_key(name);
+                let wasm_import_module =
+                    wit_bindgen_core::wasm_import_module_name(resolve, name, implements);
                 let binding = Some(name);
+                let should_gen_types = self.implements_types_generated.insert(id);
                 let mut r#gen = self.interface(resolve, binding, true, Some(wasm_import_module));
                 r#gen.interface = Some(id);
-                r#gen.types(id);
-                let namespace =
-                    namespace(resolve, &TypeOwner::Interface(id), false, &r#gen.r#gen.opts);
+                if let (WorldKey::Name(label), Some(_)) = (name, implements) {
+                    r#gen.implements_label = Some((label.clone(), false));
+                }
+                if should_gen_types {
+                    r#gen.types(id);
+                }
+                let namespace = r#gen.freestanding_namespace(id, false);
 
                 for (_name, func) in resolve.interfaces[id].functions.iter() {
                     if matches!(func.kind, FunctionKind::Freestanding) {
@@ -564,6 +574,7 @@ impl WorldGenerator for Cpp {
         resolve: &Resolve,
         name: &WorldKey,
         id: InterfaceId,
+        implements: Option<InterfaceId>,
         _files: &mut Files,
     ) -> anyhow::Result<()> {
         let old_prefix = self.opts.export_prefix.clone();
@@ -579,12 +590,19 @@ impl WorldGenerator for Cpp {
             .src
             .push_str(&format!("// export_interface {name:?}\n"));
         self.imported_interfaces.remove(&id);
-        let wasm_import_module = resolve.name_world_key(name);
+        let wasm_import_module =
+            wit_bindgen_core::wasm_import_module_name(resolve, name, implements);
         let binding = Some(name);
+        let should_gen_types = self.implements_types_generated.insert(id);
         let mut r#gen = self.interface(resolve, binding, false, Some(wasm_import_module));
         r#gen.interface = Some(id);
-        r#gen.types(id);
-        let namespace = namespace(resolve, &TypeOwner::Interface(id), true, &r#gen.r#gen.opts);
+        if let (WorldKey::Name(label), Some(_)) = (name, implements) {
+            r#gen.implements_label = Some((label.clone(), true));
+        }
+        if should_gen_types {
+            r#gen.types(id);
+        }
+        let namespace = r#gen.freestanding_namespace(id, true);
 
         for (_name, func) in resolve.interfaces[id].functions.iter() {
             if matches!(func.kind, FunctionKind::Freestanding) {
@@ -762,7 +780,6 @@ impl WorldGenerator for Cpp {
     }
 }
 
-// determine namespace (for the lifted C++ function)
 fn namespace(resolve: &Resolve, owner: &TypeOwner, guest_export: bool, opts: &Opts) -> Vec<String> {
     let mut result = Vec::default();
     if let Some(prefix) = &opts.internal_prefix {
@@ -850,9 +867,35 @@ struct CppInterfaceGenerator<'a> {
     sizes: SizeAlign,
     in_guest_import: bool,
     pub wasm_import_module: Option<String>,
+    /// When generating for an implements item, the label and whether it's an export.
+    implements_label: Option<(String, bool)>,
 }
 
 impl CppInterfaceGenerator<'_> {
+    /// Compute the namespace for freestanding functions in an interface.
+    /// Uses `implements_label` when set, otherwise falls back to the standard
+    /// namespace computation.
+    fn freestanding_namespace(&self, iface: InterfaceId, guest_export: bool) -> Vec<String> {
+        if let Some((label, is_export)) = &self.implements_label {
+            let mut ns = Vec::new();
+            if let Some(prefix) = &self.r#gen.opts.internal_prefix {
+                ns.push(prefix.clone());
+            }
+            if *is_export {
+                ns.push(String::from("exports"));
+            }
+            ns.push(to_c_ident(label));
+            ns
+        } else {
+            namespace(
+                self.resolve,
+                &TypeOwner::Interface(iface),
+                guest_export,
+                &self.r#gen.opts,
+            )
+        }
+    }
+
     fn types(&mut self, iface: InterfaceId) {
         let iface_data = &self.resolve().interfaces[iface];
 
@@ -923,7 +966,20 @@ impl CppInterfaceGenerator<'_> {
                 .map(TypeOwner::Interface)
                 .unwrap_or(TypeOwner::World(self.r#gen.world_id.unwrap())),
         ));
-        let mut namespace = namespace(self.resolve, &owner, guest_export, &self.r#gen.opts);
+        let mut namespace = if let Some((label, is_export)) = &self.implements_label {
+            // For implements items, use the label as namespace
+            let mut ns = Vec::new();
+            if let Some(prefix) = &self.r#gen.opts.internal_prefix {
+                ns.push(prefix.clone());
+            }
+            if *is_export {
+                ns.push(String::from("exports"));
+            }
+            ns.push(to_c_ident(label));
+            ns
+        } else {
+            namespace(self.resolve, &owner, guest_export, &self.r#gen.opts)
+        };
         let is_drop = is_special_method(func);
         let func_name_h = if !matches!(&func.kind, FunctionKind::Freestanding) {
             namespace.push(object.clone());

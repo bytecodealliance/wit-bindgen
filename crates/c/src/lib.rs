@@ -211,18 +211,27 @@ impl WorldGenerator for C {
         resolve: &Resolve,
         name: &WorldKey,
         id: InterfaceId,
+        implements: Option<InterfaceId>,
         _files: &mut Files,
     ) -> Result<()> {
-        let wasm_import_module = resolve.name_world_key(name);
+        let wasm_import_module =
+            wit_bindgen_core::wasm_import_module_name(resolve, name, implements);
         let mut r#gen = self.interface(resolve, true, Some(&wasm_import_module));
         r#gen.interface = Some((id, name));
+        r#gen.implements = implements;
         r#gen.define_interface_types(id);
 
         for (i, (_name, func)) in resolve.interfaces[id].functions.iter().enumerate() {
             if i == 0 {
-                let name = resolve.name_world_key(name);
-                uwriteln!(r#gen.src.h_fns, "\n// Imported Functions from `{name}`");
-                uwriteln!(r#gen.src.c_fns, "\n// Imported Functions from `{name}`");
+                let display_name = resolve.name_world_key(name);
+                uwriteln!(
+                    r#gen.src.h_fns,
+                    "\n// Imported Functions from `{display_name}`"
+                );
+                uwriteln!(
+                    r#gen.src.c_fns,
+                    "\n// Imported Functions from `{display_name}`"
+                );
             }
             r#gen.import(Some(name), func);
         }
@@ -259,17 +268,25 @@ impl WorldGenerator for C {
         resolve: &Resolve,
         name: &WorldKey,
         id: InterfaceId,
+        implements: Option<InterfaceId>,
         _files: &mut Files,
     ) -> Result<()> {
         let mut r#gen = self.interface(resolve, false, None);
         r#gen.interface = Some((id, name));
+        r#gen.implements = implements;
         r#gen.define_interface_types(id);
 
         for (i, (_name, func)) in resolve.interfaces[id].functions.iter().enumerate() {
             if i == 0 {
-                let name = resolve.name_world_key(name);
-                uwriteln!(r#gen.src.h_fns, "\n// Exported Functions from `{name}`");
-                uwriteln!(r#gen.src.c_fns, "\n// Exported Functions from `{name}`");
+                let display_name = resolve.name_world_key(name);
+                uwriteln!(
+                    r#gen.src.h_fns,
+                    "\n// Exported Functions from `{display_name}`"
+                );
+                uwriteln!(
+                    r#gen.src.c_fns,
+                    "\n// Exported Functions from `{display_name}`"
+                );
             }
             r#gen.export(func, Some(name));
         }
@@ -601,6 +618,7 @@ impl C {
             interface: None,
             in_import,
             wasm_import_module,
+            implements: None,
         }
     }
 
@@ -1297,6 +1315,7 @@ struct InterfaceGenerator<'a> {
     resolve: &'a Resolve,
     interface: Option<(InterfaceId, &'a WorldKey)>,
     wasm_import_module: Option<&'a str>,
+    implements: Option<InterfaceId>,
 }
 
 impl C {
@@ -1893,6 +1912,10 @@ pub fn gen_type_name(resolve: &Resolve, ty: TypeId) -> (CTypeNameInfo<'_>, Strin
 }
 
 impl InterfaceGenerator<'_> {
+    fn wasm_name_world_key(&self, key: &WorldKey) -> String {
+        wit_bindgen_core::wasm_import_module_name(self.resolve, key, self.implements)
+    }
+
     fn define_interface_types(&mut self, id: InterfaceId) {
         let mut live = LiveTypes::default();
         live.add_interface(self.resolve, id);
@@ -2122,7 +2145,7 @@ impl InterfaceGenerator<'_> {
             self.src.c_fns,
             "__attribute__((__import_module__(\"{}\"), __import_name__(\"{import_prefix}{}\")))",
             match interface_name {
-                Some(name) => self.resolve.name_world_key(name),
+                Some(name) => self.wasm_name_world_key(name),
                 None => "$root".to_string(),
             },
             func.name
@@ -2282,7 +2305,7 @@ impl InterfaceGenerator<'_> {
 
         self.src.c_fns("\n");
 
-        let core_module_name = interface_name.map(|s| self.resolve.name_world_key(s));
+        let core_module_name = interface_name.map(|s| self.wasm_name_world_key(s));
         let export_name = func.legacy_core_export_name(core_module_name.as_deref());
 
         // Print the actual header for this function into the header file, and
@@ -2368,7 +2391,7 @@ impl InterfaceGenerator<'_> {
             );
             uwriteln!(self.src.h_helpers, "void {name}_return({return_ty});");
             let import_module = match interface_name {
-                Some(name) => self.resolve.name_world_key(name),
+                Some(name) => self.wasm_name_world_key(name),
                 None => "$root".to_string(),
             };
             uwriteln!(
@@ -2755,7 +2778,7 @@ void {name}_return({return_ty}) {{
         let module = format!(
             "{prefix}{}",
             interface
-                .map(|name| self.resolve.name_world_key(name))
+                .map(|name| self.wasm_name_world_key(name))
                 .unwrap_or_else(|| "$root".into())
         );
         for (index, ty) in func
