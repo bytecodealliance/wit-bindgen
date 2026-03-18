@@ -9,7 +9,7 @@ use wit_bindgen_core::{
     },
 };
 
-pub(crate) const FFI_DIR: &str = "ffi";
+use crate::async_support::ASYNC_DIR;
 
 #[derive(Default)]
 pub(crate) struct Imports {
@@ -203,7 +203,7 @@ impl PkgResolver {
                         }
                         _ => format!("Array[{}]", self.type_name(this, &ty)),
                     },
-                    TypeDefKind::FixedLengthList(ty, _size) => {
+                    TypeDefKind::FixedLengthList(ty, _) => {
                         format!("FixedArray[{}]", self.type_name(this, &ty))
                     }
                     TypeDefKind::Tuple(tuple) => {
@@ -249,9 +249,9 @@ impl PkgResolver {
                     }
 
                     TypeDefKind::Future(ty) => {
-                        let qualifier = self.qualify_package(this, FFI_DIR);
+                        let qualifier = self.qualify_package(this, ASYNC_DIR);
                         format!(
-                            "{}FutureReader[{}]",
+                            "{}Future[{}]",
                             qualifier,
                             ty.as_ref()
                                 .map(|t| self.type_name(this, t))
@@ -260,9 +260,9 @@ impl PkgResolver {
                     }
 
                     TypeDefKind::Stream(ty) => {
-                        let qualifier = self.qualify_package(this, FFI_DIR);
+                        let qualifier = self.qualify_package(this, ASYNC_DIR);
                         format!(
-                            "{}StreamReader[{}]",
+                            "{}Stream[{}]",
                             qualifier,
                             ty.as_ref()
                                 .map(|t| self.type_name(this, t))
@@ -284,6 +284,11 @@ impl PkgResolver {
                 }
             }
         }
+    }
+
+    /// Generate type name for export result types (lowering context).
+    pub(crate) fn type_name_for_lowering(&mut self, this: &str, ty: &Type) -> String {
+        self.type_name(this, ty)
     }
 
     pub(crate) fn non_empty_type<'a>(&self, ty: Option<&'a Type>) -> Option<&'a Type> {
