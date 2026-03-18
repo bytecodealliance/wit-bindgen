@@ -3,6 +3,18 @@ module wit.common;
 import core.attribute : mustuse;
 import ldc.attributes : llvmAttr;
 
+package(wit) extern(C) {
+void*   malloc(size_t size);
+void    free(void* ptr);
+}
+
+package(wit) auto mallocSlice(T)(size_t count) {
+    auto ptr = malloc(count*T.sizeof);
+    if (ptr is null) return null;
+
+    return (cast(T*)ptr)[0..count];
+}
+
 // from std.meta
 package(wit) alias AliasSeq(T...) = T;
 
@@ -152,10 +164,10 @@ public:
 
     bool isNone() const @safe @nogc nothrow => !_present;
 
-    ref inout(T) unwrap() inout @safe @nogc nothrow return
+    ref inout(T) unwrap() inout @trusted @nogc nothrow return
     in (_present) do { return _value; }
 
-    T unwrapOr(T fallback) @safe @nogc nothrow => _present ? _value : fallback;
+    T unwrapOr(T fallback) @trusted @nogc nothrow => _present ? _value : fallback;
 
     T unwrapOrElse(D)(scope D fallback)
     if (is(D R == return) && is(R : T) && is(D == __parameters))
@@ -215,7 +227,7 @@ public:
         ref inout(T) unwrap() inout @trusted @nogc nothrow return
         in (isOk) do { return _storage.value; }
 
-        T unwrapOr(T fallback) @safe @nogc nothrow => isOk ? _storage.value : fallback;
+        T unwrapOr(T fallback) @trusted @nogc nothrow => isOk ? _storage.value : fallback;
 
         T unwrapOrElse(D)(scope D fallback)
         if (is(D R == return) && is(R : T) && is(D == __parameters))
