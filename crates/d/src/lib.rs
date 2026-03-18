@@ -2,12 +2,26 @@ use anyhow::Result;
 use heck::*;
 use std::borrow::Cow;
 use std::collections::{BTreeSet, HashMap, HashSet};
-use std::mem::take;
+use std::mem::{replace, take};
 use std::path::PathBuf;
 use wit_bindgen_core::{
-    Direction, Files, InterfaceGenerator, Source, Types, WorldGenerator, abi::WasmType,
+    Direction, Files, InterfaceGenerator, Source, Types, WorldGenerator,
+    abi::{self, Bindgen, WasmType},
     wit_parser::*,
 };
+
+type DType = String;
+#[derive(Default, Debug)]
+struct DSig {
+    const_member: bool,
+    static_member: bool,
+    result: DType,
+    arguments: Vec<(String, DType)>,
+    name: String,
+    //namespace: Vec<String>,
+    implicit_self: bool,
+    post_return: bool,
+}
 
 #[derive(Default)]
 struct D {
@@ -693,7 +707,7 @@ impl<'a> DInterfaceGenerator<'a> {
                         TypeDefKind::Handle(Handle::Own(id)) => {
                             Cow::Owned(self.scoped_type_name(*id, from_module_fqn))
                         }
-                        TypeDefKind::Handle(Handle::Borrow(_id)) => {
+                        TypeDefKind::Handle(Handle::Borrow(id)) => {
                             Cow::Owned(self.scoped_type_name(*id, from_module_fqn) + ".Borrow")
                         }
                         TypeDefKind::Tuple(t) => Cow::Owned(format!(
@@ -709,14 +723,8 @@ impl<'a> DInterfaceGenerator<'a> {
                         }
                         TypeDefKind::Result(r) => Cow::Owned(format!(
                             "Result!({}, {})",
-                            match r.ok {
-                                Some(ok_type) => self.type_name(&ok_type, from_module_fqn),
-                                None => Cow::Borrowed("void"),
-                            },
-                            match r.err {
-                                Some(err_type) => self.type_name(&err_type, from_module_fqn),
-                                None => Cow::Borrowed("void"),
-                            }
+                            self.optional_type_name(r.ok.as_ref(), from_module_fqn),
+                            self.optional_type_name(r.err.as_ref(), from_module_fqn),
                         )),
                         TypeDefKind::List(ty) => Cow::Owned(format!(
                             "WitList!({})",
@@ -743,6 +751,13 @@ impl<'a> DInterfaceGenerator<'a> {
                 }
             }
             Type::ErrorContext => todo!(),
+        }
+    }
+
+    fn optional_type_name(&self, ty: Option<&Type>, from_module_fqn: &str) -> Cow<'static, str> {
+        match ty {
+            Some(ty) => self.type_name(ty, from_module_fqn),
+            None => Cow::Borrowed("void"),
         }
     }
 
@@ -826,6 +841,67 @@ impl<'a> DInterfaceGenerator<'a> {
         type_info.has_resource
     }
 
+    fn get_d_signature(&mut self, func: &Function) -> DSig {
+        match &func.kind {
+            FunctionKind::Freestanding | FunctionKind::Method(_) => {}
+
+            FunctionKind::AsyncFreestanding
+            | FunctionKind::Static(_)
+            | FunctionKind::Constructor(_)
+            | FunctionKind::AsyncMethod(_)
+            | FunctionKind::AsyncStatic(_) => {
+                todo!()
+            }
+        }
+
+        let mut res = DSig::default();
+
+        let split_name = match &func.kind {
+            FunctionKind::Freestanding | FunctionKind::AsyncFreestanding => &func.name,
+            FunctionKind::Method(_)
+            | FunctionKind::Static(_)
+            | FunctionKind::Constructor(_)
+            | FunctionKind::AsyncMethod(_)
+            | FunctionKind::AsyncStatic(_) => func.name.split(".").skip(1).next().unwrap(),
+        };
+
+        let lower_name = split_name.to_lower_camel_case();
+        let escaped_name = escape_d_identifier(&lower_name);
+
+        res.name = escaped_name.into();
+
+        res.result
+            .push_str(&(self.optional_type_name(func.result.as_ref(), self.fqn)));
+
+        for (
+            i,
+            Param {
+                name, ty: param, ..
+            },
+        ) in func.params.iter().enumerate()
+        {
+            if i == 0 && name == "self" {
+                match &func.kind {
+                    FunctionKind::Method(_) => {
+                        res.implicit_self = true;
+                        continue;
+                    }
+                    _ => {}
+                }
+            }
+
+            let lower_param_name = name.to_lower_camel_case();
+            let escaped_param_name = escape_d_identifier(&lower_param_name);
+
+            res.arguments.push((
+                escaped_param_name.into(),
+                self.type_name(&param, self.fqn).into(),
+            ));
+        }
+
+        res
+    }
+
     fn import_func(&mut self, func: &Function) {
         match &func.kind {
             FunctionKind::Freestanding => {}
@@ -837,22 +913,68 @@ impl<'a> DInterfaceGenerator<'a> {
             }
         }
 
-        let sig = self
+        let wasm_sig = self
             .resolve
             .wasm_signature(abi::AbiVariant::GuestImport, func);
+
+        let d_sig = self.get_d_signature(func);
 
         self.src.push_str(&format!(
             "\n/++\n{}\n+/\n",
             func.docs.contents.as_deref().unwrap_or_default()
         ));
+
+        if d_sig.static_member {
+            self.src.push_str("static ");
+        }
+        self.src.push_str(&format!(
+            "{} {}({}) {{\n",
+            d_sig.result,
+            d_sig.name,
+            d_sig
+                .arguments
+                .iter()
+                .map(|(name, ty)| "in ".to_owned() + ty + " " + name)
+                .collect::<Vec<String>>()
+                .join(", ")
+        ));
+
+        let mut params = Vec::new();
+
+        if d_sig.implicit_self {
+            params.push("this");
+        }
+        for (arg, ty) in &d_sig.arguments {
+            params.push(arg);
+        }
+
+        let mut f = FunctionBindgen::new(self, &params);
+        abi::call(
+            f.r#gen.resolve,
+            abi::AbiVariant::GuestImport,
+            abi::LiftLower::LowerArgsLiftResults,
+            func,
+            &mut f,
+            false,
+        );
+        let ret_area_decl = f.emit_ret_area_if_needed();
+
+        let FunctionBindgen { src, .. } = f;
+        self.src.push_str(&ret_area_decl);
+        self.src.push_str(&src.to_string());
+
+        self.src.push_str("}\n");
+
+        self.src.push_str("/// ditto\n");
         self.src.push_str(&format!(
             "@wasmImport!(\"{}\", \"{}\")\n",
             self.wasm_import_module.unwrap(),
             func.name
         ));
+
         // The mangle is not important, as long as it won't conflict with other symbols
         // WebAssembly symbol identifiers are much more permissive than C (can be any UTF-8).
-        // Yet, LDC before 1.42 don't allow full use of this fact. We make some substitutions.
+        // Yet, LDC before 1.42 doesn't allow full use of this fact. We make some substitutions.
         self.src.push_str(&format!(
             "pragma(mangle, \"__wit_import_{}__{}\")\n",
             self.wasm_import_module
@@ -865,30 +987,16 @@ impl<'a> DInterfaceGenerator<'a> {
                 .replace("]", ":")
         ));
 
-        let split_name = match &func.kind {
-            FunctionKind::Freestanding | FunctionKind::AsyncFreestanding => &func.name,
-            FunctionKind::Method(_)
-            | FunctionKind::Static(_)
-            | FunctionKind::Constructor(_)
-            | FunctionKind::AsyncMethod(_)
-            | FunctionKind::AsyncStatic(_) => {
-                self.src.push_str("static ");
-
-                func.name.split(".").skip(1).next().unwrap()
-            }
-        };
-
-        let lower_name = split_name.to_lower_camel_case();
-        let escaped_name = escape_d_identifier(&lower_name);
-
         self.src.push_str(&format!(
-            "/*private*/ extern(C) {} __import_{escaped_name}({});\n",
-            match sig.results.len() {
+            "static private extern(C) {} __import_{}({});\n",
+            match wasm_sig.results.len() {
                 0 => "void",
-                1 => wasm_type(sig.results[0]),
+                1 => wasm_type(wasm_sig.results[0]),
                 _ => unimplemented!("multi-value return not supported"),
             },
-            sig.params
+            d_sig.name,
+            wasm_sig
+                .params
                 .iter()
                 .map(|param| wasm_type(*param))
                 .collect::<Vec<&str>>()
@@ -973,9 +1081,9 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
 
                     self.src.push_str(&format!(
                         "struct {escaped_name} {{
-        package(wit) int __handle = 0;
+        package(wit) uint __handle = 0;
 
-        package(wit) this(int handle) {{
+        package(wit) this(uint handle) {{
             __handle = handle;
         }}
 
@@ -1004,11 +1112,34 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
                         }
                     }
 
+                    self.src
+                        .push_str("void drop() {\n__import__drop(__handle);\n}\n");
+
+                    self.src.push_str(&format!(
+                        "@wasmImport!(\"{}\", \"[resource-drop]{}\")\n",
+                        self.wasm_import_module.unwrap(),
+                        name
+                    ));
+
+                    // The mangle is not important, as long as it won't conflict with other symbols
+                    // WebAssembly symbol identifiers are much more permissive than C (can be any UTF-8).
+                    // Yet, LDC before 1.42 doesn't allow full use of this fact. We make some substitutions.
+                    self.src.push_str(&format!(
+                        "pragma(mangle, \"__wit_import_{}__:resource_drop:{}\")\n",
+                        self.wasm_import_module
+                            .unwrap()
+                            .replace("/", "__")
+                            .replace("-", "_"),
+                        name.replace("-", "_")
+                    ));
+                    self.src
+                        .push_str("static private extern(C) void __import__drop(uint);\n\n");
+
                     self.src.push_str(&format!(
                         "struct Borrow {{
-            package(wit) int __handle = 0;
+            package(wit) uint __handle = 0;
 
-            package(wit) this(int handle) {{
+            package(wit) this(uint handle) {{
                 __handle = handle;
             }}
 
@@ -1131,10 +1262,7 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
         for case in &variant.cases {
             self.src.push_str(&format!(
                 "{}, // {}\n",
-                match &case.ty {
-                    None => Cow::Borrowed("void"),
-                    Some(ty) => self.type_name(ty, &owner_fqn),
-                },
+                self.optional_type_name(case.ty.as_ref(), &owner_fqn),
                 escape_d_identifier(&case.name.to_lower_camel_case())
             ));
         }
@@ -1172,7 +1300,7 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
 
         self.src.push_str("}\n");
 
-        self.src.push_str("Tag tag() => _tag;\n");
+        self.src.push_str("Tag tag() const => _tag;\n");
 
         for case in &variant.cases {
             self.src.push_str(&format!(
@@ -1229,14 +1357,8 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
         let owner_fqn = self.type_owner_fqn(&self.resolve.types[id].owner).unwrap();
         self.src.push_str(&format!(
             "alias {escaped_name} = Result!({}, {});",
-            match result.ok {
-                Some(ok_type) => self.type_name(&ok_type, owner_fqn),
-                None => Cow::Borrowed("void"),
-            },
-            match result.err {
-                Some(err_type) => self.type_name(&err_type, owner_fqn),
-                None => Cow::Borrowed("void"),
-            }
+            self.optional_type_name(result.ok.as_ref(), owner_fqn),
+            self.optional_type_name(result.err.as_ref(), owner_fqn),
         ));
     }
 
@@ -1345,5 +1467,732 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
 
     fn type_builtin(&mut self, _id: TypeId, name: &str, _ty: &Type, _docs: &Docs) {
         todo!("def of `builtin` - {name}");
+    }
+}
+
+struct FunctionBindgen<'a, 'b> {
+    r#gen: &'b mut DInterfaceGenerator<'a>,
+    params: &'b [&'b str],
+    tmp: usize,
+    src: Source,
+    block_storage: Vec<Source>,
+    /// intermediate calculations for contained objects
+    blocks: Vec<(String, Vec<String>)>,
+    payloads: Vec<String>,
+    return_pointer_area_size: ArchitectureSize,
+    return_pointer_area_align: Alignment,
+}
+
+fn tempname(base: &str, idx: usize) -> String {
+    format!("{base}{idx}")
+}
+
+impl<'a, 'b> FunctionBindgen<'a, 'b> {
+    fn new(r#gen: &'b mut DInterfaceGenerator<'a>, params: &'b [&'b str]) -> Self {
+        Self {
+            r#gen,
+            params,
+            tmp: 0,
+            src: Default::default(),
+            block_storage: Default::default(),
+            blocks: Default::default(),
+            payloads: Default::default(),
+            return_pointer_area_size: Default::default(),
+            return_pointer_area_align: Default::default(),
+        }
+    }
+
+    fn tmp(&mut self) -> usize {
+        let ret = self.tmp;
+        self.tmp += 1;
+        ret
+    }
+
+    fn push_str(&mut self, s: &str) {
+        self.src.push_str(s);
+    }
+
+    fn load(
+        &mut self,
+        ty: &str,
+        offset: ArchitectureSize,
+        operands: &[String],
+        results: &mut Vec<String>,
+    ) {
+        results.push(format!(
+            "*(cast({}*)({} + {}))",
+            ty,
+            operands[0],
+            offset.format("size_t.sizeof")
+        ));
+    }
+
+    fn load_ext(
+        &mut self,
+        ty: &str,
+        offset: ArchitectureSize,
+        operands: &[String],
+        results: &mut Vec<String>,
+    ) {
+        self.load(ty, offset, operands, results);
+        let result = results.pop().unwrap();
+        results.push(format!("cast(uint)({result})"));
+    }
+
+    fn store(&mut self, ty: &str, offset: ArchitectureSize, operands: &[String]) {
+        self.push_str(&format!(
+            "*(cast({ty}*)({} + {})) = cast({ty})({});\n",
+            operands[1],
+            offset.format("size_t.sizeof"),
+            operands[0]
+        ));
+    }
+
+    /// Emits a shared return area declaration if needed by this function.
+    ///
+    /// During code generation, `return_pointer()` may be called multiple times for:
+    /// - Indirect parameter storage (when too many/large params)
+    /// - Return value storage (when return type is too large)
+    ///
+    /// **Safety:** This is safe because return pointers are used sequentially:
+    /// 1. Parameter marshaling (before call)
+    /// 2. Function execution
+    /// 3. Return value unmarshaling (after call)
+    ///
+    /// The scratch space is reused but never accessed simultaneously.
+    fn emit_ret_area_if_needed(&self) -> String {
+        if !self.return_pointer_area_size.is_empty() {
+            format!(
+                "align({}) void[{}] _retArea = void;\n",
+                self.return_pointer_area_align.format("size_t.sizeof"),
+                self.return_pointer_area_size.format("size_t.sizeof")
+            )
+        } else {
+            String::new()
+        }
+    }
+}
+
+impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
+    type Operand = String;
+
+    fn emit(
+        &mut self,
+        _resolve: &Resolve,
+        inst: &wit_bindgen_core::abi::Instruction<'_>,
+        operands: &mut Vec<Self::Operand>,
+        results: &mut Vec<Self::Operand>,
+    ) {
+        let mut top_as = |cvt: &str| {
+            results.push(format!("(cast({cvt})({}))", operands.pop().unwrap()));
+        };
+
+        match inst {
+            abi::Instruction::GetArg { nth } => {
+                if *nth == 0 && &self.params[0] == &"self" {
+                    results.push("this".into());
+                } else {
+                    results.push(self.params[*nth].into());
+                }
+            }
+            abi::Instruction::I32Const { val } => results.push(val.to_string()),
+            abi::Instruction::ConstZero { tys } => {
+                for _ in tys.iter() {
+                    results.push("0".to_string());
+                }
+            }
+            abi::Instruction::ListCanonLower { .. } | abi::Instruction::StringLower { .. } => {
+                results.push(format!("cast(void*)({}.ptr)", operands[0]));
+                results.push(format!("{}.length", operands[0]));
+            }
+            abi::Instruction::ListCanonLift { element, ty, .. } => {
+                let list_name = self.r#gen.type_name(&Type::Id(*ty), self.r#gen.fqn);
+                let elem_name = self.r#gen.type_name(element, self.r#gen.fqn);
+                let tmp = self.tmp();
+
+                let ptr = tempname("_ptr", tmp);
+                let len = tempname("_len", tmp);
+
+                self.push_str(&format!(
+                    "auto {ptr} = cast({elem_name}*)({});
+                    auto {len} = {};
+                    ",
+                    operands[0], operands[1]
+                ));
+
+                results.push(format!("{}({ptr}[0..{len}])", list_name));
+            }
+
+            abi::Instruction::IterElem { .. } => results.push("_elem".into()),
+            abi::Instruction::IterBasePointer => results.push("_base".into()),
+            abi::Instruction::ListLower { element, .. } => {
+                let body = self.blocks.pop().unwrap();
+                let tmp = self.tmp();
+
+                let size = self.r#gen.sizes.size(element);
+                let size_str = size.format("size_t.sizeof");
+
+                let list = tempname("_list", tmp);
+                let list_src = tempname("_listSrc", tmp);
+
+                self.push_str(&format!(
+                    "auto {list_src} = {};
+                    auto {list} = wit.common.malloc({list_src}.length * ({size_str}));
+                    scope(exit) {{ wit.common.free({list}); }}\n",
+                    operands[0]
+                ));
+
+                self.push_str(&format!("foreach (i, const ref _elem; {list_src}) {{\n"));
+                self.push_str(&format!("auto _base = {list} + i * {size_str};\n"));
+                self.push_str(&body.0);
+                //self.push_str(&format!("_targetElem = {};", body.1[0]));
+                self.push_str("\n}\n");
+
+                results.push(format!("{list}"));
+                results.push(format!("{}.length", operands[0]));
+            }
+            abi::Instruction::ListLift { ty, element, .. } => {
+                let body = self.blocks.pop().unwrap();
+                let tmp = self.tmp();
+                let size = self.r#gen.sizes.size(element);
+                let size_str = size.format("size_t.sizeof");
+                let elem_type_name = self.r#gen.type_name(element, self.r#gen.fqn);
+
+                let list = tempname("_list", tmp);
+                let list_len = tempname("_listLen", tmp);
+                let list_src = tempname("_listSrcPtr", tmp);
+                self.push_str(&format!("auto {list_src} = {};\n", operands[0]));
+                self.push_str(&format!("auto {list_len} = {};\n", operands[1]));
+                self.push_str(&format!(
+                    "auto {list} = wit.common.mallocSlice!({elem_type_name})({list_len});\n",
+                ));
+
+                self.push_str(&format!("foreach (i, ref _elem; {list}) {{\n",));
+                self.push_str(&format!(
+                    "const auto _base = {list_src} + i * {size_str};\n"
+                ));
+                self.push_str(&body.0);
+                self.push_str(&format!("_elem = {};", body.1[0]));
+                self.push_str("\n}\n");
+
+                let list_name = self.r#gen.type_name(&Type::Id(*ty), self.r#gen.fqn);
+                results.push(format!("{list_name}({list})"));
+            }
+            abi::Instruction::RecordLower { record, .. } => {
+                for field in record.fields.iter() {
+                    let lower_name = field.name.to_lower_camel_case();
+                    let escaped_name = escape_d_identifier(&lower_name);
+
+                    results.push(format!("{}.{escaped_name}", operands[0]));
+                }
+            }
+            abi::Instruction::RecordLift { ty, record, .. } => {
+                let name = self.r#gen.type_name(&Type::Id(*ty), self.r#gen.fqn);
+
+                let mut tmpvar = tempname("_record", self.tmp());
+
+                self.push_str(&format!("{name} {tmpvar} = {{\n"));
+                for (field, op) in record.fields.iter().zip(operands.iter()) {
+                    let lower_name = field.name.to_lower_camel_case();
+                    let escaped_name = escape_d_identifier(&lower_name);
+
+                    self.push_str(&format!("{escaped_name}: {op},\n"));
+                }
+                self.push_str("};\n");
+
+                results.push(tmpvar);
+            }
+
+            abi::Instruction::TupleLower { tuple, .. } => {
+                for i in 0..tuple.types.len() {
+                    results.push(format!("{}[{i}]", &operands[0]));
+                }
+            }
+
+            abi::Instruction::TupleLift { tuple, ty, .. } => {
+                let name = tempname("_tuple", self.tmp());
+                self.push_str(&format!(
+                    "auto {name} = {}(\n",
+                    self.r#gen.type_name(&Type::Id(*ty), self.r#gen.fqn),
+                ));
+                self.src.indent(1);
+                for op in operands.iter() {
+                    self.push_str(op);
+                    self.push_str(",\n");
+                }
+                self.src.deindent(1);
+                self.push_str(");\n");
+                results.push(name);
+            }
+
+            abi::Instruction::StringLift { .. } => {
+                let tmp = self.tmp();
+
+                let ptr = tempname("_ptr", tmp);
+                let len = tempname("_len", tmp);
+
+                self.push_str(&format!(
+                    "auto {ptr} = cast(char*)({});
+                    auto {len} = {};
+                    ",
+                    operands[0], operands[1]
+                ));
+
+                results.push(format!("WitString({ptr}[0..{len}])"));
+            }
+
+            abi::Instruction::VariantPayloadName => {
+                let name = tempname("_payload", self.tmp());
+                results.push(name.clone());
+                self.payloads.push(name);
+            }
+            abi::Instruction::VariantLower {
+                ty,
+                variant,
+                results: result_types,
+                ..
+            } => {
+                let blocks = self
+                    .blocks
+                    .drain(self.blocks.len() - variant.cases.len()..)
+                    .collect::<Vec<_>>();
+                let payloads = self
+                    .payloads
+                    .drain(self.payloads.len() - variant.cases.len()..)
+                    .collect::<Vec<_>>();
+
+                let mut variant_results = Vec::with_capacity(result_types.len());
+                for res_ty in result_types.iter() {
+                    let name = tempname("_variantPart", self.tmp());
+                    results.push(name.clone());
+                    self.src
+                        .push_str(&format!("{} {name} = void;\n", wasm_type(*res_ty)));
+                    variant_results.push(name);
+                }
+
+                let ty_name = self.r#gen.type_name(&Type::Id(*ty), self.r#gen.fqn);
+
+                self.push_str(&format!(
+                    "final switch ({}.tag) with ({ty_name}.Tag) {{\n",
+                    operands[0]
+                ));
+
+                for (i, ((case, (block, block_results)), payload)) in
+                    variant.cases.iter().zip(blocks).zip(payloads).enumerate()
+                {
+                    let lower_name = case.name.to_lower_camel_case();
+                    let lower_escaped_name = escape_d_identifier(&lower_name);
+
+                    let uppper_name = case.name.to_upper_camel_case();
+                    let upper_escaped_name = escape_d_identifier(&uppper_name);
+
+                    self.push_str(&format!("case {lower_escaped_name}: {{\n"));
+                    if let Some(ty) = case.ty.as_ref() {
+                        let ty_name = self.r#gen.type_name(ty, self.r#gen.fqn);
+                        self.push_str(&format!(
+                            "const ref {ty_name} {payload} = {}.get{upper_escaped_name}();\n",
+                            operands[0],
+                        ));
+                    }
+                    self.src.push_str(&block);
+
+                    for (name, result) in variant_results.iter().zip(&block_results) {
+                        self.push_str(&format!("{name} = {result};\n"));
+                    }
+                    self.src.push_str("break;\n}\n");
+                }
+
+                self.src.push_str("}\n");
+            }
+            abi::Instruction::VariantLift { variant, ty, .. } => {
+                let blocks = self
+                    .blocks
+                    .drain(self.blocks.len() - variant.cases.len()..)
+                    .collect::<Vec<_>>();
+
+                let ty = self.r#gen.type_name(&Type::Id(*ty), self.r#gen.fqn);
+
+                let tmp = self.tmp();
+                let result = tempname("_variant", tmp);
+                let tag = tempname("_tag", tmp);
+
+                self.push_str(&format!("{ty} {result} = void;\n"));
+                self.push_str(&format!("auto {tag} = {};\n", operands[0]));
+                self.push_str(&format!(
+                    "final switch (cast({ty}.Tag){tag}) with ({ty}.Tag) {{\n"
+                ));
+                for (i, (case, (block, block_results))) in
+                    variant.cases.iter().zip(blocks).enumerate()
+                {
+                    let lower_name = case.name.to_lower_camel_case();
+                    let escaped_name = escape_d_identifier(&lower_name);
+
+                    let payload = tempname("_payload", self.tmp());
+
+                    self.push_str(&format!("case {escaped_name}: {{\n"));
+                    self.src.push_str(&block);
+                    assert!(block_results.len() == (case.ty.is_some() as usize));
+
+                    let val = if let Some(_) = case.ty.as_ref() {
+                        self.push_str(&format!("auto {payload} = {};\n", block_results[0]));
+                        &payload
+                    } else {
+                        ""
+                    };
+                    self.push_str(&format!("{result} = {ty}.{escaped_name}({val});\n"));
+                    self.src.push_str("break;\n}\n");
+                }
+                self.src.push_str("}\n");
+                results.push(result);
+            }
+            abi::Instruction::OptionLower {
+                results: result_types,
+                ..
+            } => {
+                let (mut some, some_results) = self.blocks.pop().unwrap();
+                let (mut none, none_results) = self.blocks.pop().unwrap();
+                let some_payload = self.payloads.pop().unwrap();
+                let _none_payload = self.payloads.pop().unwrap();
+
+                for (i, ty) in result_types.iter().enumerate() {
+                    let name = tempname("_option", self.tmp());
+                    results.push(name.clone());
+                    self.push_str(&format!("{} {name} = void;\n", wasm_type(*ty)));
+                    let some_result = &some_results[i];
+                    some.push_str(&format!("{name} = {some_result};\n"));
+                    let none_result = &none_results[i];
+                    none.push_str(&format!("{name} = {none_result};\n"));
+                }
+
+                let bind_some = format!("ref {some_payload} = {}.unwrap();", operands[0]);
+
+                self.push_str(&format!(
+                    "\
+                    if ({}.isSome) {{
+                        {bind_some}
+                        {some}}} else {{
+                        {none}}}
+                    ",
+                    operands[0]
+                ));
+            }
+            abi::Instruction::OptionLift { ty, .. } => {
+                let (some, some_results) = self.blocks.pop().unwrap();
+                let (_none, none_results) = self.blocks.pop().unwrap();
+                assert!(none_results.is_empty());
+                assert!(some_results.len() == 1);
+
+                let type_name = self.r#gen.type_name(&Type::Id(*ty), self.r#gen.fqn);
+                let op0 = &operands[0];
+
+                let tmp = self.tmp();
+                let resultname = tempname("_option", tmp);
+                let is_some = tempname("_isSome", tmp);
+                let some_value = &some_results[0];
+                self.push_str(&format!(
+                    "{type_name} {resultname} = void;
+                    bool {is_some} = ({op0}) != 0;
+                    if ({is_some}) {{
+                        {some}
+                        {resultname} = {type_name}.some({some_value});
+                    }} else {{
+                        {resultname} = {type_name}.none;
+                    }}
+                    "
+                ));
+                results.push(format!("{resultname}"));
+            }
+
+            abi::Instruction::ResultLower {
+                results: result_types,
+                result,
+                ..
+            } => {
+                let (mut err, err_results) = self.blocks.pop().unwrap();
+                let (mut ok, ok_results) = self.blocks.pop().unwrap();
+                let err_payload = self.payloads.pop().unwrap();
+                let ok_payload = self.payloads.pop().unwrap();
+
+                for (i, ty) in result_types.iter().enumerate() {
+                    let tmp = self.tmp();
+                    let name = tempname("_resultPart", tmp);
+                    results.push(name.clone());
+                    self.src.push_str(wasm_type(*ty));
+                    self.src.push_str(" ");
+                    self.src.push_str(&name);
+                    self.src.push_str(";\n");
+                    let ok_result = &ok_results[i];
+                    ok.push_str(&format!("{name} = {ok_result};\n"));
+                    let err_result = &err_results[i];
+                    err.push_str(&format!("{name} = {err_result};\n"));
+                }
+
+                let op0 = &operands[0];
+                let bind_ok = if let Some(_ok) = result.ok.as_ref() {
+                    format!("ref {ok_payload} = {op0}.unwrap();")
+                } else {
+                    String::new()
+                };
+                let bind_err = if let Some(_err) = result.err.as_ref() {
+                    format!("ref {err_payload} = {op0}.unwrapErr();")
+                } else {
+                    String::new()
+                };
+
+                self.push_str(&format!(
+                    "\
+                    if ({op0}.isErr) {{
+                        {bind_err}
+                        {err}}} else {{
+                        {bind_ok}
+                        {ok}}}
+                    "
+                ));
+            }
+
+            abi::Instruction::ResultLift { result, ty, .. } => {
+                let (err, err_results) = self.blocks.pop().unwrap();
+                assert!(err_results.len() == (result.err.is_some() as usize));
+                let (ok, ok_results) = self.blocks.pop().unwrap();
+                assert!(ok_results.len() == (result.ok.is_some() as usize));
+
+                let full_type = self.r#gen.type_name(&Type::Id(*ty), self.r#gen.fqn);
+                let op0 = &operands[0];
+
+                let tmp = self.tmp();
+                let resultname = tempname("_result", tmp);
+                let is_err = tempname("_isErr", tmp);
+
+                let ok_value = if result.ok.is_some() {
+                    &ok_results[0]
+                } else {
+                    ""
+                };
+
+                let err_value = if result.err.is_some() {
+                    &err_results[0]
+                } else {
+                    ""
+                };
+
+                self.push_str(&format!(
+                    "{full_type} {resultname} = void;
+                    bool {is_err} = ({op0}) != 0;
+                    if ({is_err}) {{
+                        {err}
+                        {resultname} = {full_type}.err({err_value});
+                    }} else {{
+                        {ok}
+                        {resultname} = {full_type}.ok({ok_value});
+                    }}\n"
+                ));
+                results.push(resultname);
+            }
+
+            abi::Instruction::EnumLower { .. } => {
+                results.push(format!("cast(uint)({})", operands[0]))
+            }
+            abi::Instruction::EnumLift { ty, .. } => {
+                let type_name = self.r#gen.type_name(&Type::Id(*ty), self.r#gen.fqn);
+                results.push(format!("cast({})({})", type_name, operands.pop().unwrap()))
+            }
+
+            abi::Instruction::FlagsLower { flags, .. } => match flags.repr() {
+                FlagsRepr::U8 | FlagsRepr::U16 | FlagsRepr::U32(1) => {
+                    results.push(format!("cast(uint)({}.bits)", operands.pop().unwrap()));
+                }
+                FlagsRepr::U32(2) => {
+                    let tempname = tempname("_flags", self.tmp());
+
+                    self.push_str(&format!("auto {tempname} = {};", operands[0]));
+                    results.push(format!("cast(uint)({tempname}.bits & 0xffffffff)"));
+                    results.push(format!("cast(uint)(({tempname}.bits >> 32) & 0xffffffff)"));
+                }
+                _ => todo!(),
+            },
+            abi::Instruction::FlagsLift { flags, ty, .. } => {
+                let type_name = self.r#gen.type_name(&Type::Id(*ty), self.r#gen.fqn);
+
+                match flags.repr() {
+                    FlagsRepr::U8 | FlagsRepr::U16 | FlagsRepr::U32(1) => {
+                        results.push(format!("{type_name}({})", operands.pop().unwrap()));
+                    }
+                    FlagsRepr::U32(2) => {
+                        results.push(format!(
+                            "({type_name}({}) | {type_name}({} << 32))",
+                            operands[0], operands[1]
+                        ));
+                    }
+                    _ => todo!(),
+                }
+            }
+
+            abi::Instruction::HandleLower { .. } => {
+                let op = &operands[0];
+                results.push(format!("{op}.__handle"))
+            }
+
+            abi::Instruction::HandleLift { ty, .. } => {
+                let name = self.r#gen.type_name(&Type::Id(*ty), self.r#gen.fqn);
+                results.push(format!("{name}({})", operands[0]));
+            }
+
+            abi::Instruction::CallWasm { name, sig } => {
+                let split_name = if name.contains('.') {
+                    name.split(".").skip(1).next().unwrap()
+                } else {
+                    name
+                };
+
+                let lower_name = split_name.to_lower_camel_case();
+                let escaped_name = escape_d_identifier(&lower_name);
+
+                if !sig.results.is_empty() {
+                    self.src.push_str("auto _ret = ");
+                    results.push("_ret".to_string());
+                }
+                self.push_str(&format!(
+                    "__import_{escaped_name}({});\n",
+                    operands
+                        .iter()
+                        .map(|op| { op.clone() })
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ));
+            }
+            abi::Instruction::Return { amt, func } => match amt {
+                0 => {}
+                _ => {
+                    assert!(*amt == operands.len());
+
+                    if *amt == 1 {
+                        self.push_str("return ");
+                        self.src.push_str(&operands[0]);
+                        self.push_str(";\n");
+                    } else {
+                        todo!();
+                    }
+                }
+            },
+            abi::Instruction::I32Load { offset } => self.load("uint", *offset, operands, results),
+            abi::Instruction::I64Load { offset } => self.load("ulong", *offset, operands, results),
+            abi::Instruction::F32Load { offset } => self.load("float", *offset, operands, results),
+            abi::Instruction::F64Load { offset } => self.load("double", *offset, operands, results),
+            abi::Instruction::PointerLoad { offset } => {
+                self.load("void*", *offset, operands, results)
+            }
+            abi::Instruction::LengthLoad { offset } => {
+                self.load("size_t", *offset, operands, results)
+            }
+            abi::Instruction::I32Store { offset } => self.store("uint", *offset, operands),
+            abi::Instruction::I64Store { offset } => self.store("ulong", *offset, operands),
+            abi::Instruction::F32Store { offset } => self.store("float", *offset, operands),
+            abi::Instruction::F64Store { offset } => self.store("double", *offset, operands),
+            abi::Instruction::I32Store8 { offset } => self.store("ubyte", *offset, operands),
+            abi::Instruction::I32Store16 { offset } => self.store("ushort", *offset, operands),
+            abi::Instruction::PointerStore { offset } => self.store("void*", *offset, operands),
+            abi::Instruction::LengthStore { offset } => self.store("size_t", *offset, operands),
+            abi::Instruction::I32Load8U { offset } => {
+                self.load_ext("ubyte", *offset, operands, results)
+            }
+            abi::Instruction::I32Load8S { offset } => {
+                self.load_ext("byte", *offset, operands, results)
+            }
+            abi::Instruction::I32Load16U { offset } => {
+                self.load_ext("ushort", *offset, operands, results)
+            }
+            abi::Instruction::I32Load16S { offset } => {
+                self.load_ext("short", *offset, operands, results)
+            }
+            abi::Instruction::I32FromChar
+            | abi::Instruction::I32FromBool
+            | abi::Instruction::I32FromU8
+            | abi::Instruction::I32FromS8
+            | abi::Instruction::I32FromU16
+            | abi::Instruction::I32FromS16
+            | abi::Instruction::I32FromU32
+            | abi::Instruction::I32FromS32 => top_as("uint"),
+            abi::Instruction::I64FromU64 | abi::Instruction::I64FromS64 => top_as("ulong"),
+            abi::Instruction::F32FromCoreF32 => top_as("float"),
+            abi::Instruction::F64FromCoreF64 => top_as("double"),
+            abi::Instruction::S8FromI32 => top_as("byte"),
+            abi::Instruction::U8FromI32 => top_as("ubyte"),
+            abi::Instruction::S16FromI32 => top_as("short"),
+            abi::Instruction::U16FromI32 => top_as("ushort"),
+            abi::Instruction::S32FromI32 => top_as("int"),
+            abi::Instruction::U32FromI32 => top_as("uint"),
+            abi::Instruction::S64FromI64 => top_as("long"),
+            abi::Instruction::U64FromI64 => top_as("ulong"),
+            abi::Instruction::CharFromI32 => top_as("dchar"),
+            abi::Instruction::CoreF32FromF32 => top_as("float"),
+            abi::Instruction::CoreF64FromF64 => top_as("double"),
+            abi::Instruction::BoolFromI32 => results.push(format!("({} != 0)", operands[0])),
+
+            abi::Instruction::Flush { amt } => {
+                for op in operands.iter().take(*amt) {
+                    let result = tempname("_flush", self.tmp());
+                    self.push_str(&format!("auto {result} = {};\n", op));
+                    results.push(result);
+                }
+            }
+            unk => todo!("emit instruction: {unk:?}"),
+        }
+    }
+
+    fn return_pointer(&mut self, size: ArchitectureSize, align: Alignment) -> Self::Operand {
+        // Track maximum return area requirements
+        self.return_pointer_area_size = self.return_pointer_area_size.max(size);
+        self.return_pointer_area_align = self.return_pointer_area_align.max(align);
+
+        "_retArea.ptr".into()
+    }
+
+    fn push_block(&mut self) {
+        let prev = take(&mut self.src);
+        self.block_storage.push(prev);
+    }
+
+    fn finish_block(&mut self, operands: &mut Vec<Self::Operand>) {
+        let to_restore = self.block_storage.pop().unwrap();
+        let src = replace(&mut self.src, to_restore);
+        self.blocks.push((src.into(), take(operands)));
+    }
+
+    fn sizes(&self) -> &SizeAlign {
+        &self.r#gen.sizes
+    }
+
+    fn is_list_canonical(&self, _resolve: &Resolve, ty: &Type) -> bool {
+        self.r#gen.resolve.all_bits_valid(ty)
+    }
+}
+
+/// This describes the common ABI function referenced or implemented, the C++ side might correspond to a different type
+enum SpecialMethod {
+    None,
+    ResourceDrop, // ([export]) [resource-drop]
+    ResourceNew,  // [export][resource-new]
+    ResourceRep,  // [export][resource-rep]
+    Dtor,         // [dtor] (guest export only)
+    Allocate,     // internal: allocate new object (called from generated code)
+}
+
+fn is_special_method(func: &Function) -> SpecialMethod {
+    if matches!(func.kind, FunctionKind::Static(_)) {
+        if func.name.starts_with("[resource-drop]") {
+            SpecialMethod::ResourceDrop
+        } else if func.name.starts_with("[resource-new]") {
+            SpecialMethod::ResourceNew
+        } else if func.name.starts_with("[resource-rep]") {
+            SpecialMethod::ResourceRep
+        } else if func.name.starts_with("[dtor]") {
+            SpecialMethod::Dtor
+        } else if func.name == "$alloc" {
+            SpecialMethod::Allocate
+        } else {
+            SpecialMethod::None
+        }
+    } else {
+        SpecialMethod::None
     }
 }
