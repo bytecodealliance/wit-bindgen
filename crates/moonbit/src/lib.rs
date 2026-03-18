@@ -155,6 +155,9 @@ impl MoonBit {
     fn write_moon_pkg(&self, moon_pkg: &mut Source, imports: Option<&Imports>, link: bool) {
         // Disable warning for invalid inline wasm
         moon_pkg.push_str("{\n\"warn-list\": \"-44\"");
+        if self.async_support.uses_runtime() {
+            moon_pkg.push_str(",\n\"supported-targets\": \"+wasm\"");
+        }
         // Dependencies
         if let Some(imports) = imports {
             moon_pkg.push_str(",\n\"import\": [\n");

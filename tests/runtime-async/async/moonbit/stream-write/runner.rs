@@ -48,5 +48,27 @@ impl Guest for Component {
             }
         }
         assert_eq!(count, 5);
+
+        let (tx, signal) = wit_future::new(|| ());
+        let (mut rx, done) = create_bridge_stream_with_signal(signal).await;
+        let (result, values) = rx.read(Vec::<u32>::with_capacity(1)).await;
+        match result {
+            StreamResult::Complete(1) => assert_eq!(values[0], 0),
+            other => panic!("expected one value before close, got {other:?}"),
+        }
+        drop(rx);
+        tx.write(()).await.unwrap();
+        assert!(!done.await);
+
+        let (tx, signal) = wit_future::new(|| ());
+        let (mut rx, done) = create_bridge_unit_stream_with_signal(signal).await;
+        let (result, values) = rx.read(Vec::<()>::with_capacity(1)).await;
+        match result {
+            StreamResult::Complete(1) => assert_eq!(values.len(), 1),
+            other => panic!("expected one unit before close, got {other:?}"),
+        }
+        drop(rx);
+        tx.write(()).await.unwrap();
+        assert!(!done.await);
     }
 }

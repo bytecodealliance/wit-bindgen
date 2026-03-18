@@ -82,8 +82,12 @@ impl AsyncSupport {
         self.is_async = true;
     }
 
+    pub(crate) fn uses_runtime(&self) -> bool {
+        self.is_async || !self.futures.is_empty()
+    }
+
     pub(crate) fn emit_utils(&self, files: &mut Files) {
-        if !self.is_async && self.futures.is_empty() {
+        if !self.uses_runtime() {
             return;
         }
 

@@ -23,4 +23,27 @@ pub async fn run(task_group : @async.TaskGroup[Unit]) -> Unit {
     unit_count += chunk.length().reinterpret_as_uint()
   }
   assert_eq(unit_count, 5U)
+
+  let (signal, promise) = @async.Future::new()
+  let (bridge_stream, bridge_done) = @i.create_bridge_stream_with_signal(signal)
+  match bridge_stream.read(1) {
+    Some(chunk) => {
+      assert_eq(chunk.length(), 1)
+      assert_eq(chunk[0], 0U)
+    }
+    None => panic()
+  }
+  bridge_stream.close()
+  promise.write(())
+  assert_eq(bridge_done.get(), false)
+
+  let (unit_signal, unit_promise) = @async.Future::new()
+  let (bridge_unit_stream, bridge_unit_done) = @i.create_bridge_unit_stream_with_signal(unit_signal)
+  match bridge_unit_stream.read(1) {
+    Some(chunk) => assert_eq(chunk.length(), 1)
+    None => panic()
+  }
+  bridge_unit_stream.close()
+  unit_promise.write(())
+  assert_eq(bridge_unit_done.get(), false)
 }
