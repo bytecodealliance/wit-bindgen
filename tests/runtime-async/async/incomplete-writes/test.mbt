@@ -27,12 +27,12 @@ pub fn TestThing::get(self : TestThing) -> String {
 
 ///|
 pub async fn short_reads_test(
-  s : @async.CMStream[TestThing],
+  s : @async.Stream[TestThing],
   task_group : @async.TaskGroup[Unit],
-) -> @async.CMStream[TestThing] {
-  @async.CMStream::from(async fn(sink : @async.Sink[TestThing]) {
+) -> @async.Stream[TestThing] {
+  @async.Stream::from(async fn(sink : @async.Sink[TestThing]) {
     let things : Array[TestThing] = []
-    for {
+    for ;; {
       match s.read(1) {
         Some(chunk) => {
           for i = 0; i < chunk.length(); i = i + 1 {
@@ -52,12 +52,12 @@ pub async fn short_reads_test(
 
 ///|
 pub async fn short_reads_leaf(
-  s : @async.CMStream[@leafInterface.LeafThing],
+  s : @async.Stream[@leafInterface.LeafThing],
   task_group : @async.TaskGroup[Unit],
-) -> @async.CMStream[@leafInterface.LeafThing] {
-  @async.CMStream::from(async fn(sink : @async.Sink[@leafInterface.LeafThing]) {
+) -> @async.Stream[@leafInterface.LeafThing] {
+  @async.Stream::from(async fn(sink : @async.Sink[@leafInterface.LeafThing]) {
     let things : Array[@leafInterface.LeafThing] = []
-    for {
+    for ;; {
       match s.read(1) {
         Some(chunk) => {
           for i = 0; i < chunk.length(); i = i + 1 {
@@ -77,40 +77,34 @@ pub async fn short_reads_leaf(
 
 ///|
 pub async fn dropped_reader_test(
-  f1 : @async.CMFuture[TestThing],
-  f2 : @async.CMFuture[TestThing],
+  f1 : @async.Future[TestThing],
+  f2 : @async.Future[TestThing],
   task_group : @async.TaskGroup[Unit],
-) -> (@async.CMFuture[TestThing], @async.CMFuture[TestThing]) {
-  let (out1, writer1) : (@async.CMFuture[TestThing], @async.Promise[TestThing]) = @async.CMFuture::new()
-  let (out2, writer2) : (@async.CMFuture[TestThing], @async.Promise[TestThing]) = @async.CMFuture::new()
+) -> (@async.Future[TestThing], @async.Future[TestThing]) {
+  let (future1, writer1) = @async.Future::new()
+  let (future2, writer2) = @async.Future::new()
   task_group.spawn_bg(async fn() {
     f1.drop()
     let thing = f2.get()
     writer1.close()
     writer2.write(thing)
   })
-  (out1, out2)
+  (future1, future2)
 }
 
 ///|
 pub async fn dropped_reader_leaf(
-  f1 : @async.CMFuture[@leafInterface.LeafThing],
-  f2 : @async.CMFuture[@leafInterface.LeafThing],
+  f1 : @async.Future[@leafInterface.LeafThing],
+  f2 : @async.Future[@leafInterface.LeafThing],
   task_group : @async.TaskGroup[Unit],
-) -> (@async.CMFuture[@leafInterface.LeafThing], @async.CMFuture[@leafInterface.LeafThing]) {
-  let (out1, writer1) : (
-    @async.CMFuture[@leafInterface.LeafThing],
-    @async.Promise[@leafInterface.LeafThing],
-  ) = @async.CMFuture::new()
-  let (out2, writer2) : (
-    @async.CMFuture[@leafInterface.LeafThing],
-    @async.Promise[@leafInterface.LeafThing],
-  ) = @async.CMFuture::new()
+) -> (@async.Future[@leafInterface.LeafThing], @async.Future[@leafInterface.LeafThing]) {
+  let (future1, writer1) = @async.Future::new()
+  let (future2, writer2) = @async.Future::new()
   task_group.spawn_bg(async fn() {
     f1.drop()
     let thing = f2.get()
     writer1.close()
     writer2.write(thing)
   })
-  (out1, out2)
+  (future1, future2)
 }

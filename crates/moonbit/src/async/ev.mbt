@@ -16,6 +16,7 @@
 priv struct EventLoop {
   subscribes : Map[Int, Subscriber]
   tasks : Map[WaitableSet, Coroutine]
+  owned_coroutines : Map[WaitableSet, @set.Set[Coroutine]]
   finished : Map[WaitableSet, Bool]
 }
 
@@ -39,6 +40,7 @@ fn should_complete(waitable_set : WaitableSet) -> Bool {
 fn next_callback(waitable_set : WaitableSet) -> Int {
   if should_complete(waitable_set) {
     ev.tasks.remove(waitable_set)
+    ev.owned_coroutines.remove(waitable_set)
     ev.finished.remove(waitable_set)
     waitable_set.drop()
     return CallbackCode::Completed.encode()
@@ -52,12 +54,17 @@ fn next_callback(waitable_set : WaitableSet) -> Int {
 ///|
 pub fn with_waitableset(f : async () -> Unit) -> Int {
   let waitable_set = WaitableSet::new()
+  let owned = @set.Set::new()
   tls_set(waitable_set.0)
   let coro = spawn(async fn() -> Unit {
+    let coro = current_coroutine()
+    defer owned.remove(coro)
     defer ev.finished.set(waitable_set, true)
     f()
   })
   ev.tasks.set(waitable_set, coro)
+  owned.add(coro)
+  ev.owned_coroutines.set(waitable_set, owned)
   ev.finished.set(waitable_set, false)
   reschedule()
   next_callback(waitable_set)
@@ -75,13 +82,17 @@ pub fn cb(event : Int, waitable_id : Int, code : Int) -> Int {
     TaskCancelled => {
       guard ev.tasks.get(waitable_set) is Some(coro)
       coro.cancel()
-      for {
+      if ev.owned_coroutines.get(waitable_set) is Some(owned) {
+        owned.each(Coroutine::cancel)
+      }
+      for ;; {
         reschedule()
         if !has_immediately_ready_task() {
           break
         }
       }
       ev.tasks.remove(waitable_set)
+      ev.owned_coroutines.remove(waitable_set)
       ev.finished.remove(waitable_set)
       if ev.subscribes.is_empty() {
         waitable_set.drop()
@@ -104,7 +115,32 @@ pub fn cb(event : Int, waitable_id : Int, code : Int) -> Int {
 }
 
 ///|
-let ev : EventLoop = { subscribes: {}, tasks: {}, finished: {} }
+let ev : EventLoop = {
+  subscribes: {},
+  tasks: {},
+  owned_coroutines: {},
+  finished: {},
+}
+
+///|
+/// Spawn a coroutine owned by the current component-model async task.
+///
+/// This is intended for runtime bridge work such as lowering local futures and
+/// streams to component-model handles. The coroutine does not participate in
+/// `TaskGroup` structured concurrency, but it is cancelled when the current
+/// component-model task is cancelled and keeps the waitable-set alive until it
+/// terminates.
+pub fn spawn_component_task_current(f : async () -> Unit) -> Unit {
+  let waitable_set = current_waitableset()
+  guard ev.tasks.get(waitable_set) is Some(_)
+  guard ev.owned_coroutines.get(waitable_set) is Some(owned)
+  let coro = spawn(async fn() -> Unit {
+    let coro = current_coroutine()
+    defer owned.remove(coro)
+    f()
+  })
+  owned.add(coro)
+}
 
 ///|
 pub fn detach_waitable(waitable_id : Int) -> Unit {
@@ -125,7 +161,7 @@ pub async fn suspend_for_subtask(
 
   // Helper: ensure cleanup is called once we've moved past Starting state
   fn ensure_cleanup(state : SubTaskState) -> Unit {
-    if not(cleaned) && !(state is Starting) {
+    if !cleaned && !(state is Starting) {
       cleanup_after_started()
       cleaned = true
     }
@@ -159,7 +195,7 @@ pub async fn suspend_for_subtask(
   let set = @set.Set::new()
   let subscriber = { event: None, coro: set }
   ev.subscribes.set(task.handle, subscriber)
-  for {
+  for ;; {
     set.add(current_coroutine())
     waitable_join(task.handle, current_waitableset().0)
     defer subscriber.coro.remove(current_coroutine())

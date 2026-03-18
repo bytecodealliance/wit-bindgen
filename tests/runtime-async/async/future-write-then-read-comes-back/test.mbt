@@ -2,6 +2,6 @@
 //@ path = 'gen/interface/a/b/theTest/stub.mbt'
 
 ///|
-pub async fn f(param : @async.CMFuture[Unit], task_group : @async.TaskGroup[Unit]) -> @async.CMFuture[Unit] {
+pub async fn f(param : @async.Future[Unit], task_group : @async.TaskGroup[Unit]) -> @async.Future[Unit] {
   param
 }

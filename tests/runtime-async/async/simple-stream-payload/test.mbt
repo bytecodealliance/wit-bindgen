@@ -1,7 +1,7 @@
 //@ [lang]
 //@ path = 'gen/interface/my/test_/i/stub.mbt'
 
-pub async fn read_stream(x : @async.CMStream[Byte], task_group : @async.TaskGroup[Unit]) -> Unit {
+pub async fn read_stream(x : @async.Stream[Byte], task_group : @async.TaskGroup[Unit]) -> Unit {
   guard x.read(1) is Some(a)
   guard a.length() == 1
   guard a[0] == (0).to_byte()

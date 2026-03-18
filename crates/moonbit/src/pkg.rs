@@ -251,7 +251,7 @@ impl PkgResolver {
                     TypeDefKind::Future(ty) => {
                         let qualifier = self.qualify_package(this, ASYNC_DIR);
                         format!(
-                            "{}CMFuture[{}]",
+                            "{}Future[{}]",
                             qualifier,
                             ty.as_ref()
                                 .map(|t| self.type_name(this, t))
@@ -262,7 +262,7 @@ impl PkgResolver {
                     TypeDefKind::Stream(ty) => {
                         let qualifier = self.qualify_package(this, ASYNC_DIR);
                         format!(
-                            "{}CMStream[{}]",
+                            "{}Stream[{}]",
                             qualifier,
                             ty.as_ref()
                                 .map(|t| self.type_name(this, t))

@@ -54,7 +54,7 @@ pub fn reschedule() -> Unit {
     coro.state = Running
     let last_coro = scheduler.curr_coro
     scheduler.curr_coro = Some(coro)
-    if coro.cancelled && not(coro.shielded) {
+    if coro.cancelled && !coro.shielded {
       err_cont(Cancelled::Cancelled)
     } else {
       ok_cont(())

@@ -3,15 +3,15 @@
 
 ///|
 pub async fn ping(
-  x : @async.CMFuture[String],
+  x : @async.Future[String],
   y : String,
   task_group : @async.TaskGroup[Unit],
-) -> @async.CMFuture[String] {
+) -> @async.Future[String] {
   let message = x.get() + y
-  @async.CMFuture::from(async fn() { message })
+  @async.Future::ready(message)
 }
 
 ///|
-pub async fn pong(x : @async.CMFuture[String], task_group : @async.TaskGroup[Unit]) -> String {
+pub async fn pong(x : @async.Future[String], task_group : @async.TaskGroup[Unit]) -> String {
   x.get()
 }

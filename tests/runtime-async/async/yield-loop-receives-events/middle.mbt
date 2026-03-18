@@ -13,7 +13,7 @@ pub async fn f(task_group : @async.TaskGroup[Unit]) -> Unit {
     hit.val = true
   })
 
-  for {
+  for ;; {
     if hit.val {
       return
     }

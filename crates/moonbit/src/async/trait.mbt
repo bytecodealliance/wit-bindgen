@@ -56,6 +56,32 @@ pub async fn[X] Sink::write(self : Sink[X], data : ArrayView[X]) -> Int {
 }
 
 ///|
+/// Writes the entire slice to the sink unless the sink closes first.
+///
+/// Returns `true` if all items were written and `false` if the sink stopped
+/// accepting data before completion.
+pub async fn[X] Sink::write_all(self : Sink[X], data : ArrayView[X]) -> Bool {
+  if data.length() == 0 {
+    return true
+  }
+  let pending : Array[X] = []
+  for i = 0; i < data.length(); i = i + 1 {
+    pending.push(data[i])
+  }
+  let mut offset = 0
+  for ;; {
+    if offset >= pending.length() {
+      return true
+    }
+    let written = self.write(pending[offset:])
+    if written <= 0 {
+      return false
+    }
+    offset = offset + written
+  }
+}
+
+///|
 pub async fn[X] Sink::close(self : Sink[X]) -> Unit {
   (self.close)()
 }
@@ -157,7 +183,7 @@ fn[X] local_future_write(state : Ref[LocalFutureState[X]], value : X) -> Unit {
 
 ///|
 async fn[X] local_future_get(state : Ref[LocalFutureState[X]]) -> X {
-  for {
+  for ;; {
     match state.val.value {
       Some(value) => return value
       None =>
@@ -202,7 +228,7 @@ async fn[X] local_stream_write(
   }
   let total = data.length()
   let mut offset = 0
-  for {
+  for ;; {
     if offset >= total {
       return total
     }
@@ -245,7 +271,7 @@ async fn[X] local_stream_read(
     return Some([])
   }
   let result : Array[X] = []
-  for {
+  for ;; {
     if result.length() >= count {
       return Some(result[:])
     }
@@ -284,21 +310,41 @@ async fn[X] local_stream_read(
 }
 
 ///|
-pub struct Future[X] {
-  id : Int
-  state : Ref[LocalFutureState[X]]
+pub(all) enum Future[X] {
+  Handle(FutureR[X])
+  Local(Int, Ref[LocalFutureState[X]])
 }
 
 ///|
 pub impl[X] Eq for Future[X] with equal(self, other) -> Bool {
-  self.id == other.id
+  match self {
+    Handle(f) =>
+      match other {
+        Handle(g) => f.handle == g.handle
+        Local(_) => false
+      }
+    Local(id, _) =>
+      match other {
+        Handle(_) => false
+        Local(other_id, _) => id == other_id
+      }
+  }
 }
 
 ///|
 pub impl[X] Show for Future[X] with output(self, logger) {
-  logger.write_string("Future(")
-  logger.write_string(self.id.to_string())
-  logger.write_string(")")
+  match self {
+    Handle(f) => {
+      logger.write_string("Future::Handle(")
+      logger.write_string(f.handle.to_string())
+      logger.write_string(")")
+    }
+    Local(id, _) => {
+      logger.write_string("Future::Local(")
+      logger.write_string(id.to_string())
+      logger.write_string(")")
+    }
+  }
 }
 
 ///|
@@ -310,7 +356,7 @@ pub fn[X] Future::new() -> (Future[X], Promise[X]) {
       waiters: @deque.new(),
     },
   }
-  let future = Future::{ id: fresh_id(), state }
+  let future = Future::Local(fresh_id(), state)
   let promise = Promise::{
     write: (value : X) => { local_future_write(state, value) },
     close: () => { local_future_close(state) },
@@ -327,138 +373,75 @@ pub fn[X] Future::ready(value : X) -> Future[X] {
       waiters: @deque.new(),
     },
   }
-  Future::{ id: fresh_id(), state }
+  Future::Local(fresh_id(), state)
 }
 
 ///|
 pub async fn[X] Future::get(self : Future[X]) -> X {
-  local_future_get(self.state)
-}
-
-///|
-pub fn[X] Future::drop(self : Future[X]) -> Unit {
-  local_future_close(self.state)
-}
-
-///|
-pub fn[X] Future::to_cm(self : Future[X]) -> CMFuture[X] {
-  CMFuture::from_local(self)
-}
-
-///|
-pub(all) struct CMFutureOutInner[X] {
-  mut producer : (async () -> X)?
-}
-
-///|
-pub(all) struct CMFutureOut[X] {
-  id : Int
-  inner : Ref[CMFutureOutInner[X]]
-}
-
-///|
-pub fn[X] CMFutureOut::new(producer : async () -> X) -> CMFutureOut[X] {
-  { id: fresh_id(), inner: { val: { producer: Some(producer) } } }
-}
-
-///|
-pub fn[X] CMFutureOut::take_producer(self : CMFutureOut[X]) -> (async () -> X) {
-  guard self.inner.val.producer is Some(p)
-  self.inner.val.producer = None
-  p
-}
-
-///|
-pub(all) enum CMFuture[X] {
-  Incoming(FutureR[X])
-  Outgoing(CMFutureOut[X])
-}
-
-///|
-pub impl[X] Eq for CMFuture[X] with equal(self, other) -> Bool {
   match self {
-    Incoming(f) =>
-      match other {
-        Incoming(g) => f.handle == g.handle
-        Outgoing(_) => false
-      }
-    Outgoing(f) =>
-      match other {
-        Incoming(_) => false
-        Outgoing(g) => f.id == g.id
-      }
+    Handle(f) => f.get()
+    Local(_, state) => local_future_get(state)
   }
 }
 
 ///|
-pub impl[X] Show for CMFuture[X] with output(self, logger) {
+pub async fn[X] Future::drop(self : Future[X]) -> Unit {
   match self {
-    Incoming(f) => {
-      logger.write_string("CMFuture::Incoming(")
-      logger.write_string(f.handle.to_string())
-      logger.write_string(")")
-    }
-    Outgoing(f) => {
-      logger.write_string("CMFuture::Outgoing(")
-      logger.write_string(f.id.to_string())
-      logger.write_string(")")
-    }
+    Handle(f) => f.drop()
+    Local(_, state) => local_future_close(state)
   }
 }
 
 ///|
-pub fn[X] CMFuture::new() -> (CMFuture[X], Promise[X]) {
-  let (future, promise) = Future::new()
-  (CMFuture::from_local(future), promise)
-}
-
-///|
-pub fn[X] CMFuture::ready(value : X) -> CMFuture[X] {
-  CMFuture::Outgoing(CMFutureOut::new(() => value))
-}
-
-///|
-pub fn[X] CMFuture::from_local(future : Future[X]) -> CMFuture[X] {
-  CMFuture::Outgoing(CMFutureOut::new(() => future.get()))
-}
-
-///|
-pub fn[X] CMFuture::from(producer : async () -> X) -> CMFuture[X] {
-  CMFuture::Outgoing(CMFutureOut::new(producer))
-}
-
-///|
-pub async fn[X] CMFuture::get(self : CMFuture[X]) -> X {
-  match self {
-    Incoming(f) => f.get()
-    Outgoing(f) => (f.take_producer())()
-  }
-}
-
-///|
-pub async fn[X] CMFuture::drop(self : CMFuture[X]) -> Unit {
-  match self {
-    Incoming(f) => f.drop()
-    Outgoing(_) => ()
-  }
-}
-
-///|
-pub struct Stream[X] {
-  id : Int
-  state : Ref[LocalStreamState[X]]
+pub(all) enum Stream[X] {
+  Handle(StreamR[X])
+  Local(Int, Ref[LocalStreamState[X]])
+  Outgoing(Int, Ref[(async (Sink[X]) -> Unit)?])
 }
 
 ///|
 pub impl[X] Eq for Stream[X] with equal(self, other) -> Bool {
-  self.id == other.id
+  match self {
+    Handle(s) =>
+      match other {
+        Handle(t) => s.handle == t.handle
+        Local(_, _) => false
+        Outgoing(_, _) => false
+      }
+    Local(id, _) =>
+      match other {
+        Handle(_) => false
+        Local(other_id, _) => id == other_id
+        Outgoing(_, _) => false
+      }
+    Outgoing(id, _) =>
+      match other {
+        Handle(_) => false
+        Local(_, _) => false
+        Outgoing(other_id, _) => id == other_id
+      }
+  }
 }
 
 ///|
 pub impl[X] Show for Stream[X] with output(self, logger) {
-  logger.write_string("Stream(")
-  logger.write_string(self.id.to_string())
-  logger.write_string(")")
+  match self {
+    Handle(s) => {
+      logger.write_string("Stream::Handle(")
+      logger.write_string(s.handle.to_string())
+      logger.write_string(")")
+    }
+    Local(id, _) => {
+      logger.write_string("Stream::Local(")
+      logger.write_string(id.to_string())
+      logger.write_string(")")
+    }
+    Outgoing(id, _) => {
+      logger.write_string("Stream::Outgoing(")
+      logger.write_string(id.to_string())
+      logger.write_string(")")
+    }
+  }
 }
 
 ///|
@@ -476,7 +459,7 @@ pub fn[X] Stream::new(capacity? : Int = 0) -> (Stream[X], Sink[X]) {
       writers: @deque.new(),
     },
   }
-  let stream = Stream::{ id: fresh_id(), state }
+  let stream = Stream::Local(fresh_id(), state)
   let sink = Sink::{
     write: (data : ArrayView[X]) => { local_stream_write(state, data) },
     close: () => { local_stream_close(state) },
@@ -485,141 +468,23 @@ pub fn[X] Stream::new(capacity? : Int = 0) -> (Stream[X], Sink[X]) {
 }
 
 ///|
+pub fn[X] Stream::from(producer : async (Sink[X]) -> Unit) -> Stream[X] {
+  Stream::Outgoing(fresh_id(), { val: Some(producer) })
+}
+
 pub async fn[X] Stream::read(self : Stream[X], count : Int) -> ArrayView[X]? {
-  local_stream_read(self.state, count)
-}
-
-///|
-pub fn[X] Stream::close(self : Stream[X]) -> Unit {
-  local_stream_close(self.state)
-}
-
-///|
-pub fn[X] Stream::to_cm(self : Stream[X]) -> CMStream[X] {
-  CMStream::from_local(self)
-}
-
-///|
-pub(all) struct CMStreamOutInner[X] {
-  mut producer : (async (Sink[X]) -> Unit)?
-}
-
-///|
-pub(all) struct CMStreamOut[X] {
-  id : Int
-  inner : Ref[CMStreamOutInner[X]]
-}
-
-///|
-pub fn[X] CMStreamOut::new(producer : async (Sink[X]) -> Unit) -> CMStreamOut[X] {
-  { id: fresh_id(), inner: { val: { producer: Some(producer) } } }
-}
-
-///|
-pub fn[X] CMStreamOut::take_producer(self : CMStreamOut[X]) -> (async (Sink[X]) -> Unit) {
-  guard self.inner.val.producer is Some(p)
-  self.inner.val.producer = None
-  p
-}
-
-///|
-pub(all) enum CMStream[X] {
-  Incoming(StreamR[X])
-  Outgoing(CMStreamOut[X])
-}
-
-///|
-pub impl[X] Eq for CMStream[X] with equal(self, other) -> Bool {
   match self {
-    Incoming(s) =>
-      match other {
-        Incoming(t) => s.handle == t.handle
-        Outgoing(_) => false
-      }
-    Outgoing(s) =>
-      match other {
-        Incoming(_) => false
-        Outgoing(t) => s.id == t.id
-      }
+    Handle(s) => s.read(count)
+    Local(_, state) => local_stream_read(state, count)
+    Outgoing(_, _) => panic()
   }
 }
 
 ///|
-pub impl[X] Show for CMStream[X] with output(self, logger) {
+pub async fn[X] Stream::close(self : Stream[X]) -> Unit {
   match self {
-    Incoming(s) => {
-      logger.write_string("CMStream::Incoming(")
-      logger.write_string(s.handle.to_string())
-      logger.write_string(")")
-    }
-    Outgoing(s) => {
-      logger.write_string("CMStream::Outgoing(")
-      logger.write_string(s.id.to_string())
-      logger.write_string(")")
-    }
-  }
-}
-
-///|
-pub fn[X] CMStream::from(producer : async (Sink[X]) -> Unit) -> CMStream[X] {
-  CMStream::Outgoing(CMStreamOut::new(producer))
-}
-
-///|
-async fn[X] cm_stream_write_all(sink : Sink[X], data : ArrayView[X]) -> Bool {
-  if data.length() == 0 {
-    return true
-  }
-  let pending : Array[X] = []
-  for i = 0; i < data.length(); i = i + 1 {
-    pending.push(data[i])
-  }
-  let mut offset = 0
-  for {
-    if offset >= pending.length() {
-      return true
-    }
-    let written = sink.write(pending[offset:])
-    if written <= 0 {
-      return false
-    }
-    offset = offset + written
-  }
-}
-
-///|
-pub fn[X] CMStream::from_local(stream : Stream[X], chunk_size? : Int = 64) -> CMStream[X] {
-  let read_size = if chunk_size <= 0 { 64 } else { chunk_size }
-  CMStream::Outgoing(CMStreamOut::new(async fn(sink : Sink[X]) {
-    for {
-      match stream.read(read_size) {
-        Some(data) => {
-          if not(cm_stream_write_all(sink, data)) {
-            stream.close()
-            return
-          }
-        }
-        None => {
-          sink.close()
-          return
-        }
-      }
-    }
-  }))
-}
-
-///|
-pub async fn[X] CMStream::read(self : CMStream[X], count : Int) -> ArrayView[X]? {
-  match self {
-    Incoming(s) => s.read(count)
-    Outgoing(_) => panic()
-  }
-}
-
-///|
-pub async fn[X] CMStream::close(self : CMStream[X]) -> Unit {
-  match self {
-    Incoming(s) => s.close()
-    Outgoing(_) => ()
+    Handle(s) => s.close()
+    Local(_, state) => local_stream_close(state)
+    Outgoing(_, _) => ()
   }
 }

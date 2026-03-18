@@ -5,5 +5,5 @@
     { "path": "moonbitlang/core/ref", "alias": "ref" },
     { "path": "moonbitlang/core/set", "alias": "set" }
   ],
-  "supported-targets": ["wasm"]
+  "supported-targets": "+wasm"
 }

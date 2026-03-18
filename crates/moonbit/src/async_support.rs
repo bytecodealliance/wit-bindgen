@@ -374,7 +374,7 @@ fn wasmLift{camel_name}{index}(future_handle : Int) -> {lifted} {{
       wasmLift{camel_name}{index}DropReadable(future_handle)
     }}
   }}
-  {async_qualifier}CMFuture::Incoming({async_qualifier}FutureR::{{
+  {async_qualifier}Future::Handle({async_qualifier}FutureR::{{
     handle: future_handle,
     get: () => {{
       if result is Some(r) {{
@@ -463,16 +463,18 @@ fn wasmLift{camel_name}{index}(future_handle : Int) -> {lifted} {{
             r#"
 fn wasmLower{camel_name}{index}(future : {lifted}) -> Int {{
   match future {{
-    {async_qualifier}CMFuture::Incoming(f) => f.take_handle()
-    {async_qualifier}CMFuture::Outgoing(f) => {{
+    {async_qualifier}Future::Handle(f) => f.take_handle()
+    future => {{
       let handles = wasmLower{camel_name}{index}New()
       let readable = (handles & 0xFFFFFFFF).to_int()
       let writable = (handles >> 32).to_int()
-      let producer = f.take_producer()
       {async_qualifier}backpressure_inc()
-      {async_qualifier}spawn_bg_current(async fn() {{
+      {async_qualifier}spawn_component_task_current(async fn() {{
         defer {async_qualifier}backpressure_dec()
-        defer wasmLower{camel_name}{index}DropWritable(writable)"#
+        defer wasmLower{camel_name}{index}DropWritable(writable)
+        let result = try? future.get()
+        match result {{
+          Ok(value) => {{"#
         );
 
         let lower_builtins = if let Some(inner_ty) = inner_type {
@@ -484,9 +486,8 @@ fn wasmLower{camel_name}{index}(future : {lifted}) -> Int {{
             uwriteln!(
                 lower,
                 r#"
-        let value = producer()
-    let ret_area = mbt_ffi_malloc({size})
-    defer mbt_ffi_free(ret_area)"#
+            let ret_area = mbt_ffi_malloc({size})
+            defer mbt_ffi_free(ret_area)"#
             );
             abi::lower_to_memory(
                 &resolve,
@@ -499,7 +500,7 @@ fn wasmLower{camel_name}{index}(future : {lifted}) -> Int {{
             uwriteln!(
                 lower,
                 r#"
-        let _ = {async_qualifier}suspend_for_future_write(writable, wasmLower{camel_name}{index}Write(writable, ret_area)) catch {{ _ => false }}"#
+            let _ = {async_qualifier}suspend_for_future_write(writable, wasmLower{camel_name}{index}Write(writable, ret_area)) catch {{ _ => false }}"#
             );
             bindgen.take_local_ffi_imports()
         } else {
@@ -507,8 +508,8 @@ fn wasmLower{camel_name}{index}(future : {lifted}) -> Int {{
             uwriteln!(
                 lower,
                 r#"
-        let _ = producer()
-        let _ = {async_qualifier}suspend_for_future_write(writable, wasmLower{camel_name}{index}Write(writable, 0)) catch {{ _ => false }}"#
+            let _ = value
+            let _ = {async_qualifier}suspend_for_future_write(writable, wasmLower{camel_name}{index}Write(writable, 0)) catch {{ _ => false }}"#
             );
             HashSet::new()
         };
@@ -516,6 +517,9 @@ fn wasmLower{camel_name}{index}(future : {lifted}) -> Int {{
         uwriteln!(
             lower,
             r#"
+          }}
+          Err(_) => ()
+        }}
       }})
       readable
     }}
@@ -608,7 +612,7 @@ fn wasmLift{camel_name}{index}(stream_handle : Int) -> {lifted} {{
       wasmLift{camel_name}{index}DropReadable(stream_handle)
     }}
   }}
-  {async_qualifier}CMStream::Incoming({async_qualifier}StreamR::{{
+  {async_qualifier}Stream::Handle({async_qualifier}StreamR::{{
     handle: stream_handle,
     read: (count : Int) => {{
       if closed {{
@@ -707,14 +711,21 @@ fn wasmLift{camel_name}{index}(stream_handle : Int) -> {lifted} {{
             r#"
 fn wasmLower{camel_name}{index}(stream : {lifted}) -> Int {{
   match stream {{
-    {async_qualifier}CMStream::Incoming(s) => s.take_handle()
-    {async_qualifier}CMStream::Outgoing(s) => {{
+    {async_qualifier}Stream::Handle(s) => s.take_handle()
+    stream => {{
       let handles = wasmLower{camel_name}{index}New()
       let readable = (handles & 0xFFFFFFFF).to_int()
       let writable = (handles >> 32).to_int()
-      let producer = s.take_producer()
+      let producer = match stream {{
+        {async_qualifier}Stream::Outgoing(_, producer_ref) => {{
+          guard producer_ref.val is Some(producer)
+          producer_ref.val = None
+          Some(producer)
+        }}
+        _ => None
+      }}
       {async_qualifier}backpressure_inc()
-      let _ = {async_qualifier}spawn_bg_current(async fn() {{
+      let _ = {async_qualifier}spawn_component_task_current(async fn() {{
         defer {async_qualifier}backpressure_dec()
         let mut closed = false
         defer {{
@@ -800,8 +811,32 @@ fn wasmLower{camel_name}{index}(stream : {lifted}) -> Int {{
             }}
           }}
         }}
-        producer(sink)
-        sink.close()
+        match producer {{
+          Some(producer) => {{
+            producer(sink)
+            sink.close()
+          }}
+          None => {{
+            for ;; {{
+              match stream.read(64) {{
+                Some(data) => {{
+                  let pending = []
+                  for i = 0; i < data.length(); i = i + 1 {{
+                    pending.push(data[i])
+                  }}
+                  if !sink.write_all(pending[:]) {{
+                    stream.close()
+                    return
+                  }}
+                }}
+                None => {{
+                  sink.close()
+                  return
+                }}
+              }}
+            }}
+          }}
+        }}
       }})
       readable
     }}

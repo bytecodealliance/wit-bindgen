@@ -7,7 +7,7 @@ let resolved : Ref[Bool] = { val: false }
 ///|
 pub async fn pending_import(task_group : @async.TaskGroup[Unit]) -> Unit {
   resolved.val = false
-  for {
+  for ;; {
     if resolved.val {
       return
     }

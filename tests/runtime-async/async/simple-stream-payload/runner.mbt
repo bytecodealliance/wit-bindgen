@@ -5,7 +5,7 @@
 
 ///|
 pub async fn run(task_group : @async.TaskGroup[Unit]) -> Unit {
-  let stream = @async.CMStream::from(async fn(sink : @async.Sink[Byte]) {
+  let stream = @async.Stream::from(async fn(sink : @async.Sink[Byte]) {
     let a : Array[Byte] = [(0).to_byte()]
     let b : Array[Byte] = [(1).to_byte(), (2).to_byte()]
     let c : Array[Byte] = [(3).to_byte()]

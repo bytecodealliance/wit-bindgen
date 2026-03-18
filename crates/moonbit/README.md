@@ -30,7 +30,7 @@ Stream + Sink (batched reads/writes):
 let (s, sink) = @async.Stream::new[Byte]()
 @async.spawn(async fn() {
   let chunk : Array[Byte] = [1, 2, 3, 4]
-  let _ = sink.write(chunk[:])
+  assert_true(sink.write_all(chunk[:]))
   sink.close()
 })
 let chunk = s.read(4096)
@@ -43,8 +43,9 @@ match chunk {
 ```
 
 `Stream::read(count)` returns up to `count` elements; `Sink::write` accepts
-`ArrayView[T]` so byte streams can batch data efficiently. `Stream::new`
-accepts an optional `capacity` (<= 0 means unbounded).
+`ArrayView[T]` so byte streams can batch data efficiently, and
+`Sink::write_all` loops until the whole slice is accepted or the sink closes.
+`Stream::new` accepts an optional `capacity` (<= 0 means unbounded).
 
 ## Testing
 
