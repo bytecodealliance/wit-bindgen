@@ -540,6 +540,63 @@ impl WorldGenerator for D {
 
         r#gen.types(id);
 
+        r#gen
+            .src
+            .push_str("\npackage(wit) template Exports(Impl...) {\n");
+
+        for (_name, func) in &resolve.interfaces[id].functions {
+            match func.kind {
+                FunctionKind::Freestanding | FunctionKind::AsyncFreestanding => {
+                    r#gen.export_func(func);
+                }
+                _ => {}
+            }
+        }
+
+        for (type_name, type_id) in &resolve.interfaces[id].types {
+            let ty = &resolve.types[*type_id];
+
+            match &ty.kind {
+                TypeDefKind::Resource => {
+                    let upper_name = ty.name.as_ref().unwrap().to_upper_camel_case();
+                    let escaped_name = escape_d_identifier(&upper_name);
+
+                    r#gen.src.push_str(&format!(
+                        "\n/++\n{}\n+/\n",
+                        ty.docs.contents.as_deref().unwrap_or_default()
+                    ));
+
+                    r#gen
+                        .src
+                        .push_str(&format!("/// ditto\nstruct {escaped_name}_Wrappers {{\n"));
+
+                    r#gen.src.push_str(&format!(
+                        "alias _Resource_Impl = findWitExportResource!(\"{}\", \"{}\", Impl);\n",
+                        wasm_import_module, type_name
+                    ));
+
+                    for (_, func) in &resolve.interfaces[id].functions {
+                        match func.kind {
+                            FunctionKind::Freestanding | FunctionKind::AsyncFreestanding => {}
+                            FunctionKind::Method(owner)
+                            | FunctionKind::AsyncMethod(owner)
+                            | FunctionKind::Constructor(owner)
+                            | FunctionKind::Static(owner)
+                            | FunctionKind::AsyncStatic(owner) => {
+                                if owner == *type_id {
+                                    r#gen.export_func(func);
+                                }
+                            }
+                        }
+                    }
+                    r#gen.src.push_str("}\n");
+                }
+                _ => {}
+            }
+        }
+
+        r#gen.src.push_str("}\n");
+
         let mut interface_filepath = PathBuf::from_iter(fqn.split("."));
         interface_filepath.add_extension("d");
 
@@ -987,8 +1044,11 @@ impl<'a> DInterfaceGenerator<'a> {
                 .replace("]", ":")
         ));
 
+        if d_sig.implicit_self || d_sig.static_member {
+            self.src.push_str("static ");
+        }
         self.src.push_str(&format!(
-            "static private extern(C) {} __import_{}({});\n",
+            "private extern(C) {} __import_{}({});\n",
             match wasm_sig.results.len() {
                 0 => "void",
                 1 => wasm_type(wasm_sig.results[0]),
@@ -1002,6 +1062,128 @@ impl<'a> DInterfaceGenerator<'a> {
                 .collect::<Vec<&str>>()
                 .join(", ")
         ));
+    }
+
+    fn export_func(&mut self, func: &Function) {
+        match &func.kind {
+            FunctionKind::Freestanding => {}
+            FunctionKind::Method(_) => {}
+            kind => {
+                self.src
+                    .push_str(&format!("// TODO: Export {kind:?} - {}\n", func.name));
+                return;
+            }
+        }
+
+        let wasm_sig = self
+            .resolve
+            .wasm_signature(abi::AbiVariant::GuestExport, func);
+
+        let d_sig = self.get_d_signature(func);
+
+        let mut params_data = Vec::new();
+        let mut params = Vec::new();
+
+        if d_sig.implicit_self {
+            params.push("self");
+        }
+        for (arg, _ty) in wasm_sig.params.iter().enumerate() {
+            params_data.push(format!("arg{arg}"));
+        }
+        for param in &params_data {
+            params.push(&param);
+        }
+
+        self.src.push_str(&format!(
+            "\n/++\n{}\n+/\n",
+            func.docs.contents.as_deref().unwrap_or_default()
+        ));
+
+        self.src.push_str(&format!(
+            "alias {}_Sig = {} {}({});\n",
+            d_sig.name,
+            d_sig.result,
+            if d_sig.implicit_self {
+                "delegate"
+            } else {
+                "function"
+            },
+            d_sig
+                .arguments
+                .iter()
+                .map(|(name, ty)| "in ".to_owned() + ty + " " + name)
+                .collect::<Vec<String>>()
+                .join(", ")
+        ));
+
+        self.src.push_str(&format!(
+            "/// ditto\nalias {}_Impl = findWitExportFunc!(\"{}\", \"{}\", {0}_Sig, {});\n",
+            d_sig.name,
+            self.wasm_import_module.unwrap(),
+            func.name,
+            match &func.kind {
+                FunctionKind::Freestanding | FunctionKind::AsyncFreestanding => "Impl",
+                _ => {
+                    "witExportsIn!_Resource_Impl"
+                }
+            }
+        ));
+
+        self.src.push_str("/// ditto\n");
+        self.src.push_str(&format!(
+            "@wasmExport!(\"{}#{}\")\n",
+            self.wasm_import_module.unwrap(),
+            func.name
+        ));
+
+        self.src.push_str(&format!(
+            "pragma(mangle, \"__wit_export_{}__{}\")\n",
+            self.wasm_import_module
+                .unwrap()
+                .replace("/", "__")
+                .replace("-", "_"),
+            func.name
+                .replace("-", "_")
+                .replace("[", ":")
+                .replace("]", ":")
+        ));
+
+        if d_sig.implicit_self || d_sig.static_member {
+            self.src.push_str("static ");
+        }
+        self.src.push_str(&format!(
+            "private extern(C) {} __export_{}({}) {{\n",
+            match wasm_sig.results.len() {
+                0 => "void",
+                1 => wasm_type(wasm_sig.results[0]),
+                _ => unimplemented!("multi-value return not supported"),
+            },
+            d_sig.name,
+            wasm_sig
+                .params
+                .iter()
+                .zip(&params)
+                .map(|(ty, name)| format!("{} {name}", wasm_type(*ty)))
+                .collect::<Vec<String>>()
+                .join(", ")
+        ));
+
+        let mut f = FunctionBindgen::new(self, &params);
+        abi::call(
+            f.r#gen.resolve,
+            abi::AbiVariant::GuestExport,
+            abi::LiftLower::LiftArgsLowerResults,
+            func,
+            &mut f,
+            false,
+        );
+        let ret_area_decl = f.emit_ret_area_if_needed();
+
+        let FunctionBindgen { src, .. } = f;
+        self.src.push_str(&ret_area_decl);
+        self.src.push_str(&src.to_string());
+
+        self.src.push_str("}\n");
     }
 }
 
@@ -1171,7 +1353,85 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
                     panic!("Resource definition without owner?");
                 }
             },
-            Some(Direction::Export) => todo!("export of resource"),
+            Some(Direction::Export) => match ty.owner {
+                TypeOwner::Interface(owner_id) => {
+                    if let Some(cur_interface) = self.interface
+                        && cur_interface == owner_id
+                    {
+                    } else {
+                        panic!("Emitting resource from `interface` outside that interface?");
+                    }
+
+                    self.src.push_str(&format!(
+                        "\n/++\n{}\n+/\n",
+                        docs.contents.as_deref().unwrap_or_default()
+                    ));
+
+                    self.src.push_str(&format!(
+                        "struct {escaped_name} {{
+        package(wit) uint __handle = 0;
+
+        package(wit) this(uint handle) {{
+            __handle = handle;
+        }}
+
+        @disable this();
+
+        // TODO: make RAII? disable copy for the own
+
+        "
+                    ));
+
+                    /*for (_, func) in &self.resolve.interfaces[owner_id].functions {
+                        if match &func.kind {
+                            FunctionKind::Freestanding => false,
+                            FunctionKind::Method(_) => false,
+                            FunctionKind::Static(mid) => *mid == id,
+                            FunctionKind::Constructor(mid) => *mid == id,
+                            FunctionKind::AsyncFreestanding => false,
+                            FunctionKind::AsyncMethod(_) => false,
+                            FunctionKind::AsyncStatic(_) => todo!(),
+                        } {
+                            self.import_func(func);
+                        }
+                    }*/
+
+                    self.src.push_str(&format!(
+                        "struct Borrow {{
+            package(wit) void* __ptr = null;
+
+            package(wit) this(void* ptr) {{
+                __ptr = ptr;
+            }}
+
+            @disable this();
+
+                        "
+                    ));
+
+                    /*for (_, func) in &self.resolve.interfaces[owner_id].functions {
+                        if match &func.kind {
+                            FunctionKind::Freestanding => false,
+                            FunctionKind::Method(mid) => *mid == id,
+                            FunctionKind::Static(_) => false,
+                            FunctionKind::Constructor(_) => false,
+                            FunctionKind::AsyncFreestanding => false,
+                            FunctionKind::AsyncMethod(_) => todo!(),
+                            FunctionKind::AsyncStatic(_) => false,
+                        } {
+                            self.import_func(func);
+                        }
+                    }*/
+
+                    self.src.push_str("}\n");
+
+                    self.src.push_str("}\n");
+                }
+                TypeOwner::World(_) => todo!("resources in worlds"),
+                TypeOwner::None => {
+                    panic!("Resource definition without owner?");
+                }
+            },
         }
         //todo!("def of `resource`")
     }
@@ -2060,7 +2320,55 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                         .join(", ")
                 ));
             }
-            abi::Instruction::Return { amt, func } => match amt {
+            abi::Instruction::CallInterface { func, async_ } => {
+                if *async_ {
+                    todo!("CallInterface async");
+                }
+
+                if func.result.is_some() {
+                    self.src.push_str("auto _ret = ");
+                    results.push("_ret".to_string());
+                }
+
+                let split_name = match &func.kind {
+                    FunctionKind::Freestanding | FunctionKind::AsyncFreestanding => &func.name,
+                    FunctionKind::Method(_)
+                    | FunctionKind::Static(_)
+                    | FunctionKind::Constructor(_)
+                    | FunctionKind::AsyncMethod(_)
+                    | FunctionKind::AsyncStatic(_) => func.name.split(".").skip(1).next().unwrap(),
+                };
+
+                let lower_name = split_name.to_lower_camel_case();
+                let escaped_name = escape_d_identifier(&lower_name);
+
+                let implicit_self = match &func.kind {
+                    FunctionKind::Freestanding
+                    | FunctionKind::AsyncFreestanding
+                    | FunctionKind::Static(_)
+                    | FunctionKind::AsyncStatic(_)
+                    | FunctionKind::Constructor(_) => {
+                        self.src.push_str(&format!("{escaped_name}_Impl("));
+                        false
+                    }
+                    FunctionKind::Method(_) | FunctionKind::AsyncMethod(_) => {
+                        self.src.push_str(&format!(
+                            "__traits(child, cast(_Resource_Impl*)self, {escaped_name})("
+                        ));
+                        true
+                    }
+                };
+                self.src.push_str(
+                    &operands
+                        .iter()
+                        .skip(if implicit_self { 1 } else { 0 })
+                        .map(|op| op.clone())
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                );
+                self.src.push_str(");\n");
+            }
+            abi::Instruction::Return { amt, .. } => match amt {
                 0 => {}
                 _ => {
                     assert!(*amt == operands.len());

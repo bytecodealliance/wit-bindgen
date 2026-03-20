@@ -3,25 +3,14 @@ module wit.common;
 import core.attribute : mustuse;
 import ldc.attributes : llvmAttr;
 
-package(wit) extern(C) {
-void*   malloc(size_t size);
-void    free(void* ptr);
-}
-
-package(wit) auto mallocSlice(T)(size_t count) {
-    auto ptr = malloc(count*T.sizeof);
-    if (ptr is null) return null;
-
-    return (cast(T*)ptr)[0..count];
-}
-
-// from std.meta
-package(wit) alias AliasSeq(T...) = T;
-
 alias wasmImport(string mod, string name) = AliasSeq!(
     llvmAttr("wasm-import-module", mod),
     llvmAttr("wasm-import-name", name)
 );
+
+enum wasmExport(string name) = llvmAttr("wasm-export-name", name);
+
+struct witExport { string mod; string name; }
 
 /// Thin CABI compliant wrapper over `T[]`
 struct WitList(T) {
@@ -238,4 +227,60 @@ public:
         ref inout(E) unwrapErr() inout @trusted @nogc nothrow return
         in (isErr) do { return _storage.error; }
     }
+}
+
+
+package(wit):
+extern(C) {
+void*   malloc(size_t size);
+void    free(void* ptr);
+}
+
+auto mallocSlice(T)(size_t count) {
+    auto ptr = malloc(count*T.sizeof);
+    if (ptr is null) return null;
+
+    return (cast(T*)ptr)[0..count];
+}
+
+// from std.meta
+alias AliasSeq(T...) = T;
+
+
+template findWitExportFunc(string mod, string name, Sig, Impl...) {
+    static foreach(Func; Impl) {
+        static foreach(uda; __traits(getAttributes, Func)) {
+            static if (!is(uda) && is(typeof(uda) == witExport) && uda == witExport(mod, name)) {
+                static assert(
+                    !is(Func) &&
+                    (is(typeof(Func) == function) || is(typeof(Func) == delegate)),
+                    "The implementation of '", mod, "#", name, "' ",
+                    "`", __traits(fullyQualifiedName, findWitExportFunc), "` ",
+                    "must be a function or method."
+                );
+
+                static assert(
+                    !is(typeof(findWitExportFunc) == void) || __traits(isSame, findWitExportFunc, Func),
+                    "There must be only one implementation of '", mod, "#", name, "'. ",
+                    "Found at least `", __traits(fullyQualifiedName, findWitExportFunc),
+                    "` and `", __traits(fullyQualifiedName, Func), "`."
+                );
+                alias findWitExportFunc = Func;
+            }
+        }
+    }
+
+    static assert(
+        !is(typeof(findWitExportFunc) == void),
+        "Could not find implementation for '", mod, "#", name, "'"
+    );
+
+    static assert(
+        is(typeof(&findWitExportFunc) : Sig),
+        "The implementation of '", mod, "#", name, "' ",
+        "`", __traits(fullyQualifiedName, findWitExportFunc), "` ",
+        "must conform to the necessary signature. ",
+        "Found `", typeof(&findWitExportFunc), "`",
+        ", but expected `", Sig, "`"
+    );
 }
