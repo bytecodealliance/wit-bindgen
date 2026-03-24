@@ -134,9 +134,6 @@ impl InterfaceGenerator<'_> {
             TypeDefKind::Option(t) => self.type_option(type_id, typedef_name, t, &type_def.docs),
             TypeDefKind::Record(t) => self.type_record(type_id, typedef_name, t, &type_def.docs),
             TypeDefKind::List(t) => self.type_list(type_id, typedef_name, t, &type_def.docs),
-            TypeDefKind::Map(key, value) => {
-                self.type_map(type_id, typedef_name, key, value, &type_def.docs)
-            }
             TypeDefKind::Variant(t) => self.type_variant(type_id, typedef_name, t, &type_def.docs),
             TypeDefKind::Result(t) => self.type_result(type_id, typedef_name, t, &type_def.docs),
             TypeDefKind::Handle(_) => {
@@ -1036,7 +1033,6 @@ var {async_status_var} = {raw_name}({wasm_params});
                     TypeDefKind::Option(_ty) => "".to_owned(),
                     TypeDefKind::Result(_result) => "".to_owned(),
                     TypeDefKind::List(_list) => "".to_owned(),
-                    TypeDefKind::Map(_, _) => "".to_owned(),
                     TypeDefKind::Tuple(_tuple) => "".to_owned(),
                     TypeDefKind::Type(inner_type) => self.global_if_user_type(inner_type),
                     _ => "global::".to_owned(),
@@ -1112,13 +1108,6 @@ var {async_status_var} = {raw_name}({wasm_params});
                                 self.type_name_with_qualifier(ty, qualifier)
                             )
                         }
-                    }
-                    TypeDefKind::Map(key, value) => {
-                        format!(
-                            "global::System.Collections.Generic.List<({}, {})>",
-                            self.type_name_with_qualifier(key, qualifier),
-                            self.type_name_with_qualifier(value, qualifier)
-                        )
                     }
                     TypeDefKind::Tuple(tuple) => {
                         let count = tuple.types.len();
@@ -1748,10 +1737,6 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
     }
 
     fn type_list(&mut self, id: TypeId, _name: &str, _ty: &Type, _docs: &Docs) {
-        self.type_name(&Type::Id(id));
-    }
-
-    fn type_map(&mut self, id: TypeId, _name: &str, _key: &Type, _value: &Type, _docs: &Docs) {
         self.type_name(&Type::Id(id));
     }
 

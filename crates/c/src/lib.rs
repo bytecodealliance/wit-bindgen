@@ -1088,7 +1088,7 @@ fn is_prim_type_id(resolve: &Resolve, id: TypeId) -> bool {
         | TypeDefKind::Stream(_)
         | TypeDefKind::Unknown => false,
         TypeDefKind::FixedLengthList(..) => todo!(),
-        TypeDefKind::Map(key, value) => is_prim_type(resolve, key) && is_prim_type(resolve, value),
+        TypeDefKind::Map(..) => todo!(),
     }
 }
 
@@ -1174,12 +1174,7 @@ pub fn push_ty_name(resolve: &Resolve, ty: &Type, src: &mut String) {
                 }
                 TypeDefKind::Unknown => unreachable!(),
                 TypeDefKind::FixedLengthList(..) => todo!(),
-                TypeDefKind::Map(key, value) => {
-                    src.push_str("map_");
-                    push_ty_name(resolve, key, src);
-                    src.push_str("_");
-                    push_ty_name(resolve, value, src);
-                }
+                TypeDefKind::Map(..) => todo!(),
             }
         }
     }
@@ -1388,12 +1383,12 @@ impl Return {
             TypeDefKind::Tuple(_)
             | TypeDefKind::Record(_)
             | TypeDefKind::List(_)
-            | TypeDefKind::Map(_, _)
             | TypeDefKind::Variant(_) => {}
 
             TypeDefKind::Resource => todo!("return_single for resource"),
             TypeDefKind::Unknown => unreachable!(),
             TypeDefKind::FixedLengthList(..) => todo!(),
+            TypeDefKind::Map(..) => todo!(),
         }
 
         self.retptrs.push(*orig_ty);
@@ -1740,23 +1735,6 @@ void __wasm_export_{ns}_{snake}_dtor({ns}_{snake}_t* arg) {{
         self.finish_typedef_struct(id);
     }
 
-    fn type_map(&mut self, id: TypeId, _name: &str, key: &Type, value: &Type, docs: &Docs) {
-        self.src.h_defs("\n");
-        self.docs(docs, SourceType::HDefs);
-        let map_ty = self.r#gen.type_name(&Type::Id(id));
-        let entry_ty = format!("{map_ty}_entry_t");
-        uwriteln!(self.src.h_defs, "typedef struct {entry_ty} {{");
-        self.print_ty(SourceType::HDefs, key);
-        self.src.h_defs(" key;\n");
-        self.print_ty(SourceType::HDefs, value);
-        self.src.h_defs(" value;\n");
-        uwriteln!(self.src.h_defs, "}} {entry_ty};");
-        self.start_typedef_struct(id);
-        uwriteln!(self.src.h_defs, "{entry_ty} *ptr;");
-        self.src.h_defs("size_t len;\n");
-        self.finish_typedef_struct(id);
-    }
-
     fn type_fixed_length_list(
         &mut self,
         _id: TypeId,
@@ -1860,24 +1838,6 @@ impl<'a> wit_bindgen_core::AnonymousTypeGenerator<'a> for InterfaceGenerator<'a>
         self.src.h_defs("struct {\n");
         let ty = self.r#gen.type_name(ty);
         uwriteln!(self.src.h_defs, "{ty} *ptr;");
-        self.src.h_defs("size_t len;\n");
-        self.src.h_defs("}");
-        self.src.h_defs(" ");
-        self.print_typedef_target(id);
-    }
-
-    fn anonymous_type_map(&mut self, id: TypeId, key: &Type, value: &Type, _docs: &Docs) {
-        let map_ty = self.r#gen.type_name(&Type::Id(id));
-        let entry_ty = format!("{map_ty}_entry_t");
-        uwriteln!(self.src.h_defs, "\ntypedef struct {entry_ty} {{");
-        self.print_ty(SourceType::HDefs, key);
-        self.src.h_defs(" key;\n");
-        self.print_ty(SourceType::HDefs, value);
-        self.src.h_defs(" value;\n");
-        uwriteln!(self.src.h_defs, "}} {entry_ty};");
-        self.src.h_defs("\ntypedef ");
-        self.src.h_defs("struct {\n");
-        uwriteln!(self.src.h_defs, "{entry_ty} *ptr;");
         self.src.h_defs("size_t len;\n");
         self.src.h_defs("}");
         self.src.h_defs(" ");
@@ -2045,21 +2005,6 @@ impl InterfaceGenerator<'_> {
                 uwriteln!(self.src.c_helpers, "}}");
             }
 
-            TypeDefKind::Map(key, value) => {
-                self.src.c_helpers("size_t map_len = ptr->len;\n");
-                uwriteln!(self.src.c_helpers, "if (map_len > 0) {{");
-                let map_ty = self.r#gen.type_name(&Type::Id(id));
-                let entry_ty = format!("{map_ty}_entry_t");
-                uwriteln!(self.src.c_helpers, "{entry_ty} *map_ptr = ptr->ptr;");
-                self.src
-                    .c_helpers("for (size_t i = 0; i < map_len; i++) {\n");
-                self.free(key, "&map_ptr[i].key");
-                self.free(value, "&map_ptr[i].value");
-                self.src.c_helpers("}\n");
-                uwriteln!(self.src.c_helpers, "free(map_ptr);");
-                uwriteln!(self.src.c_helpers, "}}");
-            }
-
             TypeDefKind::Variant(v) => {
                 self.src.c_helpers("switch ((int32_t) ptr->tag) {\n");
                 for (i, case) in v.cases.iter().enumerate() {
@@ -2100,6 +2045,7 @@ impl InterfaceGenerator<'_> {
             }
             TypeDefKind::Unknown => unreachable!(),
             TypeDefKind::FixedLengthList(..) => todo!(),
+            TypeDefKind::Map(..) => todo!(),
         }
         if c_helpers_body_start == self.src.c_helpers.len() {
             self.src.c_helpers.as_mut_string().truncate(c_helpers_start);
@@ -2793,9 +2739,7 @@ void {name}_return({return_ty}) {{
 
                 TypeDefKind::Unknown => false,
                 TypeDefKind::FixedLengthList(..) => todo!(),
-                TypeDefKind::Map(key, value) => {
-                    self.contains_droppable_borrow(key) || self.contains_droppable_borrow(value)
-                }
+                TypeDefKind::Map(..) => todo!(),
             }
         } else {
             false
@@ -3665,11 +3609,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.push(format!("(uint8_t *) ({}).ptr", operands[0]));
                 results.push(format!("({}).len", operands[0]));
             }
-            Instruction::MapLower { .. } => {
-                let _body = self.blocks.pop().unwrap();
-                results.push(format!("(uint8_t *) ({}).ptr", operands[0]));
-                results.push(format!("({}).len", operands[0]));
-            }
 
             Instruction::ListLift { element, ty, .. } => {
                 self.assert_no_droppable_borrows("list", &Type::Id(*ty));
@@ -3682,19 +3621,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     list_name, elem_name, operands[0], operands[1]
                 ));
             }
-            Instruction::MapLift { ty, .. } => {
-                let _body = self.blocks.pop().unwrap();
-                self.assert_no_droppable_borrows("map", &Type::Id(*ty));
-                let map_name = self.r#gen.r#gen.type_name(&Type::Id(*ty));
-                let entry_name = format!("{map_name}_entry_t");
-                results.push(format!(
-                    "({}) {{ ({}*)({}), ({}) }}",
-                    map_name, entry_name, operands[0], operands[1]
-                ));
-            }
             Instruction::IterElem { .. } => results.push("e".to_string()),
-            Instruction::IterMapKey { .. } => results.push("map_key".to_string()),
-            Instruction::IterMapValue { .. } => results.push("map_value".to_string()),
             Instruction::IterBasePointer => results.push("base".to_string()),
 
             Instruction::CallWasm { sig, .. } => {
@@ -4029,28 +3956,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwriteln!(self.src, "free({ptr});");
                 uwriteln!(self.src, "}}");
             }
-            Instruction::GuestDeallocateMap { key, value } => {
-                let (body, results) = self.blocks.pop().unwrap();
-                assert!(results.is_empty());
-                let len = self.locals.tmp("len");
-                uwriteln!(self.src, "size_t {len} = {};", operands[1]);
-                uwriteln!(self.src, "if ({len} > 0) {{");
-                let ptr = self.locals.tmp("ptr");
-                uwriteln!(self.src, "uint8_t *{ptr} = {};", operands[0]);
-                let i = self.locals.tmp("i");
-                uwriteln!(self.src, "for (size_t {i} = 0; {i} < {len}; {i}++) {{");
-                let size = self.r#gen.r#gen.sizes.record([*key, *value]).size;
-                uwriteln!(
-                    self.src,
-                    "uint8_t *base = {ptr} + {i} * {};",
-                    size.format(POINTER_SIZE_EXPRESSION)
-                );
-                uwriteln!(self.src, "(void) base;");
-                uwrite!(self.src, "{body}");
-                uwriteln!(self.src, "}}");
-                uwriteln!(self.src, "free({ptr});");
-                uwriteln!(self.src, "}}");
-            }
 
             Instruction::Flush { amt } => {
                 results.extend(operands.iter().take(*amt).cloned());
@@ -4204,7 +4109,7 @@ pub fn is_arg_by_pointer(resolve: &Resolve, ty: &Type) -> bool {
             TypeDefKind::Resource => todo!("is_arg_by_pointer for resource"),
             TypeDefKind::Unknown => unreachable!(),
             TypeDefKind::FixedLengthList(..) => todo!(),
-            TypeDefKind::Map(..) => true,
+            TypeDefKind::Map(..) => todo!(),
         },
         Type::String => true,
         _ => false,

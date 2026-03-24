@@ -1319,10 +1319,6 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         // Not needed. They will become `Array[T]` or `FixedArray[T]` in Moonbit
     }
 
-    fn type_map(&mut self, _id: TypeId, _name: &str, _key: &Type, _value: &Type, _docs: &Docs) {
-        // Not needed. They will become `Array[(K, V)]` in Moonbit
-    }
-
     fn type_fixed_length_list(
         &mut self,
         _id: TypeId,
@@ -2203,57 +2199,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
             }
 
-            Instruction::MapLower {
-                key,
-                value,
-                realloc,
-            } => {
-                let Block {
-                    body,
-                    results: block_results,
-                } = self.blocks.pop().unwrap();
-                assert!(block_results.is_empty());
-
-                let op = &operands[0];
-                let layout = self.r#gen.r#gen.sizes.record([*key, *value]);
-                let size = layout.size.size_wasm32();
-                let address = self.locals.tmp("address");
-                let key_ty = self
-                    .r#gen
-                    .r#gen
-                    .pkg_resolver
-                    .type_name(self.r#gen.name, key);
-                let value_ty = self
-                    .r#gen
-                    .r#gen
-                    .pkg_resolver
-                    .type_name(self.r#gen.name, value);
-                let tuple_ty = format!("({key_ty}, {value_ty})");
-                let index = self.locals.tmp("index");
-
-                self.r#gen.ffi_imports.insert(ffi::MALLOC);
-                uwrite!(
-                    self.src,
-                    "
-                    let {address} = mbt_ffi_malloc(({op}).length() * {size});
-                    for {index} = 0; {index} < ({op}).length(); {index} = {index} + 1 {{
-                        let iter_elem : {tuple_ty} = ({op})[({index})]
-                        let iter_map_key = (iter_elem).0
-                        let iter_map_value = (iter_elem).1
-                        let iter_base = {address} + ({index} * {size});
-                        {body}
-                    }}
-                    ",
-                );
-
-                results.push(address.clone());
-                results.push(format!("({op}).length()"));
-
-                if realloc.is_none() {
-                    self.cleanup.push(Cleanup { address });
-                }
-            }
-
             Instruction::ListLift { element, .. } => {
                 let Block {
                     body,
@@ -2293,54 +2238,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.push(array);
             }
 
-            Instruction::MapLift { key, value, .. } => {
-                let Block {
-                    body,
-                    results: block_results,
-                } = self.blocks.pop().unwrap();
-                let [map_key, map_value] = &block_results[..] else {
-                    todo!("result count == {}", block_results.len())
-                };
-                let address = &operands[0];
-                let length = &operands[1];
-                let array = self.locals.tmp("array");
-                let key_ty = self
-                    .r#gen
-                    .r#gen
-                    .pkg_resolver
-                    .type_name(self.r#gen.name, key);
-                let value_ty = self
-                    .r#gen
-                    .r#gen
-                    .pkg_resolver
-                    .type_name(self.r#gen.name, value);
-                let tuple_ty = format!("({key_ty}, {value_ty})");
-                let layout = self.r#gen.r#gen.sizes.record([*key, *value]);
-                let size = layout.size.size_wasm32();
-                let index = self.locals.tmp("index");
-
-                self.r#gen.ffi_imports.insert(ffi::FREE);
-                uwrite!(
-                    self.src,
-                    "
-                    let {array} : Array[{tuple_ty}] = [];
-                    for {index} = 0; {index} < ({length}); {index} = {index} + 1 {{
-                        let iter_base = ({address}) + ({index} * {size})
-                        {body}
-                        {array}.push(({map_key}, {map_value}))
-                    }}
-                    mbt_ffi_free({address})
-                    ",
-                );
-
-                results.push(array);
-            }
-
             Instruction::IterElem { .. } => results.push("iter_elem".into()),
-
-            Instruction::IterMapKey { .. } => results.push("iter_map_key".into()),
-
-            Instruction::IterMapValue { .. } => results.push("iter_map_value".into()),
 
             Instruction::IterBasePointer => results.push("iter_base".into()),
 
@@ -2726,38 +2624,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwriteln!(self.src, "mbt_ffi_free({address})",);
             }
 
-            Instruction::GuestDeallocateMap { key, value } => {
-                let Block { body, results, .. } = self.blocks.pop().unwrap();
-                assert!(results.is_empty());
-
-                let address = &operands[0];
-                let length = &operands[1];
-                let size = self
-                    .r#gen
-                    .r#gen
-                    .sizes
-                    .record([*key, *value])
-                    .size
-                    .size_wasm32();
-
-                if !body.trim().is_empty() {
-                    let index = self.locals.tmp("index");
-
-                    uwrite!(
-                        self.src,
-                        "
-                        for {index} = 0; {index} < ({length}); {index} = {index} + 1 {{
-                            let iter_base = ({address}) + ({index} * {size})
-                            {body}
-                        }}
-                        "
-                    );
-                }
-
-                self.r#gen.ffi_imports.insert(ffi::FREE);
-                uwriteln!(self.src, "mbt_ffi_free({address})",);
-            }
-
             Instruction::Flush { amt } => {
                 results.extend(operands.iter().take(*amt).cloned());
             }
@@ -2940,6 +2806,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 );
 
                 results.push(format!("FixedArray::from_array({array}[:])"));
+            }
+
+            Instruction::MapLower { .. }
+            | Instruction::MapLift { .. }
+            | Instruction::IterMapKey { .. }
+            | Instruction::IterMapValue { .. }
+            | Instruction::GuestDeallocateMap { .. } => {
+                todo!("map types are not yet supported in this backend")
             }
         }
     }
