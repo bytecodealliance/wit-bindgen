@@ -17,6 +17,7 @@ mod config;
 mod cpp;
 mod csharp;
 mod custom;
+mod d;
 mod go;
 mod moonbit;
 mod runner;
@@ -228,6 +229,7 @@ enum Language {
     Csharp,
     MoonBit,
     Go,
+    D,
     Custom(custom::Language),
 }
 
@@ -1296,6 +1298,7 @@ impl Language {
         Language::Csharp,
         Language::MoonBit,
         Language::Go,
+        Language::D,
     ];
 
     fn obj(&self) -> &dyn LanguageMethods {
@@ -1307,6 +1310,7 @@ impl Language {
             Language::Csharp => &csharp::Csharp,
             Language::MoonBit => &moonbit::MoonBit,
             Language::Go => &go::Go,
+            Language::D => &d::D,
             Language::Custom(custom) => custom,
         }
     }
