@@ -191,6 +191,13 @@ fn escape_d_identifier(name: &str) -> &str {
         "while" => "while_",
         "with" => "with_",
 
+        // Common DRuntime & Phobos symbols
+        "Object" => "Object_",
+        "Error" => "Error_",
+        "Throwable" => "Throwable_",
+        "Exception" => "Exception_",
+        "TypeInfo" => "TypeInfo_",
+
         // Symbols we define as part of the bindings we want to avoid creating conflicts with
         "WitList" => "WitList_",
         "WitString" => "WitString_",
@@ -236,7 +243,7 @@ fn get_package_fqn(id: PackageId, resolve: &Resolve) -> String {
                     .replace('.', "_")
                     .replace('-', "_")
                     .replace('+', "_");
-                format!(".{version}")
+                format!("_{version}")
             } else {
                 String::default()
             }
@@ -1219,6 +1226,9 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
 
         let mut is_first = true;
         for field in &record.fields {
+            let lower_name = field.name.to_lower_camel_case();
+            let escaped_name = escape_d_identifier(&lower_name);
+
             if is_first {
                 is_first = false;
             } else {
@@ -1230,9 +1240,8 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
                 field.docs.contents.as_deref().unwrap_or_default()
             ));
             self.src.push_str(&format!(
-                "{} {};\n",
-                self.type_name(&field.ty, &owner_fqn),
-                field.name.to_lower_camel_case()
+                "{} {escaped_name};\n",
+                self.type_name(&field.ty, &owner_fqn)
             ));
         }
 
@@ -1730,14 +1739,27 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
     }
 }
 
+struct Block {
+    body: String,
+    results: Vec<String>,
+    element: String,
+    base: String,
+}
+
+struct BlockStorage {
+    body: Source,
+    element: String,
+    base: String,
+}
+
 struct FunctionBindgen<'a, 'b> {
     r#gen: &'b mut DInterfaceGenerator<'a>,
     params: &'b [&'b str],
     tmp: usize,
     src: Source,
-    block_storage: Vec<Source>,
+    block_storage: Vec<BlockStorage>,
     /// intermediate calculations for contained objects
-    blocks: Vec<(String, Vec<String>)>,
+    blocks: Vec<Block>,
     payloads: Vec<String>,
     return_pointer_area_size: ArchitectureSize,
     return_pointer_area_align: Alignment,
@@ -1857,8 +1879,14 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             }
             abi::Instruction::I32Const { val } => results.push(val.to_string()),
             abi::Instruction::ConstZero { tys } => {
-                for _ in tys.iter() {
-                    results.push("0".to_string());
+                for ty in tys.iter() {
+                    results.push(
+                        match ty {
+                            WasmType::Pointer => "null",
+                            _ => "0",
+                        }
+                        .to_string(),
+                    );
                 }
             }
             abi::Instruction::ListCanonLower { .. } | abi::Instruction::StringLower { .. } => {
@@ -1883,10 +1911,19 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 results.push(format!("{}({ptr}[0..{len}])", list_name));
             }
 
-            abi::Instruction::IterElem { .. } => results.push("_elem".into()),
-            abi::Instruction::IterBasePointer => results.push("_base".into()),
+            abi::Instruction::IterElem { .. } => {
+                results.push(self.block_storage.last().unwrap().element.clone())
+            }
+            abi::Instruction::IterBasePointer => {
+                results.push(self.block_storage.last().unwrap().base.clone())
+            }
             abi::Instruction::ListLower { element, .. } => {
-                let body = self.blocks.pop().unwrap();
+                let Block {
+                    body,
+                    element: block_element,
+                    base,
+                    ..
+                } = self.blocks.pop().unwrap();
                 let tmp = self.tmp();
 
                 let size = self.r#gen.sizes.size(element);
@@ -1902,9 +1939,13 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     operands[0]
                 ));
 
-                self.push_str(&format!("foreach (i, const ref _elem; {list_src}) {{\n"));
-                self.push_str(&format!("auto _base = {list} + i * {size_str};\n"));
-                self.push_str(&body.0);
+                self.push_str(&format!(
+                    "foreach ({block_element}_idx, const ref {block_element}; {list_src}) {{\n"
+                ));
+                self.push_str(&format!(
+                    "auto {base} = {list} + {block_element}_idx * {size_str};\n"
+                ));
+                self.push_str(&body);
                 //self.push_str(&format!("_targetElem = {};", body.1[0]));
                 self.push_str("\n}\n");
 
@@ -1912,7 +1953,12 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 results.push(format!("{}.length", operands[0]));
             }
             abi::Instruction::ListLift { ty, element, .. } => {
-                let body = self.blocks.pop().unwrap();
+                let Block {
+                    body,
+                    results: block_results,
+                    element: block_element,
+                    base,
+                } = self.blocks.pop().unwrap();
                 let tmp = self.tmp();
                 let size = self.r#gen.sizes.size(element);
                 let size_str = size.format("size_t.sizeof");
@@ -1927,12 +1973,14 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     "auto {list} = wit.common.mallocSlice!({elem_type_name})({list_len});\n",
                 ));
 
-                self.push_str(&format!("foreach (i, ref _elem; {list}) {{\n",));
                 self.push_str(&format!(
-                    "const auto _base = {list_src} + i * {size_str};\n"
+                    "foreach ({block_element}_idx, ref {block_element}; {list}) {{\n",
                 ));
-                self.push_str(&body.0);
-                self.push_str(&format!("_elem = {};", body.1[0]));
+                self.push_str(&format!(
+                    "const auto {base} = {list_src} + {block_element}_idx * {size_str};\n"
+                ));
+                self.push_str(&body);
+                self.push_str(&format!("{block_element} = {};", block_results[0]));
                 self.push_str("\n}\n");
 
                 let list_name = self.r#gen.type_name(&Type::Id(*ty), self.r#gen.fqn);
@@ -2032,12 +2080,12 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
 
                 let ty_name = self.r#gen.type_name(&Type::Id(*ty), self.r#gen.fqn);
 
-                self.push_str(&format!(
-                    "final switch ({}.tag) with ({ty_name}.Tag) {{\n",
-                    operands[0]
-                ));
+                let tag_type = tempname("_Tag", self.tmp());
 
-                for (i, ((case, (block, block_results)), payload)) in
+                self.push_str(&format!("alias {tag_type} = {ty_name}.Tag;\n"));
+                self.push_str(&format!("final switch ({}.tag) {{\n", operands[0]));
+
+                for (i, ((case, block), payload)) in
                     variant.cases.iter().zip(blocks).zip(payloads).enumerate()
                 {
                     let lower_name = case.name.to_lower_camel_case();
@@ -2046,7 +2094,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     let uppper_name = case.name.to_upper_camel_case();
                     let upper_escaped_name = escape_d_identifier(&uppper_name);
 
-                    self.push_str(&format!("case {lower_escaped_name}: {{\n"));
+                    self.push_str(&format!("case {tag_type}.{lower_escaped_name}: {{\n"));
                     if let Some(ty) = case.ty.as_ref() {
                         let ty_name = self.r#gen.type_name(ty, self.r#gen.fqn);
                         self.push_str(&format!(
@@ -2054,9 +2102,9 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                             operands[0],
                         ));
                     }
-                    self.src.push_str(&block);
+                    self.src.push_str(&block.body);
 
-                    for (name, result) in variant_results.iter().zip(&block_results) {
+                    for (name, result) in variant_results.iter().zip(&block.results) {
                         self.push_str(&format!("{name} = {result};\n"));
                     }
                     self.src.push_str("break;\n}\n");
@@ -2075,26 +2123,25 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let tmp = self.tmp();
                 let result = tempname("_variant", tmp);
                 let tag = tempname("_tag", tmp);
+                let tag_type = tempname("_Tag", tmp);
 
                 self.push_str(&format!("{ty} {result} = void;\n"));
                 self.push_str(&format!("auto {tag} = {};\n", operands[0]));
-                self.push_str(&format!(
-                    "final switch (cast({ty}.Tag){tag}) with ({ty}.Tag) {{\n"
-                ));
-                for (i, (case, (block, block_results))) in
-                    variant.cases.iter().zip(blocks).enumerate()
-                {
+
+                self.push_str(&format!("alias {tag_type} = {ty}.Tag;\n"));
+                self.push_str(&format!("final switch (cast({ty}.Tag){tag}) {{\n"));
+                for (i, (case, block)) in variant.cases.iter().zip(blocks).enumerate() {
                     let lower_name = case.name.to_lower_camel_case();
                     let escaped_name = escape_d_identifier(&lower_name);
 
                     let payload = tempname("_payload", self.tmp());
 
-                    self.push_str(&format!("case {escaped_name}: {{\n"));
-                    self.src.push_str(&block);
-                    assert!(block_results.len() == (case.ty.is_some() as usize));
+                    self.push_str(&format!("case {tag_type}.{escaped_name}: {{\n"));
+                    self.src.push_str(&block.body);
+                    assert!(block.results.len() == (case.ty.is_some() as usize));
 
                     let val = if let Some(_) = case.ty.as_ref() {
-                        self.push_str(&format!("auto {payload} = {};\n", block_results[0]));
+                        self.push_str(&format!("auto {payload} = {};\n", block.results[0]));
                         &payload
                     } else {
                         ""
@@ -2109,8 +2156,16 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 results: result_types,
                 ..
             } => {
-                let (mut some, some_results) = self.blocks.pop().unwrap();
-                let (mut none, none_results) = self.blocks.pop().unwrap();
+                let Block {
+                    body: mut some,
+                    results: some_results,
+                    ..
+                } = self.blocks.pop().unwrap();
+                let Block {
+                    body: mut none,
+                    results: none_results,
+                    ..
+                } = self.blocks.pop().unwrap();
                 let some_payload = self.payloads.pop().unwrap();
                 let _none_payload = self.payloads.pop().unwrap();
 
@@ -2137,8 +2192,16 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 ));
             }
             abi::Instruction::OptionLift { ty, .. } => {
-                let (some, some_results) = self.blocks.pop().unwrap();
-                let (_none, none_results) = self.blocks.pop().unwrap();
+                let Block {
+                    body: mut some,
+                    results: some_results,
+                    ..
+                } = self.blocks.pop().unwrap();
+                let Block {
+                    body: mut none,
+                    results: none_results,
+                    ..
+                } = self.blocks.pop().unwrap();
                 assert!(none_results.is_empty());
                 assert!(some_results.len() == 1);
 
@@ -2168,8 +2231,16 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 result,
                 ..
             } => {
-                let (mut err, err_results) = self.blocks.pop().unwrap();
-                let (mut ok, ok_results) = self.blocks.pop().unwrap();
+                let Block {
+                    body: mut err,
+                    results: err_results,
+                    ..
+                } = self.blocks.pop().unwrap();
+                let Block {
+                    body: mut ok,
+                    results: ok_results,
+                    ..
+                } = self.blocks.pop().unwrap();
                 let err_payload = self.payloads.pop().unwrap();
                 let ok_payload = self.payloads.pop().unwrap();
 
@@ -2211,9 +2282,17 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             }
 
             abi::Instruction::ResultLift { result, ty, .. } => {
-                let (err, err_results) = self.blocks.pop().unwrap();
+                let Block {
+                    body: mut err,
+                    results: err_results,
+                    ..
+                } = self.blocks.pop().unwrap();
                 assert!(err_results.len() == (result.err.is_some() as usize));
-                let (ok, ok_results) = self.blocks.pop().unwrap();
+                let Block {
+                    body: mut ok,
+                    results: ok_results,
+                    ..
+                } = self.blocks.pop().unwrap();
                 assert!(ok_results.len() == (result.ok.is_some() as usize));
 
                 let full_type = self.r#gen.type_name(&Type::Id(*ty), self.r#gen.fqn);
@@ -2274,7 +2353,19 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let type_name = self.r#gen.type_name(&Type::Id(*ty), self.r#gen.fqn);
 
                 match flags.repr() {
-                    FlagsRepr::U8 | FlagsRepr::U16 | FlagsRepr::U32(1) => {
+                    FlagsRepr::U8 => {
+                        results.push(format!(
+                            "{type_name}(cast(ubyte)({}))",
+                            operands.pop().unwrap()
+                        ));
+                    }
+                    FlagsRepr::U16 => {
+                        results.push(format!(
+                            "{type_name}(cast(ushort)({}))",
+                            operands.pop().unwrap()
+                        ));
+                    }
+                    FlagsRepr::U32(1) => {
                         results.push(format!("{type_name}({})", operands.pop().unwrap()));
                     }
                     FlagsRepr::U32(2) => {
@@ -2456,14 +2547,29 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
     }
 
     fn push_block(&mut self) {
-        let prev = take(&mut self.src);
-        self.block_storage.push(prev);
+        let tmp = self.tmp();
+
+        self.block_storage.push(BlockStorage {
+            body: take(&mut self.src),
+            element: tempname("_elem", tmp),
+            base: tempname("_base", tmp),
+        });
     }
 
     fn finish_block(&mut self, operands: &mut Vec<Self::Operand>) {
-        let to_restore = self.block_storage.pop().unwrap();
-        let src = replace(&mut self.src, to_restore);
-        self.blocks.push((src.into(), take(operands)));
+        let BlockStorage {
+            body,
+            element,
+            base,
+        } = self.block_storage.pop().unwrap();
+
+        let src = replace(&mut self.src, body);
+        self.blocks.push(Block {
+            body: src.into(),
+            results: take(operands),
+            element,
+            base,
+        });
     }
 
     fn sizes(&self) -> &SizeAlign {
