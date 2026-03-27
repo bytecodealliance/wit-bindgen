@@ -4,9 +4,14 @@ struct Component;
 
 export!(Component);
 
+mod alloc;
+
 use crate::exports::test::fixed_length_lists::to_test::Nested;
 
 impl exports::test::fixed_length_lists::to_test::Guest for Component {
+    fn allocated_bytes() -> u32 {
+        alloc::get().try_into().unwrap()
+    }
     fn list_param(a: [u32; 4]) {
         assert_eq!(a, [1, 2, 3, 4]);
     }
@@ -38,6 +43,15 @@ impl exports::test::fixed_length_lists::to_test::Guest for Component {
         (a, b)
     }
     fn nightmare_on_cpp(a: [Nested; 2]) -> [Nested; 2] {
+        a
+    }
+    fn string_list_param(a: [String; 3]) {
+        assert_eq!(a, ["foo", "bar", "baz"]);
+    }
+    fn string_list_result() -> [String; 3] {
+        ["foo".to_owned(), "bar".to_owned(), "baz".to_owned()]
+    }
+    fn string_list_roundtrip(a: [String; 3]) -> [String; 3] {
         a
     }
 }

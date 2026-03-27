@@ -20,6 +20,12 @@ interface to-test {
   }
 
   nightmare-on-cpp: func(a: list<nested, 2>) -> list<nested, 2>;
+
+  string-list-param: func(a: list<string, 3>);
+  string-list-result: func() -> list<string, 3>;
+  string-list-roundtrip: func(a: list<string, 3>) -> list<string, 3>;
+
+  allocated-bytes: func() -> u32;
 }
 
 world test {
