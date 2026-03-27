@@ -94,7 +94,7 @@ impl ToCSharpIdent for str {
     fn to_csharp_ident(&self) -> String {
         // Escape C# keywords
         if Self::csharp_keywords().contains(&self) {
-            format!("@{}", self)
+            format!("@{self}")
         } else {
             self.to_lower_camel_case()
         }
@@ -103,7 +103,7 @@ impl ToCSharpIdent for str {
     fn to_csharp_ident_upper(&self) -> String {
         // Escape C# keywords
         if Self::csharp_keywords().contains(&self) {
-            format!("@{}", self)
+            format!("@{self}")
         } else {
             self.to_upper_camel_case()
         }

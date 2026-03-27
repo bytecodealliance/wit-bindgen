@@ -25,11 +25,11 @@ impl LanguageMethods for Wat {
         Some(";;@")
     }
 
-    fn prepare(&self, _runner: &mut Runner<'_>) -> Result<()> {
+    fn prepare(&self, _runner: &mut Runner) -> Result<()> {
         Ok(())
     }
 
-    fn compile(&self, runner: &Runner<'_>, compile: &Compile<'_>) -> Result<()> {
+    fn compile(&self, runner: &Runner, compile: &Compile<'_>) -> Result<()> {
         let wasm = wat::parse_file(&compile.component.path)?;
         if wasmparser::Parser::is_component(&wasm) {
             super::write_if_different(&compile.output, wasm)?;
@@ -42,7 +42,7 @@ impl LanguageMethods for Wat {
         Ok(())
     }
 
-    fn verify(&self, _runner: &Runner<'_>, _verify: &Verify<'_>) -> Result<()> {
+    fn verify(&self, _runner: &Runner, _verify: &Verify<'_>) -> Result<()> {
         // doesn't participate in codegen tests
         Ok(())
     }

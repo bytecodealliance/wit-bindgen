@@ -1,0 +1,31 @@
+package test:list-in-variant;
+
+interface to-test {
+  list-in-option: func(data: option<list<string>>) -> string;
+
+  variant payload-or-empty {
+    empty,
+    with-data(list<string>),
+  }
+  list-in-variant: func(data: payload-or-empty) -> string;
+
+  list-in-result: func(data: result<list<string>, string>) -> string;
+
+  record summary {
+    count: u32,
+    label: string,
+  }
+  list-in-option-with-return: func(data: option<list<string>>) -> summary;
+
+  top-level-list: func(items: list<string>) -> string;
+}
+
+world test {
+  export to-test;
+}
+
+world runner {
+  import to-test;
+
+  export run: func();
+}

@@ -17,7 +17,7 @@ impl TestRunner {
                 return Ok(TestRunner {
                     path: runner.clone(),
                     args: Vec::new(),
-                })
+                });
             }
             Err(e) => e,
         };
@@ -45,6 +45,7 @@ impl TestRunner {
         for arg in self.args.iter() {
             ret.arg(arg);
         }
+        ret.arg("--invoke=run()");
         ret
     }
 }

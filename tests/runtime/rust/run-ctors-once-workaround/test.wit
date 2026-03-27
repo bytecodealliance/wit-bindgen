@@ -1,0 +1,15 @@
+package the:test;
+
+interface i {
+  apply-the-workaround: func();
+}
+
+world runner {
+  import i;
+
+  export run: func();
+}
+
+world test {
+  export i;
+}

@@ -1,0 +1,5 @@
+package other:test;
+
+interface test {
+  f: func();
+}

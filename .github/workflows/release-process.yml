@@ -41,7 +41,7 @@ jobs:
       # Regenerate precompiled artifacts in this repo as they're dependent on
       # the version number.
       - uses: ./.github/actions/install-wasi-sdk
-      - run: ./ci/rebuild-libcabi-realloc.sh
+      - run: ./ci/rebuild-libwit-bindgen-cabi.sh
 
       - name: Prep PR metadata
         run: |

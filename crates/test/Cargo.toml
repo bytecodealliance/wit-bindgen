@@ -4,11 +4,15 @@ version = { workspace = true }
 edition = { workspace = true }
 repository = { workspace = true }
 license = { workspace = true }
+rust-version = { workspace = true }
 homepage = 'https://github.com/bytecodealliance/wit-bindgen'
 description = """
-Backend of the `wit-bindgne test` subcommand
+Backend of the `wit-bindgen test` subcommand
 """
 readme = "README.md"
+
+[lints]
+workspace = true
 
 [lib]
 test = false
@@ -19,14 +23,19 @@ anyhow = { workspace = true }
 clap = { workspace = true, features = ['env'] }
 heck = { workspace = true }
 log = "0.4.26"
-rayon = "1.10.0"
 regex = "1.11.1"
-serde = { version = "1.0.218", features = ["derive"] }
+serde = { workspace = true }
 toml = "0.8.20"
-wasi-preview1-component-adapter-provider = "30.0.2"
+wasi-preview1-component-adapter-provider = "37.0.2"
+wac-parser = "0.8.1"
+wac-types = "0.8.1"
+wac-graph = "0.8.1"
 wasm-compose = { workspace = true }
+indexmap = { workspace = true }
 wasm-encoder = { workspace = true }
 wasmparser = { workspace = true, features = ["features"] }
 wat = { workspace = true }
 wit-component = { workspace = true }
 wit-parser = { workspace = true }
+wit-bindgen-csharp = { workspace = true }
+libtest-mimic = "0.8.1"

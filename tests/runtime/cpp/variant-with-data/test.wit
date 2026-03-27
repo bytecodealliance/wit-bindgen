@@ -1,0 +1,21 @@
+package test:variant-with-data;
+
+interface to-test {
+  variant data-variant {
+    bytes(list<u8>),
+    number(u32),
+    text(string)
+  }
+
+  get-data: func(num: u8) -> data-variant;
+}
+
+world runner {
+  import to-test;
+
+  export run: func();
+}
+
+world test {
+  export to-test;
+}

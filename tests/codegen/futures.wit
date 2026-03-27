@@ -27,6 +27,10 @@ interface futures {
   future-f32-ret: func() -> future<f32>;
   future-f64-ret: func() -> future<f64>;
 
+  future-result-list-string-ret: func() -> future<result<list<string>>>;
+  future-result-list-list-u8-ret: func() -> future<result<list<list<u8>>>>;
+  future-list-list-list-u8-ret: func() -> future<list<list<list<u8>>>>;
+
   tuple-future: func(x: future<tuple<u8, s8>>) -> future<tuple<s64, u32>>;
   string-future-arg: func(a: future<string>);
   string-future-ret: func() -> future<string>;

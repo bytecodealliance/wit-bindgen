@@ -1,16 +1,17 @@
 use crate::interface::InterfaceGenerator;
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use core::panic;
 use heck::*;
 use indexmap::{IndexMap, IndexSet};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::{self, Write as _};
 use std::mem;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use wit_bindgen_core::abi::{Bitcast, WasmType};
 use wit_bindgen_core::{
-    dealias, name_package_module, uwrite, uwriteln, wit_parser::*, Files, InterfaceGenerator as _,
-    Source, Types, WorldGenerator,
+    AsyncFilterSet, Files, InterfaceGenerator as _, Source, Types, WorldGenerator, dealias,
+    name_package_module, uwrite, uwriteln, wit_parser::*,
 };
 
 mod bindgen;
@@ -26,7 +27,7 @@ struct InterfaceName {
 }
 
 #[derive(Default)]
-struct RustWasm {
+pub struct RustWasm {
     types: Types,
     src_preamble: Source,
     src: Source,
@@ -35,8 +36,7 @@ struct RustWasm {
     export_modules: Vec<(String, Vec<String>)>,
     skip: HashSet<String>,
     interface_names: HashMap<InterfaceId, InterfaceName>,
-    /// Each imported and exported interface is stored in this map. Value indicates if last use was import.
-    interface_last_seen_as_import: HashMap<InterfaceId, bool>,
+    exported_resources: HashSet<TypeId>,
     import_funcs_called: bool,
     with_name_counter: usize,
     // Track which interfaces and types are generated. Remapped interfaces and types provided via `with`
@@ -50,8 +50,8 @@ struct RustWasm {
     /// Maps wit interface and type names to their Rust identifiers
     with: GenerationConfiguration,
 
-    future_payloads: IndexMap<String, String>,
-    stream_payloads: IndexMap<String, String>,
+    future_payloads: IndexMap<Option<Type>, String>,
+    stream_payloads: IndexMap<Option<Type>, String>,
 }
 
 #[derive(Default)]
@@ -116,6 +116,11 @@ enum RuntimeItem {
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Deserialize),
+    serde(rename_all = "kebab-case")
+)]
 pub enum ExportKey {
     World,
     Name(String),
@@ -134,53 +139,12 @@ fn parse_with(s: &str) -> Result<(String, WithOption), String> {
 }
 
 #[derive(Default, Debug, Clone)]
-pub enum AsyncConfig {
-    #[default]
-    None,
-    Some {
-        imports: Vec<String>,
-        exports: Vec<String>,
-    },
-    All,
-}
-
-#[cfg(feature = "clap")]
-fn parse_async(s: &str) -> Result<AsyncConfig, String> {
-    Ok(match s {
-        "none" => AsyncConfig::None,
-        "all" => AsyncConfig::All,
-        _ => {
-            if let Some(values) = s.strip_prefix("some=") {
-                let mut imports = Vec::new();
-                let mut exports = Vec::new();
-                for value in values.split(',') {
-                    let error = || {
-                        Err(format!(
-                            "expected string of form `import:<name>` or `export:<name>`; got `{value}`"
-                        ))
-                    };
-                    if let Some((k, v)) = value.split_once(":") {
-                        match k {
-                            "import" => imports.push(v.into()),
-                            "export" => exports.push(v.into()),
-                            _ => return error(),
-                        }
-                    } else {
-                        return error();
-                    }
-                }
-                AsyncConfig::Some { imports, exports }
-            } else {
-                return Err(format!(
-                    "expected string of form `none`, `all`, or `some=<value>[,<value>...]`; got `{s}`"
-                ));
-            }
-        }
-    })
-}
-
-#[derive(Default, Debug, Clone)]
 #[cfg_attr(feature = "clap", derive(clap::Parser))]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Deserialize),
+    serde(default, rename_all = "kebab-case")
+)]
 pub struct Opts {
     /// Whether or not a formatter is executed to format generated code.
     #[cfg_attr(feature = "clap", arg(long))]
@@ -199,7 +163,7 @@ pub struct Opts {
     pub raw_strings: bool,
 
     /// Names of functions to skip generating bindings for.
-    #[cfg_attr(feature = "clap", arg(long))]
+    #[cfg_attr(feature = "clap", arg(long, value_name = "NAME"))]
     pub skip: Vec<String>,
 
     /// If true, generate stub implementations for any exported functions,
@@ -210,7 +174,7 @@ pub struct Opts {
     /// Optionally prefix any export names with the specified value.
     ///
     /// This is useful to avoid name conflicts when testing.
-    #[cfg_attr(feature = "clap", arg(long))]
+    #[cfg_attr(feature = "clap", arg(long, value_name = "STRING"))]
     pub export_prefix: Option<String>,
 
     /// Whether to generate owning or borrowing type definitions.
@@ -232,7 +196,7 @@ pub struct Opts {
     /// The optional path to the wit-bindgen runtime module to use.
     ///
     /// This defaults to `wit_bindgen::rt`.
-    #[cfg_attr(feature = "clap", arg(long))]
+    #[cfg_attr(feature = "clap", arg(long, value_name = "PATH"))]
     pub runtime_path: Option<String>,
 
     /// The optional path to the bitflags crate to use.
@@ -245,7 +209,7 @@ pub struct Opts {
     /// specified multiple times to add multiple attributes.
     ///
     /// These derive attributes will be added to any generated structs or enums
-    #[cfg_attr(feature = "clap", arg(long, short = 'd'))]
+    #[cfg_attr(feature = "clap", arg(long, short = 'd', value_name = "DERIVE"))]
     pub additional_derive_attributes: Vec<String>,
 
     /// Variants and records to ignore when applying additional derive attributes.
@@ -254,10 +218,11 @@ pub struct Opts {
     /// This feature allows some variants and records to use types for which adding traits will cause
     /// compilation to fail, such as serde::Deserialize on wasi:io/streams.
     ///
-    #[cfg_attr(feature = "clap", arg(long))]
+    #[cfg_attr(feature = "clap", arg(long, value_name = "NAME"))]
     pub additional_derive_ignore: Vec<String>,
 
-    /// Remapping of wit interface and type names to Rust module names and types.
+    /// Remapping of wit import interface and type names to Rust module names
+    /// and types.
     ///
     /// Argument must be of the form `k=v` and this option can be passed
     /// multiple times or one option can be comma separated, for example
@@ -272,7 +237,7 @@ pub struct Opts {
 
     /// Add the specified suffix to the name of the custome section containing
     /// the component type.
-    #[cfg_attr(feature = "clap", arg(long))]
+    #[cfg_attr(feature = "clap", arg(long, value_name = "STRING"))]
     pub type_section_suffix: Option<String>,
 
     /// Disable a workaround used to prevent libc ctors/dtors from being invoked
@@ -282,11 +247,11 @@ pub struct Opts {
 
     /// Changes the default module used in the generated `export!` macro to
     /// something other than `self`.
-    #[cfg_attr(feature = "clap", arg(long))]
+    #[cfg_attr(feature = "clap", arg(long, value_name = "NAME"))]
     pub default_bindings_module: Option<String>,
 
     /// Alternative name to use for the `export!` macro if one is generated.
-    #[cfg_attr(feature = "clap", arg(long))]
+    #[cfg_attr(feature = "clap", arg(long, value_name = "NAME"))]
     pub export_macro_name: Option<String>,
 
     /// Ensures that the `export!` macro will be defined as `pub` so it is a
@@ -306,28 +271,72 @@ pub struct Opts {
     #[cfg_attr(feature = "clap", arg(long))]
     pub disable_custom_section_link_helpers: bool,
 
-    /// Determines which functions to lift or lower `async`, if any.
+    #[cfg_attr(feature = "clap", clap(flatten))]
+    #[cfg_attr(feature = "serde", serde(flatten))]
+    pub async_: AsyncFilterSet,
+
+    /// Find all structurally equal types and only generate one type definition
+    /// for each equivalence class.
     ///
-    /// Accepted values are:
-    ///     - none
-    ///     - all
-    ///     - some=<value>[,<value>...], where each <value> is of the form:
-    ///         - import:<name> or
-    ///         - export:<name>
-    #[cfg_attr(feature = "clap", arg(long = "async", value_parser = parse_async, default_value = "none"))]
-    pub async_: AsyncConfig,
+    /// Other types in the same class will be type aliases to the generated
+    /// type. This avoids clone when converting between types that are
+    /// structurally equal, which is useful when import and export the same
+    /// interface.
+    #[cfg_attr(
+        feature = "clap",
+        arg(long, require_equals = true, value_name = "true|false")
+    )]
+    pub merge_structurally_equal_types: Option<Option<bool>>,
 }
 
 impl Opts {
-    pub fn build(self) -> Box<dyn WorldGenerator> {
+    pub fn build(self) -> RustWasm {
         let mut r = RustWasm::new();
         r.skip = self.skip.iter().cloned().collect();
         r.opts = self;
-        Box::new(r)
+        r
+    }
+
+    fn merge_structurally_equal_types(&self) -> bool {
+        const DEFAULT: bool = false;
+        match self.merge_structurally_equal_types {
+            // no option passed, use the default
+            None => DEFAULT,
+            // --merge-structurally-equal-types
+            Some(None) => true,
+            // --merge-structurally-equal-types=val
+            Some(Some(val)) => val,
+        }
     }
 }
 
 impl RustWasm {
+    /// Generates Rust bindings from the `wit/` directory and writes
+    /// the result into Cargo’s `OUT_DIR`. Intended for use in `build.rs`.
+    ///
+    /// The `world` parameter specifies the world name to select.
+    /// It must be provided unless the main package contains exactly one world.
+    ///
+    /// Returns the full path to the generated bindings file.
+    pub fn generate_to_out_dir(mut self, world: Option<&str>) -> Result<PathBuf> {
+        let mut resolve = Resolve::default();
+        println!("cargo:rerun-if-changed=wit/");
+        let (pkg, _files) = resolve.push_path("wit")?;
+        let main_packages = vec![pkg];
+        let world = resolve.select_world(&main_packages, world)?;
+
+        let mut files = Files::default();
+        self.generate(&mut resolve, world, &mut files)?;
+        let out_dir = std::env::var("OUT_DIR").expect("cargo sets OUT_DIR");
+        let (name, contents) = files
+            .iter()
+            .next()
+            .expect("exactly one file should be generated");
+        let dst = Path::new(&out_dir).join(name);
+        std::fs::write(&dst, contents)?;
+        Ok(dst)
+    }
+
     fn new() -> RustWasm {
         RustWasm::default()
     }
@@ -427,14 +436,23 @@ impl RustWasm {
         is_export: bool,
     ) -> Result<bool> {
         let with_name = resolve.name_world_key(name);
-        let Some(remapping) = self.with.get(&with_name) else {
-            bail!(MissingWith(with_name));
+        let remapping = if is_export {
+            &TypeGeneration::Generate
+        } else {
+            match self.with.get(&with_name) {
+                Some(remapping) => remapping,
+                None => bail!(MissingWith(with_name)),
+            }
         };
         self.generated_types.insert(with_name);
         let entry = match remapping {
             TypeGeneration::Remap(remapped_path) => {
                 let name = format!("__with_name{}", self.with_name_counter);
                 self.with_name_counter += 1;
+                uwriteln!(
+                    self.src,
+                    "#[allow(unfulfilled_lint_expectations, unused_imports)]"
+                );
                 uwriteln!(self.src, "use {remapped_path} as {name};");
                 InterfaceName {
                     remapped: true,
@@ -452,32 +470,32 @@ impl RustWasm {
         };
 
         let remapped = entry.remapped;
-        self.interface_names.insert(id, entry);
+        let prev = self.interface_names.insert(id, entry);
+        assert!(prev.is_none());
 
         Ok(remapped)
     }
 
     fn finish_runtime_module(&mut self) {
-        if self.rt_module.is_empty() {
-            return;
-        }
+        if !self.rt_module.is_empty() {
+            // As above, disable rustfmt, as we use prettyplease.
+            if self.opts.format {
+                uwriteln!(self.src, "#[rustfmt::skip]");
+            }
 
-        // As above, disable rustfmt, as we use prettyplease.
-        if self.opts.format {
-            uwriteln!(self.src, "#[rustfmt::skip]");
-        }
-
-        self.src.push_str("mod _rt {\n");
-        self.src.push_str("#![allow(dead_code, clippy::all)]\n");
-        let mut emitted = IndexSet::new();
-        while !self.rt_module.is_empty() {
-            for item in mem::take(&mut self.rt_module) {
-                if emitted.insert(item) {
-                    self.emit_runtime_item(item);
+            self.src.push_str("mod _rt {\n");
+            self.src
+                .push_str("#![allow(dead_code, unused_imports, clippy::all)]\n");
+            let mut emitted = IndexSet::new();
+            while !self.rt_module.is_empty() {
+                for item in mem::take(&mut self.rt_module) {
+                    if emitted.insert(item) {
+                        self.emit_runtime_item(item);
+                    }
                 }
             }
+            self.src.push_str("}\n");
         }
-        self.src.push_str("}\n");
 
         if !self.future_payloads.is_empty() {
             let async_support = self.async_support_path();
@@ -497,8 +515,11 @@ pub mod wit_future {{
             self.src.push_str(&format!(
                 "\
     /// Creates a new Component Model `future` with the specified payload type.
-    pub fn new<T: FuturePayload>() -> ({async_support}::FutureWriter<T>, {async_support}::FutureReader<T>) {{
-        unsafe {{ {async_support}::future_new::<T>(T::VTABLE) }}
+    ///
+    /// The `default` function provided computes the default value to be sent in
+    /// this future if no other value was otherwise sent.
+    pub fn new<T: FuturePayload>(default: fn() -> T) -> ({async_support}::FutureWriter<T>, {async_support}::FutureReader<T>) {{
+        unsafe {{ {async_support}::future_new::<T>(default, T::VTABLE) }}
     }}
 }}
                 ",
@@ -706,7 +727,7 @@ pub unsafe trait WasmResource {
 impl<T: WasmResource> Resource<T> {
     #[doc(hidden)]
     pub unsafe fn from_handle(handle: u32) -> Self {
-        debug_assert!(handle != u32::MAX);
+        debug_assert!(handle != 0 && handle != u32::MAX);
         Self {
             handle: AtomicU32::new(handle),
             _marker: marker::PhantomData,
@@ -903,6 +924,10 @@ macro_rules! __export_{world_name}_impl {{
         section_suffix: &str,
         func_name: Option<&str>,
     ) {
+        // As above, disable rustfmt, as we use prettyplease.
+        if self.opts.format {
+            uwriteln!(self.src, "#[rustfmt::skip]");
+        }
         self.src.push_str("\n#[cfg(target_arch = \"wasm32\")]\n");
 
         // The custom section name here must start with "component-type" but
@@ -989,6 +1014,18 @@ macro_rules! __export_{world_name}_impl {{
             );
         }
     }
+
+    fn is_async(
+        &mut self,
+        resolve: &Resolve,
+        interface: Option<&WorldKey>,
+        func: &Function,
+        is_import: bool,
+    ) -> bool {
+        self.opts
+            .async_
+            .is_async(resolve, interface, func, is_import)
+    }
 }
 
 impl WorldGenerator for RustWasm {
@@ -1070,6 +1107,9 @@ impl WorldGenerator for RustWasm {
                 "//   * disable-run-ctors-once-workaround"
             );
         }
+        if self.opts.merge_structurally_equal_types() {
+            uwriteln!(self.src_preamble, "//   * merge_structurally_equal_types");
+        }
         if let Some(s) = &self.opts.export_macro_name {
             uwriteln!(self.src_preamble, "//   * export-macro-name: {s}");
         }
@@ -1085,12 +1125,49 @@ impl WorldGenerator for RustWasm {
                 "//   * disable_custom_section_link_helpers"
             );
         }
+        for opt in self.opts.async_.debug_opts() {
+            uwriteln!(self.src_preamble, "//   * async: {opt}");
+        }
         self.types.analyze(resolve);
+        self.types.collect_equal_types(resolve, world, &|a| {
+            // If `--merge-structurally-equal-types` is enabled then any type
+            // anywhere can be generated as a type alias to anything else.
+            if self.opts.merge_structurally_equal_types() {
+                return true;
+            }
+
+            match resolve.types[a].kind {
+                // These types are all defined with `type Foo = ...` in Rust
+                // since Rust either has native representations or they live in
+                // libraries or similar.
+                TypeDefKind::Type(_)
+                | TypeDefKind::Handle(_)
+                | TypeDefKind::List(_)
+                | TypeDefKind::Tuple(_)
+                | TypeDefKind::Option(_)
+                | TypeDefKind::Result(_)
+                | TypeDefKind::Future(_)
+                | TypeDefKind::Stream(_)
+                | TypeDefKind::Map(..)
+                | TypeDefKind::FixedLengthList(..) => true,
+
+                // These types are all defined with fresh new types defined
+                // in generated bindings and thus can't alias some other
+                // existing type.
+                TypeDefKind::Record(_)
+                | TypeDefKind::Variant(_)
+                | TypeDefKind::Enum(_)
+                | TypeDefKind::Flags(_)
+                | TypeDefKind::Resource
+                | TypeDefKind::Unknown => false,
+            }
+        });
         self.world = Some(world);
 
         let world = &resolve.worlds[world];
-        // Specify that all imports local to the world's package should be generated
-        for (key, item) in world.imports.iter().chain(world.exports.iter()) {
+        // Specify that all imports local to the world's package should be
+        // generated
+        for (key, item) in world.imports.iter() {
             if let WorldItem::Interface { id, .. } = item {
                 if resolve.interfaces[*id].package == world.package {
                     let name = resolve.name_world_key(key);
@@ -1101,10 +1178,32 @@ impl WorldGenerator for RustWasm {
             }
         }
 
+        for item in world.exports.values() {
+            let WorldItem::Interface { id, .. } = item else {
+                continue;
+            };
+            for id in resolve.interfaces[*id].types.values().copied() {
+                let TypeDefKind::Resource = &resolve.types[id].kind else {
+                    continue;
+                };
+                assert!(self.exported_resources.insert(id));
+            }
+        }
+
         for (k, v) in self.opts.with.iter() {
             self.with.insert(k.clone(), v.clone().into());
         }
         self.with.generate_by_default = self.opts.generate_all;
+        for (key, item) in world.imports.iter() {
+            if let WorldItem::Interface { id, .. } = item {
+                self.name_interface(resolve, *id, &key, false).unwrap();
+            }
+        }
+        for (key, item) in world.exports.iter() {
+            if let WorldItem::Interface { id, .. } = item {
+                self.name_interface(resolve, *id, &key, true).unwrap();
+            }
+        }
     }
 
     fn import_interface(
@@ -1128,7 +1227,6 @@ impl WorldGenerator for RustWasm {
             self.generated_types.insert(full_name);
         }
 
-        self.interface_last_seen_as_import.insert(id, true);
         let wasm_import_module = resolve.name_world_key(name);
         let mut r#gen = self.interface(
             Identifier::Interface(id, name),
@@ -1137,7 +1235,7 @@ impl WorldGenerator for RustWasm {
             true,
         );
         let (snake, module_path) = r#gen.start_append_submodule(name);
-        if r#gen.r#gen.name_interface(resolve, id, name, false)? {
+        if r#gen.r#gen.interface_names[&id].remapped {
             return Ok(());
         }
 
@@ -1179,20 +1277,12 @@ impl WorldGenerator for RustWasm {
         _files: &mut Files,
     ) -> Result<()> {
         let mut to_define = Vec::new();
-        for (name, ty_id) in resolve.interfaces[id].types.iter() {
+        for (ty_name, ty_id) in resolve.interfaces[id].types.iter() {
             let full_name = full_wit_type_name(resolve, *ty_id);
-            if let Some(type_gen) = self.with.get(&full_name) {
-                // skip type definition generation for remapped types
-                if type_gen.generated() {
-                    to_define.push((name, ty_id));
-                }
-            } else {
-                to_define.push((name, ty_id));
-            }
+            to_define.push((ty_name, ty_id));
             self.generated_types.insert(full_name);
         }
 
-        self.interface_last_seen_as_import.insert(id, false);
         let wasm_import_module = format!("[export]{}", resolve.name_world_key(name));
         let mut r#gen = self.interface(
             Identifier::Interface(id, name),
@@ -1201,12 +1291,12 @@ impl WorldGenerator for RustWasm {
             false,
         );
         let (snake, module_path) = r#gen.start_append_submodule(name);
-        if r#gen.r#gen.name_interface(resolve, id, name, true)? {
+        if r#gen.r#gen.interface_names[&id].remapped {
             return Ok(());
         }
 
-        for (name, ty_id) in to_define {
-            r#gen.define_type(&name, *ty_id);
+        for (ty_name, ty_id) in to_define {
+            r#gen.define_type(&ty_name, *ty_id);
         }
 
         let macro_name =
@@ -1400,11 +1490,19 @@ impl WorldGenerator for RustWasm {
             bail!("unused remappings provided via `with`: {unused_keys:?}");
         }
 
+        // Error about unused async configuration to help catch configuration
+        // errors.
+        self.opts.async_.ensure_all_used()?;
+
         Ok(())
     }
 }
 
-fn compute_module_path(name: &WorldKey, resolve: &Resolve, is_export: bool) -> Vec<String> {
+pub(crate) fn compute_module_path(
+    name: &WorldKey,
+    resolve: &Resolve,
+    is_export: bool,
+) -> Vec<String> {
     let mut path = Vec::new();
     if is_export {
         path.push("exports".to_string());
@@ -1445,6 +1543,11 @@ fn group_by_resource<'a>(
 }
 
 #[derive(Default, Debug, Clone, Copy)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Deserialize),
+    serde(rename_all = "kebab-case")
+)]
 pub enum Ownership {
     /// Generated types will be composed entirely of owning fields, regardless
     /// of whether they are used as parameters to imports or not.
@@ -1499,6 +1602,11 @@ impl fmt::Display for Ownership {
 
 /// Options for with "with" remappings.
 #[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Deserialize),
+    serde(rename_all = "kebab-case")
+)]
 pub enum WithOption {
     Path(String),
     Generate,
@@ -1531,6 +1639,15 @@ struct FnSig {
     generics: Option<String>,
     self_arg: Option<String>,
     self_is_first_param: bool,
+}
+
+impl FnSig {
+    fn update_for_func(&mut self, func: &Function) {
+        if let FunctionKind::Method(_) | FunctionKind::AsyncMethod(_) = &func.kind {
+            self.self_arg = Some("&self".into());
+            self.self_is_first_param = true;
+        }
+    }
 }
 
 pub fn to_rust_ident(name: &str) -> String {
@@ -1618,6 +1735,40 @@ fn wasm_type(ty: WasmType) -> &'static str {
     }
 }
 
+fn declare_import(
+    wasm_import_module: &str,
+    wasm_import_name: &str,
+    rust_name: &str,
+    params: &[WasmType],
+    results: &[WasmType],
+) -> String {
+    let mut sig = "(".to_owned();
+    for param in params.iter() {
+        sig.push_str("_: ");
+        sig.push_str(wasm_type(*param));
+        sig.push_str(", ");
+    }
+    sig.push(')');
+    assert!(results.len() < 2);
+    for result in results.iter() {
+        sig.push_str(" -> ");
+        sig.push_str(wasm_type(*result));
+    }
+    format!(
+        "
+            #[cfg(target_arch = \"wasm32\")]
+            #[link(wasm_import_module = \"{wasm_import_module}\")]
+            unsafe extern \"C\" {{
+                #[link_name = \"{wasm_import_name}\"]
+                fn {rust_name}{sig};
+            }}
+
+            #[cfg(not(target_arch = \"wasm32\"))]
+            unsafe extern \"C\" fn {rust_name}{sig} {{ unreachable!() }}
+        "
+    )
+}
+
 fn int_repr(repr: Int) -> &'static str {
     match repr {
         Int::U8 => "u8",
@@ -1636,52 +1787,51 @@ fn bitcast(casts: &[Bitcast], operands: &[String], results: &mut Vec<String>) {
 fn perform_cast(operand: &str, cast: &Bitcast) -> String {
     match cast {
         Bitcast::None => operand.to_owned(),
-        Bitcast::I32ToI64 => format!("i64::from({})", operand),
-        Bitcast::F32ToI32 => format!("({}).to_bits() as i32", operand),
-        Bitcast::F64ToI64 => format!("({}).to_bits() as i64", operand),
-        Bitcast::I64ToI32 => format!("{} as i32", operand),
-        Bitcast::I32ToF32 => format!("f32::from_bits({} as u32)", operand),
-        Bitcast::I64ToF64 => format!("f64::from_bits({} as u64)", operand),
-        Bitcast::F32ToI64 => format!("i64::from(({}).to_bits())", operand),
-        Bitcast::I64ToF32 => format!("f32::from_bits({} as u32)", operand),
+        Bitcast::I32ToI64 => format!("i64::from({operand})"),
+        Bitcast::F32ToI32 => format!("({operand}).to_bits() as i32"),
+        Bitcast::F64ToI64 => format!("({operand}).to_bits() as i64"),
+        Bitcast::I64ToI32 => format!("{operand} as i32"),
+        Bitcast::I32ToF32 => format!("f32::from_bits({operand} as u32)"),
+        Bitcast::I64ToF64 => format!("f64::from_bits({operand} as u64)"),
+        Bitcast::F32ToI64 => format!("i64::from(({operand}).to_bits())"),
+        Bitcast::I64ToF32 => format!("f32::from_bits({operand} as u32)"),
 
         // Convert an `i64` into a `MaybeUninit<u64>`.
-        Bitcast::I64ToP64 => format!("::core::mem::MaybeUninit::new({} as u64)", operand),
+        Bitcast::I64ToP64 => format!("::core::mem::MaybeUninit::new({operand} as u64)"),
         // Convert a `MaybeUninit<u64>` holding an `i64` value back into
         // the `i64` value.
-        Bitcast::P64ToI64 => format!("{}.assume_init() as i64", operand),
+        Bitcast::P64ToI64 => format!("{operand}.assume_init() as i64"),
 
         // Convert a pointer value into a `MaybeUninit<u64>`.
         Bitcast::PToP64 => {
             format!(
                 "{{
                         let mut t = ::core::mem::MaybeUninit::<u64>::uninit();
-                        t.as_mut_ptr().cast::<*mut u8>().write({});
+                        t.as_mut_ptr().cast::<*mut u8>().write({operand});
                         t
-                    }}",
-                operand
+                    }}"
             )
         }
         // Convert a `MaybeUninit<u64>` holding a pointer value back into
         // the pointer value.
         Bitcast::P64ToP => {
-            format!("{}.as_ptr().cast::<*mut u8>().read()", operand)
+            format!("{operand}.as_ptr().cast::<*mut u8>().read()")
         }
         // Convert an `i32` or a `usize` into a pointer.
         Bitcast::I32ToP | Bitcast::LToP => {
-            format!("{} as *mut u8", operand)
+            format!("{operand} as *mut u8")
         }
         // Convert a pointer or length holding an `i32` value back into the `i32`.
         Bitcast::PToI32 | Bitcast::LToI32 => {
-            format!("{} as i32", operand)
+            format!("{operand} as i32")
         }
         // Convert an `i32`, `i64`, or pointer holding a `usize` value back into the `usize`.
         Bitcast::I32ToL | Bitcast::I64ToL | Bitcast::PToL => {
-            format!("{} as usize", operand)
+            format!("{operand} as usize")
         }
         // Convert a `usize` into an `i64`.
         Bitcast::LToI64 => {
-            format!("{} as i64", operand)
+            format!("{operand} as i64")
         }
         Bitcast::Sequence(sequence) => {
             let [first, second] = &**sequence;
@@ -1752,4 +1902,64 @@ fn full_wit_type_name(resolve: &Resolve, id: TypeId) -> String {
         Some(interface_name) => format!("{}/{}", interface_name, type_def.name.clone().unwrap()),
         None => type_def.name.clone().unwrap(),
     }
+}
+
+enum ConstructorReturnType {
+    /// Resource constructor is infallible. E.g.:
+    /// ```wit
+    /// resource R {
+    ///    constructor(..);
+    /// }
+    /// ```
+    Self_,
+
+    /// Resource constructor is fallible. E.g.:
+    /// ```wit
+    /// resource R {
+    ///    constructor(..) -> result<R, err>;
+    /// }
+    /// ```
+    Result { err: Option<Type> },
+}
+
+fn classify_constructor_return_type(
+    resolve: &Resolve,
+    resource_id: TypeId,
+    result: &Option<Type>,
+) -> ConstructorReturnType {
+    fn classify(
+        resolve: &Resolve,
+        resource_id: TypeId,
+        result: &Option<Type>,
+    ) -> Option<ConstructorReturnType> {
+        let resource_id = dealias(resolve, resource_id);
+        let typedef = match result.as_ref()? {
+            Type::Id(id) => &resolve.types[dealias(resolve, *id)],
+            _ => return None,
+        };
+
+        match &typedef.kind {
+            TypeDefKind::Handle(Handle::Own(id)) if dealias(resolve, *id) == resource_id => {
+                Some(ConstructorReturnType::Self_)
+            }
+            TypeDefKind::Result(Result_ { ok, err }) => {
+                let ok_typedef = match ok.as_ref()? {
+                    Type::Id(id) => &resolve.types[dealias(resolve, *id)],
+                    _ => return None,
+                };
+
+                match &ok_typedef.kind {
+                    TypeDefKind::Handle(Handle::Own(id))
+                        if dealias(resolve, *id) == resource_id =>
+                    {
+                        Some(ConstructorReturnType::Result { err: *err })
+                    }
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
+    }
+
+    classify(resolve, resource_id, result).expect("invalid constructor")
 }

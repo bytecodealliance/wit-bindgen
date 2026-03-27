@@ -1,0 +1,21 @@
+package my:inline;
+
+interface t {
+    flags bar {
+        foo,
+        bar,
+        baz
+    }
+
+    get-flag: func() -> bar;
+}
+
+world test {
+  export t;
+}
+
+world runner {
+  import t;
+
+  export run: func();
+}

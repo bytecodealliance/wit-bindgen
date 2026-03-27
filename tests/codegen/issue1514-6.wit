@@ -1,0 +1,12 @@
+package demo:poc;
+
+interface i {
+  variant v {
+    v,
+  }
+  f: func(x: v);
+}
+
+world w {
+  export i;
+}

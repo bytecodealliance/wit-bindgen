@@ -1,0 +1,33 @@
+//@ wac = 'compose.wac'
+//@ dependencies = ['intermediate', 'test']
+
+package a:b;
+
+world runner {
+  import x;
+  import other:c/x;
+
+  export run: func();
+}
+
+world intermediate {
+  import x;
+  import other:c/x;
+  export x;
+  export other:c/x;
+}
+
+world test {
+  export x;
+  export other:c/x;
+}
+
+interface x {
+  f1: func();
+}
+
+package other:c {
+  interface x {
+    f2: func();
+  }
+}

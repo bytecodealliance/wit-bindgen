@@ -1,7 +1,11 @@
-pub use wit_parser::abi::{AbiVariant, WasmSignature, WasmType};
+use std::fmt;
+use std::iter;
+
+use wit_parser::Param;
+pub use wit_parser::abi::{AbiVariant, FlatTypes, WasmSignature, WasmType};
 use wit_parser::{
-    align_to_arch, Alignment, ArchitectureSize, ElementInfo, Enum, Flags, FlagsRepr, Function,
-    Handle, Int, Record, Resolve, Result_, SizeAlign, Tuple, Type, TypeDefKind, TypeId, Variant,
+    Alignment, ArchitectureSize, ElementInfo, Enum, Flags, FlagsRepr, Function, Handle, Int,
+    Record, Resolve, Result_, SizeAlign, Tuple, Type, TypeDefKind, TypeId, Variant, align_to_arch,
 };
 
 // Helper macro for defining instructions without having to have tons of
@@ -34,7 +38,7 @@ macro_rules! def_instruction {
 
         impl $name<'_> {
             /// How many operands does this instruction pop from the stack?
-            #[allow(unused_variables)]
+            #[allow(unused_variables, reason = "match arms bind fields for exhaustiveness, not usage")]
             pub fn operands_len(&self) -> usize {
                 match self {
                     $(
@@ -48,7 +52,7 @@ macro_rules! def_instruction {
             }
 
             /// How many results does this instruction push onto the stack?
-            #[allow(unused_variables)]
+            #[allow(unused_variables, reason = "match arms bind fields for exhaustiveness, not usage")]
             pub fn results_len(&self) -> usize {
                 match self {
                     $(
@@ -306,6 +310,39 @@ def_instruction! {
             ty: TypeId,
         } : [2] => [1],
 
+        /// Pops all fields for a fixed list off the stack and then composes them
+        /// into an array.
+        FixedLengthListLift {
+            element: &'a Type,
+            size: u32,
+            id: TypeId,
+        } : [*size as usize] => [1],
+
+        /// Pops an array off the stack, decomposes the elements and then pushes them onto the stack.
+        FixedLengthListLower {
+            element: &'a Type,
+            size: u32,
+            id: TypeId,
+        } : [1] => [*size as usize],
+
+        /// Pops an array and an address off the stack, passes each element to a block storing it
+        FixedLengthListLowerToMemory {
+            element: &'a Type,
+            size: u32,
+            id: TypeId,
+        } : [2] => [0],
+
+        /// Pops base address, pushes an array
+        ///
+        /// This will also pop a block from the block stack which is how to
+        /// read each individual element from the list.
+        FixedLengthListLiftFromMemory {
+            element: &'a Type,
+            size: u32,
+            id: TypeId,
+        } : [1] => [1],
+
+
         /// Pushes an operand onto the stack representing the list item from
         /// each iteration of the list.
         ///
@@ -497,11 +534,13 @@ def_instruction! {
         /// Same as `CallWasm`, except the dual where an interface is being
         /// called rather than a raw wasm function.
         ///
-        /// Note that this will be used for async functions.
+        /// Note that this will be used for async functions, and `async_`
+        /// indicates whether the function should be invoked in an async
+        /// fashion.
         CallInterface {
             func: &'a Function,
             async_: bool,
-        } : [func.params.len()] => [if *async_ { 1 } else { usize::from(func.result.is_some()) }],
+        } : [func.params.len()] => [usize::from(func.result.is_some())],
 
         /// Returns `amt` values on the stack. This is always the last
         /// instruction.
@@ -551,19 +590,17 @@ def_instruction! {
             blocks: usize,
         } : [1] => [0],
 
-        /// Call an async-lowered import.
-        AsyncCallWasm { name: &'a str } : [2] => [0],
+        /// Deallocates the language-specific handle representation on the top
+        /// of the stack. Used for async imports.
+        DropHandle { ty: &'a Type } : [1] => [0],
 
-        /// Generate code to run after `CallInterface` for an async-lifted export.
+        /// Call `task.return` for an async-lifted export.
         ///
-        /// For example, this might include task management for the
-        /// future/promise/task returned by the call made for `CallInterface`.
-        AsyncPostCallInterface { func: &'a Function } : [1] => [usize::from(func.result.is_some()) + 1],
-
-        /// Call `task.return` for an async-lifted export once the task returned
-        /// by `CallInterface` and managed by `AsyncPostCallInterface`
-        /// yields a value.
-        AsyncCallReturn { name: &'a str, params: &'a [WasmType] } : [params.len()] => [0],
+        /// This will call core wasm import `name` which will be mapped to
+        /// `task.return` later on. The function given has `params` as its
+        /// parameters and it will return no results. This is used to pass the
+        /// lowered representation of a function's results to `task.return`.
+        AsyncTaskReturn { name: &'a str, params: &'a [WasmType] } : [params.len()] => [0],
 
         /// Force the evaluation of the specified number of expressions and push
         /// the results to the stack.
@@ -657,7 +694,7 @@ pub trait Bindgen {
     /// The intermediate type for fragments of code for this type.
     ///
     /// For most languages `String` is a suitable intermediate type.
-    type Operand: Clone;
+    type Operand: Clone + fmt::Debug;
 
     /// Emit code to implement the given instruction.
     ///
@@ -738,7 +775,7 @@ pub fn call(
     bindgen: &mut impl Bindgen,
     async_: bool,
 ) {
-    Generator::new(resolve, variant, lift_lower, bindgen, async_).call(func);
+    Generator::new(resolve, bindgen).call(func, variant, lift_lower, async_);
 }
 
 pub fn lower_to_memory<B: Bindgen>(
@@ -748,16 +785,27 @@ pub fn lower_to_memory<B: Bindgen>(
     value: B::Operand,
     ty: &Type,
 ) {
-    // TODO: refactor so we don't need to pass in a bunch of unused dummy parameters:
-    let mut generator = Generator::new(
-        resolve,
-        AbiVariant::GuestImport,
-        LiftLower::LowerArgsLiftResults,
-        bindgen,
-        true,
-    );
+    let mut generator = Generator::new(resolve, bindgen);
+    // TODO: make this configurable? Right now this function is only called for
+    // future/stream callbacks so it's appropriate to skip realloc here as it's
+    // all "lower for wasm import", but this might get reused for something else
+    // in the future.
+    generator.realloc = Some(Realloc::Export("cabi_realloc"));
     generator.stack.push(value);
     generator.write_to_memory(ty, address, Default::default());
+}
+
+pub fn lower_flat<B: Bindgen>(
+    resolve: &Resolve,
+    bindgen: &mut B,
+    value: B::Operand,
+    ty: &Type,
+) -> Vec<B::Operand> {
+    let mut generator = Generator::new(resolve, bindgen);
+    generator.stack.push(value);
+    generator.realloc = Some(Realloc::Export("cabi_realloc"));
+    generator.lower(ty);
+    generator.stack
 }
 
 pub fn lift_from_memory<B: Bindgen>(
@@ -766,14 +814,7 @@ pub fn lift_from_memory<B: Bindgen>(
     address: B::Operand,
     ty: &Type,
 ) -> B::Operand {
-    // TODO: refactor so we don't need to pass in a bunch of unused dummy parameters:
-    let mut generator = Generator::new(
-        resolve,
-        AbiVariant::GuestImport,
-        LiftLower::LowerArgsLiftResults,
-        bindgen,
-        true,
-    );
+    let mut generator = Generator::new(resolve, bindgen);
     generator.read_from_memory(ty, address, Default::default());
     generator.stack.pop().unwrap()
 }
@@ -784,16 +825,10 @@ pub fn lift_from_memory<B: Bindgen>(
 /// This is only intended to be used in guest generators for exported
 /// functions and will primarily generate `GuestDeallocate*` instructions,
 /// plus others used as input to those instructions.
-pub fn post_return(resolve: &Resolve, func: &Function, bindgen: &mut impl Bindgen, async_: bool) {
-    Generator::new(
-        resolve,
-        AbiVariant::GuestExport,
-        LiftLower::LiftArgsLowerResults,
-        bindgen,
-        async_,
-    )
-    .post_return(func);
+pub fn post_return(resolve: &Resolve, func: &Function, bindgen: &mut impl Bindgen) {
+    Generator::new(resolve, bindgen).post_return(func);
 }
+
 /// Returns whether the `Function` specified needs a post-return function to
 /// be generated in guest code.
 ///
@@ -801,34 +836,46 @@ pub fn post_return(resolve: &Resolve, func: &Function, bindgen: &mut impl Bindge
 /// a list or a string primarily.
 pub fn guest_export_needs_post_return(resolve: &Resolve, func: &Function) -> bool {
     func.result
-        .map(|t| needs_post_return(resolve, &t))
+        .map(|t| needs_deallocate(resolve, &t, Deallocate::Lists))
         .unwrap_or(false)
 }
 
-fn needs_post_return(resolve: &Resolve, ty: &Type) -> bool {
+pub fn guest_export_params_have_allocations(resolve: &Resolve, func: &Function) -> bool {
+    func.params
+        .iter()
+        .any(|param| needs_deallocate(resolve, &param.ty, Deallocate::Lists))
+}
+
+fn needs_deallocate(resolve: &Resolve, ty: &Type, what: Deallocate) -> bool {
     match ty {
         Type::String => true,
         Type::ErrorContext => true,
         Type::Id(id) => match &resolve.types[*id].kind {
             TypeDefKind::List(_) => true,
-            TypeDefKind::Type(t) => needs_post_return(resolve, t),
-            TypeDefKind::Handle(_) => false,
+            TypeDefKind::Type(t) => needs_deallocate(resolve, t, what),
+            TypeDefKind::Handle(Handle::Own(_)) => what.handles(),
+            TypeDefKind::Handle(Handle::Borrow(_)) => false,
             TypeDefKind::Resource => false,
-            TypeDefKind::Record(r) => r.fields.iter().any(|f| needs_post_return(resolve, &f.ty)),
-            TypeDefKind::Tuple(t) => t.types.iter().any(|t| needs_post_return(resolve, t)),
+            TypeDefKind::Record(r) => r
+                .fields
+                .iter()
+                .any(|f| needs_deallocate(resolve, &f.ty, what)),
+            TypeDefKind::Tuple(t) => t.types.iter().any(|t| needs_deallocate(resolve, t, what)),
             TypeDefKind::Variant(t) => t
                 .cases
                 .iter()
                 .filter_map(|t| t.ty.as_ref())
-                .any(|t| needs_post_return(resolve, t)),
-            TypeDefKind::Option(t) => needs_post_return(resolve, t),
+                .any(|t| needs_deallocate(resolve, t, what)),
+            TypeDefKind::Option(t) => needs_deallocate(resolve, t, what),
             TypeDefKind::Result(t) => [&t.ok, &t.err]
                 .iter()
                 .filter_map(|t| t.as_ref())
-                .any(|t| needs_post_return(resolve, t)),
+                .any(|t| needs_deallocate(resolve, t, what)),
             TypeDefKind::Flags(_) | TypeDefKind::Enum(_) => false,
-            TypeDefKind::Future(_) | TypeDefKind::Stream(_) => false,
+            TypeDefKind::Future(_) | TypeDefKind::Stream(_) => what.handles(),
             TypeDefKind::Unknown => unreachable!(),
+            TypeDefKind::FixedLengthList(t, _) => needs_deallocate(resolve, t, what),
+            TypeDefKind::Map(..) => todo!(),
         },
 
         Type::Bool
@@ -846,53 +893,118 @@ fn needs_post_return(resolve: &Resolve, ty: &Type) -> bool {
     }
 }
 
+/// Generate instructions in `bindgen` to deallocate all lists in `ptr` where
+/// that's a pointer to a sequence of `types` stored in linear memory.
+pub fn deallocate_lists_in_types<B: Bindgen>(
+    resolve: &Resolve,
+    types: &[Type],
+    operands: &[B::Operand],
+    indirect: bool,
+    bindgen: &mut B,
+) {
+    Generator::new(resolve, bindgen).deallocate_in_types(
+        types,
+        operands,
+        indirect,
+        Deallocate::Lists,
+    );
+}
+
+/// Generate instructions in `bindgen` to deallocate all lists in `ptr` where
+/// that's a pointer to a sequence of `types` stored in linear memory.
+pub fn deallocate_lists_and_own_in_types<B: Bindgen>(
+    resolve: &Resolve,
+    types: &[Type],
+    operands: &[B::Operand],
+    indirect: bool,
+    bindgen: &mut B,
+) {
+    Generator::new(resolve, bindgen).deallocate_in_types(
+        types,
+        operands,
+        indirect,
+        Deallocate::ListsAndOwn,
+    );
+}
+
+#[derive(Copy, Clone)]
+pub enum Realloc {
+    None,
+    Export(&'static str),
+}
+
+/// What to deallocate in various `deallocate_*` methods.
+#[derive(Copy, Clone)]
+enum Deallocate {
+    /// Only deallocate lists.
+    Lists,
+    /// Deallocate lists and owned resources such as `own<T>` and
+    /// futures/streams.
+    ListsAndOwn,
+}
+
+impl Deallocate {
+    fn handles(&self) -> bool {
+        match self {
+            Deallocate::Lists => false,
+            Deallocate::ListsAndOwn => true,
+        }
+    }
+}
+
 struct Generator<'a, B: Bindgen> {
-    variant: AbiVariant,
-    lift_lower: LiftLower,
     bindgen: &'a mut B,
-    async_: bool,
     resolve: &'a Resolve,
     operands: Vec<B::Operand>,
     results: Vec<B::Operand>,
     stack: Vec<B::Operand>,
     return_pointer: Option<B::Operand>,
+    realloc: Option<Realloc>,
 }
 
+const MAX_FLAT_PARAMS: usize = 16;
+const MAX_FLAT_ASYNC_PARAMS: usize = 4;
+
 impl<'a, B: Bindgen> Generator<'a, B> {
-    fn new(
-        resolve: &'a Resolve,
-        variant: AbiVariant,
-        lift_lower: LiftLower,
-        bindgen: &'a mut B,
-        async_: bool,
-    ) -> Generator<'a, B> {
+    fn new(resolve: &'a Resolve, bindgen: &'a mut B) -> Generator<'a, B> {
         Generator {
             resolve,
-            variant,
-            lift_lower,
             bindgen,
-            async_,
             operands: Vec::new(),
             results: Vec::new(),
             stack: Vec::new(),
             return_pointer: None,
+            realloc: None,
         }
     }
 
-    fn call(&mut self, func: &Function) {
-        const MAX_FLAT_PARAMS: usize = 16;
+    fn call(&mut self, func: &Function, variant: AbiVariant, lift_lower: LiftLower, async_: bool) {
+        let sig = self.resolve.wasm_signature(variant, func);
 
-        let sig = self.resolve.wasm_signature(self.variant, func);
+        // Lowering parameters calling a wasm import _or_ returning a result
+        // from an async-lifted wasm export means we don't need to pass
+        // ownership, but we pass ownership in all other cases.
+        let realloc = match (variant, lift_lower, async_) {
+            (AbiVariant::GuestImport, LiftLower::LowerArgsLiftResults, _)
+            | (
+                AbiVariant::GuestExport
+                | AbiVariant::GuestExportAsync
+                | AbiVariant::GuestExportAsyncStackful,
+                LiftLower::LiftArgsLowerResults,
+                true,
+            ) => Realloc::None,
+            _ => Realloc::Export("cabi_realloc"),
+        };
+        assert!(self.realloc.is_none());
 
-        match self.lift_lower {
+        match lift_lower {
             LiftLower::LowerArgsLiftResults => {
-                if let (AbiVariant::GuestExport, true) = (self.variant, self.async_) {
-                    unimplemented!("host-side code generation for async lift/lower not supported");
-                }
+                self.realloc = Some(realloc);
 
+                // Create a function that performs individual lowering of operands
                 let lower_to_memory = |self_: &mut Self, ptr: B::Operand| {
                     let mut offset = ArchitectureSize::default();
-                    for (nth, (_, ty)) in func.params.iter().enumerate() {
+                    for (nth, Param { ty, .. }) in func.params.iter().enumerate() {
                         self_.emit(&Instruction::GetArg { nth });
                         offset = align_to_arch(offset, self_.bindgen.sizes().align(ty));
                         self_.write_to_memory(ty, ptr.clone(), offset);
@@ -902,98 +1014,83 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     self_.stack.push(ptr);
                 };
 
-                if self.async_ {
+                // Lower parameters
+                if sig.indirect_params {
+                    // If parameters are indirect space is
+                    // allocated for them and each argument is lowered
+                    // individually into memory.
                     let ElementInfo { size, align } = self
                         .bindgen
                         .sizes()
-                        .record(func.params.iter().map(|(_, ty)| ty));
-                    let ptr = self.bindgen.return_pointer(size, align);
+                        .record(func.params.iter().map(|param| &param.ty));
+
+                    // Resolve the pointer to the indirectly stored parameters
+                    let ptr = match variant {
+                        // When a wasm module calls an import it will provide
+                        // space that isn't explicitly deallocated.
+                        AbiVariant::GuestImport => self.bindgen.return_pointer(size, align),
+
+                        AbiVariant::GuestImportAsync => {
+                            todo!("direct param lowering for async guest import not implemented")
+                        }
+
+                        // When calling a wasm module from the outside, though,
+                        // malloc needs to be called.
+                        AbiVariant::GuestExport => {
+                            self.emit(&Instruction::Malloc {
+                                realloc: "cabi_realloc",
+                                size,
+                                align,
+                            });
+                            self.stack.pop().unwrap()
+                        }
+
+                        AbiVariant::GuestExportAsync | AbiVariant::GuestExportAsyncStackful => {
+                            todo!("direct param lowering for async not implemented")
+                        }
+                    };
+
+                    // Lower the parameters to memory
                     lower_to_memory(self, ptr);
                 } else {
-                    if !sig.indirect_params {
-                        // If the parameters for this function aren't indirect
-                        // (there aren't too many) then we simply do a normal lower
-                        // operation for them all.
-                        for (nth, (_, ty)) in func.params.iter().enumerate() {
-                            self.emit(&Instruction::GetArg { nth });
-                            self.lower(ty);
-                        }
-                    } else {
-                        // ... otherwise if parameters are indirect space is
-                        // allocated from them and each argument is lowered
-                        // individually into memory.
-                        let ElementInfo { size, align } = self
-                            .bindgen
-                            .sizes()
-                            .record(func.params.iter().map(|t| &t.1));
-                        let ptr = match self.variant {
-                            // When a wasm module calls an import it will provide
-                            // space that isn't explicitly deallocated.
-                            AbiVariant::GuestImport => self.bindgen.return_pointer(size, align),
-                            // When calling a wasm module from the outside, though,
-                            // malloc needs to be called.
-                            AbiVariant::GuestExport => {
-                                self.emit(&Instruction::Malloc {
-                                    realloc: "cabi_realloc",
-                                    size,
-                                    align,
-                                });
-                                self.stack.pop().unwrap()
-                            }
-                            AbiVariant::GuestImportAsync
-                            | AbiVariant::GuestExportAsync
-                            | AbiVariant::GuestExportAsyncStackful => {
-                                unreachable!()
-                            }
-                        };
-                        lower_to_memory(self, ptr);
+                    // ... otherwise arguments are direct,
+                    // (there aren't too many) then we simply do a normal lower
+                    // operation for them all.
+                    for (nth, Param { ty, .. }) in func.params.iter().enumerate() {
+                        self.emit(&Instruction::GetArg { nth });
+                        self.lower(ty);
                     }
                 }
+                self.realloc = None;
 
-                if self.async_ {
-                    let ElementInfo { size, align } =
-                        self.bindgen.sizes().record(func.result.iter());
-                    let ptr = self.bindgen.return_pointer(size, align);
+                // If necessary we may need to prepare a return pointer for this ABI.
+                if variant == AbiVariant::GuestImport && sig.retptr {
+                    let info = self.bindgen.sizes().params(&func.result);
+                    let ptr = self.bindgen.return_pointer(info.size, info.align);
                     self.return_pointer = Some(ptr.clone());
                     self.stack.push(ptr);
-
-                    assert_eq!(self.stack.len(), 2);
-                    self.emit(&Instruction::AsyncCallWasm {
-                        name: &format!("[async-lower]{}", func.name),
-                    });
-                } else {
-                    // If necessary we may need to prepare a return pointer for
-                    // this ABI.
-                    if self.variant == AbiVariant::GuestImport && sig.retptr {
-                        let info = self.bindgen.sizes().params(&func.result);
-                        let ptr = self.bindgen.return_pointer(info.size, info.align);
-                        self.return_pointer = Some(ptr.clone());
-                        self.stack.push(ptr);
-                    }
-
-                    assert_eq!(self.stack.len(), sig.params.len());
-                    self.emit(&Instruction::CallWasm {
-                        name: &func.name,
-                        sig: &sig,
-                    });
                 }
 
-                if !(sig.retptr || self.async_) {
-                    // With no return pointer in use we can simply lift the
-                    // result(s) of the function from the result of the core
-                    // wasm function.
-                    if let Some(ty) = &func.result {
-                        self.lift(ty)
-                    }
-                } else {
-                    let ptr = match self.variant {
+                // Call the Wasm function
+                assert_eq!(self.stack.len(), sig.params.len());
+                self.emit(&Instruction::CallWasm {
+                    name: &func.name,
+                    sig: &sig,
+                });
+
+                // Handle the result
+                if sig.retptr {
+                    // If there is a return pointer, we must get the pointer to where results
+                    // should be stored, and store the results there?
+
+                    let ptr = match variant {
                         // imports into guests means it's a wasm module
                         // calling an imported function. We supplied the
                         // return pointer as the last argument (saved in
                         // `self.return_pointer`) so we use that to read
                         // the result of the function from memory.
                         AbiVariant::GuestImport => {
-                            assert!(sig.results.is_empty() || self.async_);
+                            assert!(sig.results.is_empty());
                             self.return_pointer.take().unwrap()
                         }
 
@@ -1009,119 +1106,192 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         }
                     };
 
-                    self.read_results_from_memory(
-                        &func.result,
-                        ptr.clone(),
-                        ArchitectureSize::default(),
-                    );
-                    self.emit(&Instruction::Flush {
+                    if let (AbiVariant::GuestExport, true) = (variant, async_) {
+                        // If we're dealing with an async function, the result should not be read from memory
+                        // immediately, as it's the async call result
+                        //
+                        // We can leave the result of the call (the indication of what to do as an async call)
+                        // on the stack as a return
+                        self.stack.push(ptr);
+                    } else {
+                        // If we're not dealing with an async call, the result must be in memory at this point and can be read out
+                        self.read_results_from_memory(
+                            &func.result,
+                            ptr.clone(),
+                            ArchitectureSize::default(),
+                        );
+                        self.emit(&Instruction::Flush {
+                            amt: usize::from(func.result.is_some()),
+                        });
+                    }
+                } else {
+                    // With no return pointer in use we can simply lift the
+                    // result(s) of the function from the result of the core
+                    // wasm function.
+                    if let Some(ty) = &func.result {
+                        self.lift(ty)
+                    }
+                }
+
+                // Emit the function return
+                if async_ {
+                    self.emit(&Instruction::AsyncTaskReturn {
+                        name: &func.name,
+                        params: if func.result.is_some() {
+                            &[WasmType::Pointer]
+                        } else {
+                            &[]
+                        },
+                    });
+                } else {
+                    self.emit(&Instruction::Return {
+                        func,
                         amt: usize::from(func.result.is_some()),
                     });
                 }
-
-                self.emit(&Instruction::Return {
-                    func,
-                    amt: usize::from(func.result.is_some()),
-                });
             }
-            LiftLower::LiftArgsLowerResults => {
-                if let (AbiVariant::GuestImport, true) = (self.variant, self.async_) {
-                    todo!("implement host-side support for async lift/lower");
-                }
 
+            LiftLower::LiftArgsLowerResults => {
+                let max_flat_params = match (variant, async_) {
+                    (AbiVariant::GuestImportAsync, _is_async @ true) => MAX_FLAT_ASYNC_PARAMS,
+                    _ => MAX_FLAT_PARAMS,
+                };
+
+                // Read parameters from memory
                 let read_from_memory = |self_: &mut Self| {
                     let mut offset = ArchitectureSize::default();
-                    let ptr = self_.stack.pop().unwrap();
-                    for (_, ty) in func.params.iter() {
+                    let ptr = self_
+                        .stack
+                        .pop()
+                        .expect("empty stack during read param from memory");
+                    for Param { ty, .. } in func.params.iter() {
                         offset = align_to_arch(offset, self_.bindgen.sizes().align(ty));
                         self_.read_from_memory(ty, ptr.clone(), offset);
                         offset += self_.bindgen.sizes().size(ty);
                     }
                 };
 
-                if !sig.indirect_params {
-                    // If parameters are not passed indirectly then we lift each
+                // Resolve parameters
+                if sig.indirect_params {
+                    // If parameters were passed indirectly, arguments must be
+                    // read in succession from memory, with the pointer to the arguments
+                    // being the first argument to the function.
+                    self.emit(&Instruction::GetArg { nth: 0 });
+                    read_from_memory(self);
+                } else {
+                    // ... otherwise, if parameters were passed directly then we lift each
                     // argument in succession from the component wasm types that
                     // make-up the type.
                     let mut offset = 0;
-                    let mut temp = Vec::new();
-                    for (_, ty) in func.params.iter() {
-                        temp.truncate(0);
-                        self.resolve.push_flat(ty, &mut temp);
-                        for _ in 0..temp.len() {
+                    for Param {
+                        name: param_name,
+                        ty,
+                        ..
+                    } in func.params.iter()
+                    {
+                        let Some(types) = flat_types(self.resolve, ty, Some(max_flat_params))
+                        else {
+                            panic!(
+                                "failed to flatten types during direct parameter lifting ('{param_name}' in func '{}')",
+                                func.name
+                            );
+                        };
+                        for _ in 0..types.len() {
                             self.emit(&Instruction::GetArg { nth: offset });
                             offset += 1;
                         }
                         self.lift(ty);
                     }
-                } else {
-                    // ... otherwise argument is read in succession from memory
-                    // where the pointer to the arguments is the first argument
-                    // to the function.
-                    self.emit(&Instruction::GetArg { nth: 0 });
-                    read_from_memory(self);
                 }
 
                 // ... and that allows us to call the interface types function
-                self.emit(&Instruction::CallInterface {
-                    func,
-                    async_: self.async_,
-                });
+                self.emit(&Instruction::CallInterface { func, async_ });
 
-                let (lower_to_memory, async_results) = if self.async_ {
-                    self.emit(&Instruction::AsyncPostCallInterface { func });
-
-                    let mut results = Vec::new();
-                    if let Some(ty) = &func.result {
-                        self.resolve.push_flat(ty, &mut results);
+                // The return value of an async function is *not* the result of the function
+                // itself or a pointer but rather a status code.
+                //
+                // Asynchronous functions will call `task.return` after the
+                // interface function completes, so lowering is conditional
+                // based on slightly different logic for the `task.return`
+                // intrinsic.
+                //
+                // Note that in the async import case teh code below deals with the CM function being lowered,
+                // not the core function that is underneath that (i.e. func.result may be empty,
+                // where the associated core function underneath must have a i32 status code result)
+                let (lower_to_memory, async_flat_results) = match (async_, &func.result) {
+                    // All async cases pass along the function results and flatten where necesary
+                    (_is_async @ true, func_result) => {
+                        let results = match &func_result {
+                            Some(ty) => flat_types(self.resolve, ty, Some(max_flat_params)),
+                            None => Some(Vec::new()),
+                        };
+                        (results.is_none(), Some(results))
                     }
-                    (results.len() > MAX_FLAT_PARAMS, Some(results))
-                } else {
-                    (sig.retptr, None)
+                    // All other non-async cases
+                    (_is_async @ false, _) => (sig.retptr, None),
                 };
 
                 // This was dynamically allocated by the caller (or async start
                 // function) so after it's been read by the guest we need to
                 // deallocate it.
-                if let AbiVariant::GuestExport = self.variant {
-                    if sig.indirect_params && !self.async_ {
+                if let AbiVariant::GuestExport
+                | AbiVariant::GuestExportAsync
+                | AbiVariant::GuestExportAsyncStackful = variant
+                {
+                    if sig.indirect_params && !async_ {
                         let ElementInfo { size, align } = self
                             .bindgen
                             .sizes()
-                            .record(func.params.iter().map(|t| &t.1));
+                            .record(func.params.iter().map(|param| &param.ty));
                         self.emit(&Instruction::GetArg { nth: 0 });
                         self.emit(&Instruction::GuestDeallocate { size, align });
                     }
                 }
 
-                if !lower_to_memory {
-                    // With no return pointer in use we simply lower the
-                    // result(s) and return that directly from the function.
-                    if let Some(ty) = &func.result {
-                        self.lower(ty);
-                    }
-                } else {
-                    match self.variant {
-                        // When a function is imported to a guest this means
-                        // it's a host providing the implementation of the
-                        // import. The result is stored in the pointer
-                        // specified in the last argument, so we get the
-                        // pointer here and then write the return value into
-                        // it.
-                        AbiVariant::GuestImport => {
-                            self.emit(&Instruction::GetArg {
-                                nth: sig.params.len() - 1,
-                            });
-                            let ptr = self.stack.pop().unwrap();
-                            self.write_params_to_memory(&func.result, ptr, Default::default());
-                        }
+                self.realloc = Some(realloc);
 
-                        // For a guest import this is a function defined in
-                        // wasm, so we're returning a pointer where the
-                        // value was stored at. Allocate some space here
-                        // (statically) and then write the result into that
-                        // memory, returning the pointer at the end.
-                        AbiVariant::GuestExport => {
+                // Perform memory lowing of relevant results, including out pointers as well as traditional results
+                match (lower_to_memory, sig.retptr, variant) {
+                    // For sync calls, if no lowering to memory is required and there *is* a return pointer in use
+                    // then we need to lower then simply lower the result(s) and return that directly from the function.
+                    (_lower_to_memory @ false, _, _) => {
+                        if let Some(ty) = &func.result {
+                            self.lower(ty);
+                        }
+                    }
+
+                    // Lowering to memory for a guest import
+                    //
+                    // When a function is imported to a guest this means
+                    // it's a host providing the implementation of the
+                    // import. The result is stored in the pointer
+                    // specified in the last argument, so we get the
+                    // pointer here and then write the return value into
+                    // it.
+                    (
+                        _lower_to_memory @ true,
+                        _has_ret_ptr @ true,
+                        AbiVariant::GuestImport | AbiVariant::GuestImportAsync,
+                    ) => {
+                        self.emit(&Instruction::GetArg {
+                            nth: sig.params.len() - 1,
+                        });
+                        let ptr = self
+                            .stack
+                            .pop()
+                            .expect("empty stack during result lower to memory");
+                        self.write_params_to_memory(&func.result, ptr, Default::default());
+                    }
+
+                    // Lowering to memory for a guest export
+                    //
+                    // For a guest import this is a function defined in
+                    // wasm, so we're returning a pointer where the
+                    // value was stored at. Allocate some space here
+                    // (statically) and then write the result into that
+                    // memory, returning the pointer at the end.
+                    (_lower_to_memory @ true, _, variant) => match variant {
+                        AbiVariant::GuestExport | AbiVariant::GuestExportAsync => {
                             let ElementInfo { size, align } =
                                 self.bindgen.sizes().params(&func.result);
                             let ptr = self.bindgen.return_pointer(size, align);
@@ -1132,45 +1302,82 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                             );
                             self.stack.push(ptr);
                         }
+                        AbiVariant::GuestImport | AbiVariant::GuestImportAsync => {
+                            unreachable!(
+                                "lowering to memory cannot be performed without a return pointer ({async_note} func [{func_name}], variant {variant:#?})",
+                                async_note = async_.then_some("async").unwrap_or("sync"),
+                                func_name = func.name,
+                            )
+                        }
+                        AbiVariant::GuestExportAsyncStackful => {
+                            todo!("stackful exports are not yet supported")
+                        }
+                    },
+                }
 
-                        AbiVariant::GuestImportAsync
-                        | AbiVariant::GuestExportAsync
-                        | AbiVariant::GuestExportAsyncStackful => {
-                            unreachable!()
+                // Build and emit the appropriate return
+                match (variant, async_flat_results) {
+                    // Async guest imports always return a i32 status code
+                    (AbiVariant::GuestImport | AbiVariant::GuestImportAsync, None) if async_ => {
+                        unreachable!("async guest imports must have a return")
+                    }
+
+                    // Async guest imports with results return the status code, not a pointer to any results
+                    (AbiVariant::GuestImport | AbiVariant::GuestImportAsync, Some(results))
+                        if async_ =>
+                    {
+                        let name = &format!("[task-return]{}", func.name);
+                        let params = results.as_deref().unwrap_or_default();
+                        self.emit(&Instruction::AsyncTaskReturn { name, params });
+                    }
+
+                    // All async/non-async cases with results that need to be returned
+                    //
+                    // In practice, async imports should not end up here, as the returned result of an
+                    // async import is *not* a pointer but instead a status code.
+                    (_, Some(results)) => {
+                        let name = &format!("[task-return]{}", func.name);
+                        let params = results.as_deref().unwrap_or(&[WasmType::Pointer]);
+                        self.emit(&Instruction::AsyncTaskReturn { name, params });
+                    }
+
+                    // All async/non-async cases with no results
+                    (_, None) => {
+                        if async_ {
+                            let name = &format!("[task-return]{}", func.name);
+                            self.emit(&Instruction::AsyncTaskReturn {
+                                name: name,
+                                params: if sig.results.len() > MAX_FLAT_ASYNC_PARAMS {
+                                    &[WasmType::Pointer]
+                                } else {
+                                    &sig.results
+                                },
+                            });
+                        } else {
+                            self.emit(&Instruction::Return {
+                                func,
+                                amt: sig.results.len(),
+                            });
                         }
                     }
                 }
 
-                if let Some(results) = async_results {
-                    let name = &format!("[task-return]{}", func.name);
-
-                    self.emit(&Instruction::AsyncCallReturn {
-                        name,
-                        params: &if results.len() > MAX_FLAT_PARAMS {
-                            vec![WasmType::Pointer]
-                        } else {
-                            results
-                        },
-                    });
-                    self.emit(&Instruction::Return { func, amt: 1 });
-                } else {
-                    self.emit(&Instruction::Return {
-                        func,
-                        amt: sig.results.len(),
-                    });
-                }
+                self.realloc = None;
             }
         }
 
+        assert!(self.realloc.is_none());
+
         assert!(
             self.stack.is_empty(),
-            "stack has {} items remaining",
-            self.stack.len()
+            "stack has {} items remaining: {:?}",
+            self.stack.len(),
+            self.stack,
         );
     }
 
     fn post_return(&mut self, func: &Function) {
-        let sig = self.resolve.wasm_signature(self.variant, func);
+        let sig = self.resolve.wasm_signature(AbiVariant::GuestExport, func);
 
         // Currently post-return is only used for lists and lists are always
         // returned indirectly through memory due to their flat representation
@@ -1180,16 +1387,47 @@ impl<'a, B: Bindgen> Generator<'a, B> {
 
         self.emit(&Instruction::GetArg { nth: 0 });
         let addr = self.stack.pop().unwrap();
-        for (offset, ty) in self.bindgen.sizes().field_offsets(&func.result) {
-            self.deallocate(ty, addr.clone(), offset);
-        }
-        self.emit(&Instruction::Return { func, amt: 0 });
 
-        assert!(
-            self.stack.is_empty(),
-            "stack has {} items remaining",
-            self.stack.len()
-        );
+        let mut types = Vec::new();
+        types.extend(func.result);
+        self.deallocate_in_types(&types, &[addr], true, Deallocate::Lists);
+
+        self.emit(&Instruction::Return { func, amt: 0 });
+    }
+
+    fn deallocate_in_types(
+        &mut self,
+        types: &[Type],
+        operands: &[B::Operand],
+        indirect: bool,
+        what: Deallocate,
+    ) {
+        if indirect {
+            assert_eq!(operands.len(), 1);
+            for (offset, ty) in self.bindgen.sizes().field_offsets(types) {
+                self.deallocate_indirect(ty, operands[0].clone(), offset, what);
+            }
+            assert!(
+                self.stack.is_empty(),
+                "stack has {} items remaining",
+                self.stack.len()
+            );
+        } else {
+            let mut operands = operands;
+            let mut operands_for_ty;
+            for ty in types {
+                let types = flat_types(self.resolve, ty, None).unwrap();
+                (operands_for_ty, operands) = operands.split_at(types.len());
+                self.stack.extend_from_slice(operands_for_ty);
+                self.deallocate(ty, what);
+                assert!(
+                    self.stack.is_empty(),
+                    "stack has {} items remaining",
+                    self.stack.len()
+                );
+            }
+            assert!(operands.is_empty());
+        }
     }
 
     fn emit(&mut self, inst: &Instruction<'_>) {
@@ -1199,8 +1437,9 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         let operands_len = inst.operands_len();
         assert!(
             self.stack.len() >= operands_len,
-            "not enough operands on stack for {:?}",
-            inst
+            "not enough operands on stack for {:?}: have {} need {operands_len}",
+            inst,
+            self.stack.len(),
         );
         self.operands
             .extend(self.stack.drain((self.stack.len() - operands_len)..));
@@ -1364,6 +1603,22 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     });
                 }
                 TypeDefKind::Unknown => unreachable!(),
+                TypeDefKind::FixedLengthList(ty, size) => {
+                    self.emit(&FixedLengthListLower {
+                        element: ty,
+                        size: *size,
+                        id,
+                    });
+                    let mut values = self
+                        .stack
+                        .drain(self.stack.len() - (*size as usize)..)
+                        .collect::<Vec<_>>();
+                    for value in values.drain(..) {
+                        self.stack.push(value);
+                        self.lower(ty);
+                    }
+                }
+                TypeDefKind::Map(..) => todo!(),
             },
         }
     }
@@ -1374,10 +1629,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         cases: impl IntoIterator<Item = Option<&'b Type>>,
     ) -> Vec<WasmType> {
         use Instruction::*;
-        let mut results = Vec::new();
-        let mut temp = Vec::new();
+        let results = flat_types(self.resolve, ty, None).unwrap();
         let mut casts = Vec::new();
-        self.resolve.push_flat(ty, &mut results);
         for (i, ty) in cases.into_iter().enumerate() {
             self.push_block();
             self.emit(&VariantPayloadName);
@@ -1393,8 +1646,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 // Determine the types of all the wasm values we just
                 // pushed, and record how many. If we pushed too few
                 // then we'll need to push some zeros after this.
-                temp.truncate(0);
-                self.resolve.push_flat(ty, &mut temp);
+                let temp = flat_types(self.resolve, ty, None).unwrap();
                 pushed += temp.len();
 
                 // For all the types pushed we may need to insert some
@@ -1424,13 +1676,9 @@ impl<'a, B: Bindgen> Generator<'a, B> {
     }
 
     fn list_realloc(&self) -> Option<&'static str> {
-        // Lowering parameters calling a wasm import _or_ returning a result
-        // from an async-lifted wasm export means we don't need to pass
-        // ownership, but we pass ownership in all other cases.
-        match (self.variant, self.lift_lower, self.async_) {
-            (AbiVariant::GuestImport, LiftLower::LowerArgsLiftResults, _)
-            | (AbiVariant::GuestExport, LiftLower::LiftArgsLowerResults, true) => None,
-            _ => Some("cabi_realloc"),
+        match self.realloc.expect("realloc should be configured") {
+            Realloc::None => None,
+            Realloc::Export(s) => Some(s),
         }
     }
 
@@ -1480,18 +1728,11 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     todo!();
                 }
                 TypeDefKind::Record(record) => {
-                    let mut temp = Vec::new();
-                    self.resolve.push_flat(ty, &mut temp);
-                    let mut args = self
-                        .stack
-                        .drain(self.stack.len() - temp.len()..)
-                        .collect::<Vec<_>>();
-                    for field in record.fields.iter() {
-                        temp.truncate(0);
-                        self.resolve.push_flat(&field.ty, &mut temp);
-                        self.stack.extend(args.drain(..temp.len()));
-                        self.lift(&field.ty);
-                    }
+                    self.flat_for_each_record_type(
+                        ty,
+                        record.fields.iter().map(|f| &f.ty),
+                        Self::lift,
+                    );
                     self.emit(&RecordLift {
                         record,
                         ty: id,
@@ -1499,18 +1740,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     });
                 }
                 TypeDefKind::Tuple(tuple) => {
-                    let mut temp = Vec::new();
-                    self.resolve.push_flat(ty, &mut temp);
-                    let mut args = self
-                        .stack
-                        .drain(self.stack.len() - temp.len()..)
-                        .collect::<Vec<_>>();
-                    for ty in tuple.types.iter() {
-                        temp.truncate(0);
-                        self.resolve.push_flat(ty, &mut temp);
-                        self.stack.extend(args.drain(..temp.len()));
-                        self.lift(ty);
-                    }
+                    self.flat_for_each_record_type(ty, tuple.types.iter(), Self::lift);
                     self.emit(&TupleLift { tuple, ty: id });
                 }
                 TypeDefKind::Flags(flags) => {
@@ -1522,7 +1752,12 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
 
                 TypeDefKind::Variant(v) => {
-                    self.lift_variant_arms(ty, v.cases.iter().map(|c| c.ty.as_ref()));
+                    self.flat_for_each_variant_arm(
+                        ty,
+                        true,
+                        v.cases.iter().map(|c| c.ty.as_ref()),
+                        Self::lift,
+                    );
                     self.emit(&VariantLift {
                         variant: v,
                         ty: id,
@@ -1539,12 +1774,17 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
 
                 TypeDefKind::Option(t) => {
-                    self.lift_variant_arms(ty, [None, Some(t)]);
+                    self.flat_for_each_variant_arm(ty, true, [None, Some(t)], Self::lift);
                     self.emit(&OptionLift { payload: t, ty: id });
                 }
 
                 TypeDefKind::Result(r) => {
-                    self.lift_variant_arms(ty, [r.ok.as_ref(), r.err.as_ref()]);
+                    self.flat_for_each_variant_arm(
+                        ty,
+                        true,
+                        [r.ok.as_ref(), r.err.as_ref()],
+                        Self::lift,
+                    );
                     self.emit(&ResultLift { result: r, ty: id });
                 }
 
@@ -1561,19 +1801,56 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     });
                 }
                 TypeDefKind::Unknown => unreachable!(),
+                TypeDefKind::FixedLengthList(ty, size) => {
+                    let temp = flat_types(self.resolve, ty, None).unwrap();
+                    let flat_per_elem = temp.to_vec().len();
+                    let flatsize = flat_per_elem * (*size as usize);
+                    let mut lowered_args = self
+                        .stack
+                        .drain(self.stack.len() - flatsize..)
+                        .collect::<Vec<_>>();
+                    for _ in 0..*size {
+                        self.stack.extend(lowered_args.drain(..flat_per_elem));
+                        self.lift(ty);
+                    }
+                    self.emit(&FixedLengthListLift {
+                        element: ty,
+                        size: *size,
+                        id,
+                    });
+                }
+                TypeDefKind::Map(..) => todo!(),
             },
         }
     }
 
-    fn lift_variant_arms<'b>(
+    fn flat_for_each_record_type<'b>(
+        &mut self,
+        container: &Type,
+        types: impl Iterator<Item = &'b Type>,
+        mut iter: impl FnMut(&mut Self, &Type),
+    ) {
+        let temp = flat_types(self.resolve, container, None).unwrap();
+        let mut args = self
+            .stack
+            .drain(self.stack.len() - temp.len()..)
+            .collect::<Vec<_>>();
+        for ty in types {
+            let temp = flat_types(self.resolve, ty, None).unwrap();
+            self.stack.extend(args.drain(..temp.len()));
+            iter(self, ty);
+        }
+    }
+
+    fn flat_for_each_variant_arm<'b>(
         &mut self,
         ty: &Type,
+        blocks_with_type_have_result: bool,
         cases: impl IntoIterator<Item = Option<&'b Type>>,
+        mut iter: impl FnMut(&mut Self, &Type),
     ) {
-        let mut params = Vec::new();
-        let mut temp = Vec::new();
+        let params = flat_types(self.resolve, ty, None).unwrap();
         let mut casts = Vec::new();
-        self.resolve.push_flat(ty, &mut params);
         let block_inputs = self
             .stack
             .drain(self.stack.len() + 1 - params.len()..)
@@ -1583,8 +1860,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             if let Some(ty) = ty {
                 // Push only the values we need for this variant onto
                 // the stack.
-                temp.truncate(0);
-                self.resolve.push_flat(ty, &mut temp);
+                let temp = flat_types(self.resolve, ty, None).unwrap();
                 self.stack
                     .extend(block_inputs[..temp.len()].iter().cloned());
 
@@ -1599,9 +1875,13 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
 
                 // Then recursively lift this variant's payload.
-                self.lift(ty);
+                iter(self, ty);
             }
-            self.finish_block(ty.is_some() as usize);
+            self.finish_block(if blocks_with_type_have_result {
+                ty.is_some() as usize
+            } else {
+                0
+            });
         }
     }
 
@@ -1721,6 +2001,22 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
 
                 TypeDefKind::Unknown => unreachable!(),
+                TypeDefKind::FixedLengthList(element, size) => {
+                    // resembles write_list_to_memory
+                    self.push_block();
+                    self.emit(&IterElem { element });
+                    self.emit(&IterBasePointer);
+                    let elem_addr = self.stack.pop().unwrap();
+                    self.write_to_memory(element, elem_addr, offset);
+                    self.finish_block(0);
+                    self.stack.push(addr);
+                    self.emit(&FixedLengthListLowerToMemory {
+                        element,
+                        size: *size,
+                        id,
+                    });
+                }
+                TypeDefKind::Map(..) => todo!(),
             },
         }
     }
@@ -1907,6 +2203,20 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
 
                 TypeDefKind::Unknown => unreachable!(),
+                TypeDefKind::FixedLengthList(ty, size) => {
+                    self.push_block();
+                    self.emit(&IterBasePointer);
+                    let elemaddr = self.stack.pop().unwrap();
+                    self.read_from_memory(ty, elemaddr, offset);
+                    self.finish_block(1);
+                    self.stack.push(addr.clone());
+                    self.emit(&FixedLengthListLiftFromMemory {
+                        element: ty,
+                        size: *size,
+                        id,
+                    });
+                }
+                TypeDefKind::Map(..) => todo!(),
             },
         }
     }
@@ -1986,12 +2296,132 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         });
     }
 
-    fn deallocate(&mut self, ty: &Type, addr: B::Operand, offset: ArchitectureSize) {
+    /// Runs the deallocation of `ty` for the operands currently on
+    /// `self.stack`.
+    ///
+    /// This will pop the ABI items of `ty` from `self.stack`.
+    fn deallocate(&mut self, ty: &Type, what: Deallocate) {
+        use Instruction::*;
+
+        match *ty {
+            Type::String => {
+                self.emit(&Instruction::GuestDeallocateString);
+            }
+
+            Type::Bool
+            | Type::U8
+            | Type::S8
+            | Type::U16
+            | Type::S16
+            | Type::U32
+            | Type::S32
+            | Type::Char
+            | Type::U64
+            | Type::S64
+            | Type::F32
+            | Type::F64
+            | Type::ErrorContext => {
+                // No deallocation necessary, just discard the operand on the
+                // stack.
+                self.stack.pop().unwrap();
+            }
+
+            Type::Id(id) => match &self.resolve.types[id].kind {
+                TypeDefKind::Type(t) => self.deallocate(t, what),
+
+                TypeDefKind::List(element) => {
+                    self.push_block();
+                    self.emit(&IterBasePointer);
+                    let elemaddr = self.stack.pop().unwrap();
+                    self.deallocate_indirect(element, elemaddr, Default::default(), what);
+                    self.finish_block(0);
+
+                    self.emit(&Instruction::GuestDeallocateList { element });
+                }
+
+                TypeDefKind::Handle(Handle::Own(_))
+                | TypeDefKind::Future(_)
+                | TypeDefKind::Stream(_)
+                    if what.handles() =>
+                {
+                    self.lift(ty);
+                    self.emit(&DropHandle { ty });
+                }
+
+                TypeDefKind::Record(record) => {
+                    self.flat_for_each_record_type(
+                        ty,
+                        record.fields.iter().map(|f| &f.ty),
+                        |me, ty| me.deallocate(ty, what),
+                    );
+                }
+
+                TypeDefKind::Tuple(tuple) => {
+                    self.flat_for_each_record_type(ty, tuple.types.iter(), |me, ty| {
+                        me.deallocate(ty, what)
+                    });
+                }
+
+                TypeDefKind::Variant(variant) => {
+                    self.flat_for_each_variant_arm(
+                        ty,
+                        false,
+                        variant.cases.iter().map(|c| c.ty.as_ref()),
+                        |me, ty| me.deallocate(ty, what),
+                    );
+                    self.emit(&GuestDeallocateVariant {
+                        blocks: variant.cases.len(),
+                    });
+                }
+
+                TypeDefKind::Option(t) => {
+                    self.flat_for_each_variant_arm(ty, false, [None, Some(t)], |me, ty| {
+                        me.deallocate(ty, what)
+                    });
+                    self.emit(&GuestDeallocateVariant { blocks: 2 });
+                }
+
+                TypeDefKind::Result(e) => {
+                    self.flat_for_each_variant_arm(
+                        ty,
+                        false,
+                        [e.ok.as_ref(), e.err.as_ref()],
+                        |me, ty| me.deallocate(ty, what),
+                    );
+                    self.emit(&GuestDeallocateVariant { blocks: 2 });
+                }
+
+                // discard the operand on the stack, otherwise nothing to free.
+                TypeDefKind::Flags(_)
+                | TypeDefKind::Enum(_)
+                | TypeDefKind::Future(_)
+                | TypeDefKind::Stream(_)
+                | TypeDefKind::Handle(Handle::Own(_))
+                | TypeDefKind::Handle(Handle::Borrow(_)) => {
+                    self.stack.pop().unwrap();
+                }
+
+                TypeDefKind::Resource => unreachable!(),
+                TypeDefKind::Unknown => unreachable!(),
+
+                TypeDefKind::FixedLengthList(..) => todo!(),
+                TypeDefKind::Map(..) => todo!(),
+            },
+        }
+    }
+
+    fn deallocate_indirect(
+        &mut self,
+        ty: &Type,
+        addr: B::Operand,
+        offset: ArchitectureSize,
+        what: Deallocate,
+    ) {
         use Instruction::*;
 
         // No need to execute any instructions if this type itself doesn't
         // require any form of post-return.
-        if !needs_post_return(self.resolve, ty) {
+        if !needs_deallocate(self.resolve, ty, what) {
             return;
         }
 
@@ -2003,7 +2433,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 self.emit(&Instruction::LengthLoad {
                     offset: offset + self.bindgen.sizes().align(ty).into(),
                 });
-                self.emit(&Instruction::GuestDeallocateString);
+                self.deallocate(ty, what);
             }
 
             Type::Bool
@@ -2021,9 +2451,9 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             | Type::ErrorContext => {}
 
             Type::Id(id) => match &self.resolve.types[id].kind {
-                TypeDefKind::Type(t) => self.deallocate(t, addr, offset),
+                TypeDefKind::Type(t) => self.deallocate_indirect(t, addr, offset, what),
 
-                TypeDefKind::List(element) => {
+                TypeDefKind::List(_) => {
                     self.stack.push(addr.clone());
                     self.emit(&Instruction::PointerLoad { offset });
                     self.stack.push(addr);
@@ -2031,43 +2461,44 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         offset: offset + self.bindgen.sizes().align(ty).into(),
                     });
 
-                    self.push_block();
-                    self.emit(&IterBasePointer);
-                    let elemaddr = self.stack.pop().unwrap();
-                    self.deallocate(element, elemaddr, Default::default());
-                    self.finish_block(0);
-
-                    self.emit(&Instruction::GuestDeallocateList { element });
+                    self.deallocate(ty, what);
                 }
 
-                TypeDefKind::Handle(_) => {
-                    todo!()
+                TypeDefKind::Handle(Handle::Own(_))
+                | TypeDefKind::Future(_)
+                | TypeDefKind::Stream(_)
+                    if what.handles() =>
+                {
+                    self.read_from_memory(ty, addr, offset);
+                    self.emit(&DropHandle { ty });
                 }
 
-                TypeDefKind::Resource => {
-                    todo!()
-                }
+                TypeDefKind::Handle(Handle::Own(_)) => unreachable!(),
+                TypeDefKind::Handle(Handle::Borrow(_)) => unreachable!(),
+                TypeDefKind::Resource => unreachable!(),
 
                 TypeDefKind::Record(record) => {
-                    self.deallocate_fields(
+                    self.deallocate_indirect_fields(
                         &record.fields.iter().map(|f| f.ty).collect::<Vec<_>>(),
                         addr,
                         offset,
+                        what,
                     );
                 }
 
                 TypeDefKind::Tuple(tuple) => {
-                    self.deallocate_fields(&tuple.types, addr, offset);
+                    self.deallocate_indirect_fields(&tuple.types, addr, offset, what);
                 }
 
                 TypeDefKind::Flags(_) => {}
 
                 TypeDefKind::Variant(variant) => {
-                    self.deallocate_variant(
+                    self.deallocate_indirect_variant(
                         offset,
                         addr,
                         variant.tag(),
                         variant.cases.iter().map(|c| c.ty.as_ref()),
+                        what,
                     );
                     self.emit(&GuestDeallocateVariant {
                         blocks: variant.cases.len(),
@@ -2075,30 +2506,39 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
 
                 TypeDefKind::Option(t) => {
-                    self.deallocate_variant(offset, addr, Int::U8, [None, Some(t)]);
+                    self.deallocate_indirect_variant(offset, addr, Int::U8, [None, Some(t)], what);
                     self.emit(&GuestDeallocateVariant { blocks: 2 });
                 }
 
                 TypeDefKind::Result(e) => {
-                    self.deallocate_variant(offset, addr, Int::U8, [e.ok.as_ref(), e.err.as_ref()]);
+                    self.deallocate_indirect_variant(
+                        offset,
+                        addr,
+                        Int::U8,
+                        [e.ok.as_ref(), e.err.as_ref()],
+                        what,
+                    );
                     self.emit(&GuestDeallocateVariant { blocks: 2 });
                 }
 
                 TypeDefKind::Enum(_) => {}
 
-                TypeDefKind::Future(_) => todo!("read future from memory"),
-                TypeDefKind::Stream(_) => todo!("read stream from memory"),
+                TypeDefKind::Future(_) => unreachable!(),
+                TypeDefKind::Stream(_) => unreachable!(),
                 TypeDefKind::Unknown => unreachable!(),
+                TypeDefKind::FixedLengthList(_, _) => {}
+                TypeDefKind::Map(..) => todo!(),
             },
         }
     }
 
-    fn deallocate_variant<'b>(
+    fn deallocate_indirect_variant<'b>(
         &mut self,
         offset: ArchitectureSize,
         addr: B::Operand,
         tag: Int,
         cases: impl IntoIterator<Item = Option<&'b Type>> + Clone,
+        what: Deallocate,
     ) {
         self.stack.push(addr.clone());
         self.load_intrepr(offset, tag);
@@ -2106,15 +2546,21 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         for ty in cases {
             self.push_block();
             if let Some(ty) = ty {
-                self.deallocate(ty, addr.clone(), payload_offset);
+                self.deallocate_indirect(ty, addr.clone(), payload_offset, what);
             }
             self.finish_block(0);
         }
     }
 
-    fn deallocate_fields(&mut self, tys: &[Type], addr: B::Operand, offset: ArchitectureSize) {
+    fn deallocate_indirect_fields(
+        &mut self,
+        tys: &[Type],
+        addr: B::Operand,
+        offset: ArchitectureSize,
+        what: Deallocate,
+    ) {
         for (field_offset, ty) in self.bindgen.sizes().field_offsets(tys) {
-            self.deallocate(ty, addr.clone(), offset + (field_offset));
+            self.deallocate_indirect(ty, addr.clone(), offset + (field_offset), what);
         }
     }
 }
@@ -2173,4 +2619,15 @@ fn cast(from: WasmType, to: WasmType) -> Bitcast {
             unreachable!("Don't know how to bitcast from {:?} to {:?}", from, to);
         }
     }
+}
+
+/// Flatten types in a given type
+///
+/// It is sometimes necessary to restrict the number of max parameters dynamically,
+/// for example during an async guest import call (flat params are limited to 4)
+fn flat_types(resolve: &Resolve, ty: &Type, max_params: Option<usize>) -> Option<Vec<WasmType>> {
+    let max_params = max_params.unwrap_or(MAX_FLAT_PARAMS);
+    let mut storage = iter::repeat_n(WasmType::I32, max_params).collect::<Vec<_>>();
+    let mut flat = FlatTypes::new(storage.as_mut_slice());
+    resolve.push_flat(ty, &mut flat).then_some(flat.to_vec())
 }

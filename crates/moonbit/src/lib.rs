@@ -1,17 +1,30 @@
 use anyhow::Result;
 use core::panic;
 use heck::{ToLowerCamelCase, ToShoutySnakeCase, ToSnakeCase, ToUpperCamelCase};
-use std::{collections::HashMap, fmt::Write, mem, ops::Deref};
-use wit_bindgen_core::{
-    abi::{self, AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType},
-    dealias, uwrite, uwriteln,
-    wit_parser::{
-        Alignment, ArchitectureSize, Docs, Enum, Flags, FlagsRepr, Function, FunctionKind, Handle,
-        Int, InterfaceId, Record, Resolve, Result_, SizeAlign, Tuple, Type, TypeDef, TypeDefKind,
-        TypeId, TypeOwner, Variant, WorldId, WorldKey,
-    },
-    Direction, Files, InterfaceGenerator as _, Ns, Source, WorldGenerator,
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Write,
+    mem,
+    ops::Deref,
 };
+use wit_bindgen_core::{
+    AsyncFilterSet, Direction, Files, InterfaceGenerator as CoreInterfaceGenerator, Ns, Source,
+    WorldGenerator,
+    abi::{self, AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType},
+    uwrite, uwriteln,
+    wit_parser::{
+        Alignment, ArchitectureSize, Docs, Enum, Flags, FlagsRepr, Function, Int, InterfaceId,
+        Param, Record, Resolve, Result_, SizeAlign, Tuple, Type, TypeId, Variant, WorldId,
+        WorldKey,
+    },
+};
+
+use crate::async_support::AsyncSupport;
+use crate::pkg::{Imports, MoonbitSignature, PkgResolver, ToMoonBitIdent, ToMoonBitTypeIdent};
+
+mod async_support;
+mod ffi;
+mod pkg;
 
 // Assumptions:
 // - Data: u8 -> Byte, s8 | s16 | s32 -> Int, u16 | u32 -> UInt, s64 -> Int64, u64 -> UInt64, f32 | f64 -> Double, address -> Int
@@ -21,232 +34,50 @@ use wit_bindgen_core::{
 // - one package per interface (export and import are treated as different interfaces)
 // - ffi utils are under `./ffi`, and the project entrance (package as link target) is under `./gen`
 // TODO: Export will share the type signatures with the import by using a newtype alias
+pub(crate) const FFI_DIR: &str = "ffi";
 
-const FFI_DIR: &str = "ffi";
-
-const FFI: &str = r#"
-pub extern "wasm" fn extend16(value : Int) -> Int =
-  #|(func (param i32) (result i32) local.get 0 i32.extend16_s)
-
-pub extern "wasm" fn extend8(value : Int) -> Int =
-  #|(func (param i32) (result i32) local.get 0 i32.extend8_s)
-
-pub extern "wasm" fn store8(offset : Int, value : Int) =
-  #|(func (param i32) (param i32) local.get 0 local.get 1 i32.store8)
-
-pub extern "wasm" fn load8_u(offset : Int) -> Int =
-  #|(func (param i32) (result i32) local.get 0 i32.load8_u)
-
-pub extern "wasm" fn load8(offset : Int) -> Int =
-  #|(func (param i32) (result i32) local.get 0 i32.load8_s)
-
-pub extern "wasm" fn store16(offset : Int, value : Int) =
-  #|(func (param i32) (param i32) local.get 0 local.get 1 i32.store16)
-
-pub extern "wasm" fn load16(offset : Int) -> Int =
-  #|(func (param i32) (result i32) local.get 0 i32.load16_s)
-
-pub extern "wasm" fn load16_u(offset : Int) -> Int =
-  #|(func (param i32) (result i32) local.get 0 i32.load16_u)
-
-pub extern "wasm" fn store32(offset : Int, value : Int) =
-  #|(func (param i32) (param i32) local.get 0 local.get 1 i32.store)
-
-pub extern "wasm" fn load32(offset : Int) -> Int =
-  #|(func (param i32) (result i32) local.get 0 i32.load)
-
-pub extern "wasm" fn store64(offset : Int, value : Int64) =
-  #|(func (param i32) (param i64) local.get 0 local.get 1 i64.store)
-
-pub extern "wasm" fn load64(offset : Int) -> Int64 =
-  #|(func (param i32) (result i64) local.get 0 i64.load)
-
-pub extern "wasm" fn storef32(offset : Int, value : Float) =
-  #|(func (param i32) (param f32) local.get 0 local.get 1 f32.store)
-
-pub extern "wasm" fn loadf32(offset : Int) -> Float =
-  #|(func (param i32) (result f32) local.get 0 f32.load)
-
-pub extern "wasm" fn storef64(offset : Int, value : Double) =
-  #|(func (param i32) (param f64) local.get 0 local.get 1 f64.store)
-
-pub extern "wasm" fn loadf64(offset : Int) -> Double =
-  #|(func (param i32) (result f64) local.get 0 f64.load)
-
-pub extern "wasm" fn f32_to_i32(value : Float) -> Int =
-  #|(func (param f32) (result i32) local.get 0 f32.convert_i32_s)
-
-pub extern "wasm" fn f32_to_i64(value : Float) -> Int64 =
-  #|(func (param f32) (result i64) local.get 0 f32.convert_i64_s)
-
-extern "wasm" fn malloc_inline(size : Int) -> Int =
-  #|(func (param i32) (result i32) local.get 0 call $moonbit.malloc)
-
-pub fn malloc(size : Int) -> Int {
-  let words = size / 4 + 1
-  let address = malloc_inline(8 + words * 4)
-  store32(address, 1)
-  store32(address + 4, (words << 8) | 246)
-  address + 8
-}
-
-pub extern "wasm" fn free(position : Int) =
-  #|(func (param i32) local.get 0 i32.const 8 i32.sub call $moonbit.decref)
-
-extern "wasm" fn copy(dest : Int, src : Int, len : Int) =
-  #|(func (param i32) (param i32) (param i32) local.get 0 local.get 1 local.get 2 memory.copy)
-
-pub extern "wasm" fn str2ptr(str : String) -> Int =
-  #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.add)
-
-extern "wasm" fn ptr2str_ffi(ptr : Int) -> String =
-  #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.sub)
-
-pub fn ptr2str(ptr : Int, len : Int) -> String {
-  let words = len * 2 / 4 + 1
-  let address = ptr - 8
-  store32(address + 4, (words << 8) | 243)
-  store8(address + words * 4 + 7, 3 - len * 2 % 4)
-  ptr2str_ffi(ptr)
-}
-
-pub extern "wasm" fn bytes2ptr(bytes : FixedArray[Byte]) -> Int =
-  #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.add)
-
-extern "wasm" fn ptr2bytes_ffi(ptr : Int) -> FixedArray[Byte] =
-  #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.sub)
-
-pub fn ptr2bytes(ptr : Int, len : Int) -> FixedArray[Byte] {
-  let words = len / 4 + 1
-  let address = ptr - 8
-  store32(address + 4, (words << 8) | 246)
-  store8(address + words * 4 + 7, 3 - len % 4)
-  ptr2bytes_ffi(ptr)
-}
-
-pub extern "wasm" fn uint_array2ptr(array : FixedArray[UInt]) -> Int =
-  #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.add)
-
-pub extern "wasm" fn uint64_array2ptr(array : FixedArray[UInt64]) -> Int =
-  #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.add)
-
-pub extern "wasm" fn int_array2ptr(array : FixedArray[Int]) -> Int =
-  #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.add)
-
-pub extern "wasm" fn int64_array2ptr(array : FixedArray[Int64]) -> Int =
-  #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.add)
-
-pub extern "wasm" fn float_array2ptr(array : FixedArray[Float]) -> Int =
-  #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.add)
-
-pub extern "wasm" fn double_array2ptr(array : FixedArray[Double]) -> Int =
-  #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.add)
-
-extern "wasm" fn ptr2uint_array_ffi(ptr : Int) -> FixedArray[UInt] =
-  #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.sub)
-
-pub fn ptr2uint_array(ptr : Int, len : Int) -> FixedArray[UInt] {
-  set_header_ffi(ptr - 4, len)
-  ptr2uint_array_ffi(ptr)
-}
-
-extern "wasm" fn ptr2int_array_ffi(ptr : Int) -> FixedArray[Int] =
-  #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.sub)
-
-pub fn ptr2int_array(ptr : Int, len : Int) -> FixedArray[Int] {
-  set_header_ffi(ptr - 4, len)
-  ptr2int_array_ffi(ptr)
-}
-
-extern "wasm" fn ptr2float_array_ffi(ptr : Int) -> FixedArray[Float] =
-  #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.sub)
-
-pub fn ptr2float_array(ptr : Int, len : Int) -> FixedArray[Float] {
-  set_header_ffi(ptr - 4, len)
-  ptr2float_array_ffi(ptr)
-}
-extern "wasm" fn ptr2uint64_array_ffi(ptr : Int) -> FixedArray[UInt64] =
-  #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.sub)
-
-pub fn ptr2uint64_array(ptr : Int, len : Int) -> FixedArray[UInt64] {
-  set_header_ffi(ptr - 4, len)
-  ptr2uint64_array_ffi(ptr)
-}
-
-extern "wasm" fn ptr2int64_array_ffi(ptr : Int) -> FixedArray[Int64] =
-  #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.sub)
-
-pub fn ptr2int64_array(ptr : Int, len : Int) -> FixedArray[Int64] {
-  set_header_ffi(ptr - 4, len)
-  ptr2int64_array_ffi(ptr)
-}
-
-extern "wasm" fn ptr2double_array_ffi(ptr : Int) -> FixedArray[Double] =
-  #|(func (param i32) (result i32) local.get 0 i32.const 8 i32.sub)
-
-pub fn ptr2double_array(ptr : Int, len : Int) -> FixedArray[Double] {
-  set_header_ffi(ptr - 4, len)
-  ptr2double_array_ffi(ptr)
-}
-
-fn set_header_ffi(offset : Int, len : Int) -> Unit {
-  store32(offset, len << 8 | 241)
-}
-
-pub fn cabi_realloc(
-    src_offset : Int,
-    src_size : Int,
-    _dst_alignment : Int,
-    dst_size : Int
-) -> Int {{
-    // malloc
-    if src_offset == 0 && src_size == 0 {{
-        return malloc(dst_size)
-    }}
-    // free
-    if dst_size == 0 {{
-        free(src_offset)
-        return 0
-    }}
-    // realloc
-    let dst = malloc(dst_size)
-    copy(dst, src_offset, if src_size < dst_size { src_size } else { dst_size })
-    free(src_offset)
-    dst
-}}
-
-pub(open) trait Any {}
-pub(all) struct Cleanup {
-    address : Int
-    size : Int
-    align : Int
-}
-"#;
+pub(crate) const FFI: &str = include_str!("./ffi/ffi.mbt");
 
 #[derive(Default, Debug, Clone)]
-#[cfg_attr(feature = "clap", derive(clap::Args))]
+#[cfg_attr(feature = "clap", derive(clap::Parser))]
 pub struct Opts {
-    /// Whether or not to derive Show for all types
-    #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
-    pub derive_show: bool,
-    /// Whether or not to derive Eq for all types
-    #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
-    pub derive_eq: bool,
-    /// Whether or not to declare as Error type for types ".*error"
-    #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
-    pub derive_error: bool,
+    #[cfg_attr(feature = "clap", clap(flatten))]
+    pub derive: DeriveOpts,
+
     /// Whether or not to generate stub files ; useful for update after WIT change
     #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
     pub ignore_stub: bool,
+
     /// Whether or not to generate moon.mod.json ; useful if the project is part of a larger project
     #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
     pub ignore_module_file: bool,
+
     /// The package/dir to generate the program entrance
     #[cfg_attr(feature = "clap", arg(long, default_value = "gen"))]
     pub gen_dir: String,
+
     /// The project name ; or the package path prefix if the project is part of a larger project
     #[cfg_attr(feature = "clap", arg(long, default_value = None))]
     pub project_name: Option<String>,
+
+    #[cfg_attr(feature = "clap", clap(flatten))]
+    pub async_: AsyncFilterSet,
+}
+
+#[derive(Default, Debug, Clone)]
+#[cfg_attr(feature = "clap", derive(clap::Args))]
+pub struct DeriveOpts {
+    /// Whether or not to derive Show for all types
+    #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
+    pub derive_show: bool,
+
+    /// Whether or not to derive Eq for all types
+    #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
+    pub derive_eq: bool,
+
+    /// Whether or not to declare as Error type for types ".*error"
+    #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
+    pub derive_error: bool,
 }
 
 impl Opts {
@@ -258,16 +89,26 @@ impl Opts {
     }
 }
 
+#[derive(Default)]
 struct InterfaceFragment {
     src: String,
     ffi: String,
     stub: String,
+    builtins: HashSet<&'static str>,
 }
 
-#[derive(Default)]
-struct Imports {
-    packages: HashMap<String, String>,
-    ns: Ns,
+impl InterfaceFragment {
+    fn concat(&mut self, other: Self) {
+        self.src.push_str(&other.src);
+        self.ffi.push_str(&other.ffi);
+        self.stub.push_str(&other.stub);
+        self.builtins.extend(other.builtins);
+    }
+}
+
+enum PayloadFor {
+    Future,
+    Stream,
 }
 
 #[derive(Default)]
@@ -275,21 +116,22 @@ pub struct MoonBit {
     opts: Opts,
     name: String,
     needs_cleanup: bool,
-    import_interface_fragments: HashMap<String, Vec<InterfaceFragment>>,
-    export_interface_fragments: HashMap<String, Vec<InterfaceFragment>>,
-    import_world_fragments: Vec<InterfaceFragment>,
-    export_world_fragments: Vec<InterfaceFragment>,
+    import_interface_fragments: HashMap<String, InterfaceFragment>,
+    export_interface_fragments: HashMap<String, InterfaceFragment>,
+    import_world_fragment: InterfaceFragment,
+    export_world_fragment: InterfaceFragment,
     sizes: SizeAlign,
-    import_interface_names: HashMap<InterfaceId, String>,
-    export_interface_names: HashMap<InterfaceId, String>,
+
     interface_ns: Ns,
     // dependencies between packages
-    package_import: HashMap<String, Imports>,
+    pkg_resolver: PkgResolver,
     export: HashMap<String, String>,
     export_ns: Ns,
     // return area allocation
     return_area_size: ArchitectureSize,
     return_area_align: Alignment,
+
+    async_support: AsyncSupport,
 }
 
 impl MoonBit {
@@ -300,22 +142,26 @@ impl MoonBit {
         module: &'a str,
         direction: Direction,
     ) -> InterfaceGenerator<'a> {
+        let derive_opts = self.opts.derive.clone();
         InterfaceGenerator {
             src: String::new(),
             stub: String::new(),
             ffi: String::new(),
-            gen: self,
+            r#gen: self,
             resolve,
             name,
             module,
             direction,
+            ffi_imports: HashSet::new(),
+            derive_opts,
         }
     }
 }
 
 impl WorldGenerator for MoonBit {
     fn preprocess(&mut self, resolve: &Resolve, world: WorldId) {
-        self.name = world_name(resolve, world);
+        self.pkg_resolver.resolve = resolve.clone();
+        self.name = PkgResolver::world_name(resolve, world);
         self.sizes.fill(resolve);
     }
 
@@ -326,9 +172,11 @@ impl WorldGenerator for MoonBit {
         id: InterfaceId,
         files: &mut Files,
     ) -> Result<()> {
-        let name = interface_name(resolve, key);
+        let name = PkgResolver::interface_name(resolve, key);
         let name = self.interface_ns.tmp(&name);
-        self.import_interface_names.insert(id, name.clone());
+        self.pkg_resolver
+            .import_interface_names
+            .insert(id, name.clone());
 
         if let Some(content) = &resolve.interfaces[id].docs.contents {
             if !content.is_empty() {
@@ -340,14 +188,16 @@ impl WorldGenerator for MoonBit {
         }
 
         let module = &resolve.name_world_key(key);
-        let mut gen = self.interface(resolve, &name, module, Direction::Import);
-        gen.types(id);
+        let mut r#gen = self.interface(resolve, &name, module, Direction::Import);
+        r#gen.types(id);
 
         for (_, func) in resolve.interfaces[id].functions.iter() {
-            gen.import(module, func);
+            r#gen.import(Some(key), func);
         }
 
-        gen.add_interface_fragment();
+        let result = r#gen.finish();
+        self.import_interface_fragments
+            .insert(name.to_owned(), result);
 
         Ok(())
     }
@@ -359,14 +209,15 @@ impl WorldGenerator for MoonBit {
         funcs: &[(&str, &Function)],
         _files: &mut Files,
     ) {
-        let name = world_name(resolve, world);
-        let mut gen = self.interface(resolve, &name, "$root", Direction::Import);
+        let name = PkgResolver::world_name(resolve, world);
+        let mut r#gen = self.interface(resolve, &name, "$root", Direction::Import);
 
         for (_, func) in funcs {
-            gen.import("$root", func);
+            r#gen.import(None, func); // None is "$root"
         }
 
-        gen.add_world_fragment();
+        let result = r#gen.finish();
+        self.import_world_fragment.concat(result);
     }
 
     fn export_interface(
@@ -376,9 +227,15 @@ impl WorldGenerator for MoonBit {
         id: InterfaceId,
         files: &mut Files,
     ) -> Result<()> {
-        let name = format!("{}.{}", self.opts.gen_dir, interface_name(resolve, key));
+        let name = format!(
+            "{}.{}",
+            self.opts.r#gen_dir,
+            PkgResolver::interface_name(resolve, key)
+        );
         let name = self.interface_ns.tmp(&name);
-        self.export_interface_names.insert(id, name.clone());
+        self.pkg_resolver
+            .export_interface_names
+            .insert(id, name.clone());
 
         if let Some(content) = &resolve.interfaces[id].docs.contents {
             if !content.is_empty() {
@@ -390,14 +247,17 @@ impl WorldGenerator for MoonBit {
         }
 
         let module = &resolve.name_world_key(key);
-        let mut gen = self.interface(resolve, &name, module, Direction::Export);
-        gen.types(id);
+        let mut r#gen = self.interface(resolve, &name, module, Direction::Export);
+        r#gen.types(id);
 
         for (_, func) in resolve.interfaces[id].functions.iter() {
-            gen.export(Some(module), func);
+            r#gen.export(Some(key), func);
         }
 
-        gen.add_interface_fragment();
+        let result = r#gen.finish();
+        self.export_interface_fragments
+            .insert(name.to_owned(), result);
+
         Ok(())
     }
 
@@ -408,14 +268,19 @@ impl WorldGenerator for MoonBit {
         funcs: &[(&str, &Function)],
         _files: &mut Files,
     ) -> Result<()> {
-        let name = format!("{}.{}", self.opts.gen_dir, world_name(resolve, world));
-        let mut gen = self.interface(resolve, &name, "$root", Direction::Export);
+        let name = format!(
+            "{}.{}",
+            self.opts.r#gen_dir,
+            PkgResolver::world_name(resolve, world)
+        );
+        let mut r#gen = self.interface(resolve, &name, "$root", Direction::Export);
 
         for (_, func) in funcs {
-            gen.export(None, func);
+            r#gen.export(None, func);
         }
 
-        gen.add_world_fragment();
+        let result = r#gen.finish();
+        self.export_world_fragment.concat(result);
         Ok(())
     }
 
@@ -426,14 +291,15 @@ impl WorldGenerator for MoonBit {
         types: &[(&str, TypeId)],
         _files: &mut Files,
     ) {
-        let name = world_name(resolve, world);
-        let mut gen = self.interface(resolve, &name, "$root", Direction::Import);
+        let name = PkgResolver::world_name(resolve, world);
+        let mut r#gen = self.interface(resolve, &name, "$root", Direction::Import);
 
         for (ty_name, ty) in types {
-            gen.define_type(ty_name, *ty);
+            r#gen.define_type(ty_name, *ty);
         }
 
-        gen.add_world_fragment();
+        let result = r#gen.finish();
+        self.import_world_fragment.concat(result);
     }
 
     fn finish(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) -> Result<()> {
@@ -446,7 +312,7 @@ impl WorldGenerator for MoonBit {
                 format!("{}/{}", package.namespace, package.name)
             }))
             .unwrap_or("generated".into());
-        let name = world_name(resolve, id);
+        let name = PkgResolver::world_name(resolve, id);
 
         if let Some(content) = &resolve.worlds[id].docs.contents {
             if !content.is_empty() {
@@ -461,7 +327,7 @@ impl WorldGenerator for MoonBit {
 
         let generate_pkg_definition = |name: &String, files: &mut Files| {
             let directory = name.replace('.', "/");
-            let imports: Option<&Imports> = self.package_import.get(name);
+            let imports: Option<&Imports> = self.pkg_resolver.package_import.get(name);
             if let Some(imports) = imports {
                 let mut deps = imports
                     .packages
@@ -478,12 +344,16 @@ impl WorldGenerator for MoonBit {
 
                 files.push(
                     &format!("{directory}/moon.pkg.json"),
-                    format!("{{ \"import\": [{}] }}", deps.join(", ")).as_bytes(),
+                    format!(
+                        "{{ \"import\": [{}], \"warn-list\": \"-44\" }}",
+                        deps.join(", ")
+                    )
+                    .as_bytes(),
                 );
             } else {
                 files.push(
                     &format!("{directory}/moon.pkg.json"),
-                    format!("{{ }}").as_bytes(),
+                    "{ \"warn-list\": \"-44\" }".to_string().as_bytes(),
                 );
             }
         };
@@ -491,13 +361,16 @@ impl WorldGenerator for MoonBit {
         // Import world fragments
         let mut src = Source::default();
         let mut ffi = Source::default();
+        let mut builtins: HashSet<&'static str> = HashSet::new();
         wit_bindgen_core::generated_preamble(&mut src, version);
         wit_bindgen_core::generated_preamble(&mut ffi, version);
-        self.import_world_fragments.iter().for_each(|f| {
-            uwriteln!(src, "{}", f.src);
-            uwriteln!(ffi, "{}", f.ffi);
-            assert!(f.stub.is_empty());
-        });
+        uwriteln!(src, "{}", self.import_world_fragment.src);
+        uwriteln!(ffi, "{}", self.import_world_fragment.ffi);
+        builtins.extend(self.import_world_fragment.builtins.iter());
+        assert!(self.import_world_fragment.stub.is_empty());
+        for b in builtins.iter() {
+            uwriteln!(ffi, "{}", b);
+        }
 
         let directory = name.replace('.', "/");
         files.push(&format!("{directory}/import.mbt"), indent(&src).as_bytes());
@@ -512,132 +385,122 @@ impl WorldGenerator for MoonBit {
         let mut stub = Source::default();
         wit_bindgen_core::generated_preamble(&mut src, version);
         generated_preamble(&mut stub, version);
-        self.export_world_fragments.iter().for_each(|f| {
-            uwriteln!(src, "{}", f.src);
-            uwriteln!(stub, "{}", f.stub);
-        });
+        uwriteln!(src, "{}", self.export_world_fragment.src);
+        uwriteln!(stub, "{}", self.export_world_fragment.stub);
 
         files.push(&format!("{directory}/top.mbt"), indent(&src).as_bytes());
         if !self.opts.ignore_stub {
             files.push(
-                &format!("{}/{directory}/stub.mbt", self.opts.gen_dir),
+                &format!("{}/{directory}/stub.mbt", self.opts.r#gen_dir),
                 indent(&stub).as_bytes(),
             );
-            generate_pkg_definition(&format!("{}.{}", self.opts.gen_dir, name), files);
+            generate_pkg_definition(&format!("{}.{}", self.opts.r#gen_dir, name), files);
         }
 
-        let generate_ffi =
-            |directory: String, fragments: &[InterfaceFragment], files: &mut Files| {
-                let b = fragments
-                    .iter()
-                    .map(|f| f.ffi.deref())
-                    .collect::<Vec<_>>()
-                    .join("\n");
+        let mut builtins: HashSet<&'static str> = HashSet::new();
+        builtins.insert(ffi::MALLOC);
+        builtins.insert(ffi::FREE);
+        let mut generate_ffi =
+            |directory: String, fragment: &InterfaceFragment, files: &mut Files| {
+                // For cabi_realloc
 
                 let mut body = Source::default();
                 wit_bindgen_core::generated_preamble(&mut body, version);
-                uwriteln!(&mut body, "{b}");
+
+                uwriteln!(&mut body, "{}", fragment.ffi);
+                builtins.extend(fragment.builtins.iter());
 
                 files.push(
                     &format!(
                         "{}/{}_export.mbt",
-                        self.opts.gen_dir,
+                        self.opts.r#gen_dir,
                         directory.to_snake_case()
                     ),
                     indent(&body).as_bytes(),
                 );
             };
 
-        generate_ffi(directory, &self.export_world_fragments, files);
+        generate_ffi(directory, &self.export_world_fragment, files);
 
         // Import interface fragments
-        for (name, fragments) in &self.import_interface_fragments {
+        for (name, fragment) in &self.import_interface_fragments {
             let mut src = Source::default();
             let mut ffi = Source::default();
             wit_bindgen_core::generated_preamble(&mut src, version);
             wit_bindgen_core::generated_preamble(&mut ffi, version);
-            fragments.iter().for_each(|f| {
-                uwriteln!(src, "{}", f.src);
-                uwriteln!(ffi, "{}", f.ffi);
-                assert!(f.stub.is_empty());
-            });
+            let mut builtins: HashSet<&'static str> = HashSet::new();
+            uwriteln!(src, "{}", fragment.src);
+            uwriteln!(ffi, "{}", fragment.ffi);
+            builtins.extend(fragment.builtins.iter());
+            assert!(fragment.stub.is_empty());
+            for builtin in builtins {
+                uwriteln!(ffi, "{}", builtin);
+            }
 
             let directory = name.replace('.', "/");
             files.push(&format!("{directory}/top.mbt"), indent(&src).as_bytes());
             files.push(&format!("{directory}/ffi.mbt"), indent(&ffi).as_bytes());
-            generate_pkg_definition(&name, files);
+            generate_pkg_definition(name, files);
         }
 
         // Export interface fragments
-        for (name, fragments) in &self.export_interface_fragments {
+        for (name, fragment) in &self.export_interface_fragments {
             let mut src = Source::default();
             let mut stub = Source::default();
             wit_bindgen_core::generated_preamble(&mut src, version);
             generated_preamble(&mut stub, version);
-            fragments.iter().for_each(|f| {
-                uwriteln!(src, "{}", f.src);
-                uwriteln!(stub, "{}", f.stub);
-            });
+            uwriteln!(src, "{}", fragment.src);
+            uwriteln!(stub, "{}", fragment.stub);
 
             let directory = name.replace('.', "/");
             files.push(&format!("{directory}/top.mbt"), indent(&src).as_bytes());
             if !self.opts.ignore_stub {
                 files.push(&format!("{directory}/stub.mbt"), indent(&stub).as_bytes());
-                generate_pkg_definition(&name, files);
+                generate_pkg_definition(name, files);
             }
-            generate_ffi(directory, fragments, files);
+            generate_ffi(directory, fragment, files);
         }
 
         // Export FFI Utils
-        let mut body = Source::default();
-        wit_bindgen_core::generated_preamble(&mut body, version);
-        body.push_str(FFI);
-        files.push(&format!("{FFI_DIR}/top.mbt"), indent(&body).as_bytes());
-        files.push(&format!("{FFI_DIR}/moon.pkg.json"), "{}".as_bytes());
+        // Export Async utils
+
+        // If async is used, export async utils
+        self.async_support.emit_utils(files, version);
 
         // Export project files
         if !self.opts.ignore_stub && !self.opts.ignore_module_file {
             let mut body = Source::default();
-            uwriteln!(&mut body, "{{ \"name\": \"{project_name}\" }}");
-            files.push(&format!("moon.mod.json"), body.as_bytes());
+            uwriteln!(
+                &mut body,
+                "{{ \"name\": \"{project_name}\", \"preferred-target\": \"wasm\" }}"
+            );
+            files.push("moon.mod.json", body.as_bytes());
         }
 
-        let export_dir = self.opts.gen_dir.clone();
-
         // Export project entry point
-        let mut gen = self.interface(resolve, &export_dir.as_str(), "", Direction::Export);
-        let ffi_qualifier = gen.qualify_package(FFI_DIR);
-
         let mut body = Source::default();
         wit_bindgen_core::generated_preamble(&mut body, version);
-        uwriteln!(
-            &mut body,
-            "
-            pub fn cabi_realloc(
-                src_offset : Int,
-                src_size : Int,
-                dst_alignment : Int,
-                dst_size : Int
-            ) -> Int {{
-                {ffi_qualifier}cabi_realloc(src_offset, src_size, dst_alignment, dst_size)
-            }}
-            "
-        );
+        uwriteln!(&mut body, "{}", ffi::CABI_REALLOC);
+
         if !self.return_area_size.is_empty() {
             uwriteln!(
                 &mut body,
                 "
-                let return_area : Int = {ffi_qualifier}malloc({})
+                let return_area : Int = mbt_ffi_malloc({})
                 ",
                 self.return_area_size.size_wasm32(),
             );
         }
+        for builtin in builtins {
+            uwriteln!(&mut body, "{}", builtin);
+        }
         files.push(
-            &format!("{}/ffi.mbt", self.opts.gen_dir),
+            &format!("{}/ffi.mbt", self.opts.r#gen_dir),
             indent(&body).as_bytes(),
         );
+
         self.export
-            .insert("cabi_realloc".into(), "cabi_realloc".into());
+            .insert("mbt_ffi_cabi_realloc".into(), "cabi_realloc".into());
 
         let mut body = Source::default();
         let mut exports = self
@@ -661,7 +524,7 @@ impl WorldGenerator for MoonBit {
             "#,
             exports.join(", ")
         );
-        if let Some(imports) = self.package_import.get(&self.opts.gen_dir) {
+        if let Some(imports) = self.pkg_resolver.package_import.get(&self.opts.r#gen_dir) {
             let mut deps = imports
                 .packages
                 .iter()
@@ -680,11 +543,12 @@ impl WorldGenerator for MoonBit {
         uwrite!(
             &mut body,
             "
+              , \"warn-list\": \"-44\"
             }}
             ",
         );
         files.push(
-            &format!("{}/moon.pkg.json", self.opts.gen_dir,),
+            &format!("{}/moon.pkg.json", self.opts.r#gen_dir,),
             indent(&body).as_bytes(),
         );
 
@@ -696,125 +560,62 @@ struct InterfaceGenerator<'a> {
     src: String,
     stub: String,
     ffi: String,
-    gen: &'a mut MoonBit,
+    // Collect of FFI imports used in this interface
+    ffi_imports: HashSet<&'static str>,
+
+    r#gen: &'a mut MoonBit,
     resolve: &'a Resolve,
     // The current interface getting generated
     name: &'a str,
     module: &'a str,
     direction: Direction,
+
+    // Options for deriving traits
+    derive_opts: DeriveOpts,
 }
 
 impl InterfaceGenerator<'_> {
-    fn qualify_package(&mut self, name: &str) -> String {
-        if name != self.name {
-            let imports = self
-                .gen
-                .package_import
-                .entry(
-                    // This is a hack: the exported ffi calls are actually under the gen directory
-                    if self.direction == Direction::Export && name == FFI_DIR {
-                        self.gen.opts.gen_dir.clone()
-                    } else {
-                        self.name.to_string()
-                    },
-                )
-                .or_default();
-            if let Some(alias) = imports.packages.get(name) {
-                return format!("@{}.", alias);
-            } else {
-                let alias = imports
-                    .ns
-                    .tmp(&name.split(".").last().unwrap().to_lower_camel_case());
-                imports
-                    .packages
-                    .entry(name.to_string())
-                    .or_insert(alias.clone());
-                return format!("@{}.", alias);
-            }
-        } else {
-            "".into()
-        }
-    }
-    fn qualifier(&mut self, ty: &TypeDef) -> String {
-        if let TypeOwner::Interface(id) = &ty.owner {
-            if let Some(name) = self.gen.export_interface_names.get(id) {
-                if name != self.name {
-                    return self.qualify_package(&name.clone());
-                }
-            } else if let Some(name) = self.gen.import_interface_names.get(id) {
-                if name != self.name {
-                    return self.qualify_package(&name.clone());
-                }
-            }
-        } else if let TypeOwner::World(id) = &ty.owner {
-            let name = world_name(self.resolve, *id);
-            if name != self.name {
-                return self.qualify_package(&name.clone());
-            }
-        }
-
-        String::new()
-    }
-
-    fn add_interface_fragment(self) {
-        match self.direction {
-            Direction::Import => {
-                self.gen
-                    .import_interface_fragments
-                    .entry(self.name.to_owned())
-                    .or_default()
-                    .push(InterfaceFragment {
-                        src: self.src,
-                        stub: self.stub,
-                        ffi: self.ffi,
-                    });
-            }
-            Direction::Export => {
-                self.gen
-                    .export_interface_fragments
-                    .entry(self.name.to_owned())
-                    .or_default()
-                    .push(InterfaceFragment {
-                        src: self.src,
-                        stub: self.stub,
-                        ffi: self.ffi,
-                    });
-            }
+    fn finish(self) -> InterfaceFragment {
+        InterfaceFragment {
+            src: self.src,
+            stub: self.stub,
+            ffi: self.ffi,
+            builtins: self.ffi_imports,
         }
     }
 
-    fn add_world_fragment(self) {
-        match self.direction {
-            Direction::Import => {
-                self.gen.import_world_fragments.push(InterfaceFragment {
-                    src: self.src,
-                    stub: self.stub,
-                    ffi: self.ffi,
-                });
-            }
-            Direction::Export => {
-                self.gen.export_world_fragments.push(InterfaceFragment {
-                    src: self.src,
-                    stub: self.stub,
-                    ffi: self.ffi,
-                });
-            }
+    fn import(&mut self, module: Option<&WorldKey>, func: &Function) {
+        let async_ = self
+            .r#gen
+            .opts
+            .async_
+            .is_async(self.resolve, module, func, false);
+        if async_ {
+            self.r#gen.async_support.mark_async();
         }
-    }
 
-    fn import(&mut self, module: &str, func: &Function) {
+        let interface_name = match module {
+            Some(key) => &self.resolve.name_world_key(key),
+            None => "$root",
+        };
         let mut bindgen = FunctionBindgen::new(
             self,
             &func.name,
             self.name,
             func.params
                 .iter()
-                .map(|(name, _)| name.to_moonbit_ident())
+                .map(|Param { name, .. }| name.to_moonbit_ident())
                 .collect(),
         );
 
+        let (variant, async_prefix) = if async_ {
+            (AbiVariant::GuestImportAsync, "[async-lower]")
+        } else {
+            (AbiVariant::GuestImport, "")
+        };
+
         abi::call(
-            bindgen.gen.resolve,
+            bindgen.r#gen.resolve,
             AbiVariant::GuestImport,
             LiftLower::LowerArgsLiftResults,
             func,
@@ -822,26 +623,24 @@ impl InterfaceGenerator<'_> {
             false,
         );
 
-        let src = bindgen.src;
+        let mut src = bindgen.src.clone();
 
         let cleanup_list = if bindgen.needs_cleanup_list {
-            self.gen.needs_cleanup = true;
+            self.r#gen.needs_cleanup = true;
 
-            let ffi_qualifier = self.qualify_package(FFI_DIR);
-
-            format!(
-                r#"let cleanupList : Array[{ffi_qualifier}Cleanup] = []
-                   let ignoreList : Array[&{ffi_qualifier}Any] = []"#
-            )
+            "
+            let cleanup_list : Array[Int] = []
+            "
+            .into()
         } else {
             String::new()
         };
 
         let name = &func.name;
 
-        let sig = self.resolve.wasm_signature(AbiVariant::GuestImport, func);
+        let wasm_sig = self.resolve.wasm_signature(variant, func);
 
-        let result_type = match &sig.results[..] {
+        let result_type = match &wasm_sig.results[..] {
             [] => "".into(),
             [result] => format!("-> {}", wasm_type(*result)),
             _ => unreachable!(),
@@ -849,7 +648,7 @@ impl InterfaceGenerator<'_> {
 
         let camel_name = func.name.to_upper_camel_case();
 
-        let params = sig
+        let params = wasm_sig
             .params
             .iter()
             .enumerate()
@@ -860,36 +659,61 @@ impl InterfaceGenerator<'_> {
             .collect::<Vec<_>>()
             .join(", ");
 
-        let sig = self.sig_string(func, false);
+        let mbt_sig = self.r#gen.pkg_resolver.mbt_sig(self.name, func, false);
+        let sig = self.sig_string(&mbt_sig, async_);
+
+        let module = match module {
+            Some(key) => self.resolve.name_world_key(key),
+            None => "$root".into(),
+        };
+
+        self.r#generation_futures_and_streams_import("", func, interface_name);
 
         uwriteln!(
             self.ffi,
-            r#"fn wasmImport{camel_name}({params}) {result_type} = "{module}" "{name}""#
+            r#"fn wasmImport{camel_name}({params}) {result_type} = "{module}" "{async_prefix}{name}""#
         );
 
         print_docs(&mut self.src, &func.docs);
+
+        if async_ {
+            src = self.r#generate_async_import_function(func, mbt_sig, &wasm_sig);
+        }
 
         uwrite!(
             self.src,
             r#"
             {sig} {{
-              {cleanup_list}
-              {src}
+                {cleanup_list}
+                {src}
             }}
             "#
         );
     }
 
-    fn export(&mut self, interface_name: Option<&str>, func: &Function) {
-        let sig = self.resolve.wasm_signature(AbiVariant::GuestExport, func);
+    fn export(&mut self, interface: Option<&WorldKey>, func: &Function) {
+        let async_ = self
+            .r#gen
+            .opts
+            .async_
+            .is_async(self.resolve, interface, func, false);
+        if async_ {
+            self.r#gen.async_support.mark_async();
+        }
 
-        let func_sig = self.sig_string(func, true);
+        let variant = if async_ {
+            AbiVariant::GuestExportAsync
+        } else {
+            AbiVariant::GuestExport
+        };
 
-        let export_name = func.legacy_core_export_name(interface_name);
+        let sig = self.resolve.wasm_signature(variant, func);
+        let mbt_sig = self.r#gen.pkg_resolver.mbt_sig(self.name, func, false);
 
-        let export_dir = self.gen.opts.gen_dir.clone();
+        let func_sig = self.sig_string(&mbt_sig, async_);
+        let export_dir = self.r#gen.opts.r#gen_dir.clone();
 
-        let mut toplevel_generator = self.gen.interface(
+        let mut toplevel_generator = self.r#gen.interface(
             self.resolve,
             export_dir.as_str(),
             self.module,
@@ -904,20 +728,27 @@ impl InterfaceGenerator<'_> {
         );
 
         abi::call(
-            bindgen.gen.resolve,
-            AbiVariant::GuestExport,
+            bindgen.r#gen.resolve,
+            variant,
             LiftLower::LiftArgsLowerResults,
             func,
             &mut bindgen,
-            false,
+            async_,
         );
 
+        // TODO: adapt async cleanup
         assert!(!bindgen.needs_cleanup_list);
 
-        let src = bindgen.src;
+        // Async functions deferred task return
+        let deferred_task_return = bindgen.deferred_task_return.clone();
 
+        let src = bindgen.src;
         assert!(toplevel_generator.src.is_empty());
         assert!(toplevel_generator.ffi.is_empty());
+
+        // Transfer ffi_imports from toplevel_generator to self
+        self.ffi_imports
+            .extend(toplevel_generator.ffi_imports.iter());
 
         let result_type = match &sig.results[..] {
             [] => "Unit",
@@ -927,7 +758,7 @@ impl InterfaceGenerator<'_> {
 
         let camel_name = func.name.to_upper_camel_case();
 
-        let func_name = self.gen.export_ns.tmp(&format!("wasmExport{camel_name}"));
+        let func_name = self.r#gen.export_ns.tmp(&format!("wasmExport{camel_name}"));
 
         let params = sig
             .params
@@ -940,6 +771,18 @@ impl InterfaceGenerator<'_> {
             .collect::<Vec<_>>()
             .join(", ");
 
+        // Async export prefix for FFI
+        let async_export_prefix = if async_ { "[async-lift]" } else { "" };
+        // Async functions return type
+        let interface_name = match interface {
+            Some(key) => Some(self.resolve.name_world_key(key)),
+            None => None,
+        };
+
+        let export_name = func.legacy_core_export_name(interface_name.as_deref());
+        let module_name = interface_name.as_deref().unwrap_or("$root");
+        self.r#generation_futures_and_streams_import("[export]", func, module_name);
+
         uwrite!(
             self.ffi,
             r#"
@@ -948,9 +791,78 @@ impl InterfaceGenerator<'_> {
             }}
             "#,
         );
-        self.gen.export.insert(func_name, format!("{export_name}"));
 
-        if abi::guest_export_needs_post_return(self.resolve, func) {
+        self.r#gen
+            .export
+            .insert(func_name, format!("{async_export_prefix}{export_name}"));
+
+        if async_ {
+            let snake = self.r#gen.name.to_lower_camel_case();
+            let export_func_name = self
+                .r#gen
+                .export_ns
+                .tmp(&format!("wasmExport{snake}Async{camel_name}"));
+            let DeferredTaskReturn::Emitted {
+                body: task_return_body,
+                params: task_return_params,
+                return_param,
+            } = deferred_task_return
+            else {
+                unreachable!()
+            };
+            let func_name = func.name.clone();
+            let import_module = self.resolve.name_world_key(interface.unwrap());
+            self.r#gen.export.insert(
+                export_func_name.clone(),
+                format!("[callback]{async_export_prefix}{export_name}"),
+            );
+            let task_return_param_tys = task_return_params
+                .iter()
+                .enumerate()
+                .map(|(idx, (ty, _expr))| format!("p{}: {}", idx, wasm_type(*ty)))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let task_return_param_exprs = task_return_params
+                .iter()
+                .map(|(_ty, expr)| expr.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            let return_ty = match &func.result {
+                Some(result) => self
+                    .r#gen
+                    .pkg_resolver
+                    .type_name(self.name, result)
+                    .to_string(),
+                None => "Unit".into(),
+            };
+            let return_expr = match return_ty.as_str() {
+                "Unit" => "".into(),
+                _ => format!("{return_param}: {return_ty}",),
+            };
+            let snake_func_name = func.name.to_moonbit_ident().to_string();
+            let ffi = self.r#gen.pkg_resolver.qualify_package(self.name, FFI_DIR);
+
+            uwriteln!(
+                self.src,
+                r#"
+                fn {export_func_name}TaskReturn({task_return_param_tys}) = "[export]{import_module}" "[task-return]{func_name}"
+                
+                pub fn {snake_func_name}_task_return({return_expr}) -> Unit {{ 
+                    {task_return_body}
+                    {export_func_name}TaskReturn({task_return_param_exprs})
+                }}
+                "#
+            );
+
+            uwriteln!(
+                self.ffi,
+                r#"
+                pub fn {export_func_name}(event_raw: Int, waitable: Int, code: Int) -> Int {{
+                    {ffi}callback(event_raw, waitable, code)
+                }}
+                "#
+            );
+        } else if abi::guest_export_needs_post_return(self.resolve, func) {
             let params = sig
                 .results
                 .iter()
@@ -969,12 +881,12 @@ impl InterfaceGenerator<'_> {
                 (0..sig.results.len()).map(|i| format!("p{i}")).collect(),
             );
 
-            abi::post_return(bindgen.gen.resolve, func, &mut bindgen, false);
+            abi::post_return(bindgen.r#gen.resolve, func, &mut bindgen);
 
             let src = bindgen.src;
 
             let func_name = self
-                .gen
+                .r#gen
                 .export_ns
                 .tmp(&format!("wasmExport{camel_name}PostReturn"));
 
@@ -986,7 +898,7 @@ impl InterfaceGenerator<'_> {
                 }}
                 "#
             );
-            self.gen
+            self.r#gen
                 .export
                 .insert(func_name, format!("cabi_post_{export_name}"));
         }
@@ -1002,155 +914,26 @@ impl InterfaceGenerator<'_> {
         );
     }
 
-    fn type_name(&mut self, ty: &Type, type_variable: bool) -> String {
-        match ty {
-            Type::Bool => "Bool".into(),
-            Type::U8 => "Byte".into(),
-            Type::S32 | Type::S8 | Type::S16 => "Int".into(),
-            Type::U16 | Type::U32 => "UInt".into(),
-            Type::Char => "Char".into(),
-            Type::U64 => "UInt64".into(),
-            Type::S64 => "Int64".into(),
-            Type::F32 => "Float".into(),
-            Type::F64 => "Double".into(),
-            Type::String => "String".into(),
-            Type::ErrorContext => todo!("moonbit error context type name"),
-            Type::Id(id) => {
-                let ty = &self.resolve.types[dealias(self.resolve, *id)];
-                match &ty.kind {
-                    TypeDefKind::Type(ty) => self.type_name(ty, type_variable),
-                    TypeDefKind::List(ty) => {
-                        if type_variable {
-                            match ty {
-                                Type::U8
-                                | Type::U32
-                                | Type::U64
-                                | Type::S32
-                                | Type::S64
-                                | Type::F32
-                                | Type::F64 => {
-                                    format!("FixedArray[{}]", self.type_name(ty, type_variable))
-                                }
-                                _ => format!("Array[{}]", self.type_name(ty, type_variable)),
-                            }
-                        } else {
-                            "Array".into()
-                        }
-                    }
-                    TypeDefKind::Tuple(tuple) => {
-                        if type_variable {
-                            format!(
-                                "({})",
-                                tuple
-                                    .types
-                                    .iter()
-                                    .map(|ty| self.type_name(ty, type_variable))
-                                    .collect::<Vec<_>>()
-                                    .join(", ")
-                            )
-                        } else {
-                            unreachable!()
-                        }
-                    }
-                    TypeDefKind::Option(ty) => {
-                        if type_variable {
-                            format!("{}?", self.type_name(ty, type_variable))
-                        } else {
-                            "Option".into()
-                        }
-                    }
-                    TypeDefKind::Result(result) => {
-                        if type_variable {
-                            let mut name = |ty: &Option<Type>| {
-                                ty.as_ref()
-                                    .map(|ty| self.type_name(ty, true))
-                                    .unwrap_or_else(|| "Unit".into())
-                            };
-                            let ok = name(&result.ok);
-                            let err = name(&result.err);
-
-                            format!("Result[{ok}, {err}]")
-                        } else {
-                            "Result".into()
-                        }
-                    }
-                    TypeDefKind::Handle(handle) => {
-                        let ty = match handle {
-                            Handle::Own(ty) => ty,
-                            Handle::Borrow(ty) => ty,
-                        };
-                        let ty = &self.resolve.types[dealias(self.resolve, *ty)];
-                        if let Some(name) = &ty.name {
-                            format!("{}{}", self.qualifier(ty), name.to_moonbit_type_ident())
-                        } else {
-                            unreachable!()
-                        }
-                    }
-                    _ => {
-                        if let Some(name) = &ty.name {
-                            format!("{}{}", self.qualifier(ty), name.to_moonbit_type_ident())
-                        } else {
-                            unreachable!()
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    fn non_empty_type<'a>(&self, ty: Option<&'a Type>) -> Option<&'a Type> {
-        if let Some(ty) = ty {
-            let id = match ty {
-                Type::Id(id) => *id,
-                _ => return Some(ty),
-            };
-            match &self.resolve.types[id].kind {
-                TypeDefKind::Type(t) => self.non_empty_type(Some(t)).map(|_| ty),
-                TypeDefKind::Record(r) => (!r.fields.is_empty()).then_some(ty),
-                TypeDefKind::Tuple(t) => (!t.types.is_empty()).then_some(ty),
-                _ => Some(ty),
-            }
-        } else {
-            None
-        }
-    }
-
-    fn sig_string(&mut self, func: &Function, ignore_param: bool) -> String {
-        let name = match func.kind {
-            FunctionKind::Freestanding => func.name.to_moonbit_ident(),
-            FunctionKind::Constructor(_) => {
-                func.name.replace("[constructor]", "").to_moonbit_ident()
-            }
-            _ => func.name.split(".").last().unwrap().to_moonbit_ident(),
-        };
-        let type_name = match func.kind.resource() {
-            Some(ty) => {
-                format!("{}::", self.type_name(&Type::Id(ty), true))
-            }
-            None => "".into(),
-        };
-
-        let result_type = match &func.result {
-            None => "Unit".into(),
-            Some(ty) => self.type_name(ty, true),
-        };
-
-        let params = func
+    fn sig_string(&mut self, sig: &MoonbitSignature, async_: bool) -> String {
+        let params = sig
             .params
             .iter()
             .map(|(name, ty)| {
-                let ty = self.type_name(ty, true);
-                let name = if ignore_param {
-                    format!("_{}", name.to_moonbit_ident())
-                } else {
-                    name.to_moonbit_ident()
-                };
+                let ty = self.r#gen.pkg_resolver.type_name(self.name, ty);
                 format!("{name} : {ty}")
             })
-            .collect::<Vec<_>>()
-            .join(", ");
+            .collect::<Vec<_>>();
 
-        format!("pub fn {type_name}{name}({params}) -> {result_type}")
+        let params = params.join(", ");
+        let (async_prefix, async_suffix) = if async_ { ("async ", "") } else { ("", "") };
+        let result_type = match &sig.result_type {
+            None => "Unit".into(),
+            Some(ty) => self.r#gen.pkg_resolver.type_name(self.name, ty),
+        };
+        format!(
+            "pub {async_prefix}fn {}({params}) -> {}{async_suffix}",
+            sig.name, result_type
+        )
     }
 }
 
@@ -1171,17 +954,17 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 format!(
                     "{} : {}",
                     field.name.to_moonbit_ident(),
-                    self.type_name(&field.ty, true),
+                    self.r#gen.pkg_resolver.type_name(self.name, &field.ty),
                 )
             })
             .collect::<Vec<_>>()
             .join("; ");
 
         let mut deriviation: Vec<_> = Vec::new();
-        if self.gen.opts.derive_show {
+        if self.derive_opts.derive_show {
             deriviation.push("Show")
         }
-        if self.gen.opts.derive_eq {
+        if self.derive_opts.derive_eq {
             deriviation.push("Eq")
         }
 
@@ -1202,22 +985,22 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         let name = name.to_moonbit_type_ident();
 
         let mut deriviation: Vec<_> = Vec::new();
-        if self.gen.opts.derive_show {
+        if self.derive_opts.derive_show {
             deriviation.push("Show")
         }
-        if self.gen.opts.derive_eq {
+        if self.derive_opts.derive_eq {
             deriviation.push("Eq")
         }
-        let declaration = if self.gen.opts.derive_error && name.contains("Error") {
-            "type!"
+        let declaration = if self.derive_opts.derive_error && name.contains("Error") {
+            "suberror"
         } else {
-            "type"
+            "struct"
         };
 
         uwrite!(
             self.src,
             r#"
-            pub(all) {declaration} {name} Int derive({})
+            pub(all) {declaration} {name}(Int) derive({})
             "#,
             deriviation.join(", "),
         );
@@ -1253,14 +1036,14 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 fn wasmExportResourceNew{name}(rep : Int) -> Int = "[export]{module}" "[resource-new]{type_name}"
 
                 /// Drops a resource handle.
-                pub fn {name}::drop(self : {name}) -> Unit {{
+                pub fn {name}::drop(self : Self) -> Unit {{
                     let {name}(resource) = self
                     wasmExportResourceDrop{name}(resource)
                 }}
                 fn wasmExportResourceDrop{name}(resource : Int) = "[export]{module}" "[resource-drop]{type_name}"
 
                 /// Gets the `Int` representation of the resource pointed to the given handle.
-                pub fn {name}::rep(self : {name}) -> Int {{
+                pub fn {name}::rep(self : Self) -> Int {{
                     let {name}(resource) = self
                     wasmExportResourceRep{name}(resource)
                 }}
@@ -1278,12 +1061,12 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 "#
             );
 
-            let func_name = self.gen.export_ns.tmp(&format!("wasmExport{name}Dtor"));
+            let func_name = self.r#gen.export_ns.tmp(&format!("wasmExport{name}Dtor"));
 
-            let export_dir = self.gen.opts.gen_dir.clone();
+            let export_dir = self.r#gen.opts.r#gen_dir.clone();
 
-            let mut gen =
-                self.gen
+            let r#gen =
+                self.r#gen
                     .interface(self.resolve, export_dir.as_str(), "", Direction::Export);
 
             uwrite!(
@@ -1293,10 +1076,13 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                     {}{name}::dtor(handle)
                 }}
                 "#,
-                gen.qualify_package(&self.name.to_string())
+                r#gen
+                    .r#gen
+                    .pkg_resolver
+                    .qualify_package(r#gen.name, self.name)
             );
 
-            self.gen
+            self.r#gen
                 .export
                 .insert(func_name, format!("{module}#[dtor]{type_name}"));
         }
@@ -1343,22 +1129,22 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .join("\n    ");
 
         let mut deriviation: Vec<_> = Vec::new();
-        if self.gen.opts.derive_show {
+        if self.derive_opts.derive_show {
             deriviation.push("Show")
         }
-        if self.gen.opts.derive_eq {
+        if self.derive_opts.derive_eq {
             deriviation.push("Eq")
         }
-        let declaration = if self.gen.opts.derive_error && name.contains("Error") {
-            "type!"
+        let declaration = if self.derive_opts.derive_error && name.contains("Error") {
+            "suberror"
         } else {
-            "type"
+            "struct"
         };
 
         uwrite!(
             self.src,
             "
-            pub(all) {declaration} {name} {ty} derive({})
+            pub(all) {declaration} {name}({ty}) derive({})
             pub fn {name}::default() -> {name} {{
                 {}
             }}
@@ -1370,15 +1156,15 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 {map_to_int}
               }}
             }}
-            pub fn {name}::set(self : {name}, other: {name}Flag) -> {name} {{
+            pub fn {name}::set(self : Self, other: {name}Flag) -> {name} {{
               let {name}(flag) = self
               flag.lor(other.value())
             }}
-            pub fn {name}::unset(self : {name}, other: {name}Flag) -> {name} {{
+            pub fn {name}::unset(self : Self, other: {name}Flag) -> {name} {{
               let {name}(flag) = self
               flag.land(other.value().lnot())
             }}
-            pub fn {name}::is_set(self : {name}, other: {name}Flag) -> Bool {{
+            pub fn {name}::is_set(self : Self, other: {name}Flag) -> Bool {{
               let {name}(flag) = self
               (flag.land(other.value()) == other.value())
             }}
@@ -1394,7 +1180,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     }
 
     fn type_tuple(&mut self, _id: TypeId, _name: &str, _tuple: &Tuple, _docs: &Docs) {
-        // Not needed
+        // Not needed. They will become `(T1, T2, ...)` in Moonbit
     }
 
     fn type_variant(&mut self, _id: TypeId, name: &str, variant: &Variant, docs: &Docs) {
@@ -1408,24 +1194,24 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .map(|case| {
                 let name = case.name.to_upper_camel_case();
                 if let Some(ty) = case.ty {
-                    let ty = self.type_name(&ty, true);
+                    let ty = self.r#gen.pkg_resolver.type_name(self.name, &ty);
                     format!("{name}({ty})")
                 } else {
-                    format!("{name}")
+                    name.to_string()
                 }
             })
             .collect::<Vec<_>>()
             .join("\n  ");
 
         let mut deriviation: Vec<_> = Vec::new();
-        if self.gen.opts.derive_show {
+        if self.derive_opts.derive_show {
             deriviation.push("Show")
         }
-        if self.gen.opts.derive_eq {
+        if self.derive_opts.derive_eq {
             deriviation.push("Eq")
         }
-        let declaration = if self.gen.opts.derive_error && name.contains("Error") {
-            "type!"
+        let declaration = if self.derive_opts.derive_error && name.contains("Error") {
+            "suberror"
         } else {
             "enum"
         };
@@ -1442,11 +1228,11 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     }
 
     fn type_option(&mut self, _id: TypeId, _name: &str, _payload: &Type, _docs: &Docs) {
-        // Not needed
+        // Not needed. They will become `Option[T]` in Moonbit
     }
 
     fn type_result(&mut self, _id: TypeId, _name: &str, _result: &Result_, _docs: &Docs) {
-        // Not needed
+        // Not needed. They will become `Result[Ok, Err]` in Moonbit
     }
 
     fn type_enum(&mut self, _id: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
@@ -1463,14 +1249,14 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .join("; ");
 
         let mut deriviation: Vec<_> = Vec::new();
-        if self.gen.opts.derive_show {
+        if self.derive_opts.derive_show {
             deriviation.push("Show")
         }
-        if self.gen.opts.derive_eq {
+        if self.derive_opts.derive_eq {
             deriviation.push("Eq")
         }
-        let declaration = if self.gen.opts.derive_error && name.contains("Error") {
-            "type!"
+        let declaration = if self.derive_opts.derive_error && name.contains("Error") {
+            "suberror"
         } else {
             "enum"
         };
@@ -1527,23 +1313,29 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         );
     }
 
-    fn type_alias(&mut self, _id: TypeId, _name: &str, _ty: &Type, _docs: &Docs) {
-        // TODO: Implement correct type aliasing
-        // self.type_name(&Type::Id(id));
-    }
+    fn type_alias(&mut self, _id: TypeId, _name: &str, _ty: &Type, _docs: &Docs) {}
 
     fn type_list(&mut self, _id: TypeId, _name: &str, _ty: &Type, _docs: &Docs) {
-        // Not needed
+        // Not needed. They will become `Array[T]` or `FixedArray[T]` in Moonbit
     }
 
-    fn type_future(&mut self, id: TypeId, name: &str, ty: &Option<Type>, docs: &Docs) {
-        _ = (id, name, ty, docs);
-        todo!()
+    fn type_fixed_length_list(
+        &mut self,
+        _id: TypeId,
+        _name: &str,
+        _ty: &Type,
+        _size: u32,
+        _docs: &Docs,
+    ) {
+        // Not needed. They will become `FixedArray[T]` in Moonbit
     }
 
-    fn type_stream(&mut self, id: TypeId, name: &str, ty: &Option<Type>, docs: &Docs) {
-        _ = (id, name, ty, docs);
-        todo!()
+    fn type_future(&mut self, _id: TypeId, _name: &str, _ty: &Option<Type>, _docs: &Docs) {
+        unimplemented!() // Not needed
+    }
+
+    fn type_stream(&mut self, _id: TypeId, _name: &str, _ty: &Option<Type>, _docs: &Docs) {
+        unimplemented!() // Not needed
     }
 
     fn type_builtin(&mut self, _id: TypeId, _name: &str, _ty: &Type, _docs: &Docs) {
@@ -1554,27 +1346,33 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 struct Block {
     body: String,
     results: Vec<String>,
-    element: String,
-    base: String,
 }
-enum Cleanup {
-    Memory {
-        address: String,
-        size: String,
-        align: usize,
-    },
-    Object(String),
+
+struct Cleanup {
+    address: String,
 }
 
 struct BlockStorage {
     body: String,
-    element: String,
-    base: String,
     cleanup: Vec<Cleanup>,
 }
 
+#[derive(Clone, Debug)]
+enum DeferredTaskReturn {
+    None,
+    Generating {
+        prev_src: String,
+        return_param: String,
+    },
+    Emitted {
+        params: Vec<(WasmType, String)>,
+        body: String,
+        return_param: String,
+    },
+}
+
 struct FunctionBindgen<'a, 'b> {
-    gen: &'b mut InterfaceGenerator<'a>,
+    r#gen: &'b mut InterfaceGenerator<'a>,
     func_name: &'b str,
     func_interface: &'b str,
     params: Box<[String]>,
@@ -1585,11 +1383,12 @@ struct FunctionBindgen<'a, 'b> {
     payloads: Vec<String>,
     cleanup: Vec<Cleanup>,
     needs_cleanup_list: bool,
+    deferred_task_return: DeferredTaskReturn,
 }
 
 impl<'a, 'b> FunctionBindgen<'a, 'b> {
     fn new(
-        gen: &'b mut InterfaceGenerator<'a>,
+        r#gen: &'b mut InterfaceGenerator<'a>,
         func_name: &'b str,
         func_interface: &'b str,
         params: Box<[String]>,
@@ -1599,7 +1398,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             locals.tmp(str);
         });
         Self {
-            gen,
+            r#gen,
             func_name,
             func_interface,
             params,
@@ -1610,6 +1409,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             payloads: Vec::new(),
             cleanup: Vec::new(),
             needs_cleanup_list: false,
+            deferred_task_return: DeferredTaskReturn::None,
         }
     }
 
@@ -1648,11 +1448,17 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                 let name = name.to_upper_camel_case();
                 let assignments = results
                     .iter()
-                    .map(|result| format!("{result}"))
+                    .map(|result| result.to_string())
                     .collect::<Vec<_>>()
                     .join(", ");
 
-                let payload = if self.gen.non_empty_type(ty.as_ref()).is_some() {
+                let payload = if self
+                    .r#gen
+                    .r#gen
+                    .pkg_resolver
+                    .non_empty_type(ty.as_ref())
+                    .is_some()
+                {
                     payload
                 } else if is_result {
                     format!("_{payload}")
@@ -1714,7 +1520,11 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             .collect::<Vec<_>>();
 
         // Hacky way to get the type name without type parameter
-        let ty = self.gen.type_name(ty, false);
+        let ty = self
+            .r#gen
+            .r#gen
+            .pkg_resolver
+            .type_constructor(self.r#gen.name, ty);
         let lifted = self.locals.tmp("lifted");
 
         let cases = cases
@@ -1722,7 +1532,13 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             .zip(blocks)
             .enumerate()
             .map(|(i, ((case_name, case_ty), Block { body, results, .. }))| {
-                let payload = if self.gen.non_empty_type(case_ty.as_ref()).is_some() {
+                let payload = if self
+                    .r#gen
+                    .r#gen
+                    .pkg_resolver
+                    .non_empty_type(case_ty.as_ref())
+                    .is_some()
+                {
                     results.into_iter().next().unwrap()
                 } else {
                     String::new()
@@ -1780,7 +1596,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
     ) {
         match inst {
             Instruction::GetArg { nth } => results.push(self.params[*nth].clone()),
-            Instruction::I32Const { val } => results.push(format!("({})", val.to_string())),
+            Instruction::I32Const { val } => results.push(format!("({val})")),
             Instruction::ConstZero { tys } => results.extend(tys.iter().map(|ty| {
                 match ty {
                     WasmType::I32 => "0",
@@ -1806,12 +1622,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             | Instruction::S32FromI32
             | Instruction::S64FromI64
             | Instruction::CoreF64FromF64
-            | Instruction::F64FromCoreF64 => results.push(operands[0].clone()),
+            | Instruction::F64FromCoreF64
+            | Instruction::F32FromCoreF32
+            | Instruction::CoreF32FromF32 => results.push(operands[0].clone()),
 
-            Instruction::F32FromCoreF32 => results.push(operands[0].clone()),
-            Instruction::CoreF32FromF32 => results.push(operands[0].clone()),
-
-            Instruction::CharFromI32 => results.push(format!("Char::from_int({})", operands[0])),
+            Instruction::CharFromI32 => {
+                results.push(format!("Int::unsafe_to_char({})", operands[0]))
+            }
             Instruction::I32FromChar => results.push(format!("({}).to_int()", operands[0])),
 
             Instruction::I32FromU8 => results.push(format!("({}).to_int()", operands[0])),
@@ -1820,18 +1637,16 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
             Instruction::U8FromI32 => results.push(format!("({}).to_byte()", operands[0])),
 
-            Instruction::I32FromS8 => results.push(format!(
-                "{}extend8({})",
-                self.gen.qualify_package(FFI_DIR),
-                operands[0]
-            )),
+            Instruction::I32FromS8 => {
+                self.r#gen.ffi_imports.insert(ffi::EXTEND8);
+                results.push(format!("mbt_ffi_extend8({})", operands[0]))
+            }
             Instruction::S8FromI32 => results.push(format!("({} - 0x100)", operands[0])),
             Instruction::S16FromI32 => results.push(format!("({} - 0x10000)", operands[0])),
-            Instruction::I32FromS16 => results.push(format!(
-                "{}extend16({})",
-                self.gen.qualify_package(FFI_DIR),
-                operands[0]
-            )),
+            Instruction::I32FromS16 => {
+                self.r#gen.ffi_imports.insert(ffi::EXTEND16);
+                results.push(format!("mbt_ffi_extend16({})", operands[0]))
+            }
             Instruction::U16FromI32 => results.push(format!(
                 "({}.land(0xFFFF).reinterpret_as_uint())",
                 operands[0]
@@ -1859,7 +1674,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 Int::U8 => {
                     let op = &operands[0];
                     let flag = self.locals.tmp("flag");
-                    let ty = self.gen.type_name(&Type::Id(*ty), false);
+                    let ty = self
+                        .r#gen
+                        .r#gen
+                        .pkg_resolver
+                        .type_constructor(self.r#gen.name, &Type::Id(*ty));
                     uwriteln!(
                         self.src,
                         r#"
@@ -1871,7 +1690,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 Int::U16 | Int::U32 => {
                     let op = &operands[0];
                     let flag = self.locals.tmp("flag");
-                    let ty = self.gen.type_name(&Type::Id(*ty), false);
+                    let ty = self
+                        .r#gen
+                        .r#gen
+                        .pkg_resolver
+                        .type_constructor(self.r#gen.name, &Type::Id(*ty));
                     uwriteln!(
                         self.src,
                         r#"
@@ -1883,7 +1706,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 Int::U64 => {
                     let op = &operands[0];
                     let flag = self.locals.tmp("flag");
-                    let ty = self.gen.type_name(&Type::Id(*ty), false);
+                    let ty = self
+                        .r#gen
+                        .r#gen
+                        .pkg_resolver
+                        .type_constructor(self.r#gen.name, &Type::Id(*ty));
                     uwriteln!(
                         self.src,
                         r#"
@@ -1891,7 +1718,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         "#
                     );
                     results.push(format!("({flag}.to_int())"));
-                    results.push(format!("({flag}.lsr(32)).to_int())"));
+                    results.push(format!("({flag} >> 32).to_int())"));
                 }
             },
 
@@ -1899,21 +1726,27 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 Int::U8 => {
                     results.push(format!(
                         "{}({}.to_byte())",
-                        self.gen.type_name(&Type::Id(*ty), true),
+                        self.r#gen
+                            .r#gen
+                            .pkg_resolver
+                            .type_name(self.r#gen.name, &Type::Id(*ty)),
                         operands[0]
                     ));
                 }
                 Int::U16 | Int::U32 => {
                     results.push(format!(
                         "{}({}.reinterpret_as_uint())",
-                        self.gen.type_name(&Type::Id(*ty), true),
+                        self.r#gen
+                            .r#gen
+                            .pkg_resolver
+                            .type_name(self.r#gen.name, &Type::Id(*ty)),
                         operands[0]
                     ));
                 }
                 Int::U64 => {
                     results.push(format!(
                         "{}(({}).reinterpret_as_uint().to_uint64() | (({}).reinterpret_as_uint().to_uint64() << 32))",
-                        self.gen.type_name(&Type::Id(*ty), true),
+                        self.r#gen.r#gen.pkg_resolver.type_name(self.r#gen.name, &Type::Id(*ty)),
                         operands[0],
                         operands[1]
                     ));
@@ -1923,7 +1756,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::HandleLower { ty, .. } => {
                 let op = &operands[0];
                 let handle = self.locals.tmp("handle");
-                let ty = self.gen.type_name(&Type::Id(*ty), false);
+                let ty = self
+                    .r#gen
+                    .r#gen
+                    .pkg_resolver
+                    .type_constructor(self.r#gen.name, &Type::Id(*ty));
                 uwrite!(
                     self.src,
                     r#"
@@ -1934,13 +1771,17 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
             Instruction::HandleLift { ty, .. } => {
                 let op = &operands[0];
-                let ty = self.gen.type_name(&Type::Id(*ty), false);
+                let ty = self
+                    .r#gen
+                    .r#gen
+                    .pkg_resolver
+                    .type_constructor(self.r#gen.name, &Type::Id(*ty));
 
                 results.push(format!(
                     "{}::{}({})",
                     ty,
                     if ty.starts_with("@") {
-                        ty.split('.').last().unwrap()
+                        ty.split('.').next_back().unwrap()
                     } else {
                         &ty
                     },
@@ -1958,19 +1799,16 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let ops = operands
                     .iter()
                     .enumerate()
-                    .map(|(i, op)| {
-                        format!(
-                            "{} : {}",
-                            record.fields[i].name.to_moonbit_ident(),
-                            op.to_string()
-                        )
-                    })
+                    .map(|(i, op)| format!("{} : {}", record.fields[i].name.to_moonbit_ident(), op))
                     .collect::<Vec<_>>()
                     .join(", ");
 
                 results.push(format!(
                     "{}::{{{ops}}}",
-                    self.gen.type_name(&Type::Id(*ty), true)
+                    self.r#gen
+                        .r#gen
+                        .pkg_resolver
+                        .type_name(self.r#gen.name, &Type::Id(*ty))
                 ));
             }
 
@@ -1978,10 +1816,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let op = &operands[0];
                 // Empty tuple is Unit
                 // (T) is T
-                if tuple.types.len() == 0 {
+                if tuple.types.is_empty() {
                     results.push("()".into());
                 } else if tuple.types.len() == 1 {
-                    results.push(format!("{}", operands[0]));
+                    results.push(operands[0].to_string());
                 } else {
                     for i in 0..tuple.types.len() {
                         results.push(format!("({op}).{i}"));
@@ -2049,7 +1887,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 let declarations = lowered
                     .iter()
-                    .map(|lowered| format!("{lowered}"))
+                    .map(|lowered| lowered.to_string())
                     .collect::<Vec<_>>()
                     .join(", ");
 
@@ -2058,7 +1896,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let block = |Block { body, results, .. }| {
                     let assignments = results
                         .iter()
-                        .map(|result| format!("{result}"))
+                        .map(|result| result.to_string())
                         .collect::<Vec<_>>()
                         .join(", ");
 
@@ -2070,47 +1908,45 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 let none = block(none);
                 let some = block(some);
-
-                if declarations.is_empty() {
-                    uwrite!(
-                        self.src,
-                        r#"
-                        match (({op})) {{
-                            None => {{
-                                {none}
-                            }}
-                            Some({some_payload}) => {{
-                                {some}
-                            }}
-                        }}
-                        "#
-                    );
+                let assignment = if declarations.is_empty() {
+                    "".into()
                 } else {
-                    uwrite!(
-                        self.src,
-                        r#"
-                        let ({declarations}) = match (({op})) {{
-                            None => {{
-                                {none}
-                            }}
-                            Some({some_payload}) => {{
-                                {some}
-                            }}
+                    format!("let ({declarations}) = ")
+                };
+                uwrite!(
+                    self.src,
+                    r#"
+                    {assignment}match ({op}) {{
+                        None => {{
+                            {none}
                         }}
-                        "#
-                    );
-                }
+                        Some({some_payload}) => {{
+                            {some}
+                        }}
+                    }}
+                    "#,
+                );
             }
 
             Instruction::OptionLift { payload, ty } => {
                 let some = self.blocks.pop().unwrap();
                 let _none = self.blocks.pop().unwrap();
 
-                let ty = self.gen.type_name(&Type::Id(*ty), true);
+                let ty = self
+                    .r#gen
+                    .r#gen
+                    .pkg_resolver
+                    .type_name(self.r#gen.name, &Type::Id(*ty));
                 let lifted = self.locals.tmp("lifted");
                 let op = &operands[0];
 
-                let payload = if self.gen.non_empty_type(Some(*payload)).is_some() {
+                let payload = if self
+                    .r#gen
+                    .r#gen
+                    .pkg_resolver
+                    .non_empty_type(Some(*payload))
+                    .is_some()
+                {
                     some.results.into_iter().next().unwrap()
                 } else {
                     "None".into()
@@ -2159,43 +1995,71 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::EnumLift { ty, .. } => results.push(format!(
                 "{}::from({})",
-                self.gen.type_name(&Type::Id(*ty), true),
+                self.r#gen
+                    .r#gen
+                    .pkg_resolver
+                    .type_name(self.r#gen.name, &Type::Id(*ty)),
                 operands[0]
             )),
 
             Instruction::ListCanonLower { element, realloc } => match element {
                 Type::U8 => {
                     let op = &operands[0];
-
-                    results.push(format!(
-                        "{}bytes2ptr({op})",
-                        self.gen.qualify_package(FFI_DIR)
-                    ));
+                    let ptr = self.locals.tmp("ptr");
+                    self.r#gen.ffi_imports.insert(ffi::BYTES2PTR);
+                    uwriteln!(
+                        self.src,
+                        "
+                        let {ptr} = mbt_ffi_bytes2ptr({op})
+                        ",
+                    );
+                    results.push(ptr.clone());
                     results.push(format!("{op}.length()"));
                     if realloc.is_none() {
-                        self.cleanup.push(Cleanup::Object(op.clone()));
+                        self.cleanup.push(Cleanup { address: ptr });
                     }
                 }
                 Type::U32 | Type::U64 | Type::S32 | Type::S64 | Type::F32 | Type::F64 => {
                     let op = &operands[0];
-
+                    let ptr = self.locals.tmp("ptr");
                     let ty = match element {
-                        Type::U32 => "uint",
-                        Type::U64 => "uint64",
-                        Type::S32 => "int",
-                        Type::S64 => "int64",
-                        Type::F32 => "float",
-                        Type::F64 => "double",
+                        Type::U32 => {
+                            self.r#gen.ffi_imports.insert(ffi::UINT_ARRAY2PTR);
+                            "uint"
+                        }
+                        Type::U64 => {
+                            self.r#gen.ffi_imports.insert(ffi::UINT64_ARRAY2PTR);
+                            "uint64"
+                        }
+                        Type::S32 => {
+                            self.r#gen.ffi_imports.insert(ffi::INT_ARRAY2PTR);
+                            "int"
+                        }
+                        Type::S64 => {
+                            self.r#gen.ffi_imports.insert(ffi::INT64_ARRAY2PTR);
+                            "int64"
+                        }
+                        Type::F32 => {
+                            self.r#gen.ffi_imports.insert(ffi::FLOAT_ARRAY2PTR);
+                            "float"
+                        }
+                        Type::F64 => {
+                            self.r#gen.ffi_imports.insert(ffi::DOUBLE_ARRAY2PTR);
+                            "double"
+                        }
                         _ => unreachable!(),
                     };
 
-                    results.push(format!(
-                        "{}{ty}_array2ptr({op})",
-                        self.gen.qualify_package(FFI_DIR)
-                    ));
+                    uwriteln!(
+                        self.src,
+                        "
+                        let {ptr} = mbt_ffi_{ty}_array2ptr({op})
+                        ",
+                    );
+                    results.push(ptr.clone());
                     results.push(format!("{op}.length()"));
                     if realloc.is_none() {
-                        self.cleanup.push(Cleanup::Object(op.clone()));
+                        self.cleanup.push(Cleanup { address: ptr });
                     }
                 }
                 _ => unreachable!("unsupported list element type"),
@@ -2206,25 +2070,42 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     let result = self.locals.tmp("result");
                     let address = &operands[0];
                     let length = &operands[1];
-
+                    self.r#gen.ffi_imports.insert(ffi::PTR2BYTES);
                     uwrite!(
                         self.src,
                         "
-                        let {result} = {}ptr2bytes({address}, {length})
+                        let {result} = mbt_ffi_ptr2bytes({address}, {length})
                         ",
-                        self.gen.qualify_package(FFI_DIR)
                     );
 
                     results.push(result);
                 }
                 Type::U32 | Type::U64 | Type::S32 | Type::S64 | Type::F32 | Type::F64 => {
                     let ty = match element {
-                        Type::U32 => "uint",
-                        Type::U64 => "uint64",
-                        Type::S32 => "int",
-                        Type::S64 => "int64",
-                        Type::F32 => "float",
-                        Type::F64 => "double",
+                        Type::U32 => {
+                            self.r#gen.ffi_imports.insert(ffi::PTR2UINT_ARRAY);
+                            "uint"
+                        }
+                        Type::U64 => {
+                            self.r#gen.ffi_imports.insert(ffi::PTR2UINT64_ARRAY);
+                            "uint64"
+                        }
+                        Type::S32 => {
+                            self.r#gen.ffi_imports.insert(ffi::PTR2INT_ARRAY);
+                            "int"
+                        }
+                        Type::S64 => {
+                            self.r#gen.ffi_imports.insert(ffi::PTR2INT64_ARRAY);
+                            "int64"
+                        }
+                        Type::F32 => {
+                            self.r#gen.ffi_imports.insert(ffi::PTR2FLOAT_ARRAY);
+                            "float"
+                        }
+                        Type::F64 => {
+                            self.r#gen.ffi_imports.insert(ffi::PTR2DOUBLE_ARRAY);
+                            "double"
+                        }
                         _ => unreachable!(),
                     };
 
@@ -2235,9 +2116,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     uwrite!(
                         self.src,
                         "
-                        let {result} = {}ptr2{ty}_array({address}, {length})
+                        let {result} = mbt_ffi_ptr2{ty}_array({address}, {length})
                         ",
-                        self.gen.qualify_package(FFI_DIR)
                     );
 
                     results.push(result);
@@ -2247,14 +2127,20 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::StringLower { realloc } => {
                 let op = &operands[0];
+                let ptr = self.locals.tmp("ptr");
 
-                results.push(format!(
-                    "{}str2ptr({op})",
-                    self.gen.qualify_package(FFI_DIR)
-                ));
-                results.push(format!("{op}.charcode_length()"));
+                self.r#gen.ffi_imports.insert(ffi::STR2PTR);
+                uwrite!(
+                    self.src,
+                    "
+                    let {ptr} = mbt_ffi_str2ptr({op})
+                    ",
+                );
+
+                results.push(ptr.clone());
+                results.push(format!("{op}.length()"));
                 if realloc.is_none() {
-                    self.cleanup.push(Cleanup::Object(op.clone()));
+                    self.cleanup.push(Cleanup { address: ptr });
                 }
             }
 
@@ -2263,12 +2149,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let address = &operands[0];
                 let length = &operands[1];
 
+                self.r#gen.ffi_imports.insert(ffi::PTR2STR);
                 uwrite!(
                     self.src,
                     "
-                    let {result} = {}ptr2str({address}, {length})
+                    let {result} = mbt_ffi_ptr2str({address}, {length})
                     ",
-                    self.gen.qualify_package(FFI_DIR)
                 );
 
                 results.push(result);
@@ -2278,56 +2164,56 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let Block {
                     body,
                     results: block_results,
-                    element: block_element,
-                    base,
                 } = self.blocks.pop().unwrap();
                 assert!(block_results.is_empty());
 
                 let op = &operands[0];
-                let size = self.gen.gen.sizes.size(element).size_wasm32();
-                let align = self.gen.gen.sizes.align(element).align_wasm32();
+                let size = self.r#gen.r#gen.sizes.size(element).size_wasm32();
+                let _align = self.r#gen.r#gen.sizes.align(element).align_wasm32();
                 let address = self.locals.tmp("address");
-                let ty = self.gen.type_name(element, true);
+                let ty = self
+                    .r#gen
+                    .r#gen
+                    .pkg_resolver
+                    .type_name(self.r#gen.name, element);
                 let index = self.locals.tmp("index");
 
+                self.r#gen.ffi_imports.insert(ffi::MALLOC);
                 uwrite!(
                     self.src,
                     "
-                    let {address} = {}malloc(({op}).length() * {size});
+                    let {address} = mbt_ffi_malloc(({op}).length() * {size});
                     for {index} = 0; {index} < ({op}).length(); {index} = {index} + 1 {{
-                        let {block_element} : {ty} = ({op})[({index})]
-                        let {base} = {address} + ({index} * {size});
+                        let iter_elem : {ty} = ({op})[({index})]
+                        let iter_base = {address} + ({index} * {size});
                         {body}
                     }}
                     ",
-                    self.gen.qualify_package(FFI_DIR)
                 );
 
-                if realloc.is_none() {
-                    self.cleanup.push(Cleanup::Memory {
-                        address: address.clone(),
-                        size: format!("({op}).length() * {size}"),
-                        align,
-                    });
-                }
-
-                results.push(address);
+                results.push(address.clone());
                 results.push(format!("({op}).length()"));
+
+                if realloc.is_none() {
+                    self.cleanup.push(Cleanup { address });
+                }
             }
 
             Instruction::ListLift { element, .. } => {
                 let Block {
                     body,
                     results: block_results,
-                    base,
-                    ..
                 } = self.blocks.pop().unwrap();
                 let address = &operands[0];
                 let length = &operands[1];
                 let array = self.locals.tmp("array");
-                let ty = self.gen.type_name(element, true);
-                let size = self.gen.gen.sizes.size(element).size_wasm32();
-                // let align = self.gen.gen.sizes.align(element);
+                let ty = self
+                    .r#gen
+                    .r#gen
+                    .pkg_resolver
+                    .type_name(self.r#gen.name, element);
+                let size = self.r#gen.r#gen.sizes.size(element).size_wasm32();
+                // let align = self.r#gen.r#gen.sizes.align(element);
                 let index = self.locals.tmp("index");
 
                 let result = match &block_results[..] {
@@ -2335,30 +2221,26 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     _ => todo!("result count == {}", results.len()),
                 };
 
+                self.r#gen.ffi_imports.insert(ffi::FREE);
                 uwrite!(
                     self.src,
                     "
                     let {array} : Array[{ty}] = [];
                     for {index} = 0; {index} < ({length}); {index} = {index} + 1 {{
-                        let {base} = ({address}) + ({index} * {size})
+                        let iter_base = ({address}) + ({index} * {size})
                         {body}
                         {array}.push({result})
                     }}
-                    {}free({address})
+                    mbt_ffi_free({address})
                     ",
-                    self.gen.qualify_package(FFI_DIR)
                 );
 
                 results.push(array);
             }
 
-            Instruction::IterElem { .. } => {
-                results.push(self.block_storage.last().unwrap().element.clone())
-            }
+            Instruction::IterElem { .. } => results.push("iter_elem".into()),
 
-            Instruction::IterBasePointer => {
-                results.push(self.block_storage.last().unwrap().base.clone())
-            }
+            Instruction::IterBasePointer => results.push("iter_base".into()),
 
             Instruction::CallWasm { sig, .. } => {
                 let assignment = match &sig.results[..] {
@@ -2378,52 +2260,105 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let func_name = self.func_name.to_upper_camel_case();
 
                 let operands = operands.join(", ");
-
+                // TODO: handle this to support async functions
                 uwriteln!(self.src, "{assignment} wasmImport{func_name}({operands});");
             }
 
-            Instruction::CallInterface { func, .. } => {
+            Instruction::CallInterface { func, async_ } => {
+                let name = self.r#gen.r#gen.pkg_resolver.func_call(
+                    self.r#gen.name,
+                    func,
+                    self.func_interface,
+                );
+
+                let args = operands.join(", ");
+
+                if *async_ {
+                    let (async_func_result, task_return_result, task_return_type) =
+                        match func.result {
+                            Some(ty) => {
+                                let res = self.locals.tmp("return_result");
+                                (
+                                    res.clone(),
+                                    res,
+                                    self.r#gen
+                                        .r#gen
+                                        .pkg_resolver
+                                        .type_name(self.r#gen.name, &ty),
+                                )
+                            }
+                            None => ("_ignore".into(), "".into(), "Unit".into()),
+                        };
+
+                    if func.result.is_some() {
+                        results.push(async_func_result.clone());
+                    }
+                    let ffi = self
+                        .r#gen
+                        .r#gen
+                        .pkg_resolver
+                        .qualify_package(self.r#gen.name, FFI_DIR);
+                    uwrite!(
+                        self.src,
+                        r#"
+                        let task = {ffi}current_task();
+                        let _ = task.with_waitable_set(fn(task) {{
+                            let {async_func_result}: Ref[{task_return_type}?] = Ref::new(None)
+                            task.wait(fn() {{
+                                {async_func_result}.val = Some({name}({args}));
+                            }})
+                            for {{
+                                if task.no_wait() && {async_func_result}.val is Some({async_func_result}){{
+                                   {name}_task_return({task_return_result});
+                                   break;
+                                }} else {{
+                                   {ffi}suspend() catch {{ 
+                                        _ => {{
+                                            {ffi}task_cancel();
+                                        }}
+                                   }}
+                                }}
+                            }}
+                        }})
+                        if task.is_fail() is Some({ffi}Cancelled::Cancelled) {{
+                                {ffi}task_cancel();
+                                return {ffi}CallbackCode::Exit.encode()
+                        }}
+                        if task.is_done() {{
+                            return {ffi}CallbackCode::Exit.encode()
+                        }}
+                        return {ffi}CallbackCode::Wait(task.handle()).encode()
+                        "#,
+                    );
+                    assert!(matches!(
+                        self.deferred_task_return,
+                        DeferredTaskReturn::None
+                    ));
+                    self.deferred_task_return = DeferredTaskReturn::Generating {
+                        prev_src: mem::take(&mut self.src),
+                        return_param: async_func_result.to_string(),
+                    };
+                    return;
+                }
+
                 let assignment = match func.result {
                     None => "let _ = ".into(),
                     Some(ty) => {
-                        let ty = format!("({})", self.gen.type_name(&ty, true));
+                        let ty = format!(
+                            "({})",
+                            self.r#gen
+                                .r#gen
+                                .pkg_resolver
+                                .type_name(self.r#gen.name, &ty)
+                        );
                         let result = self.locals.tmp("result");
-                        results.push(result.clone());
+                        if func.result.is_some() {
+                            results.push(result.clone());
+                        }
                         let assignment = format!("let ({result}) : {ty} = ");
                         assignment
                     }
                 };
-
-                let name = match func.kind {
-                    FunctionKind::Freestanding | FunctionKind::AsyncFreestanding => {
-                        format!(
-                            "{}{}",
-                            self.r#gen.qualify_package(&self.func_interface.to_string()),
-                            func.name.to_moonbit_ident()
-                        )
-                    }
-                    FunctionKind::Constructor(ty) => {
-                        let name = self.gen.type_name(&Type::Id(ty), false);
-                        format!(
-                            "{}::{}",
-                            name,
-                            func.name.replace("[constructor]", "").to_moonbit_ident()
-                        )
-                    }
-                    FunctionKind::Method(ty)
-                    | FunctionKind::Static(ty)
-                    | FunctionKind::AsyncMethod(ty)
-                    | FunctionKind::AsyncStatic(ty) => {
-                        let name = self.gen.type_name(&Type::Id(ty), false);
-                        format!(
-                            "{}::{}",
-                            name,
-                            func.name.split(".").last().unwrap().to_moonbit_ident()
-                        )
-                    }
-                };
-
-                let args = operands.join(", ");
 
                 uwrite!(
                     self.src,
@@ -2434,39 +2369,38 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::Return { amt, .. } => {
+                // Bind return operands to locals BEFORE cleanup to avoid
+                // use-after-free when operands contain inline loads from
+                // return_area or other freed memory.
+                let return_locals: Vec<String> = if *amt > 0 {
+                    operands
+                        .iter()
+                        .map(|op| {
+                            let local = self.locals.tmp("ret");
+                            uwriteln!(self.src, "let {local} = {op}");
+                            local
+                        })
+                        .collect()
+                } else {
+                    Vec::new()
+                };
+
                 for clean in &self.cleanup {
-                    match clean {
-                        Cleanup::Memory {
-                            address,
-                            size: _,
-                            align: _,
-                        } => uwriteln!(
-                            self.src,
-                            "{}free({address})",
-                            self.gen.qualify_package(FFI_DIR)
-                        ),
-                        Cleanup::Object(obj) => uwriteln!(self.src, "ignore({obj})"),
-                    }
+                    let address = &clean.address;
+                    self.r#gen.ffi_imports.insert(ffi::FREE);
+                    uwriteln!(self.src, "mbt_ffi_free({address})",);
                 }
 
                 if self.needs_cleanup_list {
-                    uwrite!(
-                        self.src,
-                        "
-                        cleanupList.each(fn(cleanup) {{
-                            {}free(cleanup.address);
-                        }})
-                        ignore(ignoreList)
-                        ",
-                        self.gen.qualify_package(FFI_DIR)
-                    );
+                    self.r#gen.ffi_imports.insert(ffi::FREE);
+                    uwriteln!(self.src, "cleanup_list.each(mbt_ffi_free)",);
                 }
 
                 match *amt {
                     0 => (),
-                    1 => uwriteln!(self.src, "return {}", operands[0]),
+                    1 => uwriteln!(self.src, "return {}", return_locals[0]),
                     _ => {
-                        let results = operands.join(", ");
+                        let results = return_locals.join(", ");
                         uwriteln!(self.src, "return ({results})");
                     }
                 }
@@ -2474,143 +2408,159 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::I32Load { offset }
             | Instruction::PointerLoad { offset }
-            | Instruction::LengthLoad { offset } => results.push(format!(
-                "{}load32(({}) + {offset})",
-                self.gen.qualify_package(FFI_DIR),
-                operands[0],
-                offset = offset.size_wasm32()
-            )),
+            | Instruction::LengthLoad { offset } => {
+                self.r#gen.ffi_imports.insert(ffi::LOAD32);
+                results.push(format!(
+                    "mbt_ffi_load32(({}) + {offset})",
+                    operands[0],
+                    offset = offset.size_wasm32()
+                ))
+            }
 
-            Instruction::I32Load8U { offset } => results.push(format!(
-                "{}load8_u(({}) + {offset})",
-                self.gen.qualify_package(FFI_DIR),
-                operands[0],
-                offset = offset.size_wasm32()
-            )),
+            Instruction::I32Load8U { offset } => {
+                self.r#gen.ffi_imports.insert(ffi::LOAD8_U);
+                results.push(format!(
+                    "mbt_ffi_load8_u(({}) + {offset})",
+                    operands[0],
+                    offset = offset.size_wasm32()
+                ))
+            }
 
-            Instruction::I32Load8S { offset } => results.push(format!(
-                "{}load8(({}) + {offset})",
-                self.gen.qualify_package(FFI_DIR),
-                operands[0],
-                offset = offset.size_wasm32()
-            )),
+            Instruction::I32Load8S { offset } => {
+                self.r#gen.ffi_imports.insert(ffi::LOAD8);
+                results.push(format!(
+                    "mbt_ffi_load8(({}) + {offset})",
+                    operands[0],
+                    offset = offset.size_wasm32()
+                ))
+            }
 
-            Instruction::I32Load16U { offset } => results.push(format!(
-                "{}load16_u(({}) + {offset})",
-                self.gen.qualify_package(FFI_DIR),
-                operands[0],
-                offset = offset.size_wasm32()
-            )),
+            Instruction::I32Load16U { offset } => {
+                self.r#gen.ffi_imports.insert(ffi::LOAD16_U);
+                results.push(format!(
+                    "mbt_ffi_load16_u(({}) + {offset})",
+                    operands[0],
+                    offset = offset.size_wasm32()
+                ))
+            }
 
-            Instruction::I32Load16S { offset } => results.push(format!(
-                "{}load16(({}) + {offset})",
-                self.gen.qualify_package(FFI_DIR),
-                operands[0],
-                offset = offset.size_wasm32()
-            )),
+            Instruction::I32Load16S { offset } => {
+                self.r#gen.ffi_imports.insert(ffi::LOAD16);
+                results.push(format!(
+                    "mbt_ffi_load16(({}) + {offset})",
+                    operands[0],
+                    offset = offset.size_wasm32()
+                ))
+            }
 
-            Instruction::I64Load { offset } => results.push(format!(
-                "{}load64(({}) + {offset})",
-                self.gen.qualify_package(FFI_DIR),
-                operands[0],
-                offset = offset.size_wasm32()
-            )),
+            Instruction::I64Load { offset } => {
+                self.r#gen.ffi_imports.insert(ffi::LOAD64);
+                results.push(format!(
+                    "mbt_ffi_load64(({}) + {offset})",
+                    operands[0],
+                    offset = offset.size_wasm32()
+                ))
+            }
 
-            Instruction::F32Load { offset } => results.push(format!(
-                "{}loadf32(({}) + {offset})",
-                self.gen.qualify_package(FFI_DIR),
-                operands[0],
-                offset = offset.size_wasm32()
-            )),
+            Instruction::F32Load { offset } => {
+                self.r#gen.ffi_imports.insert(ffi::LOADF32);
+                results.push(format!(
+                    "mbt_ffi_loadf32(({}) + {offset})",
+                    operands[0],
+                    offset = offset.size_wasm32()
+                ))
+            }
 
-            Instruction::F64Load { offset } => results.push(format!(
-                "{}loadf64(({}) + {offset})",
-                self.gen.qualify_package(FFI_DIR),
-                operands[0],
-                offset = offset.size_wasm32()
-            )),
+            Instruction::F64Load { offset } => {
+                self.r#gen.ffi_imports.insert(ffi::LOADF64);
+                results.push(format!(
+                    "mbt_ffi_loadf64(({}) + {offset})",
+                    operands[0],
+                    offset = offset.size_wasm32()
+                ))
+            }
 
             Instruction::I32Store { offset }
             | Instruction::PointerStore { offset }
-            | Instruction::LengthStore { offset } => uwriteln!(
-                self.src,
-                "{}store32(({}) + {offset}, {})",
-                self.gen.qualify_package(FFI_DIR),
-                operands[1],
-                operands[0],
-                offset = offset.size_wasm32()
-            ),
-
-            Instruction::I32Store8 { offset } => uwriteln!(
-                self.src,
-                "{}store8(({}) + {offset}, {})",
-                self.gen.qualify_package(FFI_DIR),
-                operands[1],
-                operands[0],
-                offset = offset.size_wasm32()
-            ),
-
-            Instruction::I32Store16 { offset } => uwriteln!(
-                self.src,
-                "{}store16(({}) + {offset}, {})",
-                self.gen.qualify_package(FFI_DIR),
-                operands[1],
-                operands[0],
-                offset = offset.size_wasm32()
-            ),
-
-            Instruction::I64Store { offset } => uwriteln!(
-                self.src,
-                "{}store64(({}) + {offset}, {})",
-                self.gen.qualify_package(FFI_DIR),
-                operands[1],
-                operands[0],
-                offset = offset.size_wasm32()
-            ),
-
-            Instruction::F32Store { offset } => uwriteln!(
-                self.src,
-                "{}storef32(({}) + {offset}, {})",
-                self.gen.qualify_package(FFI_DIR),
-                operands[1],
-                operands[0],
-                offset = offset.size_wasm32()
-            ),
-
-            Instruction::F64Store { offset } => uwriteln!(
-                self.src,
-                "{}storef64(({}) + {offset}, {})",
-                self.gen.qualify_package(FFI_DIR),
-                operands[1],
-                operands[0],
-                offset = offset.size_wasm32()
-            ),
-            // TODO: see what we can do with align
-            Instruction::Malloc { size, .. } => {
+            | Instruction::LengthStore { offset } => {
+                self.r#gen.ffi_imports.insert(ffi::STORE32);
                 uwriteln!(
                     self.src,
-                    "{}malloc({})",
-                    self.gen.qualify_package(FFI_DIR),
-                    size.size_wasm32()
+                    "mbt_ffi_store32(({}) + {offset}, {})",
+                    operands[1],
+                    operands[0],
+                    offset = offset.size_wasm32()
                 )
+            }
+
+            Instruction::I32Store8 { offset } => {
+                self.r#gen.ffi_imports.insert(ffi::STORE8);
+                uwriteln!(
+                    self.src,
+                    "mbt_ffi_store8(({}) + {offset}, {})",
+                    operands[1],
+                    operands[0],
+                    offset = offset.size_wasm32()
+                )
+            }
+
+            Instruction::I32Store16 { offset } => {
+                self.r#gen.ffi_imports.insert(ffi::STORE16);
+                uwriteln!(
+                    self.src,
+                    "mbt_ffi_store16(({}) + {offset}, {})",
+                    operands[1],
+                    operands[0],
+                    offset = offset.size_wasm32()
+                )
+            }
+
+            Instruction::I64Store { offset } => {
+                self.r#gen.ffi_imports.insert(ffi::STORE64);
+                uwriteln!(
+                    self.src,
+                    "mbt_ffi_store64(({}) + {offset}, {})",
+                    operands[1],
+                    operands[0],
+                    offset = offset.size_wasm32()
+                )
+            }
+
+            Instruction::F32Store { offset } => {
+                self.r#gen.ffi_imports.insert(ffi::STOREF32);
+                uwriteln!(
+                    self.src,
+                    "mbt_ffi_storef32(({}) + {offset}, {})",
+                    operands[1],
+                    operands[0],
+                    offset = offset.size_wasm32()
+                )
+            }
+
+            Instruction::F64Store { offset } => {
+                self.r#gen.ffi_imports.insert(ffi::STOREF64);
+                uwriteln!(
+                    self.src,
+                    "mbt_ffi_storef64(({}) + {offset}, {})",
+                    operands[1],
+                    operands[0],
+                    offset = offset.size_wasm32()
+                )
+            }
+            // TODO: see what we can do with align
+            Instruction::Malloc { size, .. } => {
+                self.r#gen.ffi_imports.insert(ffi::MALLOC);
+                uwriteln!(self.src, "mbt_ffi_malloc({})", size.size_wasm32())
             }
 
             Instruction::GuestDeallocate { .. } => {
-                uwriteln!(
-                    self.src,
-                    "{}free({})",
-                    self.gen.qualify_package(FFI_DIR),
-                    operands[0]
-                )
+                self.r#gen.ffi_imports.insert(ffi::FREE);
+                uwriteln!(self.src, "mbt_ffi_free({})", operands[0])
             }
 
             Instruction::GuestDeallocateString => {
-                uwriteln!(
-                    self.src,
-                    "{}free({})",
-                    self.gen.qualify_package(FFI_DIR),
-                    operands[0]
-                )
+                self.r#gen.ffi_imports.insert(ffi::FREE);
+                uwriteln!(self.src, "mbt_ffi_free({})", operands[0])
             }
 
             Instruction::GuestDeallocateVariant { blocks } => {
@@ -2647,19 +2597,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::GuestDeallocateList { element } => {
-                let Block {
-                    body,
-                    results,
-                    base,
-                    ..
-                } = self.blocks.pop().unwrap();
+                let Block { body, results, .. } = self.blocks.pop().unwrap();
                 assert!(results.is_empty());
 
                 let address = &operands[0];
                 let length = &operands[1];
 
-                let size = self.gen.gen.sizes.size(element).size_wasm32();
-                // let align = self.gen.gen.sizes.align(element);
+                let size = self.r#gen.r#gen.sizes.size(element).size_wasm32();
+                // let align = self.r#gen.r#gen.sizes.align(element);
 
                 if !body.trim().is_empty() {
                     let index = self.locals.tmp("index");
@@ -2668,54 +2613,219 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         self.src,
                         "
                         for {index} = 0; {index} < ({length}); {index} = {index} + 1 {{
-                            let {base} = ({address}) + ({index} * {size})
+                            let iter_base = ({address}) + ({index} * {size})
                             {body}
                         }}
                         "
                     );
                 }
 
-                uwriteln!(
-                    self.src,
-                    "{}free({address})",
-                    self.gen.qualify_package(FFI_DIR)
-                );
+                self.r#gen.ffi_imports.insert(ffi::FREE);
+                uwriteln!(self.src, "mbt_ffi_free({address})",);
             }
 
             Instruction::Flush { amt } => {
-                results.extend(operands.iter().take(*amt).map(|v| v.clone()));
+                results.extend(operands.iter().take(*amt).cloned());
             }
 
-            Instruction::AsyncPostCallInterface { .. }
-            | Instruction::AsyncCallReturn { .. }
-            | Instruction::FutureLower { .. }
-            | Instruction::FutureLift { .. }
-            | Instruction::StreamLower { .. }
-            | Instruction::StreamLift { .. }
-            | Instruction::ErrorContextLower { .. }
+            Instruction::FutureLift { ty, .. } => {
+                let result = self.locals.tmp("result");
+                let op = &operands[0];
+                // let qualifier = self.r#gen.qualify_package(self.func_interface);
+                let ty = self
+                    .r#gen
+                    .r#gen
+                    .pkg_resolver
+                    .type_name(self.r#gen.name, &Type::Id(*ty));
+                let ffi = self
+                    .r#gen
+                    .r#gen
+                    .pkg_resolver
+                    .qualify_package(self.r#gen.name, FFI_DIR);
+
+                let snake_name = format!("static_{}_future_table", ty.to_snake_case(),);
+
+                uwriteln!(
+                    self.src,
+                    r#"let {result} = {ffi}FutureReader::new({op}, {snake_name});"#,
+                );
+
+                results.push(result);
+            }
+
+            Instruction::FutureLower { .. } => {
+                let op = &operands[0];
+                results.push(format!("{op}.handle"));
+            }
+
+            Instruction::AsyncTaskReturn { params, .. } => {
+                let (body, return_param) = match &mut self.deferred_task_return {
+                    DeferredTaskReturn::Generating {
+                        prev_src,
+                        return_param,
+                    } => {
+                        mem::swap(&mut self.src, prev_src);
+                        (mem::take(prev_src), return_param.clone())
+                    }
+                    _ => unreachable!(),
+                };
+                assert_eq!(params.len(), operands.len());
+                self.deferred_task_return = DeferredTaskReturn::Emitted {
+                    body,
+                    params: params
+                        .iter()
+                        .zip(operands)
+                        .map(|(a, b)| (*a, b.clone()))
+                        .collect(),
+                    return_param,
+                };
+            }
+
+            Instruction::StreamLower { .. } => {
+                let op = &operands[0];
+                results.push(format!("{op}.handle"));
+            }
+
+            Instruction::StreamLift { ty, .. } => {
+                let result = self.locals.tmp("result");
+                let op = &operands[0];
+                let qualifier = self
+                    .r#gen
+                    .r#gen
+                    .pkg_resolver
+                    .qualify_package(self.r#gen.name, self.func_interface);
+                let ty = self
+                    .r#gen
+                    .r#gen
+                    .pkg_resolver
+                    .type_name(self.r#gen.name, &Type::Id(*ty));
+                let ffi = self
+                    .r#gen
+                    .r#gen
+                    .pkg_resolver
+                    .qualify_package(self.r#gen.name, FFI_DIR);
+                let snake_name = format!(
+                    "static_{}_stream_table",
+                    ty.replace(&qualifier, "").to_snake_case(),
+                );
+
+                uwriteln!(
+                    self.src,
+                    r#"let {result} = {ffi}StreamReader::new({op}, {snake_name});"#,
+                );
+
+                results.push(result);
+            }
+            Instruction::ErrorContextLower { .. }
             | Instruction::ErrorContextLift { .. }
-            | Instruction::AsyncCallWasm { .. } => todo!(),
+            | Instruction::DropHandle { .. } => todo!(),
+            Instruction::FixedLengthListLift {
+                element: _,
+                size,
+                id: _,
+            } => {
+                let array = self.locals.tmp("array");
+                let mut elements = String::new();
+                for a in operands.drain(0..(*size as usize)) {
+                    elements.push_str(&a);
+                    elements.push_str(", ");
+                }
+                uwriteln!(self.src, "let {array} : FixedArray[_] = [{elements}]");
+                results.push(array);
+            }
+            Instruction::FixedLengthListLower {
+                element: _,
+                size,
+                id: _,
+            } => {
+                for i in 0..(*size as usize) {
+                    results.push(format!("({})[{i}]", operands[0]));
+                }
+            }
+            Instruction::FixedLengthListLowerToMemory {
+                element,
+                size: _,
+                id: _,
+            } => {
+                let Block {
+                    body,
+                    results: block_results,
+                } = self.blocks.pop().unwrap();
+                assert!(block_results.is_empty());
+
+                let vec = operands[0].clone();
+                let target = operands[1].clone();
+                let size = self.r#gen.r#gen.sizes.size(element).size_wasm32();
+                let index = self.locals.tmp("index");
+
+                uwrite!(
+                    self.src,
+                    "
+                    for {index} = 0; {index} < ({vec}).length(); {index} = {index} + 1 {{
+                        let iter_elem = ({vec})[{index}]
+                        let iter_base = ({target}) + ({index} * {size})
+                        {body}
+                    }}
+                    ",
+                );
+            }
+            Instruction::FixedLengthListLiftFromMemory {
+                element,
+                size: fll_size,
+                id: _,
+            } => {
+                let Block {
+                    body,
+                    results: block_results,
+                } = self.blocks.pop().unwrap();
+                let address = &operands[0];
+                let array = self.locals.tmp("array");
+                let ty = self
+                    .r#gen
+                    .r#gen
+                    .pkg_resolver
+                    .type_name(self.r#gen.name, element);
+                let elem_size = self.r#gen.r#gen.sizes.size(element).size_wasm32();
+                let index = self.locals.tmp("index");
+
+                let result = match &block_results[..] {
+                    [result] => result,
+                    _ => todo!("result count == {}", block_results.len()),
+                };
+
+                uwrite!(
+                    self.src,
+                    "
+                    let {array} : Array[{ty}] = []
+                    for {index} = 0; {index} < {fll_size}; {index} = {index} + 1 {{
+                        let iter_base = ({address}) + ({index} * {elem_size})
+                        {body}
+                        {array}.push({result})
+                    }}
+                    ",
+                );
+
+                results.push(format!("FixedArray::from_array({array}[:])"));
+            }
         }
     }
 
     fn return_pointer(&mut self, size: ArchitectureSize, align: Alignment) -> String {
-        if self.gen.direction == Direction::Import {
-            let ffi_qualifier = self.gen.qualify_package(FFI_DIR);
+        if self.r#gen.direction == Direction::Import {
+            self.r#gen.ffi_imports.insert(ffi::MALLOC);
             let address = self.locals.tmp("return_area");
             uwriteln!(
                 self.src,
-                "let {address} = {ffi_qualifier}malloc({})",
+                "let {address} = mbt_ffi_malloc({})",
                 size.size_wasm32(),
             );
-            self.cleanup.push(Cleanup::Memory {
+            self.cleanup.push(Cleanup {
                 address: address.clone(),
-                size: size.size_wasm32().to_string(),
-                align: align.align_wasm32(),
             });
             address
         } else {
-            self.gen.gen.return_area_size = self.gen.gen.return_area_size.max(size);
-            self.gen.gen.return_area_align = self.gen.gen.return_area_align.max(align);
+            self.r#gen.r#gen.return_area_size = self.r#gen.r#gen.return_area_size.max(size);
+            self.r#gen.r#gen.return_area_align = self.r#gen.r#gen.return_area_align.max(align);
             "return_area".into()
         }
     }
@@ -2723,35 +2833,19 @@ impl Bindgen for FunctionBindgen<'_, '_> {
     fn push_block(&mut self) {
         self.block_storage.push(BlockStorage {
             body: mem::take(&mut self.src),
-            element: self.locals.tmp("element"),
-            base: self.locals.tmp("base"),
             cleanup: mem::take(&mut self.cleanup),
         });
     }
 
     fn finish_block(&mut self, operands: &mut Vec<String>) {
-        let BlockStorage {
-            body,
-            element,
-            base,
-            cleanup,
-        } = self.block_storage.pop().unwrap();
+        let BlockStorage { body, cleanup } = self.block_storage.pop().unwrap();
 
         if !self.cleanup.is_empty() {
             self.needs_cleanup_list = true;
 
             for cleanup in &self.cleanup {
-                match cleanup {
-                    Cleanup::Memory {
-                        address,
-                        size,
-                        align,
-                    } => uwriteln!(
-                        self.src,
-                        "cleanupList.push({{address: {address}, size: {size}, align: {align}}})",
-                    ),
-                    Cleanup::Object(obj) => uwriteln!(self.src, "ignoreList.push({obj})",),
-                }
+                let address = &cleanup.address;
+                uwriteln!(self.src, "cleanup_list.push({address})",);
             }
         }
 
@@ -2760,13 +2854,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
         self.blocks.push(Block {
             body: mem::replace(&mut self.src, body),
             results: mem::take(operands),
-            element,
-            base,
         });
     }
 
     fn sizes(&self) -> &SizeAlign {
-        &self.gen.gen.sizes
+        &self.r#gen.r#gen.sizes
     }
 
     fn is_list_canonical(&self, _resolve: &Resolve, element: &Type) -> bool {
@@ -2780,18 +2872,18 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 fn perform_cast(op: &str, cast: &Bitcast) -> String {
     match cast {
         Bitcast::I32ToF32 => {
-            format!("({op}).to_float()")
+            format!("({op}).reinterpret_as_float()")
         }
-        Bitcast::I64ToF32 => format!("Int64::to_int({op}).to_float()"),
+        Bitcast::I64ToF32 => format!("({op}).to_int().reinterpret_as_float()"),
         Bitcast::F32ToI32 => {
-            format!("@ffi.f32_to_i32({op})")
+            format!("({op}).reinterpret_as_int()")
         }
-        Bitcast::F32ToI64 => format!("@ffi.f32_to_i64({op})"),
+        Bitcast::F32ToI64 => format!("({op}).reinterpret_as_int().to_int64()"),
         Bitcast::I64ToF64 => {
-            format!("Int64::to_double({op})")
+            format!("({op}).reinterpret_as_double()")
         }
         Bitcast::F64ToI64 => {
-            format!("Double::to_int64({op})")
+            format!("({op}).reinterpret_as_int64()")
         }
         Bitcast::LToI64 | Bitcast::PToP64 | Bitcast::I32ToI64 => format!("Int::to_int64({op})"),
         Bitcast::I64ToL | Bitcast::P64ToP | Bitcast::I64ToI32 => format!("Int64::to_int({op})"),
@@ -2860,90 +2952,15 @@ fn indent(code: &str) -> Source {
     indented
 }
 
-fn world_name(resolve: &Resolve, world: WorldId) -> String {
-    format!("world.{}", resolve.worlds[world].name.to_lower_camel_case())
-}
-
-fn interface_name(resolve: &Resolve, name: &WorldKey) -> String {
-    let pkg = match name {
-        WorldKey::Name(_) => None,
-        WorldKey::Interface(id) => {
-            let pkg = resolve.interfaces[*id].package.unwrap();
-            Some(resolve.packages[pkg].name.clone())
-        }
-    };
-
-    let name = match name {
-        WorldKey::Name(name) => name,
-        WorldKey::Interface(id) => resolve.interfaces[*id].name.as_ref().unwrap(),
-    }
-    .to_lower_camel_case();
-
-    format!(
-        "interface.{}{name}",
-        if let Some(name) = &pkg {
-            format!(
-                "{}.{}.",
-                name.namespace.to_moonbit_ident(),
-                name.name.to_moonbit_ident()
-            )
-        } else {
-            String::new()
-        }
-    )
-}
-
-trait ToMoonBitIdent: ToOwned {
-    fn to_moonbit_ident(&self) -> Self::Owned;
-}
-
-impl ToMoonBitIdent for str {
-    fn to_moonbit_ident(&self) -> String {
-        // Escape MoonBit keywords
-        match self {
-            "continue" | "for" | "match" | "if" | "pub" | "priv" | "readonly" | "break"
-            | "raise" | "try" | "except" | "catch" | "else" | "enum" | "struct" | "type"
-            | "trait" | "return" | "let" | "mut" | "while" | "loop" | "extern" | "with"
-            | "throw" | "init" | "main" | "test" | "in" | "guard" | "typealias" | "const"
-            | "method" | "move" | "do" | "static" | "final" => {
-                format!("{self}_")
-            }
-            _ => self.to_snake_case(),
-        }
-    }
-}
-
-trait ToMoonBitTypeIdent: ToOwned {
-    fn to_moonbit_type_ident(&self) -> Self::Owned;
-}
-
-impl ToMoonBitTypeIdent for str {
-    fn to_moonbit_type_ident(&self) -> String {
-        // Escape MoonBit builtin types
-        match self.to_upper_camel_case().as_str() {
-            type_name @ ("Bool" | "Byte" | "Int" | "Int64" | "UInt" | "UInt64" | "Float"
-            | "Double" | "Error" | "Buffer" | "Bytes" | "Array" | "FixedArray"
-            | "Map" | "String" | "Option" | "Result" | "Char" | "Json") => {
-                format!("{type_name}_")
-            }
-            type_name => type_name.to_owned(),
-        }
-    }
-}
-
 fn generated_preamble(src: &mut Source, version: &str) {
     uwriteln!(src, "// Generated by `wit-bindgen` {version}.")
 }
 
 fn print_docs(src: &mut String, docs: &Docs) {
+    uwrite!(src, "///|");
     if let Some(docs) = &docs.contents {
-        let lines = docs
-            .trim()
-            .lines()
-            .map(|line| format!("/// {line}"))
-            .collect::<Vec<_>>()
-            .join("\n");
-
-        uwrite!(src, "{}", lines)
+        for line in docs.trim().lines() {
+            uwrite!(src, "\n/// {line}");
+        }
     }
 }

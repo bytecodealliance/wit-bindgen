@@ -1,0 +1,13 @@
+package example:composition;
+
+let leaf = new test:leaf { ... };
+let intermediate = new test:test {
+  foo: leaf.foo,
+  ...
+};
+let runner = new test:runner {
+  foo: intermediate.foo,
+  ...
+};
+
+export runner...;

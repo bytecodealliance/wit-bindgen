@@ -1,0 +1,17 @@
+package example:composition;
+
+let leaf-thing = new test:leaf-thing { ... };
+let leaf-toplevel = new test:leaf-toplevel {
+  test: leaf-thing.test,
+  thing: leaf-thing.test.thing,
+  ...
+};
+let intermediate = new test:intermediate {
+  test: leaf-thing.test,
+  toplevel-import: leaf-toplevel.toplevel-export,
+  thing: leaf-thing.test.thing,
+  ...
+};
+let runner = new test:runner { test: intermediate.test, ... };
+
+export runner...;

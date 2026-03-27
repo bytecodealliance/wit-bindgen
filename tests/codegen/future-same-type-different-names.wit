@@ -1,0 +1,67 @@
+//@ async = true
+
+package a:b;
+
+interface i {
+  resource a;
+  f1: func(x: future<a>);
+
+  type b = a;
+  f2: func(x: future<b>);
+}
+
+interface i2 {
+  use i.{a};
+  f3: func(x: future<a>);
+
+  use i.{b};
+  f4: func(x: future<b>);
+}
+
+interface i3 {
+  f5: func(x: future<u8>);
+
+  type hello = u8;
+  f6: func(x: future<hello>);
+}
+
+interface i4 {
+  type a = result<u8, u32>;
+  f7: func(x: future<a>);
+
+  type b = result<u8, u32>;
+  f8: func(x: future<b>);
+}
+
+interface i5 {
+  type a = result<u8, u32>;
+  f9: func(x: future<a>);
+}
+
+interface i6 {
+  enum error-code {
+    io,
+    closed,
+  }
+}
+
+interface i7 {
+  use i6.{error-code};
+  f10: func() -> future<result<_, error-code>>;
+}
+
+interface i8 {
+  use i6.{error-code};
+  f11: func() -> future<result<_, error-code>>;
+}
+
+world foo {
+  import i;
+  import i2;
+  import i3;
+  import i4;
+  import i5;
+  import i6;
+  import i7;
+  import i8;
+}

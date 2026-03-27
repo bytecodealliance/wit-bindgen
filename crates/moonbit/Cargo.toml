@@ -5,11 +5,15 @@ version = { workspace = true }
 edition = { workspace = true }
 repository = { workspace = true }
 license = { workspace = true }
+rust-version = { workspace = true }
 homepage = 'https://github.com/bytecodealliance/wit-bindgen'
 description = """
 MoonBit bindings generator for WIT and the component model, typically used
 through the `wit-bindgen-cli` crate.
 """
+
+[lints]
+workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
@@ -17,5 +21,5 @@ wit-bindgen-core = { workspace = true }
 heck = { workspace = true }
 clap = { workspace = true, optional = true }
 
-[dev-dependencies]
-test-helpers = { path = '../test-helpers' }
+[features]
+clap = ['dep:clap', 'wit-bindgen-core/clap']

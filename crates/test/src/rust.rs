@@ -1,9 +1,11 @@
-use crate::{Compile, Kind, LanguageMethods, Runner, Verify};
-use anyhow::Result;
+use crate::config::StringList;
+use crate::{Compile, LanguageMethods, Runner, Verify};
+use anyhow::{Context, Result};
 use clap::Parser;
 use heck::ToSnakeCase;
+use serde::Deserialize;
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 #[derive(Default, Debug, Clone, Parser)]
@@ -16,7 +18,7 @@ pub struct RustOpts {
     #[clap(long, conflicts_with = "rust_wit_bindgen_path", value_name = "X.Y.Z")]
     rust_wit_bindgen_version: Option<String>,
 
-    /// A custom version to use for the `wit-bindgen` dependency.
+    /// Name of the Rust target to compile for.
     #[clap(long, default_value = "wasm32-wasip2", value_name = "TARGET")]
     rust_target: String,
 }
@@ -28,6 +30,19 @@ pub struct State {
     wit_bindgen_rlib: PathBuf,
     futures_rlib: PathBuf,
     wit_bindgen_deps: Vec<PathBuf>,
+}
+
+/// Rust-specific configuration of component files
+#[derive(Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RustConfig {
+    /// Space-separated list or array of compiler flags to pass.
+    #[serde(default)]
+    rustflags: StringList,
+    /// List of path to rust files to build as external crates and link to the
+    /// main crate.
+    #[serde(default)]
+    externs: Vec<String>,
 }
 
 impl LanguageMethods for Rust {
@@ -46,13 +61,23 @@ impl LanguageMethods for Rust {
         args: &[String],
     ) -> bool {
         // no_std doesn't currently work with async
-        if config.async_ && args.iter().any(|s| s == "--std-feature") {
+        if config.async_
+            && args.iter().any(|s| s == "--std-feature")
+            // Except these actually do work:
+            && name != "async-trait-function.wit-no-std"
+            && name != "async-resource-func.wit-no-std"
+        {
             return true;
         }
 
         // Currently there's a bug with this borrowing mode which means that
         // this variant does not pass.
         if name == "wasi-http-borrowed-duplicate" {
+            return true;
+        }
+
+        // Named fixed-length lists don't work with async yet.
+        if name == "named-fixed-length-list.wit-async" {
             return true;
         }
 
@@ -68,6 +93,7 @@ impl LanguageMethods for Rust {
             ),
             ("async", &["--async=all"]),
             ("no-std", &["--std-feature"]),
+            ("merge-equal", &["--merge-structurally-equal-types"]),
         ]
     }
 
@@ -79,7 +105,7 @@ impl LanguageMethods for Rust {
         &["--stubs"]
     }
 
-    fn prepare(&self, runner: &mut Runner<'_>) -> Result<()> {
+    fn prepare(&self, runner: &mut Runner) -> Result<()> {
         let cwd = env::current_dir()?;
         let opts = &runner.opts.rust;
         let dir = cwd.join(&runner.opts.artifacts).join("rust");
@@ -106,7 +132,7 @@ name = "tmp"
 [workspace]
 
 [dependencies]
-wit-bindgen = {{ {wit_bindgen_dep} }}
+wit-bindgen = {{ {wit_bindgen_dep}, features = ['async-spawn', 'inter-task-wakeup'] }}
 futures = "0.3.31"
 
 [lib]
@@ -145,45 +171,66 @@ path = 'lib.rs'
         Ok(())
     }
 
-    fn compile(&self, runner: &Runner<'_>, compile: &Compile) -> Result<()> {
-        let mut cmd = runner.rustc(Edition::E2021);
+    fn compile(&self, runner: &Runner, compile: &Compile) -> Result<()> {
+        let config = compile.component.deserialize_lang_config::<RustConfig>()?;
 
         // If this rust target doesn't natively produce a component then place
         // the compiler output in a temporary location which is componentized
         // later on.
-        let output = if runner.produces_component() {
-            compile.output.to_path_buf()
-        } else {
-            compile.output.with_extension("core.wasm")
+        let output = compile.output.with_extension("core.wasm");
+
+        // Compile all extern crates, if any
+        let mut externs = Vec::new();
+        let manifest_dir = compile.component.path.parent().unwrap();
+
+        let rustc = |path: &Path, output: &Path| {
+            // Compile the main crate, passing `--extern` for all upstream crates.
+            let mut cmd = runner.rustc(Edition::E2021);
+            cmd.env("CARGO_MANIFEST_DIR", manifest_dir)
+                .arg(path)
+                .arg("-o")
+                .arg(&output);
+            for flag in Vec::from(config.rustflags.clone()) {
+                cmd.arg(flag);
+            }
+            cmd
         };
 
-        cmd.current_dir(compile.component.path.parent().unwrap())
-            .env("CARGO_MANIFEST_DIR", ".")
-            .env(
-                "BINDINGS",
-                compile
-                    .bindings_dir
-                    .join(format!("{}.rs", compile.component.kind)),
-            )
-            .arg(compile.component.path.file_name().unwrap())
-            .arg("-o")
-            .arg(&output);
-        match compile.component.kind {
-            Kind::Runner => {}
-            Kind::Test => {
-                cmd.arg("--crate-type=cdylib");
-            }
+        for file in config.externs.iter() {
+            let file = manifest_dir.join(file);
+            let stem = file.file_stem().unwrap().to_str().unwrap();
+            let output = compile.artifacts_dir.join(format!("lib{stem}.rlib"));
+            runner.run_command(rustc(&file, &output).arg("--crate-type=rlib"))?;
+            externs.push((stem.to_string(), output));
+        }
+
+        // Compile the main crate, passing `--extern` for all upstream crates.
+        let mut cmd = rustc(&compile.component.path, &output);
+        cmd.env(
+            "BINDINGS",
+            compile.bindings_dir.join(format!(
+                "{}.rs",
+                compile.component.bindgen.world.replace('-', "_")
+            )),
+        );
+        for (name, path) in externs {
+            let arg = format!("--extern={name}={}", path.display());
+            cmd.arg(arg);
+        }
+        cmd.arg("--crate-type=cdylib");
+        if runner.produces_component() {
+            cmd.arg("-Clink-arg=--skip-wit-component");
         }
         runner.run_command(&mut cmd)?;
 
-        if !runner.produces_component() {
-            runner.convert_p1_to_component(&output, compile)?;
-        }
+        runner
+            .convert_p1_to_component(&output, compile)
+            .with_context(|| format!("failed to convert {output:?}"))?;
 
         Ok(())
     }
 
-    fn verify(&self, runner: &Runner<'_>, verify: &Verify<'_>) -> Result<()> {
+    fn verify(&self, runner: &Runner, verify: &Verify<'_>) -> Result<()> {
         let bindings = verify
             .bindings_dir
             .join(format!("{}.rs", verify.world.to_snake_case()));
@@ -234,7 +281,7 @@ enum Edition {
     E2024,
 }
 
-impl Runner<'_> {
+impl Runner {
     fn rustc(&self, edition: Edition) -> Command {
         let state = self.rust_state.as_ref().unwrap();
         let opts = &self.opts.rust;

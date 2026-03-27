@@ -8,11 +8,12 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 use std::ops::Deref;
 use std::{iter, mem};
-use wit_bindgen_core::{uwrite, Direction, Files, InterfaceGenerator as _, WorldGenerator};
+use wit_bindgen_core::{Direction, Files, InterfaceGenerator as _, Types, WorldGenerator, uwrite};
 use wit_component::WitPrinter;
 use wit_parser::abi::WasmType;
 use wit_parser::{
-    Function, InterfaceId, Resolve, SizeAlign, Type, TypeId, TypeOwner, WorldId, WorldKey,
+    Function, InterfaceId, Resolve, SizeAlign, Type, TypeDefKind, TypeId, TypeOwner, WorldId,
+    WorldItem, WorldKey,
 };
 
 /// CSharp is the world generator for wit files. It coordinates all the generated code.
@@ -23,10 +24,8 @@ use wit_parser::{
 #[derive(Default)]
 pub struct CSharp {
     pub(crate) opts: Opts,
+    pub(crate) types: Types,
     pub(crate) name: String,
-    pub(crate) usings: HashSet<String>,
-    #[allow(unused)]
-    pub(crate) interop_usings: HashSet<String>,
     pub(crate) return_area_size: usize,
     pub(crate) return_area_align: usize,
     pub(crate) tuple_counts: HashSet<usize>,
@@ -35,6 +34,7 @@ pub struct CSharp {
     pub(crate) needs_export_return_area: bool,
     pub(crate) needs_rep_table: bool,
     pub(crate) needs_wit_exception: bool,
+    pub(crate) needs_async_support: bool,
     pub(crate) interface_fragments: HashMap<String, InterfaceTypeAndFragments>,
     pub(crate) world_fragments: Vec<InterfaceFragment>,
     pub(crate) sizes: SizeAlign,
@@ -43,6 +43,9 @@ pub struct CSharp {
     pub(crate) all_resources: HashMap<TypeId, ResourceInfo>,
     pub(crate) world_resources: HashMap<TypeId, ResourceInfo>,
     pub(crate) import_funcs_called: bool,
+    pub(crate) generated_future_types: HashSet<Option<Type>>,
+    // Top level types that are bidirectional like enums, to save code size and not duplicate whene unnecessary.
+    pub(crate) bidirectional_types_src: HashSet<String>,
 }
 
 impl CSharp {
@@ -64,6 +67,7 @@ impl CSharp {
         resolve: &'a Resolve,
         name: &'a str,
         direction: Direction,
+        is_world: bool,
     ) -> InterfaceGenerator<'a> {
         InterfaceGenerator {
             src: String::new(),
@@ -73,8 +77,9 @@ impl CSharp {
             resolve,
             name,
             direction,
-            usings: HashSet::<String>::new(),
-            interop_usings: HashSet::<String>::new(),
+            futures: Vec::new(),
+            streams: Vec::new(),
+            is_world,
         }
     }
 
@@ -92,18 +97,47 @@ impl CSharp {
         }
     }
 
-    pub(crate) fn require_using(&mut self, using_ns: &str) {
-        if !self.usings.contains(using_ns) {
-            let using_ns_string = using_ns.to_string();
-            self.usings.insert(using_ns_string);
-        }
+    // We can share some types to save some code size and allow a more intuitive user experience.
+    pub(crate) fn type_is_bidirectional(resolve: &Resolve, ty: &TypeId) -> bool {
+        let type_def = &resolve.types[*ty];
+        let kind = &type_def.kind;
+
+        return match kind {
+            TypeDefKind::Flags(_) => true,
+            TypeDefKind::Enum(_) => true,
+            _ => false,
+        };
     }
 
-    #[allow(unused)]
-    fn require_interop_using(&mut self, using_ns: &str) {
-        if !self.interop_usings.contains(using_ns) {
-            let using_ns_string = using_ns.to_string();
-            self.interop_usings.insert(using_ns_string);
+    fn write_world_fragments(
+        &mut self,
+        direction: Direction,
+        direction_name: &str,
+        src: &mut String,
+        access: &str,
+        name: &String,
+    ) {
+        if self
+            .world_fragments
+            .iter()
+            .any(|f| f.direction == Some(direction))
+        {
+            uwrite!(
+                src,
+                "
+                {access} interface I{name}World{direction_name}{{
+                "
+            );
+            src.push_str(
+                &self
+                    .world_fragments
+                    .iter()
+                    .filter(|f| f.direction == Some(direction))
+                    .map(|f| f.csharp_src.deref())
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            );
+            src.push_str("}\n");
         }
     }
 }
@@ -111,6 +145,29 @@ impl CSharp {
 impl WorldGenerator for CSharp {
     fn preprocess(&mut self, resolve: &Resolve, world: WorldId) {
         let name = &resolve.worlds[world].name;
+        self.types.analyze(resolve);
+        self.types.collect_equal_types(resolve, world, &|a| {
+            match resolve.types[a].kind {
+                // We'll start with the same split as Rust and change as required.
+                TypeDefKind::Type(_)
+                | TypeDefKind::Handle(_)
+                | TypeDefKind::List(_)
+                | TypeDefKind::Tuple(_)
+                | TypeDefKind::Option(_)
+                | TypeDefKind::Result(_)
+                | TypeDefKind::Future(_)
+                | TypeDefKind::Stream(_)
+                | TypeDefKind::Map(..)
+                | TypeDefKind::FixedLengthList(..) => true,
+
+                TypeDefKind::Record(_)
+                | TypeDefKind::Variant(_)
+                | TypeDefKind::Enum(_)
+                | TypeDefKind::Flags(_)
+                | TypeDefKind::Resource
+                | TypeDefKind::Unknown => false,
+            }
+        });
         self.name = name.to_string();
         self.sizes.fill(resolve);
     }
@@ -124,14 +181,14 @@ impl WorldGenerator for CSharp {
     ) -> anyhow::Result<()> {
         let name = interface_name(self, resolve, key, Direction::Import);
         self.interface_names.insert(id, name.clone());
-        let mut gen = self.interface(resolve, &name, Direction::Import);
+        let mut r#gen = self.interface(resolve, &name, Direction::Import, false);
 
-        let mut old_resources = mem::take(&mut gen.csharp_gen.all_resources);
-        gen.types(id);
-        let new_resources = mem::take(&mut gen.csharp_gen.all_resources);
+        let mut old_resources = mem::take(&mut r#gen.csharp_gen.all_resources);
+        r#gen.types(id);
+        let new_resources = mem::take(&mut r#gen.csharp_gen.all_resources);
         old_resources.extend(new_resources.clone());
-        gen.csharp_gen.all_resources = old_resources;
-
+        r#gen.csharp_gen.all_resources = old_resources;
+        let import_module_name = &resolve.name_world_key(key);
         for (resource, funcs) in by_resource(
             resolve.interfaces[id]
                 .functions
@@ -140,23 +197,26 @@ impl WorldGenerator for CSharp {
             new_resources.keys().copied(),
         ) {
             if let Some(resource) = resource {
-                gen.start_resource(resource, Some(key));
+                r#gen.start_resource(resource, Some(key));
             }
 
-            let import_module_name = &resolve.name_world_key(key);
             for func in funcs {
-                gen.import(import_module_name, func);
+                r#gen.import(import_module_name, func);
             }
 
             if resource.is_some() {
-                gen.end_resource();
+                r#gen.end_resource();
             }
         }
 
         // for anonymous types
-        gen.define_interface_types(id);
+        r#gen.define_interface_types(id);
 
-        gen.add_interface_fragment(false);
+        r#gen.add_futures_or_streams(import_module_name, false, true);
+
+        r#gen.add_futures_or_streams(import_module_name, false, false);
+
+        r#gen.add_interface_fragment(false);
 
         Ok(())
     }
@@ -171,27 +231,28 @@ impl WorldGenerator for CSharp {
         self.import_funcs_called = true;
 
         let name = &format!("{}-world", resolve.worlds[world].name).to_upper_camel_case();
-        let name = &format!("{name}.I{name}");
-        let mut gen = self.interface(resolve, name, Direction::Import);
+        let name = &format!("{name}.I{name}Imports");
+        let mut r#gen = self.interface(resolve, name, Direction::Import, true);
 
+        //TODO: This generates resource types for imports even when not used, i.e. no imported functions.
         for (resource, funcs) in by_resource(
             funcs.iter().copied(),
-            gen.csharp_gen.world_resources.keys().copied(),
+            r#gen.csharp_gen.world_resources.keys().copied(),
         ) {
             if let Some(resource) = resource {
-                gen.start_resource(resource, None);
+                r#gen.start_resource(resource, None);
             }
 
             for func in funcs {
-                gen.import("$root", func);
+                r#gen.import("$root", func);
             }
 
             if resource.is_some() {
-                gen.end_resource();
+                r#gen.end_resource();
             }
         }
 
-        gen.add_world_fragment();
+        r#gen.add_world_fragment(Some(Direction::Import));
     }
 
     fn export_interface(
@@ -203,14 +264,13 @@ impl WorldGenerator for CSharp {
     ) -> anyhow::Result<()> {
         let name = interface_name(self, resolve, key, Direction::Export);
         self.interface_names.insert(id, name.clone());
-        let mut gen = self.interface(resolve, &name, Direction::Export);
+        let mut r#gen = self.interface(resolve, &name, Direction::Export, false);
 
-        let mut old_resources = mem::take(&mut gen.csharp_gen.all_resources);
-        gen.types(id);
-        let new_resources = mem::take(&mut gen.csharp_gen.all_resources);
+        let mut old_resources = mem::take(&mut r#gen.csharp_gen.all_resources);
+        r#gen.types(id);
+        let new_resources = mem::take(&mut r#gen.csharp_gen.all_resources);
         old_resources.extend(new_resources.clone());
-        gen.csharp_gen.all_resources = old_resources;
-
+        r#gen.csharp_gen.all_resources = old_resources;
         for (resource, funcs) in by_resource(
             resolve.interfaces[id]
                 .functions
@@ -219,51 +279,80 @@ impl WorldGenerator for CSharp {
             new_resources.keys().copied(),
         ) {
             if let Some(resource) = resource {
-                gen.start_resource(resource, Some(key));
+                r#gen.start_resource(resource, Some(key));
             }
 
             for func in funcs {
-                gen.export(func, Some(key));
+                r#gen.export(func, Some(key));
             }
 
             if resource.is_some() {
-                gen.end_resource();
+                r#gen.end_resource();
             }
         }
 
         // for anonymous types
-        gen.define_interface_types(id);
+        r#gen.define_interface_types(id);
 
-        gen.add_interface_fragment(true);
+        let import_module_name = &resolve.name_world_key(key);
+        r#gen.add_futures_or_streams(&format!("[export]{import_module_name}"), true, true);
+
+        r#gen.add_futures_or_streams(&format!("[export]{import_module_name}"), true, false);
+
+        r#gen.add_interface_fragment(true);
         Ok(())
     }
 
     fn export_funcs(
         &mut self,
         resolve: &Resolve,
-        world: WorldId,
+        world_id: WorldId,
         funcs: &[(&str, &Function)],
         _files: &mut Files,
     ) -> anyhow::Result<()> {
-        let name = &format!("{}-world", resolve.worlds[world].name).to_upper_camel_case();
-        let name = &format!("{name}.I{name}");
-        let mut gen = self.interface(resolve, name, Direction::Export);
+        let name = &format!("{}-world", resolve.worlds[world_id].name).to_upper_camel_case();
+        let name = &format!("{name}.I{name}Exports");
+        let mut r#gen = self.interface(resolve, name, Direction::Export, true);
 
-        for (resource, funcs) in by_resource(funcs.iter().copied(), iter::empty()) {
-            if let Some(resource) = resource {
-                gen.start_resource(resource, None);
-            }
-
-            for func in funcs {
-                gen.export(func, None);
-            }
-
-            if resource.is_some() {
-                gen.end_resource();
+        // Write the export types used by the functions.
+        let world = &resolve.worlds[world_id];
+        let mut types = Vec::new();
+        for (name, export) in world.exports.iter() {
+            match name {
+                WorldKey::Name(name) => match export {
+                    WorldItem::Type { id, .. } => {
+                        if !CSharp::type_is_bidirectional(resolve, &id) {
+                            types.push((name.as_str(), *id))
+                        }
+                    }
+                    _ => {}
+                },
+                WorldKey::Interface(_) => {}
             }
         }
 
-        gen.add_world_fragment();
+        if !types.is_empty() {
+            export_types(&mut r#gen, &types);
+        }
+
+        for (resource, funcs) in by_resource(
+            funcs.iter().copied(),
+            r#gen.csharp_gen.world_resources.keys().copied(),
+        ) {
+            if let Some(resource) = resource {
+                r#gen.start_resource(resource, None);
+            }
+
+            for func in funcs {
+                r#gen.export(func, None);
+            }
+
+            if resource.is_some() {
+                r#gen.end_resource();
+            }
+        }
+
+        r#gen.add_world_fragment(Some(Direction::Export));
         Ok(())
     }
 
@@ -275,19 +364,19 @@ impl WorldGenerator for CSharp {
         _files: &mut Files,
     ) {
         let name = &format!("{}-world", resolve.worlds[world].name).to_upper_camel_case();
-        let name = &format!("{name}.I{name}");
-        let mut gen = self.interface(resolve, name, Direction::Import);
+        let name = &format!("{name}.I{name}Imports");
+        let mut r#gen = self.interface(resolve, name, Direction::Import, false);
 
-        let mut old_resources = mem::take(&mut gen.csharp_gen.all_resources);
+        let mut old_resources = mem::take(&mut r#gen.csharp_gen.all_resources);
         for (ty_name, ty) in types {
-            gen.define_type(ty_name, *ty);
+            r#gen.define_type(ty_name, *ty);
         }
-        let new_resources = mem::take(&mut gen.csharp_gen.all_resources);
+        let new_resources = mem::take(&mut r#gen.csharp_gen.all_resources);
         old_resources.extend(new_resources.clone());
-        gen.csharp_gen.all_resources = old_resources;
-        gen.csharp_gen.world_resources = new_resources;
+        r#gen.csharp_gen.all_resources = old_resources;
+        r#gen.csharp_gen.world_resources = new_resources;
 
-        gen.add_world_fragment();
+        r#gen.add_world_fragment(Some(Direction::Import));
     }
 
     fn finish(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) -> anyhow::Result<()> {
@@ -313,38 +402,6 @@ impl WorldGenerator for CSharp {
         let mut src = String::new();
         src.push_str(&header);
 
-        let access = self.access_modifier();
-
-        let using_pos = src.len();
-
-        uwrite!(
-            src,
-            "
-             namespace {world_namespace} {{
-
-             {access} interface I{name}World {{
-            "
-        );
-
-        src.push_str(
-            &self
-                .world_fragments
-                .iter()
-                .map(|f| f.csharp_src.deref())
-                .collect::<Vec<_>>()
-                .join("\n"),
-        );
-
-        let usings: Vec<_> = self
-            .world_fragments
-            .iter()
-            .flat_map(|f| &f.usings)
-            .cloned()
-            .collect();
-        usings.iter().for_each(|u| {
-            self.require_using(u);
-        });
-
         let mut producers = wasm_metadata::Producers::empty();
         producers.add(
             "processed-by",
@@ -352,17 +409,65 @@ impl WorldGenerator for CSharp {
             env!("CARGO_PKG_VERSION"),
         );
 
-        src.push_str("}\n");
+        let access = self.access_modifier();
+
+        if self.needs_async_support {
+            uwrite!(
+                src,
+                "
+                    using System.Runtime.CompilerServices;
+
+                "
+            );
+        }
+
+        uwrite!(
+            src,
+            "
+                using System;
+                using System.Runtime.InteropServices;
+                using System.Collections.Concurrent;
+                using System.Threading;
+                using System.Threading.Tasks;
+            "
+        );
+        uwrite!(
+            src,
+            "
+             namespace {world_namespace} {{
+
+            "
+        );
+
+        src.push_str(
+            &self
+                .world_fragments
+                .iter()
+                .filter(|f| f.direction.is_none())
+                .map(|f| f.csharp_src.deref())
+                .collect::<Vec<_>>()
+                .join("\n"),
+        );
+
+        src.push_str(
+            self.bidirectional_types_src
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join("\n")
+                .as_str(),
+        );
+        self.write_world_fragments(Direction::Import, "Imports", &mut src, access, &name);
+        self.write_world_fragments(Direction::Export, "Exports", &mut src, access, &name);
 
         if self.needs_result {
-            self.require_using("System.Runtime.InteropServices");
             uwrite!(
                 src,
                 r#"
 
                 {access} readonly struct None {{}}
 
-                [StructLayout(LayoutKind.Sequential)]
+                [global::System.Runtime.InteropServices.StructLayoutAttribute(global::System.Runtime.InteropServices.LayoutKind.Sequential)]
                 {access} readonly struct Result<TOk, TErr>
                 {{
                     {access} readonly byte Tag;
@@ -396,7 +501,7 @@ impl WorldGenerator for CSharp {
                                 return (TOk)value;
                             }}
 
-                            throw new ArgumentException("expected k, got " + Tag);
+                            throw new global::System.ArgumentException("expected k, got " + Tag);
                         }}
                     }}
 
@@ -409,7 +514,7 @@ impl WorldGenerator for CSharp {
                                 return (TErr)value;
                             }}
 
-                            throw new ArgumentException("expected Err, got " + Tag);
+                            throw new global::System.ArgumentException("expected Err, got " + Tag);
                         }}
                     }}
 
@@ -424,7 +529,6 @@ impl WorldGenerator for CSharp {
         }
 
         if self.needs_option {
-            self.require_using("System.Diagnostics.CodeAnalysis");
             uwrite!(
                 src,
                 r#"
@@ -445,7 +549,7 @@ impl WorldGenerator for CSharp {
 
                     {access} static Option<T> None => none;
 
-                    [MemberNotNullWhen(true, nameof(Value))]
+                    [global::System.Diagnostics.CodeAnalysis.MemberNotNullWhenAttribute(true, nameof(Value))]
                     {access} bool HasValue {{ get; }}
 
                     {access} T? Value {{ get; }}
@@ -458,7 +562,7 @@ impl WorldGenerator for CSharp {
             uwrite!(
                 src,
                 r#"
-                {access} class WitException: Exception {{
+                {access} class WitException: global::System.Exception {{
                     {access} object Value {{ get; }}
                     {access} uint NestingLevel {{ get; }}
 
@@ -489,26 +593,25 @@ impl WorldGenerator for CSharp {
             let (array_size, element_type) =
                 dotnet_aligned_array(self.return_area_size, self.return_area_align);
 
-            self.require_using("System.Runtime.CompilerServices");
             uwrite!(
                 ret_area_str,
                 "
                 {access} static class InteropReturnArea
                 {{
-                    [InlineArray({0})]
-                    [StructLayout(LayoutKind.Sequential, Pack = {1})]
+                    [global::System.Runtime.CompilerServices.InlineArrayAttribute({0})]
+                    [global::System.Runtime.InteropServices.StructLayoutAttribute(global::System.Runtime.InteropServices.LayoutKind.Sequential, Pack = {1})]
                     internal struct ReturnArea
                     {{
                         private {2} buffer;
 
                         internal unsafe nint AddressOfReturnArea()
                         {{
-                            return (nint)Unsafe.AsPointer(ref buffer);
+                            return (nint)global::System.Runtime.CompilerServices.Unsafe.AsPointer(ref buffer);
                         }}
                     }}
 
-                    [ThreadStatic]
-                    [FixedAddressValueType]
+                    [global::System.ThreadStaticAttribute]
+                    [global::System.Runtime.CompilerServices.FixedAddressValueTypeAttribute]
                     internal static ReturnArea returnArea = default;
                 }}
                 ",
@@ -528,46 +631,90 @@ impl WorldGenerator for CSharp {
         if !&self.world_fragments.is_empty() {
             src.push('\n');
 
-            src.push_str("namespace exports {\n");
+            if self
+                .world_fragments
+                .iter()
+                .any(|f| f.direction == Some(Direction::Import))
+            {
+                src.push_str("\n");
 
-            src.push_str(
-                &self
+                src.push_str("namespace Imports {\n");
+
+                src.push_str(&format!(
+                    "{access} partial class {name}WorldImportsInterop : I{name}WorldImports\n"
+                ));
+                src.push_str("{");
+
+                for fragment in self
                     .world_fragments
                     .iter()
-                    .flat_map(|f| &f.interop_usings)
-                    .collect::<HashSet<&String>>() // de-dup across world_fragments
-                    .iter()
-                    .map(|s| "using ".to_owned() + s + ";")
-                    .collect::<Vec<String>>()
-                    .join("\n"),
-            );
-            src.push('\n');
+                    .filter(|f| f.direction == Some(Direction::Import))
+                {
+                    if !fragment.csharp_interop_src.is_empty() {
+                        src.push_str("\n");
 
-            src.push_str(&format!("{access} static class {name}World\n"));
-            src.push('{');
-
-            for fragment in &self.world_fragments {
-                src.push('\n');
-
-                src.push_str(&fragment.csharp_interop_src);
+                        src.push_str(&fragment.csharp_interop_src);
+                    }
+                }
+                src.push_str("}\n");
+                src.push_str("}\n");
             }
-            src.push_str("}\n");
-            src.push_str("}\n");
+
+            if self
+                .world_fragments
+                .iter()
+                .any(|f| f.direction == Some(Direction::Export))
+            {
+                src.push_str("namespace Exports {\n");
+
+                src.push_str(&format!("{access} static class {name}WorldInterop\n"));
+                src.push_str("{");
+
+                for fragment in self
+                    .world_fragments
+                    .iter()
+                    .filter(|f| f.direction == Some(Direction::Export))
+                {
+                    src.push_str("\n");
+
+                    src.push_str(&fragment.csharp_interop_src);
+                }
+                src.push_str("}\n");
+                src.push_str("}\n");
+            }
+        }
+
+        if !self.generated_future_types.is_empty() {
+            src.push_str("\n");
+            src.push_str(
+                r#"public static class WitFuture
+            {
+                internal static (FutureReader, FutureWriter) FutureNew(FutureVTable table)
+                {
+                    return FutureHelpers.RawFutureNew(table);
+                }
+
+            "#,
+            );
+
+            src.push_str(
+                r#"
+            }
+            "#,
+            );
+        }
+
+        if self.needs_async_support {
+            src.push_str("\n");
+            src.push_str(include_str!("AsyncSupport.cs"));
+
+            src.push_str("\n");
+            src.push_str(&include_str!("FutureCommonSupport.cs"));
         }
 
         src.push('\n');
 
         src.push_str("}\n");
-
-        src.insert_str(
-            using_pos,
-            &self
-                .usings
-                .iter()
-                .map(|s| "using ".to_owned() + s + ";")
-                .collect::<Vec<String>>()
-                .join("\n"),
-        );
 
         files.push(&format!("{name}.cs"), indent(&src).as_bytes());
 
@@ -614,6 +761,7 @@ impl WorldGenerator for CSharp {
 
             let body = format!(
                 "{header}
+
                  namespace {fully_qualified_namespace};
 
                  {access} partial class {stub_class_name} : {interface_or_class_name} {{
@@ -627,7 +775,7 @@ impl WorldGenerator for CSharp {
 
         if self.opts.generate_stub {
             generate_stub(
-                format!("I{name}World"),
+                format!("I{name}WorldExports"),
                 files,
                 Stubs::World(&self.world_fragments),
             );
@@ -702,7 +850,7 @@ impl WorldGenerator for CSharp {
                 // temporarily add this attribute until it is available in dotnet 9
                 namespace System.Runtime.InteropServices
                 {{
-                    internal partial class WasmImportLinkageAttribute : Attribute {{}}
+                    internal partial class WasmImportLinkageAttribute : global::System.Attribute {{}}
                 }}
                 #endif
                 "#,
@@ -729,7 +877,6 @@ impl WorldGenerator for CSharp {
             if !body.is_empty() {
                 let body = format!(
                     "{header}
-                    {0}
 
                     namespace {namespace};
 
@@ -737,12 +884,6 @@ impl WorldGenerator for CSharp {
                         {body}
                     }}
                     ",
-                    fragments
-                        .iter()
-                        .flat_map(|f| &f.usings)
-                        .map(|s| "using ".to_owned() + s + ";")
-                        .collect::<Vec<String>>()
-                        .join("\n"),
                 );
 
                 files.push(&format!("{full_name}.cs"), indent(&body).as_bytes());
@@ -758,7 +899,8 @@ impl WorldGenerator for CSharp {
             let class_name = interface_name.strip_prefix("I").unwrap();
             let body = format!(
                 "{header}
-                 {0}
+
+                using System;
 
                 namespace {namespace}
                 {{
@@ -767,12 +909,6 @@ impl WorldGenerator for CSharp {
                   }}
                 }}
                 ",
-                fragments
-                    .iter()
-                    .flat_map(|f| &f.interop_usings)
-                    .map(|s| "using ".to_owned() + s + ";\n")
-                    .collect::<Vec<String>>()
-                    .join(""),
             );
 
             files.push(
@@ -792,6 +928,12 @@ impl WorldGenerator for CSharp {
 enum Stubs<'a> {
     World(&'a Vec<InterfaceFragment>),
     Interface(&'a Vec<InterfaceFragment>),
+}
+
+fn export_types(r#gen: &mut InterfaceGenerator, types: &[(&str, TypeId)]) {
+    for (ty_name, ty) in types {
+        r#gen.define_type(ty_name, *ty);
+    }
 }
 
 // We cant use "StructLayout.Pack" as dotnet will use the minimum of the type and the "Pack" field,
@@ -864,14 +1006,21 @@ fn interface_name(
         }
     };
 
-    let name = match name {
-        WorldKey::Name(name) => name.to_upper_camel_case(),
-        WorldKey::Interface(id) => resolve.interfaces[*id]
-            .name
-            .as_ref()
-            .unwrap()
-            .to_upper_camel_case(),
-    };
+    let name = format!(
+        "{}{}",
+        match name {
+            WorldKey::Name(name) => name.to_upper_camel_case(),
+            WorldKey::Interface(id) => resolve.interfaces[*id]
+                .name
+                .as_ref()
+                .unwrap()
+                .to_upper_camel_case(),
+        },
+        match direction {
+            Direction::Import => "Imports",
+            Direction::Export => "Exports",
+        }
+    );
 
     let namespace = match &pkg {
         Some(name) => {
@@ -896,8 +1045,8 @@ fn interface_name(
         "{}wit.{}.{}I{name}",
         world_namespace,
         match direction {
-            Direction::Import => "imports",
-            Direction::Export => "exports",
+            Direction::Import => "Imports",
+            Direction::Export => "Exports",
         },
         namespace
     )

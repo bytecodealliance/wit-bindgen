@@ -1,20 +1,24 @@
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::Parser;
-use rayon::prelude::*;
+use libtest_mimic::Trial;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::fs;
-use std::io::Write;
+use std::mem;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use wasm_encoder::{Encode, Section};
 use wit_component::{ComponentEncoder, StringEncoding};
 
 mod c;
 mod config;
+mod cpp;
+mod csharp;
 mod custom;
+mod go;
+mod moonbit;
 mod runner;
 mod rust;
 mod wat;
@@ -98,18 +102,42 @@ pub struct Opts {
 
     /// Configuration of which languages are tested.
     ///
-    /// Passing `--lang rust` will only test Rust for example. Passing
-    /// `--lang=-rust` will test everything except Rust.
-    #[clap(short, long)]
+    /// Passing `--lang rust` will only test Rust for example.
+    #[clap(short, long, required = true, value_delimiter = ',')]
     languages: Vec<String>,
+
+    /// Less output per test
+    #[clap(short, long, conflicts_with = "format")]
+    quiet: bool,
+
+    /// Number of threads used for parallel testing.
+    #[clap(long, value_name = "N")]
+    test_threads: Option<usize>,
+
+    /// Only run tests with this exact name.
+    #[clap(long)]
+    exact: bool,
+
+    /// A list of filters. Tests whose names contain parts of any of these
+    /// filters are skipped.
+    #[clap(long, value_name = "FILTER")]
+    skip: Vec<String>,
+
+    /// Specifies whether or not to color the output.
+    #[clap(long, value_name = "auto|always|never")]
+    color: Option<libtest_mimic::ColorSetting>,
+
+    /// Specifies the format of the output.
+    #[clap(long, value_name = "pretty|terse")]
+    format: Option<libtest_mimic::FormatSetting>,
 }
 
 impl Opts {
     pub fn run(&self, wit_bindgen: &Path) -> Result<()> {
         Runner {
-            opts: self,
+            opts: self.clone(),
             rust_state: None,
-            wit_bindgen,
+            wit_bindgen: wit_bindgen.to_path_buf(),
             test_runner: runner::TestRunner::new(&self.runner)?,
         }
         .run()
@@ -117,21 +145,30 @@ impl Opts {
 }
 
 /// Helper structure representing a discovered `test.wit` file.
+#[derive(Clone)]
 struct Test {
     /// The name of this test, unique amongst all tests.
     ///
     /// Inferred from the directory name.
     name: String,
 
+    /// Path to the root of this test.
+    path: PathBuf,
+
+    /// Configuration for this test, specified in the WIT file.
+    config: config::WitConfig,
+
     kind: TestKind,
 }
 
+#[derive(Clone)]
 enum TestKind {
     Runtime(Vec<Component>),
     Codegen(PathBuf),
 }
 
 /// Helper structure representing a single component found in a test directory.
+#[derive(Clone)]
 struct Component {
     /// The name of this component, inferred from the file stem.
     ///
@@ -150,6 +187,15 @@ struct Component {
     /// The WIT world that's being used with this component, loaded from
     /// `test.wit`.
     bindgen: Bindgen,
+
+    /// The contents of the test file itself.
+    contents: String,
+
+    /// The contents of the test file itself.
+    lang_config: Option<HashMap<String, toml::Value>>,
+
+    /// Runtime flags to wasmtime.
+    wasmtime_flags: config::StringList,
 }
 
 #[derive(Clone)]
@@ -167,7 +213,7 @@ struct Bindgen {
     wit_config: config::WitConfig,
 }
 
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 enum Kind {
     Runner,
     Test,
@@ -179,6 +225,9 @@ enum Language {
     C,
     Cpp,
     Wat,
+    Csharp,
+    MoonBit,
+    Go,
     Custom(custom::Language),
 }
 
@@ -202,16 +251,16 @@ struct Verify<'a> {
 }
 
 /// Helper structure to package up runtime state associated with executing tests.
-struct Runner<'a> {
-    opts: &'a Opts,
+struct Runner {
+    opts: Opts,
     rust_state: Option<rust::State>,
-    wit_bindgen: &'a Path,
+    wit_bindgen: PathBuf,
     test_runner: runner::TestRunner,
 }
 
-impl Runner<'_> {
+impl Runner {
     /// Executes all tests.
-    fn run(&mut self) -> Result<()> {
+    fn run(mut self) -> Result<()> {
         // First step, discover all tests in the specified test directory.
         let mut tests = HashMap::new();
         for test in self.opts.test.iter() {
@@ -226,10 +275,9 @@ impl Runner<'_> {
         }
 
         self.prepare_languages(&tests)?;
-        self.run_codegen_tests(&tests)?;
-        self.run_runtime_tests(&tests)?;
-
-        println!("PASSED");
+        let me = Arc::new(self);
+        me.run_codegen_tests(&tests)?;
+        me.run_runtime_tests(&tests)?;
 
         Ok(())
     }
@@ -238,7 +286,11 @@ impl Runner<'_> {
     fn discover_tests(&self, tests: &mut HashMap<String, Test>, path: &Path) -> Result<()> {
         if path.is_file() {
             if path.extension().and_then(|s| s.to_str()) == Some("wit") {
-                return self.insert_test(&path, TestKind::Codegen(path.to_owned()), tests);
+                let config =
+                    fs::read_to_string(path).with_context(|| format!("failed to read {path:?}"))?;
+                let config = config::parse_test_config::<config::WitConfig>(&config, "//@")
+                    .with_context(|| format!("failed to parse test config from {path:?}"))?;
+                return self.insert_test(&path, config, TestKind::Codegen(path.to_owned()), tests);
             }
 
             return Ok(());
@@ -246,15 +298,20 @@ impl Runner<'_> {
 
         let runtime_candidate = path.join("test.wit");
         if runtime_candidate.is_file() {
-            let components = self
-                .load_test(&runtime_candidate, path)
+            let (config, components) = self
+                .load_runtime_test(&runtime_candidate, path)
                 .with_context(|| format!("failed to load test in {path:?}"))?;
-            return self.insert_test(path, TestKind::Runtime(components), tests);
+            return self.insert_test(path, config, TestKind::Runtime(components), tests);
         }
 
         let codegen_candidate = path.join("wit");
         if codegen_candidate.is_dir() {
-            return self.insert_test(path, TestKind::Codegen(codegen_candidate), tests);
+            return self.insert_test(
+                path,
+                Default::default(),
+                TestKind::Codegen(codegen_candidate),
+                tests,
+            );
         }
 
         for entry in path.read_dir().context("failed to read test directory")? {
@@ -270,6 +327,7 @@ impl Runner<'_> {
     fn insert_test(
         &self,
         path: &Path,
+        config: config::WitConfig,
         kind: TestKind,
         tests: &mut HashMap<String, Test>,
     ) -> Result<()> {
@@ -281,6 +339,8 @@ impl Runner<'_> {
             test_name.to_string(),
             Test {
                 name: test_name.to_string(),
+                path: path.to_path_buf(),
+                config,
                 kind,
             },
         );
@@ -293,22 +353,37 @@ impl Runner<'_> {
     /// Loads a test from `dir` using the `wit` file in the directory specified.
     ///
     /// Returns a list of components that were found within this directory.
-    fn load_test(&self, wit: &Path, dir: &Path) -> Result<Vec<Component>> {
+    fn load_runtime_test(
+        &self,
+        wit: &Path,
+        dir: &Path,
+    ) -> Result<(config::WitConfig, Vec<Component>)> {
         let mut resolve = wit_parser::Resolve::default();
-        let pkg = resolve
-            .push_file(&wit)
-            .context("failed to load `test.wit` in test directory")?;
+
+        let wit_path = if dir.join("deps").exists() { dir } else { wit };
+        let (pkg, _files) = resolve.push_path(wit_path).context(format!(
+            "failed to load `test.wit` in test directory: {:?}",
+            &wit
+        ))?;
         let resolve = Arc::new(resolve);
-        resolve
-            .select_world(pkg, Some("runner"))
-            .context("failed to find expected `runner` world to generate bindings")?;
-        resolve
-            .select_world(pkg, Some("test"))
-            .context("failed to find expected `test` world to generate bindings")?;
 
         let wit_contents = std::fs::read_to_string(wit)?;
         let wit_config: config::WitConfig = config::parse_test_config(&wit_contents, "//@")
             .context("failed to parse WIT test config")?;
+
+        let mut worlds = Vec::new();
+
+        let mut push_world = |kind: Kind, name: &str| -> Result<()> {
+            let world = resolve.select_world(&[pkg], Some(name)).with_context(|| {
+                format!("failed to find expected `{name}` world to generate bindings")
+            })?;
+            worlds.push((world, kind));
+            Ok(())
+        };
+        push_world(Kind::Runner, wit_config.runner_world())?;
+        for world in wit_config.dependency_worlds() {
+            push_world(Kind::Test, &world)?;
+        }
 
         let mut components = Vec::new();
         let mut any_runner = false;
@@ -321,38 +396,41 @@ impl Runner<'_> {
             let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
                 continue;
             };
-            let kind = if name.starts_with("runner") {
-                any_runner = true;
-                Kind::Runner
-            } else if name != "test.wit" && name.starts_with("test") {
-                any_test = true;
-                Kind::Test
-            } else {
+            if name == "test.wit" {
+                continue;
+            }
+
+            let Some((world, kind)) = worlds
+                .iter()
+                .find(|(world, _kind)| name.starts_with(&resolve.worlds[*world].name))
+            else {
                 log::debug!("skipping file {name:?}");
                 continue;
             };
-
+            match kind {
+                Kind::Runner => any_runner = true,
+                Kind::Test => any_test = true,
+            }
             let bindgen = Bindgen {
                 args: Vec::new(),
                 wit_config: wit_config.clone(),
-                world: kind.to_string(),
-                wit_path: wit.to_path_buf(),
+                world: resolve.worlds[*world].name.clone(),
+                wit_path: wit_path.to_path_buf(),
             };
-
             let component = self
-                .parse_component(&path, kind, bindgen)
+                .parse_component(&path, *kind, bindgen)
                 .with_context(|| format!("failed to parse component source file {path:?}"))?;
             components.push(component);
         }
 
         if !any_runner {
-            bail!("no `runner*` test files found in test directory");
+            bail!("no runner files found in test directory");
         }
         if !any_test {
-            bail!("no `test*` test files found in test directory");
+            bail!("no test files found in test directory");
         }
 
-        Ok(components)
+        Ok((wit_config, components))
     }
 
     /// Parsers the component located at `path` and creates all information
@@ -368,6 +446,9 @@ impl Runner<'_> {
             "c" => Language::C,
             "cpp" => Language::Cpp,
             "wat" => Language::Wat,
+            "cs" => Language::Csharp,
+            "mbt" => Language::MoonBit,
+            "go" => Language::Go,
             other => Language::Custom(custom::Language::lookup(self, other)?),
         };
 
@@ -387,6 +468,9 @@ impl Runner<'_> {
             language,
             bindgen,
             kind,
+            contents,
+            lang_config: config.lang,
+            wasmtime_flags: config.wasmtime_flags,
         })
     }
 
@@ -434,30 +518,19 @@ impl Runner<'_> {
     }
 
     /// Executes all tests that are `TestKind::Codegen`.
-    fn run_codegen_tests(&mut self, tests: &HashMap<String, Test>) -> Result<()> {
+    fn run_codegen_tests(self: &Arc<Self>, tests: &HashMap<String, Test>) -> Result<()> {
         let mut codegen_tests = Vec::new();
         let languages = self.all_languages();
-        for (name, test) in tests.iter().filter_map(|(name, t)| match &t.kind {
+        for (name, config, test) in tests.iter().filter_map(|(name, t)| match &t.kind {
             TestKind::Runtime(_) => None,
-            TestKind::Codegen(p) => Some((name, p)),
+            TestKind::Codegen(p) => Some((name, &t.config, p)),
         }) {
             if let Some(filter) = &self.opts.filter {
                 if !filter.is_match(name) {
                     continue;
                 }
             }
-            let config = match fs::read_to_string(test) {
-                Ok(wit) => config::parse_test_config::<config::WitConfig>(&wit, "//@")
-                    .with_context(|| format!("failed to parse test config from {test:?}"))?,
-                Err(_) => Default::default(),
-            };
             for language in languages.iter() {
-                // Right now C++'s generator is the same as C's, so don't
-                // duplicate everything there.
-                if *language == Language::Cpp {
-                    continue;
-                }
-
                 // If the CLI arguments filter out this language, then discard
                 // the test case.
                 if !self.include_language(&language) {
@@ -471,7 +544,7 @@ impl Runner<'_> {
 
                 codegen_tests.push((
                     language.clone(),
-                    test,
+                    test.to_owned(),
                     name.to_string(),
                     args.clone(),
                     config.clone(),
@@ -484,7 +557,7 @@ impl Runner<'_> {
                     }
                     codegen_tests.push((
                         language.clone(),
-                        test,
+                        test.clone(),
                         format!("{name}-{args_kind}"),
                         args,
                         config.clone(),
@@ -497,34 +570,49 @@ impl Runner<'_> {
             return Ok(());
         }
 
-        println!("Running {} codegen tests:", codegen_tests.len());
+        println!("=== Running codegen tests ===");
+        self.run_tests(
+            codegen_tests
+                .into_iter()
+                .map(|(language, test, args_kind, args, config)| {
+                    let me = self.clone();
+                    let should_fail = language
+                        .obj()
+                        .should_fail_verify(&args_kind, &config, &args);
 
-        let results = codegen_tests
-            .par_iter()
-            .map(|(language, test, args_kind, args, config)| {
-                let should_fail = language.obj().should_fail_verify(args_kind, config, args);
-                let result = self
-                    .codegen_test(language, test, &args_kind, args, config)
-                    .with_context(|| {
-                        format!("failed to codegen test for `{language}` over {test:?}")
-                    });
-                self.update_status(&result, should_fail);
-                (result, should_fail, language, test, args_kind)
-            })
-            .collect::<Vec<_>>();
+                    let name = format!("{language} {args_kind} {test:?}");
+                    Trial::test(&name, move || {
+                        let result = me
+                            .codegen_test(&language, &test, &args_kind, &args, &config)
+                            .with_context(|| {
+                                format!("failed to codegen test for `{language}` over {test:?}")
+                            });
 
-        println!("");
-
-        self.render_errors(results.into_iter().map(
-            |(result, should_fail, language, test, args_kind)| {
-                StepResult::new(test.to_str().unwrap(), result)
-                    .should_fail(should_fail)
-                    .metadata("language", language)
-                    .metadata("variant", args_kind)
-            },
-        ));
+                        me.render_error(
+                            StepResult::new(result)
+                                .should_fail(should_fail)
+                                .metadata("language", language)
+                                .metadata("variant", args_kind),
+                        )
+                    })
+                })
+                .collect::<Vec<_>>(),
+        );
 
         Ok(())
+    }
+
+    fn run_tests(&self, trials: Vec<Trial>) {
+        let args = libtest_mimic::Arguments {
+            skip: self.opts.skip.clone(),
+            quiet: self.opts.quiet,
+            format: self.opts.format,
+            color: self.opts.color,
+            test_threads: self.opts.test_threads,
+            exact: self.opts.exact,
+            ..Default::default()
+        };
+        libtest_mimic::run(&args, trials).exit_if_failed();
     }
 
     /// Runs a single codegen test.
@@ -543,8 +631,12 @@ impl Runner<'_> {
         let mut resolve = wit_parser::Resolve::default();
         let (pkg, _) = resolve.push_path(test).context("failed to load WIT")?;
         let world = resolve
-            .select_world(pkg, None)
-            .or_else(|err| resolve.select_world(pkg, Some("imports")).map_err(|_| err))
+            .select_world(&[pkg], None)
+            .or_else(|err| {
+                resolve
+                    .select_world(&[pkg], Some("imports"))
+                    .map_err(|_| err)
+            })
             .context("failed to select a world for bindings generation")?;
         let world = resolve.worlds[world].name.clone();
 
@@ -553,6 +645,7 @@ impl Runner<'_> {
             .join("codegen")
             .join(language.to_string())
             .join(args_kind);
+        let _ = fs::remove_dir_all(&artifacts_dir);
         let bindings_dir = artifacts_dir.join("bindings");
         let bindgen = Bindgen {
             args: args.to_vec(),
@@ -583,7 +676,7 @@ impl Runner<'_> {
     }
 
     /// Execute all `TestKind::Runtime` tests
-    fn run_runtime_tests(&mut self, tests: &HashMap<String, Test>) -> Result<()> {
+    fn run_runtime_tests(self: &Arc<Self>, tests: &HashMap<String, Test>) -> Result<()> {
         let components = tests
             .values()
             .filter(|t| match &self.opts.filter {
@@ -600,88 +693,149 @@ impl Runner<'_> {
             .filter(|(_test, component)| self.include_language(&component.language))
             .collect::<Vec<_>>();
 
-        println!("Compiling {} components:", components.len());
-
-        // In parallel compile all sources to their binary component
-        // form.
-        let compile_results = components
-            .par_iter()
-            .map(|(test, component)| {
-                let path = self
-                    .compile_component(test, component)
-                    .with_context(|| format!("failed to compile component {:?}", component.path));
-                self.update_status(&path, false);
-                (test, component, path)
-            })
-            .collect::<Vec<_>>();
-        println!("");
-
-        let mut compilations = Vec::new();
-        self.render_errors(
-            compile_results
+        println!("=== Compiling components ===");
+        let compilations = Arc::new(Mutex::new(Vec::new()));
+        self.run_tests(
+            components
                 .into_iter()
-                .map(|(test, component, result)| match result {
-                    Ok(path) => {
-                        compilations.push((test, component, path));
-                        StepResult::new("", Ok(()))
-                    }
-                    Err(e) => StepResult::new(&test.name, Err(e))
-                        .metadata("component", &component.name)
-                        .metadata("path", component.path.display()),
-                }),
+                .map(|(test, component)| {
+                    let me = self.clone();
+                    let compilations = compilations.clone();
+                    let test = test.clone();
+                    let component = component.clone();
+                    Trial::test(&component.path.display().to_string(), move || {
+                        let result = me.compile_component(&test, &component).with_context(|| {
+                            format!("failed to compile component {:?}", component.path)
+                        });
+                        match result {
+                            Ok(path) => {
+                                compilations.lock().unwrap().push((test, component, path));
+                                Ok(())
+                            }
+                            Err(e) => me.render_error(
+                                StepResult::new(Err(e))
+                                    .metadata("component", &component.name)
+                                    .metadata("path", component.path.display()),
+                            ),
+                        }
+                    })
+                })
+                .collect(),
         );
+        let compilations = mem::take(&mut *compilations.lock().unwrap());
 
         // Next, massage the data a bit. Create a map of all tests to where
         // their components are located. Then perform a product of runners/tests
-        // to generate a list of test cases. Finally actually execute the testj
+        // to generate a list of test cases. Finally actually execute the test
         // cases.
         let mut compiled_components = HashMap::new();
         for (test, component, path) in compilations {
-            let list = compiled_components.entry(&test.name).or_insert(Vec::new());
+            let list = compiled_components.entry(test.name).or_insert(Vec::new());
             list.push((component, path));
         }
 
         let mut to_run = Vec::new();
         for (test, components) in compiled_components.iter() {
             for a in components.iter().filter(|(c, _)| c.kind == Kind::Runner) {
-                for b in components.iter().filter(|(c, _)| c.kind == Kind::Test) {
-                    to_run.push((test, a, b));
-                }
+                self.push_tests(&tests[test.as_str()], components, a, &mut to_run)
+                    .with_context(|| format!("failed to make test for `{test}`"))?;
             }
         }
 
-        println!("Running {} runtime tests:", to_run.len());
+        println!("=== Running runtime tests ===");
 
-        let results = to_run
-            .par_iter()
-            .map(|(case_name, (runner, runner_path), (test, test_path))| {
-                let case = &tests[case_name.as_str()];
-                let result = self
-                    .runtime_test(case, runner, runner_path, test, test_path)
-                    .with_context(|| {
-                        format!(
-                            "failed to run `{}` with runner `{}` and test `{}`",
-                            case.name, runner.language, test.language,
+        self.run_tests(
+            to_run
+                .into_iter()
+                .map(|(case_name, (runner, runner_path), test_components)| {
+                    let me = self.clone();
+                    let mut name = format!("{case_name}");
+                    for component in [&runner]
+                        .into_iter()
+                        .chain(test_components.iter().map(|p| &p.0))
+                    {
+                        name.push_str(&format!(
+                            " | {}",
+                            component.path.file_name().unwrap().to_str().unwrap()
+                        ));
+                    }
+                    let case_name = case_name.to_string();
+                    let runner = runner.clone();
+                    let runner_path = runner_path.to_path_buf();
+                    let case = tests[case_name.as_str()].clone();
+                    Trial::test(&name, move || {
+                        let result = me
+                            .runtime_test(&case, &runner, &runner_path, &test_components)
+                            .with_context(|| format!("failed to run `{}`", case.name));
+                        me.render_error(
+                            StepResult::new(result)
+                                .metadata("runner", runner.path.display())
+                                .metadata("compiled runner", runner_path.display()),
                         )
-                    });
-                self.update_status(&result, false);
-                (result, case_name, runner, runner_path, test, test_path)
-            })
-            .collect::<Vec<_>>();
-
-        println!("");
-
-        self.render_errors(results.into_iter().map(
-            |(result, case_name, runner, runner_path, test, test_path)| {
-                StepResult::new(case_name, result)
-                    .metadata("runner", runner.path.display())
-                    .metadata("test", test.path.display())
-                    .metadata("compiled runner", runner_path.display())
-                    .metadata("compiled test", test_path.display())
-            },
-        ));
+                    })
+                })
+                .collect(),
+        );
 
         Ok(())
+    }
+
+    /// For the `test` provided, and the selected `runner`, determines all
+    /// permutations of tests from `components` and pushes them on to `to_run`.
+    fn push_tests(
+        &self,
+        test: &Test,
+        components: &[(Component, PathBuf)],
+        runner: &(Component, PathBuf),
+        to_run: &mut Vec<(String, (Component, PathBuf), Vec<(Component, PathBuf)>)>,
+    ) -> Result<()> {
+        /// Recursive function which walks over `worlds`, the list of worlds
+        /// that `test` expects, one by one. For each world it finds a matching
+        /// component in `components` and then recurses for the next item in the
+        /// `worlds` list.
+        ///
+        /// Once `worlds` is empty the `test` list, a temporary vector, is
+        /// cloned and pushed into `commit`.
+        fn push(
+            worlds: &[String],
+            components: &[(Component, PathBuf)],
+            test: &mut Vec<(Component, PathBuf)>,
+            commit: &mut dyn FnMut(Vec<(Component, PathBuf)>),
+        ) -> Result<()> {
+            match worlds.split_first() {
+                Some((world, rest)) => {
+                    let mut any = false;
+                    for (component, path) in components {
+                        if component.bindgen.world == *world {
+                            any = true;
+                            test.push((component.clone(), path.clone()));
+                            push(rest, components, test, commit)?;
+                            test.pop();
+                        }
+                    }
+                    if !any {
+                        bail!("no components found for `{world}`");
+                    }
+                }
+
+                // No more `worlds`? Then `test` is our set of test components.
+                None => commit(test.clone()),
+            }
+            Ok(())
+        }
+
+        push(
+            &test.config.dependency_worlds(),
+            components,
+            &mut Vec::new(),
+            &mut |test_components| {
+                to_run.push((
+                    test.name.clone(),
+                    (runner.0.clone(), runner.1.clone()),
+                    test_components,
+                ));
+            },
+        )
     }
 
     /// Compiles the `component` specified to wasm for the `test` given.
@@ -693,6 +847,7 @@ impl Runner<'_> {
             .join(&self.opts.artifacts)
             .join(&test.name);
         let artifacts_dir = root_dir.join(format!("{}-{}", component.name, component.language));
+        let _ = fs::remove_dir_all(&artifacts_dir);
         let bindings_dir = artifacts_dir.join("bindings");
         let output = root_dir.join(format!("{}-{}.wasm", component.name, component.language));
         component
@@ -715,37 +870,173 @@ impl Runner<'_> {
         }
         wasmparser::Validator::new_with_features(wasmparser::WasmFeatures::all())
             .validate_all(&wasm)
-            .with_context(|| format!("compiler produced invalid wasm file {output:?}"))?;
+            .with_context(|| {
+                format!(
+                    "compiler produced invalid wasm file {output:?} for component {}",
+                    component.name
+                )
+            })?;
 
         Ok(output)
     }
 
     /// Executes a single test case.
     ///
-    /// Composes `runner_wasm` with `test_wasm` and then executes it with the
-    /// runner specified in CLIflags.
+    /// Composes `runner_wasm` with the components in `test_components` and then
+    /// executes it with the runner specified in CLI flags.
     fn runtime_test(
         &self,
         case: &Test,
         runner: &Component,
         runner_wasm: &Path,
-        test: &Component,
-        test_wasm: &Path,
+        test_components: &[(Component, PathBuf)],
     ) -> Result<()> {
-        let mut config = wasm_compose::config::Config::default();
-        config.definitions = vec![test_wasm.to_path_buf()];
-        let composed = wasm_compose::composer::ComponentComposer::new(runner_wasm, &config)
-            .compose()
-            .with_context(|| format!("failed to compose {runner_wasm:?} with {test_wasm:?}"))?;
+        // If possible use `wasm-compose` to compose the test together. This is
+        // only possible when customization isn't used though. This is also only
+        // done for async tests at this time to ensure that there's a version of
+        // composition that's done which is at the same version as wasmparser
+        // and friends.
+        let composed = if case.config.wac.is_none() {
+            self.compose_wasm_with_wasm_compose(runner_wasm, test_components)?
+        } else {
+            self.compose_wasm_with_wac(case, runner, runner_wasm, test_components)?
+        };
+
         let dst = runner_wasm.parent().unwrap();
-        let composed_wasm = dst.join(format!(
-            "{}-composed-{}-{}-{}-{}.wasm",
-            case.name, runner.name, runner.language, test.name, test.language
-        ));
+        let mut filename = format!(
+            "composed-{}",
+            runner.path.file_name().unwrap().to_str().unwrap(),
+        );
+        for (test, _) in test_components {
+            filename.push_str("-");
+            filename.push_str(test.path.file_name().unwrap().to_str().unwrap());
+        }
+        filename.push_str(".wasm");
+        let composed_wasm = dst.join(filename);
         write_if_different(&composed_wasm, &composed)?;
 
-        self.run_command(self.test_runner.command().arg(&composed_wasm))?;
+        let mut cmd = self.test_runner.command();
+        for component in [runner]
+            .into_iter()
+            .chain(test_components.iter().map(|(c, _)| c))
+        {
+            for flag in Vec::from(component.wasmtime_flags.clone()) {
+                cmd.arg(flag);
+            }
+        }
+        cmd.arg(&composed_wasm);
+        self.run_command(&mut cmd)?;
         Ok(())
+    }
+
+    fn compose_wasm_with_wasm_compose(
+        &self,
+        runner_wasm: &Path,
+        test_components: &[(Component, PathBuf)],
+    ) -> Result<Vec<u8>> {
+        assert!(test_components.len() > 0);
+        let mut last_bytes = None;
+        let mut path: PathBuf;
+        for (i, (_component, component_path)) in test_components.iter().enumerate() {
+            let main = match last_bytes.take() {
+                Some(bytes) => {
+                    path = runner_wasm.with_extension(&format!("composition{i}.wasm"));
+                    std::fs::write(&path, &bytes)
+                        .with_context(|| format!("failed to write temporary file {path:?}"))?;
+                    path.as_path()
+                }
+                None => runner_wasm,
+            };
+
+            let mut config = wasm_compose::config::Config::default();
+            config.definitions = vec![component_path.to_path_buf()];
+            last_bytes = Some(
+                wasm_compose::composer::ComponentComposer::new(main, &config)
+                    .compose()
+                    .with_context(|| {
+                        format!("failed to compose {main:?} with {component_path:?}")
+                    })?,
+            );
+        }
+
+        Ok(last_bytes.unwrap())
+    }
+
+    fn compose_wasm_with_wac(
+        &self,
+        case: &Test,
+        runner: &Component,
+        runner_wasm: &Path,
+        test_components: &[(Component, PathBuf)],
+    ) -> Result<Vec<u8>> {
+        let document = match &case.config.wac {
+            Some(path) => {
+                let wac_config = case.path.join(path);
+                fs::read_to_string(&wac_config)
+                    .with_context(|| format!("failed to read {wac_config:?}"))?
+            }
+            // Default wac script is to just make `test_components` available
+            // to the `runner`.
+            None => {
+                let mut script = String::from("package example:composition;\n");
+                let mut args = Vec::new();
+                for (component, _path) in test_components {
+                    let world = &component.bindgen.world;
+                    args.push(format!("...{world}"));
+                    script.push_str(&format!("let {world} = new test:{world} {{ ... }};\n"));
+                }
+                args.push("...".to_string());
+                let runner = &runner.bindgen.world;
+                script.push_str(&format!(
+                    "let runner = new test:{runner} {{ {} }};\n\
+                     export runner...;",
+                    args.join(", ")
+                ));
+
+                script
+            }
+        };
+
+        // Get allocations for `test:{world}` rooted on the stack as
+        // `BorrowedPackageKey` below requires `&str`.
+        let components_as_packages = test_components
+            .iter()
+            .map(|(component, path)| {
+                Ok((format!("test:{}", component.bindgen.world), fs::read(path)?))
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        let runner_name = format!("test:{}", runner.bindgen.world);
+        let mut packages = indexmap::IndexMap::new();
+        packages.insert(
+            wac_types::BorrowedPackageKey {
+                name: &runner_name,
+                version: None,
+            },
+            fs::read(runner_wasm)?,
+        );
+        for (name, contents) in components_as_packages.iter() {
+            packages.insert(
+                wac_types::BorrowedPackageKey {
+                    name,
+                    version: None,
+                },
+                contents.clone(),
+            );
+        }
+
+        // TODO: should figure out how to render these errors better.
+        let document =
+            wac_parser::Document::parse(&document).context("failed to parse wac script")?;
+        document
+            .resolve(packages)
+            .context("failed to run `wac` resolve")?
+            .encode(wac_graph::EncodeOptions {
+                define_components: true,
+                validate: false,
+                processor: None,
+            })
+            .context("failed to encode `wac` result")
     }
 
     /// Helper to execute an external process and generate a helpful error
@@ -791,26 +1082,25 @@ status: {}",
     /// Stores the output at `compile.output`.
     fn convert_p1_to_component(&self, p1: &Path, compile: &Compile<'_>) -> Result<()> {
         let mut resolve = wit_parser::Resolve::default();
-        let (pkg, _) = resolve.push_path(&compile.component.bindgen.wit_path)?;
-        let world = resolve.select_world(pkg, Some(&compile.component.kind.to_string()))?;
+        let (pkg, _) = resolve
+            .push_path(&compile.component.bindgen.wit_path)
+            .context("failed to load WIT")?;
+        let world = resolve.select_world(&[pkg], Some(&compile.component.bindgen.world))?;
         let mut module = fs::read(&p1).context("failed to read wasm file")?;
-        let encoded = wit_component::metadata::encode(&resolve, world, StringEncoding::UTF8, None)?;
 
-        let section = wasm_encoder::CustomSection {
-            name: Cow::Borrowed("component-type"),
-            data: Cow::Borrowed(&encoded),
-        };
-        module.push(section.id());
-        section.encode(&mut module);
+        if !has_component_type_sections(&module) {
+            let encoded =
+                wit_component::metadata::encode(&resolve, world, StringEncoding::UTF8, None)?;
+            let section = wasm_encoder::CustomSection {
+                name: Cow::Borrowed("component-type"),
+                data: Cow::Borrowed(&encoded),
+            };
+            module.push(section.id());
+            section.encode(&mut module);
+        }
 
-        let wasi_adapter = match compile.component.kind {
-            Kind::Runner => {
-                wasi_preview1_component_adapter_provider::WASI_SNAPSHOT_PREVIEW1_COMMAND_ADAPTER
-            }
-            Kind::Test => {
-                wasi_preview1_component_adapter_provider::WASI_SNAPSHOT_PREVIEW1_REACTOR_ADAPTER
-            }
-        };
+        let wasi_adapter =
+            wasi_preview1_component_adapter_provider::WASI_SNAPSHOT_PREVIEW1_REACTOR_ADAPTER;
 
         let component = ComponentEncoder::default()
             .module(module.as_slice())
@@ -824,92 +1114,54 @@ status: {}",
         Ok(())
     }
 
-    /// "poor man's test output progress"
-    fn update_status<T>(&self, result: &Result<T>, should_fail: bool) {
-        if result.is_ok() == !should_fail {
-            print!(".");
-        } else {
-            print!("F");
-        }
-        let _ = std::io::stdout().flush();
-    }
-
     /// Returns whether `languages` is included in this testing session.
     fn include_language(&self, language: &Language) -> bool {
-        let lang = language.obj().display();
-        let mut any_positive = false;
-        let mut any_negative = false;
-        for opt in self.opts.languages.iter() {
-            for name in opt.split(',') {
-                if let Some(suffix) = name.strip_prefix('-') {
-                    any_negative = true;
-                    // If explicitly asked to not include this, don't include
-                    // it.
-                    if suffix == lang {
-                        return false;
-                    }
-                } else {
-                    any_positive = true;
-                    // If explicitly asked to include this, then include it.
-                    if name == lang {
-                        return true;
-                    }
-                }
-            }
-        }
-
-        // By default include all languages.
-        if self.opts.languages.is_empty() {
-            return true;
-        }
-
-        // If any language was explicitly included then assume any non-mentioned
-        // language should be omitted.
-        if any_positive {
-            return false;
-        }
-
-        // And if there are only negative mentions (e.g. `-foo`) then assume
-        // everything else is allowed.
-        assert!(any_negative);
-        true
+        self.opts
+            .languages
+            .iter()
+            .any(|l| l == language.obj().display())
     }
 
-    fn render_errors<'a>(&self, results: impl Iterator<Item = StepResult<'a>>) {
-        let mut failures = 0;
-        for result in results {
-            let err = match (result.result, result.should_fail) {
-                (Ok(()), false) | (Err(_), true) => continue,
-                (Err(e), false) => e,
-                (Ok(()), true) => anyhow!("test should have failed, but passed"),
-            };
-            failures += 1;
+    fn render_error(&self, result: StepResult<'_>) -> Result<(), libtest_mimic::Failed> {
+        let err = match (result.result, result.should_fail) {
+            (Ok(()), false) | (Err(_), true) => return Ok(()),
+            (Err(e), false) => e,
+            (Ok(()), true) => return Err("test should have failed, but passed".into()),
+        };
 
-            println!("------ Failure: {} --------", result.name);
-            for (k, v) in result.metadata {
-                println!("  {k}: {v}");
-            }
-            println!("  error: {}", format!("{err:?}").replace("\n", "\n  "));
+        let mut s = String::new();
+        for (k, v) in result.metadata {
+            s.push_str(&format!("  {k}: {v}\n"));
         }
+        s.push_str(&format!(
+            "  error: {}",
+            format!("{err:?}").replace("\n", "\n  ")
+        ));
+        Err(s.into())
+    }
+}
 
-        if failures > 0 {
-            println!("{failures} tests FAILED");
-            std::process::exit(1);
+fn has_component_type_sections(wasm: &[u8]) -> bool {
+    for payload in wasmparser::Parser::new(0).parse_all(wasm) {
+        match payload {
+            Ok(wasmparser::Payload::CustomSection(s)) if s.name().starts_with("component-type") => {
+                return true;
+            }
+            _ => {}
         }
     }
+    false
 }
 
 struct StepResult<'a> {
     result: Result<()>,
     should_fail: bool,
-    name: &'a str,
     metadata: Vec<(&'a str, String)>,
 }
 
 impl<'a> StepResult<'a> {
-    fn new(name: &'a str, result: Result<()>) -> StepResult<'a> {
+    fn new(result: Result<()>) -> StepResult<'a> {
         StepResult {
-            name,
             result,
             should_fail: false,
             metadata: Vec::new(),
@@ -954,17 +1206,28 @@ trait LanguageMethods {
 
     /// Performs any one-time preparation necessary for this language, such as
     /// downloading or caching dependencies.
-    fn prepare(&self, runner: &mut Runner<'_>) -> Result<()>;
+    fn prepare(&self, runner: &mut Runner) -> Result<()>;
+
+    /// Add some files to the generated directory _before_ calling bindgen
+    fn generate_bindings_prepare(
+        &self,
+        _runner: &Runner,
+        _bindgen: &Bindgen,
+        _dir: &Path,
+    ) -> Result<()> {
+        Ok(())
+    }
 
     /// Generates bindings for `component` into `dir`.
     ///
     /// Runs `wit-bindgen` in aa subprocess to catch failures such as panics.
-    fn generate_bindings(&self, runner: &Runner<'_>, bindgen: &Bindgen, dir: &Path) -> Result<()> {
+    fn generate_bindings(&self, runner: &Runner, bindgen: &Bindgen, dir: &Path) -> Result<()> {
         let name = match self.bindgen_name() {
             Some(name) => name,
             None => return Ok(()),
         };
-        let mut cmd = Command::new(runner.wit_bindgen);
+        self.generate_bindings_prepare(runner, bindgen, dir)?;
+        let mut cmd = Command::new(&runner.wit_bindgen);
         cmd.arg(name)
             .arg(&bindgen.wit_path)
             .arg("--world")
@@ -1013,7 +1276,7 @@ trait LanguageMethods {
     }
 
     /// Performs compilation as specified by `compile`.
-    fn compile(&self, runner: &Runner<'_>, compile: &Compile) -> Result<()>;
+    fn compile(&self, runner: &Runner, compile: &Compile) -> Result<()>;
 
     /// Returns whether this language is supposed to fail this codegen tests
     /// given the `config` and `args` for the test.
@@ -1021,18 +1284,29 @@ trait LanguageMethods {
 
     /// Performs a "check" or a verify that the generated bindings described by
     /// `Verify` are indeed valid.
-    fn verify(&self, runner: &Runner<'_>, verify: &Verify) -> Result<()>;
+    fn verify(&self, runner: &Runner, verify: &Verify) -> Result<()>;
 }
 
 impl Language {
-    const ALL: &[Language] = &[Language::Rust, Language::C, Language::Cpp, Language::Wat];
+    const ALL: &[Language] = &[
+        Language::Rust,
+        Language::C,
+        Language::Cpp,
+        Language::Wat,
+        Language::Csharp,
+        Language::MoonBit,
+        Language::Go,
+    ];
 
     fn obj(&self) -> &dyn LanguageMethods {
         match self {
             Language::Rust => &rust::Rust,
             Language::C => &c::C,
-            Language::Cpp => &c::Cpp,
+            Language::Cpp => &cpp::Cpp,
             Language::Wat => &wat::Wat,
+            Language::Csharp => &csharp::Csharp,
+            Language::MoonBit => &moonbit::MoonBit,
+            Language::Go => &go::Go,
             Language::Custom(custom) => custom,
         }
     }
@@ -1069,4 +1343,35 @@ fn write_if_different(path: &Path, contents: impl AsRef<[u8]>) -> Result<bool> {
     }
     fs::write(path, contents).with_context(|| format!("failed to write {path:?}"))?;
     Ok(true)
+}
+
+impl Component {
+    /// Helper to convert `RuntimeTestConfig` to a `RuntimeTestConfig<T>` and
+    /// then extract the `T`.
+    ///
+    /// This is called from within each language's implementation with a
+    /// specific `T` necessary for that language.
+    fn deserialize_lang_config<T>(&self) -> Result<T>
+    where
+        T: Default + serde::de::DeserializeOwned,
+    {
+        // If this test has no language-specific configuration then return this
+        // language's default configuration.
+        if self.lang_config.is_none() {
+            return Ok(T::default());
+        }
+
+        // Otherwise re-parse the TOML at the top of the file but this time
+        // with the specific `T` that we're interested in. This is expected
+        // to then produce a value in the `lang` field since
+        // `self.lang_config.is_some()` is true.
+        let config = config::parse_test_config::<config::RuntimeTestConfig<T>>(
+            &self.contents,
+            self.language
+                .obj()
+                .comment_prefix_for_test_config()
+                .unwrap(),
+        )?;
+        Ok(config.lang.unwrap())
+    }
 }

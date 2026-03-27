@@ -1,0 +1,12 @@
+package test:named-fll;
+
+interface types {
+    type my-array = list<u32, 4>;
+    type byte-buf = list<u8, 16>;
+    use-my-array: func(a: my-array) -> my-array;
+}
+
+world test {
+    import types;
+    export types;
+}

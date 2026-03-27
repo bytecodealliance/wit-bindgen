@@ -5,10 +5,11 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 use syn::parse::{Error, Parse, ParseStream, Result};
 use syn::punctuated::Punctuated;
-use syn::spanned::Spanned;
-use syn::{braced, token, LitStr, Token};
+use syn::{Token, braced, token};
+use wit_bindgen_core::AsyncFilterSet;
+use wit_bindgen_core::WorldGenerator;
 use wit_bindgen_core::wit_parser::{PackageId, Resolve, UnresolvedPackageGroup, WorldId};
-use wit_bindgen_rust::{AsyncConfig, Opts, Ownership, WithOption};
+use wit_bindgen_rust::{Opts, Ownership, WithOption};
 
 #[proc_macro]
 pub fn generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
@@ -51,7 +52,7 @@ struct Config {
 
 /// The source of the wit package definition
 enum Source {
-    /// A path to a wit directory
+    /// A list of paths to wit directories
     Paths(Vec<PathBuf>),
     /// Inline sources have an optional path to a directory of their dependencies
     Inline(String, Option<Vec<PathBuf>>),
@@ -74,7 +75,13 @@ impl Parse for Config {
             for field in fields.into_pairs() {
                 match field.into_value() {
                     Opt::Path(span, p) => {
-                        let paths = p.into_iter().map(|f| PathBuf::from(f.value())).collect();
+                        let paths = p
+                            .into_iter()
+                            .map(|f| f.evaluate_string())
+                            .collect::<Result<Vec<_>>>()?
+                            .into_iter()
+                            .map(PathBuf::from)
+                            .collect();
 
                         source = Some(match source {
                             Some(Source::Paths(_)) | Some(Source::Inline(_, Some(_))) => {
@@ -155,7 +162,7 @@ impl Parse for Config {
                             return Err(Error::new(span, "cannot specify second async config"));
                         }
                         async_configured = true;
-                        if !matches!(val, AsyncConfig::None) && !cfg!(feature = "async") {
+                        if val.any_enabled() && !cfg!(feature = "async") {
                             return Err(Error::new(
                                 span,
                                 "must enable `async` feature to enable async imports and/or exports",
@@ -173,9 +180,10 @@ impl Parse for Config {
                 )]));
             }
         }
-        let (resolve, pkgs, files) =
+        let (resolve, main_packages, files) =
             parse_source(&source, &features).map_err(|err| anyhow_to_syn(call_site, err))?;
-        let world = select_world(&resolve, &pkgs, world.as_deref())
+        let world = resolve
+            .select_world(&main_packages, world.as_deref())
             .map_err(|e| anyhow_to_syn(call_site, e))?;
         Ok(Config {
             opts,
@@ -184,43 +192,6 @@ impl Parse for Config {
             files,
             debug,
         })
-    }
-}
-
-fn select_world(
-    resolve: &Resolve,
-    pkgs: &[PackageId],
-    world: Option<&str>,
-) -> anyhow::Result<WorldId> {
-    if pkgs.len() == 1 {
-        resolve.select_world(pkgs[0], world)
-    } else {
-        assert!(!pkgs.is_empty());
-        match world {
-            Some(name) => {
-                if !name.contains(":") {
-                    anyhow::bail!(
-                        "with multiple packages a fully qualified \
-                         world name must be specified"
-                    )
-                }
-
-                // This will ignore the package argument due to the fully
-                // qualified name being used.
-                resolve.select_world(pkgs[0], world)
-            }
-            None => {
-                let worlds = pkgs
-                    .iter()
-                    .filter_map(|p| resolve.select_world(*p, None).ok())
-                    .collect::<Vec<_>>();
-                match &worlds[..] {
-                    [] => anyhow::bail!("no packages have a world"),
-                    [world] => Ok(*world),
-                    _ => anyhow::bail!("multiple packages have a world, must specify which to use"),
-                }
-            }
-        }
     }
 }
 
@@ -250,26 +221,37 @@ fn parse_source(
         }
         Ok(())
     };
+    let default = root.join("wit");
     match source {
         Some(Source::Inline(s, path)) => {
-            if let Some(p) = path {
-                parse(p)?;
+            match path {
+                Some(p) => parse(p)?,
+                // If no `path` is explicitly specified still parse the default
+                // `wit` directory if it exists. Don't require its existence,
+                // however, as `inline` can be used in lieu of a folder. Test
+                // whether it exists and only if there is it parsed.
+                None => {
+                    if default.exists() {
+                        parse(&[default])?;
+                    }
+                }
             }
+            pkgs.truncate(0);
             pkgs.push(resolve.push_group(UnresolvedPackageGroup::parse("macro-input", s)?)?);
         }
         Some(Source::Paths(p)) => parse(p)?,
-        None => parse(&vec![root.join("wit")])?,
+        None => parse(&[default])?,
     };
 
     Ok((resolve, pkgs, files))
 }
 
 impl Config {
-    fn expand(self) -> Result<TokenStream> {
+    fn expand(mut self) -> Result<TokenStream> {
         let mut files = Default::default();
         let mut generator = self.opts.build();
         generator
-            .generate(&self.resolve, self.world, &mut files)
+            .generate(&mut self.resolve, self.world, &mut files)
             .map_err(|e| anyhow_to_syn(Span::call_site(), e))?;
         let (_, src) = files.iter().next().unwrap();
         let mut src = std::str::from_utf8(src).unwrap().to_string();
@@ -369,14 +351,32 @@ impl From<ExportKey> for wit_bindgen_rust::ExportKey {
     }
 }
 
-enum AsyncConfigSomeKind {
-    Imports,
-    Exports,
+#[cfg(feature = "macro-string")]
+type PathType = macro_string::MacroString;
+#[cfg(not(feature = "macro-string"))]
+type PathType = syn::LitStr;
+
+trait EvaluateString {
+    fn evaluate_string(&self) -> Result<String>;
+}
+
+#[cfg(feature = "macro-string")]
+impl EvaluateString for macro_string::MacroString {
+    fn evaluate_string(&self) -> Result<String> {
+        self.eval()
+    }
+}
+
+#[cfg(not(feature = "macro-string"))]
+impl EvaluateString for syn::LitStr {
+    fn evaluate_string(&self) -> Result<String> {
+        Ok(self.value())
+    }
 }
 
 enum Opt {
     World(syn::LitStr),
-    Path(Span, Vec<syn::LitStr>),
+    Path(Span, Vec<PathType>),
     Inline(syn::LitStr),
     UseStdFeature,
     RawStrings,
@@ -399,7 +399,7 @@ enum Opt {
     GenerateUnusedTypes(syn::LitBool),
     Features(Vec<syn::LitStr>),
     DisableCustomSectionLinkHelpers(syn::LitBool),
-    Async(AsyncConfig, Span),
+    Async(AsyncFilterSet, Span),
     Debug(syn::LitBool),
 }
 
@@ -415,11 +415,13 @@ impl Parse for Opt {
             if input.peek(token::Bracket) {
                 let contents;
                 syn::bracketed!(contents in input);
-                let list = Punctuated::<_, Token![,]>::parse_terminated(&contents)?;
-                Ok(Opt::Path(list.span(), list.into_iter().collect()))
+                let span = input.span();
+                let list = Punctuated::<PathType, Token![,]>::parse_terminated(&contents)?;
+                Ok(Opt::Path(span, list.into_iter().collect()))
             } else {
-                let path: LitStr = input.parse()?;
-                Ok(Opt::Path(path.span(), vec![path]))
+                let span = input.span();
+                let path: PathType = input.parse()?;
+                Ok(Opt::Path(span, vec![path]))
             }
         } else if l.peek(kw::inline) {
             input.parse::<kw::inline>()?;
@@ -516,7 +518,7 @@ impl Parse for Opt {
             let _lbrace = braced!(contents in input);
             let fields: Punctuated<_, Token![,]> =
                 contents.parse_terminated(with_field_parse, Token![,])?;
-            Ok(Opt::With(HashMap::from_iter(fields.into_iter())))
+            Ok(Opt::With(HashMap::from_iter(fields)))
         } else if l.peek(kw::generate_all) {
             input.parse::<kw::generate_all>()?;
             Ok(Opt::GenerateAll)
@@ -563,25 +565,16 @@ impl Parse for Opt {
             let span = input.parse::<Token![async]>()?.span;
             input.parse::<Token![:]>()?;
             if input.peek(syn::LitBool) {
-                if input.parse::<syn::LitBool>()?.value {
-                    Ok(Opt::Async(AsyncConfig::All, span))
-                } else {
-                    Ok(Opt::Async(AsyncConfig::None, span))
-                }
+                let enabled = input.parse::<syn::LitBool>()?.value;
+                Ok(Opt::Async(AsyncFilterSet::all(enabled), span))
             } else {
-                let mut imports = Vec::new();
-                let mut exports = Vec::new();
+                let mut set = AsyncFilterSet::default();
                 let contents;
-                syn::braced!(contents in input);
-                for (kind, values) in
-                    contents.parse_terminated(parse_async_some_field, Token![,])?
-                {
-                    match kind {
-                        AsyncConfigSomeKind::Imports => imports = values,
-                        AsyncConfigSomeKind::Exports => exports = values,
-                    }
+                syn::bracketed!(contents in input);
+                for val in contents.parse_terminated(|p| p.parse::<syn::LitStr>(), Token![,])? {
+                    set.push(&val.value());
                 }
-                Ok(Opt::Async(AsyncConfig::Some { imports, exports }, span))
+                Ok(Opt::Async(set, span))
             }
         } else {
             Err(l.error())
@@ -638,30 +631,6 @@ fn with_field_parse(input: ParseStream<'_>) -> Result<(String, WithOption)> {
 
 /// Format a valid Rust string
 fn fmt(input: &str) -> Result<String> {
-    let syntax_tree = syn::parse_file(&input)?;
+    let syntax_tree = syn::parse_file(input)?;
     Ok(prettyplease::unparse(&syntax_tree))
-}
-
-fn parse_async_some_field(input: ParseStream<'_>) -> Result<(AsyncConfigSomeKind, Vec<String>)> {
-    let lookahead = input.lookahead1();
-    let kind = if lookahead.peek(kw::imports) {
-        input.parse::<kw::imports>()?;
-        input.parse::<Token![:]>()?;
-        AsyncConfigSomeKind::Imports
-    } else if lookahead.peek(kw::exports) {
-        input.parse::<kw::exports>()?;
-        input.parse::<Token![:]>()?;
-        AsyncConfigSomeKind::Exports
-    } else {
-        return Err(lookahead.error());
-    };
-
-    let list;
-    syn::bracketed!(list in input);
-    let fields = list.parse_terminated(Parse::parse, Token![,])?;
-
-    Ok((
-        kind,
-        fields.iter().map(|s: &syn::LitStr| s.value()).collect(),
-    ))
 }

@@ -1,0 +1,17 @@
+package my:strings;
+
+world runner {
+  import cat: interface {
+    foo: func(x: string);
+    bar: func() -> string;
+  }
+
+  export run: func();
+}
+
+world test {
+  export cat: interface {
+    foo: func(x: string);
+    bar: func() -> string;
+  }
+}

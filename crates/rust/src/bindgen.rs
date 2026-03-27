@@ -1,27 +1,26 @@
-use crate::{int_repr, to_rust_ident, wasm_type, Identifier, InterfaceGenerator, RustFlagsRepr};
+use crate::{
+    ConstructorReturnType, InterfaceGenerator, RustFlagsRepr, classify_constructor_return_type,
+    int_repr, to_rust_ident,
+};
 use heck::*;
 use std::fmt::Write as _;
 use std::mem;
 use wit_bindgen_core::abi::{Bindgen, Instruction, LiftLower, WasmType};
-use wit_bindgen_core::{dealias, uwrite, uwriteln, wit_parser::*, Source};
+use wit_bindgen_core::{Source, dealias, uwrite, uwriteln, wit_parser::*};
 
 pub(super) struct FunctionBindgen<'a, 'b> {
     pub r#gen: &'b mut InterfaceGenerator<'a>,
     params: Vec<String>,
-    async_: bool,
     wasm_import_module: &'b str,
     pub src: Source,
     blocks: Vec<String>,
-    block_storage: Vec<(Source, Vec<(String, String)>)>,
+    block_storage: Vec<Source>,
     tmp: usize,
     pub needs_cleanup_list: bool,
-    cleanup: Vec<(String, String)>,
     pub import_return_pointer_area_size: ArchitectureSize,
     pub import_return_pointer_area_align: Alignment,
     pub handle_decls: Vec<String>,
     always_owned: bool,
-    pub async_result_name: Option<String>,
-    emitted_cleanup: bool,
 }
 
 pub const POINTER_SIZE_EXPRESSION: &str = "::core::mem::size_of::<*const u8>()";
@@ -30,84 +29,43 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
     pub(super) fn new(
         r#gen: &'b mut InterfaceGenerator<'a>,
         params: Vec<String>,
-        async_: bool,
         wasm_import_module: &'b str,
         always_owned: bool,
     ) -> FunctionBindgen<'a, 'b> {
         FunctionBindgen {
             r#gen,
             params,
-            async_,
             wasm_import_module,
             src: Default::default(),
             blocks: Vec::new(),
             block_storage: Vec::new(),
             tmp: 0,
             needs_cleanup_list: false,
-            cleanup: Vec::new(),
             import_return_pointer_area_size: Default::default(),
             import_return_pointer_area_align: Default::default(),
             handle_decls: Vec::new(),
             always_owned,
-            async_result_name: None,
-            emitted_cleanup: false,
         }
     }
 
-    fn emit_cleanup(&mut self) {
-        if self.emitted_cleanup {
-            return;
-        }
-        self.emitted_cleanup = true;
-        for (ptr, layout) in mem::take(&mut self.cleanup) {
-            let alloc = self.r#gen.path_to_std_alloc_module();
-            self.push_str(&format!(
-                "if {layout}.size() != 0 {{\n{alloc}::dealloc({ptr}.cast(), {layout});\n}}\n"
-            ));
-        }
-        if self.needs_cleanup_list {
-            let alloc = self.r#gen.path_to_std_alloc_module();
-            self.push_str(&format!(
-                "for (ptr, layout) in cleanup_list {{\n
-                    if layout.size() != 0 {{\n
-                        {alloc}::dealloc(ptr.cast(), layout);\n
-                    }}\n
-                }}\n",
-            ));
+    fn cleanup(&mut self, cleanup_value: &str) {
+        if self.block_storage.len() > 0 {
+            self.needs_cleanup_list = true;
+            uwriteln!(self.src, "cleanup_list.extend({cleanup_value});");
         }
     }
 
     fn declare_import(&mut self, name: &str, params: &[WasmType], results: &[WasmType]) -> String {
-        // Define the actual function we're calling inline
         let tmp = self.tmp();
-        let mut sig = "(".to_owned();
-        for param in params.iter() {
-            sig.push_str("_: ");
-            sig.push_str(wasm_type(*param));
-            sig.push_str(", ");
-        }
-        sig.push(')');
-        assert!(results.len() < 2);
-        for result in results.iter() {
-            sig.push_str(" -> ");
-            sig.push_str(wasm_type(*result));
-        }
-        let module_name = self.wasm_import_module;
-        uwrite!(
-            self.src,
-            "
-                #[cfg(target_arch = \"wasm32\")]
-                #[link(wasm_import_module = \"{module_name}\")]
-                unsafe extern \"C\" {{
-                    #[link_name = \"{name}\"]
-                    fn wit_import{tmp}{sig};
-                }}
-
-                #[cfg(not(target_arch = \"wasm32\"))]
-                unsafe extern \"C\" fn wit_import{tmp}{sig} {{ unreachable!() }}
-            "
-        );
-        format!("wit_import{tmp}")
+        let rust_name = format!("wit_import{tmp}");
+        self.src.push_str(&crate::declare_import(
+            self.wasm_import_module,
+            name,
+            &rust_name,
+            params,
+            results,
+        ));
+        rust_name
     }
 
     fn let_results(&mut self, amt: usize, results: &mut Vec<String>) {
@@ -115,7 +73,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             0 => {}
             1 => {
                 let tmp = self.tmp();
-                let res = format!("result{}", tmp);
+                let res = format!("result{tmp}");
                 self.push_str("let ");
                 self.push_str(&res);
                 results.push(res);
@@ -125,7 +83,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                 let tmp = self.tmp();
                 self.push_str("let (");
                 for i in 0..n {
-                    let arg = format!("result{}_{}", tmp, i);
+                    let arg = format!("result{tmp}_{i}");
                     self.push_str(&arg);
                     self.push_str(",");
                     results.push(arg);
@@ -149,7 +107,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         self.push_str("{ ");
         for field in record.fields.iter() {
             let name = to_rust_ident(&field.name);
-            let arg = format!("{}{}", name, tmp);
+            let arg = format!("{name}{tmp}");
             self.push_str(&name);
             self.push_str(":");
             self.push_str(&arg);
@@ -184,7 +142,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         let tmp = self.tmp();
         self.push_str("let (");
         for i in 0..tuple.types.len() {
-            let arg = format!("t{}_{}", tmp, i);
+            let arg = format!("t{tmp}_{i}");
             self.push_str(&arg);
             self.push_str(", ");
             results.push(arg);
@@ -239,26 +197,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
     fn push_block(&mut self) {
         let prev_src = mem::take(&mut self.src);
-        let prev_cleanup = mem::take(&mut self.cleanup);
-        self.block_storage.push((prev_src, prev_cleanup));
+        self.block_storage.push(prev_src);
     }
 
     fn finish_block(&mut self, operands: &mut Vec<String>) {
-        if !self.cleanup.is_empty() {
-            self.needs_cleanup_list = true;
-            self.push_str("cleanup_list.extend_from_slice(&[");
-            for (ptr, layout) in mem::take(&mut self.cleanup) {
-                self.push_str("(");
-                self.push_str(&ptr);
-                self.push_str(", ");
-                self.push_str(&layout);
-                self.push_str("),");
-            }
-            self.push_str("]);\n");
-        }
-        let (prev_src, prev_cleanup) = self.block_storage.pop().unwrap();
+        let prev_src = self.block_storage.pop().unwrap();
         let src = mem::replace(&mut self.src, prev_src);
-        self.cleanup = prev_cleanup;
         let expr = match operands.len() {
             0 => "()".to_string(),
             1 => operands[0].clone(),
@@ -305,26 +249,15 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 "let ptr{tmp} = (&raw mut _RET_AREA.0).cast::<u8>();"
             );
         }
-        format!("ptr{}", tmp)
+        format!("ptr{tmp}")
     }
 
     fn sizes(&self) -> &SizeAlign {
         &self.r#gen.sizes
     }
 
-    fn is_list_canonical(&self, resolve: &Resolve, ty: &Type) -> bool {
-        if !resolve.all_bits_valid(ty) {
-            return false;
-        }
-        match ty {
-            // Note that tuples in Rust are not ABI-compatible with component
-            // model tuples, so those are exempted here from canonical lists.
-            Type::Id(id) => {
-                let info = self.r#gen.r#gen.types.get(*id);
-                !info.has_resource && !info.has_tuple
-            }
-            _ => true,
-        }
+    fn is_list_canonical(&self, _resolve: &Resolve, ty: &Type) -> bool {
+        self.r#gen.is_list_canonical(ty)
     }
 
     fn emit(
@@ -343,7 +276,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
         match inst {
             Instruction::GetArg { nth } => results.push(self.params[*nth].clone()),
-            Instruction::I32Const { val } => results.push(format!("{}i32", val)),
+            Instruction::I32Const { val } => results.push(format!("{val}i32")),
             Instruction::ConstZero { tys } => {
                 for ty in tys.iter() {
                     match ty {
@@ -462,20 +395,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 let dealiased_resource = dealias(resolve, *resource);
 
+                let name = self.r#gen.type_path(dealiased_resource, true);
                 let result = if is_own {
-                    let name = self.r#gen.type_path(dealiased_resource, true);
                     format!("{name}::from_handle({op} as u32)")
                 } else if self.r#gen.is_exported_resource(*resource) {
-                    let name = resolve.types[*resource]
-                        .name
-                        .as_deref()
-                        .unwrap()
-                        .to_upper_camel_case();
                     format!("{name}Borrow::lift({op} as u32 as usize)")
                 } else {
                     let tmp = format!("handle{}", self.tmp());
                     self.handle_decls.push(format!("let {tmp};"));
-                    let name = self.r#gen.type_path(dealiased_resource, true);
                     format!(
                         "{{\n
                             {tmp} = {name}::from_handle({op} as u32);
@@ -494,23 +421,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::FutureLift { payload, .. } => {
                 let async_support = self.r#gen.r#gen.async_support_path();
                 let op = &operands[0];
-                let name = payload
-                    .as_ref()
-                    .map(|ty| {
-                        self.r#gen
-                            .type_name_owned_with_id(ty, Identifier::StreamOrFuturePayload)
-                    })
-                    .unwrap_or_else(|| "()".into());
-                let ordinal = self
-                    .r#gen
-                    .r#gen
-                    .future_payloads
-                    .get_index_of(&name)
-                    .unwrap();
+                let name = match payload {
+                    Some(ty) => self.r#gen.type_name_owned(ty),
+                    None => "()".to_string(),
+                };
                 let path = self.r#gen.path_to_root();
                 results.push(format!(
-                    "{async_support}::FutureReader::from_handle_and_vtable\
-                     ({op} as u32, &{path}wit_future::vtable{ordinal}::VTABLE)"
+                    "{async_support}::FutureReader::new\
+                     ({op} as u32, &<{name} as {path}wit_future::FuturePayload>::VTABLE)"
                 ))
             }
 
@@ -522,23 +440,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::StreamLift { payload, .. } => {
                 let async_support = self.r#gen.r#gen.async_support_path();
                 let op = &operands[0];
-                let name = payload
-                    .as_ref()
-                    .map(|ty| {
-                        self.r#gen
-                            .type_name_owned_with_id(ty, Identifier::StreamOrFuturePayload)
-                    })
-                    .unwrap_or_else(|| "()".into());
-                let ordinal = self
-                    .r#gen
-                    .r#gen
-                    .stream_payloads
-                    .get_index_of(&name)
-                    .unwrap();
+                let name = match payload {
+                    Some(ty) => self.r#gen.type_name_owned(ty),
+                    None => "()".to_string(),
+                };
                 let path = self.r#gen.path_to_root();
                 results.push(format!(
-                    "{async_support}::StreamReader::from_handle_and_vtable\
-                     ({op} as u32, &{path}wit_stream::vtable{ordinal}::VTABLE)"
+                    "{async_support}::StreamReader::new\
+                     ({op} as u32, &<{name} as {path}wit_stream::StreamPayload>::VTABLE)"
                 ))
             }
 
@@ -734,19 +643,22 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::ListCanonLower { realloc, .. } => {
                 let tmp = self.tmp();
-                let val = format!("vec{}", tmp);
-                let ptr = format!("ptr{}", tmp);
-                let len = format!("len{}", tmp);
+                let val = format!("vec{tmp}");
+                let ptr = format!("ptr{tmp}");
+                let len = format!("len{tmp}");
+                let vec = self.r#gen.path_to_vec();
                 if realloc.is_none() {
                     self.push_str(&format!("let {} = {};\n", val, operands[0]));
                 } else {
                     let op0 = operands.pop().unwrap();
-                    self.push_str(&format!("let {} = ({}).into_boxed_slice();\n", val, op0));
+                    self.push_str(&format!(
+                        "let {val} = <_ as Into<{vec}<_>>>::into({op0}).into_boxed_slice();\n"
+                    ));
                 }
-                self.push_str(&format!("let {} = {}.as_ptr().cast::<u8>();\n", ptr, val));
-                self.push_str(&format!("let {} = {}.len();\n", len, val));
+                self.push_str(&format!("let {ptr} = {val}.as_ptr().cast::<u8>();\n"));
+                self.push_str(&format!("let {len} = {val}.len();\n"));
                 if realloc.is_some() {
-                    self.push_str(&format!("::core::mem::forget({});\n", val));
+                    self.push_str(&format!("::core::mem::forget({val});\n"));
                 }
                 results.push(format!("{ptr}.cast_mut()"));
                 results.push(len);
@@ -754,11 +666,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::ListCanonLift { .. } => {
                 let tmp = self.tmp();
-                let len = format!("len{}", tmp);
+                let len = format!("len{tmp}");
                 self.push_str(&format!("let {} = {};\n", len, operands[1]));
                 let vec = self.r#gen.path_to_vec();
                 let result = format!(
-                    "{vec}::from_raw_parts({}.cast(), {1}, {1})",
+                    "<_ as From<{vec}<_>>>::from({vec}::from_raw_parts({}.cast(), {1}, {1}))",
                     operands[0], len
                 );
                 results.push(result);
@@ -766,19 +678,19 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::StringLower { realloc } => {
                 let tmp = self.tmp();
-                let val = format!("vec{}", tmp);
-                let ptr = format!("ptr{}", tmp);
-                let len = format!("len{}", tmp);
+                let val = format!("vec{tmp}");
+                let ptr = format!("ptr{tmp}");
+                let len = format!("len{tmp}");
                 if realloc.is_none() {
                     self.push_str(&format!("let {} = {};\n", val, operands[0]));
                 } else {
                     let op0 = format!("{}.into_bytes()", operands[0]);
-                    self.push_str(&format!("let {} = ({}).into_boxed_slice();\n", val, op0));
+                    self.push_str(&format!("let {val} = ({op0}).into_boxed_slice();\n"));
                 }
-                self.push_str(&format!("let {} = {}.as_ptr().cast::<u8>();\n", ptr, val));
-                self.push_str(&format!("let {} = {}.len();\n", len, val));
+                self.push_str(&format!("let {ptr} = {val}.as_ptr().cast::<u8>();\n"));
+                self.push_str(&format!("let {len} = {val}.len();\n"));
                 if realloc.is_some() {
-                    self.push_str(&format!("::core::mem::forget({});\n", val));
+                    self.push_str(&format!("::core::mem::forget({val});\n"));
                 }
                 results.push(format!("{ptr}.cast_mut()"));
                 results.push(len);
@@ -787,7 +699,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::StringLift => {
                 let vec = self.r#gen.path_to_vec();
                 let tmp = self.tmp();
-                let len = format!("len{}", tmp);
+                let len = format!("len{tmp}");
                 uwriteln!(self.src, "let {len} = {};", operands[1]);
                 uwriteln!(
                     self.src,
@@ -803,12 +715,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::ListLower { element, realloc } => {
                 let alloc = self.r#gen.path_to_std_alloc_module();
+                let rt = self.r#gen.r#gen.runtime_path().to_string();
                 let body = self.blocks.pop().unwrap();
                 let tmp = self.tmp();
                 let vec = format!("vec{tmp}");
                 let result = format!("result{tmp}");
                 let layout = format!("layout{tmp}");
                 let len = format!("len{tmp}");
+                let cleanup = format!("_cleanup{tmp}");
                 self.push_str(&format!(
                     "let {vec} = {operand0};\n",
                     operand0 = operands[0]
@@ -817,17 +731,23 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let size = self.r#gen.sizes.size(element);
                 let align = self.r#gen.sizes.align(element);
                 self.push_str(&format!(
-                    "let {layout} = {alloc}::Layout::from_size_align_unchecked({vec}.len() * {}, {});\n",
+                    "let {layout} = {alloc}::Layout::from_size_align({vec}.len() * {}, {}).unwrap();\n",
                     size.format(POINTER_SIZE_EXPRESSION), align.format(POINTER_SIZE_EXPRESSION),
                 ));
-                self.push_str(&format!("let {result} = if {layout}.size() != 0 {{\n"));
                 self.push_str(&format!(
-                    "let ptr = {alloc}::alloc({layout}).cast::<u8>();\n",
+                    "let ({result}, {cleanup}) = {rt}::Cleanup::new({layout});"
                 ));
-                self.push_str(&format!(
-                    "if ptr.is_null()\n{{\n{alloc}::handle_alloc_error({layout});\n}}\nptr\n}}",
-                ));
-                self.push_str("else {\n::core::ptr::null_mut()\n};\n");
+                if realloc.is_none() {
+                    // If an allocator isn't requested then we must clean up the
+                    // allocation ourselves since our callee isn't taking
+                    // ownership.
+                    self.cleanup(&cleanup);
+                } else {
+                    uwriteln!(
+                        self.src,
+                        "if let Some(cleanup) = {cleanup} {{ cleanup.forget(); }}"
+                    );
+                }
                 self.push_str(&format!("for (i, e) in {vec}.into_iter().enumerate() {{\n",));
                 self.push_str(&format!(
                     "let base = {result}.add(i * {});\n",
@@ -837,13 +757,24 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.push_str("\n}\n");
                 results.push(format!("{result}"));
                 results.push(len);
+            }
 
-                if realloc.is_none() {
-                    // If an allocator isn't requested then we must clean up the
-                    // allocation ourselves since our callee isn't taking
-                    // ownership.
-                    self.cleanup.push((result, layout));
-                }
+            Instruction::FixedLengthListLowerToMemory {
+                element,
+                size: _,
+                id: _,
+            } => {
+                let body = self.blocks.pop().unwrap();
+                let vec = operands[0].clone();
+                let target = operands[1].clone();
+                let size = self.r#gen.sizes.size(element);
+                self.push_str(&format!("for (i, e) in {vec}.into_iter().enumerate() {{\n",));
+                self.push_str(&format!(
+                    "let base = {target}.add(i * {});\n",
+                    size.format(POINTER_SIZE_EXPRESSION)
+                ));
+                self.push_str(&body);
+                self.push_str("\n}\n");
             }
 
             Instruction::ListLift { element, .. } => {
@@ -903,50 +834,66 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.push_str(");\n");
             }
 
-            Instruction::AsyncCallWasm { name, .. } => {
-                let func = self.declare_import(name, &[WasmType::Pointer; 2], &[WasmType::I32]);
+            Instruction::CallInterface { func, async_ } => {
+                let prev_src = mem::replace(self.src.as_mut_string(), String::new());
 
-                let async_support = self.r#gen.r#gen.async_support_path();
-                let operands = operands.join(", ");
-                uwriteln!(
-                    self.src,
-                    "{async_support}::await_result({func}, {operands}).await;"
-                );
-            }
+                self.let_results(usize::from(func.result.is_some()), results);
+                // If this function has a result and it's async, then after
+                // this instruction the result is going to be lowered. This
+                // lowering must happen in terms of `&T`, so force the result
+                // of this expression to have `&` in front.
+                if func.result.is_some() && *async_ {
+                    self.push_str("&");
+                }
 
-            Instruction::CallInterface { func, .. } => {
-                if self.async_ {
-                    self.push_str(&format!("let result = "));
-                    results.push("result".into());
-                } else {
-                    self.let_results(usize::from(func.result.is_some()), results);
-                };
+                // Force evaluation of all arguments to happen in a sub-block
+                // for this call. This is where `handle_decls` are pushed to
+                // ensure that they're scoped to just this block. Additionally
+                // this is where `prev_src` is pushed, just before the call.
+                //
+                // The purpose of this is to force `borrow<T>` arguments to get
+                // dropped before the call to `task.return` that will happen
+                // after an async call. For normal calls this happens because
+                // the result of this function is returned directly, but for
+                // async calls the return happens as part of this function as
+                // a call to `task.return` via the `AsyncTaskReturn`
+                // instruction.
+                self.push_str("{\n");
+                for decl in self.handle_decls.drain(..) {
+                    self.src.push_str(&decl);
+                }
+                self.push_str(&prev_src);
                 let constructor_type = match &func.kind {
                     FunctionKind::Freestanding | FunctionKind::AsyncFreestanding => {
-                        self.push_str(&format!("T::{}", to_rust_ident(&func.name)));
+                        self.push_str(&format!("T_::{}", to_rust_ident(func.item_name())));
                         None
                     }
                     FunctionKind::Method(_)
                     | FunctionKind::Static(_)
                     | FunctionKind::AsyncMethod(_)
                     | FunctionKind::AsyncStatic(_) => {
-                        self.push_str(&format!("T::{}", to_rust_ident(func.item_name())));
+                        self.push_str(&format!("T_::{}", to_rust_ident(func.item_name())));
                         None
                     }
                     FunctionKind::Constructor(ty) => {
+                        let return_type =
+                            classify_constructor_return_type(resolve, *ty, &func.result);
                         let ty = resolve.types[*ty]
                             .name
                             .as_deref()
                             .unwrap()
                             .to_upper_camel_case();
-                        let call = if self.async_ {
-                            let async_support = self.r#gen.r#gen.async_support_path();
-                            format!("{async_support}::futures::FutureExt::map(T::new")
-                        } else {
-                            format!("{ty}::new(T::new",)
-                        };
-                        self.push_str(&call);
-                        Some(ty)
+
+                        match return_type {
+                            ConstructorReturnType::Self_ => {
+                                self.push_str(&format!("{ty}::new(T_::new"));
+                            }
+                            ConstructorReturnType::Result { .. } => {
+                                self.push_str(&format!("T_::new"));
+                            }
+                        }
+
+                        Some((ty, return_type))
                     }
                 };
                 self.push_str("(");
@@ -960,99 +907,55 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     // Automatically convert `Borrow<'_, AResource>` to
                     // `&Self` since traits have `&self` as their
                     // first arguments.
-                    if i == 0 && matches!(func.kind, FunctionKind::Method(_)) {
+                    if i == 0
+                        && (matches!(func.kind, FunctionKind::Method(_))
+                            || matches!(func.kind, FunctionKind::AsyncMethod(_)))
+                    {
                         self.push_str(".get()")
                     }
                 }
                 self.push_str(")");
-                if let Some(ty) = constructor_type {
-                    self.push_str(&if self.async_ {
-                        format!(", {ty}::new)")
-                    } else {
-                        ")".into()
-                    });
-                }
-                if self.async_ {
+                if *async_ {
                     self.push_str(".await");
                 }
-                self.push_str(";\n");
+                match constructor_type {
+                    Some((_, ConstructorReturnType::Self_)) => self.push_str(")"),
+                    Some((ty, ConstructorReturnType::Result { .. })) => {
+                        self.push_str(&format!(".map({ty}::new)"))
+                    }
+                    None => {}
+                }
+                self.push_str("\n};\n");
             }
 
-            Instruction::AsyncPostCallInterface { func } => {
-                let result = &operands[0];
-                self.async_result_name = Some(result.clone());
-                results.push("result".into());
-                let params = (0..usize::from(func.result.is_some()))
-                    .map(|_| {
-                        let tmp = self.tmp();
-                        let param = format!("result{}", tmp);
-                        results.push(param.clone());
-                        param
-                    })
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                let params = if func.result.is_none() {
-                    format!("({params})")
-                } else {
-                    params
-                };
-                let async_support = self.r#gen.r#gen.async_support_path();
-                // TODO: This relies on `abi::Generator` emitting
-                // `AsyncCallReturn` immediately after this instruction to
-                // complete the incomplete expression we generate here.  We
-                // should refactor this so it's less fragile (e.g. have
-                // `abi::Generator` emit a `AsyncCallReturn` first, which would
-                // push a closure expression we can consume here).
-                //
-                // Also, see `InterfaceGenerator::generate_guest_export` for
-                // where we emit the open bracket corresponding to the `};` we
-                // emit here.
-                //
-                // The async-specific `Instruction`s will probably need to be
-                // refactored anyway once we start implementing support for
-                // other languages besides Rust.
-                uwriteln!(
-                    self.src,
-                    "\
-                            {result}
-                        }};
-                        let result = {async_support}::first_poll({result}, |{params}| {{
-                    "
-                );
-            }
-
-            Instruction::AsyncCallReturn { name, params } => {
+            Instruction::AsyncTaskReturn { name, params } => {
                 let func = self.declare_import(name, params, &[]);
 
+                uwriteln!(self.src, "_task_cancel.forget();");
                 uwriteln!(self.src, "{func}({});", operands.join(", "));
-                self.emit_cleanup();
-                self.src.push_str("});\n");
             }
 
             Instruction::Flush { amt } => {
                 for i in 0..*amt {
                     let tmp = self.tmp();
-                    let result = format!("result{}", tmp);
+                    let result = format!("result{tmp}");
                     uwriteln!(self.src, "let {result} = {};", operands[i]);
                     results.push(result);
                 }
             }
 
-            Instruction::Return { amt, .. } => {
-                self.emit_cleanup();
-                match amt {
-                    0 => {}
-                    1 => {
-                        self.push_str(&operands[0]);
-                        self.push_str("\n");
-                    }
-                    _ => {
-                        self.push_str("(");
-                        self.push_str(&operands.join(", "));
-                        self.push_str(")\n");
-                    }
+            Instruction::Return { amt, .. } => match amt {
+                0 => {}
+                1 => {
+                    self.push_str(&operands[0]);
+                    self.push_str("\n");
                 }
-            }
+                _ => {
+                    self.push_str("(");
+                    self.push_str(&operands.join(", "));
+                    self.push_str(")\n");
+                }
+            },
 
             Instruction::I32Load { offset } => {
                 let tmp = self.tmp();
@@ -1296,6 +1199,57 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     size = size.format(POINTER_SIZE_EXPRESSION),
                     align = align.format(POINTER_SIZE_EXPRESSION)
                 ));
+            }
+
+            Instruction::DropHandle { .. } => {
+                uwriteln!(self.src, "let _ = {};", operands[0]);
+            }
+            Instruction::FixedLengthListLift {
+                element: _,
+                size,
+                id: _,
+            } => {
+                let tmp = self.tmp();
+                let result = format!("result{tmp}");
+                self.push_str(&format!("let {result} = [",));
+                for a in operands.drain(0..(*size as usize)) {
+                    self.push_str(&a);
+                    self.push_str(", ");
+                }
+                self.push_str("];\n");
+                results.push(result);
+            }
+            Instruction::FixedLengthListLower {
+                element: _,
+                size,
+                id: _,
+            } => {
+                for i in 0..(*size as usize) {
+                    results.push(format!("{}[{i}]", operands[0]));
+                }
+            }
+            Instruction::FixedLengthListLiftFromMemory {
+                element,
+                size,
+                id: _,
+            } => {
+                let body = self.blocks.pop().unwrap();
+                let elemsize = self
+                    .r#gen
+                    .sizes
+                    .size(element)
+                    .format(POINTER_SIZE_EXPRESSION);
+                let base = operands[0].clone();
+                let tmp = self.tmp();
+                let index_var = format!("idx{tmp}");
+                self.push_str(&format!(
+                    " let array{tmp}: [_; {size}] = core::array::from_fn(|{index_var}| {{
+                            let base = {base}.add({index_var} * {elemsize});
+                            {body}
+                        }});"
+                ));
+                let result = format!("array{tmp}");
+                results.push(result);
             }
         }
     }

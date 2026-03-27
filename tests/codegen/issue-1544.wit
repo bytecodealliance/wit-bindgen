@@ -1,0 +1,30 @@
+//@ async = true
+
+// Regression: `generate_payloads` panics when `get_representative_type`
+// canonicalizes a payload type to one owned by an interface that hasn't
+// been imported yet (because world import order differs from WIT
+// definition order which determines type IDs).
+
+package test:repro;
+
+interface types {
+    type t = u32;
+}
+
+// Defined first (smaller type IDs), imported second.
+interface a {
+    use types.{t};
+    f: func() -> future<result<_, t>>;
+}
+
+// Defined second (larger type IDs), imported first.
+interface b {
+    use types.{t};
+    f: func() -> future<result<_, t>>;
+}
+
+world w {
+    import types;
+    import b;
+    import a;
+}

@@ -5,11 +5,15 @@ version = { workspace = true }
 edition = { workspace = true }
 repository = { workspace = true }
 license = { workspace = true }
+rust-version = { workspace = true }
 homepage = 'https://github.com/bytecodealliance/wit-bindgen'
 description = """
 C# bindings generator for WIT and the component model, typically used
 through the `wit-bindgen-cli` crate.
 """
+
+[lints]
+workspace = true
 
 [lib]
 doctest = false
@@ -24,11 +28,6 @@ heck = { workspace = true }
 clap = { workspace = true, optional = true }
 anyhow = { workspace = true }
 indexmap = { workspace = true }
-
-[dev-dependencies]
-test-helpers = { path = '../test-helpers' }
-wasm-encoder = { workspace = true }
-wasmparser = { workspace = true }
 
 [features]
 default = ["aot"]

@@ -9,6 +9,12 @@
 //! [Component Model]: https://component-model.bytecodealliance.org/
 
 #![no_std]
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
+#[cfg(not(feature = "rustc-dep-of-std"))]
+extern crate alloc;
+#[cfg(feature = "std")]
+extern crate std;
 
 /// Generate bindings for an input WIT document.
 ///
@@ -652,7 +658,9 @@
 ///     // ["../path/to/wit1", "../path/to/wit2"]
 ///     // Usually used in testing, our test suite may want to generate code
 ///     // from wit files located in multiple paths within a single mod, and we
-///     // don't want to copy these files again.
+///     // don't want to copy these files again. Currently these locations must
+///     // be ordered, as later paths can't contain dependencies on earlier
+///     // paths. This restriction may be lifted in the future.
 ///     path: "../path/to/wit",
 ///
 ///     // Enables passing "inline WIT". If specified this is the default
@@ -739,17 +747,6 @@
 ///     // more allocations than necessary.
 ///     ownership: Owning,
 ///
-///     // Specifies an alternative name for the `export!` macro generated for
-///     // any exports this world has.
-///     //
-///     // Defaults to "export"
-///     export_macro_name: "export",
-///
-///     // Indicates whether the `export!` macro is `pub` or just `pub(crate)`.
-///     //
-///     // This defaults to `false`.
-///     pub_export_macro: false,
-///
 ///     // The second mode of ownership is "Borrowing". This mode then
 ///     // additionally has a boolean flag indicating whether duplicate types
 ///     // should be generated if necessary.
@@ -769,6 +766,17 @@
 ///     // `wit-bindgen` repository to help improve the default "Owning" use
 ///     // case above if possible.
 ///     ownership: Borrowing { duplicate_if_necessary: false },
+///
+///     // Specifies an alternative name for the `export!` macro generated for
+///     // any exports this world has.
+///     //
+///     // Defaults to "export"
+///     export_macro_name: "export",
+///
+///     // Indicates whether the `export!` macro is `pub` or just `pub(crate)`.
+///     //
+///     // This defaults to `false`.
+///     pub_export_macro: false,
 ///
 ///     // The generated `export!` macro, if any, will by default look for
 ///     // generated types adjacent to where the `export!` macro is invoked
@@ -839,18 +847,19 @@
 ///     //
 ///     // The resulting bindings will use the component model
 ///     // [async ABI](https://github.com/WebAssembly/component-model/blob/main/design/mvp/Async.md).
-///     // This may be specified either as a boolean (e.g. `async: true`, meaning
-///     // all imports and exports should use the async ABI) or as lists of
-///     // specific imports and/or exports as shown here:
-///     async: {
-///         imports: [
-///             "wasi:http/types@0.3.0-draft#[static]body.finish",
-///             "wasi:http/handler@0.3.0-draft#handle",
-///         ],
-///         exports: [
-///             "wasi:http/handler@0.3.0-draft#handle",
-///         ]
-///     }
+///     //
+///     // If this option is not provided then the WIT's source annotation will
+///     // be used instead.
+///     async: true,    // all bindings are async
+///     async: false,   // all bindings are sync
+///     // With an array per-function configuration can be specified. A leading
+///     // '-' will disable async for that particular function.
+///     async: [
+///         "wasi:http/types@0.3.0-draft#[static]body.finish",
+///         "import:wasi:http/handler@0.3.0-draft#handle",
+///         "-export:wasi:http/handler@0.3.0-draft#handle",
+///         "all",
+///     ],
 /// });
 /// ```
 ///
@@ -858,34 +867,21 @@
 #[cfg(feature = "macros")]
 pub use wit_bindgen_rust_macro::generate;
 
-// This re-export is no longer needed in new bindings and is only
-// here for compatibility.
-#[doc(hidden)]
-pub use rt::bitflags;
-
-mod pre_wit_bindgen_0_20_0;
-
 #[cfg(docsrs)]
 pub mod examples;
 
 #[doc(hidden)]
-pub mod rt {
-    // Re-export `bitflags` so that we can reference it from macros.
-    pub use wit_bindgen_rt::bitflags;
+pub mod rt;
 
-    #[cfg(target_arch = "wasm32")]
-    pub use wit_bindgen_rt::run_ctors_once;
-
-    pub fn maybe_link_cabi_realloc() {
-        #[cfg(feature = "realloc")]
-        wit_bindgen_rt::maybe_link_cabi_realloc();
-    }
-
-    #[cfg(all(feature = "realloc", not(target_env = "p2")))]
-    pub use wit_bindgen_rt::cabi_realloc;
-
-    #[cfg(feature = "async")]
-    pub use wit_bindgen_rt::async_support;
-
-    pub use crate::pre_wit_bindgen_0_20_0::*;
-}
+#[cfg(feature = "inter-task-wakeup")]
+pub use rt::async_support::UnitStreamOps;
+#[cfg(feature = "async-spawn")]
+pub use rt::async_support::spawn;
+#[cfg(feature = "async")]
+pub use rt::async_support::{
+    AbiBuffer, FutureOps, FutureRead, FutureReader, FutureWrite, FutureWriteCancel,
+    FutureWriteError, FutureWriter, RawFutureRead, RawFutureReader, RawFutureWrite,
+    RawFutureWriter, RawStreamRead, RawStreamReader, RawStreamWrite, RawStreamWriter, StreamOps,
+    StreamRead, StreamReader, StreamResult, StreamWrite, StreamWriter, backpressure_dec,
+    backpressure_inc, block_on, yield_async, yield_blocking,
+};

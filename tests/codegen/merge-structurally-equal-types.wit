@@ -1,0 +1,31 @@
+package test:merge-equal;
+
+// This interface is not reachable from the test world,
+// so it cannot be used as a representative type
+interface unreachable {
+    record payload {
+        data: list<u8>,
+        tag: string,
+    }
+}
+
+interface importer {
+    record payload {
+        data: list<u8>,
+        tag: string,
+    }
+    consume: func(p: payload);
+}
+
+interface exporter {
+    record payload {
+        data: list<u8>,
+        tag: string,
+    }
+    produce: func() -> payload;
+}
+
+world test {
+    import importer;
+    export exporter;
+}

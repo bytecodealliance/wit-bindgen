@@ -32,7 +32,7 @@ internal class RepTable<T> {
 
     internal T Get(nint rep) {
         if (list[(int)rep] is Vacant) {
-            throw new ArgumentException("invalid rep");
+            throw new global::System.ArgumentException("invalid rep");
         }
         return (T) list[(int)rep];
     }

@@ -30,10 +30,13 @@ between bindings definitions.
 [component model]: https://github.com/WebAssembly/component-model
 
 The `wit-bindgen` repository is currently focused on **guest** programs which
-are those compiled to WebAssembly. Executing a component in a host is not
+are those compiled to WebAssembly. Languages developed in this repository are
+Rust, C, C++, C#, and Go. For other languages see the [documentation
+below](#guest-other-languages).
+
+Executing a component in a host is not
 managed in this repository, and some options of how to do so are [described
-below][hosts]. Languages developed in this repository are Rust, C, Java (TeaVM
-Java), Go (TinyGo), and C#. If you encounter any problems feel free to [open an
+below][hosts]. If you encounter any problems feel free to [open an
 issue](https://github.com/bytecodealliance/wit-bindgen/issues/new) or chat with
 us on [Zulip][zulip].
 
@@ -263,6 +266,8 @@ which in this case, as expected, is the same as the input world.
 
 ### Guest: C/C++
 
+See the [`wit-bindgen` C and C++ Bindings Generator documentation](/crates/c/README.md) for details.
+
 C and C++ code can be compiled for the `wasm32-wasip1` target using the [WASI
 SDK] project. The releases on that repository have precompiled `clang` binaries
 which are pre-configured to compile for WebAssembly.
@@ -314,7 +319,7 @@ wasm-tools component wit ./my-component.wasm
 To generate the bindings:
 
 ```
-wit-bindgen c-sharp -w command -r native-aot --generate-stub wit/
+wit-bindgen csharp -w command -r native-aot --generate-stub wit/
 ```
 
 Now you create a c# project file:
@@ -357,7 +362,16 @@ Now you can build with:
 dotnet publish
 ```
 
-Checkout out [componentize-dotnet](https://github.com/bytecodealliance/componentize-dotnet) for a simplified experience.
+Check out [componentize-dotnet](https://github.com/bytecodealliance/componentize-dotnet) for a simplified experience.
+
+### Guest: Go
+
+See the [wit-bindgen-go README.md](crates/go/README.md) for details and generating and using Go bindings.
+
+### Guest: TinyGo
+
+>[!WARNING]
+>The TinyGo WIT bindings generator found at the [go.bytecodealliance.org](https://github.com/bytecodealliance/go-modules) is no longer being maintained. It is recommended to migrate to [Guest: Go](#guest-go).
 
 ### Guest: Java
 
@@ -367,23 +381,13 @@ a long time and never was at feature parity with other generators, so it was
 removed. The last commit with support for TeaVM-WASI was
 https://github.com/bytecodealliance/wit-bindgen/commit/86e8ae2b8b97f11b73b273345b0e00340f017270.
 
-### Guest: TinyGo
+### Guest: C++-17+
 
-The **new** TinyGo WIT bindings generator is currently in development at the
-[wasm-tools-go](https://github.com/bytecodealliance/wasm-tools-go) repository.
+The cpp crate contains code to generate C++ code which uses the std types
+optional, string, string_view, vector, expected to represent generic
+WIT types.
 
-To install the `wit-bindgen-go` CLI, run:
-
-```sh
-go install github.com/bytecodealliance/wasm-tools-go/cmd/wit-bindgen-go
-```
-> Note: it requires `wasm-tools` to be installed.
-
-Then, you can generate the bindings for your project:
-
-```sh
-wit-bindgen-go generate <path-to-wit-pkg>
-```
+This relies on wasi-SDK for guest compilation.
 
 ### Guest: MoonBit
 
@@ -413,16 +417,18 @@ To avoid touching the files during regeneration (including `moon.pkg.json` or `m
 
 ### Guest: Other Languages
 
-Guest component support for JavaScript and Python is available in
-[componentize-js](https://github.com/bytecodealliance/ComponentizeJS) and
-[componentize-py](https://github.com/bytecodealliance/componentize-py), respectively.
+A (non-exhaustive) list of other languages known to support components are:
+
+* JavaScript through [componentize-js](https://github.com/bytecodealliance/ComponentizeJS)
+* Python through [componentize-py](https://github.com/bytecodealliance/componentize-py)
+
 See also
 [The WebAssembly Component Model developer's guide](https://component-model.bytecodealliance.org/language-support.html)
 for examples of how to build components using various languages.
 
 Other languages such as Ruby, etc, are hoped to be supported one day
 with `wit-bindgen` or with components in general. It's recommended to reach out
-on [zulip] if you're intersted in contributing a generator for one of these
+on [zulip] if you're interested in contributing a generator for one of these
 langauges. It's worth noting, however, that turning an interpreted language into
 a component is significantly different from how compiled languages currently
 work (e.g. Rust or C/C++). It's expected that the first interpreted language

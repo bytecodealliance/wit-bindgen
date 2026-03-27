@@ -1,12 +1,12 @@
 use crate::csharp_ident::ToCSharpIdent;
-use crate::interface::{InterfaceGenerator, ParameterType};
+use crate::interface::{InterfaceGenerator, ParameterType, variant_new_func_name};
 use crate::world_generator::CSharp;
 use heck::ToUpperCamelCase;
 use std::fmt::Write;
 use std::mem;
 use std::ops::Deref;
 use wit_bindgen_core::abi::{Bindgen, Bitcast, Instruction};
-use wit_bindgen_core::{uwrite, uwriteln, Direction, Ns};
+use wit_bindgen_core::{Direction, Ns, uwrite, uwriteln};
 use wit_parser::abi::WasmType;
 use wit_parser::{
     Alignment, ArchitectureSize, Docs, FunctionKind, Handle, Resolve, SizeAlign, Type, TypeDefKind,
@@ -32,6 +32,8 @@ pub(crate) struct FunctionBindgen<'a, 'b> {
     is_block: bool,
     fixed_statments: Vec<Fixed>,
     parameter_type: ParameterType,
+    pub(crate) result_type: Option<Type>,
+    pub(crate) resource_type_name: Option<String>,
 }
 
 impl<'a, 'b> FunctionBindgen<'a, 'b> {
@@ -42,6 +44,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         params: Box<[String]>,
         results: Vec<TypeId>,
         parameter_type: ParameterType,
+        result_type: Option<Type>,
     ) -> FunctionBindgen<'a, 'b> {
         let mut locals = Ns::default();
         // Ensure temporary variable names don't clash with parameter names:
@@ -66,7 +69,9 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             resource_drops: Vec::new(),
             is_block: false,
             fixed_statments: Vec::new(),
-            parameter_type,
+            parameter_type: parameter_type,
+            result_type: result_type,
+            resource_type_name: None,
         }
     }
 
@@ -145,7 +150,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             switch ({op}.Tag) {{
                 {cases}
 
-                default: throw new ArgumentException($"invalid discriminant: {{{op}}}");
+                default: throw new global::System.ArgumentException("invalid discriminant: " + {op});
             }}
             "#
         );
@@ -162,8 +167,8 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             .blocks
             .drain(self.blocks.len() - cases.len()..)
             .collect::<Vec<_>>();
+        let variant_name = self.interface_gen.type_name_with_qualifier(ty, false);
         let ty = self.interface_gen.type_name_with_qualifier(ty, true);
-        //let ty = self.gen.type_name(ty);
         let generics_position = ty.find('<');
         let lifted = self.locals.tmp("lifted");
 
@@ -194,7 +199,8 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                     String::new()
                 };
 
-                let method = case_name.to_csharp_ident_upper();
+                let method =
+                    variant_new_func_name(&variant_name, &case_name.to_csharp_ident_upper());
 
                 let call = if let Some(position) = generics_position {
                     let (ty, generics) = ty.split_at(position);
@@ -222,7 +228,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             switch ({op}) {{
                 {cases}
 
-                default: throw new ArgumentException($"invalid discriminant: {{{op}}}");
+                default: throw new global::System.ArgumentException("invalid discriminant:" + {op});
             }}
             "#
         );
@@ -271,7 +277,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             self.interface_gen.csharp_gen.needs_wit_exception = true;
             let (var_name, exception_name) = var;
             let exception_name = match exception_name {
-                Some(type_name) => &format!("WitException<{}>", type_name),
+                Some(type_name) => &format!("WitException<{type_name}>"),
                 None => "WitException",
             };
             uwrite!(
@@ -304,7 +310,13 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         let ty = self
             .interface_gen
             .type_name_with_qualifier(&func.result.unwrap(), true);
-        uwriteln!(self.src, "{ty} {ret};");
+        let is_async = InterfaceGenerator::is_async(&func.kind);
+
+        if is_async {
+            uwriteln!(self.src, "Task<{ty}> {ret};");
+        } else {
+            uwriteln!(self.src, "{ty} {ret};");
+        }
         let mut cases = Vec::with_capacity(self.results.len());
         let mut oks = Vec::with_capacity(self.results.len());
         let mut payload_is_void = false;
@@ -363,13 +375,54 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                         {{
                             {cases}
 
-                            default: throw new ArgumentException($"invalid nesting level: {{e.NestingLevel}}");
+                            default: throw new global::System.ArgumentException($"invalid nesting level: {{e.NestingLevel}}");
                         }}
                     }}
                 "#
             );
         }
         ret
+    }
+
+    pub fn emit_allocation_for_type(&mut self, results: &[WasmType]) -> String {
+        let address = self.locals.tmp("address");
+        let buffer_size = self.get_size_for_type(results);
+        let align = self.get_align_for_type(results);
+        uwriteln!(
+            self.src,
+            "void* {address} = global::System.Runtime.InteropServices.NativeMemory.AlignedAlloc({buffer_size}, {align});"
+        );
+
+        // TODO: Store the address somewhere so we can free it when the task completes.
+        address
+    }
+
+    fn get_size_for_type(&self, results: &[WasmType]) -> usize {
+        match results {
+            [WasmType::I32] => 4,
+            [WasmType::I64] => 8,
+            [WasmType::F32] => 4,
+            [WasmType::F64] => 8,
+            [WasmType::Pointer, WasmType::Length] => 4, // TODO: Wasm64
+            [WasmType::PointerOrI64, WasmType::Length] => 8,
+            _ => {
+                todo!("other types not yet supported");
+            }
+        }
+    }
+
+    fn get_align_for_type(&self, results: &[WasmType]) -> usize {
+        match results {
+            [WasmType::I32] => 4,
+            [WasmType::I64] => 8,
+            [WasmType::F32] => 4,
+            [WasmType::F64] => 8,
+            [WasmType::Pointer, WasmType::Length] => 4, // TODO: Wasm64
+            [WasmType::PointerOrI64, WasmType::Length] => 8,
+            _ => {
+                todo!("other types not yet supported");
+            }
+        }
     }
 }
 
@@ -400,22 +453,22 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             })),
             Instruction::I32Load { offset }
             | Instruction::PointerLoad { offset }
-            | Instruction::LengthLoad { offset } => results.push(format!("BitConverter.ToInt32(new Span<byte>((void*)({} + {offset}), 4))",operands[0],offset = offset.size_wasm32())),
-            Instruction::I32Load8U { offset } => results.push(format!("new Span<byte>((void*)({} + {offset}), 1)[0]",operands[0],offset = offset.size_wasm32())),
-            Instruction::I32Load8S { offset } => results.push(format!("(sbyte)new Span<byte>((void*)({} + {offset}), 1)[0]",operands[0],offset = offset.size_wasm32())),
-            Instruction::I32Load16U { offset } => results.push(format!("BitConverter.ToUInt16(new Span<byte>((void*)({} + {offset}), 2))",operands[0],offset = offset.size_wasm32())),
-            Instruction::I32Load16S { offset } => results.push(format!("BitConverter.ToInt16(new Span<byte>((void*)({} + {offset}), 2))",operands[0],offset = offset.size_wasm32())),
-            Instruction::I64Load { offset } => results.push(format!("BitConverter.ToInt64(new Span<byte>((void*)({} + {offset}), 8))",operands[0],offset = offset.size_wasm32())),
-            Instruction::F32Load { offset } => results.push(format!("BitConverter.ToSingle(new Span<byte>((void*)({} + {offset}), 4))",operands[0],offset = offset.size_wasm32())),
-            Instruction::F64Load { offset } => results.push(format!("BitConverter.ToDouble(new Span<byte>((void*)({} + {offset}), 8))",operands[0],offset = offset.size_wasm32())),
+            | Instruction::LengthLoad { offset } => results.push(format!("global::System.BitConverter.ToInt32(new global::System.Span<byte>((byte*){} + {offset}, 4))",operands[0],offset = offset.size_wasm32())),
+            Instruction::I32Load8U { offset } => results.push(format!("new global::System.Span<byte>((byte*){} + {offset}, 1)[0]",operands[0],offset = offset.size_wasm32())),
+            Instruction::I32Load8S { offset } => results.push(format!("(sbyte)new global::System.Span<byte>((byte*){} + {offset}, 1)[0]",operands[0],offset = offset.size_wasm32())),
+            Instruction::I32Load16U { offset } => results.push(format!("global::System.BitConverter.ToUInt16(new global::System.Span<byte>((byte*){} + {offset}, 2))",operands[0],offset = offset.size_wasm32())),
+            Instruction::I32Load16S { offset } => results.push(format!("global::System.BitConverter.ToInt16(new global::System.Span<byte>((byte*){} + {offset}, 2))",operands[0],offset = offset.size_wasm32())),
+            Instruction::I64Load { offset } => results.push(format!("global::System.BitConverter.ToInt64(new global::System.Span<byte>((byte*){} + {offset}, 8))",operands[0],offset = offset.size_wasm32())),
+            Instruction::F32Load { offset } => results.push(format!("global::System.BitConverter.ToSingle(new global::System.Span<byte>((byte*){} + {offset}, 4))",operands[0],offset = offset.size_wasm32())),
+            Instruction::F64Load { offset } => results.push(format!("global::System.BitConverter.ToDouble(new global::System.Span<byte>((byte*){} + {offset}, 8))",operands[0],offset = offset.size_wasm32())),
             Instruction::I32Store { offset }
             | Instruction::PointerStore { offset }
-            | Instruction::LengthStore { offset } => uwriteln!(self.src, "BitConverter.TryWriteBytes(new Span<byte>((void*)({} + {offset}), 4), {});", operands[1], operands[0],offset = offset.size_wasm32()),
+            | Instruction::LengthStore { offset } => uwriteln!(self.src, "global::System.BitConverter.TryWriteBytes(new global::System.Span<byte>((byte*){} + {offset}, 4), {});", operands[1], operands[0],offset = offset.size_wasm32()),
             Instruction::I32Store8 { offset } => uwriteln!(self.src, "*(byte*)({} + {offset}) = (byte){};", operands[1], operands[0],offset = offset.size_wasm32()),
-            Instruction::I32Store16 { offset } => uwriteln!(self.src, "BitConverter.TryWriteBytes(new Span<byte>((void*)({} + {offset}), 2), (short){});", operands[1], operands[0],offset = offset.size_wasm32()),
-            Instruction::I64Store { offset } => uwriteln!(self.src, "BitConverter.TryWriteBytes(new Span<byte>((void*)({} + {offset}), 8), unchecked((long){}));", operands[1], operands[0],offset = offset.size_wasm32()),
-            Instruction::F32Store { offset } => uwriteln!(self.src, "BitConverter.TryWriteBytes(new Span<byte>((void*)({} + {offset}), 4), unchecked((float){}));", operands[1], operands[0],offset = offset.size_wasm32()),
-            Instruction::F64Store { offset } => uwriteln!(self.src, "BitConverter.TryWriteBytes(new Span<byte>((void*)({} + {offset}), 8), unchecked((double){}));", operands[1], operands[0],offset = offset.size_wasm32()),
+            Instruction::I32Store16 { offset } => uwriteln!(self.src, "global::System.BitConverter.TryWriteBytes(new global::System.Span<byte>((byte*){} + {offset}, 2), (short){});", operands[1], operands[0],offset = offset.size_wasm32()),
+            Instruction::I64Store { offset } => uwriteln!(self.src, "global::System.BitConverter.TryWriteBytes(new global::System.Span<byte>((byte*){} + {offset}, 8), unchecked((long){}));", operands[1], operands[0],offset = offset.size_wasm32()),
+            Instruction::F32Store { offset } => uwriteln!(self.src, "global::System.BitConverter.TryWriteBytes(new global::System.Span<byte>((byte*){} + {offset}, 4), unchecked((float){}));", operands[1], operands[0],offset = offset.size_wasm32()),
+            Instruction::F64Store { offset } => uwriteln!(self.src, "global::System.BitConverter.TryWriteBytes(new global::System.Span<byte>((byte*){} + {offset}, 8), unchecked((double){}));", operands[1], operands[0],offset = offset.size_wasm32()),
 
             Instruction::I64FromU64 => results.push(format!("unchecked((long)({}))", operands[0])),
             Instruction::I32FromChar => results.push(format!("((int){})", operands[0])),
@@ -499,7 +552,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.interface_gen.qualifier(true, ty),
                     name.to_string().to_upper_camel_case()
                 );
-                let mut result = format!("new {} (\n", qualified_type_name);
+                let mut result = format!("new {qualified_type_name} (\n");
 
                 result.push_str(&operands.join(", "));
                 result.push(')');
@@ -513,7 +566,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::TupleLower { tuple, ty: _ } => {
                 let op = &operands[0];
                 match tuple.types.len() {
-                    1 => results.push(format!("({})", op)),
+                    1 => results.push(format!("({op})")),
                     _ => {
                         for i in 0..tuple.types.len() {
                             results.push(format!("{}.Item{}", op, i + 1));
@@ -680,7 +733,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             break;
                         }}
 
-                        default: throw new ArgumentException("invalid discriminant: " + ({op}));
+                        default: throw new global::System.ArgumentException("invalid discriminant: " + ({op}));
                     }}
                     "#
                 );
@@ -711,7 +764,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::EnumLift { ty, .. } => {
                 let t = self.interface_gen.type_name_with_qualifier(&Type::Id(*ty), true);
                 let op = &operands[0];
-                results.push(format!("({}){}", t, op));
+                results.push(format!("({t}){op}"));
 
                 // uwriteln!(
                 //    self.src,
@@ -748,7 +801,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             uwrite!(
                                 self.src,
                                 "
-                                var {handle} = GCHandle.Alloc({list}, GCHandleType.Pinned);
+                                var {handle} = global::System.Runtime.InteropServices.GCHandle.Alloc({list}, global::System.Runtime.InteropServices.GCHandleType.Pinned);
                                 var {ptr} = {handle}.AddrOfPinnedObject();
                                 cleanups.Add(()=> {handle}.Free());
                                 "
@@ -766,8 +819,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             self.src,
                             "
                             var {byte_length} = ({size}) * {list}.Length;
-                            var {address} = NativeMemory.Alloc((nuint)({byte_length}));
-                            {list}.AsSpan().CopyTo(new Span<{ty}>({address},{byte_length}));
+                            var {address} = global::System.Runtime.InteropServices.NativeMemory.Alloc((nuint)({byte_length}));
+                            global::System.MemoryExtensions.AsSpan({list}).CopyTo(new global::System.Span<{ty}>({address},{byte_length}));
                             "
                         );
 
@@ -787,7 +840,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.src,
                     "
                     var {array} = new {ty}[{length}];
-                    new Span<{ty}>((void*)({address}), {length}).CopyTo(new Span<{ty}>({array}));
+                    new global::System.Span<{ty}>((void*)({address}), {length}).CopyTo(new global::System.Span<{ty}>({array}));
+
+                    if ({length} > 0) {{
+                        global::System.Runtime.InteropServices.NativeMemory.Free((void*){address});
+                    }}
                     "
                 );
 
@@ -805,9 +862,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     uwriteln!(
                         self.src,
                         "
-                        var {utf8_bytes} = Encoding.UTF8.GetBytes({op});
+                        var {utf8_bytes} = global::System.Text.Encoding.UTF8.GetBytes({op});
                         var {length} = {utf8_bytes}.Length;
-                        var {gc_handle} = GCHandle.Alloc({utf8_bytes}, GCHandleType.Pinned);
+                        var {gc_handle} = global::System.Runtime.InteropServices.GCHandle.Alloc({utf8_bytes}, global::System.Runtime.InteropServices.GCHandleType.Pinned);
                         var {str_ptr} = {gc_handle}.AddrOfPinnedObject();
                         "
                     );
@@ -825,16 +882,16 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     uwriteln!(
                         self.src,
                         "
-                        var {string_span} = {op}.AsSpan();
-                        var {length} = Encoding.UTF8.GetByteCount({string_span});
-                        var {str_ptr} = NativeMemory.Alloc((nuint){length});
-                        Encoding.UTF8.GetBytes({string_span}, new Span<byte>({str_ptr}, {length}));
+                        var {string_span} = global::System.MemoryExtensions.AsSpan({op});
+                        var {length} = global::System.Text.Encoding.UTF8.GetByteCount({string_span});
+                        var {str_ptr} = global::System.Runtime.InteropServices.NativeMemory.Alloc((nuint){length});
+                        global::System.Text.Encoding.UTF8.GetBytes({string_span}, new global::System.Span<byte>({str_ptr}, {length}));
                         "
                     );
                     results.push(format!("(int){str_ptr}"));
                 }
 
-                results.push(length);
+                results.push(format!("{length}"));
                 if FunctionKind::Freestanding == *self.kind || self.interface_gen.direction == Direction::Export {
                     self.interface_gen.require_interop_using("System.Text");
                     self.interface_gen.require_interop_using("System.Runtime.InteropServices");
@@ -845,16 +902,23 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::StringLift { .. } => {
-                if FunctionKind::Freestanding == *self.kind || self.interface_gen.direction == Direction::Export {
-                    self.interface_gen.require_interop_using("System.Text");
-                } else {
-                    self.interface_gen.require_using("System.Text");
-                }
+                let str = self.locals.tmp("str");
+                let op0 = &operands[0];
+                let op1 = &operands[1];
 
-                results.push(format!(
-                    "Encoding.UTF8.GetString((byte*){}, {})",
-                    operands[0], operands[1]
-                ));
+                let get_str = format!("global::System.Text.Encoding.UTF8.GetString((byte*){op0}, {op1})");
+
+                uwriteln!(
+                    self.src,
+                    "
+                    var {str} = {get_str};
+                    if ({op1} > 0) {{
+                        global::System.Runtime.InteropServices.NativeMemory.Free((void*){op0});
+                    }}
+                    "
+                );
+
+                results.push(str);
             }
 
             Instruction::ListLower { element, realloc } => {
@@ -901,9 +965,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             }}
                             else
                             {{
-                                var {buffer_size} = {size} * {list}.Count;
-                                {address} = NativeMemory.AlignedAlloc((nuint){buffer_size}, {align});
-                                cleanups.Add(() => NativeMemory.AlignedFree({address}));
+                                var {buffer_size} = {size} * (nuint){list}.Count;
+                                {address} = global::System.Runtime.InteropServices.NativeMemory.AlignedAlloc({buffer_size}, {align});
+                                cleanups.Add(() => global::System.Runtime.InteropServices.NativeMemory.AlignedFree({address}));
                             }}
                             "
                         );
@@ -912,8 +976,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         //cabi_realloc_post_return will be called to clean up this allocation
                         uwrite!(self.src,
                             "
-                            var {buffer_size} = {size} * {list}.Count;
-                            void* {address} = NativeMemory.AlignedAlloc((nuint){buffer_size}, {align});
+                            var {buffer_size} = {size} * (nuint){list}.Count;
+                            void* {address} = global::System.Runtime.InteropServices.NativeMemory.AlignedAlloc({buffer_size}, {align});
                             "
                         );
                     }
@@ -955,11 +1019,15 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwrite!(
                     self.src,
                     "
-                    var {array} = new List<{ty}>({length});
+                    var {array} = new global::System.Collections.Generic.List<{ty}>({length});
                     for (int {index} = 0; {index} < {length}; ++{index}) {{
                         nint {base} = {address} + ({index} * {size});
                         {body}
                         {array}.Add({result});
+                    }}
+
+                    if ({length} > 0) {{
+                        global::System.Runtime.InteropServices.NativeMemory.Free((void*){address});
                     }}
                     "
                 );
@@ -976,27 +1044,55 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::CallWasm { sig, .. } => {
+                let mut result = String::new();
                 let assignment = match &sig.results[..] {
                     [_] => {
-                        let result = self.locals.tmp("result");
+                        result = self.locals.tmp("result");
                         let assignment = format!("var {result} = ");
-                        results.push(result);
                         assignment
                     }
 
-                    [] => String::new(),
+                    [] => {
+                        String::new()
+                    }
 
                     _ => unreachable!(),
                 };
 
                 let func_name = self.func_name.to_upper_camel_case();
-
                 let operands = operands.join(", ");
+
+                let (_namespace, interface_name) =
+                    &CSharp::get_class_name_from_qualified_name(self.interface_gen.name);
+                let mut interop_name = format!("{}ImportsInterop", interface_name.strip_prefix("I").unwrap()
+                    .strip_suffix(if self.interface_gen.direction == Direction::Import { "Imports" } else { "Exports" }).unwrap().to_upper_camel_case());
+
+                if self.interface_gen.is_world && self.interface_gen.direction == Direction::Import {
+                    interop_name = format!("Imports.{interop_name}");
+                }
+
+                let resource_type_name = match self.kind {
+                    FunctionKind::Method(resource_type_id) |
+                    FunctionKind::Static(resource_type_id) |
+                    FunctionKind::Constructor(resource_type_id) => {
+                        format!(
+                            ".{}",
+                            self.interface_gen.csharp_gen.all_resources[resource_type_id]
+                                .name
+                                .to_upper_camel_case()
+                        )
+                    }
+                    _ => String::new(),
+                };
 
                 uwriteln!(
                     self.src,
-                    "{assignment} {func_name}WasmInterop.wasmImport{func_name}({operands});"
+                    "{assignment} {interop_name}{resource_type_name}.{func_name}WasmInterop.wasmImport{func_name}({operands});"
                 );
+
+                if sig.results.len() >= 1 {
+                    results.push(result);
+                }
             }
 
             Instruction::CallInterface { func, .. } => {
@@ -1023,6 +1119,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     }
                 }
 
+                let is_async = InterfaceGenerator::is_async(self.kind);
                 match self.kind {
                     FunctionKind::Constructor(id) => {
                         let target = self.interface_gen.csharp_gen.all_resources[id].export_impl_name();
@@ -1038,13 +1135,51 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         };
 
                         match func.result {
-                            None => uwriteln!(self.src, "{target}.{func_name}({oper});"),
+                            None => {
+                                if is_async{
+                                    uwriteln!(self.src, "var ret = {target}.{func_name}({oper});");
+                                } else {
+                                    uwriteln!(self.src, "{target}.{func_name}({oper});");
+                                }
+                            }
                             Some(_ty) => {
                                 let ret = self.handle_result_call(func, target, func_name, oper);
                                 results.push(ret);
                             }
                         }
                     }
+                }
+
+                if is_async {
+                    self.interface_gen.csharp_gen.needs_async_support = true;
+                    let name = self.func_name.to_upper_camel_case();
+                    let ret_param = match func.result {
+                            None => "",
+                            Some(_ty) => "ret.Result"
+                            };
+
+                    uwriteln!(self.src, r#"if (ret.IsCompletedSuccessfully) 
+                    {{
+                        {name}TaskReturn({ret_param});
+                        return (uint)CallbackCode.Exit;
+                    }}
+
+                    ret.ContinueWith(t => 
+                    {{
+                        if (t.IsFaulted)
+                        {{
+                            // TODO
+                            Console.Error.WriteLine("Async function {name} IsFaulted.  This scenario is not yet implemented.");
+                            throw new NotImplementedException("Async function {name} IsFaulted.  This scenario is not yet implemented.");
+                        }}
+
+                        {name}TaskReturn({ret_param});
+                    }});
+                    
+                    // TODO: Defer dropping borrowed resources until a result is returned.
+                    ContextTask* contextTaskPtr = AsyncSupport.ContextGet();
+                    return (uint)CallbackCode.Wait | (uint)(contextTaskPtr->WaitableSetHandle << 4);
+                    "#);
                 }
 
                 for (_,  drop) in &self.resource_drops {
@@ -1061,7 +1196,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
 
                 if self.needs_cleanup {
-                    self.src.insert_str(0, "var cleanups = new List<Action>();
+                    self.src.insert_str(0, "var cleanups = new global::System.Collections.Generic.List<global::System.Action>();
                         ");
 
                     uwriteln!(self.src, "
@@ -1093,11 +1228,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::GuestDeallocate { .. } => {
                 // the original alloc here comes from cabi_realloc implementation (wasi-libc in .net)
-                uwriteln!(self.src, r#"NativeMemory.Free((void*){});"#, operands[0]);
+                uwriteln!(self.src, r#"global::System.Runtime.InteropServices.NativeMemory.Free((void*){});"#, operands[0]);
             }
 
             Instruction::GuestDeallocateString => {
-                uwriteln!(self.src, r#"NativeMemory.Free((void*){});"#, operands[0]);
+                uwriteln!(self.src, r#"global::System.Runtime.InteropServices.NativeMemory.Free((void*){});"#, operands[0]);
             }
 
             Instruction::GuestDeallocateVariant { blocks } => {
@@ -1157,7 +1292,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     );
                 }
 
-                uwriteln!(self.src, r#"NativeMemory.Free((void*){});"#, operands[0]);
+                uwriteln!(self.src, r#"global::System.Runtime.InteropServices.NativeMemory.Free((void*){});"#, operands[0]);
             }
 
             Instruction::HandleLower {
@@ -1254,6 +1389,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         } else {
                             uwriteln!(self.src, "var {resource} = ({export_name}) {export_name}.repTable.Get({op});");
                         }
+                        self.resource_type_name = Some(export_name);
                     }
                 }
                 results.push(resource);
@@ -1263,15 +1399,93 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.extend(operands.iter().take(*amt).cloned());
             }
 
-            Instruction::AsyncPostCallInterface { .. }
-            | Instruction::AsyncCallReturn { .. }
-            | Instruction::FutureLower { .. }
-            | Instruction::FutureLift { .. }
-            | Instruction::StreamLower { .. }
-            | Instruction::StreamLift { .. }
-            | Instruction::ErrorContextLower { .. }
+            Instruction::FutureLower { payload, ty: _ }
+            | Instruction::StreamLower { payload, ty: _ }=> {
+                let op = &operands[0];
+                let generic_type_name = match payload {
+                    Some(generic_type) => {
+                        &self.interface_gen.type_name_with_qualifier(generic_type, false)
+                    }
+                    None => ""
+                };
+
+                match inst {
+                    Instruction::FutureLower { .. } => {
+                        self.interface_gen.add_future(self.func_name, &generic_type_name, **payload);
+                    }
+                    _ => {
+                        self.interface_gen.add_stream(self.func_name, &generic_type_name, **payload);
+                    }
+                }
+
+                results.push(format!("{op}.TakeHandle()"));
+            }
+
+            Instruction::AsyncTaskReturn { name: _, params: _ } => {
+                uwriteln!(self.src, "// TODO: task_cancel.forget();");
+            }
+
+            Instruction::FutureLift { payload, ty: _ }
+            | Instruction:: StreamLift { payload, ty: _ } => {
+                 let generic_type_name_with_qualifier = match payload {
+                    Some(generic_type) => {
+                        &self.interface_gen.type_name_with_qualifier(generic_type, true)
+                    }
+                    None => ""
+                };
+                 let generic_type_name = match payload {
+                    Some(generic_type) => {
+                        &self.interface_gen.type_name_with_qualifier(generic_type, false)
+                    }
+                    None => ""
+                };
+                let upper_camel = generic_type_name.to_upper_camel_case();
+                let bracketed_generic = match payload {
+                    Some(_) => {
+                        format!("<{generic_type_name_with_qualifier}>")
+                    }
+                    None => String::new()
+                };
+            //    let sig_type_name = "Void";
+                let reader_var = self.locals.tmp("reader");
+                let module = self.interface_gen.name;
+                let (import_name, interface_name) = CSharp::get_class_name_from_qualified_name(module);
+                let base_interface_name = interface_name
+                    .strip_prefix("I").unwrap();
+
+                let future_stream_name = match inst {
+                    Instruction::FutureLift{payload: _, ty: _} => "Future",
+                    Instruction::StreamLift{payload: _, ty: _} => "Stream",
+                    _ => {
+                        panic!("Unexpected instruction for lift");
+                    }
+                };
+                uwriteln!(self.src, "var {reader_var} = new {future_stream_name}Reader{bracketed_generic}({}, {import_name}.{base_interface_name}Interop.{future_stream_name}VTable{});", operands[0], upper_camel);
+                results.push(reader_var);
+
+                match inst {
+                    Instruction::FutureLift { .. } => {
+                        self.interface_gen.add_future(self.func_name, &generic_type_name, **payload);
+                    }
+                    _ => {
+                        self.interface_gen.add_stream(self.func_name, &generic_type_name, **payload);
+                    }
+                }
+
+                self.interface_gen.csharp_gen.needs_async_support = true;
+            }
+
+            Instruction::ErrorContextLower { .. }
             | Instruction::ErrorContextLift { .. }
-            | Instruction::AsyncCallWasm { .. } => todo!(),
+            | Instruction::DropHandle { .. }
+            | Instruction::FixedLengthListLift { .. }
+            | Instruction::FixedLengthListLower { .. }
+            | Instruction::FixedLengthListLowerToMemory { .. }
+            | Instruction::FixedLengthListLiftFromMemory { .. }
+            => {
+                dbg!(inst);
+                todo!()
+            }
         }
     }
 
@@ -1305,7 +1519,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwrite!(
                     self.src,
                     "
-                    var {ret_area} = stackalloc {element_type}[{array_size}];
+                    var {ret_area} = stackalloc {element_type}[{array_size} + 1];
                     var {ptr} = ((int){ret_area}) + ({align} - 1) & -{align};
                     ",
                     align = align.align_wasm32()
@@ -1374,7 +1588,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 }
 
 /// Dereference any number `TypeDefKind::Type` aliases to retrieve the target type.
-fn dealias(resolve: &Resolve, mut id: TypeId) -> TypeId {
+pub fn dealias(resolve: &Resolve, mut id: TypeId) -> TypeId {
     loop {
         match &resolve.types[id].kind {
             TypeDefKind::Type(Type::Id(that_id)) => id = *that_id,
@@ -1401,12 +1615,12 @@ fn list_element_info(ty: &Type) -> (usize, &'static str) {
 
 fn perform_cast(op: &String, cast: &Bitcast) -> String {
     match cast {
-        Bitcast::I32ToF32 => format!("BitConverter.Int32BitsToSingle((int){op})"),
-        Bitcast::I64ToF32 => format!("BitConverter.Int32BitsToSingle((int){op})"),
-        Bitcast::F32ToI32 => format!("BitConverter.SingleToInt32Bits({op})"),
-        Bitcast::F32ToI64 => format!("BitConverter.SingleToInt32Bits({op})"),
-        Bitcast::I64ToF64 => format!("BitConverter.Int64BitsToDouble({op})"),
-        Bitcast::F64ToI64 => format!("BitConverter.DoubleToInt64Bits({op})"),
+        Bitcast::I32ToF32 => format!("global::System.BitConverter.Int32BitsToSingle((int){op})"),
+        Bitcast::I64ToF32 => format!("global::System.BitConverter.Int32BitsToSingle((int){op})"),
+        Bitcast::F32ToI32 => format!("global::System.BitConverter.SingleToInt32Bits({op})"),
+        Bitcast::F32ToI64 => format!("global::System.BitConverter.SingleToInt32Bits({op})"),
+        Bitcast::I64ToF64 => format!("global::System.BitConverter.Int64BitsToDouble({op})"),
+        Bitcast::F64ToI64 => format!("global::System.BitConverter.DoubleToInt64Bits({op})"),
         Bitcast::I32ToI64 => format!("(long) ({op})"),
         Bitcast::I64ToI32 => format!("(int) ({op})"),
         Bitcast::I64ToP64 => op.to_string(),

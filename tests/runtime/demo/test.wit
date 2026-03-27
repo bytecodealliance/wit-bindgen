@@ -1,0 +1,15 @@
+package a:b;
+
+interface the-test {
+  x: func();
+}
+
+world runner {
+  import the-test;
+
+  export run: func();
+}
+
+world test {
+  export the-test;
+}

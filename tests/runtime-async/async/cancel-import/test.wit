@@ -1,0 +1,16 @@
+package my:test;
+
+interface i {
+  pending-import: async func(x: future);
+  backpressure-set: func(x: bool);
+}
+
+world test {
+  export i;
+}
+
+world runner {
+  import i;
+
+  export run: async func();
+}

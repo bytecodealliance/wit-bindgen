@@ -1,8 +1,8 @@
-use anyhow::{bail, Context, Error, Result};
+use anyhow::{Context, Error, Result, bail};
 use clap::Parser;
 use std::path::PathBuf;
 use std::str;
-use wit_bindgen_core::{wit_parser, Files, WorldGenerator};
+use wit_bindgen_core::{Files, WorldGenerator, wit_parser};
 use wit_parser::Resolve;
 
 /// Helper for passing VERSION to opt.
@@ -46,17 +46,28 @@ enum Opt {
         #[clap(flatten)]
         args: Common,
     },
+    /// Generates bindings for C++ modules.
+    #[cfg(feature = "cpp")]
+    Cpp {
+        #[clap(flatten)]
+        opts: wit_bindgen_cpp::Opts,
+        #[clap(flatten)]
+        args: Common,
+    },
 
-    /// Generates bindings for TinyGo-based Go guest modules (Deprecated)
+    /// Generates bindings for Go guest modules
     #[cfg(feature = "go")]
-    TinyGo {
+    Go {
+        #[clap(flatten)]
+        opts: wit_bindgen_go::Opts,
         #[clap(flatten)]
         args: Common,
     },
 
     /// Generates bindings for C# guest modules.
     #[cfg(feature = "csharp")]
-    CSharp {
+    #[command(alias = "c-sharp")]
+    Csharp {
         #[clap(flatten)]
         opts: wit_bindgen_csharp::Opts,
         #[clap(flatten)]
@@ -76,14 +87,18 @@ struct Common {
     #[clap(long = "out-dir")]
     out_dir: Option<PathBuf>,
 
-    /// Location of WIT file(s) to generate bindings for.
+    /// Locations of WIT file(s) to generate bindings for.
     ///
-    /// This path can be either a directory containing `*.wit` files, a `*.wit`
-    /// file itself, or a `*.wasm` file which is a wasm-encoded WIT package.
-    /// Most of the time it's likely to be a directory containing `*.wit` files
-    /// with an optional `deps` folder inside of it.
+    /// These paths can be either directories containing `*.wit` files, `*.wit`
+    /// files themselves, or `*.wasm` files which are wasm-encoded WIT packages.
+    /// Most of the time they're likely to be directories containing `*.wit`
+    /// files with optional `deps` folders inside of them.
+    ///
+    /// Currently these locations must be ordered, as later paths can't contain
+    /// dependencies on earlier paths. This restriction may be lifted in the
+    /// future.
     #[clap(value_name = "WIT", index = 1)]
-    wit: PathBuf,
+    wit: Vec<PathBuf>,
 
     /// Optionally specified world that bindings are generated for.
     ///
@@ -117,6 +132,8 @@ struct Common {
 }
 
 fn main() -> Result<()> {
+    env_logger::init();
+
     let mut files = Files::default();
     let (generator, opt) = match Opt::parse() {
         #[cfg(feature = "markdown")]
@@ -125,14 +142,14 @@ fn main() -> Result<()> {
         Opt::Moonbit { opts, args } => (opts.build(), args),
         #[cfg(feature = "c")]
         Opt::C { opts, args } => (opts.build(), args),
+        #[cfg(feature = "cpp")]
+        Opt::Cpp { opts, args } => (opts.build(args.out_dir.as_ref()), args),
         #[cfg(feature = "rust")]
-        Opt::Rust { opts, args } => (opts.build(), args),
+        Opt::Rust { opts, args } => (Box::new(opts.build()) as Box<dyn WorldGenerator>, args),
         #[cfg(feature = "go")]
-        Opt::TinyGo { args: _ } => {
-            bail!("Go bindgen has been moved to a separate repository. Please visit https://github.com/bytecodealliance/go-modules for the new Go bindings generator `wit-bindgen-go`.")
-        }
+        Opt::Go { opts, args } => (opts.build(), args),
         #[cfg(feature = "csharp")]
-        Opt::CSharp { opts, args } => (opts.build(), args),
+        Opt::Csharp { opts, args } => (opts.build(), args),
         Opt::Test { opts } => return opts.run(std::env::args_os().nth(0).unwrap().as_ref()),
     };
 
@@ -143,10 +160,10 @@ fn main() -> Result<()> {
             Some(path) => path.join(name),
             None => name.into(),
         };
-        eprintln!("Generating {:?}", dst);
+        eprintln!("Generating {dst:?}");
 
         if opt.check {
-            let prev = std::fs::read(&dst).with_context(|| format!("failed to read {:?}", dst))?;
+            let prev = std::fs::read(&dst).with_context(|| format!("failed to read {dst:?}"))?;
             if prev != contents {
                 // The contents differ. If it looks like textual contents, do a
                 // line-by-line comparison so that we can tell users what the
@@ -159,7 +176,10 @@ fn main() -> Result<()> {
                         .any(|c| c.is_control() && !matches!(c, '\n' | '\r' | '\t'))
                         && utf8_prev.lines().eq(utf8_contents.lines())
                     {
-                        bail!("{} differs only in line endings (CRLF vs. LF). If this is a text file, configure git to mark the file as `text eol=lf`.", dst.display());
+                        bail!(
+                            "{} differs only in line endings (CRLF vs. LF). If this is a text file, configure git to mark the file as `text eol=lf`.",
+                            dst.display()
+                        );
                     }
                 }
                 // The contents are binary or there are other differences; just
@@ -171,9 +191,9 @@ fn main() -> Result<()> {
 
         if let Some(parent) = dst.parent() {
             std::fs::create_dir_all(parent)
-                .with_context(|| format!("failed to create {:?}", parent))?;
+                .with_context(|| format!("failed to create {parent:?}"))?;
         }
-        std::fs::write(&dst, contents).with_context(|| format!("failed to write {:?}", dst))?;
+        std::fs::write(&dst, contents).with_context(|| format!("failed to write {dst:?}"))?;
     }
 
     Ok(())
@@ -206,9 +226,13 @@ fn gen_world(
             resolve.features.insert(feature.to_string());
         }
     }
-    let (pkg, _files) = resolve.push_path(&opts.wit)?;
-    let world = resolve.select_world(pkg, opts.world.as_deref())?;
-    generator.generate(&resolve, world, files)?;
+    let mut main_packages = Vec::new();
+    for wit in &opts.wit {
+        let (pkg, _files) = resolve.push_path(wit)?;
+        main_packages.push(pkg);
+    }
+    let world = resolve.select_world(&main_packages, opts.world.as_deref())?;
+    generator.generate(&mut resolve, world, files)?;
 
     Ok(())
 }

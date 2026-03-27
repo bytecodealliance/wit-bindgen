@@ -1,14 +1,17 @@
-mod component_type_object;
+pub mod component_type_object;
 
 use anyhow::Result;
 use heck::*;
+use indexmap::IndexSet;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 use std::mem;
-use wit_bindgen_core::abi::{self, AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType};
+use wit_bindgen_core::abi::{
+    self, AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmSignature, WasmType,
+};
 use wit_bindgen_core::{
-    dealias, uwrite, uwriteln, wit_parser::*, AnonymousTypeGenerator, Direction, Files,
-    InterfaceGenerator as _, Ns, WorldGenerator,
+    AnonymousTypeGenerator, AsyncFilterSet, Direction, Files, InterfaceGenerator as _, Ns,
+    WorldGenerator, dealias, uwrite, uwriteln, wit_parser::*,
 };
 use wit_component::StringEncoding;
 
@@ -26,6 +29,7 @@ struct C {
     needs_union_float_int32: bool,
     needs_union_int64_double: bool,
     needs_union_double_int64: bool,
+    needs_async: bool,
     prim_names: HashSet<String>,
     world: String,
     sizes: SizeAlign,
@@ -35,6 +39,7 @@ struct C {
     dtor_funcs: HashMap<TypeId, String>,
     type_names: HashMap<TypeId, String>,
     resources: HashMap<TypeId, ResourceInfo>,
+    futures: IndexSet<TypeId>,
 }
 
 #[derive(Default)]
@@ -70,7 +75,14 @@ pub struct Opts {
     pub no_helpers: bool,
 
     /// Set component string encoding
-    #[cfg_attr(feature = "clap", arg(long, default_value_t = StringEncoding::default()))]
+    #[cfg_attr(
+        feature = "clap",
+        arg(
+            long,
+            default_value_t = StringEncoding::default(),
+            value_name = "ENCODING",
+        ),
+    )]
     pub string_encoding: StringEncoding,
 
     /// Skip optional null pointer and boolean result argument signature
@@ -88,17 +100,35 @@ pub struct Opts {
     pub rename: Vec<(String, String)>,
 
     /// Rename the world in the generated source code and file names.
-    #[cfg_attr(feature = "clap", arg(long))]
+    #[cfg_attr(feature = "clap", arg(long, value_name = "NAME"))]
     pub rename_world: Option<String>,
 
-    /// Add the specified suffix to the name of the custome section containing
+    /// Add the specified suffix to the name of the custom section containing
     /// the component type.
-    #[cfg_attr(feature = "clap", arg(long))]
+    #[cfg_attr(feature = "clap", arg(long, value_name = "STRING"))]
     pub type_section_suffix: Option<String>,
 
     /// Configure the autodropping of borrows in exported functions.
-    #[cfg_attr(feature = "clap", arg(long, default_value_t = Enabled::default()))]
+    #[cfg_attr(
+        feature = "clap",
+        arg(
+            long,
+            default_value_t = Enabled::default(),
+            value_name = "ENABLED",
+        ),
+    )]
     pub autodrop_borrows: Enabled,
+
+    #[cfg_attr(feature = "clap", clap(flatten))]
+    pub async_: AsyncFilterSet,
+
+    /// Force generation of async helpers even if no async functions/futures are present.
+    #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
+    pub generate_async_helpers: bool,
+
+    /// Generate helpers for threading builtins. Implies `--generate-async-helpers`.
+    #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
+    pub generate_threading_helpers: bool,
 }
 
 #[cfg(feature = "clap")]
@@ -119,12 +149,13 @@ impl Opts {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 struct Return {
     scalar: Option<Scalar>,
     retptrs: Vec<Type>,
 }
 
+#[derive(Clone)]
 struct CSig {
     name: String,
     sig: String,
@@ -133,7 +164,7 @@ struct CSig {
     retptrs: Vec<String>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 enum Scalar {
     Void,
     OptionBool(Type),
@@ -155,13 +186,18 @@ impl WorldGenerator for C {
         let world = &resolve.worlds[world];
         for (key, _item) in world.imports.iter().chain(world.exports.iter()) {
             let name = resolve.name_world_key(key);
-            interfaces.insert(name, key.clone());
+            interfaces
+                .entry(name)
+                .or_insert(Vec::new())
+                .push(key.clone());
         }
 
         for (from, to) in self.opts.rename.iter() {
             match interfaces.get(from) {
-                Some(key) => {
-                    self.renamed_interfaces.insert(key.clone(), to.clone());
+                Some(keys) => {
+                    for key in keys {
+                        self.renamed_interfaces.insert(key.clone(), to.clone());
+                    }
                 }
                 None => {
                     eprintln!("warning: rename of `{from}` did not match any interfaces");
@@ -178,20 +214,20 @@ impl WorldGenerator for C {
         _files: &mut Files,
     ) -> Result<()> {
         let wasm_import_module = resolve.name_world_key(name);
-        let mut gen = self.interface(resolve, true, Some(&wasm_import_module));
-        gen.interface = Some((id, name));
-        gen.define_interface_types(id);
+        let mut r#gen = self.interface(resolve, true, Some(&wasm_import_module));
+        r#gen.interface = Some((id, name));
+        r#gen.define_interface_types(id);
 
         for (i, (_name, func)) in resolve.interfaces[id].functions.iter().enumerate() {
             if i == 0 {
                 let name = resolve.name_world_key(name);
-                uwriteln!(gen.src.h_fns, "\n// Imported Functions from `{name}`");
-                uwriteln!(gen.src.c_fns, "\n// Imported Functions from `{name}`");
+                uwriteln!(r#gen.src.h_fns, "\n// Imported Functions from `{name}`");
+                uwriteln!(r#gen.src.c_fns, "\n// Imported Functions from `{name}`");
             }
-            gen.import(Some(name), func);
+            r#gen.import(Some(name), func);
         }
 
-        gen.gen.src.append(&gen.src);
+        r#gen.r#gen.src.append(&r#gen.src);
 
         Ok(())
     }
@@ -204,18 +240,18 @@ impl WorldGenerator for C {
         _files: &mut Files,
     ) {
         let name = &resolve.worlds[world].name;
-        let mut gen = self.interface(resolve, true, Some("$root"));
-        gen.define_function_types(funcs);
+        let mut r#gen = self.interface(resolve, true, Some("$root"));
+        r#gen.define_function_types(funcs);
 
         for (i, (_name, func)) in funcs.iter().enumerate() {
             if i == 0 {
-                uwriteln!(gen.src.h_fns, "\n// Imported Functions from `{name}`");
-                uwriteln!(gen.src.c_fns, "\n// Imported Functions from `{name}`");
+                uwriteln!(r#gen.src.h_fns, "\n// Imported Functions from `{name}`");
+                uwriteln!(r#gen.src.c_fns, "\n// Imported Functions from `{name}`");
             }
-            gen.import(None, func);
+            r#gen.import(None, func);
         }
 
-        gen.gen.src.append(&gen.src);
+        r#gen.r#gen.src.append(&r#gen.src);
     }
 
     fn export_interface(
@@ -225,20 +261,20 @@ impl WorldGenerator for C {
         id: InterfaceId,
         _files: &mut Files,
     ) -> Result<()> {
-        let mut gen = self.interface(resolve, false, None);
-        gen.interface = Some((id, name));
-        gen.define_interface_types(id);
+        let mut r#gen = self.interface(resolve, false, None);
+        r#gen.interface = Some((id, name));
+        r#gen.define_interface_types(id);
 
         for (i, (_name, func)) in resolve.interfaces[id].functions.iter().enumerate() {
             if i == 0 {
                 let name = resolve.name_world_key(name);
-                uwriteln!(gen.src.h_fns, "\n// Exported Functions from `{name}`");
-                uwriteln!(gen.src.c_fns, "\n// Exported Functions from `{name}`");
+                uwriteln!(r#gen.src.h_fns, "\n// Exported Functions from `{name}`");
+                uwriteln!(r#gen.src.c_fns, "\n// Exported Functions from `{name}`");
             }
-            gen.export(func, Some(name));
+            r#gen.export(func, Some(name));
         }
 
-        gen.gen.src.append(&gen.src);
+        r#gen.r#gen.src.append(&r#gen.src);
         Ok(())
     }
 
@@ -250,18 +286,18 @@ impl WorldGenerator for C {
         _files: &mut Files,
     ) -> Result<()> {
         let name = &resolve.worlds[world].name;
-        let mut gen = self.interface(resolve, false, None);
-        gen.define_function_types(funcs);
+        let mut r#gen = self.interface(resolve, false, None);
+        r#gen.define_function_types(funcs);
 
         for (i, (_name, func)) in funcs.iter().enumerate() {
             if i == 0 {
-                uwriteln!(gen.src.h_fns, "\n// Exported Functions from `{name}`");
-                uwriteln!(gen.src.c_fns, "\n// Exported Functions from `{name}`");
+                uwriteln!(r#gen.src.h_fns, "\n// Exported Functions from `{name}`");
+                uwriteln!(r#gen.src.c_fns, "\n// Exported Functions from `{name}`");
             }
-            gen.export(func, None);
+            r#gen.export(func, None);
         }
 
-        gen.gen.src.append(&gen.src);
+        r#gen.r#gen.src.append(&r#gen.src);
         Ok(())
     }
 
@@ -272,13 +308,13 @@ impl WorldGenerator for C {
         types: &[(&str, TypeId)],
         _files: &mut Files,
     ) {
-        let mut gen = self.interface(resolve, true, Some("$root"));
+        let mut r#gen = self.interface(resolve, true, Some("$root"));
         let mut live = LiveTypes::default();
         for (_, id) in types {
             live.add_type_id(resolve, *id);
         }
-        gen.define_live_types(live);
-        gen.gen.src.append(&gen.src);
+        r#gen.define_live_types(live);
+        r#gen.r#gen.src.append(&r#gen.src);
     }
 
     fn finish(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) -> Result<()> {
@@ -293,6 +329,7 @@ impl WorldGenerator for C {
             self.src.c_adapters,
             "
                extern void {linking_symbol}(void);
+               __attribute__((used))
                void {linking_symbol}_public_use_in_this_compilation_unit(void) {{
                    {linking_symbol}();
                }}
@@ -310,6 +347,7 @@ impl WorldGenerator for C {
                     uwrite!(
                         self.src.h_helpers,
                         "
+                            // Returns the length of the UTF-16 string `s` in code units
                             size_t {snake}_string_len(const char16_t* s);
                         ",
                     );
@@ -336,12 +374,17 @@ impl WorldGenerator for C {
             uwrite!(
                 self.src.h_helpers,
                 "
-                   // Transfers ownership of `s` into the string `ret`
+                   // Sets the string `ret` to reference the input string `s` without copying it
                    void {snake}_string_set({snake}_string_t *ret, const {c_string_ty} *s);
 
-                   // Creates a copy of the input nul-terminate string `s` and
+                   // Creates a copy of the input nul-terminated string `s` and
                    // stores it into the component model string `ret`.
                    void {snake}_string_dup({snake}_string_t *ret, const {c_string_ty} *s);
+
+                   // Creates a copy of the input string `s` with length `len` and
+                   // stores it into the component model string `ret`.
+                   // The length is specified in code units (bytes for UTF-8, 16-bit values for UTF-16).
+                   void {snake}_string_dup_n({snake}_string_t *ret, const {c_string_ty} *s, size_t len);
 
                    // Deallocates the string pointed to by `ret`, deallocating
                    // the memory behind the string.
@@ -362,6 +405,12 @@ impl WorldGenerator for C {
                        memcpy(ret->ptr, s, ret->len * {size});
                    }}
 
+                   void {snake}_string_dup_n({snake}_string_t *ret, const {c_string_ty} *s, size_t len) {{
+                       ret->len = len;
+                       ret->ptr = ({ty}*) cabi_realloc(NULL, 0, {size}, ret->len * {size});
+                       memcpy(ret->ptr, s, ret->len * {size});
+                   }}
+
                    void {snake}_string_free({snake}_string_t *ret) {{
                        if (ret->len > 0) {{
                            free(ret->ptr);
@@ -374,27 +423,37 @@ impl WorldGenerator for C {
         }
         if self.needs_union_int32_float {
             uwriteln!(
-                self.src.c_helpers,
+                self.src.c_defs,
                 "\nunion int32_float {{ int32_t a; float b; }};"
             );
         }
         if self.needs_union_float_int32 {
             uwriteln!(
-                self.src.c_helpers,
+                self.src.c_defs,
                 "\nunion float_int32 {{ float a; int32_t b; }};"
             );
         }
         if self.needs_union_int64_double {
             uwriteln!(
-                self.src.c_helpers,
+                self.src.c_defs,
                 "\nunion int64_double {{ int64_t a; double b; }};"
             );
         }
         if self.needs_union_double_int64 {
             uwriteln!(
-                self.src.c_helpers,
+                self.src.c_defs,
                 "\nunion double_int64 {{ double a; int64_t b; }};"
             );
+        }
+        if self.needs_async
+            || self.futures.len() > 0
+            || self.opts.generate_async_helpers
+            || self.opts.generate_threading_helpers
+        {
+            self.generate_async_helpers();
+        }
+        if self.opts.generate_threading_helpers {
+            self.generate_threading_helpers();
         }
         let version = env!("CARGO_PKG_VERSION");
         let mut h_str = wit_bindgen_core::Source::default();
@@ -430,36 +489,6 @@ impl WorldGenerator for C {
         c_str.push_str(&self.src.c_defs);
         c_str.push_str(&self.src.c_fns);
 
-        if self.needs_string {
-            uwriteln!(
-                h_str,
-                "
-                typedef struct {snake}_string_t {{\n\
-                  {ty} *ptr;\n\
-                  size_t len;\n\
-                }} {snake}_string_t;",
-                ty = self.char_type(),
-            );
-        }
-        if self.src.h_defs.len() > 0 {
-            h_str.push_str(&self.src.h_defs);
-        }
-
-        h_str.push_str(&self.src.h_fns);
-
-        if !self.opts.no_helpers && self.src.h_helpers.len() > 0 {
-            uwriteln!(h_str, "\n// Helper Functions");
-            h_str.push_str(&self.src.h_helpers);
-            h_str.push_str("\n");
-        }
-
-        if !self.opts.no_helpers && self.src.c_helpers.len() > 0 {
-            uwriteln!(c_str, "\n// Helper Functions");
-            c_str.push_str(self.src.c_helpers.as_mut_string());
-        }
-
-        uwriteln!(c_str, "\n// Component Adapters");
-
         // Declare a statically-allocated return area, if needed. We only do
         // this for export bindings, because import bindings allocate their
         // return-area on the stack.
@@ -477,6 +506,50 @@ impl WorldGenerator for C {
                     .format(POINTER_SIZE_EXPRESSION),
             );
         }
+
+        if self.needs_string {
+            uwriteln!(
+                h_str,
+                "
+                typedef struct {snake}_string_t {{\n\
+                  {ty} *ptr;\n\
+                  size_t len;\n\
+                }} {snake}_string_t;",
+                ty = self.char_type(),
+            );
+        }
+
+        if self.src.h_async.len() > 0 {
+            uwriteln!(h_str, "\n// Async Helper Functions");
+            h_str.push_str(&self.src.h_async);
+            h_str.push_str("\n");
+        }
+
+        if self.src.h_defs.len() > 0 {
+            h_str.push_str(&self.src.h_defs);
+        }
+
+        h_str.push_str(&self.src.h_fns);
+
+        if !self.opts.no_helpers && self.src.h_helpers.len() > 0 {
+            uwriteln!(h_str, "\n// Helper Functions");
+            h_str.push_str(&self.src.h_helpers);
+            h_str.push_str("\n");
+        }
+
+        if !self.opts.no_helpers && self.src.c_helpers.len() > 0 {
+            uwriteln!(c_str, "\n// Helper Functions");
+            c_str.push_str(self.src.c_helpers.as_mut_string());
+        }
+
+        if self.src.c_async.len() > 0 {
+            uwriteln!(c_str, "\n// Async Helper Functions");
+            c_str.push_str(&self.src.c_async);
+            c_str.push_str("\n");
+        }
+
+        uwriteln!(c_str, "\n// Component Adapters");
+
         c_str.push_str(&self.src.c_adapters);
 
         uwriteln!(
@@ -523,7 +596,7 @@ impl C {
     ) -> InterfaceGenerator<'a> {
         InterfaceGenerator {
             src: Source::default(),
-            gen: self,
+            r#gen: self,
             resolve,
             interface: None,
             in_import,
@@ -573,7 +646,7 @@ impl C {
                 dst.push_str("string_t");
                 self.needs_string = true;
             }
-            Type::ErrorContext => todo!("C error context type name"),
+            Type::ErrorContext => dst.push_str("error_context"),
             Type::Id(id) => {
                 if let Some(name) = self.type_names.get(id) {
                     dst.push_str(name);
@@ -609,36 +682,36 @@ impl C {
         match cast {
             Bitcast::I32ToF32 | Bitcast::I64ToF32 => {
                 self.needs_union_int32_float = true;
-                format!("((union int32_float){{ (int32_t) {} }}).b", op)
+                format!("((union int32_float){{ (int32_t) {op} }}).b")
             }
             Bitcast::F32ToI32 | Bitcast::F32ToI64 => {
                 self.needs_union_float_int32 = true;
-                format!("((union float_int32){{ {} }}).b", op)
+                format!("((union float_int32){{ {op} }}).b")
             }
             Bitcast::I64ToF64 => {
                 self.needs_union_int64_double = true;
-                format!("((union int64_double){{ (int64_t) {} }}).b", op)
+                format!("((union int64_double){{ (int64_t) {op} }}).b")
             }
             Bitcast::F64ToI64 => {
                 self.needs_union_double_int64 = true;
-                format!("((union double_int64){{ {} }}).b", op)
+                format!("((union double_int64){{ {op} }}).b")
             }
             Bitcast::I32ToI64 | Bitcast::LToI64 | Bitcast::PToP64 => {
-                format!("(int64_t) {}", op)
+                format!("(int64_t) {op}")
             }
             Bitcast::I64ToI32 | Bitcast::I64ToL => {
-                format!("(int32_t) {}", op)
+                format!("(int32_t) {op}")
             }
             // P64 is currently represented as int64_t, so no conversion is needed.
             Bitcast::I64ToP64 | Bitcast::P64ToI64 => {
-                format!("{}", op)
+                format!("{op}")
             }
             Bitcast::P64ToP | Bitcast::I32ToP | Bitcast::LToP => {
-                format!("(uint8_t *) {}", op)
+                format!("(uint8_t *) {op}")
             }
 
             // Cast to uintptr_t to avoid implicit pointer-to-int conversions.
-            Bitcast::PToI32 | Bitcast::PToL => format!("(uintptr_t) {}", op),
+            Bitcast::PToI32 | Bitcast::PToL => format!("(uintptr_t) {op}"),
 
             Bitcast::I32ToL | Bitcast::LToI32 | Bitcast::None => op.to_string(),
 
@@ -648,6 +721,298 @@ impl C {
                 self.perform_cast(&inner, second)
             }
         }
+    }
+
+    fn generate_threading_helpers(&mut self) {
+        let snake = self.world.to_snake_case();
+        uwriteln!(
+            self.src.h_async,
+            "
+void* {snake}_context_get_1(void);
+void {snake}_context_set_1(void* value);
+uint32_t {snake}_thread_yield_cancellable(void);
+uint32_t {snake}_thread_index(void);
+uint32_t {snake}_thread_new_indirect(void (*start_function)(void*), void* arg);
+void {snake}_thread_suspend_to(uint32_t thread);
+uint32_t {snake}_thread_suspend_to_cancellable(uint32_t thread);
+void {snake}_thread_suspend_to_suspended(uint32_t thread);
+uint32_t {snake}_thread_suspend_to_suspended_cancellable(uint32_t thread);
+void {snake}_thread_unsuspend(uint32_t thread);
+void {snake}_thread_yield_to_suspended(uint32_t thread);
+uint32_t {snake}_thread_yield_to_suspended_cancellable(uint32_t thread);
+void {snake}_thread_suspend(void);
+uint32_t {snake}_thread_suspend_cancellable(void);
+            "
+        );
+        uwriteln!(
+            self.src.c_async,
+            r#"
+__attribute__((__import_module__("$root"), __import_name__("[context-get-1]")))
+extern void* __context_get_1(void);
+
+void* {snake}_context_get_1(void) {{
+    return __context_get_1();
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[context-set-1]")))
+extern void __context_set_1(void*);
+
+void {snake}_context_set_1(void* value) {{
+    __context_set_1(value);
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[cancellable][thread-yield]")))
+extern uint32_t __thread_yield_cancellable(void);
+
+uint32_t {snake}_thread_yield_cancellable(void) {{
+    return __thread_yield_cancellable();
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[thread-index]")))
+extern uint32_t __thread_index(void);
+
+uint32_t {snake}_thread_index(void) {{
+    return __thread_index();
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[thread-new-indirect-v0]")))
+extern uint32_t __thread_new_indirect(uint32_t, void*);
+
+uint32_t {snake}_thread_new_indirect(void (*start_function)(void*), void* arg) {{
+    return __thread_new_indirect((uint32_t)(uintptr_t)start_function, arg
+);
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[thread-suspend-to-suspended]")))
+extern uint32_t __thread_suspend_to_suspended(uint32_t);
+
+void {snake}_thread_suspend_to_suspended(uint32_t thread) {{
+    __thread_suspend_to_suspended(thread);
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[cancellable][thread-suspend-to-suspended]")))
+extern uint32_t __thread_suspend_to_suspended_cancellable(uint32_t);
+
+uint32_t {snake}_thread_suspend_to_suspended_cancellable(uint32_t thread) {{
+    return __thread_suspend_to_suspended_cancellable(thread);
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[thread-suspend-to]")))
+extern uint32_t __thread_suspend_to(uint32_t);
+
+void {snake}_thread_suspend_to(uint32_t thread) {{
+    __thread_suspend_to(thread);
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[cancellable][thread-suspend-to]")))
+extern uint32_t __thread_suspend_to_cancellable(uint32_t);
+
+uint32_t {snake}_thread_suspend_to_cancellable(uint32_t thread) {{
+    return __thread_suspend_to_cancellable(thread);
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[thread-unsuspend]")))
+extern void __thread_unsuspend(uint32_t);
+
+void {snake}_thread_unsuspend(uint32_t thread) {{
+    __thread_unsuspend(thread);
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[thread-yield-to-suspended]")))
+extern uint32_t __thread_yield_to_suspended(uint32_t);
+
+void {snake}_thread_yield_to_suspended(uint32_t thread) {{
+    __thread_yield_to_suspended(thread);
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[cancellable][thread-yield-to-suspended]")))
+extern uint32_t __thread_yield_to_suspended_cancellable(uint32_t);
+
+uint32_t {snake}_thread_yield_to_suspended_cancellable(uint32_t thread) {{
+    return __thread_yield_to_suspended_cancellable(thread);
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[thread-suspend]")))
+extern uint32_t __thread_suspend(void);
+
+void {snake}_thread_suspend(void) {{
+    __thread_suspend();
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[cancellable][thread-suspend]")))
+extern uint32_t __thread_suspend_cancellable(void);
+uint32_t {snake}_thread_suspend_cancellable(void) {{
+    return __thread_suspend_cancellable();
+}}
+            "#
+        );
+    }
+
+    fn generate_async_helpers(&mut self) {
+        let snake = self.world.to_snake_case();
+        let shouty = self.world.to_shouty_snake_case();
+        uwriteln!(
+            self.src.h_async,
+            "
+typedef uint32_t {snake}_subtask_status_t;
+typedef uint32_t {snake}_subtask_t;
+#define {shouty}_SUBTASK_STATE(status) (({snake}_subtask_state_t) ((status) & 0xf))
+#define {shouty}_SUBTASK_HANDLE(status) (({snake}_subtask_t) ((status) >> 4))
+
+typedef enum {snake}_subtask_state {{
+    {shouty}_SUBTASK_STARTING,
+    {shouty}_SUBTASK_STARTED,
+    {shouty}_SUBTASK_RETURNED,
+    {shouty}_SUBTASK_STARTED_CANCELLED,
+    {shouty}_SUBTASK_RETURNED_CANCELLED,
+}} {snake}_subtask_state_t;
+
+{snake}_subtask_status_t {snake}_subtask_cancel({snake}_subtask_t subtask);
+void {snake}_subtask_drop({snake}_subtask_t subtask);
+
+typedef uint32_t {snake}_callback_code_t;
+#define {shouty}_CALLBACK_CODE_EXIT 0
+#define {shouty}_CALLBACK_CODE_YIELD 1
+#define {shouty}_CALLBACK_CODE_WAIT(set) (2 | (set << 4))
+
+typedef enum {snake}_event_code {{
+    {shouty}_EVENT_NONE,
+    {shouty}_EVENT_SUBTASK,
+    {shouty}_EVENT_STREAM_READ,
+    {shouty}_EVENT_STREAM_WRITE,
+    {shouty}_EVENT_FUTURE_READ,
+    {shouty}_EVENT_FUTURE_WRITE,
+    {shouty}_EVENT_CANCEL,
+}} {snake}_event_code_t;
+
+typedef struct {snake}_event {{
+    {snake}_event_code_t event;
+    uint32_t waitable;
+    uint32_t code;
+}} {snake}_event_t;
+
+typedef uint32_t {snake}_waitable_set_t;
+{snake}_waitable_set_t {snake}_waitable_set_new(void);
+void {snake}_waitable_join(uint32_t waitable, {snake}_waitable_set_t set);
+void {snake}_waitable_set_drop({snake}_waitable_set_t set);
+void {snake}_waitable_set_wait({snake}_waitable_set_t set, {snake}_event_t *event);
+void {snake}_waitable_set_poll({snake}_waitable_set_t set, {snake}_event_t *event);
+
+void {snake}_task_cancel(void);
+
+typedef uint32_t {snake}_waitable_status_t;
+#define {shouty}_WAITABLE_STATE(status) (({snake}_waitable_state_t) ((status) & 0xf))
+#define {shouty}_WAITABLE_COUNT(status) ((uint32_t) ((status) >> 4))
+#define {shouty}_WAITABLE_STATUS_BLOCKED (({snake}_waitable_status_t) -1)
+
+typedef enum {snake}_waitable_state {{
+    {shouty}_WAITABLE_COMPLETED,
+    {shouty}_WAITABLE_DROPPED,
+    {shouty}_WAITABLE_CANCELLED,
+}} {snake}_waitable_state_t;
+
+void {snake}_backpressure_inc(void);
+void {snake}_backpressure_dec(void);
+void* {snake}_context_get_0(void);
+void {snake}_context_set_0(void* value);
+void {snake}_thread_yield(void);
+            "
+        );
+        uwriteln!(
+            self.src.c_async,
+            r#"
+__attribute__((__import_module__("$root"), __import_name__("[subtask-cancel]")))
+extern uint32_t __subtask_cancel(uint32_t handle);
+
+{snake}_subtask_status_t {snake}_subtask_cancel({snake}_subtask_t subtask) {{
+    return __subtask_cancel(subtask);
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[subtask-drop]")))
+extern void __subtask_drop(uint32_t handle);
+
+void {snake}_subtask_drop({snake}_subtask_t subtask) {{
+    __subtask_drop(subtask);
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[waitable-set-new]")))
+extern uint32_t __waitable_set_new(void);
+
+{snake}_waitable_set_t {snake}_waitable_set_new(void) {{
+    return __waitable_set_new();
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[waitable-join]")))
+extern void __waitable_join(uint32_t, uint32_t);
+
+void {snake}_waitable_join(uint32_t waitable, {snake}_waitable_set_t set) {{
+    __waitable_join(waitable, set);
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[waitable-set-drop]")))
+extern void __waitable_set_drop(uint32_t);
+
+void {snake}_waitable_set_drop({snake}_waitable_set_t set) {{
+    __waitable_set_drop(set);
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[waitable-set-wait]")))
+extern uint32_t __waitable_set_wait(uint32_t, uint32_t*);
+__attribute__((__import_module__("$root"), __import_name__("[waitable-set-poll]")))
+extern uint32_t __waitable_set_poll(uint32_t, uint32_t*);
+
+void {snake}_waitable_set_wait({snake}_waitable_set_t set, {snake}_event_t *event) {{
+    event->event = ({snake}_event_code_t) __waitable_set_wait(set, &event->waitable);
+}}
+
+void {snake}_waitable_set_poll({snake}_waitable_set_t set, {snake}_event_t *event) {{
+    event->event = ({snake}_event_code_t) __waitable_set_poll(set, &event->waitable);
+}}
+
+__attribute__((__import_module__("[export]$root"), __import_name__("[task-cancel]")))
+extern void __task_cancel(void);
+
+void {snake}_task_cancel() {{
+    __task_cancel();
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[backpressure-inc]")))
+extern void __backpressure_inc(void);
+
+void {snake}_backpressure_inc(void) {{
+    __backpressure_inc();
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[backpressure-dec]")))
+extern void __backpressure_dec(void);
+
+void {snake}_backpressure_dec(void) {{
+    __backpressure_dec();
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[context-get-0]")))
+extern void* __context_get_0(void);
+
+void* {snake}_context_get_0(void) {{
+    return __context_get_0();
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[context-set-0]")))
+extern void __context_set_0(void*);
+
+
+void {snake}_context_set_0(void *value) {{
+    __context_set_0(value);
+}}
+
+__attribute__((__import_module__("$root"), __import_name__("[thread-yield]")))
+extern uint32_t __thread_yield(void);
+
+void {snake}_thread_yield(void) {{
+    __thread_yield();
+}}
+            "#
+        );
     }
 }
 
@@ -666,7 +1031,7 @@ pub fn imported_types_used_by_exported_interfaces(
                 exported_interfaces.insert(*id);
                 live_export_types.add_interface(resolve, *id)
             }
-            WorldItem::Type(_) => unreachable!(),
+            WorldItem::Type { .. } => unreachable!(),
         }
     }
 
@@ -722,6 +1087,8 @@ fn is_prim_type_id(resolve: &Resolve, id: TypeId) -> bool {
         | TypeDefKind::Future(_)
         | TypeDefKind::Stream(_)
         | TypeDefKind::Unknown => false,
+        TypeDefKind::FixedLengthList(..) => todo!(),
+        TypeDefKind::Map(..) => todo!(),
     }
 }
 
@@ -783,8 +1150,20 @@ pub fn push_ty_name(resolve: &Resolve, ty: &Type, src: &mut String) {
                     src.push_str("list_");
                     push_ty_name(resolve, ty, src);
                 }
-                TypeDefKind::Future(_) => todo!(),
-                TypeDefKind::Stream(_) => todo!(),
+                TypeDefKind::Future(ty) => {
+                    src.push_str("future_");
+                    match ty {
+                        Some(ty) => push_ty_name(resolve, ty, src),
+                        None => src.push_str("void"),
+                    }
+                }
+                TypeDefKind::Stream(ty) => {
+                    src.push_str("stream_");
+                    match ty {
+                        Some(ty) => push_ty_name(resolve, ty, src),
+                        None => src.push_str("void"),
+                    }
+                }
                 TypeDefKind::Handle(Handle::Own(resource)) => {
                     src.push_str("own_");
                     push_ty_name(resolve, &Type::Id(*resource), src);
@@ -794,6 +1173,8 @@ pub fn push_ty_name(resolve: &Resolve, ty: &Type, src: &mut String) {
                     push_ty_name(resolve, &Type::Id(*resource), src);
                 }
                 TypeDefKind::Unknown => unreachable!(),
+                TypeDefKind::FixedLengthList(..) => todo!(),
+                TypeDefKind::Map(..) => todo!(),
             }
         }
     }
@@ -912,7 +1293,7 @@ pub fn c_func_name(
 struct InterfaceGenerator<'a> {
     src: Source,
     in_import: bool,
-    gen: &'a mut C,
+    r#gen: &'a mut C,
     resolve: &'a Resolve,
     interface: Option<(InterfaceId, &'a WorldKey)>,
     wasm_import_module: Option<&'a str>,
@@ -963,7 +1344,11 @@ impl Return {
             TypeDefKind::Type(t) => return self.return_single(resolve, t, orig_ty, sig_flattening),
 
             // Flags are returned as their bare values, and enums and handles are scalars
-            TypeDefKind::Flags(_) | TypeDefKind::Enum(_) | TypeDefKind::Handle(_) => {
+            TypeDefKind::Flags(_)
+            | TypeDefKind::Enum(_)
+            | TypeDefKind::Handle(_)
+            | TypeDefKind::Future(_)
+            | TypeDefKind::Stream(_) => {
                 self.scalar = Some(Scalar::Type(*orig_ty));
                 return;
             }
@@ -1000,10 +1385,10 @@ impl Return {
             | TypeDefKind::List(_)
             | TypeDefKind::Variant(_) => {}
 
-            TypeDefKind::Future(_) => todo!("return_single for future"),
-            TypeDefKind::Stream(_) => todo!("return_single for stream"),
             TypeDefKind::Resource => todo!("return_single for resource"),
             TypeDefKind::Unknown => unreachable!(),
+            TypeDefKind::FixedLengthList(..) => todo!(),
+            TypeDefKind::Map(..) => todo!(),
         }
 
         self.retptrs.push(*orig_ty);
@@ -1087,7 +1472,8 @@ void {ns}_{snake}_drop_own({own} handle) {{
                 "\ntypedef struct {borrow} {{\nint32_t __handle;\n}} {borrow};\n"
             ));
 
-            if self.autodrop_enabled() {
+            // Explicit borrow dropping is not required if autodrop is enabled.
+            if !self.autodrop_enabled() {
                 // As we have two different types for owned vs borrowed resources,
                 // but owns and borrows are dropped using the same intrinsic we
                 // also generate a version of the drop function for borrows that we
@@ -1126,7 +1512,7 @@ extern {borrow} {ns}_borrow_{snake}({own} handle);
             // will be required to fill in. This is an empty struct.
             self.src.h_defs("\n");
             self.src.h_defs("typedef struct ");
-            let ty_name = self.gen.type_names[&id].clone();
+            let ty_name = self.r#gen.type_names[&id].clone();
             self.src.h_defs(&ty_name);
             self.src.h_defs(" ");
             self.print_typedef_target(id);
@@ -1179,7 +1565,7 @@ void __wasm_export_{ns}_{snake}_dtor({ns}_{snake}_t* arg) {{
             ));
         }
 
-        self.gen.resources.insert(
+        self.r#gen.resources.insert(
             id,
             ResourceInfo {
                 own,
@@ -1349,14 +1735,29 @@ void __wasm_export_{ns}_{snake}_dtor({ns}_{snake}_t* arg) {{
         self.finish_typedef_struct(id);
     }
 
-    fn type_future(&mut self, id: TypeId, name: &str, ty: &Option<Type>, docs: &Docs) {
-        _ = (id, name, ty, docs);
-        todo!()
+    fn type_fixed_length_list(
+        &mut self,
+        _id: TypeId,
+        _name: &str,
+        _ty: &Type,
+        _size: u32,
+        _docs: &Docs,
+    ) {
+        todo!("named fixed-length list types are not yet supported in the C backend")
     }
 
-    fn type_stream(&mut self, id: TypeId, name: &str, ty: &Option<Type>, docs: &Docs) {
-        _ = (id, name, ty, docs);
-        todo!()
+    fn type_future(&mut self, id: TypeId, _name: &str, _ty: &Option<Type>, docs: &Docs) {
+        self.src.h_defs("\n");
+        self.docs(docs, SourceType::HDefs);
+        self.src.h_defs("\ntypedef uint32_t ");
+        self.print_typedef_target(id);
+    }
+
+    fn type_stream(&mut self, id: TypeId, _name: &str, _ty: &Option<Type>, docs: &Docs) {
+        self.src.h_defs("\n");
+        self.docs(docs, SourceType::HDefs);
+        self.src.h_defs("\ntypedef uint32_t ");
+        self.print_typedef_target(id);
     }
 
     fn type_builtin(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
@@ -1374,7 +1775,7 @@ impl<'a> wit_bindgen_core::AnonymousTypeGenerator<'a> for InterfaceGenerator<'a>
         let resource = match handle {
             Handle::Borrow(id) | Handle::Own(id) => id,
         };
-        let info = &self.gen.resources[&dealias(self.resolve, *resource)];
+        let info = &self.r#gen.resources[&dealias(self.resolve, *resource)];
         match handle {
             Handle::Borrow(_) => self.src.h_defs(&info.borrow),
             Handle::Own(_) => self.src.h_defs(&info.own),
@@ -1387,7 +1788,7 @@ impl<'a> wit_bindgen_core::AnonymousTypeGenerator<'a> for InterfaceGenerator<'a>
         self.src.h_defs("\ntypedef ");
         self.src.h_defs("struct {\n");
         for (i, t) in ty.types.iter().enumerate() {
-            let ty = self.gen.type_name(t);
+            let ty = self.r#gen.type_name(t);
             uwriteln!(self.src.h_defs, "{ty} f{i};");
         }
         self.src.h_defs("}");
@@ -1399,7 +1800,7 @@ impl<'a> wit_bindgen_core::AnonymousTypeGenerator<'a> for InterfaceGenerator<'a>
         self.src.h_defs("\ntypedef ");
         self.src.h_defs("struct {\n");
         self.src.h_defs("bool is_some;\n");
-        let ty = self.gen.type_name(ty);
+        let ty = self.r#gen.type_name(ty);
         uwriteln!(self.src.h_defs, "{ty} val;");
         self.src.h_defs("}");
         self.src.h_defs(" ");
@@ -1418,11 +1819,11 @@ impl<'a> wit_bindgen_core::AnonymousTypeGenerator<'a> for InterfaceGenerator<'a>
         if ok_ty.is_some() || err_ty.is_some() {
             self.src.h_defs("union {\n");
             if let Some(ok) = ok_ty {
-                let ty = self.gen.type_name(ok);
+                let ty = self.r#gen.type_name(ok);
                 uwriteln!(self.src.h_defs, "{ty} ok;");
             }
             if let Some(err) = err_ty {
-                let ty = self.gen.type_name(err);
+                let ty = self.r#gen.type_name(err);
                 uwriteln!(self.src.h_defs, "{ty} err;");
             }
             self.src.h_defs("} val;\n");
@@ -1435,7 +1836,7 @@ impl<'a> wit_bindgen_core::AnonymousTypeGenerator<'a> for InterfaceGenerator<'a>
     fn anonymous_type_list(&mut self, id: TypeId, ty: &Type, _docs: &Docs) {
         self.src.h_defs("\ntypedef ");
         self.src.h_defs("struct {\n");
-        let ty = self.gen.type_name(ty);
+        let ty = self.r#gen.type_name(ty);
         uwriteln!(self.src.h_defs, "{ty} *ptr;");
         self.src.h_defs("size_t len;\n");
         self.src.h_defs("}");
@@ -1443,16 +1844,28 @@ impl<'a> wit_bindgen_core::AnonymousTypeGenerator<'a> for InterfaceGenerator<'a>
         self.print_typedef_target(id);
     }
 
-    fn anonymous_type_future(&mut self, _id: TypeId, _ty: &Option<Type>, _docs: &Docs) {
-        todo!("print_anonymous_type for future");
+    fn anonymous_type_future(&mut self, id: TypeId, _ty: &Option<Type>, _docs: &Docs) {
+        self.src.h_defs("\ntypedef uint32_t ");
+        self.print_typedef_target(id);
     }
 
-    fn anonymous_type_stream(&mut self, _id: TypeId, _ty: &Option<Type>, _docs: &Docs) {
-        todo!("print_anonymous_type for stream");
+    fn anonymous_type_stream(&mut self, id: TypeId, _ty: &Option<Type>, _docs: &Docs) {
+        self.src.h_defs("\ntypedef uint32_t ");
+        self.print_typedef_target(id);
     }
 
     fn anonymous_type_type(&mut self, _id: TypeId, _ty: &Type, _docs: &Docs) {
         todo!("print_anonymous_type for type");
+    }
+
+    fn anonymous_type_fixed_length_list(
+        &mut self,
+        _id: TypeId,
+        _ty: &Type,
+        _size: u32,
+        _docs: &Docs,
+    ) {
+        todo!("print_anonymous_type for fixed length list");
     }
 }
 
@@ -1496,7 +1909,7 @@ impl InterfaceGenerator<'_> {
 
     fn define_live_types(&mut self, live: LiveTypes) {
         for ty in live.iter() {
-            if self.gen.type_names.contains_key(&ty) {
+            if self.r#gen.type_names.contains_key(&ty) {
                 continue;
             }
 
@@ -1504,7 +1917,7 @@ impl InterfaceGenerator<'_> {
             match info {
                 CTypeNameInfo::Named { name } => {
                     let typedef_name = format!("{}_{encoded}_t", self.owner_namespace(ty));
-                    let prev = self.gen.type_names.insert(ty, typedef_name.clone());
+                    let prev = self.r#gen.type_names.insert(ty, typedef_name.clone());
                     assert!(prev.is_none());
 
                     self.define_type(name, ty)
@@ -1512,16 +1925,16 @@ impl InterfaceGenerator<'_> {
 
                 CTypeNameInfo::Anonymous { is_prim } => {
                     let (defined, name) = if is_prim {
-                        let namespace = self.gen.world.to_snake_case();
+                        let namespace = self.r#gen.world.to_snake_case();
                         let name = format!("{namespace}_{encoded}_t");
-                        let new_prim = self.gen.prim_names.insert(name.clone());
+                        let new_prim = self.r#gen.prim_names.insert(name.clone());
                         (!new_prim, name)
                     } else {
                         let namespace = self.owner_namespace(ty);
                         (false, format!("{namespace}_{encoded}_t"))
                     };
 
-                    let prev = self.gen.type_names.insert(ty, name);
+                    let prev = self.r#gen.type_names.insert(ty, name);
                     assert!(prev.is_none());
 
                     if defined {
@@ -1551,7 +1964,7 @@ impl InterfaceGenerator<'_> {
         let h_helpers_start = self.src.h_helpers.len();
         let c_helpers_start = self.src.c_helpers.len();
 
-        let name = self.gen.type_names[&id].clone();
+        let name = self.r#gen.type_names[&id].clone();
         let prefix = name.strip_suffix("_t").unwrap();
 
         self.src
@@ -1581,7 +1994,7 @@ impl InterfaceGenerator<'_> {
                 self.src.c_helpers("size_t list_len = ptr->len;\n");
                 uwriteln!(self.src.c_helpers, "if (list_len > 0) {{");
                 let mut t_name = String::new();
-                self.gen.push_type_name(t, &mut t_name);
+                self.r#gen.push_type_name(t, &mut t_name);
                 self.src
                     .c_helpers(&format!("{t_name} *list_ptr = ptr->ptr;\n"));
                 self.src
@@ -1623,13 +2036,16 @@ impl InterfaceGenerator<'_> {
                 }
                 self.src.c_helpers("}\n");
             }
-            TypeDefKind::Future(_) => todo!("print_dtor for future"),
-            TypeDefKind::Stream(_) => todo!("print_dtor for stream"),
+            TypeDefKind::Future(_) | TypeDefKind::Stream(_) => {
+                self.free(&Type::Id(id), "*ptr");
+            }
             TypeDefKind::Resource => {}
             TypeDefKind::Handle(Handle::Borrow(id) | Handle::Own(id)) => {
                 self.free(&Type::Id(*id), "*ptr");
             }
             TypeDefKind::Unknown => unreachable!(),
+            TypeDefKind::FixedLengthList(..) => todo!(),
+            TypeDefKind::Map(..) => todo!(),
         }
         if c_helpers_body_start == self.src.c_helpers.len() {
             self.src.c_helpers.as_mut_string().truncate(c_helpers_start);
@@ -1637,18 +2053,18 @@ impl InterfaceGenerator<'_> {
             return;
         }
         self.src.c_helpers("}\n");
-        self.gen.dtor_funcs.insert(id, format!("{prefix}_free"));
+        self.r#gen.dtor_funcs.insert(id, format!("{prefix}_free"));
     }
 
     fn free(&mut self, ty: &Type, expr: &str) {
         match ty {
             Type::Id(id) => {
-                if let Some(dtor) = self.gen.dtor_funcs.get(&id) {
+                if let Some(dtor) = self.r#gen.dtor_funcs.get(&id) {
                     self.src.c_helpers(&format!("{dtor}({expr});\n"));
                 }
             }
             Type::String => {
-                let snake = self.gen.world.to_snake_case();
+                let snake = self.r#gen.world.to_snake_case();
                 self.src
                     .c_helpers(&format!("{snake}_string_free({expr});\n"));
             }
@@ -1672,16 +2088,30 @@ impl InterfaceGenerator<'_> {
         c_func_name(
             self.in_import,
             self.resolve,
-            &self.gen.world,
+            &self.r#gen.world,
             interface_id,
             func,
-            &self.gen.renamed_interfaces,
+            &self.r#gen.renamed_interfaces,
         )
     }
 
     fn import(&mut self, interface_name: Option<&WorldKey>, func: &Function) {
+        let async_ = self
+            .r#gen
+            .opts
+            .async_
+            .is_async(self.resolve, interface_name, func, true);
+        if async_ {
+            self.r#gen.needs_async = true;
+        }
+
         self.docs(&func.docs, SourceType::HFns);
-        let sig = self.resolve.wasm_signature(AbiVariant::GuestImport, func);
+        let (variant, import_prefix) = if async_ {
+            (AbiVariant::GuestImportAsync, "[async-lower]")
+        } else {
+            (AbiVariant::GuestImport, "")
+        };
+        let sig = self.resolve.wasm_signature(variant, func);
 
         self.src.c_fns("\n");
 
@@ -1690,7 +2120,7 @@ impl InterfaceGenerator<'_> {
         // signature.
         uwriteln!(
             self.src.c_fns,
-            "__attribute__((__import_module__(\"{}\"), __import_name__(\"{}\")))",
+            "__attribute__((__import_module__(\"{}\"), __import_name__(\"{import_prefix}{}\")))",
             match interface_name {
                 Some(name) => self.resolve.name_world_key(name),
                 None => "$root".to_string(),
@@ -1698,7 +2128,7 @@ impl InterfaceGenerator<'_> {
             func.name
         );
         let name = self.c_func_name(interface_name, func);
-        let import_name = self.gen.names.tmp(&format!("__wasm_import_{name}",));
+        let import_name = self.r#gen.names.tmp(&format!("__wasm_import_{name}",));
         self.src.c_fns("extern ");
         match sig.results.len() {
             0 => self.src.c_fns("void"),
@@ -1722,20 +2152,32 @@ impl InterfaceGenerator<'_> {
         // Print the public facing signature into the header, and since that's
         // what we are defining also print it into the C file.
         self.src.h_fns("extern ");
-        let c_sig = self.print_sig(interface_name, func, !self.gen.opts.no_sig_flattening);
+        let c_sig = self.print_sig(interface_name, func, &sig, async_);
         self.src.c_adapters("\n");
         self.src.c_adapters(&c_sig.sig);
         self.src.c_adapters(" {\n");
 
+        if async_ {
+            self.import_body_async(func, c_sig, &sig, &import_name);
+        } else {
+            self.import_body_sync(func, c_sig, &import_name);
+        }
+
+        self.src.c_adapters("}\n");
+
+        self.generate_async_futures_and_streams("", func, interface_name);
+    }
+
+    fn import_body_sync(&mut self, func: &Function, c_sig: CSig, import_name: &str) {
         // construct optional adapters from maybe pointers to real optional
         // structs internally
         let mut optional_adapters = String::from("");
-        if !self.gen.opts.no_sig_flattening {
+        if !self.r#gen.opts.no_sig_flattening {
             for (i, (_, param)) in c_sig.params.iter().enumerate() {
-                let ty = &func.params[i].1;
+                let ty = &func.params[i].ty;
                 if let Type::Id(id) = ty {
                     if let TypeDefKind::Option(_) = &self.resolve.types[*id].kind {
-                        let ty = self.gen.type_name(ty);
+                        let ty = self.r#gen.type_name(ty);
                         uwrite!(
                             optional_adapters,
                             "{ty} {param};
@@ -1754,9 +2196,8 @@ impl InterfaceGenerator<'_> {
 
         let mut f = FunctionBindgen::new(self, c_sig, &import_name);
         for (pointer, param) in f.sig.params.iter() {
-            f.locals.insert(&param).unwrap();
             if *pointer {
-                f.params.push(format!("*{}", param));
+                f.params.push(format!("*{param}"));
             } else {
                 f.params.push(param.clone());
             }
@@ -1766,7 +2207,7 @@ impl InterfaceGenerator<'_> {
         }
         f.src.push_str(&optional_adapters);
         abi::call(
-            f.gen.resolve,
+            f.r#gen.resolve,
             AbiVariant::GuestImport,
             LiftLower::LowerArgsLiftResults,
             func,
@@ -1793,11 +2234,51 @@ impl InterfaceGenerator<'_> {
         }
 
         self.src.c_adapters(&String::from(src));
-        self.src.c_adapters("}\n");
+    }
+
+    fn import_body_async(
+        &mut self,
+        func: &Function,
+        c_sig: CSig,
+        wasm_sig: &WasmSignature,
+        import_name: &str,
+    ) {
+        let mut params = Vec::new();
+        if wasm_sig.indirect_params {
+            params.push(format!("(uint8_t*) {}", c_sig.params[0].1));
+        } else {
+            let mut f = FunctionBindgen::new(self, c_sig.clone(), "INVALID");
+            for (i, Param { ty, .. }) in func.params.iter().enumerate() {
+                let param = &c_sig.params[i].1;
+                params.extend(abi::lower_flat(f.r#gen.resolve, &mut f, param.clone(), ty));
+            }
+            f.r#gen.src.c_adapters.push_str(&f.src);
+        }
+        if func.result.is_some() {
+            params.push(format!("(uint8_t*) {}", c_sig.params.last().unwrap().1));
+        }
+        uwriteln!(
+            self.src.c_adapters,
+            "return {import_name}({});",
+            params.join(", "),
+        );
     }
 
     fn export(&mut self, func: &Function, interface_name: Option<&WorldKey>) {
-        let sig = self.resolve.wasm_signature(AbiVariant::GuestExport, func);
+        let async_ = self
+            .r#gen
+            .opts
+            .async_
+            .is_async(self.resolve, interface_name, func, false);
+
+        let (variant, prefix) = if async_ {
+            self.r#gen.needs_async = true;
+            (AbiVariant::GuestExportAsync, "[async-lift]")
+        } else {
+            (AbiVariant::GuestExport, "")
+        };
+
+        let sig = self.resolve.wasm_signature(variant, func);
 
         self.src.c_fns("\n");
 
@@ -1806,53 +2287,112 @@ impl InterfaceGenerator<'_> {
 
         // Print the actual header for this function into the header file, and
         // it's what we'll be calling.
-        let h_sig = self.print_sig(interface_name, func, !self.gen.opts.no_sig_flattening);
+        let h_sig = self.print_sig(interface_name, func, &sig, async_);
 
         // Generate, in the C source file, the raw wasm signature that has the
         // canonical ABI.
         uwriteln!(
             self.src.c_adapters,
-            "\n__attribute__((__export_name__(\"{export_name}\")))"
+            "\n__attribute__((__export_name__(\"{prefix}{export_name}\")))"
         );
         let name = self.c_func_name(interface_name, func);
-        let import_name = self.gen.names.tmp(&format!("__wasm_export_{name}"));
+        let import_name = self.r#gen.names.tmp(&format!("__wasm_export_{name}"));
 
         let mut f = FunctionBindgen::new(self, h_sig, &import_name);
         match sig.results.len() {
-            0 => f.gen.src.c_adapters("void"),
-            1 => f.gen.src.c_adapters(wasm_type(sig.results[0])),
+            0 => f.r#gen.src.c_adapters("void"),
+            1 => f.r#gen.src.c_adapters(wasm_type(sig.results[0])),
             _ => unimplemented!("multi-value return not supported"),
         }
-        f.gen.src.c_adapters(" ");
-        f.gen.src.c_adapters(&import_name);
-        f.gen.src.c_adapters("(");
+        f.r#gen.src.c_adapters(" ");
+        f.r#gen.src.c_adapters(&import_name);
+        f.r#gen.src.c_adapters("(");
         for (i, param) in sig.params.iter().enumerate() {
             if i > 0 {
-                f.gen.src.c_adapters(", ");
+                f.r#gen.src.c_adapters(", ");
             }
             let name = f.locals.tmp("arg");
-            uwrite!(f.gen.src.c_adapters, "{} {}", wasm_type(*param), name);
+            uwrite!(f.r#gen.src.c_adapters, "{} {}", wasm_type(*param), name);
             f.params.push(name);
         }
         if sig.params.len() == 0 {
-            f.gen.src.c_adapters("void");
+            f.r#gen.src.c_adapters("void");
         }
-        f.gen.src.c_adapters(") {\n");
+        f.r#gen.src.c_adapters(") {\n");
 
         // Perform all lifting/lowering and append it to our src.
         abi::call(
-            f.gen.resolve,
-            AbiVariant::GuestExport,
+            f.r#gen.resolve,
+            variant,
             LiftLower::LiftArgsLowerResults,
             func,
             &mut f,
-            false,
+            async_,
         );
-        let FunctionBindgen { src, .. } = f;
+        let FunctionBindgen {
+            src,
+            deferred_task_return,
+            ..
+        } = f;
         self.src.c_adapters(&src);
         self.src.c_adapters("}\n");
 
-        if abi::guest_export_needs_post_return(self.resolve, func) {
+        if async_ {
+            let snake = self.r#gen.world.to_snake_case();
+            let return_ty = match &func.result {
+                Some(ty) => format!("{} ret", self.r#gen.type_name(ty)),
+                None => "void".to_string(),
+            };
+            let DeferredTaskReturn::Emitted {
+                body: mut task_return_body,
+                name: task_return_name,
+                params: task_return_params,
+            } = deferred_task_return
+            else {
+                unreachable!()
+            };
+            let task_return_param_tys = task_return_params
+                .iter()
+                .map(|(ty, _expr)| wasm_type(*ty))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let task_return_param_exprs = task_return_params
+                .iter()
+                .map(|(_ty, expr)| expr.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            let task_return_body = task_return_body.as_mut_string();
+            uwriteln!(
+                self.src.h_fns,
+                "{snake}_callback_code_t {name}_callback({snake}_event_t *event);",
+            );
+            uwriteln!(self.src.h_helpers, "void {name}_return({return_ty});");
+            let import_module = match interface_name {
+                Some(name) => self.resolve.name_world_key(name),
+                None => "$root".to_string(),
+            };
+            uwriteln!(
+                self.src.c_helpers,
+                r#"
+__attribute__((__export_name__("[callback]{prefix}{export_name}")))
+uint32_t {import_name}_callback(uint32_t event_raw, uint32_t waitable, uint32_t code) {{
+    {snake}_event_t event;
+    event.event = ({snake}_event_code_t) event_raw;
+    event.waitable = waitable;
+    event.code = code;
+    return {name}_callback(&event);
+}}
+
+__attribute__((__import_module__("[export]{import_module}"), __import_name__("{task_return_name}")))
+void {import_name}__task_return({task_return_param_tys});
+
+void {name}_return({return_ty}) {{
+    {task_return_body}
+    {import_name}__task_return({task_return_param_exprs});
+}}
+                "#
+            );
+        } else if abi::guest_export_needs_post_return(self.resolve, func) {
             uwriteln!(
                 self.src.c_fns,
                 "__attribute__((__weak__, __export_name__(\"cabi_post_{export_name}\")))"
@@ -1877,42 +2417,110 @@ impl InterfaceGenerator<'_> {
 
             let mut f = FunctionBindgen::new(self, c_sig, &import_name);
             f.params = params;
-            abi::post_return(f.gen.resolve, func, &mut f, false);
+            abi::post_return(f.r#gen.resolve, func, &mut f);
             let FunctionBindgen { src, .. } = f;
             self.src.c_fns(&src);
             self.src.c_fns("}\n");
         }
+
+        self.generate_async_futures_and_streams("[export]", func, interface_name);
     }
 
     fn print_sig(
         &mut self,
         interface_name: Option<&WorldKey>,
         func: &Function,
-        sig_flattening: bool,
+        sig: &WasmSignature,
+        async_: bool,
     ) -> CSig {
         let name = self.c_func_name(interface_name, func);
-        self.gen.names.insert(&name).expect("duplicate symbols");
+        self.r#gen.names.insert(&name).expect("duplicate symbols");
 
         let start = self.src.h_fns.len();
         let mut result_rets = false;
         let mut result_rets_has_ok_type = false;
 
-        let ret = self.classify_ret(func, sig_flattening);
-        match &ret.scalar {
-            None | Some(Scalar::Void) => self.src.h_fns("void"),
-            Some(Scalar::OptionBool(_id)) => self.src.h_fns("bool"),
-            Some(Scalar::ResultBool(ok, _err)) => {
-                result_rets = true;
-                result_rets_has_ok_type = ok.is_some();
-                self.src.h_fns("bool");
+        let ret = if async_ && !self.in_import {
+            Return {
+                scalar: func.result.map(Scalar::Type),
+                retptrs: Vec::new(),
             }
-            Some(Scalar::Type(ty)) => self.print_ty(SourceType::HFns, ty),
+        } else {
+            self.classify_ret(func)
+        };
+        if async_ {
+            let snake = self.r#gen.world.to_snake_case();
+            if self.in_import {
+                uwrite!(self.src.h_fns, "{snake}_subtask_status_t");
+            } else {
+                uwrite!(self.src.h_fns, "{snake}_callback_code_t");
+            }
+        } else {
+            match &ret.scalar {
+                None | Some(Scalar::Void) => self.src.h_fns("void"),
+                Some(Scalar::OptionBool(_id)) => self.src.h_fns("bool"),
+                Some(Scalar::ResultBool(ok, _err)) => {
+                    result_rets = true;
+                    result_rets_has_ok_type = ok.is_some();
+                    self.src.h_fns("bool");
+                }
+                Some(Scalar::Type(ty)) => self.print_ty(SourceType::HFns, ty),
+            }
         }
         self.src.h_fns(" ");
         self.src.h_fns(&name);
         self.src.h_fns("(");
+        let params;
+        let mut retptrs = Vec::new();
+        if async_ && self.in_import {
+            params = self.print_sig_async_import_params(&name, func, sig);
+        } else if async_ && !self.in_import {
+            params = self.print_sig_params(func);
+        } else {
+            params = self.print_sig_params(func);
+            let single_ret = ret.retptrs.len() == 1;
+            for (i, ty) in ret.retptrs.iter().enumerate() {
+                if i > 0 || func.params.len() > 0 {
+                    self.src.h_fns(", ");
+                }
+                self.print_ty(SourceType::HFns, ty);
+                self.src.h_fns(" *");
+                let name: String = if result_rets {
+                    assert!(i <= 1);
+                    if i == 0 && result_rets_has_ok_type {
+                        "ret".into()
+                    } else {
+                        "err".into()
+                    }
+                } else if single_ret {
+                    "ret".into()
+                } else {
+                    format!("ret{i}")
+                };
+                self.src.h_fns(&name);
+                retptrs.push(name);
+            }
+            if func.params.len() == 0 && ret.retptrs.len() == 0 {
+                self.src.h_fns("void");
+            }
+        }
+        self.src.h_fns(")");
+
+        let sig = self.src.h_fns[start..].to_string();
+        self.src.h_fns(";\n");
+
+        CSig {
+            sig,
+            name,
+            params,
+            ret,
+            retptrs,
+        }
+    }
+
+    fn print_sig_params(&mut self, func: &Function) -> Vec<(bool, String)> {
         let mut params = Vec::new();
-        for (i, (name, ty)) in func.params.iter().enumerate() {
+        for (i, Param { name, ty, .. }) in func.params.iter().enumerate() {
             if i > 0 {
                 self.src.h_fns(", ");
             }
@@ -1920,7 +2528,7 @@ impl InterfaceGenerator<'_> {
             // optional param pointer sig_flattening
             let optional_type = if let Type::Id(id) = ty {
                 if let TypeDefKind::Option(option_ty) = &self.resolve.types[*id].kind {
-                    if sig_flattening {
+                    if !self.r#gen.opts.no_sig_flattening {
                         Some(option_ty)
                     } else {
                         None
@@ -1931,7 +2539,7 @@ impl InterfaceGenerator<'_> {
             } else {
                 None
             };
-            let (print_ty, print_name) = if sig_flattening {
+            let (print_ty, print_name) = if !self.r#gen.opts.no_sig_flattening {
                 if let Some(option_ty) = optional_type {
                     (option_ty, format!("maybe_{}", to_c_ident(name)))
                 } else {
@@ -1948,65 +2556,94 @@ impl InterfaceGenerator<'_> {
             self.src.h_fns(&print_name);
             params.push((optional_type.is_none() && pointer, to_c_ident(name)));
         }
-        let mut retptrs = Vec::new();
-        let single_ret = ret.retptrs.len() == 1;
-        for (i, ty) in ret.retptrs.iter().enumerate() {
-            if i > 0 || func.params.len() > 0 {
-                self.src.h_fns(", ");
-            }
-            self.print_ty(SourceType::HFns, ty);
-            self.src.h_fns(" *");
-            let name: String = if result_rets {
-                assert!(i <= 1);
-                if i == 0 && result_rets_has_ok_type {
-                    "ret".into()
-                } else {
-                    "err".into()
-                }
-            } else if single_ret {
-                "ret".into()
-            } else {
-                format!("ret{}", i)
-            };
-            self.src.h_fns(&name);
-            retptrs.push(name);
-        }
-        if func.params.len() == 0 && ret.retptrs.len() == 0 {
-            self.src.h_fns("void");
-        }
-        self.src.h_fns(")");
-
-        let sig = self.src.h_fns[start..].to_string();
-        self.src.h_fns(";\n");
-
-        CSig {
-            sig,
-            name,
-            params,
-            ret,
-            retptrs,
-        }
+        params
     }
 
-    fn classify_ret(&mut self, func: &Function, sig_flattening: bool) -> Return {
+    fn print_sig_async_import_params(
+        &mut self,
+        c_func_name: &str,
+        func: &Function,
+        sig: &WasmSignature,
+    ) -> Vec<(bool, String)> {
+        let mut params = Vec::new();
+        let mut printed = false;
+        if sig.indirect_params {
+            match &func.params[..] {
+                [] => {}
+                [Param { name: _, ty, .. }] => {
+                    printed = true;
+                    let name = "arg".to_string();
+                    self.print_ty(SourceType::HFns, ty);
+                    self.src.h_fns(" *");
+                    self.src.h_fns(&name);
+                    params.push((true, name));
+                }
+                multiple => {
+                    printed = true;
+                    let names = multiple
+                        .iter()
+                        .map(|Param { name, ty, .. }| (to_c_ident(name), self.r#gen.type_name(ty)))
+                        .collect::<Vec<_>>();
+                    uwriteln!(self.src.h_defs, "typedef struct {c_func_name}_args {{");
+                    for (name, ty) in names {
+                        uwriteln!(self.src.h_defs, "{ty} {name};");
+                    }
+                    uwriteln!(self.src.h_defs, "}} {c_func_name}_args_t;");
+                    uwrite!(self.src.h_fns, "{c_func_name}_args_t *args");
+                    params.push((true, "args".to_string()));
+                }
+            }
+        } else {
+            for Param { name, ty, .. } in func.params.iter() {
+                let name = to_c_ident(name);
+                if printed {
+                    self.src.h_fns(", ");
+                } else {
+                    printed = true;
+                }
+                self.print_ty(SourceType::HFns, ty);
+                self.src.h_fns(" ");
+                self.src.h_fns(&name);
+                params.push((false, name));
+            }
+        }
+        if let Some(ty) = &func.result {
+            if printed {
+                self.src.h_fns(", ");
+            } else {
+                printed = true;
+            }
+            let name = "result".to_string();
+            self.print_ty(SourceType::HFns, ty);
+            self.src.h_fns(" *");
+            self.src.h_fns(&name);
+            params.push((true, name));
+        }
+        if !printed {
+            self.src.h_fns("void");
+        }
+        params
+    }
+
+    fn classify_ret(&mut self, func: &Function) -> Return {
         let mut ret = Return::default();
         match &func.result {
             None => ret.scalar = Some(Scalar::Void),
             Some(ty) => {
-                ret.return_single(self.resolve, ty, ty, sig_flattening);
+                ret.return_single(self.resolve, ty, ty, !self.r#gen.opts.no_sig_flattening);
             }
         }
         return ret;
     }
 
     fn print_typedef_target(&mut self, id: TypeId) {
-        let name = &self.gen.type_names[&id];
+        let name = &self.r#gen.type_names[&id];
         self.src.h_defs(&name);
         self.src.h_defs(";\n");
     }
 
     fn start_typedef_struct(&mut self, id: TypeId) {
-        let name = &self.gen.type_names[&id];
+        let name = &self.r#gen.type_names[&id];
         self.src.h_defs("typedef struct ");
         self.src.h_defs(&name);
         self.src.h_defs(" {\n");
@@ -2021,15 +2658,15 @@ impl InterfaceGenerator<'_> {
         owner_namespace(
             self.interface,
             self.in_import,
-            self.gen.world.clone(),
+            self.r#gen.world.clone(),
             self.resolve,
             id,
-            &self.gen.renamed_interfaces,
+            &self.r#gen.renamed_interfaces,
         )
     }
 
     fn print_ty(&mut self, stype: SourceType, ty: &Type) {
-        self.gen
+        self.r#gen
             .push_type_name(ty, self.src.src(stype).as_mut_string());
     }
 
@@ -2047,7 +2684,7 @@ impl InterfaceGenerator<'_> {
     }
 
     fn autodrop_enabled(&self) -> bool {
-        self.gen.opts.autodrop_borrows == Enabled::Yes
+        self.r#gen.opts.autodrop_borrows == Enabled::Yes
     }
 
     fn contains_droppable_borrow(&self, ty: &Type) -> bool {
@@ -2059,7 +2696,7 @@ impl InterfaceGenerator<'_> {
                     Handle::Borrow(id) => {
                         !self.in_import
                             && matches!(
-                                self.gen.resources[&dealias(self.resolve, *id)].direction,
+                                self.r#gen.resources[&dealias(self.resolve, *id)].direction,
                                 Direction::Import
                             )
                     }
@@ -2101,11 +2738,183 @@ impl InterfaceGenerator<'_> {
                 TypeDefKind::Type(ty) => self.contains_droppable_borrow(ty),
 
                 TypeDefKind::Unknown => false,
+                TypeDefKind::FixedLengthList(..) => todo!(),
+                TypeDefKind::Map(..) => todo!(),
             }
         } else {
             false
         }
     }
+
+    fn generate_async_futures_and_streams(
+        &mut self,
+        prefix: &str,
+        func: &Function,
+        interface: Option<&WorldKey>,
+    ) {
+        let module = format!(
+            "{prefix}{}",
+            interface
+                .map(|name| self.resolve.name_world_key(name))
+                .unwrap_or_else(|| "$root".into())
+        );
+        for (index, ty) in func
+            .find_futures_and_streams(self.resolve)
+            .into_iter()
+            .enumerate()
+        {
+            let func_name = &func.name;
+
+            match &self.resolve.types[ty].kind {
+                TypeDefKind::Future(payload_type) => {
+                    self.generate_async_future_or_stream(
+                        PayloadFor::Future,
+                        &module,
+                        index,
+                        func_name,
+                        ty,
+                        payload_type.as_ref(),
+                    );
+                }
+                TypeDefKind::Stream(payload_type) => {
+                    self.generate_async_future_or_stream(
+                        PayloadFor::Stream,
+                        &module,
+                        index,
+                        func_name,
+                        ty,
+                        payload_type.as_ref(),
+                    );
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    fn generate_async_future_or_stream(
+        &mut self,
+        payload_for: PayloadFor,
+        module: &str,
+        index: usize,
+        func_name: &str,
+        ty: TypeId,
+        payload_type: Option<&Type>,
+    ) {
+        if !self.r#gen.futures.insert(ty) {
+            return;
+        }
+        let ty = self.r#gen.type_name(&Type::Id(ty));
+        let name = ty.strip_suffix("_t").unwrap();
+        let snake = self.r#gen.world.to_snake_case();
+        let kind = match payload_for {
+            PayloadFor::Future => "future",
+            PayloadFor::Stream => "stream",
+        };
+        let payload_len_arg = match payload_for {
+            PayloadFor::Future => "",
+            PayloadFor::Stream => ", size_t",
+        };
+        let (read_arg_ty, read_arg_expr, write_arg_ty, write_arg_expr) =
+            match (payload_for, payload_type) {
+                (PayloadFor::Future, None) => ("".to_string(), "NULL", "".to_string(), "NULL"),
+                (PayloadFor::Future, Some(ty)) => {
+                    let ty = self.r#gen.type_name(ty);
+                    (
+                        format!(", {ty} *buf"),
+                        "(uint8_t*) buf",
+                        format!(", const {ty} *buf"),
+                        "(const uint8_t*) buf",
+                    )
+                }
+                (PayloadFor::Stream, None) => (
+                    ", size_t amt".to_string(),
+                    "NULL, amt",
+                    ", size_t amt".to_string(),
+                    "NULL, amt",
+                ),
+                (PayloadFor::Stream, Some(ty)) => {
+                    let ty = self.r#gen.type_name(ty);
+                    (
+                        format!(", {ty} *buf, size_t amt"),
+                        "(uint8_t*) buf, amt",
+                        format!(", const {ty} *buf, size_t amt"),
+                        "(const uint8_t*) buf, amt",
+                    )
+                }
+            };
+
+        // TODO: this is a hack around space-stripping in `source.rs`, ideally
+        // wouldn't be necessary.
+        let empty = "";
+        uwriteln!(
+            self.src.h_helpers,
+            r#"
+typedef uint32_t {name}_writer_t;
+
+{ty} {name}_new({name}_writer_t *writer);
+{snake}_waitable_status_t {name}_read({ty} reader{read_arg_ty});
+{snake}_waitable_status_t {name}_write({name}_writer_t writer{write_arg_ty});
+{snake}_waitable_status_t {name}_cancel_read({ty} reader);
+{snake}_waitable_status_t {name}_cancel_write({name}_writer_t writer);
+void {name}_drop_readable({ty} reader);{empty}
+void {name}_drop_writable({name}_writer_t writer);
+            "#,
+        );
+        uwriteln!(
+            self.src.c_helpers,
+            r#"
+__attribute__((__import_module__("{module}"), __import_name__("[{kind}-new-{index}]{func_name}")))
+extern uint64_t {name}__new(void);
+__attribute__((__import_module__("{module}"), __import_name__("[async-lower][{kind}-read-{index}]{func_name}")))
+extern uint32_t {name}__read(uint32_t, uint8_t*{payload_len_arg});
+__attribute__((__import_module__("{module}"), __import_name__("[async-lower][{kind}-write-{index}]{func_name}")))
+extern uint32_t {name}__write(uint32_t, const uint8_t*{payload_len_arg});
+__attribute__((__import_module__("{module}"), __import_name__("[{kind}-cancel-read-{index}]{func_name}")))
+extern uint32_t {name}__cancel_read(uint32_t);
+__attribute__((__import_module__("{module}"), __import_name__("[{kind}-cancel-write-{index}]{func_name}")))
+extern uint32_t {name}__cancel_write(uint32_t);
+__attribute__((__import_module__("{module}"), __import_name__("[{kind}-drop-readable-{index}]{func_name}")))
+extern void {name}__drop_readable(uint32_t);
+__attribute__((__import_module__("{module}"), __import_name__("[{kind}-drop-writable-{index}]{func_name}")))
+extern void {name}__drop_writable(uint32_t);
+
+{ty} {name}_new({name}_writer_t *writer) {{
+    uint64_t packed = {name}__new();
+    *writer = (uint32_t) (packed >> 32);
+    return (uint32_t) packed;
+}}
+
+{snake}_waitable_status_t {name}_read({ty} reader{read_arg_ty}) {{
+    return {name}__read(reader, {read_arg_expr});
+}}
+
+{snake}_waitable_status_t {name}_write({name}_writer_t writer{write_arg_ty}) {{
+    return {name}__write(writer, {write_arg_expr});
+}}
+
+{snake}_waitable_status_t {name}_cancel_read({ty} reader){empty} {{
+    return {name}__cancel_read(reader);
+}}
+
+{snake}_waitable_status_t {name}_cancel_write({name}_writer_t writer) {{
+    return {name}__cancel_write(writer);
+}}
+
+void {name}_drop_readable({ty} reader){empty} {{
+    {name}__drop_readable(reader);
+}}
+
+void {name}_drop_writable({name}_writer_t writer) {{
+    {name}__drop_writable(writer);
+}}
+            "#,
+        );
+    }
+}
+
+enum PayloadFor {
+    Future,
+    Stream,
 }
 
 struct DroppableBorrow {
@@ -2114,7 +2923,7 @@ struct DroppableBorrow {
 }
 
 struct FunctionBindgen<'a, 'b> {
-    gen: &'a mut InterfaceGenerator<'b>,
+    r#gen: &'a mut InterfaceGenerator<'b>,
     locals: Ns,
     src: wit_bindgen_core::Source,
     sig: CSig,
@@ -2128,6 +2937,15 @@ struct FunctionBindgen<'a, 'b> {
     import_return_pointer_area_size: ArchitectureSize,
     import_return_pointer_area_align: Alignment,
 
+    /// State of what to generate for the `task.return` intrinsic in the case
+    /// that this bindings generator is being used for an async export.
+    ///
+    /// This typically stays at `DeferredTaskReturn::None` except for the case
+    /// of async exports where they'll fill this in after the `CallInterface`
+    /// instruction. For some more information see the documentation on
+    /// `DeferredTaskReturn`.
+    deferred_task_return: DeferredTaskReturn,
+
     /// Borrows observed during lifting an export, that will need to be dropped when the guest
     /// function exits.
     borrows: Vec<DroppableBorrow>,
@@ -2136,16 +2954,66 @@ struct FunctionBindgen<'a, 'b> {
     borrow_decls: wit_bindgen_core::Source,
 }
 
+/// State associated with the generation of the `task.return` intrinsic function
+/// with async exports.
+enum DeferredTaskReturn {
+    /// Default state, meaning that either bindings generation isn't happening
+    /// for an async export or the async export is in the bindings generation
+    /// mode before `CallInterface`.
+    None,
+
+    /// An async export is having bindings generated and `CallInterface` has
+    /// been seen. After that instruction the `deferred_task_return` field
+    /// transitions to this state.
+    ///
+    /// This state is then present until the `AsyncTaskReturn` instruction is
+    /// met at which point this changes to `Emitted` below.
+    Generating {
+        /// The previous contents of `self.src` just after the `CallInterface`
+        /// had its code generator. This is effectively the bindings-generated
+        /// contents of the export and this will get replaced back into
+        /// `self.src` once the `AsyncTaskReturn` is generated.
+        prev_src: wit_bindgen_core::Source,
+    },
+
+    /// An `AsyncTaskReturn` has been seen and all state is now located here to
+    /// be used for generating the `task.return` intrinsic.
+    ///
+    /// This state is only generated during `AsyncTaskReturn` and is used to
+    /// record everything necessary to generate `task.return` meaning that the
+    /// in-`FunctionBindgen` state is now "back to normal" where it's intended
+    /// for the main function having bindings generated.
+    Emitted {
+        /// The name of the `task.return` intrinsic that should be imported.
+        /// Note that this does not include the module.
+        name: String,
+        /// The wasm type of each parameter provided to the `task.return`
+        /// intrinsic as well as the C expression necessary to produce this
+        /// parameter. The type is used to declare the intrinsic and the C
+        /// expression is used to call the intrinsic from the generated
+        /// function.
+        params: Vec<(WasmType, String)>,
+        /// The body of the `task.return` intrinsic. This contains the bulk of
+        /// the lowering code from a function's return value to the canonical
+        /// ABI.
+        body: wit_bindgen_core::Source,
+    },
+}
+
 impl<'a, 'b> FunctionBindgen<'a, 'b> {
     fn new(
-        gen: &'a mut InterfaceGenerator<'b>,
+        r#gen: &'a mut InterfaceGenerator<'b>,
         sig: CSig,
         func_to_call: &'a str,
     ) -> FunctionBindgen<'a, 'b> {
+        let mut locals = Ns::default();
+        for (_, name) in sig.params.iter() {
+            locals.insert(name).unwrap();
+        }
         FunctionBindgen {
-            gen,
+            r#gen,
             sig,
-            locals: Default::default(),
+            locals,
             src: Default::default(),
             func_to_call,
             block_storage: Vec::new(),
@@ -2158,6 +3026,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             import_return_pointer_area_align: Default::default(),
             borrow_decls: Default::default(),
             borrows: Vec::new(),
+            deferred_task_return: DeferredTaskReturn::None,
         }
     }
 
@@ -2192,7 +3061,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
     ) {
         self.load(ty, offset, operands, results);
         let result = results.pop().unwrap();
-        results.push(format!("(int32_t) {}", result));
+        results.push(format!("(int32_t) {result}"));
     }
 
     fn store(&mut self, ty: &str, offset: ArchitectureSize, operands: &[String]) {
@@ -2221,14 +3090,11 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
     }
 
     fn assert_no_droppable_borrows(&self, context: &str, ty: &Type) {
-        if !self.gen.in_import
-            && self.gen.autodrop_enabled()
-            && self.gen.contains_droppable_borrow(ty)
+        if !self.r#gen.in_import
+            && self.r#gen.autodrop_enabled()
+            && self.r#gen.contains_droppable_borrow(ty)
         {
-            panic!(
-                "Unable to autodrop borrows in `{}` values, please disable autodrop",
-                context
-            )
+            panic!("Unable to autodrop borrows in `{context}` values, please disable autodrop")
         }
     }
 }
@@ -2237,7 +3103,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
     type Operand = String;
 
     fn sizes(&self) -> &SizeAlign {
-        &self.gen.gen.sizes
+        &self.r#gen.r#gen.sizes
     }
 
     fn push_block(&mut self) {
@@ -2256,15 +3122,16 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
         // Use a stack-based return area for imports, because exports need
         // their return area to be live until the post-return call.
-        if self.gen.in_import {
+        if self.r#gen.in_import {
             self.import_return_pointer_area_size = self.import_return_pointer_area_size.max(size);
             self.import_return_pointer_area_align =
                 self.import_return_pointer_area_align.max(align);
             uwriteln!(self.src, "uint8_t *{} = (uint8_t *) &ret_area;", ptr);
         } else {
-            self.gen.gen.return_pointer_area_size = self.gen.gen.return_pointer_area_size.max(size);
-            self.gen.gen.return_pointer_area_align =
-                self.gen.gen.return_pointer_area_align.max(align);
+            self.r#gen.r#gen.return_pointer_area_size =
+                self.r#gen.r#gen.return_pointer_area_size.max(size);
+            self.r#gen.r#gen.return_pointer_area_align =
+                self.r#gen.r#gen.return_pointer_area_align.max(align);
             // Declare a statically-allocated return area.
             uwriteln!(self.src, "uint8_t *{} = (uint8_t *) &RET_AREA;", ptr);
         }
@@ -2332,7 +3199,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::Bitcasts { casts } => {
                 for (cast, op) in casts.iter().zip(operands) {
-                    let op = self.gen.gen.perform_cast(op, cast);
+                    let op = self.r#gen.r#gen.perform_cast(op, cast);
                     results.push(op);
                 }
             }
@@ -2348,10 +3215,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
             }
             Instruction::RecordLift { ty, record, .. } => {
-                let name = self.gen.gen.type_name(&Type::Id(*ty));
-                let mut result = format!("({}) {{\n", name);
+                let name = self.r#gen.r#gen.type_name(&Type::Id(*ty));
+                let mut result = format!("({name}) {{\n");
                 for (field, op) in record.fields.iter().zip(operands.iter()) {
-                    let field_ty = self.gen.gen.type_name(&field.ty);
+                    let field_ty = self.r#gen.r#gen.type_name(&field.ty);
                     uwriteln!(result, "({}) {},", field_ty, op);
                 }
                 result.push_str("}");
@@ -2361,14 +3228,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::TupleLower { tuple, .. } => {
                 let op = &operands[0];
                 for i in 0..tuple.types.len() {
-                    results.push(format!("({}).f{}", op, i));
+                    results.push(format!("({op}).f{i}"));
                 }
             }
             Instruction::TupleLift { ty, tuple, .. } => {
-                let name = self.gen.gen.type_name(&Type::Id(*ty));
-                let mut result = format!("({}) {{\n", name);
+                let name = self.r#gen.r#gen.type_name(&Type::Id(*ty));
+                let mut result = format!("({name}) {{\n");
                 for (ty, op) in tuple.types.iter().zip(operands.iter()) {
-                    let ty = self.gen.gen.type_name(&ty);
+                    let ty = self.r#gen.r#gen.type_name(&ty);
                     uwriteln!(result, "({}) {},", ty, op);
                 }
                 result.push_str("}");
@@ -2383,7 +3250,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::HandleLift { handle, ty, .. } => match handle {
                 Handle::Borrow(resource)
                     if matches!(
-                        self.gen.gen.resources[&dealias(resolve, *resource)].direction,
+                        self.r#gen.r#gen.resources[&dealias(resolve, *resource)].direction,
                         Direction::Export
                     ) =>
                 {
@@ -2391,21 +3258,21 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     // it as a raw pointer rather than an opaque handle.
                     let op = &operands[0];
                     let name = self
-                        .gen
-                        .gen
+                        .r#gen
+                        .r#gen
                         .type_name(&Type::Id(dealias(resolve, *resource)));
                     results.push(format!("(({name}*) {op})"))
                 }
                 _ => {
                     let op = &operands[0];
-                    let name = self.gen.gen.type_name(&Type::Id(*ty));
+                    let name = self.r#gen.r#gen.type_name(&Type::Id(*ty));
                     results.push(format!("({name}) {{ {op} }}"));
 
                     if let Handle::Borrow(id) = handle {
-                        if !self.gen.in_import && self.gen.autodrop_enabled() {
+                        if !self.r#gen.in_import && self.r#gen.autodrop_enabled() {
                             // Here we've received a borrow of an imported resource, which is the
                             // kind we'll need to drop when the exported function is returning.
-                            let ty = dealias(self.gen.resolve, *id);
+                            let ty = dealias(self.r#gen.resolve, *id);
 
                             let name = self.locals.tmp("borrow");
                             uwriteln!(self.borrow_decls, "int32_t {name} = 0;");
@@ -2423,7 +3290,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     results.push(operands.pop().unwrap());
                 }
                 Int::U64 => {
-                    let name = self.gen.gen.type_name(&Type::Id(*ty));
+                    let name = self.r#gen.r#gen.type_name(&Type::Id(*ty));
                     let tmp = self.locals.tmp("flags");
                     uwriteln!(self.src, "{name} {tmp} = {};", operands[0]);
                     results.push(format!("{tmp} & 0xffffffff"));
@@ -2436,7 +3303,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     results.push(operands.pop().unwrap());
                 }
                 Int::U64 => {
-                    let name = self.gen.gen.type_name(&Type::Id(*ty));
+                    let name = self.r#gen.r#gen.type_name(&Type::Id(*ty));
                     let op0 = &operands[0];
                     let op1 = &operands[1];
                     results.push(format!("(({name}) ({op0})) | ((({name}) ({op1})) << 32)"));
@@ -2445,7 +3312,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::VariantPayloadName => {
                 let name = self.locals.tmp("payload");
-                results.push(format!("*{}", name));
+                results.push(format!("*{name}"));
                 self.payloads.push(name);
             }
 
@@ -2482,7 +3349,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 {
                     uwriteln!(self.src, "case {}: {{", i);
                     if let Some(ty) = case.ty.as_ref() {
-                        let ty = self.gen.gen.type_name(ty);
+                        let ty = self.r#gen.r#gen.type_name(ty);
                         uwrite!(
                             self.src,
                             "const {} *{} = &({}).val",
@@ -2510,7 +3377,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     .drain(self.blocks.len() - variant.cases.len()..)
                     .collect::<Vec<_>>();
 
-                let ty = self.gen.gen.type_name(&Type::Id(*ty));
+                let ty = self.r#gen.r#gen.type_name(&Type::Id(*ty));
                 let result = self.locals.tmp("variant");
                 uwriteln!(self.src, "{} {};", ty, result);
                 uwriteln!(self.src, "{}.tag = {};", result, operands[0]);
@@ -2523,7 +3390,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     assert!(block_results.len() == (case.ty.is_some() as usize));
 
                     if let Some(_) = case.ty.as_ref() {
-                        let mut dst = format!("{}.val", result);
+                        let mut dst = format!("{result}.val");
                         dst.push_str(".");
                         dst.push_str(&to_c_ident(&case.name));
                         self.store_op(&block_results[0], &dst);
@@ -2558,7 +3425,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
 
                 let op0 = &operands[0];
-                let ty = self.gen.gen.type_name(payload);
+                let ty = self.r#gen.r#gen.type_name(payload);
                 let bind_some = format!("const {ty} *{some_payload} = &({op0}).val;");
 
                 uwrite!(
@@ -2579,7 +3446,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 assert!(some_results.len() == 1);
                 let some_result = &some_results[0];
 
-                let ty = self.gen.gen.type_name(&Type::Id(*ty));
+                let ty = self.r#gen.r#gen.type_name(&Type::Id(*ty));
                 let result = self.locals.tmp("option");
                 uwriteln!(self.src, "{ty} {result};");
                 let op0 = &operands[0];
@@ -2634,13 +3501,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 let op0 = &operands[0];
                 let bind_ok = if let Some(ok) = result.ok.as_ref() {
-                    let ok_ty = self.gen.gen.type_name(ok);
+                    let ok_ty = self.r#gen.r#gen.type_name(ok);
                     format!("const {ok_ty} *{ok_payload} = &({op0}).val.ok;")
                 } else {
                     String::new()
                 };
                 let bind_err = if let Some(err) = result.err.as_ref() {
-                    let err_ty = self.gen.gen.type_name(err);
+                    let err_ty = self.r#gen.r#gen.type_name(err);
                     format!("const {err_ty} *{err_payload} = &({op0}).val.err;")
                 } else {
                     String::new()
@@ -2686,7 +3553,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     String::new()
                 };
 
-                let ty = self.gen.gen.type_name(&Type::Id(*ty));
+                let ty = self.r#gen.r#gen.type_name(&Type::Id(*ty));
                 uwriteln!(self.src, "{ty} {result_tmp};");
                 let op0 = &operands[0];
                 uwriteln!(
@@ -2719,19 +3586,19 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::ListCanonLift { element, ty, .. } => {
                 self.assert_no_droppable_borrows("list", &Type::Id(*ty));
 
-                let list_name = self.gen.gen.type_name(&Type::Id(*ty));
-                let elem_name = self.gen.gen.type_name(element);
+                let list_name = self.r#gen.r#gen.type_name(&Type::Id(*ty));
+                let elem_name = self.r#gen.r#gen.type_name(element);
                 results.push(format!(
                     "({}) {{ ({}*)({}), ({}) }}",
                     list_name, elem_name, operands[0], operands[1]
                 ));
             }
             Instruction::StringLift { .. } => {
-                let list_name = self.gen.gen.type_name(&Type::String);
+                let list_name = self.r#gen.r#gen.type_name(&Type::String);
                 results.push(format!(
                     "({}) {{ ({}*)({}), ({}) }}",
                     list_name,
-                    self.gen.gen.char_type(),
+                    self.r#gen.r#gen.char_type(),
                     operands[0],
                     operands[1]
                 ));
@@ -2747,8 +3614,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.assert_no_droppable_borrows("list", &Type::Id(*ty));
 
                 let _body = self.blocks.pop().unwrap();
-                let list_name = self.gen.gen.type_name(&Type::Id(*ty));
-                let elem_name = self.gen.gen.type_name(element);
+                let list_name = self.r#gen.r#gen.type_name(&Type::Id(*ty));
+                let elem_name = self.r#gen.r#gen.type_name(element);
                 results.push(format!(
                     "({}) {{ ({}*)({}), ({}) }}",
                     list_name, elem_name, operands[0], operands[1]
@@ -2780,23 +3647,24 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.src.push_str(");\n");
             }
 
-            Instruction::CallInterface { func, .. } => {
+            Instruction::CallInterface { func, async_ } => {
                 let mut args = String::new();
                 for (i, (op, (byref, _))) in operands.iter().zip(&self.sig.params).enumerate() {
                     if i > 0 {
                         args.push_str(", ");
                     }
-                    let ty = &func.params[i].1;
+                    let ty = &func.params[i].ty;
                     if *byref {
                         let name = self.locals.tmp("arg");
-                        let ty = self.gen.gen.type_name(ty);
+                        let ty = self.r#gen.r#gen.type_name(ty);
                         uwriteln!(self.src, "{} {} = {};", ty, name, op);
                         args.push_str("&");
                         args.push_str(&name);
                     } else {
-                        if !self.gen.in_import {
+                        if !self.r#gen.in_import {
                             if let Type::Id(id) = ty {
-                                if let TypeDefKind::Option(_) = &self.gen.resolve.types[*id].kind {
+                                if let TypeDefKind::Option(_) = &self.r#gen.resolve.types[*id].kind
+                                {
                                     uwrite!(args, "{op}.is_some ? &({op}.val) : NULL");
                                     continue;
                                 }
@@ -2805,12 +3673,33 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         args.push_str(op);
                     }
                 }
+                if *async_ {
+                    let ret = self.locals.tmp("ret");
+                    let snake = self.r#gen.r#gen.world.to_snake_case();
+                    uwriteln!(
+                        self.src,
+                        "{snake}_callback_code_t {ret} = {}({args});",
+                        self.sig.name,
+                    );
+                    uwriteln!(self.src, "return {ret};");
+                    if func.result.is_some() {
+                        results.push("ret".to_string());
+                    }
+                    assert!(matches!(
+                        self.deferred_task_return,
+                        DeferredTaskReturn::None
+                    ));
+                    self.deferred_task_return = DeferredTaskReturn::Generating {
+                        prev_src: mem::take(&mut self.src),
+                    };
+                    return;
+                }
                 match &self.sig.ret.scalar {
                     None => {
                         let mut retptrs = Vec::new();
                         for ty in self.sig.ret.retptrs.iter() {
                             let name = self.locals.tmp("ret");
-                            let ty = self.gen.gen.type_name(ty);
+                            let ty = self.r#gen.r#gen.type_name(ty);
                             uwriteln!(self.src, "{} {};", ty, name);
                             if args.len() > 0 {
                                 args.push_str(", ");
@@ -2828,7 +3717,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     Some(Scalar::Type(_)) => {
                         let ret = self.locals.tmp("ret");
                         let ty = func.result.unwrap();
-                        let ty = self.gen.gen.type_name(&ty);
+                        let ty = self.r#gen.r#gen.type_name(&ty);
                         uwriteln!(self.src, "{} {} = {}({});", ty, ret, self.sig.name, args);
                         results.push(ret);
                     }
@@ -2840,11 +3729,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         }
                         args.push_str("&");
                         args.push_str(&val);
-                        let payload_ty = self.gen.gen.type_name(ty);
+                        let payload_ty = self.r#gen.r#gen.type_name(ty);
                         uwriteln!(self.src, "{} {};", payload_ty, val);
                         uwriteln!(self.src, "bool {} = {}({});", ret, self.sig.name, args);
                         let ty = func.result.unwrap();
-                        let option_ty = self.gen.gen.type_name(&ty);
+                        let option_ty = self.r#gen.r#gen.type_name(&ty);
                         let option_ret = self.locals.tmp("ret");
                         uwrite!(
                             self.src,
@@ -2858,7 +3747,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     }
                     Some(Scalar::ResultBool(ok, err)) => {
                         let ty = &func.result.unwrap();
-                        let result_ty = self.gen.gen.type_name(ty);
+                        let result_ty = self.r#gen.r#gen.type_name(ty);
                         let ret = self.locals.tmp("ret");
                         let mut ret_iter = self.sig.ret.retptrs.iter();
                         uwriteln!(self.src, "{result_ty} {ret};");
@@ -2869,7 +3758,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                                     uwrite!(args, ", ");
                                 }
                                 uwrite!(args, "&{val}");
-                                let ty = self.gen.gen.type_name(ty);
+                                let ty = self.r#gen.r#gen.type_name(ty);
                                 uwriteln!(self.src, "{} {};", ty, val);
                                 Some(val)
                             } else {
@@ -2884,7 +3773,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                                 uwrite!(args, ", ")
                             }
                             uwrite!(args, "&{val}");
-                            let ty = self.gen.gen.type_name(ty);
+                            let ty = self.r#gen.r#gen.type_name(ty);
                             uwriteln!(self.src, "{} {};", ty, val);
                             Some(val)
                         } else {
@@ -2919,7 +3808,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     }
                 }
             }
-            Instruction::Return { .. } if self.gen.in_import => match self.sig.ret.scalar {
+            Instruction::Return { .. } if self.r#gen.in_import => match self.sig.ret.scalar {
                 None => {
                     for op in operands.iter() {
                         self.store_in_retptr(op);
@@ -2937,7 +3826,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 Some(Scalar::OptionBool(_)) => {
                     assert_eq!(operands.len(), 1);
                     let variant = &operands[0];
-                    self.store_in_retptr(&format!("{}.val", variant));
+                    self.store_in_retptr(&format!("{variant}.val"));
                     self.src.push_str("return ");
                     self.src.push_str(&variant);
                     self.src.push_str(".is_some;\n");
@@ -2949,7 +3838,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     uwriteln!(self.src, "if (!{}.is_err) {{", variant);
                     if ok.is_some() {
                         if ok.is_some() {
-                            self.store_in_retptr(&format!("{}.val.ok", variant));
+                            self.store_in_retptr(&format!("{variant}.val.ok"));
                         } else {
                             self.empty_return_value();
                         }
@@ -2961,7 +3850,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     );
                     if err.is_some() {
                         if err.is_some() {
-                            self.store_in_retptr(&format!("{}.val.err", variant));
+                            self.store_in_retptr(&format!("{variant}.val.err"));
                         } else {
                             self.empty_return_value();
                         }
@@ -2980,7 +3869,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.src.append_src(&src);
 
                 for DroppableBorrow { name, ty } in self.borrows.iter() {
-                    let drop_fn = self.gen.gen.resources[ty].drop_fn.as_str();
+                    let drop_fn = self.r#gen.r#gen.resources[ty].drop_fn.as_str();
                     uwriteln!(self.src, "if ({name} != 0) {{");
                     uwriteln!(self.src, "  {drop_fn}({name});");
                     uwriteln!(self.src, "}}");
@@ -3055,7 +3944,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwriteln!(self.src, "uint8_t *{ptr} = {};", operands[0]);
                 let i = self.locals.tmp("i");
                 uwriteln!(self.src, "for (size_t {i} = 0; {i} < {len}; {i}++) {{");
-                let size = self.gen.gen.sizes.size(element);
+                let size = self.r#gen.r#gen.sizes.size(element);
                 uwriteln!(
                     self.src,
                     "uint8_t *base = {ptr} + {i} * {};",
@@ -3069,7 +3958,40 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::Flush { amt } => {
-                results.extend(operands.iter().take(*amt).map(|v| v.clone()));
+                results.extend(operands.iter().take(*amt).cloned());
+            }
+
+            Instruction::AsyncTaskReturn { name, params } => {
+                let body = match &mut self.deferred_task_return {
+                    DeferredTaskReturn::Generating { prev_src } => {
+                        mem::swap(&mut self.src, prev_src);
+                        mem::take(prev_src)
+                    }
+                    _ => unreachable!(),
+                };
+                assert_eq!(params.len(), operands.len());
+                self.deferred_task_return = DeferredTaskReturn::Emitted {
+                    name: name.to_string(),
+                    body,
+                    params: params
+                        .iter()
+                        .zip(operands)
+                        .map(|(a, b)| (*a, b.clone()))
+                        .collect(),
+                };
+            }
+
+            Instruction::FutureLift { .. } => {
+                results.push(format!("((uint32_t) {})", operands[0]));
+            }
+            Instruction::FutureLower { .. } => {
+                results.push(format!("((int32_t) {})", operands[0]));
+            }
+            Instruction::StreamLift { .. } => {
+                results.push(format!("((uint32_t) {})", operands[0]));
+            }
+            Instruction::StreamLower { .. } => {
+                results.push(format!("((int32_t) {})", operands[0]));
             }
 
             i => unimplemented!("{:?}", i),
@@ -3094,10 +4016,12 @@ struct Source {
     h_defs: wit_bindgen_core::Source,
     h_fns: wit_bindgen_core::Source,
     h_helpers: wit_bindgen_core::Source,
+    h_async: wit_bindgen_core::Source,
     c_defs: wit_bindgen_core::Source,
     c_fns: wit_bindgen_core::Source,
     c_helpers: wit_bindgen_core::Source,
     c_adapters: wit_bindgen_core::Source,
+    c_async: wit_bindgen_core::Source,
 }
 
 impl Source {
@@ -3111,10 +4035,12 @@ impl Source {
         self.h_defs.push_str(&append_src.h_defs);
         self.h_fns.push_str(&append_src.h_fns);
         self.h_helpers.push_str(&append_src.h_helpers);
+        self.h_async.push_str(&append_src.h_async);
         self.c_defs.push_str(&append_src.c_defs);
         self.c_fns.push_str(&append_src.c_fns);
         self.c_helpers.push_str(&append_src.c_helpers);
         self.c_adapters.push_str(&append_src.c_adapters);
+        self.c_async.push_str(&append_src.c_async);
     }
     fn h_defs(&mut self, s: &str) {
         self.h_defs.push_str(s);
@@ -3136,7 +4062,7 @@ impl Source {
     }
 }
 
-fn wasm_type(ty: WasmType) -> &'static str {
+pub fn wasm_type(ty: WasmType) -> &'static str {
     match ty {
         WasmType::I32 => "int32_t",
         WasmType::I64 => "int64_t",
@@ -3163,7 +4089,7 @@ pub fn flags_repr(f: &Flags) -> Int {
         FlagsRepr::U16 => Int::U16,
         FlagsRepr::U32(1) => Int::U32,
         FlagsRepr::U32(2) => Int::U64,
-        repr => panic!("unimplemented flags {:?}", repr),
+        repr => panic!("unimplemented flags {repr:?}"),
     }
 }
 
@@ -3178,10 +4104,12 @@ pub fn is_arg_by_pointer(resolve: &Resolve, ty: &Type) -> bool {
             TypeDefKind::Flags(_) => false,
             TypeDefKind::Handle(_) => false,
             TypeDefKind::Tuple(_) | TypeDefKind::Record(_) | TypeDefKind::List(_) => true,
-            TypeDefKind::Future(_) => todo!("is_arg_by_pointer for future"),
-            TypeDefKind::Stream(_) => todo!("is_arg_by_pointer for stream"),
+            TypeDefKind::Future(_) => false,
+            TypeDefKind::Stream(_) => false,
             TypeDefKind::Resource => todo!("is_arg_by_pointer for resource"),
             TypeDefKind::Unknown => unreachable!(),
+            TypeDefKind::FixedLengthList(..) => todo!(),
+            TypeDefKind::Map(..) => todo!(),
         },
         Type::String => true,
         _ => false,
@@ -3294,6 +4222,10 @@ pub fn to_c_ident(name: &str) -> String {
         //  variable names for option and result flattening.
         "ret" => "ret_".into(),
         "err" => "err_".into(),
+        // C standard library macros that conflict when used as identifiers
+        "stdin" => "stdin_".into(),
+        "stdout" => "stdout_".into(),
+        "stderr" => "stderr_".into(),
         s => s.to_snake_case(),
     }
 }

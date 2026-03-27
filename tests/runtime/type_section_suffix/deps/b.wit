@@ -1,5 +1,0 @@
-package test:b;
-
-world imports {
-  import bar: func();
-}
