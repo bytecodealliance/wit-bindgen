@@ -2914,6 +2914,10 @@ const (
         uwriteln!(self.src, "{docs}type {name} = [{size}]{ty}");
     }
 
+    fn type_map(&mut self, _id: TypeId, _name: &str, _key: &Type, _value: &Type, _docs: &Docs) {
+        todo!("map types are not yet supported in the Go backend")
+    }
+
     fn type_builtin(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
         _ = (id, name, ty, docs);
         todo!()

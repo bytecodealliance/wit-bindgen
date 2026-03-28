@@ -1766,10 +1766,11 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
     }
 
     fn print_ty(&mut self, ty: &Type, mode: TypeMode) {
-        // If we have a typedef of a string or a list, the typedef is an alias
-        // for `String` or `Vec<T>`. If this is a borrow, instead of borrowing
-        // them as `&String` or `&Vec<T>`, use `&str` or `&[T]` so that callers
-        // don't need to create owned copies.
+        // If we have a typedef of a string, list, or map, the typedef is an
+        // alias for `String`, `Vec<T>`, or `Map<K, V>`. If this is a borrow,
+        // instead of borrowing them as `&String` or `&Vec<T>`, use `&str` or
+        // `&[T]` so that callers don't need to create owned copies. Maps are
+        // borrowed as `&Map<K, V>`.
         if let Type::Id(id) = ty {
             let id = dealias(self.resolve, *id);
             let typedef = &self.resolve.types[id];
@@ -1947,20 +1948,14 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
                 self.push_str(lifetime);
                 self.push_str(" ");
             }
-            self.push_str("[(");
-            self.print_ty(key, key_mode);
-            self.push_str(", ");
-            self.print_ty(value, value_mode);
-            self.push_str(")]");
-        } else {
-            let path = self.path_to_map();
-            self.push_str(&path);
-            self.push_str("::<");
-            self.print_ty(key, key_mode);
-            self.push_str(", ");
-            self.print_ty(value, value_mode);
-            self.push_str(">");
         }
+        let path = format!("{}::Map", self.r#gen.runtime_path());
+        self.push_str(&path);
+        self.push_str("::<");
+        self.print_ty(key, key_mode);
+        self.push_str(", ");
+        self.print_ty(value, value_mode);
+        self.push_str(">");
     }
 
     fn print_generics(&mut self, lifetime: Option<&str>) {
@@ -2587,10 +2582,6 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
 
     pub fn path_to_vec(&mut self) -> String {
         self.path_from_runtime_module(RuntimeItem::VecType, "Vec")
-    }
-
-    pub fn path_to_map(&mut self) -> String {
-        self.path_from_runtime_module(RuntimeItem::MapType, "Map")
     }
 
     pub fn path_to_string(&mut self) -> String {

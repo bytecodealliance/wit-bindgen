@@ -1975,6 +1975,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             Type::Id(id) => match &self.resolve.types[id].kind {
                 TypeDefKind::Type(t) => self.write_to_memory(t, addr, offset),
                 TypeDefKind::List(_) => self.write_list_to_memory(ty, addr, offset),
+                // Maps have the same linear memory layout as list<tuple<K, V>>.
                 TypeDefKind::Map(_, _) => self.write_list_to_memory(ty, addr, offset),
 
                 TypeDefKind::Future(_) | TypeDefKind::Stream(_) | TypeDefKind::Handle(_) => {
@@ -2183,6 +2184,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 TypeDefKind::Type(t) => self.read_from_memory(t, addr, offset),
 
                 TypeDefKind::List(_) => self.read_list_from_memory(ty, addr, offset),
+                // Maps have the same linear memory layout as list<tuple<K, V>>.
                 TypeDefKind::Map(_, _) => self.read_list_from_memory(ty, addr, offset),
 
                 TypeDefKind::Future(_) | TypeDefKind::Stream(_) | TypeDefKind::Handle(_) => {

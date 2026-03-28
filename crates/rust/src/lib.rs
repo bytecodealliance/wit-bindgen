@@ -98,7 +98,6 @@ impl TypeGeneration {
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
 enum RuntimeItem {
     AllocCrate,
-    MapType,
     StringType,
     StdAllocModule,
     VecType,
@@ -557,10 +556,6 @@ pub mod wit_stream {{
         match item {
             RuntimeItem::AllocCrate => {
                 uwriteln!(self.src, "extern crate alloc as alloc_crate;");
-            }
-            RuntimeItem::MapType => {
-                let rt = self.runtime_path().to_string();
-                uwriteln!(self.src, "pub use {rt}::Map;");
             }
             RuntimeItem::StdAllocModule => {
                 self.rt_module.insert(RuntimeItem::AllocCrate);

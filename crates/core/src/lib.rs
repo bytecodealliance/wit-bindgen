@@ -166,10 +166,7 @@ pub trait InterfaceGenerator<'a> {
     fn type_alias(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs);
     fn type_list(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs);
     fn type_fixed_length_list(&mut self, id: TypeId, name: &str, ty: &Type, size: u32, docs: &Docs);
-    fn type_map(&mut self, id: TypeId, name: &str, key: &Type, value: &Type, docs: &Docs) {
-        let _ = (id, name, key, value, docs);
-        todo!("map types are not yet supported in this backend");
-    }
+    fn type_map(&mut self, id: TypeId, name: &str, key: &Type, value: &Type, docs: &Docs);
     fn type_builtin(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs);
     fn type_future(&mut self, id: TypeId, name: &str, ty: &Option<Type>, docs: &Docs);
     fn type_stream(&mut self, id: TypeId, name: &str, ty: &Option<Type>, docs: &Docs);

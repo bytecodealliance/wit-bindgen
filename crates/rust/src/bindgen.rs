@@ -876,7 +876,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let len = format!("len{tmp}");
                 let base = format!("base{tmp}");
                 let result = format!("result{tmp}");
-                let map = self.r#gen.path_to_map();
+                let map = format!("{}::Map", self.r#gen.r#gen.runtime_path());
                 self.push_str(&format!(
                     "let {base} = {operand0};\n",
                     operand0 = operands[0]
