@@ -98,6 +98,8 @@ impl LanguageMethods for MoonBit {
         config: &crate::config::WitConfig,
         _args: &[String],
     ) -> bool {
+        // async-resource-func actually works, but most other async tests
+        // fail during codegen or verification
         name == "map.wit" || (config.async_ && name != "async-resource-func.wit")
     }
 
