@@ -98,8 +98,7 @@ impl LanguageMethods for MoonBit {
         config: &crate::config::WitConfig,
         _args: &[String],
     ) -> bool {
-        name == "map.wit"
-            || (config.async_ && name != "async-resource-func.wit")
+        name == "map.wit" || (config.async_ && name != "async-resource-func.wit")
     }
 
     fn verify(&self, runner: &Runner, verify: &crate::Verify) -> anyhow::Result<()> {

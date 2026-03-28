@@ -58,7 +58,7 @@ impl LanguageMethods for C {
     ) -> bool {
         config.error_context
             || name.starts_with("named-fixed-length-list.wit")
-            || name == "map.wit"
+            || name.starts_with("map.wit")
     }
 
     fn codegen_test_variants(&self) -> &[(&str, &[&str])] {
