@@ -218,10 +218,7 @@ pub trait AnonymousTypeGenerator<'a> {
     fn anonymous_type_result(&mut self, id: TypeId, ty: &Result_, docs: &Docs);
     fn anonymous_type_list(&mut self, id: TypeId, ty: &Type, docs: &Docs);
     fn anonymous_type_fixed_length_list(&mut self, id: TypeId, ty: &Type, size: u32, docs: &Docs);
-    fn anonymous_type_map(&mut self, id: TypeId, key: &Type, value: &Type, docs: &Docs) {
-        let _ = (id, key, value, docs);
-        todo!("anonymous map types are not yet supported in this backend");
-    }
+    fn anonymous_type_map(&mut self, id: TypeId, key: &Type, value: &Type, docs: &Docs);
     fn anonymous_type_future(&mut self, id: TypeId, ty: &Option<Type>, docs: &Docs);
     fn anonymous_type_stream(&mut self, id: TypeId, ty: &Option<Type>, docs: &Docs);
     fn anonymous_type_type(&mut self, id: TypeId, ty: &Type, docs: &Docs);

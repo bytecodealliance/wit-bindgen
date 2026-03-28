@@ -1871,6 +1871,16 @@ impl<'a> wit_bindgen_core::AnonymousTypeGenerator<'a> for InterfaceGenerator<'a>
     ) {
         todo!("print_anonymous_type for fixed length list");
     }
+
+    fn anonymous_type_map(
+        &mut self,
+        _id: TypeId,
+        _key: &Type,
+        _value: &Type,
+        _docs: &Docs,
+    ) {
+        todo!("anonymous map types are not yet supported in the C backend");
+    }
 }
 
 pub enum CTypeNameInfo<'a> {

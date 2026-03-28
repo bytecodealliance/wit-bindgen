@@ -10,19 +10,19 @@ export!(Component);
 
 impl Guest for Component {
     fn run() {
-        let ids_by_name = named_roundtrip(&[
-            (1, "one".to_string()),
-            (1, "uno".to_string()),
-            (2, "two".to_string()),
-        ]);
+        let mut input = NamesById::new();
+        input.insert(1, "one".to_string());
+        input.insert(1, "uno".to_string());
+        input.insert(2, "two".to_string());
+        let ids_by_name = named_roundtrip(&input);
         assert_eq!(ids_by_name.get("uno"), Some(&1));
         assert_eq!(ids_by_name.get("two"), Some(&2));
         assert_eq!(ids_by_name.get("one"), None);
 
-        let bytes_by_name = bytes_roundtrip(&[
-            ("hello".to_string(), b"world".to_vec()),
-            ("bin".to_string(), vec![0u8, 1, 2]),
-        ]);
+        let mut bytes_input = BytesByName::new();
+        bytes_input.insert("hello".to_string(), b"world".to_vec());
+        bytes_input.insert("bin".to_string(), vec![0u8, 1, 2]);
+        let bytes_by_name = bytes_roundtrip(&bytes_input);
         assert_eq!(
             bytes_by_name.get("hello").map(Vec::as_slice),
             Some(b"world".as_slice())
