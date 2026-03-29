@@ -16,6 +16,11 @@ interface map-types {
     y: string,
   }
 
+  variant map-or-string {
+    as-map(names-by-id),
+    as-string(string),
+  }
+
   named-roundtrip: func(a: names-by-id) -> ids-by-name;
   inline-roundtrip: func(a: map<u32, string>, b: map<string, list<u8>>) -> tuple<map<string, u32>, map<string, list<u8>>>;
   nested-roundtrip: func(a: bytes-by-name) -> bytes-by-name;
@@ -25,6 +30,9 @@ interface map-types {
   record-value-roundtrip: func(a: map<string, map-value-record>) -> map<string, map-value-record>;
   bool-key-roundtrip: func(a: map<bool, string>) -> map<bool, string>;
   char-key-roundtrip: func(a: map<char, u32>) -> map<char, u32>;
+  variant-roundtrip: func(a: map-or-string) -> map-or-string;
+  result-roundtrip: func(a: result<names-by-id, string>) -> result<names-by-id, string>;
+  tuple-with-map: func(a: tuple<names-by-id, u64>) -> tuple<names-by-id, u64>;
 }
 
 world map-world {

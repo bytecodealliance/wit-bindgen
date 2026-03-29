@@ -17,6 +17,10 @@ impl Guest for Component {
         test_record_roundtrip();
         test_inline_roundtrip();
         test_large_map();
+        test_multi_param_roundtrip();
+        test_nested_roundtrip();
+        test_variant_roundtrip();
+        test_result_roundtrip();
     }
 }
 
@@ -95,6 +99,78 @@ fn test_large_map() {
     let result = large_roundtrip(&input);
     assert_eq!(result.len(), 100);
     for i in 0..100 {
-        assert_eq!(result.get(&i).map(String::as_str), Some(format!("value-{i}").as_str()));
+        assert_eq!(
+            result.get(&i).map(String::as_str),
+            Some(format!("value-{i}").as_str()),
+        );
+    }
+}
+
+fn test_multi_param_roundtrip() {
+    let mut names = NamesById::new();
+    names.insert(1, "one".to_string());
+    names.insert(2, "two".to_string());
+    let mut bytes = BytesByName::new();
+    bytes.insert("key".to_string(), vec![42u8]);
+    let (ids, bytes_out) = multi_param_roundtrip(&names, &bytes);
+    assert_eq!(ids.len(), 2);
+    assert_eq!(ids.get("one"), Some(&1));
+    assert_eq!(ids.get("two"), Some(&2));
+    assert_eq!(bytes_out.len(), 1);
+    assert_eq!(
+        bytes_out.get("key").map(Vec::as_slice),
+        Some([42u8].as_slice()),
+    );
+}
+
+fn test_nested_roundtrip() {
+    let mut inner_a = wit_bindgen::rt::Map::new();
+    inner_a.insert(1, "one".to_string());
+    inner_a.insert(2, "two".to_string());
+    let mut inner_b = wit_bindgen::rt::Map::new();
+    inner_b.insert(10, "ten".to_string());
+    let mut outer = wit_bindgen::rt::Map::new();
+    outer.insert("group-a".to_string(), inner_a);
+    outer.insert("group-b".to_string(), inner_b);
+    let result = nested_roundtrip(&outer);
+    assert_eq!(result.len(), 2);
+    let ra = result.get("group-a").unwrap();
+    assert_eq!(ra.get(&1).map(String::as_str), Some("one"));
+    assert_eq!(ra.get(&2).map(String::as_str), Some("two"));
+    let rb = result.get("group-b").unwrap();
+    assert_eq!(rb.get(&10).map(String::as_str), Some("ten"));
+}
+
+fn test_variant_roundtrip() {
+    let mut map = NamesById::new();
+    map.insert(1, "one".to_string());
+    let as_map = variant_roundtrip(&MapOrString::AsMap(map));
+    match &as_map {
+        MapOrString::AsMap(m) => {
+            assert_eq!(m.get(&1).map(String::as_str), Some("one"));
+        }
+        MapOrString::AsString(_) => panic!("expected AsMap"),
+    }
+
+    let as_str = variant_roundtrip(&MapOrString::AsString("hello".to_string()));
+    match &as_str {
+        MapOrString::AsString(s) => assert_eq!(s, "hello"),
+        MapOrString::AsMap(_) => panic!("expected AsString"),
+    }
+}
+
+fn test_result_roundtrip() {
+    let mut map = NamesById::new();
+    map.insert(5, "five".to_string());
+    let ok_result = result_roundtrip(Ok(&map));
+    match &ok_result {
+        Ok(m) => assert_eq!(m.get(&5).map(String::as_str), Some("five")),
+        Err(_) => panic!("expected Ok"),
+    }
+
+    let err_result = result_roundtrip(Err("bad input"));
+    match &err_result {
+        Err(e) => assert_eq!(e, "bad input"),
+        Ok(_) => panic!("expected Err"),
     }
 }

@@ -1,6 +1,8 @@
 include!(env!("BINDINGS"));
 
-use crate::exports::test::maps::to_test::{BytesByName, IdsByName, LabeledEntry, NamesById};
+use crate::exports::test::maps::to_test::{
+    BytesByName, IdsByName, LabeledEntry, MapOrString, NamesById,
+};
 
 struct Component;
 
@@ -62,6 +64,36 @@ impl exports::test::maps::to_test::Guest for Component {
     }
 
     fn large_roundtrip(a: NamesById) -> NamesById {
+        a
+    }
+
+    fn multi_param_roundtrip(a: NamesById, b: BytesByName) -> (IdsByName, BytesByName) {
+        assert_eq!(a.len(), 2);
+        assert_eq!(b.len(), 1);
+        let mut ids = IdsByName::new();
+        for (id, name) in a {
+            ids.insert(name, id);
+        }
+        (ids, b)
+    }
+
+    fn nested_roundtrip(
+        a: wit_bindgen::rt::Map<String, wit_bindgen::rt::Map<u32, String>>,
+    ) -> wit_bindgen::rt::Map<String, wit_bindgen::rt::Map<u32, String>> {
+        assert_eq!(a.len(), 2);
+        let inner = a.get("group-a").unwrap();
+        assert_eq!(inner.get(&1).map(String::as_str), Some("one"));
+        assert_eq!(inner.get(&2).map(String::as_str), Some("two"));
+        let inner2 = a.get("group-b").unwrap();
+        assert_eq!(inner2.get(&10).map(String::as_str), Some("ten"));
+        a
+    }
+
+    fn variant_roundtrip(a: MapOrString) -> MapOrString {
+        a
+    }
+
+    fn result_roundtrip(a: Result<NamesById, String>) -> Result<NamesById, String> {
         a
     }
 }

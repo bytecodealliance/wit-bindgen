@@ -10,6 +10,11 @@ interface to-test {
     values: names-by-id,
   }
 
+  variant map-or-string {
+    as-map(names-by-id),
+    as-string(string),
+  }
+
   named-roundtrip: func(a: names-by-id) -> ids-by-name;
   bytes-roundtrip: func(a: bytes-by-name) -> bytes-by-name;
   empty-roundtrip: func(a: names-by-id) -> names-by-id;
@@ -17,6 +22,10 @@ interface to-test {
   record-roundtrip: func(a: labeled-entry) -> labeled-entry;
   inline-roundtrip: func(a: map<u32, string>) -> map<string, u32>;
   large-roundtrip: func(a: names-by-id) -> names-by-id;
+  multi-param-roundtrip: func(a: names-by-id, b: bytes-by-name) -> tuple<ids-by-name, bytes-by-name>;
+  nested-roundtrip: func(a: map<string, map<u32, string>>) -> map<string, map<u32, string>>;
+  variant-roundtrip: func(a: map-or-string) -> map-or-string;
+  result-roundtrip: func(a: result<names-by-id, string>) -> result<names-by-id, string>;
 }
 
 world test {
