@@ -96,4 +96,16 @@ impl exports::test::maps::to_test::Guest for Component {
     fn result_roundtrip(a: Result<NamesById, String>) -> Result<NamesById, String> {
         a
     }
+
+    fn tuple_roundtrip(a: (NamesById, u64)) -> (NamesById, u64) {
+        assert_eq!(a.0.len(), 1);
+        assert_eq!(a.0.get(&7).map(String::as_str), Some("seven"));
+        assert_eq!(a.1, 42);
+        a
+    }
+
+    fn single_entry_roundtrip(a: NamesById) -> NamesById {
+        assert_eq!(a.len(), 1);
+        a
+    }
 }

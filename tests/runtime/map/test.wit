@@ -26,6 +26,8 @@ interface to-test {
   nested-roundtrip: func(a: map<string, map<u32, string>>) -> map<string, map<u32, string>>;
   variant-roundtrip: func(a: map-or-string) -> map-or-string;
   result-roundtrip: func(a: result<names-by-id, string>) -> result<names-by-id, string>;
+  tuple-roundtrip: func(a: tuple<names-by-id, u64>) -> tuple<names-by-id, u64>;
+  single-entry-roundtrip: func(a: names-by-id) -> names-by-id;
 }
 
 world test {

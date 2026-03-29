@@ -21,6 +21,8 @@ impl Guest for Component {
         test_nested_roundtrip();
         test_variant_roundtrip();
         test_result_roundtrip();
+        test_tuple_roundtrip();
+        test_single_entry_roundtrip();
     }
 }
 
@@ -173,4 +175,24 @@ fn test_result_roundtrip() {
         Err(e) => assert_eq!(e, "bad input"),
         Ok(_) => panic!("expected Err"),
     }
+}
+
+fn test_tuple_roundtrip() {
+    let mut map = NamesById::new();
+    map.insert(7, "seven".to_string());
+    let (result_map, result_num) = tuple_roundtrip((&map, 42));
+    assert_eq!(result_map.len(), 1);
+    assert_eq!(result_map.get(&7).map(String::as_str), Some("seven"));
+    assert_eq!(result_num, 42);
+}
+
+fn test_single_entry_roundtrip() {
+    let mut input = NamesById::new();
+    input.insert(99, "ninety-nine".to_string());
+    let result = single_entry_roundtrip(&input);
+    assert_eq!(result.len(), 1);
+    assert_eq!(
+        result.get(&99).map(String::as_str),
+        Some("ninety-nine"),
+    );
 }
