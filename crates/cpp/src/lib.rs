@@ -535,7 +535,10 @@ impl WorldGenerator for Cpp {
                 let namespace =
                     namespace(resolve, &TypeOwner::Interface(id), false, &r#gen.r#gen.opts);
                 let docs = resolve.interfaces[id].docs.contents.as_deref();
-                r#gen.r#gen.h_src.change_namespace_with_docs(&namespace, docs);
+                r#gen
+                    .r#gen
+                    .h_src
+                    .change_namespace_with_docs(&namespace, docs);
                 r#gen.types(id);
 
                 for (_name, func) in resolve.interfaces[id].functions.iter() {
@@ -587,7 +590,10 @@ impl WorldGenerator for Cpp {
         r#gen.interface = Some(id);
         let namespace = namespace(resolve, &TypeOwner::Interface(id), true, &r#gen.r#gen.opts);
         let docs = resolve.interfaces[id].docs.contents.as_deref();
-        r#gen.r#gen.h_src.change_namespace_with_docs(&namespace, docs);
+        r#gen
+            .r#gen
+            .h_src
+            .change_namespace_with_docs(&namespace, docs);
         r#gen.types(id);
 
         for (_name, func) in resolve.interfaces[id].functions.iter() {
