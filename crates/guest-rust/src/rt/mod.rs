@@ -67,6 +67,11 @@ pub mod bitflags {
     pub use crate::bitflags;
 }
 
+#[cfg(feature = "std")]
+pub type Map<K, V> = std::collections::HashMap<K, V>;
+#[cfg(not(feature = "std"))]
+pub type Map<K, V> = alloc::collections::BTreeMap<K, V>;
+
 /// For more information about this see `./ci/rebuild-libwit-bindgen-cabi.sh`.
 #[cfg(not(target_env = "p2"))]
 mod wit_bindgen_cabi_realloc;

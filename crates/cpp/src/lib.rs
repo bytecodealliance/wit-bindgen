@@ -2232,6 +2232,17 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
         todo!("named fixed-length list types are not yet supported in the C++ backend")
     }
 
+    fn type_map(
+        &mut self,
+        _id: TypeId,
+        _name: &str,
+        _key: &wit_bindgen_core::wit_parser::Type,
+        _value: &wit_bindgen_core::wit_parser::Type,
+        _docs: &wit_bindgen_core::wit_parser::Docs,
+    ) {
+        todo!("map types are not yet supported in the C++ backend")
+    }
+
     fn type_builtin(
         &mut self,
         _id: TypeId,
@@ -3503,6 +3514,13 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             }
             abi::Instruction::AsyncTaskReturn { .. } => todo!(),
             abi::Instruction::DropHandle { .. } => todo!(),
+            abi::Instruction::MapLower { .. }
+            | abi::Instruction::MapLift { .. }
+            | abi::Instruction::IterMapKey { .. }
+            | abi::Instruction::IterMapValue { .. }
+            | abi::Instruction::GuestDeallocateMap { .. } => {
+                todo!("map types are not yet supported in this backend")
+            }
         }
     }
 
