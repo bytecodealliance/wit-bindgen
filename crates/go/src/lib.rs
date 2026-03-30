@@ -116,6 +116,15 @@ pub struct Opts {
     #[cfg_attr(feature = "clap", clap(long))]
     pub pkg_name: Option<String>,
 
+    /// When `--pkg-name` is specified, optionally specify a different package
+    /// for exports.
+    ///
+    /// This allows you to put the exports and imports in separate packages when
+    /// building a library.  If only `--pkg-name` is specified, this will
+    /// default to that value.
+    #[cfg_attr(feature = "clap", clap(long, requires = "pkg_name"))]
+    pub export_pkg_name: Option<String>,
+
     /// Print the version of the remote package being used for the shared WIT types.
     ///
     /// Must be specified in addition to the `pkg-name` flag.
@@ -210,8 +219,12 @@ struct Go {
 
 impl Go {
     /// Adds the bindings module prefix to a package name.
-    fn mod_pkg(&self, name: &str) -> String {
-        let prefix = self.opts.pkg_name.as_deref().unwrap_or("wit_component");
+    fn mod_pkg(&self, for_export: bool, name: &str) -> String {
+        let prefix = for_export
+            .then_some(())
+            .and(self.opts.export_pkg_name.as_deref())
+            .or(self.opts.pkg_name.as_deref())
+            .unwrap_or("wit_component");
         format!(r#""{prefix}/{name}""#)
     }
 
@@ -236,7 +249,7 @@ impl Go {
                 package
             };
             let prefix = format!("{package}.");
-            imports.insert(self.mod_pkg(&package));
+            imports.insert(self.mod_pkg(exported, &package));
             prefix
         }
     }
@@ -883,16 +896,14 @@ impl WorldGenerator for Go {
             files.push(
                 "go.mod",
                 format!(
-                    r#"module {}
+                    r#"module wit_component
 
 go 1.25
 
 require (
-    go.bytecodealliance.org/pkg {}
+    go.bytecodealliance.org/pkg {REMOTE_PKG_VERSION}
 )
 "#,
-                    self.opts.pkg_name.as_deref().unwrap_or("wit_component"),
-                    REMOTE_PKG_VERSION,
                 )
                 .as_bytes(),
             );
@@ -1778,7 +1789,7 @@ for index := 0; index < int({length}); index++ {{
                     FunctionKind::Freestanding | FunctionKind::AsyncFreestanding => {
                         let args = operands.join(", ");
                         let call = format!("{package}.{name}({args})");
-                        self.imports.insert(self.generator.mod_pkg(&package));
+                        self.imports.insert(self.generator.mod_pkg(true, &package));
                         call
                     }
                     FunctionKind::Constructor(ty) => {
@@ -1789,7 +1800,7 @@ for index := 0; index < int({length}); index++ {{
                             .unwrap()
                             .to_upper_camel_case();
                         let call = format!("{package}.Make{ty}({args})");
-                        self.imports.insert(self.generator.mod_pkg(&package));
+                        self.imports.insert(self.generator.mod_pkg(true, &package));
                         call
                     }
                     FunctionKind::Method(_) | FunctionKind::AsyncMethod(_) => {
