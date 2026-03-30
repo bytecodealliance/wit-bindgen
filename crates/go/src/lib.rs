@@ -130,6 +130,15 @@ pub struct Opts {
     /// Must be specified in addition to the `pkg-name` flag.
     #[cfg_attr(feature = "clap", clap(long))]
     pub print_remote_pkg_version: bool,
+
+    /// When generating Go package names, include the WIT package version even
+    /// if only one version of that package is referenced by the specified
+    /// world.
+    ///
+    /// By default, the version will only be included in the name if the world
+    /// references more than one version of the WIT package.
+    #[cfg_attr(feature = "clap", clap(long))]
+    pub include_versions: bool,
 }
 
 impl Opts {
@@ -242,7 +251,7 @@ impl Go {
         if local == owner && (exported ^ in_import) {
             String::new()
         } else {
-            let package = interface_name(resolve, owner);
+            let package = self.interface_name(resolve, owner);
             let package = if exported {
                 format!("export_{package}")
             } else {
@@ -623,7 +632,7 @@ func Lift{upper_kind}{camel}(handle int32) *witTypes.{upper_kind}Reader[{payload
                                 } else {
                                     format!(
                                         "{}_",
-                                        interface_name(
+                                        self.interface_name(
                                             resolve,
                                             Some(
                                                 &self
@@ -735,7 +744,7 @@ impl WorldGenerator for Go {
             data.extend(self.import(resolve, func, Some(name)));
         }
         self.interfaces
-            .entry(interface_name(resolve, Some(name)))
+            .entry(self.interface_name(resolve, Some(name)))
             .or_default()
             .extend(data);
 
@@ -754,7 +763,7 @@ impl WorldGenerator for Go {
             data.extend(self.import(resolve, func, None));
         }
         self.interfaces
-            .entry(interface_name(resolve, None))
+            .entry(self.interface_name(resolve, None))
             .or_default()
             .extend(data);
     }
@@ -783,12 +792,13 @@ impl WorldGenerator for Go {
 
             let data = generator.into();
 
+            let name = self.interface_name(resolve, Some(name));
             if exported {
                 &mut self.export_interfaces
             } else {
                 &mut self.interfaces
             }
-            .entry(interface_name(resolve, Some(name)))
+            .entry(name)
             .or_default()
             .extend(data);
         }
@@ -831,7 +841,7 @@ impl WorldGenerator for Go {
         }
         let data = generator.into();
         self.interfaces
-            .entry(interface_name(resolve, None))
+            .entry(self.interface_name(resolve, None))
             .or_default()
             .extend(data);
     }
@@ -1226,7 +1236,7 @@ func {camel}({go_params}) {go_results} {{
         let sig = resolve.wasm_signature(variant, func);
         let core_module_name = interface.map(|v| resolve.name_world_key(v));
         let export_name = func.legacy_core_export_name(core_module_name.as_deref());
-        let name = func_name(resolve, interface, func);
+        let name = self.func_name(resolve, interface, func);
 
         let params = sig
             .params
@@ -1351,7 +1361,7 @@ func wasm_export_post_return_{name}(result {results}) {{
             let results = self.func_results(resolve, func, interface, false, &mut imports);
 
             self.export_interfaces
-                .entry(interface_name(resolve, interface))
+                .entry(self.interface_name(resolve, interface))
                 .or_default()
                 .extend(InterfaceData {
                     code: format!(
@@ -1470,12 +1480,13 @@ func wasm_export_{name}({params}) {results} {{
                     &func.name,
                 );
 
+                let name = self.interface_name(resolve, interface);
                 if in_import || !exported {
                     &mut self.interfaces
                 } else {
                     &mut self.export_interfaces
                 }
-                .entry(interface_name(resolve, interface))
+                .entry(name)
                 .or_default()
                 .extend(data);
             }
@@ -1493,6 +1504,47 @@ func wasm_export_{name}({params}) {results} {{
                 false
             }
         })
+    }
+
+    fn interface_name(&self, resolve: &Resolve, interface: Option<&WorldKey>) -> String {
+        match interface {
+            Some(WorldKey::Name(name)) => name.to_snake_case(),
+            Some(WorldKey::Interface(id)) => {
+                let interface = &resolve.interfaces[*id];
+                let package = &resolve.packages[interface.package.unwrap()];
+                let package_has_multiple_versions = resolve.packages.iter().any(|(_, p)| {
+                    p.name.namespace == package.name.namespace
+                        && p.name.name == package.name.name
+                        && p.name.version != package.name.version
+                });
+                let version = if package_has_multiple_versions || self.opts.include_versions {
+                    if let Some(version) = &package.name.version {
+                        format!("{}_", version.to_string().replace(['.', '-', '+'], "_"))
+                    } else {
+                        String::new()
+                    }
+                } else {
+                    String::new()
+                };
+                let namespace = package.name.namespace.to_snake_case();
+                let package = package.name.name.to_snake_case();
+                let interface = interface.name.as_ref().unwrap().to_snake_case();
+                format!("{namespace}_{package}_{version}{interface}")
+            }
+            None => "wit_world".into(),
+        }
+    }
+
+    fn func_name(
+        &self,
+        resolve: &Resolve,
+        interface: Option<&WorldKey>,
+        func: &Function,
+    ) -> String {
+        let prefix = self.interface_name(resolve, interface);
+        let name = func.name.to_snake_case().replace('.', "_");
+
+        format!("{prefix}_{name}")
     }
 }
 
@@ -1783,7 +1835,10 @@ for index := 0; index < int({length}); index++ {{
                 }
 
                 let name = func.item_name().to_upper_camel_case();
-                let package = format!("export_{}", interface_name(resolve, self.interface));
+                let package = format!(
+                    "export_{}",
+                    self.generator.interface_name(resolve, self.interface)
+                );
 
                 let call = match &func.kind {
                     FunctionKind::Freestanding | FunctionKind::AsyncFreestanding => {
@@ -2943,42 +2998,6 @@ const (
         let docs = format_docs(docs);
         uwriteln!(self.src, "{docs}type {name} = {ty}");
     }
-}
-
-fn interface_name(resolve: &Resolve, interface: Option<&WorldKey>) -> String {
-    match interface {
-        Some(WorldKey::Name(name)) => name.to_snake_case(),
-        Some(WorldKey::Interface(id)) => {
-            let interface = &resolve.interfaces[*id];
-            let package = &resolve.packages[interface.package.unwrap()];
-            let package_has_multiple_versions = resolve.packages.iter().any(|(_, p)| {
-                p.name.namespace == package.name.namespace
-                    && p.name.name == package.name.name
-                    && p.name.version != package.name.version
-            });
-            let version = if package_has_multiple_versions {
-                if let Some(version) = &package.name.version {
-                    format!("{}_", version.to_string().replace(['.', '-', '+'], "_"))
-                } else {
-                    String::new()
-                }
-            } else {
-                String::new()
-            };
-            let namespace = package.name.namespace.to_snake_case();
-            let package = package.name.name.to_snake_case();
-            let interface = interface.name.as_ref().unwrap().to_snake_case();
-            format!("{namespace}_{package}_{version}{interface}")
-        }
-        None => "wit_world".into(),
-    }
-}
-
-fn func_name(resolve: &Resolve, interface: Option<&WorldKey>, func: &Function) -> String {
-    let prefix = interface_name(resolve, interface);
-    let name = func.name.to_snake_case().replace('.', "_");
-
-    format!("{prefix}_{name}")
 }
 
 fn wasm_type(ty: WasmType) -> &'static str {
