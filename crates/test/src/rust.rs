@@ -132,7 +132,7 @@ name = "tmp"
 [workspace]
 
 [dependencies]
-wit-bindgen = {{ {wit_bindgen_dep}, features = ['async-spawn', 'inter-task-wakeup'] }}
+wit-bindgen = {{ {wit_bindgen_dep}, features = ['async-spawn', 'inter-task-wakeup', 'futures-stream'] }}
 futures = "0.3.31"
 
 [lib]
