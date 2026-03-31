@@ -125,6 +125,11 @@ pub fn string_roundtrip(a : String) -> String {
 }
 
 ///|
+pub fn wasi_http_headers_roundtrip(a : Array[(String, FixedArray[Byte])]) -> Array[(String, FixedArray[Byte])] {
+  a
+}
+
+///|
 pub fn allocated_bytes() -> UInt {
   // not quite sure about this
   0

@@ -892,13 +892,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
 
                 results.push(format!("{length}"));
-                if FunctionKind::Freestanding == *self.kind || self.interface_gen.direction == Direction::Export {
-                    self.interface_gen.require_interop_using("System.Text");
-                    self.interface_gen.require_interop_using("System.Runtime.InteropServices");
-                } else {
-                    self.interface_gen.require_using("System.Text");
-                    self.interface_gen.require_using("System.Runtime.InteropServices");
-                }
             }
 
             Instruction::StringLift { .. } => {
