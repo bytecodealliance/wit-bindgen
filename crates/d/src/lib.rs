@@ -444,7 +444,6 @@ impl WorldGenerator for D {
         r#gen.interface = Some(id);
         r#gen.prologue();
 
-        r#gen.src.push_str("// Types");
         if let WorldKey::Name(_) = name {
             // We have an inline interface imported in a world.
             // Emit the "common" types as well
@@ -456,7 +455,6 @@ impl WorldGenerator for D {
 
         r#gen.types(id);
 
-        r#gen.src.push_str("\n// Functions\n");
         for (_name, func) in &resolve.interfaces[id].functions {
             match func.kind {
                 FunctionKind::Freestanding | FunctionKind::AsyncFreestanding => {
@@ -491,24 +489,22 @@ impl WorldGenerator for D {
             r#gen.define_type(name, *id);
         }
 
-        let src = take(&mut r#gen.src);
-        self.type_imports_src.append_src(&src);
+        self.type_imports_src = take(&mut r#gen.src);
     }
 
     fn import_funcs(
         &mut self,
-        _resolve: &Resolve,
+        resolve: &Resolve,
         _world: WorldId,
         funcs: &[(&str, &Function)],
         _files: &mut Files,
     ) {
-        let _name = WorldKey::Name("$root".to_string());
-        //let wasm_import_module = resolve.name_world_key(&name);
-
-        for (name, _func) in funcs {
-            self.function_imports_src
-                .push_str(&format!("// Import function - {name}\n"));
+        let mut r#gen = self.interface(resolve, Some(Direction::Import), None, Some("$root"));
+        for (_name, func) in funcs {
+            r#gen.import_func(func);
         }
+
+        self.function_imports_src = take(&mut r#gen.src);
     }
 
     fn export_interface(
@@ -615,15 +611,17 @@ impl WorldGenerator for D {
 
     fn export_funcs(
         &mut self,
-        _resolve: &Resolve,
+        resolve: &Resolve,
         _world: WorldId,
         funcs: &[(&str, &Function)],
         _files: &mut Files,
     ) -> Result<()> {
-        for (name, _func) in funcs {
-            self.function_exports_src
-                .push_str(&format!("// Export function: {name}\n"));
+        let mut r#gen = self.interface(resolve, Some(Direction::Export), None, Some("$root"));
+        for (_name, func) in funcs {
+            r#gen.export_func(func);
         }
+
+        self.function_exports_src = take(&mut r#gen.src);
         Ok(())
     }
 
@@ -657,7 +655,6 @@ impl WorldGenerator for D {
 
         world_src.push_str(&format!("module {};\n\n", self.world_fqn));
         world_src.push_str("import wit.common;\n\n");
-        world_src.push_str("// Interface imports\n");
         world_src.push_str(
             &self
                 .interface_imports
@@ -667,13 +664,8 @@ impl WorldGenerator for D {
                 .join("\n"),
         );
 
-        world_src.push_str("\n\n// Type imports\n");
-        world_src.append_src(&self.type_imports_src);
+        world_src.push_str("\n");
 
-        world_src.push_str("\n// Function imports\n");
-        world_src.append_src(&self.function_imports_src);
-
-        world_src.push_str("\n// Interface exports\n");
         world_src.push_str(
             &self
                 .interface_exports
@@ -683,10 +675,14 @@ impl WorldGenerator for D {
                 .join("\n"),
         );
 
+        world_src.push_str("\n");
+
+        world_src.append_src(&self.type_imports_src);
+
+        world_src.append_src(&self.function_imports_src);
+
         world_src.push_str("\n\nprivate alias AliasSeq(T...) = T;\n");
         world_src.push_str("template Exports(Impl...) {\n");
-        world_src.push_str("// Interface exports\n");
-
         world_src.push_str("alias InterfaceExports = AliasSeq!(\n");
         world_src.indent(1);
         world_src.push_str(
@@ -700,8 +696,7 @@ impl WorldGenerator for D {
         world_src.deindent(1);
         world_src.push_str("\n);\n");
 
-        world_src.push_str("\n// Function exports\n");
-        world_src.append_src(&self.function_exports_src);
+        world_src.push_str(&self.function_exports_src.as_str());
         world_src.push_str("}\n");
 
         let mut world_filepath = PathBuf::from_iter(get_world_fqn(world_id, resolve).split("."));
@@ -1256,112 +1251,151 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
 
         match self.direction {
             None => panic!("Resources can only be generated for imports, or exports. Not common."),
-            Some(Direction::Import) => match ty.owner {
-                TypeOwner::Interface(owner_id) => {
-                    if let Some(cur_interface) = self.interface
-                        && cur_interface == owner_id
-                    {
-                    } else {
-                        panic!("Emitting resource from `interface` outside that interface?");
-                    }
+            Some(Direction::Import) => {
+                self.src.push_str(&format!(
+                    "\n/++\n{}\n+/\n",
+                    docs.contents.as_deref().unwrap_or_default()
+                ));
 
-                    self.src.push_str(&format!(
-                        "\n/++\n{}\n+/\n",
-                        docs.contents.as_deref().unwrap_or_default()
-                    ));
+                self.src.push_str(&format!(
+                    "struct {escaped_name} {{
+    package(wit) uint __handle = 0;
 
-                    self.src.push_str(&format!(
-                        "struct {escaped_name} {{
-        package(wit) uint __handle = 0;
+    package(wit) this(uint handle) {{
+        __handle = handle;
+    }}
 
-        package(wit) this(uint handle) {{
-            __handle = handle;
-        }}
+    @disable this();
 
-        @disable this();
-
-        // TODO: make RAII? disable copy for the own
+    // TODO: make RAII? disable copy for the own
 
 
-        auto borrow() => Borrow(__handle);
-        alias borrow this;
+    auto borrow() => Borrow(__handle);
+    alias borrow this;
 
-        "
-                    ));
+    "
+                ));
 
-                    for (_, func) in &self.resolve.interfaces[owner_id].functions {
-                        if match &func.kind {
-                            FunctionKind::Freestanding => false,
-                            FunctionKind::Method(_) => false,
-                            FunctionKind::Static(mid) => *mid == id,
-                            FunctionKind::Constructor(mid) => *mid == id,
-                            FunctionKind::AsyncFreestanding => false,
-                            FunctionKind::AsyncMethod(_) => false,
-                            FunctionKind::AsyncStatic(_) => todo!(),
-                        } {
-                            self.import_func(func);
+                match ty.owner {
+                    TypeOwner::Interface(owner_id) => {
+                        for (_, func) in &self.resolve.interfaces[owner_id].functions {
+                            if match &func.kind {
+                                FunctionKind::Freestanding => false,
+                                FunctionKind::Method(_) => false,
+                                FunctionKind::Static(mid) => *mid == id,
+                                FunctionKind::Constructor(mid) => *mid == id,
+                                FunctionKind::AsyncFreestanding => false,
+                                FunctionKind::AsyncMethod(_) => false,
+                                FunctionKind::AsyncStatic(_) => todo!(),
+                            } {
+                                self.import_func(func);
+                            }
                         }
                     }
-
-                    self.src
-                        .push_str("void drop() {\n__import__drop(__handle);\n}\n");
-
-                    self.src.push_str(&format!(
-                        "@wasmImport!(\"{}\", \"[resource-drop]{}\")\n",
-                        self.wasm_import_module.unwrap(),
-                        name
-                    ));
-
-                    // The mangle is not important, as long as it won't conflict with other symbols
-                    // WebAssembly symbol identifiers are much more permissive than C (can be any UTF-8).
-                    // Yet, LDC before 1.42 doesn't allow full use of this fact. We make some substitutions.
-                    self.src.push_str(&format!(
-                        "pragma(mangle, \"__wit_import_{}__:resource_drop:{}\")\n",
-                        self.wasm_import_module
-                            .unwrap()
-                            .replace("/", "__")
-                            .replace("-", "_"),
-                        name.replace("-", "_")
-                    ));
-                    self.src
-                        .push_str("static private extern(C) void __import__drop(uint);\n\n");
-
-                    self.src.push_str(&format!(
-                        "struct Borrow {{
-            package(wit) uint __handle = 0;
-
-            package(wit) this(uint handle) {{
-                __handle = handle;
-            }}
-
-            @disable this();
-
-                        "
-                    ));
-
-                    for (_, func) in &self.resolve.interfaces[owner_id].functions {
-                        if match &func.kind {
-                            FunctionKind::Freestanding => false,
-                            FunctionKind::Method(mid) => *mid == id,
-                            FunctionKind::Static(_) => false,
-                            FunctionKind::Constructor(_) => false,
-                            FunctionKind::AsyncFreestanding => false,
-                            FunctionKind::AsyncMethod(_) => todo!(),
-                            FunctionKind::AsyncStatic(_) => false,
-                        } {
-                            self.import_func(func);
+                    TypeOwner::World(owner_id) => {
+                        for (_, import) in &self.resolve.worlds[owner_id].imports {
+                            match &import {
+                                WorldItem::Function(func) => {
+                                    if match &func.kind {
+                                        FunctionKind::Freestanding => false,
+                                        FunctionKind::Method(_) => false,
+                                        FunctionKind::Static(mid) => *mid == id,
+                                        FunctionKind::Constructor(mid) => *mid == id,
+                                        FunctionKind::AsyncFreestanding => false,
+                                        FunctionKind::AsyncMethod(_) => false,
+                                        FunctionKind::AsyncStatic(_) => todo!(),
+                                    } {
+                                        self.import_func(func);
+                                    }
+                                }
+                                _ => {}
+                            }
                         }
                     }
-
-                    self.src.push_str("}\n");
-
-                    self.src.push_str("}\n");
+                    TypeOwner::None => {
+                        panic!("Resource definition without owner?");
+                    }
                 }
-                TypeOwner::World(_) => todo!("resources in worlds"),
-                TypeOwner::None => {
-                    panic!("Resource definition without owner?");
+
+                self.src
+                    .push_str("void drop() {\n__import__drop(__handle);\n}\n");
+
+                self.src.push_str(&format!(
+                    "@wasmImport!(\"{}\", \"[resource-drop]{}\")\n",
+                    self.wasm_import_module.unwrap(),
+                    name
+                ));
+
+                // The mangle is not important, as long as it won't conflict with other symbols
+                // WebAssembly symbol identifiers are much more permissive than C (can be any UTF-8).
+                // Yet, LDC before 1.42 doesn't allow full use of this fact. We make some substitutions.
+                self.src.push_str(&format!(
+                    "pragma(mangle, \"__wit_import_{}__:resource_drop:{}\")\n",
+                    self.wasm_import_module
+                        .unwrap()
+                        .replace("/", "__")
+                        .replace("-", "_"),
+                    name.replace("-", "_")
+                ));
+                self.src
+                    .push_str("static private extern(C) void __import__drop(uint);\n\n");
+
+                self.src.push_str(&format!(
+                    "struct Borrow {{
+    package(wit) uint __handle = 0;
+
+    package(wit) this(uint handle) {{
+        __handle = handle;
+    }}
+
+    @disable this();
+
+                "
+                ));
+
+                match ty.owner {
+                    TypeOwner::Interface(owner_id) => {
+                        for (_, func) in &self.resolve.interfaces[owner_id].functions {
+                            if match &func.kind {
+                                FunctionKind::Freestanding => false,
+                                FunctionKind::Method(mid) => *mid == id,
+                                FunctionKind::Static(_) => false,
+                                FunctionKind::Constructor(_) => false,
+                                FunctionKind::AsyncFreestanding => false,
+                                FunctionKind::AsyncMethod(_) => todo!(),
+                                FunctionKind::AsyncStatic(_) => false,
+                            } {
+                                self.import_func(func);
+                            }
+                        }
+                    }
+                    TypeOwner::World(owner_id) => {
+                        for (_, import) in &self.resolve.worlds[owner_id].imports {
+                            match &import {
+                                WorldItem::Function(func) => {
+                                    if match &func.kind {
+                                        FunctionKind::Freestanding => false,
+                                        FunctionKind::Method(mid) => *mid == id,
+                                        FunctionKind::Static(_) => false,
+                                        FunctionKind::Constructor(_) => false,
+                                        FunctionKind::AsyncFreestanding => false,
+                                        FunctionKind::AsyncMethod(_) => todo!(),
+                                        FunctionKind::AsyncStatic(_) => false,
+                                    } {
+                                        self.import_func(func);
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                    TypeOwner::None => {
+                        panic!("Resource definition without owner?");
+                    }
                 }
-            },
+                self.src.push_str("}\n");
+                self.src.push_str("}\n");
+            }
             Some(Direction::Export) => match ty.owner {
                 TypeOwner::Interface(owner_id) => {
                     if let Some(cur_interface) = self.interface
@@ -1436,7 +1470,7 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
 
                     self.src.push_str("}\n");
                 }
-                TypeOwner::World(_) => todo!("resources in worlds"),
+                TypeOwner::World(_) => unimplemented!("resource exports in worlds"),
                 TypeOwner::None => {
                     panic!("Resource definition without owner?");
                 }
