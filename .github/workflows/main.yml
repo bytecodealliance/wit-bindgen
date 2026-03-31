@@ -80,11 +80,9 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
         # moonbit removed from language matrix for now - causing CI failures
         lang: [c, rust, csharp, cpp, go]
-        exclude:
-          # For now csharp doesn't work on macos, so exclude it from testing.
-          - os: macos-latest
-            lang: csharp
     runs-on: ${{ matrix.os }}
+    env:
+      RUNTIMELAB_COMMIT: '4cac3ab5c8e97fda69c23dfca41ace964babc05e'
     steps:
     - uses: actions/checkout@v4
       with:
@@ -103,7 +101,14 @@ jobs:
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: '9.x'
-      if: matrix.lang == 'csharp'
+      if: matrix.lang == 'csharp' && runner.os != 'macOS'
+
+    - name: Setup .NET 10 (macOS)
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.x'
+        dotnet-quality: 'preview'
+      if: matrix.lang == 'csharp' && runner.os == 'macOS'
 
     - name: Setup Go
       uses: actions/setup-go@v5
@@ -124,6 +129,57 @@ jobs:
         "C:\Users\runneradmin\.moon\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
       shell: powershell
       if: matrix.os == 'windows-latest' && matrix.lang == 'moonbit'
+
+    # macOS C# requires locally-built ILC packages since no osx-arm64
+    # packages are published on NuGet.
+    - name: Cache runtimelab ILC packages
+      id: cache-runtimelab
+      uses: actions/cache@v4
+      with:
+        path: runtimelab-packages
+        key: runtimelab-macos-arm64-${{ env.RUNTIMELAB_COMMIT }}
+      if: runner.os == 'macOS' && matrix.lang == 'csharp'
+
+    - name: Install LLVM 18 for runtimelab build
+      if: runner.os == 'macOS' && matrix.lang == 'csharp' && steps.cache-runtimelab.outputs.cache-hit != 'true'
+      run: brew install llvm@18
+
+    - name: Checkout runtimelab
+      uses: actions/checkout@v4
+      with:
+        repository: dotnet/runtimelab
+        ref: ${{ env.RUNTIMELAB_COMMIT }}
+        path: runtimelab
+      if: runner.os == 'macOS' && matrix.lang == 'csharp' && steps.cache-runtimelab.outputs.cache-hit != 'true'
+
+    - name: Build runtimelab ILC packages
+      if: runner.os == 'macOS' && matrix.lang == 'csharp' && steps.cache-runtimelab.outputs.cache-hit != 'true'
+      run: |
+        cd runtimelab
+        ln -sf $WASI_SDK_PATH src/mono/wasi/wasi-sdk
+        mkdir -p src/mono/wasi/include
+
+        # Build wasi libs and packages
+        ./build.sh clr.aot+libs -c Release -a wasm -os wasi /p:NuGetAudit=false
+        ./build.sh nativeaot.packages -c Release -a wasm -os wasi /p:NuGetAudit=false
+
+        # Build host compiler, libs, WASM JIT, and packages
+        ./build.sh clr.aot -c Release /p:NuGetAudit=false
+        ./build.sh libs -c Release /p:NuGetAudit=false
+        LLVM_CMAKE_CONFIG_RELEASE=$(brew --prefix llvm@18)/lib/cmake/llvm \
+        src/coreclr/build-runtime.sh -arm64 -release -os osx -outputrid osx-arm64 -component llvmjit
+        cp artifacts/bin/coreclr/osx.arm64.Release/libclrjit_universal_llvm32_arm64.dylib artifacts/bin/coreclr/osx.arm64.Release/ilc-published/
+        cp artifacts/bin/coreclr/osx.arm64.Release/libjitinterface_arm64.dylib artifacts/bin/coreclr/osx.arm64.Release/ilc-published/
+        ./build.sh nativeaot.packages -c Release /p:NuGetAudit=false
+
+        mkdir -p ../runtimelab-packages
+        cp artifacts/packages/Release/Shipping/*.nupkg ../runtimelab-packages/
+
+    - name: Set ILC env vars for macOS C#
+      if: runner.os == 'macOS' && matrix.lang == 'csharp'
+      run: |
+        echo "ILC_VERSION=10.0.0-dev" >> $GITHUB_ENV
+        echo "ILC_PACKAGES_PATH=${{ github.workspace }}/runtimelab-packages" >> $GITHUB_ENV
 
     # Run all codegen tests for this language
     - run: |

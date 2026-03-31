@@ -99,6 +99,7 @@ impl LanguageMethods for Csharp {
         let os = match std::env::consts::OS {
             "windows" => "win",
             "linux" => std::env::consts::OS,
+            "macos" => "osx",
             other => todo!("OS {} not supported", other),
         };
 
