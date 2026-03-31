@@ -939,7 +939,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 );
                 let ret_area = self.locals.tmp("retArea");
 
-                let array_size = if align > 1 { 
+                let array_size = if align > 1 {
                     // Add one additional element in case the starting address is not aligned
                     format!("{array_size} * {list}.Count + 1")
                 } else {
