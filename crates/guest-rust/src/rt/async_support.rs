@@ -61,6 +61,8 @@ mod abi_buffer;
 mod cabi;
 mod error_context;
 mod future_support;
+#[cfg(feature = "futures-stream")]
+mod futures_stream;
 #[cfg(feature = "inter-task-wakeup")]
 mod inter_task_wakeup;
 mod stream_support;
@@ -79,6 +81,8 @@ use self::waitable_set::WaitableSet;
 pub use abi_buffer::*;
 pub use error_context::*;
 pub use future_support::*;
+#[cfg(feature = "futures-stream")]
+pub use futures_stream::*;
 pub use stream_support::*;
 #[doc(hidden)]
 pub use subtask::Subtask;
