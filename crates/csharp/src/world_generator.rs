@@ -35,6 +35,7 @@ pub struct CSharp {
     pub(crate) needs_rep_table: bool,
     pub(crate) needs_wit_exception: bool,
     pub(crate) needs_async_support: bool,
+    pub(crate) needs_align_stack_ptr: bool,
     pub(crate) interface_fragments: HashMap<String, InterfaceTypeAndFragments>,
     pub(crate) world_fragments: Vec<InterfaceFragment>,
     pub(crate) sizes: SizeAlign,
@@ -623,6 +624,21 @@ impl WorldGenerator for CSharp {
             src.push_str(&ret_area_str);
         }
 
+        if self.needs_align_stack_ptr {
+            uwrite!(
+                src,
+                "
+                {access} static class MemoryHelper
+                {{
+                    {access} static unsafe void* AlignStackPtr(void* stackAddress, uint alignment)
+                    {{
+                        return (void*)(((int)stackAddress) + ((int)alignment - 1) & -(int)alignment);
+                    }}
+                }}
+                "
+            );
+        }
+
         if self.needs_rep_table {
             src.push('\n');
             src.push_str(include_str!("RepTable.cs"));
@@ -942,7 +958,6 @@ pub fn dotnet_aligned_array(array_size: usize, required_alignment: usize) -> (us
     let num_elements = array_size.div_ceil(required_alignment);
     match required_alignment {
         1 => (num_elements, "byte".to_owned()),
-        // Add one additional element in case the starting address is not aligned
         2 => (num_elements, "ushort".to_owned()),
         4 => (num_elements, "uint".to_owned()),
         8 => (num_elements, "ulong".to_owned()),

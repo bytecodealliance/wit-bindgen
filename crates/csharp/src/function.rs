@@ -452,23 +452,23 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 .to_owned()
             })),
             Instruction::I32Load { offset }
-            | Instruction::PointerLoad { offset }
-            | Instruction::LengthLoad { offset } => results.push(format!("global::System.BitConverter.ToInt32(new global::System.Span<byte>((byte*){} + {offset}, 4))",operands[0],offset = offset.size_wasm32())),
-            Instruction::I32Load8U { offset } => results.push(format!("new global::System.Span<byte>((byte*){} + {offset}, 1)[0]",operands[0],offset = offset.size_wasm32())),
-            Instruction::I32Load8S { offset } => results.push(format!("(sbyte)new global::System.Span<byte>((byte*){} + {offset}, 1)[0]",operands[0],offset = offset.size_wasm32())),
-            Instruction::I32Load16U { offset } => results.push(format!("global::System.BitConverter.ToUInt16(new global::System.Span<byte>((byte*){} + {offset}, 2))",operands[0],offset = offset.size_wasm32())),
-            Instruction::I32Load16S { offset } => results.push(format!("global::System.BitConverter.ToInt16(new global::System.Span<byte>((byte*){} + {offset}, 2))",operands[0],offset = offset.size_wasm32())),
-            Instruction::I64Load { offset } => results.push(format!("global::System.BitConverter.ToInt64(new global::System.Span<byte>((byte*){} + {offset}, 8))",operands[0],offset = offset.size_wasm32())),
-            Instruction::F32Load { offset } => results.push(format!("global::System.BitConverter.ToSingle(new global::System.Span<byte>((byte*){} + {offset}, 4))",operands[0],offset = offset.size_wasm32())),
-            Instruction::F64Load { offset } => results.push(format!("global::System.BitConverter.ToDouble(new global::System.Span<byte>((byte*){} + {offset}, 8))",operands[0],offset = offset.size_wasm32())),
+            | Instruction::LengthLoad { offset } => results.push(format!("new global::System.Span<int>((void*)((byte*){} + {offset}), 1)[0]", operands[0], offset = offset.size_wasm32())),
+            Instruction::PointerLoad { offset } => results.push(format!("new global::System.Span<nint>((void*)((byte*){} + {offset}), 1)[0]", operands[0], offset = offset.size_wasm32())),
+            Instruction::I32Load8U { offset } => results.push(format!("new global::System.Span<byte>((byte*){} + {offset}, 1)[0]", operands[0], offset = offset.size_wasm32())),
+            Instruction::I32Load8S { offset } => results.push(format!("(sbyte)new global::System.Span<byte>((byte*){} + {offset}, 1)[0]", operands[0], offset = offset.size_wasm32())),
+            Instruction::I32Load16U { offset } => results.push(format!("new global::System.Span<ushort>((void*)((byte*){} + {offset}), 1)[0]", operands[0], offset = offset.size_wasm32())),
+            Instruction::I32Load16S { offset } => results.push(format!("new global::System.Span<short>((void*)((byte*){} + {offset}), 1)[0]", operands[0], offset = offset.size_wasm32())),
+            Instruction::I64Load { offset } => results.push(format!("new global::System.Span<long>((void*)((byte*){} + {offset}), 1)[0]", operands[0], offset = offset.size_wasm32())),
+            Instruction::F32Load { offset } => results.push(format!("new global::System.Span<float>((void*)((byte*){} + {offset}), 1)[0]", operands[0], offset = offset.size_wasm32())),
+            Instruction::F64Load { offset } => results.push(format!("new global::System.Span<double>((void*)((byte*){} + {offset}), 1)[0]", operands[0], offset = offset.size_wasm32())),
             Instruction::I32Store { offset }
-            | Instruction::PointerStore { offset }
-            | Instruction::LengthStore { offset } => uwriteln!(self.src, "global::System.BitConverter.TryWriteBytes(new global::System.Span<byte>((byte*){} + {offset}, 4), {});", operands[1], operands[0],offset = offset.size_wasm32()),
-            Instruction::I32Store8 { offset } => uwriteln!(self.src, "*(byte*)({} + {offset}) = (byte){};", operands[1], operands[0],offset = offset.size_wasm32()),
-            Instruction::I32Store16 { offset } => uwriteln!(self.src, "global::System.BitConverter.TryWriteBytes(new global::System.Span<byte>((byte*){} + {offset}, 2), (short){});", operands[1], operands[0],offset = offset.size_wasm32()),
-            Instruction::I64Store { offset } => uwriteln!(self.src, "global::System.BitConverter.TryWriteBytes(new global::System.Span<byte>((byte*){} + {offset}, 8), unchecked((long){}));", operands[1], operands[0],offset = offset.size_wasm32()),
-            Instruction::F32Store { offset } => uwriteln!(self.src, "global::System.BitConverter.TryWriteBytes(new global::System.Span<byte>((byte*){} + {offset}, 4), unchecked((float){}));", operands[1], operands[0],offset = offset.size_wasm32()),
-            Instruction::F64Store { offset } => uwriteln!(self.src, "global::System.BitConverter.TryWriteBytes(new global::System.Span<byte>((byte*){} + {offset}, 8), unchecked((double){}));", operands[1], operands[0],offset = offset.size_wasm32()),
+            | Instruction::LengthStore { offset } => uwriteln!(self.src, "new global::System.Span<int>((void*)((byte*){} + {offset}), 1)[0] = {};", operands[1], operands[0], offset = offset.size_wasm32()),
+            Instruction::PointerStore { offset } => uwriteln!(self.src, "new global::System.Span<nint>((void*)((byte*){} + {offset}), 1)[0] = (nint){};", operands[1], operands[0], offset = offset.size_wasm32()),
+            Instruction::I32Store8 { offset } => uwriteln!(self.src, "*(byte*)({} + {offset}) = (byte){};", operands[1], operands[0], offset = offset.size_wasm32()),
+            Instruction::I32Store16 { offset } => uwriteln!(self.src, "new global::System.Span<short>((void*)((byte*){} + {offset}), 1)[0] = (short){};", operands[1], operands[0], offset = offset.size_wasm32()),
+            Instruction::I64Store { offset } => uwriteln!(self.src, "new global::System.Span<long>((void*)((byte*){} + {offset}), 1)[0] = unchecked((long){});", operands[1], operands[0], offset = offset.size_wasm32()),
+            Instruction::F32Store { offset } => uwriteln!(self.src, "new global::System.Span<float>((void*)((byte*){} + {offset}), 1)[0] = unchecked((float){});", operands[1], operands[0], offset = offset.size_wasm32()),
+            Instruction::F64Store { offset } => uwriteln!(self.src, "new global::System.Span<double>((void*)((byte*){} + {offset}), 1)[0] = unchecked((double){});", operands[1], operands[0], offset = offset.size_wasm32()),
 
             Instruction::I64FromU64 => results.push(format!("unchecked((long)({}))", operands[0])),
             Instruction::I32FromChar => results.push(format!("((int){})", operands[0])),
@@ -949,12 +949,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 match realloc {
                     None => {
                         self.needs_cleanup = true;
+                        self.interface_gen.csharp_gen.needs_align_stack_ptr = true;
                         uwrite!(self.src,
                             "
                             void* {address};
                             if (({size} * {list}.Count) < 1024) {{
                                 var {ret_area} = stackalloc {element_type}[{array_size}];
-                                {address} = (void*)(((int){ret_area}) + ({align} - 1) & -{align});
+                                {address} = MemoryHelper.AlignStackPtr({ret_area}, {align});
                             }}
                             else
                             {{
@@ -1509,11 +1510,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     array_size
                 };
 
+                self.interface_gen.csharp_gen.needs_align_stack_ptr = true;
                 uwrite!(
                     self.src,
                     "
-                    var {ret_area} = stackalloc {element_type}[{array_size} + 1];
-                    var {ptr} = ((int){ret_area}) + ({align} - 1) & -{align};
+                    var {ret_area} = stackalloc {element_type}[{array_size}];
+                    var {ptr} = (nint)MemoryHelper.AlignStackPtr({ret_area}, {align});
                     ",
                     align = align.align_wasm32()
                 );
