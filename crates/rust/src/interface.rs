@@ -1,8 +1,8 @@
 use crate::bindgen::{FunctionBindgen, POINTER_SIZE_EXPRESSION};
 use crate::{
-    ConstructorReturnType, FnSig, Identifier, InterfaceName, Ownership, RuntimeItem, RustFlagsRepr,
-    RustWasm, TypeGeneration, classify_constructor_return_type, full_wit_type_name, int_repr,
-    to_rust_ident, to_upper_camel_case, wasm_type,
+    classify_constructor_return_type, full_wit_type_name, int_repr, to_rust_ident,
+    to_upper_camel_case, wasm_type, ConstructorReturnType, FnSig, Identifier, InterfaceName,
+    Ownership, RuntimeItem, RustFlagsRepr, RustWasm, TypeGeneration,
 };
 use anyhow::Result;
 use heck::*;
@@ -11,7 +11,7 @@ use std::fmt::Write as _;
 use std::mem;
 use wit_bindgen_core::abi::{self, AbiVariant, LiftLower};
 use wit_bindgen_core::{
-    AnonymousTypeGenerator, Source, TypeInfo, dealias, uwrite, uwriteln, wit_parser::*,
+    dealias, uwrite, uwriteln, wit_parser::*, AnonymousTypeGenerator, Source, TypeInfo,
 };
 
 pub struct InterfaceGenerator<'a> {
@@ -303,6 +303,7 @@ macro_rules! {macro_name} {{
                     unreachable!()
                 }
             };
+            let module = module.replace(':', "_").replace('#', "_");
             let camel = name.to_upper_camel_case();
             uwriteln!(
                 self.src,
@@ -1215,6 +1216,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
         };
         let export_prefix = self.r#gen.opts.export_prefix.as_deref().unwrap_or("");
         let export_name = func.legacy_core_export_name(wasm_module_export_name.as_deref());
+        let export_name = export_name.replace(':', "_").replace('#', "_");
         let export_name = if async_ {
             format!("[async-lift]{export_name}")
         } else {
