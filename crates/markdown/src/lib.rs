@@ -116,6 +116,7 @@ impl WorldGenerator for Markdown {
         resolve: &Resolve,
         name: &WorldKey,
         id: InterfaceId,
+        _implements: Option<InterfaceId>,
         _files: &mut Files,
     ) -> Result<()> {
         let name = resolve.name_world_key(name);
@@ -155,6 +156,7 @@ impl WorldGenerator for Markdown {
         resolve: &Resolve,
         name: &WorldKey,
         id: InterfaceId,
+        _implements: Option<InterfaceId>,
         _files: &mut Files,
     ) -> Result<()> {
         let name = resolve.name_world_key(name);

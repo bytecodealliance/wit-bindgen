@@ -224,9 +224,15 @@ struct Go {
     types: HashSet<TypeId>,
     resources: HashMap<TypeId, Direction>,
     futures_and_streams: HashMap<(TypeId, bool), Option<WorldKey>>,
+    /// The current `implements` value being processed.
+    current_implements: Option<InterfaceId>,
 }
 
 impl Go {
+    fn wasm_name_world_key(&self, resolve: &Resolve, key: &WorldKey) -> String {
+        wit_bindgen_core::wasm_import_module_name(resolve, key, self.current_implements)
+    }
+
     /// Adds the bindings module prefix to a package name.
     fn mod_pkg(&self, for_export: bool, name: &str) -> String {
         let prefix = for_export
@@ -419,7 +425,7 @@ impl Go {
             "{prefix}{}",
             interface
                 .as_ref()
-                .map(|name| resolve.name_world_key(name))
+                .map(|name| self.wasm_name_world_key(resolve, name))
                 .unwrap_or_else(|| "$root".into())
         );
 
@@ -723,11 +729,14 @@ impl WorldGenerator for Go {
         resolve: &Resolve,
         name: &WorldKey,
         id: InterfaceId,
+        implements: Option<InterfaceId>,
         _files: &mut Files,
     ) -> Result<()> {
         if let WorldKey::Name(_) = name {
             self.interface_names.insert(id, name.clone());
         }
+
+        self.current_implements = implements;
 
         let mut data = {
             let mut generator = InterfaceGenerator::new(self, resolve, Some((id, name)), true);
@@ -748,6 +757,7 @@ impl WorldGenerator for Go {
             .or_default()
             .extend(data);
 
+        self.current_implements = None;
         Ok(())
     }
 
@@ -773,11 +783,14 @@ impl WorldGenerator for Go {
         resolve: &Resolve,
         name: &WorldKey,
         id: InterfaceId,
+        implements: Option<InterfaceId>,
         _files: &mut Files,
     ) -> Result<()> {
         if let WorldKey::Name(_) = name {
             self.interface_names.insert(id, name.clone());
         }
+
+        self.current_implements = implements;
 
         for (type_name, ty) in &resolve.interfaces[id].types {
             let exported = matches!(resolve.types[*ty].kind, TypeDefKind::Resource)
@@ -808,6 +821,7 @@ impl WorldGenerator for Go {
             self.src.push_str(&code);
         }
 
+        self.current_implements = None;
         Ok(())
     }
 
@@ -1015,7 +1029,7 @@ impl Go {
         let (camel, has_self) = func_declaration(resolve, func);
 
         let module = match interface {
-            Some(name) => resolve.name_world_key(name),
+            Some(name) => self.wasm_name_world_key(resolve, name),
             None => "$root".to_string(),
         };
 
@@ -1234,7 +1248,7 @@ func {camel}({go_params}) {go_results} {{
         };
 
         let sig = resolve.wasm_signature(variant, func);
-        let core_module_name = interface.map(|v| resolve.name_world_key(v));
+        let core_module_name = interface.map(|v| self.wasm_name_world_key(resolve, v));
         let export_name = func.legacy_core_export_name(core_module_name.as_deref());
         let name = self.func_name(resolve, interface, func);
 
@@ -1285,7 +1299,7 @@ func {camel}({go_params}) {go_results} {{
             self.imports.insert(remote_pkg("async"));
 
             let module = match interface {
-                Some(name) => resolve.name_world_key(name),
+                Some(name) => self.wasm_name_world_key(resolve, name),
                 None => "$root".to_string(),
             };
 
@@ -2639,7 +2653,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         let camel = name.to_upper_camel_case();
         let module = self
             .interface
-            .map(|(_, key)| self.resolve.name_world_key(key))
+            .map(|(_, key)| self.generator.wasm_name_world_key(self.resolve, key))
             .unwrap_or_else(|| "$root".into());
 
         if self.in_import {
