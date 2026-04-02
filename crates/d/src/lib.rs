@@ -726,7 +726,9 @@ impl<'a> DInterfaceGenerator<'a> {
     fn scoped_type_name(&self, id: TypeId, from_module_fqn: &str) -> String {
         let ty = &self.resolve.types[id];
 
-        let owner_fqn = self.type_owner_fqn(&ty.owner).unwrap();
+        let owner_fqn = self
+            .type_owner_fqn(&ty.owner, self.r#gen.types.get(id).has_resource)
+            .unwrap();
 
         let upper_name = ty.name.as_ref().unwrap().to_upper_camel_case();
         let escaped_name = escape_d_identifier(&upper_name);
@@ -820,14 +822,27 @@ impl<'a> DInterfaceGenerator<'a> {
         }
     }
 
-    fn type_owner_fqn(&self, owner: &TypeOwner) -> Option<&str> {
+    fn type_owner_fqn(&self, owner: &TypeOwner, imports_instead_of_common: bool) -> Option<&str> {
         match &owner {
             TypeOwner::None => None,
             TypeOwner::Interface(interface_id) => match self.direction {
                 Some(_) => self
                     .r#gen
                     .lookup_interface_fqn(*interface_id, self.direction)
-                    .or_else(|| self.r#gen.lookup_interface_fqn(*interface_id, None)),
+                    .or_else(|| {
+                        if !imports_instead_of_common || self.direction != Some(Direction::Import) {
+                            self.r#gen.lookup_interface_fqn(
+                                *interface_id,
+                                if imports_instead_of_common {
+                                    Some(Direction::Import)
+                                } else {
+                                    None
+                                },
+                            )
+                        } else {
+                            None
+                        }
+                    }),
                 None => self.r#gen.lookup_interface_fqn(*interface_id, None),
             },
             TypeOwner::World(world_id) => {
@@ -882,6 +897,17 @@ impl<'a> DInterfaceGenerator<'a> {
                         None => common_fqn,
                     }
                 ));
+
+                if self.direction == Some(Direction::Export) {
+                    if let Some(import_fqn) = self
+                        .r#gen
+                        .lookup_interface_fqn(dep_id, Some(Direction::Import))
+                    {
+                        self.src.push_str("static import ");
+                        self.src.push_str(import_fqn);
+                        self.src.push_str(";\n");
+                    }
+                }
             } else {
                 self.src
                     .push_str(&format!("static import {};\n", common_fqn));
@@ -1209,7 +1235,7 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
         let escaped_name = escape_d_identifier(&upper_name);
 
         let owner_fqn = self
-            .type_owner_fqn(&self.resolve.types[id].owner)
+            .type_owner_fqn(&self.resolve.types[id].owner, false)
             .unwrap()
             .to_string();
 
@@ -1488,7 +1514,9 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
             docs.contents.as_deref().unwrap_or_default()
         ));
 
-        let owner_fqn = self.type_owner_fqn(&self.resolve.types[id].owner).unwrap();
+        let owner_fqn = self
+            .type_owner_fqn(&self.resolve.types[id].owner, false)
+            .unwrap();
         self.src.push_str(&format!(
             "alias {escaped_name} = Tuple!({});",
             tuple
@@ -1549,7 +1577,7 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
         };
 
         let owner_fqn = self
-            .type_owner_fqn(&self.resolve.types[id].owner)
+            .type_owner_fqn(&self.resolve.types[id].owner, false)
             .unwrap()
             .to_string();
 
@@ -1641,7 +1669,9 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
             docs.contents.as_deref().unwrap_or_default()
         ));
 
-        let owner_fqn = self.type_owner_fqn(&self.resolve.types[id].owner).unwrap();
+        let owner_fqn = self
+            .type_owner_fqn(&self.resolve.types[id].owner, false)
+            .unwrap();
         self.src.push_str(&format!(
             "alias {escaped_name} = Option!({});",
             self.type_name(payload, owner_fqn)
@@ -1657,7 +1687,9 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
             docs.contents.as_deref().unwrap_or_default()
         ));
 
-        let owner_fqn = self.type_owner_fqn(&self.resolve.types[id].owner).unwrap();
+        let owner_fqn = self
+            .type_owner_fqn(&self.resolve.types[id].owner, false)
+            .unwrap();
         self.src.push_str(&format!(
             "alias {escaped_name} = Result!({}, {});",
             self.optional_type_name(result.ok.as_ref(), owner_fqn),
@@ -1714,7 +1746,8 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
 
         let typename = self.type_name(
             alias_ty,
-            self.type_owner_fqn(&self.resolve.types[id].owner).unwrap(),
+            self.type_owner_fqn(&self.resolve.types[id].owner, false)
+                .unwrap(),
         );
 
         self.src
@@ -1730,7 +1763,9 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
             docs.contents.as_deref().unwrap_or_default()
         ));
 
-        let owner_fqn = self.type_owner_fqn(&self.resolve.types[id].owner).unwrap();
+        let owner_fqn = self
+            .type_owner_fqn(&self.resolve.types[id].owner, false)
+            .unwrap();
         self.src.push_str(&format!(
             "alias {escaped_name} = WitList!({});",
             self.type_name(ty, owner_fqn)
@@ -1753,7 +1788,9 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
             docs.contents.as_deref().unwrap_or_default()
         ));
 
-        let owner_fqn = self.type_owner_fqn(&self.resolve.types[id].owner).unwrap();
+        let owner_fqn = self
+            .type_owner_fqn(&self.resolve.types[id].owner, false)
+            .unwrap();
         self.src.push_str(&format!(
             "alias {escaped_name} = {}[{size}];",
             self.type_name(ty, owner_fqn)
