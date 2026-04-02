@@ -35,6 +35,7 @@ std = []
 async = ["std", "wit-bindgen-rust-macro?/async"]
 bitflags = ["dep:bitflags"]
 async-spawn = ['async', 'dep:futures']
+futures-stream = ['async', 'dep:futures']
 macro-string = ["wit-bindgen-rust-macro?/macro-string"]
 
 # Unstable feature to support being a libstd dependency
