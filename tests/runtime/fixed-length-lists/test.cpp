@@ -49,3 +49,21 @@ std::array<to_test::Nested, 2>
 to_test::NightmareOnCpp(std::array<to_test::Nested, 2> a) {
     return a;
 }
+void to_test::StringListParam(std::array<wit::string, 3> a) {
+    assert(a[0].get_view() == "foo");
+    assert(a[1].get_view() == "bar");
+    assert(a[2].get_view() == "baz");
+}
+std::array<wit::string, 3> to_test::StringListResult() {
+    return std::array<wit::string, 3>{
+        wit::string::from_view("foo"),
+        wit::string::from_view("bar"),
+        wit::string::from_view("baz"),
+    };
+}
+std::array<wit::string, 3> to_test::StringListRoundtrip(std::array<wit::string, 3> a) {
+    return a;
+}
+uint32_t to_test::AllocatedBytes() {
+    return 0;
+}
