@@ -1,0 +1,402 @@
+// Copyright 2025 International Digital Economy Academy
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+///|
+priv struct EventLoop {
+  subscribes : Map[Int, Subscriber]
+  tasks : Map[WaitableSet, Coroutine]
+  owned_coroutines : Map[WaitableSet, @set.Set[Coroutine]]
+  finished : Map[WaitableSet, Bool]
+}
+
+///|
+priv struct Subscriber {
+  mut event : Events?
+  coro : @set.Set[Coroutine]
+}
+
+///|
+fn current_waitableset() -> WaitableSet {
+  WaitableSet(tls_get())
+}
+
+///|
+fn should_complete(waitable_set : WaitableSet) -> Bool {
+  ev.finished.get(waitable_set) is Some(true) && no_more_work()
+}
+
+///|
+fn next_callback(waitable_set : WaitableSet) -> Int {
+  if should_complete(waitable_set) {
+    ev.tasks.remove(waitable_set)
+    ev.owned_coroutines.remove(waitable_set)
+    ev.finished.remove(waitable_set)
+    waitable_set.drop()
+    return CallbackCode::Completed.encode()
+  }
+  if has_immediately_ready_task() && ev.subscribes.is_empty() {
+    return CallbackCode::Yield.encode()
+  }
+  CallbackCode::Wait(waitable_set.0).encode()
+}
+
+///|
+pub fn with_waitableset(f : async () -> Unit) -> Int {
+  let waitable_set = WaitableSet::new()
+  let owned = @set.Set::new()
+  tls_set(waitable_set.0)
+  let coro = spawn(async fn() -> Unit {
+    let coro = current_coroutine()
+    defer owned.remove(coro)
+    defer ev.finished.set(waitable_set, true)
+    f()
+  })
+  ev.tasks.set(waitable_set, coro)
+  owned.add(coro)
+  ev.owned_coroutines.set(waitable_set, owned)
+  ev.finished.set(waitable_set, false)
+  reschedule()
+  next_callback(waitable_set)
+}
+
+///|
+pub fn cb(event : Int, waitable_id : Int, code : Int) -> Int {
+  let waitable_set = current_waitableset()
+  let events = Events::new(EventCode::from(event), waitable_id, code)
+  match events {
+    None => {
+      reschedule()
+      next_callback(waitable_set)
+    }
+    TaskCancelled => {
+      guard ev.tasks.get(waitable_set) is Some(coro)
+      coro.cancel()
+      if ev.owned_coroutines.get(waitable_set) is Some(owned) {
+        owned.each(Coroutine::cancel)
+      }
+      for ;; {
+        reschedule()
+        if !has_immediately_ready_task() {
+          break
+        }
+      }
+      ev.tasks.remove(waitable_set)
+      ev.owned_coroutines.remove(waitable_set)
+      ev.finished.remove(waitable_set)
+      if ev.subscribes.is_empty() {
+        waitable_set.drop()
+      }
+      task_cancel()
+      return CallbackCode::Completed.encode()
+    }
+    _ => {
+      let sub = ev.subscribes.get(waitable_id)
+      guard sub is Some(subscriber)
+      subscriber.event = Some(events)
+      subscriber.coro.each(Coroutine::wake)
+      subscriber.coro.clear()
+      ev.subscribes.remove(waitable_id)
+      waitable_join(waitable_id, 0)
+      reschedule()
+      next_callback(waitable_set)
+    }
+  }
+}
+
+///|
+let ev : EventLoop = {
+  subscribes: {},
+  tasks: {},
+  owned_coroutines: {},
+  finished: {},
+}
+
+///|
+/// Spawn a coroutine owned by the current component-model async task.
+///
+/// This is intended for runtime bridge work such as lowering local futures and
+/// streams to component-model handles. The coroutine does not participate in
+/// `TaskGroup` structured concurrency, but it is cancelled when the current
+/// component-model task is cancelled and keeps the waitable-set alive until it
+/// terminates.
+pub fn spawn_component_task_current(f : async () -> Unit) -> Unit {
+  let waitable_set = current_waitableset()
+  guard ev.tasks.get(waitable_set) is Some(_)
+  guard ev.owned_coroutines.get(waitable_set) is Some(owned)
+  let coro = spawn(async fn() -> Unit {
+    let coro = current_coroutine()
+    defer owned.remove(coro)
+    f()
+  })
+  owned.add(coro)
+}
+
+///|
+pub fn detach_waitable(waitable_id : Int) -> Unit {
+  if ev.subscribes.get(waitable_id) is Some(subscriber) {
+    subscriber.coro.clear()
+    ev.subscribes.remove(waitable_id)
+  }
+  waitable_join(waitable_id, 0)
+}
+
+///|
+pub async fn suspend_for_subtask(
+  val : Int,
+  cleanup_after_started : () -> Unit,
+) -> Unit {
+  let task = SubTask::from(val)
+  let mut cleaned = false
+
+  // Helper: ensure cleanup is called once we've moved past Starting state
+  fn ensure_cleanup(state : SubTaskState) -> Unit {
+    if !cleaned && !(state is Starting) {
+      cleanup_after_started()
+      cleaned = true
+    }
+  }
+
+  // Immediate completion without a handle.
+  if task.handle == 0 {
+    ensure_cleanup(task.state)
+    match task.state {
+      Returned => return
+      Cancelled_before_started => raise SubTaskCancelled(before_started=true)
+      Cancelled_before_returned => raise SubTaskCancelled(before_started=false)
+      _ => panic()
+    }
+  }
+
+  defer subtask_drop(task.handle)
+
+  // Initial state, return if finished
+  ensure_cleanup(task.state)
+  match task.state {
+    Returned => return
+    Cancelled_before_started => raise SubTaskCancelled(before_started=true)
+    Cancelled_before_returned => raise SubTaskCancelled(before_started=false)
+    _ => ()
+  }
+
+  // Create subscriber to wait for events
+  // The task has unique subscriber
+  guard ev.subscribes.get(task.handle) is None
+  let set = @set.Set::new()
+  let subscriber = { event: None, coro: set }
+  ev.subscribes.set(task.handle, subscriber)
+  for ;; {
+    set.add(current_coroutine())
+    waitable_join(task.handle, current_waitableset().0)
+    defer subscriber.coro.remove(current_coroutine())
+    suspend() catch {
+      Cancelled::Cancelled =>
+        // Cancel the subtask
+        return protect_from_cancel(() => {
+          subscriber.event = task
+            .cancel()
+            .map(state => Subtask(task.handle, state))
+          while subscriber.event is None {
+            suspend()
+          }
+          guard subscriber.event is Some(Subtask(i, state)) && i == task.handle
+          ensure_cleanup(state)
+          match state {
+            Returned => return
+            Cancelled_before_started =>
+              raise SubTaskCancelled(before_started=true)
+            Cancelled_before_returned =>
+              raise SubTaskCancelled(before_started=false)
+            _ => panic() // should not happen
+          }
+        })
+    }
+
+    // Subsequent state, return if finished
+    if subscriber.event is Some(Subtask(i, state)) {
+      guard i == task.handle
+      ensure_cleanup(state)
+      match state {
+        Returned => return
+        Cancelled_before_started => raise SubTaskCancelled(before_started=true)
+        Cancelled_before_returned =>
+          raise SubTaskCancelled(before_started=false)
+        _ => subscriber.event = None
+      }
+    }
+  }
+}
+
+///|
+pub async fn suspend_for_future_read(idx : Int, val : Int) -> Unit {
+  let result = if val == -1 {
+    let subscriber = if ev.subscribes.get(idx) is Some(subscriber) {
+      subscriber
+    } else {
+      let set = @set.Set::new()
+      let subscriber = { event: None, coro: set }
+      ev.subscribes.set(idx, subscriber)
+      subscriber
+    }
+    waitable_join(idx, current_waitableset().0)
+    subscriber.coro.add(current_coroutine())
+    defer subscriber.coro.remove(current_coroutine())
+    suspend()
+    guard subscriber.event is Some(FutureRead(i, result)) && i == idx
+    result
+  } else {
+    let result = FutureReadResult::from(val)
+    if ev.subscribes.get(idx) is Some(subscriber) {
+      subscriber.event = Some(FutureRead(idx, result))
+      subscriber.coro.each(Coroutine::wake)
+      subscriber.coro.clear()
+      ev.subscribes.remove(idx)
+      waitable_join(idx, 0)
+    }
+    result
+  }
+  match result {
+    Completed => return
+    Cancelled => raise FutureReadError::Cancelled
+  }
+}
+
+///|
+pub async fn suspend_for_future_write(idx : Int, val : Int) -> Bool {
+  let result = if val == -1 {
+    let subscriber = if ev.subscribes.get(idx) is Some(subscriber) {
+      subscriber
+    } else {
+      let set = @set.Set::new()
+      let subscriber = { event: None, coro: set }
+      ev.subscribes.set(idx, subscriber)
+      subscriber
+    }
+    waitable_join(idx, current_waitableset().0)
+    subscriber.coro.add(current_coroutine())
+    defer subscriber.coro.remove(current_coroutine())
+    suspend()
+    guard subscriber.event is Some(FutureWrite(i, result)) && i == idx
+    result
+  } else {
+    let result = FutureWriteResult::from(val)
+    if ev.subscribes.get(idx) is Some(subscriber) {
+      subscriber.event = Some(FutureWrite(idx, result))
+      subscriber.coro.each(Coroutine::wake)
+      subscriber.coro.clear()
+      ev.subscribes.remove(idx)
+      waitable_join(idx, 0)
+    }
+    result
+  }
+  match result {
+    Completed => true
+    Dropped => false
+    Cancelled => raise FutureWriteCancelled
+  }
+}
+
+///|
+pub async fn suspend_for_stream_read(idx : Int, val : Int) -> (Int, Bool) {
+  let { progress, copy_result } = if val == -1 {
+    // Blocked, wait for event
+    let subscriber = if ev.subscribes.get(idx) is Some(subscriber) {
+      subscriber.coro.add(current_coroutine())
+      subscriber
+    } else {
+      waitable_join(idx, current_waitableset().0)
+      let set = @set.Set::new()
+      set.add(current_coroutine())
+      let subscriber = { event: None, coro: set }
+      ev.subscribes.set(idx, subscriber)
+      subscriber
+    }
+    defer subscriber.coro.remove(current_coroutine())
+    suspend()
+    guard subscriber.event is Some(StreamRead(i, result)) && i == idx
+    result
+  } else {
+    let result = StreamResult::from(val)
+    if ev.subscribes.get(idx) is Some(subscriber) {
+      subscriber.event = Some(StreamRead(idx, result))
+      subscriber.coro.each(Coroutine::wake)
+      subscriber.coro.clear()
+      ev.subscribes.remove(idx)
+      waitable_join(idx, 0)
+    }
+    result
+  }
+  match copy_result {
+    Completed => return (progress, false)
+    Dropped => return (progress, true)
+    Cancelled =>
+      if progress > 0 {
+        return (progress, false)
+      } else {
+        raise StreamReadCancelled
+      }
+  }
+}
+
+///|
+pub async fn suspend_for_stream_write(idx : Int, val : Int) -> (Int, Bool) {
+  let { progress, copy_result } = if val == -1 {
+    // Blocked, wait for event
+    let subscriber = if ev.subscribes.get(idx) is Some(subscriber) {
+      subscriber.coro.add(current_coroutine())
+      subscriber
+    } else {
+      waitable_join(idx, current_waitableset().0)
+      let set = @set.Set::new()
+      set.add(current_coroutine())
+      let subscriber = { event: None, coro: set }
+      ev.subscribes.set(idx, subscriber)
+      subscriber
+    }
+    defer subscriber.coro.remove(current_coroutine())
+    suspend()
+    guard subscriber.event is Some(StreamWrite(i, result)) && i == idx
+    result
+  } else {
+    let result = StreamResult::from(val)
+    if ev.subscribes.get(idx) is Some(subscriber) {
+      subscriber.event = Some(StreamWrite(idx, result))
+      subscriber.coro.each(Coroutine::wake)
+      subscriber.coro.clear()
+      ev.subscribes.remove(idx)
+      waitable_join(idx, 0)
+    }
+    result
+  }
+  match copy_result {
+    Completed => return (progress, false)
+    Dropped => return (progress, true)
+    // FIXME(WebAssembly/component-model#490): cancellation may be observed in
+    // cases that should otherwise block. Treat this as no-progress so callers
+    // can retry.
+    Cancelled => return (progress, false)
+  }
+}
+
+///|
+pub suberror OpCancelled {
+  SubTaskCancelled(before_started~ : Bool)
+  StreamReadCancelled
+  FutureWriteCancelled
+}
+
+///|
+pub(all) suberror FutureReadError {
+  Cancelled
+  Dropped
+}

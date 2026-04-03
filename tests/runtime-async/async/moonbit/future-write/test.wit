@@ -1,0 +1,26 @@
+package my:test;
+
+interface i {
+  // MoonBit creates a future, writes a value, and returns it
+  create-future-with-value: async func(value: u32) -> future<u32>;
+  // MoonBit creates a future without a payload
+  create-unit-future: async func() -> future;
+  // MoonBit returns nested future handles
+  create-nested-future: async func(value: u32) -> future<future<u32>>;
+
+  record nested-future-record {
+    nested: future<future<u32>>,
+  }
+  // MoonBit returns a record containing nested futures
+  create-nested-future-record: async func(value: u32) -> nested-future-record;
+}
+
+world test {
+  export i;
+}
+
+world runner {
+  import i;
+
+  export run: async func();
+}
