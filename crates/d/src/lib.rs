@@ -1916,7 +1916,12 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
     fn emit_ret_area_if_needed(&self) -> String {
         if !self.return_pointer_area_size.is_empty() {
             format!(
-                "align({}) void[{}] _retArea = void;\n",
+                "{}align({}) void[{}] _retArea = void;\n",
+                if self.r#gen.direction == Some(Direction::Export) {
+                    "static "
+                } else {
+                    ""
+                },
                 self.return_pointer_area_align.format("size_t.sizeof"),
                 self.return_pointer_area_size.format("size_t.sizeof")
             )
@@ -2003,23 +2008,25 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             | abi::Instruction::I32FromS8
             | abi::Instruction::I32FromU16
             | abi::Instruction::I32FromS16
-            | abi::Instruction::I32FromU32
             | abi::Instruction::I32FromS32 => top_as("uint"),
-            abi::Instruction::I64FromU64 | abi::Instruction::I64FromS64 => top_as("ulong"),
-            abi::Instruction::CoreF32FromF32 => top_as("float"),
-            abi::Instruction::CoreF64FromF64 => top_as("double"),
+            abi::Instruction::I32FromU32 => results.push(operands.pop().unwrap()),
+
+            abi::Instruction::I64FromU64 => results.push(operands.pop().unwrap()),
+            abi::Instruction::I64FromS64 => top_as("ulong"),
+            abi::Instruction::CoreF32FromF32 => results.push(operands.pop().unwrap()),
+            abi::Instruction::CoreF64FromF64 => results.push(operands.pop().unwrap()),
 
             abi::Instruction::S8FromI32 => top_as("byte"),
             abi::Instruction::U8FromI32 => top_as("ubyte"),
             abi::Instruction::S16FromI32 => top_as("short"),
             abi::Instruction::U16FromI32 => top_as("ushort"),
             abi::Instruction::S32FromI32 => top_as("int"),
-            abi::Instruction::U32FromI32 => top_as("uint"),
+            abi::Instruction::U32FromI32 => results.push(operands.pop().unwrap()),
             abi::Instruction::S64FromI64 => top_as("long"),
-            abi::Instruction::U64FromI64 => top_as("ulong"),
+            abi::Instruction::U64FromI64 => results.push(operands.pop().unwrap()),
             abi::Instruction::CharFromI32 => top_as("dchar"),
-            abi::Instruction::F32FromCoreF32 => top_as("float"),
-            abi::Instruction::F64FromCoreF64 => top_as("double"),
+            abi::Instruction::F32FromCoreF32 => results.push(operands.pop().unwrap()),
+            abi::Instruction::F64FromCoreF64 => results.push(operands.pop().unwrap()),
             abi::Instruction::BoolFromI32 => results.push(format!("({} != 0)", operands[0])),
 
             abi::Instruction::ListCanonLower { .. } | abi::Instruction::StringLower { .. } => {
@@ -2129,17 +2136,68 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 results.push(format!("{list_name}({list})"));
             }
 
-            abi::Instruction::FixedLengthListLift { .. } => {
-                todo!("instr: FixedLengthListLower");
+            abi::Instruction::FixedLengthListLift { size, id, .. } => {
+                let result = tempname("_arr", self.tmp());
+                let type_name = self.r#gen.type_name(&Type::Id(*id), self.r#gen.fqn);
+                self.push_str(&format!("{type_name} {result} = [\n",));
+                self.src.indent(1);
+                for op in operands.drain(0..(*size as usize)) {
+                    self.push_str(&op);
+                    self.push_str(", \n");
+                }
+                self.src.deindent(1);
+                self.push_str("];\n");
+                results.push(result);
             }
-            abi::Instruction::FixedLengthListLower { .. } => {
-                todo!("instr: FixedLengthListLower");
+            abi::Instruction::FixedLengthListLower { size, .. } => {
+                for i in 0..(*size as usize) {
+                    results.push(format!("{}[{i}]", operands[0]));
+                }
             }
-            abi::Instruction::FixedLengthListLowerToMemory { .. } => {
-                todo!("instr: FixedLengthListLowerToMemory");
+            abi::Instruction::FixedLengthListLowerToMemory { element, .. } => {
+                let Block {
+                    body,
+                    results: _,
+                    element: block_element,
+                    base,
+                } = self.blocks.pop().unwrap();
+                let arr_src = &operands[0];
+                let size_str = self.r#gen.sizes.size(element).format("size_t.sizeof");
+
+                self.push_str(&format!(
+                    "foreach ({block_element}_idx, const ref {block_element}; {arr_src}) {{\n"
+                ));
+                self.push_str(&format!(
+                    "const auto {base} = {arr_src} + {block_element}_idx * {size_str};\n"
+                ));
+                self.push_str(&body);
+                self.push_str("\n}\n");
             }
-            abi::Instruction::FixedLengthListLiftFromMemory { .. } => {
-                todo!("instr: FixedLengthListLiftFromMemory");
+            abi::Instruction::FixedLengthListLiftFromMemory { id, element, .. } => {
+                let Block {
+                    body,
+                    results: block_results,
+                    element: block_element,
+                    base,
+                } = self.blocks.pop().unwrap();
+                let arr_src = &operands[0];
+                let type_name = self.r#gen.type_name(&Type::Id(*id), self.r#gen.fqn);
+                let size_str = self.r#gen.sizes.size(element).format("size_t.sizeof");
+
+                let result = tempname("_arr", self.tmp());
+                self.push_str(&format!("{type_name} {result} = void;\n"));
+
+                self.push_str(&format!(
+                    "foreach ({block_element}_idx, ref {block_element}; {result}) {{\n"
+                ));
+                self.push_str(&format!(
+                    "const auto {base} = {arr_src} + {block_element}_idx * {size_str};\n"
+                ));
+                self.push_str(&body);
+                self.push_str(&format!("{block_element} = {};", block_results[0]));
+                self.push_str("\n}\n");
+
+                results.push(result);
             }
 
             abi::Instruction::IterElem { .. } => {
