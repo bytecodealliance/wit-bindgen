@@ -1330,6 +1330,10 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         // Not needed. They will become `FixedArray[T]` in Moonbit
     }
 
+    fn type_map(&mut self, _id: TypeId, _name: &str, _key: &Type, _value: &Type, _docs: &Docs) {
+        todo!("map types are not yet supported in the MoonBit backend")
+    }
+
     fn type_future(&mut self, _id: TypeId, _name: &str, _ty: &Option<Type>, _docs: &Docs) {
         unimplemented!() // Not needed
     }
@@ -2806,6 +2810,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 );
 
                 results.push(format!("FixedArray::from_array({array}[:])"));
+            }
+
+            Instruction::MapLower { .. }
+            | Instruction::MapLift { .. }
+            | Instruction::IterMapKey { .. }
+            | Instruction::IterMapValue { .. }
+            | Instruction::GuestDeallocateMap { .. } => {
+                todo!("map types are not yet supported in this backend")
             }
         }
     }

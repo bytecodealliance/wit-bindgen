@@ -49,6 +49,7 @@ impl LanguageMethods for Csharp {
                 | "import-export-resource.wit"
                 | "issue-1433.wit"
                 | "named-fixed-length-list.wit"
+                | "map.wit"
         )
     }
 
