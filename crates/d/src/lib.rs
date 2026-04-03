@@ -6,7 +6,7 @@ use std::mem::{replace, take};
 use std::path::PathBuf;
 use wit_bindgen_core::{
     Direction, Files, InterfaceGenerator, Source, Types, WorldGenerator,
-    abi::{self, Bindgen, WasmType},
+    abi::{self, Bindgen, Bitcast, WasmType},
     wit_parser::*,
 };
 
@@ -322,6 +322,9 @@ impl D {
             direction,
 
             wasm_import_module,
+
+            return_pointer_area_size: Default::default(),
+            return_pointer_area_align: Default::default(),
         }
     }
 
@@ -598,6 +601,9 @@ impl WorldGenerator for D {
             }
         }
 
+        let ret_area_decl = r#gen.emit_ret_area_if_needed();
+
+        r#gen.src.push_str(&ret_area_decl);
         r#gen.src.push_str("}\n");
 
         let mut interface_filepath = PathBuf::from_iter(fqn.split("."));
@@ -618,10 +624,19 @@ impl WorldGenerator for D {
     ) -> Result<()> {
         let mut r#gen = self.interface(resolve, Some(Direction::Export), None, Some("$root"));
         for (_name, func) in funcs {
-            r#gen.export_func(func);
+            match func.kind {
+                FunctionKind::Freestanding | FunctionKind::AsyncFreestanding => {
+                    r#gen.export_func(func);
+                }
+                _ => {}
+            }
         }
 
+        let ret_area_decl = r#gen.emit_ret_area_if_needed();
+
         self.function_exports_src = take(&mut r#gen.src);
+        self.function_exports_src.push_str(&ret_area_decl);
+
         Ok(())
     }
 
@@ -720,6 +735,9 @@ struct DInterfaceGenerator<'a> {
     fqn: &'a str,
 
     sizes: SizeAlign,
+
+    return_pointer_area_size: ArchitectureSize,
+    return_pointer_area_align: Alignment,
 }
 
 impl<'a> DInterfaceGenerator<'a> {
@@ -1095,11 +1113,15 @@ impl<'a> DInterfaceGenerator<'a> {
     fn export_func(&mut self, func: &Function) {
         match &func.kind {
             FunctionKind::Freestanding => {}
+            FunctionKind::Constructor(_) => {
+                todo!("Export FunctionKind::Constructor - {}\n", func.name);
+            }
             FunctionKind::Method(_) => {}
+            FunctionKind::Static(_) => {
+                todo!("Export FunctionKind::Static - {}\n", func.name);
+            }
             kind => {
-                self.src
-                    .push_str(&format!("// TODO: Export {kind:?} - {}\n", func.name));
-                return;
+                todo!("Export {kind:?} - {}\n", func.name);
             }
         }
 
@@ -1205,13 +1227,36 @@ impl<'a> DInterfaceGenerator<'a> {
             &mut f,
             false,
         );
+
         let ret_area_decl = f.emit_ret_area_if_needed();
 
-        let FunctionBindgen { src, .. } = f;
+        let FunctionBindgen {
+            src,
+            return_pointer_area_size,
+            return_pointer_area_align,
+            ..
+        } = f;
+        self.return_pointer_area_size = self.return_pointer_area_size.max(return_pointer_area_size);
+        self.return_pointer_area_align = self
+            .return_pointer_area_align
+            .max(return_pointer_area_align);
+
         self.src.push_str(&ret_area_decl);
         self.src.push_str(&src.to_string());
 
         self.src.push_str("}\n");
+    }
+
+    fn emit_ret_area_if_needed(&self) -> String {
+        if !self.return_pointer_area_size.is_empty() {
+            format!(
+                "\nalign({}) private void[{}] _exportsRetArea;\n",
+                self.return_pointer_area_align.format("size_t.sizeof"),
+                self.return_pointer_area_size.format("size_t.sizeof")
+            )
+        } else {
+            String::new()
+        }
     }
 }
 
@@ -1894,7 +1939,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
 
     fn store(&mut self, ty: &str, offset: ArchitectureSize, operands: &[String]) {
         self.push_str(&format!(
-            "*(cast({ty}*)({} + {})) = cast({ty})({});\n",
+            "*cast({ty}*)({} + {}) = cast({ty})({});\n",
             operands[1],
             offset.format("size_t.sizeof"),
             operands[0]
@@ -1915,18 +1960,54 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
     /// The scratch space is reused but never accessed simultaneously.
     fn emit_ret_area_if_needed(&self) -> String {
         if !self.return_pointer_area_size.is_empty() {
-            format!(
-                "{}align({}) void[{}] _retArea = void;\n",
-                if self.r#gen.direction == Some(Direction::Export) {
-                    "static "
-                } else {
-                    ""
-                },
-                self.return_pointer_area_align.format("size_t.sizeof"),
-                self.return_pointer_area_size.format("size_t.sizeof")
-            )
+            match self.r#gen.direction {
+                Some(Direction::Import) => format!(
+                    "align({}) void[{}] _retArea = void;\n",
+                    self.return_pointer_area_align.format("size_t.sizeof"),
+                    self.return_pointer_area_size.format("size_t.sizeof")
+                ),
+                Some(Direction::Export) => "alias _retArea = _exportsRetArea;\n".to_string(),
+                None => {
+                    unreachable!();
+                }
+            }
         } else {
             String::new()
+        }
+    }
+}
+
+fn perform_cast(op: &str, cast: &Bitcast) -> String {
+    match cast {
+        Bitcast::I32ToF32 | Bitcast::I64ToF32 => {
+            format!("cast(uint)({op}).reinterpretCast!float")
+        }
+        Bitcast::F32ToI32 | Bitcast::F32ToI64 => {
+            format!("({op}).reinterpretCast!uint")
+        }
+        Bitcast::I64ToF64 => {
+            format!("({op}).reinterpretCast!double")
+        }
+        Bitcast::F64ToI64 => {
+            format!("({op}).reinterpretCast!ulong")
+        }
+        Bitcast::I32ToI64 | Bitcast::LToI64 | Bitcast::PToP64 => {
+            format!("cast(ulong)({op})")
+        }
+        Bitcast::I64ToI32 | Bitcast::PToI32 | Bitcast::LToI32 => {
+            format!("cast(uint)({op})")
+        }
+        Bitcast::P64ToI64 | Bitcast::None | Bitcast::I64ToP64 => op.to_string(),
+        Bitcast::P64ToP | Bitcast::I32ToP | Bitcast::LToP => {
+            format!("cast(void*)({op})")
+        }
+        Bitcast::PToL | Bitcast::I32ToL | Bitcast::I64ToL => {
+            format!("cast(size_t)({op})")
+        }
+        Bitcast::Sequence(sequence) => {
+            let [first, second] = &**sequence;
+            let inner = perform_cast(op, first);
+            perform_cast(&inner, second)
         }
     }
 }
@@ -1942,7 +2023,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
         results: &mut Vec<Self::Operand>,
     ) {
         let mut top_as = |cvt: &str| {
-            results.push(format!("(cast({cvt})({}))", operands.pop().unwrap()));
+            results.push(format!("cast({cvt})({})", operands.pop().unwrap()));
         };
 
         match inst {
@@ -1955,6 +2036,12 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             }
 
             abi::Instruction::I32Const { val } => results.push(val.to_string()),
+            abi::Instruction::Bitcasts { casts } => {
+                for (cast, op) in casts.iter().zip(operands) {
+                    let op = perform_cast(op, cast);
+                    results.push(op);
+                }
+            }
             abi::Instruction::ConstZero { tys } => {
                 for ty in tys.iter() {
                     results.push(
@@ -2027,7 +2114,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             abi::Instruction::CharFromI32 => top_as("dchar"),
             abi::Instruction::F32FromCoreF32 => results.push(operands.pop().unwrap()),
             abi::Instruction::F64FromCoreF64 => results.push(operands.pop().unwrap()),
-            abi::Instruction::BoolFromI32 => results.push(format!("({} != 0)", operands[0])),
+            abi::Instruction::BoolFromI32 => results.push(format!("({}) != 0", operands[0])),
 
             abi::Instruction::ListCanonLower { .. } | abi::Instruction::StringLower { .. } => {
                 results.push(format!("cast(void*)({}.ptr)", operands[0]));
@@ -2059,7 +2146,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     "foreach ({block_element}_idx, const ref {block_element}; {list_src}) {{\n"
                 ));
                 self.push_str(&format!(
-                    "auto {base} = {list} + {block_element}_idx * {size_str};\n"
+                    "auto {base} = {list} + {block_element}_idx * ({size_str});\n"
                 ));
                 self.push_str(&body);
                 //self.push_str(&format!("_targetElem = {};", body.1[0]));
@@ -2681,10 +2768,13 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 todo!("instr: Malloc")
             }
             abi::Instruction::GuestDeallocate { .. } => {
-                todo!("instr: GuestDeallocate")
+                self.push_str(&format!("free({});", operands[0]));
             }
             abi::Instruction::GuestDeallocateString { .. } => {
-                todo!("instr: GuestDeallocateString")
+                todo!("instr: GuestDeallocateString");
+                //self.push_str(&format!("if (({}) > 0) {{\n", operands[1]));
+                //self.push_str(&format!("free({});", operands[0]));
+                //self.push_str("}\n");
             }
             abi::Instruction::GuestDeallocateList { .. } => {
                 todo!("instr: GuestDeallocateList")

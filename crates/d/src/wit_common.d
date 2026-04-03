@@ -231,9 +231,17 @@ public:
 
 
 package(wit):
+
 extern(C) {
 void*   malloc(size_t size);
 void    free(void* ptr);
+}
+
+// from numem.casting
+pragma(inline, true)
+auto ref T reinterpretCast(T, U)(auto ref U from) @trusted if (T.sizeof == U.sizeof) {
+    union tmp { U from; T to; }
+    return tmp(from).to;
 }
 
 auto mallocSlice(T)(size_t count) {
