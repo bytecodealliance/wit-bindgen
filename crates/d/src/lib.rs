@@ -1948,6 +1948,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     results.push(self.params[*nth].into());
                 }
             }
+
             abi::Instruction::I32Const { val } => results.push(val.to_string()),
             abi::Instruction::ConstZero { tys } => {
                 for ty in tys.iter() {
@@ -1960,33 +1961,70 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     );
                 }
             }
+
+            abi::Instruction::I32Load { offset } => self.load("uint", *offset, operands, results),
+            abi::Instruction::I32Load8U { offset } => {
+                self.load_ext("ubyte", *offset, operands, results)
+            }
+            abi::Instruction::I32Load8S { offset } => {
+                self.load_ext("byte", *offset, operands, results)
+            }
+            abi::Instruction::I32Load16U { offset } => {
+                self.load_ext("ushort", *offset, operands, results)
+            }
+            abi::Instruction::I32Load16S { offset } => {
+                self.load_ext("short", *offset, operands, results)
+            }
+            abi::Instruction::I64Load { offset } => self.load("ulong", *offset, operands, results),
+            abi::Instruction::F32Load { offset } => self.load("float", *offset, operands, results),
+            abi::Instruction::F64Load { offset } => self.load("double", *offset, operands, results),
+
+            abi::Instruction::PointerLoad { offset } => {
+                self.load("void*", *offset, operands, results)
+            }
+            abi::Instruction::LengthLoad { offset } => {
+                self.load("size_t", *offset, operands, results)
+            }
+
+            abi::Instruction::I32Store { offset } => self.store("uint", *offset, operands),
+            abi::Instruction::I32Store8 { offset } => self.store("ubyte", *offset, operands),
+            abi::Instruction::I32Store16 { offset } => self.store("ushort", *offset, operands),
+
+            abi::Instruction::I64Store { offset } => self.store("ulong", *offset, operands),
+            abi::Instruction::F32Store { offset } => self.store("float", *offset, operands),
+            abi::Instruction::F64Store { offset } => self.store("double", *offset, operands),
+
+            abi::Instruction::PointerStore { offset } => self.store("void*", *offset, operands),
+            abi::Instruction::LengthStore { offset } => self.store("size_t", *offset, operands),
+
+            abi::Instruction::I32FromChar
+            | abi::Instruction::I32FromBool
+            | abi::Instruction::I32FromU8
+            | abi::Instruction::I32FromS8
+            | abi::Instruction::I32FromU16
+            | abi::Instruction::I32FromS16
+            | abi::Instruction::I32FromU32
+            | abi::Instruction::I32FromS32 => top_as("uint"),
+            abi::Instruction::I64FromU64 | abi::Instruction::I64FromS64 => top_as("ulong"),
+            abi::Instruction::CoreF32FromF32 => top_as("float"),
+            abi::Instruction::CoreF64FromF64 => top_as("double"),
+
+            abi::Instruction::S8FromI32 => top_as("byte"),
+            abi::Instruction::U8FromI32 => top_as("ubyte"),
+            abi::Instruction::S16FromI32 => top_as("short"),
+            abi::Instruction::U16FromI32 => top_as("ushort"),
+            abi::Instruction::S32FromI32 => top_as("int"),
+            abi::Instruction::U32FromI32 => top_as("uint"),
+            abi::Instruction::S64FromI64 => top_as("long"),
+            abi::Instruction::U64FromI64 => top_as("ulong"),
+            abi::Instruction::CharFromI32 => top_as("dchar"),
+            abi::Instruction::F32FromCoreF32 => top_as("float"),
+            abi::Instruction::F64FromCoreF64 => top_as("double"),
+            abi::Instruction::BoolFromI32 => results.push(format!("({} != 0)", operands[0])),
+
             abi::Instruction::ListCanonLower { .. } | abi::Instruction::StringLower { .. } => {
                 results.push(format!("cast(void*)({}.ptr)", operands[0]));
                 results.push(format!("{}.length", operands[0]));
-            }
-            abi::Instruction::ListCanonLift { element, ty, .. } => {
-                let list_name = self.r#gen.type_name(&Type::Id(*ty), self.r#gen.fqn);
-                let elem_name = self.r#gen.type_name(element, self.r#gen.fqn);
-                let tmp = self.tmp();
-
-                let ptr = tempname("_ptr", tmp);
-                let len = tempname("_len", tmp);
-
-                self.push_str(&format!(
-                    "auto {ptr} = cast({elem_name}*)({});
-                    auto {len} = {};
-                    ",
-                    operands[0], operands[1]
-                ));
-
-                results.push(format!("{}({ptr}[0..{len}])", list_name));
-            }
-
-            abi::Instruction::IterElem { .. } => {
-                results.push(self.block_storage.last().unwrap().element.clone())
-            }
-            abi::Instruction::IterBasePointer => {
-                results.push(self.block_storage.last().unwrap().base.clone())
             }
             abi::Instruction::ListLower { element, .. } => {
                 let Block {
@@ -2023,6 +2061,39 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 results.push(format!("{list}"));
                 results.push(format!("{}.length", operands[0]));
             }
+
+            abi::Instruction::ListCanonLift { element, ty, .. } => {
+                let list_name = self.r#gen.type_name(&Type::Id(*ty), self.r#gen.fqn);
+                let elem_name = self.r#gen.type_name(element, self.r#gen.fqn);
+                let tmp = self.tmp();
+
+                let ptr = tempname("_ptr", tmp);
+                let len = tempname("_len", tmp);
+
+                self.push_str(&format!(
+                    "auto {ptr} = cast({elem_name}*)({});
+                    auto {len} = {};
+                    ",
+                    operands[0], operands[1]
+                ));
+
+                results.push(format!("{}({ptr}[0..{len}])", list_name));
+            }
+            abi::Instruction::StringLift => {
+                let tmp = self.tmp();
+
+                let ptr = tempname("_ptr", tmp);
+                let len = tempname("_len", tmp);
+
+                self.push_str(&format!(
+                    "auto {ptr} = cast(char*)({});
+                    auto {len} = {};
+                    ",
+                    operands[0], operands[1]
+                ));
+
+                results.push(format!("WitString({ptr}[0..{len}])"));
+            }
             abi::Instruction::ListLift { ty, element, .. } => {
                 let Block {
                     body,
@@ -2057,6 +2128,27 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let list_name = self.r#gen.type_name(&Type::Id(*ty), self.r#gen.fqn);
                 results.push(format!("{list_name}({list})"));
             }
+
+            abi::Instruction::FixedLengthListLift { .. } => {
+                todo!("instr: FixedLengthListLower");
+            }
+            abi::Instruction::FixedLengthListLower { .. } => {
+                todo!("instr: FixedLengthListLower");
+            }
+            abi::Instruction::FixedLengthListLowerToMemory { .. } => {
+                todo!("instr: FixedLengthListLowerToMemory");
+            }
+            abi::Instruction::FixedLengthListLiftFromMemory { .. } => {
+                todo!("instr: FixedLengthListLiftFromMemory");
+            }
+
+            abi::Instruction::IterElem { .. } => {
+                results.push(self.block_storage.last().unwrap().element.clone())
+            }
+            abi::Instruction::IterBasePointer => {
+                results.push(self.block_storage.last().unwrap().base.clone())
+            }
+
             abi::Instruction::RecordLower { record, .. } => {
                 for field in record.fields.iter() {
                     let lower_name = field.name.to_lower_camel_case();
@@ -2082,12 +2174,20 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 results.push(tmpvar);
             }
 
+            abi::Instruction::HandleLower { .. } => {
+                let op = &operands[0];
+                results.push(format!("{op}.__handle"))
+            }
+            abi::Instruction::HandleLift { ty, .. } => {
+                let name = self.r#gen.type_name(&Type::Id(*ty), self.r#gen.fqn);
+                results.push(format!("{name}({})", operands[0]));
+            }
+
             abi::Instruction::TupleLower { tuple, .. } => {
                 for i in 0..tuple.types.len() {
                     results.push(format!("{}[{i}]", &operands[0]));
                 }
             }
-
             abi::Instruction::TupleLift { tuple, ty, .. } => {
                 let name = tempname("_tuple", self.tmp());
                 self.push_str(&format!(
@@ -2104,20 +2204,46 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 results.push(name);
             }
 
-            abi::Instruction::StringLift { .. } => {
-                let tmp = self.tmp();
+            abi::Instruction::FlagsLower { flags, .. } => match flags.repr() {
+                FlagsRepr::U8 | FlagsRepr::U16 | FlagsRepr::U32(1) => {
+                    results.push(format!("cast(uint)({}.bits)", operands.pop().unwrap()));
+                }
+                FlagsRepr::U32(2) => {
+                    let tempname = tempname("_flags", self.tmp());
 
-                let ptr = tempname("_ptr", tmp);
-                let len = tempname("_len", tmp);
+                    self.push_str(&format!("auto {tempname} = {};", operands[0]));
+                    results.push(format!("cast(uint)({tempname}.bits & 0xffffffff)"));
+                    results.push(format!("cast(uint)(({tempname}.bits >> 32) & 0xffffffff)"));
+                }
+                _ => todo!(),
+            },
+            abi::Instruction::FlagsLift { flags, ty, .. } => {
+                let type_name = self.r#gen.type_name(&Type::Id(*ty), self.r#gen.fqn);
 
-                self.push_str(&format!(
-                    "auto {ptr} = cast(char*)({});
-                    auto {len} = {};
-                    ",
-                    operands[0], operands[1]
-                ));
-
-                results.push(format!("WitString({ptr}[0..{len}])"));
+                match flags.repr() {
+                    FlagsRepr::U8 => {
+                        results.push(format!(
+                            "{type_name}(cast(ubyte)({}))",
+                            operands.pop().unwrap()
+                        ));
+                    }
+                    FlagsRepr::U16 => {
+                        results.push(format!(
+                            "{type_name}(cast(ushort)({}))",
+                            operands.pop().unwrap()
+                        ));
+                    }
+                    FlagsRepr::U32(1) => {
+                        results.push(format!("{type_name}({})", operands.pop().unwrap()));
+                    }
+                    FlagsRepr::U32(2) => {
+                        results.push(format!(
+                            "({type_name}({}) | {type_name}({} << 32))",
+                            operands[0], operands[1]
+                        ));
+                    }
+                    _ => todo!(),
+                }
             }
 
             abi::Instruction::VariantPayloadName => {
@@ -2223,6 +2349,15 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 self.src.push_str("}\n");
                 results.push(result);
             }
+
+            abi::Instruction::EnumLower { .. } => {
+                results.push(format!("cast(uint)({})", operands[0]))
+            }
+            abi::Instruction::EnumLift { ty, .. } => {
+                let type_name = self.r#gen.type_name(&Type::Id(*ty), self.r#gen.fqn);
+                results.push(format!("cast({})({})", type_name, operands.pop().unwrap()))
+            }
+
             abi::Instruction::OptionLower {
                 results: result_types,
                 ..
@@ -2351,7 +2486,6 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     "
                 ));
             }
-
             abi::Instruction::ResultLift { result, ty, .. } => {
                 let Block {
                     body: mut err,
@@ -2397,66 +2531,6 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     }}\n"
                 ));
                 results.push(resultname);
-            }
-
-            abi::Instruction::EnumLower { .. } => {
-                results.push(format!("cast(uint)({})", operands[0]))
-            }
-            abi::Instruction::EnumLift { ty, .. } => {
-                let type_name = self.r#gen.type_name(&Type::Id(*ty), self.r#gen.fqn);
-                results.push(format!("cast({})({})", type_name, operands.pop().unwrap()))
-            }
-
-            abi::Instruction::FlagsLower { flags, .. } => match flags.repr() {
-                FlagsRepr::U8 | FlagsRepr::U16 | FlagsRepr::U32(1) => {
-                    results.push(format!("cast(uint)({}.bits)", operands.pop().unwrap()));
-                }
-                FlagsRepr::U32(2) => {
-                    let tempname = tempname("_flags", self.tmp());
-
-                    self.push_str(&format!("auto {tempname} = {};", operands[0]));
-                    results.push(format!("cast(uint)({tempname}.bits & 0xffffffff)"));
-                    results.push(format!("cast(uint)(({tempname}.bits >> 32) & 0xffffffff)"));
-                }
-                _ => todo!(),
-            },
-            abi::Instruction::FlagsLift { flags, ty, .. } => {
-                let type_name = self.r#gen.type_name(&Type::Id(*ty), self.r#gen.fqn);
-
-                match flags.repr() {
-                    FlagsRepr::U8 => {
-                        results.push(format!(
-                            "{type_name}(cast(ubyte)({}))",
-                            operands.pop().unwrap()
-                        ));
-                    }
-                    FlagsRepr::U16 => {
-                        results.push(format!(
-                            "{type_name}(cast(ushort)({}))",
-                            operands.pop().unwrap()
-                        ));
-                    }
-                    FlagsRepr::U32(1) => {
-                        results.push(format!("{type_name}({})", operands.pop().unwrap()));
-                    }
-                    FlagsRepr::U32(2) => {
-                        results.push(format!(
-                            "({type_name}({}) | {type_name}({} << 32))",
-                            operands[0], operands[1]
-                        ));
-                    }
-                    _ => todo!(),
-                }
-            }
-
-            abi::Instruction::HandleLower { .. } => {
-                let op = &operands[0];
-                results.push(format!("{op}.__handle"))
-            }
-
-            abi::Instruction::HandleLift { ty, .. } => {
-                let name = self.r#gen.type_name(&Type::Id(*ty), self.r#gen.fqn);
-                results.push(format!("{name}({})", operands[0]));
             }
 
             abi::Instruction::CallWasm { name, sig } => {
@@ -2544,59 +2618,25 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     }
                 }
             },
-            abi::Instruction::I32Load { offset } => self.load("uint", *offset, operands, results),
-            abi::Instruction::I64Load { offset } => self.load("ulong", *offset, operands, results),
-            abi::Instruction::F32Load { offset } => self.load("float", *offset, operands, results),
-            abi::Instruction::F64Load { offset } => self.load("double", *offset, operands, results),
-            abi::Instruction::PointerLoad { offset } => {
-                self.load("void*", *offset, operands, results)
+
+            abi::Instruction::Malloc { .. } => {
+                todo!("instr: Malloc")
             }
-            abi::Instruction::LengthLoad { offset } => {
-                self.load("size_t", *offset, operands, results)
+            abi::Instruction::GuestDeallocate { .. } => {
+                todo!("instr: GuestDeallocate")
             }
-            abi::Instruction::I32Store { offset } => self.store("uint", *offset, operands),
-            abi::Instruction::I64Store { offset } => self.store("ulong", *offset, operands),
-            abi::Instruction::F32Store { offset } => self.store("float", *offset, operands),
-            abi::Instruction::F64Store { offset } => self.store("double", *offset, operands),
-            abi::Instruction::I32Store8 { offset } => self.store("ubyte", *offset, operands),
-            abi::Instruction::I32Store16 { offset } => self.store("ushort", *offset, operands),
-            abi::Instruction::PointerStore { offset } => self.store("void*", *offset, operands),
-            abi::Instruction::LengthStore { offset } => self.store("size_t", *offset, operands),
-            abi::Instruction::I32Load8U { offset } => {
-                self.load_ext("ubyte", *offset, operands, results)
+            abi::Instruction::GuestDeallocateString { .. } => {
+                todo!("instr: GuestDeallocateString")
             }
-            abi::Instruction::I32Load8S { offset } => {
-                self.load_ext("byte", *offset, operands, results)
+            abi::Instruction::GuestDeallocateList { .. } => {
+                todo!("instr: GuestDeallocateList")
             }
-            abi::Instruction::I32Load16U { offset } => {
-                self.load_ext("ushort", *offset, operands, results)
+            abi::Instruction::GuestDeallocateVariant { .. } => {
+                todo!("instr: GuestDeallocateVariant")
             }
-            abi::Instruction::I32Load16S { offset } => {
-                self.load_ext("short", *offset, operands, results)
+            abi::Instruction::DropHandle { .. } => {
+                todo!("instr: DropHandle")
             }
-            abi::Instruction::I32FromChar
-            | abi::Instruction::I32FromBool
-            | abi::Instruction::I32FromU8
-            | abi::Instruction::I32FromS8
-            | abi::Instruction::I32FromU16
-            | abi::Instruction::I32FromS16
-            | abi::Instruction::I32FromU32
-            | abi::Instruction::I32FromS32 => top_as("uint"),
-            abi::Instruction::I64FromU64 | abi::Instruction::I64FromS64 => top_as("ulong"),
-            abi::Instruction::F32FromCoreF32 => top_as("float"),
-            abi::Instruction::F64FromCoreF64 => top_as("double"),
-            abi::Instruction::S8FromI32 => top_as("byte"),
-            abi::Instruction::U8FromI32 => top_as("ubyte"),
-            abi::Instruction::S16FromI32 => top_as("short"),
-            abi::Instruction::U16FromI32 => top_as("ushort"),
-            abi::Instruction::S32FromI32 => top_as("int"),
-            abi::Instruction::U32FromI32 => top_as("uint"),
-            abi::Instruction::S64FromI64 => top_as("long"),
-            abi::Instruction::U64FromI64 => top_as("ulong"),
-            abi::Instruction::CharFromI32 => top_as("dchar"),
-            abi::Instruction::CoreF32FromF32 => top_as("float"),
-            abi::Instruction::CoreF64FromF64 => top_as("double"),
-            abi::Instruction::BoolFromI32 => results.push(format!("({} != 0)", operands[0])),
 
             abi::Instruction::Flush { amt } => {
                 for op in operands.iter().take(*amt) {
@@ -2605,6 +2645,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     results.push(result);
                 }
             }
+
             unk => todo!("emit instruction: {unk:?}"),
         }
     }
