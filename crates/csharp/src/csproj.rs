@@ -1,5 +1,5 @@
 use anyhow::Result;
-use std::{fs, path::PathBuf};
+use std::{env, fs, path::PathBuf};
 
 use heck::ToUpperCamelCase;
 
@@ -103,21 +103,36 @@ impl CSProjectLLVMBuilder {
             let os = match std::env::consts::OS {
                 "windows" => "win",
                 "linux" => std::env::consts::OS,
+                "macos" => "osx",
                 other => todo!("OS {} not supported", other),
             };
+
+            let arch = match std::env::consts::ARCH {
+                "aarch64" => "arm64",
+                "x86_64" => "x64",
+                other => todo!("ARCH {} not supported", other),
+            };
+
+            let ilc_version = env::var("ILC_VERSION").unwrap_or_else(|_| "10.0.0-*".to_string());
 
             csproj.push_str(
                 &format!(
                     r#"
         <ItemGroup>
-            <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-*" />
-            <PackageReference Include="runtime.{os}-x64.Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-*" />
+            <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="{ilc_version}" />
+            <PackageReference Include="runtime.{os}-{arch}.Microsoft.DotNet.ILCompiler.LLVM" Version="{ilc_version}" />
         </ItemGroup>"#),
             );
 
+            let local_source = match env::var("ILC_PACKAGES_PATH") {
+                Ok(path) => format!(r#"<add key="local-ilc" value="{path}" />"#),
+                Err(_) => String::new(),
+            };
+
             fs::write(
                 self.dir.join("nuget.config"),
-                r#"<?xml version="1.0" encoding="utf-8"?>
+                format!(
+                    r#"<?xml version="1.0" encoding="utf-8"?>
             <configuration>
                 <config>
                     <!-- Store the packages where they can be shared between tests -->
@@ -126,11 +141,12 @@ impl CSProjectLLVMBuilder {
                 <packageSources>
                 <!--To inherit the global NuGet package sources remove the <clear/> line below -->
                 <clear />
+                {local_source}
                 <add key="nuget" value="https://api.nuget.org/v3/index.json" />
                 <add key="dotnet-experimental" value="https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json" />
-                <!--<add key="dotnet-experimental" value="C:\github\runtimelab\artifacts\packages\Debug\Shipping" />-->
               </packageSources>
-            </configuration>"#,
+            </configuration>"#
+                ),
             )?;
         }
 
