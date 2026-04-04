@@ -232,4 +232,33 @@ void exports_runner_run() {
     runner_list_f32_free(&ret.f0);
     runner_list_f64_free(&ret.f1);
   }
+
+  {
+    runner_tuple2_string_list_u8_t headers_data[2];
+    runner_string_set(&headers_data[0].f0, "Content-Type");
+    uint8_t val0[] = "text/plain";
+    headers_data[0].f1.ptr = val0;
+    headers_data[0].f1.len = 10;
+
+    runner_string_set(&headers_data[1].f0, "Content-Length");
+    uint8_t val1[] = "9";
+    headers_data[1].f1.ptr = val1;
+    headers_data[1].f1.len = 1;
+
+    runner_list_tuple2_string_list_u8_t headers = { headers_data, 2 };
+    runner_list_tuple2_string_list_u8_t result;
+    test_lists_to_test_wasi_http_headers_roundtrip(&headers, &result);
+
+    assert(result.len == 2);
+    assert(result.ptr[0].f0.len == 12);
+    assert(memcmp(result.ptr[0].f0.ptr, "Content-Type", 12) == 0);
+    assert(result.ptr[0].f1.len == 10);
+    assert(memcmp(result.ptr[0].f1.ptr, "text/plain", 10) == 0);
+    assert(result.ptr[1].f0.len == 14);
+    assert(memcmp(result.ptr[1].f0.ptr, "Content-Length", 14) == 0);
+    assert(result.ptr[1].f1.len == 1);
+    assert(result.ptr[1].f1.ptr[0] == '9');
+
+    runner_list_tuple2_string_list_u8_free(&result);
+  }
 }
