@@ -11,11 +11,8 @@ public class RunnerWorldExportsImpl
         var task = IIImports.PendingImport(reader);
         Debug.Assert(!task.IsCompleted);
 
-        Console.WriteLine("Writing to future to complete pending import...");
         var writeTask = writer.Write();
-        Console.WriteLine("WriteTask IsCompleted: " + writeTask.IsCompleted);
         await task;
-        Console.WriteLine("RunnerWorld PendingImport task is completed");
         Debug.Assert(!task.IsFaulted && task.IsCompleted);
         writer.Dispose();
         reader.Dispose();
