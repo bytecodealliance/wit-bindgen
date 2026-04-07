@@ -67,10 +67,58 @@ pub mod bitflags {
     pub use crate::bitflags;
 }
 
-#[cfg(feature = "std")]
-pub type Map<K, V> = std::collections::HashMap<K, V>;
-#[cfg(not(feature = "std"))]
 pub type Map<K, V> = alloc::collections::BTreeMap<K, V>;
+
+/// Trait abstracting the map operations needed by generated WIT bindings.
+///
+/// Generated code delegates to these methods rather than calling inherent
+/// methods on a concrete type, so users can swap in their own map
+/// implementation via the `map_type` bindgen option.
+///
+/// The concrete map type must also implement `IntoIterator` (both owned
+/// and by-ref) yielding key/value pairs.
+pub trait WitMap<K, V> {
+    fn wit_map_new(capacity: usize) -> Self;
+    fn wit_map_push(&mut self, key: K, value: V);
+    fn wit_map_len(&self) -> usize;
+}
+
+impl<'a, K, V, T: WitMap<K, V>> WitMap<K, V> for &'a T {
+    fn wit_map_new(_capacity: usize) -> Self {
+        unreachable!()
+    }
+    fn wit_map_push(&mut self, _key: K, _value: V) {
+        unreachable!()
+    }
+    fn wit_map_len(&self) -> usize {
+        T::wit_map_len(self)
+    }
+}
+
+impl<K: Ord, V> WitMap<K, V> for alloc::collections::BTreeMap<K, V> {
+    fn wit_map_new(_capacity: usize) -> Self {
+        alloc::collections::BTreeMap::new()
+    }
+    fn wit_map_push(&mut self, key: K, value: V) {
+        self.insert(key, value);
+    }
+    fn wit_map_len(&self) -> usize {
+        self.len()
+    }
+}
+
+#[cfg(feature = "std")]
+impl<K: core::hash::Hash + Eq, V> WitMap<K, V> for std::collections::HashMap<K, V> {
+    fn wit_map_new(capacity: usize) -> Self {
+        std::collections::HashMap::with_capacity(capacity)
+    }
+    fn wit_map_push(&mut self, key: K, value: V) {
+        self.insert(key, value);
+    }
+    fn wit_map_len(&self) -> usize {
+        self.len()
+    }
+}
 
 /// For more information about this see `./ci/rebuild-libwit-bindgen-cabi.sh`.
 #[cfg(not(target_env = "p2"))]

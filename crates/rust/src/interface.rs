@@ -1949,7 +1949,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
                 self.push_str(" ");
             }
         }
-        let path = format!("{}::Map", self.r#gen.runtime_path());
+        let path = self.r#gen.map_type_path();
         self.push_str(&path);
         self.push_str("::<");
         self.print_ty(key, key_mode);

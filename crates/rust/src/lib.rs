@@ -199,6 +199,18 @@ pub struct Opts {
     #[cfg_attr(feature = "clap", arg(long, value_name = "PATH"))]
     pub runtime_path: Option<String>,
 
+    /// The optional path to the map type to use for WIT `map<K, V>`.
+    ///
+    /// The specified type must accept two type parameters `<K, V>` and
+    /// implement the `WitMap<K, V>` trait from the wit-bindgen runtime.
+    /// It must also implement `IntoIterator<Item = (K, V)>` (owned) and
+    /// its reference must implement `IntoIterator` yielding key/value
+    /// pairs.
+    ///
+    /// Defaults to `{runtime_path}::Map` which is `BTreeMap`.
+    #[cfg_attr(feature = "clap", arg(long, value_name = "PATH"))]
+    pub map_type: Option<String>,
+
     /// The optional path to the bitflags crate to use.
     ///
     /// This defaults to `wit_bindgen::bitflags`.
@@ -415,6 +427,17 @@ impl RustWasm {
             .runtime_path
             .as_deref()
             .unwrap_or("wit_bindgen::rt")
+    }
+
+    fn map_type_path(&self) -> String {
+        self.opts
+            .map_type
+            .clone()
+            .unwrap_or_else(|| format!("{}::Map", self.runtime_path()))
+    }
+
+    fn wit_map_path(&self) -> String {
+        format!("{}::WitMap", self.runtime_path())
     }
 
     fn bitflags_path(&self) -> String {
@@ -1056,6 +1079,9 @@ impl WorldGenerator for RustWasm {
         }
         if let Some(runtime_path) = &self.opts.runtime_path {
             uwriteln!(self.src_preamble, "//   * runtime_path: {:?}", runtime_path);
+        }
+        if let Some(map_type) = &self.opts.map_type {
+            uwriteln!(self.src_preamble, "//   * map_type: {:?}", map_type);
         }
         if let Some(bitflags_path) = &self.opts.bitflags_path {
             uwriteln!(
