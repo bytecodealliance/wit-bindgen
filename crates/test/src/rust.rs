@@ -94,6 +94,10 @@ impl LanguageMethods for Rust {
             ("async", &["--async=all"]),
             ("no-std", &["--std-feature"]),
             ("merge-equal", &["--merge-structurally-equal-types"]),
+            (
+                "hashmap",
+                &["--map-type=std::collections::HashMap"],
+            ),
         ]
     }
 

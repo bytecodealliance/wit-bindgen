@@ -800,9 +800,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         "if let Some(cleanup) = {cleanup} {{ cleanup.forget(); }}"
                     );
                 }
-                self.push_str(&format!(
-                    "for (i, (map_key, map_value)) in {map}.into_iter().enumerate() {{\n"
-                ));
+                uwriteln!(
+                    self.src,
+                    "for (i, (map_key, map_value)) in {wit_map}::wit_map_into_iter({map}).enumerate() {{"
+                );
                 self.push_str(&format!(
                     "let base = {result}.add(i * {});\n",
                     entry.size.format(POINTER_SIZE_EXPRESSION)
