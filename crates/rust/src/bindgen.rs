@@ -802,7 +802,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
                 uwriteln!(
                     self.src,
-                    "for (i, (map_key, map_value)) in {wit_map}::wit_map_into_iter({map}).enumerate() {{"
+                    "for (i, (map_key, map_value)) in IntoIterator::into_iter({map}).enumerate() {{"
                 );
                 self.push_str(&format!(
                     "let base = {result}.add(i * {});\n",
