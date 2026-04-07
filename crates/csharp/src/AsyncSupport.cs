@@ -433,7 +433,7 @@ public abstract class ReaderBase : IFutureStream
         }
         else
         {
-            // TODO: crete buffers for lowered stream types and then lift
+            // TODO: create buffers for lowered stream types and then lift
             throw new NotImplementedException("reading from futures types that require lifting");
         }
     }
