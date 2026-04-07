@@ -886,7 +886,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     "let {len} = {operand1};\n",
                     operand1 = operands[1]
                 ));
-                uwriteln!(self.src, "let mut {result} = {wit_map}::wit_map_new({len});");
+                uwriteln!(
+                    self.src,
+                    "let mut {result} = {wit_map}::wit_map_new({len});"
+                );
                 uwriteln!(self.src, "for i in 0..{len} {{");
                 uwriteln!(
                     self.src,
@@ -894,7 +897,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     size = entry.size.format(POINTER_SIZE_EXPRESSION),
                 );
                 uwriteln!(self.src, "let (map_key, map_value) = {body};");
-                uwriteln!(self.src, "{wit_map}::wit_map_push(&mut {result}, map_key, map_value);");
+                uwriteln!(
+                    self.src,
+                    "{wit_map}::wit_map_push(&mut {result}, map_key, map_value);"
+                );
                 uwriteln!(self.src, "}}");
                 results.push(result);
                 let dealloc = self.r#gen.path_to_cabi_dealloc();
