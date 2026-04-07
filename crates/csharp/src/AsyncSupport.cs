@@ -551,11 +551,7 @@ public class FutureReader<T>(int handle, FutureVTable vTable) : ReaderBase(handl
             {
                 readTask.SetResult(buf[0]);
             }
-            else if (it.IsCanceled)
-            {
-                // readTask.SetCanceled();
-            }
-            else
+            else if (!it.IsCanceled)
             {
                 //TODO
                 throw new NotImplementedException("faulted future read not implemented");
@@ -681,6 +677,14 @@ public abstract class WriterBase : IFutureStream
         if (status.IsBlocked)
         {
             var tcs = new ComponentTask<int>(new CancelableWrite(cancelable, Handle));
+            tcs.ContinueWith(t =>
+            {
+                if (t.IsCanceled)
+                {
+                    canDrop = false;
+                }
+            });
+
             ContextTask* contextTaskPtr = AsyncSupport.ContextGet();
             if(contextTaskPtr == null)
             {
