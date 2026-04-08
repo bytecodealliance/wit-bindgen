@@ -26,12 +26,14 @@ struct DSig {
 #[derive(Default)]
 struct D {
     used_interfaces: HashSet<(WorldKey, InterfaceId)>,
+    export_stubs: Vec<String>,
 
     interface_imports: Vec<String>,
     interface_exports: Vec<String>,
     type_imports_src: Source,
     function_imports_src: Source,
     function_exports_src: Source,
+    export_stubs_src: Source,
 
     opts: Opts,
 
@@ -57,6 +59,11 @@ pub struct Opts {
     /// Where to place output files
     #[cfg_attr(feature = "clap", arg(skip))]
     out_dir: Option<PathBuf>,
+
+    #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
+    /// Whether stubs/declarations for exports should be emitted
+    /// Only for testing purposes.
+    emit_export_stubs: bool,
 }
 
 impl Opts {
@@ -313,6 +320,8 @@ impl D {
 
         DInterfaceGenerator {
             src: Source::default(),
+            stub_src: Source::default(),
+            stubs: Vec::default(),
             fqn: "",
             r#gen: self,
             resolve,
@@ -487,7 +496,10 @@ impl WorldGenerator for D {
         types: &[(&str, TypeId)],
         _files: &mut Files,
     ) {
+        let fqn = self.world_fqn.clone();
         let mut r#gen = self.interface(resolve, Some(Direction::Import), None, Some("$root"));
+        r#gen.fqn = &fqn;
+
         for (name, id) in types.iter() {
             r#gen.define_type(name, *id);
         }
@@ -502,7 +514,10 @@ impl WorldGenerator for D {
         funcs: &[(&str, &Function)],
         _files: &mut Files,
     ) {
+        let fqn = self.world_fqn.clone();
         let mut r#gen = self.interface(resolve, Some(Direction::Import), None, Some("$root"));
+        r#gen.fqn = &fqn;
+
         for (_name, func) in funcs {
             r#gen.import_func(func);
         }
@@ -604,12 +619,31 @@ impl WorldGenerator for D {
         let ret_area_decl = r#gen.emit_ret_area_if_needed();
 
         r#gen.src.push_str(&ret_area_decl);
-        r#gen.src.push_str("}\n");
+        r#gen.src.push_str("}\n\n");
+
+        let DInterfaceGenerator {
+            mut src,
+            stub_src,
+            stubs,
+            ..
+        } = r#gen;
+
+        if self.opts.emit_export_stubs {
+            src.append_src(&stub_src);
+
+            src.push_str("alias STUBS = AliasSeq!(\n");
+            src.indent(1);
+            src.push_str(&stubs.join(",\n"));
+            src.deindent(1);
+            src.push_str("\n);\n");
+
+            self.export_stubs.push(format!("{fqn}.STUBS"));
+        }
 
         let mut interface_filepath = PathBuf::from_iter(fqn.split("."));
         interface_filepath.add_extension("d");
 
-        files.push(interface_filepath.to_str().unwrap(), r#gen.src.as_bytes());
+        files.push(interface_filepath.to_str().unwrap(), src.as_bytes());
 
         self.cur_interface = None;
         Ok(())
@@ -622,7 +656,10 @@ impl WorldGenerator for D {
         funcs: &[(&str, &Function)],
         _files: &mut Files,
     ) -> Result<()> {
+        let fqn = self.world_fqn.clone();
         let mut r#gen = self.interface(resolve, Some(Direction::Export), None, Some("$root"));
+        r#gen.fqn = &fqn;
+
         for (_name, func) in funcs {
             match func.kind {
                 FunctionKind::Freestanding | FunctionKind::AsyncFreestanding => {
@@ -634,8 +671,20 @@ impl WorldGenerator for D {
 
         let ret_area_decl = r#gen.emit_ret_area_if_needed();
 
-        self.function_exports_src = take(&mut r#gen.src);
+        let DInterfaceGenerator {
+            src,
+            stub_src,
+            mut stubs,
+            ..
+        } = r#gen;
+
+        self.function_exports_src = src;
         self.function_exports_src.push_str(&ret_area_decl);
+
+        if self.opts.emit_export_stubs {
+            self.export_stubs_src.append_src(&stub_src);
+            self.export_stubs.append(&mut stubs);
+        }
 
         Ok(())
     }
@@ -714,6 +763,20 @@ impl WorldGenerator for D {
         world_src.push_str(&self.function_exports_src.as_str());
         world_src.push_str("}\n");
 
+        if self.opts.emit_export_stubs {
+            self.export_stubs_src.push_str("alias STUBS = AliasSeq!(\n");
+            self.export_stubs_src.indent(1);
+            self.export_stubs_src
+                .push_str(&self.export_stubs.join(",\n"));
+            self.export_stubs_src.deindent(1);
+            self.export_stubs_src.push_str("\n);\n");
+
+            self.export_stubs_src
+                .push_str("alias Exports_STUB_INVOKE = Exports!(STUBS);\n");
+
+            world_src.append_src(&self.export_stubs_src);
+        }
+
         let mut world_filepath = PathBuf::from_iter(get_world_fqn(world_id, resolve).split("."));
         world_filepath.push("package.d");
 
@@ -726,6 +789,8 @@ impl WorldGenerator for D {
 
 struct DInterfaceGenerator<'a> {
     src: Source,
+    stub_src: Source,
+    stubs: Vec<String>,
     direction: Option<Direction>,
     r#gen: &'a mut D,
     resolve: &'a Resolve,
@@ -1189,6 +1254,24 @@ impl<'a> DInterfaceGenerator<'a> {
                 }
             }
         ));
+
+        if self.r#gen.opts.emit_export_stubs {
+            self.stub_src.push_str(&format!(
+                "@witExport(\"{}\", \"{}\")\n{} {}_STUB({});\n",
+                self.wasm_import_module.unwrap(),
+                func.name,
+                d_sig.result,
+                d_sig.name,
+                d_sig
+                    .arguments
+                    .iter()
+                    .map(|(name, ty)| "in ".to_owned() + ty + " " + name)
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ));
+
+            self.stubs.push(d_sig.name.clone() + "_STUB");
+        }
 
         self.src.push_str("/// ditto\n");
         self.src.push_str(&format!(
@@ -1991,7 +2074,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
 fn perform_cast(op: &str, cast: &Bitcast) -> String {
     match cast {
         Bitcast::I32ToF32 | Bitcast::I64ToF32 => {
-            format!("cast(uint)({op}).reinterpretCast!float")
+            format!("(cast(uint){op}).reinterpretCast!float")
         }
         Bitcast::F32ToI32 | Bitcast::F32ToI64 => {
             format!("({op}).reinterpretCast!uint")
@@ -2260,13 +2343,14 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     base,
                 } = self.blocks.pop().unwrap();
                 let arr_src = &operands[0];
+                let arr_dst = &operands[1];
                 let size_str = self.r#gen.sizes.size(element).format("size_t.sizeof");
 
                 self.push_str(&format!(
                     "foreach ({block_element}_idx, const ref {block_element}; {arr_src}) {{\n"
                 ));
                 self.push_str(&format!(
-                    "const auto {base} = {arr_src} + {block_element}_idx * {size_str};\n"
+                    "const auto {base} = {arr_dst} + {block_element}_idx * {size_str};\n"
                 ));
                 self.push_str(&body);
                 self.push_str("\n}\n");
