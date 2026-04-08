@@ -852,6 +852,11 @@ impl As{upcase} for {to_convert} {{
             .as_deref()
             .unwrap_or("export")
             .to_string();
+        let macro_self = if self.opts.pub_export_macro {
+            format!("$crate::__export_{world_name}_impl")
+        } else {
+            format!("__export_{world_name}_impl")
+        };
         uwriteln!(
             self.src,
             r#"
@@ -877,8 +882,11 @@ impl As{upcase} for {to_convert} {{
 macro_rules! __export_{world_name}_impl {{
     ($ty:path) => ({default_bindings_module}::{export_macro_name}!({{ ty: $ty, with_types_in: {default_bindings_module} }}););
     ({{ ty: $ty:path $(,)? }}) => ({default_bindings_module}::{export_macro_name}!({{ ty: $ty, with_types_in: {default_bindings_module} }}););
-    ({{ ty: $ty:path, with_types_in: $($path_to_types:tt)+, }}) => ({default_bindings_module}::{export_macro_name}!({{ ty: $ty, with_types_in: $($path_to_types)* }}););
-    ({{ ty: $ty:path, with_types_in: $($path_to_types:tt)+ }}) => ("#
+    ({{ ty: $ty:path, with_types_in: $($path_to_types:tt)+ }}) => ({macro_self}!(@peel $ty [] $($path_to_types)*););
+    (@peel $ty:path [$($acc:tt)*] ,) => ({macro_self}!(@impl $ty, $($acc)*););
+    (@peel $ty:path [$($acc:tt)*]) => ({macro_self}!(@impl $ty, $($acc)*););
+    (@peel $ty:path [$($acc:tt)*] $head:tt $($tail:tt)*) => ({macro_self}!(@peel $ty [$($acc)* $head] $($tail)*););
+    (@impl $ty:path, $($path_to_types:tt)*) => ("#
         );
         for (name, path_to_types) in self.export_macros.iter() {
             let mut path = "$($path_to_types)*".to_string();
