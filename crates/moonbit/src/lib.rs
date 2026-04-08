@@ -287,7 +287,7 @@ impl WorldGenerator for MoonBit {
             if let Some(content) = &resolve.interfaces[id].docs.contents
                 && !content.is_empty()
             {
-                files.push(&format!("{}/README.md", directory), content.as_bytes());
+                files.push(&format!("{directory}/README.md"), content.as_bytes());
             }
 
             // Source
@@ -362,7 +362,7 @@ impl WorldGenerator for MoonBit {
         if let Some(content) = &resolve.worlds[world].docs.contents
             && !content.is_empty()
         {
-            files.push(&format!("{}/README.md", directory), content.as_bytes());
+            files.push(&format!("{directory}/README.md"), content.as_bytes());
         }
         // Source
         let mut src = Source::default();

@@ -155,6 +155,7 @@ impl AsyncSupport {
 impl<'a> InterfaceGenerator<'a> {
     /// Builds the MoonBit body for async imports, wiring wasm subtasks into the
     /// runtime and lowering/lifting payloads as needed.
+    #[allow(dead_code, reason = "used by follow-up async generation work")]
     pub(super) fn generate_async_import_function(
         &mut self,
         func: &Function,
@@ -487,21 +488,21 @@ fn {table_name}() -> {ffi}{camel_kind}VTable[{result}] {{
         types: &[Type],
         operands: &[String],
         indirect: bool,
-        module: &str,
+        _module: &str,
     ) -> String {
         let mut f = FunctionBindgen::new(self, Box::new([]));
         abi::deallocate_lists_in_types(f.interface_gen.resolve, types, operands, indirect, &mut f);
         f.src
     }
 
-    fn lift_from_memory(&mut self, address: &str, ty: &Type, module: &str) -> (String, String) {
+    fn lift_from_memory(&mut self, address: &str, ty: &Type, _module: &str) -> (String, String) {
         let mut f = FunctionBindgen::new(self, Box::new([]));
 
         let result = abi::lift_from_memory(f.interface_gen.resolve, &mut f, address.into(), ty);
         (f.src, result)
     }
 
-    fn lower_to_memory(&mut self, address: &str, value: &str, ty: &Type, module: &str) -> String {
+    fn lower_to_memory(&mut self, address: &str, value: &str, ty: &Type, _module: &str) -> String {
         let mut f = FunctionBindgen::new(self, Box::new([]));
         abi::lower_to_memory(
             f.interface_gen.resolve,
