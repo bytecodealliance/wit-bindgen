@@ -770,7 +770,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             } => {
                 let alloc = self.r#gen.path_to_std_alloc_module();
                 let rt = self.r#gen.r#gen.runtime_path().to_string();
-                let wit_map = self.r#gen.r#gen.wit_map_path();
                 let body = self.blocks.pop().unwrap();
                 let tmp = self.tmp();
                 let map = format!("map{tmp}");
@@ -778,12 +777,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let layout = format!("layout{tmp}");
                 let len = format!("len{tmp}");
                 let cleanup = format!("_cleanup{tmp}");
-                uwriteln!(self.src, "use {wit_map};");
                 self.push_str(&format!(
                     "let {map} = {operand0};\n",
                     operand0 = operands[0]
                 ));
-                self.push_str(&format!("let {len} = {map}.wit_map_len();\n"));
+                self.push_str(&format!("let {len} = {map}.len();\n"));
                 let entry = self.map_entry_layout(key, value);
                 self.push_str(&format!(
                     "let {layout} = {alloc}::Layout::from_size_align({len} * {}, {}).unwrap();\n",

@@ -75,24 +75,12 @@ pub type Map<K, V> = alloc::collections::BTreeMap<K, V>;
 /// methods on a concrete type, so users can swap in their own map
 /// implementation via the `map_type` bindgen option.
 ///
-/// The type must also implement `IntoIterator` (both owned and by-reference)
-/// so that generated lowering code can iterate over entries.
+/// The type must also provide a `.len() -> usize` method and implement
+/// `IntoIterator` (both owned and by-reference) so that generated lowering
+/// code can query the length and iterate over entries.
 pub trait WitMap<K, V>: Sized {
     fn wit_map_new(capacity: usize) -> Self;
     fn wit_map_push(&mut self, key: K, value: V);
-    fn wit_map_len(&self) -> usize;
-}
-
-impl<'a, K, V, T: WitMap<K, V>> WitMap<K, V> for &'a T {
-    fn wit_map_new(_capacity: usize) -> Self {
-        unreachable!()
-    }
-    fn wit_map_push(&mut self, _key: K, _value: V) {
-        unreachable!()
-    }
-    fn wit_map_len(&self) -> usize {
-        T::wit_map_len(*self)
-    }
 }
 
 impl<K: Ord, V> WitMap<K, V> for alloc::collections::BTreeMap<K, V> {
@@ -101,9 +89,6 @@ impl<K: Ord, V> WitMap<K, V> for alloc::collections::BTreeMap<K, V> {
     }
     fn wit_map_push(&mut self, key: K, value: V) {
         self.insert(key, value);
-    }
-    fn wit_map_len(&self) -> usize {
-        self.len()
     }
 }
 
@@ -114,9 +99,6 @@ impl<K: core::hash::Hash + Eq, V> WitMap<K, V> for std::collections::HashMap<K, 
     }
     fn wit_map_push(&mut self, key: K, value: V) {
         self.insert(key, value);
-    }
-    fn wit_map_len(&self) -> usize {
-        self.len()
     }
 }
 
@@ -291,13 +273,13 @@ mod tests {
     use alloc::string::ToString;
 
     #[test]
-    fn btreemap_new_push_len() {
+    fn btreemap_new_push() {
         let mut m: BTreeMap<u32, alloc::string::String> = WitMap::wit_map_new(10);
-        assert_eq!(WitMap::<u32, alloc::string::String>::wit_map_len(&m), 0);
+        assert_eq!(m.len(), 0);
 
         WitMap::wit_map_push(&mut m, 1, "one".to_string());
         WitMap::wit_map_push(&mut m, 2, "two".to_string());
-        assert_eq!(WitMap::<u32, alloc::string::String>::wit_map_len(&m), 2);
+        assert_eq!(m.len(), 2);
     }
 
     #[test]
@@ -305,26 +287,18 @@ mod tests {
         let mut m: BTreeMap<u32, u32> = WitMap::wit_map_new(0);
         WitMap::wit_map_push(&mut m, 1, 10);
         WitMap::wit_map_push(&mut m, 1, 20);
-        assert_eq!(WitMap::<u32, u32>::wit_map_len(&m), 1);
+        assert_eq!(m.len(), 1);
+        assert_eq!(m[&1], 20);
     }
 
     #[test]
-    fn ref_blanket_impl_len() {
+    fn btreemap_into_iter() {
         let mut m: BTreeMap<u32, u32> = WitMap::wit_map_new(0);
-        WitMap::wit_map_push(&mut m, 1, 10);
+        WitMap::wit_map_push(&mut m, 10, 100);
+        WitMap::wit_map_push(&mut m, 20, 200);
 
-        let r = &m;
-        assert_eq!(WitMap::<u32, u32>::wit_map_len(&r), 1);
-    }
-
-    #[test]
-    fn double_ref_blanket_impl_len() {
-        let mut m: BTreeMap<u32, u32> = WitMap::wit_map_new(0);
-        WitMap::wit_map_push(&mut m, 1, 10);
-
-        let r = &m;
-        let rr = &r;
-        assert_eq!(WitMap::<u32, u32>::wit_map_len(rr), 1);
+        let entries: alloc::vec::Vec<_> = m.into_iter().collect();
+        assert_eq!(entries, alloc::vec![(10, 100), (20, 200)]);
     }
 
     #[cfg(feature = "std")]
@@ -333,11 +307,11 @@ mod tests {
         use std::collections::HashMap;
 
         #[test]
-        fn hashmap_new_push_len() {
+        fn hashmap_new_push() {
             let mut m: HashMap<u32, u32> = WitMap::wit_map_new(5);
             WitMap::wit_map_push(&mut m, 1, 10);
             WitMap::wit_map_push(&mut m, 2, 20);
-            assert_eq!(WitMap::<u32, u32>::wit_map_len(&m), 2);
+            assert_eq!(m.len(), 2);
         }
     }
 }
