@@ -884,7 +884,10 @@ macro_rules! __export_{world_name}_impl {{
                 path.push_str("::");
                 path.push_str(path_to_types)
             }
-            uwriteln!(self.src, "{path}::{name}!({{ ty: $ty, with_types_in: {path} }});");
+            uwriteln!(
+                self.src,
+                "{path}::{name}!({{ ty: $ty, with_types_in: {path} }});"
+            );
         }
 
         // See comments in `finish` for why this conditionally happens here.
