@@ -25,6 +25,7 @@ pub struct InterfaceGenerator<'a> {
     pub return_pointer_area_size: ArchitectureSize,
     pub return_pointer_area_align: Alignment,
     pub(super) needs_runtime_module: bool,
+    pub(super) needs_wit_map: bool,
 }
 
 /// A description of the "mode" in which a type is printed.
@@ -391,7 +392,12 @@ macro_rules! {macro_name} {{
         if self.needs_runtime_module {
             let root = self.path_to_root();
             if !root.is_empty() {
-                return format!("use {root}_rt;\n{src}");
+                let wit_map_use = if self.needs_wit_map {
+                    format!("use {root}_rt::WitMap;\n")
+                } else {
+                    String::new()
+                };
+                return format!("use {root}_rt;\n{wit_map_use}{src}");
             }
         }
         src

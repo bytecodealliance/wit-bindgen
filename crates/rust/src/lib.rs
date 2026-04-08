@@ -113,6 +113,7 @@ enum RuntimeItem {
     AsF64,
     ResourceType,
     BoxType,
+    WitMapTrait,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -374,6 +375,7 @@ impl RustWasm {
             return_pointer_area_size: Default::default(),
             return_pointer_area_align: Default::default(),
             needs_runtime_module: false,
+            needs_wit_map: false,
         }
     }
 
@@ -703,6 +705,11 @@ pub fn run_ctors_once() {{
 
             RuntimeItem::AsF64 => {
                 self.emit_runtime_as_trait("f64", &["f64"]);
+            }
+
+            RuntimeItem::WitMapTrait => {
+                let rt = self.runtime_path().to_string();
+                uwriteln!(self.src, "pub use {rt}::WitMap;");
             }
 
             RuntimeItem::ResourceType => {

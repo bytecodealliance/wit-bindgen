@@ -75,12 +75,12 @@ pub type Map<K, V> = alloc::collections::BTreeMap<K, V>;
 /// methods on a concrete type, so users can swap in their own map
 /// implementation via the `map_type` bindgen option.
 ///
-/// The type must also provide a `.len() -> usize` method and implement
-/// `IntoIterator` (both owned and by-reference) so that generated lowering
-/// code can query the length and iterate over entries.
+/// The type must also implement `IntoIterator` (both owned and by-reference)
+/// so that generated lowering code can iterate over entries.
 pub trait WitMap<K, V>: Sized {
     fn wit_map_new(capacity: usize) -> Self;
     fn wit_map_push(&mut self, key: K, value: V);
+    fn wit_map_len(&self) -> usize;
 }
 
 impl<K: Ord, V> WitMap<K, V> for alloc::collections::BTreeMap<K, V> {
@@ -89,6 +89,9 @@ impl<K: Ord, V> WitMap<K, V> for alloc::collections::BTreeMap<K, V> {
     }
     fn wit_map_push(&mut self, key: K, value: V) {
         self.insert(key, value);
+    }
+    fn wit_map_len(&self) -> usize {
+        self.len()
     }
 }
 
@@ -99,6 +102,9 @@ impl<K: core::hash::Hash + Eq, V> WitMap<K, V> for std::collections::HashMap<K, 
     }
     fn wit_map_push(&mut self, key: K, value: V) {
         self.insert(key, value);
+    }
+    fn wit_map_len(&self) -> usize {
+        self.len()
     }
 }
 
@@ -292,13 +298,13 @@ mod tests {
     }
 
     #[test]
-    fn btreemap_into_iter() {
+    fn btreemap_wit_map_len() {
         let mut m: BTreeMap<u32, u32> = WitMap::wit_map_new(0);
-        WitMap::wit_map_push(&mut m, 10, 100);
-        WitMap::wit_map_push(&mut m, 20, 200);
-
-        let entries: alloc::vec::Vec<_> = m.into_iter().collect();
-        assert_eq!(entries, alloc::vec![(10, 100), (20, 200)]);
+        assert_eq!(m.wit_map_len(), 0);
+        WitMap::wit_map_push(&mut m, 1, 10);
+        assert_eq!(m.wit_map_len(), 1);
+        WitMap::wit_map_push(&mut m, 2, 20);
+        assert_eq!(m.wit_map_len(), 2);
     }
 
     #[cfg(feature = "std")]
@@ -312,6 +318,14 @@ mod tests {
             WitMap::wit_map_push(&mut m, 1, 10);
             WitMap::wit_map_push(&mut m, 2, 20);
             assert_eq!(m.len(), 2);
+        }
+
+        #[test]
+        fn hashmap_wit_map_len() {
+            let mut m: HashMap<u32, u32> = WitMap::wit_map_new(0);
+            assert_eq!(m.wit_map_len(), 0);
+            WitMap::wit_map_push(&mut m, 1, 10);
+            assert_eq!(m.wit_map_len(), 1);
         }
     }
 }
