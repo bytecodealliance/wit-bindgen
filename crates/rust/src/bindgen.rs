@@ -772,7 +772,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let rt = self.r#gen.r#gen.runtime_path().to_string();
                 self.r#gen.needs_wit_map = true;
                 self.r#gen.needs_runtime_module = true;
-                self.r#gen.r#gen.rt_module.insert(crate::RuntimeItem::WitMapTrait);
+                self.r#gen
+                    .r#gen
+                    .rt_module
+                    .insert(crate::RuntimeItem::WitMapTrait);
                 let body = self.blocks.pop().unwrap();
                 let tmp = self.tmp();
                 let map = format!("map{tmp}");
