@@ -778,11 +778,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let layout = format!("layout{tmp}");
                 let len = format!("len{tmp}");
                 let cleanup = format!("_cleanup{tmp}");
+                uwriteln!(self.src, "use {wit_map};");
                 self.push_str(&format!(
                     "let {map} = {operand0};\n",
                     operand0 = operands[0]
                 ));
-                uwriteln!(self.src, "let {len} = {wit_map}::wit_map_len(&{map});");
+                self.push_str(&format!("let {len} = {map}.wit_map_len();\n"));
                 let entry = self.map_entry_layout(key, value);
                 self.push_str(&format!(
                     "let {layout} = {alloc}::Layout::from_size_align({len} * {}, {}).unwrap();\n",
@@ -800,10 +801,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         "if let Some(cleanup) = {cleanup} {{ cleanup.forget(); }}"
                     );
                 }
-                uwriteln!(
-                    self.src,
-                    "for (i, (map_key, map_value)) in IntoIterator::into_iter({map}).enumerate() {{"
-                );
+                self.push_str(&format!(
+                    "for (i, (map_key, map_value)) in {map}.into_iter().enumerate() {{\n"
+                ));
                 self.push_str(&format!(
                     "let base = {result}.add(i * {});\n",
                     entry.size.format(POINTER_SIZE_EXPRESSION)
