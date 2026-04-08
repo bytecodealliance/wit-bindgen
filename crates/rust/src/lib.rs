@@ -876,10 +876,12 @@ impl As{upcase} for {to_convert} {{
 {macro_export}
 macro_rules! __export_{world_name}_impl {{
     ($ty:path) => ({default_bindings_module}::{export_macro_name}!({{ ty: $ty, with_types_in: {default_bindings_module} }}););
-    ({{ $ty:path $(, $(with_types_in: $path_to_types:path $(,)?)?)? }}) => ("#
+    ({{ ty: $ty:path $(,)? }}) => ({default_bindings_module}::{export_macro_name}!({{ ty: $ty, with_types_in: {default_bindings_module} }}););
+    ({{ ty: $ty:path, with_types_in: $($path_to_types:tt)+, }}) => ({default_bindings_module}::{export_macro_name}!({{ ty: $ty, with_types_in: $($path_to_types)* }}););
+    ({{ ty: $ty:path, with_types_in: $($path_to_types:tt)+ }}) => ("#
         );
         for (name, path_to_types) in self.export_macros.iter() {
-            let mut path = "$($path_to_types_root)*".to_string();
+            let mut path = "$($path_to_types)*".to_string();
             if !path_to_types.is_empty() {
                 path.push_str("::");
                 path.push_str(path_to_types)
