@@ -946,10 +946,9 @@ impl<'a> DInterfaceGenerator<'a> {
 
     fn get_d_signature(&mut self, func: &Function) -> DSig {
         match &func.kind {
-            FunctionKind::Freestanding | FunctionKind::Method(_) => {}
+            FunctionKind::Freestanding | FunctionKind::Method(_) | FunctionKind::Static(_) => {}
 
             FunctionKind::AsyncFreestanding
-            | FunctionKind::Static(_)
             | FunctionKind::Constructor(_)
             | FunctionKind::AsyncMethod(_)
             | FunctionKind::AsyncStatic(_) => {
@@ -972,6 +971,10 @@ impl<'a> DInterfaceGenerator<'a> {
         let escaped_name = escape_d_identifier(&lower_name);
 
         res.name = escaped_name.into();
+        res.static_member = match &func.kind {
+            FunctionKind::Static(_) => true,
+            _ => false,
+        };
 
         res.result
             .push_str(&(self.optional_type_name(func.result.as_ref(), self.fqn)));
@@ -1008,11 +1011,17 @@ impl<'a> DInterfaceGenerator<'a> {
     fn import_func(&mut self, func: &Function) {
         match &func.kind {
             FunctionKind::Freestanding => {}
-            FunctionKind::Method(_) => {}
-            kind => {
-                self.src
-                    .push_str(&format!("// TODO: Import {kind:?} - {}\n", func.name));
+            FunctionKind::Constructor(_) => {
+                self.src.push_str(&format!(
+                    "// TODO: Import FunctionKind::Constructor - {}\n",
+                    func.name
+                ));
                 return;
+            }
+            FunctionKind::Method(_) => {}
+            FunctionKind::Static(_) => {}
+            kind => {
+                todo!("Import {kind:?} - {}\n", func.name);
             }
         }
 
@@ -1114,12 +1123,14 @@ impl<'a> DInterfaceGenerator<'a> {
         match &func.kind {
             FunctionKind::Freestanding => {}
             FunctionKind::Constructor(_) => {
-                todo!("Export FunctionKind::Constructor - {}\n", func.name);
+                self.src.push_str(&format!(
+                    "// TODO: Export FunctionKind::Constructor - {}\n",
+                    func.name
+                ));
+                return;
             }
             FunctionKind::Method(_) => {}
-            FunctionKind::Static(_) => {
-                todo!("Export FunctionKind::Static - {}\n", func.name);
-            }
+            FunctionKind::Static(_) => {}
             kind => {
                 todo!("Export {kind:?} - {}\n", func.name);
             }
@@ -1389,7 +1400,7 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
                 }
 
                 self.src
-                    .push_str("void drop() {\n__import__drop(__handle);\n}\n");
+                    .push_str("\nvoid drop() {\n__import__drop(__handle);\n}\n");
 
                 self.src.push_str(&format!(
                     "@wasmImport!(\"{}\", \"[resource-drop]{}\")\n",
