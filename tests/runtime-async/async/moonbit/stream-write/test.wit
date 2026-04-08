@@ -1,6 +1,11 @@
 package my:test;
 
 interface i {
+  resource thing {
+    constructor(value: u32);
+    value: func() -> u32;
+  }
+
   // MoonBit creates a stream, writes values, and returns it
   create-stream-with-values: async func(count: u32) -> stream<u32>;
   // MoonBit creates a unit stream
@@ -11,6 +16,8 @@ interface i {
   // Same as above, but for unit streams to cover the unit-specific lowering
   // path.
   create-bridge-unit-stream-with-signal: async func(signal: future) -> tuple<stream, future<bool>>;
+  active-things: func() -> u32;
+  create-bridge-thing-stream-with-signal: async func(signal: future) -> tuple<stream<thing>, future<bool>>;
 }
 
 world test {

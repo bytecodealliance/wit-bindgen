@@ -1,6 +1,11 @@
 package my:test;
 
 interface i {
+  resource thing {
+    constructor(value: u32);
+    value: func() -> u32;
+  }
+
   // MoonBit creates a future, writes a value, and returns it
   create-future-with-value: async func(value: u32) -> future<u32>;
   // MoonBit creates a future without a payload
@@ -13,6 +18,9 @@ interface i {
   }
   // MoonBit returns a record containing nested futures
   create-nested-future-record: async func(value: u32) -> nested-future-record;
+
+  active-things: func() -> u32;
+  create-dropped-resource-future-with-signal: async func(signal: future) -> tuple<future<thing>, future>;
 }
 
 world test {

@@ -6,7 +6,10 @@ use std::{
 use heck::ToUpperCamelCase;
 use wit_bindgen_core::{
     Direction, Files, Source,
-    abi::{self, WasmSignature, deallocate_lists_in_types, lift_from_memory},
+    abi::{
+        self, WasmSignature, deallocate_lists_and_own_in_types, deallocate_lists_in_types,
+        lift_from_memory,
+    },
     dealias, uwriteln,
     wit_parser::{
         Function, LiftLowerAbi, ManglingAndAbi, Param, Type, TypeDefKind, TypeId, WasmImport,
@@ -501,12 +504,26 @@ fn wasmLower{camel_name}{index}(future : {lifted}) -> Int {{
                 &inner_ty,
             );
             uwriteln!(lower, "{}", bindgen.src);
+            let mut builtins = bindgen.take_local_ffi_imports();
             uwriteln!(
                 lower,
                 r#"
-            let _ = {async_qualifier}suspend_for_future_write(writable, wasmLower{camel_name}{index}Write(writable, ret_area)) catch {{ _ => false }}"#
+            let transferred = {async_qualifier}suspend_for_future_write(writable, wasmLower{camel_name}{index}Write(writable, ret_area)) catch {{ _ => false }}
+            if !transferred {{"#
             );
-            bindgen.take_local_ffi_imports()
+            let mut cleanup_bindgen =
+                FunctionBindgen::new(self, Box::new([]), Direction::Export, true, false);
+            deallocate_lists_and_own_in_types(
+                &resolve,
+                &[inner_ty],
+                &["ret_area".to_string()],
+                true,
+                &mut cleanup_bindgen,
+            );
+            uwriteln!(lower, "{}", cleanup_bindgen.src);
+            builtins.extend(cleanup_bindgen.take_local_ffi_imports());
+            uwriteln!(lower, "            }}");
+            builtins
         } else {
             // Unit type - no value to write, just complete the future
             uwriteln!(
@@ -744,37 +761,39 @@ fn wasmLower{camel_name}{index}(stream : {lifted}) -> Int {{
             }}"#
         );
 
-        let lower_builtins = if let Some(inner_ty) = inner_type {
-            let resolve = self.resolve.clone();
-            let elem_type = self.world_gen.pkg_resolver.type_name(self.name, &inner_ty);
-            let mut lower_bindgen =
-                FunctionBindgen::new(self, Box::new([]), Direction::Export, true, false);
-            lower_bindgen.use_ffi(ffi::MALLOC);
-            lower_bindgen.use_ffi(ffi::FREE);
+        let (lower_builtins, bridge_cleanup, bridge_cleanup_uses_memory, bridge_cleanup_lower) =
+            if let Some(inner_ty) = inner_type {
+                let resolve = self.resolve.clone();
+                let elem_type = self.world_gen.pkg_resolver.type_name(self.name, &inner_ty);
+                let mut lower_bindgen =
+                    FunctionBindgen::new(self, Box::new([]), Direction::Export, true, false);
+                lower_bindgen.use_ffi(ffi::MALLOC);
+                lower_bindgen.use_ffi(ffi::FREE);
 
-            uwriteln!(
-                lower,
-                r#"
+                uwriteln!(
+                    lower,
+                    r#"
             let ptr = mbt_ffi_malloc(data.length() * {elem_size})
             defer mbt_ffi_free(ptr)
             for i = 0; i < data.length(); i = i + 1 {{
               let elem_ptr = ptr + i * {elem_size}
               let elem : {elem_type} = data[i]"#
-            );
+                );
 
-            abi::lower_to_memory(
-                &resolve,
-                &mut lower_bindgen,
-                "elem_ptr".to_string(),
-                "elem".to_string(),
-                &inner_ty,
-            );
-            uwriteln!(lower, "{}", lower_bindgen.src);
-            uwriteln!(lower, "            }}");
+                abi::lower_to_memory(
+                    &resolve,
+                    &mut lower_bindgen,
+                    "elem_ptr".to_string(),
+                    "elem".to_string(),
+                    &inner_ty,
+                );
+                uwriteln!(lower, "{}", lower_bindgen.src);
+                uwriteln!(lower, "            }}");
+                let mut builtins = lower_bindgen.take_local_ffi_imports();
 
-            uwriteln!(
-                lower,
-                r#"
+                uwriteln!(
+                    lower,
+                    r#"
             let (progress, dropped) = {async_qualifier}suspend_for_stream_write(
               writable,
               wasmLower{camel_name}{index}Write(writable, ptr, data.length()),
@@ -784,13 +803,41 @@ fn wasmLower{camel_name}{index}(stream : {lifted}) -> Int {{
               wasmLower{camel_name}{index}DropWritable(writable)
             }}
             progress"#
-            );
-            lower_bindgen.take_local_ffi_imports()
-        } else {
-            // Unit type stream
-            uwriteln!(
-                lower,
-                r#"
+                );
+                let mut cleanup_lower_bindgen =
+                    FunctionBindgen::new(self, Box::new([]), Direction::Export, true, false);
+                abi::lower_to_memory(
+                    &resolve,
+                    &mut cleanup_lower_bindgen,
+                    "elem_ptr".to_string(),
+                    "elem".to_string(),
+                    &inner_ty,
+                );
+                let cleanup_lower_src = cleanup_lower_bindgen.src.clone();
+                builtins.extend(cleanup_lower_bindgen.take_local_ffi_imports());
+                let mut cleanup_bindgen =
+                    FunctionBindgen::new(self, Box::new([]), Direction::Export, true, false);
+                cleanup_bindgen.use_ffi(ffi::MALLOC);
+                cleanup_bindgen.use_ffi(ffi::FREE);
+                deallocate_lists_and_own_in_types(
+                    &resolve,
+                    &[inner_ty],
+                    &["elem_ptr".to_string()],
+                    true,
+                    &mut cleanup_bindgen,
+                );
+                builtins.extend(cleanup_bindgen.take_local_ffi_imports());
+                (
+                    builtins,
+                    Some(cleanup_bindgen.src),
+                    true,
+                    Some(cleanup_lower_src),
+                )
+            } else {
+                // Unit type stream
+                uwriteln!(
+                    lower,
+                    r#"
             let (progress, dropped) = {async_qualifier}suspend_for_stream_write(
               writable,
               wasmLower{camel_name}{index}Write(writable, 0, data.length()),
@@ -800,9 +847,9 @@ fn wasmLower{camel_name}{index}(stream : {lifted}) -> Int {{
               wasmLower{camel_name}{index}DropWritable(writable)
             }}
             progress"#
-            );
-            HashSet::new()
-        };
+                );
+                (HashSet::new(), None, false, None)
+            };
 
         uwriteln!(
             lower,
@@ -823,15 +870,88 @@ fn wasmLower{camel_name}{index}(stream : {lifted}) -> Int {{
           None => {{
             for ;; {{
               match stream.read(64) {{
-                Some(data) => {{
-                  let pending = []
-                  for i = 0; i < data.length(); i = i + 1 {{
-                    pending.push(data[i])
-                  }}
-                  if !sink.write_all(pending[:]) {{
+                Some(data) => {{"#
+        );
+        if let Some(cleanup) = bridge_cleanup {
+            uwriteln!(
+                lower,
+                r#"
+                  let mut offset = 0
+                  for ;; {{
+                    if offset >= data.length() {{
+                      break
+                    }}
+                    let written = sink.write(data[offset:])
+                    if written <= 0 {{
+                      for i = offset; i < data.length(); i = i + 1 {{
+                        let elem = data[i]"#
+            );
+            if bridge_cleanup_uses_memory {
+                uwriteln!(
+                    lower,
+                    r#"
+                        let elem_ptr = mbt_ffi_malloc({elem_size})
+                        defer mbt_ffi_free(elem_ptr)"#
+                );
+                if let Some(cleanup_lower) = &bridge_cleanup_lower {
+                    uwriteln!(lower, "{}", cleanup_lower);
+                }
+            }
+            uwriteln!(lower, "{}", cleanup);
+            uwriteln!(
+                lower,
+                r#"
+                      }}
+                      stream.close()
+                      match stream {{
+                        {async_qualifier}Stream::Local(_, _) => {{
+                          for ;; {{
+                            match stream.read(64) {{
+                              Some(buffered) => {{
+                                for j = 0; j < buffered.length(); j = j + 1 {{
+                                  let elem = buffered[j]"#
+            );
+            if bridge_cleanup_uses_memory {
+                uwriteln!(
+                    lower,
+                    r#"
+                                  let elem_ptr = mbt_ffi_malloc({elem_size})
+                                  defer mbt_ffi_free(elem_ptr)"#
+                );
+                if let Some(cleanup_lower) = &bridge_cleanup_lower {
+                    uwriteln!(lower, "{}", cleanup_lower);
+                }
+            }
+            uwriteln!(lower, "{}", cleanup);
+            uwriteln!(
+                lower,
+                r#"
+                                }}
+                              }}
+                              None => break
+                            }}
+                          }}
+                        }}
+                        _ => ()
+                      }}
+                      return
+                    }}
+                    offset += written
+                  }}"#
+            );
+        } else {
+            uwriteln!(
+                lower,
+                r#"
+                  if !sink.write_all(data) {{
                     stream.close()
                     return
-                  }}
+                  }}"#
+            );
+        }
+        uwriteln!(
+            lower,
+            r#"
                 }}
                 None => {{
                   sink.close()

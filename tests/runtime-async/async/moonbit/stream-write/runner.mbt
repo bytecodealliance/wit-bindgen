@@ -46,4 +46,22 @@ pub async fn run(task_group : @async.TaskGroup[Unit]) -> Unit {
   bridge_unit_stream.close()
   unit_promise.write(())
   assert_eq(bridge_unit_done.get(), false)
+
+  let (thing_signal, thing_promise) = @async.Future::new()
+  let (thing_stream, thing_done) = @i.create_bridge_thing_stream_with_signal(thing_signal)
+  let first_thing = match thing_stream.read(1) {
+    Some(chunk) => {
+      assert_eq(chunk.length(), 1)
+      let thing = chunk[0]
+      assert_eq(thing.value(), 0U)
+      thing
+    }
+    None => panic()
+  }
+  thing_stream.close()
+  thing_promise.write(())
+  assert_eq(thing_done.get(), false)
+  first_thing.drop()
+  @async.pause()
+  assert_eq(@i.active_things(), 0U)
 }

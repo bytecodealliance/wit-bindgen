@@ -1109,25 +1109,60 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         print_docs(&mut self.src, docs);
         let name = name.to_moonbit_type_ident();
 
-        let mut deriviation: Vec<_> = Vec::new();
-        if self.derive_opts.derive_show {
-            deriviation.push("Show")
-        }
-        if self.derive_opts.derive_eq {
-            deriviation.push("Eq")
-        }
-        let declaration = if self.derive_opts.derive_error && name.contains("Error") {
-            "suberror"
-        } else {
-            "struct"
-        };
-
         uwrite!(
             self.src,
             r#"
-            pub(all) {declaration} {name}(Int) derive({})
+            pub(all) struct {name} {{
+                mut raw : Int
+                owned : Bool
+            }}
             "#,
-            deriviation.join(", "),
+        );
+        if self.derive_opts.derive_eq {
+            uwrite!(
+                self.src,
+                r#"
+                pub impl Eq for {name} with equal(self, other) {{
+                    self.rep() == other.rep()
+                }}
+                "#,
+            );
+        }
+        if self.derive_opts.derive_show {
+            uwrite!(
+                self.src,
+                r#"
+                pub impl Show for {name} with output(self, logger) {{
+                    logger.write_string("{name}(")
+                    logger.write_string(self.rep().to_string())
+                    logger.write_string(")")
+                }}
+                "#,
+            );
+        }
+        uwrite!(
+            self.src,
+            r#"
+            #doc(hidden)
+            pub fn {name}::from_handle(handle : Int) -> {name} {{
+                {name}::{{ raw: handle, owned: true }}
+            }}
+
+            #doc(hidden)
+            pub fn {name}::from_rep(rep : Int) -> {name} {{
+                {name}::{{ raw: rep, owned: false }}
+            }}
+
+            #doc(hidden)
+            pub fn {name}::take_handle(self : Self) -> Int {{
+                let raw = self.raw
+                if raw == -1 || !self.owned {{
+                    panic()
+                }}
+                self.raw = -1
+                raw
+            }}
+            "#,
         );
 
         if self.direction == Direction::Import {
@@ -1144,8 +1179,21 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 r#"
                 /// Drops a resource handle.
                 pub fn {name}::drop(self : {name}) -> Unit {{
-                    let {name}(resource) = self
-                    wasmImportResourceDrop{name}(resource)
+                    let raw = self.raw
+                    if raw == -1 || !self.owned {{
+                        return
+                    }}
+                    self.raw = -1
+                    wasmImportResourceDrop{name}(raw)
+                }}
+
+                #doc(hidden)
+                pub fn {name}::rep(self : Self) -> Int {{
+                    let raw = self.raw
+                    if raw == -1 {{
+                        panic()
+                    }}
+                    raw
                 }}
                 "#,
             );
@@ -1186,21 +1234,32 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 r#"
                 /// Creates a new resource with the given `rep` as its representation and returning the handle to this resource.
                 pub fn {name}::new(rep : Int) -> {name} {{
-                    {name}::{name}(wasmExportResourceNew{name}(rep))
+                    {name}::from_handle(wasmExportResourceNew{name}(rep))
                 }}
                 fn wasmExportResourceNew{name}(rep : Int) -> Int = "{new_module}" "{new_name}"
 
                 /// Drops a resource handle.
                 pub fn {name}::drop(self : Self) -> Unit {{
-                    let {name}(resource) = self
-                    wasmExportResourceDrop{name}(resource)
+                    let raw = self.raw
+                    if raw == -1 || !self.owned {{
+                        return
+                    }}
+                    self.raw = -1
+                    wasmExportResourceDrop{name}(raw)
                 }}
                 fn wasmExportResourceDrop{name}(resource : Int) = "{drop_module}" "{drop_name}"
 
                 /// Gets the `Int` representation of the resource pointed to the given handle.
                 pub fn {name}::rep(self : Self) -> Int {{
-                    let {name}(resource) = self
-                    wasmExportResourceRep{name}(resource)
+                    let raw = self.raw
+                    if raw == -1 {{
+                        panic()
+                    }}
+                    if self.owned {{
+                        wasmExportResourceRep{name}(raw)
+                    }} else {{
+                        raw
+                    }}
                 }}
                 fn wasmExportResourceRep{name}(resource : Int) -> Int = "{rep_module}" "{rep_name}"
                 "#,
@@ -1224,7 +1283,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 r#"
                 #doc(hidden)
                 pub fn {func_name}(handle : Int) -> Unit {{
-                    {name}::dtor(handle)
+                    {name}::dtor({name}::from_rep(handle))
                 }}
                 "#,
             );
@@ -1916,31 +1975,21 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
             },
 
-            Instruction::HandleLower { ty, .. } => {
+            Instruction::HandleLower { handle, ty, .. } => {
                 let op = &operands[0];
-                let handle = self.locals.tmp("handle");
                 let ty = self.resolve_constructor(&Type::Id(*ty));
-                uwrite!(
-                    self.src,
-                    r#"
-                    let {ty}({handle}) = {op}
-                    "#
-                );
-                results.push(handle);
+                match handle {
+                    Handle::Own(_) => results.push(format!("{ty}::take_handle({op})")),
+                    Handle::Borrow(_) => results.push(format!("{ty}::rep({op})")),
+                }
             }
-            Instruction::HandleLift { ty, .. } => {
+            Instruction::HandleLift { handle, ty, .. } => {
                 let op = &operands[0];
                 let ty = self.resolve_constructor(&Type::Id(*ty));
-                results.push(format!(
-                    "{}::{}({})",
-                    ty,
-                    if ty.starts_with("@") {
-                        ty.split('.').next_back().unwrap()
-                    } else {
-                        &ty
-                    },
-                    op
-                ));
+                match handle {
+                    Handle::Own(_) => results.push(format!("{ty}::from_handle({op})")),
+                    Handle::Borrow(_) => results.push(format!("{ty}::from_rep({op})")),
+                }
             }
 
             Instruction::RecordLower { record, .. } => {
@@ -3078,10 +3127,6 @@ fn indent(code: &str) -> Source {
         indented.push_str("\n");
     }
     indented
-}
-
-fn generated_preamble(src: &mut Source, version: &str) {
-    uwriteln!(src, "// Generated by `wit-bindgen` {version}.")
 }
 
 fn print_docs(src: &mut String, docs: &Docs) {

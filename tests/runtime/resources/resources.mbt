@@ -26,14 +26,14 @@ let k_counter : Ref[Int] = { val: 1 }
 ///|
 /// Destructor of the resource.
 pub fn X::dtor(self : X) -> Unit {
-  x.remove(self.0)
+  x.remove(self.rep())
 }
 
 ///|
 /// Destructor of the resource.
 pub fn Z::dtor(self : Z) -> Unit {
   z_dropped.val += 1
-  z.remove(self.0)
+  z.remove(self.rep())
 }
 
 ///|
@@ -52,12 +52,12 @@ pub fn X::x(a : Int) -> X {
 
 ///|
 pub fn X::get_a(self : X) -> Int {
-  x[self.0]
+  x[self.rep()]
 }
 
 ///|
 pub fn X::set_a(self : X, a : Int) -> Unit {
-  x[self.0] = a
+  x[self.rep()] = a
 }
 
 ///|
@@ -76,7 +76,7 @@ pub fn Z::z(a : Int) -> Z {
 
 ///|
 pub fn Z::get_a(self : Z) -> Int {
-  z[self.0]
+  z[self.rep()]
 }
 
 ///|
@@ -88,7 +88,7 @@ pub fn Z::num_dropped() -> UInt {
 pub fn add(a : Z, b : Z) -> Z {
   let rep = z_counter.val
   z_counter.val += 1
-  z[rep] = z[a.0] + z[b.0]
+  z[rep] = z[a.rep()] + z[b.rep()]
   Z::new(rep)
 }
 

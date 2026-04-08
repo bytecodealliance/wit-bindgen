@@ -61,19 +61,12 @@ pub async fn[X] Sink::write(self : Sink[X], data : ArrayView[X]) -> Int {
 /// Returns `true` if all items were written and `false` if the sink stopped
 /// accepting data before completion.
 pub async fn[X] Sink::write_all(self : Sink[X], data : ArrayView[X]) -> Bool {
-  if data.length() == 0 {
-    return true
-  }
-  let pending : Array[X] = []
-  for i = 0; i < data.length(); i = i + 1 {
-    pending.push(data[i])
-  }
   let mut offset = 0
   for ;; {
-    if offset >= pending.length() {
+    if offset >= data.length() {
       return true
     }
-    let written = self.write(pending[offset:])
+    let written = self.write(data[offset:])
     if written <= 0 {
       return false
     }

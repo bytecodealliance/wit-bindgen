@@ -3,6 +3,7 @@
 include!(env!("BINDINGS"));
 
 use crate::my::test::i::*;
+use wit_bindgen::yield_async;
 
 struct Component;
 
@@ -30,5 +31,15 @@ impl Guest for Component {
         let record_inner = record.nested.await;
         let record_value = record_inner.await;
         assert_eq!(record_value, 9);
+
+        let (tx, signal) = wit_future::new(|| ());
+        let (resource_future, done) = create_dropped_resource_future_with_signal(signal).await;
+        drop(resource_future);
+        tx.write(()).await.unwrap();
+        done.await;
+        for _ in 0..5 {
+            yield_async().await;
+        }
+        assert_eq!(active_things(), 0);
     }
 }

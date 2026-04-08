@@ -18,4 +18,12 @@ pub async fn run(task_group : @async.TaskGroup[Unit]) -> Unit {
   let nested_record = @i.create_nested_future_record(9U)
   let nested_inner = nested_record.nested.get()
   assert_eq(nested_inner.get(), 9U)
+
+  let (signal, promise) = @async.Future::new()
+  let (resource_future, done) = @i.create_dropped_resource_future_with_signal(signal)
+  resource_future.drop()
+  promise.write(())
+  done.get()
+  @async.pause()
+  assert_eq(@i.active_things(), 0U)
 }

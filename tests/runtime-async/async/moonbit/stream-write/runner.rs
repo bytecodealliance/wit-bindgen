@@ -3,7 +3,7 @@
 include!(env!("BINDINGS"));
 
 use crate::my::test::i::*;
-use wit_bindgen::StreamResult;
+use wit_bindgen::{StreamResult, yield_async};
 
 struct Component;
 
@@ -70,5 +70,22 @@ impl Guest for Component {
         drop(rx);
         tx.write(()).await.unwrap();
         assert!(!done.await);
+
+        let (tx, signal) = wit_future::new(|| ());
+        let (mut rx, done) = create_bridge_thing_stream_with_signal(signal).await;
+        let (result, values) = rx.read(Vec::<Thing>::with_capacity(1)).await;
+        let thing = match result {
+            StreamResult::Complete(1) => values.into_iter().next().unwrap(),
+            other => panic!("expected one thing before close, got {other:?}"),
+        };
+        assert_eq!(thing.value(), 0);
+        drop(rx);
+        tx.write(()).await.unwrap();
+        assert!(!done.await);
+        drop(thing);
+        for _ in 0..5 {
+            yield_async().await;
+        }
+        assert_eq!(active_things(), 0);
     }
 }
