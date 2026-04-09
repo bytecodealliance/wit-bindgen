@@ -234,7 +234,9 @@ package(wit):
 
 extern(C) {
 void*   malloc(size_t size);
+void*   realloc(void* ptr, size_t newSIzew);
 void    free(void* ptr);
+noreturn abort();
 }
 
 // from numem.casting
@@ -334,4 +336,12 @@ template witExportsIn(T) {
             }
         }
     }
+}
+
+@wasmExport!("cabi_realloc")
+void* cabi_realloc(void *ptr, size_t oldSize, size_t alignment, size_t newSize) {
+    if (newSize == 0) return cast(void*)alignment;
+    void *ret = realloc(ptr, newSize);
+    if (!ret) abort();
+    return ret;
 }
