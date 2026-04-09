@@ -541,12 +541,15 @@ impl WorldGenerator for D {
         self.interface_exports.push(fqn.clone());
 
         let wasm_import_module = resolve.name_world_key(name);
+        let emit_exports_stubs = self.opts.emit_export_stubs;
+
         let mut r#gen = self.interface(
             resolve,
             Some(Direction::Export),
             Some(name),
             Some(&wasm_import_module),
         );
+        r#gen.fqn = &fqn;
         r#gen.interface = Some(id);
         r#gen.prologue();
 
@@ -596,6 +599,16 @@ impl WorldGenerator for D {
                         wasm_import_module, type_name
                     ));
 
+                    if emit_exports_stubs {
+                        r#gen.stub_src.push_str(&format!(
+                            "@witExport(\"{}\", \"{}\")\nstruct {escaped_name}_STUB {{\n",
+                            wasm_import_module,
+                            ty.name.as_ref().unwrap()
+                        ));
+
+                        r#gen.stubs.push(escaped_name.to_owned() + "_STUB");
+                    }
+
                     for (_, func) in &resolve.interfaces[id].functions {
                         match func.kind {
                             FunctionKind::Freestanding | FunctionKind::AsyncFreestanding => {}
@@ -611,6 +624,10 @@ impl WorldGenerator for D {
                         }
                     }
                     r#gen.src.push_str("}\n");
+
+                    if emit_exports_stubs {
+                        r#gen.stub_src.push_str("}\n");
+                    }
                 }
                 _ => {}
             }
@@ -697,6 +714,7 @@ impl WorldGenerator for D {
                 let wasm_import_module = resolve.name_world_key(&name);
                 let mut r#gen =
                     self.interface(resolve, None, Some(&name), Some(&wasm_import_module));
+                r#gen.fqn = &fqn;
                 r#gen.interface = Some(id);
                 r#gen.prologue();
                 r#gen.types(id);
@@ -941,8 +959,6 @@ impl<'a> DInterfaceGenerator<'a> {
     fn prologue(&mut self) {
         let id = self.interface.unwrap();
 
-        let fqn = self.r#gen.lookup_interface_fqn(id, self.direction).unwrap();
-
         let interface = &self.resolve.interfaces[self.interface.unwrap()];
 
         self.src.push_str(&format!(
@@ -950,7 +966,7 @@ impl<'a> DInterfaceGenerator<'a> {
             interface.docs.contents.as_deref().unwrap_or_default()
         ));
 
-        self.src.push_str(&format!("module {};\n\n", fqn));
+        self.src.push_str(&format!("module {};\n\n", self.fqn));
 
         self.src.push_str("import wit.common;\n\n");
         if self.direction.is_some()
@@ -1226,14 +1242,9 @@ impl<'a> DInterfaceGenerator<'a> {
         ));
 
         self.src.push_str(&format!(
-            "alias {}_Sig = {} {}({});\n",
+            "alias {}_Sig = {} function({});\n",
             d_sig.name,
             d_sig.result,
-            if d_sig.implicit_self {
-                "delegate"
-            } else {
-                "function"
-            },
             d_sig
                 .arguments
                 .iter()
@@ -1243,10 +1254,11 @@ impl<'a> DInterfaceGenerator<'a> {
         ));
 
         self.src.push_str(&format!(
-            "/// ditto\nalias {}_Impl = findWitExportFunc!(\"{}\", \"{}\", {0}_Sig, {});\n",
+            "/// ditto\nalias {}_Impl = findWitExportFunc!(\"{}\", \"{}\", {0}_Sig, {}, {});\n",
             d_sig.name,
             self.wasm_import_module.unwrap(),
             func.name,
+            d_sig.implicit_self,
             match &func.kind {
                 FunctionKind::Freestanding | FunctionKind::AsyncFreestanding => "Impl",
                 _ => {
@@ -1257,9 +1269,15 @@ impl<'a> DInterfaceGenerator<'a> {
 
         if self.r#gen.opts.emit_export_stubs {
             self.stub_src.push_str(&format!(
-                "@witExport(\"{}\", \"{}\")\n{} {}_STUB({});\n",
+                "@witExport(\"{}\", \"{}\")\n",
                 self.wasm_import_module.unwrap(),
-                func.name,
+                func.name
+            ));
+            if d_sig.static_member {
+                self.stub_src.push_str("static ");
+            }
+            self.stub_src.push_str(&format!(
+                "{} {}_STUB({});\n",
                 d_sig.result,
                 d_sig.name,
                 d_sig
@@ -1270,7 +1288,12 @@ impl<'a> DInterfaceGenerator<'a> {
                     .join(", ")
             ));
 
-            self.stubs.push(d_sig.name.clone() + "_STUB");
+            match func.kind {
+                FunctionKind::Freestanding | FunctionKind::AsyncFreestanding => {
+                    self.stubs.push(d_sig.name.clone() + "_STUB");
+                }
+                _ => {}
+            }
         }
 
         self.src.push_str("/// ditto\n");
@@ -1590,20 +1613,6 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
         "
                     ));
 
-                    /*for (_, func) in &self.resolve.interfaces[owner_id].functions {
-                        if match &func.kind {
-                            FunctionKind::Freestanding => false,
-                            FunctionKind::Method(_) => false,
-                            FunctionKind::Static(mid) => *mid == id,
-                            FunctionKind::Constructor(mid) => *mid == id,
-                            FunctionKind::AsyncFreestanding => false,
-                            FunctionKind::AsyncMethod(_) => false,
-                            FunctionKind::AsyncStatic(_) => todo!(),
-                        } {
-                            self.import_func(func);
-                        }
-                    }*/
-
                     self.src.push_str(&format!(
                         "struct Borrow {{
             package(wit) void* __ptr = null;
@@ -1616,20 +1625,6 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
 
                         "
                     ));
-
-                    /*for (_, func) in &self.resolve.interfaces[owner_id].functions {
-                        if match &func.kind {
-                            FunctionKind::Freestanding => false,
-                            FunctionKind::Method(mid) => *mid == id,
-                            FunctionKind::Static(_) => false,
-                            FunctionKind::Constructor(_) => false,
-                            FunctionKind::AsyncFreestanding => false,
-                            FunctionKind::AsyncMethod(_) => todo!(),
-                            FunctionKind::AsyncStatic(_) => false,
-                        } {
-                            self.import_func(func);
-                        }
-                    }*/
 
                     self.src.push_str("}\n");
 
@@ -2829,7 +2824,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     }
                     FunctionKind::Method(_) | FunctionKind::AsyncMethod(_) => {
                         self.src.push_str(&format!(
-                            "__traits(child, cast(_Resource_Impl*)self, {escaped_name})("
+                            "__traits(child, cast(_Resource_Impl*)self, {escaped_name}_Impl)("
                         ));
                         true
                     }
