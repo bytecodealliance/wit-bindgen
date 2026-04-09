@@ -600,18 +600,55 @@ impl InterfaceGenerator<'_> {
         }
 
         let ffi_import_name = format!("wasmImport{}", func.name.to_upper_camel_case());
+        let mut bindgen = FunctionBindgen::new(
+            self,
+            func.params
+                .iter()
+                .map(|Param { name, .. }| name.to_moonbit_ident())
+                .collect(),
+        );
+
+        abi::call(
+            bindgen.interface_gen.resolve,
+            AbiVariant::GuestImport,
+            LiftLower::LowerArgsLiftResults,
+            func,
+            &mut bindgen,
+            false,
+        );
+
+        let mut src = bindgen.src.clone();
+
+        let cleanup_list = if bindgen.needs_cleanup_list {
+            "let cleanup_list : Array[Int] = []"
+        } else {
+            ""
+        };
+
+        let mbt_sig = self.world_gen.pkg_resolver.mbt_sig(self.name, func, false);
+        let sig = self.sig_string(&mbt_sig, async_);
 
         // Generate the core wasm abi
-        {
-            let wasm_sig = self.resolve.wasm_signature(
-                if async_ {
-                    AbiVariant::GuestImportAsync
-                } else {
-                    AbiVariant::GuestImport
-                },
+        let wasm_sig = self.resolve.wasm_signature(
+            if async_ {
+                AbiVariant::GuestImportAsync
+            } else {
+                AbiVariant::GuestImport
+            },
+            func,
+        );
+        let (import_module, import_name) = self.resolve.wasm_import_name(
+            ManglingAndAbi::Legacy(if async_ {
+                LiftLowerAbi::AsyncCallback
+            } else {
+                LiftLowerAbi::Sync
+            }),
+            WasmImport::Func {
+                interface: self.interface,
                 func,
-            );
-
+            },
+        );
+        {
             let result_type = match &wasm_sig.results[..] {
                 [] => "".into(),
                 [result] => format!("-> {}", wasm_type(*result)),
@@ -626,18 +663,6 @@ impl InterfaceGenerator<'_> {
                 .collect::<Vec<_>>()
                 .join(", ");
 
-            let (import_module, import_name) = self.resolve.wasm_import_name(
-                ManglingAndAbi::Legacy(if async_ {
-                    LiftLowerAbi::AsyncCallback
-                } else {
-                    LiftLowerAbi::Sync
-                }),
-                WasmImport::Func {
-                    interface: self.interface,
-                    func,
-                },
-            );
-
             uwriteln!(
                 self.ffi,
                 r#"
@@ -648,52 +673,25 @@ impl InterfaceGenerator<'_> {
 
         // Generate the MoonBit wrapper
         if async_ {
-            // self.r#generation_futures_and_streams_import("", func, &import_module);
-            // if async_ {
-            //     src = self.r#generate_async_import_function(func, mbt_sig, &wasm_sig);
-            // }
-            todo!("async import not supported yet");
-        } else {
-            let mut bindgen = FunctionBindgen::new(
-                self,
-                func.params
-                    .iter()
-                    .map(|Param { name, .. }| name.to_moonbit_ident())
-                    .collect(),
-            );
-
-            abi::call(
-                bindgen.interface_gen.resolve,
-                AbiVariant::GuestImport,
-                LiftLower::LowerArgsLiftResults,
-                func,
-                &mut bindgen,
-                false,
-            );
-
-            let src = bindgen.src.clone();
-
-            let cleanup_list = if bindgen.needs_cleanup_list {
-                "let cleanup_list : Array[Int] = []"
-            } else {
-                ""
+            let interface_name = match self.interface {
+                Some(key) => self.resolve.name_world_key(key),
+                None => "$root".into(),
             };
-
-            let mbt_sig = self.world_gen.pkg_resolver.mbt_sig(self.name, func, false);
-            let sig = self.sig_string(&mbt_sig, async_);
-
-            print_docs(&mut self.src, &func.docs);
-
-            uwrite!(
-                self.src,
-                r#"
-                {sig} {{
-                {cleanup_list}
-                {src}
-            }}
-            "#
-            );
+            self.generation_futures_and_streams_import("", func, &interface_name);
+            src = self.generate_async_import_function(func, mbt_sig, &wasm_sig);
         }
+
+        print_docs(&mut self.src, &func.docs);
+
+        uwrite!(
+            self.src,
+            r#"
+            {sig} {{
+            {cleanup_list}
+            {src}
+        }}
+        "#
+        );
     }
 
     fn export(&mut self, func: &Function) {
