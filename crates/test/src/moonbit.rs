@@ -126,7 +126,7 @@ impl LanguageMethods for MoonBit {
     ) -> bool {
         // async-resource-func actually works, but most other async tests
         // fail during codegen or verification
-        config.async_ && name != "async-resource-func.wit"
+        name == "map.wit" || (config.async_ && name != "async-resource-func.wit")
     }
 
     fn verify(&self, runner: &Runner, verify: &crate::Verify) -> anyhow::Result<()> {

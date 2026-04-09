@@ -1468,6 +1468,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             | Instruction::FixedLengthListLower { .. }
             | Instruction::FixedLengthListLowerToMemory { .. }
             | Instruction::FixedLengthListLiftFromMemory { .. }
+            | Instruction::MapLower { .. }
+            | Instruction::MapLift { .. }
+            | Instruction::IterMapKey { .. }
+            | Instruction::IterMapValue { .. }
+            | Instruction::GuestDeallocateMap { .. }
             => {
                 dbg!(inst);
                 todo!()
