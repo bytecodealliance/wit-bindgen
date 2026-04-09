@@ -4,30 +4,66 @@ include!(env!("BINDINGS"));
 
 use test::fixed_length_lists::to_test::*;
 
+mod alloc;
+
+struct Guard {
+    me_before: usize,
+    remote_before: u32,
+}
+
+impl Guard {
+    fn new() -> Guard {
+        Guard {
+            me_before: alloc::get(),
+            remote_before: allocated_bytes(),
+        }
+    }
+}
+
+impl Drop for Guard {
+    fn drop(&mut self) {
+        assert_eq!(self.me_before, alloc::get());
+        assert_eq!(self.remote_before, allocated_bytes());
+    }
+}
+
 struct Component;
 
 export!(Component);
 
 impl Guest for Component {
     fn run() {
-        list_param([1, 2, 3, 4]);
-        list_param2([[1, 2], [3, 4]]);
-        list_param3([
-            -1, 2, -3, 4, -5, 6, -7, 8, -9, 10, -11, 12, -13, 14, -15, 16, -17, 18, -19, 20,
-        ]);
         {
+            let _guard = Guard::new();
+            list_param([1, 2, 3, 4]);
+        }
+        {
+            let _guard = Guard::new();
+            list_param2([[1, 2], [3, 4]]);
+        }
+        {
+            let _guard = Guard::new();
+            list_param3([
+                -1, 2, -3, 4, -5, 6, -7, 8, -9, 10, -11, 12, -13, 14, -15, 16, -17, 18, -19, 20,
+            ]);
+        }
+        {
+            let _guard = Guard::new();
             let result = list_result();
             assert_eq!(result, [b'0', b'1', b'A', b'B', b'a', b'b', 128, 255]);
         }
         {
+            let _guard = Guard::new();
             let result = list_minmax16([0, 1024, 32768, 65535], [1, 2048, -32767, -2]);
             assert_eq!(result, ([0, 1024, 32768, 65535], [1, 2048, -32767, -2]));
         }
         {
+            let _guard = Guard::new();
             let result = list_minmax_float([2.0, -42.0], [0.25, -0.125]);
             assert_eq!(result, ([2.0, -42.0], [0.25, -0.125]));
         }
         {
+            let _guard = Guard::new();
             let result =
                 list_roundtrip([b'a', b'b', b'c', b'd', 0, 1, 2, 3, b'A', b'B', b'Y', b'Z']);
             assert_eq!(
@@ -36,6 +72,7 @@ impl Guest for Component {
             );
         }
         {
+            let _guard = Guard::new();
             let result = nested_roundtrip([[1, 5], [42, 1_000_000]], [[-1, 3], [-2_000_000, 4711]]);
             assert_eq!(
                 result,
@@ -43,6 +80,7 @@ impl Guest for Component {
             );
         }
         {
+            let _guard = Guard::new();
             let result = large_roundtrip(
                 [[1, 5], [42, 1_000_000]],
                 [
@@ -66,9 +104,24 @@ impl Guest for Component {
             );
         }
         {
+            let _guard = Guard::new();
             let result = nightmare_on_cpp([Nested { l: [1, -1] }, Nested { l: [2, -2] }]);
             assert_eq!(result[0].l, [1, -1]);
             assert_eq!(result[1].l, [2, -2]);
+        }
+        {
+            let _guard = Guard::new();
+            string_list_param(["foo".to_owned(), "bar".to_owned(), "baz".to_owned()]);
+        }
+        {
+            let _guard = Guard::new();
+            let result = string_list_result();
+            assert_eq!(result, ["foo", "bar", "baz"]);
+        }
+        {
+            let _guard = Guard::new();
+            let result = string_list_roundtrip(["foo".to_owned(), "bar".to_owned(), "baz".to_owned()]);
+            assert_eq!(result, ["foo", "bar", "baz"]);
         }
     }
 }
