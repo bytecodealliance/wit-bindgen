@@ -1057,6 +1057,9 @@ impl<'a> DInterfaceGenerator<'a> {
             _ => false,
         };
 
+        res.post_return = self.direction == Some(Direction::Export)
+            && abi::guest_export_needs_post_return(self.resolve, func);
+
         res.result
             .push_str(&(self.optional_type_name(func.result.as_ref(), self.fqn)));
 
@@ -1296,23 +1299,21 @@ impl<'a> DInterfaceGenerator<'a> {
             }
         }
 
+        let core_module_name = self.name.map(|s| self.resolve.name_world_key(s));
+        let export_name = func.legacy_core_export_name(core_module_name.as_deref());
+
         self.src.push_str("/// ditto\n");
-        self.src.push_str(&format!(
-            "@wasmExport!(\"{}#{}\")\n",
-            self.wasm_import_module.unwrap(),
-            func.name
-        ));
+        self.src
+            .push_str(&format!("@wasmExport!(\"{export_name}\")\n"));
 
         self.src.push_str(&format!(
-            "pragma(mangle, \"__wit_export_{}__{}\")\n",
-            self.wasm_import_module
-                .unwrap()
+            "pragma(mangle, \"__wit_export_{}\")\n",
+            export_name
                 .replace("/", "__")
-                .replace("-", "_"),
-            func.name
                 .replace("-", "_")
                 .replace("[", ":")
                 .replace("]", ":")
+                .replace("#", "::")
         ));
 
         if d_sig.implicit_self || d_sig.static_member {
@@ -1362,6 +1363,68 @@ impl<'a> DInterfaceGenerator<'a> {
         self.src.push_str(&src.to_string());
 
         self.src.push_str("}\n");
+
+        if abi::guest_export_needs_post_return(self.resolve, func) {
+            let mut param_data = Vec::new();
+            let mut params = Vec::<&str>::new();
+
+            for (arg, _ty) in wasm_sig.results.iter().enumerate() {
+                param_data.push(format!("arg{arg}"));
+            }
+            for param in &param_data {
+                params.push(&param);
+            }
+
+            self.src
+                .push_str(&format!("@wasmExport!(\"cabi_post_{export_name}\")\n"));
+
+            self.src.push_str(&format!(
+                "pragma(mangle, \"__wit_cabi_post_{}\")\n",
+                export_name
+                    .replace("/", "__")
+                    .replace("-", "_")
+                    .replace("[", ":")
+                    .replace("]", ":")
+                    .replace("#", "::")
+            ));
+
+            if d_sig.implicit_self || d_sig.static_member {
+                self.src.push_str("static ");
+            }
+            self.src.push_str(&format!(
+                "private extern(C) void __cabi_post_{}({}) {{\n",
+                d_sig.name,
+                wasm_sig
+                    .results
+                    .iter()
+                    .zip(&params)
+                    .map(|(ty, name)| format!("{} {name}", wasm_type(*ty)))
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ));
+
+            let mut f = FunctionBindgen::new(self, &params);
+            abi::post_return(f.r#gen.resolve, func, &mut f);
+
+            let ret_area_decl = f.emit_ret_area_if_needed();
+
+            let FunctionBindgen {
+                src,
+                return_pointer_area_size,
+                return_pointer_area_align,
+                ..
+            } = f;
+            self.return_pointer_area_size =
+                self.return_pointer_area_size.max(return_pointer_area_size);
+            self.return_pointer_area_align = self
+                .return_pointer_area_align
+                .max(return_pointer_area_align);
+
+            self.src.push_str(&ret_area_decl);
+            self.src.push_str(&src.to_string());
+
+            self.src.push_str("}\n");
+        }
     }
 
     fn emit_ret_area_if_needed(&self) -> String {
@@ -1615,10 +1678,10 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
 
                     self.src.push_str(&format!(
                         "struct Borrow {{
-            package(wit) void* __ptr = null;
+            package(wit) uint __handle = 0;
 
-            package(wit) this(void* ptr) {{
-                __ptr = ptr;
+            package(wit) this(uint handle) {{
+                __handle = handle;
             }}
 
             @disable this();
@@ -2861,16 +2924,57 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 self.push_str(&format!("free({});", operands[0]));
             }
             abi::Instruction::GuestDeallocateString { .. } => {
-                todo!("instr: GuestDeallocateString");
-                //self.push_str(&format!("if (({}) > 0) {{\n", operands[1]));
-                //self.push_str(&format!("free({});", operands[0]));
-                //self.push_str("}\n");
+                self.push_str(&format!("if ({} > 0) {{\n", operands[1]));
+                self.push_str(&format!("free({});\n", operands[0]));
+                self.push_str("}\n");
             }
-            abi::Instruction::GuestDeallocateList { .. } => {
-                todo!("instr: GuestDeallocateList")
+            abi::Instruction::GuestDeallocateList { element } => {
+                let Block {
+                    body,
+                    results: block_results,
+                    element: block_element,
+                    base,
+                } = self.blocks.pop().unwrap();
+                let tmp = self.tmp();
+                let size = self.r#gen.sizes.size(element);
+                let size_str = size.format("size_t.sizeof");
+
+                let list = tempname("_list", tmp);
+                let list_len = tempname("_listLen", tmp);
+                let list_src = tempname("_listSrcPtr", tmp);
+                self.push_str(&format!("auto {list_src} = {};\n", operands[0]));
+                self.push_str(&format!("auto {list_len} = {};\n", operands[1]));
+
+                self.push_str(&format!(
+                    "foreach ({block_element}_idx; 0..{list_len}) {{\n",
+                ));
+                self.push_str(&format!(
+                    "const auto {base} = {list_src} + {block_element}_idx * {size_str};\n"
+                ));
+                self.push_str(&body);
+                self.push_str("\n}\n");
+
+                self.push_str(&format!("if ({} > 0) {{\n", operands[1]));
+                self.push_str(&format!("free({});\n", operands[0]));
+                self.push_str("}\n");
             }
-            abi::Instruction::GuestDeallocateVariant { .. } => {
-                todo!("instr: GuestDeallocateVariant")
+            abi::Instruction::GuestDeallocateVariant {
+                blocks: block_count,
+            } => {
+                let blocks = self
+                    .blocks
+                    .drain(self.blocks.len() - block_count..)
+                    .collect::<Vec<_>>();
+
+                self.push_str(&format!("switch ({}) {{\n", operands[0]));
+                for (i, block) in blocks.into_iter().enumerate() {
+                    assert!(results.is_empty());
+
+                    self.push_str(&format!("case {}: {{\n", i));
+                    self.src.push_str(&block.body);
+                    self.src.push_str("break;\n}\n");
+                }
+                self.src.push_str("default: break;\n}\n");
             }
             abi::Instruction::DropHandle { .. } => {
                 todo!("instr: DropHandle")
