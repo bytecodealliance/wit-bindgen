@@ -1285,12 +1285,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         if (t.IsFaulted)
                         {{
                             // TODO
-                            Console.Error.WriteLine("Async function {name} IsFaulted.  This scenario is not yet implemented.");
                             throw new NotImplementedException("Async function {name} IsFaulted.  This scenario is not yet implemented.");
                         }}
 
                         {name}TaskReturn({ret_param});
-                    }});
+
+                    }}, TaskContinuationOptions.ExecuteSynchronously);
                     
                     // TODO: Defer dropping borrowed resources until a result is returned.
                     ContextTask* contextTaskPtr = AsyncSupport.ContextGet();
@@ -1657,7 +1657,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             | Instruction::FixedLengthListLift { .. }
             | Instruction::FixedLengthListLower { .. }
             | Instruction::FixedLengthListLowerToMemory { .. }
-            | Instruction::FixedLengthListLiftFromMemory { .. } => {
+            | Instruction::FixedLengthListLiftFromMemory { .. }
+            | Instruction::MapLower { .. }
+            | Instruction::MapLift { .. }
+            | Instruction::IterMapKey { .. }
+            | Instruction::IterMapValue { .. }
+            | Instruction::GuestDeallocateMap { .. }
+            => {
                 dbg!(inst);
                 todo!()
             }

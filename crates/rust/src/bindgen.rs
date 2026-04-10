@@ -160,6 +160,10 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         }
     }
 
+    fn map_entry_layout(&self, key: &Type, value: &Type) -> ElementInfo {
+        self.r#gen.sizes.record([key, value])
+    }
+
     fn typename_lower(&self, id: TypeId) -> String {
         let owned = self.always_owned
             || match self.lift_lower() {
@@ -759,6 +763,61 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.push(len);
             }
 
+            Instruction::MapLower {
+                key,
+                value,
+                realloc,
+            } => {
+                let alloc = self.r#gen.path_to_std_alloc_module();
+                let rt = self.r#gen.r#gen.runtime_path().to_string();
+                self.r#gen.needs_wit_map = true;
+                self.r#gen.needs_runtime_module = true;
+                self.r#gen
+                    .r#gen
+                    .rt_module
+                    .insert(crate::RuntimeItem::WitMapTrait);
+                let body = self.blocks.pop().unwrap();
+                let tmp = self.tmp();
+                let map = format!("map{tmp}");
+                let result = format!("result{tmp}");
+                let layout = format!("layout{tmp}");
+                let len = format!("len{tmp}");
+                let cleanup = format!("_cleanup{tmp}");
+                self.push_str(&format!(
+                    "let {map} = {operand0};\n",
+                    operand0 = operands[0]
+                ));
+                self.push_str(&format!("let {len} = {map}.wit_map_len();\n"));
+                let entry = self.map_entry_layout(key, value);
+                self.push_str(&format!(
+                    "let {layout} = {alloc}::Layout::from_size_align({len} * {}, {}).unwrap();\n",
+                    entry.size.format(POINTER_SIZE_EXPRESSION),
+                    entry.align.format(POINTER_SIZE_EXPRESSION),
+                ));
+                self.push_str(&format!(
+                    "let ({result}, {cleanup}) = {rt}::Cleanup::new({layout});"
+                ));
+                if realloc.is_none() {
+                    self.cleanup(&cleanup);
+                } else {
+                    uwriteln!(
+                        self.src,
+                        "if let Some(cleanup) = {cleanup} {{ cleanup.forget(); }}"
+                    );
+                }
+                self.push_str(&format!(
+                    "for (i, (map_key, map_value)) in {map}.into_iter().enumerate() {{\n"
+                ));
+                self.push_str(&format!(
+                    "let base = {result}.add(i * {});\n",
+                    entry.size.format(POINTER_SIZE_EXPRESSION)
+                ));
+                self.push_str(&body);
+                self.push_str("\n}\n");
+                results.push(format!("{result}"));
+                results.push(len);
+            }
+
             Instruction::FixedLengthListLowerToMemory {
                 element,
                 size: _,
@@ -816,7 +875,52 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 ));
             }
 
+            Instruction::MapLift { key, value, .. } => {
+                let body = self.blocks.pop().unwrap();
+                let tmp = self.tmp();
+                let entry = self.map_entry_layout(key, value);
+                let len = format!("len{tmp}");
+                let base = format!("base{tmp}");
+                let result = format!("result{tmp}");
+                let wit_map = self.r#gen.r#gen.wit_map_path();
+                self.push_str(&format!(
+                    "let {base} = {operand0};\n",
+                    operand0 = operands[0]
+                ));
+                self.push_str(&format!(
+                    "let {len} = {operand1};\n",
+                    operand1 = operands[1]
+                ));
+                uwriteln!(
+                    self.src,
+                    "let mut {result} = {wit_map}::wit_map_new({len});"
+                );
+                uwriteln!(self.src, "for i in 0..{len} {{");
+                uwriteln!(
+                    self.src,
+                    "let base = {base}.add(i * {size});",
+                    size = entry.size.format(POINTER_SIZE_EXPRESSION),
+                );
+                uwriteln!(self.src, "let (map_key, map_value) = {body};");
+                uwriteln!(
+                    self.src,
+                    "{wit_map}::wit_map_push(&mut {result}, map_key, map_value);"
+                );
+                uwriteln!(self.src, "}}");
+                results.push(result);
+                let dealloc = self.r#gen.path_to_cabi_dealloc();
+                self.push_str(&format!(
+                    "{dealloc}({base}, {len} * {size}, {align});\n",
+                    size = entry.size.format(POINTER_SIZE_EXPRESSION),
+                    align = entry.align.format(POINTER_SIZE_EXPRESSION),
+                ));
+            }
+
             Instruction::IterElem { .. } => results.push("e".to_string()),
+
+            Instruction::IterMapKey { .. } => results.push("map_key".to_string()),
+
+            Instruction::IterMapValue { .. } => results.push("map_value".to_string()),
 
             Instruction::IterBasePointer => results.push("base".to_string()),
 
@@ -1198,6 +1302,41 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     "{dealloc}({base}, {len} * {size}, {align});\n",
                     size = size.format(POINTER_SIZE_EXPRESSION),
                     align = align.format(POINTER_SIZE_EXPRESSION)
+                ));
+            }
+
+            Instruction::GuestDeallocateMap { key, value } => {
+                let body = self.blocks.pop().unwrap();
+                let tmp = self.tmp();
+                let entry = self.map_entry_layout(key, value);
+                let len = format!("len{tmp}");
+                let base = format!("base{tmp}");
+                self.push_str(&format!(
+                    "let {base} = {operand0};\n",
+                    operand0 = operands[0]
+                ));
+                self.push_str(&format!(
+                    "let {len} = {operand1};\n",
+                    operand1 = operands[1]
+                ));
+
+                if body != "()" {
+                    self.push_str("for i in 0..");
+                    self.push_str(&len);
+                    self.push_str(" {\n");
+                    self.push_str("let base = ");
+                    self.push_str(&base);
+                    self.push_str(".add(i * ");
+                    self.push_str(&entry.size.format(POINTER_SIZE_EXPRESSION));
+                    self.push_str(");\n");
+                    self.push_str(&body);
+                    self.push_str("\n}\n");
+                }
+                let dealloc = self.r#gen.path_to_cabi_dealloc();
+                self.push_str(&format!(
+                    "{dealloc}({base}, {len} * {size}, {align});\n",
+                    size = entry.size.format(POINTER_SIZE_EXPRESSION),
+                    align = entry.align.format(POINTER_SIZE_EXPRESSION)
                 ));
             }
 
