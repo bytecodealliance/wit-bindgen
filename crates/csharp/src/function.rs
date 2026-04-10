@@ -892,7 +892,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                                 "
                             );
                         }
-                        results.push(format!("(int){ptr}"));
+                        results.push(format!("(nint){ptr}"));
                         results.push(format!("({list}).Length"));
                     }
                     Direction::Export => {
