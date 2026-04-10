@@ -632,7 +632,7 @@ impl WorldGenerator for CSharp {
                 {{
                     {access} static unsafe void* AlignStackPtr(void* stackAddress, uint alignment)
                     {{
-                        return (void*)(((int)stackAddress) + ((int)alignment - 1) & -(int)alignment);
+                        return (void*)(((nint)stackAddress) + ((int)alignment - 1) & -(int)alignment);
                     }}
                 }}
                 "
