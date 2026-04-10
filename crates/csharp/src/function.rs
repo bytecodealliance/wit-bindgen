@@ -1662,8 +1662,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             | Instruction::MapLift { .. }
             | Instruction::IterMapKey { .. }
             | Instruction::IterMapValue { .. }
-            | Instruction::GuestDeallocateMap { .. }
-            => {
+            | Instruction::GuestDeallocateMap { .. } => {
                 dbg!(inst);
                 todo!()
             }
