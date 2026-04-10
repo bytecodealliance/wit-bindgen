@@ -162,5 +162,24 @@ impl Guest for Component {
                 ),
             );
         }
+
+        {
+            let _guard = Guard::new();
+            let headers = vec![
+                ("Content-Type".to_owned(), b"text/plain".to_vec()),
+                (
+                    "Content-Length".to_owned(),
+                    "Not found".len().to_string().into_bytes(),
+                ),
+            ];
+            let result = wasi_http_headers_roundtrip(&headers);
+            assert_eq!(result[0].0, "Content-Type");
+            assert_eq!(result[0].1, b"text/plain");
+            assert_eq!(result[1].0, "Content-Length");
+            assert_eq!(
+                result[1].1,
+                "Not found".len().to_string().into_bytes()
+            );
+        }
     }
 }

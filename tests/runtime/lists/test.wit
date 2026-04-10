@@ -27,6 +27,8 @@ interface to-test {
 
   string-roundtrip: func(a: string) -> string;
 
+  wasi-http-headers-roundtrip: func(a: list<tuple<string, list<u8>>>) -> list<tuple<string, list<u8>>>;
+
   allocated-bytes: func() -> u32;
 }
 

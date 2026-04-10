@@ -105,4 +105,18 @@ void exports::runner::Run()
             std::vector<double>{DBL_MIN, DBL_MAX, -HUGE_VAL, HUGE_VAL}
         )
     ));
+
+    {
+        std::vector<uint8_t> val0 = {'t', 'e', 'x', 't', '/', 'p', 'l', 'a', 'i', 'n'};
+        std::vector<uint8_t> val1 = {'9'};
+        std::vector<std::tuple<std::string_view, std::span<const uint8_t>>> headers;
+        headers.push_back(std::make_tuple(std::string_view("Content-Type"), std::span<const uint8_t>(val0)));
+        headers.push_back(std::make_tuple(std::string_view("Content-Length"), std::span<const uint8_t>(val1)));
+        auto result = WasiHttpHeadersRoundtrip(headers);
+        assert(result.size() == 2);
+        assert(equal(std::get<0>(result[0]), "Content-Type"));
+        assert(equal(std::get<1>(result[0]), std::vector<uint8_t>{'t', 'e', 'x', 't', '/', 'p', 'l', 'a', 'i', 'n'}));
+        assert(equal(std::get<0>(result[1]), "Content-Length"));
+        assert(equal(std::get<1>(result[1]), std::vector<uint8_t>{'9'}));
+    }
 }

@@ -32,6 +32,19 @@ func Run() {
 	assertEqual(test.ListResult2(), "hello!")
 	assert(slices.Equal(test.ListResult3(), []string{"hello,", "world!"}))
 	assert(slices.Equal(test.ListRoundtrip([]uint8{}), []uint8{}))
+
+	{
+		headers := []Tuple2[string, []uint8]{
+			{"Content-Type", []uint8("text/plain")},
+			{"Content-Length", []uint8("9")},
+		}
+		result := test.WasiHttpHeadersRoundtrip(headers)
+		assertEqual(len(result), 2)
+		assertEqual(result[0].F0, "Content-Type")
+		assert(slices.Equal(result[0].F1, []uint8("text/plain")))
+		assertEqual(result[1].F0, "Content-Length")
+		assert(slices.Equal(result[1].F1, []uint8("9")))
+	}
 }
 
 func assertEqual[T comparable](a T, b T) {
