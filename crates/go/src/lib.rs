@@ -2613,10 +2613,7 @@ for index := 0; index < int({length}); index++ {{
             }
             Instruction::IterMapKey { .. } => results.push("map_key".into()),
             Instruction::IterMapValue { .. } => results.push("map_value".into()),
-            Instruction::GuestDeallocateMap { .. } => {
-                // Nothing to do here; should be handled when calling `pinner.Unpin()`
-            }
-            Instruction::GuestDeallocate { .. } => {
+            Instruction::GuestDeallocateMap { .. } | Instruction::GuestDeallocate { .. } => {
                 // Nothing to do here; should be handled when calling `pinner.Unpin()`
             }
             _ => unimplemented!("{instruction:?}"),
