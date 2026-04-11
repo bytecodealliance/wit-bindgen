@@ -1459,7 +1459,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     }
 
     fn type_map(&mut self, _id: TypeId, _name: &str, _key: &Type, _value: &Type, _docs: &Docs) {
-        todo!("map types are not yet supported in the MoonBit backend")
+        // Not needed. Maps become `Map[K, V]` inline in MoonBit
     }
 
     fn type_future(&mut self, _id: TypeId, _name: &str, _ty: &Option<Type>, _docs: &Docs) {
@@ -2889,12 +2889,118 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.push(format!("FixedArray::from_array({array}[:])"));
             }
 
-            Instruction::MapLower { .. }
-            | Instruction::MapLift { .. }
-            | Instruction::IterMapKey { .. }
-            | Instruction::IterMapValue { .. }
-            | Instruction::GuestDeallocateMap { .. } => {
-                todo!("map types are not yet supported in this backend")
+            Instruction::MapLower {
+                key,
+                value,
+                realloc,
+            } => {
+                let Block {
+                    body,
+                    results: block_results,
+                } = self.blocks.pop().unwrap();
+                assert!(block_results.is_empty());
+
+                let op = &operands[0];
+                let entry = self.interface_gen.world_gen.sizes.record([*key, *value]);
+                let size = entry.size.size_wasm32();
+                let address = self.locals.tmp("address");
+                let index = self.locals.tmp("index");
+                let iter_map_key = self.locals.tmp("iter_map_key");
+                let iter_map_value = self.locals.tmp("iter_map_value");
+
+                self.use_ffi(ffi::MALLOC);
+                uwrite!(
+                    self.src,
+                    "
+                    let {address} = mbt_ffi_malloc(({op}).length() * {size});
+                    let mut {index} = 0
+                    ({op}).each(fn({iter_map_key}, {iter_map_value}) {{
+                        let iter_map_key = {iter_map_key}
+                        let iter_map_value = {iter_map_value}
+                        let iter_base = {address} + ({index} * {size})
+                        {body}
+                        {index} = {index} + 1
+                    }})
+                    ",
+                );
+
+                results.push(address.clone());
+                results.push(format!("({op}).length()"));
+
+                if realloc.is_none() {
+                    self.cleanup.push(Cleanup { address });
+                }
+            }
+
+            Instruction::MapLift { key, value, .. } => {
+                let Block {
+                    body,
+                    results: block_results,
+                } = self.blocks.pop().unwrap();
+                let address = &operands[0];
+                let length = &operands[1];
+                let map = self.locals.tmp("map");
+                let key_ty = self.resolve_type_name(key);
+                let value_ty = self.resolve_type_name(value);
+                let entry = self.interface_gen.world_gen.sizes.record([*key, *value]);
+                let size = entry.size.size_wasm32();
+                let index = self.locals.tmp("index");
+
+                let (body_key, body_value) = match &block_results[..] {
+                    [k, v] => (k, v),
+                    _ => todo!(
+                        "expected 2 results from map lift block, got {}",
+                        block_results.len()
+                    ),
+                };
+
+                self.use_ffi(ffi::FREE);
+                uwrite!(
+                    self.src,
+                    "
+                    let {map} : Map[{key_ty}, {value_ty}] = {{}}
+                    for {index} = 0; {index} < ({length}); {index} = {index} + 1 {{
+                        let iter_base = ({address}) + ({index} * {size})
+                        {body}
+                        {map}[{body_key}] = {body_value}
+                    }}
+                    mbt_ffi_free({address})
+                    ",
+                );
+
+                results.push(map);
+            }
+
+            Instruction::IterMapKey { .. } => results.push("iter_map_key".into()),
+
+            Instruction::IterMapValue { .. } => results.push("iter_map_value".into()),
+
+            Instruction::GuestDeallocateMap { key, value } => {
+                let Block { body, results, .. } = self.blocks.pop().unwrap();
+                assert!(results.is_empty());
+
+                let address = &operands[0];
+                let length = &operands[1];
+
+                let entry = self.interface_gen.world_gen.sizes.record([*key, *value]);
+                let size = entry.size.size_wasm32();
+
+                if !body.trim().is_empty() {
+                    let index = self.locals.tmp("index");
+
+                    uwrite!(
+                        self.src,
+                        "
+                        for {index} = 0; {index} < ({length}); {index} = {index} + 1 {{
+                            let iter_base = ({address}) + ({index} * {size})
+                            {body}
+                        }}
+                        "
+                    );
+                }
+
+                self.use_ffi(ffi::FREE);
+                uwriteln!(self.src, "mbt_ffi_free({address})",);
             }
         }
     }
