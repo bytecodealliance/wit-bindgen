@@ -211,9 +211,11 @@ fn escape_d_identifier(name: &str) -> &str {
         "WitFlags" => "WitFlags_",
         "Option" => "Option_",
         "Result" => "Result_",
-        "bits" => "bits_",     // part of WitFlags
-        "borrow" => "borrow_", // part of the expansion of `resource`
-        "drop" => "drop_",     // part of the expansion of `resource`
+        "bits" => "bits_",               // part of WitFlags
+        "borrow" => "borrow_",           // part of the expansion of `resource`
+        "drop" => "drop_",               // part of the expansion of `resource`
+        "makeNew" => "makeNew_",         // part of the expansion of `resource`
+        "constructor" => "constructor_", // part of the expansion of `resource`
 
         s => s,
     }
@@ -893,15 +895,15 @@ impl<'a> DInterfaceGenerator<'a> {
                             self.type_name(&ty, from_module_fqn)
                         )),
                         TypeDefKind::Future(_) => {
-                            Cow::Borrowed("/* todo - type_name of `future` */")
+                            todo!("type_name of `future`")
                         }
                         TypeDefKind::Stream(_) => {
-                            Cow::Borrowed("/* todo - type_name of `stream` */")
+                            todo!("type_name of `stream`")
                         }
                         TypeDefKind::FixedLengthList(ty, size) => {
                             Cow::Owned(format!("{}[{size}]", self.type_name(ty, from_module_fqn)))
                         }
-                        TypeDefKind::Map(_, _) => todo!(),
+                        TypeDefKind::Map(_, _) => todo!("type_name of `map`"),
                         TypeDefKind::Unknown => unimplemented!(),
                         unhandled => {
                             panic!(
@@ -1027,10 +1029,12 @@ impl<'a> DInterfaceGenerator<'a> {
 
     fn get_d_signature(&mut self, func: &Function) -> DSig {
         match &func.kind {
-            FunctionKind::Freestanding | FunctionKind::Method(_) | FunctionKind::Static(_) => {}
+            FunctionKind::Freestanding
+            | FunctionKind::Method(_)
+            | FunctionKind::Static(_)
+            | FunctionKind::Constructor(_) => {}
 
             FunctionKind::AsyncFreestanding
-            | FunctionKind::Constructor(_)
             | FunctionKind::AsyncMethod(_)
             | FunctionKind::AsyncStatic(_) => {
                 todo!()
@@ -1041,19 +1045,27 @@ impl<'a> DInterfaceGenerator<'a> {
 
         let split_name = match &func.kind {
             FunctionKind::Freestanding | FunctionKind::AsyncFreestanding => &func.name,
+            FunctionKind::Constructor(_) => "",
             FunctionKind::Method(_)
             | FunctionKind::Static(_)
-            | FunctionKind::Constructor(_)
             | FunctionKind::AsyncMethod(_)
             | FunctionKind::AsyncStatic(_) => func.name.split(".").skip(1).next().unwrap(),
         };
 
         let lower_name = split_name.to_lower_camel_case();
-        let escaped_name = escape_d_identifier(&lower_name);
+        let escaped_name = if let FunctionKind::Constructor(_) = &func.kind {
+            match self.direction {
+                Some(Direction::Import) => "makeNew",
+                _ => "constructor",
+            }
+        } else {
+            escape_d_identifier(&lower_name)
+        };
 
         res.name = escaped_name.into();
         res.static_member = match &func.kind {
             FunctionKind::Static(_) => true,
+            FunctionKind::Constructor(_) => true,
             _ => false,
         };
 
@@ -1094,16 +1106,10 @@ impl<'a> DInterfaceGenerator<'a> {
 
     fn import_func(&mut self, func: &Function) {
         match &func.kind {
-            FunctionKind::Freestanding => {}
-            FunctionKind::Constructor(_) => {
-                self.src.push_str(&format!(
-                    "// TODO: Import FunctionKind::Constructor - {}\n",
-                    func.name
-                ));
-                return;
-            }
-            FunctionKind::Method(_) => {}
-            FunctionKind::Static(_) => {}
+            FunctionKind::Freestanding
+            | FunctionKind::Constructor(_)
+            | FunctionKind::Method(_)
+            | FunctionKind::Static(_) => {}
             kind => {
                 todo!("Import {kind:?} - {}\n", func.name);
             }
@@ -1205,16 +1211,10 @@ impl<'a> DInterfaceGenerator<'a> {
 
     fn export_func(&mut self, func: &Function) {
         match &func.kind {
-            FunctionKind::Freestanding => {}
-            FunctionKind::Constructor(_) => {
-                self.src.push_str(&format!(
-                    "// TODO: Export FunctionKind::Constructor - {}\n",
-                    func.name
-                ));
-                return;
-            }
-            FunctionKind::Method(_) => {}
-            FunctionKind::Static(_) => {}
+            FunctionKind::Freestanding
+            | FunctionKind::Constructor(_)
+            | FunctionKind::Method(_)
+            | FunctionKind::Static(_) => {}
             kind => {
                 todo!("Export {kind:?} - {}\n", func.name);
             }
@@ -1699,7 +1699,6 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
                 }
             },
         }
-        //todo!("def of `resource`")
     }
 
     fn type_tuple(&mut self, id: TypeId, name: &str, tuple: &Tuple, docs: &Docs) {
@@ -1992,6 +1991,10 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
             "alias {escaped_name} = {}[{size}];",
             self.type_name(ty, owner_fqn)
         ));
+    }
+
+    fn type_map(&mut self, _id: TypeId, name: &str, _key: &Type, _value: &Type, _docs: &Docs) {
+        todo!("def of `map` - {name}");
     }
 
     fn type_future(&mut self, _id: TypeId, name: &str, _ty: &Option<Type>, _docs: &Docs) {
@@ -2839,7 +2842,11 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 };
 
                 let lower_name = split_name.to_lower_camel_case();
-                let escaped_name = escape_d_identifier(&lower_name);
+                let escaped_name = if name.starts_with("[constructor]") {
+                    "makeNew"
+                } else {
+                    escape_d_identifier(&lower_name)
+                };
 
                 if !sig.results.is_empty() {
                     self.src.push_str("auto _ret = ");
@@ -2866,15 +2873,19 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
 
                 let split_name = match &func.kind {
                     FunctionKind::Freestanding | FunctionKind::AsyncFreestanding => &func.name,
+                    FunctionKind::Constructor(_) => "",
                     FunctionKind::Method(_)
                     | FunctionKind::Static(_)
-                    | FunctionKind::Constructor(_)
                     | FunctionKind::AsyncMethod(_)
                     | FunctionKind::AsyncStatic(_) => func.name.split(".").skip(1).next().unwrap(),
                 };
 
                 let lower_name = split_name.to_lower_camel_case();
-                let escaped_name = escape_d_identifier(&lower_name);
+                let escaped_name = if let FunctionKind::Constructor(_) = &func.kind {
+                    "constructor"
+                } else {
+                    escape_d_identifier(&lower_name)
+                };
 
                 let implicit_self = match &func.kind {
                     FunctionKind::Freestanding
