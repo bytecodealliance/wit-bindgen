@@ -300,6 +300,10 @@ pub struct Opts {
         arg(long, require_equals = true, value_name = "true|false")
     )]
     pub merge_structurally_equal_types: Option<Option<bool>>,
+
+    /// If true, methods normally returning `()` instead return `&Self`. This applies to both imported and exported methods.
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub enable_method_chaining: bool,
 }
 
 impl Opts {

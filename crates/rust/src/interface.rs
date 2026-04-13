@@ -768,7 +768,7 @@ pub mod vtable{ordinal} {{
     }
 
     fn lower_to_memory(&mut self, address: &str, value: &str, ty: &Type, module: &str) -> String {
-        let mut f = FunctionBindgen::new(self, Vec::new(), module, true);
+        let mut f = FunctionBindgen::new(self, Vec::new(), module, true, false);
         abi::lower_to_memory(f.r#gen.resolve, &mut f, address.into(), value.into(), ty);
         format!("unsafe {{ {} }}", String::from(f.src))
     }
@@ -780,7 +780,7 @@ pub mod vtable{ordinal} {{
         indirect: bool,
         module: &str,
     ) -> String {
-        let mut f = FunctionBindgen::new(self, Vec::new(), module, true);
+        let mut f = FunctionBindgen::new(self, Vec::new(), module, true, false);
         abi::deallocate_lists_in_types(f.r#gen.resolve, types, operands, indirect, &mut f);
         format!("unsafe {{ {} }}", String::from(f.src))
     }
@@ -792,13 +792,13 @@ pub mod vtable{ordinal} {{
         indirect: bool,
         module: &str,
     ) -> String {
-        let mut f = FunctionBindgen::new(self, Vec::new(), module, true);
+        let mut f = FunctionBindgen::new(self, Vec::new(), module, true, false);
         abi::deallocate_lists_and_own_in_types(f.r#gen.resolve, types, operands, indirect, &mut f);
         format!("unsafe {{ {} }}", String::from(f.src))
     }
 
     fn lift_from_memory(&mut self, address: &str, ty: &Type, module: &str) -> String {
-        let mut f = FunctionBindgen::new(self, Vec::new(), module, true);
+        let mut f = FunctionBindgen::new(self, Vec::new(), module, true, false);
         let result = abi::lift_from_memory(f.r#gen.resolve, &mut f, address.into(), ty);
         format!("unsafe {{ {}\n{result} }}", String::from(f.src))
     }
@@ -809,7 +809,13 @@ pub mod vtable{ordinal} {{
         func: &Function,
         params: Vec<String>,
     ) {
-        let mut f = FunctionBindgen::new(self, params, module, false);
+        let mut f = FunctionBindgen::new(
+            self,
+            params,
+            module,
+            false,
+            matches!(&func.kind, FunctionKind::Method(_)) && self.r#gen.opts.enable_method_chaining,
+        );
         abi::call(
             f.r#gen.resolve,
             AbiVariant::GuestImport,
@@ -1032,7 +1038,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
             }
             lowers.push("ParamsLower(_ptr,)".to_string());
         } else {
-            let mut f = FunctionBindgen::new(self, Vec::new(), module, true);
+            let mut f = FunctionBindgen::new(self, Vec::new(), module, true, false);
             let mut results = Vec::new();
             for (i, Param { ty, .. }) in func.params.iter().enumerate() {
                 let name = format!("_lower{i}");
@@ -1078,8 +1084,17 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
         }
         uwriteln!(
             self.src,
-            "_MySubtask {{ _unused: core::marker::PhantomData }}.call(({})).await",
-            params.join(" ")
+            "_MySubtask {{ _unused: core::marker::PhantomData }}.call(({})).await{}",
+            params.join(" "),
+            if let (FunctionKind::Method(_), None, true) = (
+                &func.kind,
+                func.result,
+                self.r#gen.opts.enable_method_chaining
+            ) {
+                ";\nself"
+            } else {
+                ""
+            }
         );
     }
 
@@ -1121,7 +1136,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
             );
         }
 
-        let mut f = FunctionBindgen::new(self, params, self.wasm_import_module, false);
+        let mut f = FunctionBindgen::new(self, params, self.wasm_import_module, false, false);
         let variant = if async_ {
             AbiVariant::GuestExportAsync
         } else {
@@ -1191,7 +1206,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
             let params = self.print_post_return_sig(func);
             self.src.push_str("{ unsafe {\n");
 
-            let mut f = FunctionBindgen::new(self, params, self.wasm_import_module, false);
+            let mut f = FunctionBindgen::new(self, params, self.wasm_import_module, false, false);
             abi::post_return(f.r#gen.resolve, func, &mut f);
             let FunctionBindgen {
                 needs_cleanup_list,
@@ -1439,19 +1454,29 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
     fn print_signature(&mut self, func: &Function, params_owned: bool, sig: &FnSig) -> Vec<String> {
         let params = self.print_docs_and_params(func, params_owned, sig);
         self.push_str(" -> ");
-        if let FunctionKind::Constructor(resource_id) = &func.kind {
-            match classify_constructor_return_type(&self.resolve, *resource_id, &func.result) {
-                ConstructorReturnType::Self_ => {
-                    self.push_str("Self");
-                }
-                ConstructorReturnType::Result { err } => {
-                    self.push_str("Result<Self, ");
-                    self.print_result_type(&err);
-                    self.push_str("> where Self: Sized");
+        match &func.kind {
+            FunctionKind::Constructor(resource_id) => {
+                match classify_constructor_return_type(&self.resolve, *resource_id, &func.result) {
+                    ConstructorReturnType::Self_ => {
+                        self.push_str("Self");
+                    }
+                    ConstructorReturnType::Result { err } => {
+                        self.push_str("Result<Self, ");
+                        self.print_result_type(&err);
+                        self.push_str("> where Self: Sized");
+                    }
                 }
             }
-        } else {
-            self.print_result_type(&func.result);
+            FunctionKind::Method(_) => {
+                if self.r#gen.opts.enable_method_chaining && func.result.is_none() {
+                    self.push_str("&Self");
+                } else {
+                    self.print_result_type(&func.result);
+                }
+            }
+            _ => {
+                self.print_result_type(&func.result);
+            }
         }
         params
     }

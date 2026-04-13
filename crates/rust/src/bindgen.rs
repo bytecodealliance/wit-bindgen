@@ -21,6 +21,7 @@ pub(super) struct FunctionBindgen<'a, 'b> {
     pub import_return_pointer_area_align: Alignment,
     pub handle_decls: Vec<String>,
     always_owned: bool,
+    return_self: bool,
 }
 
 pub const POINTER_SIZE_EXPRESSION: &str = "::core::mem::size_of::<*const u8>()";
@@ -31,6 +32,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         params: Vec<String>,
         wasm_import_module: &'b str,
         always_owned: bool,
+        return_self: bool,
     ) -> FunctionBindgen<'a, 'b> {
         FunctionBindgen {
             r#gen,
@@ -45,6 +47,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             import_return_pointer_area_align: Default::default(),
             handle_decls: Vec::new(),
             always_owned,
+            return_self,
         }
     }
 
@@ -1049,7 +1052,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::Return { amt, .. } => match amt {
-                0 => {}
+                0 => {
+                    if self.return_self {
+                        uwriteln!(self.src, "self");
+                    }
+                }
                 1 => {
                     self.push_str(&operands[0]);
                     self.push_str("\n");
