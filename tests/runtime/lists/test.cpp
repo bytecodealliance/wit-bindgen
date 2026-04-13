@@ -129,3 +129,7 @@ std::tuple<wit::vector<uint64_t>, wit::vector<int64_t>> exports::test::lists::to
 std::tuple<wit::vector<float>, wit::vector<double>> exports::test::lists::to_test::ListMinmaxFloat(wit::vector<float> a, wit::vector<double> b) {
     return std::make_tuple(std::move(a), std::move(b));
 }
+
+wit::vector<std::tuple<wit::string, wit::vector<uint8_t>>> exports::test::lists::to_test::WasiHttpHeadersRoundtrip(wit::vector<std::tuple<wit::string, wit::vector<uint8_t>>> a) {
+    return a;
+}

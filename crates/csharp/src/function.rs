@@ -451,24 +451,102 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
                 .to_owned()
             })),
-            Instruction::I32Load { offset }
-            | Instruction::PointerLoad { offset }
-            | Instruction::LengthLoad { offset } => results.push(format!("global::System.BitConverter.ToInt32(new global::System.Span<byte>((byte*){} + {offset}, 4))",operands[0],offset = offset.size_wasm32())),
-            Instruction::I32Load8U { offset } => results.push(format!("new global::System.Span<byte>((byte*){} + {offset}, 1)[0]",operands[0],offset = offset.size_wasm32())),
-            Instruction::I32Load8S { offset } => results.push(format!("(sbyte)new global::System.Span<byte>((byte*){} + {offset}, 1)[0]",operands[0],offset = offset.size_wasm32())),
-            Instruction::I32Load16U { offset } => results.push(format!("global::System.BitConverter.ToUInt16(new global::System.Span<byte>((byte*){} + {offset}, 2))",operands[0],offset = offset.size_wasm32())),
-            Instruction::I32Load16S { offset } => results.push(format!("global::System.BitConverter.ToInt16(new global::System.Span<byte>((byte*){} + {offset}, 2))",operands[0],offset = offset.size_wasm32())),
-            Instruction::I64Load { offset } => results.push(format!("global::System.BitConverter.ToInt64(new global::System.Span<byte>((byte*){} + {offset}, 8))",operands[0],offset = offset.size_wasm32())),
-            Instruction::F32Load { offset } => results.push(format!("global::System.BitConverter.ToSingle(new global::System.Span<byte>((byte*){} + {offset}, 4))",operands[0],offset = offset.size_wasm32())),
-            Instruction::F64Load { offset } => results.push(format!("global::System.BitConverter.ToDouble(new global::System.Span<byte>((byte*){} + {offset}, 8))",operands[0],offset = offset.size_wasm32())),
-            Instruction::I32Store { offset }
-            | Instruction::PointerStore { offset }
-            | Instruction::LengthStore { offset } => uwriteln!(self.src, "global::System.BitConverter.TryWriteBytes(new global::System.Span<byte>((byte*){} + {offset}, 4), {});", operands[1], operands[0],offset = offset.size_wasm32()),
-            Instruction::I32Store8 { offset } => uwriteln!(self.src, "*(byte*)({} + {offset}) = (byte){};", operands[1], operands[0],offset = offset.size_wasm32()),
-            Instruction::I32Store16 { offset } => uwriteln!(self.src, "global::System.BitConverter.TryWriteBytes(new global::System.Span<byte>((byte*){} + {offset}, 2), (short){});", operands[1], operands[0],offset = offset.size_wasm32()),
-            Instruction::I64Store { offset } => uwriteln!(self.src, "global::System.BitConverter.TryWriteBytes(new global::System.Span<byte>((byte*){} + {offset}, 8), unchecked((long){}));", operands[1], operands[0],offset = offset.size_wasm32()),
-            Instruction::F32Store { offset } => uwriteln!(self.src, "global::System.BitConverter.TryWriteBytes(new global::System.Span<byte>((byte*){} + {offset}, 4), unchecked((float){}));", operands[1], operands[0],offset = offset.size_wasm32()),
-            Instruction::F64Store { offset } => uwriteln!(self.src, "global::System.BitConverter.TryWriteBytes(new global::System.Span<byte>((byte*){} + {offset}, 8), unchecked((double){}));", operands[1], operands[0],offset = offset.size_wasm32()),
+            Instruction::I32Load { offset } | Instruction::LengthLoad { offset } => {
+                results.push(format!(
+                    "new global::System.Span<int>((void*)((byte*){} + {offset}), 1)[0]",
+                    operands[0],
+                    offset = offset.size_wasm32()
+                ))
+            }
+            Instruction::PointerLoad { offset } => results.push(format!(
+                "new global::System.Span<nint>((void*)((byte*){} + {offset}), 1)[0]",
+                operands[0],
+                offset = offset.size_wasm32()
+            )),
+            Instruction::I32Load8U { offset } => results.push(format!(
+                "new global::System.Span<byte>((byte*){} + {offset}, 1)[0]",
+                operands[0],
+                offset = offset.size_wasm32()
+            )),
+            Instruction::I32Load8S { offset } => results.push(format!(
+                "(sbyte)new global::System.Span<byte>((byte*){} + {offset}, 1)[0]",
+                operands[0],
+                offset = offset.size_wasm32()
+            )),
+            Instruction::I32Load16U { offset } => results.push(format!(
+                "new global::System.Span<ushort>((void*)((byte*){} + {offset}), 1)[0]",
+                operands[0],
+                offset = offset.size_wasm32()
+            )),
+            Instruction::I32Load16S { offset } => results.push(format!(
+                "new global::System.Span<short>((void*)((byte*){} + {offset}), 1)[0]",
+                operands[0],
+                offset = offset.size_wasm32()
+            )),
+            Instruction::I64Load { offset } => results.push(format!(
+                "new global::System.Span<long>((void*)((byte*){} + {offset}), 1)[0]",
+                operands[0],
+                offset = offset.size_wasm32()
+            )),
+            Instruction::F32Load { offset } => results.push(format!(
+                "new global::System.Span<float>((void*)((byte*){} + {offset}), 1)[0]",
+                operands[0],
+                offset = offset.size_wasm32()
+            )),
+            Instruction::F64Load { offset } => results.push(format!(
+                "new global::System.Span<double>((void*)((byte*){} + {offset}), 1)[0]",
+                operands[0],
+                offset = offset.size_wasm32()
+            )),
+            Instruction::I32Store { offset } | Instruction::LengthStore { offset } => uwriteln!(
+                self.src,
+                "new global::System.Span<int>((void*)((byte*){} + {offset}), 1)[0] = {};",
+                operands[1],
+                operands[0],
+                offset = offset.size_wasm32()
+            ),
+            Instruction::PointerStore { offset } => uwriteln!(
+                self.src,
+                "new global::System.Span<nint>((void*)((byte*){} + {offset}), 1)[0] = (nint){};",
+                operands[1],
+                operands[0],
+                offset = offset.size_wasm32()
+            ),
+            Instruction::I32Store8 { offset } => uwriteln!(
+                self.src,
+                "*(byte*)({} + {offset}) = (byte){};",
+                operands[1],
+                operands[0],
+                offset = offset.size_wasm32()
+            ),
+            Instruction::I32Store16 { offset } => uwriteln!(
+                self.src,
+                "new global::System.Span<short>((void*)((byte*){} + {offset}), 1)[0] = (short){};",
+                operands[1],
+                operands[0],
+                offset = offset.size_wasm32()
+            ),
+            Instruction::I64Store { offset } => uwriteln!(
+                self.src,
+                "new global::System.Span<long>((void*)((byte*){} + {offset}), 1)[0] = unchecked((long){});",
+                operands[1],
+                operands[0],
+                offset = offset.size_wasm32()
+            ),
+            Instruction::F32Store { offset } => uwriteln!(
+                self.src,
+                "new global::System.Span<float>((void*)((byte*){} + {offset}), 1)[0] = unchecked((float){});",
+                operands[1],
+                operands[0],
+                offset = offset.size_wasm32()
+            ),
+            Instruction::F64Store { offset } => uwriteln!(
+                self.src,
+                "new global::System.Span<double>((void*)((byte*){} + {offset}), 1)[0] = unchecked((double){});",
+                operands[1],
+                operands[0],
+                offset = offset.size_wasm32()
+            ),
 
             Instruction::I64FromU64 => results.push(format!("unchecked((long)({}))", operands[0])),
             Instruction::I32FromChar => results.push(format!("((int){})", operands[0])),
@@ -494,9 +572,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             | Instruction::S32FromI32
             | Instruction::S64FromI64 => results.push(operands[0].clone()),
 
-            Instruction::Bitcasts { casts } => {
-                results.extend(casts.iter().zip(operands).map(|(cast, op)| perform_cast(op, cast)))
-            }
+            Instruction::Bitcasts { casts } => results.extend(
+                casts
+                    .iter()
+                    .zip(operands)
+                    .map(|(cast, op)| perform_cast(op, cast)),
+            ),
 
             Instruction::I32FromBool => {
                 results.push(format!("({} ? 1 : 0)", operands[0]));
@@ -511,14 +592,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 if flags.flags.len() > 32 {
                     results.push(format!(
                         "unchecked((int)(((long){}) & uint.MaxValue))",
-                        operands[0].to_string()
+                        operands[0]
                     ));
-                    results.push(format!(
-                        "unchecked(((int)((long){} >> 32)))",
-                        operands[0].to_string()
-                    ));
+                    results.push(format!("unchecked(((int)((long){} >> 32)))", operands[0]));
                 } else {
-                    results.push(format!("(int){}", operands[0].to_string()));
+                    results.push(format!("(int){}", operands[0]));
                 }
             }
 
@@ -531,9 +609,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 if flags.flags.len() > 32 {
                     results.push(format!(
                         "({})(unchecked((uint)({})) | (ulong)(unchecked((uint)({}))) << 32)",
-                        qualified_type_name,
-                        operands[0].to_string(),
-                        operands[1].to_string()
+                        qualified_type_name, operands[0], operands[1]
                     ));
                 } else {
                     results.push(format!("({})({})", qualified_type_name, operands[0]))
@@ -555,7 +631,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let mut result = format!("new {qualified_type_name} (\n");
 
                 result.push_str(&operands.join(", "));
-                result.push_str(")");
+                result.push(')');
 
                 results.push(result);
             }
@@ -627,52 +703,54 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let declarations = lowered
                     .iter()
                     .zip(lowered_types.iter())
-                    .map(|(lowered, ty)| format!("{} {lowered};", crate::world_generator::wasm_type(*ty)))
+                    .map(|(lowered, ty)| {
+                        format!("{} {lowered};", crate::world_generator::wasm_type(*ty))
+                    })
                     .collect::<Vec<_>>()
                     .join("\n");
 
                 let op = &operands[0];
 
                 let nesting = if let Type::Id(id) = payload {
-                    matches!(&self.interface_gen.resolve.types[*id].kind, TypeDefKind::Option(_))
+                    matches!(
+                        &self.interface_gen.resolve.types[*id].kind,
+                        TypeDefKind::Option(_)
+                    )
                 } else {
                     false
                 };
 
-                let mut block = |ty: Option<&Type>, Block { body, results, .. }, payload, nesting| {
-                    let payload = if let Some(ty) = self.interface_gen.non_empty_type(ty) {
-                        let ty = self.interface_gen.type_name_with_qualifier(ty, true);
-                        if nesting {
-                            format!("var {payload} = {op}.Value;")
+                let mut block =
+                    |ty: Option<&Type>, Block { body, results, .. }, payload, nesting| {
+                        let payload = if let Some(ty) = self.interface_gen.non_empty_type(ty) {
+                            let ty = self.interface_gen.type_name_with_qualifier(ty, true);
+                            if nesting {
+                                format!("var {payload} = {op}.Value;")
+                            } else {
+                                format!("var {payload} = ({ty}) {op};")
+                            }
                         } else {
-                            format!("var {payload} = ({ty}) {op};")
-                        }
-                    } else {
-                        String::new()
-                    };
+                            String::new()
+                        };
 
-                    let assignments = lowered
-                        .iter()
-                        .zip(&results)
-                        .map(|(lowered, result)| format!("{lowered} = {result};\n"))
-                        .collect::<Vec<_>>()
-                        .concat();
+                        let assignments = lowered
+                            .iter()
+                            .zip(&results)
+                            .map(|(lowered, result)| format!("{lowered} = {result};\n"))
+                            .collect::<Vec<_>>()
+                            .concat();
 
-                    format!(
-                        "{payload}
+                        format!(
+                            "{payload}
                          {body}
                          {assignments}"
-                    )
-                };
+                        )
+                    };
 
                 let none = block(None, none, none_payload, nesting);
                 let some = block(Some(payload), some, some_payload, nesting);
 
-                let test = if nesting {
-                    ".HasValue"
-                } else {
-                    " != null"
-                };
+                let test = if nesting { ".HasValue" } else { " != null" };
 
                 uwrite!(
                     self.src,
@@ -692,12 +770,17 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let some = self.blocks.pop().unwrap();
                 let _none = self.blocks.pop().unwrap();
 
-                let ty = self.interface_gen.type_name_with_qualifier(&Type::Id(*ty), true);
+                let ty = self
+                    .interface_gen
+                    .type_name_with_qualifier(&Type::Id(*ty), true);
                 let lifted = self.locals.tmp("lifted");
                 let op = &operands[0];
 
                 let nesting = if let Type::Id(id) = payload {
-                    matches!(&self.interface_gen.resolve.types[*id].kind, TypeDefKind::Option(_))
+                    matches!(
+                        &self.interface_gen.resolve.types[*id].kind,
+                        TypeDefKind::Option(_)
+                    )
                 } else {
                     false
                 };
@@ -762,7 +845,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::EnumLower { .. } => results.push(format!("(int){}", operands[0])),
 
             Instruction::EnumLift { ty, .. } => {
-                let t = self.interface_gen.type_name_with_qualifier(&Type::Id(*ty), true);
+                let t = self
+                    .interface_gen
+                    .type_name_with_qualifier(&Type::Id(*ty), true);
                 let op = &operands[0];
                 results.push(format!("({t}){op}"));
 
@@ -786,7 +871,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                                 item_to_pin: list.clone(),
                                 ptr_name: ptr.clone(),
                             });
-                        }else if !self.is_block && self.parameter_type == ParameterType::Memory {
+                        } else if !self.is_block && self.parameter_type == ParameterType::Memory {
                             self.fixed_statments.push(Fixed {
                                 item_to_pin: format!("{list}.Span"),
                                 ptr_name: ptr.clone(),
@@ -813,7 +898,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     Direction::Export => {
                         let (_, ty) = list_element_info(element);
                         let address = self.locals.tmp("address");
-                        let size = self.interface_gen.csharp_gen.sizes.size(element).size_wasm32();
+                        let size = self
+                            .interface_gen
+                            .csharp_gen
+                            .sizes
+                            .size(element)
+                            .size_wasm32();
                         let byte_length = self.locals.tmp("byteLength");
                         uwrite!(
                             self.src,
@@ -899,7 +989,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let op0 = &operands[0];
                 let op1 = &operands[1];
 
-                let get_str = format!("global::System.Text.Encoding.UTF8.GetString((byte*){op0}, {op1})");
+                let get_str =
+                    format!("global::System.Text.Encoding.UTF8.GetString((byte*){op0}, {op1})");
 
                 uwriteln!(
                     self.src,
@@ -924,30 +1015,46 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 assert!(block_results.is_empty());
 
                 let list = &operands[0];
-                let size = self.interface_gen.csharp_gen.sizes.size(element).size_wasm32();
+                let size = self
+                    .interface_gen
+                    .csharp_gen
+                    .sizes
+                    .size(element)
+                    .size_wasm32();
                 let ty = self.interface_gen.type_name_with_qualifier(element, true);
                 let index = self.locals.tmp("index");
 
                 let address = self.locals.tmp("address");
                 let buffer_size = self.locals.tmp("bufferSize");
                 //TODO: wasm64
-                let align = self.interface_gen.csharp_gen.sizes.align(element).align_wasm32();
+                let align = self
+                    .interface_gen
+                    .csharp_gen
+                    .sizes
+                    .align(element)
+                    .align_wasm32();
 
-                let (array_size, element_type) = crate::world_generator::dotnet_aligned_array(
-                    size,
-                    align,
-                );
+                let (array_size, element_type) =
+                    crate::world_generator::dotnet_aligned_array(size, align);
                 let ret_area = self.locals.tmp("retArea");
+
+                let array_size = if align > 1 {
+                    // Add one additional element in case the starting address is not aligned
+                    format!("{array_size} * {list}.Count + 1")
+                } else {
+                    format!("{array_size} * {list}.Count")
+                };
 
                 match realloc {
                     None => {
                         self.needs_cleanup = true;
+                        self.interface_gen.csharp_gen.needs_align_stack_ptr = true;
                         uwrite!(self.src,
                             "
                             void* {address};
                             if (({size} * {list}.Count) < 1024) {{
-                                var {ret_area} = stackalloc {element_type}[({array_size}*{list}.Count)+1];
-                                {address} = (void*)(((int){ret_area}) + ({align} - 1) & -{align});
+                                var {ret_area} = stackalloc {element_type}[{array_size}];
+                                {address} = MemoryHelper.AlignStackPtr({ret_area}, {align});
                             }}
                             else
                             {{
@@ -969,7 +1076,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     }
                 }
 
-                uwrite!(self.src,
+                uwrite!(
+                    self.src,
                     "
                     for (int {index} = 0; {index} < {list}.Count; ++{index}) {{
                         {ty} {block_element} = {list}[{index}];
@@ -994,7 +1102,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let length = &operands[1];
                 let array = self.locals.tmp("array");
                 let ty = self.interface_gen.type_name_with_qualifier(element, true);
-                let size = self.interface_gen.csharp_gen.sizes.size(element).size_wasm32();
+                let size = self
+                    .interface_gen
+                    .csharp_gen
+                    .sizes
+                    .size(element)
+                    .size_wasm32();
                 let index = self.locals.tmp("index");
 
                 let result = match &block_results[..] {
@@ -1038,9 +1151,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         assignment
                     }
 
-                    [] => {
-                        String::new()
-                    }
+                    [] => String::new(),
 
                     _ => unreachable!(),
                 };
@@ -1050,17 +1161,29 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 let (_namespace, interface_name) =
                     &CSharp::get_class_name_from_qualified_name(self.interface_gen.name);
-                let mut interop_name = format!("{}ImportsInterop", interface_name.strip_prefix("I").unwrap()
-                    .strip_suffix(if self.interface_gen.direction == Direction::Import { "Imports" } else { "Exports" }).unwrap().to_upper_camel_case());
+                let mut interop_name = format!(
+                    "{}ImportsInterop",
+                    interface_name
+                        .strip_prefix("I")
+                        .unwrap()
+                        .strip_suffix(if self.interface_gen.direction == Direction::Import {
+                            "Imports"
+                        } else {
+                            "Exports"
+                        })
+                        .unwrap()
+                        .to_upper_camel_case()
+                );
 
-                if self.interface_gen.is_world && self.interface_gen.direction == Direction::Import {
+                if self.interface_gen.is_world && self.interface_gen.direction == Direction::Import
+                {
                     interop_name = format!("Imports.{interop_name}");
                 }
 
                 let resource_type_name = match self.kind {
-                    FunctionKind::Method(resource_type_id) |
-                    FunctionKind::Static(resource_type_id) |
-                    FunctionKind::Constructor(resource_type_id) => {
+                    FunctionKind::Method(resource_type_id)
+                    | FunctionKind::Static(resource_type_id)
+                    | FunctionKind::Constructor(resource_type_id) => {
                         format!(
                             ".{}",
                             self.interface_gen.csharp_gen.all_resources[resource_type_id]
@@ -1108,21 +1231,26 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let is_async = InterfaceGenerator::is_async(self.kind);
                 match self.kind {
                     FunctionKind::Constructor(id) => {
-                        let target = self.interface_gen.csharp_gen.all_resources[id].export_impl_name();
+                        let target =
+                            self.interface_gen.csharp_gen.all_resources[id].export_impl_name();
                         let ret = self.locals.tmp("ret");
                         uwriteln!(self.src, "var {ret} = new {target}({oper});");
                         results.push(ret);
                     }
                     _ => {
                         let target = match self.kind {
-                            FunctionKind::Static(id) |FunctionKind::AsyncStatic(id)=> self.interface_gen.csharp_gen.all_resources[id].export_impl_name(),
-                            FunctionKind::Method(_) |FunctionKind::AsyncMethod(_)=> operands[0].clone(),
-                            _ => format!("{class_name_root}Impl")
+                            FunctionKind::Static(id) | FunctionKind::AsyncStatic(id) => {
+                                self.interface_gen.csharp_gen.all_resources[id].export_impl_name()
+                            }
+                            FunctionKind::Method(_) | FunctionKind::AsyncMethod(_) => {
+                                operands[0].clone()
+                            }
+                            _ => format!("{class_name_root}Impl"),
                         };
 
                         match func.result {
                             None => {
-                                if is_async{
+                                if is_async {
                                     uwriteln!(self.src, "var ret = {target}.{func_name}({oper});");
                                 } else {
                                     uwriteln!(self.src, "{target}.{func_name}({oper});");
@@ -1140,11 +1268,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.interface_gen.csharp_gen.needs_async_support = true;
                     let name = self.func_name.to_upper_camel_case();
                     let ret_param = match func.result {
-                            None => "",
-                            Some(_ty) => "ret.Result"
-                            };
+                        None => "",
+                        Some(_ty) => "ret.Result",
+                    };
 
-                    uwriteln!(self.src, r#"if (ret.IsCompletedSuccessfully) 
+                    uwriteln!(
+                        self.src,
+                        r#"if (ret.IsCompletedSuccessfully) 
                     {{
                         {name}TaskReturn({ret_param});
                         return (uint)CallbackCode.Exit;
@@ -1155,43 +1285,61 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         if (t.IsFaulted)
                         {{
                             // TODO
-                            Console.Error.WriteLine("Async function {name} IsFaulted.  This scenario is not yet implemented.");
                             throw new NotImplementedException("Async function {name} IsFaulted.  This scenario is not yet implemented.");
                         }}
 
                         {name}TaskReturn({ret_param});
-                    }});
+
+                    }}, TaskContinuationOptions.ExecuteSynchronously);
                     
                     // TODO: Defer dropping borrowed resources until a result is returned.
-                    return (uint)CallbackCode.Wait | (uint)(AsyncSupport.WaitableSet.Handle << 4);
-                    "#);
+                    ContextTask* contextTaskPtr = AsyncSupport.ContextGet();
+                    return (uint)CallbackCode.Wait | (uint)(contextTaskPtr->WaitableSetHandle << 4);
+                    "#
+                    );
                 }
 
-                for (_,  drop) in &self.resource_drops {
+                for (_, drop) in &self.resource_drops {
                     uwriteln!(self.src, "{drop}?.Dispose();");
                 }
             }
 
             Instruction::Return { amt, .. } => {
-                if self.fixed_statments.len() > 0 {
-                    let fixed: String = self.fixed_statments.iter().map(|f| format!("{} = {}", f.ptr_name, f.item_to_pin)).collect::<Vec<_>>().join(", ");
-                    self.src.insert_str(0, &format!("fixed (void* {fixed})
+                if !self.fixed_statments.is_empty() {
+                    let fixed: String = self
+                        .fixed_statments
+                        .iter()
+                        .map(|f| format!("{} = {}", f.ptr_name, f.item_to_pin))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    self.src.insert_str(
+                        0,
+                        &format!(
+                            "fixed (void* {fixed})
                         {{
-                        "));
+                        "
+                        ),
+                    );
                 }
 
                 if self.needs_cleanup {
                     self.src.insert_str(0, "var cleanups = new global::System.Collections.Generic.List<global::System.Action>();
                         ");
 
-                    uwriteln!(self.src, "
+                    uwriteln!(
+                        self.src,
+                        "
                     foreach (var cleanup in cleanups)
                     {{
                         cleanup();
-                    }}");
+                    }}"
+                    );
                 }
 
-                if !matches!((self.interface_gen.direction, self.kind), (Direction::Import, FunctionKind::Constructor(_))) {
+                if !matches!(
+                    (self.interface_gen.direction, self.kind),
+                    (Direction::Import, FunctionKind::Constructor(_))
+                ) {
                     match *amt {
                         0 => (),
                         1 => {
@@ -1204,7 +1352,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     }
                 }
 
-                if self.fixed_statments.len() > 0 {
+                if !self.fixed_statments.is_empty() {
                     uwriteln!(self.src, "}}");
                 }
             }
@@ -1213,11 +1361,19 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::GuestDeallocate { .. } => {
                 // the original alloc here comes from cabi_realloc implementation (wasi-libc in .net)
-                uwriteln!(self.src, r#"global::System.Runtime.InteropServices.NativeMemory.Free((void*){});"#, operands[0]);
+                uwriteln!(
+                    self.src,
+                    r#"global::System.Runtime.InteropServices.NativeMemory.Free((void*){});"#,
+                    operands[0]
+                );
             }
 
             Instruction::GuestDeallocateString => {
-                uwriteln!(self.src, r#"global::System.Runtime.InteropServices.NativeMemory.Free((void*){});"#, operands[0]);
+                uwriteln!(
+                    self.src,
+                    r#"global::System.Runtime.InteropServices.NativeMemory.Free((void*){});"#,
+                    operands[0]
+                );
             }
 
             Instruction::GuestDeallocateVariant { blocks } => {
@@ -1238,19 +1394,21 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     .collect::<Vec<_>>()
                     .join("\n");
 
-                    let op = &operands[0];
+                let op = &operands[0];
 
-                    uwrite!(
-                        self.src,
-                        "
+                uwrite!(
+                    self.src,
+                    "
                         switch ({op}) {{
                             {cases}
                         }}
                         "
-                    );
+                );
             }
 
-            Instruction::GuestDeallocateList { element: element_type } => {
+            Instruction::GuestDeallocateList {
+                element: element_type,
+            } => {
                 let Block {
                     body,
                     results: block_results,
@@ -1261,7 +1419,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 let address = &operands[0];
                 let length = &operands[1];
-                let size = self.interface_gen.csharp_gen.sizes.size(element_type).size_wasm32();
+                let size = self
+                    .interface_gen
+                    .csharp_gen
+                    .sizes
+                    .size(element_type)
+                    .size_wasm32();
 
                 if !body.trim().is_empty() {
                     let index = self.locals.tmp("index");
@@ -1277,18 +1440,20 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     );
                 }
 
-                uwriteln!(self.src, r#"global::System.Runtime.InteropServices.NativeMemory.Free((void*){});"#, operands[0]);
+                uwriteln!(
+                    self.src,
+                    r#"global::System.Runtime.InteropServices.NativeMemory.Free((void*){});"#,
+                    operands[0]
+                );
             }
 
-            Instruction::HandleLower {
-                handle,
-                ..
-            } => {
+            Instruction::HandleLower { handle, .. } => {
                 let (Handle::Own(ty) | Handle::Borrow(ty)) = handle;
                 let is_own = matches!(handle, Handle::Own(_));
                 let handle = self.locals.tmp("handle");
                 let id = dealias(self.interface_gen.resolve, *ty);
-                let ResourceInfo { direction, .. } = &self.interface_gen.csharp_gen.all_resources[&id];
+                let ResourceInfo { direction, .. } =
+                    &self.interface_gen.csharp_gen.all_resources[&id];
                 let op = &operands[0];
 
                 uwriteln!(self.src, "var {handle} = {op}.Handle;");
@@ -1302,7 +1467,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     Direction::Export => {
                         self.interface_gen.csharp_gen.needs_rep_table = true;
                         let local_rep = self.locals.tmp("localRep");
-                        let export_name = self.interface_gen.csharp_gen.all_resources[&id].export_impl_name();
+                        let export_name =
+                            self.interface_gen.csharp_gen.all_resources[&id].export_impl_name();
                         if is_own {
                             // Note that we set `{op}.Handle` to zero below to ensure that application code doesn't
                             // try to use the instance while the host has ownership.  We'll set it back to non-zero
@@ -1328,27 +1494,27 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         }
                     }
                 }
-                results.push(format!("{handle}"));
+                results.push(handle);
             }
 
-            Instruction::HandleLift {
-                handle,
-                ..
-            } => {
+            Instruction::HandleLift { handle, .. } => {
                 let (Handle::Own(ty) | Handle::Borrow(ty)) = handle;
                 let is_own = matches!(handle, Handle::Own(_));
                 let mut resource = self.locals.tmp("resource");
                 let id = dealias(self.interface_gen.resolve, *ty);
-                let ResourceInfo { direction, .. } = &self.interface_gen.csharp_gen.all_resources[&id];
+                let ResourceInfo { direction, .. } =
+                    &self.interface_gen.csharp_gen.all_resources[&id];
                 let op = &operands[0];
 
                 match direction {
                     Direction::Import => {
-                        let import_name = self.interface_gen.type_name_with_qualifier(&Type::Id(id), true);
+                        let import_name = self
+                            .interface_gen
+                            .type_name_with_qualifier(&Type::Id(id), true);
 
                         if let FunctionKind::Constructor(_) = self.kind {
                             resource = "this".to_owned();
-                            uwriteln!(self.src,"{resource}.Handle = {op};");
+                            uwriteln!(self.src, "{resource}.Handle = {op};");
                         } else {
                             let var = if is_own { "var" } else { "" };
                             uwriteln!(
@@ -1363,7 +1529,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     Direction::Export => {
                         self.interface_gen.csharp_gen.needs_rep_table = true;
 
-                        let export_name = self.interface_gen.csharp_gen.all_resources[&id].export_impl_name();
+                        let export_name =
+                            self.interface_gen.csharp_gen.all_resources[&id].export_impl_name();
                         if is_own {
                             uwriteln!(
                                 self.src,
@@ -1372,7 +1539,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                                 {resource}.Handle = {op};"
                             );
                         } else {
-                            uwriteln!(self.src, "var {resource} = ({export_name}) {export_name}.repTable.Get({op});");
+                            uwriteln!(
+                                self.src,
+                                "var {resource} = ({export_name}) {export_name}.repTable.Get({op});"
+                            );
                         }
                         self.resource_type_name = Some(export_name);
                     }
@@ -1384,22 +1554,30 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.extend(operands.iter().take(*amt).cloned());
             }
 
-            Instruction::FutureLower { payload, ty }
-            | Instruction::StreamLower { payload, ty }=> {
+            Instruction::FutureLower { payload, ty: _ }
+            | Instruction::StreamLower { payload, ty: _ } => {
                 let op = &operands[0];
                 let generic_type_name = match payload {
-                    Some(generic_type) => {
-                        &self.interface_gen.type_name_with_qualifier(generic_type, false)
-                    }
-                    None => ""
+                    Some(generic_type) => &self
+                        .interface_gen
+                        .type_name_with_qualifier(generic_type, false),
+                    None => "",
                 };
 
                 match inst {
                     Instruction::FutureLower { .. } => {
-                        self.interface_gen.add_future(self.func_name, &generic_type_name, ty);
+                        self.interface_gen.add_future(
+                            self.func_name,
+                            &generic_type_name,
+                            **payload,
+                        );
                     }
                     _ => {
-                        self.interface_gen.add_stream(self.func_name, &generic_type_name, ty);
+                        self.interface_gen.add_stream(
+                            self.func_name,
+                            &generic_type_name,
+                            **payload,
+                        );
                     }
                 }
 
@@ -1410,53 +1588,63 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwriteln!(self.src, "// TODO: task_cancel.forget();");
             }
 
-            Instruction::FutureLift { payload, ty }
-            | Instruction:: StreamLift { payload, ty } => {
-                 let generic_type_name_with_qualifier = match payload {
-                    Some(generic_type) => {
-                        &self.interface_gen.type_name_with_qualifier(generic_type, true)
-                    }
-                    None => ""
+            Instruction::FutureLift { payload, ty: _ }
+            | Instruction::StreamLift { payload, ty: _ } => {
+                let generic_type_name_with_qualifier = match payload {
+                    Some(generic_type) => &self
+                        .interface_gen
+                        .type_name_with_qualifier(generic_type, true),
+                    None => "",
                 };
-                 let generic_type_name = match payload {
-                    Some(generic_type) => {
-                        &self.interface_gen.type_name_with_qualifier(generic_type, false)
-                    }
-                    None => ""
+                let generic_type_name = match payload {
+                    Some(generic_type) => &self
+                        .interface_gen
+                        .type_name_with_qualifier(generic_type, false),
+                    None => "",
                 };
                 let upper_camel = generic_type_name.to_upper_camel_case();
                 let bracketed_generic = match payload {
                     Some(_) => {
                         format!("<{generic_type_name_with_qualifier}>")
                     }
-                    None => String::new()
+                    None => String::new(),
                 };
-            //    let sig_type_name = "Void";
+                //    let sig_type_name = "Void";
                 let reader_var = self.locals.tmp("reader");
                 let module = self.interface_gen.name;
-                let (import_name, interface_name) = CSharp::get_class_name_from_qualified_name(module);
-                let export_name = import_name
-                    .replace(".Imports.", ".Exports.");
-                let base_interface_name = interface_name
-                    .strip_prefix("I").unwrap()
-                    .replace("Imports", "Exports"); // TODO: This is fragile and depends on the interface name.
+                let (import_name, interface_name) =
+                    CSharp::get_class_name_from_qualified_name(module);
+                let base_interface_name = interface_name.strip_prefix("I").unwrap();
 
                 let future_stream_name = match inst {
-                    Instruction::FutureLift{payload: _, ty: _} => "Future",
-                    Instruction::StreamLift{payload: _, ty: _} => "Stream",
+                    Instruction::FutureLift { payload: _, ty: _ } => "Future",
+                    Instruction::StreamLift { payload: _, ty: _ } => "Stream",
                     _ => {
                         panic!("Unexpected instruction for lift");
                     }
                 };
-                uwriteln!(self.src, "var {reader_var} = new {future_stream_name}Reader{bracketed_generic}({}, {export_name}.{base_interface_name}Interop.{future_stream_name}VTable{});", operands[0], upper_camel);
+                uwriteln!(
+                    self.src,
+                    "var {reader_var} = new {future_stream_name}Reader{bracketed_generic}({}, {import_name}.{base_interface_name}Interop.{future_stream_name}VTable{});",
+                    operands[0],
+                    upper_camel
+                );
                 results.push(reader_var);
 
                 match inst {
                     Instruction::FutureLift { .. } => {
-                        self.interface_gen.add_future(self.func_name, &generic_type_name, ty);
+                        self.interface_gen.add_future(
+                            self.func_name,
+                            &generic_type_name,
+                            **payload,
+                        );
                     }
                     _ => {
-                        self.interface_gen.add_stream(self.func_name, &generic_type_name, ty);
+                        self.interface_gen.add_stream(
+                            self.func_name,
+                            &generic_type_name,
+                            **payload,
+                        );
                     }
                 }
 
@@ -1470,7 +1658,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             | Instruction::FixedLengthListLower { .. }
             | Instruction::FixedLengthListLowerToMemory { .. }
             | Instruction::FixedLengthListLiftFromMemory { .. }
-            => {
+            | Instruction::MapLower { .. }
+            | Instruction::MapLift { .. }
+            | Instruction::IterMapKey { .. }
+            | Instruction::IterMapValue { .. }
+            | Instruction::GuestDeallocateMap { .. } => {
                 dbg!(inst);
                 todo!()
             }
@@ -1497,15 +1689,23 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 // to align the allocation via the stackalloc command, unlike with a fixed array where the pointer will be aligned.
                 // We get the final ptr to pass to the wasm runtime by shifting to the
                 // correctly aligned pointer (sometimes it can be already aligned).
+                let array_size = if self.import_return_pointer_area_align > 1 {
+                    // Add one additional element in case the starting address is not aligned
+                    array_size + 1
+                } else {
+                    array_size
+                };
+
+                self.interface_gen.csharp_gen.needs_align_stack_ptr = true;
                 uwrite!(
                     self.src,
                     "
-                    var {ret_area} = stackalloc {element_type}[{array_size} + 1];
-                    var {ptr} = ((int){ret_area}) + ({align} - 1) & -{align};
+                    var {ret_area} = stackalloc {element_type}[{array_size}];
+                    var {ptr} = (nint)MemoryHelper.AlignStackPtr({ret_area}, {align});
                     ",
                     align = align.align_wasm32()
                 );
-                format!("{ptr}")
+                ptr
             }
             Direction::Export => {
                 // exports need their return area to be live until the post-return call.
@@ -1528,7 +1728,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 );
                 self.interface_gen.csharp_gen.needs_export_return_area = true;
 
-                format!("{ptr}")
+                ptr
             }
         }
     }
@@ -1604,8 +1804,8 @@ fn perform_cast(op: &String, cast: &Bitcast) -> String {
         Bitcast::F64ToI64 => format!("global::System.BitConverter.DoubleToInt64Bits({op})"),
         Bitcast::I32ToI64 => format!("(long) ({op})"),
         Bitcast::I64ToI32 => format!("(int) ({op})"),
-        Bitcast::I64ToP64 => format!("{op}"),
-        Bitcast::P64ToI64 => format!("{op}"),
+        Bitcast::I64ToP64 => op.to_string(),
+        Bitcast::P64ToI64 => op.to_string(),
         Bitcast::LToI64 | Bitcast::PToP64 => format!("(long) ({op})"),
         Bitcast::I64ToL | Bitcast::P64ToP => format!("(int) ({op})"),
         Bitcast::I32ToP

@@ -111,3 +111,7 @@ func ListMinmax64(x []uint64, y []int64) ([]uint64, []int64) {
 func ListMinmaxFloat(x []float32, y []float64) ([]float32, []float64) {
 	return x, y
 }
+
+func WasiHttpHeadersRoundtrip(x []Tuple2[string, []uint8]) []Tuple2[string, []uint8] {
+	return x
+}

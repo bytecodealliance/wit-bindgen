@@ -420,7 +420,13 @@ impl InterfaceGenerator<'_> {
                     }
                     TypeDefKind::Unknown => unreachable!(),
                     TypeDefKind::FixedLengthList(..) => todo!(),
-                    TypeDefKind::Map(..) => todo!(),
+                    TypeDefKind::Map(key, value) => {
+                        self.push_str("map<");
+                        self.print_ty(key);
+                        self.push_str(", ");
+                        self.print_ty(value);
+                        self.push_str(">");
+                    }
                 }
             }
         }
@@ -647,6 +653,10 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     }
 
     fn type_list(&mut self, id: TypeId, name: &str, _ty: &Type, docs: &Docs) {
+        self.type_alias(id, name, &Type::Id(id), docs);
+    }
+
+    fn type_map(&mut self, id: TypeId, name: &str, _key: &Type, _value: &Type, docs: &Docs) {
         self.type_alias(id, name, &Type::Id(id), docs);
     }
 

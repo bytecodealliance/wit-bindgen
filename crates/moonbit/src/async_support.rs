@@ -24,6 +24,17 @@ const ASYNC_WASM_PRIMITIVE: &str = include_str!("./ffi/wasm_primitive.mbt");
 const ASYNC_WAITABLE_SET: &str = include_str!("./ffi/waitable_task.mbt");
 const ASYNC_SUBTASK: &str = include_str!("./ffi/subtask.mbt");
 
+// NEW Async Impl
+const ASYNC_ABI: &str = include_str!("./async/async_abi.mbt");
+const ASYNC_CORO: &str = include_str!("./async/coroutine.mbt");
+const ASYNC_EV: &str = include_str!("./async/ev.mbt");
+const ASYNC_SCHEDULER: &str = include_str!("./async/scheduler.mbt");
+const ASYNC_TASK: &str = include_str!("./async/task.mbt");
+const ASYNC_TASK_GROUP: &str = include_str!("./async/task_group.mbt");
+const ASYNC_TRAIT: &str = include_str!("./async/trait.mbt");
+const ASYNC_PKG_JSON: &str = include_str!("./async/moon.pkg.json");
+const ASYNC_PRIM: &str = include_str!("./async/async_primitive.mbt");
+
 struct Segment<'a> {
     name: &'a str,
     src: &'a str,
@@ -51,6 +62,43 @@ const ASYNC_UTILS: [&Segment; 5] = [
         src: ASYNC_SUBTASK,
     },
 ];
+
+const ASYNC_IMPL: [&Segment; 8] = [
+    &Segment {
+        name: "async_abi",
+        src: ASYNC_ABI,
+    },
+    &Segment {
+        name: "async_coro",
+        src: ASYNC_CORO,
+    },
+    &Segment {
+        name: "async_ev",
+        src: ASYNC_EV,
+    },
+    &Segment {
+        name: "async_scheduler",
+        src: ASYNC_SCHEDULER,
+    },
+    &Segment {
+        name: "async_task",
+        src: ASYNC_TASK,
+    },
+    &Segment {
+        name: "async_task_group",
+        src: ASYNC_TASK_GROUP,
+    },
+    &Segment {
+        name: "async_trait",
+        src: ASYNC_TRAIT,
+    },
+    &Segment {
+        name: "async_primitive",
+        src: ASYNC_PRIM,
+    },
+];
+
+pub(crate) const ASYNC_DIR: &str = "async";
 
 #[derive(Default)]
 pub(crate) struct AsyncSupport {
@@ -85,6 +133,16 @@ impl AsyncSupport {
                 indent(s.src).as_bytes(),
             );
         });
+        ASYNC_IMPL.iter().for_each(|s| {
+            files.push(
+                &format!("{ASYNC_DIR}/{}.mbt", s.name),
+                indent(s.src).as_bytes(),
+            );
+        });
+        files.push(
+            &format!("{ASYNC_DIR}/moon.pkg.json"),
+            indent(ASYNC_PKG_JSON).as_bytes(),
+        );
         files.push(
             &format!("{FFI_DIR}/moon.pkg.json"),
             "{ \"warn-list\": \"-44\", \"supported-targets\": [\"wasm\"] }".as_bytes(),
@@ -97,6 +155,7 @@ impl AsyncSupport {
 impl<'a> InterfaceGenerator<'a> {
     /// Builds the MoonBit body for async imports, wiring wasm subtasks into the
     /// runtime and lowering/lifting payloads as needed.
+    #[allow(dead_code, reason = "used by follow-up async generation work")]
     pub(super) fn generate_async_import_function(
         &mut self,
         func: &Function,
@@ -115,14 +174,17 @@ impl<'a> InterfaceGenerator<'a> {
                 }
                 multiple_params => {
                     let params = multiple_params.iter().map(|Param { ty, .. }| ty);
-                    let offsets = self.r#gen.sizes.field_offsets(params.clone());
-                    let elem_info = self.r#gen.sizes.params(params);
+                    let offsets = self.world_gen.sizes.field_offsets(params.clone());
+                    let elem_info = self.world_gen.sizes.params(params);
                     body.push_str(&format!(
                         r#"
                         let _lower_ptr : Int = {ffi}malloc({})
                         "#,
                         elem_info.size.size_wasm32(),
-                        ffi = self.r#gen.pkg_resolver.qualify_package(self.name, FFI_DIR)
+                        ffi = self
+                            .world_gen
+                            .pkg_resolver
+                            .qualify_package(self.name, FFI_DIR)
                     ));
 
                     for ((offset, ty), name) in offsets.iter().zip(
@@ -143,16 +205,24 @@ impl<'a> InterfaceGenerator<'a> {
                 }
             }
         } else {
-            let mut f = FunctionBindgen::new(self, "INVALID", self.name, Box::new([]));
+            let mut f = FunctionBindgen::new(self, Box::new([]));
             for (name, ty) in mbt_sig.params.iter() {
-                lower_params.extend(abi::lower_flat(f.r#gen.resolve, &mut f, name.clone(), ty));
+                lower_params.extend(abi::lower_flat(
+                    f.interface_gen.resolve,
+                    &mut f,
+                    name.clone(),
+                    ty,
+                ));
             }
             lower_results.push(f.src.clone());
         }
 
         let func_name = func.name.to_upper_camel_case();
 
-        let ffi = self.r#gen.pkg_resolver.qualify_package(self.name, FFI_DIR);
+        let ffi = self
+            .world_gen
+            .pkg_resolver
+            .qualify_package(self.name, FFI_DIR);
 
         let call_import = |params: &Vec<String>| {
             format!(
@@ -255,18 +325,21 @@ impl<'a> InterfaceGenerator<'a> {
         result_type: Option<&Type>,
     ) {
         if !self
-            .r#gen
+            .world_gen
             .async_support
             .register_future_or_stream(module, ty)
         {
             return;
         }
         let result = match result_type {
-            Some(ty) => self.r#gen.pkg_resolver.type_name(self.name, ty),
+            Some(ty) => self.world_gen.pkg_resolver.type_name(self.name, ty),
             None => "Unit".into(),
         };
 
-        let type_name = self.r#gen.pkg_resolver.type_name(self.name, &Type::Id(ty));
+        let type_name = self
+            .world_gen
+            .pkg_resolver
+            .type_name(self.name, &Type::Id(ty));
         let name = result.to_upper_camel_case();
         let kind = match payload_for {
             PayloadFor::Future => "future",
@@ -283,7 +356,10 @@ impl<'a> InterfaceGenerator<'a> {
             PayloadFor::Future => "",
             PayloadFor::Stream => "List",
         };
-        let ffi = self.r#gen.pkg_resolver.qualify_package(self.name, FFI_DIR);
+        let ffi = self
+            .world_gen
+            .pkg_resolver
+            .qualify_package(self.name, FFI_DIR);
 
         let mut dealloc_list;
         let malloc;
@@ -412,29 +488,38 @@ fn {table_name}() -> {ffi}{camel_kind}VTable[{result}] {{
         types: &[Type],
         operands: &[String],
         indirect: bool,
-        module: &str,
+        _module: &str,
     ) -> String {
-        let mut f = FunctionBindgen::new(self, "INVALID", module, Box::new([]));
-        abi::deallocate_lists_in_types(f.r#gen.resolve, types, operands, indirect, &mut f);
+        let mut f = FunctionBindgen::new(self, Box::new([]));
+        abi::deallocate_lists_in_types(f.interface_gen.resolve, types, operands, indirect, &mut f);
         f.src
     }
 
-    fn lift_from_memory(&mut self, address: &str, ty: &Type, module: &str) -> (String, String) {
-        let mut f = FunctionBindgen::new(self, "INVALID", module, Box::new([]));
+    fn lift_from_memory(&mut self, address: &str, ty: &Type, _module: &str) -> (String, String) {
+        let mut f = FunctionBindgen::new(self, Box::new([]));
 
-        let result = abi::lift_from_memory(f.r#gen.resolve, &mut f, address.into(), ty);
+        let result = abi::lift_from_memory(f.interface_gen.resolve, &mut f, address.into(), ty);
         (f.src, result)
     }
 
-    fn lower_to_memory(&mut self, address: &str, value: &str, ty: &Type, module: &str) -> String {
-        let mut f = FunctionBindgen::new(self, "INVALID", module, Box::new([]));
-        abi::lower_to_memory(f.r#gen.resolve, &mut f, address.into(), value.into(), ty);
+    fn lower_to_memory(&mut self, address: &str, value: &str, ty: &Type, _module: &str) -> String {
+        let mut f = FunctionBindgen::new(self, Box::new([]));
+        abi::lower_to_memory(
+            f.interface_gen.resolve,
+            &mut f,
+            address.into(),
+            value.into(),
+            ty,
+        );
         f.src
     }
 
     fn malloc_memory(&mut self, address: &str, length: &str, ty: &Type) -> String {
-        let size = self.r#gen.sizes.size(ty).size_wasm32();
-        let ffi = self.r#gen.pkg_resolver.qualify_package(self.name, FFI_DIR);
+        let size = self.world_gen.sizes.size(ty).size_wasm32();
+        let ffi = self
+            .world_gen
+            .pkg_resolver
+            .qualify_package(self.name, FFI_DIR);
         format!("let {address} = {ffi}malloc({size} * {length});")
     }
 
@@ -452,7 +537,10 @@ fn {table_name}() -> {ffi}{camel_kind}VTable[{result}] {{
         lift_func: &str,
         ty: &Type,
     ) -> String {
-        let ffi = self.r#gen.pkg_resolver.qualify_package(self.name, FFI_DIR);
+        let ffi = self
+            .world_gen
+            .pkg_resolver
+            .qualify_package(self.name, FFI_DIR);
         if self.is_list_canonical(self.resolve, ty) {
             if ty == &Type::U8 {
                 return format!("{ffi}ptr2bytes({address}, {length})");
@@ -469,7 +557,7 @@ fn {table_name}() -> {ffi}{camel_kind}VTable[{result}] {{
 
             return format!("{ffi}ptr2{ty}_array({address}, {length})");
         }
-        let size = self.r#gen.sizes.size(ty).size_wasm32();
+        let size = self.world_gen.sizes.size(ty).size_wasm32();
         format!(
             r#"
             FixedArray::makei(
@@ -485,7 +573,10 @@ fn {table_name}() -> {ffi}{camel_kind}VTable[{result}] {{
 
     fn list_lower_to_memory(&mut self, lower_func: &str, value: &str, ty: &Type) -> String {
         // Align the address, moonbit only supports wasm32 for now
-        let ffi = self.r#gen.pkg_resolver.qualify_package(self.name, FFI_DIR);
+        let ffi = self
+            .world_gen
+            .pkg_resolver
+            .qualify_package(self.name, FFI_DIR);
         if self.is_list_canonical(self.resolve, ty) {
             if ty == &Type::U8 {
                 return format!("{ffi}bytes2ptr({value})");
@@ -502,7 +593,7 @@ fn {table_name}() -> {ffi}{camel_kind}VTable[{result}] {{
             };
             return format!("{ffi}{ty}_array2ptr({value})");
         }
-        let size = self.r#gen.sizes.size(ty).size_wasm32();
+        let size = self.world_gen.sizes.size(ty).size_wasm32();
         format!(
             r#"
             let address = {ffi}malloc(({value}).length() * {size});

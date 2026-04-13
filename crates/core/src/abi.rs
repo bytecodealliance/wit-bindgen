@@ -310,6 +310,28 @@ def_instruction! {
             ty: TypeId,
         } : [2] => [1],
 
+        /// Lowers a map into a canonical pointer/length pair.
+        ///
+        /// This operation pops a map value from the stack and pushes pointer
+        /// and length. A block is popped from the block stack to lower one
+        /// key/value entry into linear memory.
+        MapLower {
+            key: &'a Type,
+            value: &'a Type,
+            realloc: Option<&'a str>,
+        } : [1] => [2],
+
+        /// Lifts a canonical pointer/length pair into a map.
+        ///
+        /// This operation consumes pointer and length from the stack. A block
+        /// is popped from the block stack and must produce key/value for one
+        /// map entry.
+        MapLift {
+            key: &'a Type,
+            value: &'a Type,
+            ty: TypeId,
+        } : [2] => [1],
+
         /// Pops all fields for a fixed list off the stack and then composes them
         /// into an array.
         FixedLengthListLift {
@@ -348,6 +370,14 @@ def_instruction! {
         ///
         /// This is only used inside of blocks related to lowering lists.
         IterElem { element: &'a Type } : [0] => [1],
+
+        /// Pushes an operand onto the stack representing the current map key
+        /// for each map iteration.
+        IterMapKey { key: &'a Type } : [0] => [1],
+
+        /// Pushes an operand onto the stack representing the current map value
+        /// for each map iteration.
+        IterMapValue { value: &'a Type } : [0] => [1],
 
         /// Pushes an operand onto the stack representing the base pointer of
         /// the next element in a list.
@@ -579,6 +609,17 @@ def_instruction! {
         /// body of the deallocation loop.
         GuestDeallocateList {
             element: &'a Type,
+        } : [2] => [0],
+
+        /// Used exclusively for guest-code generation this indicates that a
+        /// map is being deallocated. The ptr/length are on the stack and are
+        /// popped off and used to deallocate the map entry buffer.
+        ///
+        /// This variant also pops a block off the block stack to be used as
+        /// the body of the deallocation loop over map entries.
+        GuestDeallocateMap {
+            key: &'a Type,
+            value: &'a Type,
         } : [2] => [0],
 
         /// Used exclusively for guest-code generation this indicates that
@@ -875,7 +916,7 @@ fn needs_deallocate(resolve: &Resolve, ty: &Type, what: Deallocate) -> bool {
             TypeDefKind::Future(_) | TypeDefKind::Stream(_) => what.handles(),
             TypeDefKind::Unknown => unreachable!(),
             TypeDefKind::FixedLengthList(t, _) => needs_deallocate(resolve, t, what),
-            TypeDefKind::Map(..) => todo!(),
+            TypeDefKind::Map(_, _) => true,
         },
 
         Type::Bool
@@ -1618,7 +1659,25 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         self.lower(ty);
                     }
                 }
-                TypeDefKind::Map(..) => todo!(),
+                TypeDefKind::Map(key, value) => {
+                    let realloc = self.list_realloc();
+                    let value_offset = self.bindgen.sizes().field_offsets([key, value])[1].0;
+                    self.push_block();
+                    self.emit(&IterMapKey { key });
+                    self.emit(&IterBasePointer);
+                    let key_addr = self.stack.pop().unwrap();
+                    self.write_to_memory(key, key_addr, Default::default());
+                    self.emit(&IterMapValue { value });
+                    self.emit(&IterBasePointer);
+                    let value_addr = self.stack.pop().unwrap();
+                    self.write_to_memory(value, value_addr, value_offset);
+                    self.finish_block(0);
+                    self.emit(&MapLower {
+                        key,
+                        value,
+                        realloc,
+                    });
+                }
             },
         }
     }
@@ -1819,7 +1878,16 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         id,
                     });
                 }
-                TypeDefKind::Map(..) => todo!(),
+                TypeDefKind::Map(key, value) => {
+                    let value_offset = self.bindgen.sizes().field_offsets([key, value])[1].0;
+                    self.push_block();
+                    self.emit(&IterBasePointer);
+                    let entry_addr = self.stack.pop().unwrap();
+                    self.read_from_memory(key, entry_addr.clone(), Default::default());
+                    self.read_from_memory(value, entry_addr, value_offset);
+                    self.finish_block(2);
+                    self.emit(&MapLift { key, value, ty: id });
+                }
             },
         }
     }
@@ -1907,6 +1975,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             Type::Id(id) => match &self.resolve.types[id].kind {
                 TypeDefKind::Type(t) => self.write_to_memory(t, addr, offset),
                 TypeDefKind::List(_) => self.write_list_to_memory(ty, addr, offset),
+                // Maps have the same linear memory layout as list<tuple<K, V>>.
+                TypeDefKind::Map(_, _) => self.write_list_to_memory(ty, addr, offset),
 
                 TypeDefKind::Future(_) | TypeDefKind::Stream(_) | TypeDefKind::Handle(_) => {
                     self.lower_and_emit(ty, addr, &I32Store { offset })
@@ -2016,7 +2086,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         id,
                     });
                 }
-                TypeDefKind::Map(..) => todo!(),
             },
         }
     }
@@ -2115,6 +2184,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 TypeDefKind::Type(t) => self.read_from_memory(t, addr, offset),
 
                 TypeDefKind::List(_) => self.read_list_from_memory(ty, addr, offset),
+                // Maps have the same linear memory layout as list<tuple<K, V>>.
+                TypeDefKind::Map(_, _) => self.read_list_from_memory(ty, addr, offset),
 
                 TypeDefKind::Future(_) | TypeDefKind::Stream(_) | TypeDefKind::Handle(_) => {
                     self.emit_and_lift(ty, addr, &I32Load { offset })
@@ -2216,7 +2287,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         id,
                     });
                 }
-                TypeDefKind::Map(..) => todo!(),
             },
         }
     }
@@ -2339,6 +2409,18 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     self.emit(&Instruction::GuestDeallocateList { element });
                 }
 
+                TypeDefKind::Map(key, value) => {
+                    let value_offset = self.bindgen.sizes().field_offsets([key, value])[1].0;
+                    self.push_block();
+                    self.emit(&IterBasePointer);
+                    let entry_addr = self.stack.pop().unwrap();
+                    self.deallocate_indirect(key, entry_addr.clone(), Default::default(), what);
+                    self.deallocate_indirect(value, entry_addr, value_offset, what);
+                    self.finish_block(0);
+
+                    self.emit(&Instruction::GuestDeallocateMap { key, value });
+                }
+
                 TypeDefKind::Handle(Handle::Own(_))
                 | TypeDefKind::Future(_)
                 | TypeDefKind::Stream(_)
@@ -2405,7 +2487,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 TypeDefKind::Unknown => unreachable!(),
 
                 TypeDefKind::FixedLengthList(..) => todo!(),
-                TypeDefKind::Map(..) => todo!(),
             },
         }
     }
@@ -2454,6 +2535,17 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 TypeDefKind::Type(t) => self.deallocate_indirect(t, addr, offset, what),
 
                 TypeDefKind::List(_) => {
+                    self.stack.push(addr.clone());
+                    self.emit(&Instruction::PointerLoad { offset });
+                    self.stack.push(addr);
+                    self.emit(&Instruction::LengthLoad {
+                        offset: offset + self.bindgen.sizes().align(ty).into(),
+                    });
+
+                    self.deallocate(ty, what);
+                }
+
+                TypeDefKind::Map(_, _) => {
                     self.stack.push(addr.clone());
                     self.emit(&Instruction::PointerLoad { offset });
                     self.stack.push(addr);
@@ -2527,7 +2619,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 TypeDefKind::Stream(_) => unreachable!(),
                 TypeDefKind::Unknown => unreachable!(),
                 TypeDefKind::FixedLengthList(_, _) => {}
-                TypeDefKind::Map(..) => todo!(),
             },
         }
     }

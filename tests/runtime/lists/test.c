@@ -161,3 +161,7 @@ void exports_test_lists_to_test_list_minmax_float(test_list_f32_t *a, test_list_
   ret->f0 = *a;
   ret->f1 = *b;
 }
+
+void exports_test_lists_to_test_wasi_http_headers_roundtrip(test_list_tuple2_string_list_u8_t *a, test_list_tuple2_string_list_u8_t *ret0) {
+  *ret0 = *a;
+}

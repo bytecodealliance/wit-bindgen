@@ -43,10 +43,9 @@ The generated files will reference the following files in the [bytecodealliance/
   - defines an `Option` type as required by the WIT world
   - defines a `Result` type as required by the WIT world
   - defines a `Unit` type as required by the WIT world
-  - defines a `StreamReader` and `StreamWriter` types as required by the WIT world
-  - defines a `FutureReader` and `FutureWriter` types as required by the WIT world
+  - defines `StreamReader` and `StreamWriter` types as required by the WIT world
+  - defines `FutureReader` and `FutureWriter` types as required by the WIT world
 - `go.bytecodealliance.org/pkg/wit/async` (if needed): defines low-level functions for integrating the Go scheduler with the component model async ABI
-
 
 Note that async support currently requires [a patched version of
 Go](https://github.com/dicej/go/releases/tag/go1.25.5-wasi-on-idle).  Code

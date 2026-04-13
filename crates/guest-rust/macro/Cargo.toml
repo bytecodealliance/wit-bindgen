@@ -23,6 +23,9 @@ wit-bindgen-rust = { workspace = true }
 anyhow = { workspace = true }
 syn = { workspace = true }
 prettyplease = { workspace = true }
+macro-string = { workspace = true, optional = true }
 
 [features]
+default = ["macro-string"]
 async = []
+macro-string = ["dep:macro-string"]

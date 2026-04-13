@@ -106,6 +106,12 @@ impl CSProjectLLVMBuilder {
                 other => todo!("OS {} not supported", other),
             };
 
+            // Share nuget packages between codegen and runtime tests.
+            let packages_path = if self.dir.to_str().unwrap().contains("codegen") {
+                "../../../../.packages"
+            } else {
+                "../../../.packages"
+            };
             csproj.push_str(
                 &format!(
                     r#"
@@ -117,11 +123,12 @@ impl CSProjectLLVMBuilder {
 
             fs::write(
                 self.dir.join("nuget.config"),
-                r#"<?xml version="1.0" encoding="utf-8"?>
+                format!(
+                    r#"<?xml version="1.0" encoding="utf-8"?>
             <configuration>
                 <config>
                     <!-- Store the packages where they can be shared between tests -->
-                    <add key="globalPackagesFolder" value="../../../.packages" />
+                    <add key="globalPackagesFolder" value="{packages_path}" />
                 </config>
                 <packageSources>
                 <!--To inherit the global NuGet package sources remove the <clear/> line below -->
@@ -130,7 +137,8 @@ impl CSProjectLLVMBuilder {
                 <add key="dotnet-experimental" value="https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json" />
                 <!--<add key="dotnet-experimental" value="C:\github\runtimelab\artifacts\packages\Debug\Shipping" />-->
               </packageSources>
-            </configuration>"#,
+            </configuration>"#
+                ),
             )?;
         }
 

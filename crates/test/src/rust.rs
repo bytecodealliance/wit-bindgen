@@ -94,6 +94,7 @@ impl LanguageMethods for Rust {
             ("async", &["--async=all"]),
             ("no-std", &["--std-feature"]),
             ("merge-equal", &["--merge-structurally-equal-types"]),
+            ("hashmap", &["--map-type=std::collections::HashMap"]),
         ]
     }
 
@@ -132,7 +133,7 @@ name = "tmp"
 [workspace]
 
 [dependencies]
-wit-bindgen = {{ {wit_bindgen_dep}, features = ['async-spawn', 'inter-task-wakeup'] }}
+wit-bindgen = {{ {wit_bindgen_dep}, features = ['async-spawn', 'inter-task-wakeup', 'futures-stream'] }}
 futures = "0.3.31"
 
 [lib]

@@ -1,5 +1,5 @@
 use crate::{LanguageMethods, Runner};
-use anyhow::bail;
+use anyhow::{Context, bail};
 use serde::Deserialize;
 use std::process::Command;
 
@@ -25,7 +25,12 @@ impl LanguageMethods for MoonBit {
     }
 
     fn default_bindgen_args(&self) -> &[&str] {
-        &["--derive-show", "--derive-eq", "--derive-error"]
+        &[
+            "--derive-debug",
+            "--derive-show",
+            "--derive-eq",
+            "--derive-error",
+        ]
     }
 
     fn prepare(&self, runner: &mut Runner) -> anyhow::Result<()> {
@@ -60,24 +65,45 @@ impl LanguageMethods for MoonBit {
         }
 
         // Compile the MoonBit bindings to a wasm file
-        let manifest = compile.bindings_dir.join("moon.mod.json");
         let mut cmd = Command::new("moon");
         cmd.arg("build")
+            .arg("--target")
+            .arg("wasm")
+            .arg("--release")
             .arg("--no-strip") // for debugging
-            .arg("--manifest-path")
-            .arg(&manifest);
+            .current_dir(&compile.bindings_dir);
         runner.run_command(&mut cmd)?;
-        // Build the component
-        let artifact = compile
-            .bindings_dir
-            .join("target/wasm/release/build/gen/gen.wasm");
+        // Build the component. MoonBit toolchains may use either `_build` or
+        // `target` output roots depending on version/configuration.
+        let artifact_candidates = [
+            compile
+                .bindings_dir
+                .join("_build/wasm/release/build/gen/gen.wasm"),
+            compile
+                .bindings_dir
+                .join("target/wasm/release/build/gen/gen.wasm"),
+            compile
+                .bindings_dir
+                .join("_build/wasm/debug/build/gen/gen.wasm"),
+            compile
+                .bindings_dir
+                .join("target/wasm/debug/build/gen/gen.wasm"),
+        ];
+        let artifact = artifact_candidates
+            .iter()
+            .find(|path| path.exists())
+            .cloned()
+            .with_context(|| {
+                format!("failed to locate MoonBit output wasm, looked in: {artifact_candidates:?}",)
+            })?;
         // Embed WIT files
         let manifest_dir = compile.component.path.parent().unwrap();
+        let embedded = artifact.with_extension("embedded.wasm");
         let mut cmd = Command::new("wasm-tools");
         cmd.arg("component")
             .arg("embed")
             .args(["--encoding", "utf16"])
-            .args(["-o", artifact.to_str().unwrap()])
+            .args(["-o", embedded.to_str().unwrap()])
             .args(["-w", &compile.component.bindgen.world])
             .arg(manifest_dir)
             .arg(&artifact);
@@ -87,7 +113,7 @@ impl LanguageMethods for MoonBit {
         cmd.arg("component")
             .arg("new")
             .args(["-o", compile.output.to_str().unwrap()])
-            .arg(&artifact);
+            .arg(&embedded);
         runner.run_command(&mut cmd)?;
         Ok(())
     }
@@ -100,22 +126,19 @@ impl LanguageMethods for MoonBit {
     ) -> bool {
         // async-resource-func actually works, but most other async tests
         // fail during codegen or verification
-        config.async_ && name != "async-resource-func.wit"
+        name == "map.wit" || (config.async_ && name != "async-resource-func.wit")
     }
 
     fn verify(&self, runner: &Runner, verify: &crate::Verify) -> anyhow::Result<()> {
-        let manifest = verify.bindings_dir.join("moon.mod.json");
         let mut cmd = Command::new("moon");
         cmd.arg("check")
             .arg("--warn-list")
-            .arg("-28")
-            // .arg("--deny-warn")
-            .arg("--manifest-path")
-            .arg(&manifest);
+            .arg("-28") // avoid warning noise in generated bindings
+            .current_dir(&verify.bindings_dir);
 
         runner.run_command(&mut cmd)?;
         let mut cmd = Command::new("moon");
-        cmd.arg("build").arg("--manifest-path").arg(&manifest);
+        cmd.arg("build").current_dir(&verify.bindings_dir);
 
         runner.run_command(&mut cmd)?;
         Ok(())
