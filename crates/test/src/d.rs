@@ -1,5 +1,5 @@
 use crate::{Compile, LanguageMethods, Runner, Verify};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::Parser;
 use std::env;
 use std::fs;
@@ -104,8 +104,32 @@ fn search_for_world_package(bindings_root: &Path) -> Option<PathBuf> {
         .find(|p| p.is_file() && p.file_name().unwrap() == "package.d")
 }
 
-fn compile(_runner: &Runner, _compile: &Compile<'_>, _compiler: PathBuf) -> Result<()> {
-    todo!();
+fn compile(runner: &Runner, compile: &Compile<'_>, compiler: PathBuf) -> Result<()> {
+    let mut cmd = Command::new(compiler);
+
+    let output = compile.output.with_extension("core.wasm");
+    cmd.arg(&compile.component.path)
+        .arg("-betterC")
+        .arg("-mtriple=wasm32-unknown-unknown")
+        .arg("-I")
+        .arg(&compile.bindings_dir)
+        .arg("-i") // compile included dependencies
+        .arg("--de") // deperecations are errors
+        .arg("-w") // warnings are errors
+        .arg("-L--no-entry")
+        .arg("-L--no-export-dynamic")
+        .arg("--d-version=WitBindings_DummyLibc") // to provide bump allocator and `abort`
+        .arg("--checkaction=halt") // to trap instead of using libc __assert
+        .arg("-of")
+        .arg(&output);
+
+    runner.run_command(&mut cmd)?;
+
+    runner
+        .convert_p1_to_component(&output, compile)
+        .with_context(|| format!("failed to convert {output:?}"))?;
+
+    Ok(())
 }
 
 fn verify(runner: &Runner, verify: &Verify<'_>, compiler: PathBuf) -> Result<()> {
