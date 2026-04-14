@@ -114,7 +114,7 @@ jobs:
     - name: Setup D
       uses: dlang-community/setup-dlang@v2
       with:
-        compiler: ldc2-1.41
+        compiler: ldc-1.41
       if: matrix.lang == 'd'
 
       # Hacky work-around for https://github.com/dotnet/runtime/issues/80619

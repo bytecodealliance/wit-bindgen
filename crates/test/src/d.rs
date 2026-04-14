@@ -1,9 +1,6 @@
-use crate::config::StringList;
 use crate::{Compile, LanguageMethods, Runner, Verify};
-use anyhow::{Context, Result};
+use anyhow::Result;
 use clap::Parser;
-use heck::ToSnakeCase;
-use serde::Deserialize;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -14,7 +11,7 @@ pub struct DOpts {}
 
 pub struct D;
 
-fn ldc2(runner: &Runner) -> PathBuf {
+fn ldc2(_runner: &Runner) -> PathBuf {
     format!("ldc2").into()
 }
 
@@ -107,7 +104,7 @@ fn search_for_world_package(bindings_root: &Path) -> Option<PathBuf> {
         .find(|p| p.is_file() && p.file_name().unwrap() == "package.d")
 }
 
-fn compile(runner: &Runner, compile: &Compile<'_>, compiler: PathBuf) -> Result<()> {
+fn compile(_runner: &Runner, _compile: &Compile<'_>, _compiler: PathBuf) -> Result<()> {
     todo!();
 }
 
