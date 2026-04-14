@@ -1111,9 +1111,18 @@ impl<'a> DInterfaceGenerator<'a> {
             let lower_param_name = name.to_lower_camel_case();
             let escaped_param_name = escape_d_identifier(&lower_param_name);
 
+            let needs_in_qualifier = match param {
+                Type::ErrorContext | Type::String | Type::Id(_) => true,
+                _ => false,
+            };
+
             res.arguments.push((
                 escaped_param_name.into(),
-                self.type_name(&param, self.fqn).into(),
+                if needs_in_qualifier {
+                    "in ".to_owned()
+                } else {
+                    "".to_owned()
+                } + &self.type_name(&param, self.fqn),
             ));
         }
 
@@ -1152,7 +1161,7 @@ impl<'a> DInterfaceGenerator<'a> {
             d_sig
                 .arguments
                 .iter()
-                .map(|(name, ty)| "in ".to_owned() + ty + " " + name)
+                .map(|(name, ty)| ty.to_owned() + " " + name)
                 .collect::<Vec<String>>()
                 .join(", ")
         ));
@@ -1267,7 +1276,7 @@ impl<'a> DInterfaceGenerator<'a> {
             d_sig
                 .arguments
                 .iter()
-                .map(|(name, ty)| "in ".to_owned() + ty + " " + name)
+                .map(|(name, ty)| ty.to_owned() + " " + name)
                 .collect::<Vec<String>>()
                 .join(", ")
         ));
@@ -1302,7 +1311,7 @@ impl<'a> DInterfaceGenerator<'a> {
                 d_sig
                     .arguments
                     .iter()
-                    .map(|(name, ty)| "in ".to_owned() + ty + " " + name)
+                    .map(|(name, ty)| ty.to_owned() + " " + name)
                     .collect::<Vec<String>>()
                     .join(", ")
             ));
