@@ -3594,21 +3594,16 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let tmp = self.tmp();
                 let entry = self.r#gen.sizes.record([*key, *value]);
                 let size = entry.size.format(POINTER_SIZE_EXPRESSION);
-                let key_type =
-                    self.r#gen
-                        .type_name(key, &self.namespace, Flavor::InStruct);
-                let value_type =
-                    self.r#gen
-                        .type_name(value, &self.namespace, Flavor::InStruct);
+                let key_type = self.r#gen.type_name(key, &self.namespace, Flavor::InStruct);
+                let value_type = self
+                    .r#gen
+                    .type_name(value, &self.namespace, Flavor::InStruct);
                 let len = format!("len{tmp}");
                 let base = format!("base{tmp}");
                 let result = format!("result{tmp}");
                 uwriteln!(self.src, "auto {base} = {};", operands[0]);
                 uwriteln!(self.src, "auto {len} = {};", operands[1]);
-                uwriteln!(
-                    self.src,
-                    "std::map<{key_type}, {value_type}> {result};"
-                );
+                uwriteln!(self.src, "std::map<{key_type}, {value_type}> {result};");
                 if self.r#gen.r#gen.opts.api_style == APIStyle::Symmetric
                     && matches!(self.variant, AbiVariant::GuestExport)
                 {
