@@ -478,7 +478,7 @@ impl WorldGenerator for D {
         }
 
         let mut interface_filepath = PathBuf::from_iter(fqn.split("."));
-        interface_filepath.add_extension("d");
+        interface_filepath.set_extension("d");
 
         files.push(interface_filepath.to_str().unwrap(), r#gen.src.as_bytes());
 
@@ -678,7 +678,7 @@ impl WorldGenerator for D {
         }
 
         let mut interface_filepath = PathBuf::from_iter(fqn.split("."));
-        interface_filepath.add_extension("d");
+        interface_filepath.set_extension("d");
 
         files.push(interface_filepath.to_str().unwrap(), src.as_bytes());
 
@@ -740,7 +740,7 @@ impl WorldGenerator for D {
                 r#gen.types(id);
 
                 let mut interface_filepath = PathBuf::from_iter(fqn.split("."));
-                interface_filepath.add_extension("d");
+                interface_filepath.set_extension("d");
 
                 files.push(interface_filepath.to_str().unwrap(), r#gen.src.as_bytes());
             }
