@@ -596,8 +596,7 @@ impl WorldGenerator for D {
                         .push_str(&format!("/// ditto\nstruct {escaped_name}_Wrappers {{\n"));
 
                     r#gen.src.push_str(&format!(
-                        "alias _Resource_Impl = findWitExportResource!(\"{}\", \"{}\", Impl);\n",
-                        wasm_import_module, type_name
+                        "alias _Resource_Impl = findWitExportResource!(\"{wasm_import_module}\", \"{type_name}\", Impl);\n"
                     ));
 
                     if emit_exports_stubs {
@@ -1028,11 +1027,10 @@ impl<'a> DInterfaceGenerator<'a> {
                     }
                 }
             } else {
-                self.src
-                    .push_str(&format!("static import {};\n", common_fqn));
+                self.src.push_str(&format!("static import {common_fqn};\n"));
 
                 if let Some(fqn) = directional_fqn {
-                    self.src.push_str(&format!("static import {};\n", fqn));
+                    self.src.push_str(&format!("static import {fqn};\n"));
                 };
             }
         }
@@ -1181,7 +1179,7 @@ impl<'a> DInterfaceGenerator<'a> {
 
         let FunctionBindgen { src, .. } = f;
         self.src.push_str(&ret_area_decl);
-        self.src.push_str(&src.to_string());
+        self.src.push_str(&src);
 
         self.src.push_str("}\n");
 
@@ -1378,7 +1376,7 @@ impl<'a> DInterfaceGenerator<'a> {
             .max(return_pointer_area_align);
 
         self.src.push_str(&ret_area_decl);
-        self.src.push_str(&src.to_string());
+        self.src.push_str(&src);
 
         self.src.push_str("}\n");
 
@@ -1439,7 +1437,7 @@ impl<'a> DInterfaceGenerator<'a> {
                 .max(return_pointer_area_align);
 
             self.src.push_str(&ret_area_decl);
-            self.src.push_str(&src.to_string());
+            self.src.push_str(&src);
 
             self.src.push_str("}\n");
         }
@@ -2401,7 +2399,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     operands[0], operands[1]
                 ));
 
-                results.push(format!("{}({ptr}[0..{len}])", list_name));
+                results.push(format!("{list_name}({ptr}[0..{len}])"));
             }
             abi::Instruction::StringLift => {
                 let tmp = self.tmp();
@@ -2926,11 +2924,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 }
                 self.push_str(&format!(
                     "__import_{escaped_name}({});\n",
-                    operands
-                        .iter()
-                        .map(|op| { op.clone() })
-                        .collect::<Vec<_>>()
-                        .join(", ")
+                    operands.iter().cloned().collect::<Vec<_>>().join(", ")
                 ));
             }
             abi::Instruction::CallInterface { func, async_ } => {
@@ -2979,7 +2973,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     &operands
                         .iter()
                         .skip(if implicit_self { 1 } else { 0 })
-                        .map(|op| op.clone())
+                        .cloned()
                         .collect::<Vec<_>>()
                         .join(", "),
                 );
@@ -3052,7 +3046,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 for (i, block) in blocks.into_iter().enumerate() {
                     assert!(results.is_empty());
 
-                    self.push_str(&format!("case {}: {{\n", i));
+                    self.push_str(&format!("case {i}: {{\n"));
                     self.src.push_str(&block.body);
                     self.src.push_str("break;\n}\n");
                 }
@@ -3065,7 +3059,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             abi::Instruction::Flush { amt } => {
                 for op in operands.iter().take(*amt) {
                     let result = tempname("_flush", self.tmp());
-                    self.push_str(&format!("auto {result} = {};\n", op));
+                    self.push_str(&format!("auto {result} = {op};\n"));
                     results.push(result);
                 }
             }
