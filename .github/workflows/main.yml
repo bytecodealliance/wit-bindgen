@@ -79,7 +79,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         # moonbit removed from language matrix for now - causing CI failures
-        lang: [c, rust, csharp, cpp, go]
+        lang: [c, rust, csharp, cpp, go, d]
         exclude:
           # For now csharp doesn't work on macos, so exclude it from testing.
           - os: macos-latest
@@ -110,6 +110,12 @@ jobs:
       with:
         go-version: 1.25.4
       if: matrix.lang == 'go'
+
+    - name: Setup D
+      uses: dlang-community/setup-dlang@v2
+      with:
+        compiler: ldc-1.41
+      if: matrix.lang == 'd'
 
       # Hacky work-around for https://github.com/dotnet/runtime/issues/80619
     - run: dotnet new console -o /tmp/foo

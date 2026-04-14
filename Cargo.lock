@@ -1496,6 +1496,7 @@ dependencies = [
  "wit-bindgen-core",
  "wit-bindgen-cpp",
  "wit-bindgen-csharp",
+ "wit-bindgen-d",
  "wit-bindgen-go",
  "wit-bindgen-markdown",
  "wit-bindgen-moonbit",
@@ -1542,6 +1543,20 @@ dependencies = [
  "wit-bindgen-core",
  "wit-component",
  "wit-parser",
+]
+
+[[package]]
+name = "wit-bindgen-d"
+version = "0.55.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "heck",
+ "indexmap",
+ "wasm-encoder 0.246.1",
+ "wasm-metadata 0.246.1",
+ "wit-bindgen-core",
+ "wit-component",
 ]
 
 [[package]]
