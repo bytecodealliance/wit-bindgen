@@ -814,7 +814,7 @@ pub mod vtable{ordinal} {{
             params,
             module,
             false,
-            matches!(&func.kind, FunctionKind::Method(_)) && self.r#gen.opts.enable_method_chaining,
+            self.r#gen.should_return_self(func),
         );
         abi::call(
             f.r#gen.resolve,
@@ -1086,11 +1086,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
             self.src,
             "_MySubtask {{ _unused: core::marker::PhantomData }}.call(({})).await{}",
             params.join(" "),
-            if let (FunctionKind::Method(_), None, true) = (
-                &func.kind,
-                func.result,
-                self.r#gen.opts.enable_method_chaining
-            ) {
+            if self.r#gen.should_return_self(func) {
                 ";\nself"
             } else {
                 ""
@@ -1454,27 +1450,21 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
     fn print_signature(&mut self, func: &Function, params_owned: bool, sig: &FnSig) -> Vec<String> {
         let params = self.print_docs_and_params(func, params_owned, sig);
         self.push_str(" -> ");
-        match &func.kind {
-            FunctionKind::Constructor(resource_id) => {
-                match classify_constructor_return_type(&self.resolve, *resource_id, &func.result) {
-                    ConstructorReturnType::Self_ => {
-                        self.push_str("Self");
-                    }
-                    ConstructorReturnType::Result { err } => {
-                        self.push_str("Result<Self, ");
-                        self.print_result_type(&err);
-                        self.push_str("> where Self: Sized");
-                    }
+        if let FunctionKind::Constructor(resource_id) = &func.kind {
+            match classify_constructor_return_type(&self.resolve, *resource_id, &func.result) {
+                ConstructorReturnType::Self_ => {
+                    self.push_str("Self");
+                }
+                ConstructorReturnType::Result { err } => {
+                    self.push_str("Result<Self, ");
+                    self.print_result_type(&err);
+                    self.push_str("> where Self: Sized");
                 }
             }
-            FunctionKind::Method(_) => {
-                if self.r#gen.opts.enable_method_chaining && func.result.is_none() {
-                    self.push_str("&Self");
-                } else {
-                    self.print_result_type(&func.result);
-                }
-            }
-            _ => {
+        } else {
+            if self.r#gen.should_return_self(func) {
+                self.push_str("&Self");
+            } else {
                 self.print_result_type(&func.result);
             }
         }

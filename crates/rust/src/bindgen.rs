@@ -1051,22 +1051,26 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
             }
 
-            Instruction::Return { amt, .. } => match amt {
-                0 => {
-                    if self.return_self {
-                        uwriteln!(self.src, "self");
+            Instruction::Return { amt, .. } => {
+                assert!(!self.return_self || *amt == 0);
+
+                match amt {
+                    0 => {
+                        if self.return_self {
+                            self.push_str("self\n");
+                        }
+                    }
+                    1 => {
+                        self.push_str(&operands[0]);
+                        self.push_str("\n");
+                    }
+                    _ => {
+                        self.push_str("(");
+                        self.push_str(&operands.join(", "));
+                        self.push_str(")\n");
                     }
                 }
-                1 => {
-                    self.push_str(&operands[0]);
-                    self.push_str("\n");
-                }
-                _ => {
-                    self.push_str("(");
-                    self.push_str(&operands.join(", "));
-                    self.push_str(")\n");
-                }
-            },
+            }
 
             Instruction::I32Load { offset } => {
                 let tmp = self.tmp();

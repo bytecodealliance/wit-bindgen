@@ -1060,6 +1060,12 @@ macro_rules! __export_{world_name}_impl {{
             .async_
             .is_async(resolve, interface, func, is_import)
     }
+
+    fn should_return_self(&self, func: &Function) -> bool {
+        self.opts.enable_method_chaining
+            && func.result.is_none()
+            && matches!(&func.kind, FunctionKind::Method(_))
+    }
 }
 
 impl WorldGenerator for RustWasm {
