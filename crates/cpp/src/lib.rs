@@ -75,6 +75,7 @@ struct Includes {
     needs_wit: bool,
     needs_memory: bool,
     needs_array: bool,
+    needs_map: bool,
 }
 
 #[derive(Default)]
@@ -434,6 +435,9 @@ impl Cpp {
         }
         if self.dependencies.needs_bit {
             self.include("<bit>");
+        }
+        if self.dependencies.needs_map {
+            self.include("<map>");
         }
     }
 
@@ -914,7 +918,7 @@ impl CppInterfaceGenerator<'_> {
             TypeDefKind::Stream(_) => todo!("generate for stream"),
             TypeDefKind::Handle(_) => todo!("generate for handle"),
             TypeDefKind::FixedLengthList(_, _) => todo!(),
-            TypeDefKind::Map(_, _) => todo!(),
+            TypeDefKind::Map(k, v) => self.type_map(id, name, k, v, &ty.docs),
             TypeDefKind::Unknown => unreachable!(),
         }
     }
@@ -1741,7 +1745,12 @@ impl CppInterfaceGenerator<'_> {
                         self.type_name(ty, from_namespace, flavor)
                     )
                 }
-                TypeDefKind::Map(_, _) => todo!(),
+                TypeDefKind::Map(key, value) => {
+                    self.r#gen.dependencies.needs_map = true;
+                    let k = self.type_name(key, from_namespace, flavor);
+                    let v = self.type_name(value, from_namespace, flavor);
+                    format!("std::map<{k}, {v}>")
+                }
                 TypeDefKind::Unknown => todo!(),
             },
             Type::ErrorContext => todo!(),
@@ -2266,7 +2275,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
         _value: &wit_bindgen_core::wit_parser::Type,
         _docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
-        todo!("map types are not yet supported in the C++ backend")
+        // nothing to do here
     }
 
     fn type_builtin(
@@ -3544,12 +3553,107 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             }
             abi::Instruction::AsyncTaskReturn { .. } => todo!(),
             abi::Instruction::DropHandle { .. } => todo!(),
-            abi::Instruction::MapLower { .. }
-            | abi::Instruction::MapLift { .. }
-            | abi::Instruction::IterMapKey { .. }
-            | abi::Instruction::IterMapValue { .. }
-            | abi::Instruction::GuestDeallocateMap { .. } => {
-                todo!("map types are not yet supported in this backend")
+            abi::Instruction::MapLower {
+                key,
+                value,
+                realloc,
+            } => {
+                let tmp = self.tmp();
+                let body = self.blocks.pop().unwrap();
+                let val = format!("map{tmp}");
+                let ptr = format!("ptr{tmp}");
+                let len = format!("len{tmp}");
+                let idx = format!("idx{tmp}");
+                let entry = self.r#gen.sizes.record([*key, *value]);
+                let size = entry.size.format(POINTER_SIZE_EXPRESSION);
+                let align = entry.align.format(POINTER_SIZE_EXPRESSION);
+                self.push_str(&format!("auto&& {val} = {};\n", operands[0]));
+                self.push_str(&format!("auto {len} = (size_t)({val}.size());\n"));
+                uwriteln!(
+                    self.src,
+                    "auto {ptr} = ({ptr_type})({len} > 0 ? cabi_realloc(nullptr, 0, {align}, {len} * {size}) : nullptr);",
+                    ptr_type = self.r#gen.r#gen.opts.ptr_type()
+                );
+                uwriteln!(self.src, "size_t {idx} = 0;");
+                uwriteln!(
+                    self.src,
+                    "for (auto&& [iter_map_key, iter_map_value] : {val}) {{"
+                );
+                uwriteln!(self.src, "auto base = {ptr} + {idx} * {size};");
+                uwrite!(self.src, "{}", body.0);
+                uwriteln!(self.src, "++{idx};");
+                uwriteln!(self.src, "}}");
+                if realloc.is_some() {
+                    // ownership transfers
+                }
+                results.push(ptr);
+                results.push(len);
+            }
+            abi::Instruction::MapLift { key, value, .. } => {
+                let body = self.blocks.pop().unwrap();
+                let tmp = self.tmp();
+                let entry = self.r#gen.sizes.record([*key, *value]);
+                let size = entry.size.format(POINTER_SIZE_EXPRESSION);
+                let key_type =
+                    self.r#gen
+                        .type_name(key, &self.namespace, Flavor::InStruct);
+                let value_type =
+                    self.r#gen
+                        .type_name(value, &self.namespace, Flavor::InStruct);
+                let len = format!("len{tmp}");
+                let base = format!("base{tmp}");
+                let result = format!("result{tmp}");
+                uwriteln!(self.src, "auto {base} = {};", operands[0]);
+                uwriteln!(self.src, "auto {len} = {};", operands[1]);
+                uwriteln!(
+                    self.src,
+                    "std::map<{key_type}, {value_type}> {result};"
+                );
+                if self.r#gen.r#gen.opts.api_style == APIStyle::Symmetric
+                    && matches!(self.variant, AbiVariant::GuestExport)
+                {
+                    assert!(self.needs_dealloc);
+                    uwriteln!(self.src, "if ({len}>0) _deallocate.push_back({base});");
+                }
+                uwriteln!(self.src, "for (unsigned i=0; i<{len}; ++i) {{");
+                uwriteln!(self.src, "auto base = {base} + i * {size};");
+                uwrite!(self.src, "{}", body.0);
+                let body_key = &body.1[0];
+                let body_value = &body.1[1];
+                uwriteln!(
+                    self.src,
+                    "{result}.insert(std::make_pair({}, {}));",
+                    move_if_necessary(body_key),
+                    move_if_necessary(body_value)
+                );
+                uwriteln!(self.src, "}}");
+                results.push(move_if_necessary(&result));
+            }
+            abi::Instruction::IterMapKey { .. } => {
+                results.push("iter_map_key".to_string());
+            }
+            abi::Instruction::IterMapValue { .. } => {
+                results.push("iter_map_value".to_string());
+            }
+            abi::Instruction::GuestDeallocateMap { key, value } => {
+                let (body, results) = self.blocks.pop().unwrap();
+                assert!(results.is_empty());
+                let tmp = self.tmp();
+                let ptr = self.tempname("ptr", tmp);
+                let len = self.tempname("len", tmp);
+                uwriteln!(self.src, "uint8_t* {ptr} = {};", operands[0]);
+                uwriteln!(self.src, "size_t {len} = {};", operands[1]);
+                let i = self.tempname("i", tmp);
+                uwriteln!(self.src, "for (size_t {i} = 0; {i} < {len}; {i}++) {{");
+                let entry = self.r#gen.sizes.record([*key, *value]);
+                let size = entry.size.format(POINTER_SIZE_EXPRESSION);
+                uwriteln!(self.src, "uint8_t* base = {ptr} + {i} * {size};");
+                uwriteln!(self.src, "(void) base;");
+                uwrite!(self.src, "{body}");
+                uwriteln!(self.src, "}}");
+                uwriteln!(self.src, "if ({len} > 0) {{");
+                uwriteln!(self.src, "free((void*) ({ptr}));");
+                uwriteln!(self.src, "}}");
             }
         }
     }
