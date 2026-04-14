@@ -21,6 +21,7 @@ pub(super) struct FunctionBindgen<'a, 'b> {
     pub import_return_pointer_area_align: Alignment,
     pub handle_decls: Vec<String>,
     always_owned: bool,
+    return_self: bool,
 }
 
 pub const POINTER_SIZE_EXPRESSION: &str = "::core::mem::size_of::<*const u8>()";
@@ -31,6 +32,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         params: Vec<String>,
         wasm_import_module: &'b str,
         always_owned: bool,
+        return_self: bool,
     ) -> FunctionBindgen<'a, 'b> {
         FunctionBindgen {
             r#gen,
@@ -45,6 +47,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             import_return_pointer_area_align: Default::default(),
             handle_decls: Vec::new(),
             always_owned,
+            return_self,
         }
     }
 
@@ -1048,18 +1051,26 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
             }
 
-            Instruction::Return { amt, .. } => match amt {
-                0 => {}
-                1 => {
-                    self.push_str(&operands[0]);
-                    self.push_str("\n");
+            Instruction::Return { amt, .. } => {
+                assert!(!self.return_self || *amt == 0);
+
+                match amt {
+                    0 => {
+                        if self.return_self {
+                            self.push_str("self\n");
+                        }
+                    }
+                    1 => {
+                        self.push_str(&operands[0]);
+                        self.push_str("\n");
+                    }
+                    _ => {
+                        self.push_str("(");
+                        self.push_str(&operands.join(", "));
+                        self.push_str(")\n");
+                    }
                 }
-                _ => {
-                    self.push_str("(");
-                    self.push_str(&operands.join(", "));
-                    self.push_str(")\n");
-                }
-            },
+            }
 
             Instruction::I32Load { offset } => {
                 let tmp = self.tmp();

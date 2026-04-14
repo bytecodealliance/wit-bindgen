@@ -768,7 +768,7 @@ pub mod vtable{ordinal} {{
     }
 
     fn lower_to_memory(&mut self, address: &str, value: &str, ty: &Type, module: &str) -> String {
-        let mut f = FunctionBindgen::new(self, Vec::new(), module, true);
+        let mut f = FunctionBindgen::new(self, Vec::new(), module, true, false);
         abi::lower_to_memory(f.r#gen.resolve, &mut f, address.into(), value.into(), ty);
         format!("unsafe {{ {} }}", String::from(f.src))
     }
@@ -780,7 +780,7 @@ pub mod vtable{ordinal} {{
         indirect: bool,
         module: &str,
     ) -> String {
-        let mut f = FunctionBindgen::new(self, Vec::new(), module, true);
+        let mut f = FunctionBindgen::new(self, Vec::new(), module, true, false);
         abi::deallocate_lists_in_types(f.r#gen.resolve, types, operands, indirect, &mut f);
         format!("unsafe {{ {} }}", String::from(f.src))
     }
@@ -792,13 +792,13 @@ pub mod vtable{ordinal} {{
         indirect: bool,
         module: &str,
     ) -> String {
-        let mut f = FunctionBindgen::new(self, Vec::new(), module, true);
+        let mut f = FunctionBindgen::new(self, Vec::new(), module, true, false);
         abi::deallocate_lists_and_own_in_types(f.r#gen.resolve, types, operands, indirect, &mut f);
         format!("unsafe {{ {} }}", String::from(f.src))
     }
 
     fn lift_from_memory(&mut self, address: &str, ty: &Type, module: &str) -> String {
-        let mut f = FunctionBindgen::new(self, Vec::new(), module, true);
+        let mut f = FunctionBindgen::new(self, Vec::new(), module, true, false);
         let result = abi::lift_from_memory(f.r#gen.resolve, &mut f, address.into(), ty);
         format!("unsafe {{ {}\n{result} }}", String::from(f.src))
     }
@@ -809,7 +809,13 @@ pub mod vtable{ordinal} {{
         func: &Function,
         params: Vec<String>,
     ) {
-        let mut f = FunctionBindgen::new(self, params, module, false);
+        let mut f = FunctionBindgen::new(
+            self,
+            params,
+            module,
+            false,
+            self.r#gen.should_return_self(func),
+        );
         abi::call(
             f.r#gen.resolve,
             AbiVariant::GuestImport,
@@ -1032,7 +1038,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
             }
             lowers.push("ParamsLower(_ptr,)".to_string());
         } else {
-            let mut f = FunctionBindgen::new(self, Vec::new(), module, true);
+            let mut f = FunctionBindgen::new(self, Vec::new(), module, true, false);
             let mut results = Vec::new();
             for (i, Param { ty, .. }) in func.params.iter().enumerate() {
                 let name = format!("_lower{i}");
@@ -1078,8 +1084,13 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
         }
         uwriteln!(
             self.src,
-            "_MySubtask {{ _unused: core::marker::PhantomData }}.call(({})).await",
-            params.join(" ")
+            "_MySubtask {{ _unused: core::marker::PhantomData }}.call(({})).await{}",
+            params.join(" "),
+            if self.r#gen.should_return_self(func) {
+                ";\nself"
+            } else {
+                ""
+            }
         );
     }
 
@@ -1121,7 +1132,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
             );
         }
 
-        let mut f = FunctionBindgen::new(self, params, self.wasm_import_module, false);
+        let mut f = FunctionBindgen::new(self, params, self.wasm_import_module, false, false);
         let variant = if async_ {
             AbiVariant::GuestExportAsync
         } else {
@@ -1191,7 +1202,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
             let params = self.print_post_return_sig(func);
             self.src.push_str("{ unsafe {\n");
 
-            let mut f = FunctionBindgen::new(self, params, self.wasm_import_module, false);
+            let mut f = FunctionBindgen::new(self, params, self.wasm_import_module, false, false);
             abi::post_return(f.r#gen.resolve, func, &mut f);
             let FunctionBindgen {
                 needs_cleanup_list,
@@ -1451,7 +1462,11 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
                 }
             }
         } else {
-            self.print_result_type(&func.result);
+            if self.r#gen.should_return_self(func) {
+                self.push_str("&Self");
+            } else {
+                self.print_result_type(&func.result);
+            }
         }
         params
     }

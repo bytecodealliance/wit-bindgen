@@ -300,6 +300,10 @@ pub struct Opts {
         arg(long, require_equals = true, value_name = "true|false")
     )]
     pub merge_structurally_equal_types: Option<Option<bool>>,
+
+    /// If true, methods normally returning `()` instead return `&Self`. This applies to both imported and exported methods.
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub enable_method_chaining: bool,
 }
 
 impl Opts {
@@ -1055,6 +1059,12 @@ macro_rules! __export_{world_name}_impl {{
         self.opts
             .async_
             .is_async(resolve, interface, func, is_import)
+    }
+
+    fn should_return_self(&self, func: &Function) -> bool {
+        self.opts.enable_method_chaining
+            && func.result.is_none()
+            && matches!(&func.kind, FunctionKind::Method(_))
     }
 }
 
