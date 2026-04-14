@@ -214,6 +214,7 @@ fn escape_d_identifier(name: &str) -> &str {
         "bits" => "bits_",               // part of WitFlags
         "borrow" => "borrow_",           // part of the expansion of `resource`
         "drop" => "drop_",               // part of the expansion of `resource`
+        "rep" => "rep_",                 // part of the expansion of `resource`
         "makeNew" => "makeNew_",         // part of the expansion of `resource`
         "constructor" => "constructor_", // part of the expansion of `resource`
 
@@ -625,6 +626,25 @@ impl WorldGenerator for D {
                             }
                         }
                     }
+
+                    r#gen.src.push_str(&format!(
+                        "\n@wasmExport!(\"{}#[dtor]{}\")\n",
+                        wasm_import_module,
+                        ty.name.as_ref().unwrap()
+                    ));
+                    r#gen.src.push_str(&format!(
+                        "pragma(mangle, \"__wit_export_{}__:dtor:{}\")\n",
+                        wasm_import_module.replace("/", "__").replace("-", "_"),
+                        ty.name.as_ref().unwrap().replace("-", "_")
+                    ));
+                    r#gen.src.push_str(
+                        "static private extern(C) void __export_dtor(void* ptr) {
+                            (*cast(_Resource_Impl*)ptr).destroy!false;
+                            free(ptr);
+                        }
+                        ",
+                    );
+
                     r#gen.src.push_str("}\n");
 
                     if emit_exports_stubs {
@@ -1518,12 +1538,6 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
 
     @disable this();
 
-    // TODO: make RAII? disable copy for the own
-
-
-    auto borrow() => Borrow(__handle);
-    alias borrow this;
-
     "
                 ));
 
@@ -1569,17 +1583,12 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
                 }
 
                 self.src
-                    .push_str("\nvoid drop() {\n__import__drop(__handle);\n}\n");
-
+                    .push_str("\nvoid drop() {\n__import_drop(__handle);\n}\n");
                 self.src.push_str(&format!(
                     "@wasmImport!(\"{}\", \"[resource-drop]{}\")\n",
                     self.wasm_import_module.unwrap(),
                     name
                 ));
-
-                // The mangle is not important, as long as it won't conflict with other symbols
-                // WebAssembly symbol identifiers are much more permissive than C (can be any UTF-8).
-                // Yet, LDC before 1.42 doesn't allow full use of this fact. We make some substitutions.
                 self.src.push_str(&format!(
                     "pragma(mangle, \"__wit_import_{}__:resource_drop:{}\")\n",
                     self.wasm_import_module
@@ -1589,10 +1598,15 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
                     name.replace("-", "_")
                 ));
                 self.src
-                    .push_str("static private extern(C) void __import__drop(uint);\n\n");
+                    .push_str("static private extern(C) void __import_drop(uint);\n\n");
 
                 self.src.push_str(&format!(
-                    "struct Borrow {{
+                    "// TODO: make RAII? disable copy for the own
+
+    auto borrow() => Borrow(__handle);
+    alias borrow this;
+
+    struct Borrow {{
     package(wit) uint __handle = 0;
 
     package(wit) this(uint handle) {{
@@ -1600,7 +1614,6 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
     }}
 
     @disable this();
-
                 "
                 ));
 
@@ -1670,14 +1683,78 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
         }}
 
         @disable this();
-
-        // TODO: make RAII? disable copy for the own
-
-        "
+"
                     ));
 
                     self.src.push_str(&format!(
-                        "struct Borrow {{
+                        "
+                        static {escaped_name} makeNew(T)(scope void delegate(out T) dg) if (is(T == struct)) {{
+                        auto ptr = cast(T*)malloc(T.sizeof);
+                        if (ptr is null) return {escaped_name}.init;
+
+                        dg(*ptr);
+                        return {escaped_name}(__import_makeNew(ptr));
+                        }}
+                        ",
+                    ));
+                    self.src.push_str(&format!(
+                        "@wasmImport!(\"{}\", \"[resource-new]{}\")\n",
+                        self.wasm_import_module.unwrap(),
+                        name
+                    ));
+                    self.src.push_str(&format!(
+                        "pragma(mangle, \"__wit_import_{}__:resource_new:{}\")\n",
+                        self.wasm_import_module
+                            .unwrap()
+                            .replace("/", "__")
+                            .replace("-", "_"),
+                        name.replace("-", "_")
+                    ));
+                    self.src
+                        .push_str("static private extern(C) uint __import_makeNew(void*);\n\n");
+
+                    self.src
+                        .push_str("T* rep(T)() if (is(T == struct)) {\nreturn cast(T*)__import_rep(__handle);\n}\n");
+                    self.src.push_str(&format!(
+                        "@wasmImport!(\"{}\", \"[resource-rep]{}\")\n",
+                        self.wasm_import_module.unwrap(),
+                        name
+                    ));
+                    self.src.push_str(&format!(
+                        "pragma(mangle, \"__wit_import_{}__:resource_rep:{}\")\n",
+                        self.wasm_import_module
+                            .unwrap()
+                            .replace("/", "__")
+                            .replace("-", "_"),
+                        name.replace("-", "_")
+                    ));
+                    self.src
+                        .push_str("static private extern(C) void __import_rep(uint);\n\n");
+
+                    self.src
+                        .push_str("void drop() {\n__import_drop(__handle);\n}\n");
+                    self.src.push_str(&format!(
+                        "@wasmImport!(\"{}\", \"[resource-drop]{}\")\n",
+                        self.wasm_import_module.unwrap(),
+                        name
+                    ));
+                    self.src.push_str(&format!(
+                        "pragma(mangle, \"__wit_import_{}__:resource_drop:{}\")\n",
+                        self.wasm_import_module
+                            .unwrap()
+                            .replace("/", "__")
+                            .replace("-", "_"),
+                        name.replace("-", "_")
+                    ));
+                    self.src
+                        .push_str("static private extern(C) void __import_drop(uint);\n\n");
+
+                    self.src.push_str(&format!(
+                        "// TODO: make RAII? disable copy for the own
+        auto borrow() => Borrow(__handle);
+        alias borrow this;
+
+        struct Borrow {{
             package(wit) uint __handle = 0;
 
             package(wit) this(uint handle) {{
