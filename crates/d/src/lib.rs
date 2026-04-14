@@ -13,12 +13,10 @@ use wit_bindgen_core::{
 type DType = String;
 #[derive(Default, Debug)]
 struct DSig {
-    const_member: bool,
     static_member: bool,
     result: DType,
     arguments: Vec<(String, DType)>,
     name: String,
-    //namespace: Vec<String>,
     implicit_self: bool,
     post_return: bool,
 }
@@ -1166,7 +1164,7 @@ impl<'a> DInterfaceGenerator<'a> {
         if d_sig.implicit_self {
             params.push("this");
         }
-        for (arg, ty) in &d_sig.arguments {
+        for (arg, _ty) in &d_sig.arguments {
             params.push(arg);
         }
 
@@ -1924,7 +1922,7 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
                 "/// ditto\nbool is{escaped_upper_case_name}() const => _tag == Tag.{escaped_lower_case_name};\n",
             ));
 
-            if let Some(ty) = &case.ty {
+            if case.ty.is_some() {
                 self.src.push_str(&format!(
                     "///ditto\nalias get{escaped_upper_case_name} = _get!(Tag.{escaped_lower_case_name});\n",
                 ));
@@ -2538,7 +2536,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             abi::Instruction::RecordLift { ty, record, .. } => {
                 let name = self.r#gen.type_name(&Type::Id(*ty), self.r#gen.fqn);
 
-                let mut tmpvar = tempname("_record", self.tmp());
+                let tmpvar = tempname("_record", self.tmp());
 
                 self.push_str(&format!("{name} {tmpvar} = {{\n"));
                 for (field, op) in record.fields.iter().zip(operands.iter()) {
@@ -2566,7 +2564,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     results.push(format!("{}[{i}]", &operands[0]));
                 }
             }
-            abi::Instruction::TupleLift { tuple, ty, .. } => {
+            abi::Instruction::TupleLift { ty, .. } => {
                 let name = tempname("_tuple", self.tmp());
                 self.push_str(&format!(
                     "auto {name} = {}(\n",
@@ -2660,9 +2658,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 self.push_str(&format!("alias {tag_type} = {ty_name}.Tag;\n"));
                 self.push_str(&format!("final switch ({}.tag) {{\n", operands[0]));
 
-                for (i, ((case, block), payload)) in
-                    variant.cases.iter().zip(blocks).zip(payloads).enumerate()
-                {
+                for ((case, block), payload) in variant.cases.iter().zip(blocks).zip(payloads) {
                     let lower_name = case.name.to_lower_camel_case();
                     let lower_escaped_name = escape_d_identifier(&lower_name);
 
@@ -2705,7 +2701,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
 
                 self.push_str(&format!("alias {tag_type} = {ty}.Tag;\n"));
                 self.push_str(&format!("final switch (cast({ty}.Tag){tag}) {{\n"));
-                for (i, (case, block)) in variant.cases.iter().zip(blocks).enumerate() {
+                for (case, block) in variant.cases.iter().zip(blocks) {
                     let lower_name = case.name.to_lower_camel_case();
                     let escaped_name = escape_d_identifier(&lower_name);
 
@@ -2777,12 +2773,11 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             }
             abi::Instruction::OptionLift { ty, .. } => {
                 let Block {
-                    body: mut some,
+                    body: some,
                     results: some_results,
                     ..
                 } = self.blocks.pop().unwrap();
                 let Block {
-                    body: mut none,
                     results: none_results,
                     ..
                 } = self.blocks.pop().unwrap();
@@ -2866,13 +2861,13 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             }
             abi::Instruction::ResultLift { result, ty, .. } => {
                 let Block {
-                    body: mut err,
+                    body: err,
                     results: err_results,
                     ..
                 } = self.blocks.pop().unwrap();
                 assert!(err_results.len() == (result.err.is_some() as usize));
                 let Block {
-                    body: mut ok,
+                    body: ok,
                     results: ok_results,
                     ..
                 } = self.blocks.pop().unwrap();
@@ -3019,7 +3014,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             abi::Instruction::GuestDeallocateList { element } => {
                 let Block {
                     body,
-                    results: block_results,
+                    results: _,
                     element: block_element,
                     base,
                 } = self.blocks.pop().unwrap();
@@ -3027,7 +3022,6 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let size = self.r#gen.sizes.size(element);
                 let size_str = size.format("size_t.sizeof");
 
-                let list = tempname("_list", tmp);
                 let list_len = tempname("_listLen", tmp);
                 let list_src = tempname("_listSrcPtr", tmp);
                 self.push_str(&format!("auto {list_src} = {};\n", operands[0]));
@@ -3120,35 +3114,5 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
 
     fn is_list_canonical(&self, _resolve: &Resolve, ty: &Type) -> bool {
         self.r#gen.resolve.all_bits_valid(ty)
-    }
-}
-
-/// This describes the common ABI function referenced or implemented, the C++ side might correspond to a different type
-enum SpecialMethod {
-    None,
-    ResourceDrop, // ([export]) [resource-drop]
-    ResourceNew,  // [export][resource-new]
-    ResourceRep,  // [export][resource-rep]
-    Dtor,         // [dtor] (guest export only)
-    Allocate,     // internal: allocate new object (called from generated code)
-}
-
-fn is_special_method(func: &Function) -> SpecialMethod {
-    if matches!(func.kind, FunctionKind::Static(_)) {
-        if func.name.starts_with("[resource-drop]") {
-            SpecialMethod::ResourceDrop
-        } else if func.name.starts_with("[resource-new]") {
-            SpecialMethod::ResourceNew
-        } else if func.name.starts_with("[resource-rep]") {
-            SpecialMethod::ResourceRep
-        } else if func.name.starts_with("[dtor]") {
-            SpecialMethod::Dtor
-        } else if func.name == "$alloc" {
-            SpecialMethod::Allocate
-        } else {
-            SpecialMethod::None
-        }
-    } else {
-        SpecialMethod::None
     }
 }
