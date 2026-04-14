@@ -453,6 +453,7 @@ impl Runner {
             "cs" => Language::Csharp,
             "mbt" => Language::MoonBit,
             "go" => Language::Go,
+            "d" => Language::D,
             other => Language::Custom(custom::Language::lookup(self, other)?),
         };
 
