@@ -216,3 +216,22 @@ mod retyped_list {
         }
     });
 }
+
+#[allow(unused, reason = "testing codegen, not functionality")]
+mod method_chaining {
+    wit_bindgen::generate!({
+        inline: r#"
+        package test:method-chaining;
+        world test {
+            resource a {
+                constructor();
+                set-a: func(arg: u32);
+                set-b: func(arg: bool);
+                do: func();
+            }
+        }
+        "#,
+        generate_all,
+        enable_method_chaining: true
+    });
+}

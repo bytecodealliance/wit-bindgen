@@ -171,6 +171,9 @@ impl Parse for Config {
                         }
                         opts.async_ = val;
                     }
+                    Opt::EnableMethodChaining(enable) => {
+                        opts.enable_method_chaining = enable.value();
+                    }
                 }
             }
         } else {
@@ -324,6 +327,7 @@ mod kw {
     syn::custom_keyword!(disable_custom_section_link_helpers);
     syn::custom_keyword!(imports);
     syn::custom_keyword!(debug);
+    syn::custom_keyword!(enable_method_chaining);
 }
 
 #[derive(Clone)]
@@ -404,6 +408,7 @@ enum Opt {
     DisableCustomSectionLinkHelpers(syn::LitBool),
     Async(AsyncFilterSet, Span),
     Debug(syn::LitBool),
+    EnableMethodChaining(syn::LitBool),
 }
 
 impl Parse for Opt {
@@ -568,6 +573,10 @@ impl Parse for Opt {
             input.parse::<kw::debug>()?;
             input.parse::<Token![:]>()?;
             Ok(Opt::Debug(input.parse()?))
+        } else if l.peek(kw::enable_method_chaining) {
+            input.parse::<kw::enable_method_chaining>()?;
+            input.parse::<Token![:]>()?;
+            Ok(Opt::EnableMethodChaining(input.parse()?))
         } else if l.peek(Token![async]) {
             let span = input.parse::<Token![async]>()?.span;
             input.parse::<Token![:]>()?;
