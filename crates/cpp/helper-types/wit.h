@@ -107,6 +107,12 @@ public:
   char const* end() const {
     return (char const*)data_ + length;
   }
+  friend bool operator<(string const &a, string const &b) {
+    return a.get_view() < b.get_view();
+  }
+  friend bool operator==(string const &a, string const &b) {
+    return a.get_view() == b.get_view();
+  }
 };
 
 /// A vector in linear memory, freed unconditionally using free
