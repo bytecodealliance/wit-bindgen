@@ -3565,7 +3565,6 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let len = format!("len{tmp}");
                 let idx = format!("idx{tmp}");
                 let entry_name = format!("entry{tmp}");
-                let key_type = self.r#gen.type_name(key, &self.namespace, Flavor::InStruct);
                 let entry = self.r#gen.sizes.record([*key, *value]);
                 let size = entry.size.format(POINTER_SIZE_EXPRESSION);
                 let align = entry.align.format(POINTER_SIZE_EXPRESSION);
@@ -3578,10 +3577,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 );
                 uwriteln!(self.src, "size_t {idx} = 0;");
                 uwriteln!(self.src, "for (auto& {entry_name} : {val}) {{");
-                uwriteln!(
-                    self.src,
-                    "auto& iter_map_key = const_cast<{key_type}&>({entry_name}.first);"
-                );
+                uwriteln!(self.src, "auto iter_map_key = {entry_name}.first;");
                 uwriteln!(self.src, "auto& iter_map_value = {entry_name}.second;");
                 uwriteln!(self.src, "auto base = {ptr} + {idx} * {size};");
                 uwrite!(self.src, "{}", body.0);
