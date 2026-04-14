@@ -64,6 +64,8 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             &rust_name,
             params,
             results,
+            &self.r#gen.r#gen.native_stub_macro,
+            &mut self.r#gen.r#gen.native_stub_methods,
         ));
         rust_name
     }
