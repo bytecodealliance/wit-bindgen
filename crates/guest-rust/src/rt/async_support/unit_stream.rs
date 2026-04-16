@@ -1,6 +1,6 @@
 use crate::rt::async_support::raw_stream_new;
 use crate::{RawStreamReader, RawStreamWriter, StreamOps};
-use std::alloc::Layout;
+use core::alloc::Layout;
 
 /// Operations for `stream<()>`.
 ///

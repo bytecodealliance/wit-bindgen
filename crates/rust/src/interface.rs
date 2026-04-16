@@ -706,7 +706,7 @@ pub mod vtable{ordinal} {{
         drop_readable,
         {dealloc_lists_arg},
         layout: unsafe {{
-            ::std::alloc::Layout::from_size_align_unchecked({size}, {align})
+            ::core::alloc::Layout::from_size_align_unchecked({size}, {align})
         }},
         {lift_arg},
         {lower_arg},

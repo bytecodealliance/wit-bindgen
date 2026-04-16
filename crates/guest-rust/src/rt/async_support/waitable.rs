@@ -2,13 +2,13 @@
 //! that waitable.
 
 use super::cabi;
-use std::ffi::c_void;
-use std::future::Future;
-use std::marker;
-use std::mem;
-use std::pin::Pin;
-use std::ptr;
-use std::task::{Context, Poll, Waker};
+use core::ffi::c_void;
+use core::future::Future;
+use core::marker;
+use core::mem;
+use core::pin::Pin;
+use core::ptr;
+use core::task::{Context, Poll, Waker};
 
 /// Generic future-based operation on any "waitable" in the component model.
 ///
