@@ -7,12 +7,12 @@
 //! the canonical ABI are additionally leaked with it which should be memory
 //! safe.
 
+use crate::rt::Cleanup;
 use crate::rt::async_support::waitable::{WaitableOp, WaitableOperation};
 use crate::rt::async_support::{
     STATUS_RETURNED, STATUS_RETURNED_CANCELLED, STATUS_STARTED, STATUS_STARTED_CANCELLED,
     STATUS_STARTING,
 };
-use crate::rt::Cleanup;
 use core::alloc::Layout;
 use core::future::Future;
 use core::marker;

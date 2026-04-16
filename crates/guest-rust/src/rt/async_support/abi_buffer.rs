@@ -1,5 +1,5 @@
-use crate::rt::async_support::StreamOps;
 use crate::rt::Cleanup;
+use crate::rt::async_support::StreamOps;
 use alloc::alloc::Layout;
 use alloc::vec::Vec;
 use core::mem::{self, MaybeUninit};

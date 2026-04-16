@@ -111,9 +111,9 @@
 //! alive until that write completes but otherwise shouldn't hinder anything
 //! else.
 
-use crate::rt::async_support::waitable::{WaitableOp, WaitableOperation};
-use crate::rt::async_support::ReturnCode;
 use crate::rt::Cleanup;
+use crate::rt::async_support::ReturnCode;
+use crate::rt::async_support::waitable::{WaitableOp, WaitableOperation};
 use alloc::sync::Arc;
 use alloc::task::Wake;
 use core::alloc::Layout;
