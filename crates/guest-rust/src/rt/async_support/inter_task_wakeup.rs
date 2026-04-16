@@ -1,12 +1,8 @@
 use super::FutureState;
+use crate::rt::async_support::try_lock::TryLock;
 use crate::rt::async_support::{BLOCKED, COMPLETED};
 use crate::{RawStreamReader, RawStreamWriter, StreamOps, UnitStreamOps};
-use core::cell::UnsafeCell;
 use core::ptr;
-use core::sync::atomic::{
-    AtomicBool,
-    Ordering::{Acquire, Release},
-};
 
 #[derive(Default)]
 pub struct State {
@@ -31,7 +27,9 @@ impl FutureState<'_> {
             assert!(!self.inter_task_wakeup.stream_reading);
             let (writer, reader) = UnitStreamOps::new();
             self.inter_task_wakeup.stream = Some(reader);
-            self.waker.inter_task_stream.set(writer);
+            let mut waker_stream = self.waker.inter_task_stream.lock.try_lock().unwrap();
+            assert!(waker_stream.is_none());
+            *waker_stream = Some(writer);
         }
 
         // If there's not already a pending read then schedule a new read here.
@@ -83,37 +81,18 @@ impl State {
 
 #[derive(Default)]
 pub struct WakerState {
-    in_use: AtomicBool,
-    lock: UnsafeCell<Option<RawStreamWriter<UnitStreamOps>>>,
+    lock: TryLock<Option<RawStreamWriter<UnitStreamOps>>>,
 }
 
-unsafe impl Send for WakerState {}
-unsafe impl Sync for WakerState {}
-
 impl WakerState {
-    fn set(&self, writer: RawStreamWriter<UnitStreamOps>) {
-        self.with(|waker_stream| {
-            assert!(waker_stream.is_none());
-            *waker_stream = Some(writer);
-        })
-    }
-
-    fn with<R>(&self, f: impl FnOnce(&mut Option<RawStreamWriter<UnitStreamOps>>) -> R) -> R {
-        assert!(!self.in_use.swap(true, Acquire));
-        let ret = unsafe { f(&mut *self.lock.get()) };
-        self.in_use.store(false, Release);
-        ret
-    }
-
     pub fn wake(&self) {
         // Here the wakeup stream should already have been filled in by the
         // original future itself. The stream should also have an active read
         // while the future is sleeping. This means that this write should
         // succeed immediately.
-        self.with(|inter_task_stream| {
-            let stream = inter_task_stream.as_mut().unwrap();
-            let rc = unsafe { UnitStreamOps.start_write(stream.handle(), ptr::null_mut(), 1) };
-            assert_eq!(rc, COMPLETED | (1 << 4));
-        })
+        let mut inter_task_stream = self.lock.try_lock().unwrap();
+        let stream = inter_task_stream.as_mut().unwrap();
+        let rc = unsafe { UnitStreamOps.start_write(stream.handle(), ptr::null_mut(), 1) };
+        assert_eq!(rc, COMPLETED | (1 << 4));
     }
 }

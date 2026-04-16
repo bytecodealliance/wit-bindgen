@@ -68,6 +68,7 @@ mod futures_stream;
 mod inter_task_wakeup;
 mod stream_support;
 mod subtask;
+mod try_lock;
 #[cfg(feature = "inter-task-wakeup")]
 mod unit_stream;
 mod waitable;
