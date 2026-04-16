@@ -2,10 +2,11 @@
 //! module documentation in `future_support.rs`.
 
 use crate::rt::async_support::waitable::{WaitableOp, WaitableOperation};
-use crate::rt::async_support::{AbiBuffer, DROPPED, ReturnCode};
+use crate::rt::async_support::{AbiBuffer, ReturnCode, DROPPED};
+use alloc::vec::Vec;
 use {
     crate::rt::Cleanup,
-    std::{
+    core::{
         alloc::Layout,
         fmt,
         future::Future,
@@ -13,7 +14,6 @@ use {
         ptr,
         sync::atomic::{AtomicU32, Ordering::Relaxed},
         task::{Context, Poll},
-        vec::Vec,
     },
 };
 
@@ -308,7 +308,7 @@ where
         // TODO: can probably be a bit more efficient about this and avoid
         // moving `value` onto the heap in some situations, but that's left as
         // an optimization for later.
-        self.write_all(std::vec![value]).await.pop()
+        self.write_all(alloc::vec![value]).await.pop()
     }
 }
 

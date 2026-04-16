@@ -1,8 +1,8 @@
 use crate::bindgen::{FunctionBindgen, POINTER_SIZE_EXPRESSION};
 use crate::{
-    ConstructorReturnType, FnSig, Identifier, InterfaceName, Ownership, RuntimeItem, RustFlagsRepr,
-    RustWasm, TypeGeneration, classify_constructor_return_type, full_wit_type_name, int_repr,
-    to_rust_ident, to_upper_camel_case, wasm_type,
+    classify_constructor_return_type, full_wit_type_name, int_repr, to_rust_ident,
+    to_upper_camel_case, wasm_type, ConstructorReturnType, FnSig, Identifier, InterfaceName,
+    Ownership, RuntimeItem, RustFlagsRepr, RustWasm, TypeGeneration,
 };
 use anyhow::Result;
 use heck::*;
@@ -11,7 +11,7 @@ use std::fmt::Write as _;
 use std::mem;
 use wit_bindgen_core::abi::{self, AbiVariant, LiftLower};
 use wit_bindgen_core::{
-    AnonymousTypeGenerator, Source, TypeInfo, dealias, uwrite, uwriteln, wit_parser::*,
+    dealias, uwrite, uwriteln, wit_parser::*, AnonymousTypeGenerator, Source, TypeInfo,
 };
 
 pub struct InterfaceGenerator<'a> {
@@ -706,7 +706,7 @@ pub mod vtable{ordinal} {{
         drop_readable,
         {dealloc_lists_arg},
         layout: unsafe {{
-            ::std::alloc::Layout::from_size_align_unchecked({size}, {align})
+            ::core::alloc::Layout::from_size_align_unchecked({size}, {align})
         }},
         {lift_arg},
         {lower_arg},

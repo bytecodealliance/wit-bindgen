@@ -111,19 +111,24 @@
 //! alive until that write completes but otherwise shouldn't hinder anything
 //! else.
 
-use crate::rt::Cleanup;
-use crate::rt::async_support::ReturnCode;
 use crate::rt::async_support::waitable::{WaitableOp, WaitableOperation};
-use std::alloc::Layout;
-use std::fmt;
-use std::future::{Future, IntoFuture};
-use std::marker;
-use std::mem::{self, ManuallyDrop};
-use std::pin::Pin;
-use std::ptr;
-use std::sync::atomic::{AtomicU32, Ordering::Relaxed};
-use std::sync::{Arc, Mutex};
-use std::task::{Context, Poll, Wake, Waker};
+use crate::rt::async_support::ReturnCode;
+use crate::rt::Cleanup;
+use alloc::sync::Arc;
+use alloc::task::Wake;
+use core::alloc::Layout;
+use core::cell::UnsafeCell;
+use core::fmt;
+use core::future::{Future, IntoFuture};
+use core::marker;
+use core::mem::{self, ManuallyDrop};
+use core::pin::Pin;
+use core::ptr;
+use core::sync::atomic::{
+    AtomicBool, AtomicU32,
+    Ordering::{Acquire, Relaxed, Release},
+};
+use core::task::{Context, Poll, Waker};
 
 /// Helper trait which encapsulates the various operations which can happen
 /// with a future.
@@ -501,7 +506,8 @@ impl<O: FutureOps> RawFutureWriter<O> {
         O: 'static,
     {
         return Arc::new(DeferredWrite {
-            write: Mutex::new(self.write(value)),
+            write: UnsafeCell::new(self.write(value)),
+            in_use: AtomicBool::new(false),
         })
         .wake();
 
@@ -519,7 +525,8 @@ impl<O: FutureOps> RawFutureWriter<O> {
         /// doesn't require the `async-spawn` feature and instead works with the
         /// `wasip3_task` C ABI structures (which spawn doesn't support).
         struct DeferredWrite<O: FutureOps> {
-            write: Mutex<RawFutureWrite<O>>,
+            write: UnsafeCell<RawFutureWrite<O>>,
+            in_use: AtomicBool,
         }
 
         // SAFETY: Needed to satisfy `Waker::from` but otherwise should be ok
@@ -529,6 +536,10 @@ impl<O: FutureOps> RawFutureWriter<O> {
 
         impl<O: FutureOps + 'static> Wake for DeferredWrite<O> {
             fn wake(self: Arc<Self>) {
+                if self.in_use.swap(true, Acquire) {
+                    panic!("recursive wake detected");
+                }
+
                 // When a `wake` signal comes in that should happen in two
                 // locations:
                 //
@@ -550,8 +561,7 @@ impl<O: FutureOps> RawFutureWriter<O> {
                 let poll = {
                     let waker = Waker::from(self.clone());
                     let mut cx = Context::from_waker(&waker);
-                    let mut write = self.write.lock().unwrap();
-                    unsafe { Pin::new_unchecked(&mut *write).poll(&mut cx) }
+                    unsafe { Pin::new_unchecked(&mut *self.write.get()).poll(&mut cx) }
                 };
                 if poll.is_ready() {
                     assert_eq!(Arc::strong_count(&self), 1);
@@ -559,6 +569,8 @@ impl<O: FutureOps> RawFutureWriter<O> {
                     assert!(Arc::strong_count(&self) > 1);
                 }
                 assert_eq!(Arc::weak_count(&self), 0);
+
+                self.in_use.store(false, Release);
             }
         }
     }
@@ -756,7 +768,7 @@ impl<T> fmt::Display for FutureWriteError<T> {
     }
 }
 
-impl<T> std::error::Error for FutureWriteError<T> {}
+impl<T> core::error::Error for FutureWriteError<T> {}
 
 /// Result of [`FutureWrite::cancel`].
 #[derive(Debug)]

@@ -1,6 +1,6 @@
 //! Low-level FFI-like bindings around `waitable-set` in the canonical ABI.
 
-use std::num::NonZeroU32;
+use core::num::NonZeroU32;
 
 pub struct WaitableSet(NonZeroU32);
 
