@@ -1,10 +1,10 @@
 use anyhow::Result;
 use heck::*;
-use pulldown_cmark::{html, Event, LinkType, Parser, Tag};
+use pulldown_cmark::{Event, LinkType, Parser, Tag, html};
 use std::collections::HashMap;
 use std::fmt::Write;
 use wit_bindgen_core::{
-    uwriteln, wit_parser, Files, InterfaceGenerator as _, Source, WorldGenerator,
+    Files, InterfaceGenerator as _, Source, WorldGenerator, uwriteln, wit_parser,
 };
 use wit_parser::*;
 
