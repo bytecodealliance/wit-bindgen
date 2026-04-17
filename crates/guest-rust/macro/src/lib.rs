@@ -163,12 +163,6 @@ impl Parse for Config {
                             return Err(Error::new(span, "cannot specify second async config"));
                         }
                         async_configured = true;
-                        if val.any_enabled() && !cfg!(feature = "async") {
-                            return Err(Error::new(
-                                span,
-                                "must enable `async` feature to enable async imports and/or exports",
-                            ));
-                        }
                         opts.async_ = val;
                     }
                     Opt::EnableMethodChaining(enable) => {
