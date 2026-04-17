@@ -13,6 +13,7 @@
 #include <stdlib.h> // free
 #include <new>
 #include <span>
+#include <utility> // pair
 
 namespace wit {
 /// @brief Helper class to map between IDs and resources
@@ -107,12 +108,6 @@ public:
   char const* end() const {
     return (char const*)data_ + length;
   }
-  friend bool operator<(string const &a, string const &b) {
-    return a.get_view() < b.get_view();
-  }
-  friend bool operator==(string const &a, string const &b) {
-    return a.get_view() == b.get_view();
-  }
 };
 
 /// A vector in linear memory, freed unconditionally using free
@@ -174,6 +169,70 @@ public:
     }
     return result;
   } 
+};
+
+/// @brief A map stored as a contiguous array of key-value pairs in linear
+/// memory, freed unconditionally using free.
+///
+/// Mirrors the canonical ABI representation of `map<K, V>` (`list<tuple<K, V>>`)
+/// to enable lift without per-entry tree allocation. Unlike `std::map` this
+/// container provides flat iteration only — callers who need keyed lookup can
+/// build their own index from `get_view()`.
+template <class K, class V> class map {
+public:
+  using entry_type = std::pair<K, V>;
+
+private:
+  entry_type *data_;
+  size_t length;
+
+  static entry_type* empty_ptr() { return (entry_type*)alignof(entry_type); }
+
+public:
+  map(map const &) = delete;
+  map(map &&b) : data_(b.data_), length(b.length) { b.data_ = nullptr; }
+  map &operator=(map const &) = delete;
+  map &operator=(map &&b) {
+    if (data_ && length > 0) {
+      for (unsigned i = 0; i < length; ++i) { data_[i].~entry_type(); }
+      free(data_);
+    }
+    data_ = b.data_;
+    length = b.length;
+    b.data_ = nullptr;
+    return *this;
+  }
+  map(entry_type *d, size_t l) : data_(d), length(l) {}
+  map() : data_(empty_ptr()), length() {}
+  entry_type const *data() const { return data_; }
+  entry_type *data() { return data_; }
+  entry_type &operator[](size_t n) { return data_[n]; }
+  entry_type const &operator[](size_t n) const { return data_[n]; }
+  size_t size() const { return length; }
+  bool empty() const { return !length; }
+  ~map() {
+    if (data_ && length > 0) {
+      for (unsigned i = 0; i < length; ++i) { data_[i].~entry_type(); }
+      free((void*)data_);
+    }
+  }
+  // WARNING: map contains uninitialized entries; caller must construct them via
+  // `initialize` before the map is observed or destroyed.
+  static map<K, V> allocate(size_t len) {
+    if (!len) return map<K, V>(empty_ptr(), 0);
+    return map<K, V>((entry_type*)malloc(sizeof(entry_type) * len), len);
+  }
+  void initialize(size_t n, entry_type&& entry) {
+    new ((void*)(data_ + n)) entry_type(std::move(entry));
+  }
+  entry_type* leak() { entry_type* result = data_; data_ = nullptr; return result; }
+  static void drop_raw(void *ptr) { if (ptr != empty_ptr()) free(ptr); }
+  std::span<entry_type> get_view() const { return std::span<entry_type>(data_, length); }
+  std::span<entry_type const> get_const_view() const { return std::span<entry_type const>(data_, length); }
+  entry_type* begin() { return data_; }
+  entry_type* end() { return data_ + length; }
+  entry_type const* begin() const { return data_; }
+  entry_type const* end() const { return data_ + length; }
 };
 
 /// @brief  A Resource defined within the guest (guest side)
