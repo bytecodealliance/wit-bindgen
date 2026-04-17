@@ -32,28 +32,28 @@ edition = "2024"
 version = "0.56.0"
 license = "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT"
 repository = "https://github.com/bytecodealliance/wit-bindgen"
-rust-version = "1.87.0"
+rust-version = "1.88.0"
 
 [workspace.dependencies]
-anyhow = "1.0.72"
-bitflags = "2.3.3"
+anyhow = "1.0.102"
+bitflags = "2.11.1"
 heck = { version = "0.5" }
-pulldown-cmark = { version = "0.9", default-features = false }
-serde = { version = "1.0.218", features = ["derive"] }
-clap = { version = "4.3.19", features = ["derive"] }
+pulldown-cmark = { version = "0.13.3", default-features = false }
+serde = { version = "1.0.228", features = ["derive"] }
+clap = { version = "4.6.1", features = ["derive"] }
 indexmap = "2.0.0"
 prettyplease = "0.2.20"
 syn = { version = "2.0.89", features = ["printing"] }
 futures = "0.3.31"
 macro-string = "0.2.0"
 
-wat = "1.246.1"
-wasmparser = "0.246.1"
-wasm-encoder = "0.246.1"
-wasm-metadata = { version = "0.246.1", default-features = false }
-wit-parser = "0.246.1"
-wit-component = "0.246.1"
-wasm-compose = "0.246.1"
+wat = "1.247.0"
+wasmparser = "0.247.0"
+wasm-encoder = "0.247.0"
+wasm-metadata = { version = "0.247.0", default-features = false }
+wit-parser = "0.247.0"
+wit-component = "0.247.0"
+wasm-compose = "0.247.0"
 
 wit-bindgen-core = { path = 'crates/core', version = '0.56.0' }
 wit-bindgen-c = { path = 'crates/c', version = '0.56.0' }
