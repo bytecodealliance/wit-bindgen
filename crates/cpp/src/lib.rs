@@ -3512,17 +3512,19 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let len = self.tempname("_len", tmp);
                 uwriteln!(self.src, "uint8_t* {ptr} = {};", operands[0]);
                 uwriteln!(self.src, "size_t {len} = {};", operands[1]);
-                let i = self.tempname("i", tmp);
-                uwriteln!(self.src, "for (size_t {i} = 0; {i} < {len}; {i}++) {{");
-                let size = self.r#gen.sizes.size(element);
-                uwriteln!(
-                    self.src,
-                    "uint8_t* _base = {ptr} + {i} * {size};",
-                    size = size.format(POINTER_SIZE_EXPRESSION)
-                );
-                uwriteln!(self.src, "(void) _base;");
-                uwrite!(self.src, "{body}");
-                uwriteln!(self.src, "}}");
+                if !body.trim().is_empty() {
+                    let i = self.tempname("i", tmp);
+                    uwriteln!(self.src, "for (size_t {i} = 0; {i} < {len}; {i}++) {{");
+                    let size = self.r#gen.sizes.size(element);
+                    uwriteln!(
+                        self.src,
+                        "uint8_t* _base = {ptr} + {i} * {size};",
+                        size = size.format(POINTER_SIZE_EXPRESSION)
+                    );
+                    uwriteln!(self.src, "(void) _base;");
+                    uwrite!(self.src, "{body}");
+                    uwriteln!(self.src, "}}");
+                }
                 uwriteln!(self.src, "if ({len} > 0) {{");
                 uwriteln!(self.src, "free((void*) ({ptr}));");
                 uwriteln!(self.src, "}}");
@@ -3673,14 +3675,15 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let len = self.tempname("len", tmp);
                 uwriteln!(self.src, "uint8_t* {ptr} = {};", operands[0]);
                 uwriteln!(self.src, "size_t {len} = {};", operands[1]);
-                let i = self.tempname("i", tmp);
-                uwriteln!(self.src, "for (size_t {i} = 0; {i} < {len}; {i}++) {{");
-                let entry = self.r#gen.sizes.record([*key, *value]);
-                let size = entry.size.format(POINTER_SIZE_EXPRESSION);
-                uwriteln!(self.src, "uint8_t* base = {ptr} + {i} * {size};");
-                uwriteln!(self.src, "(void) base;");
-                uwrite!(self.src, "{body}");
-                uwriteln!(self.src, "}}");
+                if !body.trim().is_empty() {
+                    let i = self.tempname("i", tmp);
+                    uwriteln!(self.src, "for (size_t {i} = 0; {i} < {len}; {i}++) {{");
+                    let entry = self.r#gen.sizes.record([*key, *value]);
+                    let size = entry.size.format(POINTER_SIZE_EXPRESSION);
+                    uwriteln!(self.src, "uint8_t* base = {ptr} + {i} * {size};");
+                    uwrite!(self.src, "{body}");
+                    uwriteln!(self.src, "}}");
+                }
                 uwriteln!(self.src, "if ({len} > 0) {{");
                 uwriteln!(self.src, "free((void*) ({ptr}));");
                 uwriteln!(self.src, "}}");
