@@ -3587,7 +3587,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 // layout (see wit-bindgen#1592), so always allocate a fresh ABI
                 // buffer rather than reusing the source map's storage.
                 self.push_str(&format!("auto&& {val} = {};\n", operands[0]));
-                self.push_str(&format!("auto {len} = (size_t)({val}.size());\n"));
+                self.push_str(&format!("auto {len} = {val}.size();\n"));
                 uwriteln!(
                     self.src,
                     "auto {ptr} = ({ptr_type})({len} > 0 ? cabi_realloc(nullptr, 0, {align}, {len} * {size}) : nullptr);",
