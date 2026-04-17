@@ -3592,7 +3592,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 self.push_str(&format!("auto {len} = {val}.size();\n"));
                 uwriteln!(
                     self.src,
-                    "auto {ptr} = ({ptr_type})({len} > 0 ? cabi_realloc(nullptr, 0, {align}, {len} * {size}) : nullptr);",
+                    "auto {ptr} = static_cast<{ptr_type}>({len} > 0 ? cabi_realloc(nullptr, 0, {align}, {len} * {size}) : nullptr);",
                     ptr_type = self.r#gen.r#gen.opts.ptr_type()
                 );
                 uwriteln!(self.src, "for (size_t i = 0; i < {len}; ++i) {{");
