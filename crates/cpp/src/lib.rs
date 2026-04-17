@@ -75,7 +75,6 @@ struct Includes {
     needs_wit: bool,
     needs_memory: bool,
     needs_array: bool,
-    needs_map: bool,
 }
 
 #[derive(Default)]
@@ -435,9 +434,6 @@ impl Cpp {
         }
         if self.dependencies.needs_bit {
             self.include("<bit>");
-        }
-        if self.dependencies.needs_map {
-            self.include("<map>");
         }
     }
 
@@ -1746,10 +1742,31 @@ impl CppInterfaceGenerator<'_> {
                     )
                 }
                 TypeDefKind::Map(key, value) => {
-                    self.r#gen.dependencies.needs_map = true;
-                    let k = self.type_name(key, from_namespace, flavor);
-                    let v = self.type_name(value, from_namespace, flavor);
-                    format!("std::map<{k}, {v}>")
+                    let element_flavor = match flavor {
+                        Flavor::BorrowedArgument | Flavor::Argument(AbiVariant::GuestImport) => {
+                            Flavor::BorrowedArgument
+                        }
+                        _ => Flavor::InStruct,
+                    };
+                    let k = self.type_name(key, from_namespace, element_flavor);
+                    let v = self.type_name(value, from_namespace, element_flavor);
+                    match flavor {
+                        Flavor::BorrowedArgument => {
+                            self.r#gen.dependencies.needs_span = true;
+                            format!("std::span<std::pair<{k}, {v}> const>")
+                        }
+                        Flavor::Argument(var)
+                            if matches!(var, AbiVariant::GuestImport)
+                                || self.r#gen.opts.api_style == APIStyle::Symmetric =>
+                        {
+                            self.r#gen.dependencies.needs_span = true;
+                            format!("std::span<std::pair<{k}, {v}> const>")
+                        }
+                        _ => {
+                            self.r#gen.dependencies.needs_wit = true;
+                            format!("wit::map<{k}, {v}>")
+                        }
+                    }
                 }
                 TypeDefKind::Unknown => todo!(),
             },
@@ -3563,11 +3580,12 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let val = format!("map{tmp}");
                 let ptr = format!("ptr{tmp}");
                 let len = format!("len{tmp}");
-                let idx = format!("idx{tmp}");
-                let entry_name = format!("entry{tmp}");
                 let entry = self.r#gen.sizes.record([*key, *value]);
                 let size = entry.size.format(POINTER_SIZE_EXPRESSION);
                 let align = entry.align.format(POINTER_SIZE_EXPRESSION);
+                // The canonical ABI entry layout can differ from the C++ entry
+                // layout (see wit-bindgen#1592), so always allocate a fresh ABI
+                // buffer rather than reusing the source map's storage.
                 self.push_str(&format!("auto&& {val} = {};\n", operands[0]));
                 self.push_str(&format!("auto {len} = (size_t)({val}.size());\n"));
                 uwriteln!(
@@ -3575,16 +3593,15 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     "auto {ptr} = ({ptr_type})({len} > 0 ? cabi_realloc(nullptr, 0, {align}, {len} * {size}) : nullptr);",
                     ptr_type = self.r#gen.r#gen.opts.ptr_type()
                 );
-                uwriteln!(self.src, "size_t {idx} = 0;");
-                uwriteln!(self.src, "for (auto& {entry_name} : {val}) {{");
-                uwriteln!(self.src, "auto iter_map_key = {entry_name}.first;");
-                uwriteln!(self.src, "auto& iter_map_value = {entry_name}.second;");
-                uwriteln!(self.src, "auto base = {ptr} + {idx} * {size};");
+                uwriteln!(self.src, "for (size_t i = 0; i < {len}; ++i) {{");
+                uwriteln!(self.src, "auto base = {ptr} + i * {size};");
+                uwriteln!(self.src, "auto&& iter_entry = {val}[i];");
+                uwriteln!(self.src, "auto&& iter_map_key = iter_entry.first;");
+                uwriteln!(self.src, "auto&& iter_map_value = iter_entry.second;");
                 uwrite!(self.src, "{}", body.0);
-                uwriteln!(self.src, "++{idx};");
                 uwriteln!(self.src, "}}");
                 if realloc.is_some() {
-                    // ownership transfers
+                    uwriteln!(self.src, "{}.leak();", operands[0]);
                 }
                 results.push(ptr);
                 results.push(len);
@@ -3594,16 +3611,24 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let tmp = self.tmp();
                 let entry = self.r#gen.sizes.record([*key, *value]);
                 let size = entry.size.format(POINTER_SIZE_EXPRESSION);
-                let key_type = self.r#gen.type_name(key, &self.namespace, Flavor::InStruct);
-                let value_type = self
-                    .r#gen
-                    .type_name(value, &self.namespace, Flavor::InStruct);
+                let flavor = if self.r#gen.r#gen.opts.api_style == APIStyle::Symmetric
+                    && matches!(self.variant, AbiVariant::GuestExport)
+                {
+                    Flavor::BorrowedArgument
+                } else {
+                    Flavor::InStruct
+                };
+                let key_type = self.r#gen.type_name(key, &self.namespace, flavor);
+                let value_type = self.r#gen.type_name(value, &self.namespace, flavor);
                 let len = format!("len{tmp}");
                 let base = format!("base{tmp}");
                 let result = format!("result{tmp}");
                 uwriteln!(self.src, "auto {base} = {};", operands[0]);
                 uwriteln!(self.src, "auto {len} = {};", operands[1]);
-                uwriteln!(self.src, "std::map<{key_type}, {value_type}> {result};");
+                uwriteln!(
+                    self.src,
+                    "auto {result} = wit::map<{key_type}, {value_type}>::allocate({len});"
+                );
                 if self.r#gen.r#gen.opts.api_style == APIStyle::Symmetric
                     && matches!(self.variant, AbiVariant::GuestExport)
                 {
@@ -3617,12 +3642,22 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let body_value = &body.1[1];
                 uwriteln!(
                     self.src,
-                    "{result}.insert(std::make_pair({}, {}));",
+                    "{result}.initialize(i, std::make_pair({}, {}));",
                     move_if_necessary(body_key),
                     move_if_necessary(body_value)
                 );
                 uwriteln!(self.src, "}}");
-                results.push(move_if_necessary(&result));
+
+                if self.r#gen.r#gen.opts.api_style == APIStyle::Symmetric
+                    && matches!(self.variant, AbiVariant::GuestExport)
+                {
+                    results.push(format!("{result}.get_const_view()"));
+                    self.leak_on_insertion.replace(format!(
+                        "if ({len}>0) _deallocate.push_back((void*){result}.leak());\n"
+                    ));
+                } else {
+                    results.push(move_if_necessary(&result));
+                }
             }
             abi::Instruction::IterMapKey { .. } => {
                 results.push("iter_map_key".to_string());
