@@ -5,12 +5,18 @@ version = { workspace = true }
 edition = { workspace = true }
 repository = { workspace = true }
 license = { workspace = true }
-rust-version = { workspace = true }
 homepage = 'https://github.com/bytecodealliance/wit-bindgen'
 description = """
 Rust bindings generator and runtime support for WIT and the component model.
 Used when compiling Rust programs to the component model.
 """
+
+# Note that this is specifically different from the workspace's MSRV because
+# this crate gets included in a number of other crates in the Rust ecosystem
+# (e.g. through the `wasip{1,2,3}` crates) and thus we want it to be a bit more
+# compatible than most. Take the same stance as wasm-tools where this is no
+# larger than the current version of Rust minus 10 for now.
+rust-version = "1.85.0"
 
 [lints]
 workspace = true

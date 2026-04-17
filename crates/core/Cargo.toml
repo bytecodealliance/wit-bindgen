@@ -5,12 +5,15 @@ version = { workspace = true }
 edition = { workspace = true }
 repository = { workspace = true }
 license = { workspace = true }
-rust-version = { workspace = true }
 homepage = 'https://github.com/bytecodealliance/wit-bindgen'
 description = """
 Low-level support for bindings generation based on WIT files for use with
 `wit-bindgen-cli` and other languages.
 """
+
+# See documentation in `crates/guest-rust/Cargo.toml` for why this is
+# specifically set.
+rust-version = "1.85.0"
 
 [lints]
 workspace = true
