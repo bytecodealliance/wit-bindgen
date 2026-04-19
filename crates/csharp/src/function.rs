@@ -5,7 +5,7 @@ use heck::ToUpperCamelCase;
 use std::fmt::Write;
 use std::mem;
 use std::ops::Deref;
-use wit_bindgen_core::abi::{Bindgen, Bitcast, Instruction};
+use wit_bindgen_core::abi::{self, Bindgen, Bitcast, Instruction};
 use wit_bindgen_core::{Direction, Ns, uwrite, uwriteln};
 use wit_parser::abi::WasmType;
 use wit_parser::{
@@ -299,6 +299,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         target: String,
         func_name: String,
         oper: String,
+        use_await: bool,
     ) -> String {
         let ret = self.locals.tmp("ret");
         if self.interface_gen.csharp_gen.opts.with_wit_results {
@@ -312,7 +313,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             .type_name_with_qualifier(&func.result.unwrap(), true);
         let is_async = InterfaceGenerator::is_async(&func.kind);
 
-        if is_async {
+        if is_async && !use_await {
             uwriteln!(self.src, "Task<{ty}> {ret};");
         } else {
             uwriteln!(self.src, "{ty} {ret};");
@@ -362,7 +363,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         } else {
             format!("{target}.{func_name}({oper})")
         };
-        uwriteln!(self.src, "{ret} = {head}{val}{tail};");
+        uwriteln!(self.src, "{ret} = {}{head}{val}{tail};", if use_await { "await " } else { "" });
         if !self.results.is_empty() {
             self.interface_gen.csharp_gen.needs_wit_exception = true;
             let cases = cases.join("\n");
@@ -1106,6 +1107,54 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
 
                 let is_async = InterfaceGenerator::is_async(self.kind);
+                if is_async && self.interface_gen.direction == Direction::Export {
+                    // The UCO method cannot be async so we create and call another async method.
+                    // This allows us to follow the same codegen pattern as other languages.
+                    self.interface_gen.csharp_gen.needs_async_support = true;
+                    let async_func_name = format!("{}Async", self.func_name.to_upper_camel_case());
+
+                    uwriteln!(self.src, r#"var task = {async_func_name}({oper});
+                        if (task.IsCompletedSuccessfully)
+                        {{
+                            return (int)CallbackCode.Exit;
+                        }}
+
+                        Console.WriteLine("Async function {async_func_name} did not complete synchronously.");
+                        // TODO: Defer dropping borrowed resources until a result is returned.
+                        ContextTask* contextTaskPtr = AsyncSupport.ContextGet();
+                        Console.WriteLine("contextTaskPtr is null " + (contextTaskPtr == null));
+
+                        return (int)CallbackCode.Wait | (int)(contextTaskPtr->WaitableSetHandle << 4);
+                }}
+                    "#);
+
+                    // Start the Async function
+                    uwriteln!(self.src, r#"public static async Task {async_func_name}({})
+                    {{
+                        var cleanups = new global::System.Collections.Generic.List<global::System.Action>();
+
+                    "#, func.params.iter().enumerate().map(|(i, p)| format!("{} {}", self.interface_gen.type_name_with_qualifier(&p.ty, false), operands[i])).collect::<Vec<_>>().join(", "));
+                    self.needs_cleanup = true;
+                    // let ret_param = match func.result {
+                    //     None => String::new(),
+                    //     Some(ty) => {
+                    //         let ops = abi::lower_flat(self.interface_gen.resolve, self, "ret.Result".to_string(), &ty);
+                    //         ops.join(", ")               
+                    //     }
+                    // };
+
+                    // uwriteln!(self.src, r#"
+                    //     return (int)CallbackCode.Exit;
+                    // "#);
+                    // let ret_param_async = match func.result {
+                    //     None => String::new(),
+                    //     Some(ty) => {
+                    //         let ops = abi::lower_flat(self.interface_gen.resolve, self, "ret.Result".to_string(), &ty);
+                    //         ops.join(", ")
+                    //     }
+                    // };
+                }
+
                 match self.kind {
                     FunctionKind::Constructor(id) => {
                         let target = self.interface_gen.csharp_gen.all_resources[id].export_impl_name();
@@ -1129,14 +1178,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                                 }
                             }
                             Some(_ty) => {
-                                let ret = self.handle_result_call(func, target, func_name, oper);
+                                let ret = self.handle_result_call(func, target, func_name, oper, is_async && self.interface_gen.direction == Direction::Export);
                                 results.push(ret);
                             }
                         }
                     }
                 }
 
-                if is_async {
+                if is_async && self.interface_gen.direction == Direction::Import {
                     self.interface_gen.csharp_gen.needs_async_support = true;
                     let name = self.func_name.to_upper_camel_case();
                     let ret_param = match func.result {
@@ -1407,8 +1456,20 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.push(format!("{op}.TakeHandle()"));
             }
 
-            Instruction::AsyncTaskReturn { name: _, params: _ } => {
+            Instruction::AsyncTaskReturn { name, params } => {
+                let name = name.strip_prefix("[task-return]").unwrap().to_upper_camel_case();
                 uwriteln!(self.src, "// TODO: task_cancel.forget();");
+                if self.interface_gen.direction == Direction::Export {
+                    uwriteln!(self.src, "{name}TaskReturn({});", operands.join(", "));
+
+                    if self.needs_cleanup {
+                        uwriteln!(self.src, "
+                        foreach (var cleanup in cleanups)
+                        {{
+                            cleanup();
+                        }}");
+                    }
+                }
             }
 
             Instruction::FutureLift { payload, ty: _ }

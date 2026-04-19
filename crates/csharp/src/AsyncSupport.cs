@@ -12,7 +12,7 @@ public enum EventCode {
   Cancel = 6,
 }
 
-public enum CallbackCode : uint
+public enum CallbackCode : int
 {
     Exit = 0,
     Yield = 1,
@@ -130,7 +130,7 @@ public static class AsyncSupport
     }
 
     // unsafe because we are using pointers.
-    public static unsafe uint Callback(EventWaitable e, ContextTask* contextPtr)
+    public static unsafe int Callback(EventWaitable e, ContextTask* contextPtr)
     {
         ContextTask* contextTaskPtr = ContextGet();
 
@@ -170,10 +170,10 @@ public static class AsyncSupport
             {
                 ContextSet(null);
                 Marshal.FreeHGlobal((IntPtr)contextTaskPtr);
-                return (uint)CallbackCode.Exit;
+                return (int)CallbackCode.Exit;
             }
 
-            return (uint)CallbackCode.Wait | (uint)(contextTaskPtr->WaitableSetHandle << 4);
+            return (int)CallbackCode.Wait | (int)(contextTaskPtr->WaitableSetHandle << 4);
         }
 
         throw new NotImplementedException($"WaitableStatus not implemented {e.WaitableStatus.State} in set {contextTaskPtr->WaitableSetHandle}");
@@ -272,14 +272,10 @@ public delegate uint FutureWrite(int handle, IntPtr buffer);
 
 public delegate uint StreamWrite(int handle, IntPtr buffer, uint length);
 public delegate uint StreamRead(int handle, IntPtr buffer, uint length);
+public delegate Array Lift(IntPtr buffer, Array? resultBuffer);
 public delegate void Lower(object payload, uint size);
 public delegate uint CancelRead(int handle);
 public delegate uint CancelWrite(int handle);
-
-public interface ICancelableRead
-{
-    uint CancelRead(int handle);
-}
 
 public interface ICancelableWrite
 {
@@ -291,7 +287,7 @@ public interface ICancelable
     uint Cancel();
 }
 
-public class CancelableRead(ICancelableRead cancelableVTable, int handle) : ICancelable
+public class CancelableRead(IVTable cancelableVTable, int handle) : ICancelable
 {
     public uint Cancel()
     {
@@ -307,17 +303,30 @@ public class CancelableWrite(ICancelableWrite cancelableVTable, int handle) : IC
     }
 }
 
-public struct FutureVTable : ICancelableRead, ICancelableWrite
+/// <summary>
+/// Common to all VTables.  TODO: Delete ICancelableWrite?
+/// </summary>
+public interface IVTable
+{
+    uint CancelRead(int handle);
+    uint Size { get; set; }
+    uint Align { get; set; }
+}
+
+public struct FutureVTable : ICancelableWrite, IVTable
 {
     internal New New;
     internal FutureRead Read;
     internal FutureWrite Write;
     internal DropReader DropReader;
     internal DropWriter DropWriter;
+    internal Lift? Lift;
     internal Lower? Lower;
     internal CancelWrite CancelWriteDelegate;
     internal CancelRead CancelReadDelegate;
-
+    // The size and alignment of the buffer.
+    public uint Size { get; set; }
+    public uint Align { get; set; }
     public uint CancelRead(int handle)
     {
         return CancelReadDelegate(handle);
@@ -329,16 +338,20 @@ public struct FutureVTable : ICancelableRead, ICancelableWrite
     }
 }
 
-public struct StreamVTable : ICancelableRead, ICancelableWrite
+public struct StreamVTable : ICancelableWrite, IVTable
 {
     internal New New;
     internal StreamRead Read;
     internal StreamWrite Write;
     internal DropReader DropReader;
     internal DropWriter DropWriter;
+    internal Lift? Lift;
     internal Lower? Lower;
     internal CancelWrite CancelWriteDelegate;
     internal CancelRead CancelReadDelegate;
+    // The size and alignment of the buffer.
+    public uint Size { get; set; }
+    public uint Align { get; set; }
 
     public uint CancelRead(int handle)
     {
@@ -424,40 +437,67 @@ public abstract class ReaderBase : IFutureStream
         return handle;
     }
 
-    protected GCHandle LiftBuffer<T>(T[] buffer)
+    protected unsafe IntPtr GetBuffer<T>(int length, IVTable vTable, List<Action> cleanups)
+    {
+        // For primitive, blittable types, TODO: this probably does not align 100% with the component ABI?
+        if (typeof(T).IsPrimitive || typeof(T).IsValueType)
+        {
+            var buffer = new T[length];
+            var handle = GCHandle.Alloc(buffer, GCHandleType.Pinned);
+            cleanups.Add(() => handle.Free());
+            return handle.AddrOfPinnedObject();
+        }
+        else
+        {
+            System.Diagnostics.Debug.Assert(vTable.Size > 0, $"Did not compute size for {typeof(T)}.");
+            IntPtr bufferPtr = (IntPtr)global::System.Runtime.InteropServices.NativeMemory.AlignedAlloc(vTable.Size, vTable.Align);
+            cleanups.Add(() => global::System.Runtime.InteropServices.NativeMemory.Free((void*)bufferPtr));
+            Console.WriteLine("creating buffer of type " + typeof(T).FullName);
+            return bufferPtr;
+        }
+    }
+
+    protected unsafe T[] LiftBuffer<T>(IntPtr buffer, T[] resultBuffer, Lift? liftFunc)
     {
         // For primitive, blittable types
         if (typeof(T).IsPrimitive || typeof(T).IsValueType)
         {
-            return GCHandle.Alloc(buffer, GCHandleType.Pinned);
+            // TODO array length > 1
+            resultBuffer[0] = *(T*)buffer;
         }
         else
         {
-            // TODO: crete buffers for lowered stream types and then lift
-            throw new NotImplementedException("reading from futures types that require lifting");
+            Console.WriteLine("Lifting buffer of type " + typeof(T).FullName + " is not supported without a custom lower function.");
+            liftFunc(buffer, resultBuffer);
         }
+
+        return resultBuffer;
     }
 
     internal abstract uint VTableRead(IntPtr bufferPtr, int length);
 
     // unsafe as we are working with pointers.
-    internal unsafe ComponentTask<int> ReadInternal(Func<GCHandle?> liftBuffer, int length, ICancelableRead cancelableRead)
+    internal unsafe ComponentTask<int> ReadInternal(IntPtr buffer, int length, IVTable vtable)
     {
+        Console.WriteLine("ReadInternal start");
         if (Handle == 0)
         {
             throw new InvalidOperationException("Handle already taken");
         }
+        Console.WriteLine("ReadInternal Handle is valid");
 
         if (writerDropped)
         {
             throw new StreamDroppedException();    
         }
+        Console.WriteLine("ReadInternal writer is not dropped");
 
-        bufferHandle = liftBuffer();
-        var status = new WaitableStatus(VTableRead(bufferHandle == null ? IntPtr.Zero : bufferHandle.Value.AddrOfPinnedObject(), length));
+        Console.WriteLine("Reading");
+        var status = new WaitableStatus(VTableRead(buffer, length));
         if (status.IsBlocked)
         {
-            var task = new ComponentTask<int>(new CancelableRead(cancelableRead, Handle));
+        Console.WriteLine("Blocked");
+            var task = new ComponentTask<int>(new CancelableRead(vtable, Handle));
             ContextTask* contextTaskPtr = AsyncSupport.ContextGet();
             if(contextTaskPtr == null)
             {
@@ -469,6 +509,8 @@ public abstract class ReaderBase : IFutureStream
         }
         if (status.IsCompleted)
         {
+        Console.WriteLine("complete");
+
             return ComponentTask<int>.FromResult((int)status.Count);
         }
 
@@ -519,9 +561,10 @@ public class FutureReader : ReaderBase
 
     public ComponentTask Read()
     {
-        return ReadInternal(() => null, 0, VTable);
+        return ReadInternal(IntPtr.Zero, 0, VTable);
     }
 
+    // TODO: delete this method?
     internal override uint VTableRead(IntPtr ptr, int length)
     {
         return VTable.Read(Handle, ptr);
@@ -539,17 +582,24 @@ public class FutureReader<T>(int handle, FutureVTable vTable) : ReaderBase(handl
 
     public ComponentTask<T> Read()
     {
-        T[] buf = new T[1];
-        ComponentTask<int> internalTask = ReadInternal(() => LiftBuffer(buf), 1, VTable);
+        Console.WriteLine("FutureReader<T> reading");
+        var cleanups = new List<Action>();
+        var buf = GetBuffer<T>(1, VTable, cleanups);
+        ComponentTask<int> internalTask = ReadInternal(buf, 1, VTable);
 
         // Wrap the task so we can return a T and not the number of Ts read
         ComponentTask<T> readTask = new(new DelegatingCancelable(internalTask));
 
         internalTask.ContinueWith(it =>
         {
+            foreach(var cleanup in cleanups)
+            {
+                cleanup();
+            }
+
             if (it.IsCompletedSuccessfully)
             {
-                readTask.SetResult(buf[0]);
+                readTask.SetResult(((T[])VTable.Lift(buf, new T[1]))[0]);
             }
             else if (!it.IsCanceled)
             {
@@ -598,7 +648,7 @@ public class StreamReader : ReaderBase
 
     public ComponentTask Read(int length)
     {
-        return ReadInternal(() => null, length, VTable);
+        return ReadInternal(IntPtr.Zero, length, VTable);
     }
 
     internal override uint VTableRead(IntPtr ptr, int length)
@@ -616,9 +666,31 @@ public class StreamReader<T>(int handle, StreamVTable vTable) :  ReaderBase(hand
 {
     public StreamVTable VTable { get; private set; } = vTable;
 
-    public ComponentTask<int> Read(T[] buffer)
+    public ComponentTask<int> Read(T[] resultBuffer)
     {
-        return ReadInternal(() => LiftBuffer(buffer), buffer.Length, VTable);
+        var cleanups = new List<Action>();
+        var buf = GetBuffer<T>(resultBuffer.Length, VTable, cleanups);
+
+        var task = ReadInternal(buf, resultBuffer.Length, VTable);
+        task.ContinueWith(it =>
+        {
+            foreach(var cleanup in cleanups)
+            {
+                cleanup();
+            }
+
+            if (it.IsCompletedSuccessfully)
+            {
+                VTable.Lift(buf, resultBuffer);
+            }
+            else if (!it.IsCanceled)
+            {
+                //TODO
+                throw new NotImplementedException("faulted stream read not implemented");
+            }
+        });
+
+        return task;
     }
 
     internal override uint VTableRead(IntPtr ptr, int length)

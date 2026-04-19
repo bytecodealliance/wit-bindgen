@@ -7,6 +7,7 @@ use heck::{ToShoutySnakeCase, ToUpperCamelCase};
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt::Write;
+use std::io::empty;
 use std::mem;
 use std::ops::Deref;
 use wit_bindgen_core::abi::LiftLower;
@@ -19,6 +20,8 @@ use wit_parser::{
     Docs, Enum, Flags, FlagsRepr, Function, FunctionKind, Handle, Int, InterfaceId, LiveTypes,
     Record, Resolve, Result_, Tuple, Type, TypeDefKind, TypeId, TypeOwner, Variant, WorldKey,
 };
+
+const MAX_FLAT_PARAMS: usize = 16;
 
 pub(crate) struct InterfaceFragment {
     pub(crate) csharp_src: String,
@@ -41,6 +44,7 @@ impl InterfaceTypeAndFragments {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct FutureInfo {
     pub name: String,
     pub generic_type_name: String,
@@ -230,18 +234,24 @@ impl InterfaceGenerator<'_> {
         let mut generated_future_types: HashSet<Option<Type>> = HashSet::new();
         let (_namespace, interface_name) = &CSharp::get_class_name_from_qualified_name(self.name);
         let interop_name = format!("{}Interop", interface_name.strip_prefix("I").unwrap());
-        let (futures_or_streams, stream_length_param) = if is_future {
-            (&self.futures, "")
+
+        // avoid the immutable self borrow
+        let (futures_or_streams, stream_length_param) : (Vec<FutureInfo>, &str)= if is_future {
+            (self.futures.iter().cloned().collect(), "")
         } else {
-            (&self.streams, ", uint length")
+            (self.streams.iter().cloned().collect(), ", uint length")
         };
+
         let mut index = 0;
+        let mut size = 0;
+        let mut align = 0;
         for future in futures_or_streams {
             // This code originally copied from Rust codegen generate_payload.
             // See the rust codegen for the comment - essentially we canonicalize to one per type.
             let canonical_payload = match future.ty {
                 Some(Type::Id(id)) => {
                     let id = self.csharp_gen.types.get_representative_type(id);
+
                     match self.resolve.types[id].kind {
                         TypeDefKind::Type(t) => Some(t),
                         _ => Some(Type::Id(id)),
@@ -253,6 +263,11 @@ impl InterfaceGenerator<'_> {
                 if generated_future_types.contains(&canonical_payload) {
                     continue;
                 }
+            }
+            if let Some(payload) = canonical_payload {
+                //TODO: wasm64
+                size = self.csharp_gen.sizes.size(&payload).size_wasm32();
+                align = self.csharp_gen.sizes.align(&payload).align_wasm32();
             }
 
             let future_name = &future.name;
@@ -270,6 +285,9 @@ impl InterfaceGenerator<'_> {
                     DropWriter = {future_stream_name}DropWriter{upper_camel_future_type},
                     CancelReadDelegate = {future_stream_name}CancelRead{upper_camel_future_type},   
                     CancelWriteDelegate = {future_stream_name}CancelWrite{upper_camel_future_type},
+                    Lift = {future_stream_name}Lift{upper_camel_future_type},
+                    Size = {size},
+                    Align = {align},
                 }};
                 "#
             );
@@ -363,6 +381,31 @@ impl InterfaceGenerator<'_> {
                             stub: "".to_string(),
                             direction: Some(self.direction),
                         });
+
+                    if let Some(payload_type) = canonical_payload {
+                        let (lift, result) = self.lift_from_memory("buffer", &payload_type, &"");
+                        // dealloc_lists = self.deallocate_lists(
+                        //     std::slice::from_ref(payload_type),
+                        //     &["ptr".to_string()],
+                        //     true,
+                        //     &module,
+                        // );
+
+                        uwrite!(
+                            self.csharp_interop_src,
+                            r#"
+                            public static unsafe Array {future_stream_name}Lift{upper_camel_future_type}(IntPtr buffer, Array resultBuffer) 
+                            {{
+                                {lift}
+
+                                // TODO: length > 1
+                                resultBuffer.SetValue(str, 0);
+
+                                return resultBuffer;
+                            }}
+                            "#
+                        );
+                    }
 
                     if !bool_generic_new_added {
                         self.csharp_gen
@@ -472,9 +515,9 @@ impl InterfaceGenerator<'_> {
 
             if requires_async_return_buffer_param {
                 if param_list.is_empty() {
-                    "void *taskResultBuffer".to_string()
+                    "nint taskResultBuffer".to_string()
                 } else {
-                    format!("{param_list}, void *taskResultBuffer")
+                    format!("{param_list}, nint taskResultBuffer")
                 }
             } else {
                 param_list
@@ -673,12 +716,19 @@ impl InterfaceGenerator<'_> {
             let name = func.name.to_upper_camel_case();
             let raw_name = format!("IImportsInterop.{name}WasmInterop.wasmImport{name}");
 
-            let wasm_params = wasm_params
-                .iter()
-                .map(|v| v.as_str())
-                .chain(func.result.map(|_| "address"))
-                .collect::<Vec<_>>()
-                .join(", ");
+            let mut wasm_param_refs: Vec<&str> =
+                wasm_params.iter().map(|v| v.as_str()).collect();
+
+            let async_return_buffer_prefixed;
+                
+            if func.result.is_some() {
+                // Build a new owned string with the prefix
+                async_return_buffer_prefixed = Some(format!("(nint){}", async_return_buffer.as_ref().unwrap()));
+                // Borrow from that owned string
+                wasm_param_refs.push(async_return_buffer_prefixed.as_ref().unwrap().as_str());
+            }
+
+            let wasm_params = wasm_param_refs.join(", ");
 
             // TODO: lift expr
             let code = format!(
@@ -686,7 +736,8 @@ impl InterfaceGenerator<'_> {
 var {async_status_var} = {raw_name}({wasm_params});
 "
             );
-            src = format!("{code}{}", bindgen.src);
+
+            src = format!("{code}");
 
             if let Some(buffer) = async_return_buffer {
                 let ty = bindgen.result_type.expect("expected a result type");
@@ -696,6 +747,7 @@ var {async_status_var} = {raw_name}({wasm_params});
                     buffer.clone(),
                     &ty,
                 );
+                uwriteln!(src, "{}",bindgen.src);
                 let return_type = self.type_name_with_qualifier(&ty, true);
 
                 let lift_func = format!("() => {lift_expr}");
@@ -807,7 +859,7 @@ var {async_status_var} = {raw_name}({wasm_params});
             .join(";\n");
 
         let wasm_result_type = if async_ {
-            "uint"
+            "int"
         } else {
             match &sig.results[..] {
                 [] => "void",
@@ -961,12 +1013,31 @@ var {async_status_var} = {raw_name}({wasm_params});
                 interop_class_name = format!("Exports.{interop_class_name}");
             }
 
-            // TODO: The task return function can take up to 16 core parameters.
-            let (task_return_param_sig, task_return_param) = match &sig.results[..] {
-                [] => (String::new(), String::new()),
-                [_result] => (format!("{wasm_result_type} result"), "result".to_string()),
-                _ => unreachable!(),
-            };
+            let resolve = &self.resolve;
+            let (task_return_param_sig_vec, task_return_param_vec): (Vec<String>, Vec<String>)  = func
+                .result
+                .map(|ty| {
+                    let mut storage = vec![abi::WasmType::I32; MAX_FLAT_PARAMS];
+                    let mut flat = abi::FlatTypes::new(&mut storage);
+                    if resolve.push_flat(&ty, &mut flat) {
+                        flat.to_vec()
+                    } else {
+                        vec![abi::WasmType::I32]
+                    }
+                })
+                .unwrap_or_default()
+                .into_iter()
+                .enumerate()
+                .map(|(i, ty)| {
+                    let ty = crate::world_generator::wasm_type(ty);
+                    (format!("{ty} arg{i}"), format!("arg{i}"))
+                })
+                .unzip();
+
+            let task_return_param_sig = task_return_param_sig_vec
+                .join(", ");
+            let task_return_param = task_return_param_vec
+                .join(", ");
 
             uwriteln!(
                 self.src,
@@ -1478,6 +1549,16 @@ var {async_status_var} = {raw_name}({wasm_params});
             ty: ty,
         });
     }
+
+    fn lift_from_memory(&mut self, address: &str, ty: &Type, module: &str) -> (String, String) {
+        let boxed: Box<[String]> = Vec::new().into_boxed_slice();
+
+        let mut f = FunctionBindgen::new(self, "", &FunctionKind::AsyncFreestanding, 
+            boxed,vec![], ParameterType::ABI, None);
+        let result = abi::lift_from_memory(f.interface_gen.resolve, &mut f, address.into(), ty);
+
+        (f.src, result)
+    }
 }
 
 impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
@@ -1775,6 +1856,8 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
     fn type_stream(&mut self, id: TypeId, _name: &str, _ty: &Option<Type>, _docs: &Docs) {
         self.type_name(&Type::Id(id));
     }
+
+
 }
 
 // Handles the tag being the same name as the variant, which would cause a method with the same name as the type in C# which is not valid.
