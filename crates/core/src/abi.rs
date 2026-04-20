@@ -2656,7 +2656,10 @@ impl<'a, B: Bindgen> Generator<'a, B> {
     }
 }
 
-fn cast(from: WasmType, to: WasmType) -> Bitcast {
+/// Returns the [`Bitcast`] required to move a value of flat type
+/// `from` into flat type `to` under the canonical ABI's unification
+/// rules. Panics if the pair isn't a legal bitcast per the spec.
+pub fn cast(from: WasmType, to: WasmType) -> Bitcast {
     use WasmType::*;
 
     match (from, to) {
@@ -2712,11 +2715,18 @@ fn cast(from: WasmType, to: WasmType) -> Bitcast {
     }
 }
 
-/// Flatten types in a given type
+/// Flatten a component-level type into its canonical-ABI wasm-type
+/// sequence, or return `None` if the result would exceed `max_params`.
 ///
-/// It is sometimes necessary to restrict the number of max parameters dynamically,
-/// for example during an async guest import call (flat params are limited to 4)
-fn flat_types(resolve: &Resolve, ty: &Type, max_params: Option<usize>) -> Option<Vec<WasmType>> {
+/// `max_params` defaults to [`Resolve::MAX_FLAT_PARAMS`] (16). It is
+/// sometimes necessary to restrict the cap dynamically — for example
+/// during an async guest-import call, where flat params are limited
+/// to 4.
+pub fn flat_types(
+    resolve: &Resolve,
+    ty: &Type,
+    max_params: Option<usize>,
+) -> Option<Vec<WasmType>> {
     let max_params = max_params.unwrap_or(MAX_FLAT_PARAMS);
     let mut storage = iter::repeat_n(WasmType::I32, max_params).collect::<Vec<_>>();
     let mut flat = FlatTypes::new(storage.as_mut_slice());
