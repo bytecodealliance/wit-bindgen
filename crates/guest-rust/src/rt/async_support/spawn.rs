@@ -4,11 +4,11 @@
 #![allow(static_mut_refs)]
 
 use crate::rt::async_support::BoxFuture;
+use alloc::boxed::Box;
+use alloc::vec::Vec;
+use core::future::Future;
+use core::task::{Context, Poll};
 use futures::stream::{FuturesUnordered, StreamExt};
-use std::boxed::Box;
-use std::future::Future;
-use std::task::{Context, Poll};
-use std::vec::Vec;
 
 /// Any newly-deferred work queued by calls to the `spawn` function while
 /// polling the current task.
