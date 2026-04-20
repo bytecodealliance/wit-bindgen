@@ -232,7 +232,7 @@ mod method_chaining {
         }
         "#,
         generate_all,
-        enable_method_chaining: true
+        chainable_methods: ["all"]
     });
 }
 

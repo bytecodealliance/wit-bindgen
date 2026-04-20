@@ -14,6 +14,8 @@ mod path;
 pub use path::name_package_module;
 mod async_;
 pub use async_::AsyncFilterSet;
+mod chainable_method;
+pub use chainable_method::ChainableMethodFilterSet;
 
 #[derive(Default, Copy, Clone, PartialEq, Eq, Debug)]
 pub enum Direction {
