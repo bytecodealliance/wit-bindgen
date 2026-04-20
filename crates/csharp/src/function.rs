@@ -1133,26 +1133,29 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     {{
                         var cleanups = new global::System.Collections.Generic.List<global::System.Action>();
 
-                    "#, func.params.iter().enumerate().map(|(i, p)| format!("{} {}", self.interface_gen.type_name_with_qualifier(&p.ty, false), operands[i])).collect::<Vec<_>>().join(", "));
-                    self.needs_cleanup = true;
-                    // let ret_param = match func.result {
-                    //     None => String::new(),
-                    //     Some(ty) => {
-                    //         let ops = abi::lower_flat(self.interface_gen.resolve, self, "ret.Result".to_string(), &ty);
-                    //         ops.join(", ")               
-                    //     }
-                    // };
+                    "#, func.params.iter().enumerate().map(|(i, p)| {
+                        let mut param_type = self.interface_gen.type_name_with_qualifier(&p.ty, false);
 
-                    // uwriteln!(self.src, r#"
-                    //     return (int)CallbackCode.Exit;
-                    // "#);
-                    // let ret_param_async = match func.result {
-                    //     None => String::new(),
-                    //     Some(ty) => {
-                    //         let ops = abi::lower_flat(self.interface_gen.resolve, self, "ret.Result".to_string(), &ty);
-                    //         ops.join(", ")
-                    //     }
-                    // };
+                        // Resource types need the Impl class to be distinguised.
+                        match p.ty {
+                            Type::Id(type_id) => {
+                                let id = dealias(self.interface_gen.resolve, type_id);
+
+                                let kind = &self.interface_gen.resolve.types[id].kind;
+                                match kind {
+                                    TypeDefKind::Handle(handle) => {
+                                        let (Handle::Own(ty) | Handle::Borrow(ty)) = handle;
+                                        param_type = self.interface_gen.csharp_gen.all_resources[&ty].export_impl_name();
+                                    }
+                                    _ => {},
+                                }
+                            }
+                            _ => {}
+                        }
+
+                        format!("{} {}", param_type, operands[i])
+                    }).collect::<Vec<_>>().join(", "));
+                    self.needs_cleanup = true;
                 }
 
                 match self.kind {
@@ -1172,7 +1175,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         match func.result {
                             None => {
                                 if is_async{
-                                    uwriteln!(self.src, "var ret = {target}.{func_name}({oper});");
+                                    uwriteln!(self.src, "await {target}.{func_name}({oper});");
                                 } else {
                                     uwriteln!(self.src, "{target}.{func_name}({oper});");
                                 }
@@ -1457,17 +1460,19 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::AsyncTaskReturn { name, params } => {
-                let name = name.strip_prefix("[task-return]").unwrap().to_upper_camel_case();
-                uwriteln!(self.src, "// TODO: task_cancel.forget();");
-                if self.interface_gen.direction == Direction::Export {
-                    uwriteln!(self.src, "{name}TaskReturn({});", operands.join(", "));
+                if !params.is_empty() {
+                    let name = name.strip_prefix("[task-return]").unwrap().to_upper_camel_case();
+                    uwriteln!(self.src, "// TODO: task_cancel.forget();");
+                    if self.interface_gen.direction == Direction::Export {
+                        uwriteln!(self.src, "{name}TaskReturn({});", operands.join(", "));
 
-                    if self.needs_cleanup {
-                        uwriteln!(self.src, "
-                        foreach (var cleanup in cleanups)
-                        {{
-                            cleanup();
-                        }}");
+                        if self.needs_cleanup {
+                            uwriteln!(self.src, "
+                            foreach (var cleanup in cleanups)
+                            {{
+                                cleanup();
+                            }}");
+                        }
                     }
                 }
             }

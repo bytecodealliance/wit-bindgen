@@ -264,15 +264,21 @@ impl InterfaceGenerator<'_> {
                     continue;
                 }
             }
+            let mut lift_func = "null".to_string();
+            let future_name = &future.name;
+            let generic_type_name = &future.generic_type_name;
+            let upper_camel_future_type = generic_type_name.to_upper_camel_case();
+
             if let Some(payload) = canonical_payload {
                 //TODO: wasm64
                 size = self.csharp_gen.sizes.size(&payload).size_wasm32();
                 align = self.csharp_gen.sizes.align(&payload).align_wasm32();
+
+                if needs_ptr(&payload) {
+                    lift_func = format!("{future_stream_name}Lift{upper_camel_future_type}");
+                }
             }
 
-            let future_name = &future.name;
-            let generic_type_name = &future.generic_type_name;
-            let upper_camel_future_type = generic_type_name.to_upper_camel_case();
             uwrite!(
                 self.csharp_interop_src,
                 r#"
@@ -285,7 +291,7 @@ impl InterfaceGenerator<'_> {
                     DropWriter = {future_stream_name}DropWriter{upper_camel_future_type},
                     CancelReadDelegate = {future_stream_name}CancelRead{upper_camel_future_type},   
                     CancelWriteDelegate = {future_stream_name}CancelWrite{upper_camel_future_type},
-                    Lift = {future_stream_name}Lift{upper_camel_future_type},
+                    Lift = {lift_func},
                     Size = {size},
                     Align = {align},
                 }};
@@ -382,14 +388,8 @@ impl InterfaceGenerator<'_> {
                             direction: Some(self.direction),
                         });
 
-                    if let Some(payload_type) = canonical_payload {
+                    if lift_func != "null" && let Some(payload_type) = canonical_payload {
                         let (lift, result) = self.lift_from_memory("buffer", &payload_type, &"");
-                        // dealloc_lists = self.deallocate_lists(
-                        //     std::slice::from_ref(payload_type),
-                        //     &["ptr".to_string()],
-                        //     true,
-                        //     &module,
-                        // );
 
                         uwrite!(
                             self.csharp_interop_src,
@@ -399,7 +399,7 @@ impl InterfaceGenerator<'_> {
                                 {lift}
 
                                 // TODO: length > 1
-                                resultBuffer.SetValue(str, 0);
+                                resultBuffer.SetValue({result}, 0);
 
                                 return resultBuffer;
                             }}
@@ -1858,6 +1858,25 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
     }
 
 
+}
+
+// TODO: Is this not publicly available elsewhere, a function that says if a type needs to be returned as a pointer
+fn needs_ptr(ty: &Type) -> bool {
+    match *ty {
+        Type::Bool |
+        Type::S8 |
+        Type::U8 |
+        Type::S16 |
+        Type::U16 |
+        Type::S32 |
+        Type::U32 |
+        Type::S64 |
+        Type::U64 |
+        Type::Char |
+        Type::F32 |
+        Type::F64 => false,
+        _ => true
+    }
 }
 
 // Handles the tag being the same name as the variant, which would cause a method with the same name as the type in C# which is not valid.
