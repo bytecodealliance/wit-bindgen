@@ -1,0 +1,14 @@
+//@ async = true
+
+package a:b;
+
+world w {
+    use t.{r};
+    export f: async func() -> future<result<r, string>>;
+}
+
+interface t {
+    record r {
+        x: u32,
+    }
+}

@@ -30,6 +30,7 @@ impl LanguageMethods for Go {
         config.error_context
             || name == "async-trait-function.wit"
             || name == "named-fixed-length-list.wit"
+            || name == "issue-1598.wit"
     }
 
     fn default_bindgen_args_for_codegen(&self) -> &[&str] {

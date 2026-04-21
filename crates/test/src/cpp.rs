@@ -45,6 +45,10 @@ impl LanguageMethods for Cpp {
         config: &crate::config::WitConfig,
         _args: &[String],
     ) -> bool {
+        // Compiles on C++ despite the blanket async exclusion below.
+        if name == "issue-1598.wit" {
+            return false;
+        }
         return match name {
             "issue1514-6.wit" | "named-fixed-length-list.wit" | "map.wit" => true,
             _ => false,
