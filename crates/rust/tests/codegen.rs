@@ -235,3 +235,25 @@ mod method_chaining {
         enable_method_chaining: true
     });
 }
+
+// Regression for #1598: world-level `use t.{r};` inside
+// `future<result<r, _>>` used to emit unresolved bare `R` in vtable{N}.
+#[allow(unused, reason = "testing codegen, not functionality")]
+mod issue_1598_future_result_use {
+    wit_bindgen::generate!({
+        inline: r#"
+        package a:b;
+
+        world w {
+            use t.{r};
+            export f: func() -> future<result<r, string>>;
+        }
+
+        interface t {
+            record r {
+                x: u32,
+            }
+        }
+        "#,
+    });
+}
