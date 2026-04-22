@@ -813,37 +813,15 @@ impl WorldGenerator for CSharp {
                 );
             }
 
-            // For the time being, we generate both a .wit file and a .o file to
-            // represent the component type.  Newer releases of the .NET runtime
-            // will be able to use the former, but older ones will need the
-            // latter.
-            //
-            // TODO: stop generating the .o file once a new-enough release is
-            // available for us to test using only the .wit file.
-
-            {
-                // When generating a WIT file, we first round-trip through the
-                // binary encoding.  This has the effect of flattening any
-                // `include`d worlds into the specified world and excluding
-                // unrelated worlds, ensuring the output WIT contains no extra
-                // information beyond what the binary representation contains.
-                //
-                // This is important because including more than one world in
-                // the output would make it ambigious, and since this file is
-                // intended to be used non-interactively at link time, the
-                // linker will have no additional information to resolve such
-                // ambiguity.
-                let (resolve, world) = wit_parser::decoding::decode_world(
-                    &wit_component::metadata::encode(resolve, id, self.opts.string_encoding, None)?,
-                )?;
-                let pkg = resolve.worlds[world].package.unwrap();
-
-                files.push(
-                    &format!("{world_namespace}_component_type.wasm"),
-                    wit_component::encode(&resolve, pkg)?.as_slice(),
-                );
-            }
-
+            // Embed component-type metadata as a wasm object file with a
+            // `component-type:<world>` custom section and a linking symbol.
+            // The symbol is force-linked via a `--undefined` linker arg in the
+            // generated csproj so the object is retained after GC, which makes
+            // the custom section available to `wasm-component-ld` for
+            // component synthesis. This path is independent of the bundled
+            // `wasm-component-ld`'s WIT parser and therefore works for WIT
+            // features (e.g. `map`) that the bundled version does not yet
+            // understand when fed a textual or binary WIT package.
             files.push(
                 &format!("{world_namespace}_component_type.o"),
                 wit_bindgen_c::component_type_object::object(
