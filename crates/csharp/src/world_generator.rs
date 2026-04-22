@@ -856,6 +856,18 @@ impl WorldGenerator for CSharp {
                 );
             }
 
+            files.push(
+                &format!("{world_namespace}_component_type.o"),
+                wit_bindgen_c::component_type_object::object(
+                    resolve,
+                    id,
+                    &world.name,
+                    self.opts.string_encoding,
+                    None,
+                )?
+                .as_slice(),
+            );
+
             // TODO: remove when we switch to dotnet 9
             let mut wasm_import_linakge_src = String::new();
 

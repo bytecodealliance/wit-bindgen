@@ -94,7 +94,7 @@ impl CSProjectLLVMBuilder {
         </ItemGroup>
 
         <ItemGroup>
-            <CustomLinkerArg Include=\"-Wl,--component-type,{camel}_component_type.wit\" />
+            <NativeFileReference Include=\"{camel}_component_type.o\" Condition=\"Exists('{camel}_component_type.o')\" />
         </ItemGroup>
         "
         );
