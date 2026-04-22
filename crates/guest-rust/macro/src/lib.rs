@@ -163,13 +163,10 @@ impl Parse for Config {
                             return Err(Error::new(span, "cannot specify second async config"));
                         }
                         async_configured = true;
-                        if val.any_enabled() && !cfg!(feature = "async") {
-                            return Err(Error::new(
-                                span,
-                                "must enable `async` feature to enable async imports and/or exports",
-                            ));
-                        }
                         opts.async_ = val;
+                    }
+                    Opt::EnableMethodChaining(enable) => {
+                        opts.enable_method_chaining = enable.value();
                     }
                 }
             }
@@ -324,6 +321,7 @@ mod kw {
     syn::custom_keyword!(disable_custom_section_link_helpers);
     syn::custom_keyword!(imports);
     syn::custom_keyword!(debug);
+    syn::custom_keyword!(enable_method_chaining);
 }
 
 #[derive(Clone)]
@@ -404,6 +402,7 @@ enum Opt {
     DisableCustomSectionLinkHelpers(syn::LitBool),
     Async(AsyncFilterSet, Span),
     Debug(syn::LitBool),
+    EnableMethodChaining(syn::LitBool),
 }
 
 impl Parse for Opt {
@@ -568,6 +567,10 @@ impl Parse for Opt {
             input.parse::<kw::debug>()?;
             input.parse::<Token![:]>()?;
             Ok(Opt::Debug(input.parse()?))
+        } else if l.peek(kw::enable_method_chaining) {
+            input.parse::<kw::enable_method_chaining>()?;
+            input.parse::<Token![:]>()?;
+            Ok(Opt::EnableMethodChaining(input.parse()?))
         } else if l.peek(Token![async]) {
             let span = input.parse::<Token![async]>()?.span;
             input.parse::<Token![:]>()?;

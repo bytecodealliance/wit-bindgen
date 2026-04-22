@@ -1,9 +1,9 @@
 use crate::rt::Cleanup;
 use crate::rt::async_support::StreamOps;
-use std::alloc::Layout;
-use std::mem::{self, MaybeUninit};
-use std::ptr;
-use std::vec::Vec;
+use alloc::alloc::Layout;
+use alloc::vec::Vec;
+use core::mem::{self, MaybeUninit};
+use core::ptr;
 
 /// A helper structure used with a stream to handle the canonical ABI
 /// representation of lists and track partial writes.

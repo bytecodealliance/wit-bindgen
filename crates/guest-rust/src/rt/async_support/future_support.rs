@@ -113,17 +113,19 @@
 
 use crate::rt::Cleanup;
 use crate::rt::async_support::ReturnCode;
+use crate::rt::async_support::try_lock::TryLock;
 use crate::rt::async_support::waitable::{WaitableOp, WaitableOperation};
-use std::alloc::Layout;
-use std::fmt;
-use std::future::{Future, IntoFuture};
-use std::marker;
-use std::mem::{self, ManuallyDrop};
-use std::pin::Pin;
-use std::ptr;
-use std::sync::atomic::{AtomicU32, Ordering::Relaxed};
-use std::sync::{Arc, Mutex};
-use std::task::{Context, Poll, Wake, Waker};
+use alloc::sync::Arc;
+use alloc::task::Wake;
+use core::alloc::Layout;
+use core::fmt;
+use core::future::{Future, IntoFuture};
+use core::marker;
+use core::mem::{self, ManuallyDrop};
+use core::pin::Pin;
+use core::ptr;
+use core::sync::atomic::{AtomicU32, Ordering::Relaxed};
+use core::task::{Context, Poll, Waker};
 
 /// Helper trait which encapsulates the various operations which can happen
 /// with a future.
@@ -501,7 +503,7 @@ impl<O: FutureOps> RawFutureWriter<O> {
         O: 'static,
     {
         return Arc::new(DeferredWrite {
-            write: Mutex::new(self.write(value)),
+            write: TryLock::new(self.write(value)),
         })
         .wake();
 
@@ -519,7 +521,7 @@ impl<O: FutureOps> RawFutureWriter<O> {
         /// doesn't require the `async-spawn` feature and instead works with the
         /// `wasip3_task` C ABI structures (which spawn doesn't support).
         struct DeferredWrite<O: FutureOps> {
-            write: Mutex<RawFutureWrite<O>>,
+            write: TryLock<RawFutureWrite<O>>,
         }
 
         // SAFETY: Needed to satisfy `Waker::from` but otherwise should be ok
@@ -550,7 +552,7 @@ impl<O: FutureOps> RawFutureWriter<O> {
                 let poll = {
                     let waker = Waker::from(self.clone());
                     let mut cx = Context::from_waker(&waker);
-                    let mut write = self.write.lock().unwrap();
+                    let mut write = self.write.try_lock().unwrap();
                     unsafe { Pin::new_unchecked(&mut *write).poll(&mut cx) }
                 };
                 if poll.is_ready() {
@@ -756,7 +758,7 @@ impl<T> fmt::Display for FutureWriteError<T> {
     }
 }
 
-impl<T> std::error::Error for FutureWriteError<T> {}
+impl<T> core::error::Error for FutureWriteError<T> {}
 
 /// Result of [`FutureWrite::cancel`].
 #[derive(Debug)]

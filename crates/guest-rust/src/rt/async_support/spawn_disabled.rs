@@ -1,5 +1,5 @@
 use crate::rt::async_support::BoxFuture;
-use std::task::{Context, Poll};
+use core::task::{Context, Poll};
 
 #[derive(Default)]
 pub struct Tasks<'a> {

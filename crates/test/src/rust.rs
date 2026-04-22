@@ -57,19 +57,9 @@ impl LanguageMethods for Rust {
     fn should_fail_verify(
         &self,
         name: &str,
-        config: &crate::config::WitConfig,
-        args: &[String],
+        _config: &crate::config::WitConfig,
+        _args: &[String],
     ) -> bool {
-        // no_std doesn't currently work with async
-        if config.async_
-            && args.iter().any(|s| s == "--std-feature")
-            // Except these actually do work:
-            && name != "async-trait-function.wit-no-std"
-            && name != "async-resource-func.wit-no-std"
-        {
-            return true;
-        }
-
         // Currently there's a bug with this borrowing mode which means that
         // this variant does not pass.
         if name == "wasi-http-borrowed-duplicate" {

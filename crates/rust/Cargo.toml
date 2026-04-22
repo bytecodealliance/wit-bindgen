@@ -5,12 +5,15 @@ version = { workspace = true }
 edition = { workspace = true }
 repository = { workspace = true }
 license = { workspace = true }
-rust-version = { workspace = true }
 homepage = 'https://github.com/bytecodealliance/wit-bindgen'
 description = """
 Rust bindings generator for WIT and the component model, typically used through
 the `wit-bindgen` crate's `generate!` macro.
 """
+
+# See documentation in `crates/guest-rust/Cargo.toml` for why this is
+# specifically set.
+rust-version = "1.85.0"
 
 [lints]
 workspace = true

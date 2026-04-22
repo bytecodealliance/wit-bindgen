@@ -1,8 +1,8 @@
 //! Raw bindings to `error-context` in the canonical ABI.
 
-use std::fmt::{self, Debug, Display};
-use std::ptr;
-use std::string::String;
+use alloc::string::String;
+use core::fmt::{self, Debug, Display};
+use core::ptr;
 
 /// Represents the Component Model `error-context` type.
 #[derive(PartialEq, Eq)]
@@ -56,7 +56,7 @@ impl Display for ErrorContext {
     }
 }
 
-impl std::error::Error for ErrorContext {}
+impl core::error::Error for ErrorContext {}
 
 impl Drop for ErrorContext {
     fn drop(&mut self) {

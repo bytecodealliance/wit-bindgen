@@ -13,11 +13,11 @@ use crate::rt::async_support::{
     STATUS_RETURNED, STATUS_RETURNED_CANCELLED, STATUS_STARTED, STATUS_STARTED_CANCELLED,
     STATUS_STARTING,
 };
-use std::alloc::Layout;
-use std::future::Future;
-use std::marker;
-use std::num::NonZeroU32;
-use std::ptr;
+use core::alloc::Layout;
+use core::future::Future;
+use core::marker;
+use core::num::NonZeroU32;
+use core::ptr;
 
 /// Raw operations used to invoke an imported asynchronous function.
 ///

@@ -860,6 +860,11 @@ extern crate std;
 ///         "-export:wasi:http/handler@0.3.0-draft#handle",
 ///         "all",
 ///     ],
+///
+///     // All resource methods with empty returns are instead generated as
+///     // returning `-> &Self`, to permit method chaining (e.g. for builder).
+///     // This expectation is also imposed on exports.
+///     enable_method_chaining: true,
 /// });
 /// ```
 ///

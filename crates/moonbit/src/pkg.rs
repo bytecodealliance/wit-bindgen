@@ -270,6 +270,14 @@ impl PkgResolver {
                         )
                     }
 
+                    TypeDefKind::Map(key, value) => {
+                        format!(
+                            "Map[{}, {}]",
+                            self.type_name(this, &key),
+                            self.type_name(this, &value)
+                        )
+                    }
+
                     _ => {
                         if let Some(name) = &ty.name {
                             format!(

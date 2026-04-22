@@ -27,5 +27,4 @@ macro-string = { workspace = true, optional = true }
 
 [features]
 default = ["macro-string"]
-async = []
 macro-string = ["dep:macro-string"]
