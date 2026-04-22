@@ -9,7 +9,6 @@ use std::fmt::Write;
 use std::ops::Deref;
 use std::{iter, mem};
 use wit_bindgen_core::{Direction, Files, InterfaceGenerator as _, Types, WorldGenerator, uwrite};
-use wit_component::WitPrinter;
 use wit_parser::abi::WasmType;
 use wit_parser::{
     Function, InterfaceId, Resolve, SizeAlign, Type, TypeDefKind, TypeId, TypeOwner, WorldId,
@@ -839,20 +838,9 @@ impl WorldGenerator for CSharp {
                 )?;
                 let pkg = resolve.worlds[world].package.unwrap();
 
-                let mut printer = WitPrinter::default();
-                printer.emit_docs(false);
-                printer.print(
-                    &resolve,
-                    pkg,
-                    &resolve
-                        .packages
-                        .iter()
-                        .filter_map(|(id, _)| if id == pkg { None } else { Some(id) })
-                        .collect::<Vec<_>>(),
-                )?;
                 files.push(
-                    &format!("{world_namespace}_component_type.wit"),
-                    String::from(printer.output).as_bytes(),
+                    &format!("{world_namespace}_component_type.wasm"),
+                    wit_component::encode(&resolve, pkg)?.as_slice(),
                 );
             }
 
