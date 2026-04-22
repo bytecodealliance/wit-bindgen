@@ -94,8 +94,7 @@ impl CSProjectLLVMBuilder {
         </ItemGroup>
 
         <ItemGroup>
-            <NativeFileReference Include=\"{camel}_component_type.o\" />
-            <CustomLinkerArg Include=\"-Wl,--undefined=__component_type_object_force_link_{world}\" />
+            <CustomLinkerArg Include=\"-Wl,--component-type,{camel}_component_type.wit\" />
         </ItemGroup>
         "
         );
