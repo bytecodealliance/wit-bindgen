@@ -21,7 +21,6 @@ test = false
 
 [dependencies]
 wit-bindgen-core = { workspace = true }
-wit-bindgen-c = { workspace = true }
 wit-component = { workspace = true }
 wit-parser = { workspace = true }
 wasm-metadata = { workspace = true }

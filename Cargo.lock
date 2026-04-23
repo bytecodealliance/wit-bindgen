@@ -1566,7 +1566,6 @@ dependencies = [
  "indexmap",
  "regex",
  "wasm-metadata 0.247.0",
- "wit-bindgen-c",
  "wit-bindgen-core",
  "wit-component",
  "wit-parser",
