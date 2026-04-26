@@ -2446,7 +2446,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
 
 fn move_if_necessary(arg: &str) -> String {
     // if it is a name of a variable move it
-    if !arg.is_empty() && arg.chars().all(char::is_alphanumeric) {
+    if !arg.is_empty() && arg.chars().all(|c| char::is_alphanumeric(c) || c == '_') {
         format!("std::move({arg})")
     } else {
         arg.into()
@@ -2709,7 +2709,11 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     size = size.format(POINTER_SIZE_EXPRESSION)
                 );
                 uwrite!(self.src, "{}", body.0);
-                uwriteln!(self.src, "auto _e{tmp} = {};", move_if_necessary(&body.1[0]));
+                uwriteln!(
+                    self.src,
+                    "auto _e{tmp} = {};",
+                    move_if_necessary(&body.1[0])
+                );
                 if let Some(code) = self.leak_on_insertion.take() {
                     assert!(self.needs_dealloc);
                     uwriteln!(self.src, "{code}");
