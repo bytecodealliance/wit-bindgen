@@ -278,7 +278,7 @@ fn _resource_rep(handle: u32) -> *mut u8
 #[doc(hidden)]
 {macro_export}
 macro_rules! {macro_name} {{
-    ($ty:ident with_types_in $($path_to_types:tt)*) => (const _: () = {{
+    ({{ ty: $ty:path, with_types_in: $($path_to_types:tt)* }}) => (const _: () = {{
 "
         );
 
