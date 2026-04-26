@@ -3482,8 +3482,8 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let (body, results) = self.blocks.pop().unwrap();
                 assert!(results.is_empty());
                 let tmp = self.tmp();
-                let ptr = self.tempname("ptr", tmp);
-                let len = self.tempname("len", tmp);
+                let ptr = self.tempname("_ptr", tmp);
+                let len = self.tempname("_len", tmp);
                 uwriteln!(self.src, "uint8_t* {ptr} = {};", operands[0]);
                 uwriteln!(self.src, "size_t {len} = {};", operands[1]);
                 let i = self.tempname("i", tmp);
@@ -3491,10 +3491,10 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let size = self.r#gen.sizes.size(element);
                 uwriteln!(
                     self.src,
-                    "uint8_t* base = {ptr} + {i} * {size};",
+                    "uint8_t* _base = {ptr} + {i} * {size};",
                     size = size.format(POINTER_SIZE_EXPRESSION)
                 );
-                uwriteln!(self.src, "(void) base;");
+                uwriteln!(self.src, "(void) _base;");
                 uwrite!(self.src, "{body}");
                 uwriteln!(self.src, "}}");
                 uwriteln!(self.src, "if ({len} > 0) {{");
