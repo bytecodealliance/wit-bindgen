@@ -7,7 +7,6 @@ use heck::{ToShoutySnakeCase, ToUpperCamelCase};
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt::Write;
-use std::io::empty;
 use std::mem;
 use std::ops::Deref;
 use wit_bindgen_core::abi::LiftLower;
@@ -265,6 +264,7 @@ impl InterfaceGenerator<'_> {
                 }
             }
             let mut lift_func = "null".to_string();
+            let mut lower_func = "null".to_string();
             let future_name = &future.name;
             let generic_type_name = &future.generic_type_name;
             let upper_camel_future_type = generic_type_name.to_upper_camel_case();
@@ -276,6 +276,7 @@ impl InterfaceGenerator<'_> {
 
                 if needs_ptr(&payload) {
                     lift_func = format!("{future_stream_name}Lift{upper_camel_future_type}");
+                    lower_func = format!("{future_stream_name}Lower{upper_camel_future_type}");
                 }
             }
 
@@ -292,6 +293,7 @@ impl InterfaceGenerator<'_> {
                     CancelReadDelegate = {future_stream_name}CancelRead{upper_camel_future_type},   
                     CancelWriteDelegate = {future_stream_name}CancelWrite{upper_camel_future_type},
                     Lift = {lift_func},
+                    Lower = {lower_func},
                     Size = {size},
                     Align = {align},
                 }};
@@ -389,7 +391,7 @@ impl InterfaceGenerator<'_> {
                         });
 
                     if lift_func != "null" && let Some(payload_type) = canonical_payload {
-                        let (lift, result) = self.lift_from_memory("buffer", &payload_type, &"");
+                        let (lift, result) = self.lift_from_memory("buffer", &payload_type);
 
                         uwrite!(
                             self.csharp_interop_src,
@@ -400,8 +402,28 @@ impl InterfaceGenerator<'_> {
 
                                 // TODO: length > 1
                                 resultBuffer.SetValue({result}, 0);
-
                                 return resultBuffer;
+                            }}
+                            "#
+                        );
+                    }
+
+                    if lower_func != "null" && let Some(payload_type) = canonical_payload {
+                        let lower_code = self.lower_to_memory("ptr", "typedToLower", &payload_type);
+                        let size_align = self.csharp_gen.sizes.params(Some(&payload_type));
+                        // TODO: Wasm64
+                        self.csharp_gen.return_area_size = self.csharp_gen.return_area_size.max(size_align.size.size_wasm32());
+                        self.csharp_gen.return_area_align = self.csharp_gen.return_area_align.max(size_align.align.align_wasm32());
+                        self.csharp_gen.needs_export_return_area = true;
+                        uwrite!(
+                            self.csharp_interop_src,
+                            r#"
+                            public static unsafe void {future_stream_name}Lower{upper_camel_future_type}(object toLower) 
+                            {{
+                                var ptr = InteropReturnArea.returnArea.AddressOfReturnArea();
+                                Console.WriteLine("type is " + toLower.GetType());
+                                var typedToLower = ({generic_type_name})toLower;
+                                {lower_code}
                             }}
                             "#
                         );
@@ -739,18 +761,18 @@ var {async_status_var} = {raw_name}({wasm_params});
 
             src = format!("{code}");
 
+            let bindgen_src = bindgen.src;
             if let Some(buffer) = async_return_buffer {
                 let ty = bindgen.result_type.expect("expected a result type");
-                let lift_expr = abi::lift_from_memory(
-                    bindgen.interface_gen.resolve,
-                    &mut bindgen,
-                    buffer.clone(),
-                    &ty,
-                );
-                uwriteln!(src, "{}",bindgen.src);
+                let (lift_expr, res) = self.lift_from_memory("address", &ty);
+                uwriteln!(src, "{}", bindgen_src);
                 let return_type = self.type_name_with_qualifier(&ty, true);
 
-                let lift_func = format!("() => {lift_expr}");
+                let lift_func = format!("() => {{
+                        {lift_expr}
+
+                        return {res};
+                    }}");
                 uwriteln!(
                     src,
                     "
@@ -928,6 +950,7 @@ var {async_status_var} = {raw_name}({wasm_params});
             [global::System.Runtime.InteropServices.UnmanagedCallersOnlyAttribute(EntryPoint = "[callback]{export_name}")]
             public static unsafe uint {camel_name}Callback(int eventRaw, uint waitable, uint code)
             {{
+            Console.WriteLine("Callback for {export_name} creating EventWaitable with code " + eventRaw + " for waitable " + waitable + " with code " + code);
                 EventWaitable e = new EventWaitable((EventCode)eventRaw, waitable, code);
 
             "#
@@ -938,7 +961,8 @@ var {async_status_var} = {raw_name}({wasm_params});
                 uwriteln!(
                     self.csharp_interop_src,
                     r#"
-                        throw new NotImplementedException("callbacks with parameters are not yet implemented.");
+                        //return (uint)AsyncSupport.Callback(e, lift func);
+                        return (uint)AsyncSupport.Callback(e, (ContextTask *)IntPtr.Zero);
                     }}
                     "#
                 );
@@ -946,9 +970,9 @@ var {async_status_var} = {raw_name}({wasm_params});
                 uwriteln!(
                     self.csharp_interop_src,
                     r#"
-                    return (uint)AsyncSupport.Callback(e, (ContextTask *)IntPtr.Zero);
-                }}
-                "#
+                        return (uint)AsyncSupport.Callback(e, (ContextTask *)IntPtr.Zero);
+                    }}
+                    "#
                 );
             }
         }
@@ -1550,7 +1574,7 @@ var {async_status_var} = {raw_name}({wasm_params});
         });
     }
 
-    fn lift_from_memory(&mut self, address: &str, ty: &Type, module: &str) -> (String, String) {
+    fn lift_from_memory(&mut self, address: &str, ty: &Type) -> (String, String) {
         let boxed: Box<[String]> = Vec::new().into_boxed_slice();
 
         let mut f = FunctionBindgen::new(self, "", &FunctionKind::AsyncFreestanding, 
@@ -1559,6 +1583,18 @@ var {async_status_var} = {raw_name}({wasm_params});
 
         (f.src, result)
     }
+
+    // TODO: delete unused parameter
+    fn lower_to_memory(&mut self, address: &str, value: &str, ty: &Type) -> String {
+        let boxed: Box<[String]> = Vec::new().into_boxed_slice();
+
+        let mut f = FunctionBindgen::new(self, "", &FunctionKind::AsyncFreestanding, 
+            boxed,vec![], ParameterType::ABI, None);
+        abi::lower_to_memory(f.interface_gen.resolve, &mut f, address.into(), value.into(), ty);
+
+        f.src
+    }
+
 }
 
 impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {

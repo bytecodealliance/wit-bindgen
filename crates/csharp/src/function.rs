@@ -5,13 +5,14 @@ use heck::ToUpperCamelCase;
 use std::fmt::Write;
 use std::mem;
 use std::ops::Deref;
-use wit_bindgen_core::abi::{self, Bindgen, Bitcast, Instruction};
+use wit_bindgen_core::abi::{Bindgen, Bitcast, Instruction};
 use wit_bindgen_core::{Direction, Ns, uwrite, uwriteln};
 use wit_parser::abi::WasmType;
 use wit_parser::{
     Alignment, ArchitectureSize, Docs, FunctionKind, Handle, Resolve, SizeAlign, Type, TypeDefKind,
     TypeId,
 };
+use regex::Regex;
 
 /// FunctionBindgen generates the C# code for calling functions defined in wit
 pub(crate) struct FunctionBindgen<'a, 'b> {
@@ -905,6 +906,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwriteln!(
                     self.src,
                     "
+                    Console.WriteLine(\"string lift characters \" + {op1}); 
                     var {str} = {get_str};
                     if ({op1} > 0) {{
                         global::System.Runtime.InteropServices.NativeMemory.Free((void*){op0});
@@ -1153,7 +1155,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             _ => {}
                         }
 
-                        format!("{} {}", param_type, operands[i])
+                        format!("{} {}", param_type, strip_lift(&operands[i]))
                     }).collect::<Vec<_>>().join(", "));
                     self.needs_cleanup = true;
                 }
@@ -1459,20 +1461,19 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.push(format!("{op}.TakeHandle()"));
             }
 
-            Instruction::AsyncTaskReturn { name, params } => {
-                if !params.is_empty() {
-                    let name = name.strip_prefix("[task-return]").unwrap().to_upper_camel_case();
-                    uwriteln!(self.src, "// TODO: task_cancel.forget();");
-                    if self.interface_gen.direction == Direction::Export {
-                        uwriteln!(self.src, "{name}TaskReturn({});", operands.join(", "));
+            Instruction::AsyncTaskReturn { name, params: _ } => {
+                let name = name.strip_prefix("[task-return]").unwrap().to_upper_camel_case();
+                uwriteln!(self.src, "Console.WriteLine(\"async task return for {name}\");");
+                uwriteln!(self.src, "// TODO: task_cancel.forget();");
+                if self.interface_gen.direction == Direction::Export {
+                    uwriteln!(self.src, "{name}TaskReturn({});", operands.join(", "));
 
-                        if self.needs_cleanup {
-                            uwriteln!(self.src, "
-                            foreach (var cleanup in cleanups)
-                            {{
-                                cleanup();
-                            }}");
-                        }
+                    if self.needs_cleanup {
+                        uwriteln!(self.src, "
+                        foreach (var cleanup in cleanups)
+                        {{
+                            cleanup();
+                        }}");
                     }
                 }
             }
@@ -1630,6 +1631,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
     fn is_list_canonical(&self, _resolve: &Resolve, element: &Type) -> bool {
         crate::world_generator::is_primitive(element)
     }
+}
+
+// TODO: this is not great, we want the underlying parameter, but it is passed in operands already lifted.
+pub fn strip_lift(lifted_param: &String) -> String {
+    let re = Regex::new(r"(?x)unchecked\(\s*\(\s*\w+\s*\)\s*\(\s*(\w+)\s*\)\s*\)").unwrap();
+    let out = re.replace_all(lifted_param, "$1");
+    out.into_owned()
 }
 
 /// Dereference any number `TypeDefKind::Type` aliases to retrieve the target type.

@@ -8,10 +8,20 @@ namespace TestWorld.wit.Exports.my.test
     {
         public static async Task<FutureReader<string>> Ping(FutureReader<string> future, string s)
         {
+            Console.WriteLine("test: Ping started");
             var msg = (await future.Read()) + s;
+            Console.WriteLine("test: Ping Read completed " + msg);
             var (newFutureReader, newFutureWriter) = IIExports.FutureNewString();
-            await newFutureWriter.Write(msg);
-
+            Console.WriteLine("test: Ping return future creates");
+            var writeTask = newFutureWriter.Write(msg);
+            Console.WriteLine("test: Ping return future write started");
+            writeTask.ContinueWith(t =>
+            {
+                if(t.Exception != null)
+                {
+                    Debug.Fail("Exception in returned future write." + t.Exception);                    
+                }
+            });
             return newFutureReader;
         }
 
