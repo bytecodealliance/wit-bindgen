@@ -1,0 +1,5 @@
+package demo:poc;
+
+world w {
+  import foo: func(ptr0: string) -> u32;
+}

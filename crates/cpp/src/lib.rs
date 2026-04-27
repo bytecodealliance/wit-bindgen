@@ -2446,7 +2446,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
 
 fn move_if_necessary(arg: &str) -> String {
     // if it is a name of a variable move it
-    if !arg.is_empty() && arg.chars().all(char::is_alphanumeric) {
+    if !arg.is_empty() && arg.chars().all(|c| char::is_alphanumeric(c) || c == '_') {
         format!("std::move({arg})")
     } else {
         arg.into()
@@ -2557,9 +2557,9 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             abi::Instruction::BoolFromI32 => top_as("bool"),
             abi::Instruction::ListCanonLower { realloc, .. } => {
                 let tmp = self.tmp();
-                let val = format!("vec{tmp}");
-                let ptr = format!("ptr{tmp}");
-                let len = format!("len{tmp}");
+                let val = format!("_vec{tmp}");
+                let ptr = format!("_ptr{tmp}");
+                let len = format!("_len{tmp}");
                 self.push_str(&format!("auto&& {} = {};\n", val, operands[0]));
                 self.push_str(&format!(
                     "auto {} = ({})({}.data());\n",
@@ -2578,9 +2578,9 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             }
             abi::Instruction::StringLower { realloc } => {
                 let tmp = self.tmp();
-                let val = format!("vec{tmp}");
-                let ptr = format!("ptr{tmp}");
-                let len = format!("len{tmp}");
+                let val = format!("_vec{tmp}");
+                let ptr = format!("_ptr{tmp}");
+                let len = format!("_len{tmp}");
                 self.push_str(&format!("auto&& {} = {};\n", val, operands[0]));
                 self.push_str(&format!(
                     "auto {} = ({})({}.data());\n",
@@ -2600,9 +2600,9 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             abi::Instruction::ListLower { element, realloc } => {
                 let tmp = self.tmp();
                 let body = self.blocks.pop().unwrap();
-                let val = format!("vec{tmp}");
-                let ptr = format!("ptr{tmp}");
-                let len = format!("len{tmp}");
+                let val = format!("_vec{tmp}");
+                let ptr = format!("_ptr{tmp}");
+                let len = format!("_len{tmp}");
                 let size = self.r#gen.sizes.size(element);
                 self.push_str(&format!("auto&& {} = {};\n", val, operands[0]));
                 self.push_str(&format!(
@@ -2614,10 +2614,10 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 self.push_str(&format!("auto {len} = (size_t)({val}.size());\n"));
                 self.push_str(&format!("for (size_t i = 0; i < {len}; ++i) {{\n"));
                 self.push_str(&format!(
-                    "auto base = {ptr} + i * {size};\n",
+                    "auto _base = {ptr} + i * {size};\n",
                     size = size.format(POINTER_SIZE_EXPRESSION)
                 ));
-                self.push_str(&format!("auto&& iter_elem = {val}[i];\n"));
+                self.push_str(&format!("auto&& _iter_elem = {val}[i];\n"));
                 self.push_str(&format!("{}\n", body.0));
                 self.push_str("}\n");
                 if realloc.is_none() {
@@ -2630,7 +2630,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             }
             abi::Instruction::ListCanonLift { element, .. } => {
                 let tmp = self.tmp();
-                let len = format!("len{tmp}");
+                let len = format!("_len{tmp}");
                 let inner = self
                     .r#gen
                     .type_name(element, &self.namespace, Flavor::InStruct);
@@ -2649,7 +2649,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             }
             abi::Instruction::StringLift => {
                 let tmp = self.tmp();
-                let len = format!("len{tmp}");
+                let len = format!("_len{tmp}");
                 uwriteln!(self.src, "auto {} = {};\n", len, operands[1]);
                 let result = if self.r#gen.r#gen.opts.api_style == APIStyle::Symmetric
                     && matches!(self.variant, AbiVariant::GuestExport)
@@ -2679,9 +2679,9 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     Flavor::InStruct
                 };
                 let vtype = self.r#gen.type_name(element, &self.namespace, flavor);
-                let len = format!("len{tmp}");
-                let base = format!("base{tmp}");
-                let result = format!("result{tmp}");
+                let len = format!("_len{tmp}");
+                let base = format!("_base{tmp}");
+                let result = format!("_result{tmp}");
                 self.push_str(&format!(
                     "auto {base} = {operand0};\n",
                     operand0 = operands[0]
@@ -2705,17 +2705,21 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 uwriteln!(self.src, "for (unsigned i=0; i<{len}; ++i) {{");
                 uwriteln!(
                     self.src,
-                    "auto base = {base} + i * {size};",
+                    "auto _base = {base} + i * {size};",
                     size = size.format(POINTER_SIZE_EXPRESSION)
                 );
                 uwrite!(self.src, "{}", body.0);
-                uwriteln!(self.src, "auto e{tmp} = {};", move_if_necessary(&body.1[0]));
+                uwriteln!(
+                    self.src,
+                    "auto _e{tmp} = {};",
+                    move_if_necessary(&body.1[0])
+                );
                 if let Some(code) = self.leak_on_insertion.take() {
                     assert!(self.needs_dealloc);
                     uwriteln!(self.src, "{code}");
                 }
                 // inplace construct
-                uwriteln!(self.src, "{result}.initialize(i, std::move(e{tmp}));");
+                uwriteln!(self.src, "{result}.initialize(i, std::move(_e{tmp}));");
                 uwriteln!(self.src, "}}");
 
                 if self.r#gen.r#gen.opts.api_style == APIStyle::Symmetric
@@ -2739,7 +2743,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 id: _,
             } => {
                 let tmp = self.tmp();
-                let result = format!("result{tmp}");
+                let result = format!("_result{tmp}");
                 let typename = self
                     .r#gen
                     .type_name(element, &self.namespace, Flavor::InStruct);
@@ -2758,7 +2762,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             } => {
                 let body = self.blocks.pop().unwrap();
                 let tmp = self.tmp();
-                let vec = format!("array{tmp}");
+                let vec = format!("_array{tmp}");
                 let source = operands[0].clone();
                 let size = self.r#gen.sizes.size(element);
                 let size_str = size.format(POINTER_SIZE_EXPRESSION);
@@ -2769,12 +2773,12 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 self.push_str(&format!("std::array<{typename}, {elemsize}> {vec};\n"));
                 self.push_str(&format!(
                     "{{
-                    {ptr_type} outer_base = {source};\n"
+                    {ptr_type} _outer_base = {source};\n"
                 ));
-                let source: String = "outer_base".into();
+                let source: String = "_outer_base".into();
                 // let vec: String = "outer_vec".into();
                 self.push_str(&format!("for (unsigned i = 0; i<{elemsize}; ++i) {{\n",));
-                self.push_str(&format!("{ptr_type} base = {source} + i * {size_str};\n"));
+                self.push_str(&format!("{ptr_type} _base = {source} + i * {size_str};\n"));
                 self.push_str(&body.0);
                 self.push_str(&format!("{vec}[i] = {};", body.1[0]));
                 self.push_str("\n}\n}\n");
@@ -2805,23 +2809,23 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let ptr_type = self.r#gen.r#gen.opts.ptr_type();
                 self.push_str(&format!(
                     "{{
-                    {ptr_type} outer_base = {target};\n"
+                    {ptr_type} _outer_base = {target};\n"
                 ));
-                let target: String = "outer_base".into();
+                let target: String = "_outer_base".into();
                 self.push_str(&format!(
-                    "std::array<{typename}, {elemsize}>& outer_vec = {vec};\n"
+                    "std::array<{typename}, {elemsize}>& _outer_vec = {vec};\n"
                 ));
-                let vec: String = "outer_vec".into();
+                let vec: String = "_outer_vec".into();
                 self.push_str(&format!("for (unsigned i = 0; i<{vec}.size(); ++i) {{\n",));
                 self.push_str(&format!(
-                    "{ptr_type} base = {target} + i * {size_str};
-                     {typename}& iter_elem = {vec}[i];\n"
+                    "{ptr_type} _base = {target} + i * {size_str};
+                     {typename}& _iter_elem = {vec}[i];\n"
                 ));
                 self.push_str(&body.0);
                 self.push_str("\n}\n}\n");
             }
-            abi::Instruction::IterElem { .. } => results.push("iter_elem".to_string()),
-            abi::Instruction::IterBasePointer => results.push("base".to_string()),
+            abi::Instruction::IterElem { .. } => results.push("_iter_elem".to_string()),
+            abi::Instruction::IterBasePointer => results.push("_base".to_string()),
             abi::Instruction::RecordLower { record, .. } => {
                 let op = &operands[0];
                 for f in record.fields.iter() {
@@ -3478,8 +3482,8 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let (body, results) = self.blocks.pop().unwrap();
                 assert!(results.is_empty());
                 let tmp = self.tmp();
-                let ptr = self.tempname("ptr", tmp);
-                let len = self.tempname("len", tmp);
+                let ptr = self.tempname("_ptr", tmp);
+                let len = self.tempname("_len", tmp);
                 uwriteln!(self.src, "uint8_t* {ptr} = {};", operands[0]);
                 uwriteln!(self.src, "size_t {len} = {};", operands[1]);
                 let i = self.tempname("i", tmp);
@@ -3487,10 +3491,10 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let size = self.r#gen.sizes.size(element);
                 uwriteln!(
                     self.src,
-                    "uint8_t* base = {ptr} + {i} * {size};",
+                    "uint8_t* _base = {ptr} + {i} * {size};",
                     size = size.format(POINTER_SIZE_EXPRESSION)
                 );
-                uwriteln!(self.src, "(void) base;");
+                uwriteln!(self.src, "(void) _base;");
                 uwrite!(self.src, "{body}");
                 uwriteln!(self.src, "}}");
                 uwriteln!(self.src, "if ({len} > 0) {{");
