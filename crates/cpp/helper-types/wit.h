@@ -13,6 +13,7 @@
 #include <stdlib.h> // free
 #include <new>
 #include <span>
+#include <utility> // pair
 
 namespace wit {
 /// @brief Helper class to map between IDs and resources
@@ -168,6 +169,107 @@ public:
     }
     return result;
   } 
+};
+
+/// @brief A map stored as a contiguous array of key-value pairs in linear
+/// memory, freed unconditionally using free.
+///
+/// Mirrors the canonical ABI representation of `map<K, V>` (`list<tuple<K, V>>`)
+/// to enable lift without per-entry tree allocation. The container has no
+/// ordering or hashing guarantees and exposes only the subset of the
+/// `std::unordered_map` API that's meaningful over a flat pair buffer plus
+/// the bindings-construction primitives (`allocate`, `initialize`, `leak`,
+/// `drop_raw`, `data`).
+template <class K, class V> class unordered_map {
+public:
+  using entry_type = std::pair<K, V>;
+
+private:
+  entry_type *data_;
+  size_t length;
+
+  static entry_type* empty_ptr() { return (entry_type*)alignof(entry_type); }
+
+public:
+  unordered_map(unordered_map const &) = delete;
+  unordered_map(unordered_map &&b) : data_(b.data_), length(b.length) {
+    b.data_ = nullptr;
+    b.length = 0;
+  }
+  unordered_map &operator=(unordered_map const &) = delete;
+  unordered_map &operator=(unordered_map &&b) {
+    if (data_ && length > 0) {
+      for (unsigned i = 0; i < length; ++i) { data_[i].~entry_type(); }
+      free(data_);
+    }
+    data_ = b.data_;
+    length = b.length;
+    b.data_ = nullptr;
+    b.length = 0;
+    return *this;
+  }
+  unordered_map(entry_type *d, size_t l) : data_(d), length(l) {}
+  unordered_map() : data_(empty_ptr()), length() {}
+  entry_type const *data() const { return data_; }
+  entry_type *data() { return data_; }
+  size_t size() const { return length; }
+  bool empty() const { return !length; }
+  ~unordered_map() {
+    if (data_ && length > 0) {
+      for (unsigned i = 0; i < length; ++i) { data_[i].~entry_type(); }
+      free((void*)data_);
+    }
+  }
+  // WARNING: unordered_map contains uninitialized entries; caller must
+  // construct them via `initialize` before the map is observed or destroyed.
+  static unordered_map<K, V> allocate(size_t len) {
+    if (!len) return unordered_map<K, V>(empty_ptr(), 0);
+    return unordered_map<K, V>(
+        (entry_type*)malloc(sizeof(entry_type) * len), len);
+  }
+  void initialize(size_t n, entry_type&& entry) {
+    new ((void*)(data_ + n)) entry_type(std::move(entry));
+  }
+  entry_type *leak() {
+    entry_type *result = data_;
+    data_ = nullptr;
+    return result;
+  }
+  static void drop_raw(void *ptr) {
+    if (ptr != empty_ptr()) free(ptr);
+  }
+  entry_type *begin() { return data_; }
+  entry_type *end() { return data_ + length; }
+  entry_type const *begin() const { return data_; }
+  entry_type const *end() const { return data_ + length; }
+};
+
+/// @brief A non-owning, read-only view over a contiguous run of key-value
+/// pairs in linear memory.
+///
+/// Counterpart to `wit::unordered_map<K, V>` for borrowed arguments: a
+/// borrow-only handle that mimics map semantics rather than vector semantics
+/// — entries are reachable via range-for or `data()`/`size()`, with no
+/// positional `operator[]`. Construct from a `wit::unordered_map<K, V>` or
+/// an explicit `(data, size)` pair.
+template <class K, class V> class unordered_map_view {
+public:
+  using entry_type = std::pair<K, V>;
+
+private:
+  entry_type const *data_;
+  size_t length;
+
+public:
+  unordered_map_view() : data_(nullptr), length(0) {}
+  unordered_map_view(entry_type const *d, size_t l) : data_(d), length(l) {}
+  unordered_map_view(unordered_map<K, V> const &m)
+      : data_(m.data()), length(m.size()) {}
+  entry_type const *data() const { return data_; }
+  size_t size() const { return length; }
+  bool empty() const { return !length; }
+  entry_type const *begin() const { return data_; }
+  entry_type const *end() const { return data_ + length; }
 };
 
 /// @brief  A Resource defined within the guest (guest side)
