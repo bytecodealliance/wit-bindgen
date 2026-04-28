@@ -2,6 +2,7 @@ use crate::csharp_ident::ToCSharpIdent;
 use crate::interface::{InterfaceGenerator, ParameterType, variant_new_func_name};
 use crate::world_generator::CSharp;
 use heck::ToUpperCamelCase;
+use regex::Regex;
 use std::fmt::Write;
 use std::mem;
 use std::ops::Deref;
@@ -299,6 +300,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         target: String,
         func_name: String,
         oper: String,
+        use_await: bool,
     ) -> String {
         let ret = self.locals.tmp("ret");
         if self.interface_gen.csharp_gen.opts.with_wit_results {
@@ -312,7 +314,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             .type_name_with_qualifier(&func.result.unwrap(), true);
         let is_async = InterfaceGenerator::is_async(&func.kind);
 
-        if is_async {
+        if is_async && !use_await {
             uwriteln!(self.src, "Task<{ty}> {ret};");
         } else {
             uwriteln!(self.src, "{ty} {ret};");
@@ -362,7 +364,11 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         } else {
             format!("{target}.{func_name}({oper})")
         };
-        uwriteln!(self.src, "{ret} = {head}{val}{tail};");
+        uwriteln!(
+            self.src,
+            "{ret} = {}{head}{val}{tail};",
+            if use_await { "await " } else { "" }
+        );
         if !self.results.is_empty() {
             self.interface_gen.csharp_gen.needs_wit_exception = true;
             let cases = cases.join("\n");
@@ -995,6 +1001,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwriteln!(
                     self.src,
                     "
+                    Console.WriteLine(\"string lift characters \" + {op1}); 
                     var {str} = {get_str};
                     if ({op1} > 0) {{
                         global::System.Runtime.InteropServices.NativeMemory.Free((void*){op0});
@@ -1229,6 +1236,73 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
 
                 let is_async = InterfaceGenerator::is_async(self.kind);
+                if is_async && self.interface_gen.direction == Direction::Export {
+                    // The UCO method cannot be async so we create and call another async method.
+                    // This allows us to follow the same codegen pattern as other languages.
+                    self.interface_gen.csharp_gen.needs_async_support = true;
+                    let async_func_name = format!("{}Async", self.func_name.to_upper_camel_case());
+
+                    uwriteln!(
+                        self.src,
+                        r#"var task = {async_func_name}({oper});
+                        if (task.IsCompletedSuccessfully)
+                        {{
+                            return (int)CallbackCode.Exit;
+                        }}
+
+                        Console.WriteLine("Async function {async_func_name} did not complete synchronously.");
+                        // TODO: Defer dropping borrowed resources until a result is returned.
+                        ContextTask* contextTaskPtr = AsyncSupport.ContextGet();
+                        Console.WriteLine("contextTaskPtr is null " + (contextTaskPtr == null));
+
+                        return (int)CallbackCode.Wait | (int)(contextTaskPtr->WaitableSetHandle << 4);
+                }}
+                    "#
+                    );
+
+                    // Start the Async function
+                    uwriteln!(
+                        self.src,
+                        r#"public static async Task {async_func_name}({})
+                    {{
+                        var cleanups = new global::System.Collections.Generic.List<global::System.Action>();
+
+                    "#,
+                        func.params
+                            .iter()
+                            .enumerate()
+                            .map(|(i, p)| {
+                                let mut param_type =
+                                    self.interface_gen.type_name_with_qualifier(&p.ty, false);
+
+                                // Resource types need the Impl class to be distinguised.
+                                match p.ty {
+                                    Type::Id(type_id) => {
+                                        let id = dealias(self.interface_gen.resolve, type_id);
+
+                                        let kind = &self.interface_gen.resolve.types[id].kind;
+                                        match kind {
+                                            TypeDefKind::Handle(handle) => {
+                                                let (Handle::Own(ty) | Handle::Borrow(ty)) = handle;
+                                                param_type =
+                                                    self.interface_gen.csharp_gen.all_resources
+                                                        [&ty]
+                                                        .export_impl_name();
+                                            }
+                                            _ => {}
+                                        }
+                                    }
+                                    _ => {}
+                                }
+
+                                format!("{} {}", param_type, strip_lift(&operands[i]))
+                            })
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    );
+                    self.needs_cleanup = true;
+                }
+
                 match self.kind {
                     FunctionKind::Constructor(id) => {
                         let target =
@@ -1251,20 +1325,26 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         match func.result {
                             None => {
                                 if is_async {
-                                    uwriteln!(self.src, "var ret = {target}.{func_name}({oper});");
+                                    uwriteln!(self.src, "await {target}.{func_name}({oper});");
                                 } else {
                                     uwriteln!(self.src, "{target}.{func_name}({oper});");
                                 }
                             }
                             Some(_ty) => {
-                                let ret = self.handle_result_call(func, target, func_name, oper);
+                                let ret = self.handle_result_call(
+                                    func,
+                                    target,
+                                    func_name,
+                                    oper,
+                                    is_async && self.interface_gen.direction == Direction::Export,
+                                );
                                 results.push(ret);
                             }
                         }
                     }
                 }
 
-                if is_async {
+                if is_async && self.interface_gen.direction == Direction::Import {
                     self.interface_gen.csharp_gen.needs_async_support = true;
                     let name = self.func_name.to_upper_camel_case();
                     let ret_param = match func.result {
@@ -1557,11 +1637,17 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::FutureLower { payload, ty: _ }
             | Instruction::StreamLower { payload, ty: _ } => {
                 let op = &operands[0];
-                let generic_type_name = match payload {
-                    Some(generic_type) => &self
-                        .interface_gen
-                        .type_name_with_qualifier(generic_type, false),
-                    None => "",
+                let (generic_type_name, generic_type_name_with_qualifier) = match payload {
+                    Some(generic_type) => {
+                        let name = self
+                            .interface_gen
+                            .type_name_with_qualifier(generic_type, false);
+                        let qualified_name = self
+                            .interface_gen
+                            .type_name_with_qualifier(generic_type, true);
+                        (name, qualified_name)
+                    }
+                    None => (String::new(), String::new()),
                 };
 
                 match inst {
@@ -1569,6 +1655,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         self.interface_gen.add_future(
                             self.func_name,
                             &generic_type_name,
+                            &generic_type_name_with_qualifier,
                             **payload,
                         );
                     }
@@ -1576,6 +1663,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         self.interface_gen.add_stream(
                             self.func_name,
                             &generic_type_name,
+                            &generic_type_name_with_qualifier,
                             **payload,
                         );
                     }
@@ -1584,8 +1672,30 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.push(format!("{op}.TakeHandle()"));
             }
 
-            Instruction::AsyncTaskReturn { name: _, params: _ } => {
+            Instruction::AsyncTaskReturn { name, params: _ } => {
+                let name = name
+                    .strip_prefix("[task-return]")
+                    .unwrap()
+                    .to_upper_camel_case();
+                uwriteln!(
+                    self.src,
+                    "Console.WriteLine(\"async task return for {name}\");"
+                );
                 uwriteln!(self.src, "// TODO: task_cancel.forget();");
+                if self.interface_gen.direction == Direction::Export {
+                    uwriteln!(self.src, "{name}TaskReturn({});", operands.join(", "));
+
+                    if self.needs_cleanup {
+                        uwriteln!(
+                            self.src,
+                            "
+                        foreach (var cleanup in cleanups)
+                        {{
+                            cleanup();
+                        }}"
+                        );
+                    }
+                }
             }
 
             Instruction::FutureLift { payload, ty: _ }
@@ -1636,6 +1746,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         self.interface_gen.add_future(
                             self.func_name,
                             &generic_type_name,
+                            &generic_type_name_with_qualifier,
                             **payload,
                         );
                     }
@@ -1643,6 +1754,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         self.interface_gen.add_stream(
                             self.func_name,
                             &generic_type_name,
+                            &generic_type_name_with_qualifier,
                             **payload,
                         );
                     }
@@ -1766,6 +1878,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
     fn is_list_canonical(&self, _resolve: &Resolve, element: &Type) -> bool {
         crate::world_generator::is_primitive(element)
     }
+}
+
+// TODO: this is not great, we want the underlying parameter, but it is passed in operands already lifted.
+pub fn strip_lift(lifted_param: &String) -> String {
+    let re = Regex::new(r"(?x)unchecked\(\s*\(\s*\w+\s*\)\s*\(\s*(\w+)\s*\)\s*\)").unwrap();
+    let out = re.replace_all(lifted_param, "$1");
+    out.into_owned()
 }
 
 /// Dereference any number `TypeDefKind::Type` aliases to retrieve the target type.

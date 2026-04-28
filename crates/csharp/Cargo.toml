@@ -28,6 +28,7 @@ heck = { workspace = true }
 clap = { workspace = true, optional = true }
 anyhow = { workspace = true }
 indexmap = { workspace = true }
+regex = "1.12.3"
 
 [features]
 default = ["aot"]

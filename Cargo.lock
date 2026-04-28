@@ -1460,6 +1460,7 @@ dependencies = [
  "clap",
  "heck",
  "indexmap",
+ "regex",
  "wasm-metadata 0.247.0",
  "wit-bindgen-core",
  "wit-component",

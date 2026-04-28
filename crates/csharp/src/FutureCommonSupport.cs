@@ -16,11 +16,11 @@ public readonly struct SubtaskStatus (uint status)
 {
     public uint State => status & 0xf;
     public int Handle => (int)(status >> 4);
-    public bool IsSubtaskStarting => State == 0;
-    public bool IsSubtaskStarted => State == 1;
-    public bool IsSubtaskReturned => State == 2;
-    public bool IsSubtaskStartedCancelled => State == 3;
-    public bool IsSubtaskReturnedCancelled => State == 4;
+    public bool IsStarting => State == 0;
+    public bool IsStarted => State == 1;
+    public bool IsReturned => State == 2;
+    public bool IsStartedCancelled => State == 3;
+    public bool IsReturnedCancelled => State == 4;
 }
 
 public readonly struct EventWaitable
@@ -52,6 +52,6 @@ public readonly struct EventWaitable
     public readonly SubtaskStatus SubtaskStatus;
     public readonly int WaitableCount => (int)Code >> 4;
     public bool IsDropped => !IsSubtask && WaitableStatus.IsDropped;
-    public bool IsCompleted => IsSubtask && SubtaskStatus.IsSubtaskReturned || !IsSubtask && WaitableStatus.IsCompleted;
+    public bool IsCompleted => IsSubtask && SubtaskStatus.IsReturned || !IsSubtask && WaitableStatus.IsCompleted;
 }
 

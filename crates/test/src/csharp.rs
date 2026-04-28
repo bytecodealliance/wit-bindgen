@@ -48,7 +48,6 @@ impl LanguageMethods for Csharp {
                 | "async-resource-func.wit"
                 | "import-export-resource.wit"
                 | "issue-1433.wit"
-                | "issue-1598.wit"
                 | "named-fixed-length-list.wit"
                 | "map.wit"
         )
