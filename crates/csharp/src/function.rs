@@ -1442,19 +1442,21 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::FutureLower { payload, ty: _ }
             | Instruction::StreamLower { payload, ty: _ }=> {
                 let op = &operands[0];
-                let generic_type_name = match payload {
+                let (generic_type_name, generic_type_name_with_qualifier) = match payload {
                     Some(generic_type) => {
-                        &self.interface_gen.type_name_with_qualifier(generic_type, true)
+                        let name = self.interface_gen.type_name_with_qualifier(generic_type, false);
+                        let qualified_name = self.interface_gen.type_name_with_qualifier(generic_type, true);
+                        (name, qualified_name)
                     }
-                    None => ""
+                    None => (String::new(), String::new())
                 };
 
                 match inst {
                     Instruction::FutureLower { .. } => {
-                        self.interface_gen.add_future(self.func_name, &generic_type_name, **payload);
+                        self.interface_gen.add_future(self.func_name, &generic_type_name, &generic_type_name_with_qualifier,**payload);
                     }
                     _ => {
-                        self.interface_gen.add_stream(self.func_name, &generic_type_name, **payload);
+                        self.interface_gen.add_stream(self.func_name, &generic_type_name, &generic_type_name_with_qualifier, **payload);
                     }
                 }
 
@@ -1518,10 +1520,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 match inst {
                     Instruction::FutureLift { .. } => {
-                        self.interface_gen.add_future(self.func_name, &generic_type_name, **payload);
+                        self.interface_gen.add_future(self.func_name, &generic_type_name, &generic_type_name_with_qualifier,**payload);
                     }
                     _ => {
-                        self.interface_gen.add_stream(self.func_name, &generic_type_name_with_qualifier, **payload);
+                        self.interface_gen.add_stream(self.func_name, &generic_type_name, &generic_type_name_with_qualifier,**payload);
                     }
                 }
 

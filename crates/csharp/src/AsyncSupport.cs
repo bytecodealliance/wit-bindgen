@@ -410,7 +410,7 @@ public delegate uint FutureWrite(int handle, IntPtr buffer);
 public delegate uint StreamWrite(int handle, IntPtr buffer, uint length);
 public delegate uint StreamRead(int handle, IntPtr buffer, uint length);
 public delegate Array Lift(IntPtr buffer, Array? resultBuffer);
-public delegate void Lower(object payload);
+public delegate void Lower(object payload, List<Action> cleanups);
 public delegate uint CancelRead(int handle);
 public delegate uint CancelWrite(int handle);
 
@@ -896,7 +896,7 @@ public abstract class WriterBase : IFutureStream
     internal abstract uint VTableWrite(IntPtr bufferPtr, int length);
 
     // unsafe as we are working with pointers.
-    internal unsafe ComponentTask<int> WriteInternal(Func<nint> lowerPayload, int length, ICancelableWrite cancelable)
+    internal unsafe ComponentTask<int> WriteInternal(Func<List<Action>, nint> lowerPayload, int length, ICancelableWrite cancelable)
     {
         if (Handle == 0)
         {
@@ -907,7 +907,8 @@ public abstract class WriterBase : IFutureStream
         {
             throw new StreamDroppedException();    
         }
-        bufferPtr = lowerPayload();
+        var cleanups = new List<Action>();
+        bufferPtr = lowerPayload(cleanups);
 
         var status = new WaitableStatus(VTableWrite(bufferPtr, length));
         canDrop = true;  // We can only call drop once something has been written.
@@ -917,6 +918,11 @@ public abstract class WriterBase : IFutureStream
             var tcs = new ComponentTask<int>(new CancelableWrite(cancelable, Handle));
             tcs.ContinueWith(t =>
             {
+                foreach(var cleanup in cleanups)
+                {
+                    cleanup();
+                }
+
                 if (t.IsCanceled)
                 {
                     canDrop = false;
@@ -980,7 +986,7 @@ public class FutureWriter(int handle, FutureVTable vTable) : WriterBase(handle)
 
     public ComponentTask<int> Write()
     {
-        return WriteInternal(() => 0, 0, VTable);
+        return WriteInternal(_ => 0, 0, VTable);
     }
 
     internal override uint VTableWrite(IntPtr bufferPtr, int length)
@@ -998,7 +1004,7 @@ public class FutureWriter<T>(int handle, FutureVTable vTable) : WriterBase(handl
 {
     public FutureVTable VTable { get; private set; } = vTable;
 
-    private nint LowerPayload(T payload)
+    private nint LowerPayload(T payload, List<Action> cleanups)
     {
         if (VTable.Lower == null)
         {
@@ -1007,14 +1013,14 @@ public class FutureWriter<T>(int handle, FutureVTable vTable) : WriterBase(handl
         else
         {
             // Lower the payload
-            VTable.Lower(payload);
+            VTable.Lower(payload, cleanups);
             return InteropReturnArea.returnArea.AddressOfReturnArea();
         }
     }
 
     public ComponentTask<int> Write(T payload)
     {
-        return WriteInternal(() => LowerPayload(payload), 1, VTable);
+        return WriteInternal(cleanups => LowerPayload(payload, cleanups), 1, VTable);
     }
 
     internal override uint VTableWrite(IntPtr bufferPtr, int length)
@@ -1034,7 +1040,7 @@ public class StreamWriter(int handle, StreamVTable vTable) : WriterBase(handle)
 
     public ComponentTask<int> Write()
     {
-        return WriteInternal(() => 0, 0, VTable);
+        return WriteInternal(_ => 0, 0, VTable);
     }
 
     internal override uint VTableWrite(IntPtr bufferPtr, int length)
@@ -1053,7 +1059,7 @@ public class StreamWriter<T>(int handle, StreamVTable vTable) : WriterBase(handl
     private nint bufferPtr;
     public StreamVTable VTable { get; private set; } = vTable;
 
-    private nint LowerPayload(T[] payload)
+    private nint LowerPayload(T[] payload, List<Action> cleanups)
     {
         if (VTable.Lower == null)
         {
@@ -1062,14 +1068,14 @@ public class StreamWriter<T>(int handle, StreamVTable vTable) : WriterBase(handl
         else
         {
             // Lower the payload
-            VTable.Lower(payload);
+            VTable.Lower(payload, cleanups);
             return InteropReturnArea.returnArea.AddressOfReturnArea();
         }
     }
 
     public ComponentTask<int> Write(T[] payload)
     {
-        return WriteInternal(() => LowerPayload(payload), payload.Length, VTable);
+        return WriteInternal(cleanups => LowerPayload(payload, cleanups), payload.Length, VTable);
     }
 
     internal override uint VTableWrite(IntPtr bufferPtr, int length)

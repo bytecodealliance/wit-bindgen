@@ -47,6 +47,7 @@ impl InterfaceTypeAndFragments {
 pub(crate) struct FutureInfo {
     pub name: String,
     pub generic_type_name: String,
+    pub qualified_generic_type_name: String,
     pub ty: Option<Type>,
 }
 
@@ -268,6 +269,7 @@ impl InterfaceGenerator<'_> {
             let future_name = &future.name;
             let generic_type_name = &future.generic_type_name;
             let upper_camel_future_type = generic_type_name.to_upper_camel_case();
+            let upper_camel_qualified_generic_type = future.qualified_generic_type_name.to_upper_camel_case();
 
             if let Some(payload) = canonical_payload {
                 //TODO: wasm64
@@ -415,14 +417,15 @@ impl InterfaceGenerator<'_> {
                         self.csharp_gen.return_area_size = self.csharp_gen.return_area_size.max(size_align.size.size_wasm32());
                         self.csharp_gen.return_area_align = self.csharp_gen.return_area_align.max(size_align.align.align_wasm32());
                         self.csharp_gen.needs_export_return_area = true;
+                        let qualified_generic_type_name = &future.qualified_generic_type_name;
                         uwrite!(
                             self.csharp_interop_src,
                             r#"
-                            public static unsafe void {future_stream_name}Lower{upper_camel_future_type}(object toLower) 
+                            public static unsafe void {future_stream_name}Lower{upper_camel_future_type}(object toLower, List<Action> cleanups) 
                             {{
                                 var ptr = InteropReturnArea.returnArea.AddressOfReturnArea();
                                 Console.WriteLine("type is " + toLower.GetType());
-                                var typedToLower = ({generic_type_name})toLower;
+                                var typedToLower = ({qualified_generic_type_name})toLower;
                                 {lower_code}
                             }}
                             "#
@@ -1577,11 +1580,13 @@ var {async_status_var} = {raw_name}({wasm_params});
         &mut self,
         func_name: &str,
         generic_type_name: &str,
+        qualified_generic_type_name: &str,
         ty: Option<Type>,
     ) {
         self.futures.push(FutureInfo {
             name: func_name.to_string(),
             generic_type_name: generic_type_name.to_string(),
+            qualified_generic_type_name: qualified_generic_type_name.to_string(),
             ty: ty,
         });
     }
@@ -1590,11 +1595,13 @@ var {async_status_var} = {raw_name}({wasm_params});
         &mut self,
         func_name: &str,
         generic_type_name: &str,
+        qualified_generic_type_name: &str,
         ty: Option<Type>,
     ) {
         self.streams.push(FutureInfo {
             name: func_name.to_string(),
             generic_type_name: generic_type_name.to_string(),
+            qualified_generic_type_name: qualified_generic_type_name.to_string(),
             ty: ty,
         });
     }
