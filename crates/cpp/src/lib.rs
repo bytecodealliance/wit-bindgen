@@ -3594,7 +3594,8 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     ptr_type = self.r#gen.r#gen.opts.ptr_type()
                 );
                 uwriteln!(self.src, "for (size_t i = 0; i < {len}; ++i) {{");
-                uwriteln!(self.src, "auto base = {ptr} + i * {size};");
+                uwriteln!(self.src, "auto _base = {ptr} + i * {size};");
+                uwriteln!(self.src, "(void) _base;");
                 uwriteln!(self.src, "auto&& iter_entry = {val}.data()[i];");
                 uwriteln!(self.src, "auto&& iter_map_key = iter_entry.first;");
                 uwriteln!(self.src, "auto&& iter_map_value = iter_entry.second;");
@@ -3636,7 +3637,8 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     uwriteln!(self.src, "if ({len}>0) _deallocate.push_back({base});");
                 }
                 uwriteln!(self.src, "for (unsigned i=0; i<{len}; ++i) {{");
-                uwriteln!(self.src, "auto base = {base} + i * {size};");
+                uwriteln!(self.src, "auto _base = {base} + i * {size};");
+                uwriteln!(self.src, "(void) _base;");
                 uwrite!(self.src, "{}", body.0);
                 let body_key = &body.1[0];
                 let body_value = &body.1[1];
@@ -3672,8 +3674,8 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let (body, results) = self.blocks.pop().unwrap();
                 assert!(results.is_empty());
                 let tmp = self.tmp();
-                let ptr = self.tempname("ptr", tmp);
-                let len = self.tempname("len", tmp);
+                let ptr = self.tempname("_ptr", tmp);
+                let len = self.tempname("_len", tmp);
                 uwriteln!(self.src, "uint8_t* {ptr} = {};", operands[0]);
                 uwriteln!(self.src, "size_t {len} = {};", operands[1]);
                 if !body.trim().is_empty() {
@@ -3681,7 +3683,8 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     uwriteln!(self.src, "for (size_t {i} = 0; {i} < {len}; {i}++) {{");
                     let entry = self.r#gen.sizes.record([*key, *value]);
                     let size = entry.size.format(POINTER_SIZE_EXPRESSION);
-                    uwriteln!(self.src, "uint8_t* base = {ptr} + {i} * {size};");
+                    uwriteln!(self.src, "uint8_t* _base = {ptr} + {i} * {size};");
+                    uwriteln!(self.src, "(void) _base;");
                     uwrite!(self.src, "{body}");
                     uwriteln!(self.src, "}}");
                 }
