@@ -177,7 +177,7 @@ public:
 /// Mirrors the canonical ABI representation of `map<K, V>` (`list<tuple<K, V>>`)
 /// to enable lift without per-entry tree allocation. Unlike `std::map` this
 /// container provides flat iteration only — callers who need keyed lookup can
-/// build their own index from `get_view()`.
+/// build their own index from `data()`/`size()` or by ranging over entries.
 template <class K, class V> class map {
 public:
   using entry_type = std::pair<K, V>;
@@ -234,12 +234,6 @@ public:
   }
   static void drop_raw(void *ptr) {
     if (ptr != empty_ptr()) free(ptr);
-  }
-  std::span<entry_type> get_view() const {
-    return std::span<entry_type>(data_, length);
-  }
-  std::span<entry_type const> get_const_view() const {
-    return std::span<entry_type const>(data_, length);
   }
   entry_type *begin() { return data_; }
   entry_type *end() { return data_ + length; }

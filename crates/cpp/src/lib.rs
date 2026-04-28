@@ -3653,7 +3653,10 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 if self.r#gen.r#gen.opts.api_style == APIStyle::Symmetric
                     && matches!(self.variant, AbiVariant::GuestExport)
                 {
-                    results.push(format!("{result}.get_const_view()"));
+                    self.r#gen.r#gen.dependencies.needs_span = true;
+                    results.push(format!(
+                        "std::span<std::pair<{key_type}, {value_type}> const>({result}.data(), {result}.size())"
+                    ));
                     self.leak_on_insertion.replace(format!(
                         "if ({len}>0) _deallocate.push_back((void*){result}.leak());\n"
                     ));
