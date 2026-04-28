@@ -229,14 +229,24 @@ public:
   void initialize(size_t n, entry_type&& entry) {
     new ((void*)(data_ + n)) entry_type(std::move(entry));
   }
-  entry_type* leak() { entry_type* result = data_; data_ = nullptr; return result; }
-  static void drop_raw(void *ptr) { if (ptr != empty_ptr()) free(ptr); }
-  std::span<entry_type> get_view() const { return std::span<entry_type>(data_, length); }
-  std::span<entry_type const> get_const_view() const { return std::span<entry_type const>(data_, length); }
-  entry_type* begin() { return data_; }
-  entry_type* end() { return data_ + length; }
-  entry_type const* begin() const { return data_; }
-  entry_type const* end() const { return data_ + length; }
+  entry_type *leak() {
+    entry_type *result = data_;
+    data_ = nullptr;
+    return result;
+  }
+  static void drop_raw(void *ptr) {
+    if (ptr != empty_ptr()) free(ptr);
+  }
+  std::span<entry_type> get_view() const {
+    return std::span<entry_type>(data_, length);
+  }
+  std::span<entry_type const> get_const_view() const {
+    return std::span<entry_type const>(data_, length);
+  }
+  entry_type *begin() { return data_; }
+  entry_type *end() { return data_ + length; }
+  entry_type const *begin() const { return data_; }
+  entry_type const *end() const { return data_ + length; }
 };
 
 /// @brief  A Resource defined within the guest (guest side)
