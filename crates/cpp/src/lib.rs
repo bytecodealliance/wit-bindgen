@@ -1753,16 +1753,16 @@ impl CppInterfaceGenerator<'_> {
                     self.r#gen.dependencies.needs_wit = true;
                     match flavor {
                         Flavor::BorrowedArgument => {
-                            format!("wit::map_view<{k}, {v}>")
+                            format!("wit::unordered_map_view<{k}, {v}>")
                         }
                         Flavor::Argument(var)
                             if matches!(var, AbiVariant::GuestImport)
                                 || self.r#gen.opts.api_style == APIStyle::Symmetric =>
                         {
-                            format!("wit::map_view<{k}, {v}>")
+                            format!("wit::unordered_map_view<{k}, {v}>")
                         }
                         _ => {
-                            format!("wit::map<{k}, {v}>")
+                            format!("wit::unordered_map<{k}, {v}>")
                         }
                     }
                 }
@@ -3627,7 +3627,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 uwriteln!(self.src, "auto {len} = {};", operands[1]);
                 uwriteln!(
                     self.src,
-                    "auto {result} = wit::map<{key_type}, {value_type}>::allocate({len});"
+                    "auto {result} = wit::unordered_map<{key_type}, {value_type}>::allocate({len});"
                 );
                 if self.r#gen.r#gen.opts.api_style == APIStyle::Symmetric
                     && matches!(self.variant, AbiVariant::GuestExport)
@@ -3653,7 +3653,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 {
                     self.r#gen.r#gen.dependencies.needs_wit = true;
                     results.push(format!(
-                        "wit::map_view<{key_type}, {value_type}>({result}.data(), {result}.size())"
+                        "wit::unordered_map_view<{key_type}, {value_type}>({result}.data(), {result}.size())"
                     ));
                     self.leak_on_insertion.replace(format!(
                         "if ({len}>0) _deallocate.push_back((void*){result}.leak());\n"
