@@ -134,6 +134,9 @@ impl InterfaceGenerator<'_> {
             TypeDefKind::Option(t) => self.type_option(type_id, typedef_name, t, &type_def.docs),
             TypeDefKind::Record(t) => self.type_record(type_id, typedef_name, t, &type_def.docs),
             TypeDefKind::List(t) => self.type_list(type_id, typedef_name, t, &type_def.docs),
+            TypeDefKind::Map(key, value) => {
+                self.type_map(type_id, typedef_name, key, value, &type_def.docs)
+            }
             TypeDefKind::Variant(t) => self.type_variant(type_id, typedef_name, t, &type_def.docs),
             TypeDefKind::Result(t) => self.type_result(type_id, typedef_name, t, &type_def.docs),
             TypeDefKind::Handle(_) => {
@@ -1174,6 +1177,13 @@ var {async_status_var} = {raw_name}({wasm_params});
                         };
                         return format!("StreamReader{generic_type}").to_owned();
                     }
+                    TypeDefKind::Map(key, value) => {
+                        format!(
+                            "global::System.Collections.Generic.Dictionary<{}, {}>",
+                            self.type_name_with_qualifier(key, qualifier),
+                            self.type_name_with_qualifier(value, qualifier)
+                        )
+                    }
                     _ => {
                         if let Some(name) = &ty.name {
                             format!(
@@ -1749,8 +1759,8 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
         todo!("named fixed-length list types are not yet supported in the C# backend")
     }
 
-    fn type_map(&mut self, _id: TypeId, _name: &str, _key: &Type, _value: &Type, _docs: &Docs) {
-        todo!("map types are not yet supported in the C# backend")
+    fn type_map(&mut self, id: TypeId, _name: &str, _key: &Type, _value: &Type, _docs: &Docs) {
+        self.type_name(&Type::Id(id));
     }
 
     fn type_builtin(&mut self, _id: TypeId, _name: &str, _ty: &Type, _docs: &Docs) {

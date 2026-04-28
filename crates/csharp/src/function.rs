@@ -1011,6 +1011,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     results: block_results,
                     element: block_element,
                     base,
+                    ..
                 } = self.blocks.pop().unwrap();
                 assert!(block_results.is_empty());
 
@@ -1414,6 +1415,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     results: block_results,
                     base,
                     element: _,
+                    ..
                 } = self.blocks.pop().unwrap();
                 assert!(block_results.is_empty());
 
@@ -1651,18 +1653,193 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.interface_gen.csharp_gen.needs_async_support = true;
             }
 
+            Instruction::MapLower {
+                key,
+                value,
+                realloc,
+            } => {
+                let Block {
+                    body,
+                    results: block_results,
+                    base,
+                    map_key,
+                    map_value,
+                    ..
+                } = self.blocks.pop().unwrap();
+                assert!(block_results.is_empty());
+
+                let map = &operands[0];
+                let entry = self
+                    .interface_gen
+                    .csharp_gen
+                    .sizes
+                    .record([*key, *value].iter().copied());
+                let size = entry.size.size_wasm32();
+                let align = entry.align.align_wasm32();
+                let key_ty = self.interface_gen.type_name_with_qualifier(key, true);
+                let value_ty = self.interface_gen.type_name_with_qualifier(value, true);
+
+                let index = self.locals.tmp("index");
+                let address = self.locals.tmp("address");
+                let buffer_size = self.locals.tmp("bufferSize");
+                let entry_var = self.locals.tmp("entry");
+
+                let (array_size, element_type) =
+                    crate::world_generator::dotnet_aligned_array(size, align);
+                let ret_area = self.locals.tmp("retArea");
+
+                let array_size = if align > 1 {
+                    format!("{array_size} * {map}.Count + 1")
+                } else {
+                    format!("{array_size} * {map}.Count")
+                };
+
+                match realloc {
+                    None => {
+                        self.needs_cleanup = true;
+                        self.interface_gen.csharp_gen.needs_align_stack_ptr = true;
+                        uwrite!(
+                            self.src,
+                            "
+                            void* {address};
+                            if (({size} * {map}.Count) < 1024) {{
+                                var {ret_area} = stackalloc {element_type}[{array_size}];
+                                {address} = MemoryHelper.AlignStackPtr({ret_area}, {align});
+                            }}
+                            else
+                            {{
+                                var {buffer_size} = {size} * (nuint){map}.Count;
+                                {address} = global::System.Runtime.InteropServices.NativeMemory.AlignedAlloc({buffer_size}, {align});
+                                cleanups.Add(() => global::System.Runtime.InteropServices.NativeMemory.AlignedFree({address}));
+                            }}
+                            "
+                        );
+                    }
+                    Some(_) => {
+                        uwrite!(
+                            self.src,
+                            "
+                            var {buffer_size} = {size} * (nuint){map}.Count;
+                            void* {address} = global::System.Runtime.InteropServices.NativeMemory.AlignedAlloc({buffer_size}, {align});
+                            "
+                        );
+                    }
+                }
+
+                uwrite!(
+                    self.src,
+                    "
+                    int {index} = 0;
+                    foreach (var {entry_var} in {map}) {{
+                        {key_ty} {map_key} = {entry_var}.Key;
+                        {value_ty} {map_value} = {entry_var}.Value;
+                        int {base} = (int){address} + ({index} * {size});
+                        {body}
+                        ++{index};
+                    }}
+                    "
+                );
+
+                results.push(format!("(int){address}"));
+                results.push(format!("{map}.Count"));
+            }
+
+            Instruction::MapLift { key, value, .. } => {
+                let Block {
+                    body,
+                    results: block_results,
+                    base,
+                    ..
+                } = self.blocks.pop().unwrap();
+                let address = &operands[0];
+                let length = &operands[1];
+                let map = self.locals.tmp("map");
+                let key_ty = self.interface_gen.type_name_with_qualifier(key, true);
+                let value_ty = self.interface_gen.type_name_with_qualifier(value, true);
+                let entry = self
+                    .interface_gen
+                    .csharp_gen
+                    .sizes
+                    .record([*key, *value].iter().copied());
+                let size = entry.size.size_wasm32();
+                let index = self.locals.tmp("index");
+
+                let body_key = &block_results[0];
+                let body_value = &block_results[1];
+
+                uwrite!(
+                    self.src,
+                    "
+                    var {map} = new global::System.Collections.Generic.Dictionary<{key_ty}, {value_ty}>((int){length});
+                    for (int {index} = 0; {index} < {length}; ++{index}) {{
+                        nint {base} = {address} + ({index} * {size});
+                        {body}
+                        {map}[{body_key}] = {body_value};
+                    }}
+
+                    if ({length} > 0) {{
+                        global::System.Runtime.InteropServices.NativeMemory.Free((void*){address});
+                    }}
+                    "
+                );
+
+                results.push(map);
+            }
+
+            Instruction::IterMapKey { .. } => {
+                results.push(self.block_storage.last().unwrap().map_key.clone())
+            }
+
+            Instruction::IterMapValue { .. } => {
+                results.push(self.block_storage.last().unwrap().map_value.clone())
+            }
+
+            Instruction::GuestDeallocateMap { key, value } => {
+                let Block {
+                    body,
+                    results: block_results,
+                    base,
+                    ..
+                } = self.blocks.pop().unwrap();
+                assert!(block_results.is_empty());
+
+                let address = &operands[0];
+                let length = &operands[1];
+                let entry = self
+                    .interface_gen
+                    .csharp_gen
+                    .sizes
+                    .record([*key, *value].iter().copied());
+                let size = entry.size.size_wasm32();
+
+                if !body.trim().is_empty() {
+                    let index = self.locals.tmp("index");
+
+                    uwrite!(
+                        self.src,
+                        "
+                        for (int {index} = 0; {index} < {length}; ++{index}) {{
+                            int {base} = (int){address} + ({index} * {size});
+                            {body}
+                        }}
+                        "
+                    );
+                }
+
+                uwriteln!(
+                    self.src,
+                    r#"global::System.Runtime.InteropServices.NativeMemory.Free((void*){});"#,
+                    operands[0]
+                );
+            }
+
             Instruction::ErrorContextLower { .. }
             | Instruction::ErrorContextLift { .. }
             | Instruction::DropHandle { .. }
             | Instruction::FixedLengthListLift { .. }
             | Instruction::FixedLengthListLower { .. }
             | Instruction::FixedLengthListLowerToMemory { .. }
-            | Instruction::FixedLengthListLiftFromMemory { .. }
-            | Instruction::MapLower { .. }
-            | Instruction::MapLift { .. }
-            | Instruction::IterMapKey { .. }
-            | Instruction::IterMapValue { .. }
-            | Instruction::GuestDeallocateMap { .. } => {
+            | Instruction::FixedLengthListLiftFromMemory { .. } => {
                 dbg!(inst);
                 todo!()
             }
@@ -1738,6 +1915,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             body: mem::take(&mut self.src),
             element: self.locals.tmp("element"),
             base: self.locals.tmp("basePtr"),
+            map_key: self.locals.tmp("mapKey"),
+            map_value: self.locals.tmp("mapValue"),
         });
 
         self.is_block = true;
@@ -1748,6 +1927,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             body,
             element,
             base,
+            map_key,
+            map_value,
         } = self.block_storage.pop().unwrap();
 
         self.blocks.push(Block {
@@ -1755,6 +1936,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             results: mem::take(operands),
             element,
             base,
+            map_key,
+            map_value,
         });
         self.is_block = false;
     }
@@ -1827,6 +2010,8 @@ struct Block {
     results: Vec<String>,
     element: String,
     base: String,
+    map_key: String,
+    map_value: String,
 }
 
 struct Fixed {
@@ -1838,6 +2023,8 @@ struct BlockStorage {
     body: String,
     element: String,
     base: String,
+    map_key: String,
+    map_value: String,
 }
 
 #[derive(Clone)]

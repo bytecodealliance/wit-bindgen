@@ -814,14 +814,6 @@ impl WorldGenerator for CSharp {
                 );
             }
 
-            // For the time being, we generate both a .wit file and a .o file to
-            // represent the component type.  Newer releases of the .NET runtime
-            // will be able to use the former, but older ones will need the
-            // latter.
-            //
-            // TODO: stop generating the .o file once a new-enough release is
-            // available for us to test using only the .wit file.
-
             {
                 // When generating a WIT file, we first round-trip through the
                 // binary encoding.  This has the effect of flattening any

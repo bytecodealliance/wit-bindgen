@@ -50,7 +50,6 @@ impl LanguageMethods for Csharp {
                 | "issue-1433.wit"
                 | "issue-1598.wit"
                 | "named-fixed-length-list.wit"
-                | "map.wit"
         )
     }
 
