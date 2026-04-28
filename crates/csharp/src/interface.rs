@@ -1063,12 +1063,24 @@ var {async_status_var} = {raw_name}({wasm_params});
             let task_return_param = task_return_param_vec
                 .join(", ");
 
+            let resource_type_name = match func.kind {
+                FunctionKind::Method(resource_type_id) |
+                FunctionKind::AsyncMethod(resource_type_id) |
+                FunctionKind::Static(resource_type_id) |
+                FunctionKind::Constructor(resource_type_id) => {
+                    format!("Method{}", self.csharp_gen.all_resources[&resource_type_id]
+                        .name
+                        .to_upper_camel_case())
+                }
+                _ => String::new()
+                };
+            
             uwriteln!(
                 self.src,
                 r#"
-            public static void {camel_name}TaskReturn({task_return_param_sig} )
+            public static void {camel_name}TaskReturn({task_return_param_sig})
             {{
-                {interop_class_name}.{camel_name}TaskReturn({task_return_param});
+                {interop_class_name}.{resource_type_name}{camel_name}TaskReturn({task_return_param});
             }}
             "#
             );
