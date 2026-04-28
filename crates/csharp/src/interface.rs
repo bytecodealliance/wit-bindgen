@@ -235,7 +235,7 @@ impl InterfaceGenerator<'_> {
         let (_namespace, interface_name) = &CSharp::get_class_name_from_qualified_name(self.name);
         let interop_name = format!("{}Interop", interface_name.strip_prefix("I").unwrap());
         // avoid the immutable self borrow
-        let (futures_or_streams, stream_length_param) : (Vec<FutureInfo>, &str)= if is_future {
+        let (futures_or_streams, stream_length_param): (Vec<FutureInfo>, &str) = if is_future {
             (self.futures.iter().cloned().collect(), "")
         } else {
             (self.streams.iter().cloned().collect(), ", uint length")
@@ -268,7 +268,6 @@ impl InterfaceGenerator<'_> {
             let future_name = &future.name;
             let generic_type_name = &future.generic_type_name;
             let upper_camel_future_type = generic_type_name.to_upper_camel_case();
-            let upper_camel_qualified_generic_type = future.qualified_generic_type_name.to_upper_camel_case();
 
             if let Some(payload) = canonical_payload {
                 //TODO: wasm64
@@ -391,7 +390,9 @@ impl InterfaceGenerator<'_> {
                             direction: Some(self.direction),
                         });
 
-                    if lift_func != "null" && let Some(payload_type) = canonical_payload {
+                    if lift_func != "null"
+                        && let Some(payload_type) = canonical_payload
+                    {
                         let (lift, result) = self.lift_from_memory("buffer", &payload_type);
 
                         uwrite!(
@@ -409,12 +410,20 @@ impl InterfaceGenerator<'_> {
                         );
                     }
 
-                    if lower_func != "null" && let Some(payload_type) = canonical_payload {
+                    if lower_func != "null"
+                        && let Some(payload_type) = canonical_payload
+                    {
                         let lower_code = self.lower_to_memory("ptr", "typedToLower", &payload_type);
                         let size_align = self.csharp_gen.sizes.params(Some(&payload_type));
                         // TODO: Wasm64
-                        self.csharp_gen.return_area_size = self.csharp_gen.return_area_size.max(size_align.size.size_wasm32());
-                        self.csharp_gen.return_area_align = self.csharp_gen.return_area_align.max(size_align.align.align_wasm32());
+                        self.csharp_gen.return_area_size = self
+                            .csharp_gen
+                            .return_area_size
+                            .max(size_align.size.size_wasm32());
+                        self.csharp_gen.return_area_align = self
+                            .csharp_gen
+                            .return_area_align
+                            .max(size_align.align.align_wasm32());
                         self.csharp_gen.needs_export_return_area = true;
                         let qualified_generic_type_name = &future.qualified_generic_type_name;
                         uwrite!(
@@ -740,14 +749,14 @@ impl InterfaceGenerator<'_> {
             let name = func.name.to_upper_camel_case();
             let raw_name = format!("IImportsInterop.{name}WasmInterop.wasmImport{name}");
 
-            let mut wasm_param_refs: Vec<&str> =
-                wasm_params.iter().map(|v| v.as_str()).collect();
+            let mut wasm_param_refs: Vec<&str> = wasm_params.iter().map(|v| v.as_str()).collect();
 
             let async_return_buffer_prefixed;
-                
+
             if func.result.is_some() {
                 // Build a new owned string with the prefix
-                async_return_buffer_prefixed = Some(format!("(nint){}", async_return_buffer.as_ref().unwrap()));
+                async_return_buffer_prefixed =
+                    Some(format!("(nint){}", async_return_buffer.as_ref().unwrap()));
                 // Borrow from that owned string
                 wasm_param_refs.push(async_return_buffer_prefixed.as_ref().unwrap().as_str());
             }
@@ -770,11 +779,13 @@ var {async_status_var} = {raw_name}({wasm_params});
                 uwriteln!(src, "{}", bindgen_src);
                 let return_type = self.type_name_with_qualifier(&ty, true);
 
-                let lift_func = format!("() => {{
+                let lift_func = format!(
+                    "() => {{
                         {lift_expr}
 
                         return {res};
-                    }}");
+                    }}"
+                );
                 uwriteln!(
                     src,
                     "
@@ -1040,43 +1051,44 @@ var {async_status_var} = {raw_name}({wasm_params});
             }
 
             let resolve = &self.resolve;
-            let (task_return_param_sig_vec, task_return_param_vec): (Vec<String>, Vec<String>)  = func
-                .result
-                .map(|ty| {
-                    let mut storage = vec![abi::WasmType::I32; MAX_FLAT_PARAMS];
-                    let mut flat = abi::FlatTypes::new(&mut storage);
-                    if resolve.push_flat(&ty, &mut flat) {
-                        flat.to_vec()
-                    } else {
-                        vec![abi::WasmType::I32]
-                    }
-                })
-                .unwrap_or_default()
-                .into_iter()
-                .enumerate()
-                .map(|(i, ty)| {
-                    let ty = crate::world_generator::wasm_type(ty);
-                    (format!("{ty} arg{i}"), format!("arg{i}"))
-                })
-                .unzip();
+            let (task_return_param_sig_vec, task_return_param_vec): (Vec<String>, Vec<String>) =
+                func.result
+                    .map(|ty| {
+                        let mut storage = vec![abi::WasmType::I32; MAX_FLAT_PARAMS];
+                        let mut flat = abi::FlatTypes::new(&mut storage);
+                        if resolve.push_flat(&ty, &mut flat) {
+                            flat.to_vec()
+                        } else {
+                            vec![abi::WasmType::I32]
+                        }
+                    })
+                    .unwrap_or_default()
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, ty)| {
+                        let ty = crate::world_generator::wasm_type(ty);
+                        (format!("{ty} arg{i}"), format!("arg{i}"))
+                    })
+                    .unzip();
 
-            let task_return_param_sig = task_return_param_sig_vec
-                .join(", ");
-            let task_return_param = task_return_param_vec
-                .join(", ");
+            let task_return_param_sig = task_return_param_sig_vec.join(", ");
+            let task_return_param = task_return_param_vec.join(", ");
 
             let resource_type_name = match func.kind {
-                FunctionKind::Method(resource_type_id) |
-                FunctionKind::AsyncMethod(resource_type_id) |
-                FunctionKind::Static(resource_type_id) |
-                FunctionKind::Constructor(resource_type_id) => {
-                    format!("Method{}", self.csharp_gen.all_resources[&resource_type_id]
-                        .name
-                        .to_upper_camel_case())
+                FunctionKind::Method(resource_type_id)
+                | FunctionKind::AsyncMethod(resource_type_id)
+                | FunctionKind::Static(resource_type_id)
+                | FunctionKind::Constructor(resource_type_id) => {
+                    format!(
+                        "Method{}",
+                        self.csharp_gen.all_resources[&resource_type_id]
+                            .name
+                            .to_upper_camel_case()
+                    )
                 }
-                _ => String::new()
-                };
-            
+                _ => String::new(),
+            };
+
             uwriteln!(
                 self.src,
                 r#"
@@ -1088,17 +1100,20 @@ var {async_status_var} = {raw_name}({wasm_params});
             );
 
             let resource_type_name = match func.kind {
-                FunctionKind::Method(resource_type_id) |
-                FunctionKind::AsyncMethod(resource_type_id) |
-                FunctionKind::Static(resource_type_id) |
-                FunctionKind::Constructor(resource_type_id) => {
-                    format!("Method{}", self.csharp_gen.all_resources[&resource_type_id]
-                        .name
-                        .to_upper_camel_case())
+                FunctionKind::Method(resource_type_id)
+                | FunctionKind::AsyncMethod(resource_type_id)
+                | FunctionKind::Static(resource_type_id)
+                | FunctionKind::Constructor(resource_type_id) => {
+                    format!(
+                        "Method{}",
+                        self.csharp_gen.all_resources[&resource_type_id]
+                            .name
+                            .to_upper_camel_case()
+                    )
                 }
-                _ => String::new()
-                };
-            let task_return_name = format!("{}{}", resource_type_name, camel_name);
+                _ => String::new(),
+            };
+            let task_return_name = format!("{resource_type_name}{camel_name}");
 
             uwriteln!(
                 self.csharp_interop_src,
@@ -1608,8 +1623,15 @@ var {async_status_var} = {raw_name}({wasm_params});
     fn lift_from_memory(&mut self, address: &str, ty: &Type) -> (String, String) {
         let boxed: Box<[String]> = Vec::new().into_boxed_slice();
 
-        let mut f = FunctionBindgen::new(self, "", &FunctionKind::AsyncFreestanding, 
-            boxed,vec![], ParameterType::ABI, None);
+        let mut f = FunctionBindgen::new(
+            self,
+            "",
+            &FunctionKind::AsyncFreestanding,
+            boxed,
+            vec![],
+            ParameterType::ABI,
+            None,
+        );
         let result = abi::lift_from_memory(f.interface_gen.resolve, &mut f, address.into(), ty);
 
         (f.src, result)
@@ -1619,13 +1641,25 @@ var {async_status_var} = {raw_name}({wasm_params});
     fn lower_to_memory(&mut self, address: &str, value: &str, ty: &Type) -> String {
         let boxed: Box<[String]> = Vec::new().into_boxed_slice();
 
-        let mut f = FunctionBindgen::new(self, "", &FunctionKind::AsyncFreestanding, 
-            boxed,vec![], ParameterType::ABI, None);
-        abi::lower_to_memory(f.interface_gen.resolve, &mut f, address.into(), value.into(), ty);
+        let mut f = FunctionBindgen::new(
+            self,
+            "",
+            &FunctionKind::AsyncFreestanding,
+            boxed,
+            vec![],
+            ParameterType::ABI,
+            None,
+        );
+        abi::lower_to_memory(
+            f.interface_gen.resolve,
+            &mut f,
+            address.into(),
+            value.into(),
+            ty,
+        );
 
         f.src
     }
-
 }
 
 impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
@@ -1927,26 +1961,24 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
     fn type_stream(&mut self, id: TypeId, _name: &str, _ty: &Option<Type>, _docs: &Docs) {
         self.type_name(&Type::Id(id));
     }
-
-
 }
 
 // TODO: Is this not publicly available elsewhere, a function that says if a type needs to be returned as a pointer
 fn needs_ptr(ty: &Type) -> bool {
     match *ty {
-        Type::Bool |
-        Type::S8 |
-        Type::U8 |
-        Type::S16 |
-        Type::U16 |
-        Type::S32 |
-        Type::U32 |
-        Type::S64 |
-        Type::U64 |
-        Type::Char |
-        Type::F32 |
-        Type::F64 => false,
-        _ => true
+        Type::Bool
+        | Type::S8
+        | Type::U8
+        | Type::S16
+        | Type::U16
+        | Type::S32
+        | Type::U32
+        | Type::S64
+        | Type::U64
+        | Type::Char
+        | Type::F32
+        | Type::F64 => false,
+        _ => true,
     }
 }
 

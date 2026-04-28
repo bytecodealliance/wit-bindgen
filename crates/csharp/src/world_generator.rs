@@ -585,7 +585,7 @@ impl WorldGenerator for CSharp {
             )
         }
 
-        if self.needs_async_support{
+        if self.needs_async_support {
             self.needs_export_return_area = true;
         }
 
@@ -599,7 +599,10 @@ impl WorldGenerator for CSharp {
             let (array_size, element_type) = if self.return_area_size == 0 {
                 (1, "byte".to_owned())
             } else {
-                crate::world_generator::dotnet_aligned_array(self.return_area_size, self.return_area_align)
+                crate::world_generator::dotnet_aligned_array(
+                    self.return_area_size,
+                    self.return_area_align,
+                )
             };
 
             uwrite!(

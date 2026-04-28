@@ -2,6 +2,7 @@ use crate::csharp_ident::ToCSharpIdent;
 use crate::interface::{InterfaceGenerator, ParameterType, variant_new_func_name};
 use crate::world_generator::CSharp;
 use heck::ToUpperCamelCase;
+use regex::Regex;
 use std::fmt::Write;
 use std::mem;
 use std::ops::Deref;
@@ -12,7 +13,6 @@ use wit_parser::{
     Alignment, ArchitectureSize, Docs, FunctionKind, Handle, Resolve, SizeAlign, Type, TypeDefKind,
     TypeId,
 };
-use regex::Regex;
 
 /// FunctionBindgen generates the C# code for calling functions defined in wit
 pub(crate) struct FunctionBindgen<'a, 'b> {
@@ -364,7 +364,11 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         } else {
             format!("{target}.{func_name}({oper})")
         };
-        uwriteln!(self.src, "{ret} = {}{head}{val}{tail};", if use_await { "await " } else { "" });
+        uwriteln!(
+            self.src,
+            "{ret} = {}{head}{val}{tail};",
+            if use_await { "await " } else { "" }
+        );
         if !self.results.is_empty() {
             self.interface_gen.csharp_gen.needs_wit_exception = true;
             let cases = cases.join("\n");
@@ -1238,7 +1242,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.interface_gen.csharp_gen.needs_async_support = true;
                     let async_func_name = format!("{}Async", self.func_name.to_upper_camel_case());
 
-                    uwriteln!(self.src, r#"var task = {async_func_name}({oper});
+                    uwriteln!(
+                        self.src,
+                        r#"var task = {async_func_name}({oper});
                         if (task.IsCompletedSuccessfully)
                         {{
                             return (int)CallbackCode.Exit;
@@ -1251,35 +1257,49 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                         return (int)CallbackCode.Wait | (int)(contextTaskPtr->WaitableSetHandle << 4);
                 }}
-                    "#);
+                    "#
+                    );
 
                     // Start the Async function
-                    uwriteln!(self.src, r#"public static async Task {async_func_name}({})
+                    uwriteln!(
+                        self.src,
+                        r#"public static async Task {async_func_name}({})
                     {{
                         var cleanups = new global::System.Collections.Generic.List<global::System.Action>();
 
-                    "#, func.params.iter().enumerate().map(|(i, p)| {
-                        let mut param_type = self.interface_gen.type_name_with_qualifier(&p.ty, false);
+                    "#,
+                        func.params
+                            .iter()
+                            .enumerate()
+                            .map(|(i, p)| {
+                                let mut param_type =
+                                    self.interface_gen.type_name_with_qualifier(&p.ty, false);
 
-                        // Resource types need the Impl class to be distinguised.
-                        match p.ty {
-                            Type::Id(type_id) => {
-                                let id = dealias(self.interface_gen.resolve, type_id);
+                                // Resource types need the Impl class to be distinguised.
+                                match p.ty {
+                                    Type::Id(type_id) => {
+                                        let id = dealias(self.interface_gen.resolve, type_id);
 
-                                let kind = &self.interface_gen.resolve.types[id].kind;
-                                match kind {
-                                    TypeDefKind::Handle(handle) => {
-                                        let (Handle::Own(ty) | Handle::Borrow(ty)) = handle;
-                                        param_type = self.interface_gen.csharp_gen.all_resources[&ty].export_impl_name();
+                                        let kind = &self.interface_gen.resolve.types[id].kind;
+                                        match kind {
+                                            TypeDefKind::Handle(handle) => {
+                                                let (Handle::Own(ty) | Handle::Borrow(ty)) = handle;
+                                                param_type =
+                                                    self.interface_gen.csharp_gen.all_resources
+                                                        [&ty]
+                                                        .export_impl_name();
+                                            }
+                                            _ => {}
+                                        }
                                     }
-                                    _ => {},
+                                    _ => {}
                                 }
-                            }
-                            _ => {}
-                        }
 
-                        format!("{} {}", param_type, strip_lift(&operands[i]))
-                    }).collect::<Vec<_>>().join(", "));
+                                format!("{} {}", param_type, strip_lift(&operands[i]))
+                            })
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    );
                     self.needs_cleanup = true;
                 }
 
@@ -1311,7 +1331,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                                 }
                             }
                             Some(_ty) => {
-                                let ret = self.handle_result_call(func, target, func_name, oper, is_async && self.interface_gen.direction == Direction::Export);
+                                let ret = self.handle_result_call(
+                                    func,
+                                    target,
+                                    func_name,
+                                    oper,
+                                    is_async && self.interface_gen.direction == Direction::Export,
+                                );
                                 results.push(ret);
                             }
                         }
@@ -1612,25 +1638,32 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             | Instruction::StreamLower { payload, ty: _ } => {
                 let op = &operands[0];
                 let (generic_type_name, generic_type_name_with_qualifier) = match payload {
-                    Some(generic_type) => &self
-                        let name = self.interface_gen.type_name_with_qualifier(generic_type, false);
-                        let qualified_name = self.interface_gen.type_name_with_qualifier(generic_type, true);
+                    Some(generic_type) => {
+                        let name = self
+                            .interface_gen
+                            .type_name_with_qualifier(generic_type, false);
+                        let qualified_name = self
+                            .interface_gen
+                            .type_name_with_qualifier(generic_type, true);
                         (name, qualified_name)
-                    None => (String::new(), String::new())
+                    }
+                    None => (String::new(), String::new()),
                 };
 
                 match inst {
                     Instruction::FutureLower { .. } => {
-                        self.interface_gen.add_future(self.func_name, &generic_type_name, &generic_type_name_with_qualifier,**payload);
+                        self.interface_gen.add_future(
                             self.func_name,
                             &generic_type_name,
+                            &generic_type_name_with_qualifier,
                             **payload,
                         );
                     }
                     _ => {
-                        self.interface_gen.add_stream(self.func_name, &generic_type_name, &generic_type_name_with_qualifier, **payload);
+                        self.interface_gen.add_stream(
                             self.func_name,
                             &generic_type_name,
+                            &generic_type_name_with_qualifier,
                             **payload,
                         );
                     }
@@ -1640,18 +1673,27 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::AsyncTaskReturn { name, params: _ } => {
-                let name = name.strip_prefix("[task-return]").unwrap().to_upper_camel_case();
-                uwriteln!(self.src, "Console.WriteLine(\"async task return for {name}\");");
+                let name = name
+                    .strip_prefix("[task-return]")
+                    .unwrap()
+                    .to_upper_camel_case();
+                uwriteln!(
+                    self.src,
+                    "Console.WriteLine(\"async task return for {name}\");"
+                );
                 uwriteln!(self.src, "// TODO: task_cancel.forget();");
                 if self.interface_gen.direction == Direction::Export {
                     uwriteln!(self.src, "{name}TaskReturn({});", operands.join(", "));
 
                     if self.needs_cleanup {
-                        uwriteln!(self.src, "
+                        uwriteln!(
+                            self.src,
+                            "
                         foreach (var cleanup in cleanups)
                         {{
                             cleanup();
-                        }}");
+                        }}"
+                        );
                     }
                 }
             }
@@ -1701,16 +1743,18 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 match inst {
                     Instruction::FutureLift { .. } => {
-                        self.interface_gen.add_future(self.func_name, &generic_type_name, &generic_type_name_with_qualifier,**payload);
+                        self.interface_gen.add_future(
                             self.func_name,
                             &generic_type_name,
+                            &generic_type_name_with_qualifier,
                             **payload,
                         );
                     }
                     _ => {
-                        self.interface_gen.add_stream(self.func_name, &generic_type_name, &generic_type_name_with_qualifier,**payload);
+                        self.interface_gen.add_stream(
                             self.func_name,
                             &generic_type_name,
+                            &generic_type_name_with_qualifier,
                             **payload,
                         );
                     }
