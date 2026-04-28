@@ -1750,20 +1750,18 @@ impl CppInterfaceGenerator<'_> {
                     };
                     let k = self.type_name(key, from_namespace, element_flavor);
                     let v = self.type_name(value, from_namespace, element_flavor);
+                    self.r#gen.dependencies.needs_wit = true;
                     match flavor {
                         Flavor::BorrowedArgument => {
-                            self.r#gen.dependencies.needs_span = true;
-                            format!("std::span<std::pair<{k}, {v}> const>")
+                            format!("wit::map_view<{k}, {v}>")
                         }
                         Flavor::Argument(var)
                             if matches!(var, AbiVariant::GuestImport)
                                 || self.r#gen.opts.api_style == APIStyle::Symmetric =>
                         {
-                            self.r#gen.dependencies.needs_span = true;
-                            format!("std::span<std::pair<{k}, {v}> const>")
+                            format!("wit::map_view<{k}, {v}>")
                         }
                         _ => {
-                            self.r#gen.dependencies.needs_wit = true;
                             format!("wit::map<{k}, {v}>")
                         }
                     }
@@ -3653,9 +3651,9 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 if self.r#gen.r#gen.opts.api_style == APIStyle::Symmetric
                     && matches!(self.variant, AbiVariant::GuestExport)
                 {
-                    self.r#gen.r#gen.dependencies.needs_span = true;
+                    self.r#gen.r#gen.dependencies.needs_wit = true;
                     results.push(format!(
-                        "std::span<std::pair<{key_type}, {value_type}> const>({result}.data(), {result}.size())"
+                        "wit::map_view<{key_type}, {value_type}>({result}.data(), {result}.size())"
                     ));
                     self.leak_on_insertion.replace(format!(
                         "if ({len}>0) _deallocate.push_back((void*){result}.leak());\n"
