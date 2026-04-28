@@ -111,6 +111,7 @@ impl Parse for Config {
                     Opt::Ownership(ownership) => opts.ownership = ownership,
                     Opt::Skip(list) => opts.skip.extend(list.iter().map(|i| i.value())),
                     Opt::RuntimePath(path) => opts.runtime_path = Some(path.value()),
+                    Opt::MapType(path) => opts.map_type = Some(path.value()),
                     Opt::BitflagsPath(path) => opts.bitflags_path = Some(path.value()),
                     Opt::Stubs => {
                         opts.stubs = true;
@@ -162,13 +163,10 @@ impl Parse for Config {
                             return Err(Error::new(span, "cannot specify second async config"));
                         }
                         async_configured = true;
-                        if val.any_enabled() && !cfg!(feature = "async") {
-                            return Err(Error::new(
-                                span,
-                                "must enable `async` feature to enable async imports and/or exports",
-                            ));
-                        }
                         opts.async_ = val;
+                    }
+                    Opt::EnableMethodChaining(enable) => {
+                        opts.enable_method_chaining = enable.value();
                     }
                 }
             }
@@ -304,6 +302,7 @@ mod kw {
     syn::custom_keyword!(inline);
     syn::custom_keyword!(ownership);
     syn::custom_keyword!(runtime_path);
+    syn::custom_keyword!(map_type);
     syn::custom_keyword!(bitflags_path);
     syn::custom_keyword!(exports);
     syn::custom_keyword!(stubs);
@@ -322,6 +321,7 @@ mod kw {
     syn::custom_keyword!(disable_custom_section_link_helpers);
     syn::custom_keyword!(imports);
     syn::custom_keyword!(debug);
+    syn::custom_keyword!(enable_method_chaining);
 }
 
 #[derive(Clone)]
@@ -383,6 +383,7 @@ enum Opt {
     Skip(Vec<syn::LitStr>),
     Ownership(Ownership),
     RuntimePath(syn::LitStr),
+    MapType(syn::LitStr),
     BitflagsPath(syn::LitStr),
     Stubs,
     ExportPrefix(syn::LitStr),
@@ -401,6 +402,7 @@ enum Opt {
     DisableCustomSectionLinkHelpers(syn::LitBool),
     Async(AsyncFilterSet, Span),
     Debug(syn::LitBool),
+    EnableMethodChaining(syn::LitBool),
 }
 
 impl Parse for Opt {
@@ -486,6 +488,10 @@ impl Parse for Opt {
             input.parse::<kw::runtime_path>()?;
             input.parse::<Token![:]>()?;
             Ok(Opt::RuntimePath(input.parse()?))
+        } else if l.peek(kw::map_type) {
+            input.parse::<kw::map_type>()?;
+            input.parse::<Token![:]>()?;
+            Ok(Opt::MapType(input.parse()?))
         } else if l.peek(kw::bitflags_path) {
             input.parse::<kw::bitflags_path>()?;
             input.parse::<Token![:]>()?;
@@ -561,6 +567,10 @@ impl Parse for Opt {
             input.parse::<kw::debug>()?;
             input.parse::<Token![:]>()?;
             Ok(Opt::Debug(input.parse()?))
+        } else if l.peek(kw::enable_method_chaining) {
+            input.parse::<kw::enable_method_chaining>()?;
+            input.parse::<Token![:]>()?;
+            Ok(Opt::EnableMethodChaining(input.parse()?))
         } else if l.peek(Token![async]) {
             let span = input.parse::<Token![async]>()?.span;
             input.parse::<Token![:]>()?;

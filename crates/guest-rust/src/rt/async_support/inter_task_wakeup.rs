@@ -1,8 +1,8 @@
 use super::FutureState;
+use crate::rt::async_support::try_lock::TryLock;
 use crate::rt::async_support::{BLOCKED, COMPLETED};
 use crate::{RawStreamReader, RawStreamWriter, StreamOps, UnitStreamOps};
-use std::ptr;
-use std::sync::Mutex;
+use core::ptr;
 
 #[derive(Default)]
 pub struct State {
@@ -27,7 +27,7 @@ impl FutureState<'_> {
             assert!(!self.inter_task_wakeup.stream_reading);
             let (writer, reader) = UnitStreamOps::new();
             self.inter_task_wakeup.stream = Some(reader);
-            let mut waker_stream = self.waker.inter_task_stream.lock.lock().unwrap();
+            let mut waker_stream = self.waker.inter_task_stream.lock.try_lock().unwrap();
             assert!(waker_stream.is_none());
             *waker_stream = Some(writer);
         }
@@ -81,7 +81,7 @@ impl State {
 
 #[derive(Default)]
 pub struct WakerState {
-    lock: Mutex<Option<RawStreamWriter<UnitStreamOps>>>,
+    lock: TryLock<Option<RawStreamWriter<UnitStreamOps>>>,
 }
 
 impl WakerState {
@@ -90,7 +90,7 @@ impl WakerState {
         // original future itself. The stream should also have an active read
         // while the future is sleeping. This means that this write should
         // succeed immediately.
-        let mut inter_task_stream = self.lock.lock().unwrap();
+        let mut inter_task_stream = self.lock.try_lock().unwrap();
         let stream = inter_task_stream.as_mut().unwrap();
         let rc = unsafe { UnitStreamOps.start_write(stream.handle(), ptr::null_mut(), 1) };
         assert_eq!(rc, COMPLETED | (1 << 4));

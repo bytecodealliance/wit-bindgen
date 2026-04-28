@@ -3,9 +3,10 @@
 
 use crate::rt::async_support::waitable::{WaitableOp, WaitableOperation};
 use crate::rt::async_support::{AbiBuffer, DROPPED, ReturnCode};
+use alloc::vec::Vec;
 use {
     crate::rt::Cleanup,
-    std::{
+    core::{
         alloc::Layout,
         fmt,
         future::Future,
@@ -13,9 +14,11 @@ use {
         ptr,
         sync::atomic::{AtomicU32, Ordering::Relaxed},
         task::{Context, Poll},
-        vec::Vec,
     },
 };
+
+/// Maximum size of a read/write operation as specified by the canonical ABI.
+const MAX_LENGTH: usize = (1 << 28) - 1;
 
 /// Operations that a stream requires throughout the implementation.
 ///
@@ -305,7 +308,7 @@ where
         // TODO: can probably be a bit more efficient about this and avoid
         // moving `value` onto the heap in some situations, but that's left as
         // an optimization for later.
-        self.write_all(std::vec![value]).await.pop()
+        self.write_all(alloc::vec![value]).await.pop()
     }
 }
 
@@ -376,7 +379,11 @@ where
         let (ptr, len) = buf.abi_ptr_and_len();
         // SAFETY: sure hope this is safe, everything in this module and
         // `AbiBuffer` is trying to make this safe.
-        let code = unsafe { self.writer.ops.start_write(self.writer.handle, ptr, len) };
+        let code = unsafe {
+            self.writer
+                .ops
+                .start_write(self.writer.handle, ptr, len.min(MAX_LENGTH))
+        };
         rtdebug!(
             "stream.write({}, {ptr:?}, {len}) = {code:#x}",
             self.writer.handle
@@ -618,7 +625,7 @@ unsafe impl<'a, O: StreamOps> WaitableOp for StreamReadOp<'a, O> {
         let code = unsafe {
             self.reader
                 .ops
-                .start_read(self.reader.handle(), ptr, cap.len())
+                .start_read(self.reader.handle(), ptr, cap.len().min(MAX_LENGTH))
         };
         rtdebug!(
             "stream.read({}, {ptr:?}, {}) = {code:#x}",

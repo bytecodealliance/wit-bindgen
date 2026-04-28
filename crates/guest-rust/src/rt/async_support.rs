@@ -1,16 +1,16 @@
 #![deny(missing_docs)]
 
-extern crate std;
+use alloc::boxed::Box;
+use alloc::collections::BTreeMap;
+use alloc::sync::Arc;
+use alloc::task::Wake;
+use core::ffi::c_void;
+use core::future::Future;
+use core::mem;
+use core::pin::Pin;
+use core::ptr;
 use core::sync::atomic::{AtomicU32, Ordering};
-use std::boxed::Box;
-use std::collections::BTreeMap;
-use std::ffi::c_void;
-use std::future::Future;
-use std::mem;
-use std::pin::Pin;
-use std::ptr;
-use std::sync::Arc;
-use std::task::{Context, Poll, Wake, Waker};
+use core::task::{Context, Poll, Waker};
 
 macro_rules! rtdebug {
     ($($f:tt)*) => {
@@ -18,6 +18,7 @@ macro_rules! rtdebug {
         // crate like `log` or such to reduce runtime deps. Intended to be used
         // during development for now.
         if false {
+            #[cfg(feature = "std")]
             std::eprintln!($($f)*);
         }
     }
@@ -67,6 +68,7 @@ mod futures_stream;
 mod inter_task_wakeup;
 mod stream_support;
 mod subtask;
+mod try_lock;
 #[cfg(feature = "inter-task-wakeup")]
 mod unit_stream;
 mod waitable;

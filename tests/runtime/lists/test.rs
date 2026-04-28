@@ -96,4 +96,10 @@ impl exports::test::lists::to_test::Guest for Component {
     fn list_minmax_float(a: Vec<f32>, b: Vec<f64>) -> (Vec<f32>, Vec<f64>) {
         (a, b)
     }
+
+    fn wasi_http_headers_roundtrip(
+        headers: Vec<(String, Vec<u8>)>,
+    ) -> Vec<(String, Vec<u8>)> {
+        headers
+    }
 }

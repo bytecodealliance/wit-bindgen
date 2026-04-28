@@ -1,0 +1,41 @@
+package foo:foo;
+
+interface map-types {
+  type names-by-id = map<u32, string>;
+  type ids-by-name = map<string, u32>;
+  type bytes-by-name = map<string, list<u8>>;
+  type optional-values = map<string, option<u32>>;
+  type nested-map = map<string, map<u32, string>>;
+
+  record wrapped-map {
+    values: names-by-id,
+  }
+
+  record map-value-record {
+    x: u32,
+    y: string,
+  }
+
+  variant map-or-string {
+    as-map(names-by-id),
+    as-string(string),
+  }
+
+  named-roundtrip: func(a: names-by-id) -> ids-by-name;
+  inline-roundtrip: func(a: map<u32, string>, b: map<string, list<u8>>) -> tuple<map<string, u32>, map<string, list<u8>>>;
+  nested-roundtrip: func(a: bytes-by-name) -> bytes-by-name;
+  wrapped-roundtrip: func(a: wrapped-map) -> wrapped-map;
+  option-map-roundtrip: func(a: optional-values) -> optional-values;
+  nested-map-roundtrip: func(a: nested-map) -> nested-map;
+  record-value-roundtrip: func(a: map<string, map-value-record>) -> map<string, map-value-record>;
+  bool-key-roundtrip: func(a: map<bool, string>) -> map<bool, string>;
+  char-key-roundtrip: func(a: map<char, u32>) -> map<char, u32>;
+  variant-roundtrip: func(a: map-or-string) -> map-or-string;
+  result-roundtrip: func(a: result<names-by-id, string>) -> result<names-by-id, string>;
+  tuple-with-map: func(a: tuple<names-by-id, u64>) -> tuple<names-by-id, u64>;
+}
+
+world map-world {
+  import map-types;
+  export map-types;
+}

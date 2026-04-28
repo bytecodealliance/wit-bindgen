@@ -1,0 +1,41 @@
+package test:maps;
+
+interface to-test {
+  type names-by-id = map<u32, string>;
+  type ids-by-name = map<string, u32>;
+  type bytes-by-name = map<string, list<u8>>;
+
+  record labeled-entry {
+    label: string,
+    values: names-by-id,
+  }
+
+  variant map-or-string {
+    as-map(names-by-id),
+    as-string(string),
+  }
+
+  named-roundtrip: func(a: names-by-id) -> ids-by-name;
+  bytes-roundtrip: func(a: bytes-by-name) -> bytes-by-name;
+  empty-roundtrip: func(a: names-by-id) -> names-by-id;
+  option-roundtrip: func(a: map<string, option<u32>>) -> map<string, option<u32>>;
+  record-roundtrip: func(a: labeled-entry) -> labeled-entry;
+  inline-roundtrip: func(a: map<u32, string>) -> map<string, u32>;
+  large-roundtrip: func(a: names-by-id) -> names-by-id;
+  multi-param-roundtrip: func(a: names-by-id, b: bytes-by-name) -> tuple<ids-by-name, bytes-by-name>;
+  nested-roundtrip: func(a: map<string, map<u32, string>>) -> map<string, map<u32, string>>;
+  variant-roundtrip: func(a: map-or-string) -> map-or-string;
+  result-roundtrip: func(a: result<names-by-id, string>) -> result<names-by-id, string>;
+  tuple-roundtrip: func(a: tuple<names-by-id, u64>) -> tuple<names-by-id, u64>;
+  single-entry-roundtrip: func(a: names-by-id) -> names-by-id;
+}
+
+world test {
+  export to-test;
+}
+
+world runner {
+  import to-test;
+
+  export run: func();
+}

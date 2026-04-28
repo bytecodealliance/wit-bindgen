@@ -209,10 +209,15 @@ impl WorldGenerator for Markdown {
         for event in parser {
             if let Event::Code(code) = &event {
                 if let Some(dst) = self.hrefs.get(code.as_ref()) {
-                    let tag = Tag::Link(LinkType::Inline, dst.as_str().into(), "".into());
+                    let tag = Tag::Link {
+                        link_type: LinkType::Inline,
+                        dest_url: dst.as_str().into(),
+                        title: "".into(),
+                        id: "".into(),
+                    };
                     events.push(Event::Start(tag.clone()));
                     events.push(event.clone());
-                    events.push(Event::End(tag));
+                    events.push(Event::End(tag.into()));
                     continue;
                 }
             }
@@ -420,7 +425,13 @@ impl InterfaceGenerator<'_> {
                     }
                     TypeDefKind::Unknown => unreachable!(),
                     TypeDefKind::FixedLengthList(..) => todo!(),
-                    TypeDefKind::Map(..) => todo!(),
+                    TypeDefKind::Map(key, value) => {
+                        self.push_str("map<");
+                        self.print_ty(key);
+                        self.push_str(", ");
+                        self.print_ty(value);
+                        self.push_str(">");
+                    }
                 }
             }
         }
@@ -647,6 +658,10 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     }
 
     fn type_list(&mut self, id: TypeId, name: &str, _ty: &Type, docs: &Docs) {
+        self.type_alias(id, name, &Type::Id(id), docs);
+    }
+
+    fn type_map(&mut self, id: TypeId, name: &str, _key: &Type, _value: &Type, docs: &Docs) {
         self.type_alias(id, name, &Type::Id(id), docs);
     }
 

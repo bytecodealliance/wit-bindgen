@@ -395,6 +395,11 @@ impl Go {
                     TypeDefKind::Type(ty) => {
                         self.type_name(resolve, *ty, local, in_import, imports)
                     }
+                    TypeDefKind::Map(key, value) => {
+                        let key = self.type_name(resolve, *key, local, in_import, imports);
+                        let value = self.type_name(resolve, *value, local, in_import, imports);
+                        format!("map[{key}]{value}")
+                    }
                     _ => todo!("{:?}", ty.kind),
                 }
             }
@@ -694,6 +699,13 @@ func Lift{upper_kind}{camel}(handle int32) *witTypes.{upper_kind}Reader[{payload
                             "future_{}",
                             ty.map(|ty| self.mangle_name(resolve, ty, local))
                                 .unwrap_or_else(|| "unit".into())
+                        )
+                    }
+                    TypeDefKind::Map(key, value) => {
+                        format!(
+                            "map_{}_{}",
+                            self.mangle_name(resolve, *key, local),
+                            self.mangle_name(resolve, *value, local)
                         )
                     }
                     kind => todo!("{kind:?}"),
@@ -2546,7 +2558,62 @@ lifters = append(lifters, func() {{
                 let handle = &operands[0];
                 results.push(format!("{package}LiftStream{camel}({handle})"));
             }
-            Instruction::GuestDeallocate { .. } => {
+            Instruction::MapLower { key, value, .. } => {
+                self.need_unsafe = true;
+                self.need_pinner = true;
+                self.imports.insert(remote_pkg("runtime"));
+                let (body, _) = self.blocks.pop().unwrap();
+                let value_op = &operands[0];
+                let src_map = self.locals.tmp("srcMap");
+                let result = self.locals.tmp("result");
+                let length = self.locals.tmp("length");
+                let idx = self.locals.tmp("idx");
+                let entry = self.generator.sizes.record([*key, *value]);
+                let size = entry.size.format(POINTER_SIZE_EXPRESSION);
+                let align = entry.align.format(POINTER_SIZE_EXPRESSION);
+                uwriteln!(
+                    self.src,
+                    "{src_map} := {value_op}
+{length} := uint32(len({src_map}))
+{result} := witRuntime.Allocate({PINNER}, uintptr({length} * {size}), {align})
+var {idx} int
+for map_key, map_value := range {src_map} {{
+        {ITER_BASE_POINTER} := unsafe.Add({result}, {idx} * {size})
+        {body}
+        {idx}++
+}}
+"
+                );
+                results.push(format!("uintptr({result})"));
+                results.push(length);
+            }
+            Instruction::MapLift { key, value, .. } => {
+                self.need_unsafe = true;
+                let (body, body_results) = self.blocks.pop().unwrap();
+                let pointer = &operands[0];
+                let length = &operands[1];
+                let result = self.locals.tmp("result");
+                let entry = self.generator.sizes.record([*key, *value]);
+                let size = entry.size.format(POINTER_SIZE_EXPRESSION);
+                let key_type = self.type_name(resolve, **key);
+                let value_type = self.type_name(resolve, **value);
+                let body_key = &body_results[0];
+                let body_value = &body_results[1];
+                uwriteln!(
+                    self.src,
+                    "{result} := make(map[{key_type}]{value_type}, {length})
+for index := 0; index < int({length}); index++ {{
+        {ITER_BASE_POINTER} := unsafe.Add(unsafe.Pointer({pointer}), index * {size})
+        {body}
+        {result}[{body_key}] = {body_value}
+}}
+"
+                );
+                results.push(result);
+            }
+            Instruction::IterMapKey { .. } => results.push("map_key".into()),
+            Instruction::IterMapValue { .. } => results.push("map_value".into()),
+            Instruction::GuestDeallocateMap { .. } | Instruction::GuestDeallocate { .. } => {
                 // Nothing to do here; should be handled when calling `pinner.Unpin()`
             }
             _ => unimplemented!("{instruction:?}"),
@@ -2980,6 +3047,14 @@ const (
         uwriteln!(self.src, "{docs}type {name} = [{size}]{ty}");
     }
 
+    fn type_map(&mut self, _id: TypeId, name: &str, key: &Type, value: &Type, docs: &Docs) {
+        let name = name.to_upper_camel_case();
+        let key = self.type_name(self.resolve, *key);
+        let value = self.type_name(self.resolve, *value);
+        let docs = format_docs(docs);
+        uwriteln!(self.src, "{docs}type {name} = map[{key}]{value}");
+    }
+
     fn type_builtin(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
         _ = (id, name, ty, docs);
         todo!()
@@ -3141,6 +3216,9 @@ fn any(resolve: &Resolve, ty: Type, fun: &dyn Fn(Type) -> bool) -> bool {
                 TypeDefKind::Tuple(tuple) => tuple.types.iter().any(|ty| any(resolve, *ty, fun)),
                 TypeDefKind::Future(ty) | TypeDefKind::Stream(ty) => {
                     ty.map(|ty| any(resolve, ty, fun)).unwrap_or(false)
+                }
+                TypeDefKind::Map(key, value) => {
+                    any(resolve, *key, fun) || any(resolve, *value, fun)
                 }
                 _ => todo!("{:?}", ty.kind),
             }

@@ -113,6 +113,7 @@ enum RuntimeItem {
     AsF64,
     ResourceType,
     BoxType,
+    WitMapTrait,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -198,6 +199,18 @@ pub struct Opts {
     /// This defaults to `wit_bindgen::rt`.
     #[cfg_attr(feature = "clap", arg(long, value_name = "PATH"))]
     pub runtime_path: Option<String>,
+
+    /// The optional path to the map type to use for WIT `map<K, V>`.
+    ///
+    /// The specified type must accept two type parameters `<K, V>` and
+    /// implement the `WitMap<K, V>` trait from the wit-bindgen runtime.
+    /// It must also implement `IntoIterator<Item = (K, V)>` (owned) and
+    /// its reference must implement `IntoIterator` yielding key/value
+    /// pairs.
+    ///
+    /// Defaults to `{runtime_path}::Map` which is `BTreeMap`.
+    #[cfg_attr(feature = "clap", arg(long, value_name = "PATH"))]
+    pub map_type: Option<String>,
 
     /// The optional path to the bitflags crate to use.
     ///
@@ -287,6 +300,10 @@ pub struct Opts {
         arg(long, require_equals = true, value_name = "true|false")
     )]
     pub merge_structurally_equal_types: Option<Option<bool>>,
+
+    /// If true, methods normally returning `()` instead return `&Self`. This applies to both imported and exported methods.
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub enable_method_chaining: bool,
 }
 
 impl Opts {
@@ -362,6 +379,7 @@ impl RustWasm {
             return_pointer_area_size: Default::default(),
             return_pointer_area_align: Default::default(),
             needs_runtime_module: false,
+            needs_wit_map: false,
         }
     }
 
@@ -415,6 +433,17 @@ impl RustWasm {
             .runtime_path
             .as_deref()
             .unwrap_or("wit_bindgen::rt")
+    }
+
+    fn map_type_path(&self) -> String {
+        self.opts
+            .map_type
+            .clone()
+            .unwrap_or_else(|| format!("{}::Map", self.runtime_path()))
+    }
+
+    fn wit_map_path(&self) -> String {
+        format!("{}::WitMap", self.runtime_path())
     }
 
     fn bitflags_path(&self) -> String {
@@ -680,6 +709,11 @@ pub fn run_ctors_once() {{
 
             RuntimeItem::AsF64 => {
                 self.emit_runtime_as_trait("f64", &["f64"]);
+            }
+
+            RuntimeItem::WitMapTrait => {
+                let rt = self.runtime_path().to_string();
+                uwriteln!(self.src, "pub use {rt}::WitMap;");
             }
 
             RuntimeItem::ResourceType => {
@@ -1026,6 +1060,12 @@ macro_rules! __export_{world_name}_impl {{
             .async_
             .is_async(resolve, interface, func, is_import)
     }
+
+    fn should_return_self(&self, func: &Function) -> bool {
+        self.opts.enable_method_chaining
+            && func.result.is_none()
+            && matches!(&func.kind, FunctionKind::Method(_))
+    }
 }
 
 impl WorldGenerator for RustWasm {
@@ -1056,6 +1096,9 @@ impl WorldGenerator for RustWasm {
         }
         if let Some(runtime_path) = &self.opts.runtime_path {
             uwriteln!(self.src_preamble, "//   * runtime_path: {:?}", runtime_path);
+        }
+        if let Some(map_type) = &self.opts.map_type {
+            uwriteln!(self.src_preamble, "//   * map_type: {:?}", map_type);
         }
         if let Some(bitflags_path) = &self.opts.bitflags_path {
             uwriteln!(

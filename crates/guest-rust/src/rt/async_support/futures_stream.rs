@@ -1,6 +1,6 @@
 use super::stream_support::{RawStreamReader, StreamOps, StreamVtable};
-use std::boxed::Box;
-use std::{
+use alloc::boxed::Box;
+use core::{
     future::Future,
     pin::Pin,
     task::{Context, Poll},
@@ -60,7 +60,7 @@ impl<O: StreamOps + 'static> futures::stream::Stream for RawStreamReaderStream<O
         // All variants of `StreamAdapterState` are `Unpin`, so `Pin<&mut Self>`
         // can be freely projected.
         loop {
-            match std::mem::replace(&mut self.state, StreamAdapterState::Complete) {
+            match core::mem::replace(&mut self.state, StreamAdapterState::Complete) {
                 StreamAdapterState::Idle(mut reader) => {
                     let fut: ReadNextFut<O> = Box::pin(async move {
                         let item = reader.next().await;

@@ -261,7 +261,11 @@ impl Types {
             TypeDefKind::FixedLengthList(ty, _) => {
                 info = self.type_info(resolve, ty);
             }
-            TypeDefKind::Map(..) => todo!(),
+            TypeDefKind::Map(key, value) => {
+                info = self.type_info(resolve, key);
+                info |= self.type_info(resolve, value);
+                info.has_list = true;
+            }
             TypeDefKind::Unknown => unreachable!(),
         }
         let prev = self.type_info.insert(ty, info);

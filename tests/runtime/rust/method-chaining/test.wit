@@ -1,0 +1,18 @@
+package foo:bar;
+
+interface i {
+    resource a {
+        constructor();
+        set-a: func(arg: u32);
+        set-b: func(arg: bool);
+        do: func();
+    }
+}
+world runner {
+    import i;
+
+    export run: func();
+}
+world test {
+    export i;
+}

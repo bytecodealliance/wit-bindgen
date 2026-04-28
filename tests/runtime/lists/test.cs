@@ -158,5 +158,10 @@ namespace TestWorld.wit.Exports.test.lists
         {
             return a;
         }
+
+        public static List<(string, byte[])> WasiHttpHeadersRoundtrip(List<(string, byte[])> a)
+        {
+            return a;
+        }
     }
 }

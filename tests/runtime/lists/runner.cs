@@ -159,5 +159,15 @@ public class RunnerWorldExportsImpl : IRunnerWorldExports
                 && s[2] == double.NegativeInfinity
                 && s[3] == double.PositiveInfinity);
         }
+
+        {
+            var headers = new List<(string, byte[])>() { ("Content-Type", Encoding.UTF8.GetBytes("text/plain")), ("Content-Length", Encoding.UTF8.GetBytes("Not found".Count().ToString())) };
+            var result = IToTestImports.WasiHttpHeadersRoundtrip(headers);
+            for (var i = 0; i < result.Count(); i++)
+            {
+                Debug.Assert(result[i].Item1 == headers[i].Item1);
+                Debug.Assert(headers[i].Item2.SequenceEqual(result[i].Item2));
+            }
+        }
     }
 }

@@ -35,6 +35,7 @@ pub struct CSharp {
     pub(crate) needs_rep_table: bool,
     pub(crate) needs_wit_exception: bool,
     pub(crate) needs_async_support: bool,
+    pub(crate) needs_align_stack_ptr: bool,
     pub(crate) interface_fragments: HashMap<String, InterfaceTypeAndFragments>,
     pub(crate) world_fragments: Vec<InterfaceFragment>,
     pub(crate) sizes: SizeAlign,
@@ -388,7 +389,7 @@ impl WorldGenerator for CSharp {
         let world = &resolve.worlds[id];
         let world_namespace = self.qualifier();
         let world_namespace = world_namespace.strip_suffix(".").unwrap();
-        let namespace = format!("{world_namespace}");
+        let namespace = world_namespace;
         let name = world.name.to_upper_camel_case();
 
         let version = env!("CARGO_PKG_VERSION");
@@ -631,13 +632,28 @@ impl WorldGenerator for CSharp {
             src.push_str(&ret_area_str);
         }
 
+        if self.needs_align_stack_ptr {
+            uwrite!(
+                src,
+                "
+                {access} static class MemoryHelper
+                {{
+                    {access} static unsafe void* AlignStackPtr(void* stackAddress, uint alignment)
+                    {{
+                        return (void*)(((nint)stackAddress) + ((int)alignment - 1) & -(int)alignment);
+                    }}
+                }}
+                "
+            );
+        }
+
         if self.needs_rep_table {
-            src.push_str("\n");
+            src.push('\n');
             src.push_str(include_str!("RepTable.cs"));
         }
 
         if !&self.world_fragments.is_empty() {
-            src.push_str("\n");
+            src.push('\n');
 
             if self
                 .world_fragments
@@ -720,7 +736,7 @@ impl WorldGenerator for CSharp {
             src.push_str(&include_str!("FutureCommonSupport.cs"));
         }
 
-        src.push_str("\n");
+        src.push('\n');
 
         src.push_str("}\n");
 
@@ -748,11 +764,11 @@ impl WorldGenerator for CSharp {
 
             let (fragments, fully_qualified_namespace) = match stubs {
                 Stubs::World(fragments) => {
-                    let fully_qualified_namespace = format!("{namespace}");
+                    let fully_qualified_namespace = namespace.to_string();
                     (fragments, fully_qualified_namespace)
                 }
                 Stubs::Interface(fragments) => {
-                    let fully_qualified_namespace = format!("{stub_namespace}");
+                    let fully_qualified_namespace = stub_namespace.clone();
                     (fragments, fully_qualified_namespace)
                 }
             };
@@ -826,13 +842,9 @@ impl WorldGenerator for CSharp {
                 // intended to be used non-interactively at link time, the
                 // linker will have no additional information to resolve such
                 // ambiguity.
-                let (resolve, world) =
-                    wit_parser::decoding::decode_world(&wit_component::metadata::encode(
-                        &resolve,
-                        id,
-                        self.opts.string_encoding,
-                        None,
-                    )?)?;
+                let (resolve, world) = wit_parser::decoding::decode_world(
+                    &wit_component::metadata::encode(resolve, id, self.opts.string_encoding, None)?,
+                )?;
                 let pkg = resolve.worlds[world].package.unwrap();
 
                 let mut printer = WitPrinter::default();
@@ -886,7 +898,7 @@ impl WorldGenerator for CSharp {
                 .collect::<Vec<_>>()
                 .join("\n");
 
-            if body.len() > 0 {
+            if !body.is_empty() {
                 let body = format!(
                     "{header}
 
@@ -951,11 +963,12 @@ fn export_types(r#gen: &mut InterfaceGenerator, types: &[(&str, TypeId)]) {
 // We cant use "StructLayout.Pack" as dotnet will use the minimum of the type and the "Pack" field,
 // so for byte it would always use 1 regardless of the "Pack".
 pub fn dotnet_aligned_array(array_size: usize, required_alignment: usize) -> (usize, String) {
+    let num_elements = array_size.div_ceil(required_alignment);
     match required_alignment {
-        1 => (array_size, "byte".to_owned()),
-        2 => ((array_size + 1) / 2, "ushort".to_owned()),
-        4 => ((array_size + 3) / 4, "uint".to_owned()),
-        8 => ((array_size + 7) / 8, "ulong".to_owned()),
+        1 => (num_elements, "byte".to_owned()),
+        2 => (num_elements, "ushort".to_owned()),
+        4 => (num_elements, "uint".to_owned()),
+        8 => (num_elements, "ulong".to_owned()),
         _ => todo!("unsupported return_area_align {}", required_alignment),
     }
 }
@@ -1041,11 +1054,7 @@ fn interface_name(
             );
 
             if let Some(version) = &name.version {
-                let v = version
-                    .to_string()
-                    .replace('.', "_")
-                    .replace('-', "_")
-                    .replace('+', "_");
+                let v = version.to_string().replace(['.', '-', '+'], "_");
                 ns = format!("{}v{}.", ns, &v);
             }
             ns

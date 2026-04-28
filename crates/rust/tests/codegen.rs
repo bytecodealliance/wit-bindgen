@@ -144,6 +144,49 @@ mod newtyped_list {
 }
 
 #[allow(unused, reason = "testing codegen, not functionality")]
+mod map_type_hashmap {
+    wit_bindgen::generate!({
+        inline: r#"
+        package test:map-type;
+
+        interface maps {
+            type names-by-id = map<u32, string>;
+
+            roundtrip: func(a: names-by-id) -> names-by-id;
+            inline-roundtrip: func(a: map<string, u32>) -> map<string, u32>;
+        }
+
+        world test {
+            import maps;
+            export maps;
+        }
+        "#,
+        map_type: "std::collections::HashMap",
+        generate_all,
+    });
+}
+
+#[allow(unused, reason = "testing codegen, not functionality")]
+mod map_type_default {
+    wit_bindgen::generate!({
+        inline: r#"
+        package test:map-default;
+
+        interface maps {
+            type names-by-id = map<u32, string>;
+            nested: func(a: map<string, map<u32, string>>) -> map<string, map<u32, string>>;
+        }
+
+        world test {
+            import maps;
+            export maps;
+        }
+        "#,
+        generate_all,
+    });
+}
+
+#[allow(unused, reason = "testing codegen, not functionality")]
 mod retyped_list {
     use std::ops::Deref;
 
@@ -171,5 +214,24 @@ mod retyped_list {
         with: {
             "test:retyped-list/bytes/retyped-list-as-bytes": bytes::Bytes,
         }
+    });
+}
+
+#[allow(unused, reason = "testing codegen, not functionality")]
+mod method_chaining {
+    wit_bindgen::generate!({
+        inline: r#"
+        package test:method-chaining;
+        world test {
+            resource a {
+                constructor();
+                set-a: func(arg: u32);
+                set-b: func(arg: bool);
+                do: func();
+            }
+        }
+        "#,
+        generate_all,
+        enable_method_chaining: true
     });
 }

@@ -30,6 +30,7 @@ impl LanguageMethods for Go {
         config.error_context
             || name == "async-trait-function.wit"
             || name == "named-fixed-length-list.wit"
+            || name == "issue-1598.wit"
     }
 
     fn default_bindgen_args_for_codegen(&self) -> &[&str] {
@@ -161,7 +162,7 @@ fn replace_bindings_go_mod(runner: &Runner, bindings_dir: &Path) -> Result<()> {
     super::write_if_different(
         &bindings_dir.join("go.mod"),
         format!(
-            "module wit_component\n\ngo 1.25\n\nreplace go.bytecodealliance.org => {}",
+            "module wit_component\n\ngo 1.25\n\nreplace go.bytecodealliance.org/pkg => {}",
             go_package_path.display()
         ),
     )?;

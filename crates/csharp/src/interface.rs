@@ -234,7 +234,6 @@ impl InterfaceGenerator<'_> {
         let mut generated_future_types: HashSet<Option<Type>> = HashSet::new();
         let (_namespace, interface_name) = &CSharp::get_class_name_from_qualified_name(self.name);
         let interop_name = format!("{}Interop", interface_name.strip_prefix("I").unwrap());
-
         // avoid the immutable self borrow
         let (futures_or_streams, stream_length_param) : (Vec<FutureInfo>, &str)= if is_future {
             (self.futures.iter().cloned().collect(), "")
@@ -668,12 +667,12 @@ impl InterfaceGenerator<'_> {
     fn gen_import_src(
         &mut self,
         func: &Function,
-        results: &Vec<TypeId>,
+        results: &[TypeId],
         parameter_type: ParameterType,
     ) -> (String, String) {
         let mut bindgen = FunctionBindgen::new(
             self,
-            &func.item_name(),
+            func.item_name(),
             &func.kind,
             func.params
                 .iter()
@@ -686,7 +685,7 @@ impl InterfaceGenerator<'_> {
                     }
                 })
                 .collect(),
-            results.clone(),
+            results.to_vec(),
             parameter_type,
             func.result,
         );
@@ -849,7 +848,7 @@ var {async_status_var} = {raw_name}({wasm_params});
 
         let mut bindgen = FunctionBindgen::new(
             self,
-            &func.item_name(),
+            func.item_name(),
             &func.kind,
             (0..sig.params.len()).map(|i| format!("p{i}")).collect(),
             results,
@@ -1404,7 +1403,7 @@ var {async_status_var} = {raw_name}({wasm_params});
             Direction::Export => {
                 let prefix = key
                     .map(|s| format!("{}#", self.resolve.name_world_key(s)))
-                    .unwrap_or_else(String::new);
+                    .unwrap_or_default();
 
                 uwrite!(
                     self.csharp_interop_src,
@@ -1896,6 +1895,10 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
         _docs: &Docs,
     ) {
         todo!("named fixed-length list types are not yet supported in the C# backend")
+    }
+
+    fn type_map(&mut self, _id: TypeId, _name: &str, _key: &Type, _value: &Type, _docs: &Docs) {
+        todo!("map types are not yet supported in the C# backend")
     }
 
     fn type_builtin(&mut self, _id: TypeId, _name: &str, _ty: &Type, _docs: &Docs) {

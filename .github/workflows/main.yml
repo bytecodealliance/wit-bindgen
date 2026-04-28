@@ -89,9 +89,8 @@ jobs:
     - uses: actions/checkout@v4
       with:
         submodules: true
-    # FIXME(rust-lang/rust#148347) current rust (1.91) is broken
     - name: Install Rust
-      run: rustup update 1.90.0 --no-self-update && rustup default 1.90.0
+      run: rustup update stable --no-self-update && rustup default stable
     - run: rustup target add wasm32-wasip1 wasm32-wasip2
 
     - run: rustup target add wasm32-unknown-unknown
@@ -200,6 +199,8 @@ jobs:
       run: rustup target add wasm32-unknown-unknown
     - name: Install wasm32-wasip1 target
       run: rustup target add wasm32-wasip1
+    - name: Install wasm32v1-none target
+      run: rustup target add wasm32v1-none
 
     # Verify the output of the `./ci/rebuild-libwit-bindgen-cabi.sh` script is
     # up-to-date.
@@ -228,6 +229,10 @@ jobs:
     - run: cargo build --target wasm32-wasip1 -p wit-bindgen --no-default-features --features inter-task-wakeup
     - run: cargo build --target wasm32-wasip1 -p wit-bindgen --no-default-features --features futures-stream
 
+    # wasm32v1-none has no std, so a stray std::* usage fails to link here.
+    - run: cargo build --target wasm32v1-none -p wit-bindgen --no-default-features --features async
+    - run: cargo build --target wasm32v1-none -p wit-bindgen --no-default-features --features async-spawn
+
     # Verity that documentation can be generated for the rust bindings crate.
     - run: rustup update nightly --no-self-update
     - run: cargo +nightly doc -p wit-bindgen --no-deps
@@ -243,6 +248,18 @@ jobs:
       run: rustup update stable && rustup default stable && rustup component add rustfmt
     - name: Format source code
       run: cargo fmt -- --check
+
+  msrv:
+    name: Verify MSRV
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    # Verify MSRV for the whole workspace
+    - run: rustup update 1.88.0 && rustup default 1.88.0
+    - run: cargo check
+    # Verify the tighter MSRV of the `wit-bindgen` crate.
+    - run: rustup update 1.85.0 && rustup default 1.85.0
+    - run: cargo check -p wit-bindgen --all-features
 
   verify-publish:
     if: github.repository_owner == 'bytecodealliance'
@@ -269,6 +286,7 @@ jobs:
       - build
       - verify-publish
       - check
+      - msrv
       # - async
     if: always()
 
