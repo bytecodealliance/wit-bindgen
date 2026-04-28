@@ -3597,7 +3597,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 );
                 uwriteln!(self.src, "for (size_t i = 0; i < {len}; ++i) {{");
                 uwriteln!(self.src, "auto base = {ptr} + i * {size};");
-                uwriteln!(self.src, "auto&& iter_entry = {val}[i];");
+                uwriteln!(self.src, "auto&& iter_entry = {val}.data()[i];");
                 uwriteln!(self.src, "auto&& iter_map_key = iter_entry.first;");
                 uwriteln!(self.src, "auto&& iter_map_value = iter_entry.second;");
                 uwrite!(self.src, "{}", body.0);
