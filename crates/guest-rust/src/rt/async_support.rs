@@ -235,15 +235,11 @@ impl FutureState<'_> {
                 let poll = me.tasks.poll_next(&mut context);
 
                 match poll {
-                    // A future completed, yay! Keep going to see if more have
-                    // completed.
-                    Poll::Ready(Some(())) => (),
-
                     // The task list is empty, but there might be remaining work
                     // in terms of waitables through the cabi interface. In this
                     // situation wait for all waitables to be resolved before
                     // signaling that our own task is done.
-                    Poll::Ready(None) => {
+                    Poll::Ready(()) => {
                         assert!(me.tasks.is_empty());
                         if me.remaining_work() {
                             let waitable = me.waitable_set.as_ref().unwrap().as_raw();
