@@ -190,7 +190,10 @@ private:
 
 public:
   map(map const &) = delete;
-  map(map &&b) : data_(b.data_), length(b.length) { b.data_ = nullptr; }
+  map(map &&b) : data_(b.data_), length(b.length) {
+    b.data_ = nullptr;
+    b.length = 0;
+  }
   map &operator=(map const &) = delete;
   map &operator=(map &&b) {
     if (data_ && length > 0) {
@@ -200,6 +203,7 @@ public:
     data_ = b.data_;
     length = b.length;
     b.data_ = nullptr;
+    b.length = 0;
     return *this;
   }
   map(entry_type *d, size_t l) : data_(d), length(l) {}
