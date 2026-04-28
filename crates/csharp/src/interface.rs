@@ -1073,12 +1073,25 @@ var {async_status_var} = {raw_name}({wasm_params});
             "#
             );
 
+            let resource_type_name = match func.kind {
+                FunctionKind::Method(resource_type_id) |
+                FunctionKind::AsyncMethod(resource_type_id) |
+                FunctionKind::Static(resource_type_id) |
+                FunctionKind::Constructor(resource_type_id) => {
+                    format!("Method{}", self.csharp_gen.all_resources[&resource_type_id]
+                        .name
+                        .to_upper_camel_case())
+                }
+                _ => String::new()
+                };
+            let task_return_name = format!("{}{}", resource_type_name, camel_name);
+
             uwriteln!(
                 self.csharp_interop_src,
                 r#"
             // TODO: The task return function can take up to 16 core parameters.
             [global::System.Runtime.InteropServices.DllImportAttribute("[export]{import_module}", EntryPoint = "[task-return]{wasm_func_name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
-            public static extern void {camel_name}TaskReturn({task_return_param_sig});
+            public static extern void {task_return_name}TaskReturn({task_return_param_sig});
             "#
             );
         }

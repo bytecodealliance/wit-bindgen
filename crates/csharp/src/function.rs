@@ -1444,7 +1444,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let op = &operands[0];
                 let generic_type_name = match payload {
                     Some(generic_type) => {
-                        &self.interface_gen.type_name_with_qualifier(generic_type, false)
+                        &self.interface_gen.type_name_with_qualifier(generic_type, true)
                     }
                     None => ""
                 };
@@ -1521,7 +1521,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         self.interface_gen.add_future(self.func_name, &generic_type_name, **payload);
                     }
                     _ => {
-                        self.interface_gen.add_stream(self.func_name, &generic_type_name, **payload);
+                        self.interface_gen.add_stream(self.func_name, &generic_type_name_with_qualifier, **payload);
                     }
                 }
 
