@@ -210,8 +210,6 @@ public:
   map() : data_(empty_ptr()), length() {}
   entry_type const *data() const { return data_; }
   entry_type *data() { return data_; }
-  entry_type &operator[](size_t n) { return data_[n]; }
-  entry_type const &operator[](size_t n) const { return data_[n]; }
   size_t size() const { return length; }
   bool empty() const { return !length; }
   ~map() {
