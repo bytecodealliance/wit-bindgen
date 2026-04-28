@@ -26,13 +26,46 @@ impl<'a> Tasks<'a> {
         }
     }
 
-    pub fn poll_next(&mut self, cx: &mut Context<'_>) -> Poll<Option<()>> {
-        unsafe {
-            let ret = self.tasks.poll_next_unpin(cx);
-            if !SPAWNED.is_empty() {
-                self.tasks.extend(SPAWNED.drain(..));
+    pub fn poll_next(&mut self, cx: &mut Context<'_>) -> Poll<()> {
+        loop {
+            // Perform some work by seeing what's next in this
+            // `FuturesUnordered`. Afterwards check the set of spawned tasks
+            // and, if any, add them to our set of tasks being done.
+            let poll = self.tasks.poll_next_unpin(cx);
+            let spawned = unsafe {
+                if SPAWNED.is_empty() {
+                    false
+                } else {
+                    self.tasks.extend(SPAWNED.drain(..));
+                    true
+                }
+            };
+            match poll {
+                // If no tasks were ready, and if we didn't spawn any work,
+                // then there's nothing left to do so return pending.
+                //
+                // If no tasks were ready, and if we spawned some work, then
+                // turn the loop again to register interest in the work and
+                // ensure that it's not forgotten about.
+                Poll::Pending => {
+                    if !spawned {
+                        return Poll::Pending;
+                    }
+                }
+
+                // If our set of tasks is empty it shouldn't be possible to have
+                // spawned anything, and return saying that we're done.
+                Poll::Ready(None) => {
+                    assert!(!spawned);
+                    return Poll::Ready(());
+                }
+
+                // If a task finished, then turn the loop again to see if there
+                // are any other completed tasks. This also serves double-duty
+                // to ensure that we look at everything in our set of tasks
+                // before concluding that we're finished.
+                Poll::Ready(Some(())) => {}
             }
-            ret
         }
     }
 

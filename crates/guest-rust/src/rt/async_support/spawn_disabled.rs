@@ -11,14 +11,14 @@ impl<'a> Tasks<'a> {
         Tasks { future: Some(root) }
     }
 
-    pub fn poll_next(&mut self, cx: &mut Context<'_>) -> Poll<Option<()>> {
+    pub fn poll_next(&mut self, cx: &mut Context<'_>) -> Poll<()> {
         if let Some(future) = self.future.as_mut() {
             if future.as_mut().poll(cx).is_ready() {
                 self.future = None;
             }
         }
         if self.is_empty() {
-            Poll::Ready(None)
+            Poll::Ready(())
         } else {
             Poll::Pending
         }
