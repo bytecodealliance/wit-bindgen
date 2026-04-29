@@ -1256,7 +1256,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 // based on slightly different logic for the `task.return`
                 // intrinsic.
                 //
-                // Note that in the async import case teh code below deals with the CM function being lowered,
+                // Note that in the async import case the code below deals with the CM function being lowered,
                 // not the core function that is underneath that (i.e. func.result may be empty,
                 // where the associated core function underneath must have a i32 status code result)
                 let (lower_to_memory, async_flat_results) = match (async_, &func.result) {

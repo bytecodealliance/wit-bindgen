@@ -9,3 +9,5 @@ ace
 __pycache__
 crates/guest-rust/src/cabi_realloc.o
 wit_component
+
+/wit-bindgen.sln
