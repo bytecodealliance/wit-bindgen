@@ -27,7 +27,6 @@ public readonly struct EventWaitable
 {
     public EventWaitable(EventCode eventCode, uint waitable, uint code)
     {
-        Console.WriteLine($"EventWaitable with code {code}");
         EventCode = eventCode;
         Waitable = (int)waitable;
         Code = code;

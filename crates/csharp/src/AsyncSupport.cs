@@ -133,9 +133,8 @@ public static class AsyncSupport
     }
 
     // unsafe because we are using pointers.
-    public static unsafe int Callback(EventWaitable e, ContextTask* contextPtr)
+    public static unsafe int Callback(EventWaitable e)
     {
-        Console.WriteLine("Callback");
         ContextTask* contextTaskPtr = ContextGet();
 
         var waitables = pendingTasks[contextTaskPtr->WaitableSetHandle];
@@ -152,77 +151,21 @@ public static class AsyncSupport
             waitables.Remove(e.Waitable, out _);
             if (e.IsSubtask)
             {
-                if (e.SubtaskStatus.IsStarting)
+                switch (e.SubtaskStatus)
                 {
-                    throw new Exception("unexpected subtask status Starting " + e.Code);
-                }
-                if (e.SubtaskStatus.IsStarted || e.SubtaskStatus.IsReturned)
-                {
-                    waitableInfoState.SetResult(e.WaitableCount);
-                    Interop.SubtaskDrop(e.Waitable);
-                }
-                else
-                {
-                    throw new Exception("TODO: subtask status " + e.Code);
-                }
-            }
-            else
-            {
-                if (e.IsDropped)
-                {
-                    waitableInfoState.SetException(new StreamDroppedException());
-                }
-                else
-                {
-                    // This may add a new waitable to the set.
-                    waitableInfoState.SetResult(e.WaitableCount);
-                }
-            }
+                    case { IsStarting: true }:
+                        throw new Exception("unexpected subtask status Starting " + e.Code);
 
-            if (waitables.Count == 0)
-            {
-                ContextSet(null);
-                Marshal.FreeHGlobal((IntPtr)contextTaskPtr);
-                return (int)CallbackCode.Exit;
-            }
+                    case { IsStarted: true }:
+                        break;
 
-            return (int)CallbackCode.Wait | (int)(contextTaskPtr->WaitableSetHandle << 4);
-        }
+                    case { IsReturned: true }:
+                        waitableInfoState.SetResult(e.WaitableCount);
+                        Interop.SubtaskDrop(e.Waitable);
+                        break;
 
-        throw new NotImplementedException($"WaitableStatus not implemented {e.WaitableStatus.State} in set {contextTaskPtr->WaitableSetHandle}");
-    }
-
-    // unsafe because we are using pointers.
-    public static unsafe int Callback<T>(EventWaitable e, Func<T> liftFunc)
-    {
-        Console.WriteLine("Callback");
-        ContextTask* contextTaskPtr = ContextGet();
-
-        var waitables = pendingTasks[contextTaskPtr->WaitableSetHandle];
-        var waitableInfoState = waitables[e.Waitable];
-
-        if (e.IsDropped)
-        {
-            waitableInfoState.FutureStream!.OtherSideDropped();
-        }
-
-        if (e.IsCompleted || e.IsDropped)
-        {
-            // The operation is complete so we can free the buffer and remove the waitable from our dicitonary
-            waitables.Remove(e.Waitable, out _);
-            if (e.IsSubtask)
-            {
-                if (e.SubtaskStatus.IsStarting)
-                {
-                    throw new Exception("unexpected subtask status Starting " + e.Code);
-                }
-                if (e.SubtaskStatus.IsStarted || e.SubtaskStatus.IsReturned)
-                {
-                    Interop.SubtaskDrop(e.Waitable);
-                }
-                else
-                {
-                    throw new Exception("TODO: subtask status " + e.Code);
+                    default:
+                        throw new Exception("TODO: subtask status " + e.Code);
                 }
             }
             else
@@ -294,10 +237,6 @@ public static class AsyncSupport
             }
 
             var intTaskCompletionSource = new TaskCompletionSource<int>();
-            intTaskCompletionSource.Task.ContinueWith( t =>
-            {
-               Console.WriteLine("intTaskCompletionSource continuewith"); 
-            }, TaskContinuationOptions.ExecuteSynchronously);
             var tcs = new LiftingTaskCompletionSource<T>(intTaskCompletionSource, liftFunc);
             Join(subtaskStatus.Handle, contextTaskPtr->WaitableSetHandle, new WaitableInfoState(intTaskCompletionSource));
 

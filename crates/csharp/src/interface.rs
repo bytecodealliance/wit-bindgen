@@ -432,7 +432,6 @@ impl InterfaceGenerator<'_> {
                             public static unsafe void {future_stream_name}Lower{upper_camel_future_type}(object toLower, List<Action> cleanups) 
                             {{
                                 var ptr = InteropReturnArea.returnArea.AddressOfReturnArea();
-                                Console.WriteLine("type is " + toLower.GetType());
                                 var typedToLower = ({qualified_generic_type_name})toLower;
                                 {lower_code}
                             }}
@@ -963,30 +962,18 @@ var {async_status_var} = {raw_name}({wasm_params});
             [global::System.Runtime.InteropServices.UnmanagedCallersOnlyAttribute(EntryPoint = "[callback]{export_name}")]
             public static unsafe uint {camel_name}Callback(int eventRaw, uint waitable, uint code)
             {{
-            Console.WriteLine("Callback for {export_name} creating EventWaitable with code " + eventRaw + " for waitable " + waitable + " with code " + code);
                 EventWaitable e = new EventWaitable((EventCode)eventRaw, waitable, code);
 
             "#
             );
 
-            // TODO: Get the results from a static dictionary?
-            if sig.results.len() > 0 {
-                uwriteln!(
-                    self.csharp_interop_src,
-                    r#"
-                        return (uint)AsyncSupport.Callback(e, (ContextTask *)IntPtr.Zero);
-                    }}
-                    "#
-                );
-            } else {
-                uwriteln!(
-                    self.csharp_interop_src,
-                    r#"
-                        return (uint)AsyncSupport.Callback(e, (ContextTask *)IntPtr.Zero);
-                    }}
-                    "#
-                );
-            }
+            uwriteln!(
+                self.csharp_interop_src,
+                r#"
+                    return (uint)AsyncSupport.Callback(e);
+                }}
+                "#
+            );
         }
 
         if abi::guest_export_needs_post_return(self.resolve, func) {
@@ -1963,6 +1950,7 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
 // TODO: Is this not publicly available elsewhere, a function that says if a type needs to be returned as a pointer
 fn needs_ptr(ty: &Type) -> bool {
+    // TODO: This list is not complete, e.g. handles should be here.
     match *ty {
         Type::Bool
         | Type::S8
