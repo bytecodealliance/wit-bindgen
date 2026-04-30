@@ -1874,6 +1874,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 }
 
 // TODO: this is not great, we want the underlying parameter, but it is passed in operands already lifted.
+// This regex will transform unchecked((uint)(p0)) -> p0
 pub fn strip_lift(lifted_param: &String) -> String {
     let re = Regex::new(r"(?x)unchecked\(\s*\(\s*\w+\s*\)\s*\(\s*(\w+)\s*\)\s*\)").unwrap();
     let out = re.replace_all(lifted_param, "$1");
