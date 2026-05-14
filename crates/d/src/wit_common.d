@@ -31,6 +31,9 @@ struct WitList(T) {
     inout(T)[] asSlice() @trusted inout {
         return (ptr && length) ? ptr[0..length] : null;
     }
+
+    bool opEquals(in T[] other) const => this[] == other;
+    size_t toHash() const => this[].hashOf;
 }
 auto witList(T : U[], U)(T slice) => WitList!U(slice);
 
@@ -75,6 +78,8 @@ mixin template WitFlags(T) if (__traits(isUnsigned, T)) {
         result.opOpAssign!op(flags);
         return result;
     }
+
+    typeof(this) witClone() const { return this; }
 }
 
 
@@ -163,6 +168,14 @@ public:
     { return _present ? _value : fallback(); }
 }
 
+auto some(T)(T value) @safe @nogc nothrow {
+    return Option!T.some(value);
+}
+
+auto none(T)(T value) @safe @nogc nothrow {
+    return Option!T.some(value);
+}
+
 /// Based on Rust's Result
 @mustuse
 struct Result(T, E) {
@@ -230,6 +243,83 @@ public:
 }
 
 
+void witFree(T)(scope ref T val) if (__traits(isArithmetic, T)) {
+    // no-op
+}
+T witClone(T)(in T val) if (__traits(isArithmetic, T)) {
+    return val;
+}
+
+void witFree(T : Option!U, U)(scope ref T val) {
+    static if (!is(U == void)) if (val.isSome) val.unwrap.witFree;
+}
+T witClone(T : Option!U, U)(in T val) {
+    if (val.isSome) {
+        static if (!is(U == void)) {
+            return T.some(val.unwrap.witClone);
+        } else {
+            return T.some;
+        }
+    } else {
+        return T.none;
+    }
+}
+
+void witFree(T : Result!(U, V), U, V)(scope ref T val) {
+    if (val.isErr) {
+        static if (!is(V == void)) val.unwrapErr.witFree;
+    } else {
+        static if (!is(U == void)) val.unwrap.witFree;
+    }
+}
+T witClone(T : Result!(U, V), U, V)(in T val) {
+    if (val.isErr) {
+        static if (!is(V == void)) {
+            return T.err(val.unwrapErr.witClone);
+        } else {
+            return T.err;
+        }
+    } else {
+        static if (!is(U == void)) {
+            return T.ok(val.unwrap.witClone);
+        } else {
+            return T.ok;
+        }
+    }
+}
+
+void witFree(T : WitList!U, U)(scope ref T val) {
+    foreach (ref e; val) {
+        e.witFree;
+    }
+    if (val.ptr && val.length) free(val.ptr);
+    val = null;
+}
+T witClone(T : WitList!U, U)(in T val) {
+    if (val.ptr == null || val.length == 0) return T(null);
+
+    auto clone = mallocSlice!U(val.length);
+
+    foreach (i, ref e; clone) {
+        e = val[i].witClone;
+    }
+
+    return clone.witList;
+}
+
+void witFree(T : Tuple!U, U...)(scope ref T val) {
+    static foreach (F; T.tupleof) {
+        __traits(child, val, F).witFree;
+    }
+}
+T witClone(T : Tuple!U, U...)(in T val) {
+    T clone;
+    static foreach (F; T.tupleof) {
+        __traits(child, clone, F) = __traits(child, val, F).witClone;
+    }
+    return clone;
+}
+
 package(wit):
 
 extern(C) {
@@ -275,6 +365,20 @@ version (WitBindings_DummyLibc) {
         import ldc.intrinsics : llvm_trap;
         llvm_trap();
         while(true) {}
+    }
+
+    private int memcmp(const void* ptr1, const void* ptr2, size_t size)
+    {
+        auto data1 = cast(const(ubyte)*)ptr1;
+        auto data2 = cast(const(ubyte)*)ptr2;
+
+        foreach (i; 0..size) {
+            auto b1 = data1[i];
+            auto b2 = data2[i];
+            if (b1 != b2) return b1-b2;
+        }
+
+        return 0;
     }
 } else {
     void*    malloc(size_t size);

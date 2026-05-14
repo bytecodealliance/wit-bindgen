@@ -1463,6 +1463,27 @@ impl<'a> DInterfaceGenerator<'a> {
             String::new()
         }
     }
+
+    fn needs_wit_free(&self, ty: Type) -> bool {
+        match ty {
+            Type::String => true,
+            Type::Id(id) => {
+                let typeinfo = &self.r#gen.types.get(id);
+                typeinfo.has_list || typeinfo.has_resource
+            }
+            _ => false,
+        }
+    }
+
+    fn can_have_wit_clone(&self, ty: Type) -> bool {
+        match ty {
+            Type::Id(id) => {
+                let typeinfo = &self.r#gen.types.get(id);
+                !typeinfo.has_own_handle
+            }
+            _ => true,
+        }
+    }
 }
 
 impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
@@ -1514,6 +1535,34 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
                 "{} {escaped_name};\n",
                 self.type_name(&field.ty, &owner_fqn)
             ));
+        }
+
+        self.src.push_str("\nvoid witFree() {\n");
+        for field in &record.fields {
+            let lower_name = field.name.to_lower_camel_case();
+            let escaped_name = escape_d_identifier(&lower_name);
+
+            if self.needs_wit_free(field.ty) {
+                self.src.push_str(&format!("{escaped_name}.witFree;\n"));
+            }
+        }
+        self.src.push_str("}\n");
+
+        if self.can_have_wit_clone(Type::Id(id)) {
+            self.src
+                .push_str(&format!("\n{escaped_name} witClone() const {{\n"));
+            self.src
+                .push_str(&format!("{escaped_name} clone = void;\n"));
+            for field in &record.fields {
+                let lower_name = field.name.to_lower_camel_case();
+                let escaped_name = escape_d_identifier(&lower_name);
+
+                self.src.push_str(&format!(
+                    "clone.{escaped_name} = this.{escaped_name}.witClone;\n"
+                ));
+            }
+            self.src.push_str("return clone;\n");
+            self.src.push_str("}\n");
         }
 
         self.src.push_str("}\n");
@@ -1604,6 +1653,7 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
                 ));
                 self.src
                     .push_str("static private extern(C) void __import_drop(uint);\n\n");
+                self.src.push_str("alias witFree = drop;\n");
 
                 self.src.push_str(&format!(
                     "// TODO: make RAII? disable copy for the own
@@ -1619,6 +1669,9 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
     }}
 
     @disable this();
+
+    void witFree() {{}}
+    Borrow witClone() const {{ return Borrow(__handle); }}
                 "
                 ));
 
@@ -1753,6 +1806,7 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
                     ));
                     self.src
                         .push_str("static private extern(C) void __import_drop(uint);\n\n");
+                    self.src.push_str("alias witFree = drop;\n");
 
                     self.src.push_str(&format!(
                         "// TODO: make RAII? disable copy for the own
@@ -1767,6 +1821,9 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
             }}
 
             @disable this();
+
+            void witFree() {{}}
+            Borrow witClone() const {{ return Borrow(__handle); }}
 
                         "
                     ));
@@ -1935,6 +1992,47 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
                 ));
             }
         }
+
+        self.src.push_str("\nvoid witFree() {\n");
+        if self.needs_wit_free(Type::Id(id)) {
+            self.src.push_str("switch (_tag) with (Tag) {\n");
+            for case in &variant.cases {
+                let lower_case_name = case.name.to_lower_camel_case();
+                let escaped_lower_case_name = escape_d_identifier(&lower_case_name);
+
+                if case.ty.is_some() && self.needs_wit_free(case.ty.unwrap()) {
+                    self.src.push_str(&format!(
+                        "case {escaped_lower_case_name}: _get!(Tag.{escaped_lower_case_name}).witFree; break;\n",
+                    ));
+                }
+            }
+            self.src.push_str("default: break;\n");
+            self.src.push_str("}\n");
+        }
+        self.src.push_str("}\n");
+
+        if self.can_have_wit_clone(Type::Id(id)) {
+            self.src
+                .push_str(&format!("\n{escaped_name} witClone() const {{\n"));
+            self.src.push_str("final switch (_tag) {\n");
+            for case in &variant.cases {
+                let lower_case_name = case.name.to_lower_camel_case();
+                let escaped_lower_case_name = escape_d_identifier(&lower_case_name);
+
+                if case.ty.is_some() {
+                    self.src.push_str(&format!(
+                        "case Tag.{escaped_lower_case_name}: return _create!(Tag.{escaped_lower_case_name})(this._get!(Tag.{escaped_lower_case_name}).witClone); break;\n",
+                    ));
+                } else {
+                    self.src.push_str(&format!(
+                        "case Tag.{escaped_lower_case_name}: return _create!(Tag.{escaped_lower_case_name}); break;\n",
+                    ));
+                }
+            }
+            self.src.push_str("}\n");
+            self.src.push_str("}\n");
+        }
+
         self.src.push_str("}\n");
     }
 
