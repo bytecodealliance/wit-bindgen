@@ -26,10 +26,10 @@ log = "0.4.26"
 regex = "1.11.1"
 serde = { workspace = true }
 toml = "1.1.2"
-wasi-preview1-component-adapter-provider = "43.0.1"
-wac-parser = "0.9.0"
-wac-types = "0.9.0"
-wac-graph = "0.9.0"
+wasi-preview1-component-adapter-provider = "44.0.0"
+wac-parser = "0.10.0"
+wac-types = "0.10.0"
+wac-graph = "0.10.0"
 wasm-compose = { workspace = true }
 indexmap = { workspace = true }
 wasm-encoder = { workspace = true }
