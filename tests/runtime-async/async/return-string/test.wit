@@ -1,0 +1,14 @@
+package my:test;
+
+interface i {
+  return-string: async func() -> string;
+}
+
+world test {
+  export i;
+}
+
+world runner {
+  import i;
+  export run: async func();
+}
