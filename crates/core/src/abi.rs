@@ -1165,10 +1165,11 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                             amt: usize::from(func.result.is_some()),
                         });
                     }
-                } else {
-                    // With no return pointer in use we can simply lift the
-                    // result(s) of the function from the result of the core
-                    // wasm function.
+                } else if !async_ {
+                    // With no return pointer in use for a synchronous call, we can simply lift the
+                    // result(s) of the function from the result of the core wasm function. For async
+                    // calls, the component result is delivered via `task.return` and core result is
+                    // async progress.
                     if let Some(ty) = &func.result {
                         self.lift(ty)
                     }
@@ -1178,11 +1179,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 if async_ {
                     self.emit(&Instruction::AsyncTaskReturn {
                         name: &func.name,
-                        params: if func.result.is_some() {
-                            &[WasmType::Pointer]
-                        } else {
-                            &[]
-                        },
+                        params: &sig.results,
                     });
                 } else {
                     self.emit(&Instruction::Return {
