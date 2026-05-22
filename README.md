@@ -410,6 +410,19 @@ This can be useful having one project that exports multiple worlds.
 When using `wit-bindgen moonbit`, you may use `--derive-show` or `--derive-eq` to derive `Show` or `Eq` traits for all types.
 You may also use `--derive-error`, which will make types containing `Error` as error types in MoonBit.
 
+#### MoonBit ABI compatibility
+
+The MoonBit generator emits inline wasm helpers for strings, bytes, and arrays.
+MoonBit changed the ABI layout for these values so the data pointer no longer
+needs the old 8-byte offset. This is a breaking change for generated MoonBit
+bindings that use inline wasm, but it is not something the MoonBit compiler can
+detect at the type level.
+
+Regenerate MoonBit bindings with a `wit-bindgen` version that matches the
+MoonBit toolchain ABI layout. If old generated bindings or an older MoonBit
+toolchain are mixed with new bindings, components may still compile but fail at
+runtime with corrupted strings/bytes or traps.
+
 You will find the files to be modified with the name `**/stub.mbt`.
 To avoid touching the files during regeneration (including `moon.pkg.json` or `moon.mod.json`) you may use `--ignore-stub`.
 
