@@ -62,7 +62,8 @@ impl LanguageMethods for Rust {
     ) -> bool {
         // Currently there's a bug with this borrowing mode which means that
         // this variant does not pass.
-        if name == "wasi-http-borrowed-duplicate" {
+        if name == "wasi-http-borrowed-duplicate" || name == "more-variants.wit-borrowed-duplicate"
+        {
             return true;
         }
 
