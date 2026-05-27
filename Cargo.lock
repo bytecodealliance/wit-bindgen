@@ -1428,12 +1428,14 @@ dependencies = [
  "anyhow",
  "clap",
  "heck",
+ "indexmap",
  "test-helpers",
  "wasm-encoder 0.249.0",
  "wasm-metadata 0.249.0",
  "wit-bindgen-c",
  "wit-bindgen-core",
  "wit-component",
+ "wit-parser",
 ]
 
 [[package]]

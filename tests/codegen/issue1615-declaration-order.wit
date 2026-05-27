@@ -1,0 +1,40 @@
+package test:test;
+
+interface sqlite {
+  resource connection {
+    open: static func(database: string) -> result<connection, error>;
+    execute: func(statement: string, parameters: list<value>) -> result<query-result, error>;
+    last-insert-rowid: func() -> s64;
+    changes: func() -> u64;
+  }
+
+  variant error {
+    no-such-database,
+    access-denied,
+    invalid-connection,
+    database-full,
+    io(string)
+  }
+
+  record query-result {
+    columns: list<string>,
+    rows: list<row-result>,
+  }
+
+  record row-result {
+    values: list<value>
+  }
+
+  variant value {
+    integer(s64),
+    real(f64),
+    text(string),
+    blob(list<u8>),
+    null
+  }
+}
+
+world test {
+  import sqlite;
+  export foo: func();
+}
