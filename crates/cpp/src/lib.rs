@@ -879,19 +879,6 @@ impl CppInterfaceGenerator<'_> {
     fn types(&mut self, iface: InterfaceId) {
         let iface_data = &self.resolve().interfaces[iface];
 
-        // First pass: emit forward declarations for all resources
-        // This ensures resources can reference each other in method signatures
-        for (name, id) in iface_data.types.iter() {
-            let ty = &self.resolve().types[*id];
-            if matches!(&ty.kind, TypeDefKind::Resource) {
-                let pascal = name.to_upper_camel_case();
-                let guest_import = self.r#gen.imported_interfaces.contains(&iface);
-                let namespc = namespace(self.resolve, &ty.owner, !guest_import, &self.r#gen.opts);
-                self.r#gen.h_src.change_namespace(&namespc);
-                uwriteln!(self.r#gen.h_src.src, "class {pascal};");
-            }
-        }
-
         // Second pass: emit full type definitions for all types.
         //
         // Here we sort the types topologically, taking into consideration the
