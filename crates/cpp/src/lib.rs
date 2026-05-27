@@ -3161,23 +3161,28 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 }
 
                 let op0 = &operands[0];
-                let flavor = if matches!(self.variant, AbiVariant::GuestImport) {
-                    Flavor::BorrowedArgument
-                } else {
-                    Flavor::InStruct
-                };
-                let ty = self.r#gen.type_name(payload, &self.namespace, flavor);
                 let is_function_param = self.params.iter().any(|p| p == op0);
-                let value_extract = if matches!(payload, Type::String)
+                let (flavor, value_extract) = if matches!(payload, Type::String)
                     && matches!(self.variant, AbiVariant::GuestImport)
                     && !is_function_param
                 {
                     // Import from struct/variant field: optional<wit::string> needs .get_view()
-                    format!("(std::move({op0})).value().get_view()")
+                    (
+                        Flavor::BorrowedArgument,
+                        format!("(std::move({op0})).value().get_view()"),
+                    )
                 } else {
                     // Direct parameter, export, or non-string: just .value()
-                    format!("(std::move({op0})).value()")
+                    (
+                        if let (Type::String, AbiVariant::GuestImport) = (payload, self.variant) {
+                            Flavor::BorrowedArgument
+                        } else {
+                            Flavor::InStruct
+                        },
+                        format!("(std::move({op0})).value()"),
+                    )
                 };
+                let ty = self.r#gen.type_name(payload, &self.namespace, flavor);
                 let bind_some = format!("{ty} {some_payload} = {value_extract};");
 
                 uwrite!(

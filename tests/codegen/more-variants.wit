@@ -1,0 +1,75 @@
+package test:test;
+
+interface more-variants {
+  variant error {
+      connection-failed(string),
+      bad-parameter(string),
+      query-failed(query-error),
+      value-conversion-failed(string),
+      other(string)
+  }
+
+  variant query-error {
+      text(string),
+      db-error(db-error),
+  }
+
+  record db-error {
+      as-text: string,
+      severity: string,
+      code: string,
+      message: string,
+      detail: option<string>,
+      extras: list<tuple<string, string>>,
+  }
+
+  variant db-value {
+      boolean(bool),
+      int8(s8),
+      int16(s16),
+      int32(s32),
+      int64(s64),
+      floating32(f32),
+      floating64(f64),
+      str(string),
+      binary(list<u8>),
+      date(tuple<s32, u8, u8>),
+      time(tuple<u8, u8, u8, u32>),
+      datetime(tuple<s32, u8, u8, u8, u8, u8, u32>),
+      timestamp(s64),
+      uuid(string),
+      jsonb(list<u8>),
+      decimal(string),
+      range-int32(tuple<option<tuple<s32, range-bound-kind>>, option<tuple<s32, range-bound-kind>>>),
+      range-int64(tuple<option<tuple<s64, range-bound-kind>>, option<tuple<s64, range-bound-kind>>>),
+      range-decimal(tuple<option<tuple<string, range-bound-kind>>, option<tuple<string, range-bound-kind>>>),
+      array-int32(list<option<s32>>),
+      array-int64(list<option<s64>>),
+      array-decimal(list<option<string>>),
+      array-str(list<option<string>>),
+      interval(interval),
+      db-null,
+  }
+
+  record interval {
+    micros: s64,
+    days: s32,
+    months: s32,
+  }
+
+  type row = list<db-value>;
+
+  enum range-bound-kind {
+    inclusive,
+    exclusive,
+  }
+
+  resource connection {
+    query: func(statement: string, params: list<db-value>) -> result<list<row>, error>;
+  }
+}
+
+world test {
+  import more-variants;
+  export foo: func();
+}
