@@ -1,5 +1,6 @@
 use anyhow::bail;
 use heck::{ToPascalCase, ToShoutySnakeCase, ToSnakeCase, ToUpperCamelCase};
+use indexmap::{IndexMap, IndexSet};
 use std::{
     collections::{HashMap, HashSet},
     fmt::{self, Display, Write as FmtWrite},
@@ -891,9 +892,13 @@ impl CppInterfaceGenerator<'_> {
             }
         }
 
-        // Second pass: emit full type definitions
-        for (name, id) in iface_data.types.iter() {
-            self.define_type(name, *id);
+        // Second pass: emit full type definitions for all types.
+        //
+        // Here we sort the types topologically, taking into consideration the
+        // parameter and return types of functions associated with resource
+        // types. This ensures each type is declared before any uses of it.
+        for (name, id) in sort_types(self.resolve, &iface_data.types) {
+            self.define_type(name, id);
         }
     }
 
@@ -3627,5 +3632,128 @@ fn is_special_method(func: &Function) -> SpecialMethod {
         }
     } else {
         SpecialMethod::None
+    }
+}
+
+/// Sort the specified types topologically, taking the parameter and result
+/// types of resource functions into consideration.
+fn sort_types<'a>(
+    resolve: &Resolve,
+    types: &'a IndexMap<String, TypeId>,
+) -> IndexMap<&'a str, TypeId> {
+    let mut sorted = IndexSet::new();
+    let mut visited = HashSet::new();
+    for id in types.values() {
+        sort(resolve, Type::Id(*id), &mut sorted, &mut visited);
+    }
+    let names = types
+        .iter()
+        .map(|(k, v)| (*v, k.as_str()))
+        .collect::<HashMap<_, _>>();
+    sorted
+        .into_iter()
+        .filter_map(|v| names.get(&v).map(|k| (*k, v)))
+        .collect()
+}
+
+fn sort(resolve: &Resolve, ty: Type, sorted: &mut IndexSet<TypeId>, visited: &mut HashSet<TypeId>) {
+    match ty {
+        Type::Bool
+        | Type::U8
+        | Type::U16
+        | Type::U32
+        | Type::S8
+        | Type::S16
+        | Type::S32
+        | Type::Char
+        | Type::U64
+        | Type::S64
+        | Type::F32
+        | Type::F64
+        | Type::String
+        | Type::ErrorContext => (),
+        Type::Id(id) => {
+            let ty = &resolve.types[id];
+            match &ty.kind {
+                TypeDefKind::Record(record) => {
+                    for field in &record.fields {
+                        sort(resolve, field.ty, sorted, visited);
+                    }
+                    sorted.insert(id);
+                }
+                TypeDefKind::Variant(variant) => {
+                    for case in &variant.cases {
+                        if let Some(ty) = case.ty {
+                            sort(resolve, ty, sorted, visited);
+                        }
+                    }
+                    sorted.insert(id);
+                }
+                TypeDefKind::Enum(_) | TypeDefKind::Flags(_) => {
+                    sorted.insert(id);
+                }
+                TypeDefKind::Handle(Handle::Borrow(resource) | Handle::Own(resource)) => {
+                    sort(resolve, Type::Id(*resource), sorted, visited);
+                    sorted.insert(id);
+                }
+                TypeDefKind::Option(some) => {
+                    sort(resolve, *some, sorted, visited);
+                    sorted.insert(id);
+                }
+                TypeDefKind::Result(result) => {
+                    if let Some(ty) = result.ok {
+                        sort(resolve, ty, sorted, visited);
+                    }
+                    if let Some(ty) = result.err {
+                        sort(resolve, ty, sorted, visited);
+                    }
+                    sorted.insert(id);
+                }
+                TypeDefKind::Tuple(tuple) => {
+                    for ty in &tuple.types {
+                        sort(resolve, *ty, sorted, visited);
+                    }
+                    sorted.insert(id);
+                }
+                TypeDefKind::List(ty) | TypeDefKind::FixedLengthList(ty, _) => {
+                    sort(resolve, *ty, sorted, visited);
+                }
+                TypeDefKind::Type(ty) => {
+                    sort(resolve, *ty, sorted, visited);
+                }
+                TypeDefKind::Resource => {
+                    // Here we avoid infinite recursion by remembering if we've
+                    // seen this type already.
+                    if !visited.contains(&id) {
+                        visited.insert(id);
+
+                        if let TypeOwner::Interface(interface) = ty.owner {
+                            for function in resolve.interfaces[interface].functions.values() {
+                                if let Some(resource) = function.kind.resource()
+                                    && resource == id
+                                {
+                                    for parameter in &function.params {
+                                        sort(resolve, parameter.ty, &mut *sorted, &mut *visited);
+                                    }
+
+                                    if let Some(ty) = function.result {
+                                        sort(resolve, ty, &mut *sorted, &mut *visited);
+                                    }
+                                }
+                            }
+                        }
+
+                        sorted.insert(id);
+                    }
+                }
+                TypeDefKind::Stream(ty) | TypeDefKind::Future(ty) => {
+                    if let Some(ty) = ty {
+                        sort(resolve, *ty, sorted, visited);
+                    }
+                    sorted.insert(id);
+                }
+                kind => todo!("{kind:?}"),
+            }
+        }
     }
 }
