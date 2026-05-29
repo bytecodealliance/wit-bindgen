@@ -7,6 +7,12 @@ interface i {
         set-b: func(arg: bool);
         do: func();
     }
+    resource b {
+        constructor();
+        set-a: func(arg: u32);
+        set-b: func(arg: bool);
+        do: func();
+    }
 }
 world runner {
     import i;

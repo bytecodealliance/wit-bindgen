@@ -179,8 +179,13 @@ impl<'i> InterfaceGenerator<'i> {
                 private: true,
                 ..Default::default()
             };
-            sig.update_for_func(&func);
-            self.print_signature(func, true, &sig);
+
+            let should_return_self =
+                self.r#gen
+                    .should_return_self(self.resolve, interface.map(|p| p.1), func, false);
+
+            sig.update_for_func(&func, should_return_self);
+            self.print_signature(func, true, &sig, should_return_self);
             self.src.push_str(";\n");
             let trait_method = mem::replace(&mut self.src, prev);
             methods.push(trait_method);
@@ -741,22 +746,37 @@ pub mod vtable{ordinal} {{
             async_,
             ..Default::default()
         };
+
+        let should_return_self = self
+            .r#gen
+            .should_return_self(self.resolve, interface, func, true);
+
         if let Some(id) = func.kind.resource() {
             let name = self.resolve.types[id].name.as_ref().unwrap();
             let name = to_upper_camel_case(name);
             uwriteln!(self.src, "impl {name} {{");
             sig.use_item_name = true;
-            sig.update_for_func(&func);
+            sig.update_for_func(&func, should_return_self);
         }
         self.src.push_str("#[allow(unused_unsafe, clippy::all)]\n");
-        let params = self.print_signature(func, async_, &sig);
+        let params = self.print_signature(func, async_, &sig, should_return_self);
         self.src.push_str("{\n");
         self.src.push_str("unsafe {\n");
 
         if async_ {
-            self.generate_guest_import_body_async(&self.wasm_import_module, func, params);
+            self.generate_guest_import_body_async(
+                &self.wasm_import_module,
+                func,
+                params,
+                should_return_self,
+            );
         } else {
-            self.generate_guest_import_body_sync(&self.wasm_import_module, func, params);
+            self.generate_guest_import_body_sync(
+                &self.wasm_import_module,
+                func,
+                params,
+                should_return_self,
+            );
         }
 
         self.src.push_str("}\n");
@@ -808,14 +828,9 @@ pub mod vtable{ordinal} {{
         module: &str,
         func: &Function,
         params: Vec<String>,
+        should_return_self: bool,
     ) {
-        let mut f = FunctionBindgen::new(
-            self,
-            params,
-            module,
-            false,
-            self.r#gen.should_return_self(func),
-        );
+        let mut f = FunctionBindgen::new(self, params, module, false, should_return_self);
         abi::call(
             f.r#gen.resolve,
             AbiVariant::GuestImport,
@@ -856,6 +871,7 @@ pub mod vtable{ordinal} {{
         module: &str,
         func: &Function,
         mut params: Vec<String>,
+        should_return_self: bool,
     ) {
         let param_tys = func
             .params
@@ -1086,11 +1102,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
             self.src,
             "_MySubtask {{ _unused: core::marker::PhantomData }}.call(({})).await{}",
             params.join(" "),
-            if self.r#gen.should_return_self(func) {
-                ";\nself"
-            } else {
-                ""
-            }
+            if should_return_self { ";\nself" } else { "" }
         );
     }
 
@@ -1387,9 +1399,14 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
                 private: true,
                 ..Default::default()
             };
-            sig.update_for_func(&func);
+
+            let should_return_self =
+                self.r#gen
+                    .should_return_self(self.resolve, interface.map(|p| p.1), func, false);
+
+            sig.update_for_func(&func, should_return_self);
             self.src.push_str("#[allow(unused_variables)]\n");
-            self.print_signature(func, true, &sig);
+            self.print_signature(func, true, &sig, should_return_self);
             self.src.push_str("{ unreachable!() }\n");
         }
 
@@ -1447,8 +1464,14 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
         // }
     }
 
-    fn print_signature(&mut self, func: &Function, params_owned: bool, sig: &FnSig) -> Vec<String> {
-        let params = self.print_docs_and_params(func, params_owned, sig);
+    fn print_signature(
+        &mut self,
+        func: &Function,
+        params_owned: bool,
+        sig: &FnSig,
+        should_return_self: bool,
+    ) -> Vec<String> {
+        let params = self.print_docs_and_params(func, params_owned, sig, should_return_self);
         self.push_str(" -> ");
         if let FunctionKind::Constructor(resource_id) = &func.kind {
             match classify_constructor_return_type(&self.resolve, *resource_id, &func.result) {
@@ -1462,8 +1485,8 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
                 }
             }
         } else {
-            if self.r#gen.should_return_self(func) {
-                self.push_str("&Self");
+            if should_return_self {
+                self.push_str("Self");
             } else {
                 self.print_result_type(&func.result);
             }
@@ -1476,6 +1499,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
         func: &Function,
         params_owned: bool,
         sig: &FnSig,
+        should_return_self: bool,
     ) -> Vec<String> {
         self.rustdoc(&func.docs);
         self.rustdoc_params(&func.params, "Parameters");
@@ -1523,7 +1547,11 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
         ) in func.params.iter().enumerate()
         {
             if i == 0 && sig.self_is_first_param {
-                params.push("self".to_string());
+                params.push(if should_return_self {
+                    "&self".to_string()
+                } else {
+                    "self".to_string()
+                });
                 continue;
             }
             let name = to_rust_ident(name);
