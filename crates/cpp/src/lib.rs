@@ -35,11 +35,18 @@ pub const POINTER_SIZE_EXPRESSION: &str = "sizeof(void*)";
 type CppType = String;
 
 #[derive(Clone, Copy, Debug)]
+enum SubFlavor {
+    Owned,
+    Borrowed,
+}
+
+#[derive(Clone, Copy, Debug)]
 enum Flavor {
     Argument(AbiVariant),
     Result(AbiVariant),
     InStruct,
     BorrowedArgument,
+    CanonicalAbi(SubFlavor),
 }
 
 #[derive(Default)]
@@ -2625,9 +2632,16 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let size = self.r#gen.sizes.size(element);
                 self.push_str(&format!("auto&& {val} = {};\n", operands[0]));
                 self.push_str(&format!("auto {len} = (size_t)({val}.size());\n"));
-                let tpe = self
-                    .r#gen
-                    .type_name(element, &self.namespace, Flavor::InStruct);
+                let subvar = match self.variant {
+                    AbiVariant::GuestImport => SubFlavor::Borrowed,
+                    AbiVariant::GuestExport => todo!(),
+                    AbiVariant::GuestImportAsync => todo!(),
+                    AbiVariant::GuestExportAsync => todo!(),
+                    AbiVariant::GuestExportAsyncStackful => todo!(),
+                };
+                let tpe =
+                    self.r#gen
+                        .type_name(element, &self.namespace, Flavor::CanonicalAbi(subvar));
                 self.push_str(&format!(
                     "auto {vres} = wit::vector<{tpe}>::allocate({len});\n"
                 ));
