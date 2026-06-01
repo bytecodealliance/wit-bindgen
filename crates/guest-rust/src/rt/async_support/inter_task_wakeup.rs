@@ -1,6 +1,6 @@
-use super::FutureState;
+use super::TaskState;
 use crate::rt::async_support::try_lock::TryLock;
-use crate::rt::async_support::{BLOCKED, COMPLETED};
+use crate::rt::async_support::{BLOCKED, COMPLETED, WaitableSet};
 use crate::{RawStreamReader, RawStreamWriter, StreamOps, UnitStreamOps};
 use core::ptr;
 
@@ -18,7 +18,7 @@ pub struct State {
     stream_reading: bool,
 }
 
-impl FutureState<'_> {
+impl TaskState<'_> {
     pub(super) fn read_inter_task_stream(&mut self) {
         // Lazily allocate the inter-task stream now that we're actually going
         // to sleep. We don't know where the wakeup notification will come from
@@ -27,7 +27,7 @@ impl FutureState<'_> {
             assert!(!self.inter_task_wakeup.stream_reading);
             let (writer, reader) = UnitStreamOps::new();
             self.inter_task_wakeup.stream = Some(reader);
-            let mut waker_stream = self.waker.inter_task_stream.lock.try_lock().unwrap();
+            let mut waker_stream = self.shared.inter_task_stream.lock.try_lock().unwrap();
             assert!(waker_stream.is_none());
             *waker_stream = Some(writer);
         }
@@ -44,7 +44,7 @@ impl FutureState<'_> {
             let rc = unsafe { UnitStreamOps.start_read(handle, ptr::null_mut(), 1) };
             assert_eq!(rc, BLOCKED);
             self.inter_task_wakeup.stream_reading = true;
-            self.add_waitable(handle);
+            self.shared.add_waitable(handle);
         }
     }
 
@@ -61,7 +61,7 @@ impl FutureState<'_> {
         // synchronous `stream.cancel-read` traps if the stream is still a member
         // of a waitable set, so this must happen first. This matches the
         // unregister-then-cancel ordering in `WaitableOperation::cancel`.
-        self.remove_waitable(handle);
+        WaitableSet::remove_waitable_from_all_sets(handle);
         // Note that the return code here is discarded. No matter what the read
         // is cancelled, and whether we actually read something or whether we
         // cancelled doesn't matter.

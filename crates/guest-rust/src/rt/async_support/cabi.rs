@@ -66,6 +66,7 @@ extern_wasm! {
 /// The first version of `wasip3_task` which implies the existence of the
 /// fields `ptr`, `waitable_register`, and `waitable_unregister`.
 pub const WASIP3_TASK_V1: u32 = 1;
+pub const WASIP3_TASK_V2: u32 = 2;
 
 /// Indirect "vtable" used to connect imported functions and exported tasks.
 /// Executors (e.g. exported functions) define and manage this while imports
@@ -104,4 +105,58 @@ pub struct wasip3_task {
     /// Returns the `callback_ptr` passed to `waitable_register` if present, or
     /// `NULL` if it's not present.
     pub waitable_unregister: unsafe extern "C" fn(ptr: *mut c_void, waitable: u32) -> *mut c_void,
+}
+
+unsafe impl Send for wasip3_task {}
+unsafe impl Sync for wasip3_task {}
+
+/// Indirect "vtable" used to connect imported functions and exported tasks.
+/// Executors (e.g. exported functions) define and manage this while imports
+/// use it.
+#[repr(C)]
+pub struct wasip3_task_v2 {
+    /// TODO
+    pub v1: wasip3_task,
+    /// TODO
+    pub vtable: &'static wasip3_task_vtable,
+}
+
+/// Indirect "vtable" used to connect imported functions and exported tasks.
+/// Executors (e.g. exported functions) define and manage this while imports
+/// use it.
+#[repr(C)]
+pub struct wasip3_task_vtable {
+    /// Currently `WASIP3_TASK_V1`. Indicates what fields are present next
+    /// depending on the version here.
+    pub version: u32,
+
+    /// Register a new `waitable` for this exported task.
+    ///
+    /// This exported task will add `waitable` to its `waitable-set`. When it
+    /// becomes ready then `callback` will be invoked with the ready code as
+    /// well as the `callback_ptr` provided.
+    ///
+    /// If `waitable` was previously registered with this task then the
+    /// previous `callback_ptr` is returned. Otherwise `NULL` is returned.
+    ///
+    /// It's the caller's responsibility to ensure that `callback_ptr` is valid
+    /// until `callback` is invoked, `waitable_unregister` is invoked, or
+    /// `waitable_register` is called again to overwrite the value.
+    pub waitable_register: unsafe extern "C" fn(
+        ptr: *mut c_void,
+        waitable: u32,
+        callback: unsafe extern "C" fn(callback_ptr: *mut c_void, code: u32),
+        callback_ptr: *mut c_void,
+    ) -> *mut c_void,
+
+    /// Removes the `waitable` from this task's `waitable-set`.
+    ///
+    /// Returns the `callback_ptr` passed to `waitable_register` if present, or
+    /// `NULL` if it's not present.
+    pub waitable_unregister: unsafe extern "C" fn(ptr: *mut c_void, waitable: u32) -> *mut c_void,
+
+    /// TODO
+    pub clone: unsafe extern "C" fn(ptr: *mut c_void) -> *mut c_void,
+    /// TODO
+    pub drop: unsafe extern "C" fn(ptr: *mut c_void),
 }
