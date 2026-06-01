@@ -79,7 +79,7 @@ void exports_runner_run() {
     test_list_typedef3_t b;
     b.ptr = &b_str;
     b.len = 1;
-    runner_tuple2_list_typedef2_list_typedef3_t ret;
+    test_tuple2_list_typedef2_list_typedef3_t ret;
     test_list_typedefs(&a, &b, &ret);
 
     assert(memcmp(ret.f0.ptr, "typedef3", ret.f0.len) == 0);
