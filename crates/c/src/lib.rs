@@ -1099,7 +1099,7 @@ fn is_prim_type_id(resolve: &Resolve, id: TypeId) -> bool {
         | TypeDefKind::Stream(_)
         | TypeDefKind::Unknown => false,
         TypeDefKind::FixedLengthList(..) => todo!(),
-        TypeDefKind::Map(..) => todo!(),
+        TypeDefKind::Map(key, value) => is_prim_type(resolve, key) && is_prim_type(resolve, value),
     }
 }
 
@@ -1185,7 +1185,12 @@ pub fn push_ty_name(resolve: &Resolve, ty: &Type, src: &mut String) {
                 }
                 TypeDefKind::Unknown => unreachable!(),
                 TypeDefKind::FixedLengthList(..) => todo!(),
-                TypeDefKind::Map(..) => todo!(),
+                TypeDefKind::Map(key, value) => {
+                    src.push_str("map_");
+                    push_ty_name(resolve, key, src);
+                    src.push_str("_");
+                    push_ty_name(resolve, value, src);
+                }
             }
         }
     }
@@ -1394,12 +1399,12 @@ impl Return {
             TypeDefKind::Tuple(_)
             | TypeDefKind::Record(_)
             | TypeDefKind::List(_)
+            | TypeDefKind::Map(..)
             | TypeDefKind::Variant(_) => {}
 
             TypeDefKind::Resource => todo!("return_single for resource"),
             TypeDefKind::Unknown => unreachable!(),
             TypeDefKind::FixedLengthList(..) => todo!(),
-            TypeDefKind::Map(..) => todo!(),
         }
 
         self.retptrs.push(*orig_ty);
@@ -1757,8 +1762,15 @@ void __wasm_export_{ns}_{snake}_dtor({ns}_{snake}_t* arg) {{
         todo!("named fixed-length list types are not yet supported in the C backend")
     }
 
-    fn type_map(&mut self, _id: TypeId, _name: &str, _key: &Type, _value: &Type, _docs: &Docs) {
-        todo!("map types are not yet supported in the C backend")
+    fn type_map(&mut self, id: TypeId, _name: &str, key: &Type, value: &Type, docs: &Docs) {
+        self.src.h_defs("\n");
+        self.docs(docs, SourceType::HDefs);
+        self.print_map_entry_typedef(id, key, value);
+        self.start_typedef_struct(id);
+        self.print_map_entry_typename(id);
+        self.src.h_defs(" *ptr;\n");
+        self.src.h_defs("size_t len;\n");
+        self.finish_typedef_struct(id);
     }
 
     fn type_future(&mut self, id: TypeId, _name: &str, _ty: &Option<Type>, docs: &Docs) {
@@ -1883,8 +1895,16 @@ impl<'a> wit_bindgen_core::AnonymousTypeGenerator<'a> for InterfaceGenerator<'a>
         todo!("print_anonymous_type for fixed length list");
     }
 
-    fn anonymous_type_map(&mut self, _id: TypeId, _key: &Type, _value: &Type, _docs: &Docs) {
-        todo!("anonymous map types are not yet supported in the C backend");
+    fn anonymous_type_map(&mut self, id: TypeId, key: &Type, value: &Type, _docs: &Docs) {
+        self.print_map_entry_typedef(id, key, value);
+        self.src.h_defs("\ntypedef ");
+        self.src.h_defs("struct {\n");
+        self.print_map_entry_typename(id);
+        self.src.h_defs(" *ptr;\n");
+        self.src.h_defs("size_t len;\n");
+        self.src.h_defs("}");
+        self.src.h_defs(" ");
+        self.print_typedef_target(id);
     }
 }
 
@@ -2064,7 +2084,19 @@ impl InterfaceGenerator<'_> {
             }
             TypeDefKind::Unknown => unreachable!(),
             TypeDefKind::FixedLengthList(..) => todo!(),
-            TypeDefKind::Map(..) => todo!(),
+            TypeDefKind::Map(key, value) => {
+                let entry_name = self.map_entry_typename(id);
+                self.src.c_helpers("size_t map_len = ptr->len;\n");
+                uwriteln!(self.src.c_helpers, "if (map_len > 0) {{");
+                uwriteln!(self.src.c_helpers, "{entry_name} *map_ptr = ptr->ptr;");
+                self.src
+                    .c_helpers("for (size_t i = 0; i < map_len; i++) {\n");
+                self.free(key, "&map_ptr[i].key");
+                self.free(value, "&map_ptr[i].value");
+                self.src.c_helpers("}\n");
+                uwriteln!(self.src.c_helpers, "free(map_ptr);");
+                uwriteln!(self.src.c_helpers, "}}");
+            }
         }
         if c_helpers_body_start == self.src.c_helpers.len() {
             self.src.c_helpers.as_mut_string().truncate(c_helpers_start);
@@ -2673,6 +2705,31 @@ void {name}_return({return_ty}) {{
         self.print_typedef_target(id);
     }
 
+    /// Returns the typedef name of the synthetic entry struct used as the
+    /// element type of a `map<K, V>`'s flat-pair representation.
+    fn map_entry_typename(&self, id: TypeId) -> String {
+        let map_name = &self.r#gen.type_names[&id];
+        let prefix = map_name.strip_suffix("_t").unwrap_or(map_name.as_str());
+        format!("{prefix}_entry_t")
+    }
+
+    fn print_map_entry_typename(&mut self, id: TypeId) {
+        let entry_name = self.map_entry_typename(id);
+        self.src.h_defs(&entry_name);
+    }
+
+    /// Emits the `typedef struct { K key; V value; } <map>_entry_t;` companion
+    /// declaration that precedes the map struct itself.
+    fn print_map_entry_typedef(&mut self, id: TypeId, key: &Type, value: &Type) {
+        self.src.h_defs("\ntypedef struct {\n");
+        self.print_ty(SourceType::HDefs, key);
+        self.src.h_defs(" key;\n");
+        self.print_ty(SourceType::HDefs, value);
+        self.src.h_defs(" value;\n} ");
+        self.print_map_entry_typename(id);
+        self.src.h_defs(";\n");
+    }
+
     fn owner_namespace(&self, id: TypeId) -> String {
         owner_namespace(
             self.interface,
@@ -2758,7 +2815,9 @@ void {name}_return({return_ty}) {{
 
                 TypeDefKind::Unknown => false,
                 TypeDefKind::FixedLengthList(..) => todo!(),
-                TypeDefKind::Map(..) => todo!(),
+                TypeDefKind::Map(key, value) => {
+                    self.contains_droppable_borrow(key) || self.contains_droppable_borrow(value)
+                }
             }
         } else {
             false
@@ -3640,7 +3699,35 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     list_name, elem_name, operands[0], operands[1]
                 ));
             }
+
+            // Maps share the canonical "flat array of entries" layout with the
+            // C struct emitted by `type_map`/`anonymous_type_map`, so the body
+            // block is discarded and we splice `.ptr` / `.len` through directly
+            // (mirroring how `ListLower`/`ListLift` work above).
+            Instruction::MapLower { .. } => {
+                let _body = self.blocks.pop().unwrap();
+                results.push(format!("(uint8_t *) ({}).ptr", operands[0]));
+                results.push(format!("({}).len", operands[0]));
+            }
+
+            Instruction::MapLift { ty, .. } => {
+                self.assert_no_droppable_borrows("map", &Type::Id(*ty));
+
+                let _body = self.blocks.pop().unwrap();
+                let map_name = self.r#gen.r#gen.type_name(&Type::Id(*ty));
+                let entry_name = {
+                    let prefix = map_name.strip_suffix("_t").unwrap_or(&map_name);
+                    format!("{prefix}_entry_t")
+                };
+                results.push(format!(
+                    "({}) {{ ({}*)({}), ({}) }}",
+                    map_name, entry_name, operands[0], operands[1]
+                ));
+            }
+
             Instruction::IterElem { .. } => results.push("e".to_string()),
+            Instruction::IterMapKey { .. } => results.push("map_key".to_string()),
+            Instruction::IterMapValue { .. } => results.push("map_value".to_string()),
             Instruction::IterBasePointer => results.push("base".to_string()),
 
             Instruction::CallWasm { sig, .. } => {
@@ -3976,6 +4063,29 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwriteln!(self.src, "}}");
             }
 
+            Instruction::GuestDeallocateMap { key, value } => {
+                let (body, results) = self.blocks.pop().unwrap();
+                assert!(results.is_empty());
+                let len = self.locals.tmp("len");
+                uwriteln!(self.src, "size_t {len} = {};", operands[1]);
+                uwriteln!(self.src, "if ({len} > 0) {{");
+                let ptr = self.locals.tmp("ptr");
+                uwriteln!(self.src, "uint8_t *{ptr} = {};", operands[0]);
+                let i = self.locals.tmp("i");
+                uwriteln!(self.src, "for (size_t {i} = 0; {i} < {len}; {i}++) {{");
+                let entry = self.r#gen.r#gen.sizes.record([*key, *value]);
+                uwriteln!(
+                    self.src,
+                    "uint8_t *base = {ptr} + {i} * {};",
+                    entry.size.format(POINTER_SIZE_EXPRESSION)
+                );
+                uwriteln!(self.src, "(void) base;");
+                uwrite!(self.src, "{body}");
+                uwriteln!(self.src, "}}");
+                uwriteln!(self.src, "free({ptr});");
+                uwriteln!(self.src, "}}");
+            }
+
             Instruction::Flush { amt } => {
                 results.extend(operands.iter().take(*amt).cloned());
             }
@@ -4122,13 +4232,15 @@ pub fn is_arg_by_pointer(resolve: &Resolve, ty: &Type) -> bool {
             TypeDefKind::Enum(_) => false,
             TypeDefKind::Flags(_) => false,
             TypeDefKind::Handle(_) => false,
-            TypeDefKind::Tuple(_) | TypeDefKind::Record(_) | TypeDefKind::List(_) => true,
+            TypeDefKind::Tuple(_)
+            | TypeDefKind::Record(_)
+            | TypeDefKind::List(_)
+            | TypeDefKind::Map(..) => true,
             TypeDefKind::Future(_) => false,
             TypeDefKind::Stream(_) => false,
             TypeDefKind::Resource => todo!("is_arg_by_pointer for resource"),
             TypeDefKind::Unknown => unreachable!(),
             TypeDefKind::FixedLengthList(..) => todo!(),
-            TypeDefKind::Map(..) => todo!(),
         },
         Type::String => true,
         _ => false,
