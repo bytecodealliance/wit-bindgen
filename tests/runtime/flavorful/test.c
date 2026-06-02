@@ -65,7 +65,7 @@ bool exports_test_errno_result(exports_test_my_errno_t *err) {
 void exports_test_list_typedefs(
     exports_test_list_typedef_t *a,
     exports_test_list_typedef3_t *c,
-    test_tuple2_list_typedef2_list_typedef3_t *ret) {
+    exports_test_tuple2_list_typedef2_list_typedef3_t *ret) {
   assert(memcmp(a->ptr, "typedef1", a->len) == 0);
   exports_test_list_typedef_free(a);
 

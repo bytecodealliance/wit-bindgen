@@ -1068,6 +1068,17 @@ fn is_prim_type(resolve: &Resolve, ty: &Type) -> bool {
 }
 
 fn is_prim_type_id(resolve: &Resolve, id: TypeId) -> bool {
+    // A named type contributes its (interface-local) name to the generated
+    // type name rather than its structure, so even when its underlying
+    // representation is primitive it must not be treated as a world-shareable
+    // "primitive" type. Otherwise two interfaces that each define a
+    // differently-typed but identically-named type (e.g. `field-value` in two
+    // versions of `wasi:http/types`) collapse onto the same anonymous type
+    // name, producing structs with incompatible element pointer types.
+    // See https://github.com/bytecodealliance/wit-bindgen/issues/1621.
+    if resolve.types[id].name.is_some() {
+        return false;
+    }
     match &resolve.types[id].kind {
         TypeDefKind::List(elem) => is_prim_type(resolve, elem),
 

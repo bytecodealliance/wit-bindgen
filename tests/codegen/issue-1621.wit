@@ -1,0 +1,16 @@
+package my:test;
+
+interface a {
+  type t = list<u8>;
+  f: func() -> list<t>;
+}
+
+interface b {
+  type t = list<u8>;
+  g: func() -> list<t>;
+}
+
+world w {
+  import a;
+  import b;
+}
