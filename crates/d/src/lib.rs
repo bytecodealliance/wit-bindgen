@@ -826,10 +826,6 @@ impl WorldGenerator for D {
             let world_name = &world.name;
             let pkg = &resolve.packages[world.package.unwrap()].name;
             let version = env!("CARGO_PKG_VERSION");
-            world_src.push_str(&format!(
-                "\n@(imported!\"ldc.attributes\".section(\"component-type:wit-bindgen:{version}:\
-                 {pkg}:{world_name}:{opts_suffix}\"))\n"
-            ));
 
             let mut producers = wasm_metadata::Producers::empty();
             producers.add(
@@ -848,7 +844,7 @@ impl WorldGenerator for D {
 
             world_src.push_str(&format!(
                 "
-                void __wit_bindgen_component_types() {{
+                void __wit_bindgen_component_type() {{
                     imported!\"ldc.llvmasm\".__irEx!(
                         \"\",
                         \"\",

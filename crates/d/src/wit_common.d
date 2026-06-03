@@ -18,8 +18,9 @@ struct WitList(T) {
     T* ptr;
     size_t length;
 
-    this(T[] slice) @trusted {
-        this = slice;
+    this(inout T[] slice) inout @trusted {
+        ptr = slice.ptr;
+        length = slice.length;
     }
 
     void opAssign(T[] slice) @trusted {
@@ -35,8 +36,7 @@ struct WitList(T) {
     bool opEquals(in T[] other) const => this[] == other;
     size_t toHash() const => this[].hashOf;
 }
-auto witList(T : U[], U)(T slice) => WitList!U(slice);
-
+auto witList(T : U[], U)(inout T slice) => inout WitList!U(slice);
 
 // WIT ABI for string matches List,
 // except list<char> in WIT is actually List!(dchar)
@@ -140,17 +140,17 @@ private:
     bool _present = false;
     T _value;
 
-    this(bool present, T value = T.init) @safe @nogc nothrow {
+    this(bool present, inout T value) inout @safe @nogc nothrow {
         _present = present;
         _value = value;
     }
 public:
-    static Option some(T value) @safe @nogc nothrow {
-        return Option(true, value);
+    static inout(Option) some(inout T value) @safe @nogc nothrow {
+        return inout Option(true, value);
     }
 
     static Option none() @safe @nogc nothrow {
-        return Option(false);
+        return Option(false, T.init);
     }
 
     bool isSome() const @safe @nogc nothrow => _present;
@@ -168,12 +168,12 @@ public:
     { return _present ? _value : fallback(); }
 }
 
-auto some(T)(T value) @safe @nogc nothrow {
+auto some(T)(inout T value) @safe @nogc nothrow {
     return Option!T.some(value);
 }
 
-auto none(T)(T value) @safe @nogc nothrow {
-    return Option!T.some(value);
+auto none(T)() @safe @nogc nothrow {
+    return Option!T.none;
 }
 
 /// Based on Rust's Result
@@ -192,7 +192,7 @@ private:
     }
     Storage _storage;
 
-    this(bool hasError, Storage storage) @safe @nogc nothrow {
+    this(bool hasError, inout(Storage) storage) inout @safe @nogc nothrow {
         _hasError = hasError;
         _storage = storage;
     }
@@ -201,22 +201,22 @@ public:
     static if (is(T == void)) {
         static Result ok() @safe @nogc nothrow => Result(false, Storage.init);
     } else {
-        static Result ok(T value) @trusted @nogc nothrow {
+        static Result ok(inout(T) value) @trusted @nogc nothrow {
             Storage newStorage = Storage.init;
-            newStorage.value = value;
+            newStorage.value = cast(T)value;
 
-            return Result(false, newStorage);
+            return Result(false, cast(inout Storage)newStorage);
         }
     }
 
     static if (is(E == void)) {
         static Result err() @safe @nogc nothrow => Result(true, Storage.init);
     } else {
-        static Result err(E error) @trusted @nogc nothrow {
+        static inout(Result) err(inout(E) error) @trusted @nogc nothrow {
             Storage newStorage = Storage.init;
-            newStorage.error = error;
+            newStorage.error = cast(E)error;
 
-            return Result(true, newStorage);
+            return inout Result(true, cast(inout Storage)newStorage);
         }
     }
 
@@ -316,6 +316,20 @@ T witClone(T : Tuple!U, U...)(in T val) {
     T clone;
     static foreach (F; T.tupleof) {
         __traits(child, clone, F) = __traits(child, val, F).witClone;
+    }
+    return clone;
+}
+
+
+void witFree(T : U[L], U, size_t L)(scope ref T val) {
+    foreach (ref e; val) {
+        e.witFree;
+    }
+}
+T witClone(T : U[L], U, size_t L)(in T val) {
+    T clone;
+    foreach (i, ref e; clone) {
+        e = val[i].witClone;
     }
     return clone;
 }

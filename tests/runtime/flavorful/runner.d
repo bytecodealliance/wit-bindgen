@@ -13,7 +13,7 @@ void run() {
     }
 
     {
-        auto result = fListInRecord3(ListInRecord3(a: cast(WitString)"list_in_record3 input".witList));
+        auto result = fListInRecord3(const ListInRecord3("list_in_record3 input".witList));
         scope(exit) result.witFree;
 
         assert(
@@ -23,7 +23,7 @@ void run() {
     }
 
     {
-        auto result = fListInRecord4(ListInAlias(a: cast(WitString)"input4".witList));
+        auto result = fListInRecord4(const ListInAlias("input4".witList));
         scope(exit) result.witFree;
 
         assert(
@@ -32,7 +32,7 @@ void run() {
         );
     }
 
-    fListInVariant1(some(cast(WitString)"foo".witList), Result!(void, WitString).err(cast(WitString)"bar".witList));
+    fListInVariant1(some("foo".witList), Result!(void, WitString).err("bar".witList));
 
     {
         auto result = fListInVariant2();
@@ -41,17 +41,17 @@ void run() {
 
         assert(
             result
-            == some(cast(WitString)"list_in_variant2".witList)
+            == some("list_in_variant2".witList)
         );
     }
 
     {
-        auto result = fListInVariant3(some(cast(WitString)"input3".witList));
+        auto result = fListInVariant3(some("input3".witList));
         scope(exit) result.witFree;
 
         assert(
             result
-            == some(cast(WitString)"output3".witList)
+            == some("output3".witList)
         );
     }
 
@@ -62,8 +62,8 @@ void run() {
     assert(errnoResult().isOk);
 
     {
-        WitString[1] input = [cast(WitString)"typedef2".witList];
-        auto result = listTypedefs(cast(WitString)"typedef1".witList, input[].witList);
+        immutable WitString[1] input = ["typedef2".witList];
+        auto result = listTypedefs("typedef1".witList, input[].witList);
         scope(exit) result.witFree;
 
         assert(result[0] == (cast(ubyte[])"typedef3").witList);
@@ -72,12 +72,19 @@ void run() {
     }
 
     {
-        bool[2] input1 = [true, false];
-        Result!(void, void)[2] input2 = [Result!(void, void).ok(), Result!(void, void).err()];
-        MyErrno[2] input3 = [MyErrno.success, MyErrno.a];
+        static immutable bool[] input1 = [true, false];
+        static immutable Result!()[] input2 = [Result!().ok, Result!().err];
+        static immutable MyErrno[] input3 = [MyErrno.success, MyErrno.a];
 
         auto result = listOfVariants(input1[].witList, input2[].witList, input3[].witList);
         scope(exit) result.witFree;
+
+        static immutable bool[] output1 = [false, true];
+        static immutable Result!()[] output2 = [Result!().err, Result!().ok];
+        static immutable MyErrno[] output3 = [MyErrno.a, MyErrno.b];
+        assert(result[0] == output1);
+        assert(result[1] == output2);
+        assert(result[2] == output3);
     }
 }
 
