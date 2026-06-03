@@ -178,7 +178,7 @@ auto none(T)(T value) @safe @nogc nothrow {
 
 /// Based on Rust's Result
 @mustuse
-struct Result(T, E) {
+struct Result(T = void, E = void) {
 private:
     bool _hasError;
     union Storage {
