@@ -244,34 +244,6 @@ public:
   entry_type const *end() const { return data_ + length; }
 };
 
-/// @brief A non-owning, read-only view over a contiguous run of key-value
-/// pairs in linear memory.
-///
-/// Counterpart to `wit::unordered_map<K, V>` for borrowed arguments: a
-/// borrow-only handle that mimics map semantics rather than vector semantics
-/// — entries are reachable via range-for or `data()`/`size()`, with no
-/// positional `operator[]`. Construct from a `wit::unordered_map<K, V>` or
-/// an explicit `(data, size)` pair.
-template <class K, class V> class unordered_map_view {
-public:
-  using entry_type = std::pair<K, V>;
-
-private:
-  entry_type const *data_;
-  size_t length;
-
-public:
-  unordered_map_view() : data_(nullptr), length(0) {}
-  unordered_map_view(entry_type const *d, size_t l) : data_(d), length(l) {}
-  unordered_map_view(unordered_map<K, V> const &m)
-      : data_(m.data()), length(m.size()) {}
-  entry_type const *data() const { return data_; }
-  size_t size() const { return length; }
-  bool empty() const { return !length; }
-  entry_type const *begin() const { return data_; }
-  entry_type const *end() const { return data_ + length; }
-};
-
 /// @brief  A Resource defined within the guest (guest side)
 ///
 /// It registers with the host and should remain in a static location.

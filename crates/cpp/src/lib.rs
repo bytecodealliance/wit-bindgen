@@ -425,6 +425,9 @@ impl Cpp {
         if self.dependencies.needs_tuple {
             self.include("<tuple>");
         }
+        if self.dependencies.needs_span {
+            self.include("<span>");
+        }
         if self.dependencies.needs_wit {
             self.include("\"wit.h\"");
         }
@@ -1734,28 +1737,27 @@ impl CppInterfaceGenerator<'_> {
                     )
                 }
                 TypeDefKind::Map(key, value) => {
-                    let element_flavor = match flavor {
-                        Flavor::BorrowedArgument | Flavor::Argument(AbiVariant::GuestImport) => {
-                            Flavor::BorrowedArgument
+                    let borrowed = match flavor {
+                        Flavor::BorrowedArgument => true,
+                        Flavor::Argument(var) => {
+                            matches!(var, AbiVariant::GuestImport)
+                                || self.r#gen.opts.api_style == APIStyle::Symmetric
                         }
-                        _ => Flavor::InStruct,
+                        _ => false,
+                    };
+                    let element_flavor = if borrowed {
+                        Flavor::BorrowedArgument
+                    } else {
+                        Flavor::InStruct
                     };
                     let k = self.type_name(key, from_namespace, element_flavor);
                     let v = self.type_name(value, from_namespace, element_flavor);
-                    self.r#gen.dependencies.needs_wit = true;
-                    match flavor {
-                        Flavor::BorrowedArgument => {
-                            format!("wit::unordered_map_view<{k}, {v}>")
-                        }
-                        Flavor::Argument(var)
-                            if matches!(var, AbiVariant::GuestImport)
-                                || self.r#gen.opts.api_style == APIStyle::Symmetric =>
-                        {
-                            format!("wit::unordered_map_view<{k}, {v}>")
-                        }
-                        _ => {
-                            format!("wit::unordered_map<{k}, {v}>")
-                        }
+                    if borrowed {
+                        self.r#gen.dependencies.needs_span = true;
+                        format!("std::span<std::pair<{k}, {v}> const>")
+                    } else {
+                        self.r#gen.dependencies.needs_wit = true;
+                        format!("wit::unordered_map<{k}, {v}>")
                     }
                 }
                 TypeDefKind::Unknown => todo!(),
@@ -3651,8 +3653,9 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     && matches!(self.variant, AbiVariant::GuestExport)
                 {
                     self.r#gen.r#gen.dependencies.needs_wit = true;
+                    self.r#gen.r#gen.dependencies.needs_span = true;
                     results.push(format!(
-                        "wit::unordered_map_view<{key_type}, {value_type}>({result}.data(), {result}.size())"
+                        "std::span<std::pair<{key_type}, {value_type}> const>({result}.data(), {result}.size())"
                     ));
                     self.leak_on_insertion.replace(format!(
                         "if ({len}>0) _deallocate.push_back((void*){result}.leak());\n"
