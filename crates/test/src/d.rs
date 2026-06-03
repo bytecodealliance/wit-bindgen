@@ -111,13 +111,13 @@ fn compile(runner: &Runner, compile: &Compile<'_>, compiler: PathBuf) -> Result<
     cmd.arg(&compile.component.path)
         .arg("-betterC")
         .arg("-mtriple=wasm32-unknown-unknown")
+        .arg("-fvisibility=hidden") // important to make sure unused symbols don't get linked
         .arg("-I")
         .arg(&compile.bindings_dir)
         .arg("-i") // compile included dependencies
         .arg("--de") // deperecations are errors
         .arg("-w") // warnings are errors
         .arg("-L--no-entry")
-        .arg("-L--no-export-dynamic")
         .arg("--d-version=WitBindings_DummyLibc") // to provide bump allocator and `abort`
         .arg("--checkaction=halt") // to trap instead of using libc __assert
         .arg("-of")
