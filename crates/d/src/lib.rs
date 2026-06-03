@@ -62,6 +62,11 @@ pub struct Opts {
     /// Whether stubs/declarations for exports should be emitted
     /// Only for testing purposes.
     emit_export_stubs: bool,
+
+    /// Add the specified suffix to the name of the custome section containing
+    /// the component type.
+    #[cfg_attr(feature = "clap", arg(long, value_name = "STRING"))]
+    pub type_section_suffix: Option<String>,
 }
 
 impl Opts {
@@ -812,6 +817,55 @@ impl WorldGenerator for D {
                 .push_str("alias Exports_STUB_INVOKE = Exports!(STUBS);\n");
 
             world_src.append_src(&self.export_stubs_src);
+        }
+
+        // Linker `component-type` section
+        {
+            let opts_suffix = self.opts.type_section_suffix.as_deref().unwrap_or("");
+            let world = &resolve.worlds[world_id];
+            let world_name = &world.name;
+            let pkg = &resolve.packages[world.package.unwrap()].name;
+            let version = env!("CARGO_PKG_VERSION");
+            world_src.push_str(&format!(
+                "\n@(imported!\"ldc.attributes\".section(\"component-type:wit-bindgen:{version}:\
+                 {pkg}:{world_name}:{opts_suffix}\"))\n"
+            ));
+
+            let mut producers = wasm_metadata::Producers::empty();
+            producers.add(
+                "processed-by",
+                env!("CARGO_PKG_NAME"),
+                env!("CARGO_PKG_VERSION"),
+            );
+
+            let component_type = wit_component::metadata::encode(
+                resolve,
+                world_id,
+                wit_component::StringEncoding::UTF8,
+                Some(&producers),
+            )
+            .unwrap();
+
+            world_src.push_str(&format!(
+                "
+                void __wit_bindgen_component_types() {{
+                    imported!\"ldc.llvmasm\".__irEx!(
+                        \"\",
+                        \"\",
+                        `!wasm.custom_sections = !{{!0}}
+                !0 = !{{!\"component-type:wit-bindgen:{version}:{pkg}:{world_name}:{opts_suffix}\", !\"{}\"}}`,
+                        void
+                    );
+                }}
+                ",
+                &component_type
+                    .iter()
+                    .map(|b| format!("\\{b:02X}"))
+                    .enumerate()
+                    .fold(String::default(), |a, (i, b)| {
+                        if (i % 24) == 0 { a + "`\n~`" + &b } else { a + &b }
+                    })
+            ));
         }
 
         let mut world_filepath = PathBuf::from_iter(get_world_fqn(world_id, resolve).split("."));
@@ -1658,7 +1712,7 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
                 self.src.push_str(&format!(
                     "// TODO: make RAII? disable copy for the own
 
-    auto borrow() => Borrow(__handle);
+    Borrow borrow() => Borrow(__handle);
     alias borrow this;
 
     struct Borrow {{
@@ -1810,7 +1864,7 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
 
                     self.src.push_str(&format!(
                         "// TODO: make RAII? disable copy for the own
-        auto borrow() => Borrow(__handle);
+        Borrow borrow() => Borrow(__handle);
         alias borrow this;
 
         struct Borrow {{
