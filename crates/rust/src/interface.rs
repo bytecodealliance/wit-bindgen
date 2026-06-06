@@ -239,6 +239,30 @@ fn _resource_rep(handle: u32) -> *mut u8
 
                     "#
             );
+            let box_path = self.path_to_box();
+            uwriteln!(
+                self.src,
+                r#"#[doc(hidden)]
+/// Place the value on the heap or in an arena, return the raw pointer.
+/// Override for custom resource allocators.
+fn _resource_into_raw(val: Option<Self>) -> *mut Option<Self> where Self: Sized
+{{
+    {box_path}::into_raw({box_path}::new(val))
+}}
+
+#[doc(hidden)]
+/// Consumes the value from the handle, handle is invalid afterwards.
+/// 
+/// # Safety
+/// 
+/// See Box::from_raw
+unsafe fn _resource_from_raw(handle: *mut Option<Self>) -> Option<Self> where Self: Sized
+{{
+    *unsafe {{ {box_path}::from_raw(handle) }}
+}}
+
+                    "#
+            );
             for method in methods {
                 self.src.push_str(method);
             }
@@ -337,30 +361,6 @@ macro_rules! {macro_name} {{
         resource_traits: impl Iterator<Item = (TypeId, &'a str)>,
     ) {
         uwriteln!(self.src, "pub trait {trait_name} {{");
-        let box_path = self.path_to_box();
-        uwriteln!(
-            self.src,
-            r#"#[doc(hidden)]
-/// Place the value on the heap or in an arena, return the raw pointer.
-/// Override for custom resource allocators.
-fn _resource_into_raw(val: Option<Self>) -> *mut Option<Self> where Self: Sized
-{{
-    {box_path}::into_raw({box_path}::new(val))
-}}
-
-#[doc(hidden)]
-/// Consumes the value from the handle, handle is invalid afterwards.
-/// 
-/// # Safety
-/// 
-/// See Box::from_raw
-unsafe fn _resource_from_raw(handle: *mut Option<Self>) -> Option<Self> where Self: Sized
-{{
-    *unsafe {{ {box_path}::from_raw(handle) }}
-}}
-
-                    "#
-        );
         for (id, trait_name) in resource_traits {
             let name = self.resolve.types[id]
                 .name

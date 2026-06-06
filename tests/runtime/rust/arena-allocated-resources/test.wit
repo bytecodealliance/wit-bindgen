@@ -1,0 +1,18 @@
+package test:arena-allocated-resources;
+
+interface to-test {
+  resource thing {
+    constructor(v: u32);
+    get: func() -> u32;
+  }
+}
+
+world test {
+  export to-test;
+}
+
+world runner {
+  import to-test;
+
+  export run: func();
+}
