@@ -129,6 +129,23 @@ pub struct Opts {
     /// Generate helpers for threading builtins. Implies `--generate-async-helpers`.
     #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
     pub generate_threading_helpers: bool,
+
+    /// Remapping of imported interface names to C include files.
+    /// These will be included and no binding code is generated.
+    ///
+    /// Argument must be of the form `k=v` and this option can be passed
+    /// multiple times or one option can be comma separated, for example
+    /// `k1=v1,k2=v2`.
+    #[cfg_attr(feature = "clap", arg(long, value_parser = parse_with, value_delimiter = ','))]
+    pub with: Vec<(String, String)>,
+}
+
+#[cfg(feature = "clap")]
+fn parse_with(s: &str) -> Result<(String, String), String> {
+    let (k, v) = s.split_once('=').ok_or_else(|| {
+        format!("expected string of form `<key>=<value>[,<key>=<value>...]`; got `{s}`")
+    })?;
+    Ok((k.to_string(), v.to_string()))
 }
 
 #[cfg(feature = "clap")]
@@ -228,7 +245,22 @@ impl WorldGenerator for C {
             r#gen.import(Some(name), func);
         }
 
-        r#gen.r#gen.src.append(&r#gen.src);
+        // Check whether this interface is included via --with
+        if let Some((_, header)) = r#gen
+            .r#gen
+            .opts
+            .with
+            .iter()
+            .find(|e| e.0 == wasm_import_module)
+        {
+            // Add include for the external header
+            let include_str = format!("\"{header}\"");
+            if !r#gen.r#gen.h_includes.contains(&include_str) {
+                r#gen.r#gen.h_includes.push(include_str);
+            }
+        } else {
+            r#gen.r#gen.src.append(&r#gen.src);
+        }
 
         Ok(())
     }
