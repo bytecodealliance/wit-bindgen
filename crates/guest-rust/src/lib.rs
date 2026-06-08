@@ -881,7 +881,7 @@ pub mod rt;
 #[cfg(feature = "inter-task-wakeup")]
 pub use rt::async_support::UnitStreamOps;
 #[cfg(feature = "async-spawn")]
-pub use rt::async_support::spawn;
+pub use rt::async_support::spawn_local;
 #[cfg(feature = "async")]
 pub use rt::async_support::{
     AbiBuffer, FutureOps, FutureRead, FutureReader, FutureWrite, FutureWriteCancel,
