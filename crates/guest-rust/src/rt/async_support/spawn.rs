@@ -110,6 +110,6 @@ impl<'a> Tasks<'a> {
 ///
 /// [`block_on`]: crate::block_on
 /// [#1305]: https://github.com/bytecodealliance/wit-bindgen/issues/1305
-pub fn spawn(future: impl Future<Output = ()> + 'static) {
+pub fn spawn_local(future: impl Future<Output = ()> + 'static) {
     unsafe { SPAWNED.push(Box::pin(future)) }
 }

@@ -11,7 +11,7 @@ static mut HIT: bool = false;
 
 impl crate::exports::test::common::i_runner::Guest for Component {
     async fn f() {
-        wit_bindgen::spawn(async move {
+        wit_bindgen::spawn_local(async move {
             f().await;
             unsafe {
                 HIT = true;
