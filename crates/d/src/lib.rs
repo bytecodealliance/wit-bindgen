@@ -881,7 +881,11 @@ impl WorldGenerator for D {
 
             world_src.push_str(&format!(
                 "
-                void __wit_bindgen_component_type() {{
+                pragma(inline, false)
+                package({}) void __wit_bindgen_component_type_force_link() pure @nogc nothrow {{}}
+
+
+                package({0}) void __wit_bindgen_component_type() {{
                     imported!\"ldc.llvmasm\".__irEx!(
                         \"\",
                         \"\",
@@ -891,6 +895,7 @@ impl WorldGenerator for D {
                     );
                 }}
                 ",
+                self.root_pkg,
                 &component_type
                     .iter()
                     .map(|b| format!("\\{b:02X}"))
@@ -1131,6 +1136,7 @@ impl<'a> DInterfaceGenerator<'a> {
             }
         }
         self.src.push_str("\n");
+        self.src.push_str(&format!("package ({}) void __wit_bindgen_component_type_force_link() pure @nogc nothrow => imported!\"{}\".__wit_bindgen_component_type_force_link();\n", self.r#gen.root_pkg, self.r#gen.world_fqn));
     }
 
     fn type_is_direction_sensitive(&self, id: TypeId) -> bool {
