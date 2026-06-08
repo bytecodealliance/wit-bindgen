@@ -25,3 +25,62 @@ impl Ns {
         ret
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Ns;
+
+    #[test]
+    fn insert_unique_ok() {
+        let mut ns = Ns::default();
+        assert!(ns.insert("foo").is_ok());
+    }
+
+    #[test]
+    fn insert_duplicate_err() {
+        let mut ns = Ns::default();
+        ns.insert("foo").unwrap();
+        assert_eq!(
+            ns.insert("foo"),
+            Err("name `foo` already defined".to_string())
+        );
+    }
+
+    #[test]
+    fn tmp_returns_base_when_free() {
+        let mut ns = Ns::default();
+        assert_eq!(ns.tmp("foo"), "foo");
+    }
+
+    #[test]
+    fn tmp_avoids_inserted_name() {
+        let mut ns = Ns::default();
+        ns.insert("foo").unwrap();
+        assert_eq!(ns.tmp("foo"), "foo0");
+    }
+
+    #[test]
+    fn tmp_avoids_predefined_suffix() {
+        let mut ns = Ns::default();
+        ns.insert("foo").unwrap();
+        ns.insert("foo0").unwrap();
+        assert_eq!(ns.tmp("foo"), "foo1");
+    }
+
+    #[test]
+    fn tmp_skips_multiple_predefined_suffixes() {
+        let mut ns = Ns::default();
+        ns.insert("bar").unwrap();
+        ns.insert("bar0").unwrap();
+        ns.insert("bar1").unwrap();
+        assert_eq!(ns.tmp("bar"), "bar2");
+    }
+
+    #[test]
+    fn tmp_empty_name_edge_case() {
+        let mut ns = Ns::default();
+        assert_eq!(ns.tmp(""), "");
+        assert_eq!(ns.tmp(""), "0");
+        assert_eq!(ns.tmp(""), "1");
+    }
+}
