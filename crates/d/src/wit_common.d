@@ -1,5 +1,3 @@
-module wit.common;
-
 import core.attribute : mustuse;
 import ldc.attributes : llvmAttr;
 
@@ -115,7 +113,7 @@ private:
 
     @disable this();
 
-    this(Tag tag, Storage storage = Storage.init) {
+    this(Tag tag, inout Storage storage = Storage.init) inout @nogc nothrow @trusted {
       _tag = tag;
       _storage = storage;
     }
@@ -124,10 +122,10 @@ private:
     static auto _create(Tag tag)() if (is(Types[tag] == void)) {
         return typeof(this)(tag);
     }
-    static auto _create(Tag tag)(Types[tag] val) if (!is(Types[tag] == void)) {
+    static auto _create(Tag tag)(inout Types[tag] val) if (!is(Types[tag] == void)) {
         Storage storage = Storage.init;
-        storage.tupleof[tag+1] = val;
-        return typeof(this)(tag, storage);
+        storage.tupleof[tag+1] = cast(Types[tag])val;
+        return inout typeof(this)(tag, cast(inout(Storage))storage);
     }
 
     ref auto _get(Tag tag)() inout return if (!is(Types[tag] == void))
@@ -334,10 +332,11 @@ T witClone(T : U[L], U, size_t L)(in T val) {
     return clone;
 }
 
-package(wit):
+package:
 
 extern(C) {
 version (WitBindings_DummyLibc) {
+@nogc nothrow {
     extern __gshared ubyte __heap_base;
     private __gshared void* heapTail = &__heap_base;
 
@@ -394,11 +393,14 @@ version (WitBindings_DummyLibc) {
 
         return 0;
     }
+}
 } else {
+@nogc nothrow {
     void*    malloc(size_t size);
     void*    realloc(void* ptr, size_t newSize);
     void     free(void* ptr);
     noreturn abort();
+}
 }
 }
 
@@ -409,7 +411,7 @@ auto ref T reinterpretCast(T, U)(auto ref U from) @trusted if (T.sizeof == U.siz
     return tmp(from).to;
 }
 
-auto mallocSlice(T)(size_t count) {
+auto mallocSlice(T)(size_t count) @nogc nothrow {
     auto ptr = malloc(count*T.sizeof);
     if (ptr is null) return null;
 

@@ -23,6 +23,8 @@ struct DSig {
 
 #[derive(Default)]
 struct D {
+    root_pkg: String,
+
     used_interfaces: HashSet<(WorldKey, InterfaceId)>,
     export_stubs: Vec<String>,
 
@@ -67,6 +69,11 @@ pub struct Opts {
     /// the component type.
     #[cfg_attr(feature = "clap", arg(long, value_name = "STRING"))]
     pub type_section_suffix: Option<String>,
+
+    /// Add the specified suffix to the name of the custome section containing
+    /// the component type.
+    #[cfg_attr(feature = "clap", arg(long, value_name = "STRING"))]
+    pub root_package: Option<String>,
 }
 
 impl Opts {
@@ -237,7 +244,7 @@ pub fn wasm_type(ty: WasmType) -> &'static str {
     }
 }
 
-fn get_package_fqn(id: PackageId, resolve: &Resolve) -> String {
+fn get_package_fqn(root_pkg: &str, id: PackageId, resolve: &Resolve) -> String {
     let pkg = &resolve.packages[id];
     let pkg_has_multiple_versions = resolve.packages.iter().any(|(_, p)| {
         p.name.namespace == pkg.name.namespace
@@ -246,7 +253,7 @@ fn get_package_fqn(id: PackageId, resolve: &Resolve) -> String {
     });
 
     format!(
-        "wit.{}.{}{}",
+        "{root_pkg}.{}.{}{}",
         escape_d_identifier(&pkg.name.namespace.to_snake_case()),
         escape_d_identifier(&pkg.name.name.to_snake_case()),
         if pkg_has_multiple_versions {
@@ -267,6 +274,7 @@ fn get_package_fqn(id: PackageId, resolve: &Resolve) -> String {
 }
 
 fn get_interface_fqn(
+    root_pkg: &str,
     interface_id: &WorldKey,
     world_fqn: &str,
     resolve: &Resolve,
@@ -292,7 +300,7 @@ fn get_interface_fqn(
 
             format!(
                 "{}.{}.{}",
-                get_package_fqn(iface.package.unwrap(), resolve),
+                get_package_fqn(root_pkg, iface.package.unwrap(), resolve),
                 escape_d_identifier(&iface.name.as_ref().unwrap().to_snake_case()),
                 match direction {
                     None => "common",
@@ -304,11 +312,11 @@ fn get_interface_fqn(
     }
 }
 
-fn get_world_fqn(id: WorldId, resolve: &Resolve) -> String {
+fn get_world_fqn(root_pkg: &str, id: WorldId, resolve: &Resolve) -> String {
     let world = &resolve.worlds[id];
     format!(
         "{}.{}",
-        get_package_fqn(world.package.unwrap(), resolve),
+        get_package_fqn(root_pkg, world.package.unwrap(), resolve),
         escape_d_identifier(&world.name.to_snake_case())
     )
 }
@@ -359,7 +367,9 @@ impl WorldGenerator for D {
     }
 
     fn preprocess(&mut self, resolve: &Resolve, world_id: WorldId) {
-        self.world_fqn = get_world_fqn(world_id, resolve);
+        self.root_pkg = self.opts.root_package.as_deref().unwrap_or("wit").into();
+
+        self.world_fqn = get_world_fqn(&self.root_pkg, world_id, resolve);
         self.world_id = Some(world_id);
         self.types.analyze(resolve);
 
@@ -373,12 +383,18 @@ impl WorldGenerator for D {
 
                         match name {
                             WorldKey::Interface(_) => {
-                                result.common =
-                                    Some(get_interface_fqn(&name, &self.world_fqn, resolve, None));
+                                result.common = Some(get_interface_fqn(
+                                    &self.root_pkg,
+                                    &name,
+                                    &self.world_fqn,
+                                    resolve,
+                                    None,
+                                ));
                             }
                             WorldKey::Name(_) => {
                                 // For anonymous/inline imports, the common types are in the same file as the imports
                                 result.common = Some(get_interface_fqn(
+                                    &self.root_pkg,
                                     &name,
                                     &self.world_fqn,
                                     resolve,
@@ -390,6 +406,7 @@ impl WorldGenerator for D {
                         result
                     });
                     (*fqns).import = Some(get_interface_fqn(
+                        &self.root_pkg,
                         &name,
                         &self.world_fqn,
                         resolve,
@@ -408,12 +425,18 @@ impl WorldGenerator for D {
 
                         match name {
                             WorldKey::Interface(_) => {
-                                result.common =
-                                    Some(get_interface_fqn(&name, &self.world_fqn, resolve, None));
+                                result.common = Some(get_interface_fqn(
+                                    &self.root_pkg,
+                                    &name,
+                                    &self.world_fqn,
+                                    resolve,
+                                    None,
+                                ));
                             }
                             WorldKey::Name(_) => {
                                 // For anonymous/inline exports, the common types are in the same file as the exports
                                 result.common = Some(get_interface_fqn(
+                                    &self.root_pkg,
                                     &name,
                                     &self.world_fqn,
                                     resolve,
@@ -425,6 +448,7 @@ impl WorldGenerator for D {
                         result
                     });
                     (*fqns).export = Some(get_interface_fqn(
+                        &self.root_pkg,
                         &name,
                         &self.world_fqn,
                         resolve,
@@ -482,7 +506,11 @@ impl WorldGenerator for D {
             }
         }
 
-        let mut interface_filepath = PathBuf::from_iter(fqn.split("."));
+        let mut interface_filepath = PathBuf::from_iter(
+            ["wit"]
+                .into_iter()
+                .chain(fqn.split(".").skip(r#gen.r#gen.root_pkg.split(".").count())),
+        );
         interface_filepath.set_extension("d");
 
         files.push(interface_filepath.to_str().unwrap(), r#gen.src.as_bytes());
@@ -570,9 +598,10 @@ impl WorldGenerator for D {
 
         r#gen.types(id);
 
-        r#gen
-            .src
-            .push_str("\npackage(wit) template Exports(Impl...) {\n");
+        r#gen.src.push_str(&format!(
+            "\npackage({}) template Exports(Impl...) {{\n",
+            r#gen.r#gen.root_pkg
+        ));
 
         for (_name, func) in &resolve.interfaces[id].functions {
             match func.kind {
@@ -681,7 +710,11 @@ impl WorldGenerator for D {
             self.export_stubs.push(format!("{fqn}.STUBS"));
         }
 
-        let mut interface_filepath = PathBuf::from_iter(fqn.split("."));
+        let mut interface_filepath = PathBuf::from_iter(
+            ["wit"]
+                .into_iter()
+                .chain(fqn.split(".").skip(self.root_pkg.split(".").count())),
+        );
         interface_filepath.set_extension("d");
 
         files.push(interface_filepath.to_str().unwrap(), src.as_bytes());
@@ -743,7 +776,11 @@ impl WorldGenerator for D {
                 r#gen.prologue();
                 r#gen.types(id);
 
-                let mut interface_filepath = PathBuf::from_iter(fqn.split("."));
+                let mut interface_filepath = PathBuf::from_iter(
+                    ["wit"]
+                        .into_iter()
+                        .chain(fqn.split(".").skip(r#gen.r#gen.root_pkg.split(".").count())),
+                );
                 interface_filepath.set_extension("d");
 
                 files.push(interface_filepath.to_str().unwrap(), r#gen.src.as_bytes());
@@ -760,7 +797,7 @@ impl WorldGenerator for D {
         ));
 
         world_src.push_str(&format!("module {};\n\n", self.world_fqn));
-        world_src.push_str("import wit.common;\n\n");
+        world_src.push_str(&format!("import {}.common;\n\n", self.root_pkg));
         world_src.push_str(
             &self
                 .interface_imports
@@ -864,12 +901,20 @@ impl WorldGenerator for D {
             ));
         }
 
-        let mut world_filepath = PathBuf::from_iter(get_world_fqn(world_id, resolve).split("."));
+        let mut world_filepath = PathBuf::from_iter(
+            ["wit"].into_iter().chain(
+                get_world_fqn(&self.root_pkg, world_id, resolve)
+                    .split(".")
+                    .skip(self.root_pkg.split(".").count()),
+            ),
+        );
         world_filepath.push("package.d");
 
         files.push(world_filepath.to_str().unwrap(), world_src.as_bytes());
 
-        files.push("wit/common.d", include_bytes!("wit_common.d"));
+        let mut wit_common_file = format!("module {}.common;\n\n", self.root_pkg).into_bytes();
+        wit_common_file.extend_from_slice(include_bytes!("wit_common.d").as_slice());
+        files.push("wit/common.d", &wit_common_file);
         Ok(())
     }
 }
@@ -1037,7 +1082,8 @@ impl<'a> DInterfaceGenerator<'a> {
 
         self.src.push_str(&format!("module {};\n\n", self.fqn));
 
-        self.src.push_str("import wit.common;\n\n");
+        self.src
+            .push_str(&format!("import {}.common;\n\n", self.r#gen.root_pkg));
         if self.direction.is_some()
             && let Some(WorldKey::Interface(_)) = self.name
         {
@@ -1205,7 +1251,7 @@ impl<'a> DInterfaceGenerator<'a> {
             self.src.push_str("static ");
         }
         self.src.push_str(&format!(
-            "{} {}({}) {{\n",
+            "{} {}({}) @nogc nothrow {{\n",
             d_sig.result,
             d_sig.name,
             d_sig
@@ -1268,7 +1314,7 @@ impl<'a> DInterfaceGenerator<'a> {
             self.src.push_str("static ");
         }
         self.src.push_str(&format!(
-            "private extern(C) {} __import_{}({});\n",
+            "private extern(C) {} __import_{}({}) @nogc nothrow;\n",
             match wasm_sig.results.len() {
                 0 => "void",
                 1 => wasm_type(wasm_sig.results[0]),
@@ -1634,15 +1680,18 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
 
                 self.src.push_str(&format!(
                     "struct {escaped_name} {{
-    package(wit) uint __handle = 0;
+    @nogc nothrow:
 
-    package(wit) this(uint handle) {{
+    package({}) uint __handle = 0;
+
+    package({0}) this(uint handle) {{
         __handle = handle;
     }}
 
     @disable this();
 
-    "
+    ",
+                    self.r#gen.root_pkg
                 ));
 
                 match ty.owner {
@@ -1712,9 +1761,11 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
     alias borrow this;
 
     struct Borrow {{
-    package(wit) uint __handle = 0;
+    @nogc nothrow:
 
-    package(wit) this(uint handle) {{
+    package({}) uint __handle = 0;
+
+    package({0}) this(uint handle) {{
         __handle = handle;
     }}
 
@@ -1722,7 +1773,8 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
 
     void witFree() {{}}
     Borrow witClone() const {{ return Borrow(__handle); }}
-                "
+                ",
+                    self.r#gen.root_pkg
                 ));
 
                 match ty.owner {
@@ -1784,14 +1836,17 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
 
                     self.src.push_str(&format!(
                         "struct {escaped_name} {{
-        package(wit) uint __handle = 0;
+        @nogc nothrow:
 
-        package(wit) this(uint handle) {{
+        package({}) uint __handle = 0;
+
+        package({0}) this(uint handle) {{
             __handle = handle;
         }}
 
         @disable this();
-"
+",
+                        self.r#gen.root_pkg
                     ));
 
                     self.src.push_str(&format!(
@@ -1864,9 +1919,11 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
         alias borrow this;
 
         struct Borrow {{
-            package(wit) uint __handle = 0;
+            @nogc nothrow:
 
-            package(wit) this(uint handle) {{
+            package({}) uint __handle = 0;
+
+            package({0}) this(uint handle) {{
                 __handle = handle;
             }}
 
@@ -1875,7 +1932,8 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
             void witFree() {{}}
             Borrow witClone() const {{ return Borrow(__handle); }}
 
-                        "
+                        ",
+                        self.r#gen.root_pkg
                     ));
 
                     self.src.push_str("}\n");
@@ -2016,7 +2074,8 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
 
         self.src.push_str("}\n");
 
-        self.src.push_str("Tag tag() const => _tag;\n");
+        self.src
+            .push_str("Tag tag() const @safe @nogc nothrow pure => _tag;\n");
 
         for case in &variant.cases {
             self.src.push_str(&format!(
@@ -2522,9 +2581,9 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
 
                 self.push_str(&format!(
                     "auto {list_src} = {};
-                    auto {list} = wit.common.malloc({list_src}.length * ({size_str}));
-                    scope(exit) {{ wit.common.free({list}); }}\n",
-                    operands[0]
+                    auto {list} = {}.common.malloc({list_src}.length * ({size_str}));
+                    scope(exit) {{ {1}.common.free({list}); }}\n",
+                    operands[0], self.r#gen.r#gen.root_pkg
                 ));
 
                 self.push_str(&format!(
@@ -2591,7 +2650,8 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 self.push_str(&format!("auto {list_src} = {};\n", operands[0]));
                 self.push_str(&format!("auto {list_len} = {};\n", operands[1]));
                 self.push_str(&format!(
-                    "auto {list} = wit.common.mallocSlice!({elem_type_name})({list_len});\n",
+                    "auto {list} = {}.common.mallocSlice!({elem_type_name})({list_len});\n",
+                    self.r#gen.r#gen.root_pkg
                 ));
 
                 self.push_str(&format!(
