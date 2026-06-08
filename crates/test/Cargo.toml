@@ -26,7 +26,7 @@ log = "0.4.26"
 regex = "1.11.1"
 serde = { workspace = true }
 toml = "1.1.2"
-wasi-preview1-component-adapter-provider = "44.0.0"
+wasi-preview1-component-adapter-provider = "45.0.1"
 wac-parser = "0.10.0"
 wac-types = "0.10.0"
 wac-graph = "0.10.0"
