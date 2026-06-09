@@ -168,6 +168,9 @@ impl Parse for Config {
                     Opt::EnableMethodChaining(enable) => {
                         opts.enable_method_chaining = enable.value();
                     }
+                    Opt::MergeStructurallyEqualTypes(enable) => {
+                        opts.merge_structurally_equal_types = Some(Some(enable.value()))
+                    }
                 }
             }
         } else {
@@ -322,6 +325,7 @@ mod kw {
     syn::custom_keyword!(imports);
     syn::custom_keyword!(debug);
     syn::custom_keyword!(enable_method_chaining);
+    syn::custom_keyword!(merge_structurally_equal_types);
 }
 
 #[derive(Clone)]
@@ -403,6 +407,7 @@ enum Opt {
     Async(AsyncFilterSet, Span),
     Debug(syn::LitBool),
     EnableMethodChaining(syn::LitBool),
+    MergeStructurallyEqualTypes(syn::LitBool),
 }
 
 impl Parse for Opt {
@@ -586,6 +591,10 @@ impl Parse for Opt {
                 }
                 Ok(Opt::Async(set, span))
             }
+        } else if l.peek(kw::merge_structurally_equal_types) {
+            input.parse::<kw::merge_structurally_equal_types>()?;
+            input.parse::<Token![:]>()?;
+            Ok(Opt::MergeStructurallyEqualTypes(input.parse()?))
         } else {
             Err(l.error())
         }

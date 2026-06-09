@@ -235,3 +235,69 @@ mod method_chaining {
         enable_method_chaining: true
     });
 }
+
+#[allow(unused, reason = "testing codegen, not functionality")]
+mod merge_structurally_equal_types {
+    wit_bindgen::generate!({
+        inline: r#"
+        package test:merge-structurally-equal-types;
+
+        interface blag {
+            variant kind1 { a, b(u64), c }
+            variant kind2 { a, b(u64), c }
+            record kind3 { a: input-stream }
+            record kind4 { a: input-stream }
+            record tree { l: t1, r: t1  }
+            record t1 { l: t2, r: t2 }
+            record t2 { l: t3, r: t3 }
+            record t3 { l: kind1, r: kind2 }
+            record t-stream  { tree: tree, %stream: option<borrow<input-stream>> }
+            resource input-stream {
+                read: func(len: u64) -> list<u8>;
+            }
+            f: func(x: kind1) -> kind2;
+            g: func(x: kind3) -> kind4;
+            h: func(x: t-stream) -> tree;
+        }
+
+        interface blah {
+            use blag.{input-stream, kind4, t-stream};
+            variant kind5 { a, b(u64), c }
+            variant kind6 { a, c, b(u64) }
+            record kind7 { a: borrow<input-stream> }
+            record tt { l: t2, r: t2  }
+            record t1 { l: t3, r: t3 }
+            record t2 { l: t1, r: t1 }
+            record t3 { l: kind5, r: kind5 }
+            variant custom-result { ok(tt), err }
+            f: func(x: kind6) -> kind5;
+            g: func(x: kind7) -> kind4;
+            h: func(x: t-stream) -> custom-result;
+
+            record r1 { a: u8 }
+            type a1 = u8;
+            record r2 { a: a1 }
+            alias-type: func(x: r1) -> r2;
+        }
+
+        interface resources {
+            resource r1;
+            type r2 = r1;
+
+            record t1 { a: r1 }
+            record t2 { a: r2 }
+            alias-own: func(x: t1) -> t2;
+            alias-aggregate: func(x: option<t1>) -> option<t2>;
+        }
+
+        world proxy {
+            import blag;
+            export blag;
+            import blah;
+            export blah;
+        }
+        "#,
+        generate_all,
+        merge_structurally_equal_types: true
+    });
+}
