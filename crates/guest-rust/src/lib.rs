@@ -865,6 +865,15 @@ extern crate std;
 ///     // returning `-> &Self`, to permit method chaining (e.g. for builder).
 ///     // This expectation is also imposed on exports.
 ///     enable_method_chaining: true,
+///
+///     // Find all structurally equal types and only generate one type
+///     // definition for each equivalence class.
+///     //
+///     // Other types in the same class will be type aliases to the generated
+///     // type. This avoids clone when converting between types that are
+///     // structurally equal, which is useful when import and export the same
+///     // interface.
+///     merge_structurally_equal_types: true,
 /// });
 /// ```
 ///
