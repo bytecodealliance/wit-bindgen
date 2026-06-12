@@ -891,6 +891,24 @@ extern crate std;
 ///     // structurally equal, which is useful when import and export the same
 ///     // interface.
 ///     merge_structurally_equal_types: true,
+///
+///     // Make the same generated bindings usable on a native (non-wasm)
+///     // target as well as on wasm32.
+///     //
+///     // Imports normally compile to `unreachable!()` off wasm32. With this
+///     // enabled each one instead calls through a function pointer that a host
+///     // installs at load time via a generated
+///     // `__wit_bindgen_register_*` symbol, and exports additionally get a
+///     // native symbol whose name encodes the characters a linker cannot
+///     // accept. Both targets still build from one source.
+///     //
+///     // The registration symbols are prefixed with a hex-encoded
+///     // `<package>/<world>` so that two `generate!` invocations in one crate
+///     // don't collide. Binding the *same* world twice in one linkage unit
+///     // still does; use `type_section_suffix` to tell them apart. See
+///     // `wit_bindgen_rust::Opts::link_native_symbols` for the full list of
+///     // symbols a host can expect.
+///     link_native_symbols: true,
 /// });
 /// ```
 ///

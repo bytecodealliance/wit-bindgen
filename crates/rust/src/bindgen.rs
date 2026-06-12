@@ -67,6 +67,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             &rust_name,
             params,
             results,
+            self.r#gen.r#gen.native_symbols(),
         ));
         rust_name
     }
