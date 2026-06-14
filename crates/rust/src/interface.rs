@@ -684,6 +684,18 @@ macro_rules! {macro_name} {{
             PayloadFor::Future => "",
             PayloadFor::Stream => ", _: usize",
         };
+        // On wasm the VTABLE stores the address of a local wrapper rather than
+        // the canonical import directly (see the wrapper functions below). The
+        // wrappers need *named* extra params to forward, where the extern block
+        // and native stubs only need the type.
+        let start_extra_named = match payload_for {
+            PayloadFor::Future => "",
+            PayloadFor::Stream => ", _extra: usize",
+        };
+        let start_extra_arg = match payload_for {
+            PayloadFor::Future => "",
+            PayloadFor::Stream => ", _extra",
+        };
         let mut lift_fn = format!("unsafe fn lift(ptr: *mut u8) -> {name} {{ {lift} }}");
         let mut lower_fn = format!("unsafe fn lower(value: {name}, ptr: *mut u8) {{ {lower} }}");
         let mut dealloc_lists_fn =
@@ -733,24 +745,48 @@ pub mod vtable{ordinal} {{
     #[cfg(not(target_arch = "wasm32"))]
     unsafe extern "C" fn start_write(_: u32, _: *const u8{start_extra}) -> u32 {{ unreachable!() }}
 
+    // Work around a behavior of LLD where in a shared library when an address
+    // is taken of an imported function that only shows up as a `GOT.func`
+    // import which means there's not actual import for wit-component to
+    // generate bindings for. This is worked around with local Rust functions
+    // that simply delegate to the imports. Seems to work for now even though
+    // it seems like optimizations should defeat this, but it's not all that
+    // much more indirection and in theory gets things working for now.
     #[cfg(target_arch = "wasm32")]
-    #[link(wasm_import_module = "{module}")]
-    unsafe extern "C" {{
-        #[link_name = "[{import_prefix}-new-{index}]{func_name}"]
-        fn new() -> u64;
-        #[link_name = "[{import_prefix}-cancel-write-{index}]{func_name}"]
-        fn cancel_write(_: u32) -> u32;
-        #[link_name = "[{import_prefix}-cancel-read-{index}]{func_name}"]
-        fn cancel_read(_: u32) -> u32;
-        #[link_name = "[{import_prefix}-drop-writable-{index}]{func_name}"]
-        fn drop_writable(_: u32);
-        #[link_name = "[{import_prefix}-drop-readable-{index}]{func_name}"]
-        fn drop_readable(_: u32);
-        #[link_name = "[async-lower][{import_prefix}-read-{index}]{func_name}"]
-        fn start_read(_: u32, _: *mut u8{start_extra}) -> u32;
-        #[link_name = "[async-lower][{import_prefix}-write-{index}]{func_name}"]
-        fn start_write(_: u32, _: *const u8{start_extra}) -> u32;
+    mod imports {{
+        #[link(wasm_import_module = "{module}")]
+        unsafe extern "C" {{
+            #[link_name = "[{import_prefix}-new-{index}]{func_name}"]
+            pub(super) fn new() -> u64;
+            #[link_name = "[{import_prefix}-cancel-write-{index}]{func_name}"]
+            pub(super) fn cancel_write(_: u32) -> u32;
+            #[link_name = "[{import_prefix}-cancel-read-{index}]{func_name}"]
+            pub(super) fn cancel_read(_: u32) -> u32;
+            #[link_name = "[{import_prefix}-drop-writable-{index}]{func_name}"]
+            pub(super) fn drop_writable(_: u32);
+            #[link_name = "[{import_prefix}-drop-readable-{index}]{func_name}"]
+            pub(super) fn drop_readable(_: u32);
+            #[link_name = "[async-lower][{import_prefix}-read-{index}]{func_name}"]
+            pub(super) fn start_read(_: u32, _: *mut u8{start_extra}) -> u32;
+            #[link_name = "[async-lower][{import_prefix}-write-{index}]{func_name}"]
+            pub(super) fn start_write(_: u32, _: *const u8{start_extra}) -> u32;
+        }}
     }}
+
+    #[cfg(target_arch = "wasm32")]
+    unsafe extern "C" fn new() -> u64 {{ unsafe {{ imports::new() }} }}
+    #[cfg(target_arch = "wasm32")]
+    unsafe extern "C" fn cancel_write(handle: u32) -> u32 {{ unsafe {{ imports::cancel_write(handle) }} }}
+    #[cfg(target_arch = "wasm32")]
+    unsafe extern "C" fn cancel_read(handle: u32) -> u32 {{ unsafe {{ imports::cancel_read(handle) }} }}
+    #[cfg(target_arch = "wasm32")]
+    unsafe extern "C" fn drop_writable(handle: u32) {{ unsafe {{ imports::drop_writable(handle) }} }}
+    #[cfg(target_arch = "wasm32")]
+    unsafe extern "C" fn drop_readable(handle: u32) {{ unsafe {{ imports::drop_readable(handle) }} }}
+    #[cfg(target_arch = "wasm32")]
+    unsafe extern "C" fn start_read(handle: u32, ptr: *mut u8{start_extra_named}) -> u32 {{ unsafe {{ imports::start_read(handle, ptr{start_extra_arg}) }} }}
+    #[cfg(target_arch = "wasm32")]
+    unsafe extern "C" fn start_write(handle: u32, ptr: *const u8{start_extra_named}) -> u32 {{ unsafe {{ imports::start_write(handle, ptr{start_extra_arg}) }} }}
 
     {lift_fn}
     {lower_fn}
