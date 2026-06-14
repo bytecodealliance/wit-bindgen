@@ -1,6 +1,6 @@
 include!(env!("BINDINGS"));
 
-use crate::exports::test::arena_allocated_resources::to_test::{Guest, GuestThing};
+use crate::exports::test::arena_allocated_resources::to_test::{Guest, GuestThing, ThingStorage};
 
 export!(Component);
 
@@ -80,7 +80,7 @@ impl GuestThing for MyThing {
         self.contents
     }
 
-    fn _resource_into_raw(val: Option<Self>) -> *mut Option<Self>
+    fn resource_into_raw_(val: ThingStorage<Self>) -> *mut ThingStorage<Self>
     where
         Self: Sized,
     {
@@ -93,7 +93,7 @@ impl GuestThing for MyThing {
         .unwrap_or(core::ptr::null_mut())
     }
 
-    unsafe fn _resource_from_raw(handle: *mut Option<Self>) -> Option<Self>
+    unsafe fn resource_from_raw_(handle: *mut ThingStorage<Self>) -> ThingStorage<Self>
     where
         Self: Sized,
     {

@@ -240,12 +240,16 @@ fn _resource_rep(handle: u32) -> *mut u8
                     "#
             );
             let box_path = self.path_to_box();
+            let camel = resource_name.to_pascal_case();
             uwriteln!(
                 self.src,
                 r#"#[doc(hidden)]
 /// Place the value on the heap or in an arena, return the raw pointer.
 /// Override for custom resource allocators.
-fn _resource_into_raw(val: Option<Self>) -> *mut Option<Self> where Self: Sized
+/// 
+/// The pointed object needs to live for the entire lifecycle of the resource and
+/// should only be freed once via the matching resource_from_raw_ function.
+fn resource_into_raw_(val: {camel}Storage<Self>) -> *mut {camel}Storage<Self> where Self: Sized
 {{
     {box_path}::into_raw({box_path}::new(val))
 }}
@@ -255,8 +259,8 @@ fn _resource_into_raw(val: Option<Self>) -> *mut Option<Self> where Self: Sized
 /// 
 /// # Safety
 /// 
-/// See Box::from_raw
-unsafe fn _resource_from_raw(handle: *mut Option<Self>) -> Option<Self> where Self: Sized
+/// See Box::from_raw (call exactly once and only on pointers received from resource_into_raw).
+unsafe fn resource_from_raw_(handle: *mut {camel}Storage<Self>) -> {camel}Storage<Self> where Self: Sized
 {{
     *unsafe {{ {box_path}::from_raw(handle) }}
 }}
@@ -2750,6 +2754,8 @@ pub struct {camel} {{
 }}
 
 type _{camel}Rep<T> = Option<T>;
+/// Data type for arena allocation of resources
+pub type {camel}Storage<T> = Option<T>;
 
 impl {camel} {{
     /// Creates a new resource from the specified representation.
@@ -2760,7 +2766,7 @@ impl {camel} {{
     pub fn new<T: Guest{camel}>(val: T) -> Self {{
         Self::type_guard::<T>();
         let val: _{camel}Rep<T> = Some(val);
-        let ptr: *mut _{camel}Rep<T> = T::_resource_into_raw(val);
+        let ptr: *mut _{camel}Rep<T> = T::resource_into_raw_(val);
         unsafe {{
             Self::from_handle(T::_resource_new(ptr.cast()))
         }}
@@ -2821,7 +2827,7 @@ impl {camel} {{
     #[doc(hidden)]
     pub unsafe fn dtor<T: 'static + Guest{camel}>(handle: *mut u8) {{
         Self::type_guard::<T>();
-        let _ = unsafe {{ T::_resource_from_raw(handle as *mut _{camel}Rep<T>) }};
+        let _ = unsafe {{ T::resource_from_raw_(handle as *mut _{camel}Rep<T>) }};
     }}
 
     fn as_ptr<T: Guest{camel}>(&self) -> *mut _{camel}Rep<T> {{
