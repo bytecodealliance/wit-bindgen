@@ -12,6 +12,7 @@ impl Guest for Component {
 
 mod arena {
 
+    use core::sync::atomic::{AtomicUsize, Ordering};
     use core::{cell::UnsafeCell, mem::MaybeUninit};
 
     /// A simple no_std arena allocator for fixed-size allocations.
@@ -20,91 +21,65 @@ mod arena {
     /// and does not support individual deallocation. Memory is reclaimed
     /// only when the entire arena is reset.
     pub struct Arena<T, const SIZE: usize> {
-        buffer: [MaybeUninit<T>; SIZE],
-        offset: usize,
+        buffer: [UnsafeCell<MaybeUninit<T>>; SIZE],
+        offset: AtomicUsize,
     }
 
-    impl<T, const SIZE: usize> Arena<T, SIZE> {
+    // Element allocation is atomic and elements are exclusively handed out after allocation,
+    // so the arena can be send to other threads and simultaneosly accessed by multiple threads
+    unsafe impl<T: Sync, const SIZE: usize> Sync for Arena<T, SIZE> {}
+    unsafe impl<T: Send, const SIZE: usize> Send for Arena<T, SIZE> {}
+
+    impl<T: Default, const SIZE: usize> Arena<T, SIZE> {
+        pub const fn new() -> Self {
+            Self {
+                buffer: [const { UnsafeCell::new(MaybeUninit::uninit()) }; SIZE],
+                offset: AtomicUsize::new(0),
+            }
+        }
+
         /// Allocates space for a single item of type T.
         /// Returns a mutable reference to the allocated memory, or None if there's insufficient space.
-        pub fn alloc_one(&mut self) -> Option<&mut T> {
-            if self.offset < SIZE {
-                let ptr = self.buffer[self.offset].as_mut_ptr();
-                self.offset += 1;
-                Some(unsafe { &mut *ptr })
-            } else {
-                None
-            }
-        }
-    }
-
-    /// A static-safe wrapper for Arena that uses interior mutability.
-    ///
-    /// This allows an Arena to be stored in a static variable and accessed safely
-    /// in single-threaded contexts without requiring std or alloc.
-    ///
-    /// # Safety
-    ///
-    /// This type is safe to use in single-threaded environments. In multi-threaded
-    /// contexts, external synchronization is required.
-    pub struct StaticArena<T, const SIZE: usize> {
-        arena: UnsafeCell<Arena<T, SIZE>>,
-    }
-
-    // SAFETY: StaticArena is Sync because we enforce single-threaded access through
-    // the API. It can be safely shared across threads as long as only one thread
-    // accesses it at a time (which is the responsibility of the user).
-    unsafe impl<T, const SIZE: usize> Sync for StaticArena<T, SIZE> where T: Sync {}
-
-    // SAFETY: StaticArena is Send because the underlying Arena can be moved between
-    // threads, and T itself must be Send.
-    unsafe impl<T, const SIZE: usize> Send for StaticArena<T, SIZE> where T: Send {}
-
-    impl<T, const SIZE: usize> StaticArena<T, SIZE> {
-        /// Creates a new static arena.
-        pub const fn new() -> Self {
-            StaticArena {
-                arena: UnsafeCell::new(Arena {
-                    buffer: [const { MaybeUninit::uninit() }; SIZE],
-                    offset: 0,
-                }),
-            }
-        }
-
-        /// Gets mutable access to the arena.
-        ///
-        /// # Safety
-        ///
-        /// This is safe in single-threaded contexts. In multi-threaded contexts,
-        /// the caller must ensure exclusive access.
-        #[inline]
-        pub fn get_mut(&self) -> &mut Arena<T, SIZE> {
-            unsafe { &mut *self.arena.get() }
-        }
-
-        /// Allocates a single item.
         pub fn alloc_one(&self) -> Option<&mut T> {
-            self.get_mut().alloc_one()
+            // short circuit the exhausted state (don't increment if full)
+            if self.offset.load(Ordering::Relaxed) >= SIZE {
+                None
+            } else {
+                // now try to allocate for real
+                let pos = self.offset.fetch_add(1, Ordering::Acquire);
+                if pos >= SIZE {
+                    // now self.offset is already beyond SIZE, reduce our increment and return none
+                    self.offset.fetch_sub(1, Ordering::Release);
+                    None
+                } else {
+                    let ptr = self.buffer[pos].get();
+                    // SAFETY: we demand exclusive ownership of the item in the arena
+                    let uninit = unsafe { &mut *ptr };
+                    Some(uninit.write(Default::default()))
+                }
+            }
         }
     }
 }
 
-use arena::StaticArena;
+use arena::Arena;
 
 #[derive(Clone)]
 struct MyThing {
     contents: u32,
 }
 
-static ARENA: StaticArena<Option<MyThing>, 4> = StaticArena::new();
+static ARENA: Arena<Option<MyThing>, 4> = Arena::new();
 
 impl GuestThing for MyThing {
     fn new(v: u32) -> MyThing {
         MyThing { contents: v }
     }
+
     fn get(&self) -> u32 {
         self.contents
     }
+
     fn _resource_into_raw(val: Option<Self>) -> *mut Option<Self>
     where
         Self: Sized,
@@ -117,6 +92,7 @@ impl GuestThing for MyThing {
         })
         .unwrap_or(core::ptr::null_mut())
     }
+
     unsafe fn _resource_from_raw(handle: *mut Option<Self>) -> Option<Self>
     where
         Self: Sized,
