@@ -1,6 +1,6 @@
 include!(env!("BINDINGS"));
 
-use crate::exports::test::arena_allocated_resources::to_test::{Guest, GuestThing, ThingStorage};
+use crate::exports::test::arena_allocated_resources::to_test::{Guest, GuestThing};
 
 export!(Component);
 
@@ -80,10 +80,7 @@ impl GuestThing for MyThing {
         self.contents
     }
 
-    fn resource_into_raw_(val: ThingStorage<Self>) -> *mut ThingStorage<Self>
-    where
-        Self: Sized,
-    {
+    unsafe fn resource_into_raw_(val: Self::Rep) -> *mut Self::Rep {
         val.and_then(|v| {
             ARENA.alloc_one().map(|x| {
                 *x = Some(v);
@@ -93,11 +90,7 @@ impl GuestThing for MyThing {
         .unwrap_or(core::ptr::null_mut())
     }
 
-    unsafe fn resource_from_raw_(handle: *mut ThingStorage<Self>) -> ThingStorage<Self>
-    where
-        Self: Sized,
-    {
-        let res = unsafe { &mut *handle }.take();
-        res
+    unsafe fn resource_from_raw_(handle: *mut Self::Rep) -> Self::Rep {
+        unsafe { &mut *handle }.take()
     }
 }

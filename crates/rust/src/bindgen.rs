@@ -406,7 +406,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let result = if is_own {
                     format!("{name}::from_handle({op} as u32)")
                 } else if self.r#gen.is_exported_resource(*resource) {
-                    format!("{name}Borrow::lift({op} as u32 as usize)")
+                    format!(
+                        "{name}Borrow::lift(core::ptr::with_exposed_provenance({op} as u32 as usize))"
+                    )
                 } else {
                     let tmp = format!("handle{}", self.tmp());
                     self.handle_decls.push(format!("let {tmp};"));

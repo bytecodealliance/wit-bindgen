@@ -1,6 +1,8 @@
 use core::alloc::Layout;
 use core::ptr::{self, NonNull};
 
+pub use crate::resource::{Resource, ResourceRep};
+
 // Re-export `bitflags` so that we can reference it from macros.
 #[cfg(feature = "bitflags")]
 pub use bitflags;
