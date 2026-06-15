@@ -23,4 +23,5 @@ crate::generate!({
             }
         }
     "#,
+    runtime_path: "crate::rt", // only needed for this in-crate example.
 });
