@@ -887,6 +887,8 @@ pub mod examples;
 #[doc(hidden)]
 pub mod rt;
 
+pub mod resource;
+
 #[cfg(feature = "inter-task-wakeup")]
 pub use rt::async_support::UnitStreamOps;
 #[cfg(feature = "async-spawn")]

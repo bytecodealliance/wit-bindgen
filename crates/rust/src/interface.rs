@@ -196,9 +196,10 @@ impl<'i> InterfaceGenerator<'i> {
                     .map(|(resource, (trait_name, ..))| (resource.unwrap(), trait_name.as_str())),
             )
         }
+        let rt = self.r#gen.runtime_path().to_string();
 
         for (resource, (trait_name, methods)) in traits.iter() {
-            uwriteln!(self.src, "pub trait {trait_name}: 'static {{");
+            uwriteln!(self.src, "pub trait {trait_name}: {rt}::Resource {{");
             let resource = resource.unwrap();
             let resource_name = self.resolve.types[resource].name.as_ref().unwrap();
             let (_, interface_name) = interface.unwrap();
@@ -235,6 +236,55 @@ fn _resource_rep(handle: u32) -> *mut u8
 {{
     {import_rep}
     unsafe {{ rep(handle as i32) }}
+}}
+
+                    "#
+            );
+            let box_path = self.path_to_box();
+            uwriteln!(
+                self.src,
+                r#"
+/// Place this resource's representation into a location with a stable pointer,
+/// returning a pointer to that location.
+///
+/// This method is used to place `val` on the heap, for example, or possibly in
+/// an arena. The returned pointer must remain valid for the lifetime of this
+/// resource. The default implementation of this metho will place `val` onto the
+/// heap with `Box`. The returned pointer will be deallocated by the sibling
+/// `resource_from_raw_` function.
+///
+/// # Safety
+///
+/// Note that this method is not `unsafe` to call, but it is `unsafe` to
+/// define. When overriding this method you must additionally override the
+/// `resource_from_raw_` to insert an appropriate deallocation for the returned
+/// pointer. In the future this might become a default associated trait bound,
+/// but that's not stable in Rust right now.
+#[doc(hidden)]
+unsafe fn resource_into_raw_(val: Self::Rep) -> *mut Self::Rep
+{{
+    {box_path}::into_raw({box_path}::new(val))
+}}
+
+/// Consumes and deallocates a pointer previously returned by
+/// `resource_into_raw_`.
+///
+/// This function is used to deallocate resources and allocations associated
+/// with the allocation routine when creating a resource. The default
+/// implementation of this method will read `handle`'s value and deallocate it
+/// as a `Box`.
+///
+/// Note that when overriding this method you'll almost surely want to override
+/// `resource_into_raw_` as well.
+///
+/// # Safety
+///
+/// This method is only safe to call with pointers previously created by
+/// `resource_into_raw_`. For more information see `Box::from_raw` for examples.
+#[doc(hidden)]
+unsafe fn resource_from_raw_(handle: *mut Self::Rep) -> Self::Rep
+{{
+    *unsafe {{ {box_path}::from_raw(handle) }}
 }}
 
                     "#
@@ -2716,7 +2766,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 Identifier::World(_) => unimplemented!("resource exports from worlds"),
                 Identifier::StreamOrFuturePayload => unreachable!(),
             };
-            let box_path = self.path_to_box();
+            let rt = self.r#gen.runtime_path();
             uwriteln!(
                 self.src,
                 r#"
@@ -2726,8 +2776,6 @@ pub struct {camel} {{
     handle: {resource}<{camel}>,
 }}
 
-type _{camel}Rep<T> = Option<T>;
-
 impl {camel} {{
     /// Creates a new resource from the specified representation.
     ///
@@ -2736,31 +2784,30 @@ impl {camel} {{
     /// create a handle. The owned handle is then returned as `{camel}`.
     pub fn new<T: Guest{camel}>(val: T) -> Self {{
         Self::type_guard::<T>();
-        let val: _{camel}Rep<T> = Some(val);
-        let ptr: *mut _{camel}Rep<T> =
-            {box_path}::into_raw({box_path}::new(val));
+        let rep = <T::Rep as {rt}::ResourceRep<T>>::rep_new(val);
         unsafe {{
+            let ptr = T::resource_into_raw_(rep);
             Self::from_handle(T::_resource_new(ptr.cast()))
         }}
     }}
 
     /// Gets access to the underlying `T` which represents this resource.
     pub fn get<T: Guest{camel}>(&self) -> &T {{
-        let ptr = unsafe {{ &*self.as_ptr::<T>() }};
-        ptr.as_ref().unwrap()
+        let ptr = self.as_ptr::<T>();
+        unsafe {{ <T::Rep as {rt}::ResourceRep<T>>::rep_as_ref(ptr) }}
     }}
 
     /// Gets mutable access to the underlying `T` which represents this
     /// resource.
     pub fn get_mut<T: Guest{camel}>(&mut self) -> &mut T {{
-        let ptr = unsafe {{ &mut *self.as_ptr::<T>() }};
-        ptr.as_mut().unwrap()
+        let ptr = self.as_ptr::<T>();
+        unsafe {{ <T::Rep as {rt}::ResourceRep<T>>::rep_as_mut(ptr) }}
     }}
 
     /// Consumes this resource and returns the underlying `T`.
     pub fn into_inner<T: Guest{camel}>(self) -> T {{
-        let ptr = unsafe {{ &mut *self.as_ptr::<T>() }};
-        ptr.take().unwrap()
+        let ptr = self.as_ptr::<T>();
+        unsafe {{ <T::Rep as {rt}::ResourceRep<T>>::rep_take(ptr) }}
     }}
 
     #[doc(hidden)]
@@ -2783,7 +2830,7 @@ impl {camel} {{
     // It's theoretically possible to implement the `Guest{camel}` trait twice
     // so guard against using it with two different types here.
     #[doc(hidden)]
-    fn type_guard<T: 'static>() {{
+    fn type_guard<T: {rt}::Resource>() {{
         use core::any::TypeId;
         static mut LAST_TYPE: Option<TypeId> = None;
         unsafe {{
@@ -2797,12 +2844,14 @@ impl {camel} {{
     }}
 
     #[doc(hidden)]
-    pub unsafe fn dtor<T: 'static>(handle: *mut u8) {{
+    pub unsafe fn dtor<T: Guest{camel}>(handle: *mut u8) {{
         Self::type_guard::<T>();
-        let _ = unsafe {{ {box_path}::from_raw(handle as *mut _{camel}Rep<T>) }};
+        unsafe {{
+            let _rep = T::resource_from_raw_(handle.cast());
+        }}
     }}
 
-    fn as_ptr<T: Guest{camel}>(&self) -> *mut _{camel}Rep<T> {{
+    fn as_ptr<T: Guest{camel}>(&self) -> *mut T::Rep {{
        {camel}::type_guard::<T>();
        T::_resource_rep(self.handle()).cast()
     }}
@@ -2813,29 +2862,29 @@ impl {camel} {{
 #[derive(Debug)]
 #[repr(transparent)]
 pub struct {camel}Borrow<'a> {{
-    rep: *mut u8,
+    rep: *const u8,
     _marker: core::marker::PhantomData<&'a {camel}>,
 }}
 
 impl<'a> {camel}Borrow<'a>{{
     #[doc(hidden)]
-    pub unsafe fn lift(rep: usize) -> Self {{
+    pub unsafe fn lift(rep: *const u8) -> Self {{
         Self {{
-            rep: rep as *mut u8,
+            rep,
             _marker: core::marker::PhantomData,
         }}
     }}
 
     /// Gets access to the underlying `T` in this resource.
     pub fn get<T: Guest{camel}>(&self) -> &'a T {{
-       let ptr = unsafe {{ &mut *self.as_ptr::<T>() }};
-       ptr.as_ref().unwrap()
+       let ptr = self.as_ptr::<T>();
+       unsafe {{ <T::Rep as {rt}::ResourceRep<T>>::rep_as_ref(ptr) }}
     }}
 
     // NB: mutable access is not allowed due to the component model allowing
     // multiple borrows of the same resource.
 
-    fn as_ptr<T: 'static>(&self) -> *mut _{camel}Rep<T> {{
+    fn as_ptr<T: Guest{camel}>(&self) -> *const T::Rep {{
        {camel}::type_guard::<T>();
        self.rep.cast()
     }}
