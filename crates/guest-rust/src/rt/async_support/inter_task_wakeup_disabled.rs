@@ -1,9 +1,9 @@
-use super::FutureState;
+use super::TaskState;
 
 #[derive(Default)]
 pub struct State;
 
-impl FutureState<'_> {
+impl TaskState<'_> {
     pub(super) fn read_inter_task_stream(&mut self) {
         assert!(
             self.remaining_work(),
