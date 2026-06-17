@@ -43,6 +43,29 @@
 //!
 //! Additionally for now this file is serving as documentation of this
 //! interface.
+//!
+//! # Revisions
+//!
+//! This interface is intended to be evolvable over time if needed. Notably the
+//! original task structure, `wasip3_task`, has a `version` field where certain
+//! version levels imply the existence of certain fields. The historical
+//! revisions are:
+//!
+//! ### V1
+//!
+//! This was the original version. This is the original specification of
+//! `wasip3_task_set` and `wasip3_task`.
+//!
+//! ### V2
+//!
+//! This was added 2026-06-17 in response to #1618. This added
+//! `wasip3_task_v2` and `wasip3_task_vtable`. This version enables cloning a
+//! task to create a strong reference to it independent of the stack lifetime
+//! that `wasip3_task_set` is required to uphold. This necessitated introducing
+//! `clone` and `drop` callbacks to manage the lifetime of this reference.
+//! While doing this everything was moved into a vtable structure instead of
+//! inline in `wasip3_task` to make it easier to add more function pointers
+//! in the future if necessary.
 
 use core::ffi::c_void;
 
@@ -81,18 +104,7 @@ pub struct wasip3_task {
     /// below as the first argument.
     pub ptr: *mut c_void,
 
-    /// Register a new `waitable` for this exported task.
-    ///
-    /// This exported task will add `waitable` to its `waitable-set`. When it
-    /// becomes ready then `callback` will be invoked with the ready code as
-    /// well as the `callback_ptr` provided.
-    ///
-    /// If `waitable` was previously registered with this task then the
-    /// previous `callback_ptr` is returned. Otherwise `NULL` is returned.
-    ///
-    /// It's the caller's responsibility to ensure that `callback_ptr` is valid
-    /// until `callback` is invoked, `waitable_unregister` is invoked, or
-    /// `waitable_register` is called again to overwrite the value.
+    /// See `wasip3_task_vtable::waitable_register`.
     pub waitable_register: unsafe extern "C" fn(
         ptr: *mut c_void,
         waitable: u32,
@@ -100,34 +112,31 @@ pub struct wasip3_task {
         callback_ptr: *mut c_void,
     ) -> *mut c_void,
 
-    /// Removes the `waitable` from this task's `waitable-set`.
-    ///
-    /// Returns the `callback_ptr` passed to `waitable_register` if present, or
-    /// `NULL` if it's not present.
+    /// See `wasip3_task_vtable::waitable_unregister`.
     pub waitable_unregister: unsafe extern "C" fn(ptr: *mut c_void, waitable: u32) -> *mut c_void,
 }
 
 unsafe impl Send for wasip3_task {}
 unsafe impl Sync for wasip3_task {}
 
-/// Indirect "vtable" used to connect imported functions and exported tasks.
-/// Executors (e.g. exported functions) define and manage this while imports
-/// use it.
+/// Representation when `wasip3_task::version` is `WASIP3_TASK_V2`.
 #[repr(C)]
 pub struct wasip3_task_v2 {
-    /// TODO
+    /// The original task structure.
     pub v1: wasip3_task,
-    /// TODO
+
+    /// An always-valid pointer to a list of function pointers, described
+    /// below.
     pub vtable: &'static wasip3_task_vtable,
 }
 
-/// Indirect "vtable" used to connect imported functions and exported tasks.
-/// Executors (e.g. exported functions) define and manage this while imports
-/// use it.
+/// Function pointer operations that can operate on `wasip3_task::ptr`.
+///
+/// This was introduced in the "v2" ABI and is a member of `wasip3_task_v2`.
 #[repr(C)]
 pub struct wasip3_task_vtable {
-    /// Currently `WASIP3_TASK_V1`. Indicates what fields are present next
-    /// depending on the version here.
+    /// Currently `WASIP3_TASK_V2` as that was the first version that specified
+    /// vtables.
     pub version: u32,
 
     /// Register a new `waitable` for this exported task.
@@ -155,8 +164,17 @@ pub struct wasip3_task_vtable {
     /// `NULL` if it's not present.
     pub waitable_unregister: unsafe extern "C" fn(ptr: *mut c_void, waitable: u32) -> *mut c_void,
 
-    /// TODO
+    /// Clones this task's pointer to create a separately owned pointer which
+    /// can be persisted outside the stack frame that this is being used
+    /// within.
+    ///
+    /// Cloned values must be dropped/deallocated with `drop` below.
     pub clone: unsafe extern "C" fn(ptr: *mut c_void) -> *mut c_void,
-    /// TODO
+
+    /// Drops and deallocates the provided pointer previously created by a
+    /// call to the `clone` callback above.
+    ///
+    /// This must not be called on the `ptr` value within `wasip3_task::ptr` as
+    /// that's not managed with this lifetime.
     pub drop: unsafe extern "C" fn(ptr: *mut c_void),
 }
